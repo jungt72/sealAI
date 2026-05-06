@@ -1,0 +1,7 @@
+[Unit]
+Description=SealAI SEO daily anomaly report
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/thorsten/sealai
+ExecStart=/home/thorsten/sealai/seo/scripts/run_daily_reports.sh

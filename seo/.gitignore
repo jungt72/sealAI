@@ -1,0 +1,11 @@
+*.db
+*.sqlite
+*.sqlite3
+.env
+.secrets/
+data/
+reports/generated/
+logs/
+backups/
+__pycache__/
+.pytest_cache/

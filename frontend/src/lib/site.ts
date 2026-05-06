@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = "https://sealai.com";
+const DEFAULT_SITE_URL = "https://sealai.net";
 
 export function resolveSiteUrl(value: string | undefined): string {
   const trimmed = value?.trim();

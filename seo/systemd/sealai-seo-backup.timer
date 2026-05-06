@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly SealAI SEO SQLite backup timer
+
+[Timer]
+OnCalendar=Sun *-*-* 05:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

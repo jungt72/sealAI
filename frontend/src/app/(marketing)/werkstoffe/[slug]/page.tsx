@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getContentDoc, getAllSlugs } from "@/lib/content/loader";
 import { createMetadata } from "@/lib/seo/metadata";
-import { generateTechArticleSchema } from "@/lib/seo/jsonLd";
+import { generateBreadcrumbSchema, generateTechArticleSchema } from "@/lib/seo/jsonLd";
 import MdxProse from "@/components/content/MdxProse";
 
 interface Props {
@@ -41,6 +41,11 @@ export default async function WerkstoffePage({ params }: Props) {
     path: `/werkstoffe/${slug}`,
     category: "Dichtungswerkstoffe / Elastomere",
   });
+  const breadcrumbJsonLd = generateBreadcrumbSchema([
+    { name: "Startseite", path: "/" },
+    { name: "Werkstoffe", path: "/werkstoffe" },
+    { name: doc.metadata.title, path: `/werkstoffe/${slug}` },
+  ]);
 
   return (
     <>
@@ -48,7 +53,11 @@ export default async function WerkstoffePage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <MdxProse content={doc.content} type="werkstoffe" slug={slug} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <MdxProse content={doc.content} type="werkstoffe" slug={slug} title={doc.metadata.title} />
     </>
   );
 }

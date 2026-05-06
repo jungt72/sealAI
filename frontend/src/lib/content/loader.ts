@@ -71,8 +71,16 @@ export async function getAllSlugs(type: "medien" | "werkstoffe" | "wissen"): Pro
     const files = await fs.readdir(dirPath);
     return files
       .filter((f) => f.endsWith(".md"))
+      .sort()
       .map((f) => f.replace(".md", ""));
   } catch (error) {
     return [];
   }
+}
+
+export async function getAllContentDocs(type: "medien" | "werkstoffe" | "wissen"): Promise<ContentDoc[]> {
+  const slugs = await getAllSlugs(type);
+  const docs = await Promise.all(slugs.map((slug) => getContentDoc(type, slug)));
+
+  return docs.filter((doc): doc is ContentDoc => Boolean(doc));
 }

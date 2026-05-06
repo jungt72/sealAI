@@ -15,7 +15,9 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:node": "node --test src/**/*.test.ts",
-    "test:all": "npm run test:node && npm run test:run"
+    "test:all": "npm run test:node && npm run test:run",
+    "gsc": "node scripts/gsc/gsc.mjs",
+    "gsc:auth": "node scripts/gsc/oauth.mjs"
   },
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",

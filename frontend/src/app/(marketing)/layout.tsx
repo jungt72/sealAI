@@ -12,7 +12,7 @@ export default function MarketingLayout({
       <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <Link href="/" className="text-xl font-bold tracking-tight text-seal-blue">
-            SealingAI
+            sealingAI
           </Link>
           
           <nav className="hidden md:flex items-center gap-8">
@@ -29,7 +29,7 @@ export default function MarketingLayout({
               href="/dashboard/new" 
               className="flex items-center gap-2 rounded-full bg-seal-blue px-5 py-2 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-95"
             >
-              Analyse starten
+              Fall klären
               <ArrowRight size={14} />
             </Link>
           </nav>
@@ -51,9 +51,9 @@ export default function MarketingLayout({
         <div className="mx-auto max-w-7xl px-6">
           <div className="flex flex-col md:flex-row justify-between gap-10">
             <div className="flex flex-col gap-4">
-              <span className="text-lg font-bold text-seal-blue">SealingAI</span>
+              <span className="text-lg font-bold text-seal-blue">sealingAI</span>
               <p className="text-sm text-muted-foreground max-w-xs">
-                Sealing Intelligence — Professionelle technische Analyse und Vorqualifizierung von Dichtungslösungen.
+                Klär deinen Dichtungsfall, bevor du fragst. Neutral, strukturiert und ohne heimliche Weitergabe.
               </p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-10">
@@ -73,7 +73,7 @@ export default function MarketingLayout({
           </div>
           <div className="mt-12 border-t border-border/50 pt-8 text-center">
             <p className="text-[12px] text-muted-foreground">
-              © {new Date().getFullYear()} SealingAI. Alle Rechte vorbehalten. Technische Freigaben erfolgen ausschließlich durch den Hersteller.
+              © {new Date().getFullYear()} sealingAI. Alle Rechte vorbehalten. Technische Freigaben erfolgen ausschließlich durch den Hersteller.
             </p>
           </div>
         </div>

@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { resolveSiteUrl } from "./site.ts";
 
 test("resolveSiteUrl falls back to the default site URL", () => {
-  assert.equal(resolveSiteUrl(undefined), "https://sealai.com");
-  assert.equal(resolveSiteUrl("   "), "https://sealai.com");
+  assert.equal(resolveSiteUrl(undefined), "https://sealai.net");
+  assert.equal(resolveSiteUrl("   "), "https://sealai.net");
 });
 
 test("resolveSiteUrl trims a trailing slash from configured URLs", () => {

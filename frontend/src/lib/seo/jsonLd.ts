@@ -1,7 +1,12 @@
 import { getSiteUrl } from "@/lib/site";
 
-const SITE_NAME = "SealingAI";
+const SITE_NAME = "sealingAI";
 const DEFAULT_LOGO = `${getSiteUrl()}/images/logo-sealingai.png`;
+
+type BreadcrumbItem = {
+  name: string;
+  path: string;
+};
 
 export function generateOrganizationSchema() {
   const siteUrl = getSiteUrl();
@@ -12,6 +17,9 @@ export function generateOrganizationSchema() {
     "url": siteUrl,
     "logo": DEFAULT_LOGO,
     "description": "Sealing Intelligence — Professionelle technische Analyse und Vorqualifizierung von Dichtungslösungen.",
+    "sameAs": [
+      "https://sealai.net",
+    ],
   };
 }
 
@@ -48,6 +56,57 @@ export function generateArticleSchema({
       },
     },
     "datePublished": datePublished,
+  };
+}
+
+export function generateBreadcrumbSchema(items: BreadcrumbItem[]) {
+  const siteUrl = getSiteUrl();
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": items.map((item, index) => ({
+      "@type": "ListItem",
+      "position": index + 1,
+      "name": item.name,
+      "item": `${siteUrl}${item.path}`,
+    })),
+  };
+}
+
+export function generateCollectionPageSchema({
+  title,
+  description,
+  path,
+  items,
+}: {
+  title: string;
+  description: string;
+  path: string;
+  items: BreadcrumbItem[];
+}) {
+  const siteUrl = getSiteUrl();
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    "name": title,
+    "description": description,
+    "url": `${siteUrl}${path}`,
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": SITE_NAME,
+      "url": siteUrl,
+    },
+    "mainEntity": {
+      "@type": "ItemList",
+      "itemListElement": items.map((item, index) => ({
+        "@type": "ListItem",
+        "position": index + 1,
+        "name": item.name,
+        "url": `${siteUrl}${item.path}`,
+      })),
+    },
   };
 }
 

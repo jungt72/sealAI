@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getContentDoc, getAllSlugs } from "@/lib/content/loader";
 import { createMetadata } from "@/lib/seo/metadata";
-import { generateTechArticleSchema } from "@/lib/seo/jsonLd";
+import { generateBreadcrumbSchema, generateTechArticleSchema } from "@/lib/seo/jsonLd";
 import MdxProse from "@/components/content/MdxProse";
 
 interface Props {
@@ -41,6 +41,11 @@ export default async function MedienPage({ params }: Props) {
     path: `/medien/${slug}`,
     category: "Chemische Beständigkeit / Medien",
   });
+  const breadcrumbJsonLd = generateBreadcrumbSchema([
+    { name: "Startseite", path: "/" },
+    { name: "Medien", path: "/medien" },
+    { name: doc.metadata.title, path: `/medien/${slug}` },
+  ]);
 
   return (
     <>
@@ -48,7 +53,11 @@ export default async function MedienPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <MdxProse content={doc.content} type="medien" slug={slug} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <MdxProse content={doc.content} type="medien" slug={slug} title={doc.metadata.title} />
     </>
   );
 }

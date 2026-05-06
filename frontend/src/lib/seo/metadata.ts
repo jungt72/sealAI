@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import { getSiteUrl } from "@/lib/site";
 
-const SITE_NAME = "SealingAI";
+const SITE_NAME = "sealingAI";
 const SITE_DESCRIPTION = "Professionelle technische Vorqualifizierung und Analyse für industrielle Dichtungslösungen.";
 
 type SeoProps = {

@@ -1,36 +1,49 @@
 ---
-title: "FKM (Fluorkautschuk) — Technische Daten und Anwendung"
-description: "Detaillierte Analyse des Dichtungswerkstoffs FKM: Temperaturbeständigkeit, chemische Resistenz und Einsatzgrenzen."
+title: "FKM-Dichtung: Medien, Temperatur und Grenzen vor der Herstellerprüfung"
+description: "FKM/Viton technisch einordnen und die offenen Betriebsdaten für eine belastbare Herstellerprüfung sichtbar machen."
 category: "Dichtungswerkstoffe"
+datePublished: "2026-05-05"
+author: "sealingAI"
 ---
 
-# FKM (Fluorkautschuk) — Technische Analyse
+# FKM-Dichtung: Medien, Temperatur und Grenzen vor der Herstellerprüfung
 
-Fluorkautschuk (FKM) gehört zu den leistungsfähigsten Elastomeren für anspruchsvolle industrielle Dichtungsanwendungen. Er zeichnet sich durch seine exzellente thermische und chemische Beständigkeit aus.
+FKM ist ein leistungsfähiger Fluorkautschuk für viele anspruchsvolle Dichtungsanwendungen. Im Markt wird häufig auch die Bezeichnung Viton verwendet. Technisch ist entscheidend, welcher konkrete FKM-Typ, welche Vernetzung und welches Betriebsfenster gemeint sind.
 
-## Werkstoffeigenschaften
+FKM ist oft interessant bei höheren Temperaturen und vielen öl- oder kraftstoffnahen Medien. Trotzdem ist FKM nicht automatisch für jede Chemikalie oder jeden thermischen Grenzfall geeignet.
 
-FKM-Mischungen variieren je nach Fluorgehalt (meist 66 % bis 70 %). Ein höherer Fluorgehalt verbessert die chemische Beständigkeit, beeinträchtigt jedoch meist das Kälteflexibilitätsverhalten.
+## Typische Stärken
 
-### Technische Eckdaten:
-* **Temperaturbereich:** -20 °C bis +200 °C (kurzzeitig bis +230 °C).
-* **Chemische Beständigkeit:** Mineralöle, Kraftstoffe, aliphatische und aromatische Kohlenwasserstoffe, sowie viele Chemikalien.
-* **Ungeeignet für:** Heißwasser, Dampf, Amine und polare Lösungsmittel wie Aceton.
+- gute Temperaturbeständigkeit im Vergleich zu vielen Standardelastomeren
+- häufig gute Beständigkeit gegen Mineralöle, Kraftstoffe und viele Kohlenwasserstoffe
+- verbreitet für O-Ringe, Wellendichtringe, Formteile und technische Dichtungen
+- unterschiedliche Typen für unterschiedliche Medienprofile
 
-## Anwendungsgebiete
+## Wichtige Grenzen
 
-FKM wird bevorzugt in Branchen wie der Chemischen Industrie, Energietechnik und Luftfahrt eingesetzt, wo hohe Temperaturen und aggressive Medien gleichzeitig auftreten.
+FKM kann bei Dampf, Heißwasser, bestimmten Aminen, Ketonen, polaren Lösungsmitteln oder Tieftemperaturen kritisch sein. Auch Säuren und Reinigungsmedien müssen differenziert betrachtet werden.
 
-### Typische Einsatzbeispiele:
-* **O-Ringe** in Gehäusen und Armaturen.
-* **Wellendichtringe** für Motoren und Getriebe.
-* **Membranen** in Pumpensystemen.
+Ein Datenblattwert ersetzt keine Anwendungsprüfung. Temperatur, Medium, Konzentration, Kontaktzeit, Druck und Bewegung wirken zusammen.
 
-## Verarbeitung und Typen
+## FKM, Viton und Werkstoffbezeichnung
 
-Man unterscheidet zwischen verschiedenen Typen (z.B. Viton® A, B, GF), die sich in der Zusammensetzung und Vernetzung (bisphenolisch oder peroxidisch) unterscheiden. Peroxidisch vernetztes FKM bietet eine verbesserte Beständigkeit gegenüber Wasserdampf und Säuren.
+Viton ist eine bekannte Handelsbezeichnung für bestimmte FKM-Typen. In einer technischen Anfrage sollte nicht nur "Viton" stehen, wenn eigentlich eine konkrete Medien- oder Temperaturanforderung gemeint ist. Besser ist eine Anfragebasis mit Betriebsdaten und, falls vorhanden, bisheriger Werkstoffbezeichnung.
 
-> **Wichtiger Hinweis:** In Anwendungen mit extremen Tieftemperaturen unter -30 °C müssen spezielle FKM-Typen (z.B. LT-Typen) gewählt werden.
+## RFQ-relevante Angaben
 
----
-*Analysieren Sie die Eignung von FKM für Ihre spezifische Anwendung im SeaLAI Dashboard.*
+| Angabe | Warum sie wichtig ist |
+|---|---|
+| Medium und Konzentration | bestimmt die chemische Vorprüfung |
+| Temperaturprofil | Dauer- und Spitzentemperaturen trennen |
+| Druck und Bewegung | beeinflusst Verformung, Reibung und Extrusion |
+| Kontaktzeit | relevant bei chemischer Belastung |
+| Freigaben | Lebensmittel, Trinkwasser, Automotive oder andere Normen |
+| Vergleichswerkstoff | hilft bei Ersatzteil- oder Schadensfällen |
+
+## Vergleich zu EPDM, NBR und PTFE
+
+FKM wird häufig gegen NBR, EPDM oder PTFE abgewogen. NBR ist oft wirtschaftlich für Ölstandardfälle, EPDM häufig bei Wasser- und Wetterkontexten relevant, PTFE bei sehr breiter chemischer Orientierung. Die Auswahl ist aber immer anwendungsbezogen.
+
+## sealingAI-Grenze
+
+sealingAI kann FKM als möglichen Werkstoffkontext einordnen und fehlende Angaben für eine Herstellerprüfung sammeln. sealingAI gibt keine finale Materialfreigabe und keine finale Dichtungsauslegung.
