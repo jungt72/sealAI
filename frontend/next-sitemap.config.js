@@ -33,7 +33,17 @@ module.exports = {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/dashboard", "/dashboard/", "/goal", "/goal/", "/rag", "/rag/"],
+        disallow: [
+          "/api/",
+          "/dashboard",
+          "/dashboard/",
+          "/dashboard/seo",
+          "/dashboard/seo/",
+          "/goal",
+          "/goal/",
+          "/rag",
+          "/rag/",
+        ],
       },
     ],
   },
