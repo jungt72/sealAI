@@ -13,15 +13,22 @@ test("isProtectedPath matches rag routes", () => {
   assert.equal(isProtectedPath("/rag/documents"), true);
 });
 
+test("isProtectedPath matches goal routes", () => {
+  assert.equal(isProtectedPath("/goal"), true);
+  assert.equal(isProtectedPath("/goal/new"), true);
+});
+
 test("isProtectedPath ignores unprotected routes", () => {
   assert.equal(isProtectedPath("/"), false);
   assert.equal(isProtectedPath("/api/auth/signin"), false);
+  assert.equal(isProtectedPath("/login"), false);
   assert.equal(isProtectedPath("/settings"), false);
 });
 
 test("shouldRedirectToSignIn only redirects unauthenticated protected requests", () => {
   assert.equal(shouldRedirectToSignIn("/dashboard", false), true);
   assert.equal(shouldRedirectToSignIn("/rag", false), true);
+  assert.equal(shouldRedirectToSignIn("/goal", false), true);
   assert.equal(shouldRedirectToSignIn("/dashboard", true), false);
   assert.equal(shouldRedirectToSignIn("/", false), false);
 });

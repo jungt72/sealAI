@@ -13,6 +13,8 @@ import { create } from "zustand";
 import type { ChatMessage } from "@/hooks/useAgentStream";
 
 interface ChatStore {
+  /** Aktuell gebundene Fall-ID aus dem Agent-Stream */
+  activeCaseId: string | null;
   /** Abgeschlossene Nachrichten (User + Assistant) */
   messages: ChatMessage[];
   /** Laufender Streaming-Text des aktuellen Assistant-Turns */
@@ -30,6 +32,7 @@ interface ChatStore {
 
   // ── State-Sync-Setter (nur für CaseScreen-useEffect) ─────────────────────
   setMessages: (msgs: ChatMessage[]) => void;
+  setActiveCaseId: (caseId: string | null) => void;
   setStreamingText: (text: string) => void;
   setIsStreaming: (v: boolean) => void;
   setError: (e: string | null) => void;
@@ -47,6 +50,7 @@ const noopSend = async (_msg: string): Promise<void> => {};
 const noopStart = (): void => {};
 
 export const useChatStore = create<ChatStore>()((set) => ({
+  activeCaseId: null,
   messages: [],
   streamingText: "",
   isStreaming: false,
@@ -56,6 +60,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   startNewChat: noopStart,
 
   setMessages: (msgs) => set({ messages: msgs }),
+  setActiveCaseId: (caseId) => set({ activeCaseId: caseId }),
   setStreamingText: (text) => set({ streamingText: text }),
   setIsStreaming: (v) => set({ isStreaming: v }),
   setError: (e) => set({ error: e }),

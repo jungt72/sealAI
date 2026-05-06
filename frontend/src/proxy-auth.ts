@@ -1,5 +1,5 @@
 export function isProtectedPath(pathname: string): boolean {
-  return pathname.startsWith("/dashboard") || pathname.startsWith("/rag");
+  return pathname.startsWith("/dashboard") || pathname.startsWith("/goal") || pathname.startsWith("/rag");
 }
 
 export function shouldRedirectToSignIn(pathname: string, isLoggedIn: boolean): boolean {

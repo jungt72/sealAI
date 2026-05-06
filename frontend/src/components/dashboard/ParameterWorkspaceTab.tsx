@@ -87,9 +87,9 @@ const PARAMETER_FIELDS: ParameterField[] = [
     fieldName: "sealing_type",
     label: "Dichtungstyp-Richtung",
     kind: "text",
-    placeholder: "z. B. RWDR, PTFE-RWDR, Gleitringdichtung",
+    placeholder: "z. B. RWDR, Gleitringdichtung, O-Ring",
     detail: "Diese Angabe ist nur eine Richtung oder vorhandene Vermutung.",
-    why: "SeaLAI nutzt sie zur Einordnung, prüft aber weiter gegen Medium, Druck, Geometrie und Anwendung.",
+    why: "SealingAI nutzt sie zur Einordnung, prüft aber weiter gegen Medium, Druck, Geometrie und Anwendung.",
   },
   {
     fieldName: "counterface_surface",
@@ -97,7 +97,7 @@ const PARAMETER_FIELDS: ParameterField[] = [
     kind: "text",
     placeholder: "z. B. gehärtete Welle, Ra 0,2 µm, unbekannt",
     detail: "Oberfläche, Härte und Rundlauf beeinflussen Verschleiß, Leckage und Reibung.",
-    why: "Gerade bei RWDR/PTFE-RWDR ist die Gegenlauffläche häufig ein Herstellerprüfpunkt.",
+    why: "Gerade bei dynamischen Dichtstellen ist die Gegenlauffläche häufig ein Herstellerprüfpunkt.",
   },
 ];
 
@@ -400,7 +400,7 @@ function parameterFieldForHint(hint: string): ParameterField | null {
     kind: details.kind ?? "text",
     placeholder: details.placeholder ?? "Angabe eintragen",
     detail: details.detail ?? "Diese Angabe hilft, den Fall genauer einzuordnen.",
-    why: details.why ?? "SeaLAI übernimmt die Angabe als Nutzerangabe und hält Herstellerprüfung sichtbar.",
+    why: details.why ?? "SealingAI übernimmt die Angabe als Nutzerangabe und hält Herstellerprüfung sichtbar.",
   };
 }
 
@@ -651,7 +651,7 @@ function TypeSpecificParameterGuidance({ workspace }: { workspace: WorkspaceView
         <div>
           <h3 className="text-sm font-semibold text-[#111827]">Passende Zusatzangaben</h3>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-            Der Parameter-Tab passt sich an den Dichtungstyp an. Hydraulik, Flachdichtung, O-Ring, RWDR und Gleitringdichtung brauchen unterschiedliche Angaben. Was SeaLAI direkt verarbeiten kann, erscheint unten als Eingabefeld.
+            Der Parameter-Tab passt sich an den Dichtungstyp an. Hydraulik, Flachdichtung, O-Ring, RWDR und Gleitringdichtung brauchen unterschiedliche Angaben. Was SealingAI direkt verarbeiten kann, erscheint unten als Eingabefeld.
           </p>
         </div>
         {sealProfile?.sealType && (
@@ -777,7 +777,7 @@ export function ParameterWorkspaceTab({
           <div>
             <h2 className="text-base font-semibold tracking-tight text-[#111827]">Angaben direkt eintragen</h2>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
-              Trage Werte ein, die du sicher kennst. SeaLAI übernimmt nur neue oder geänderte Angaben, rechnet abhängige Hinweise neu und hält offene Punkte sichtbar.
+              Trage Werte ein, die du sicher kennst. SealingAI übernimmt neue oder geänderte Angaben, rechnet abhängige Hinweise neu und hält offene Punkte sichtbar.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">

@@ -14,7 +14,6 @@ import {
   buildMediumStatusViewFromWorkspace, 
   buildMediumStatusViewFromStream 
 } from "@/lib/mediumStatusView";
-import type { WorkspaceRfqReadinessProjection } from "@/lib/contracts/workspace";
 
 export type CockpitData = {
   view: EngineeringCockpitView;
@@ -22,7 +21,6 @@ export type CockpitData = {
   coverage: number;
   releaseStatus: string;
   mediumStatus: MediumStatusViewModel;
-  rfqReadinessProjection?: WorkspaceRfqReadinessProjection | null;
 };
 
 function isEngineeringPath(value: string | null | undefined): value is EngineeringPath {
@@ -39,70 +37,54 @@ function isEngineeringPath(value: string | null | undefined): value is Engineeri
 const SECTIONS_CONFIG: Array<{
   id: EngineeringSection["id"];
   title: string;
-  fields: Array<{ key: string; label: string; unit: string; aliases?: string[] }>;
+  fields: Array<{ key: string; label: string; unit: string }>;
 }> = [
   {
     id: "application_function",
-    title: "1. Anlage & Funktion",
+    title: "A. Grunddaten",
     fields: [
-      { key: "asset_type", label: "Anlage / Baugruppe", unit: "", aliases: ["installation", "application_context"] },
-      { key: "asset_function", label: "Funktion", unit: "", aliases: ["primary_function"] },
-      { key: "seal_location", label: "Dichtstelle", unit: "", aliases: ["geometry_context"] },
-      { key: "motion_type", label: "Bewegungsart", unit: "", aliases: ["movement_type"] },
-      { key: "primary_function", label: "Dichtfunktion", unit: "", aliases: ["pressure_direction"] },
-      { key: "consequence_of_failure", label: "Ausfallfolge", unit: "", aliases: ["allowable_leakage"] },
+      { key: "medium", label: "Medium / Fluid", unit: "" },
+      { key: "temperature_c", label: "Temperatur", unit: "°C" },
+      { key: "pressure_bar", label: "Druck", unit: "bar" },
+      { key: "shaft_diameter_mm", label: "Referenz-Ø", unit: "mm" },
+      { key: "speed_rpm", label: "Drehzahl", unit: "rpm" },
+      { key: "motion_type", label: "Bewegungsart", unit: "" },
+      { key: "installation", label: "Equipment-Typ", unit: "" },
+      { key: "pressure_direction", label: "Druckrichtung", unit: "" },
     ]
   },
   {
     id: "medium_environment",
-    title: "2. Medium & Umgebung",
+    title: "B. Technische Risikofaktoren",
     fields: [
-      { key: "medium_name", label: "Medium", unit: "", aliases: ["medium"] },
-      { key: "medium_category", label: "Medienkategorie", unit: "", aliases: ["medium_family"] },
-      { key: "temperature_max", label: "Temperatur max.", unit: "°C", aliases: ["temperature_c"] },
-      { key: "particles_present", label: "Partikel", unit: "", aliases: ["solids_percent", "contamination"] },
-      { key: "cleaning_media", label: "Reinigung / CIP", unit: "", aliases: ["cleaning_cycles"] },
-      { key: "food_contact", label: "Food/Pharma/ATEX", unit: "", aliases: ["compliance", "industry"] },
-      { key: "benetzung", label: "Benetzung", unit: "", aliases: ["dry_run_possible", "duty_profile"] },
+      { key: "viscosity", label: "Viskosität", unit: "cSt" },
+      { key: "solids_percent", label: "Feststoffe", unit: "%" },
+      { key: "ph", label: "pH-Wert", unit: "" },
+      { key: "dry_run_possible", label: "Trockenlauf mögl.", unit: "" },
+      { key: "cleaning_cycles", label: "Reinigungszyklen", unit: "" },
     ]
   },
   {
     id: "operating_geometry",
-    title: "3. Betriebsdaten & Geometrie",
+    title: "C. Geometrie & Einbauraum",
     fields: [
-      { key: "shaft_diameter", label: "Wellendurchmesser", unit: "mm", aliases: ["shaft_diameter_mm"] },
-      { key: "housing_bore", label: "Gehäusebohrung", unit: "mm", aliases: ["housing_bore_mm"] },
-      { key: "installation_width", label: "Einbaubreite", unit: "mm", aliases: ["installation_width_mm"] },
-      { key: "speed_rpm", label: "Drehzahl", unit: "rpm" },
-      { key: "pressure_nominal", label: "Betriebsdruck", unit: "bar", aliases: ["pressure_bar"] },
-      { key: "surface_finish", label: "Oberfläche", unit: "", aliases: ["counterface_surface"] },
+      { key: "geometry_context", label: "Bauraum", unit: "" },
       { key: "shaft_material", label: "Wellenwerkstoff", unit: "" },
-      { key: "shaft_runout", label: "Rundlauf", unit: "mm", aliases: ["runout_mm"] },
+      { key: "shaft_hardness", label: "Wellenhärte", unit: "HRC" },
+      { key: "runout_mm", label: "Rundlauf", unit: "mm" },
+      { key: "vibration_rms", label: "Vibration RMS", unit: "mm/s" },
     ]
   },
   {
     id: "risk_readiness",
-    title: "4. Risiken & Anfrage-Reife",
+    title: "D. Anfrage- & Freigabereife",
     fields: [
-      { key: "top_risks", label: "Top-Risiken", unit: "", aliases: ["contamination", "medium_qualifiers"] },
-      { key: "readiness_level", label: "Readiness Level", unit: "" },
-      { key: "blocking_unknowns", label: "Blockierende Unbekannte", unit: "" },
-      { key: "recommended_next_question", label: "Nächste Frage", unit: "" },
-      { key: "rfq_possible", label: "RFQ möglich", unit: "" },
-      { key: "compliance", label: "Norm/Hygiene/ATEX", unit: "", aliases: ["industry"] },
+      { key: "allowable_leakage", label: "Zul. Leckage", unit: "" },
+      { key: "life_hours", label: "Lebensdauer", unit: "h" },
+      { key: "compliance", label: "Konformität", unit: "" },
     ]
   }
 ];
-
-function readParameterValue(parameters: Record<string, any>, assertion: any, key: string, aliases: string[] = []) {
-  for (const candidate of [key, ...aliases]) {
-    const value = parameters[candidate] ?? assertion?.[candidate]?.value;
-    if (value !== null && value !== undefined && value !== "") {
-      return value;
-    }
-  }
-  return null;
-}
 
 function projectEngineeringView(
   parameters: Record<string, any>,
@@ -118,7 +100,7 @@ function projectEngineeringView(
   SECTIONS_CONFIG.forEach(secConfig => {
     const properties: EngineeringProperty[] = secConfig.fields.flatMap((f) => {
       const assertion = assertions?.[f.key];
-      const rawVal = readParameterValue(parameters, assertions, f.key, f.aliases);
+      const rawVal = parameters[f.key] || assertion?.value || null;
       
       let origin: DataOrigin = "missing";
       let isConfirmed = false;
@@ -209,6 +191,7 @@ export function useCockpitData(): CockpitData | null {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const streamWorkspace = useWorkspaceStore((s) => s.streamWorkspace);
   const streamAssertions = useWorkspaceStore((s) => s.streamAssertions);
+  const userParameterOverrides = useWorkspaceStore((s) => s.userParameterOverrides);
 
   return useMemo(() => {
     let rawParams: Record<string, any> = {};
@@ -219,7 +202,7 @@ export function useCockpitData(): CockpitData | null {
     let engineeringPath: EngineeringPath | null = null;
 
     if (workspace) {
-      rawParams = workspace.parameters || {};
+      rawParams = { ...(workspace.parameters || {}), ...userParameterOverrides };
       mediumStatus = buildMediumStatusViewFromWorkspace(workspace);
       requestType = workspace.requestType || null;
       engineeringPath = isEngineeringPath(workspace.engineeringPath) ? workspace.engineeringPath : null;
@@ -231,7 +214,7 @@ export function useCockpitData(): CockpitData | null {
           params[p.field_name.toLowerCase().replace(/\s+/g, "_")] = p.value;
         }
       }
-      rawParams = params;
+      rawParams = { ...params, ...userParameterOverrides };
       wsObj = streamWorkspace as any; 
       mediumStatus = buildMediumStatusViewFromStream(streamWorkspace);
     } else {
@@ -247,7 +230,6 @@ export function useCockpitData(): CockpitData | null {
         coverage: workspace?.completeness?.coverageScore || 0,
         releaseStatus: workspace?.governance.releaseStatus || "inadmissible",
         mediumStatus,
-        rfqReadinessProjection: workspace.rfqReadinessProjection ?? null,
       };
     }
 
@@ -258,9 +240,7 @@ export function useCockpitData(): CockpitData | null {
       parameters: rawParams,
       coverage: workspace?.completeness?.coverageScore || 0,
       releaseStatus: workspace?.governance.releaseStatus || "inadmissible",
-      mediumStatus,
-      rfqReadinessProjection:
-        workspace?.rfqReadinessProjection ?? streamWorkspace?.rfqReadinessProjection ?? null,
+      mediumStatus
     };
-  }, [workspace, streamWorkspace, streamAssertions]);
+  }, [workspace, streamWorkspace, streamAssertions, userParameterOverrides]);
 }

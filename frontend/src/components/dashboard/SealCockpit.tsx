@@ -43,7 +43,7 @@ export function CockpitTabs({
   return (
     <div
       role="tablist"
-      aria-label="SealAI Cockpit"
+      aria-label="SealingAI Cockpit"
       className="custom-scrollbar flex gap-2 overflow-x-auto bg-transparent px-4 pb-2 pt-4"
     >
       {tabs.map((tab) => {
@@ -833,7 +833,7 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
     <WorkspaceTabShell
       title="Werkstoff"
       icon={Layers}
-      intro="SeaLAI entwickelt hier ein Werkstofffenster aus dem aktuellen Fallzustand. Die Entscheidung bleibt bis zur Herstellerprüfung offen."
+      intro="SealingAI entwickelt hier ein Werkstofffenster aus dem aktuellen Fallzustand. Die Entscheidung bleibt bis zur Herstellerprüfung offen."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
         <InfoTile title="Medium" value={normalizeText(input?.medium ?? workspace?.parameters?.medium)} tone="info" />
@@ -928,6 +928,27 @@ function CalculationTab({
   );
 }
 
+
+function RfqQualificationTab({
+  data,
+  workspace,
+}: {
+  data: SealCockpitOverview;
+  workspace: WorkspaceView | null;
+}) {
+  return (
+    <WorkspaceTabShell
+      title="Anfragebasis"
+      icon={FileText}
+      intro="RFQ-Readiness, offene Punkte und Vorschau für die spätere Herstellerprüfung. Hier wird nichts automatisch versendet."
+    >
+      <div className="mt-4">
+        <RfqPane data={data} caseId={workspace?.caseId} workspace={workspace} />
+      </div>
+    </WorkspaceTabShell>
+  );
+}
+
 function BriefingTab({
   data,
   workspace,
@@ -974,6 +995,12 @@ export function SealCockpit({
 }) {
   const [activeTab, setActiveTab] = useState<CockpitTabId>(preferredTab ?? "overview");
 
+  useEffect(() => {
+    if (preferredTab) {
+      setActiveTab(preferredTab);
+    }
+  }, [preferredTab]);
+
   return (
     <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-transparent bg-transparent lg:min-h-0">
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
@@ -1004,6 +1031,8 @@ export function SealCockpit({
             isSubmitting={isParameterSubmitting}
             onSubmit={onParameterSubmit ?? (async () => {})}
           />
+        ) : activeTab === "rfq" ? (
+          <RfqQualificationTab data={data} workspace={workspace} />
         ) : activeTab === "medium" ? (
           <MediumTab workspace={workspace} />
         ) : activeTab === "application" ? (

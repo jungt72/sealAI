@@ -7,7 +7,7 @@ export const proxy = auth((req) => {
   const { pathname } = req.nextUrl;
 
   if (shouldRedirectToSignIn(pathname, !!req.auth)) {
-    const signInUrl = new URL("/api/auth/signin", req.nextUrl);
+    const signInUrl = new URL("/login", req.nextUrl);
     signInUrl.searchParams.set(
       "callbackUrl",
       req.nextUrl.pathname + req.nextUrl.search,
@@ -20,6 +20,9 @@ export const proxy = auth((req) => {
 
 export const config = {
   matcher: [
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|public).*)",
+    "/dashboard/:path*",
+    "/goal/:path*",
+    "/goal",
+    "/rag/:path*",
   ],
 };

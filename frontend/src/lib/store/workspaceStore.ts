@@ -26,61 +26,64 @@ export type ActivePanel =
   | null;
 
 // ── Medium Intelligence types (fetched via BFF) ────────────────────────────
-export interface MediumResearchAttempt {
-  attempted: boolean;
-  status:
-    | "ok"
-    | "no_hits"
-    | "not_requested"
-    | "disabled"
-    | "not_configured"
-    | "error"
-    | "tenant_missing";
-  hit_count: number;
-  tier?: string | null;
-  note?: string | null;
-}
-
 export interface MediumEvidenceItem {
   id: string;
-  source_type: "deterministic" | "rag" | "web";
-  validation_status: "system_derived" | "documented" | "web_retrieved" | "not_available";
   title: string;
-  source_name?: string | null;
   excerpt: string;
-  confidence: "low" | "medium" | "high";
-  url?: string | null;
-}
-
-export interface MediumResearchSection {
-  id: string;
-  title: string;
-  content: string;
-  bullets: string[];
-  evidence_ref_ids: string[];
+  source_name?: string | null;
+  source_type: "rag" | "web" | "system" | string;
+  validation_status: "documented" | "web_retrieved" | "system_derived" | string;
 }
 
 export interface MediumIntelligenceData {
-  medium: string;
+  canonicalName: string;
+  family: string;
+  subFamily?: string;
+  medium?: string | null;
   resolved_medium?: string | null;
-  summary?: string | null;
-  answer_markdown?: string | null;
-  answer_markdown_source?: "deterministic_sections" | "medium_composer" | "composer_fallback";
-  sections: MediumResearchSection[];
-  evidence: MediumEvidenceItem[];
+  pH: { min: number | null; max: number | null; note: string };
+  viscosityMpas: { at20c: number | null; at40c: number | null; at80c: number | null };
+  temperatureRange: { minC: number; maxC: number; criticalNoteC: number | null };
+  pressureTypical: { maxBar: number | null; note: string };
+  corrosiveness: "low" | "medium" | "high" | "very_high";
+  chemicalAggressiveness: "low" | "medium" | "high" | "very_high";
+  compatibleMaterials: string[];
+  incompatibleMaterials: Array<string | { material: string; reason: string }>;
+  specialChallenges: string[];
+  sealingConsiderations: string[];
+  typicalIndustries: string[];
+  normsStandards: string[];
+  warningFlags: string[];
+  confidenceLevel: "high" | "medium" | "low";
   research_status: {
-    rag: MediumResearchAttempt;
-    web: MediumResearchAttempt;
+    rag: {
+      attempted: boolean;
+      status: string;
+      hit_count?: number;
+      tier?: string | null;
+      note?: string | null;
+    };
+    web: {
+      attempted: boolean;
+      status: string;
+      hit_count?: number;
+      tier?: string | null;
+      note?: string | null;
+    };
   };
+  answer_markdown?: string | null;
+  answer_markdown_source?: string | null;
   composer?: {
-    enabled: boolean;
-    attempted: boolean;
-    succeeded: boolean;
-    source: "deterministic_sections" | "medium_composer" | "composer_fallback";
-    fallback_reason?: string | null;
-  };
+    succeeded?: boolean;
+  } | null;
+  sections: Array<{
+    id: string;
+    title: string;
+    content: string;
+    bullets: string[];
+  }>;
+  evidence: MediumEvidenceItem[];
   limitations: string[];
-  not_for_release_decisions: boolean;
 }
 
 interface WorkspaceStore {
@@ -90,6 +93,8 @@ interface WorkspaceStore {
   streamWorkspace: StreamWorkspaceView | null;
   /** Letzte bekannte Assertions aus dem Governed-Stream — bleibt nach Stream-Ende erhalten */
   streamAssertions: Record<string, AssertionEntry> | null;
+  /** Direkt vom Nutzer im rechten Parameterformular eingegebene Werte */
+  userParameterOverrides: Record<string, string>;
 
   // ── Medium Intelligence ────────────────────────────────────────────────────
   mediumIntelligence: MediumIntelligenceData | null;
@@ -117,6 +122,8 @@ interface WorkspaceStore {
   setWorkspaceLoading: (v: boolean) => void;
   setStreamWorkspace: (v: StreamWorkspaceView | null) => void;
   setStreamAssertions: (v: Record<string, AssertionEntry> | null) => void;
+  setUserParameterOverride: (key: string, value: string) => void;
+  resetUserParameterOverrides: () => void;
   setChatInput: (v: string | null) => void;
   setIsSidebarOpen: (v: boolean) => void;
   setIsDesktopViewport: (v: boolean) => void;
@@ -125,7 +132,7 @@ interface WorkspaceStore {
   setMediumIntelligence: (data: MediumIntelligenceData | null) => void;
   setMediumIntelligenceLoading: (v: boolean) => void;
   setMediumIntelligenceFor: (label: string | null) => void;
-  setMediumIntelligenceResult: (label: string | null, data: MediumIntelligenceData | null) => void;
+  setMediumIntelligenceResult: (label: string, data: MediumIntelligenceData) => void;
 
   // ── UI-Aktionen ───────────────────────────────────────────────────────────
   toggleSidebar: () => void;
@@ -148,6 +155,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set) => ({
   workspaceLoading: false,
   streamWorkspace: null,
   streamAssertions: null,
+  userParameterOverrides: {},
   mediumIntelligence: null,
   mediumIntelligenceLoading: false,
   mediumIntelligenceFor: null,
@@ -171,6 +179,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set) => ({
       streamAssertions: v === null ? null : v.assertions ?? s.streamAssertions,
     })),
   setStreamAssertions: (v) => set({ streamAssertions: v }),
+  setUserParameterOverride: (key, value) =>
+    set((s) => {
+      const next = { ...s.userParameterOverrides };
+      const normalized = value.trim();
+      if (normalized) {
+        next[key] = value;
+      } else {
+        delete next[key];
+      }
+      return { userParameterOverrides: next };
+    }),
+  resetUserParameterOverrides: () => set({ userParameterOverrides: {} }),
   setChatInput: (v) => set({ chatInput: v }),
   setIsSidebarOpen: (v) => set({ isSidebarOpen: v }),
   setIsDesktopViewport: (v) => set({ isDesktopViewport: v }),
@@ -198,6 +218,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set) => ({
       workspaceLoading: false,
       streamWorkspace: null,
       streamAssertions: null,
+      userParameterOverrides: {},
       chatInput: null,
       activeResponseClass: null,
       mediumIntelligence: null,

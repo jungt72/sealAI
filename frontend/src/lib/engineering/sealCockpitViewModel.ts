@@ -1,6 +1,7 @@
 export type CockpitTabId =
   | "overview"
   | "parameters"
+  | "rfq"
   | "medium"
   | "application"
   | "material"
@@ -61,6 +62,7 @@ export type SealCockpitOverview = {
 export const sealCockpitTabs: CockpitTab[] = [
   { id: "overview", label: "Übersicht" },
   { id: "parameters", label: "Parameter" },
+  { id: "rfq", label: "Anfragebasis" },
   { id: "medium", label: "Medium" },
   { id: "application", label: "Anwendung" },
   { id: "material", label: "Werkstoff" },

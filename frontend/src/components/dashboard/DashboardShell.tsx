@@ -1,32 +1,123 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useSession } from "next-auth/react";
 import {
   Bell,
   Database,
+  LayoutDashboard,
   MessageSquareText,
   Clock3,
   Bookmark,
   FileText,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Settings,
+  Target,
 } from "lucide-react";
 
 import LogoutButton from "@/components/dashboard/LogoutButton";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/dashboard/new", icon: MessageSquareText, label: "Chat" },
-  { href: "/rag", icon: Database, label: "Wissen" },
+  { href: "/dashboard/new", icon: MessageSquareText, label: "Neue Analyse" },
+  { href: "/goal", icon: Target, label: "Goal" },
+  { href: "/rag", icon: Database, label: "Wissensbasis" },
   { href: "/dashboard/new", icon: Clock3, label: "Verlauf" },
   { href: "/dashboard/new", icon: Bookmark, label: "Merkliste" },
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
+
+type CaseHistoryItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  updatedAt: string | null;
+};
+
+function greetingForNow(date = new Date()) {
+  const hour = date.getHours();
+  if (hour < 11) return "Guten Morgen";
+  if (hour < 17) return "Guten Tag";
+  return "Guten Abend";
+}
+
+function firstNameFromSession(name?: string | null, email?: string | null) {
+  const source = (name || email || "Thorsten").trim();
+  const first = source.split(/[\s@]/)[0];
+  return first || "Thorsten";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function caseIdFromPayload(item: Record<string, unknown>) {
+  return String(
+    item.case_id ||
+      item.caseId ||
+      item.id ||
+      item.session_id ||
+      item.conversation_id ||
+      "",
+  );
+}
+
+function formatHistoryDate(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function normalizeCaseHistory(payload: unknown): CaseHistoryItem[] {
+  const rawItems = Array.isArray(payload)
+    ? payload
+    : Array.isArray(asRecord(payload).items)
+      ? (asRecord(payload).items as unknown[])
+      : Array.isArray(asRecord(payload).cases)
+        ? (asRecord(payload).cases as unknown[])
+        : [];
+
+  return rawItems
+    .map((raw) => {
+      const item = asRecord(raw);
+      const id = caseIdFromPayload(item);
+      if (!id) return null;
+      const title = String(
+        item.title ||
+          item.name ||
+          item.case_number ||
+          item.summary ||
+          `Fall ${id}`,
+      );
+      const status = String(item.status || item.phase || item.request_type || "Analyse");
+      const updatedAt =
+        formatHistoryDate(item.updated_at) ||
+        formatHistoryDate(item.updatedAt) ||
+        formatHistoryDate(item.last_activity_at);
+      return {
+        id,
+        title,
+        subtitle: updatedAt ? `${status} · ${updatedAt}` : status,
+        updatedAt,
+      };
+    })
+    .filter((item): item is CaseHistoryItem => Boolean(item))
+    .slice(0, 30);
+}
 
 export default function DashboardShell({
   children,
@@ -34,73 +125,54 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const [isNavExpanded, setIsNavExpanded] = useState(false);
+  const { data: session } = useSession();
+  const userName = firstNameFromSession(session?.user?.name, session?.user?.email);
+  const greeting = useMemo(() => greetingForNow(), []);
+  const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
-  const userName = "Thorsten";
+  useEffect(() => {
+    let isCurrent = true;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    fetch("/api/bff/agent/cases?limit=30", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body?.error?.message || `case_history_failed:${response.status}`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!isCurrent) return;
+        setHistoryItems(normalizeCaseHistory(payload));
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return;
+        setHistoryError(error instanceof Error ? error.message : "Verlauf konnte nicht geladen werden.");
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setHistoryLoading(false);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [pathname]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-white font-sans text-foreground">
-      <aside
-        className={cn(
-          "hidden h-full shrink-0 flex-col border-r border-[#D6E4F6] bg-[#EAF2FF] transition-[width] duration-200 ease-out md:flex",
-          isNavExpanded ? "w-[244px]" : "w-[72px]",
-        )}
-      >
-        <div
-          className={cn(
-            "flex items-center border-b border-[#D6E4F6] px-3",
-            isNavExpanded ? "h-[72px] justify-between" : "h-[126px] flex-col justify-start gap-3 py-3",
-          )}
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[14px] border border-[#E7ECF3] bg-white shadow-[0_10px_26px_rgba(4,30,73,0.12)]">
-              <Image
-                src="/images/logo/sealai-symbol.png"
-                alt="SeaLAI"
-                width={36}
-                height={36}
-                className="object-contain"
-                priority
-              />
-            </div>
-            {isNavExpanded ? (
-              <div className="min-w-0 animate-in fade-in duration-200">
-                <div className="truncate text-[17px] font-semibold tracking-[0.12em] text-[#0F172A]">SEALING</div>
-                <div className="truncate text-[10px] font-medium tracking-[0.16em] text-[#6B7280]">INTELLIGENCE</div>
-              </div>
-            ) : null}
+    <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
+      <aside className="hidden h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white lg:flex">
+        <div className="flex h-[72px] items-center justify-center border-b border-[#E7ECF3]">
+          <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0B5BD3] text-base font-semibold text-white shadow-[0_10px_30px_rgba(11,91,211,0.22)]">
+            S
           </div>
-          {isNavExpanded ? (
-            <button
-              type="button"
-              aria-label="Navigation einklappen"
-              aria-expanded={isNavExpanded}
-              title="Navigation einklappen"
-              onClick={() => setIsNavExpanded(false)}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
-            >
-              <PanelLeftClose size={18} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              aria-label="Navigation erweitern"
-              aria-expanded={isNavExpanded}
-              title="Navigation erweitern"
-              onClick={() => setIsNavExpanded(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#BFD6F6] bg-[#F7FBFF] text-[#5F7FA8] transition-colors hover:border-[#9DBDED] hover:bg-white hover:text-[#0B5BD3]"
-            >
-              <PanelLeftOpen size={18} />
-            </button>
-          )}
         </div>
 
-        <nav
-          className={cn(
-            "flex flex-1 flex-col gap-3 px-3 py-6",
-            isNavExpanded ? "items-stretch" : "items-center",
-          )}
-        >
+        <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-6">
           {NAV_ITEMS.map((item) => {
             const isActive =
               item.href === "/dashboard/new"
@@ -112,58 +184,111 @@ export default function DashboardShell({
                 href={item.href}
                 title={item.label}
                 className={cn(
-                  "flex h-11 items-center rounded-[14px] border transition-colors",
-                  isNavExpanded ? "w-full justify-start gap-3 px-3" : "w-11 justify-center",
+                  "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
                   isActive
                     ? "border-[#CFE0FF] bg-[#EEF4FF] text-[#0B5BD3]"
                     : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
                 )}
               >
-                <item.icon size={19} className="shrink-0" />
-                {isNavExpanded ? (
-                  <span className="min-w-0 truncate text-[13px] font-medium">{item.label}</span>
-                ) : null}
+                <item.icon size={19} />
               </Link>
             );
           })}
         </nav>
 
-        <div
-          className={cn(
-            "flex flex-col gap-3 border-t border-[#D6E4F6] px-3 py-4",
-            isNavExpanded ? "items-stretch" : "items-center",
-          )}
-        >
+        <div className="flex flex-col items-center gap-3 border-t border-[#E7ECF3] px-3 py-4">
           <button
             type="button"
             title="Einstellungen"
-            className={cn(
-              "flex h-11 items-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
-              isNavExpanded ? "w-full justify-start gap-3 px-3" : "w-11 justify-center",
-            )}
+            className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
           >
-            <Settings size={18} className="shrink-0" />
-            {isNavExpanded ? <span className="text-[13px] font-medium">Einstellungen</span> : null}
+            <Settings size={18} />
           </button>
-          <div className={cn("w-full", isNavExpanded ? "" : "px-1")}>
-            <LogoutButton showLabel={isNavExpanded} />
+          <div className="w-full px-1">
+            <LogoutButton />
           </div>
         </div>
       </aside>
 
+      <aside className="flex h-full w-[286px] shrink-0 flex-col border-r border-[#E7ECF3] bg-[#FBFCFE]">
+        <div className="flex h-[72px] items-center border-b border-[#E7ECF3] px-4">
+          <Link
+            href="/dashboard/new"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[14px] border border-[#DCE7F7] bg-white text-sm font-semibold text-[#111827] shadow-sm transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF]"
+          >
+            <Plus size={16} />
+            Neue Analyse
+          </Link>
+        </div>
+
+        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-4">
+          <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">
+            Verlauf
+          </div>
+          {historyLoading ? (
+            <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
+              Lade Gespräche...
+            </div>
+          ) : historyError ? (
+            <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+              {historyError}
+            </div>
+          ) : historyItems.length === 0 ? (
+            <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
+              Noch keine gespeicherten Fälle.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {historyItems.map((item) => {
+                const href = `/dashboard/${encodeURIComponent(item.id)}`;
+                const isActive = pathname === href;
+                return (
+                  <Link
+                    key={item.id}
+                    href={href}
+                    title={item.title}
+                    className={cn(
+                      "block rounded-[12px] px-3 py-2.5 text-left transition-colors",
+                      isActive
+                        ? "bg-[#EEF4FF] text-[#0B5BD3]"
+                        : "text-[#374151] hover:bg-white hover:text-[#111827]",
+                    )}
+                  >
+                    <div className="truncate text-sm font-medium">{item.title}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-[#8A94A6]">
+                      {item.subtitle}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-[#E7ECF3] px-4 py-3 text-[11px] leading-4 text-[#8A94A6]">
+          Fälle bleiben über die Case-ID wiederaufrufbar. Aktive Chats wechseln nach dem ersten Turn automatisch auf die Fall-URL.
+        </div>
+      </aside>
+
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-transparent bg-transparent px-5 sm:px-7">
-          <div className="flex min-w-0 items-center">
-            <div className={cn("items-center gap-3 leading-none", isNavExpanded ? "hidden" : "flex")}>
-              <div className="text-[21px] font-semibold tracking-[0.18em] text-[#1F2937]">SEALING</div>
+        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E7ECF3] bg-white px-5 sm:px-7">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SEALING</div>
               <div className="h-5 w-px bg-[#D7DDE8]" />
-              <div className="text-[14px] font-medium tracking-[0.12em] text-[#374151]">INTELLIGENCE</div>
+              <div className="text-[16px] font-medium text-[#374151]">INTELLIGENCE</div>
+            </div>
+            <div className="mt-1 truncate text-[12px] text-[#6B7280]">
+              {greeting} {userName}, schön, dass du da bist.
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
             <div className="hidden text-sm text-[#6B7280] md:block">
-              Vorgang: <span className="font-semibold text-[#0B5BD3]">COMP-2025-000245</span>
+              Arbeitsraum: <span className="font-semibold text-[#0B5BD3]">Anfragebasis</span>
             </div>
+            <span className="inline-flex items-center rounded-full border border-[#D8EEDB] bg-[#EEF9F0] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2F8F46]">
+              Governed
+            </span>
             <button
               type="button"
               title="Benachrichtigungen"
@@ -177,6 +302,7 @@ export default function DashboardShell({
               </div>
               <div className="hidden text-left md:block">
                 <div className="text-sm font-medium text-[#111827]">{userName} Mustermann</div>
+                <div className="text-[12px] text-[#6B7280]">Ingenieur</div>
               </div>
             </div>
             <Link
@@ -188,7 +314,11 @@ export default function DashboardShell({
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-white">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB] p-3">
+          <div className="h-full overflow-hidden rounded-[20px] border border-[#E7ECF3] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+            {children}
+          </div>
+        </div>
       </main>
     </div>
   );
