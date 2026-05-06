@@ -21,7 +21,7 @@ export default function ChatComposer({
   isUploading,
   autoFocus,
   externalValue,
-  placeholder = "Beschreibe deine Anwendung, das Medium oder die Anforderungen ...",
+  placeholder = "Beschreibe deine Dichtungssituation ...",
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(() => ({
     lastExternalValue: externalValue ?? null,

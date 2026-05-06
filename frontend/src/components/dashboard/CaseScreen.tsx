@@ -1748,7 +1748,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F7F9FC]">
       <WorkspaceTimeline steps={timelineSteps} />
 
-      <div className="relative min-h-0 flex-1 p-4 sm:p-5">
+      <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">
         {!isWorkspaceOpen ? (
           <button
             type="button"
@@ -1770,7 +1770,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
               : "lg:grid-cols-[minmax(430px,1fr)]",
           )}
         >
-          <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-white shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
+          <section className="min-h-0 overflow-hidden">
             <ChatPane
               caseId={caseId}
               initialGoal={initialGoal}
@@ -1780,7 +1780,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
           </section>
 
           {isWorkspaceOpen ? (
-            <aside className="relative min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-[#FBFCFE] shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
+            <aside className="relative min-h-0 overflow-hidden">
               <button
                 type="button"
                 aria-label="Arbeitsbereich einklappen"

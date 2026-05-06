@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -34,13 +34,6 @@ type CaseHistoryItem = {
   subtitle: string;
   updatedAt: string | null;
 };
-
-function greetingForNow(date = new Date()) {
-  const hour = date.getHours();
-  if (hour < 11) return "Guten Morgen";
-  if (hour < 17) return "Guten Tag";
-  return "Guten Abend";
-}
 
 function firstNameFromSession(name?: string | null, email?: string | null) {
   const source = (name || email || "Thorsten").trim();
@@ -126,7 +119,6 @@ export default function DashboardShell({
   const pathname = usePathname();
   const { data: session } = useSession();
   const userName = firstNameFromSession(session?.user?.name, session?.user?.email);
-  const greeting = useMemo(() => greetingForNow(), []);
   const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -306,9 +298,6 @@ export default function DashboardShell({
               <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SEALING</div>
               <div className="h-5 w-px bg-[#D7DDE8]" />
               <div className="text-[16px] font-medium text-[#374151]">INTELLIGENCE</div>
-            </div>
-            <div className="mt-1 truncate text-[12px] text-[#6B7280]">
-              {greeting} {userName}, schön, dass du da bist.
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">

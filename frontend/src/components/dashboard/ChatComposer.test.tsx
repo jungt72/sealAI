@@ -10,7 +10,7 @@ describe("ChatComposer", () => {
     const onSend = vi.fn();
     const { rerender } = render(<ChatComposer onSend={onSend} externalValue="RFQ-Preview vorbereiten" />);
 
-    const composer = screen.getByPlaceholderText(/Beschreibe deine Anwendung/i);
+    const composer = screen.getByPlaceholderText(/Beschreibe deine Dichtungssituation/i);
     expect(composer).toHaveValue("RFQ-Preview vorbereiten");
 
     await user.clear(composer);

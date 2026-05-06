@@ -767,9 +767,9 @@ export function ParameterWorkspaceTab({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mx-4 mt-4 space-y-4">
-      <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
+    <form onSubmit={handleSubmit} className="px-4 pb-4 pt-3">
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 pb-1">
           <div>
             <h2 className="text-base font-semibold tracking-tight text-[#111827]">Angaben direkt eintragen</h2>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
@@ -782,7 +782,7 @@ export function ParameterWorkspaceTab({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {PARAMETER_FIELDS.map((field) => (
             <ParameterFieldCard
               key={field.fieldName}
@@ -800,7 +800,7 @@ export function ParameterWorkspaceTab({
           ))}
         </div>
 
-        <div className="mt-4">
+        <div>
           <TypeSpecificParameterGuidance workspace={workspace} />
         </div>
 
@@ -841,7 +841,7 @@ export function ParameterWorkspaceTab({
           </div>
         )}
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#F0F2F5] pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <button
             type="button"
             onClick={() => {

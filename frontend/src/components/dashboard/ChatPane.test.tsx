@@ -75,19 +75,21 @@ describe("ChatPane", () => {
     window.localStorage.clear();
   });
 
-  it("places first-run guidance and suggestions in a quiet start state", async () => {
+  it("places the composer in a centered first-run state without prompt bubbles", async () => {
     const user = userEvent.setup();
     agentStreamMockState.activeCaseId = "";
 
     render(<ChatPane />);
 
-    expect(screen.getAllByText(/belastbare Anfragebasis/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Welche Angaben fehlen noch für eine belastbare Anfragebasis?" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Dichtungsfall mit Medium, Temperatur, Druck und Drehzahl analysieren." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ChatComposer" })).toBeInTheDocument();
+    expect(screen.queryByText(/Governed RFQ Qualification/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/belastbare Anfragebasis/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Welche Angaben fehlen noch für eine belastbare Anfragebasis?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dichtungsfall mit Medium, Temperatur, Druck und Drehzahl analysieren." })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Dichtungsfall mit Medium, Temperatur, Druck und Drehzahl analysieren." }));
+    await user.click(screen.getByRole("button", { name: "ChatComposer" }));
 
-    expect(agentStreamMockState.sendMessage).toHaveBeenCalledWith("Dichtungsfall mit Medium, Temperatur, Druck und Drehzahl analysieren.");
+    expect(agentStreamMockState.sendMessage).toHaveBeenCalledWith("Composer text");
   });
 
   it("registers chat callbacks and keeps the active case id in shared state", () => {
@@ -112,7 +114,7 @@ describe("ChatPane", () => {
     expect(screen.getByText("Dichtungsfall mit Wasser, 80 Grad und 6 bar.")).toBeInTheDocument();
     expect(screen.getByText("Welche Flansch- oder Normgeometrie liegt vor?")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dichtungsfall mit Medium, Temperatur, Druck und Drehzahl analysieren." })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Medienliste prüfen" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Medienliste prüfen" })).not.toBeInTheDocument();
   });
 
   it("renders a restrained streaming placeholder before text chunks arrive", () => {
@@ -125,6 +127,7 @@ describe("ChatPane", () => {
 
   it("forwards composer messages to the agent stream", async () => {
     const user = userEvent.setup();
+    agentStreamMockState.activeCaseId = "";
 
     render(<ChatPane initialGoal="Goal text" />);
 
