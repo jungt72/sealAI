@@ -1002,9 +1002,9 @@ export function SealCockpit({
   }, [preferredTab]);
 
   return (
-    <aside className="flex h-full min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-transparent bg-transparent lg:min-h-0">
+    <aside className="flex min-h-0 min-w-0 flex-col overflow-visible rounded-[20px] border border-transparent bg-transparent">
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto pb-4">
+      <div className="min-h-0 overflow-visible pb-4">
         {activeTab === "overview" ? (
           <>
             <CockpitStatusStrip items={data.statusStrip} />

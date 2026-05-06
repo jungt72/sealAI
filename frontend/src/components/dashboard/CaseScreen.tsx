@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -121,6 +121,12 @@ const WORKSPACE_MODE_OPTIONS: Array<{ id: WorkspaceMode; label: string }> = [
   { id: "knowledge_compare", label: "Vergleich" },
   { id: "knowledge_deep_dive", label: "Deep Dive" },
 ];
+
+const DEFAULT_WORKSPACE_WIDTH = 400;
+const MIN_CHAT_WIDTH = 430;
+const MIN_WORKSPACE_WIDTH = 340;
+const MAX_WORKSPACE_WIDTH = 720;
+const RESIZER_WIDTH = 18;
 
 const CORE_PARAMETER_FIELDS: ParameterFieldDescriptor[] = [
   { key: "medium", label: "Medium" },
@@ -1680,9 +1686,55 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(true);
+  const [workspaceWidth, setWorkspaceWidth] = useState(DEFAULT_WORKSPACE_WIDTH);
+  const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
+
+  useEffect(() => {
+    if (!isResizingWorkspace) {
+      return;
+    }
+
+    const updateWorkspaceWidth = (clientX: number) => {
+      const bounds = layoutRef.current?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+      const availableForWorkspace = bounds.width - MIN_CHAT_WIDTH - RESIZER_WIDTH;
+      const maxWidth = Math.max(MIN_WORKSPACE_WIDTH, Math.min(MAX_WORKSPACE_WIDTH, availableForWorkspace));
+      const nextWidth = bounds.right - clientX - RESIZER_WIDTH / 2;
+      setWorkspaceWidth(Math.min(maxWidth, Math.max(MIN_WORKSPACE_WIDTH, nextWidth)));
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      updateWorkspaceWidth(event.clientX);
+    };
+    const handleMouseMove = (event: MouseEvent) => {
+      updateWorkspaceWidth(event.clientX);
+    };
+
+    const stopResizing = () => {
+      setIsResizingWorkspace(false);
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("pointerup", stopResizing, { once: true });
+    window.addEventListener("mouseup", stopResizing, { once: true });
+
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("pointerup", stopResizing);
+      window.removeEventListener("mouseup", stopResizing);
+    };
+  }, [isResizingWorkspace]);
 
   const handleWorkspaceRefresh = useCallback(
     async (nextCaseId?: string) => {
@@ -1745,10 +1797,10 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   );
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F7F9FC]">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-[#F7F9FC]">
       <WorkspaceTimeline steps={timelineSteps} />
 
-      <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">
+      <div className="relative flex-1 px-4 py-4 sm:px-5">
         {!isWorkspaceOpen ? (
           <button
             type="button"
@@ -1763,14 +1815,14 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
         ) : null}
 
         <div
+          ref={layoutRef}
+          style={{ "--workspace-width": `${workspaceWidth}px` } as React.CSSProperties}
           className={cn(
-            "grid h-full min-h-0 gap-4 transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            isWorkspaceOpen
-              ? "lg:grid-cols-[minmax(430px,3fr)_minmax(360px,2fr)]"
-              : "lg:grid-cols-[minmax(430px,1fr)]",
+            "flex min-h-[640px] flex-col lg:flex-row",
+            isResizingWorkspace && "select-none",
           )}
         >
-          <section className="min-h-0 overflow-hidden">
+          <section className="min-h-[460px] flex-1 overflow-hidden lg:min-w-[430px]">
             <ChatPane
               caseId={caseId}
               initialGoal={initialGoal}
@@ -1780,7 +1832,32 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
           </section>
 
           {isWorkspaceOpen ? (
-            <aside className="relative min-h-0 overflow-hidden">
+            <>
+            <button
+              type="button"
+              aria-label="Arbeitsbereichbreite anpassen"
+              aria-orientation="vertical"
+              title="Arbeitsbereichbreite anpassen"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                setIsResizingWorkspace(true);
+              }}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setIsResizingWorkspace(true);
+              }}
+              className={cn(
+                "relative hidden w-[18px] shrink-0 cursor-col-resize touch-none items-stretch justify-center outline-none lg:flex",
+                "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-[#D3DCE8]",
+                "before:shadow-[0_0_0_1px_rgba(255,255,255,0.85),-10px_0_24px_rgba(15,23,42,0.08),10px_0_24px_rgba(15,23,42,0.08)]",
+                isResizingWorkspace && "before:bg-[#0B57D0]",
+              )}
+            >
+              <span className="sticky top-[50vh] flex h-16 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-[#C7D2E2] bg-white/90 shadow-[0_8px_24px_rgba(15,23,42,0.16)] transition-colors">
+                <span className="h-8 w-1 rounded-full bg-[#9AA9BC]" />
+              </span>
+            </button>
+            <aside className="relative min-h-0 w-full overflow-visible lg:w-[var(--workspace-width)] lg:shrink-0">
               <button
                 type="button"
                 aria-label="Arbeitsbereich einklappen"
@@ -1790,7 +1867,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
               >
                 <PanelRightClose size={16} />
               </button>
-              <div className="h-full min-h-0 pr-12">
+              <div className="min-h-0 pr-12">
                 <SealCockpit
                   data={cockpitViewModel}
                   workspace={workspace}
@@ -1800,6 +1877,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
                 />
               </div>
             </aside>
+            </>
           ) : null}
         </div>
       </div>
