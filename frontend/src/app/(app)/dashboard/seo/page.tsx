@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -21,6 +23,9 @@ import {
 
 import { getAllSlugs } from "@/lib/content/loader";
 import { cn } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "SEO Cockpit | SealingAI",
@@ -48,6 +53,25 @@ type RoadmapRow = {
   primaryKeyword: string;
   intent: string;
   priority: "hoch" | "mittel";
+};
+
+type RankingSnapshot = {
+  dbFound: boolean;
+  hasGscRows: boolean;
+  latestDataDate: string | null;
+  rows: GscRankingRow[];
+};
+
+type GscRankingRow = {
+  keyword: string;
+  siteUrl: string;
+  page: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+  firstDate: string;
+  lastDate: string;
 };
 
 const ROADMAP: RoadmapRow[] = [
@@ -143,6 +167,9 @@ const ROADMAP: RoadmapRow[] = [
   },
 ];
 
+const TARGET_DOMAINS = ["sealingai.com", "sealai.net"];
+const execFileAsync = promisify(execFile);
+
 const KEYWORD_CLUSTERS = [
   {
     cluster: "Radial shaft seals",
@@ -179,6 +206,36 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatShortDate(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("de-DE").format(Math.round(value));
+}
+
+function formatDecimal(value: number) {
+  return new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("de-DE", {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 async function pathExists(candidate: string) {
@@ -269,6 +326,117 @@ async function seoStackStatus() {
   };
 }
 
+async function firstExistingPath(candidates: string[]) {
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function normalizeRankingRows(value: unknown): GscRankingRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    const keyword = typeof row.keyword === "string" ? row.keyword : "";
+    const siteUrl = typeof row.site_url === "string" ? row.site_url : "";
+    const page = typeof row.page === "string" ? row.page : "";
+    if (!keyword || !siteUrl || !page) {
+      return [];
+    }
+    return [{
+      keyword,
+      siteUrl,
+      page,
+      clicks: Number(row.clicks ?? 0),
+      impressions: Number(row.impressions ?? 0),
+      ctr: Number(row.ctr ?? 0),
+      position: Number(row.position ?? 0),
+      firstDate: String(row.first_date ?? ""),
+      lastDate: String(row.last_date ?? ""),
+    }];
+  });
+}
+
+async function gscRankingSnapshot(): Promise<RankingSnapshot> {
+  const dbPath = await firstExistingPath([
+    process.env.SEO_DB_PATH || "",
+    "/var/seo/data/seo.db",
+    "/home/thorsten/var/seo/data/seo.db",
+    path.resolve(process.cwd(), "..", "seo", "data", "seo.db"),
+  ].filter(Boolean));
+
+  if (!dbPath) {
+    return { dbFound: false, hasGscRows: false, latestDataDate: null, rows: [] };
+  }
+
+  const keywords = ROADMAP.map((row) => row.primaryKeyword.toLowerCase());
+  const script = `
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+keywords = json.loads(sys.argv[2])
+conn = sqlite3.connect(db_path)
+conn.row_factory = sqlite3.Row
+tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+if "gsc_daily_page_query" not in tables:
+    print(json.dumps({"has_gsc_rows": False, "latest_data_date": None, "rows": []}))
+    raise SystemExit(0)
+
+total = conn.execute("SELECT COUNT(*) FROM gsc_daily_page_query").fetchone()[0]
+latest = conn.execute("SELECT MAX(data_date) FROM gsc_daily_page_query").fetchone()[0]
+if not total:
+    print(json.dumps({"has_gsc_rows": False, "latest_data_date": latest, "rows": []}))
+    raise SystemExit(0)
+
+placeholders = ",".join("?" for _ in keywords)
+rows = conn.execute(f"""
+    SELECT
+      LOWER(query_sanitized) AS keyword,
+      site_url,
+      page,
+      SUM(clicks) AS clicks,
+      SUM(impressions) AS impressions,
+      CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) / SUM(impressions) ELSE 0 END AS ctr,
+      CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE AVG(position) END AS position,
+      MIN(data_date) AS first_date,
+      MAX(data_date) AS last_date
+    FROM gsc_daily_page_query
+    WHERE LOWER(query_sanitized) IN ({placeholders})
+    GROUP BY keyword, site_url, page
+    ORDER BY impressions DESC, position ASC
+""", keywords).fetchall()
+print(json.dumps({
+    "has_gsc_rows": bool(total),
+    "latest_data_date": latest,
+    "rows": [dict(row) for row in rows],
+}, ensure_ascii=False))
+`;
+
+  try {
+    const { stdout } = await execFileAsync("python3", ["-c", script, dbPath, JSON.stringify(keywords)], {
+      maxBuffer: 1024 * 1024,
+    });
+    const payload = JSON.parse(stdout) as Record<string, unknown>;
+    return {
+      dbFound: true,
+      hasGscRows: Boolean(payload.has_gsc_rows),
+      latestDataDate: typeof payload.latest_data_date === "string" ? payload.latest_data_date : null,
+      rows: normalizeRankingRows(payload.rows),
+    };
+  } catch {
+    return { dbFound: true, hasGscRows: false, latestDataDate: null, rows: [] };
+  }
+}
+
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
     <span
@@ -308,17 +476,20 @@ function Metric({
 }
 
 export default async function SeoDashboardPage() {
-  const [wissen, werkstoffe, medien, reports, stack] = await Promise.all([
+  const [wissen, werkstoffe, medien, reports, stack, rankings] = await Promise.all([
     getAllSlugs("wissen"),
     getAllSlugs("werkstoffe"),
     getAllSlugs("medien"),
     latestReports(),
     seoStackStatus(),
+    gscRankingSnapshot(),
   ]);
   const publishedCount = wissen.length + werkstoffe.length + medien.length + 1;
   const onlineRoadmap = ROADMAP.filter((row) => row.status === "online").length;
   const reportsReady = reports.length > 0;
   const automationReady = stack.gscScript && stack.dataForSeoScript && stack.gscTimer && stack.weeklyTimer;
+  const rankingRowsByKeyword = new Map(rankings.rows.map((row) => [row.keyword, row]));
+  const rankingCoverage = ROADMAP.filter((row) => rankingRowsByKeyword.has(row.primaryKeyword)).length;
 
   const actions = [
     {
@@ -339,6 +510,12 @@ export default async function SeoDashboardPage() {
       title: "Content-Architektur gegen V8-Claim-Boundary prüfen",
       detail: "Alle Seiten müssen Orientierung und Anfragequalität liefern, aber keine finale Material- oder Herstellerfreigabe behaupten.",
       command: "PYTHONPATH=seo/src python -m sealai_seo.cli report-content-roadmap",
+      tone: "quiet",
+    },
+    {
+      title: "Neutralen SERP-Rankcheck vorbereiten",
+      detail: "GSC zeigt nur Keywords mit Impressionen. Für echte Positionsprüfung von sealingai.com ohne Impressionen brauchen wir einen kostenkontrollierten DataForSEO-SERP-Check.",
+      command: "DataForSEO SERP organic live: Domain sealingai.com, location 2276, language de, Top-10 Run-0 Keywords",
       tone: "quiet",
     },
   ] as const;
@@ -371,6 +548,9 @@ export default async function SeoDashboardPage() {
             <StatusPill tone={reportsReady ? "ready" : "attention"}>
               <FileText size={13} /> Reports
             </StatusPill>
+            <StatusPill tone={rankingCoverage > 0 ? "ready" : "quiet"}>
+              <BarChart3 size={13} /> Rankings
+            </StatusPill>
           </div>
         </section>
 
@@ -379,6 +559,75 @@ export default async function SeoDashboardPage() {
           <Metric label="Run-0 Roadmap" value={`${onlineRoadmap}/${ROADMAP.length}`} detail="erste Keyword- und Content-Architektur online abbildbar" icon={ListChecks} />
           <Metric label="Automation" value={automationReady ? "bereit" : "offen"} detail="GSC/DataForSEO Skripte und Report-Timer im SEO-Stack" icon={Workflow} />
           <Metric label="Letzter Report" value={reports[0] ? formatDate(reports[0].modifiedAt) : "noch keiner"} detail={reports[0]?.name ?? "GSC-Reports nach erstem Sync sichtbar"} icon={Clock3} />
+        </section>
+
+        <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 size={18} className="text-[#0B57D0]" />
+                <h2 className="text-lg font-semibold">Ranking-Positionen</h2>
+              </div>
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
+                GSC-Ø-Positionen für die Run-0 Keywords. Zielmarke: {TARGET_DOMAINS[0]}; bis zur GSC-Datensammlung von sealingai.com wird transparent angezeigt, ob Daten nur für {TARGET_DOMAINS[1]} oder noch gar nicht vorliegen.
+              </p>
+            </div>
+            <StatusPill tone={rankingCoverage > 0 ? "ready" : rankings.hasGscRows ? "attention" : "quiet"}>
+              {rankingCoverage}/{ROADMAP.length} Keywords mit Position
+            </StatusPill>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[960px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#E6ECF5] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                  <th className="py-3 pr-4">Keyword</th>
+                  <th className="py-3 pr-4">Domain / Property</th>
+                  <th className="py-3 pr-4">Zielseite</th>
+                  <th className="py-3 pr-4 text-right">Impr.</th>
+                  <th className="py-3 pr-4 text-right">Klicks</th>
+                  <th className="py-3 pr-4 text-right">CTR</th>
+                  <th className="py-3 pr-4 text-right">Ø-Position</th>
+                  <th className="py-3 text-right">Zeitraum</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ROADMAP.map((row) => {
+                  const ranking = rankingRowsByKeyword.get(row.primaryKeyword);
+                  return (
+                    <tr key={`ranking-${row.primaryKeyword}`} className="border-b border-[#EEF2F7] align-top last:border-0">
+                      <td className="py-3 pr-4 font-medium">{row.primaryKeyword}</td>
+                      <td className="py-3 pr-4 text-[#4B5563]">{ranking?.siteUrl ?? TARGET_DOMAINS[0]}</td>
+                      <td className="py-3 pr-4">
+                        {ranking ? (
+                          <a href={ranking.page} className="font-medium text-[#0B57D0] hover:underline">
+                            {ranking.page.replace(/^https?:\/\//, "")}
+                          </a>
+                        ) : (
+                          <span className="text-[#94A3B8]">Noch keine Impressionen</span>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{ranking ? formatNumber(ranking.impressions) : "-"}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{ranking ? formatNumber(ranking.clicks) : "-"}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{ranking ? formatPercent(ranking.ctr) : "-"}</td>
+                      <td className="py-3 pr-4 text-right">
+                        {ranking ? (
+                          <span className="font-semibold text-[#111827]">{formatDecimal(ranking.position)}</span>
+                        ) : (
+                          <span className="text-[#94A3B8]">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 text-right text-[#4B5563]">
+                        {ranking ? `${formatShortDate(ranking.firstDate)} - ${formatShortDate(ranking.lastDate)}` : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 rounded-[14px] border border-[#D9E5F7] bg-[#F8FBFF] px-3 py-2 text-[12px] leading-5 text-[#526179]">
+            Quelle: Google Search Console Search Analytics, gewichtete durchschnittliche Position. {rankings.dbFound ? "SEO-Datenbank gefunden." : "SEO-Datenbank noch nicht gefunden."} {rankings.latestDataDate ? `Letzter GSC-Datentag: ${formatShortDate(rankings.latestDataDate)}.` : "Noch kein GSC-Query-Datensatz vorhanden."} Für keywords ohne Impressionen ist ein separater DataForSEO-SERP-Rankcheck nötig.
+          </div>
         </section>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
