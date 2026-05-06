@@ -1,6 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DashboardShell from "./DashboardShell";
 
@@ -14,45 +13,53 @@ vi.mock("next-auth/react", () => ({
 }));
 
 describe("DashboardShell", () => {
-  it("renders the SeaLAI image logo in the shell", () => {
-    render(
-      <DashboardShell>
-        <main>Arbeitsbereich</main>
-      </DashboardShell>,
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              case_id: "case-42",
+              title: "RWDR Wasser-Glykol",
+              status: "Analyse",
+              updated_at: "2026-05-06T08:00:00.000Z",
+            },
+          ],
+        }),
+      }),
     );
-
-    const logos = screen.getAllByAltText("SeaLAI") as HTMLImageElement[];
-    expect(logos.length).toBeGreaterThanOrEqual(1);
-    expect(logos[0].getAttribute("src")).toContain("sealai-symbol.png");
-    expect(screen.getByText("SEALING")).toBeInTheDocument();
-    expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
-    expect(screen.getByText(/Vorgang:/)).toBeInTheDocument();
-    expect(screen.queryByText(/governed/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("Ingenieur")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Suche-ID:/)).not.toBeInTheDocument();
-    expect(screen.queryByText("Knowledge Modus")).not.toBeInTheDocument();
-    expect(screen.queryByText(/schön, dass du da bist/i)).not.toBeInTheDocument();
   });
 
-  it("expands the left navigation so labels and content become visible", async () => {
-    const user = userEvent.setup();
-
+  it("renders the sealingAI header and active workspace", () => {
     render(
       <DashboardShell>
         <main>Arbeitsbereich</main>
       </DashboardShell>,
     );
 
-    expect(screen.queryByText("Wissen")).not.toBeInTheDocument();
+    expect(screen.getByText("SEALING")).toBeInTheDocument();
+    expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
+    expect(screen.getByText(/Arbeitsraum:/)).toBeInTheDocument();
+    expect(screen.getByText("Anfragebasis")).toBeInTheDocument();
+    expect(screen.queryByText(/Suche-ID:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Knowledge Modus")).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole("button", { name: "Navigation erweitern" }));
-
-    expect(screen.getByText("Wissen")).toBeInTheDocument();
-    expect(screen.getByText("Dokumente")).toBeInTheDocument();
-    expect(screen.getByText("Einstellungen")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Navigation einklappen" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
+  it("renders the persistent left navigation and case history shell", async () => {
+    render(
+      <DashboardShell>
+        <main>Arbeitsbereich</main>
+      </DashboardShell>,
     );
+
+    expect(screen.getAllByRole("link", { name: "Neue Analyse" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Goal" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Wissensbasis" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Einstellungen" })).toBeInTheDocument();
+    expect(screen.getByText("Verlauf")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
   });
 });

@@ -1,5 +1,4 @@
-import { render, screen } from "@testing-library/react";
-import { within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,41 +11,67 @@ const workspaceHookState = vi.hoisted((): { workspace: WorkspaceView | null } =>
 }));
 
 const patchAgentOverridesMock = vi.hoisted(() => vi.fn());
-const workspaceRefreshMock = vi.hoisted(() => vi.fn());
+const fetchWorkspaceMock = vi.hoisted(() => vi.fn());
+const workspaceStoreMock = vi.hoisted(() => ({
+  userParameterOverrides: {} as Record<string, string>,
+  activeResponseClass: null as string | null,
+  streamWorkspace: null,
+  streamAssertions: null,
+  setWorkspace: vi.fn(),
+  setWorkspaceLoading: vi.fn(),
+  setUserParameterOverride: vi.fn(),
+  resetUserParameterOverrides: vi.fn(),
+  setMediumIntelligence: vi.fn(),
+  setMediumIntelligenceLoading: vi.fn(),
+  setMediumIntelligenceFor: vi.fn(),
+  setMediumIntelligenceResult: vi.fn(),
+}));
+const chatStoreMock = vi.hoisted(() => ({
+  activeCaseId: null as string | null,
+  sendMessage: vi.fn(),
+  isStreaming: false,
+}));
 
 vi.mock("@/components/dashboard/ChatPane", () => ({
-  default: ({ caseId, parameterConfirmation }: { caseId?: string; parameterConfirmation?: string | null }) => (
-    <div data-testid="chat-pane">
-      ChatPane {caseId ?? "new"}
-      {parameterConfirmation ? <div>{parameterConfirmation}</div> : null}
-    </div>
-  ),
+  default: ({ caseId }: { caseId?: string }) => <div data-testid="chat-pane">ChatPane {caseId ?? "new"}</div>,
 }));
 
 vi.mock("@/lib/bff/parameterOverride", () => ({
   patchAgentOverrides: patchAgentOverridesMock,
 }));
 
-vi.mock("@/hooks/useWorkspace", () => ({
-  useWorkspace: () => ({
-    workspace: workspaceHookState.workspace,
-    isLoading: false,
-    refresh: workspaceRefreshMock,
-  }),
+vi.mock("@/lib/bff/workspace", () => ({
+  fetchWorkspace: fetchWorkspaceMock,
 }));
 
 vi.mock("@/lib/store/workspaceStore", () => ({
   useWorkspaceStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
+      workspace: workspaceHookState.workspace,
+      streamWorkspace: workspaceStoreMock.streamWorkspace,
+      streamAssertions: workspaceStoreMock.streamAssertions,
+      userParameterOverrides: workspaceStoreMock.userParameterOverrides,
+      activeResponseClass: workspaceStoreMock.activeResponseClass,
       mediumIntelligence: null,
       mediumIntelligenceLoading: false,
       mediumIntelligenceFor: null,
-      setWorkspace: vi.fn(),
-      setWorkspaceLoading: vi.fn(),
-      setMediumIntelligence: vi.fn(),
-      setMediumIntelligenceLoading: vi.fn(),
-      setMediumIntelligenceFor: vi.fn(),
-      setMediumIntelligenceResult: vi.fn(),
+      setWorkspace: workspaceStoreMock.setWorkspace,
+      setWorkspaceLoading: workspaceStoreMock.setWorkspaceLoading,
+      setUserParameterOverride: workspaceStoreMock.setUserParameterOverride,
+      resetUserParameterOverrides: workspaceStoreMock.resetUserParameterOverrides,
+      setMediumIntelligence: workspaceStoreMock.setMediumIntelligence,
+      setMediumIntelligenceLoading: workspaceStoreMock.setMediumIntelligenceLoading,
+      setMediumIntelligenceFor: workspaceStoreMock.setMediumIntelligenceFor,
+      setMediumIntelligenceResult: workspaceStoreMock.setMediumIntelligenceResult,
+    }),
+}));
+
+vi.mock("@/lib/store/chatStore", () => ({
+  useChatStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({
+      activeCaseId: chatStoreMock.activeCaseId,
+      sendMessage: chatStoreMock.sendMessage,
+      isStreaming: chatStoreMock.isStreaming,
     }),
 }));
 
@@ -314,8 +339,23 @@ function workspaceFixture(): WorkspaceView {
 describe("CaseScreen", () => {
   beforeEach(() => {
     workspaceHookState.workspace = null;
-    workspaceRefreshMock.mockReset();
-    workspaceRefreshMock.mockResolvedValue(undefined);
+    workspaceStoreMock.userParameterOverrides = {};
+    workspaceStoreMock.activeResponseClass = null;
+    workspaceStoreMock.streamWorkspace = null;
+    workspaceStoreMock.streamAssertions = null;
+    chatStoreMock.activeCaseId = null;
+    chatStoreMock.isStreaming = false;
+    chatStoreMock.sendMessage.mockReset();
+    workspaceStoreMock.setWorkspace.mockReset();
+    workspaceStoreMock.setWorkspaceLoading.mockReset();
+    workspaceStoreMock.setUserParameterOverride.mockReset();
+    workspaceStoreMock.resetUserParameterOverrides.mockReset();
+    workspaceStoreMock.setMediumIntelligence.mockReset();
+    workspaceStoreMock.setMediumIntelligenceLoading.mockReset();
+    workspaceStoreMock.setMediumIntelligenceFor.mockReset();
+    workspaceStoreMock.setMediumIntelligenceResult.mockReset();
+    fetchWorkspaceMock.mockReset();
+    fetchWorkspaceMock.mockResolvedValue(workspaceFixture());
     patchAgentOverridesMock.mockReset();
     patchAgentOverridesMock.mockResolvedValue({
       session_id: "case-42",
@@ -331,176 +371,108 @@ describe("CaseScreen", () => {
     });
   });
 
-  it("starts with chat only and lets users open the cockpit manually", async () => {
-    const user = userEvent.setup();
-
+  it("renders chat and the persistent RFQ workspace with parameter intake", () => {
     render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
-    expect(screen.queryByRole("tablist", { name: "SealAI Cockpit" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Werte eintragen" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Werte eintragen" }));
-    const tabs = screen.getByRole("tablist", { name: "SealAI Cockpit" });
-    expect(within(tabs).getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: "Cockpit-Breite anpassen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cockpit schließen" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Übersicht" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Parameter" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Medium" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Anwendung" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Werkstoff" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Berechnung" })).toBeInTheDocument();
-    expect(within(tabs).getByRole("tab", { name: "Briefing" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Cockpit schließen" }));
-    expect(screen.queryByRole("tablist", { name: "SealAI Cockpit" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Cockpit-Breite anpassen" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Werte eintragen" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Schnelleingabe für vorbereitete Fälle" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Medium")).toBeInTheDocument();
+    expect(screen.getByLabelText("Drehzahl")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "In Fallakte speichern" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mit sealingAI analysieren" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Anfragebasis" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "Parameter & Application" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Medium Intelligence" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Calculations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Open Points / Next Step" })).toBeInTheDocument();
   });
 
-  it("renders the requested overview status strip and four cockpit cards after manual opening", async () => {
-    const user = userEvent.setup();
+  it("keeps /dashboard/new free of legacy mock values while showing the new intake surface", () => {
+    render(<CaseScreen />);
 
-    render(<CaseScreen caseId="case-42" />);
-
-    await user.click(screen.getByRole("button", { name: "Werte eintragen" }));
-    await user.click(screen.getByRole("tab", { name: "Übersicht" }));
-
-    expect(screen.getByText("Dichtungsfall")).toBeInTheDocument();
-    expect(screen.getByText("Noch nicht eingeordnet")).toBeInTheDocument();
-    expect(screen.getByText("Stand")).toBeInTheDocument();
-    expect(screen.getByText("0 % geklärt")).toBeInTheDocument();
-    expect(screen.getAllByText("Lösungsraum").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Noch offen").length).toBeGreaterThan(0);
-    expect(screen.getByText("Noch kein Dichtungsfall gestartet")).toBeInTheDocument();
-    expect(screen.getByText("Gerechnet")).toBeInTheDocument();
-    expect(screen.getByText("0 von 5 Checks vorhanden")).toBeInTheDocument();
-    expect(screen.getByText("Notizen")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Partner-Fit" })).not.toBeInTheDocument();
-
-    expect(screen.getByRole("heading", { name: "Angaben zum Fall" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Was noch wichtig ist" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Einordnung" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
-  });
-
-  it("renders an honest empty and missing state without productive mock values after manual opening", async () => {
-    const user = userEvent.setup();
-
-    render(<CaseScreen caseId="case-42" />);
-
-    await user.click(screen.getByRole("button", { name: "Werte eintragen" }));
-    await user.click(screen.getByRole("tab", { name: "Übersicht" }));
-
-    expect(screen.getByText("Beschreibe kurz deine Anwendung, dann zeigt SeaLAI hier die nächsten offenen Punkte.")).toBeInTheDocument();
-    expect(screen.getByText("Noch kein technischer Fall")).toBeInTheDocument();
-    expect(screen.getByText("Umfangsgeschwindigkeit")).toBeInTheDocument();
-    expect(screen.getAllByText("Noch nicht möglich")).toHaveLength(5);
-    expect(screen.getAllByText("Startet, sobald ein Dichtungsfall beschrieben ist").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Noch keine technischen Daten vorhanden").length).toBeGreaterThan(0);
-
+    expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
+    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mit sealingAI analysieren" })).toBeDisabled();
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText("PTFE-RWDR vorqualifiziert")).not.toBeInTheDocument();
     expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("3,0 m/s")).not.toBeInTheDocument();
-
     expect(screen.queryByText(["An Hersteller", "senden"].join(" "))).not.toBeInTheDocument();
     expect(screen.queryByText(["finalisieren", "und versenden"].join(" "))).not.toBeInTheDocument();
     expect(screen.queryByText(["Technische", "Validierung"].join(" "))).not.toBeInTheDocument();
   });
 
-  it("renders /dashboard/new without legacy cockpit mock values", () => {
-    render(<CaseScreen />);
-
-    expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
-    expect(screen.getByRole("button", { name: "Werte eintragen" })).toBeInTheDocument();
-    expect(screen.queryByText("0 % geklärt")).not.toBeInTheDocument();
-    expect(screen.queryByText("0 von 5 Checks vorhanden")).not.toBeInTheDocument();
-    expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
-    expect(screen.queryByText("35-90 °C")).not.toBeInTheDocument();
-    expect(screen.queryByText("2,5 bar")).not.toBeInTheDocument();
-    expect(screen.queryByText("1.450 rpm")).not.toBeInTheDocument();
-    expect(screen.queryByText("40 mm")).not.toBeInTheDocument();
-    expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
-  });
-
-  it("maps a real workspace fixture into the cockpit ViewModel", () => {
+  it("maps a real workspace fixture into the RFQ workspace view", () => {
     workspaceHookState.workspace = workspaceFixture();
 
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getAllByText("Rotierende Welle / RWDR").length).toBeGreaterThan(0);
-    expect(screen.getByText("72 % geklärt")).toBeInTheDocument();
+    expect(screen.getAllByText("72%").length).toBeGreaterThan(0);
     expect(screen.getByText("Wasser-Glykol")).toBeInTheDocument();
     expect(screen.getByText("85 °C")).toBeInTheDocument();
     expect(screen.getByText("1.8 bar")).toBeInTheDocument();
     expect(screen.getByText("1200 rpm")).toBeInTheDocument();
     expect(screen.getByText("42 mm")).toBeInTheDocument();
-    expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
-    expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();
+    expect(screen.getByText("2.64")).toBeInTheDocument();
+    expect(screen.getByText("0.48")).toBeInTheDocument();
     expect(screen.getByText("50400")).toBeInTheDocument();
-    expect(screen.getByText("RWDR-Arbeitsstand mit Wasser-Glykol, 85 °C und offener Gegenlauffläche.")).toBeInTheDocument();
-    expect(screen.getByText("Woher: Wissensbasis")).toBeInTheDocument();
-    expect(screen.getByText("Stand: nicht validiert")).toBeInTheDocument();
-    expect(screen.getAllByText("Welche Gegenlauffläche und Oberflächenrauheit sind dokumentiert?").length).toBeGreaterThan(0);
-    expect(screen.getByText(/keine Auslegungsfreigabe/i)).toBeInTheDocument();
-
+    expect(screen.getAllByText("Gegenlauffläche").length).toBeGreaterThan(0);
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
   });
 
-  it("switches cockpit tabs in place without leaving the dashboard shell", async () => {
+  it("switches workspace modes without leaving the dashboard shell", async () => {
     const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
     render(<CaseScreen caseId="case-42" />);
 
-    await user.click(screen.getByRole("tab", { name: "Parameter" }));
-
-    expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Angaben direkt eintragen" })).toBeInTheDocument();
-    expect(screen.getByText(/SeaLAI übernimmt nur neue oder geänderte Angaben/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "Berechnung" }));
-
-    expect(screen.getByRole("tab", { name: "Berechnung" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Berechnung" })).toBeInTheDocument();
-    expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Vergleich" }));
+    expect(screen.getByRole("button", { name: "Vergleich" })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Vergleich NBR vs PTFE" })).toBeInTheDocument());
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
 
-    await user.click(screen.getByRole("tab", { name: "Medium" }));
+    await user.click(screen.getByRole("button", { name: "Deep Dive" }));
+    expect(screen.getByRole("button", { name: "Deep Dive" })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Material Profile" })).toBeInTheDocument());
 
-    expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument();
-    expect(screen.getByText("Wasser-Glykol")).toBeInTheDocument();
-    expect(screen.queryByText(/Dieser Cockpit-Tab ist vorbereitet/i)).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "Briefing" }));
-
-    expect(screen.getByRole("heading", { name: "Briefing" })).toBeInTheDocument();
-    expect(screen.getByText(/Kurze Zusammenfassung für interne Klärung/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "Übersicht" }));
-
-    expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Anfragebasis" }));
+    expect(screen.getByRole("button", { name: "Anfragebasis" })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Parameter & Application" })).toBeInTheDocument());
   });
 
-  it("sends only changed parameter values and mirrors the confirmation in chat", async () => {
+  it("persists prepared parameter intake values into the case file", async () => {
     const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
+    workspaceStoreMock.userParameterOverrides = {
+      speed_rpm: "1450",
+    };
+
     render(<CaseScreen caseId="case-42" />);
 
-    await user.click(screen.getByRole("tab", { name: "Parameter" }));
-    await user.clear(screen.getByLabelText("Drehzahl"));
-    await user.type(screen.getByLabelText("Drehzahl"), "1450");
-    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
+    expect(screen.getByLabelText("Drehzahl")).toHaveValue("1450");
+    await user.click(screen.getByRole("button", { name: "In Fallakte speichern" }));
 
-    expect(patchAgentOverridesMock).toHaveBeenCalledWith("case-42", {
-      overrides: [{ field_name: "speed_rpm", value: 1450, unit: "rpm" }],
-    });
-    expect(workspaceRefreshMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("chat-pane")).toHaveTextContent(
-      "Alles klar, ich habe Drehzahl: 1450 rpm übernommen.",
-    );
+    await waitFor(() => expect(patchAgentOverridesMock).toHaveBeenCalledWith("case-42", {
+      overrides: expect.arrayContaining([{ field_name: "speed_rpm", value: 1450, unit: "rpm" }]),
+    }));
+    expect(fetchWorkspaceMock).toHaveBeenCalledWith("case-42");
+    expect(workspaceStoreMock.setWorkspace).toHaveBeenCalledWith(expect.objectContaining({ caseId: "case-42" }));
+    expect(screen.getByText("1 Parameter in der Fallakte gespeichert.")).toBeInTheDocument();
+  });
+
+  it("sends filled intake values to the chat when no case is bound yet", async () => {
+    const user = userEvent.setup();
+    workspaceStoreMock.userParameterOverrides = {
+      medium: "Wasser",
+      temperature_c: "80",
+    };
+
+    render(<CaseScreen />);
+
+    await user.click(screen.getByRole("button", { name: "Mit sealingAI analysieren" }));
+
+    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith(expect.stringContaining("- Medium: Wasser"));
+    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith(expect.stringContaining("- Temperatur: 80"));
+    expect(patchAgentOverridesMock).not.toHaveBeenCalled();
   });
 });

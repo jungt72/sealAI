@@ -346,7 +346,7 @@ function buildIntakeOverrideItems(
 }
 
 function ParameterIntakePanel({ cockpit }: { cockpit: ReturnType<typeof useCockpitData> }) {
-  const userParameterOverrides = useWorkspaceStore((s) => s.userParameterOverrides);
+  const userParameterOverrides = useWorkspaceStore((s) => s.userParameterOverrides) ?? {};
   const setUserParameterOverride = useWorkspaceStore((s) => s.setUserParameterOverride);
   const resetUserParameterOverrides = useWorkspaceStore((s) => s.resetUserParameterOverrides);
   const workspaceCaseId = useWorkspaceStore((s) => s.workspace?.caseId ?? null);
@@ -1463,7 +1463,7 @@ function deriveTimelineSteps(cockpit: ReturnType<typeof useCockpitData>): Timeli
     "Frage verstehen",
     "Vergleich aufbauen",
     "Unterschiede bewerten",
-    "Empfehlung ableiten",
+    "RFQ-Briefing vorbereiten",
   ].map((label, index) => ({
     label,
     status: index < activeIndex ? "done" : index === activeIndex ? "active" : "pending",

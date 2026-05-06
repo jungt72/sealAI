@@ -210,7 +210,7 @@ describe("RfqPane", () => {
     render(<RfqPane data={cockpitData()} caseId="case-1" />);
 
     expect(await screen.findByRole("heading", { name: "Anfragevorschau" })).toBeInTheDocument();
-    expect(screen.getByText("Stand 7")).toBeInTheDocument();
+    expect(await screen.findByText("Stand 7")).toBeInTheDocument();
     expect(screen.getByText("jetzt 8")).toBeInTheDocument();
     expect(screen.getByText(/Diese Anfragevorschau ist veraltet/i)).toBeInTheDocument();
     expect(screen.getByText("Wellendurchmesser bestaetigen")).toBeInTheDocument();

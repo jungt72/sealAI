@@ -114,7 +114,9 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
   }, [activeCaseId, caseId]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    if (typeof scrollAnchorRef.current?.scrollIntoView === "function") {
+      scrollAnchorRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
+    }
   }, [messages, streamingText, isStreaming, error]);
 
   const hasConversation = messages.length > 0 || Boolean(streamingText);
