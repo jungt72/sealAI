@@ -371,21 +371,19 @@ describe("CaseScreen", () => {
     });
   });
 
-  it("renders chat and the persistent RFQ workspace with parameter intake", () => {
+  it("renders chat with the tabbed cockpit workspace and parameter intake", () => {
     render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
-    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Schnelleingabe für vorbereitete Fälle" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "SealingAI Cockpit" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Übersicht" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Werkstoff" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Angaben direkt eintragen" })).toBeInTheDocument();
     expect(screen.getByLabelText("Medium")).toBeInTheDocument();
     expect(screen.getByLabelText("Drehzahl")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "In Fallakte speichern" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Mit sealingAI analysieren" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Anfragebasis" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "Parameter & Application" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Medium Intelligence" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Calculations" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Open Points / Next Step" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Arbeitsbereich einklappen" })).toBeInTheDocument();
   });
 
@@ -393,8 +391,8 @@ describe("CaseScreen", () => {
     render(<CaseScreen />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
-    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mit sealingAI analysieren" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" })).toBeDisabled();
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText("PTFE-RWDR vorqualifiziert")).not.toBeInTheDocument();
     expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
@@ -403,42 +401,44 @@ describe("CaseScreen", () => {
     expect(screen.queryByText(["Technische", "Validierung"].join(" "))).not.toBeInTheDocument();
   });
 
-  it("maps a real workspace fixture into the RFQ workspace view", () => {
+  it("maps a real workspace fixture into the RFQ workspace view", async () => {
+    const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
 
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getAllByText("72%").length).toBeGreaterThan(0);
-    expect(screen.getByText("Wasser-Glykol")).toBeInTheDocument();
+    expect(screen.getByText(/72 % geklärt/)).toBeInTheDocument();
+    expect(screen.getAllByText("Wasser-Glykol").length).toBeGreaterThan(0);
     expect(screen.getByText("85 °C")).toBeInTheDocument();
     expect(screen.getByText("1.8 bar")).toBeInTheDocument();
     expect(screen.getByText("1200 rpm")).toBeInTheDocument();
     expect(screen.getByText("42 mm")).toBeInTheDocument();
-    expect(screen.getByText("2.64")).toBeInTheDocument();
-    expect(screen.getByText("0.48")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Berechnung" }));
+    expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
+    expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();
     expect(screen.getByText("50400")).toBeInTheDocument();
-    expect(screen.getAllByText("Gegenlauffläche").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Backend-Ableitung aus Durchmesser und Drehzahl/).length).toBeGreaterThan(0);
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
     expect(screen.queryByText(/PTFE-RWDR ist plausibel/i)).not.toBeInTheDocument();
   });
 
-  it("switches workspace modes without leaving the dashboard shell", async () => {
+  it("switches cockpit tabs without leaving the dashboard shell", async () => {
     const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
     render(<CaseScreen caseId="case-42" />);
 
-    await user.click(screen.getByRole("button", { name: "Vergleich" }));
-    expect(screen.getByRole("button", { name: "Vergleich" })).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Vergleich NBR vs PTFE" })).toBeInTheDocument());
+    await user.click(screen.getByRole("tab", { name: "Medium" }));
+    expect(screen.getByRole("tab", { name: "Medium" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument());
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
 
-    await user.click(screen.getByRole("button", { name: "Deep Dive" }));
-    expect(screen.getByRole("button", { name: "Deep Dive" })).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Material Profile" })).toBeInTheDocument());
+    await user.click(screen.getByRole("tab", { name: "Werkstoff" }));
+    expect(screen.getByRole("tab", { name: "Werkstoff" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Werkstoff" })).toBeInTheDocument());
 
-    await user.click(screen.getByRole("button", { name: "Anfragebasis" }));
-    expect(screen.getByRole("button", { name: "Anfragebasis" })).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Parameter & Application" })).toBeInTheDocument());
+    await user.click(screen.getByRole("tab", { name: "Anfragebasis" }));
+    expect(screen.getByRole("tab", { name: "Anfragebasis" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anfragebasis" })).toBeInTheDocument());
   });
 
   it("collapses and restores the right workspace column", async () => {
@@ -447,51 +447,48 @@ describe("CaseScreen", () => {
 
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "SealingAI Cockpit" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Arbeitsbereich einklappen" }));
 
-    expect(screen.queryByRole("heading", { name: "RFQ-Qualifikationsraum" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: "SealingAI Cockpit" })).not.toBeInTheDocument();
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
     expect(screen.getByRole("button", { name: "Arbeitsbereich einblenden" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Arbeitsbereich einblenden" }));
 
-    expect(screen.getByRole("heading", { name: "RFQ-Qualifikationsraum" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "SealingAI Cockpit" })).toBeInTheDocument();
   });
 
   it("persists prepared parameter intake values into the case file", async () => {
     const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
-    workspaceStoreMock.userParameterOverrides = {
-      speed_rpm: "1450",
-    };
 
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getByLabelText("Drehzahl")).toHaveValue("1450");
-    await user.click(screen.getByRole("button", { name: "In Fallakte speichern" }));
+    await user.click(screen.getByRole("tab", { name: "Parameter" }));
+    const speedInput = screen.getByLabelText("Drehzahl");
+    await user.clear(speedInput);
+    await user.type(speedInput, "1450");
+    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
 
     await waitFor(() => expect(patchAgentOverridesMock).toHaveBeenCalledWith("case-42", {
       overrides: expect.arrayContaining([{ field_name: "speed_rpm", value: 1450, unit: "rpm" }]),
     }));
     expect(fetchWorkspaceMock).toHaveBeenCalledWith("case-42");
     expect(workspaceStoreMock.setWorkspace).toHaveBeenCalledWith(expect.objectContaining({ caseId: "case-42" }));
-    expect(screen.getByText("1 Parameter in der Fallakte gespeichert.")).toBeInTheDocument();
   });
 
   it("sends filled intake values to the chat when no case is bound yet", async () => {
     const user = userEvent.setup();
-    workspaceStoreMock.userParameterOverrides = {
-      medium: "Wasser",
-      temperature_c: "80",
-    };
 
     render(<CaseScreen />);
 
-    await user.click(screen.getByRole("button", { name: "Mit sealingAI analysieren" }));
+    await user.type(screen.getByLabelText("Medium"), "Wasser");
+    await user.type(screen.getByLabelText("Temperatur"), "80");
+    await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));
 
-    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith(expect.stringContaining("- Medium: Wasser"));
-    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith(expect.stringContaining("- Temperatur: 80"));
+    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith(expect.stringContaining("- medium: Wasser"));
+    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith(expect.stringContaining("- temperature_c: 80 °C"));
     expect(patchAgentOverridesMock).not.toHaveBeenCalled();
   });
 });

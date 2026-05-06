@@ -12,7 +12,6 @@ import {
   Bookmark,
   FileText,
   PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Settings,
   Target,
@@ -25,7 +24,6 @@ const NAV_ITEMS = [
   { href: "/dashboard/new", icon: MessageSquareText, label: "Neue Analyse" },
   { href: "/goal", icon: Target, label: "Goal" },
   { href: "/rag", icon: Database, label: "Wissensbasis" },
-  { href: "/dashboard/new", icon: Clock3, label: "Verlauf" },
   { href: "/dashboard/new", icon: Bookmark, label: "Merkliste" },
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
@@ -132,7 +130,7 @@ export default function DashboardShell({
   const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -166,8 +164,8 @@ export default function DashboardShell({
   }, [pathname]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
-      <aside className="flex h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white">
+    <div className="relative flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
+      <aside className="relative z-40 flex h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white">
         <div className="flex h-[72px] items-center justify-center border-b border-[#E7ECF3]">
           <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0B5BD3] text-base font-semibold text-white shadow-[0_10px_30px_rgba(11,91,211,0.22)]">
             S
@@ -209,7 +207,7 @@ export default function DashboardShell({
                 : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
             )}
           >
-            {isHistoryOpen ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
+            <Clock3 size={19} />
           </button>
         </nav>
 
@@ -228,7 +226,10 @@ export default function DashboardShell({
       </aside>
 
       {isHistoryOpen ? (
-        <aside className="flex h-full w-[286px] shrink-0 flex-col border-r border-[#E7ECF3] bg-[#FBFCFE]">
+        <aside
+          aria-label="Verlauf"
+          className="absolute bottom-0 left-[72px] top-0 z-30 flex w-[286px] flex-col border-r border-[#E7ECF3] bg-[#FBFCFE] shadow-[18px_0_45px_rgba(15,23,42,0.12)]"
+        >
           <div className="flex h-[72px] items-center gap-2 border-b border-[#E7ECF3] px-4">
             <Link
               href="/dashboard/new"

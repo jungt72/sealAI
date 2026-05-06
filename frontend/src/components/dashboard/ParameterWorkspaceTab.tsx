@@ -740,15 +740,11 @@ export function ParameterWorkspaceTab({
   );
   const hasAnyEnteredValue = editableFields.some((field) => Boolean(formState[field.fieldName]?.trim()));
 
-  const canSubmit = Boolean(workspace?.caseId) && hasAnyEnteredValue && !isSubmitting;
+  const canSubmit = hasAnyEnteredValue && !isSubmitting;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (!workspace?.caseId) {
-      setError("Bitte zuerst im Chat einen Dichtungsfall starten.");
-      return;
-    }
     if (!hasAnyEnteredValue) {
       setError("Bitte mindestens einen Parameter eintragen.");
       return;

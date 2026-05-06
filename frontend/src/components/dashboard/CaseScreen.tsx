@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -24,6 +24,7 @@ import type { LucideIcon } from "lucide-react";
 
 import ChatPane from "@/components/dashboard/ChatPane";
 import { StatusBadge } from "@/components/dashboard/CockpitElements";
+import { SealCockpit } from "@/components/dashboard/SealCockpit";
 import { useCockpitData } from "@/hooks/useCockpitData";
 import { patchAgentOverrides, type AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
 import { fetchWorkspace } from "@/lib/bff/workspace";
@@ -34,6 +35,7 @@ import {
   type EngineeringPath,
   type EngineeringProperty,
 } from "@/lib/engineering/cockpitModel";
+import { buildSealCockpitViewModel } from "@/lib/engineering/buildSealCockpitViewModel";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
 
@@ -1673,17 +1675,74 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const cockpit = useCockpitData();
   const workspace = useWorkspaceStore((state) => state.workspace);
   const activeResponseClass = useWorkspaceStore((state) => state.activeResponseClass);
+  const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
   const timelineSteps = useMemo(() => deriveTimelineSteps(cockpit), [cockpit]);
-  const contextItems = useMemo(() => deriveContextItems({ cockpit, caseId }), [caseId, cockpit]);
-  const [modeOverride, setModeOverride] = useState<WorkspaceMode | null>(null);
+  const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
+  const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(true);
+  const activeCaseId = useChatStore((state) => state.activeCaseId);
+  const sendMessage = useChatStore((state) => state.sendMessage);
+  const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
 
-  const displayRequestType =
-    (cockpit?.view.requestType && cockpit.view.requestType !== "nicht bestimmt"
-      ? cockpit.view.requestType
-      : initialRequestType) || "laufende Analyse";
-  const defaultWorkspaceMode = deriveDefaultWorkspaceMode({ workspace, activeResponseClass });
-  const workspaceMode = modeOverride ?? defaultWorkspaceMode;
+  const handleWorkspaceRefresh = useCallback(
+    async (nextCaseId?: string) => {
+      const refreshCaseId = nextCaseId || canonicalCaseId;
+      if (!refreshCaseId) {
+        return;
+      }
+      const nextWorkspace = await fetchWorkspace(refreshCaseId).catch(() => null);
+      if (nextWorkspace) {
+        setWorkspace(nextWorkspace);
+      }
+    },
+    [canonicalCaseId, setWorkspace],
+  );
+
+  const handleParameterSubmit = useCallback(
+    async (overrides: AgentOverrideItemRequest[], summary: string) => {
+      if (overrides.length === 0) {
+        return;
+      }
+      if (!canonicalCaseId) {
+        const facts = overrides
+          .map((override) => `- ${override.field_name}: ${override.value}${override.unit ? ` ${override.unit}` : ""}`)
+          .join("\n");
+        void sendMessage(
+          [
+            "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall.",
+            summary ? `Zusammenfassung: ${summary}` : null,
+            "",
+            facts,
+            "",
+            "Bitte stelle keine stumpfe Parameterabfrage. Entwickle eine virtuelle Lösung nach Wahrscheinlichkeiten: plausible Dichtungs-/Werkstoffrichtungen, technische Risiken, fehlende Schlüsseldaten und kluge professionelle Rückfragen. Keine finale Freigabe behaupten.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        );
+        return;
+      }
+      setIsParameterSubmitting(true);
+      try {
+        await patchAgentOverrides(canonicalCaseId, { overrides });
+        await handleWorkspaceRefresh(canonicalCaseId);
+      } finally {
+        setIsParameterSubmitting(false);
+      }
+    },
+    [canonicalCaseId, handleWorkspaceRefresh, sendMessage],
+  );
+  const handleCaseBound = useCallback(
+    (nextCaseId: string) => {
+      void handleWorkspaceRefresh(nextCaseId);
+    },
+    [handleWorkspaceRefresh],
+  );
+  const handleTurnComplete = useCallback(
+    (nextCaseId: string) => {
+      void handleWorkspaceRefresh(nextCaseId);
+    },
+    [handleWorkspaceRefresh],
+  );
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#F7F9FC]">
@@ -1707,123 +1766,40 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
           className={cn(
             "grid h-full min-h-0 gap-4 transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
             isWorkspaceOpen
-              ? "xl:grid-cols-[minmax(420px,1fr),minmax(520px,0.95fr)]"
-              : "xl:grid-cols-[minmax(420px,1fr)]",
+              ? "lg:grid-cols-[minmax(430px,3fr)_minmax(360px,2fr)]"
+              : "lg:grid-cols-[minmax(430px,1fr)]",
           )}
         >
           <section className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-white shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
-            <ChatPane caseId={caseId} initialGoal={initialGoal} />
+            <ChatPane
+              caseId={caseId}
+              initialGoal={initialGoal}
+              onCaseBound={handleCaseBound}
+              onTurnComplete={handleTurnComplete}
+            />
           </section>
 
           {isWorkspaceOpen ? (
-          <aside className="min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-[#FBFCFE] shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
-            <div className="custom-scrollbar flex h-full min-h-0 flex-col overflow-y-auto">
-              <div className="border-b border-[#E7ECF3] bg-white px-5 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
-                      Anfragebasis
-                    </div>
-                    <h1 className="mt-1 text-lg font-semibold tracking-tight text-[#111827]">
-                      RFQ-Qualifikationsraum
-                    </h1>
-                    <p className="mt-1 text-sm text-[#4B5563]">
-                      Parameter, offene Punkte, Vorchecks und Herstellerprüfbedarf in einem ruhigen Arbeitsraum.
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <StatusBadge
-                      label={workspaceMode === "knowledge_compare" ? "Vergleich" : titleCase(cockpit?.view.readiness.status || "Anfragebasis")}
-                      variant={workspaceMode === "knowledge_compare" ? "success" : cockpit?.view.readiness.isRfqReady ? "success" : "info"}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Arbeitsbereich einklappen"
-                      title="Arbeitsbereich einklappen"
-                      onClick={() => setIsWorkspaceOpen(false)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DDE6F2] bg-white text-[#526273] transition-colors hover:border-[#B8C9E0] hover:bg-[#F8FBFF] hover:text-[#0F172A]"
-                    >
-                      <PanelRightClose size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {contextItems.map((item) => (
-                    <div key={item.label} className="rounded-[14px] border border-[#E7ECF3] bg-[#FAFAFB] px-3 py-2.5">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
-                        {item.label}
-                      </div>
-                      <div className="mt-1 text-sm font-medium text-[#111827]">{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-4">
-                  <ParameterIntakePanel cockpit={cockpit} />
-                </div>
-
-                <div className="mt-4">
-                  <div className="mb-2 flex items-center justify-between text-xs text-[#4B5563]">
-                    <span>Workspace completeness</span>
-                    <span>{Math.round((cockpit?.coverage ?? 0) * 100)}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-[#F0F2F5]">
-                    <div
-                      className="h-2 rounded-full bg-[#0B57D0] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
-                      style={{ width: `${Math.round((cockpit?.coverage ?? 0) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
-                    Modus
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {WORKSPACE_MODE_OPTIONS.map((option) => {
-                      const isActive = workspaceMode === option.id;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => setModeOverride(option.id)}
-                          className={cn(
-                            "rounded-[14px] border px-3 py-2 text-sm font-medium transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                            isActive
-                              ? "border-[#0B57D0] bg-[#0B57D0] text-white"
-                              : "border-[#E5E7EB] bg-[#FAFAFB] text-[#4B5563] hover:bg-[#F0F2F5] hover:text-[#111827]",
-                          )}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+            <aside className="relative min-h-0 overflow-hidden rounded-[24px] border border-[#E7ECF3] bg-[#FBFCFE] shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
+              <button
+                type="button"
+                aria-label="Arbeitsbereich einklappen"
+                title="Arbeitsbereich einklappen"
+                onClick={() => setIsWorkspaceOpen(false)}
+                className="absolute right-4 top-4 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#DDE6F2] bg-white text-[#526273] shadow-sm transition-colors hover:border-[#B8C9E0] hover:bg-[#F8FBFF] hover:text-[#0F172A]"
+              >
+                <PanelRightClose size={16} />
+              </button>
+              <div className="h-full min-h-0 pr-12">
+                <SealCockpit
+                  data={cockpitViewModel}
+                  workspace={workspace}
+                  isParameterSubmitting={isParameterSubmitting}
+                  onParameterSubmit={handleParameterSubmit}
+                  preferredTab={workspace?.caseId ? null : "parameters"}
+                />
               </div>
-
-              <div className="relative p-4">
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={workspaceMode}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    <WorkspaceModeContent
-                      mode={workspaceMode}
-                      cockpit={cockpit}
-                      workspace={workspace}
-                      displayRequestType={displayRequestType}
-                    />
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </div>
-          </aside>
+            </aside>
           ) : null}
         </div>
       </div>

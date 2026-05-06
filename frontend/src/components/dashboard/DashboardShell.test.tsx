@@ -48,7 +48,9 @@ describe("DashboardShell", () => {
     expect(screen.queryByText("Knowledge Modus")).not.toBeInTheDocument();
   });
 
-  it("renders the persistent left navigation and case history shell", async () => {
+  it("renders the persistent left navigation and opens case history as a drawer", async () => {
+    const user = userEvent.setup();
+
     render(
       <DashboardShell>
         <main>Arbeitsbereich</main>
@@ -60,6 +62,10 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("link", { name: "Wissensbasis" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Einstellungen" })).toBeInTheDocument();
+    expect(screen.queryByText("Verlauf")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
+
     expect(screen.getByText("Verlauf")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
   });
@@ -73,6 +79,7 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
 
+    await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Historie ausblenden" }));
 
