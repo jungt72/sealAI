@@ -3,9 +3,13 @@
 
 const axios = require('axios');
 
-const STRAPI_URL = 'http://localhost:1337';
-const ADMIN_EMAIL = 'mail@thorsten-jung.de';
-const ADMIN_PASSWORD = 'Katerkimba!1';
+const STRAPI_URL = process.env.STRAPI_URL || 'http://localhost:1337';
+const ADMIN_EMAIL = process.env.STRAPI_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.STRAPI_ADMIN_PASSWORD;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    throw new Error('STRAPI_ADMIN_EMAIL and STRAPI_ADMIN_PASSWORD must be set.');
+}
 
 async function updatePermissions() {
     try {

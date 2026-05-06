@@ -1,10 +1,14 @@
+if (!process.env.STRAPI_ADMIN_EMAIL || !process.env.STRAPI_ADMIN_PASSWORD) {
+    throw new Error('STRAPI_ADMIN_EMAIL and STRAPI_ADMIN_PASSWORD must be set.');
+}
+
 async function run() {
     try {
         console.log('Authenticating as Admin...');
         const loginRes = await fetch('http://localhost:1337/admin/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'mail@thorsten-jung.de', password: 'Katerkimba!1' })
+            body: JSON.stringify({ email: process.env.STRAPI_ADMIN_EMAIL, password: process.env.STRAPI_ADMIN_PASSWORD })
         });
 
         if (!loginRes.ok) {
