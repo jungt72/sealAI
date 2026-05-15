@@ -23,6 +23,7 @@ import {
   isProgrammaticScroll,
   nextModeAfterUserScroll,
   shouldShowJumpToLive,
+  submitAnchorBottomSpacer,
   submitAnchorOffset,
   type ChatScrollMode,
 } from "@/lib/chatScroll";
@@ -257,6 +258,7 @@ export default function ChatPane({
   const viewportRef = useRef<HTMLDivElement>(null);
   const messageFlowRef = useRef<HTMLDivElement>(null);
   const latestUserRef = useRef<HTMLDivElement | null>(null);
+  const submitAnchorSpacerRef = useRef<HTMLDivElement>(null);
   const scrollModeRef = useRef<ChatScrollMode>("following-bottom");
   const pendingSubmitAnchorRef = useRef(false);
   const frozenScrollTopRef = useRef<number | null>(null);
@@ -264,6 +266,7 @@ export default function ChatPane({
   const programmaticScrollUntilRef = useRef(0);
   const hasConversationRef = useRef(false);
   const showJumpToLiveRef = useRef(false);
+  const submitAnchorSpacerPxRef = useRef(0);
   const [showJumpToLiveButton, setShowJumpToLiveButton] = useState(false);
 
   const hasConversation = messages.length > 0 || Boolean(streamingText);
@@ -304,9 +307,35 @@ export default function ChatPane({
     window.requestAnimationFrame(updateJumpToLiveState);
   }, [updateJumpToLiveState]);
 
+  const setSubmitAnchorSpacer = useCallback((nextSpacerPx: number) => {
+    const normalized = Math.ceil(Math.max(0, nextSpacerPx));
+    if (Math.abs(submitAnchorSpacerPxRef.current - normalized) < 2) {
+      return false;
+    }
+    submitAnchorSpacerPxRef.current = normalized;
+    if (submitAnchorSpacerRef.current) {
+      submitAnchorSpacerRef.current.style.height = `${normalized}px`;
+    }
+    return true;
+  }, []);
+
   const latestUserElement = useCallback(() => {
     return latestUserRef.current || messageFlowRef.current?.querySelector<HTMLElement>('[data-latest-user="true"]') || null;
   }, []);
+
+  const refreshSubmitAnchorSpacer = useCallback(() => {
+    const viewport = viewportRef.current;
+    const latestUser = latestUserElement();
+    if (!viewport || !latestUser) {
+      return false;
+    }
+
+    return setSubmitAnchorSpacer(submitAnchorBottomSpacer(
+      viewport,
+      latestUser,
+      submitAnchorSpacerPxRef.current,
+    ));
+  }, [latestUserElement, setSubmitAnchorSpacer]);
 
   const alignLatestUserToTop = useCallback(() => {
     const viewport = viewportRef.current;
@@ -315,11 +344,17 @@ export default function ChatPane({
       return false;
     }
 
+    refreshSubmitAnchorSpacer();
+
     const viewportBox = viewport.getBoundingClientRect();
     const userBox = latestUser.getBoundingClientRect();
+    const maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
     const nextTop = Math.max(
       0,
-      viewport.scrollTop + userBox.top - viewportBox.top - submitAnchorOffset(viewport),
+      Math.min(
+        maxTop,
+        viewport.scrollTop + userBox.top - viewportBox.top - submitAnchorOffset(viewport),
+      ),
     );
 
     runProgrammaticScroll(() => {
@@ -327,7 +362,7 @@ export default function ChatPane({
       frozenScrollTopRef.current = nextTop;
     });
     return true;
-  }, [latestUserElement, runProgrammaticScroll]);
+  }, [latestUserElement, refreshSubmitAnchorSpacer, runProgrammaticScroll]);
 
   const scrollToLiveBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const viewport = viewportRef.current;
@@ -335,12 +370,13 @@ export default function ChatPane({
       return;
     }
     const requestedBehavior = prefersReducedMotion() ? "auto" : behavior;
+    setSubmitAnchorSpacer(0);
     runProgrammaticScroll(() => {
       viewport.scrollTo({ top: viewport.scrollHeight, behavior: requestedBehavior });
       frozenScrollTopRef.current = null;
       scrollModeRef.current = "following-bottom";
     });
-  }, [runProgrammaticScroll]);
+  }, [runProgrammaticScroll, setSubmitAnchorSpacer]);
 
   const maintainScrollPosition = useCallback(() => {
     const viewport = viewportRef.current;
@@ -349,6 +385,7 @@ export default function ChatPane({
     }
 
     if (scrollModeRef.current === "frozen" && frozenScrollTopRef.current !== null) {
+      refreshSubmitAnchorSpacer();
       runProgrammaticScroll(() => {
         viewport.scrollTop = frozenScrollTopRef.current ?? viewport.scrollTop;
       });
@@ -361,7 +398,7 @@ export default function ChatPane({
     }
 
     updateJumpToLiveState();
-  }, [runProgrammaticScroll, scrollToLiveBottom, updateJumpToLiveState]);
+  }, [refreshSubmitAnchorSpacer, runProgrammaticScroll, scrollToLiveBottom, updateJumpToLiveState]);
 
   const markUserScrollIntent = useCallback(() => {
     if (isProgrammaticScroll(programmaticScrollUntilRef.current, Date.now())) {
@@ -442,8 +479,9 @@ export default function ChatPane({
       pendingSubmitAnchorRef.current = false;
       frozenScrollTopRef.current = null;
       lastAnchoredUserKeyRef.current = null;
+      setSubmitAnchorSpacer(0);
     }
-  }, [hasConversation, scheduleJumpToLiveVisible]);
+  }, [hasConversation, scheduleJumpToLiveVisible, setSubmitAnchorSpacer]);
 
   useLayoutEffect(() => {
     hasConversationRef.current = hasConversation;
@@ -572,6 +610,14 @@ export default function ChatPane({
                   </div>
                 </div>
               )}
+
+              <div
+                ref={submitAnchorSpacerRef}
+                aria-hidden="true"
+                data-testid="submit-anchor-spacer"
+                className="shrink-0"
+                style={{ height: 0 }}
+              />
 
             </div>
           )}

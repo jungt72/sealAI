@@ -32,3 +32,18 @@ export function submitAnchorOffset(element: Pick<HTMLElement, "clientHeight">): 
     Math.max(SUBMIT_ANCHOR_MIN_PX, element.clientHeight * SUBMIT_ANCHOR_VIEWPORT_RATIO),
   );
 }
+
+export function submitAnchorBottomSpacer(
+  viewport: Pick<HTMLElement, "clientHeight" | "scrollHeight" | "scrollTop" | "getBoundingClientRect">,
+  target: Pick<HTMLElement, "getBoundingClientRect">,
+  currentSpacerPx = 0,
+): number {
+  const viewportBox = viewport.getBoundingClientRect();
+  const targetBox = target.getBoundingClientRect();
+  const desiredTop =
+    viewport.scrollTop + targetBox.top - viewportBox.top - submitAnchorOffset(viewport as HTMLElement);
+  const scrollHeightWithoutSpacer = Math.max(0, viewport.scrollHeight - currentSpacerPx);
+  const maxTopWithoutSpacer = Math.max(0, scrollHeightWithoutSpacer - viewport.clientHeight);
+
+  return Math.ceil(Math.max(0, desiredTop - maxTopWithoutSpacer));
+}

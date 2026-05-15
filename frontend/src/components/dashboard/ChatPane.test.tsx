@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -134,7 +134,13 @@ describe("ChatPane", () => {
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
       configurable: true,
       get() {
-        return (this as HTMLElement).dataset.testid === "chat-scroll-region" ? viewportScrollHeight : 48;
+        const element = this as HTMLElement;
+        if (element.dataset.testid !== "chat-scroll-region") {
+          return 48;
+        }
+        const spacer = element.querySelector<HTMLElement>('[data-testid="submit-anchor-spacer"]');
+        const spacerHeight = spacer ? Number.parseInt(spacer.style.height || "0", 10) || 0 : 0;
+        return viewportScrollHeight + spacerHeight;
       },
     });
     window.history.replaceState(null, "", "/dashboard/case-parameter");
@@ -222,15 +228,19 @@ describe("ChatPane", () => {
     rerender(<ChatPane caseId="case-parameter" />);
 
     const viewport = screen.getByTestId("chat-scroll-region") as HTMLElement;
-    const anchoredTop = viewport.scrollTop;
 
-    expect(anchoredTop).toBe(1250);
+    await waitFor(() => {
+      expect(viewport.scrollTop).toBe(1250);
+    });
+    const anchoredTop = viewport.scrollTop;
+    expect(screen.getByTestId("submit-anchor-spacer")).toHaveStyle({ height: "550px" });
 
     viewportScrollHeight = 2400;
     agentStreamMockState.streamingText = "Der erste Stream-Chunk mit deutlich mehr Text";
     rerender(<ChatPane caseId="case-parameter" />);
 
     expect(viewport.scrollTop).toBe(anchoredTop);
+    expect(screen.getByTestId("submit-anchor-spacer")).toHaveStyle({ height: "0px" });
     expect(screen.getByRole("button", { name: "Zum aktuellen Ende" })).toBeInTheDocument();
   });
 

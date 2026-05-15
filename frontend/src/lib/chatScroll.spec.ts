@@ -5,6 +5,7 @@ import {
   isProgrammaticScroll,
   nextModeAfterUserScroll,
   shouldShowJumpToLive,
+  submitAnchorBottomSpacer,
   submitAnchorOffset,
 } from "./chatScroll";
 
@@ -38,5 +39,20 @@ describe("chatScroll", () => {
     expect(submitAnchorOffset({ clientHeight: 360 } as HTMLElement)).toBe(96);
     expect(submitAnchorOffset({ clientHeight: 800 } as HTMLElement)).toBe(176);
     expect(submitAnchorOffset({ clientHeight: 1400 } as HTMLElement)).toBe(220);
+  });
+
+  it("adds temporary lower space when a submitted turn would otherwise be trapped near the bottom", () => {
+    const viewport = {
+      clientHeight: 500,
+      scrollHeight: 1000,
+      scrollTop: 500,
+      getBoundingClientRect: () => ({ top: 100 }),
+    } as HTMLElement;
+    const latestUser = {
+      getBoundingClientRect: () => ({ top: 460 }),
+    } as HTMLElement;
+
+    expect(submitAnchorBottomSpacer(viewport, latestUser)).toBe(250);
+    expect(submitAnchorBottomSpacer({ ...viewport, scrollHeight: 1500 } as HTMLElement, latestUser)).toBe(0);
   });
 });
