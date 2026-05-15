@@ -224,7 +224,7 @@ describe("ChatPane", () => {
     const viewport = screen.getByTestId("chat-scroll-region") as HTMLElement;
     const anchoredTop = viewport.scrollTop;
 
-    expect(anchoredTop).toBe(1352);
+    expect(anchoredTop).toBe(1250);
 
     viewportScrollHeight = 2400;
     agentStreamMockState.streamingText = "Der erste Stream-Chunk mit deutlich mehr Text";

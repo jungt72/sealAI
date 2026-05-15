@@ -23,6 +23,7 @@ import {
   isProgrammaticScroll,
   nextModeAfterUserScroll,
   shouldShowJumpToLive,
+  submitAnchorOffset,
   type ChatScrollMode,
 } from "@/lib/chatScroll";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,6 @@ import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 
 const CHAT_SURFACE_MAX_WIDTH = 800;
 const CHAT_SURFACE_STYLE: React.CSSProperties = { maxWidth: CHAT_SURFACE_MAX_WIDTH };
-const SUBMIT_ANCHOR_OFFSET_PX = 8;
 const PROGRAMMATIC_SCROLL_GUARD_MS = 180;
 const CHAT_NAVIGATION_KEYS = new Set([
   "ArrowDown",
@@ -319,7 +319,7 @@ export default function ChatPane({
     const userBox = latestUser.getBoundingClientRect();
     const nextTop = Math.max(
       0,
-      viewport.scrollTop + userBox.top - viewportBox.top - SUBMIT_ANCHOR_OFFSET_PX,
+      viewport.scrollTop + userBox.top - viewportBox.top - submitAnchorOffset(viewport),
     );
 
     runProgrammaticScroll(() => {

@@ -5,6 +5,7 @@ import {
   isProgrammaticScroll,
   nextModeAfterUserScroll,
   shouldShowJumpToLive,
+  submitAnchorOffset,
 } from "./chatScroll";
 
 function metrics(scrollTop: number, clientHeight = 500, scrollHeight = 1000) {
@@ -31,5 +32,11 @@ describe("chatScroll", () => {
   it("guards programmatic scroll events from being interpreted as user intent", () => {
     expect(isProgrammaticScroll(1200, 1100)).toBe(true);
     expect(isProgrammaticScroll(1200, 1200)).toBe(false);
+  });
+
+  it("places submitted turns in the upper reading zone instead of at the hard viewport edge", () => {
+    expect(submitAnchorOffset({ clientHeight: 360 } as HTMLElement)).toBe(96);
+    expect(submitAnchorOffset({ clientHeight: 800 } as HTMLElement)).toBe(176);
+    expect(submitAnchorOffset({ clientHeight: 1400 } as HTMLElement)).toBe(220);
   });
 });
