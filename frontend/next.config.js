@@ -8,6 +8,36 @@ const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname),
 
+  async redirects() {
+    return [
+      {
+        source: "/sealingpedia",
+        destination: "/wissen",
+        permanent: true,
+      },
+      {
+        source: "/sealing-pedia",
+        destination: "/wissen",
+        permanent: true,
+      },
+      {
+        source: "/pedia",
+        destination: "/wissen",
+        permanent: true,
+      },
+      {
+        source: "/wiki",
+        destination: "/wissen",
+        permanent: true,
+      },
+      {
+        source: "/blog",
+        destination: "/wissen",
+        permanent: true,
+      },
+    ];
+  },
+
   // React Compiler (Next.js 16: top-level, nicht mehr experimental)
   // Automatisches Memoizing — ersetzt manuelles memo()/useMemo()/useCallback()
   reactCompiler: true,

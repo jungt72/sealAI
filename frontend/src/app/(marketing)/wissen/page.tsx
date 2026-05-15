@@ -6,9 +6,9 @@ import { createMetadata } from "@/lib/seo/metadata";
 import { generateBreadcrumbSchema, generateCollectionPageSchema } from "@/lib/seo/jsonLd";
 
 export const metadata: Metadata = createMetadata({
-  title: "Dichtungswissen für konkrete Fälle",
+  title: "SealingPedia: Dichtungswissen für konkrete Fälle",
   description:
-    "Fachliche Orientierung für konkrete Dichtungsfälle: Begriffe, Schadensbilder, Normbezug und bessere Herstellerfragen.",
+    "SealingPedia bündelt fachliche Orientierung für konkrete Dichtungsfälle: Begriffe, Schadensbilder, Normbezug und bessere Herstellerfragen.",
   path: "/wissen",
 });
 
@@ -20,9 +20,9 @@ const principles = [
 
 export default async function WissenIndexPage() {
   const docs = await getAllContentDocs("wissen");
-  const pageTitle = "Dichtungswissen für konkrete Fälle";
+  const pageTitle = "SealingPedia: Dichtungswissen für konkrete Fälle";
   const pageDescription =
-    "Fachliche Orientierung für konkrete Dichtungsfälle: Begriffe, Schadensbilder, Normbezug und bessere Herstellerfragen.";
+    "SealingPedia bündelt fachliche Orientierung für konkrete Dichtungsfälle: Begriffe, Schadensbilder, Normbezug und bessere Herstellerfragen.";
   const collectionJsonLd = generateCollectionPageSchema({
     title: pageTitle,
     description: pageDescription,
@@ -34,7 +34,7 @@ export default async function WissenIndexPage() {
   });
   const breadcrumbJsonLd = generateBreadcrumbSchema([
     { name: "Startseite", path: "/" },
-    { name: "Wissen", path: "/wissen" },
+    { name: "SealingPedia", path: "/wissen" },
   ]);
 
   return (
@@ -54,13 +54,13 @@ export default async function WissenIndexPage() {
               Startseite
             </Link>
             <span aria-hidden="true">/</span>
-            <span className="font-medium text-foreground">Wissen</span>
+            <span className="font-medium text-foreground">SealingPedia</span>
           </nav>
           <span className="text-sm font-bold uppercase tracking-widest text-seal-blue/60">
-            Dichtungswissen
+            SealingPedia
           </span>
           <h1 className="mt-4 max-w-4xl text-4xl font-bold tracking-tight text-seal-blue md:text-6xl">
-            Dichtungswissen, das deinen Fall klärbarer macht
+            SealingPedia: Dichtungswissen, das deinen Fall klärbarer macht
           </h1>
           <p className="mt-6 max-w-3xl text-lg leading-relaxed text-muted-foreground md:text-xl">
             Keine Lexikontexte ohne Anschluss. Jede Einordnung soll dir helfen, bessere Fragen zu stellen,
@@ -73,9 +73,9 @@ export default async function WissenIndexPage() {
         <div className="mx-auto grid max-w-7xl gap-12 px-6 lg:grid-cols-[0.75fr_1.25fr]">
           <aside className="rounded-2xl border border-border bg-slate-50 p-8">
             <BookOpen className="text-seal-blue" size={34} />
-            <h2 className="mt-5 text-2xl font-bold text-seal-blue">Verstehen statt Scheinsicherheit</h2>
+            <h2 className="mt-5 text-2xl font-bold text-seal-blue">SealingPedia statt Scheinsicherheit</h2>
             <p className="mt-4 leading-relaxed text-muted-foreground">
-              Die Wissensseiten machen dich aussagefähig. Sie ersetzen keine finale Auslegung,
+              Die SealingPedia-Seiten machen dich aussagefähig. Sie ersetzen keine finale Auslegung,
               Materialfreigabe oder Herstellerprüfung.
             </p>
             <div className="mt-6 space-y-3">

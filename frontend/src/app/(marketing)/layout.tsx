@@ -23,7 +23,7 @@ export default function MarketingLayout({
               Werkstoffe
             </Link>
             <Link href="/wissen" className="text-sm font-medium text-muted-foreground hover:text-seal-blue transition-colors">
-              Wissen
+              SealingPedia
             </Link>
             <Link 
               href="/dashboard/new" 
@@ -35,7 +35,10 @@ export default function MarketingLayout({
           </nav>
 
           {/* Mobile Menu Placeholder (Phase 8) */}
-          <div className="md:hidden">
+          <div className="flex items-center gap-4 md:hidden">
+            <Link href="/wissen" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              SealingPedia
+            </Link>
             <Link href="/dashboard/new" className="text-xs font-bold uppercase tracking-wider text-seal-blue">
               Start
             </Link>
@@ -61,7 +64,7 @@ export default function MarketingLayout({
                 <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/40">Plattform</span>
                 <Link href="/medien" className="text-sm text-muted-foreground hover:text-seal-blue">Medien</Link>
                 <Link href="/werkstoffe" className="text-sm text-muted-foreground hover:text-seal-blue">Werkstoffe</Link>
-                <Link href="/wissen" className="text-sm text-muted-foreground hover:text-seal-blue">Wissen</Link>
+                <Link href="/wissen" className="text-sm text-muted-foreground hover:text-seal-blue">SealingPedia</Link>
               </div>
               <div className="flex flex-col gap-3">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/40">Rechtliches</span>

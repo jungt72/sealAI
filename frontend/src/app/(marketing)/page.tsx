@@ -36,6 +36,12 @@ export default function LandingPage() {
               >
                 Anfragebasis vorbereiten
               </Link>
+              <Link
+                href="/wissen"
+                className="flex items-center gap-2 rounded-full border border-border bg-white px-8 py-4 text-lg font-medium text-foreground transition-all hover:bg-slate-50 active:scale-95"
+              >
+                SealingPedia lesen
+              </Link>
             </div>
           </div>
         </div>
@@ -124,7 +130,7 @@ export default function LandingPage() {
       {/* 4. MVP FOKUS & 5. MEDIUM INTELLIGENCE */}
       <section className="py-24">
         <div className="mx-auto max-w-7xl px-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="rounded-3xl border border-border p-10 flex flex-col justify-between">
               <div>
                 <Factory className="text-seal-blue mb-6" size={40} />
@@ -147,6 +153,18 @@ export default function LandingPage() {
               </div>
               <Link href="/werkstoffe" className="text-sm font-bold text-seal-light-blue flex items-center gap-2 hover:underline">
                 Werkstoffe einordnen <ArrowRight size={14} />
+              </Link>
+            </div>
+            <div className="rounded-3xl border border-border p-10 flex flex-col justify-between">
+              <div>
+                <BookOpen className="text-seal-blue mb-6" size={40} />
+                <h3 className="text-2xl font-bold text-seal-blue mb-4">SealingPedia</h3>
+                <p className="text-muted-foreground leading-relaxed mb-8 text-[17px]">
+                  Fachliche Artikel zu Werkstoffen, Medien, Schadensbildern und Anfrageparametern, damit du Dichtungsfragen sauberer einordnen kannst.
+                </p>
+              </div>
+              <Link href="/wissen" className="text-sm font-bold text-seal-blue flex items-center gap-2 hover:underline">
+                SealingPedia öffnen <ArrowRight size={14} />
               </Link>
             </div>
           </div>
