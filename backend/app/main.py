@@ -152,6 +152,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         log.info("Audit log table bootstrap skipped: audit_log_bootstrap_on_startup=false")
 
+    try:
+        from app.agent.graph.topology import get_governed_graph
+
+        await get_governed_graph()
+        log.info("LangGraph governed graph initialised")
+    except Exception as exc:
+        log.warning("LangGraph governed graph warmup failed (non-fatal): %s", exc)
+
     if settings.warmup_on_start:
         log.info("Warmup aktiviert.")
     worker_task = None
@@ -167,6 +175,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await worker_task
         except Exception:
             pass
+    try:
+        from app.agent.graph.topology import close_governed_graph_resources
+
+        await close_governed_graph_resources()
+    except Exception as exc:
+        log.warning("LangGraph governed graph shutdown cleanup failed: %s", exc)
     log.info("Stopping %s", settings.app_name)
 
 

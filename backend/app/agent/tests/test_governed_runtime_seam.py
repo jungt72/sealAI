@@ -11,6 +11,7 @@ from app.agent.api import streaming
 from app.agent.api.governed_runtime import (
     GovernedGraphTurnResult,
     build_governed_graph_input,
+    run_governed_graph_turn,
 )
 from app.agent.api.loaders import _update_governed_state_post_graph
 from app.agent.api.routes import chat
@@ -78,6 +79,62 @@ def test_build_governed_graph_input_maps_live_session_state_once() -> None:
 def test_governed_graph_input_mapping_is_not_redeclared_in_json_or_sse_callers() -> None:
     assert "GraphState(" not in inspect.getsource(chat)
     assert "GraphState(" not in inspect.getsource(streaming)
+
+
+@pytest.mark.asyncio
+async def test_governed_runtime_uses_async_graph_provider_for_streaming() -> None:
+    class FakeAsyncGraph:
+        graph_input: GraphState | None = None
+        config: dict[str, object] | None = None
+        stream_mode: list[str] | None = None
+
+        async def astream(self, graph_input, *, config, stream_mode):  # noqa: ANN001
+            self.graph_input = graph_input
+            self.config = config
+            self.stream_mode = stream_mode
+            yield (
+                "values",
+                GraphState(
+                    output_reply="Gern. Wenn du weiter machen möchtest, bin ich da.",
+                    output_response_class="conversational_answer",
+                ),
+            )
+
+    fake_graph = FakeAsyncGraph()
+    request = SimpleNamespace(session_id="case-stream", message="danke")
+    persisted_state = GovernedSessionState()
+
+    with (
+        patch(
+            "app.agent.api.governed_runtime._load_live_governed_state",
+            AsyncMock(return_value=GovernedSessionState()),
+        ),
+        patch(
+            "app.agent.api.governed_runtime.get_governed_graph",
+            AsyncMock(return_value=fake_graph),
+        ) as graph_provider,
+        patch(
+            "app.agent.api.governed_runtime._update_governed_state_post_graph",
+            AsyncMock(return_value=persisted_state),
+        ),
+        patch("app.agent.api.governed_runtime.emit_quality_trace"),
+    ):
+        result = await run_governed_graph_turn(
+            request=request,
+            current_user=_request_user(),
+            pre_gate_classification="DOMAIN_INQUIRY",
+            collect_progress=True,
+        )
+
+    graph_provider.assert_awaited_once()
+    assert fake_graph.graph_input is not None
+    assert fake_graph.graph_input.pending_message == "danke"
+    assert fake_graph.config == {
+        "configurable": {"thread_id": "sealai:tenant-1:user-1:case-stream"}
+    }
+    assert fake_graph.stream_mode == ["values", "updates", "custom"]
+    assert result.result_state.output_reply.startswith("Gern.")
+    assert result.persisted_state is persisted_state
 
 
 @pytest.mark.asyncio

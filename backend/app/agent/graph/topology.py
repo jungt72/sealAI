@@ -61,10 +61,11 @@ Architecture invariants enforced here:
       beyond max_cycles (Class B budget) or when Class A/C/D is reached.
 
 Usage:
-    from app.agent.graph.topology import build_governed_graph, GOVERNED_GRAPH
+    from app.agent.graph.topology import build_governed_graph, get_governed_graph
 
-    # Pre-compiled singleton (preferred for production)
-    result = await GOVERNED_GRAPH.ainvoke(state)
+    # Async runtime singleton (preferred for FastAPI production)
+    graph = await get_governed_graph()
+    result = await graph.ainvoke(state)
 
     # Or compile on demand (useful for testing)
     graph = build_governed_graph()
@@ -73,9 +74,11 @@ Usage:
 
 from __future__ import annotations
 
-import atexit
+import asyncio
+import inspect
 import logging
 import os
+from contextlib import suppress
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -108,7 +111,10 @@ log = logging.getLogger(__name__)
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 _FALSE_VALUES = {"0", "false", "no", "n", "off"}
-_DEFAULT_CHECKPOINTER_CONTEXT: Any = None
+_ASYNC_GRAPH_LOCK = asyncio.Lock()
+_ASYNC_GOVERNED_GRAPH: Any | None = None
+_ASYNC_CHECKPOINTER_CONTEXT: Any | None = None
+_ASYNC_CHECKPOINTER: Any | None = None
 
 
 def _env_bool(name: str) -> bool | None:
@@ -145,31 +151,20 @@ def _redis_checkpoint_url() -> str:
 
 
 def _build_default_checkpointer() -> Any | None:
-    """Create the production graph checkpointer with safe local fallbacks."""
+    """Create a sync-safe fallback checkpointer for direct graph imports/tests.
 
-    global _DEFAULT_CHECKPOINTER_CONTEXT
+    The FastAPI runtime uses ``get_governed_graph()`` below so native LangGraph
+    ``astream()/ainvoke()`` calls run against an async-capable checkpointer.
+    A sync RedisSaver would expose ``aget_tuple`` from the abstract base class
+    and crash async streams with ``NotImplementedError``.
+    """
+
     if not _native_checkpointing_enabled():
         return None
     redis_url = _redis_checkpoint_url()
     if redis_url:
-        try:
-            from langgraph.checkpoint.redis import RedisSaver  # type: ignore
-
-            manager = RedisSaver.from_conn_string(redis_url)
-            checkpointer = manager.__enter__() if hasattr(manager, "__enter__") else manager
-            if hasattr(checkpointer, "setup"):
-                checkpointer.setup()
-            if hasattr(manager, "__exit__"):
-                _DEFAULT_CHECKPOINTER_CONTEXT = manager
-                atexit.register(lambda: manager.__exit__(None, None, None))
-            log.info("[topology] LangGraph Redis checkpointer enabled")
-            return checkpointer
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "[topology] Redis checkpointer unavailable; falling back to in-memory checkpointer (%s: %s)",
-                type(exc).__name__,
-                exc,
-            )
+        log.info("[topology] Redis checkpointing deferred to async governed graph runtime")
+        return None
     try:
         from langgraph.checkpoint.memory import InMemorySaver  # type: ignore
 
@@ -178,6 +173,96 @@ def _build_default_checkpointer() -> Any | None:
     except Exception as exc:  # noqa: BLE001
         log.warning("[topology] LangGraph checkpointer disabled (%s: %s)", type(exc).__name__, exc)
         return None
+
+
+async def _setup_checkpointer_async(checkpointer: Any) -> None:
+    setup = getattr(checkpointer, "asetup", None) or getattr(checkpointer, "setup", None)
+    if setup is None:
+        return
+    result = setup()
+    if inspect.isawaitable(result):
+        await result
+
+
+async def _build_async_default_checkpointer() -> Any | None:
+    """Create the production async checkpointer with safe local fallbacks."""
+
+    global _ASYNC_CHECKPOINTER_CONTEXT, _ASYNC_CHECKPOINTER
+    if not _native_checkpointing_enabled():
+        return None
+
+    redis_url = _redis_checkpoint_url()
+    if redis_url:
+        manager: Any | None = None
+        try:
+            try:
+                from langgraph.checkpoint.redis.aio import AsyncRedisSaver  # type: ignore
+            except Exception:  # noqa: BLE001
+                from langgraph.checkpoint.redis import AsyncRedisSaver  # type: ignore
+
+            manager = AsyncRedisSaver.from_conn_string(redis_url)
+            checkpointer = (
+                await manager.__aenter__() if hasattr(manager, "__aenter__") else manager
+            )
+            await _setup_checkpointer_async(checkpointer)
+            if hasattr(manager, "__aexit__"):
+                _ASYNC_CHECKPOINTER_CONTEXT = manager
+            _ASYNC_CHECKPOINTER = checkpointer
+            log.info("[topology] LangGraph async Redis checkpointer enabled")
+            return checkpointer
+        except Exception as exc:  # noqa: BLE001
+            if manager is not None and hasattr(manager, "__aexit__"):
+                with suppress(Exception):
+                    await manager.__aexit__(None, None, None)
+            _ASYNC_CHECKPOINTER_CONTEXT = None
+            _ASYNC_CHECKPOINTER = None
+            log.warning(
+                "[topology] Async Redis checkpointer unavailable; falling back to in-memory checkpointer (%s: %s)",
+                type(exc).__name__,
+                exc,
+            )
+
+    try:
+        from langgraph.checkpoint.memory import InMemorySaver  # type: ignore
+
+        checkpointer = InMemorySaver()
+        _ASYNC_CHECKPOINTER = checkpointer
+        log.warning("[topology] LangGraph async runtime using in-memory checkpointer")
+        return checkpointer
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "[topology] Async LangGraph checkpointer disabled (%s: %s)",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
+async def get_governed_graph() -> Any:
+    """Return the async-runtime governed graph singleton."""
+
+    global _ASYNC_GOVERNED_GRAPH
+    if _ASYNC_GOVERNED_GRAPH is not None:
+        return _ASYNC_GOVERNED_GRAPH
+    async with _ASYNC_GRAPH_LOCK:
+        if _ASYNC_GOVERNED_GRAPH is None:
+            _ASYNC_GOVERNED_GRAPH = build_governed_graph(
+                checkpointer=await _build_async_default_checkpointer()
+            )
+        return _ASYNC_GOVERNED_GRAPH
+
+
+async def close_governed_graph_resources() -> None:
+    """Close async LangGraph resources during FastAPI shutdown."""
+
+    global _ASYNC_GOVERNED_GRAPH, _ASYNC_CHECKPOINTER_CONTEXT, _ASYNC_CHECKPOINTER
+    manager = _ASYNC_CHECKPOINTER_CONTEXT
+    _ASYNC_GOVERNED_GRAPH = None
+    _ASYNC_CHECKPOINTER_CONTEXT = None
+    _ASYNC_CHECKPOINTER = None
+    if manager is not None and hasattr(manager, "__aexit__"):
+        with suppress(Exception):
+            await manager.__aexit__(None, None, None)
 
 # ---------------------------------------------------------------------------
 # Node name constants

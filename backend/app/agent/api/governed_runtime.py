@@ -17,7 +17,7 @@ from app.agent.api.utils import (
     _with_governed_conversation_turn,
 )
 from app.agent.graph import GraphState
-from app.agent.graph.topology import GOVERNED_GRAPH
+from app.agent.graph.topology import get_governed_graph
 from app.agent.state.models import GovernedSessionState
 from app.core.config import settings
 from app.observability.langsmith import (
@@ -161,13 +161,14 @@ async def run_governed_graph_turn(
         stream_visible_answer_composer=collect_progress,
     )
     graph_config = _graph_thread_config(current_user=current_user, session_id=session_id)
+    governed_graph = await get_governed_graph()
 
     progress_events: list[Any] = []
     suppress_langgraph_child_traces = not settings.langsmith_trace_langgraph_children
     with langsmith_tracing_disabled(disabled=suppress_langgraph_child_traces):
-        if collect_progress and hasattr(GOVERNED_GRAPH, "astream"):
+        if collect_progress and hasattr(governed_graph, "astream"):
             latest_values: GraphState | dict[str, Any] = graph_input
-            async for event in GOVERNED_GRAPH.astream(
+            async for event in governed_graph.astream(
                 graph_input,
                 config=graph_config,
                 stream_mode=["values", "updates", "custom"],
@@ -187,7 +188,7 @@ async def run_governed_graph_turn(
         else:
             if _lg_trace_enabled():
                 _log.debug("[governed_graph] ainvoke session=%s", session_id)
-            raw_result = await GOVERNED_GRAPH.ainvoke(graph_input, config=graph_config)
+            raw_result = await governed_graph.ainvoke(graph_input, config=graph_config)
             result_state = _materialize_governed_graph_result(raw_result)
 
     persisted_state = await _update_governed_state_post_graph(
