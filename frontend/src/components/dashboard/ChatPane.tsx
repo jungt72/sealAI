@@ -267,10 +267,10 @@ export default function ChatPane({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-transparent">
-      <div data-testid="chat-scroll-region" className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div data-testid="chat-scroll-region" className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 sm:px-5">
         <div
           className={cn(
-            "mx-auto flex min-h-full w-full flex-col px-4 sm:px-5",
+            "mx-auto flex min-h-full w-full flex-col",
             isFreshStart ? "justify-center py-10" : "py-5",
           )}
           style={CHAT_SURFACE_STYLE}
