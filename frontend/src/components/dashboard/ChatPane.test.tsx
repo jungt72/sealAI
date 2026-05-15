@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChatPane from "./ChatPane";
 
@@ -29,6 +29,8 @@ const chatStoreMock = vi.hoisted(() => ({
   registerCallbacks: vi.fn(),
   setActiveCaseId: vi.fn(),
 }));
+
+let viewportScrollHeight = 1200;
 
 vi.mock("@/components/dashboard/ChatComposer", () => ({
   default: ({ externalValue, onSend, isLoading }: { externalValue?: string | null; onSend: (message: string) => void; isLoading: boolean }) => (
@@ -72,6 +74,10 @@ vi.mock("@/lib/store/chatStore", () => ({
 }));
 
 describe("ChatPane", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     agentStreamMockState.activeCaseId = "case-parameter";
     agentStreamMockState.messages = [];
@@ -80,12 +86,57 @@ describe("ChatPane", () => {
     agentStreamMockState.streamWorkspace = null;
     agentStreamMockState.isStreaming = false;
     agentStreamMockState.error = null;
+    viewportScrollHeight = 1200;
     agentStreamMockState.sendMessage.mockReset();
     agentStreamMockState.clearError.mockReset();
     workspaceStoreMock.setStreamWorkspace.mockReset();
     workspaceStoreMock.setActiveResponseClass.mockReset();
     chatStoreMock.registerCallbacks.mockReset();
     chatStoreMock.setActiveCaseId.mockReset();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      writable: true,
+      value: function scrollTo() {},
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(function scrollTo(options?: ScrollToOptions | number, y?: number) {
+      const nextTop = typeof options === "number" ? y ?? 0 : options?.top ?? this.scrollTop;
+      Object.defineProperty(this, "scrollTop", {
+        configurable: true,
+        writable: true,
+        value: nextTop,
+      });
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getBoundingClientRect() {
+      const element = this as HTMLElement;
+      const top = element.dataset.testid === "chat-scroll-region" ? 100 : element.dataset.latestUser ? 260 : 0;
+      return {
+        x: 0,
+        y: top,
+        top,
+        left: 0,
+        right: 800,
+        bottom: top + 48,
+        width: 800,
+        height: 48,
+        toJSON: () => ({}),
+      };
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return (this as HTMLElement).dataset.testid === "chat-scroll-region" ? 500 : 48;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return (this as HTMLElement).dataset.testid === "chat-scroll-region" ? viewportScrollHeight : 48;
+      },
+    });
     window.history.replaceState(null, "", "/dashboard/case-parameter");
     window.localStorage.clear();
   });
@@ -118,7 +169,7 @@ describe("ChatPane", () => {
     render(<ChatPane caseId="case-parameter" />);
 
     expect(chatStoreMock.registerCallbacks).toHaveBeenCalledWith({
-      sendMessage: agentStreamMockState.sendMessage,
+      sendMessage: expect.any(Function),
       startNewChat: expect.any(Function),
     });
     expect(chatStoreMock.setActiveCaseId).toHaveBeenCalledWith("case-parameter");
@@ -143,11 +194,67 @@ describe("ChatPane", () => {
     render(<ChatPane caseId="case-parameter" />);
 
     expect(screen.getByTestId("chat-scroll-region")).toHaveClass(
+      "chat-scroll-viewport",
       "min-h-0",
       "flex-1",
       "overflow-y-auto",
     );
+    expect(screen.getByTestId("chat-scroll-region")).toHaveAttribute("role", "log");
+    expect(screen.getByTestId("chat-scroll-region")).toHaveAttribute("aria-busy", "false");
     expect(screen.getByTestId("chat-composer-dock")).toHaveClass("shrink-0");
+  });
+
+  it("anchors the latest user turn near the viewport top and freezes streaming growth", () => {
+    agentStreamMockState.activeCaseId = "case-parameter";
+    agentStreamMockState.messages = [{ role: "assistant", content: "Vorherige Antwort", timestamp: "1" }];
+
+    const { rerender } = render(<ChatPane caseId="case-parameter" />);
+    const callbacks = chatStoreMock.registerCallbacks.mock.calls.at(-1)?.[0] as { sendMessage: (message: string) => void };
+    callbacks.sendMessage("Bitte generiere eine lange Antwort");
+
+    agentStreamMockState.messages = [
+      { role: "assistant", content: "Vorherige Antwort", timestamp: "1" },
+      { role: "user", content: "Bitte generiere eine lange Antwort", timestamp: "2" },
+    ];
+    agentStreamMockState.isStreaming = true;
+    agentStreamMockState.streamingText = "Der erste Stream-Chunk";
+    rerender(<ChatPane caseId="case-parameter" />);
+
+    const viewport = screen.getByTestId("chat-scroll-region") as HTMLElement;
+    const anchoredTop = viewport.scrollTop;
+
+    expect(anchoredTop).toBe(1352);
+
+    viewportScrollHeight = 2400;
+    agentStreamMockState.streamingText = "Der erste Stream-Chunk mit deutlich mehr Text";
+    rerender(<ChatPane caseId="case-parameter" />);
+
+    expect(viewport.scrollTop).toBe(anchoredTop);
+    expect(screen.getByRole("button", { name: "Zum aktuellen Ende" })).toBeInTheDocument();
+  });
+
+  it("resumes live-follow only after the user explicitly jumps to the current end", async () => {
+    const user = userEvent.setup();
+    agentStreamMockState.activeCaseId = "case-parameter";
+
+    const { rerender } = render(<ChatPane caseId="case-parameter" />);
+    const callbacks = chatStoreMock.registerCallbacks.mock.calls.at(-1)?.[0] as { sendMessage: (message: string) => void };
+    callbacks.sendMessage("Bitte vergleiche PTFE und NBR");
+
+    agentStreamMockState.messages = [
+      { role: "user", content: "Bitte vergleiche PTFE und NBR", timestamp: "1" },
+    ];
+    agentStreamMockState.isStreaming = true;
+    agentStreamMockState.streamingText = "Antwort läuft";
+    viewportScrollHeight = 2400;
+    rerender(<ChatPane caseId="case-parameter" />);
+
+    const viewport = screen.getByTestId("chat-scroll-region") as HTMLElement;
+
+    expect(screen.getByRole("button", { name: "Zum aktuellen Ende" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Zum aktuellen Ende" }));
+
+    expect(viewport.scrollTop).toBe(2400);
   });
 
   it("renders a restrained streaming placeholder before text chunks arrive", () => {

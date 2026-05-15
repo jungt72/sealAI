@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
 import {
+  ArrowDown,
   ArrowLeftRight,
   Bot,
   FileSearch,
@@ -17,12 +18,30 @@ import type { LucideIcon } from "lucide-react";
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { useAgentStream } from "@/hooks/useAgentStream";
+import {
+  isAtLiveBottom,
+  isProgrammaticScroll,
+  nextModeAfterUserScroll,
+  shouldShowJumpToLive,
+  type ChatScrollMode,
+} from "@/lib/chatScroll";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/store/chatStore";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 
 const CHAT_SURFACE_MAX_WIDTH = 800;
 const CHAT_SURFACE_STYLE: React.CSSProperties = { maxWidth: CHAT_SURFACE_MAX_WIDTH };
+const SUBMIT_ANCHOR_OFFSET_PX = 8;
+const PROGRAMMATIC_SCROLL_GUARD_MS = 180;
+const CHAT_NAVIGATION_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+  " ",
+]);
 
 type StarterPrompt = {
   label: string;
@@ -107,7 +126,18 @@ function firstNameFromSession(session: Session | null | undefined): string | nul
   return first || null;
 }
 
-function MessageBubble({
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function messageIdentity(message: { role: string; content: string; timestamp?: string }, index: number): string {
+  return `${message.role}:${message.timestamp ?? index}:${message.content.slice(0, 80)}`;
+}
+
+const MessageBubble = React.memo(function MessageBubble({
   role,
   content,
   isStreaming = false,
@@ -147,7 +177,7 @@ function MessageBubble({
       )}
     </div>
   );
-}
+});
 
 function EmptyChatStart({
   userName,
@@ -224,16 +254,161 @@ export default function ChatPane({
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const registerChatCallbacks = useChatStore((s) => s.registerCallbacks);
   const setChatActiveCaseId = useChatStore((s) => s.setActiveCaseId);
-  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const messageFlowRef = useRef<HTMLDivElement>(null);
+  const latestUserRef = useRef<HTMLDivElement | null>(null);
+  const scrollModeRef = useRef<ChatScrollMode>("following-bottom");
+  const pendingSubmitAnchorRef = useRef(false);
+  const frozenScrollTopRef = useRef<number | null>(null);
+  const lastAnchoredUserKeyRef = useRef<string | null>(null);
+  const programmaticScrollUntilRef = useRef(0);
+  const hasConversationRef = useRef(false);
+  const showJumpToLiveRef = useRef(false);
+  const [showJumpToLiveButton, setShowJumpToLiveButton] = useState(false);
+
+  const hasConversation = messages.length > 0 || Boolean(streamingText);
+  const currentCaseId = activeCaseId || caseId;
+  const isFreshStart = !hasConversation && !currentCaseId;
+  const userFirstName = firstNameFromSession(session);
+  const latestUserIndex = messages.reduce((latest, message, index) => (
+    message.role === "user" ? index : latest
+  ), -1);
+  const latestUserKey = latestUserIndex >= 0 ? messageIdentity(messages[latestUserIndex], latestUserIndex) : null;
+
+  const setJumpToLiveVisible = useCallback((nextVisible: boolean) => {
+    if (showJumpToLiveRef.current === nextVisible) {
+      return;
+    }
+    showJumpToLiveRef.current = nextVisible;
+    setShowJumpToLiveButton(nextVisible);
+  }, []);
+
+  const scheduleJumpToLiveVisible = useCallback((nextVisible: boolean) => {
+    window.requestAnimationFrame(() => {
+      setJumpToLiveVisible(nextVisible);
+    });
+  }, [setJumpToLiveVisible]);
+
+  const updateJumpToLiveState = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      scheduleJumpToLiveVisible(false);
+      return;
+    }
+    scheduleJumpToLiveVisible(shouldShowJumpToLive(hasConversationRef.current, viewport));
+  }, [scheduleJumpToLiveVisible]);
+
+  const runProgrammaticScroll = useCallback((scrollAction: () => void) => {
+    programmaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_GUARD_MS;
+    scrollAction();
+    window.requestAnimationFrame(updateJumpToLiveState);
+  }, [updateJumpToLiveState]);
+
+  const alignLatestUserToTop = useCallback(() => {
+    const viewport = viewportRef.current;
+    const latestUser = latestUserRef.current;
+    if (!viewport || !latestUser) {
+      return;
+    }
+
+    const viewportBox = viewport.getBoundingClientRect();
+    const userBox = latestUser.getBoundingClientRect();
+    const nextTop = Math.max(
+      0,
+      viewport.scrollTop + userBox.top - viewportBox.top - SUBMIT_ANCHOR_OFFSET_PX,
+    );
+
+    runProgrammaticScroll(() => {
+      viewport.scrollTo({ top: nextTop, behavior: "auto" });
+      frozenScrollTopRef.current = nextTop;
+    });
+  }, [runProgrammaticScroll]);
+
+  const scrollToLiveBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    const requestedBehavior = prefersReducedMotion() ? "auto" : behavior;
+    runProgrammaticScroll(() => {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: requestedBehavior });
+      frozenScrollTopRef.current = null;
+      scrollModeRef.current = "following-bottom";
+    });
+  }, [runProgrammaticScroll]);
+
+  const maintainScrollPosition = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    if (scrollModeRef.current === "frozen" && frozenScrollTopRef.current !== null) {
+      runProgrammaticScroll(() => {
+        viewport.scrollTop = frozenScrollTopRef.current ?? viewport.scrollTop;
+      });
+      return;
+    }
+
+    if (scrollModeRef.current === "following-bottom") {
+      scrollToLiveBottom("auto");
+      return;
+    }
+
+    updateJumpToLiveState();
+  }, [runProgrammaticScroll, scrollToLiveBottom, updateJumpToLiveState]);
+
+  const markUserScrollIntent = useCallback(() => {
+    if (isProgrammaticScroll(programmaticScrollUntilRef.current, Date.now())) {
+      return;
+    }
+    scrollModeRef.current = "user-browsing";
+    frozenScrollTopRef.current = null;
+  }, []);
+
+  const handleViewportScroll = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    if (isProgrammaticScroll(programmaticScrollUntilRef.current, Date.now())) {
+      updateJumpToLiveState();
+      return;
+    }
+
+    const atLiveBottom = isAtLiveBottom(viewport);
+    scrollModeRef.current = nextModeAfterUserScroll(atLiveBottom);
+    if (atLiveBottom) {
+      frozenScrollTopRef.current = null;
+    }
+    updateJumpToLiveState();
+  }, [updateJumpToLiveState]);
+
+  const handleViewportKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (CHAT_NAVIGATION_KEYS.has(event.key)) {
+      markUserScrollIntent();
+    }
+  }, [markUserScrollIntent]);
+
+  const handleSend = useCallback(async (message: string) => {
+    if (!message.trim() || isStreaming) {
+      return;
+    }
+    pendingSubmitAnchorRef.current = true;
+    scrollModeRef.current = "submit-anchor";
+    frozenScrollTopRef.current = null;
+    setJumpToLiveVisible(false);
+    await sendMessage(message);
+  }, [isStreaming, sendMessage, setJumpToLiveVisible]);
 
   useEffect(() => {
     registerChatCallbacks({
-      sendMessage,
+      sendMessage: handleSend,
       startNewChat: () => {
         window.location.href = "/dashboard/new";
       },
     });
-  }, [registerChatCallbacks, sendMessage]);
+  }, [handleSend, registerChatCallbacks]);
 
   useEffect(() => {
     setStreamWorkspace(streamWorkspace);
@@ -255,19 +430,75 @@ export default function ChatPane({
   }, [activeCaseId, caseId]);
 
   useEffect(() => {
-    if (typeof scrollAnchorRef.current?.scrollIntoView === "function") {
-      scrollAnchorRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
+    hasConversationRef.current = hasConversation;
+    if (!hasConversation) {
+      scheduleJumpToLiveVisible(false);
+      scrollModeRef.current = "following-bottom";
+      pendingSubmitAnchorRef.current = false;
+      frozenScrollTopRef.current = null;
+      lastAnchoredUserKeyRef.current = null;
     }
-  }, [messages, streamingText, isStreaming, error]);
+  }, [hasConversation, scheduleJumpToLiveVisible]);
 
-  const hasConversation = messages.length > 0 || Boolean(streamingText);
-  const currentCaseId = activeCaseId || caseId;
-  const isFreshStart = !hasConversation && !currentCaseId;
-  const userFirstName = firstNameFromSession(session);
+  useLayoutEffect(() => {
+    hasConversationRef.current = hasConversation;
+
+    if (isFreshStart) {
+      return;
+    }
+
+    if (pendingSubmitAnchorRef.current && latestUserKey && latestUserKey !== lastAnchoredUserKeyRef.current) {
+      alignLatestUserToTop();
+      pendingSubmitAnchorRef.current = false;
+      lastAnchoredUserKeyRef.current = latestUserKey;
+      scrollModeRef.current = "frozen";
+      return;
+    }
+
+    maintainScrollPosition();
+  }, [
+    alignLatestUserToTop,
+    error,
+    hasConversation,
+    isFreshStart,
+    isStreaming,
+    latestUserKey,
+    maintainScrollPosition,
+    messages.length,
+    streamingStatusText,
+    streamingText,
+  ]);
+
+  useEffect(() => {
+    const flow = messageFlowRef.current;
+    if (!flow || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(() => {
+      maintainScrollPosition();
+    });
+    observer.observe(flow);
+    return () => observer.disconnect();
+  }, [hasConversation, maintainScrollPosition]);
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-transparent">
-      <div data-testid="chat-scroll-region" className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 sm:px-5">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-transparent">
+      <div
+        ref={viewportRef}
+        data-testid="chat-scroll-region"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-busy={isStreaming}
+        aria-label="Chatverlauf"
+        tabIndex={0}
+        onScroll={handleViewportScroll}
+        onWheel={markUserScrollIntent}
+        onTouchStart={markUserScrollIntent}
+        onKeyDown={handleViewportKeyDown}
+        className="chat-scroll-viewport custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 outline-none sm:px-5"
+      >
         <div
           className={cn(
             "mx-auto flex min-h-full w-full flex-col",
@@ -283,20 +514,29 @@ export default function ChatPane({
               isStreaming={isStreaming}
             />
           ) : (
-            <div className="flex flex-1 flex-col gap-5 pb-4">
+            <div ref={messageFlowRef} className="flex flex-1 flex-col gap-5 pb-4">
               {!hasConversation && currentCaseId ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">
                   Dieser Fall ist bereit. Stelle eine Frage oder ergänze Parameter.
                 </div>
               ) : null}
 
-              {messages.map((message, index) => (
-                <MessageBubble
-                  key={`${message.role}-${index}-${message.timestamp ?? ""}`}
-                  role={message.role}
-                  content={message.content}
-                />
-              ))}
+              {messages.map((message, index) => {
+                const isLatestUser = index === latestUserIndex;
+                return (
+                  <div
+                    key={messageIdentity(message, index)}
+                    ref={isLatestUser ? latestUserRef : undefined}
+                    data-role={message.role}
+                    data-latest-user={isLatestUser || undefined}
+                  >
+                    <MessageBubble
+                      role={message.role}
+                      content={message.content}
+                    />
+                  </div>
+                );
+              })}
 
               {streamingText && (
                 <MessageBubble role="assistant" content={streamingText} isStreaming />
@@ -326,11 +566,23 @@ export default function ChatPane({
                 </div>
               )}
 
-              <div ref={scrollAnchorRef} />
             </div>
           )}
         </div>
       </div>
+
+      {showJumpToLiveButton && !isFreshStart && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[88px] z-10 flex justify-center px-4">
+          <button
+            type="button"
+            onClick={() => scrollToLiveBottom("smooth")}
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-[#C9D6E6] bg-white px-4 py-2 text-sm font-semibold text-seal-blue shadow-[0_12px_32px_rgba(4,30,73,0.16)] transition-colors hover:border-seal-blue"
+          >
+            <ArrowDown size={16} />
+            Zum aktuellen Ende
+          </button>
+        </div>
+      )}
 
       {!isFreshStart && (
         <div data-testid="chat-composer-dock" className="shrink-0 bg-transparent px-4 pb-4 pt-2 sm:px-5">
