@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/store/chatStore";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 
+const CHAT_SURFACE_MAX_WIDTH = 800;
+const CHAT_SURFACE_STYLE: React.CSSProperties = { maxWidth: CHAT_SURFACE_MAX_WIDTH };
+
 interface ChatPaneProps {
   caseId?: string;
   initialGoal?: string;
@@ -118,12 +121,15 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-transparent">
       <div data-testid="chat-scroll-region" className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
-        <div className={cn(
-          "mx-auto flex min-h-full w-full max-w-[760px] flex-col px-4 sm:px-5",
-          isFreshStart ? "justify-center py-10" : "py-5",
-        )}>
+        <div
+          className={cn(
+            "mx-auto flex min-h-full w-full flex-col px-4 sm:px-5",
+            isFreshStart ? "justify-center py-10" : "py-5",
+          )}
+          style={CHAT_SURFACE_STYLE}
+        >
           {isFreshStart ? (
-            <div className="mx-auto w-full max-w-[720px]">
+            <div className="mx-auto w-full" style={CHAT_SURFACE_STYLE}>
               <ChatComposer
                 externalValue={initialGoal}
                 onSend={(message) => void sendMessage(message)}
@@ -183,7 +189,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
 
       {!isFreshStart && (
         <div data-testid="chat-composer-dock" className="shrink-0 bg-transparent px-4 pb-4 pt-2 sm:px-5">
-          <div className="mx-auto max-w-[760px]">
+          <div className="mx-auto w-full" style={CHAT_SURFACE_STYLE}>
             <ChatComposer
               externalValue={null}
               onSend={(message) => void sendMessage(message)}

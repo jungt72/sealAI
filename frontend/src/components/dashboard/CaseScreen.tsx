@@ -45,16 +45,6 @@ interface CaseScreenProps {
   initialRequestType?: string;
 }
 
-type TimelineStep = {
-  label: string;
-  status: "done" | "active" | "pending";
-};
-
-type ContextItem = {
-  label: string;
-  value: string;
-};
-
 type ParameterStatus = "confirmed" | "inferred" | "missing" | "optional";
 
 type ParameterTabId = "rotary" | "rwdr" | "hydraulic" | "static" | "other";
@@ -122,11 +112,35 @@ const WORKSPACE_MODE_OPTIONS: Array<{ id: WorkspaceMode; label: string }> = [
   { id: "knowledge_deep_dive", label: "Deep Dive" },
 ];
 
-const DEFAULT_WORKSPACE_WIDTH = 400;
+const DEFAULT_WORKSPACE_WIDTH = 560;
+const DEFAULT_WORKSPACE_RATIO = 0.5;
+const MIN_WORKSPACE_RATIO = 0.4;
+const MAX_WORKSPACE_RATIO = 0.6;
 const MIN_CHAT_WIDTH = 430;
-const MIN_WORKSPACE_WIDTH = 340;
-const MAX_WORKSPACE_WIDTH = 720;
-const RESIZER_WIDTH = 18;
+const MIN_WORKSPACE_WIDTH = 360;
+const RESIZER_WIDTH = 36;
+
+function getWorkspaceWidthBounds(containerWidth: number) {
+  const availableForWorkspace = Math.max(
+    MIN_WORKSPACE_WIDTH,
+    containerWidth - MIN_CHAT_WIDTH - RESIZER_WIDTH,
+  );
+  const minimum = Math.min(
+    availableForWorkspace,
+    Math.max(MIN_WORKSPACE_WIDTH, containerWidth * MIN_WORKSPACE_RATIO),
+  );
+  const maximum = Math.max(
+    minimum,
+    Math.min(availableForWorkspace, containerWidth * MAX_WORKSPACE_RATIO),
+  );
+
+  return { minimum, maximum };
+}
+
+function clampWorkspaceWidth(containerWidth: number, width: number) {
+  const { minimum, maximum } = getWorkspaceWidthBounds(containerWidth);
+  return Math.min(maximum, Math.max(minimum, width));
+}
 
 const CORE_PARAMETER_FIELDS: ParameterFieldDescriptor[] = [
   { key: "medium", label: "Medium" },
@@ -1453,101 +1467,6 @@ function WorkspaceModeContent({
   );
 }
 
-function deriveTimelineSteps(cockpit: ReturnType<typeof useCockpitData>): TimelineStep[] {
-  const coverage = cockpit?.coverage ?? 0;
-  const missingMandatory = cockpit?.view.readiness.missingMandatoryKeys.length ?? 0;
-  const rfqReady = cockpit?.view.readiness.isRfqReady ?? false;
-
-  let activeIndex = 0;
-  if (rfqReady) {
-    activeIndex = 4;
-  } else if (coverage >= 0.75) {
-    activeIndex = 3;
-  } else if (coverage >= 0.45 || missingMandatory > 0) {
-    activeIndex = 2;
-  } else if (coverage > 0.1 || cockpit?.view.path) {
-    activeIndex = 1;
-  }
-
-  return [
-    "Frage verstehen",
-    "Vergleich aufbauen",
-    "Unterschiede bewerten",
-    "RFQ-Briefing vorbereiten",
-  ].map((label, index) => ({
-    label,
-    status: index < activeIndex ? "done" : index === activeIndex ? "active" : "pending",
-  }));
-}
-
-function deriveContextItems({
-  cockpit,
-  caseId,
-}: {
-  cockpit: ReturnType<typeof useCockpitData>;
-  caseId?: string;
-}): ContextItem[] {
-  const sectionProperties = Object.values(cockpit?.view.sections ?? {}).flatMap(
-    (section) => section.properties,
-  );
-  const application =
-    sectionProperties.find((property) => property.key === "installation")?.value ??
-    sectionProperties.find((property) => property.key === "geometry_context")?.value;
-
-  return [
-    { label: "Case ID", value: caseId ?? "Noch nicht gebunden" },
-    { label: "Active Path", value: titleCase(cockpit?.view.path) },
-    { label: "Application", value: compactValue(application) },
-    {
-      label: "Medium",
-      value: cockpit?.mediumStatus.label || cockpit?.mediumStatus.rawMention || "Noch offen",
-    },
-    {
-      label: "Phase",
-      value: titleCase(
-        cockpit?.view.routingMetadata?.phase || cockpit?.view.readiness.status || "case_analysis",
-      ),
-    },
-    { label: "Completeness", value: `${Math.round((cockpit?.coverage ?? 0) * 100)}%` },
-  ];
-}
-
-function WorkspaceTimeline({ steps }: { steps: TimelineStep[] }) {
-  return (
-    <div className="border-b border-border bg-white px-5 py-4 sm:px-7">
-      <div className="custom-scrollbar flex items-center gap-3 overflow-x-auto pb-1">
-        {steps.map((step, index) => {
-          const isDone = step.status === "done";
-          const isActive = step.status === "active";
-
-          return (
-            <div key={step.label} className="flex min-w-fit flex-1 items-center gap-3">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={cn(
-                    "flex h-7 min-w-7 items-center justify-center rounded-full border text-[11px] font-semibold transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                    isActive && "border-seal-blue bg-seal-blue text-white shadow-[0_4px_18px_rgba(15,23,42,0.06)]",
-                    isDone && "border-[#16A34A] bg-[#16A34A] text-white",
-                    !isDone && !isActive && "border-[#D1D5DB] bg-[#F9FAFB] text-[#6B7280]",
-                  )}
-                >
-                  {index + 1}
-                </div>
-                <div className="min-w-0">
-                  <div className={cn("whitespace-nowrap text-sm font-medium", isActive ? "text-seal-blue" : "text-muted-foreground")}>
-                    {step.label}
-                  </div>
-                </div>
-              </div>
-              {index < steps.length - 1 && <div className="h-px min-w-[56px] flex-1 bg-border" aria-hidden="true" />}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function WorkspaceCard({
   title,
   eyebrow,
@@ -1683,13 +1602,13 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const activeResponseClass = useWorkspaceStore((state) => state.activeResponseClass);
   const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
   const setWorkspaceLoading = useWorkspaceStore((state) => state.setWorkspaceLoading);
-  const timelineSteps = useMemo(() => deriveTimelineSteps(cockpit), [cockpit]);
   const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(true);
   const [workspaceWidth, setWorkspaceWidth] = useState(DEFAULT_WORKSPACE_WIDTH);
   const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
+  const hasUserResizedWorkspaceRef = useRef(false);
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
@@ -1724,6 +1643,37 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   }, [caseId, setWorkspace, setWorkspaceLoading]);
 
   useEffect(() => {
+    if (!isWorkspaceOpen) {
+      return;
+    }
+
+    const layoutElement = layoutRef.current;
+    if (!layoutElement || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const syncWorkspaceWidth = () => {
+      const bounds = layoutElement.getBoundingClientRect();
+      if (bounds.width <= 0) {
+        return;
+      }
+
+      setWorkspaceWidth((currentWidth) => {
+        const preferredWidth = hasUserResizedWorkspaceRef.current
+          ? currentWidth
+          : bounds.width * DEFAULT_WORKSPACE_RATIO;
+        return clampWorkspaceWidth(bounds.width, preferredWidth);
+      });
+    };
+
+    syncWorkspaceWidth();
+    const observer = new ResizeObserver(syncWorkspaceWidth);
+    observer.observe(layoutElement);
+
+    return () => observer.disconnect();
+  }, [isWorkspaceOpen]);
+
+  useEffect(() => {
     if (!isResizingWorkspace) {
       return;
     }
@@ -1733,10 +1683,8 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
       if (!bounds) {
         return;
       }
-      const availableForWorkspace = bounds.width - MIN_CHAT_WIDTH - RESIZER_WIDTH;
-      const maxWidth = Math.max(MIN_WORKSPACE_WIDTH, Math.min(MAX_WORKSPACE_WIDTH, availableForWorkspace));
       const nextWidth = bounds.right - clientX - RESIZER_WIDTH / 2;
-      setWorkspaceWidth(Math.min(maxWidth, Math.max(MIN_WORKSPACE_WIDTH, nextWidth)));
+      setWorkspaceWidth(clampWorkspaceWidth(bounds.width, nextWidth));
     };
     const handlePointerMove = (event: PointerEvent) => {
       updateWorkspaceWidth(event.clientX);
@@ -1828,8 +1776,6 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-white lg:overflow-hidden">
-      <WorkspaceTimeline steps={timelineSteps} />
-
       <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">
         {!isWorkspaceOpen ? (
           <button
@@ -1863,49 +1809,56 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
 
           {isWorkspaceOpen ? (
             <>
-            <button
-              type="button"
-              aria-label="Arbeitsbereichbreite anpassen"
-              title="Arbeitsbereichbreite anpassen"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                setIsResizingWorkspace(true);
-              }}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                setIsResizingWorkspace(true);
-              }}
-              className={cn(
-                "relative hidden w-[18px] shrink-0 cursor-col-resize touch-none items-stretch justify-center outline-none lg:flex",
-                "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-[#C9D1DC]",
-                "before:shadow-[0_0_0_1px_rgba(255,255,255,0.85),-10px_0_24px_rgba(15,23,42,0.08),10px_0_24px_rgba(15,23,42,0.08)]",
-                isResizingWorkspace && "before:bg-seal-blue",
-              )}
-            >
-              <span className="sticky top-[50vh] flex h-16 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-[#C7D2E2] bg-white/90 shadow-[0_8px_24px_rgba(15,23,42,0.16)] transition-colors">
-                <span className="h-8 w-1 rounded-full bg-[#9AA9BC]" />
-              </span>
-            </button>
-            <aside className="relative min-h-0 w-full overflow-visible lg:w-[var(--workspace-width)] lg:shrink-0 lg:overflow-hidden">
               <button
                 type="button"
-                aria-label="Arbeitsbereich einklappen"
-                title="Arbeitsbereich einklappen"
-                onClick={() => setIsWorkspaceOpen(false)}
-                className="absolute right-4 top-4 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-seal-blue"
+                aria-label="Arbeitsbereichbreite anpassen"
+                title="Arbeitsbereichbreite anpassen"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  hasUserResizedWorkspaceRef.current = true;
+                  setIsResizingWorkspace(true);
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  hasUserResizedWorkspaceRef.current = true;
+                  setIsResizingWorkspace(true);
+                }}
+                className={cn(
+                  "relative hidden w-9 shrink-0 cursor-col-resize touch-none items-center justify-center outline-none lg:flex",
+                  "before:absolute before:inset-y-8 before:left-1/2 before:w-7 before:-translate-x-1/2 before:rounded-full before:bg-gradient-to-r before:from-transparent before:via-[#EFF4FA] before:to-transparent before:opacity-0 before:transition-opacity hover:before:opacity-100",
+                )}
               >
-                <PanelRightClose size={16} />
+                <span
+                  className={cn(
+                    "sticky top-[50vh] flex h-12 w-10 -translate-y-1/2 items-center justify-center gap-0.5 rounded-full border border-[#C7D2E2] bg-white text-seal-blue shadow-[0_14px_35px_rgba(4,30,73,0.20)] transition-all duration-150",
+                    "hover:border-seal-blue hover:shadow-[0_18px_42px_rgba(4,30,73,0.26)]",
+                    isResizingWorkspace && "border-seal-blue bg-[#F8FAFF] shadow-[0_18px_45px_rgba(4,30,73,0.30)]",
+                  )}
+                >
+                  <ChevronLeft size={14} strokeWidth={2.4} />
+                  <ChevronRight size={14} strokeWidth={2.4} />
+                </span>
               </button>
-              <div className="custom-scrollbar min-h-0 pr-12 lg:h-full lg:overflow-y-auto">
-                <SealCockpit
-                  data={cockpitViewModel}
-                  workspace={workspace}
-                  isParameterSubmitting={isParameterSubmitting}
-                  onParameterSubmit={handleParameterSubmit}
-                  preferredTab={canonicalCaseId ? null : "parameters"}
-                />
-              </div>
-            </aside>
+              <aside className="relative min-h-0 w-full overflow-visible lg:w-[var(--workspace-width)] lg:shrink-0 lg:overflow-hidden">
+                <button
+                  type="button"
+                  aria-label="Arbeitsbereich einklappen"
+                  title="Arbeitsbereich einklappen"
+                  onClick={() => setIsWorkspaceOpen(false)}
+                  className="absolute right-4 top-4 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-white text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-seal-blue"
+                >
+                  <PanelRightClose size={16} />
+                </button>
+                <div className="custom-scrollbar min-h-0 pr-12 lg:h-full lg:overflow-y-auto">
+                  <SealCockpit
+                    data={cockpitViewModel}
+                    workspace={workspace}
+                    isParameterSubmitting={isParameterSubmitting}
+                    onParameterSubmit={handleParameterSubmit}
+                    preferredTab={canonicalCaseId ? null : "parameters"}
+                  />
+                </div>
+              </aside>
             </>
           ) : null}
         </div>
