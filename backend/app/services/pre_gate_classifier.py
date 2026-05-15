@@ -246,6 +246,7 @@ _GREETING_PATTERNS = _compile(
 )
 
 _SOCIAL_CONVERSATION_PATTERNS = _compile(
+    r"^\s*(?:danke|vielen\s+dank|dankesch[oö]n|merci|thanks|thank\s+you)\b.*$",
     r"^\s*(?:hallo|hi|hey|moin|servus|grüß\s*(?:gott|dich)|gruss|gruß|"
     r"guten\s+\w+|gute[nr]?\s+\w+)(?:\s*(?:,|und)?\s*"
     r"(?:hallo|hi|hey|moin|servus|grüß\s*(?:gott|dich)|gruss|gruß|"

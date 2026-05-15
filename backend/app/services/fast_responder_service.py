@@ -179,6 +179,16 @@ def _asks_how_are_you(user_input: str) -> bool:
     )
 
 
+def _is_thanks(user_input: str) -> bool:
+    text = (user_input or "").strip().lower()
+    return bool(
+        re.search(
+            r"^\s*(danke|vielen\s+dank|dankesch[oö]n|merci|thanks|thank\s+you)\b",
+            text,
+        )
+    )
+
+
 def _fallback_response(
     classification: PreGateClassification,
     *,
@@ -187,6 +197,12 @@ def _fallback_response(
 ) -> str:
     english = language == "en"
     if classification is PreGateClassification.GREETING:
+        if _is_thanks(user_input):
+            return (
+                "You are welcome. I am here when you want to continue."
+                if english
+                else "Gern. Ich bin da, wenn du weiter machen möchtest."
+            )
         if _asks_how_are_you(user_input):
             return (
                 "Hello! I am ready and happy to help. How can I support you today?"

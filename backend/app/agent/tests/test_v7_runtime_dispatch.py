@@ -141,6 +141,40 @@ def _knowledge_response_with_fact_evidence(content: str) -> KnowledgeResponse:
     )
 
 
+def test_pre_gate_treats_thanks_with_tail_as_social_conversation() -> None:
+    result = PreGateClassifier().classify("danke nach dem fix")
+
+    assert result.classification is PreGateClassification.GREETING
+    assert result.reasoning == "deterministic_social_conversation"
+    assert result.escalate_to_graph is False
+
+
+@pytest.mark.asyncio
+async def test_active_case_social_thanks_uses_light_conversation_not_governed_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="danke nach dem fix", session_id="active-case"),
+        current_user=_user(),
+    )
+
+    assert dispatch.runtime_mode == "CONVERSATION"
+    assert dispatch.fast_response is None
+    assert dispatch.governed_state is state
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_ONLY
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+    assert dispatch.runtime_action.graph_allowed is False
+    assert dispatch.runtime_action.graph_invocation_skipped_reason == (
+        "light_runtime_does_not_require_governed_graph"
+    )
+    load_state.assert_awaited_once()
+
+
 def _process_decision(message: str, state: GovernedSessionState):
     pre_gate = PreGateClassifier().classify(message)
     return ConversationControllerV7().decide(

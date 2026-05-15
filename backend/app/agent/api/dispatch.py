@@ -443,6 +443,30 @@ async def _resolve_runtime_dispatch_impl(
                         reason="active_case_process_question_before_governed_graph",
                     ),
                 )
+        if (
+            pre_gate.classification is PreGateClassification.GREETING
+            and request.session_id
+            and _ENABLE_CONVERSATION_RUNTIME
+        ):
+            governed_state = await _load_existing_governed_state_for_v7(
+                request=request,
+                current_user=current_user,
+            )
+            if _governed_state_has_active_case(governed_state):
+                return RuntimeDispatchResolution(
+                    gate_route="CONVERSATION",
+                    gate_reason=f"active_case_social_turn:{pre_gate.reasoning}",
+                    runtime_mode="CONVERSATION",
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    governed_state=governed_state,
+                    conversation_route=conversation_route,
+                    runtime_action=_light_runtime_action(
+                        reason=f"active_case_social_turn:{pre_gate.reasoning}",
+                        decision_source="pre_gate_active_case_social_turn",
+                    ),
+                )
         if pre_gate.classification in FastResponderService.allowed_classifications:
             if (
                 _FORCE_LLM_FAST_RESPONDER
