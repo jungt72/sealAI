@@ -96,8 +96,8 @@ describe("ChatPane", () => {
 
     render(<ChatPane />);
 
-    expect(screen.getByText("Hallo Thorsten")).toBeInTheDocument();
-    expect(screen.getByText("Schön, dass du wieder hier bist")).toBeInTheDocument();
+    expect(screen.getByText("Hallo Thorsten,")).toBeInTheDocument();
+    expect(screen.getByText("schön, dass du wieder hier bist")).toBeInTheDocument();
     expect(screen.getByText("Womit fangen wir an?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ChatComposer" })).toBeInTheDocument();
     expect(screen.queryByText(/Governed RFQ Qualification/i)).not.toBeInTheDocument();

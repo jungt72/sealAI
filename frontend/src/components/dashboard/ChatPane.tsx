@@ -164,10 +164,10 @@ function EmptyChatStart({
     <div className="mx-auto flex w-full max-w-[800px] flex-col items-center">
       <div className="mb-8 w-full">
         <p className="text-[22px] font-medium leading-tight text-seal-blue">
-          {userName ? `Hallo ${userName}` : "Hallo"}
+          {userName ? `Hallo ${userName},` : "Hallo,"}
         </p>
         <p className="mt-1 text-[22px] font-medium leading-tight text-seal-blue">
-          Schön, dass du wieder hier bist
+          schön, dass du wieder hier bist
         </p>
         <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
           Womit fangen wir an?
@@ -190,7 +190,7 @@ function EmptyChatStart({
             type="button"
             disabled={isStreaming}
             onClick={() => onSend(starter.prompt)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-transparent bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_0_rgba(15,23,42,0.04)] transition-colors hover:border-[#D7E0EC] hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#E0E7F1] bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-[#C9D6E6] hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
           >
             <starter.icon size={17} />
             <span>{starter.label}</span>
