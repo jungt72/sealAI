@@ -67,6 +67,7 @@ interface ChatPaneProps {
   caseId?: string;
   initialGoal?: string;
   onCaseBound?: (caseId: string) => void;
+  onNoCaseTurn?: () => void;
   onTurnComplete?: (caseId: string) => void;
 }
 
@@ -200,7 +201,13 @@ function EmptyChatStart({
   );
 }
 
-export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnComplete }: ChatPaneProps) {
+export default function ChatPane({
+  caseId,
+  initialGoal,
+  onCaseBound,
+  onNoCaseTurn,
+  onTurnComplete,
+}: ChatPaneProps) {
   const { data: session } = useSession();
   const {
     activeCaseId,
@@ -212,7 +219,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
     error,
     sendMessage,
     clearError,
-  } = useAgentStream({ initialCaseId: caseId, onCaseBound, onTurnComplete });
+  } = useAgentStream({ initialCaseId: caseId, onCaseBound, onNoCaseTurn, onTurnComplete });
   const setStreamWorkspace = useWorkspaceStore((s) => s.setStreamWorkspace);
   const setActiveResponseClass = useWorkspaceStore((s) => s.setActiveResponseClass);
   const registerChatCallbacks = useChatStore((s) => s.registerCallbacks);

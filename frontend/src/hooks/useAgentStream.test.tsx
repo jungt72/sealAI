@@ -203,6 +203,7 @@ describe("useAgentStream", () => {
 
   it("renders no-case fast responses without binding a case or cockpit workspace", async () => {
     const onCaseBound = vi.fn();
+    const onNoCaseTurn = vi.fn();
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
       handlers.onmessage?.({
@@ -217,7 +218,7 @@ describe("useAgentStream", () => {
       handlers.onclose?.();
     });
 
-    const { result } = renderHook(() => useAgentStream({ onCaseBound }));
+    const { result } = renderHook(() => useAgentStream({ onCaseBound, onNoCaseTurn }));
 
     await act(async () => {
       await result.current.sendMessage("Hallo");
@@ -230,6 +231,7 @@ describe("useAgentStream", () => {
     expect(result.current.activeCaseId).toBeNull();
     expect(result.current.streamWorkspace).toBeNull();
     expect(onCaseBound).not.toHaveBeenCalled();
+    expect(onNoCaseTurn).toHaveBeenCalledTimes(1);
     expect(result.current.messages).toEqual([
       expect.objectContaining({ role: "user", content: "Hallo" }),
       expect.objectContaining({ role: "assistant", content: "Hallo! Schön, dass du da bist." }),

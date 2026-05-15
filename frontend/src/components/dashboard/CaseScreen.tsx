@@ -1780,6 +1780,9 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
     },
     [handleWorkspaceRefresh],
   );
+  const handleNoCaseTurn = useCallback(() => {
+    setIsWorkspaceOpen(false);
+  }, []);
   const handleTurnComplete = useCallback(
     (nextCaseId: string) => {
       void handleWorkspaceRefresh(nextCaseId);
@@ -1816,6 +1819,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
               caseId={caseId}
               initialGoal={initialGoal}
               onCaseBound={handleCaseBound}
+              onNoCaseTurn={handleNoCaseTurn}
               onTurnComplete={handleTurnComplete}
             />
           </section>

@@ -42,6 +42,7 @@ function streamProgressText(data: unknown): string {
 type UseAgentStreamOptions = {
   initialCaseId?: string;
   onCaseBound?: (caseId: string) => void;
+  onNoCaseTurn?: () => void;
   onTurnComplete?: (caseId: string) => void;
 };
 
@@ -159,7 +160,7 @@ function userVisibleStreamError(value: unknown, status?: number): string {
 }
 
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
-  const { initialCaseId, onCaseBound, onTurnComplete } = options;
+  const { initialCaseId, onCaseBound, onNoCaseTurn, onTurnComplete } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const [streamingStatusText, setStreamingStatusText] = useState("");
@@ -428,6 +429,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
               if (stateUpdate.noCaseCreated || typeof stateUpdate.caseId !== "string") {
                 noCaseTurnRef.current = Boolean(stateUpdate.noCaseCreated);
+                onNoCaseTurn?.();
                 return;
               }
 
@@ -475,7 +477,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
         setIsStreaming(false);
       }
     },
-    [activeCaseId, finalizeAssistantTurn, isStreaming, onCaseBound, syncHistory, trackCaseBound],
+    [activeCaseId, finalizeAssistantTurn, isStreaming, onCaseBound, onNoCaseTurn, syncHistory, trackCaseBound],
   );
 
   const cancelStream = useCallback(() => {
