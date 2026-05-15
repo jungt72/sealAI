@@ -45,8 +45,8 @@ describe("DashboardShell", () => {
 
     expect(screen.getByText("SEALING")).toBeInTheDocument();
     expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
-    expect(screen.getByText(/Arbeitsraum:/)).toBeInTheDocument();
-    expect(screen.getByText("Anfragebasis")).toBeInTheDocument();
+    expect(screen.queryByText(/Arbeitsraum:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Governed")).not.toBeInTheDocument();
     expect(screen.queryByText(/Suche-ID:/)).not.toBeInTheDocument();
     expect(screen.queryByText("Knowledge Modus")).not.toBeInTheDocument();
   });

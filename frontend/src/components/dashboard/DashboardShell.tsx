@@ -418,7 +418,7 @@ export default function DashboardShell({
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-border/70 bg-white px-5 sm:px-7">
+        <header className="flex h-[72px] shrink-0 items-center justify-between bg-white px-5 sm:px-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <div className="text-[18px] font-semibold tracking-tight text-seal-blue">SEALING</div>
@@ -427,12 +427,6 @@ export default function DashboardShell({
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
-            <div className="hidden text-sm text-muted-foreground md:block">
-              Arbeitsraum: <span className="font-semibold text-seal-blue">Anfragebasis</span>
-            </div>
-            <span className="inline-flex items-center rounded-full border border-[#D8EEDB] bg-[#EEF9F0] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2F8F46]">
-              Governed
-            </span>
             <button
               type="button"
               title="Benachrichtigungen"
