@@ -212,7 +212,7 @@ export default function DashboardShell({
     <div className="relative flex h-screen w-full overflow-hidden bg-white font-sans text-foreground">
       <aside
         className={cn(
-          "relative z-40 flex h-full shrink-0 flex-col border-r border-border/80 bg-sidebar text-muted-foreground transition-[width] duration-200 ease-out",
+          "relative z-40 flex h-full shrink-0 flex-col border-r border-seal-blue bg-seal-blue text-white transition-[width] duration-200 ease-out",
           isHistoryOpen ? "w-[304px]" : "w-[72px]",
         )}
       >
@@ -223,7 +223,7 @@ export default function DashboardShell({
             aria-expanded={isHistoryOpen}
             title={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             onClick={() => setIsHistoryOpen((current) => !current)}
-            className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
+            className="grid h-10 w-10 place-items-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white"
           >
             <Menu size={20} />
           </button>
@@ -233,7 +233,7 @@ export default function DashboardShell({
               aria-label="Chats durchsuchen"
               title="Chats durchsuchen"
               onClick={() => setIsHistorySearchOpen((current) => !current)}
-              className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
+              className="grid h-10 w-10 place-items-center rounded-full text-white/90 transition-colors hover:bg-white/10 hover:text-white"
             >
               <Search size={20} />
             </button>
@@ -260,8 +260,8 @@ export default function DashboardShell({
                       className={cn(
                         "flex h-11 items-center gap-4 rounded-full border border-transparent px-4 text-[15px] font-medium transition-colors",
                         isActive
-                          ? "border-border bg-white text-seal-blue shadow-sm"
-                          : "text-muted-foreground hover:bg-white hover:text-seal-blue",
+                          ? "border-white/20 bg-white/15 text-white shadow-sm"
+                          : "text-white/80 hover:bg-white/10 hover:text-white",
                       )}
                     >
                       <item.icon size={20} />
@@ -272,9 +272,9 @@ export default function DashboardShell({
               </div>
 
               <div className="mt-7">
-                <div className="mb-2 flex items-center justify-between px-3 text-[14px] font-semibold text-foreground">
+                <div className="mb-2 flex items-center justify-between px-3 text-[14px] font-semibold text-white">
                   <span>Bereiche</span>
-                  <ChevronRight size={16} className="text-muted-foreground" />
+                  <ChevronRight size={16} className="text-white/65" />
                 </div>
                 <div className="space-y-1">
                   {WORKSPACE_ITEMS.map((item) => {
@@ -286,8 +286,8 @@ export default function DashboardShell({
                         className={cn(
                           "flex h-10 items-center gap-4 rounded-full border border-transparent px-4 text-[14px] font-medium transition-colors",
                           isActive
-                            ? "border-border bg-white text-seal-blue shadow-sm"
-                            : "text-muted-foreground hover:bg-white hover:text-seal-blue",
+                            ? "border-white/20 bg-white/15 text-white shadow-sm"
+                            : "text-white/80 hover:bg-white/10 hover:text-white",
                         )}
                       >
                         <item.icon size={18} />
@@ -299,7 +299,7 @@ export default function DashboardShell({
               </div>
             </nav>
 
-            <div className="mb-2 px-6 text-[14px] font-semibold text-foreground">
+            <div className="mb-2 px-6 text-[14px] font-semibold text-white">
               Chats
             </div>
 
@@ -320,7 +320,7 @@ export default function DashboardShell({
 
             <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-4">
               {historyLoading ? (
-                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-muted-foreground">
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-white/70">
                   Lade Gespräche...
                 </div>
               ) : historyError ? (
@@ -328,11 +328,11 @@ export default function DashboardShell({
                   {historyError}
                 </div>
               ) : historyItems.length === 0 ? (
-                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-muted-foreground">
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-white/70">
                   Noch keine gespeicherten Chats.
                 </div>
               ) : visibleHistoryItems.length === 0 ? (
-                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-muted-foreground">
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-white/70">
                   Kein passender Chat.
                 </div>
               ) : (
@@ -349,8 +349,8 @@ export default function DashboardShell({
                         className={cn(
                           "block rounded-full border border-transparent px-3 py-2 text-[14px] font-medium leading-6 transition-colors",
                           isActive
-                            ? "border-border bg-white text-seal-blue shadow-sm"
-                            : "text-muted-foreground hover:bg-white hover:text-seal-blue",
+                            ? "border-white/20 bg-white/15 text-white shadow-sm"
+                            : "text-white/75 hover:bg-white/10 hover:text-white",
                         )}
                       >
                         <span className="block truncate">{item.title}</span>
@@ -365,7 +365,7 @@ export default function DashboardShell({
               <div className="space-y-1">
                 <Link
                   href="/dashboard/seo"
-                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
+                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   <Activity size={18} />
                   <span>Aktivitäten</span>
@@ -374,15 +374,15 @@ export default function DashboardShell({
                   type="button"
                   aria-label="Einstellungen"
                   title="Einstellungen"
-                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
+                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   <Settings size={18} />
                   <span>Einstellungen & Hilfe</span>
                 </button>
-                <LogoutButton className="rounded-full px-4 text-muted-foreground hover:bg-white hover:text-red-600" />
+                <LogoutButton className="rounded-full px-4 !text-white/80 hover:!bg-white/10 hover:!text-white" />
               </div>
-              <div className="mt-5 px-4 text-[12px] leading-5 text-muted-foreground">
-                <div className="font-medium text-seal-blue">Anfragebasis</div>
+              <div className="mt-5 px-4 text-[12px] leading-5 text-white/65">
+                <div className="font-medium text-white">Anfragebasis</div>
                 <div>Governed Workspace</div>
               </div>
             </div>
@@ -396,7 +396,7 @@ export default function DashboardShell({
                   href={item.href}
                   title={item.label}
                   aria-label={item.label}
-                  className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
+                  className="grid h-10 w-10 place-items-center rounded-full text-white/85 transition-colors hover:bg-white/10 hover:text-white"
                 >
                   <item.icon size={19} />
                 </Link>
@@ -407,11 +407,11 @@ export default function DashboardShell({
                 type="button"
                 aria-label="Einstellungen"
                 title="Einstellungen"
-                className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
+                className="grid h-10 w-10 place-items-center rounded-full text-white/85 transition-colors hover:bg-white/10 hover:text-white"
               >
                 <HelpCircle size={19} />
               </button>
-              <LogoutButton showLabel={false} className="h-10 w-10 rounded-full p-0" />
+              <LogoutButton showLabel={false} className="h-10 w-10 rounded-full p-0 !text-white/85 hover:!bg-white/10 hover:!text-white" />
             </div>
           </>
         )}

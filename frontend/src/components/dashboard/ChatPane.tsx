@@ -190,7 +190,7 @@ function EmptyChatStart({
             type="button"
             disabled={isStreaming}
             onClick={() => onSend(starter.prompt)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-seal-blue bg-seal-blue px-5 py-3 text-[15px] font-medium text-white shadow-[0_4px_12px_rgba(0,48,112,0.16)] transition-colors hover:border-[#052E6C] hover:bg-[#052E6C] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#E0E7F1] bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-[#C9D6E6] hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
           >
             <starter.icon size={17} />
             <span>{starter.label}</span>
