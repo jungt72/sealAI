@@ -169,7 +169,7 @@ function EmptyChatStart({
         <p className="mt-1 text-[22px] font-medium leading-tight text-seal-blue">
           Schön, dass du wieder hier bist
         </p>
-        <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-[#202124] sm:text-[52px]">
+        <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
           Womit fangen wir an?
         </h1>
       </div>
