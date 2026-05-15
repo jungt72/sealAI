@@ -164,10 +164,10 @@ function EmptyChatStart({
     <div className="mx-auto flex w-full max-w-[800px] flex-col items-center">
       <div className="mb-8 w-full">
         <p className="text-[22px] font-medium leading-tight text-seal-blue">
-          {userName ? `Hallo ${userName},` : "Hallo,"}
+          {userName ? `Hallo ${userName}` : "Hallo"}
         </p>
         <p className="mt-1 text-[22px] font-medium leading-tight text-seal-blue">
-          schön, dass du wieder hier bist
+          Schön, dass du wieder hier bist.
         </p>
         <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
           Womit fangen wir an?
