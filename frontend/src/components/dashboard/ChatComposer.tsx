@@ -122,7 +122,7 @@ export default function ChatComposer({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        "w-full border border-[#C9D1DC] bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)] transition-colors focus-within:border-seal-blue focus-within:shadow-[0_8px_24px_rgba(15,23,42,0.10)]",
+        "w-full border border-[#C9D1DC] bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)]",
         isHero ? "rounded-[28px] p-4" : "rounded-[16px] p-2",
       )}
     >
