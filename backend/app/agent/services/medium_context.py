@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.agent.domain.medium_registry import resolve_medium_entry
+from app.agent.domain.medium_registry import classify_medium_value, normalize_medium_lookup_key, resolve_medium_entry
 
 
 MediumContextStatus = Literal["unavailable", "available"]
@@ -194,6 +194,29 @@ _MEDIUM_LIBRARY: dict[str, dict[str, object]] = {
         ],
         "confidence": "medium",
     },
+    "hydraulikoel": {
+        "medium_label": "Hydrauliköl",
+        "summary": "Hydrauliköl ist ein ölhaltiges Druckübertragungs- und Schmiermedium, dessen Basisöl, Additivierung und Viskosität für Dichtungen früh geklärt werden müssen.",
+        "properties": [
+            "ölhaltig",
+            "schmierend",
+            "viskositätsabhängig",
+            "additivierungsabhängig",
+        ],
+        "challenges": [
+            "Basisöl und Additive sauber erfassen",
+            "Temperaturfenster und Druckspitzen getrennt betrachten",
+            "Dynamik, Reibung und Spaltmaß für die Dichtstelle klären",
+            "Verunreinigungen und Alterung des Mediums berücksichtigen",
+        ],
+        "followup_points": [
+            "Hydrauliköltyp",
+            "ISO-VG-Klasse",
+            "Temperatur",
+            "Druckspitzen",
+        ],
+        "confidence": "medium",
+    },
     "chemikalien": {
         "medium_label": "Chemikalien",
         "summary": "Chemikalien sind ein Sammelbegriff fuer stofflich sehr unterschiedliche Medien; fuer die Auslegung ist die genaue Zusammensetzung entscheidend.",
@@ -215,6 +238,52 @@ _MEDIUM_LIBRARY: dict[str, dict[str, object]] = {
             "Druck",
         ],
         "confidence": "low",
+    },
+    "saeure": {
+        "medium_label": "Säure",
+        "summary": "Säuren sind chemisch aggressive Medien, bei denen Stofftyp, Konzentration, Temperatur und Kontaktzeit die frühe technische Einordnung bestimmen.",
+        "properties": [
+            "chemisch aggressiv",
+            "konzentrationsabhängig",
+            "temperaturabhängig",
+            "korrosionsrelevant",
+        ],
+        "challenges": [
+            "Säuretyp und Konzentration konkret erfassen",
+            "Metallische Kontaktflächen, Federn und Gehäuse früh als Prüfpunkte führen",
+            "Reinigung, Verdünnung, Verunreinigungen und Stillstand berücksichtigen",
+            "Dokumentierte Medien- und Werkstoffdaten als Evidenz verwenden",
+        ],
+        "followup_points": [
+            "Säuretyp",
+            "Konzentration",
+            "Temperatur",
+            "Kontaktzeit",
+        ],
+        "confidence": "low",
+    },
+    "salzsaeure": {
+        "medium_label": "Salzsäure",
+        "summary": "Salzsäure ist eine chemisch aggressive Mineralsäure; für Dichtungen sind Konzentration, Temperatur, Kontaktzeit und angrenzende metallische Komponenten besonders früh zu klären.",
+        "properties": [
+            "chemisch aggressiv",
+            "chloridhaltig",
+            "konzentrationsabhängig",
+            "korrosionsrelevant",
+        ],
+        "challenges": [
+            "Konzentration und Temperatur bestimmen den Prüfrahmen wesentlich",
+            "Metallische Komponenten, Federn, Wellen und Gehäuse korrosionsbezogen prüfen",
+            "Dämpfe, Verdünnung, Spülung und Stillstand als Betriebszustände erfassen",
+            "Werkstoff- und Compliance-Aussagen nur mit dokumentierter Evidenz verwenden",
+        ],
+        "followup_points": [
+            "Salzsäure-Konzentration",
+            "Temperatur",
+            "Kontaktzeit",
+            "metallische Kontaktteile",
+        ],
+        "confidence": "medium",
     },
     "dampf": {
         "medium_label": "Dampf",
@@ -263,6 +332,40 @@ _FAMILY_LIBRARY: dict[str, dict[str, object]] = {
         "followup_points": ["Stofftyp", "Konzentration", "Temperatur"],
         "confidence": "low",
     },
+    "oelhaltig": {
+        "medium_label": "Ölhaltiges Medium",
+        "summary": "Ölhaltige Medien müssen über Öltyp, Basis, Additivierung und Viskosität eingegrenzt werden, bevor der Dichtungsfall belastbar bewertet wird.",
+        "properties": ["ölhaltig", "viskositätsabhängig", "temperaturabhängig"],
+        "challenges": [
+            "Öltyp und Additive klären",
+            "Temperatur und Druckspitzen getrennt betrachten",
+            "Dynamik, Reibung und Schmierung früh einordnen",
+        ],
+        "followup_points": ["Öltyp", "Viskosität", "Temperatur", "Druck"],
+        "confidence": "low",
+    },
+    "waessrig": {
+        "medium_label": "Wässriges Medium",
+        "summary": "Wässrige Medien variieren je nach Reinheit, Additiven, pH-Wert und Temperatur deutlich im technischen Dichtungsverhalten.",
+        "properties": ["wasserbasiert", "temperaturabhängig", "additivabhängig"],
+        "challenges": [
+            "Wasserqualität und Additive klären",
+            "Korrosion, Ablagerung und Reinigung berücksichtigen",
+        ],
+        "followup_points": ["Wasserqualität", "Additive", "Temperatur", "Druck"],
+        "confidence": "low",
+    },
+    "dampffoermig": {
+        "medium_label": "Dampfförmiges Medium",
+        "summary": "Dampfförmige Medien verlangen eine frühe Abgrenzung von Druck, Temperatur, Kondensation und thermischen Wechseln.",
+        "properties": ["gasförmig", "thermisch relevant", "druckabhängig"],
+        "challenges": [
+            "Sattdampf oder Heißdampf klären",
+            "Kondensation und Temperaturwechsel berücksichtigen",
+        ],
+        "followup_points": ["Dampfart", "Temperatur", "Druck", "Betriebswechsel"],
+        "confidence": "low",
+    },
 }
 
 
@@ -270,11 +373,14 @@ def normalize_medium_context_key(medium_label: str | None) -> str | None:
     text = str(medium_label or "").strip()
     if not text:
         return None
+    classification = classify_medium_value(text)
+    if classification.registry_key:
+        return classification.registry_key
     entry, _matched_alias = resolve_medium_entry(text)
     if entry is not None:
         return entry.registry_key
-    lowered = text.casefold()
-    return lowered if lowered in _MEDIUM_LIBRARY else None
+    normalized = normalize_medium_lookup_key(text)
+    return normalized if normalized in _MEDIUM_LIBRARY else None
 
 
 def build_medium_context(
@@ -282,14 +388,27 @@ def build_medium_context(
     *,
     medium_family: str | None = None,
 ) -> MediumContext:
+    classification = classify_medium_value(medium_label)
     key = normalize_medium_context_key(medium_label)
     payload = dict(_MEDIUM_LIBRARY.get(key) or {})
-    if not payload and medium_family:
-        payload = dict(_FAMILY_LIBRARY.get(str(medium_family).strip()) or {})
+    if not payload and key and key.startswith("hydraulic_fluid_"):
+        payload = dict(_MEDIUM_LIBRARY.get("hydraulikoel") or {})
+    family = str(medium_family or "").strip() or (
+        classification.family if classification.family != "unknown" else ""
+    )
+    if not payload and family:
+        payload = dict(_FAMILY_LIBRARY.get(family) or {})
     if not payload:
         return MediumContext()
 
-    resolved_label = str(payload.get("medium_label") or medium_label or "").strip()
+    if (
+        not _MEDIUM_LIBRARY.get(key)
+        and classification.status == "recognized"
+        and classification.canonical_label
+    ):
+        payload["medium_label"] = classification.canonical_label
+
+    resolved_label = str(payload.get("medium_label") or classification.canonical_label or medium_label or "").strip()
     if not resolved_label:
         return MediumContext()
 
@@ -311,7 +430,7 @@ def build_medium_context(
         source_type="llm_general_knowledge",
         not_for_release_decisions=True,
         disclaimer="Allgemeiner Medium-Kontext, nicht als Freigabe.",
-        source_medium_key=key or str(medium_family or "").strip() or None,
+        source_medium_key=key or family or None,
     )
 
 
@@ -322,14 +441,21 @@ def resolve_medium_context(
     previous: MediumContext | dict[str, object] | None = None,
 ) -> MediumContext:
     key = normalize_medium_context_key(medium_label)
-    effective_key = key or (str(medium_family or "").strip() or None)
+    classification = classify_medium_value(medium_label)
+    family = str(medium_family or "").strip() or (
+        classification.family if classification.family != "unknown" else ""
+    )
+    effective_key = key or (family or None)
     if not effective_key:
         return MediumContext()
 
     if isinstance(previous, MediumContext):
         previous_context = previous
     elif isinstance(previous, dict):
-        previous_context = MediumContext.model_validate(previous)
+        try:
+            previous_context = MediumContext.model_validate(previous)
+        except Exception:  # noqa: BLE001 - legacy projections can carry older context shapes
+            previous_context = MediumContext()
     else:
         previous_context = MediumContext()
 

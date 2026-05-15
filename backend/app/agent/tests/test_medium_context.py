@@ -30,6 +30,27 @@ def test_medium_context_can_fall_back_to_medium_family() -> None:
     assert context.source_medium_key == "chemisch_aggressiv"
 
 
+def test_medium_context_resolves_specific_acid_without_release_claims() -> None:
+    context = resolve_medium_context("Salzsäure")
+
+    assert context.status == "available"
+    assert context.medium_label == "Salzsäure"
+    assert context.source_medium_key == "salzsaeure"
+    assert "Salzsäure-Konzentration" in context.followup_points
+    dumped = " ".join(context.properties + context.challenges + context.followup_points).lower()
+    assert "freigabe" not in dumped
+    assert "geeignet" not in dumped
+
+
+def test_medium_context_resolves_hydraulic_grade_via_medium_family() -> None:
+    context = resolve_medium_context("HLP 46")
+
+    assert context.status == "available"
+    assert context.medium_label == "Hydrauliköl HLP 46"
+    assert context.source_medium_key == "hydraulic_fluid_hlp_46"
+    assert "ISO-VG-Klasse" in context.followup_points
+
+
 def test_medium_context_returns_unavailable_without_medium() -> None:
     context = resolve_medium_context(None)
 

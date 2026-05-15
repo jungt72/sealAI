@@ -790,21 +790,29 @@ def _resolve_selected_partner_id(
 
 
 def _current_medium_label(state: dict[str, Any], existing_case_state: dict[str, Any]) -> str | None:
-    state_medium_context = dict(state.get("medium_context") or {})
-    medium_context_label = str(state_medium_context.get("medium_label") or "").strip()
-    if medium_context_label:
-        return medium_context_label
-
     sealing_state = dict(state.get("sealing_state") or {})
     asserted_conditions = dict((sealing_state.get("asserted") or {}).get("operating_conditions") or {})
     normalized_parameters = dict((sealing_state.get("normalized") or {}).get("normalized_parameters") or {})
     working_profile = dict(state.get("working_profile") or {})
     existing_normalized = dict(existing_case_state.get("normalized_parameters") or {})
+
     for value in (
         working_profile.get("medium"),
         asserted_conditions.get("medium"),
         normalized_parameters.get("medium"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+
+    state_medium_context = dict(state.get("medium_context") or {})
+    medium_context_label = str(state_medium_context.get("medium_label") or "").strip()
+    if medium_context_label:
+        return medium_context_label
+
+    for value in (
         existing_normalized.get("medium"),
+        dict(existing_case_state.get("medium_context") or {}).get("medium_label"),
     ):
         text = str(value or "").strip()
         if text:
@@ -816,20 +824,27 @@ def _resolve_medium_context(
     *,
     state: dict[str, Any],
     existing_case_state: dict[str, Any],
+    medium_classification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     medium_label = _current_medium_label(state, existing_case_state)
     medium_key = normalize_medium_context_key(medium_label)
-    if not medium_key:
+    medium_family = str((medium_classification or {}).get("family") or "").strip()
+    if not medium_key and not medium_family:
         return {}
+    context_key = medium_key or medium_family
 
     existing_context = dict(existing_case_state.get("medium_context") or {})
     if (
         existing_context.get("status") == "available"
-        and existing_context.get("source_medium_key") == medium_key
+        and existing_context.get("source_medium_key") == context_key
     ):
         return existing_context
 
-    return resolve_medium_context(medium_label, previous=existing_context).model_dump()
+    return resolve_medium_context(
+        medium_label,
+        medium_family=medium_family or None,
+        previous=existing_context,
+    ).model_dump()
 
 
 def build_case_state(
@@ -871,7 +886,11 @@ def build_case_state(
                 "source_registry_key": decision.registry_key,
                 "followup_question": decision.followup_question,
             }
-    medium_context_bucket = _resolve_medium_context(state=state, existing_case_state=existing_case_state)
+    medium_context_bucket = _resolve_medium_context(
+        state=state,
+        existing_case_state=existing_case_state,
+        medium_classification=medium_classification_bucket,
+    )
     relevant_fact_cards = list(state.get("relevant_fact_cards") or [])
     cycle = ((state.get("sealing_state") or {}).get("cycle") or {})
     state_revision = int(existing_case_meta.get("state_revision", cycle.get("state_revision", 0)) or 0)

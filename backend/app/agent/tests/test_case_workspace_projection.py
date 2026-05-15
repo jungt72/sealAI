@@ -164,6 +164,42 @@ def test_workspace_projection_exposes_medium_context_as_separate_orienting_slice
     assert projection.medium_context.not_for_release_decisions is True
 
 
+def test_workspace_projection_derives_medium_context_for_existing_unavailable_state() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-medium-heal"},
+            "working_profile": {
+                "engineering_profile": {"medium": "Salzsäure"},
+                "completeness": {"missing_critical_parameters": []},
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 1},
+            "system": {
+                "governance_metadata": {"release_status": "precheck_only"},
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                },
+                "medium_classification": {
+                    "status": "unavailable",
+                    "family": "unknown",
+                    "confidence": "low",
+                },
+                "medium_context": {"status": "unavailable"},
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    assert projection.medium_classification.status == "recognized"
+    assert projection.medium_classification.canonical_label == "Salzsäure"
+    assert projection.medium_classification.family == "chemisch_aggressiv"
+    assert projection.medium_context.status == "available"
+    assert projection.medium_context.medium_label == "Salzsäure"
+    assert "Salzsäure-Konzentration" in projection.medium_context.followup_points
+
+
 def test_workspace_projection_exposes_v91_backend_owned_intelligence_tabs() -> None:
     projection = project_case_workspace(
         {

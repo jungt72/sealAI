@@ -51,7 +51,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         "Content-Type": "application/json",
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(includeWebResearch ? 60_000 : 25_000),
+      signal: AbortSignal.timeout(includeWebResearch ? 90_000 : 60_000),
     });
 
     if (!res.ok) {

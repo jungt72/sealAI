@@ -148,6 +148,16 @@ class TestSingleExtraction:
         assert result.medium_classification.family == "waessrig_salzhaltig"
 
     @pytest.mark.asyncio
+    async def test_pending_message_classifies_salzsaeure_as_aggressive_medium(self):
+        state = GraphState(pending_message="Medium ist Salzsäure 10 Prozent bei 60 Grad")
+        result = await normalize_node(state)
+        assert result.medium_capture.primary_raw_text.casefold() == "salzsäure"
+        assert result.medium_classification.status == "recognized"
+        assert result.medium_classification.canonical_label == "Salzsäure"
+        assert result.medium_classification.family == "chemisch_aggressiv"
+        assert result.medium_classification.mapping_confidence == "requires_confirmation"
+
+    @pytest.mark.asyncio
     async def test_pending_message_preserves_unclassified_medium_capture(self):
         state = GraphState(pending_message="medium ist XY-Compound 4711")
         result = await normalize_node(state)

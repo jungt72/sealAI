@@ -29,6 +29,7 @@ from app.agent.v91.intelligence_state import build_v91_workspace_projection
 from app.agent.services.material_intelligence import (
     build_material_intelligence_projection,
 )
+from app.agent.services.medium_context import resolve_medium_context
 from app.agent.domain.challenge_engine import build_challenge_state
 from app.agent.communication.rfq_intent import (
     RfqReadinessIntent,
@@ -2661,8 +2662,20 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         engineering_path=engineering_path,
         raw_text_candidates=raw_text_candidates,
     )
-    if not medium_classification and primary_raw_text:
-        derived_medium = classify_medium_value(str(primary_raw_text))
+    medium_text_candidate = (
+        str(primary_raw_text or "").strip()
+        or str(parameters.get("medium") or "").strip()
+        or str(routing_profile.get("medium") or "").strip()
+    )
+    medium_classification_status = str(medium_classification.get("status") or "").strip()
+    if (
+        medium_text_candidate
+        and (
+            not medium_classification
+            or medium_classification_status in {"", "unavailable", "mentioned_unclassified"}
+        )
+    ):
+        derived_medium = classify_medium_value(medium_text_candidate)
         medium_classification = {
             "canonical_label": derived_medium.canonical_label,
             "family": derived_medium.family,
@@ -2674,6 +2687,14 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             "source_registry_key": derived_medium.registry_key,
             "followup_question": derived_medium.followup_question,
         }
+    if str(medium_context.get("status") or "").strip() != "available":
+        context = resolve_medium_context(
+            medium_text_candidate or medium_classification.get("canonical_label"),
+            medium_family=medium_classification.get("family"),
+            previous=medium_context,
+        )
+        if context.status == "available":
+            medium_context = context.model_dump()
     medium_capture_summary = MediumCaptureSummary(
         raw_mentions=[
             str(item) for item in _ls(medium_capture.get("raw_mentions")) if item

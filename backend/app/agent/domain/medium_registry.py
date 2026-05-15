@@ -285,6 +285,16 @@ _REGISTRY: tuple[MediumRegistryEntry, ...] = (
         followup_question="Um welche Säure handelt es sich genau, in welcher Konzentration und bei welcher Temperatur?",
     ),
     MediumRegistryEntry(
+        registry_key="salzsaeure",
+        canonical_label="Salzsäure",
+        family="chemisch_aggressiv",
+        aliases=("salzsäure", "salzsaeure", "hcl", "hydrochloric acid"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="acid_specific_but_condition_dependent:Salzsäure — Konzentration, Temperatur und Verunreinigungen erforderlich",
+        followup_question="Welche Salzsäure-Konzentration liegt an, bei welcher Temperatur und mit welcher Kontaktzeit?",
+    ),
+    MediumRegistryEntry(
         registry_key="lauge",
         canonical_label="Lauge",
         family="chemisch_aggressiv",
@@ -309,7 +319,7 @@ _REGISTRY: tuple[MediumRegistryEntry, ...] = (
 _EXACT_ALIAS_MAP: dict[str, tuple[MediumRegistryEntry, str]] = {}
 for _entry in _REGISTRY:
     for _alias in _entry.aliases:
-        _EXACT_ALIAS_MAP[_normalize_lookup_token(_alias)] = (_entry, _alias)
+        _EXACT_ALIAS_MAP.setdefault(_normalize_lookup_token(_alias), (_entry, _alias))
     _EXACT_ALIAS_MAP.setdefault(
         _normalize_lookup_token(_entry.canonical_label),
         (_entry, _entry.canonical_label),
@@ -336,7 +346,7 @@ _FAMILY_HINTS: tuple[tuple[re.Pattern[str], MediumFamily, str], ...] = (
         "deterministic_family_hint:solution_like",
     ),
     (
-        re.compile(r"\b(?:saeurehaltig|säurehaltig|korrosiv)\b", re.IGNORECASE),
+        re.compile(r"\b(?:saeurehaltig|säurehaltig|salzsaeure|salzsäure|hcl|korrosiv)\b", re.IGNORECASE),
         "chemisch_aggressiv",
         "deterministic_family_hint:corrosive",
     ),
