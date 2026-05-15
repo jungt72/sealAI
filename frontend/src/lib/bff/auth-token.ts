@@ -6,6 +6,8 @@ import { BffError } from "./errors.ts";
 const ACCESS_TOKEN_REFRESH_BUFFER_MS = 30_000;
 const SESSION_COOKIE_CHUNK_SIZE = 3_800;
 const DEFAULT_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const AUTHJS_SESSION_COOKIE = "authjs.session-token";
+const LEGACY_NEXTAUTH_SESSION_COOKIE = "next-auth.session-token";
 
 type BffCookieOptions = {
   httpOnly: boolean;
@@ -65,7 +67,12 @@ function shouldUseSecureCookies(request: Request): boolean {
   const cookieNames = requestCookieNames(request);
   if (
     cookieNames.has("__Secure-authjs.session-token") ||
-    [...cookieNames].some((name) => name.startsWith("__Secure-authjs.session-token."))
+    cookieNames.has("__Secure-next-auth.session-token") ||
+    [...cookieNames].some(
+      (name) =>
+        name.startsWith("__Secure-authjs.session-token.") ||
+        name.startsWith("__Secure-next-auth.session-token."),
+    )
   ) {
     return true;
   }
@@ -79,7 +86,13 @@ function shouldUseSecureCookies(request: Request): boolean {
 }
 
 function sessionCookieName(secureCookie: boolean): string {
-  return secureCookie ? "__Secure-authjs.session-token" : "authjs.session-token";
+  return secureCookie ? `__Secure-${AUTHJS_SESSION_COOKIE}` : AUTHJS_SESSION_COOKIE;
+}
+
+function legacySessionCookieName(secureCookie: boolean): string {
+  return secureCookie
+    ? `__Secure-${LEGACY_NEXTAUTH_SESSION_COOKIE}`
+    : LEGACY_NEXTAUTH_SESSION_COOKIE;
 }
 
 function requestCookieNames(request: Request): Set<string> {
@@ -107,6 +120,45 @@ function chunkSessionCookie(cookieName: string, value: string): Array<{ name: st
     });
   }
   return chunks;
+}
+
+function hasCookieFamily(cookieNames: Set<string>, cookieName: string): boolean {
+  return cookieNames.has(cookieName) || [...cookieNames].some((name) => name.startsWith(`${cookieName}.`));
+}
+
+function candidateSessionCookieNames(request: Request, secureCookie: boolean): string[] {
+  const cookieNames = requestCookieNames(request);
+  const candidates = [
+    sessionCookieName(secureCookie),
+    legacySessionCookieName(secureCookie),
+    sessionCookieName(!secureCookie),
+    legacySessionCookieName(!secureCookie),
+  ];
+  return candidates.filter((cookieName, index) => {
+    if (candidates.indexOf(cookieName) !== index) {
+      return false;
+    }
+    if (index === 0) {
+      return true;
+    }
+    return hasCookieFamily(cookieNames, cookieName);
+  });
+}
+
+async function readSessionJwt(request: Request, secureCookie: boolean): Promise<JWT | null> {
+  for (const cookieName of candidateSessionCookieNames(request, secureCookie)) {
+    const token = await getToken({
+      req: request,
+      secret: resolveAuthSecret(),
+      secureCookie: cookieName.startsWith("__Secure-"),
+      cookieName,
+      salt: cookieName,
+    });
+    if (token && typeof token !== "string") {
+      return token;
+    }
+  }
+  return null;
 }
 
 function extractAccessToken(token: JWT | string | null): string | null {
@@ -229,12 +281,8 @@ export function applyBffCookieUpdates(
 
 export async function getAccessTokenResult(request: Request): Promise<BffAccessTokenResult> {
   const secureCookie = shouldUseSecureCookies(request);
-  const token = await getToken({
-    req: request,
-    secret: resolveAuthSecret(),
-    secureCookie,
-  });
-  if (!token || typeof token === "string") {
+  const token = await readSessionJwt(request, secureCookie);
+  if (!token) {
     throw new BffError("Unauthorized", 401);
   }
 

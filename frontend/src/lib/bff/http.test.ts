@@ -14,15 +14,16 @@ async function buildSessionCookie({
   accessToken,
   refreshToken,
   expiresAt,
+  legacyCookieName = false,
 }: {
   secureCookie: boolean;
   accessToken: string;
   refreshToken?: string;
   expiresAt?: number;
+  legacyCookieName?: boolean;
 }): Promise<string> {
-  const cookieName = secureCookie
-    ? "__Secure-authjs.session-token"
-    : "authjs.session-token";
+  const baseName = legacyCookieName ? "next-auth.session-token" : "authjs.session-token";
+  const cookieName = secureCookie ? `__Secure-${baseName}` : baseName;
   const token = await encode({
     secret: AUTH_SECRET,
     salt: cookieName,
@@ -70,6 +71,23 @@ test("getAccessToken detects secure Auth.js cookies even when proxy proto is abs
   const accessToken = await getAccessToken(request);
 
   assert.equal(accessToken, "access-token-from-secure-cookie");
+});
+
+test("getAccessToken accepts legacy secure NextAuth session cookies during migration", async () => {
+  process.env.AUTH_SECRET = AUTH_SECRET;
+  const cookie = await buildSessionCookie({
+    secureCookie: true,
+    legacyCookieName: true,
+    accessToken: "access-token-from-legacy-cookie",
+    expiresAt: Math.floor(Date.now() / 1000) + 300,
+  });
+  const request = new Request("https://sealingai.com/api/bff/agent/cases", {
+    headers: { cookie },
+  });
+
+  const accessToken = await getAccessToken(request);
+
+  assert.equal(accessToken, "access-token-from-legacy-cookie");
 });
 
 test("getAccessToken refreshes expired Keycloak access tokens for BFF calls", async () => {
