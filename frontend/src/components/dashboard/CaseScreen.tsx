@@ -1827,7 +1827,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   );
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-background lg:overflow-hidden">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-white lg:overflow-hidden">
       <WorkspaceTimeline steps={timelineSteps} />
 
       <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">

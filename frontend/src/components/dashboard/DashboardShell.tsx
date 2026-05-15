@@ -197,7 +197,7 @@ export default function DashboardShell({
     : historyItems;
 
   return (
-    <div className="relative flex h-screen w-full overflow-hidden bg-background font-sans text-foreground">
+    <div className="relative flex h-screen w-full overflow-hidden bg-white font-sans text-foreground">
       <aside
         className={cn(
           "relative z-40 flex h-full shrink-0 flex-col border-r border-border/80 bg-sidebar text-muted-foreground transition-[width] duration-200 ease-out",
@@ -446,7 +446,7 @@ export default function DashboardShell({
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-background">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-white">{children}</div>
       </main>
     </div>
   );
