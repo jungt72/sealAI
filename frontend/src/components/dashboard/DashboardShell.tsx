@@ -422,7 +422,7 @@ export default function DashboardShell({
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <div className="text-[18px] font-semibold tracking-tight text-seal-blue">SEALING</div>
-              <div className="h-5 w-px bg-border" />
+              <div className="h-6 w-px bg-seal-blue/35" />
               <div className="text-[16px] font-medium text-foreground">INTELLIGENCE</div>
             </div>
           </div>
