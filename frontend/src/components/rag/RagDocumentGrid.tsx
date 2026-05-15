@@ -299,11 +299,11 @@ export default function RagDocumentGrid() {
 
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">Evidence Intake</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">Upload-Evidence</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">SealingPedia Intake</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white">SealingPedia Markdown & Evidence Upload</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-            Dokumente werden als Quellen und Extraktionskandidaten geführt. Uploads bestätigen keine
-            technischen Werte automatisch.
+            Markdown-Texte und Dokumente werden als Quellen und Extraktionskandidaten geführt.
+            Uploads bestätigen keine technischen Werte automatisch.
           </p>
         </div>
         <Button
@@ -357,8 +357,8 @@ export default function RagDocumentGrid() {
           }`}
         >
           <div>
-            <p className="text-sm font-semibold text-white">Dokumente als Evidence hinzufügen</p>
-            <p className="text-xs text-slate-300">Dateien ablegen oder auswählen. Inhalte bleiben Kandidaten.</p>
+            <p className="text-sm font-semibold text-white">Markdown oder Dokumente als Evidence hinzufügen</p>
+            <p className="text-xs text-slate-300">.md, .txt, .pdf oder .docx ablegen oder auswählen. Inhalte bleiben Kandidaten.</p>
           </div>
           <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-slate-100">
             {uploading ? "Upload läuft..." : "Dateien wählen"}

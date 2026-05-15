@@ -44,6 +44,7 @@ describe("RagDocumentGrid", () => {
 
     expect(await screen.findByText("pump-drawing.pdf")).toBeInTheDocument();
     expect(screen.getByText("Evidence-Kandidat")).toBeInTheDocument();
+    expect(screen.getByText("SealingPedia Markdown & Evidence Upload")).toBeInTheDocument();
     expect(screen.getByText(/Uploads bestätigen keine technischen Werte automatisch\./i)).toBeInTheDocument();
     expect(screen.getByText("nicht automatisch bestaetigt")).toBeInTheDocument();
   });

@@ -822,9 +822,14 @@ export default async function SeoDashboardPage() {
                 <h2 className="text-lg font-semibold">Keyword- und Content-Map</h2>
                 <p className="mt-1 text-sm text-[#64748B]">Run-0 Priorisierung mit V9-Grenze: Challenge, Prüfhypothesen und RFQ-Qualifizierung statt finaler Auslegung.</p>
               </div>
-              <Link href="/wissen" className="inline-flex items-center gap-1.5 rounded-full border border-[#D9E5F7] bg-white px-3 py-1.5 text-sm font-semibold text-[#0B57D0] hover:bg-[#F8FBFF]">
-                Content ansehen <ArrowUpRight size={14} />
-              </Link>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/wissen" className="inline-flex items-center gap-1.5 rounded-full border border-[#D9E5F7] bg-white px-3 py-1.5 text-sm font-semibold text-[#0B57D0] hover:bg-[#F8FBFF]">
+                  SealingPedia ansehen <ArrowUpRight size={14} />
+                </Link>
+                <Link href="/rag" className="inline-flex items-center gap-1.5 rounded-full border border-[#D9E5F7] bg-white px-3 py-1.5 text-sm font-semibold text-[#0B57D0] hover:bg-[#F8FBFF]">
+                  Markdown hochladen <ArrowUpRight size={14} />
+                </Link>
+              </div>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[860px] border-collapse text-left text-sm">

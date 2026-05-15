@@ -10,6 +10,7 @@ from typing import AsyncGenerator, NamedTuple
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.runtime.reply_composition import build_turn_context_instruction
 from app.agent.runtime.conversation_runtime import (
@@ -133,6 +134,18 @@ class TestBuildMessages:
         msgs = _build_messages("Und FKM?", history=history, mode="CONVERSATION")
         roles = [m["role"] for m in msgs]
         assert roles.count("user") == 2
+
+    def test_accepts_langchain_message_history(self):
+        history = [
+            HumanMessage(content="Was ist NBR?"),
+            AIMessage(content="NBR ist ein synthetischer Kautschuk."),
+        ]
+
+        msgs = _build_messages("Danke", history=history, mode="CONVERSATION")
+
+        assert {"role": "user", "content": "Was ist NBR?"} in msgs
+        assert {"role": "assistant", "content": "NBR ist ein synthetischer Kautschuk."} in msgs
+        assert msgs[-1] == {"role": "user", "content": "Danke"}
 
 
 class TestConversationStrategyContract:
@@ -467,7 +480,7 @@ class TestStreamConversation:
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"].startswith("Verstanden, ich gehe jetzt von Ihrer Korrektur aus.")
-        assert "Dann schaue ich als Naechstes auf die Einbausituation." in state_update["reply"]
+        assert "Dann schaue ich als Nächstes auf die Einbausituation." in state_update["reply"]
 
     @pytest.mark.asyncio
     async def test_final_state_update_uses_llm_reply_without_prefix_injection_when_no_context_exists(self):
@@ -522,6 +535,20 @@ class TestStreamConversation:
         assert state_update["reply"] == (
             "Hallo! Mir geht's richtig gut, danke der Nachfrage! Wie geht's dir heute?"
         )
+
+    @pytest.mark.asyncio
+    async def test_CONVERSATION_thanks_with_langchain_history_does_not_crash_stream(self):
+        history = [
+            HumanMessage(content="Vergleiche NBR und PEEK kurz."),
+            AIMessage(content="NBR ist elastomerisch, PEEK ist thermoplastisch."),
+        ]
+        with _patch_openai(["Gern. Wenn du weiter eingrenzen möchtest, sag mir den Dichtungstyp."]):
+            events = await _collect(stream_conversation("danke", history=history, mode="CONVERSATION"))
+
+        parsed = _parse_events(events)
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "Gern. Wenn du weiter eingrenzen möchtest, sag mir den Dichtungstyp."
+        assert [e.get("type") for e in parsed][-1] == "__DONE__"
 
     @pytest.mark.asyncio
     async def test_CONVERSATION_smalltalk_removes_technical_capture_sentences(self):

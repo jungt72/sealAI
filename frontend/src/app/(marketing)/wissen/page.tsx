@@ -66,6 +66,15 @@ export default async function WissenIndexPage() {
             Keine Lexikontexte ohne Anschluss. Jede Einordnung soll dir helfen, bessere Fragen zu stellen,
             offene Punkte zu erkennen und souveräner mit Herstellern oder Kollegen zu sprechen.
           </p>
+          <div className="mt-8">
+            <Link
+              href="/rag"
+              className="inline-flex items-center gap-2 rounded-full border border-[#D9E5F7] bg-white px-5 py-2.5 text-sm font-semibold text-[#0B57D0] shadow-sm transition hover:bg-[#F8FBFF]"
+            >
+              Markdown für SealingPedia hochladen
+              <ArrowRight size={15} />
+            </Link>
+          </div>
         </div>
       </section>
 

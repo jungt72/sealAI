@@ -25,7 +25,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/new", icon: MessageSquareText, label: "Neue Analyse" },
   { href: "/dashboard/seo", icon: BarChart3, label: "SEO" },
   { href: "/goal", icon: Target, label: "Goal" },
-  { href: "/rag", icon: Database, label: "Wissensbasis" },
+  { href: "/rag", icon: Database, label: "SealingPedia Upload" },
   { href: "/dashboard/new", icon: Bookmark, label: "Merkliste" },
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
@@ -184,6 +184,7 @@ export default function DashboardShell({
                 key={`${item.label}-${item.href}`}
                 href={item.href}
                 title={item.label}
+                aria-label={item.label}
                 className={cn(
                   "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
                   isActive

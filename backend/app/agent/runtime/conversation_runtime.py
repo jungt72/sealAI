@@ -154,7 +154,7 @@ def _conversation_state_update_event(
 
 def _build_messages(
     message: str,
-    history: list[dict[str, str]] | None,
+    history: list[Any] | None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
 ) -> list[dict[str, str]]:
@@ -219,11 +219,7 @@ def _build_messages(
     if strategy_instruction:
         msgs.append({"role": "system", "content": strategy_instruction})
     if mode != "EXPLORATION":
-        for turn in (history or []):
-            role = turn.get("role", "")
-            content = turn.get("content", "")
-            if role in ("user", "assistant") and content:
-                msgs.append({"role": role, "content": content})
+        msgs.extend(_iter_normalized_history(history))
     # Belt-and-suspenders: inject explicit "DO NOT ASK AGAIN" block when we have
     # confirmed params. This guards against the LLM ignoring history-based hints.
     # Skipped for CONVERSATION mode (smalltalk) — state facts must NOT surface
@@ -241,24 +237,71 @@ def _build_messages(
     return msgs
 
 
-def _count_user_turns(history: list[dict[str, str]] | None) -> int:
-    return sum(1 for turn in (history or []) if turn.get("role") == "user")
+def _history_turn_role(turn: Any) -> str:
+    """Return a normalized chat role from dicts, app models or LangChain messages."""
+
+    if isinstance(turn, dict):
+        raw_role = turn.get("role") or turn.get("type")
+    else:
+        raw_role = getattr(turn, "role", None) or getattr(turn, "type", None)
+        if raw_role is None:
+            class_name = type(turn).__name__.lower()
+            if "human" in class_name:
+                raw_role = "user"
+            elif "ai" in class_name or "assistant" in class_name:
+                raw_role = "assistant"
+    role = str(raw_role or "").strip().lower()
+    if role == "human":
+        return "user"
+    if role in {"ai", "assistant"}:
+        return "assistant"
+    return role
 
 
-def _last_user_turn_text(message: str, history: list[dict[str, str]] | None) -> str:
+def _history_turn_content(turn: Any) -> str:
+    """Return text content from dicts, app models or LangChain messages."""
+
+    if isinstance(turn, dict):
+        raw_content = turn.get("content") or turn.get("text") or ""
+    else:
+        raw_content = getattr(turn, "content", "")
+    if isinstance(raw_content, list):
+        parts: list[str] = []
+        for item in raw_content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+            else:
+                parts.append(str(item or ""))
+        return "\n".join(part.strip() for part in parts if part and part.strip())
+    return str(raw_content or "").strip()
+
+
+def _iter_normalized_history(history: list[Any] | None):
+    for turn in history or []:
+        role = _history_turn_role(turn)
+        content = _history_turn_content(turn)
+        if role in {"user", "assistant"} and content:
+            yield {"role": role, "content": content}
+
+
+def _count_user_turns(history: list[Any] | None) -> int:
+    return sum(1 for turn in _iter_normalized_history(history) if turn["role"] == "user")
+
+
+def _last_user_turn_text(message: str, history: list[Any] | None) -> str:
     current = str(message or "").strip()
     if current:
         return current
-    for turn in reversed(history or []):
-        if turn.get("role") == "user" and str(turn.get("content") or "").strip():
-            return str(turn.get("content") or "").strip()
+    for turn in reversed(list(_iter_normalized_history(history))):
+        if turn["role"] == "user":
+            return turn["content"]
     return ""
 
 
 def _build_conversation_turn_context(
     message: str,
     *,
-    history: list[dict[str, str]] | None = None,
+    history: list[Any] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
 ):
@@ -285,7 +328,7 @@ def _build_conversation_turn_context(
 
 def _build_light_confirmed_facts_summary(
     *,
-    history: list[dict[str, str]] | None,
+    history: list[Any] | None,
     case_summary: str | None,
 ) -> list[str]:
     facts: list[str] = []
@@ -300,10 +343,10 @@ def _build_light_confirmed_facts_summary(
         if len(facts) >= 3:
             return facts
 
-    for turn in reversed(history or []):
-        if turn.get("role") != "user":
+    for turn in reversed(list(_iter_normalized_history(history))):
+        if turn["role"] != "user":
             continue
-        content = str(turn.get("content") or "").strip()
+        content = turn["content"]
         if not content:
             continue
         if content not in facts:
@@ -409,7 +452,7 @@ def _known_fields_from_case_summary(case_summary: str | None) -> set[str]:
 def _build_conversation_strategy_contract(
     message: str,
     *,
-    history: list[dict[str, str]] | None = None,
+    history: list[Any] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
 ) -> ConversationStrategyContract | None:
@@ -425,11 +468,10 @@ def _build_conversation_strategy_contract(
     # mentions. This prevents the AI from repeatedly asking "Welches Medium soll abgedichtet
     # werden?" after the user has already mentioned a medium substance.
     if "medium" not in known_fields:
-        for _turn in reversed((history or [])[-16:]):
-            if _turn.get("role") == "user":
-                if _MEDIUM_MENTION_RE.search(str(_turn.get("content") or "")):
-                    known_fields = known_fields | {"medium"}
-                    break
+        for _turn in reversed(list(_iter_normalized_history(history))[-16:]):
+            if _turn["role"] == "user" and _MEDIUM_MENTION_RE.search(_turn["content"]):
+                known_fields = known_fields | {"medium"}
+                break
 
     is_problem = bool(_LEAKAGE_RE.search(lowered) or _PROBLEM_RE.search(lowered))
     is_goal = bool(_OPEN_ENTRY_RE.search(lowered))
@@ -458,7 +500,7 @@ def _build_conversation_strategy_contract(
                 None,
                 [
                     text,
-                    *(str(turn.get("content") or "").strip() for turn in (history or [])[-4:] if turn.get("role") == "user"),
+                    *(turn["content"] for turn in list(_iter_normalized_history(history))[-4:] if turn["role"] == "user"),
                     str(case_summary or "").strip(),
                 ],
             )
@@ -639,7 +681,7 @@ class ConversationResult:
 async def iter_conversation_events(
     message: str,
     *,
-    history: list[dict[str, str]] | None = None,
+    history: list[Any] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
     direct_reply: str | None = None,
@@ -753,7 +795,7 @@ async def iter_conversation_events(
 async def run_conversation(
     message: str,
     *,
-    history: list[dict[str, str]] | None = None,
+    history: list[Any] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
     direct_reply: str | None = None,
@@ -793,7 +835,7 @@ async def run_conversation(
 async def stream_conversation(
     message: str,
     *,
-    history: list[dict[str, str]] | None = None,
+    history: list[Any] | None = None,
     case_summary: str | None = None,
     mode: ConversationLightMode | None = None,
     direct_reply: str | None = None,
