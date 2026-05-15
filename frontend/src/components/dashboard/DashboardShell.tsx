@@ -5,16 +5,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
+  Activity,
   BarChart3,
   Bell,
   Database,
-  MessageSquareText,
-  Clock3,
-  Bookmark,
+  ChevronRight,
   FileText,
-  PanelLeftClose,
+  HelpCircle,
+  Menu,
+  PencilLine,
   Plus,
+  Search,
   Settings,
+  Sparkles,
   Target,
 } from "lucide-react";
 
@@ -22,11 +25,14 @@ import LogoutButton from "@/components/dashboard/LogoutButton";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/dashboard/new", icon: MessageSquareText, label: "Neue Analyse" },
+  { href: "/dashboard/new", icon: PencilLine, label: "Neuer Chat" },
+  { href: "/rag", icon: Sparkles, label: "Meine Inhalte" },
+];
+
+const WORKSPACE_ITEMS = [
   { href: "/dashboard/seo", icon: BarChart3, label: "SEO" },
   { href: "/goal", icon: Target, label: "Goal" },
-  { href: "/rag", icon: Database, label: "SealingPedia Upload" },
-  { href: "/dashboard/new", icon: Bookmark, label: "Merkliste" },
+  { href: "/rag", icon: Database, label: "SealingPedia" },
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
 ];
 
@@ -130,6 +136,8 @@ export default function DashboardShell({
   const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isHistorySearchOpen, setIsHistorySearchOpen] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
   const [isHistoryOpen, setIsHistoryOpen] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -179,149 +187,226 @@ export default function DashboardShell({
     };
   }, [pathname]);
 
+  const normalizedHistorySearch = historySearch.trim().toLowerCase();
+  const visibleHistoryItems = normalizedHistorySearch
+    ? historyItems.filter(
+        (item) =>
+          item.title.toLowerCase().includes(normalizedHistorySearch) ||
+          item.subtitle.toLowerCase().includes(normalizedHistorySearch),
+      )
+    : historyItems;
+
   return (
-    <div className="relative flex h-screen w-full overflow-hidden bg-[#F5F7FB] font-sans text-foreground">
-      <aside className="relative z-40 flex h-full w-[72px] shrink-0 flex-col border-r border-[#E7ECF3] bg-white">
-        <div className="flex h-[72px] items-center justify-center border-b border-[#E7ECF3]">
-          <div className="grid h-11 w-11 place-items-center rounded-full bg-[#0B5BD3] text-base font-semibold text-white shadow-[0_10px_30px_rgba(11,91,211,0.22)]">
-            S
-          </div>
-        </div>
-
-        <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-6">
-          {NAV_ITEMS.map((item) => {
-            const isAnalysisRoute =
-              pathname === "/dashboard" ||
-              pathname === "/dashboard/new" ||
-              (pathname.startsWith("/dashboard/") && !pathname.startsWith("/dashboard/seo"));
-            const isActive =
-              item.href === "/dashboard/new"
-                ? isAnalysisRoute
-                : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={`${item.label}-${item.href}`}
-                href={item.href}
-                title={item.label}
-                aria-label={item.label}
-                className={cn(
-                  "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
-                  isActive
-                    ? "border-[#CFE0FF] bg-[#EEF4FF] text-[#0B5BD3]"
-                    : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
-                )}
-              >
-                <item.icon size={19} />
-              </Link>
-            );
-          })}
+    <div className="relative flex h-screen w-full overflow-hidden bg-[#F2F5F9] font-sans text-foreground">
+      <aside
+        className={cn(
+          "relative z-40 flex h-full shrink-0 flex-col bg-[#EAF1F8] text-[#4F5862] transition-[width] duration-200 ease-out",
+          isHistoryOpen ? "w-[304px]" : "w-[72px]",
+        )}
+      >
+        <div className={cn("flex h-[72px] items-center", isHistoryOpen ? "justify-between px-5" : "justify-center")}>
           <button
             type="button"
-            aria-label={isHistoryOpen ? "Historie umschalten" : "Historie einblenden"}
+            aria-label={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             aria-expanded={isHistoryOpen}
-            title={isHistoryOpen ? "Historie umschalten" : "Historie einblenden"}
+            title={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             onClick={() => setIsHistoryOpen((current) => !current)}
-            className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-[14px] border transition-colors",
-              isHistoryOpen
-                ? "border-[#CFE0FF] bg-[#EEF4FF] text-[#0B5BD3]"
-                : "border-transparent text-[#6B7280] hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]",
-            )}
+            className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
           >
-            <Clock3 size={19} />
+            <Menu size={20} />
           </button>
-        </nav>
-
-        <div className="flex flex-col items-center gap-3 border-t border-[#E7ECF3] px-3 py-4">
-          <button
-            type="button"
-            title="Einstellungen"
-            className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-transparent text-[#6B7280] transition-colors hover:border-[#E7ECF3] hover:bg-[#F8FAFD] hover:text-[#111827]"
-          >
-            <Settings size={18} />
-          </button>
-          <div className="w-full px-1">
-            <LogoutButton />
-          </div>
-        </div>
-      </aside>
-
-      {isHistoryOpen ? (
-        <aside
-          aria-label="Verlauf"
-          className="absolute bottom-0 left-[72px] top-0 z-30 flex w-[286px] flex-col border-r border-[#E7ECF3] bg-[#FBFCFE] shadow-[18px_0_45px_rgba(15,23,42,0.12)] lg:relative lg:inset-auto lg:h-full lg:w-[300px] lg:shadow-none"
-        >
-          <div className="flex h-[72px] items-center gap-2 border-b border-[#E7ECF3] px-4">
-            <Link
-              href="/dashboard/new"
-              className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-[14px] border border-[#DCE7F7] bg-white text-sm font-semibold text-[#111827] shadow-sm transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF]"
-            >
-              <Plus size={16} />
-              Neue Analyse
-            </Link>
+          {isHistoryOpen ? (
             <button
               type="button"
-              aria-label="Historie ausblenden"
-              title="Historie ausblenden"
-              onClick={() => setIsHistoryOpen(false)}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#DCE7F7] bg-white text-[#6B7280] shadow-sm transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF] hover:text-[#0B5BD3]"
+              aria-label="Chats durchsuchen"
+              title="Chats durchsuchen"
+              onClick={() => setIsHistorySearchOpen((current) => !current)}
+              className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
             >
-              <PanelLeftClose size={17} />
+              <Search size={20} />
             </button>
-          </div>
+          ) : null}
+        </div>
 
-          <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-4">
-            <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">
-              Chats
-            </div>
-            {historyLoading ? (
-              <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
-                Lade Gespräche...
-              </div>
-            ) : historyError ? (
-              <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-                {historyError}
-              </div>
-            ) : historyItems.length === 0 ? (
-              <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
-                Noch keine gespeicherten Fälle.
-              </div>
-            ) : (
+        {isHistoryOpen ? (
+          <>
+            <nav className="px-3 pb-5">
               <div className="space-y-1">
-                {historyItems.map((item) => {
-                  const href = `/dashboard/${encodeURIComponent(item.id)}`;
-                  const isActive = pathname === href;
+                {NAV_ITEMS.map((item) => {
+                  const isAnalysisRoute =
+                    pathname === "/dashboard" ||
+                    pathname === "/dashboard/new" ||
+                    (pathname.startsWith("/dashboard/") && !pathname.startsWith("/dashboard/seo"));
+                  const isActive =
+                    item.href === "/dashboard/new"
+                      ? isAnalysisRoute
+                      : pathname.startsWith(item.href);
                   return (
                     <Link
-                      key={item.id}
-                      href={href}
-                      title={item.title}
+                      key={`${item.label}-${item.href}`}
+                      href={item.href}
                       className={cn(
-                        "block rounded-[12px] px-3 py-2.5 text-left transition-colors",
+                        "flex h-11 items-center gap-4 rounded-full px-4 text-[15px] font-medium transition-colors",
                         isActive
-                          ? "bg-[#EEF4FF] text-[#0B5BD3]"
-                          : "text-[#374151] hover:bg-white hover:text-[#111827]",
+                          ? "bg-[#DCE8F3] text-[#1F2933]"
+                          : "text-[#4F5862] hover:bg-[#DCE8F3] hover:text-[#1F2933]",
                       )}
                     >
-                      <div className="truncate text-sm font-medium">{item.title}</div>
-                      <div className="mt-0.5 truncate text-[11px] text-[#8A94A6]">
-                        {item.subtitle}
-                      </div>
+                      <item.icon size={20} />
+                      <span className="truncate">{item.label}</span>
                     </Link>
                   );
                 })}
               </div>
-            )}
-          </div>
 
-          <div className="border-t border-[#E7ECF3] px-4 py-3 text-[11px] leading-4 text-[#8A94A6]">
-            Chats bleiben über die Thread-ID wiederaufrufbar. Aktive Analysen wechseln nach dem ersten Turn automatisch auf die Fall-URL.
-          </div>
-        </aside>
-      ) : null}
+              <div className="mt-7">
+                <div className="mb-2 flex items-center justify-between px-3 text-[14px] font-semibold text-[#1F2933]">
+                  <span>Bereiche</span>
+                  <ChevronRight size={16} className="text-[#7A848E]" />
+                </div>
+                <div className="space-y-1">
+                  {WORKSPACE_ITEMS.map((item) => {
+                    const isActive = item.href !== "/dashboard/new" && pathname.startsWith(item.href);
+                    return (
+                      <Link
+                        key={`${item.label}-${item.href}`}
+                        href={item.href}
+                        className={cn(
+                          "flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium transition-colors",
+                          isActive
+                            ? "bg-[#DCE8F3] text-[#1F2933]"
+                            : "text-[#4F5862] hover:bg-[#DCE8F3] hover:text-[#1F2933]",
+                        )}
+                      >
+                        <item.icon size={18} />
+                        <span className="truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </nav>
+
+            <div className="mb-2 px-6 text-[14px] font-semibold text-[#1F2933]">
+              Chats
+            </div>
+
+            {isHistorySearchOpen ? (
+              <div className="px-4 pb-3">
+                <label className="sr-only" htmlFor="dashboard-history-search">
+                  Chats suchen
+                </label>
+                <input
+                  id="dashboard-history-search"
+                  value={historySearch}
+                  onChange={(event) => setHistorySearch(event.target.value)}
+                  placeholder="Chats suchen"
+                  className="h-10 w-full rounded-full border border-transparent bg-[#DCE8F3] px-4 text-[14px] text-[#1F2933] outline-none transition-colors placeholder:text-[#7A848E] focus:border-[#B8C8D8] focus:bg-white"
+                />
+              </div>
+            ) : null}
+
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+              {historyLoading ? (
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#68727D]">
+                  Lade Gespräche...
+                </div>
+              ) : historyError ? (
+                <div className="rounded-[22px] bg-[#FBE8D1] px-3 py-2.5 text-[14px] text-[#8A4A15]">
+                  {historyError}
+                </div>
+              ) : historyItems.length === 0 ? (
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#68727D]">
+                  Noch keine gespeicherten Chats.
+                </div>
+              ) : visibleHistoryItems.length === 0 ? (
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#68727D]">
+                  Kein passender Chat.
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {visibleHistoryItems.map((item) => {
+                    const href = `/dashboard/${encodeURIComponent(item.id)}`;
+                    const isActive = pathname === href;
+                    return (
+                      <Link
+                        key={item.id}
+                        href={href}
+                        title={`${item.title} · ${item.subtitle}`}
+                        aria-label={`${item.title} ${item.subtitle}`}
+                        className={cn(
+                          "block rounded-full px-3 py-2 text-[14px] font-medium leading-6 transition-colors",
+                          isActive
+                            ? "bg-[#DCE8F3] text-[#1F2933]"
+                            : "text-[#4F5862] hover:bg-[#DCE8F3] hover:text-[#1F2933]",
+                        )}
+                      >
+                        <span className="block truncate">{item.title}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-auto px-3 pb-5 pt-3">
+              <div className="space-y-1">
+                <Link
+                  href="/dashboard/seo"
+                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                >
+                  <Activity size={18} />
+                  <span>Aktivitäten</span>
+                </Link>
+                <button
+                  type="button"
+                  aria-label="Einstellungen"
+                  title="Einstellungen"
+                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                >
+                  <Settings size={18} />
+                  <span>Einstellungen & Hilfe</span>
+                </button>
+                <LogoutButton className="rounded-full px-4 text-[#4F5862] hover:bg-[#DCE8F3] hover:text-red-600" />
+              </div>
+              <div className="mt-5 px-4 text-[12px] leading-5 text-[#68727D]">
+                <div className="font-medium text-[#0B5BD3]">Anfragebasis</div>
+                <div>Governed Workspace</div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-3">
+              {[...NAV_ITEMS, ...WORKSPACE_ITEMS].map((item) => (
+                <Link
+                  key={`${item.label}-${item.href}-collapsed`}
+                  href={item.href}
+                  title={item.label}
+                  aria-label={item.label}
+                  className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                >
+                  <item.icon size={19} />
+                </Link>
+              ))}
+            </nav>
+            <div className="flex flex-col items-center gap-3 px-3 pb-5">
+              <button
+                type="button"
+                aria-label="Einstellungen"
+                title="Einstellungen"
+                className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+              >
+                <HelpCircle size={19} />
+              </button>
+              <LogoutButton showLabel={false} className="h-10 w-10 rounded-full p-0" />
+            </div>
+          </>
+        )}
+      </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E7ECF3] bg-white px-5 sm:px-7">
+        <header className="flex h-[72px] shrink-0 items-center justify-between bg-[#F2F5F9] px-5 sm:px-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SEALING</div>

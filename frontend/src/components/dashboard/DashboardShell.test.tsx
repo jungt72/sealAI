@@ -60,15 +60,16 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
 
-    expect(screen.getAllByRole("link", { name: "Neue Analyse" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Neuer Chat" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Meine Inhalte" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "SEO" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Goal" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "SealingPedia Upload" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "SealingPedia" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Einstellungen" })).toBeInTheDocument();
     expect(screen.queryByText("Chats")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
+    await user.click(screen.getByRole("button", { name: "Seitenleiste ausklappen" }));
 
     expect(screen.getByText("Chats")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
@@ -87,14 +88,14 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
+    await user.click(screen.getByRole("button", { name: "Seitenleiste ausklappen" }));
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
-    await user.click(screen.getByRole("button", { name: "Historie ausblenden" }));
+    await user.click(screen.getByRole("button", { name: "Seitenleiste einklappen" }));
 
     expect(screen.queryByText("Chats")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /RWDR Wasser-Glykol/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
+    await user.click(screen.getByRole("button", { name: "Seitenleiste ausklappen" }));
 
     expect(screen.getByText("Chats")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
