@@ -967,7 +967,7 @@ class TestExplorationReplyPromptRegistry:
 
         fake_client = MagicMock()
         fake_client.chat.completions.create = AsyncMock(
-            return_value=_FakeExplorationStream(["PTFE ", "und FKM bleiben herstellerseitig zu pruefen."])
+            return_value=_FakeExplorationStream(["PTFE ", "und FKM."])
         )
         fake_openai = MagicMock()
         fake_openai.AsyncOpenAI.return_value = fake_client
@@ -983,7 +983,8 @@ class TestExplorationReplyPromptRegistry:
 
         assert frames[-1] == "data: [DONE]\n\n"
         payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
-        assert any(payload.get("type") == "text_chunk" for payload in payloads)
+        text_chunks = [payload["text"] for payload in payloads if payload.get("type") == "text_chunk"]
+        assert text_chunks[:2] == ["PTFE ", "und FKM."]
         state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
         assert "PTFE" in state_update["reply"]
         assert fake_client.chat.completions.create.call_args.kwargs["model"]
@@ -1012,7 +1013,7 @@ class TestExplorationReplyPromptRegistry:
 
         payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
         text_chunks = [payload["text"] for payload in payloads if payload.get("type") == "text_chunk"]
-        assert text_chunks == [FAST_PATH_GUARD_FALLBACK]
+        assert "".join(text_chunks) == FAST_PATH_GUARD_FALLBACK
         assert all("geeignet" not in chunk.lower() for chunk in text_chunks)
         assert any(payload.get("type") == "turn_complete" for payload in payloads)
 

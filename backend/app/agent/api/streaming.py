@@ -427,22 +427,53 @@ async def _stream_exploration_reply(
         )
 
         full_reply = ""
+        preview_emitted = False
+        was_guarded = False
         async for chunk in response:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                full_reply += delta
+            delta = render_chunk(chunk.choices[0].delta.content or "", path="CONVERSATION")
+            if not delta:
+                continue
 
-        safe, violation_category = check_fast_path_output(full_reply)
-        if not safe:
-            _log.warning(
-                "exploration_output_guarded category=%s topic=%s",
-                violation_category,
-                query.topic[:64],
-            )
-            full_reply = FAST_PATH_GUARD_FALLBACK
+            candidate_reply = full_reply + delta
+            safe, violation_category = check_fast_path_output(candidate_reply)
+            if not safe:
+                _log.warning(
+                    "exploration_output_guarded category=%s topic=%s",
+                    violation_category,
+                    query.topic[:64],
+                )
+                if preview_emitted:
+                    yield f"data: {json.dumps({'type': 'text_reset'}, default=str)}\n\n"
+                full_reply = FAST_PATH_GUARD_FALLBACK
+                was_guarded = True
+                for segment in _visible_stream_segments(full_reply):
+                    yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment}, default=str)}\n\n"
+                    if len(full_reply) > _VISIBLE_STREAM_SEGMENT_CHARS:
+                        await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
+                break
 
-        if full_reply:
-            yield f"data: {json.dumps({'type': 'text_chunk', 'text': full_reply}, default=str)}\n\n"
+            full_reply = candidate_reply
+            for segment in _visible_stream_segments(delta):
+                yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment}, default=str)}\n\n"
+                preview_emitted = True
+                if len(delta) > _VISIBLE_STREAM_SEGMENT_CHARS:
+                    await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
+
+        if not was_guarded:
+            safe, violation_category = check_fast_path_output(full_reply)
+            if not safe:
+                _log.warning(
+                    "exploration_output_guarded category=%s topic=%s",
+                    violation_category,
+                    query.topic[:64],
+                )
+                if preview_emitted:
+                    yield f"data: {json.dumps({'type': 'text_reset'}, default=str)}\n\n"
+                full_reply = FAST_PATH_GUARD_FALLBACK
+                for segment in _visible_stream_segments(full_reply):
+                    yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment}, default=str)}\n\n"
+                    if len(full_reply) > _VISIBLE_STREAM_SEGMENT_CHARS:
+                        await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
 
         state_update_event = {
             "type": "state_update",
