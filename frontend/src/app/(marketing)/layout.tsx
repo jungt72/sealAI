@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
@@ -11,8 +12,15 @@ export default function MarketingLayout({
       {/* HEADER */}
       <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <Link href="/" className="text-xl font-bold tracking-tight text-seal-blue">
-            sealingAI
+          <Link href="/" className="flex items-center" aria-label="sealingAI Startseite">
+            <Image
+              src="/images/logo/sealingai-wordmark.png"
+              alt="sealingAI"
+              width={132}
+              height={33}
+              priority
+              className="h-7 w-auto object-contain"
+            />
           </Link>
           
           <nav className="hidden md:flex items-center gap-8">
