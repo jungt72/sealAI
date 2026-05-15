@@ -195,6 +195,49 @@ describe("BFF agent chat stream route", () => {
     expect(payloads.at(-1)).toBe("[DONE]");
   });
 
+  it("does not bind a fresh conversational turn just because backend includes UI projections", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify({
+            type: "state_update",
+            reply: "Hallo! Mir geht es gut, danke der Nachfrage.",
+            response_class: "conversational_answer",
+            ui: {
+              parameter: {
+                status: "available",
+              },
+            },
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo, wie geht es dir?" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(payloads.some((payload) => typeof payload !== "string" && payload.type === "case_bound")).toBe(false);
+    expect(stateUpdate).toMatchObject({
+      type: "state_update",
+      noCaseCreated: true,
+      responseClass: "conversational_answer",
+    });
+    expect(stateUpdate).not.toHaveProperty("caseId");
+    expect(stateUpdate.ui).toEqual({ parameter: { status: "available" } });
+  });
+
   it("does not expose raw backend auth details when the token expired", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ detail: "token_expired" }), {

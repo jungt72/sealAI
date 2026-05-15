@@ -162,7 +162,6 @@ function shouldBindCaseFromStateUpdate({
   responseClass,
   structuredState,
   proposedCaseDelta,
-  ui,
   assertions,
   rfqReadinessProjection,
 }: {
@@ -171,7 +170,6 @@ function shouldBindCaseFromStateUpdate({
   responseClass: string | null;
   structuredState: Record<string, unknown> | null;
   proposedCaseDelta: Record<string, unknown> | null;
-  ui: Record<string, unknown> | null;
   assertions: Record<string, unknown> | null;
   rfqReadinessProjection: Record<string, unknown> | null;
 }): boolean {
@@ -189,7 +187,6 @@ function shouldBindCaseFromStateUpdate({
     proposedCaseDelta,
     assertions,
     rfqReadinessProjection,
-    ui,
   ].some(hasRecordEntries);
 }
 
@@ -372,7 +369,6 @@ export async function POST(request: Request) {
                   responseClass,
                   structuredState,
                   proposedCaseDelta,
-                  ui,
                   assertions,
                   rfqReadinessProjection,
                 });
