@@ -116,8 +116,8 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
   const isFreshStart = !hasConversation && !currentCaseId;
 
   return (
-    <div className="flex h-full w-full flex-col bg-transparent">
-      <div className="custom-scrollbar flex-1 overflow-y-auto">
+    <div className="flex h-full min-h-0 w-full flex-col bg-transparent">
+      <div data-testid="chat-scroll-region" className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
         <div className={cn(
           "mx-auto flex min-h-full w-full max-w-[760px] flex-col px-4 sm:px-5",
           isFreshStart ? "justify-center py-10" : "py-5",
@@ -182,15 +182,15 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
       </div>
 
       {!isFreshStart && (
-      <div className="bg-transparent px-4 pb-4 pt-2 sm:px-5">
-        <div className="mx-auto max-w-[760px]">
-          <ChatComposer
-            externalValue={null}
-            onSend={(message) => void sendMessage(message)}
-            isLoading={isStreaming}
-          />
+        <div data-testid="chat-composer-dock" className="shrink-0 bg-transparent px-4 pb-4 pt-2 sm:px-5">
+          <div className="mx-auto max-w-[760px]">
+            <ChatComposer
+              externalValue={null}
+              onSend={(message) => void sendMessage(message)}
+              isLoading={isStreaming}
+            />
+          </div>
         </div>
-      </div>
       )}
     </div>
   );

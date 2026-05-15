@@ -1827,10 +1827,10 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   );
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-[#F7F9FC]">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-[#F7F9FC] lg:overflow-hidden">
       <WorkspaceTimeline steps={timelineSteps} />
 
-      <div className="relative flex-1 px-4 py-4 sm:px-5">
+      <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">
         {!isWorkspaceOpen ? (
           <button
             type="button"
@@ -1848,11 +1848,11 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
           ref={layoutRef}
           style={{ "--workspace-width": `${workspaceWidth}px` } as React.CSSProperties}
           className={cn(
-            "flex min-h-[640px] flex-col lg:flex-row",
+            "flex min-h-[640px] flex-col lg:h-full lg:min-h-0 lg:flex-row",
             isResizingWorkspace && "select-none",
           )}
         >
-          <section className="min-h-[460px] flex-1 overflow-hidden lg:min-w-[430px]">
+          <section className="min-h-[460px] flex-1 overflow-hidden lg:min-h-0 lg:min-w-[430px]">
             <ChatPane
               caseId={caseId}
               initialGoal={initialGoal}
@@ -1886,7 +1886,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
                 <span className="h-8 w-1 rounded-full bg-[#9AA9BC]" />
               </span>
             </button>
-            <aside className="relative min-h-0 w-full overflow-visible lg:w-[var(--workspace-width)] lg:shrink-0">
+            <aside className="relative min-h-0 w-full overflow-visible lg:w-[var(--workspace-width)] lg:shrink-0 lg:overflow-hidden">
               <button
                 type="button"
                 aria-label="Arbeitsbereich einklappen"
@@ -1896,7 +1896,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
               >
                 <PanelRightClose size={16} />
               </button>
-              <div className="min-h-0 pr-12">
+              <div className="custom-scrollbar min-h-0 pr-12 lg:h-full lg:overflow-y-auto">
                 <SealCockpit
                   data={cockpitViewModel}
                   workspace={workspace}

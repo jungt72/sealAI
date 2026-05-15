@@ -119,6 +119,17 @@ describe("ChatPane", () => {
     expect(screen.queryByRole("button", { name: "Medienliste prüfen" })).not.toBeInTheDocument();
   });
 
+  it("keeps the message list scrollable while the composer stays docked", () => {
+    render(<ChatPane caseId="case-parameter" />);
+
+    expect(screen.getByTestId("chat-scroll-region")).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "overflow-y-auto",
+    );
+    expect(screen.getByTestId("chat-composer-dock")).toHaveClass("shrink-0");
+  });
+
   it("renders a restrained streaming placeholder before text chunks arrive", () => {
     agentStreamMockState.isStreaming = true;
     agentStreamMockState.streamingStatusText = "SealingAI bewertet technische Risiken...";

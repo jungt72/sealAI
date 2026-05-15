@@ -384,6 +384,20 @@ describe("CaseScreen", () => {
     expect(screen.getByRole("button", { name: "Arbeitsbereich einklappen" })).toBeInTheDocument();
   });
 
+  it("constrains the desktop cockpit layout so the chat composer can stay in the visible viewport", () => {
+    render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
+
+    const chatSection = screen.getByTestId("chat-pane").closest("section");
+    const layout = chatSection?.parentElement;
+    const content = layout?.parentElement;
+    const root = content?.parentElement;
+
+    expect(root).toHaveClass("lg:overflow-hidden");
+    expect(content).toHaveClass("min-h-0", "flex-1");
+    expect(layout).toHaveClass("lg:h-full", "lg:min-h-0");
+    expect(chatSection).toHaveClass("overflow-hidden", "lg:min-h-0");
+  });
+
   it("loads the durable workspace when opening an existing case URL", async () => {
     render(<CaseScreen caseId="case-42" />);
 
