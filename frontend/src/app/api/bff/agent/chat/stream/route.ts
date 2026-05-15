@@ -179,15 +179,18 @@ function shouldBindCaseFromStateUpdate({
   if (backendNoCaseCreated) {
     return false;
   }
-  if (responseClass && responseClass !== "conversational_answer") {
-    return true;
-  }
-  return [
-    structuredState,
+  const hasGovernedArtifacts = [
     proposedCaseDelta,
     assertions,
     rfqReadinessProjection,
   ].some(hasRecordEntries);
+  if (responseClass === "conversational_answer") {
+    return hasGovernedArtifacts;
+  }
+  if (responseClass && responseClass !== "conversational_answer") {
+    return true;
+  }
+  return hasGovernedArtifacts || hasRecordEntries(structuredState);
 }
 
 function rawErrorText(value: unknown): string {

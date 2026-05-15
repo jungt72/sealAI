@@ -208,6 +208,11 @@ describe("BFF agent chat stream route", () => {
                 status: "available",
               },
             },
+            structured_state: {
+              conversation_messages: [
+                { role: "user", content: "Hallo, wie geht es dir?" },
+              ],
+            },
           })}\n\n`,
           "data: [DONE]\n\n",
         ]),
@@ -236,6 +241,11 @@ describe("BFF agent chat stream route", () => {
     });
     expect(stateUpdate).not.toHaveProperty("caseId");
     expect(stateUpdate.ui).toEqual({ parameter: { status: "available" } });
+    expect(stateUpdate.structuredState).toEqual({
+      conversation_messages: [
+        { role: "user", content: "Hallo, wie geht es dir?" },
+      ],
+    });
   });
 
   it("does not expose raw backend auth details when the token expired", async () => {
