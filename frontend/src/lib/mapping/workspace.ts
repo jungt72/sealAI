@@ -1,5 +1,6 @@
 import type {
   WorkspaceCompletenessScore,
+  WorkspaceChallengeIntelligence,
   WorkspaceCurrentStateAnalysis,
   WorkspaceDecisionUnderstanding,
   WorkspaceLifecycleStep,
@@ -250,6 +251,7 @@ type RawMaterialIntelligence = {
     status?: string;
     status_label?: string;
     confidence?: string;
+    plausibility?: string;
     plausibility_score?: number | string | null;
     plausibility_label?: string;
     score_drivers?: string[];
@@ -257,7 +259,11 @@ type RawMaterialIntelligence = {
     why_considered?: string[];
     limits?: string[];
     blocking_unknowns?: string[];
+    counterindicators?: string[];
     required_checks?: string[];
+    allowed_claim?: string;
+    forbidden_claims?: string[];
+    rfq_relevance?: string;
     evidence_ref_ids?: string[];
   }>;
   alternatives?: Array<{
@@ -287,6 +293,86 @@ type RawMaterialIntelligence = {
   } | null;
   not_for_release_decisions?: boolean;
   disclaimer?: string | null;
+};
+
+type RawChallengeIntelligence = {
+  schema_version?: string;
+  status?: string;
+  findings?: Array<{
+    finding_id?: string;
+    kind?: string;
+    severity?: string;
+    status?: string;
+    title?: string;
+    summary?: string;
+    rfq_relevance?: string;
+    related_fields?: string[];
+    evidence_ref_ids?: string[];
+    action_mode?: string;
+    source?: string;
+  }>;
+  hypotheses?: Array<{
+    hypothesis_id?: string;
+    label?: string;
+    plausibility_class?: string;
+    status?: string;
+    basis?: string[];
+    counterindicators?: string[];
+    blocking_unknowns?: string[];
+    required_checks?: string[];
+    rfq_relevance?: string;
+    forbidden_claims?: string[];
+    source?: string;
+  }>;
+  next_best_question?: {
+    question?: string;
+    reason?: string;
+    focus_key?: string;
+    priority?: number;
+    expected_answer_type?: string;
+    closes_findings?: string[];
+    source?: string;
+    max_questions_policy?: string;
+  } | null;
+  action_modes_run?: string[];
+  boundary_notice?: string;
+};
+
+type RawV91IntelligenceSlice = {
+  slice_id?: string;
+  status?: string;
+  claim_level?: string;
+  summary?: string;
+  signals?: string[];
+  blockers?: string[];
+  evidence_ref_ids?: string[];
+  not_for_release_decisions?: boolean;
+  source?: string;
+};
+
+type RawV91Workspace = {
+  intelligence_state?: {
+    schema_version?: string;
+    case_revision?: number;
+    overall_status?: string;
+    medium?: RawV91IntelligenceSlice;
+    material?: RawV91IntelligenceSlice;
+    challenge?: RawV91IntelligenceSlice;
+    document?: RawV91IntelligenceSlice;
+    rfq?: RawV91IntelligenceSlice;
+  } | null;
+  tab_state?: Array<{
+    tab_id?: string;
+    label?: string;
+    status?: string;
+    source_slice_id?: string;
+    summary?: string;
+    primary_items?: string[];
+    warnings?: string[];
+    next_action?: string | null;
+    evidence_ref_ids?: string[];
+    not_for_release_decisions?: boolean;
+  }>;
 };
 
 type LegacyWorkspaceProjection = {
@@ -375,6 +461,8 @@ type LegacyWorkspaceProjection = {
     followup_question?: string | null;
   };
   material_intelligence?: RawMaterialIntelligence | null;
+  challenge_intelligence?: RawChallengeIntelligence | null;
+  v91_workspace?: RawV91Workspace | null;
   case_summary: {
     thread_id: string | null;
     intent_goal?: string | null;
@@ -920,6 +1008,7 @@ function mapMaterialIntelligence(raw: RawMaterialIntelligence | null | undefined
         status: String(item.status || "needs_more_data"),
         statusLabel: String(item.status_label || "").trim(),
         confidence: String(item.confidence || "low"),
+        plausibility: String(item.plausibility || item.confidence || "low"),
         plausibilityScore: Math.max(0, Math.min(100, asNumber(item.plausibility_score) ?? 0)),
         plausibilityLabel: String(item.plausibility_label || "nicht bewertet").trim(),
         scoreDrivers: asStrings(item.score_drivers),
@@ -927,7 +1016,11 @@ function mapMaterialIntelligence(raw: RawMaterialIntelligence | null | undefined
         whyConsidered: asStrings(item.why_considered),
         limits: asStrings(item.limits),
         blockingUnknowns: asStrings(item.blocking_unknowns),
+        counterindicators: asStrings(item.counterindicators),
         requiredChecks: asStrings(item.required_checks),
+        allowedClaim: String(item.allowed_claim || "vorläufige Prüfhypothese").trim(),
+        forbiddenClaims: asStrings(item.forbidden_claims),
+        rfqRelevance: String(item.rfq_relevance || "").trim(),
         evidenceRefIds: asStrings(item.evidence_ref_ids),
       }))
       .filter((item) => item.materialKey || item.label),
@@ -962,6 +1055,120 @@ function mapMaterialIntelligence(raw: RawMaterialIntelligence | null | undefined
     },
     notForReleaseDecisions: raw?.not_for_release_decisions !== false,
     disclaimer: raw?.disclaimer || null,
+  };
+}
+
+function mapChallengeIntelligence(
+  raw: RawChallengeIntelligence | null | undefined,
+): WorkspaceChallengeIntelligence {
+  return {
+    schemaVersion: raw?.schema_version || "challenge_engine_v9.0",
+    status: raw?.status || "not_run",
+    findings: (raw?.findings || [])
+      .map((item) => ({
+        findingId: String(item.finding_id || "").trim(),
+        kind: String(item.kind || "risk"),
+        severity: String(item.severity || "watch"),
+        status: String(item.status || "open"),
+        title: String(item.title || "").trim(),
+        summary: String(item.summary || "").trim(),
+        rfqRelevance: String(item.rfq_relevance || "").trim(),
+        relatedFields: asStrings(item.related_fields),
+        evidenceRefIds: asStrings(item.evidence_ref_ids),
+        actionMode: String(item.action_mode || "RUN_RISK_COMPLETENESS"),
+        source: String(item.source || "challenge_engine_v9"),
+      }))
+      .filter((item) => item.findingId || item.title || item.summary),
+    hypotheses: (raw?.hypotheses || [])
+      .map((item) => ({
+        hypothesisId: String(item.hypothesis_id || "").trim(),
+        label: String(item.label || "").trim(),
+        plausibilityClass: String(item.plausibility_class || "low"),
+        status: String(item.status || "active"),
+        basis: asStrings(item.basis),
+        counterindicators: asStrings(item.counterindicators),
+        blockingUnknowns: asStrings(item.blocking_unknowns),
+        requiredChecks: asStrings(item.required_checks),
+        rfqRelevance: String(item.rfq_relevance || "").trim(),
+        forbiddenClaims: asStrings(item.forbidden_claims),
+        source: String(item.source || "challenge_engine_v9"),
+      }))
+      .filter((item) => item.hypothesisId || item.label),
+    nextBestQuestion: raw?.next_best_question?.question
+      ? {
+          question: String(raw.next_best_question.question),
+          reason: String(raw.next_best_question.reason || ""),
+          focusKey: String(raw.next_best_question.focus_key || "unknown"),
+          priority: raw.next_best_question.priority || 1,
+          expectedAnswerType: String(raw.next_best_question.expected_answer_type || "text"),
+          closesFindings: asStrings(raw.next_best_question.closes_findings),
+          source: String(raw.next_best_question.source || "challenge_engine_v9"),
+          maxQuestionsPolicy: String(
+            raw.next_best_question.max_questions_policy || "ask_one_highest_leverage_question",
+          ),
+        }
+      : null,
+    actionModesRun: asStrings(raw?.action_modes_run),
+    boundaryNotice: String(raw?.boundary_notice || ""),
+  };
+}
+
+function mapV91Slice(raw: RawV91IntelligenceSlice | null | undefined, sliceId: RawV91IntelligenceSlice["slice_id"]) {
+  return {
+    sliceId: String(raw?.slice_id || sliceId || "medium") as "medium" | "material" | "challenge" | "document" | "rfq",
+    status: String(raw?.status || "not_available"),
+    claimLevel: String(raw?.claim_level || "screening") as
+      | "general_orientation"
+      | "screening"
+      | "case_projection"
+      | "manufacturer_review",
+    summary: String(raw?.summary || ""),
+    signals: asStrings(raw?.signals),
+    blockers: asStrings(raw?.blockers),
+    evidenceRefIds: asStrings(raw?.evidence_ref_ids),
+    notForReleaseDecisions: raw?.not_for_release_decisions !== false,
+    source: String(raw?.source || "workspace_projection_v9_1"),
+  };
+}
+
+function mapV91Workspace(raw: RawV91Workspace | null | undefined) {
+  const intelligence = raw?.intelligence_state || {};
+  return {
+    intelligenceState: {
+      schemaVersion: String(intelligence.schema_version || "sealing_intelligence_v9_1"),
+      caseRevision:
+        typeof intelligence.case_revision === "number" ? intelligence.case_revision : 0,
+      overallStatus: String(intelligence.overall_status || "empty") as
+        | "empty"
+        | "intake"
+        | "screening"
+        | "review_needed"
+        | "rfq_basis",
+      medium: mapV91Slice(intelligence.medium, "medium"),
+      material: mapV91Slice(intelligence.material, "material"),
+      challenge: mapV91Slice(intelligence.challenge, "challenge"),
+      document: mapV91Slice(intelligence.document, "document"),
+      rfq: mapV91Slice(intelligence.rfq, "rfq"),
+    },
+    tabState: (raw?.tab_state || []).map((tab) => ({
+      tabId: String(tab.tab_id || "overview") as
+        | "overview"
+        | "parameters"
+        | "medium"
+        | "material"
+        | "challenge"
+        | "documents"
+        | "rfq",
+      label: String(tab.label || ""),
+      status: String(tab.status || "not_available"),
+      sourceSliceId: String(tab.source_slice_id || ""),
+      summary: String(tab.summary || ""),
+      primaryItems: asStrings(tab.primary_items),
+      warnings: asStrings(tab.warnings),
+      nextAction: tab.next_action || null,
+      evidenceRefIds: asStrings(tab.evidence_ref_ids),
+      notForReleaseDecisions: tab.not_for_release_decisions !== false,
+    })),
   };
 }
 
@@ -1165,6 +1372,8 @@ export function mapWorkspaceView(
       disclaimer: projection.medium_context?.disclaimer || null,
     },
     materialIntelligence: mapMaterialIntelligence(projection.material_intelligence),
+    challengeIntelligence: mapChallengeIntelligence(projection.challenge_intelligence),
+    v91Workspace: mapV91Workspace(projection.v91_workspace),
     deepDiveTabs: mapDeepDiveTabs(projection.deep_dive_tabs),
     technicalDerivations: (projection.technical_derivations || []).map((item) => ({
       calcType: item.calc_type || "unknown",

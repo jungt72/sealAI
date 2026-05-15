@@ -13,7 +13,7 @@ from app.agent.runtime.final_answer_layer import (
     answer_mode_for_fast_classification,
     apply_final_answer_layer,
 )
-from app.agent.runtime.user_facing_reply import _guard_unsafe_user_instruction
+from app.agent.runtime.user_facing_reply import collect_unsafe_user_instruction_reply_with_trace
 from app.agent.api.deps import (
     _is_light_runtime_mode,
     get_current_request_user,
@@ -817,7 +817,7 @@ async def _chat_response_from_knowledge_response(
 
 
 async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
-    early_guard_reply = _guard_unsafe_user_instruction(
+    early_guard_reply = await collect_unsafe_user_instruction_reply_with_trace(
         latest_user_message=request.message,
         turn_context=None,
     )
@@ -825,17 +825,12 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         return ChatResponse(
             session_id=request.session_id,
             **build_public_response_core(
-                reply=early_guard_reply,
+                reply=early_guard_reply.text,
                 structured_state=None,
                 policy_path="governed_guard",
                 run_meta=with_answer_trace(
                     {"guard": "unsafe_forced_case_claim"},
-                    build_answer_trace(
-                        reply_source="api_guard",
-                        answer_markdown_source="deterministic_fallback",
-                        final_visible_source="answer_markdown",
-                        fallback_reason="unsafe_user_instruction_guard",
-                    ),
+                    early_guard_reply.answer_trace,
                 ),
             ),
         )
@@ -930,4 +925,11 @@ async def chat_route(request: ChatRequest, current_user: RequestUser = Depends(g
 
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)):
-    return StreamingResponse(event_generator(request, current_user=current_user), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(request, current_user=current_user),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )

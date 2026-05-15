@@ -9,6 +9,7 @@ The frontend is a standalone Next.js 16 App Router project. Treat this directory
 ## Working Rules
 
 - Run frontend package commands from `/home/thorsten/sealai/frontend`.
+- For dashboard, cockpit, chat, RFQ, RAG, material/medium intelligence, or routing work, read the repository root `AGENTS.md` first; `docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md` is the single active product SSoT.
 - Keep changes minimal and aligned with the existing App Router structure.
 - Do not move domain logic from the backend into the frontend.
 - Prefer typed interfaces in `src/lib` and lightweight UI composition in `src/components`.

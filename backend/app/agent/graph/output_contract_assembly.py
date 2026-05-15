@@ -82,6 +82,10 @@ from app.agent.runtime.reply_composition import (
 )
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract, PendingQuestion
+from app.agent.v91.conversation_state import (
+    build_conversation_task_state,
+    build_dialogue_debt,
+)
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.output_classifier import OutputClassificationInput, OutputClassifier
 
@@ -540,15 +544,21 @@ def build_governed_conversation_strategy_contract(
             conversation_phase="narrowing",
             turn_goal="clarify_primary_open_point",
             focus_key=str(hints["focus_key"]) if hints.get("focus_key") else None,
-            user_signal_mirror=str(hints["user_signal_mirror"])
-            if hints.get("user_signal_mirror")
-            else "",
-            primary_question=str(hints["primary_question"])
-            if hints.get("primary_question")
-            else None,
-            primary_question_reason=str(hints["primary_question_reason"])
-            if hints.get("primary_question_reason")
-            else "",
+            user_signal_mirror=(
+                str(hints["user_signal_mirror"])
+                if hints.get("user_signal_mirror")
+                else ""
+            ),
+            primary_question=(
+                str(hints["primary_question"])
+                if hints.get("primary_question")
+                else None
+            ),
+            primary_question_reason=(
+                str(hints["primary_question_reason"])
+                if hints.get("primary_question_reason")
+                else ""
+            ),
             response_mode="single_question",
         )
     factory = _GOVERNED_STRATEGY_FACTORIES.get(response_class)
@@ -637,6 +647,54 @@ def _compute_public(state: GraphState) -> list[dict[str, Any]]:
     return summaries
 
 
+def _challenge_public(state: GraphState) -> dict[str, Any]:
+    """Expose bounded V9 challenge intelligence without internal state leakage."""
+    challenge = state.challenge
+    return {
+        "schema_version": challenge.schema_version,
+        "status": challenge.status,
+        "findings": [
+            {
+                "finding_id": item.finding_id,
+                "kind": item.kind,
+                "severity": item.severity,
+                "status": item.status,
+                "title": item.title,
+                "summary": item.summary,
+                "rfq_relevance": item.rfq_relevance,
+                "related_fields": list(item.related_fields),
+                "evidence_ref_ids": list(item.evidence_ref_ids),
+                "action_mode": item.action_mode,
+                "source": item.source,
+            }
+            for item in challenge.findings
+        ],
+        "hypotheses": [
+            {
+                "hypothesis_id": item.hypothesis_id,
+                "label": item.label,
+                "plausibility_class": item.plausibility_class,
+                "status": item.status,
+                "basis": list(item.basis),
+                "counterindicators": list(item.counterindicators),
+                "blocking_unknowns": list(item.blocking_unknowns),
+                "required_checks": list(item.required_checks),
+                "rfq_relevance": item.rfq_relevance,
+                "forbidden_claims": list(item.forbidden_claims),
+                "source": item.source,
+            }
+            for item in challenge.hypotheses
+        ],
+        "next_best_question": (
+            challenge.next_best_question.model_dump(mode="python")
+            if challenge.next_best_question is not None
+            else None
+        ),
+        "action_modes_run": list(challenge.action_modes_run),
+        "boundary_notice": challenge.boundary_notice,
+    }
+
+
 def _build_output_public_base(state: GraphState, response_class: str) -> dict[str, Any]:
     """Assemble the public-facing output payload (Invariant 8 compliant).
 
@@ -694,10 +752,12 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
             getattr(state.governance, "type_sensitive_required", []) or []
         ),
         "compute": _compute_public(state),
+        "challenge": _challenge_public(state),
         "matching": _matching_public(state),
         "rfq": _rfq_public(state),
         "dispatch": _dispatch_public(state),
         "norm": _norm_public(state),
+        "v92": _v92_public(state),
         "export_profile": _export_profile_public(state),
         "manufacturer_mapping": _manufacturer_mapping_public(state),
         "dispatch_contract": _dispatch_contract_public(state),
@@ -715,9 +775,9 @@ def _matching_public(state: GraphState) -> dict[str, Any]:
         and not _inquiry_release_blockers(state),
         "release_blockers": _shortlist_release_blockers(state),
         "data_source": state.matching.data_source,
-        "selected_manufacturer": selected.manufacturer_name
-        if selected is not None
-        else None,
+        "selected_manufacturer": (
+            selected.manufacturer_name if selected is not None else None
+        ),
         "manufacturer_count": len(state.matching.manufacturer_refs),
         "manufacturers": [
             ref.manufacturer_name
@@ -737,16 +797,16 @@ def _rfq_public(state: GraphState) -> dict[str, Any]:
         "release_blockers": _inquiry_release_blockers(state),
         **build_admissibility_payload(state.rfq.rfq_admissible),
         "handover_status": state.rfq.handover_status,
-        "selected_manufacturer": selected.manufacturer_name
-        if selected is not None
-        else None,
+        "selected_manufacturer": (
+            selected.manufacturer_name if selected is not None else None
+        ),
         "recipient_count": len(state.rfq.recipient_refs),
         "qualified_material_count": len(state.rfq.qualified_material_ids),
         "confirmed_parameter_count": len(state.rfq.confirmed_parameters),
         "dimension_count": len(state.rfq.dimensions),
-        "requirement_class": requirement_class.class_id
-        if requirement_class is not None
-        else None,
+        "requirement_class": (
+            requirement_class.class_id if requirement_class is not None else None
+        ),
         "notes": list(state.rfq.notes),
     }
 
@@ -781,13 +841,13 @@ def _dispatch_public(state: GraphState) -> dict[str, Any]:
     return {
         "dispatch_ready": state.dispatch.dispatch_ready,
         "dispatch_status": state.dispatch.dispatch_status,
-        "selected_manufacturer": selected.manufacturer_name
-        if selected is not None
-        else None,
+        "selected_manufacturer": (
+            selected.manufacturer_name if selected is not None else None
+        ),
         "recipient_count": len(state.dispatch.recipient_refs),
-        "requirement_class": requirement_class.class_id
-        if requirement_class is not None
-        else None,
+        "requirement_class": (
+            requirement_class.class_id if requirement_class is not None else None
+        ),
         "notes": _sanitize_public_notes(list(state.dispatch.dispatch_notes)),
     }
 
@@ -808,6 +868,65 @@ def _norm_public(state: GraphState) -> dict[str, Any]:
         "validity_limits": list(norm.validity_limits),
         "open_validation_points": list(norm.open_validation_points),
         "manufacturer_validation_required": norm.manufacturer_validation_required,
+    }
+
+
+def _v92_public(state: GraphState) -> dict[str, Any]:
+    """Public V9.2 quality summary without raw traces or internal prompts."""
+
+    return {
+        "seal_system": {
+            "status": state.seal_system.status,
+            "seal_family": state.seal_system.seal_family,
+            "seal_type": state.seal_system.seal_type,
+            "missing_fields": list(state.seal_system.missing_fields),
+            "validity_boundaries": list(state.seal_system.validity_boundaries),
+        },
+        "engineering": {
+            "status": state.engineering.status,
+            "route": state.engineering.route,
+            "next_best_engineering_action": state.engineering.next_best_engineering_action,
+            "blockers": list(state.engineering.blockers),
+        },
+        "calculations": {
+            "status": state.calculation.status,
+            "result_count": len(state.calculation.results),
+            "blocked_calculations": list(state.calculation.blocked_calculations),
+            "guardrail_violations": list(state.calculation.guardrail_violations),
+        },
+        "standards": {
+            "status": state.standards.status,
+            "registry_version": state.standards.registry_version,
+            "applicable_count": len(state.standards.applicable_entries),
+            "blocking_gaps": list(state.standards.blocking_gaps),
+            "claim_boundary": state.standards.claim_boundary,
+        },
+        "evidence_graph": {
+            "status": state.evidence_graph.status,
+            "node_count": len(state.evidence_graph.nodes),
+            "unresolved_gaps": list(state.evidence_graph.unresolved_gaps),
+        },
+        "compound": {
+            "status": state.compound_state.status,
+            "material_family_count": len(state.compound_state.material_family_candidates),
+            "compound_count": len(state.compound_state.compound_candidates),
+            "product_count": len(state.compound_state.product_candidates),
+            "separation_violations": list(state.compound_state.separation_violations),
+        },
+        "review": {
+            "status": state.review_state.status,
+            "blocking_findings": list(state.review_state.blocking_findings),
+            "required_corrections": list(state.review_state.required_corrections),
+        },
+        "dossier": {
+            "status": state.dossier.status,
+            "dossier_id": state.dossier.dossier_id,
+            "fact_count": len(state.dossier.facts),
+            "calculation_count": len(state.dossier.calculations),
+            "candidate_count": len(state.dossier.candidates),
+            "blockers": list(state.dossier.blockers),
+            "no_final_technical_release": state.dossier.no_final_technical_release,
+        },
     }
 
 
@@ -1479,6 +1598,16 @@ async def output_contract_node(state: GraphState) -> GraphState:
         strategy=strategy,
         pending_question=next_pending_question,
     )
+    v91_conversation_task = build_conversation_task_state(
+        state=state,
+        governed_context=governed_answer_context,
+        response_class=response_class,
+    )
+    v91_dialogue_debt = build_dialogue_debt(
+        state=state,
+        governed_context=governed_answer_context,
+        conversation_task=v91_conversation_task,
+    )
 
     log.debug(
         "[output_contract_node] response_class=%s gov_class=%s rfq_admissible=%s",
@@ -1493,6 +1622,10 @@ async def output_contract_node(state: GraphState) -> GraphState:
             "output_public": output_public,
             "output_reply": reply,
             "pending_question": next_pending_question,
+            "v91_question_plan": governed_answer_context.v91_question_plan,
+            "v91_conversation_task": v91_conversation_task,
+            "v91_dialogue_debt": v91_dialogue_debt,
+            "v91_final_answer_context": governed_answer_context.v91_final_answer_context,
             "governed_answer_context": governed_answer_context.model_dump(
                 mode="python"
             ),
@@ -1506,7 +1639,8 @@ async def output_contract_node(state: GraphState) -> GraphState:
         governed_answer_composer_node,
     )
 
-    result_state = await governed_answer_composer_node(result_state)
+    if not getattr(result_state, "defer_visible_answer_composer", False):
+        result_state = await governed_answer_composer_node(result_state)
 
     if response_class == _STRUCTURED_CLARIFICATION:
         try:

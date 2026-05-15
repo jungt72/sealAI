@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
+from app.agent.v91.contracts import V91WorkspaceProjection
 from app.domain.case_type import CaseType
 from app.domain.seal_type import SealFamily, SealType
 from app.domain.source_validation import SourceType, ValidationStatus
@@ -357,6 +358,7 @@ class MaterialCandidateProjection(BaseModel):
     status: str
     status_label: str
     confidence: str = "low"
+    plausibility: str = "low"
     plausibility_score: int = 0
     plausibility_label: str = "nicht bewertet"
     score_drivers: List[str] = Field(default_factory=list)
@@ -364,7 +366,11 @@ class MaterialCandidateProjection(BaseModel):
     why_considered: List[str] = Field(default_factory=list)
     limits: List[str] = Field(default_factory=list)
     blocking_unknowns: List[str] = Field(default_factory=list)
+    counterindicators: List[str] = Field(default_factory=list)
     required_checks: List[str] = Field(default_factory=list)
+    allowed_claim: str = "vorlaeufige Pruefhypothese"
+    forbidden_claims: List[str] = Field(default_factory=list)
+    rfq_relevance: str = ""
     evidence_ref_ids: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -397,16 +403,76 @@ class MaterialIntelligenceProjection(BaseModel):
     input_summary: MaterialIntelligenceInputSummary = Field(
         default_factory=MaterialIntelligenceInputSummary
     )
-    candidate_materials: List[MaterialCandidateProjection] = Field(
-        default_factory=list
-    )
+    candidate_materials: List[MaterialCandidateProjection] = Field(default_factory=list)
     alternatives: List[MaterialAlternativeProjection] = Field(default_factory=list)
     missing_field_hints: List[str] = Field(default_factory=list)
     rfq_relevance_notes: List[str] = Field(default_factory=list)
     evidence: List[MaterialEvidenceProjection] = Field(default_factory=list)
-    safety: MaterialIntelligenceSafety = Field(default_factory=MaterialIntelligenceSafety)
+    safety: MaterialIntelligenceSafety = Field(
+        default_factory=MaterialIntelligenceSafety
+    )
     not_for_release_decisions: bool = True
     disclaimer: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChallengeFindingProjection(BaseModel):
+    finding_id: str
+    kind: str
+    severity: str = "watch"
+    status: str = "open"
+    title: str
+    summary: str
+    rfq_relevance: str = ""
+    related_fields: List[str] = Field(default_factory=list)
+    evidence_ref_ids: List[str] = Field(default_factory=list)
+    action_mode: str = "RUN_RISK_COMPLETENESS"
+    source: str = "challenge_engine_v9"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SolutionHypothesisProjection(BaseModel):
+    hypothesis_id: str
+    label: str
+    plausibility_class: str = "low"
+    status: str = "active"
+    basis: List[str] = Field(default_factory=list)
+    counterindicators: List[str] = Field(default_factory=list)
+    blocking_unknowns: List[str] = Field(default_factory=list)
+    required_checks: List[str] = Field(default_factory=list)
+    rfq_relevance: str = ""
+    forbidden_claims: List[str] = Field(default_factory=list)
+    source: str = "challenge_engine_v9"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChallengeNextBestQuestionProjection(BaseModel):
+    question: str
+    reason: str
+    focus_key: str
+    priority: int = 1
+    expected_answer_type: str = "text"
+    closes_findings: List[str] = Field(default_factory=list)
+    source: str = "challenge_engine_v9"
+    max_questions_policy: str = "ask_one_highest_leverage_question"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ChallengeIntelligenceProjection(BaseModel):
+    schema_version: str = "challenge_engine_v9.0"
+    status: str = "not_run"
+    findings: List[ChallengeFindingProjection] = Field(default_factory=list)
+    hypotheses: List[SolutionHypothesisProjection] = Field(default_factory=list)
+    next_best_question: Optional[ChallengeNextBestQuestionProjection] = None
+    action_modes_run: List[str] = Field(default_factory=list)
+    boundary_notice: str = (
+        "Pruefhypothesen dienen der technischen Vorqualifikation; keine "
+        "Freigabe, keine finale Auslegung und keine Materialentscheidung."
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -811,6 +877,10 @@ class CaseWorkspaceProjection(BaseModel):
     material_intelligence: MaterialIntelligenceProjection = Field(
         default_factory=MaterialIntelligenceProjection
     )
+    challenge_intelligence: ChallengeIntelligenceProjection = Field(
+        default_factory=ChallengeIntelligenceProjection
+    )
+    v91_workspace: V91WorkspaceProjection = Field(default_factory=V91WorkspaceProjection)
     technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)
 

@@ -188,6 +188,111 @@ def _sanitize_visible_numeric_literals(text: str) -> str:
     return _INTEGERISH_FLOAT_RE.sub(r"\g<int>", text)
 
 
+_VISIBLE_GERMAN_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(pattern), replacement)
+    for pattern, replacement in (
+        (r"\bFuer\b", "Für"),
+        (r"\bfuer\b", "für"),
+        (r"\bDafuer\b", "Dafür"),
+        (r"\bdafuer\b", "dafür"),
+        (r"\bUeber\b", "Über"),
+        (r"\bueber\b", "über"),
+        (r"\bSchoen\b", "Schön"),
+        (r"\bschoen\b", "schön"),
+        (r"\bOel\b", "Öl"),
+        (r"\boel\b", "Öl"),
+        (r"\bZunaechst\b", "Zunächst"),
+        (r"\bzunaechst\b", "zunächst"),
+        (r"\bNaechst", "Nächst"),
+        (r"\bnaechst", "nächst"),
+        (r"\bHaeufig\b", "Häufig"),
+        (r"\bhaeufig\b", "häufig"),
+        (r"\bRueckfrage\b", "Rückfrage"),
+        (r"\brueckfrage\b", "Rückfrage"),
+        (r"\bVerfuegbar\b", "Verfügbar"),
+        (r"\bverfuegbar\b", "verfügbar"),
+        (r"\bMoeglich", "Möglich"),
+        (r"\bmoeglich", "möglich"),
+        (r"\bKoenn", "Könn"),
+        (r"\bkoenn", "könn"),
+        (r"\bMuess", "Müss"),
+        (r"\bmuess", "müss"),
+        (r"\bWaere\b", "Wäre"),
+        (r"\bwaere\b", "wäre"),
+        (r"\bHaette\b", "Hätte"),
+        (r"\bhaette\b", "hätte"),
+        (r"\bFrueh\b", "Früh"),
+        (r"\bfrueh\b", "früh"),
+        (r"\bHaengt\b", "Hängt"),
+        (r"\bhaengt\b", "hängt"),
+        (r"\bLaesst\b", "Lässt"),
+        (r"\blaesst\b", "lässt"),
+        (r"\bGehoert\b", "Gehört"),
+        (r"\bgehoert\b", "gehört"),
+        (r"\bGegenlaufflaechen\b", "Gegenlaufflächen"),
+        (r"\bGegenlaufflaeche\b", "Gegenlauffläche"),
+        (r"\bgegenlaufflaechen\b", "Gegenlaufflächen"),
+        (r"\bgegenlaufflaeche\b", "Gegenlauffläche"),
+        (r"\bOberflaechen\b", "Oberflächen"),
+        (r"\bOberflaeche\b", "Oberfläche"),
+        (r"\boberflaechen\b", "Oberflächen"),
+        (r"\boberflaeche\b", "Oberfläche"),
+        (r"\bDichtflaechen\b", "Dichtflächen"),
+        (r"\bDichtflaeche\b", "Dichtfläche"),
+        (r"\bBeschaedigung\b", "Beschädigung"),
+        (r"\bbeschaedigung\b", "Beschädigung"),
+        (r"\bDichtlippenbeschaedigung\b", "Dichtlippenbeschädigung"),
+        (r"\bdichtlippenbeschaedigung\b", "Dichtlippenbeschädigung"),
+        (r"\bHaerte\b", "Härte"),
+        (r"\bhaerte\b", "Härte"),
+        (r"\bHuelse\b", "Hülse"),
+        (r"\bhuelse\b", "Hülse"),
+        (r"\bBehaelter\b", "Behälter"),
+        (r"\bbehaelter\b", "Behälter"),
+        (r"\bExzentrizitaet\b", "Exzentrizität"),
+        (r"\bexzentrizitaet\b", "Exzentrizität"),
+        (r"\bEntzuendung\b", "Entzündung"),
+        (r"\bIdentitaet\b", "Identität"),
+        (r"\bQualitaet\b", "Qualität"),
+        (r"\bqualitaet\b", "qualität"),
+        (r"\bLoesung", "Lösung"),
+        (r"\bloesung", "lösung"),
+        (r"Pruef", "Prüf"),
+        (r"pruef", "prüf"),
+        (r"Klaer", "Klär"),
+        (r"klaer", "klär"),
+        (r"Bestaet", "Bestät"),
+        (r"bestaet", "bestät"),
+        (r"Unbestaet", "Unbestät"),
+        (r"unbestaet", "unbestät"),
+    )
+)
+
+_QUOTE_WRAPPED_PARAGRAPH_RE = re.compile(
+    r'(?m)^(?P<prefix>\s*)["“](?P<body>[^"\n]{24,})["”]\s*$'
+)
+
+
+def _normalize_visible_german_transliterations(text: str) -> str:
+    """Polish outward German text without touching technical values like HLP 46."""
+    normalized = text
+    for pattern, replacement in _VISIBLE_GERMAN_REPLACEMENTS:
+        normalized = pattern.sub(replacement, normalized)
+    return normalized
+
+
+def _unwrap_quote_wrapped_paragraphs(text: str) -> str:
+    """Remove accidental full-paragraph quotes from visible assistant prose."""
+    return _QUOTE_WRAPPED_PARAGRAPH_RE.sub(r"\g<prefix>\g<body>", text)
+
+
+def _polish_visible_text(text: str, *, full_response: bool) -> str:
+    polished = _normalize_visible_german_transliterations(text)
+    if full_response:
+        polished = _unwrap_quote_wrapped_paragraphs(polished)
+    return polished
+
+
 # ---------------------------------------------------------------------------
 # Public result type
 # ---------------------------------------------------------------------------
@@ -219,7 +324,8 @@ def _render_text_for_path(
 ) -> tuple[str, bool, str | None]:
     """Returns (clean_text, was_scrubbed, policy_violation_category)."""
     scrubbed = _structural_scrub(raw).strip()
-    normalized = _sanitize_visible_numeric_literals(scrubbed)
+    polished = _polish_visible_text(scrubbed, full_response=True)
+    normalized = _sanitize_visible_numeric_literals(polished)
     was_scrubbed = normalized != raw.strip()
 
     policy_violation: str | None = None
@@ -279,4 +385,5 @@ def render_chunk(
 
     Returns the cleaned chunk string (may be empty string if entirely stripped).
     """
-    return _sanitize_visible_numeric_literals(_structural_scrub(chunk))
+    polished = _polish_visible_text(_structural_scrub(chunk), full_response=False)
+    return _sanitize_visible_numeric_literals(polished)

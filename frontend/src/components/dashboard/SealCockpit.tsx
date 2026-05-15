@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Beaker,
+  Brain,
   Calculator,
   CheckCircle2,
   ClipboardList,
   Factory,
   FileText,
+  HelpCircle,
   Layers,
   Search,
   ShieldCheck,
@@ -307,32 +309,377 @@ function ItemList({
   );
 }
 
-function MaterialScore({ candidate }: { candidate: WorkspaceMaterialCandidate }) {
-  const score = Math.max(0, Math.min(100, Math.round(candidate.plausibilityScore || 0)));
+function plausibilityTone(plausibility: string) {
+  switch (plausibility) {
+    case "high":
+      return "border-emerald-200 bg-emerald-50 text-emerald-800";
+    case "blocked":
+      return "border-red-200 bg-red-50 text-red-800";
+    case "medium":
+      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#0B57D0]";
+    default:
+      return "border-amber-200 bg-amber-50 text-amber-800";
+  }
+}
+
+function findingTone(severity: string) {
+  switch (severity) {
+    case "blocking":
+      return "border-red-200 bg-red-50 text-red-800";
+    case "watch":
+      return "border-amber-200 bg-amber-50 text-amber-800";
+    default:
+      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#0B57D0]";
+  }
+}
+
+function findingLabel(severity: string) {
+  switch (severity) {
+    case "blocking":
+      return "blockierend";
+    case "watch":
+      return "prüfen";
+    default:
+      return "Hinweis";
+  }
+}
+
+function findingKindLabel(kind: string) {
+  switch (kind) {
+    case "missing_information":
+      return "offene Angabe";
+    case "contradiction":
+      return "Gegenindikator";
+    case "medium_challenge":
+      return "Medium";
+    case "application_challenge":
+      return "Anwendung";
+    case "derived_signal":
+      return "abgeleitet";
+    case "claim_guard":
+      return "Grenze";
+    default:
+      return humanizeDisplayText(kind);
+  }
+}
+
+function actionModeLabel(mode: string) {
+  switch (mode) {
+    case "CHALLENGE_KNOWN_INPUTS":
+      return "bekannte Angaben challengen";
+    case "ASK_NEXT_BEST_QUESTION":
+      return "nächste Frage";
+    case "RUN_SCENARIO_MATRIX":
+      return "Szenario-Matrix";
+    case "RUN_COUNTERINDICATOR_CHALLENGE":
+      return "Gegencheck";
+    case "RUN_SURFACE_SPEED_CHALLENGE":
+      return "Gegenfläche";
+    case "RUN_SUPPORT_SYSTEM_CHALLENGE":
+      return "Schmierung/Flush";
+    case "RUN_PRESSURE_DIRECTION_CHALLENGE":
+      return "Druckrichtung";
+    case "RUN_RISK_COMPLETENESS":
+      return "Risikoprüfung";
+    case "RUN_MEDIUM_CHALLENGE":
+      return "Mediumtiefe";
+    case "RUN_DERIVED_CALCULATIONS":
+      return "Rechencheck";
+    default:
+      return humanizeDisplayText(mode);
+  }
+}
+
+function fieldLabel(field: string) {
+  switch (field) {
+    case "medium":
+      return "Medium";
+    case "medium_qualifiers":
+      return "Mediumdetails";
+    case "temperature_c":
+      return "Temperatur";
+    case "pressure_bar":
+      return "Druck";
+    case "pressure_direction":
+      return "Druckrichtung";
+    case "sealing_type":
+      return "Dichtungstyp";
+    case "shaft_diameter_mm":
+      return "Welle";
+    case "speed_rpm":
+      return "Drehzahl";
+    case "counterface_surface":
+      return "Gegenfläche";
+    case "lubrication_context":
+      return "Schmierung/Flush";
+    default:
+      return humanizeDisplayText(field);
+  }
+}
+
+function MiniList({
+  label,
+  items,
+  limit = 3,
+}: {
+  label: string;
+  items: string[];
+  limit?: number;
+}) {
+  const visibleItems = compactItems(items, limit);
+  if (!visibleItems.length) {
+    return null;
+  }
+  return (
+    <div className="mt-2">
+      <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">{label}</div>
+      <ul className="mt-1 space-y-1 text-[12px] leading-relaxed text-[#374151]">
+        {visibleItems.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ChallengeChipRow({
+  fields,
+  actionMode,
+  evidenceRefs,
+}: {
+  fields: string[];
+  actionMode: string;
+  evidenceRefs: string[];
+}) {
+  const chips = [
+    ...compactItems(fields.map(fieldLabel), 4),
+    actionMode ? actionModeLabel(actionMode) : null,
+    ...compactItems(evidenceRefs, 2),
+  ].filter(Boolean) as string[];
+
+  if (!chips.length) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="rounded-full border border-[#E5E7EB] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#4B5563]"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function ChallengeIntelligencePanel({ workspace }: { workspace: WorkspaceView | null }) {
+  const challenge = workspace?.challengeIntelligence;
+  const findings = challenge?.findings ?? [];
+  const hypotheses = challenge?.hypotheses ?? [];
+  const question = challenge?.nextBestQuestion ?? null;
+  const hasContent = Boolean(
+    challenge &&
+      challenge.status !== "not_run" &&
+      (findings.length || hypotheses.length || question),
+  );
+
+  if (!hasContent || !challenge) {
+    return null;
+  }
+
+  const blockingCount = findings.filter((finding) => finding.severity === "blocking").length;
+  const counterindicatorCount =
+    findings.filter((finding) => finding.kind === "contradiction").length +
+    hypotheses.filter((hypothesis) => hypothesis.counterindicators.length > 0).length;
+
+  return (
+    <section className="rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#DCE8FF] pb-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
+            <Brain size={17} />
+            Challenger
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
+            Befunde, Prüfhypothesen und nächste beste Rückfrage aus dem V9-Kern.
+          </p>
+        </div>
+        <span className="inline-flex rounded-full border border-[#BFD3FF] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+          {challenge.schemaVersion}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {[
+          ["Blocker", String(blockingCount)],
+          ["Gegenchecks", String(counterindicatorCount)],
+          ["Aktionen", String(challenge.actionModesRun.length)],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-[12px] border border-[#DCE8FF] bg-white px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">{label}</div>
+            <div className="mt-1 text-lg font-semibold text-[#111827]">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {question ? (
+        <div className="mt-4 rounded-[14px] border border-[#BFD3FF] bg-white p-3">
+          <div className="flex items-start gap-2">
+            <HelpCircle className="mt-0.5 shrink-0 text-[#0B57D0]" size={17} />
+            <div>
+              <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+                Nächste beste Frage
+              </div>
+              <p className="mt-1 text-sm font-semibold leading-relaxed text-[#111827]">{question.question}</p>
+              {question.reason ? (
+                <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{question.reason}</p>
+              ) : null}
+              <ChallengeChipRow
+                fields={[question.focusKey]}
+                actionMode="ASK_NEXT_BEST_QUESTION"
+                evidenceRefs={question.closesFindings}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-3">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Kritische Befunde</div>
+          {findings.length ? (
+            <div className="mt-2 space-y-2">
+              {findings.slice(0, 6).map((finding) => (
+                <div key={finding.findingId} className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
+                        {findingKindLabel(finding.kind)}
+                      </div>
+                      <div className="mt-1 text-sm font-semibold leading-snug text-[#111827]">{finding.title}</div>
+                    </div>
+                    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-bold", findingTone(finding.severity))}>
+                      {findingLabel(finding.severity)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{finding.summary}</p>
+                  {finding.rfqRelevance ? (
+                    <p className="mt-2 rounded-[10px] border border-[#E5E7EB] bg-white px-2.5 py-2 text-[12px] leading-relaxed text-[#374151]">
+                      RFQ: {humanizeDisplayText(finding.rfqRelevance)}
+                    </p>
+                  ) : null}
+                  <ChallengeChipRow
+                    fields={finding.relatedFields}
+                    actionMode={finding.actionMode}
+                    evidenceRefs={finding.evidenceRefIds}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">Noch kein Challenger-Befund verfügbar.</p>
+          )}
+        </div>
+
+        <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-3">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Prüfhypothesen</div>
+          {hypotheses.length ? (
+            <div className="mt-2 space-y-2">
+              {hypotheses.slice(0, 4).map((hypothesis) => (
+                <div key={hypothesis.hypothesisId} className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-semibold leading-snug text-[#111827]">{hypothesis.label}</div>
+                    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-bold", plausibilityTone(hypothesis.plausibilityClass))}>
+                      {plausibilityLabel(hypothesis.plausibilityClass)}
+                    </span>
+                  </div>
+                  {hypothesis.counterindicators.length ? (
+                    <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
+                      Gegenindikator: {humanizeDisplayText(hypothesis.counterindicators[0])}
+                    </p>
+                  ) : hypothesis.basis.length ? (
+                    <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
+                      Basis: {humanizeDisplayText(hypothesis.basis[0])}
+                    </p>
+                  ) : null}
+                  <MiniList label="Blocker" items={hypothesis.blockingUnknowns} />
+                  <MiniList label="Prüfen" items={hypothesis.requiredChecks} />
+                  {hypothesis.rfqRelevance ? (
+                    <p className="mt-2 rounded-[10px] border border-[#E5E7EB] bg-white px-2.5 py-2 text-[12px] leading-relaxed text-[#374151]">
+                      RFQ: {humanizeDisplayText(hypothesis.rfqRelevance)}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">Noch keine Prüfhypothesen ableitbar.</p>
+          )}
+        </div>
+      </div>
+
+      {challenge.actionModesRun.length ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {compactItems(challenge.actionModesRun.map(actionModeLabel), 8).map((mode) => (
+            <span
+              key={mode}
+              className="rounded-full border border-[#DCE8FF] bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-[#0B57D0]"
+            >
+              {mode}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <p className="mt-3 rounded-[12px] border border-[#DCE8FF] bg-white/70 px-3 py-2 text-[12px] leading-relaxed text-[#4B5563]">
+        {normalizeText(challenge.boundaryNotice) ||
+          "Prüfhypothesen sind keine Freigabe und keine finale Auslegung."}
+      </p>
+    </section>
+  );
+}
+
+function plausibilityLabel(plausibility: string) {
+  switch (plausibility) {
+    case "high":
+      return "hoch";
+    case "medium":
+      return "mittel";
+    case "low":
+      return "niedrig";
+    default:
+      return normalizeText(plausibility) || "offen";
+  }
+}
+
+function MaterialHypothesisSummary({ candidate }: { candidate: WorkspaceMaterialCandidate }) {
   return (
     <div className="mt-3 rounded-[14px] border border-[#D7E5FF] bg-white p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
-            Prüfpriorität
+            Prüfhypothese
           </div>
           <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
-            Orientierung aus bekannten Parametern. Keine Materialentscheidung.
+            {normalizeText(candidate.allowedClaim) || "Vorläufiger Prüfrahmen aus bekannten Parametern."}
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="text-lg font-semibold text-[#111827]">{score} / 100</div>
-          <div className="text-[12px] font-semibold text-[#6B7280]">
-            {normalizeText(candidate.plausibilityLabel) || "nicht bewertet"}
-          </div>
-        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-full border px-3 py-1 text-[12px] font-bold uppercase tracking-[0.08em]",
+            plausibilityTone(candidate.plausibility),
+          )}
+        >
+          {plausibilityLabel(candidate.plausibility)}
+        </span>
       </div>
-      <div className="mt-3 h-2 rounded-full bg-[#E5EAF2]" aria-hidden="true">
-        <div
-          className="h-2 rounded-full bg-[#0B57D0]"
-          style={{ width: `${score}%` }}
-        />
-      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-[#4B5563]">
+        {normalizeText(candidate.rfqRelevance) ||
+          "Nur als Kontext für die spätere Herstellerprüfung sichtbar, nicht als Vorgabe."}
+      </p>
     </div>
   );
 }
@@ -467,6 +814,86 @@ function sourceStatusLine(workspace: WorkspaceView | null) {
     ? "noch nicht geprüft"
     : normalizeText(workspace.mediumContext.validationStatus) || "Status unklar";
   return `${source} · ${status}`;
+}
+
+function v91OverallLabel(status: string | undefined): string {
+  switch (status) {
+    case "rfq_basis":
+      return "Anfragebasis";
+    case "review_needed":
+      return "Prüfung nötig";
+    case "screening":
+      return "Screening";
+    case "intake":
+      return "Intake";
+    default:
+      return "Noch offen";
+  }
+}
+
+export function V91IntelligencePanel({ workspace }: { workspace: WorkspaceView | null }) {
+  const v91 = workspace?.v91Workspace;
+  const intelligence = v91?.intelligenceState;
+  if (!v91 || !intelligence) {
+    return null;
+  }
+
+  const slices = [
+    intelligence.medium,
+    intelligence.material,
+    intelligence.challenge,
+    intelligence.document,
+    intelligence.rfq,
+  ];
+  const nextAction =
+    v91.tabState.find((tab) => tab.nextAction)?.nextAction ||
+    workspace?.communication?.primaryQuestion ||
+    null;
+
+  return (
+    <section className="rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#DCE8FF] pb-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
+            <ShieldCheck size={17} />
+            Sealing Intelligence
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
+            Backend-owned V9.1 Workspace-Projektion aus Medium, Werkstoff, Challenge, Dokumenten und Anfragebasis.
+          </p>
+        </div>
+        <span className="inline-flex rounded-full border border-[#BFD3FF] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+          {v91OverallLabel(intelligence.overallStatus)}
+        </span>
+      </div>
+      <div className="mt-4 grid grid-cols-1 gap-2 xl:grid-cols-5">
+        {slices.map((slice) => (
+          <div key={slice.sliceId} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2.5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
+              {humanizeDisplayText(slice.sliceId)}
+            </div>
+            <div className="mt-1 text-sm font-semibold leading-snug text-[#111827]">
+              {humanizeDisplayText(slice.status)}
+            </div>
+            <p className="mt-1 line-clamp-3 text-[12px] leading-relaxed text-[#4B5563]">
+              {slice.summary || "Noch keine Projektion."}
+            </p>
+            {slice.blockers.length ? (
+              <div className="mt-2 rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-2 py-1 text-[11px] font-bold text-[#9A3412]">
+                {slice.blockers.length} offen
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {nextAction ? (
+        <div className="mt-3 rounded-[14px] border border-[#D7E5FF] bg-white px-3 py-2 text-sm leading-relaxed text-[#374151]">
+          <span className="font-semibold text-[#111827]">Nächster sinnvoller Schritt:</span>{" "}
+          {humanizeDisplayText(nextAction)}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function researchStatusLabel(attempt: MediumIntelligenceData["research_status"]["rag"] | undefined, label: string) {
@@ -867,13 +1294,14 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
                   {normalizeText(candidate.statusLabel)}
                 </span>
               </div>
-              <MaterialScore candidate={candidate} />
+              <MaterialHypothesisSummary candidate={candidate} />
               <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <ItemList title="Score-Treiber" items={candidate.scoreDrivers} />
-                <ItemList title="Warnpunkte" items={candidate.scoreCautions} />
+                <ItemList title="Stützende Signale" items={candidate.scoreDrivers} />
+                <ItemList title="Prüfpunkte" items={candidate.scoreCautions} />
                 <ItemList title="Warum im Fenster" items={candidate.whyConsidered} />
                 <ItemList title="Grenzen" items={candidate.limits} />
                 <ItemList title="Datenlücken" items={candidate.blockingUnknowns} empty="Keine weiteren Pflichtdaten aus diesem Fenster" />
+                <ItemList title="Gegenindikatoren" items={candidate.counterindicators} />
                 <ItemList title="Noch zu prüfen" items={candidate.requiredChecks} />
               </div>
             </div>
@@ -995,12 +1423,6 @@ export function SealCockpit({
 }) {
   const [activeTab, setActiveTab] = useState<CockpitTabId>(preferredTab ?? "overview");
 
-  useEffect(() => {
-    if (preferredTab) {
-      setActiveTab(preferredTab);
-    }
-  }, [preferredTab]);
-
   return (
     <aside className="flex min-h-0 min-w-0 flex-col overflow-visible rounded-[20px] border border-transparent bg-transparent">
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
@@ -1009,7 +1431,13 @@ export function SealCockpit({
           <>
             <CockpitStatusStrip items={data.statusStrip} />
             <div className="px-4 pt-4">
+              <V91IntelligencePanel workspace={workspace} />
+            </div>
+            <div className="px-4 pt-4">
               <DecisionUnderstandingPanel workspace={workspace} />
+            </div>
+            <div className="px-4 pt-4">
+              <ChallengeIntelligencePanel workspace={workspace} />
             </div>
             <div className="px-4 pt-4">
               <DesignIntakePanel workspace={workspace} />

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://sealai.net}"
+BASE_URL="${BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"
 TMP_DIR="${TMPDIR:-/tmp}"
 BODY_FILE="${TMP_DIR}/sealai-live-smoke-body.$$"
-trap 'rm -f "${BODY_FILE}"' EXIT
+HEADER_FILE="${TMP_DIR}/sealai-live-smoke-headers.$$"
+trap 'rm -f "${BODY_FILE}" "${HEADER_FILE}"' EXIT
 
 pass() { printf 'PASS: %s\n' "$1"; }
 fail() {
@@ -28,9 +29,9 @@ request_code() {
   local url="$2"
   local data="${3:-}"
   if [[ "$method" == "GET" ]]; then
-    curl -k -sS --max-time 15 -o "${BODY_FILE}" -w '%{http_code}' "$url"
+    curl -k -sS --max-time 15 -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}' "$url"
   else
-    curl -k -sS --max-time 15 -o "${BODY_FILE}" -w '%{http_code}' \
+    curl -k -sS --max-time 15 -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
       -X "$method" \
       -H 'Content-Type: application/json' \
       -d "$data" \
@@ -78,6 +79,14 @@ assert_json_field() {
   fi
 }
 
+assert_no_legacy_domain() {
+  local label="$1"
+  if grep -Eqi 'sealai\.net|auth\.sealai\.net' "${HEADER_FILE}" "${BODY_FILE}" 2>/dev/null; then
+    fail "${label} contains legacy sealai.net reference"
+  fi
+  pass "${label} contains no legacy sealai.net reference"
+}
+
 printf 'SeaLAI live pilot readiness smoke (%s)\n' "$BASE_URL"
 
 assert_code GET /api/health 200
@@ -91,7 +100,8 @@ else
 fi
 
 assert_code_any GET /dashboard/new '200,302,307,308'
-if grep -Eq 'api/auth/signin|SealingAI|SeaLAI|__next' "${BODY_FILE}"; then
+assert_no_legacy_domain 'dashboard auth boundary'
+if grep -Eq 'api/auth/signin|/login\\?callbackUrl=|/login|SealingAI|SeaLAI|__next' "${BODY_FILE}"; then
   pass 'dashboard route resolves to app or auth boundary'
 else
   fail 'dashboard route did not expose expected app/auth marker'

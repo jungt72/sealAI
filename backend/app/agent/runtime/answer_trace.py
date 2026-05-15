@@ -15,6 +15,7 @@ ReplySource = Literal[
     "hcl",
     "legacy_renderer",
     "api_guard",
+    "llm_guard",
     "unknown",
 ]
 
@@ -28,6 +29,7 @@ AnswerMarkdownSource = Literal[
     "light_conversation",
     "exploration_stream",
     "legacy_renderer",
+    "llm_guard",
     "composer_fallback",
     "deterministic_fallback",
     "unknown",

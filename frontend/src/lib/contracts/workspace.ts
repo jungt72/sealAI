@@ -104,6 +104,7 @@ export type WorkspaceMaterialCandidate = {
   status: string;
   statusLabel: string;
   confidence: string;
+  plausibility: "low" | "medium" | "high" | string;
   plausibilityScore: number;
   plausibilityLabel: string;
   scoreDrivers: string[];
@@ -111,7 +112,11 @@ export type WorkspaceMaterialCandidate = {
   whyConsidered: string[];
   limits: string[];
   blockingUnknowns: string[];
+  counterindicators: string[];
   requiredChecks: string[];
+  allowedClaim: string;
+  forbiddenClaims: string[];
+  rfqRelevance: string;
   evidenceRefIds: string[];
 };
 
@@ -144,6 +149,107 @@ export type WorkspaceMaterialIntelligence = {
   safety: WorkspaceMaterialIntelligenceSafety;
   notForReleaseDecisions: boolean;
   disclaimer: string | null;
+};
+
+export type WorkspaceChallengeFinding = {
+  findingId: string;
+  kind: string;
+  severity: string;
+  status: string;
+  title: string;
+  summary: string;
+  rfqRelevance: string;
+  relatedFields: string[];
+  evidenceRefIds: string[];
+  actionMode: string;
+  source: string;
+};
+
+export type WorkspaceSolutionHypothesis = {
+  hypothesisId: string;
+  label: string;
+  plausibilityClass: string;
+  status: string;
+  basis: string[];
+  counterindicators: string[];
+  blockingUnknowns: string[];
+  requiredChecks: string[];
+  rfqRelevance: string;
+  forbiddenClaims: string[];
+  source: string;
+};
+
+export type WorkspaceChallengeNextBestQuestion = {
+  question: string;
+  reason: string;
+  focusKey: string;
+  priority: number;
+  expectedAnswerType: string;
+  closesFindings: string[];
+  source: string;
+  maxQuestionsPolicy: string;
+};
+
+export type WorkspaceChallengeIntelligence = {
+  schemaVersion: string;
+  status: string;
+  findings: WorkspaceChallengeFinding[];
+  hypotheses: WorkspaceSolutionHypothesis[];
+  nextBestQuestion: WorkspaceChallengeNextBestQuestion | null;
+  actionModesRun: string[];
+  boundaryNotice: string;
+};
+
+export type WorkspaceV91IntelligenceSlice = {
+  sliceId: "medium" | "material" | "challenge" | "document" | "rfq";
+  status: string;
+  claimLevel:
+    | "general_orientation"
+    | "screening"
+    | "case_projection"
+    | "manufacturer_review";
+  summary: string;
+  signals: string[];
+  blockers: string[];
+  evidenceRefIds: string[];
+  notForReleaseDecisions: boolean;
+  source: string;
+};
+
+export type WorkspaceV91IntelligenceState = {
+  schemaVersion: string;
+  caseRevision: number;
+  overallStatus: "empty" | "intake" | "screening" | "review_needed" | "rfq_basis";
+  medium: WorkspaceV91IntelligenceSlice;
+  material: WorkspaceV91IntelligenceSlice;
+  challenge: WorkspaceV91IntelligenceSlice;
+  document: WorkspaceV91IntelligenceSlice;
+  rfq: WorkspaceV91IntelligenceSlice;
+};
+
+export type WorkspaceV91TabState = {
+  tabId:
+    | "overview"
+    | "parameters"
+    | "medium"
+    | "material"
+    | "challenge"
+    | "documents"
+    | "rfq";
+  label: string;
+  status: string;
+  sourceSliceId: string;
+  summary: string;
+  primaryItems: string[];
+  warnings: string[];
+  nextAction: string | null;
+  evidenceRefIds: string[];
+  notForReleaseDecisions: boolean;
+};
+
+export type WorkspaceV91Projection = {
+  intelligenceState: WorkspaceV91IntelligenceState;
+  tabState: WorkspaceV91TabState[];
 };
 
 export type WorkspaceMatchItem = {
@@ -449,6 +555,8 @@ export type WorkspaceView = {
     disclaimer: string | null;
   };
   materialIntelligence?: WorkspaceMaterialIntelligence;
+  challengeIntelligence?: WorkspaceChallengeIntelligence;
+  v91Workspace?: WorkspaceV91Projection;
   technicalDerivations?: WorkspaceTechnicalDerivation[];
   deepDiveTabs: WorkspaceDeepDiveTab[];
   specificity: {

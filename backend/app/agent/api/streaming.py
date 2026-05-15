@@ -1,7 +1,9 @@
 import logging
+import asyncio
 import json
 import dataclasses
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Literal
 
@@ -13,7 +15,7 @@ from app.agent.runtime.final_answer_layer import (
     answer_mode_for_fast_classification,
     apply_final_answer_layer,
 )
-from app.agent.runtime.user_facing_reply import _guard_unsafe_user_instruction
+from app.agent.runtime.user_facing_reply import collect_unsafe_user_instruction_reply_with_trace
 from app.agent.api.deps import (
     _is_light_runtime_mode,
     _canonical_scope,
@@ -34,13 +36,22 @@ from app.agent.api.loaders import (
     _load_live_knowledge_session_context,
     _persist_live_knowledge_session_context,
 )
-from app.agent.api.governed_runtime import run_governed_graph_turn
+from app.agent.api.governed_runtime import GovernedGraphTurnResult, run_governed_graph_turn
 from app.agent.api.assembly import (
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
 )
+from app.agent.communication.governed_answer_composer import (
+    GovernedAnswerComposer,
+    GovernedAnswerComposerInput,
+    is_governed_answer_composer_enabled,
+    render_governed_contextual_fallback,
+    safe_governed_answer_composer_error_reason,
+)
+from app.agent.communication.governed_answer_context import GovernedAnswerContext
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
+from app.agent.runtime.response_renderer import render_chunk
 from app.agent.communication.v7_contracts import (
     RuntimeAction,
     RuntimeActionType,
@@ -54,8 +65,12 @@ from app.agent.state.case_state import (
     DETERMINISTIC_DATA_VERSION,
 )
 from app.services.auth.dependencies import RequestUser
+from app.observability.langsmith import wrap_openai_client
 
 _log = logging.getLogger(__name__)
+
+_VISIBLE_STREAM_SEGMENT_CHARS = 32
+_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS = 0.018
 
 
 def classify_message_as_knowledge_override(message: str) -> str | None:
@@ -66,6 +81,63 @@ def classify_message_as_knowledge_override(message: str) -> str | None:
     )
 
     return _classify(message)
+
+
+def _visible_stream_segments(text: str) -> list[str]:
+    """Split larger LLM deltas into readable UI chunks without changing content."""
+
+    clean = str(text or "")
+    if not clean or len(clean) <= _VISIBLE_STREAM_SEGMENT_CHARS:
+        return [clean] if clean else []
+    segments: list[str] = []
+    current = ""
+    for token in re.findall(r"\S+\s*", clean):
+        if current and len(current) + len(token) > _VISIBLE_STREAM_SEGMENT_CHARS:
+            segments.append(current)
+            current = token
+        else:
+            current += token
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _graph_custom_event_to_sse_payload(progress: Any) -> dict[str, Any] | None:
+    if not isinstance(progress, dict):
+        return None
+    event_type = str(progress.get("event_type") or progress.get("type") or "")
+    if event_type in {"governed_answer_text_chunk", "text_chunk"}:
+        text = render_chunk(str(progress.get("text") or ""), path="GOVERNED")
+        if not text:
+            return None
+        return {
+            "type": "text_chunk",
+            "text": text,
+            "preview_only": True,
+            "source": "langgraph_custom",
+        }
+    if event_type in {"governed_answer_text_reset", "text_reset"}:
+        return {"type": "text_reset", "source": "langgraph_custom"}
+    if event_type in {"governed_answer_answer_final", "answer_final"}:
+        return None
+    return None
+
+
+async def _yield_graph_progress_frame(progress: Any) -> AsyncGenerator[str, None]:
+    payload = _graph_custom_event_to_sse_payload(progress)
+    if payload is None:
+        yield f"data: {json.dumps({'type': 'progress', 'data': progress}, default=str)}\n\n"
+        return
+    if payload.get("type") == "text_chunk":
+        text = str(payload.get("text") or "")
+        for segment in _visible_stream_segments(text):
+            chunk_payload = dict(payload)
+            chunk_payload["text"] = segment
+            yield f"data: {json.dumps(chunk_payload, default=str)}\n\n"
+            if len(text) > _VISIBLE_STREAM_SEGMENT_CHARS:
+                await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
+        return
+    yield f"data: {json.dumps(payload, default=str)}\n\n"
 
 
 
@@ -343,7 +415,7 @@ async def _stream_exploration_reply(
             or os.getenv("SEALAI_CONVERSATION_MODEL")
             or "gpt-4o-mini"
         )
-        client = _openai.AsyncOpenAI()
+        client = wrap_openai_client(_openai.AsyncOpenAI())
         response = await client.chat.completions.create(
             model=model,
             messages=[
@@ -462,12 +534,19 @@ async def _stream_light_runtime(
                     exc,
                 )
         if os.getenv("REDIS_URL"):
-            await _persist_live_governed_state(
-                current_user=current_user,
-                session_id=request.session_id,
-                state=updated,
-                pre_gate_classification=mode,
-            )
+            try:
+                await _persist_live_governed_state(
+                    current_user=current_user,
+                    session_id=request.session_id,
+                    state=updated,
+                    pre_gate_classification=mode,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _log.warning(
+                    "[runtime_authority] light governed state persist failed (%s: %s)",
+                    type(exc).__name__,
+                    exc,
+                )
         persisted_light_state = updated
         governed = updated
         return updated
@@ -559,26 +638,132 @@ async def _stream_governed_graph(
     pre_gate_classification: str | None = None,
     runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
-    try:
-        turn_result = await run_governed_graph_turn(
+    progress_queue: asyncio.Queue[Any] = asyncio.Queue()
+    live_progress_count = 0
+
+    async def _on_graph_progress(progress: Any) -> None:
+        await progress_queue.put(progress)
+
+    turn_task: asyncio.Task[GovernedGraphTurnResult] = asyncio.create_task(
+        run_governed_graph_turn(
             request=request,
             current_user=current_user,
             pre_gate_classification=pre_gate_classification,
             collect_progress=True,
+            progress_callback=_on_graph_progress,
         )
+    )
+    try:
+        while True:
+            if turn_task.done():
+                while not progress_queue.empty():
+                    progress = progress_queue.get_nowait()
+                    live_progress_count += 1
+                    async for frame in _yield_graph_progress_frame(progress):
+                        yield frame
+                turn_result = await turn_task
+                break
+            try:
+                progress = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+            except asyncio.TimeoutError:
+                continue
+            live_progress_count += 1
+            async for frame in _yield_graph_progress_frame(progress):
+                yield frame
     except HTTPException as exc:
         if exc.status_code == 404:
             yield f"data: {json.dumps({'type': 'error', 'message': 'governed_state_not_found'})}\n\n"
             return
         raise
+    finally:
+        if not turn_task.done():
+            turn_task.cancel()
 
-    for progress in turn_result.progress_events:
-        yield f"data: {json.dumps({'type': 'progress', 'data': progress}, default=str)}\n\n"
+    if live_progress_count == 0:
+        for progress in turn_result.progress_events:
+            async for frame in _yield_graph_progress_frame(progress):
+                yield frame
 
     context = _build_governed_reply_context(
         result_state=turn_result.result_state,
         persisted_state=turn_result.persisted_state,
     )
+    if (
+        not str(getattr(context, "answer_markdown", "") or "").strip()
+        and is_governed_answer_composer_enabled()
+    ):
+        try:
+            governed_context = GovernedAnswerContext.model_validate(
+                getattr(turn_result.result_state, "governed_answer_context", {}) or {}
+            )
+            deterministic_reply = str(context.deterministic_reply or "")
+            composer_basis_reply = render_governed_contextual_fallback(
+                governed_context,
+                deterministic_reply,
+            )
+            if not str(composer_basis_reply or "").strip():
+                composer_basis_reply = deterministic_reply
+            final_answer = ""
+            composer = GovernedAnswerComposer()
+            async for event in composer.stream(
+                GovernedAnswerComposerInput(
+                    context=governed_context,
+                    deterministic_reply=str(composer_basis_reply or ""),
+                )
+            ):
+                if event.event_type == "chunk":
+                    clean_chunk = render_chunk(str(event.text or ""), path="GOVERNED")
+                    if clean_chunk:
+                        for segment in _visible_stream_segments(clean_chunk):
+                            yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment, 'preview_only': True}, default=str)}\n\n"
+                            if len(clean_chunk) > _VISIBLE_STREAM_SEGMENT_CHARS:
+                                await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
+                    continue
+                if event.event_type == "reset":
+                    yield f"data: {json.dumps({'type': 'text_reset'}, default=str)}\n\n"
+                    continue
+                if event.event_type == "final" and event.output is not None:
+                    final_answer = event.output.answer_markdown
+
+            if final_answer:
+                run_meta = dict(context.run_meta or {})
+                run_meta["governed_answer_composer"] = {
+                    "source": "governed_composer",
+                    "error": None,
+                }
+                context = dataclasses.replace(
+                    context,
+                    answer_markdown=final_answer,
+                    answer_markdown_source="governed_composer",
+                    answer_markdown_error=None,
+                    run_meta=run_meta,
+                )
+        except Exception as exc:  # noqa: BLE001
+            reason = safe_governed_answer_composer_error_reason(exc)
+            _log.warning("[governed_answer_composer_stream] fallback reason=%s", reason)
+            fallback_answer = str(context.deterministic_reply or "").strip()
+            try:
+                governed_context = GovernedAnswerContext.model_validate(
+                    getattr(turn_result.result_state, "governed_answer_context", {}) or {}
+                )
+                fallback_answer = render_governed_contextual_fallback(
+                    governed_context,
+                    fallback_answer,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            run_meta = dict(context.run_meta or {})
+            run_meta["governed_answer_composer"] = {
+                "source": "composer_fallback",
+                "error": reason,
+            }
+            context = dataclasses.replace(
+                context,
+                answer_markdown=fallback_answer,
+                answer_markdown_source="composer_fallback",
+                answer_markdown_error=reason,
+                run_meta=run_meta,
+            )
     payload = _assemble_governed_stream_payload(
         context=context,
     )
@@ -622,25 +807,20 @@ async def event_generator(
     *,
     current_user: RequestUser,
 ) -> AsyncGenerator[str, None]:
-    early_guard_reply = _guard_unsafe_user_instruction(
+    early_guard_reply = await collect_unsafe_user_instruction_reply_with_trace(
         latest_user_message=request.message,
         turn_context=None,
     )
     if early_guard_reply is not None:
         state_update_event = {
             "type": "state_update",
-            "reply": early_guard_reply,
-            "answer_markdown": early_guard_reply,
+            "reply": early_guard_reply.text,
+            "answer_markdown": early_guard_reply.text,
             "response_class": "structured_clarification",
             "policy_path": "governed_guard",
             "run_meta": with_answer_trace(
                 None,
-                build_answer_trace(
-                    reply_source="api_guard",
-                    answer_markdown_source="deterministic_fallback",
-                    final_visible_source="answer_markdown",
-                    fallback_reason="unsafe_user_instruction_guard",
-                ),
+                early_guard_reply.answer_trace,
             ),
         }
         yield f"data: {json.dumps(state_update_event, default=str)}\n\n"

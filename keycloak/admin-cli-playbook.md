@@ -116,7 +116,7 @@ Der Helper liest standardmäßig `.env.prod`, zielt auf den realen Realm
 
 ```bash
 $kc update realms/$REALM \
-  -s smtpServer='{"host":"smtp.example.com","port":"587","from":"no-reply@sealai.net","fromDisplayName":"SealAI Auth","auth":"true","ssl":"false","starttls":"true","user":"smtp-user","password":"smtp-pass"}'
+  -s smtpServer='{"host":"smtp.example.com","port":"587","from":"no-reply@sealingai.com","fromDisplayName":"SealAI Auth","auth":"true","ssl":"false","starttls":"true","user":"smtp-user","password":"smtp-pass"}'
 ```
 
 ## 7) Backup & Export

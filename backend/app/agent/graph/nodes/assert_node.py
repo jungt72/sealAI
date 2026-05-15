@@ -33,6 +33,7 @@ import logging
 
 from app.agent.graph import GraphState
 from app.agent.state.reducers import reduce_normalized_to_asserted
+from app.agent.v91.candidate_facts import build_field_governance_decisions
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +47,14 @@ async def assert_node(state: GraphState) -> GraphState:
     Evidence is not passed in Phase F (evidence_node is Zone 4 and runs
     after assert_node in the cycle; real claims come in Phase G).
     """
+    previous_asserted = state.asserted
     asserted = reduce_normalized_to_asserted(state.normalized, evidence=None)
+    v91_field_governance_decisions = build_field_governance_decisions(
+        candidates=state.v91_candidate_facts,
+        normalized=state.normalized,
+        asserted=asserted,
+        previous_asserted=previous_asserted,
+    )
 
     log.debug(
         "[assert_node] assertions=%s blocking=%s conflicts=%s",
@@ -55,4 +63,9 @@ async def assert_node(state: GraphState) -> GraphState:
         asserted.conflict_flags,
     )
 
-    return state.model_copy(update={"asserted": asserted})
+    return state.model_copy(
+        update={
+            "asserted": asserted,
+            "v91_field_governance_decisions": v91_field_governance_decisions,
+        }
+    )

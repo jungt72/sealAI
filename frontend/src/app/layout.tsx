@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/Providers";
+import { GoogleMarketingTags } from "@/components/analytics/GoogleMarketingTags";
 import { getSiteOrigin } from "@/lib/site";
 
 const inter = Inter({
@@ -28,6 +29,7 @@ export default function RootLayout({
   return (
     <html lang="de" className="light">
       <body className={cn(inter.variable, "font-sans bg-background text-[#1F1F1F] antialiased")}>
+        <GoogleMarketingTags />
         <Providers>
           {children}
         </Providers>

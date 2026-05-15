@@ -408,6 +408,28 @@ def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
     )
 
 
+def test_rfq_preview_contains_v92_dossier_with_separated_sections() -> None:
+    payload = build_rfq_preview_payload(
+        case_row=_case(),
+        snapshot=_snapshot_with_field_envelopes(),
+    )
+
+    dossier = payload["rfq_preview"]["v92_rfq_dossier"]
+
+    assert dossier["schema_version"] == "rfq_dossier_v9_2"
+    assert dossier["no_final_technical_release"] is True
+    assert dossier["facts"]
+    assert dossier["calculations"]
+    assert "freigegeben" in dossier["forbidden_claims"]
+    assert {section["id"] for section in dossier["sections"]} == {
+        "facts",
+        "calculations",
+        "candidates",
+        "blockers",
+        "claims",
+    }
+
+
 def test_rfq_preview_marks_unconfirmed_fields_as_open_points_not_release() -> None:
     payload = build_rfq_preview_payload(
         case_row=_case(),
@@ -950,6 +972,7 @@ async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_pay
             "open_points",
             "risks",
             "manufacturer_review_notes",
+            "sealing_intelligence",
             "evidence_references",
             "source_validation_summary",
             "consent_acknowledgement_summary",
@@ -966,6 +989,12 @@ async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_pay
     assert "suitable" not in serialized
     assert "sent to manufacturer" not in serialized
     assert "automatic dispatch" not in serialized
+    assert export_payload["content"]["sealing_intelligence"]["schema_version"] == (
+        "sealingai_rfq_projection_v9_1"
+    )
+    assert export_payload["content"]["sealing_intelligence"][
+        "no_final_technical_release"
+    ] is True
     assert export_payload["content"]["evidence_references"] == (
         "upload:datasheet-1#p2",
         "chat:turn-3",

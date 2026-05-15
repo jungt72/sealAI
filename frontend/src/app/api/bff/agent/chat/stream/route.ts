@@ -8,7 +8,7 @@ import type {
   AgentTurnContext,
 } from "@/lib/contracts/agent";
 import { isOutwardResponseClass } from "@/lib/contracts/agent";
-import { getAccessToken } from "@/lib/bff/auth-token";
+import { applyBffCookieUpdates, getAccessTokenResult } from "@/lib/bff/auth-token";
 import { BffError } from "@/lib/bff/http";
 import { buildBackendUrl } from "@/lib/bff/backend";
 
@@ -107,9 +107,57 @@ function backendSaysNoCaseCreated(runMeta: Record<string, unknown> | null): bool
   );
 }
 
+function rawErrorText(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return rawErrorText(record.message || record.detail || record.code);
+  }
+  return String(value);
+}
+
+function parseNestedJsonError(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return trimmed;
+  }
+  try {
+    return rawErrorText(JSON.parse(trimmed)) || trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+function userVisibleAgentStreamError(status: number, details: unknown): string {
+  const parsed = parseNestedJsonError(rawErrorText(details));
+  const lowered = parsed.toLowerCase();
+  if (
+    status === 401 ||
+    status === 403 ||
+    lowered.includes("token_expired") ||
+    lowered.includes("refresh token") ||
+    lowered.includes("unauthorized")
+  ) {
+    return "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.";
+  }
+  if (lowered.includes("method not allowed")) {
+    return "Die Anfrage konnte nicht gesendet werden. Bitte lade die Seite neu und versuche es erneut.";
+  }
+  if (lowered.includes("agent stream failed") || lowered.includes("agent_stream_failed")) {
+    return "Die Antwort konnte gerade nicht geladen werden. Bitte versuche es erneut.";
+  }
+  if (!parsed || parsed.startsWith("{") || parsed.startsWith("[")) {
+    return "Die Antwort konnte gerade nicht geladen werden. Bitte versuche es erneut.";
+  }
+  return parsed;
+}
+
 export async function POST(request: Request) {
   try {
-    const token = await getAccessToken(request);
+    const authResult = await getAccessTokenResult(request);
+    const token = authResult.accessToken;
     const body = (await request.json()) as AgentStreamRequest;
     const caseId = body.caseId || randomUUID();
 
@@ -130,15 +178,18 @@ export async function POST(request: Request) {
 
     if (!backendResponse.ok || !backendResponse.body) {
       const details = await backendResponse.text();
-      return NextResponse.json(
+      const message = userVisibleAgentStreamError(backendResponse.status || 500, details);
+      const response = NextResponse.json(
         {
           error: {
             code: "agent_stream_failed",
-            message: details || `agent_stream_failed:${backendResponse.status}`,
+            message,
           },
         },
         { status: backendResponse.status || 500 },
       );
+      applyBffCookieUpdates(response, authResult.cookieUpdates);
+      return response;
     }
 
     const reader = backendResponse.body.getReader();
@@ -206,6 +257,11 @@ export async function POST(request: Request) {
                 continue;
               }
 
+              if (eventType === "text_reset") {
+                controller.enqueue(encodeSseEvent({ type: "text_reset" }));
+                continue;
+              }
+
               if (eventType === "state_update") {
                 const reply = typeof payload.reply === "string" ? payload.reply : "";
                 const answerMarkdown =
@@ -246,14 +302,17 @@ export async function POST(request: Request) {
               }
 
               if (eventType === "error") {
+                const message = userVisibleAgentStreamError(
+                  500,
+                  typeof payload.message === "string"
+                    ? payload.message
+                    : "Agent stream failed.",
+                );
                 controller.enqueue(
                   encodeSseEvent({
                     type: "error",
                     code: "agent_stream_failed",
-                    message:
-                      typeof payload.message === "string"
-                        ? payload.message
-                        : "Agent stream failed.",
+                    message,
                   }),
                 );
               }
@@ -272,11 +331,12 @@ export async function POST(request: Request) {
             }
           }
         } catch (error) {
+          const message = userVisibleAgentStreamError(500, error);
           controller.enqueue(
             encodeSseEvent({
               type: "error",
               code: "agent_stream_failed",
-              message: error instanceof Error ? error.message : "Agent stream failed.",
+              message,
             }),
           );
         } finally {
@@ -286,17 +346,21 @@ export async function POST(request: Request) {
       },
     });
 
-    return new Response(stream, {
+    const response = new NextResponse(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
         Connection: "keep-alive",
       },
     });
+    applyBffCookieUpdates(response, authResult.cookieUpdates);
+    return response;
   } catch (error) {
     if (error instanceof BffError) {
+      const message = userVisibleAgentStreamError(error.status, error.message);
       return NextResponse.json(
-        { error: { code: "auth_error", message: error.message } },
+        { error: { code: "auth_error", message } },
         { status: error.status },
       );
     }

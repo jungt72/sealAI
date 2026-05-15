@@ -288,12 +288,22 @@ def _status_note(status: str) -> str:
 
 def _score_label(score: int, status: str) -> str:
     if status == "excluded_by_known_constraint" or score < 30:
-        return "niedrige Prüfpriorität"
+        return "niedrige Plausibilitaetsklasse"
     if score >= 76:
-        return "hohe Prüfpriorität"
+        return "hohe Plausibilitaetsklasse"
     if score >= 56:
-        return "mittlere Prüfpriorität"
+        return "mittlere Plausibilitaetsklasse"
     return "nur mit mehr Daten"
+
+
+def _plausibility_class(score: int, status: str) -> str:
+    if status == "excluded_by_known_constraint" or score < 35:
+        return "low"
+    if status in {"candidate_to_check", "requires_supplier_review"} and score >= 70:
+        return "high"
+    if score >= 50:
+        return "medium"
+    return "low"
 
 
 def _score_material(
@@ -470,6 +480,7 @@ def _candidate(
         "status": status,
         "status_label": _status_note(status),
         "confidence": "medium" if status in {"candidate_to_check", "needs_more_data"} else "low",
+        "plausibility": _plausibility_class(score, status),
         "plausibility_score": score,
         "plausibility_label": _score_label(score, status),
         "score_drivers": score_drivers,
@@ -477,12 +488,24 @@ def _candidate(
         "why_considered": why[:4],
         "limits": list(material.get("limits") or [])[:4],
         "blocking_unknowns": relevant_missing[:5],
+        "counterindicators": score_cautions[:5],
         "required_checks": [
             "Mediumdatenblatt und Konzentration",
             "Temperaturfenster im Dauer- und Spitzenbetrieb",
             "Druck direkt an der Dichtstelle",
             "Dichtprinzip, Bauform und Kontaktpartner",
         ],
+        "allowed_claim": "vorlaeufige Pruefhypothese",
+        "forbidden_claims": [
+            "geeignet",
+            "freigegeben",
+            "beste Loesung",
+            "finale Werkstoffauswahl",
+        ],
+        "rfq_relevance": (
+            "Als Kontext fuer die Herstellerpruefung sichtbar machen; "
+            "nicht als Vorgabe oder Freigabe verwenden."
+        ),
         "evidence_ref_ids": [f"material-{material_key}"],
     }
 

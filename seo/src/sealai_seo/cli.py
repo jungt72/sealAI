@@ -14,6 +14,7 @@ from .dataforseo_budget import check_budget
 from .dataforseo_client import DataForSeoClient, summarize_user_data
 from .gsc_client import GscClient
 from .keyword_foundation import load_seed_csv, run_search_volume, seed_keywords_for_run, upsert_seed_keywords
+from .pagespeed import sync_pagespeed
 from .reports import anomaly, content_roadmap, keyword_foundation, quick_wins
 from .sync_gsc import sync
 
@@ -215,6 +216,21 @@ def cmd_report_content_roadmap(args) -> None:
     print(path)
 
 
+def cmd_sync_pagespeed(args) -> None:
+    s = settings()
+    conn = db.connect(Path(args.db or s.db_path))
+    db.apply_migrations(conn, Path(args.migrations))
+    urls = args.url or list(s.pagespeed_urls)
+    result = sync_pagespeed(
+        conn,
+        urls=urls,
+        strategy=args.strategy,
+        api_key=s.pagespeed_api_key,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sealai-seo")
     sub = parser.add_subparsers(required=True)
@@ -297,6 +313,14 @@ def build_parser() -> argparse.ArgumentParser:
     content_map.add_argument("--db")
     content_map.add_argument("--report-dir")
     content_map.set_defaults(func=cmd_report_content_roadmap)
+
+    pagespeed = sub.add_parser("sync-pagespeed")
+    pagespeed.add_argument("--url", action="append")
+    pagespeed.add_argument("--strategy", choices=["mobile", "desktop"], default="mobile")
+    pagespeed.add_argument("--db")
+    pagespeed.add_argument("--migrations", default="seo/migrations")
+    pagespeed.add_argument("--dry-run", action="store_true")
+    pagespeed.set_defaults(func=cmd_sync_pagespeed)
     return parser
 
 

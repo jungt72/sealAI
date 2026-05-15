@@ -5,12 +5,13 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncGenerator, Literal
 
 from app.agent.communication.governed_answer_context import GovernedAnswerContext
 from app.agent.communication.context import human_label
 from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
+from app.agent.v91.final_answer_guard import validate_v91_final_answer
 from app.llm.factory import get_async_llm
 from app.llm.registry import get_registry_default_model_for_role
 
@@ -45,6 +46,8 @@ _FORBIDDEN_APPROVAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"\brfq[-\s]?ready\b",
         r"\bherstellerreif(?:e|er|es|en)?\b",
         r"\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe)\s+ist\s+(?:gut\s+)?geeignet\b",
+        r"\b(?:nehmen\s+sie|nimm|verwenden\s+sie|verwende)\b.{0,80}\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe|pom|peek)\b",
+        r"\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe|pom|peek)\b.{0,80}\b(?:ist\s+die\s+beste|beste\s+l(?:oe|ö)sung)\b",
         r"\b(?:keine\s+weitere[n]?\s+pruefung|keine\s+weitere[n]?\s+prüfung|keine\s+herstellerpruefung|keine\s+herstellerprüfung)\b",
         r"\bder\s+hersteller\s+(?:wird|muss)\s+das\s+(?:akzeptieren|freigeben)\b",
         r"\b(?:zertifiziert|compliant|konform)\b",
@@ -52,6 +55,15 @@ _FORBIDDEN_APPROVAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 )
 
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
+
+_RECOVERABLE_REPAIR_REASONS = {
+    "missing_material_orientation",
+    "slot_question_before_orientation",
+    "routine_confirmation_or_restatement",
+    "restates_recently_supplied_value",
+    "communication_guard:planned_question_missing",
+    "communication_guard:too_many_questions",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +76,13 @@ class GovernedAnswerComposerInput:
 class GovernedAnswerComposerOutput:
     answer_markdown: str
     confidence_note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GovernedAnswerComposerStreamEvent:
+    event_type: Literal["chunk", "reset", "final"]
+    text: str = ""
+    output: GovernedAnswerComposerOutput | None = None
 
 
 class GovernedAnswerComposerError(ValueError):
@@ -84,6 +103,85 @@ class GovernedAnswerComposer:
     async def compose(self, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
         client, model = get_async_llm("governed_answer_composer")
         messages = build_governed_answer_composer_messages(request)
+        try:
+            return await self._compose_once(
+                client=client,
+                model=model,
+                request=request,
+                messages=messages,
+            )
+        except GovernedAnswerComposerError as exc:
+            if not _is_recoverable_repair_reason(exc):
+                raise
+            repair_messages = build_governed_answer_composer_messages(
+                request,
+                repair_reason=safe_governed_answer_composer_error_reason(exc),
+            )
+            return await self._compose_once(
+                client=client,
+                model=model,
+                request=request,
+                messages=repair_messages,
+            )
+
+    async def stream(
+        self,
+        request: GovernedAnswerComposerInput,
+    ) -> AsyncGenerator[GovernedAnswerComposerStreamEvent, None]:
+        """Stream the visible governed answer while keeping the deterministic basis.
+
+        The graph has already decided the technical basis. This method only
+        streams the LLM wording pass and validates the complete answer before
+        emitting the final event. If the stream crosses a hard boundary, it
+        raises and the caller must replace the final answer with the deterministic
+        fallback.
+        """
+
+        client, model = get_async_llm("governed_answer_composer")
+        messages = build_governed_answer_composer_messages(
+            request,
+            output_format="markdown_stream",
+        )
+        first_attempt_text = ""
+        try:
+            async for event in self._stream_once(
+                client=client,
+                model=model,
+                request=request,
+                messages=messages,
+            ):
+                if event.event_type == "chunk":
+                    first_attempt_text += event.text
+                yield event
+            return
+        except GovernedAnswerComposerError as exc:
+            if not _is_recoverable_repair_reason(exc):
+                raise
+            failed_reason = safe_governed_answer_composer_error_reason(exc)
+
+        repair_messages = build_governed_answer_composer_messages(
+            request,
+            output_format="markdown_stream",
+            repair_reason=failed_reason,
+            failed_answer=first_attempt_text,
+        )
+        yield GovernedAnswerComposerStreamEvent(event_type="reset")
+        async for event in self._stream_once(
+            client=client,
+            model=model,
+            request=request,
+            messages=repair_messages,
+        ):
+            yield event
+
+    async def _compose_once(
+        self,
+        *,
+        client: Any,
+        model: str,
+        request: GovernedAnswerComposerInput,
+        messages: list[dict[str, str]],
+    ) -> GovernedAnswerComposerOutput:
         response = await _create_completion_with_registry_fallback(
             client=client,
             model=model,
@@ -94,8 +192,50 @@ class GovernedAnswerComposer:
         )
         raw_content = response.choices[0].message.content
         output = parse_governed_answer_composer_output(raw_content)
-        _validate_contextual_answer_discipline(output.answer_markdown, request.context)
+        _validate_complete_answer(output.answer_markdown, request.context)
         return output
+
+    async def _stream_once(
+        self,
+        *,
+        client: Any,
+        model: str,
+        request: GovernedAnswerComposerInput,
+        messages: list[dict[str, str]],
+    ) -> AsyncGenerator[GovernedAnswerComposerStreamEvent, None]:
+        response = await _create_stream_with_registry_fallback(
+            client=client,
+            model=model,
+            role="governed_answer_composer",
+            messages=messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+
+        accumulated: list[str] = []
+        async for chunk in response:
+            delta = chunk.choices[0].delta if getattr(chunk, "choices", None) else None
+            text = getattr(delta, "content", None) if delta else None
+            if not text:
+                continue
+            tentative = "".join(accumulated) + str(text)
+            _validate_stream_prefix(tentative)
+            accumulated.append(str(text))
+            yield GovernedAnswerComposerStreamEvent(event_type="chunk", text=str(text))
+
+        answer_markdown = "".join(accumulated).strip()
+        if not answer_markdown:
+            raise GovernedAnswerComposerError("empty_stream_answer_markdown")
+        if len(answer_markdown) > MAX_ANSWER_MARKDOWN_CHARS:
+            raise GovernedAnswerComposerError("answer_markdown_too_long")
+        _validate_complete_answer(answer_markdown, request.context)
+        yield GovernedAnswerComposerStreamEvent(
+            event_type="final",
+            output=GovernedAnswerComposerOutput(
+                answer_markdown=answer_markdown,
+                confidence_note=None,
+            ),
+        )
 
 
 async def _create_completion_with_registry_fallback(
@@ -131,25 +271,88 @@ async def _create_completion_with_registry_fallback(
         raise
 
 
+async def _create_stream_with_registry_fallback(
+    *,
+    client: Any,
+    model: str,
+    role: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> Any:
+    try:
+        return await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        fallback_model = get_registry_default_model_for_role(role)
+        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+            log.warning(
+                "[governed_answer_composer] configured stream model rejected; retrying registry default"
+            )
+            return await client.chat.completions.create(
+                model=fallback_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+        raise
+
+
 def build_governed_answer_composer_messages(
     request: GovernedAnswerComposerInput,
+    *,
+    output_format: Literal["json", "markdown_stream"] = "json",
+    repair_reason: str | None = None,
+    failed_answer: str | None = None,
 ) -> list[dict[str, str]]:
     payload = {
         "prompt_version": GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION,
         "deterministic_reply": request.deterministic_reply,
         "governed_answer_context": request.context.model_dump(mode="json"),
     }
+    if repair_reason:
+        must_mention_terms = _user_named_material_terms(request.context.latest_user_message)
+        payload["repair"] = {
+            "reason": repair_reason,
+            "failed_answer": str(failed_answer or "")[:MAX_ANSWER_MARKDOWN_CHARS],
+            "must_mention_user_material_terms": must_mention_terms,
+            "instruction": (
+                "Rewrite the visible answer from the same governed context. "
+                "Fix the named issue; do not add unsupported engineering truth."
+            ),
+        }
     system_prompt = prompts.render(
         "governed/answer_composer.j2",
         {
             "prompt_version": GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION,
             "max_answer_chars": MAX_ANSWER_MARKDOWN_CHARS,
+            "output_format": output_format,
         },
     )
-    return [
+    messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
     ]
+    if repair_reason:
+        terms = ", ".join(payload["repair"]["must_mention_user_material_terms"])
+        repair_instruction = (
+            f"Repair the previous governed answer. Reason: {repair_reason}. "
+            "Use deterministic_reply and governed_answer_context as the only grounding. "
+        )
+        if terms:
+            repair_instruction += (
+                f"The user explicitly named these material families: {terms}. "
+                "Mention them in a short bounded orientation before the governed next question. "
+            )
+        repair_instruction += "Return only the requested output format."
+        messages.append({"role": "user", "content": repair_instruction})
+    return messages
 
 
 def parse_governed_answer_composer_output(raw_content: Any) -> GovernedAnswerComposerOutput:
@@ -172,6 +375,30 @@ def parse_governed_answer_composer_output(raw_content: Any) -> GovernedAnswerCom
         answer_markdown=answer_markdown,
         confidence_note=str(confidence_note).strip() if confidence_note else None,
     )
+
+
+def _validate_stream_prefix(text: str) -> None:
+    """Fail early before a forbidden fragment reaches the user as a chunk."""
+
+    lowered = str(text or "").casefold()
+    if any(fragment in lowered for fragment in _INTERNAL_LEAKAGE_FRAGMENTS):
+        raise GovernedAnswerComposerError("stream_internal_leakage")
+    for pattern in _FORBIDDEN_APPROVAL_PATTERNS:
+        if pattern.search(text):
+            raise GovernedAnswerComposerError("stream_forbidden_approval_language")
+
+
+def _user_named_material_terms(latest_user_message: str | None) -> list[str]:
+    latest = str(latest_user_message or "").casefold()
+    if not latest:
+        return []
+    known_terms = ("EPDM", "FKM", "FFKM", "NBR", "HNBR", "PTFE", "PU", "POM", "PEEK")
+    return [term for term in known_terms if re.search(rf"\b{re.escape(term.casefold())}\b", latest)]
+
+
+def _is_recoverable_repair_reason(exc: GovernedAnswerComposerError) -> bool:
+    reason = safe_governed_answer_composer_error_reason(exc)
+    return reason in _RECOVERABLE_REPAIR_REASONS
 
 
 def safe_governed_answer_composer_error_reason(exc: BaseException) -> str:
@@ -202,35 +429,142 @@ def render_governed_contextual_fallback(
         if len(answer) > MAX_ANSWER_MARKDOWN_CHARS:
             raise GovernedAnswerComposerError("contextual_fallback_too_long")
         _validate_answer_markdown(answer)
+        _validate_v91_final_answer(answer, context)
         return answer
     except GovernedAnswerComposerError:
         return fallback
 
 
+def has_v9_challenge_context(context: GovernedAnswerContext | None) -> bool:
+    """Return whether a governed turn carries enough context for V9 fallback wording."""
+
+    if context is None:
+        return False
+    return bool(
+        getattr(context, "challenge_findings", None)
+        or getattr(context, "challenge_hypotheses", None)
+        or context.ambiguous_values
+        or context.rejected_updates
+    )
+
+
+def should_render_governed_contextual_fallback(
+    context: GovernedAnswerContext | None,
+    deterministic_reply: str,
+) -> bool:
+    """Return whether deterministic intake wording needs human-facing context."""
+
+    if context is None:
+        return False
+    if _technical_orientation_for_user_task(context.latest_user_message):
+        return True
+    return has_v9_challenge_context(context)
+
+
 def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
+    orientation = _technical_orientation_for_user_task(context.latest_user_message)
     if context.ambiguous_values:
         item = context.ambiguous_values[0]
         value = _display_value(item.normalized_value or item.raw_value)
         label = _display_label(item.field_key, item.label)
         question = _clean_question(item.clarification_question or context.next_best_question)
         if value and question:
-            return (
+            clarification = (
                 f"{value} ist als {label} im Arbeitsstand. "
-                f"Fuer die technische Einordnung muss ich das genauer fassen: {question}"
+                f"Für die technische Einordnung muss ich das genauer fassen: {question}"
             )
+            return _join_orientation_and_question(orientation, clarification)
         if question:
-            return question
+            return _join_orientation_and_question(orientation, question)
 
     if context.accepted_updates:
         question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
         if question:
-            return question
-        return "Ich halte die Angabe als Arbeitsstand fest und pruefe den naechsten sinnvollen Schritt."
+            return _join_orientation_and_question(orientation, question)
+        return _join_orientation_and_question(
+            orientation,
+            "Ich halte die Angabe als Arbeitsstand fest und prüfe den nächsten sinnvollen Schritt.",
+        )
 
     question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
     if question:
-        return question
+        return _join_orientation_and_question(orientation, question)
     return ""
+
+
+def _technical_orientation_for_user_task(latest_user_message: str | None) -> str:
+    text = str(latest_user_message or "").casefold()
+    if not text:
+        return ""
+    asks_risk_orientation = any(
+        marker in text
+        for marker in (
+            "vergleich",
+            "vergleiche",
+            "unterschied",
+            "gegenüber",
+            "gegenueber",
+            "ordne",
+            "einordnen",
+            "einschätzen",
+            "einschaetzen",
+            "bewerte",
+            "bewerten",
+            "technisch kritisch",
+            "technisch ein",
+            "was ist kritisch",
+            "kritisch?",
+            "risiko",
+            "risiken",
+            "ursachen",
+            "systematisch prüfen",
+            "systematisch pruefen",
+        )
+    )
+    if not asks_risk_orientation:
+        return ""
+    if (
+        ("rwdr" in text or "wellendichtring" in text or "radialwellendichtring" in text)
+        and any(marker in text for marker in ("leckt", "leckage", "ursachen", "systematisch"))
+    ):
+        return (
+            "Bei früher Leckage an einem RWDR würde ich nicht zuerst den Werkstoff allein "
+            "bewerten, sondern das Schadbild systematisch trennen. Typische Ursachencluster "
+            "sind Gegenlauffläche, Laufspur, Rundlauf, Montage, Dichtlippe, Schmierung, "
+            "Druck direkt an der Dichtstelle, Temperatur, Mediumverträglichkeit und "
+            "Verschmutzung. Das ist eine technische Orientierung, keine Freigabe."
+        )
+    if {"ptfe", "fkm", "epdm", "nbr", "hnbr"}.intersection(set(re.findall(r"\b[a-z0-9]+\b", text))):
+        if ("hydraulik" in text or "hlp" in text or "öl" in text or "oel" in text) and "epdm" in text:
+            return (
+                "Bei mineralöl- oder hydraulikölnahen Medien ist EPDM eher ein Warnpunkt, "
+                "während NBR, HNBR oder FKM je nach Temperatur, Bauform und Compound eher "
+                "als Prüfhypothesen betrachtet werden. Das ist eine Vororientierung, keine "
+                "Werkstofffreigabe."
+            )
+        return (
+            "Bei diesem Werkstoffvergleich sind Medium, Temperatur, Dichtungstyp, Vorspannung, "
+            "Geometrie und Kontaktzeit die Haupttreiber. Das ist eine Vororientierung, keine "
+            "Werkstofffreigabe."
+        )
+    if "rwdr" in text or "wellendichtring" in text or "radialwellendichtring" in text:
+        return (
+            "Technisch kritisch sind bei einem RWDR vor allem Druck direkt an der Dichtlippe, "
+            "Umfangsgeschwindigkeit, Reibwärme, Schmierung, Gegenlauffläche, Rundlauf und "
+            "Medium-/Temperaturbelastung. Das ist eine technische Orientierung, keine Freigabe."
+        )
+    return (
+        "Technisch relevant sind zuerst Medium, Temperaturprofil, Druck direkt an der Dichtstelle, "
+        "Bewegung, Geometrie und Nachweise. Das ist eine Vororientierung, keine Freigabe."
+    )
+
+
+def _join_orientation_and_question(orientation: str, question: str) -> str:
+    clean_orientation = str(orientation or "").strip()
+    clean_question = str(question or "").strip()
+    if clean_orientation and clean_question:
+        return f"{clean_orientation}\n\nDie wichtigste Rückfrage ist: {clean_question}"
+    return clean_question or clean_orientation
 
 
 def _display_value(value: Any) -> str:
@@ -267,7 +601,7 @@ def _question_for_missing_fields(missing_fields: list[str]) -> str:
         if "asset" in lowered or "anlage" in lowered or "pump" in lowered or "aggregate" in lowered:
             return (
                 "Wo sitzt die Dichtung genau, zum Beispiel an Pumpe, Welle, Flansch, "
-                "Zylinder oder Behaelter?"
+                "Zylinder oder Behälter?"
             )
     return ""
 
@@ -285,6 +619,12 @@ def _validate_answer_markdown(answer_markdown: str) -> None:
         raise GovernedAnswerComposerError(f"unsafe_answer_markdown:{category}")
 
 
+def _validate_complete_answer(answer_markdown: str, context: GovernedAnswerContext) -> None:
+    _validate_answer_markdown(answer_markdown)
+    _validate_v91_final_answer(answer_markdown, context)
+    _validate_contextual_answer_discipline(answer_markdown, context)
+
+
 def _validate_contextual_answer_discipline(
     answer_markdown: str,
     context: GovernedAnswerContext,
@@ -295,6 +635,42 @@ def _validate_contextual_answer_discipline(
     model repeats freshly supplied values or asks for routine confirmation, we
     fall back to that governed question instead of showing a bureaucratic answer.
     """
+
+    latest = str(context.latest_user_message or "")
+    if _technical_orientation_for_user_task(latest):
+        lowered_answer = answer_markdown.casefold()
+        latest_lowered = latest.casefold()
+        material_terms = {"epdm", "fkm", "nbr", "hnbr", "ptfe", "ffkm", "pu"}
+        material_task = bool(
+            material_terms.intersection(set(re.findall(r"\b[a-z0-9]+\b", latest_lowered)))
+            and any(
+                marker in latest_lowered
+                for marker in (
+                    "vergleich",
+                    "vergleiche",
+                    "ordne",
+                    "einordnen",
+                    "bewerte",
+                    "bewerten",
+                    "technisch ein",
+                    "risiko",
+                    "risiken",
+                )
+            )
+        )
+        if material_task and not any(term in lowered_answer for term in material_terms):
+            raise GovernedAnswerComposerError("missing_material_orientation")
+        if (
+            "ich habe schon ein paar eckdaten" in lowered_answer
+            or "für den nächsten sinnvollen schritt brauche ich noch" in lowered_answer
+            or "fuer den naechsten sinnvollen schritt brauche ich noch" in lowered_answer
+            or "die technische richtung ist schon enger" in lowered_answer
+            or "belastbaren hebel" in lowered_answer
+        ) and not any(
+            marker in lowered_answer
+            for marker in ("technisch kritisch", "typische risiken", "ursachencluster", "vor allem")
+        ):
+            raise GovernedAnswerComposerError("slot_question_before_orientation")
 
     if not context.accepted_updates or context.ambiguous_values or not context.next_best_question:
         return
@@ -321,6 +697,19 @@ def _validate_contextual_answer_discipline(
             continue
         if value.casefold() in lowered:
             raise GovernedAnswerComposerError("restates_recently_supplied_value")
+
+
+def _validate_v91_final_answer(
+    answer_markdown: str,
+    context: GovernedAnswerContext,
+) -> None:
+    result = validate_v91_final_answer(
+        answer_markdown,
+        getattr(context, "v91_final_answer_context", None),
+    )
+    if not result.passed:
+        reason = result.findings[0] if result.findings else "v91_guard_failed"
+        raise GovernedAnswerComposerError(reason)
 
 
 def _response_format() -> dict[str, Any]:

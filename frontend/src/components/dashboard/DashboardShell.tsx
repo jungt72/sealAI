@@ -128,8 +128,11 @@ export default function DashboardShell({
 
   useEffect(() => {
     let isCurrent = true;
-    setHistoryLoading(true);
-    setHistoryError(null);
+    queueMicrotask(() => {
+      if (!isCurrent) return;
+      setHistoryLoading(true);
+      setHistoryError(null);
+    });
     fetch("/api/bff/agent/cases?limit=30", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) {

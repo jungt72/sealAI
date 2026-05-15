@@ -39,6 +39,7 @@ from app.agent.domain.medium_registry import (
     extract_medium_mentions,
     medium_registry_entries,
 )
+from app.observability.langsmith import wrap_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +382,20 @@ def run_medium_specialist(
         if str(result.canonical_medium or "").strip()
     }
     if len(canonicals) > 1:
+        canonical_values = list(canonicals.values())
+        most_specific = max(canonical_values, key=lambda value: len(value.casefold()))
+        if all(value.casefold() in most_specific.casefold() for value in canonical_values):
+            return max(
+                (
+                    result
+                    for result in results
+                    if str(result.canonical_medium or "").strip() == most_specific
+                ),
+                key=lambda item: (
+                    _mapping_confidence_rank(item.medium_confidence),
+                    len(str(item.canonical_medium or "")),
+                ),
+            )
         return MediumSpecialistResult(
             canonical_medium=None,
             medium_confidence=MappingConfidence.REQUIRES_CONFIRMATION,
@@ -980,7 +995,7 @@ def _llm_extract_medium(text: str) -> Optional[dict[str, Any]]:
     )
 
     try:
-        client = OpenAI(api_key=api_key)
+        client = wrap_openai_client(OpenAI(api_key=api_key))
         response = client.chat.completions.create(
             model=_MEDIUM_LLM_FALLBACK_MODEL,
             messages=[{"role": "user", "content": prompt}],

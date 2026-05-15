@@ -35,6 +35,26 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.agent.services.medium_context import MediumContext
+from app.agent.v91.contracts import (
+    CandidateFact,
+    ConversationTaskState,
+    DialogueDebt,
+    FieldGovernanceDecision,
+    FinalAnswerContext,
+    QuestionPlan,
+)
+from app.agent.v92.models import (
+    CalculationState,
+    CompoundState,
+    DocumentEvidenceState,
+    DossierState,
+    EngineeringState,
+    EvidenceGraphState,
+    FailureObservationState,
+    ReviewState,
+    SealSystemState,
+    StandardsState,
+)
 
 try:
     import ulid
@@ -590,6 +610,107 @@ class ContextHintState(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# ChallengeState — V9 governed sealing-intelligence layer
+# ---------------------------------------------------------------------------
+
+ChallengeFindingKind = Literal[
+    "missing_information",
+    "derived_signal",
+    "risk",
+    "contradiction",
+    "medium_challenge",
+    "application_challenge",
+    "claim_guard",
+]
+
+ChallengeSeverity = Literal["info", "watch", "blocking"]
+ChallengeLifecycleStatus = Literal["open", "resolved", "superseded", "rejected"]
+HypothesisStatus = Literal["active", "weakened", "strengthened", "superseded"]
+PlausibilityClass = Literal["low", "medium", "high", "blocked"]
+
+
+class ChallengeFinding(BaseModel):
+    """Deterministic V9 challenger finding.
+
+    A finding is not a recommendation. It is a governed observation about a
+    missing input, contradiction, derived signal, risk, or validity boundary
+    that should steer the next question and RFQ basis.
+    """
+
+    finding_id: str
+    kind: ChallengeFindingKind
+    severity: ChallengeSeverity = "watch"
+    status: ChallengeLifecycleStatus = "open"
+    title: str
+    summary: str
+    rfq_relevance: str = ""
+    related_fields: list[str] = Field(default_factory=list)
+    evidence_ref_ids: list[str] = Field(default_factory=list)
+    action_mode: str = "RUN_RISK_COMPLETENESS"
+    source: str = "challenge_engine_v9"
+
+
+class SolutionHypothesis(BaseModel):
+    """Bounded solution hypothesis for V9.
+
+    The hypothesis deliberately uses plausibility classes instead of
+    percentages and keeps counterindicators visible.
+    """
+
+    hypothesis_id: str
+    label: str
+    plausibility_class: PlausibilityClass = "low"
+    status: HypothesisStatus = "active"
+    basis: list[str] = Field(default_factory=list)
+    counterindicators: list[str] = Field(default_factory=list)
+    blocking_unknowns: list[str] = Field(default_factory=list)
+    required_checks: list[str] = Field(default_factory=list)
+    rfq_relevance: str = ""
+    forbidden_claims: list[str] = Field(
+        default_factory=lambda: [
+            "geeignet",
+            "freigegeben",
+            "beste Loesung",
+            "finale Werkstoffauswahl",
+            "garantiert",
+        ]
+    )
+    source: str = "challenge_engine_v9"
+
+
+class NextBestQuestion(BaseModel):
+    """Single strongest next question selected by the challenge engine."""
+
+    question: str
+    reason: str
+    focus_key: str
+    priority: int = Field(default=1, ge=1)
+    expected_answer_type: str = "text"
+    closes_findings: list[str] = Field(default_factory=list)
+    source: str = "challenge_engine_v9"
+    max_questions_policy: str = "ask_one_highest_leverage_question"
+
+
+class ChallengeState(BaseModel):
+    """Canonical V9 sealing-intelligence slice.
+
+    This state sits between calculation/knowledge and governance output. It is
+    deterministic, persisted, and UI-projectable.
+    """
+
+    schema_version: str = "challenge_engine_v9.0"
+    status: str = "not_run"
+    findings: list[ChallengeFinding] = Field(default_factory=list)
+    hypotheses: list[SolutionHypothesis] = Field(default_factory=list)
+    next_best_question: Optional[NextBestQuestion] = None
+    action_modes_run: list[str] = Field(default_factory=list)
+    boundary_notice: str = (
+        "Pruefhypothesen dienen der technischen Vorqualifikation; keine "
+        "Freigabe, keine finale Auslegung und keine Materialentscheidung."
+    )
+
+
+# ---------------------------------------------------------------------------
 # MatchingState — Phase G Block 1
 # ---------------------------------------------------------------------------
 
@@ -1101,6 +1222,17 @@ class GovernedSessionState(BaseModel):
     )
     application_hint: ContextHintState = Field(default_factory=ContextHintState)
     motion_hint: ContextHintState = Field(default_factory=ContextHintState)
+    challenge: ChallengeState = Field(default_factory=ChallengeState)
+    seal_system: SealSystemState = Field(default_factory=SealSystemState)
+    engineering: EngineeringState = Field(default_factory=EngineeringState)
+    calculation: CalculationState = Field(default_factory=CalculationState)
+    standards: StandardsState = Field(default_factory=StandardsState)
+    evidence_graph: EvidenceGraphState = Field(default_factory=EvidenceGraphState)
+    compound_state: CompoundState = Field(default_factory=CompoundState)
+    document_evidence: DocumentEvidenceState = Field(default_factory=DocumentEvidenceState)
+    failure_observation: FailureObservationState = Field(default_factory=FailureObservationState)
+    review_state: ReviewState = Field(default_factory=ReviewState)
+    dossier: DossierState = Field(default_factory=DossierState)
     matching: MatchingState = Field(default_factory=MatchingState)
     rfq: RfqState = Field(default_factory=RfqState)
     dispatch: DispatchState = Field(default_factory=DispatchState)
@@ -1115,10 +1247,17 @@ class GovernedSessionState(BaseModel):
         default_factory=DispatchContractState
     )
     medium_context: MediumContext = Field(default_factory=MediumContext)
+    medium_intelligence: dict[str, Any] = Field(default_factory=dict)
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
     pending_question: Optional[PendingQuestion] = None
     last_slot_answer_binding: Optional[SlotAnswerBinding] = None
     governed_answer_context: dict[str, Any] = Field(default_factory=dict)
+    v91_candidate_facts: list[CandidateFact] = Field(default_factory=list)
+    v91_field_governance_decisions: list[FieldGovernanceDecision] = Field(default_factory=list)
+    v91_question_plan: Optional[QuestionPlan] = None
+    v91_conversation_task: ConversationTaskState = Field(default_factory=ConversationTaskState)
+    v91_dialogue_debt: DialogueDebt = Field(default_factory=DialogueDebt)
+    v91_final_answer_context: Optional[FinalAnswerContext] = None
     case_events: list[CaseEvent] = Field(default_factory=list)
     exploration_progress: ExplorationProgressState = Field(
         default_factory=ExplorationProgressState

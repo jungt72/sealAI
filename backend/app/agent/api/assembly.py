@@ -8,6 +8,7 @@ from app.agent.graph import GraphState
 from app.agent.state.projections import project_for_ui
 from app.agent.runtime.answer_trace import AnswerTrace, build_answer_trace, with_answer_trace
 from app.agent.runtime.final_answer_layer import FinalAnswerEnvelope, apply_final_answer_layer
+from app.agent.runtime.response_renderer import render_response
 from app.agent.graph.output_contract_assembly import build_governed_conversation_strategy_contract
 from app.agent.domain.case_delta import proposed_case_delta_from_extractions
 from app.agent.runtime.turn_context import build_governed_turn_context
@@ -39,6 +40,11 @@ class GovernedReplyAssemblyContext:
     answer_markdown_error: str | None = None
     proposed_case_delta: ProposedCaseDelta = dataclasses.field(default_factory=ProposedCaseDelta)
     domain_context: dict[str, Any] = dataclasses.field(default_factory=dict)
+    v91_field_governance_decisions: list[Any] = dataclasses.field(default_factory=list)
+    v91_question_plan: Any | None = None
+    v91_conversation_task: Any | None = None
+    v91_dialogue_debt: Any | None = None
+    v91_final_answer_context: Any | None = None
 
 def _build_structured_version_provenance(*, decision: Any, rwdr_config_version: str | None = None) -> dict[str, Any]:
     vp = {
@@ -146,6 +152,28 @@ def _build_governed_reply_context(
                 "source": answer_markdown_source,
                 "error": answer_markdown_error,
             },
+            "v91": {
+                "field_governance_decisions": [
+                    decision.model_dump(mode="json")
+                    for decision in result_state.v91_field_governance_decisions
+                ],
+                "question_plan": (
+                    result_state.v91_question_plan.model_dump(mode="json")
+                    if result_state.v91_question_plan is not None
+                    else None
+                ),
+                "conversation_task": result_state.v91_conversation_task.model_dump(
+                    mode="json"
+                ),
+                "dialogue_debt": result_state.v91_dialogue_debt.model_dump(
+                    mode="json"
+                ),
+                "final_answer_context": (
+                    result_state.v91_final_answer_context.model_dump(mode="json")
+                    if result_state.v91_final_answer_context is not None
+                    else None
+                ),
+            },
         },
         ui_payload=ui_payload,
         deterministic_reply=deterministic_reply,
@@ -153,6 +181,11 @@ def _build_governed_reply_context(
         answer_markdown_source=answer_markdown_source,
         answer_markdown_error=answer_markdown_error,
         proposed_case_delta=proposed_case_delta,
+        v91_field_governance_decisions=result_state.v91_field_governance_decisions,
+        v91_question_plan=result_state.v91_question_plan,
+        v91_conversation_task=result_state.v91_conversation_task,
+        v91_dialogue_debt=result_state.v91_dialogue_debt,
+        v91_final_answer_context=result_state.v91_final_answer_context,
     )
 
 def _assemble_governed_stream_payload(
@@ -173,6 +206,8 @@ def _assemble_governed_stream_payload(
         if context.answer_markdown_source in {"governed_composer", "composer_fallback"}
         else ""
     )
+    if visible_answer:
+        visible_answer = render_response(visible_answer, path="GOVERNED").text
     composer_attempted = context.answer_markdown_source in {
         "governed_composer",
         "composer_fallback",
@@ -260,5 +295,31 @@ def _assemble_governed_stream_payload(
         "assertions": context.assertions_payload,
         "conversation_strategy": context.conversation_strategy.model_dump(),
         "turn_context": context.turn_context.model_dump(),
+        "v91_field_governance_decisions": [
+            decision.model_dump(mode="json")
+            if hasattr(decision, "model_dump")
+            else decision
+            for decision in context.v91_field_governance_decisions
+        ],
+        "v91_question_plan": (
+            context.v91_question_plan.model_dump(mode="json")
+            if context.v91_question_plan is not None
+            else None
+        ),
+        "v91_conversation_task": (
+            context.v91_conversation_task.model_dump(mode="json")
+            if context.v91_conversation_task is not None
+            else None
+        ),
+        "v91_dialogue_debt": (
+            context.v91_dialogue_debt.model_dump(mode="json")
+            if context.v91_dialogue_debt is not None
+            else None
+        ),
+        "v91_final_answer_context": (
+            context.v91_final_answer_context.model_dump(mode="json")
+            if context.v91_final_answer_context is not None
+            else None
+        ),
         "ui": context.ui_payload,
     }

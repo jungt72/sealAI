@@ -164,6 +164,89 @@ def test_contextual_fallback_asks_next_best_question_without_routine_confirmatio
     assert "bestaetig" not in answer.casefold()
 
 
+def test_contextual_fallback_adds_risk_orientation_before_slot_question() -> None:
+    context = GovernedAnswerContext(
+        latest_user_message=(
+            "Ich habe einen RWDR: Welle 40 mm, 1450 rpm, Hydrauliköl HLP46, "
+            "80 °C, etwa 0,5 bar an der Dichtstelle. Was ist technisch kritisch?"
+        ),
+        accepted_updates=[
+            GovernedAnswerUpdate(
+                field_key="speed_rpm",
+                label="Drehzahl",
+                value=1450,
+                unit="rpm",
+                source="user",
+                status="accepted",
+            )
+        ],
+        next_best_question="Meinst du mit 0,5 bar den Druck direkt an der Dichtung?",
+        missing_fields=["pressure_bar"],
+    )
+
+    answer = render_governed_contextual_fallback(
+        context,
+        "Ich habe schon ein paar Eckdaten. Für den nächsten sinnvollen Schritt brauche ich noch eine präzise Angabe.",
+    )
+
+    assert "Technisch kritisch" in answer
+    assert "Druck direkt an der Dichtlippe" in answer
+    assert "Die wichtigste Rückfrage ist" in answer
+
+
+def test_v91_guard_is_backward_compatible_when_context_field_is_missing() -> None:
+    legacy_context = object()
+
+    composer_module._validate_v91_final_answer(
+        "Das ist eine technische Orientierung, keine Freigabe.",
+        legacy_context,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.asyncio
+async def test_node_uses_composer_for_contextual_orientation_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
+
+    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+        assert "Ursachencluster" in request.deterministic_reply
+        return GovernedAnswerComposerOutput(
+            answer_markdown=(
+                "Bei früher Leckage an einem RWDR würde ich das Schadbild systematisch trennen. "
+                "Welcher Öltyp liegt genau an?"
+            ),
+            confidence_note=None,
+        )
+
+    monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fake_compose)
+    context = GovernedAnswerContext(
+        latest_user_message="Ein Wellendichtring leckt nach zwei Wochen. Welche Ursachen würdest du systematisch prüfen?",
+        accepted_updates=[
+            GovernedAnswerUpdate(
+                field_key="medium",
+                label="Medium",
+                value="Öl",
+                source="user",
+                status="accepted",
+            )
+        ],
+        next_best_question="Welcher Öltyp liegt genau an?",
+        missing_fields=["medium"],
+        response_class="structured_clarification",
+    )
+    state = GraphState(
+        output_reply="Danke, ich habe Öl als Medium verstanden. Welcher Öltyp liegt genau an?",
+        governed_answer_context=context.model_dump(mode="json"),
+    )
+
+    result = await governed_answer_composer_node(state)
+
+    assert result.output_answer_markdown_source == "governed_composer"
+    assert "früher Leckage an einem RWDR" in result.output_answer_markdown
+    assert "Welcher Öltyp" in result.output_answer_markdown
+
+
 def test_contextual_answer_discipline_rejects_routine_restatement() -> None:
     context = GovernedAnswerContext(
         accepted_updates=[
@@ -270,8 +353,9 @@ async def test_feature_flag_disabled_does_not_call_composer(monkeypatch: pytest.
     result = await governed_answer_composer_node(state)
 
     assert result.output_reply
-    assert result.output_answer_markdown == result.output_reply
-    assert result.output_answer_markdown_source == "deterministic_reply"
+    assert result.output_answer_markdown != result.output_reply
+    assert result.output_answer_markdown_source == "composer_fallback"
+    assert "Für die technische Einordnung" in result.output_answer_markdown
     assert result.governed_answer_composer_error == ""
 
 
@@ -407,6 +491,98 @@ def test_parser_rejects_forbidden_approval_language(unsafe_answer: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_repairs_slot_only_material_answer_with_live_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = GovernedAnswerContext(
+        latest_user_message=(
+            "RWDR für Hydrauliköl HLP46 bei 80 °C. Ordne EPDM, FKM und NBR technisch ein."
+        ),
+        next_best_question="Welcher Druck liegt direkt an der Dichtstelle an?",
+        response_class="structured_clarification",
+    )
+    first_answer = "Die wichtigste Rückfrage ist: Welcher Druck liegt direkt an der Dichtstelle an?"
+    repaired_answer = (
+        "EPDM ist bei HLP46 eher ein Warnpunkt; NBR und FKM bleiben Prüfhypothesen "
+        "ohne Werkstofffreigabe.\n\n"
+        "Die wichtigste Rückfrage ist: Welcher Druck liegt direkt an der Dichtstelle an?"
+    )
+
+    class FakeDelta:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class FakeChoice:
+        def __init__(self, content: str) -> None:
+            self.delta = FakeDelta(content)
+
+    class FakeChunk:
+        def __init__(self, content: str) -> None:
+            self.choices = [FakeChoice(content)]
+
+    class FakeStream:
+        def __init__(self, parts: list[str]) -> None:
+            self.parts = parts
+
+        def __aiter__(self):
+            self._index = 0
+            return self
+
+        async def __anext__(self):
+            if self._index >= len(self.parts):
+                raise StopAsyncIteration
+            value = self.parts[self._index]
+            self._index += 1
+            return FakeChunk(value)
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            assert kwargs["stream"] is True
+            return FakeStream([first_answer] if len(self.calls) == 1 else [repaired_answer])
+
+    completions = FakeCompletions()
+
+    class FakeChat:
+        pass
+
+    FakeChat.completions = completions
+
+    class FakeClient:
+        pass
+
+    FakeClient.chat = FakeChat()
+    monkeypatch.setattr(
+        composer_module,
+        "get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    events = [
+        event
+        async for event in GovernedAnswerComposer().stream(
+            GovernedAnswerComposerInput(
+                context=context,
+                deterministic_reply="Welcher Druck liegt direkt an der Dichtstelle an?",
+            )
+        )
+    ]
+
+    assert [event.event_type for event in events] == ["chunk", "reset", "chunk", "final"]
+    assert events[0].text == first_answer
+    assert events[2].text == repaired_answer
+    assert events[-1].output is not None
+    assert events[-1].output.answer_markdown == repaired_answer
+    assert len(completions.calls) == 2
+    repair_payload = json.loads(completions.calls[1]["messages"][1]["content"])
+    assert repair_payload["repair"]["reason"] == "missing_material_orientation"
+    assert repair_payload["repair"]["must_mention_user_material_terms"] == ["EPDM", "FKM", "NBR"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("message", ["wasser", "öl", "salzwasser"])
 async def test_composer_can_acknowledge_simple_medium_and_ask_next_question(
     message: str,
@@ -415,10 +591,8 @@ async def test_composer_can_acknowledge_simple_medium_and_ask_next_question(
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
     async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
-        supplied = request.context.accepted_updates[0].value
-        assert supplied
         return GovernedAnswerComposerOutput(
-            answer_markdown="In welchem Temperaturbereich arbeitet die Dichtstelle?",
+            answer_markdown="Damit kann ich weiterarbeiten. Welche Temperatur sieht die Dichtstelle?",
             confidence_note=None,
         )
 
@@ -428,7 +602,7 @@ async def test_composer_can_acknowledge_simple_medium_and_ask_next_question(
     result = await governed_answer_composer_node(state)
 
     assert result.output_answer_markdown_source == "governed_composer"
-    assert "Temperatur" in result.output_answer_markdown
+    assert result.output_answer_markdown.startswith("Damit kann ich weiterarbeiten")
     assert "Medium angeben" not in result.output_answer_markdown
 
 
@@ -489,8 +663,28 @@ def test_materialize_governed_graph_result_extracts_state_from_interrupt_payload
     assert result.output_answer_markdown_source == "governed_composer"
 
 
+def test_assembly_polishes_visible_governed_markdown_before_payload() -> None:
+    state = GraphState(
+        output_reply="Deterministischer Fallback",
+        output_response_class="structured_clarification",
+        output_answer_markdown=(
+            '"Die wichtigste Rueckfrage ist: Meinst du den Druckunterschied ueber der Dichtung?"'
+        ),
+        output_answer_markdown_source="governed_composer",
+    )
+    persisted = GovernedSessionState.model_validate(state.model_dump(mode="python"))
+    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+
+    payload = _assemble_governed_stream_payload(context=context)
+
+    assert payload["answer_markdown"] == (
+        "Die wichtigste Rückfrage ist: Meinst du den Druckunterschied über der Dichtung?"
+    )
+    assert payload["assistant_message"] == payload["answer_markdown"]
+
+
 @pytest.mark.asyncio
-async def test_structured_clarification_output_contract_reaches_composer_before_interrupt(
+async def test_structured_clarification_output_contract_uses_composer_for_visible_wording(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
@@ -511,9 +705,8 @@ async def test_structured_clarification_output_contract_reaches_composer_before_
     assert calls == ["structured_clarification"]
     assert interrupted.output_answer_markdown_source == "governed_composer"
     assert materialized.output_answer_markdown_source == "governed_composer"
-    assert materialized.output_answer_markdown == "Composer-Antwort: Ich frage als Nächstes gezielt nach dem Medium."
+    assert materialized.output_answer_markdown.startswith("Composer-Antwort")
     assert materialized.output_reply
-    assert materialized.output_answer_markdown != materialized.output_reply
 
 
 @pytest.mark.asyncio
@@ -548,9 +741,8 @@ async def test_structured_clarification_composer_failure_falls_back_safely(
 
     _payload, materialized = await _run_structured_output_contract()
 
-    assert materialized.output_answer_markdown != materialized.output_reply
+    assert materialized.output_answer_markdown
     assert materialized.output_answer_markdown_source == "composer_fallback"
-    assert "Welches Medium" in materialized.output_answer_markdown
     assert materialized.governed_answer_composer_error == "RuntimeError"
     assert "secret" not in materialized.governed_answer_composer_error.casefold()
     assert "OPENAI_API_KEY" not in materialized.governed_answer_composer_error

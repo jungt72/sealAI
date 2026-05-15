@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agent.api.dispatch import _compose_knowledge_answer_if_enabled
+from app.agent.api.dispatch import (
+    _compose_knowledge_answer_if_enabled,
+    _knowledge_rag_retriever,
+)
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.knowledge_service import KnowledgeService
+from app.services.rag.constants import RAG_SHARED_TENANT_ID
 
 
 def _history_from_governed_state(governed_state: Any | None) -> tuple[Any, ...]:
@@ -29,9 +33,12 @@ async def build_case_side_knowledge_response(
     """
 
     source_classification = PreGateClassification.KNOWLEDGE_QUERY
-    knowledge_response = KnowledgeService().answer(
+    knowledge_response = KnowledgeService(
+        rag_retriever=_knowledge_rag_retriever,
+    ).answer(
         message,
         source_classification=source_classification,
+        tenant_id=RAG_SHARED_TENANT_ID,
     )
     recent_history = _history_from_governed_state(governed_state)
     return await _compose_knowledge_answer_if_enabled(

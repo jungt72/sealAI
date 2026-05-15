@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.redaction import safe_error_message
 
-from app.agent.rag.paperless_tags import evaluate_paperless_tag_readiness
+from app.agent.rag.paperless_tags import augment_paperless_tags_for_rag, evaluate_paperless_tag_readiness
 from app.core.config import settings
 from app.models.rag_document import RagDocument
 from app.observability.metrics import track_rag_sync
@@ -261,7 +261,11 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                     tag_id_to_name[t] if isinstance(t, int) and t in tag_id_to_name else t
                     for t in (raw_tag_field if isinstance(raw_tag_field, list) else [raw_tag_field])
                 ]
-                p_tags = coerce_tag_strings(resolved_tags)
+                p_tags = augment_paperless_tags_for_rag(
+                    coerce_tag_strings(resolved_tags),
+                    title=str(p_title or ""),
+                    filename=str(p_filename or ""),
+                )
                 readiness = evaluate_paperless_tag_readiness(p_tags)
                 if readiness["ingest_ready"]:
                     ingest_ready += 1

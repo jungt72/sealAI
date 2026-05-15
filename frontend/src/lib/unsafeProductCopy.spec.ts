@@ -65,3 +65,22 @@ it("main frontend copy avoids final recommendation, release, dispatch and matchi
 
   expect(violations).toEqual([]);
 });
+
+it("case cockpit does not expose V9 material hypotheses as probabilities", () => {
+  const files = [
+    resolve(root, "components/dashboard/CaseScreen.tsx"),
+    resolve(root, "components/dashboard/SealCockpit.tsx"),
+  ];
+  const violations: string[] = [];
+
+  for (const file of files) {
+    const source = readFileSync(file, "utf8").toLowerCase();
+    for (const needle of ["wahrscheinlichkeit", "wahrscheinlichkeiten", " / 100"]) {
+      if (source.includes(needle)) {
+        violations.push(`${relative(root, file)}: ${needle}`);
+      }
+    }
+  }
+
+  expect(violations).toEqual([]);
+});

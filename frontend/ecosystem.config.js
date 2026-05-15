@@ -49,7 +49,10 @@ module.exports = {
         KEYCLOAK_CLIENT_ID: productionEnv.KEYCLOAK_CLIENT_ID,
         KEYCLOAK_CLIENT_SECRET: productionEnv.KEYCLOAK_CLIENT_SECRET,
         KEYCLOAK_ISSUER: productionEnv.KEYCLOAK_ISSUER,
+        SEALAI_BACKEND_ORIGIN: productionEnv.SEALAI_BACKEND_ORIGIN,
         NEXT_PUBLIC_API_BASE: productionEnv.NEXT_PUBLIC_API_BASE,
+        NEXT_PUBLIC_SITE_URL: productionEnv.NEXT_PUBLIC_SITE_URL,
+        SITE_URL: productionEnv.SITE_URL || productionEnv.NEXT_PUBLIC_SITE_URL,
         // Set at deploy time via: pm2 restart sealai-frontend --update-env
         // This allows Next.js to signal stale clients when the build changes.
         NEXT_DEPLOYMENT_ID: process.env.NEXT_DEPLOYMENT_ID || "local",

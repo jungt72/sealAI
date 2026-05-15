@@ -12,6 +12,7 @@ from app.agent.communication.models import (
     ConversationMode,
     LLMResponseContract,
 )
+from app.observability.langsmith import traceable, wrap_openai_client
 
 
 HUMAN_COMMUNICATION_PROMPT_VERSION = "sealai_human_communication_v2"
@@ -21,6 +22,7 @@ class HumanCommunicationLLM(Protocol):
     model_name: str
     provider_name: str
 
+    @traceable(name="sealai.human_communication_response", run_type="llm")
     async def create_response(
         self,
         *,
@@ -53,7 +55,7 @@ class OpenAIHumanCommunicationLLMService:
         allowed_claims: list[AllowedClaim],
         proposed_field_updates: list[dict[str, Any]],
     ) -> LLMResponseContract:
-        client = self._client_factory()
+        client = wrap_openai_client(self._client_factory())
         response = await client.chat.completions.create(
             model=self.model_name,
             messages=[

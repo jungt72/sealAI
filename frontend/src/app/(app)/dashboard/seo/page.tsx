@@ -15,7 +15,6 @@ import {
   KeyRound,
   ListChecks,
   Radar,
-  RefreshCw,
   Search,
   ShieldCheck,
   Workflow,
@@ -62,6 +61,13 @@ type RankingSnapshot = {
   rows: GscRankingRow[];
 };
 
+type PageSpeedSnapshot = {
+  dbFound: boolean;
+  latestRunAt: string | null;
+  latestStatus: string | null;
+  rows: PageSpeedMetricRow[];
+};
+
 type GscRankingRow = {
   keyword: string;
   siteUrl: string;
@@ -72,6 +78,18 @@ type GscRankingRow = {
   position: number;
   firstDate: string;
   lastDate: string;
+};
+
+type PageSpeedMetricRow = {
+  url: string;
+  strategy: string;
+  performanceScore: number | null;
+  lcpMs: number | null;
+  inpMs: number | null;
+  cls: number | null;
+  fcpMs: number | null;
+  ttfbMs: number | null;
+  fetchedAt: string;
 };
 
 const ROADMAP: RoadmapRow[] = [
@@ -167,7 +185,7 @@ const ROADMAP: RoadmapRow[] = [
   },
 ];
 
-const TARGET_DOMAINS = ["sealingai.com", "sealai.net"];
+const TARGET_DOMAINS = ["sealingai.com"];
 const execFileAsync = promisify(execFile);
 
 const KEYWORD_CLUSTERS = [
@@ -320,16 +338,22 @@ async function seoStackStatus() {
   const checks = await Promise.all([
     seoRoot ? pathExists(path.join(seoRoot, "scripts", "run_gsc_sync.sh")) : false,
     seoRoot ? pathExists(path.join(seoRoot, "scripts", "run_dataforseo_keyword_refresh.sh")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "scripts", "run_pagespeed_check.sh")) : false,
     seoRoot ? pathExists(path.join(seoRoot, "systemd", "sealai-seo-gsc-sync.timer")) : false,
     seoRoot ? pathExists(path.join(seoRoot, "systemd", "sealai-seo-weekly-report.timer")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "systemd", "sealai-seo-pagespeed.timer")) : false,
     seoRoot ? pathExists(path.join(seoRoot, "migrations", "001_init.sql")) : false,
+    seoRoot ? pathExists(path.join(seoRoot, "migrations", "002_google_toolchain.sql")) : false,
   ]);
   return {
     gscScript: checks[0],
     dataForSeoScript: checks[1],
-    gscTimer: checks[2],
-    weeklyTimer: checks[3],
-    sqliteSchema: checks[4],
+    pagespeedScript: checks[2],
+    gscTimer: checks[3],
+    weeklyTimer: checks[4],
+    pagespeedTimer: checks[5],
+    sqliteSchema: checks[6],
+    googleToolchainSchema: checks[7],
   };
 }
 
@@ -444,6 +468,95 @@ print(json.dumps({
   }
 }
 
+function normalizePageSpeedRows(value: unknown): PageSpeedMetricRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    const url = typeof row.url === "string" ? row.url : "";
+    if (!url) {
+      return [];
+    }
+    return [{
+      url,
+      strategy: typeof row.strategy === "string" ? row.strategy : "mobile",
+      performanceScore: row.performance_score === null ? null : Number(row.performance_score ?? 0),
+      lcpMs: row.lcp_ms === null ? null : Number(row.lcp_ms ?? 0),
+      inpMs: row.inp_ms === null ? null : Number(row.inp_ms ?? 0),
+      cls: row.cls === null ? null : Number(row.cls ?? 0),
+      fcpMs: row.fcp_ms === null ? null : Number(row.fcp_ms ?? 0),
+      ttfbMs: row.ttfb_ms === null ? null : Number(row.ttfb_ms ?? 0),
+      fetchedAt: String(row.fetched_at_utc ?? ""),
+    }];
+  });
+}
+
+async function pageSpeedSnapshot(): Promise<PageSpeedSnapshot> {
+  const dbPath = await firstExistingPath([
+    process.env.SEO_DB_PATH || "",
+    "/var/seo/data/seo.db",
+    "/home/thorsten/var/seo/data/seo.db",
+    path.resolve(process.cwd(), "..", "seo", "data", "seo.db"),
+  ].filter(Boolean));
+
+  if (!dbPath) {
+    return { dbFound: false, latestRunAt: null, latestStatus: null, rows: [] };
+  }
+
+  const script = `
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+conn.row_factory = sqlite3.Row
+tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+if not {"pagespeed_sync_runs", "pagespeed_url_metrics"} <= tables:
+    print(json.dumps({"latest_run_at": None, "latest_status": None, "rows": []}))
+    raise SystemExit(0)
+
+run = conn.execute("""
+    SELECT run_id, started_at_utc, status
+    FROM pagespeed_sync_runs
+    ORDER BY started_at_utc DESC
+    LIMIT 1
+""").fetchone()
+if not run:
+    print(json.dumps({"latest_run_at": None, "latest_status": None, "rows": []}))
+    raise SystemExit(0)
+rows = conn.execute("""
+    SELECT url, strategy, performance_score, lcp_ms, inp_ms, cls, fcp_ms, ttfb_ms, fetched_at_utc
+    FROM pagespeed_url_metrics
+    WHERE run_id = ?
+    ORDER BY performance_score ASC, url ASC
+""", (run["run_id"],)).fetchall()
+print(json.dumps({
+    "latest_run_at": run["started_at_utc"],
+    "latest_status": run["status"],
+    "rows": [dict(row) for row in rows],
+}, ensure_ascii=False))
+`;
+
+  try {
+    const { stdout } = await execFileAsync("python3", ["-c", script, dbPath], {
+      maxBuffer: 1024 * 1024,
+    });
+    const payload = JSON.parse(stdout) as Record<string, unknown>;
+    return {
+      dbFound: true,
+      latestRunAt: typeof payload.latest_run_at === "string" ? payload.latest_run_at : null,
+      latestStatus: typeof payload.latest_status === "string" ? payload.latest_status : null,
+      rows: normalizePageSpeedRows(payload.rows),
+    };
+  } catch {
+    return { dbFound: true, latestRunAt: null, latestStatus: null, rows: [] };
+  }
+}
+
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
     <span
@@ -483,20 +596,22 @@ function Metric({
 }
 
 export default async function SeoDashboardPage() {
-  const [wissen, werkstoffe, medien, reports, stack, rankings] = await Promise.all([
+  const [wissen, werkstoffe, medien, reports, stack, rankings, pageSpeed] = await Promise.all([
     getAllSlugs("wissen"),
     getAllSlugs("werkstoffe"),
     getAllSlugs("medien"),
     latestReports(),
     seoStackStatus(),
     gscRankingSnapshot(),
+    pageSpeedSnapshot(),
   ]);
   const publishedCount = wissen.length + werkstoffe.length + medien.length + 1;
   const onlineRoadmap = ROADMAP.filter((row) => row.status === "online").length;
   const reportsReady = reports.length > 0;
-  const automationReady = stack.gscScript && stack.dataForSeoScript && stack.gscTimer && stack.weeklyTimer;
+  const automationReady = stack.gscScript && stack.dataForSeoScript && stack.pagespeedScript && stack.gscTimer && stack.weeklyTimer && stack.pagespeedTimer;
   const rankingRowsByKeyword = new Map(rankings.rows.map((row) => [row.keyword, row]));
   const rankingCoverage = ROADMAP.filter((row) => rankingRowsByKeyword.has(row.primaryKeyword)).length;
+  const pageSpeedScore = pageSpeed.rows[0]?.performanceScore;
 
   const actions = [
     {
@@ -514,10 +629,18 @@ export default async function SeoDashboardPage() {
       tone: stack.dataForSeoScript ? "ready" : "attention",
     },
     {
-      title: "Content-Architektur gegen V8-Claim-Boundary prüfen",
-      detail: "Alle Seiten müssen Orientierung und Anfragequalität liefern, aber keine finale Material- oder Herstellerfreigabe behaupten.",
+      title: "Content-Architektur gegen V9-Challenge-Boundary prüfen",
+      detail: "Alle Seiten müssen Risiken, offene Punkte und Anfragequalität liefern, aber keine finale Material- oder Herstellerfreigabe behaupten.",
       command: "PYTHONPATH=seo/src python -m sealai_seo.cli report-content-roadmap",
       tone: "quiet",
+    },
+    {
+      title: pageSpeed.latestRunAt ? "Core Web Vitals Trend prüfen" : "Ersten PageSpeed-Run starten",
+      detail: pageSpeed.latestRunAt
+        ? "PageSpeed-Daten liegen in der SEO-Datenbank und können gegen Content-Releases verglichen werden."
+        : "Noch kein PageSpeed-Datensatz gefunden. Nächster Schritt: Mobile-Run für zentrale Landingpages starten.",
+      command: "PYTHONPATH=seo/src python -m sealai_seo.cli sync-pagespeed --strategy mobile",
+      tone: pageSpeed.latestRunAt ? "ready" : "attention",
     },
     {
       title: "Neutralen SERP-Rankcheck vorbereiten",
@@ -552,6 +675,9 @@ export default async function SeoDashboardPage() {
             <StatusPill tone={stack.dataForSeoScript ? "ready" : "attention"}>
               <KeyRound size={13} /> DataForSEO
             </StatusPill>
+            <StatusPill tone={stack.pagespeedScript && stack.pagespeedTimer ? "ready" : "attention"}>
+              <Activity size={13} /> PageSpeed
+            </StatusPill>
             <StatusPill tone={reportsReady ? "ready" : "attention"}>
               <FileText size={13} /> Reports
             </StatusPill>
@@ -561,10 +687,11 @@ export default async function SeoDashboardPage() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Metric label="Public Content" value={String(publishedCount)} detail={`${wissen.length} Wissen, ${werkstoffe.length} Werkstoffe, ${medien.length} Medien, 1 RFQ-Landingpage`} icon={FileText} />
           <Metric label="Run-0 Roadmap" value={`${onlineRoadmap}/${ROADMAP.length}`} detail="erste Keyword- und Content-Architektur online abbildbar" icon={ListChecks} />
           <Metric label="Automation" value={automationReady ? "bereit" : "offen"} detail="GSC/DataForSEO Skripte und Report-Timer im SEO-Stack" icon={Workflow} />
+          <Metric label="PageSpeed" value={pageSpeedScore == null ? "offen" : `${Math.round(pageSpeedScore * 100)}/100`} detail={pageSpeed.latestRunAt ? `letzter Run ${formatDate(pageSpeed.latestRunAt)}` : "Mobile-Lighthouse für zentrale Seiten noch starten"} icon={Activity} />
           <Metric label="Letzter Report" value={reports[0] ? formatDate(reports[0].modifiedAt) : "noch keiner"} detail={reports[0]?.name ?? "GSC-Reports nach erstem Sync sichtbar"} icon={Clock3} />
         </section>
 
@@ -576,7 +703,7 @@ export default async function SeoDashboardPage() {
                 <h2 className="text-lg font-semibold">Ranking-Positionen</h2>
               </div>
               <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
-                GSC-Ø-Positionen für die Run-0 Keywords. Zielmarke: {TARGET_DOMAINS[0]}; bis zur GSC-Datensammlung von sealingai.com wird transparent angezeigt, ob Daten nur für {TARGET_DOMAINS[1]} oder noch gar nicht vorliegen.
+                GSC-Ø-Positionen für die Run-0 Keywords. Zielmarke: {TARGET_DOMAINS[0]}; bis zur GSC-Datensammlung von sealingai.com wird transparent angezeigt, ob bereits Daten vorliegen oder noch keine Impressionen erfasst wurden.
               </p>
             </div>
             <StatusPill tone={rankingCoverage > 0 ? "ready" : rankings.hasGscRows ? "attention" : "quiet"}>
@@ -637,12 +764,63 @@ export default async function SeoDashboardPage() {
           </div>
         </section>
 
+        <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Activity size={18} className="text-[#0B57D0]" />
+                <h2 className="text-lg font-semibold">Core Web Vitals / PageSpeed</h2>
+              </div>
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
+                Automatisierter Mobile-Lighthouse-Check für zentrale sealingai.com-Seiten. Die Messwerte sind Laborwerte und ergänzen die realen GSC/Core-Web-Vitals-Daten.
+              </p>
+            </div>
+            <StatusPill tone={pageSpeed.latestStatus === "success" ? "ready" : pageSpeed.dbFound ? "attention" : "quiet"}>
+              {pageSpeed.latestStatus ?? "noch kein Run"}
+            </StatusPill>
+          </div>
+          {pageSpeed.rows.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#E6ECF5] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                    <th className="py-3 pr-4">URL</th>
+                    <th className="py-3 pr-4 text-right">Score</th>
+                    <th className="py-3 pr-4 text-right">LCP</th>
+                    <th className="py-3 pr-4 text-right">INP</th>
+                    <th className="py-3 pr-4 text-right">CLS</th>
+                    <th className="py-3 pr-4 text-right">FCP</th>
+                    <th className="py-3 text-right">TTFB</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageSpeed.rows.map((row) => (
+                    <tr key={`${row.url}-${row.strategy}`} className="border-b border-[#EEF2F7] last:border-0">
+                      <td className="py-3 pr-4 font-medium text-[#111827]">{row.url.replace(/^https?:\/\//, "")}</td>
+                      <td className="py-3 pr-4 text-right font-semibold">{row.performanceScore === null ? "-" : Math.round(row.performanceScore * 100)}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.lcpMs === null ? "-" : `${Math.round(row.lcpMs)} ms`}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.inpMs === null ? "-" : `${Math.round(row.inpMs)} ms`}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.cls === null ? "-" : formatDecimal(row.cls)}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.fcpMs === null ? "-" : `${Math.round(row.fcpMs)} ms`}</td>
+                      <td className="py-3 text-right text-[#4B5563]">{row.ttfbMs === null ? "-" : `${Math.round(row.ttfbMs)} ms`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-800">
+              Noch kein PageSpeed-Run in der SEO-Datenbank. Starte `PYTHONPATH=seo/src python -m sealai_seo.cli sync-pagespeed --strategy mobile`.
+            </div>
+          )}
+        </section>
+
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Keyword- und Content-Map</h2>
-                <p className="mt-1 text-sm text-[#64748B]">Run-0 Priorisierung mit V8-Grenze: Orientierung und RFQ-Qualifizierung statt finaler Auslegung.</p>
+                <p className="mt-1 text-sm text-[#64748B]">Run-0 Priorisierung mit V9-Grenze: Challenge, Prüfhypothesen und RFQ-Qualifizierung statt finaler Auslegung.</p>
               </div>
               <Link href="/wissen" className="inline-flex items-center gap-1.5 rounded-full border border-[#D9E5F7] bg-white px-3 py-1.5 text-sm font-semibold text-[#0B57D0] hover:bg-[#F8FBFF]">
                 Content ansehen <ArrowUpRight size={14} />

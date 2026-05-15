@@ -72,10 +72,18 @@ class Settings(BaseSettings):
     keycloak_expected_azp: str
 
     # LangSmith / OpenTelemetry tracing (auto-picked up by LangChain via os.environ)
+    langsmith_tracing: bool = False
+    langsmith_api_key: Optional[str] = None
+    langsmith_endpoint: Optional[str] = None
+    langsmith_project: str = "sealai-production"
+    sealai_trace_hash_salt: Optional[str] = None
+    langsmith_trace_salt: Optional[str] = None
+    langsmith_capture_llm_content: bool = False
+    langsmith_trace_langgraph_children: bool = False
     langchain_tracing_v2: bool = False
     langchain_api_key: Optional[str] = None
     langchain_endpoint: Optional[str] = None
-    langchain_project: str = "sealai-phase-h"
+    langchain_project: str = "sealai-production"
 
     # Prometheus metrics
     prometheus_enabled: bool = True

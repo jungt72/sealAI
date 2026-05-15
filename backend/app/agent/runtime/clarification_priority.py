@@ -413,15 +413,23 @@ def select_clarification_priority(
                 open_point_label=render_open_point_label(state, "medium"),
             )
 
+    has_explicit_medium_context = _nested_text(state.medium_classification, "status") == "recognized"
+
     for field_name in ("pressure_bar", "temperature_c", "speed_rpm", "shaft_diameter_mm"):
         if field_name in field_set:
             confirmation_priority = _observed_confirmation_priority(state, field_name)
             if confirmation_priority is not None:
                 return confirmation_priority
-            if _has_value(state, field_name):
+            if _has_value(state, field_name) and (
+                field_name not in set(field_list) or has_explicit_medium_context
+            ):
                 continue
             if field_name in {"pressure_bar", "temperature_c"}:
-                continue
+                if has_explicit_medium_context:
+                    continue
+                priority = _priority_from_field(field_name)
+                if priority is not None:
+                    return priority
             priority = _priority_from_field(field_name)
             if priority is not None:
                 return priority

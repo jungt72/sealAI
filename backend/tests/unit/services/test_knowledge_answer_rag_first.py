@@ -110,6 +110,88 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
     assert view.fallback_used is False
 
 
+def test_named_material_query_ignores_unrelated_ptfe_factcards_and_uses_rag() -> None:
+    def rag_retriever(**kwargs):
+        return [
+            {
+                "text": "NBR ist eine Acrylnitril-Butadien-Kautschuk-Familie.",
+                "metadata": {"source_id": "doc-nbr", "title": "NBR Deep Research"},
+                "fused_score": 0.72,
+            }
+        ]
+
+    response = KnowledgeService(rag_retriever=rag_retriever).answer(
+        "Was kannst du mir zu NBR sagen?",
+        tenant_id="sealai",
+        user_id="user-1",
+    )
+
+    assert response.knowledge_answer_view.rag_answer_found is True
+    assert "NBR steht für Acrylnitril" in response.content
+
+
+def test_rag_answer_sanitizes_document_artifacts_for_user_chat() -> None:
+    def rag_retriever(**kwargs):
+        return [
+            {
+                "text": (
+                    "[Document: original.md] ### RFQ-Feld-Mapping [Q4][Q8] "
+                    "### ASSUMPTIONS_AND_SCOPE NBR als Werkstofffamilie: "
+                    "NBR ist eine Acrylnitril-Butadien-Kautschuk-Familie."
+                ),
+                "metadata": {
+                    "source_id": "doc-nbr",
+                    "title": "NBR Deep Research",
+                    "chunk_id": "nbr-1",
+                },
+                "fused_score": 0.9,
+            }
+        ]
+
+    response = KnowledgeService(rag_retriever=rag_retriever).answer(
+        "Was ist NBR?",
+        tenant_id="sealai",
+        user_id="user-1",
+    )
+
+    assert response.knowledge_answer_view.rag_answer_found is True
+    assert "NBR steht für Acrylnitril" in response.content
+    assert "Typische Orientierung" in response.content
+    assert "Aus dem kuratierten/RAG-Wissenskontext" not in response.content
+    assert "[Document:" not in response.content
+    assert "[Q4]" not in response.content
+    assert "ASSUMPTIONS_AND_SCOPE" not in response.content
+    assert "RFQ-Feld-Mapping" not in response.content
+
+    evidence_text = response.knowledge_answer_view.knowledge_evidence[0].content
+    assert "[Document:" not in evidence_text
+    assert "[Q4]" not in evidence_text
+    assert "ASSUMPTIONS_AND_SCOPE" not in evidence_text
+
+
+def test_named_product_query_drops_rag_hits_without_that_product() -> None:
+    def rag_retriever(**kwargs):
+        return [
+            {
+                "text": "NBR kann je nach ACN-Gehalt fuer Oele relevant sein.",
+                "metadata": {"source_id": "doc-nbr", "title": "NBR Deep Research"},
+                "fused_score": 0.81,
+            }
+        ]
+
+    response = KnowledgeService(rag_retriever=rag_retriever).answer(
+        "Bitte untersuche ob POM mit Klübersynth UH1 6-220 verträglich ist.",
+        tenant_id="sealai",
+        user_id="user-1",
+    )
+
+    view = response.knowledge_answer_view
+
+    assert view.rag_answer_found is False
+    assert view.rag_miss is True
+    assert "NBR kann je nach" not in response.content
+
+
 def test_rag_miss_does_not_call_llm_fallback() -> None:
     fallback_calls: list[str] = []
 
@@ -129,8 +211,9 @@ def test_rag_miss_does_not_call_llm_fallback() -> None:
     view = response.knowledge_answer_view
 
     assert fallback_calls == []
-    assert view.answer_available is False
+    assert view.answer_available is True
     assert view.rag_miss is True
+    assert view.source_type is SourceType.system_derived
     assert view.fallback_allowed is False
     assert view.fallback_used is False
 

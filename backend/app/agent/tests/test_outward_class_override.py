@@ -10,8 +10,6 @@ Verifies that:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.output_contract_node import (
     _determine_response_class,
@@ -142,6 +140,12 @@ class TestClassifyMessageAsKnowledgeOverride:
 
     def test_erklaer_rwdr_returns_conversational_answer(self):
         assert classify_message_as_knowledge_override("erkläre RWDR") == "conversational_answer"
+
+    def test_was_kannst_du_zu_material_returns_conversational_answer(self):
+        assert classify_message_as_knowledge_override("Was kannst du mir zu NBR sagen?") == "conversational_answer"
+
+    def test_standalone_compatibility_question_returns_conversational_answer(self):
+        assert classify_message_as_knowledge_override("Ist POM mit Klübersynth UH1 6-220 verträglich?") == "conversational_answer"
 
     # Case-insensitive
     def test_was_ist_uppercase_returns_conversational_answer(self):

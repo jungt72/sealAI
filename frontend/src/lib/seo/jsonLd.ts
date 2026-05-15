@@ -18,7 +18,7 @@ export function generateOrganizationSchema() {
     "logo": DEFAULT_LOGO,
     "description": "Sealing Intelligence — Professionelle technische Analyse und Vorqualifizierung von Dichtungslösungen.",
     "sameAs": [
-      "https://sealai.net",
+      "https://sealingai.com",
     ],
   };
 }

@@ -19,6 +19,10 @@ from app.agent.communication.rfq_intent import (
     classify_rfq_readiness_intent,
 )
 from app.agent.runtime.answer_trace import build_answer_trace
+from app.agent.v91.semantic_boundary import (
+    build_v91_turn_policy,
+    merge_v91_trace_into_runtime_action,
+)
 from app.services.auth.dependencies import RequestUser
 from app.agent.api.deps import (
     _runtime_mode_for_pre_gate,
@@ -29,6 +33,8 @@ from app.agent.api.loaders import (
     _load_live_knowledge_session_context,
     _persist_live_knowledge_session_context,
 )
+from app.observability.langsmith import traceable
+from app.observability.sealai_quality import emit_quality_trace, stable_trace_hash
 
 _log = logging.getLogger(__name__)
 
@@ -38,6 +44,10 @@ _ENABLE_BINARY_GATE: bool = (
 )
 _ENABLE_CONVERSATION_RUNTIME: bool = (
     os.environ.get("SEALAI_ENABLE_CONVERSATION_RUNTIME", "true").lower() == "true"
+)
+_FORCE_LLM_FAST_RESPONDER: bool = (
+    os.environ.get("SEALAI_FORCE_LLM_FAST_RESPONDER", "false").lower()
+    in {"1", "true", "yes", "on"}
 )
 
 
@@ -59,6 +69,50 @@ def _knowledge_debug_trace_enabled() -> bool:
         "yes",
         "on",
     }
+
+
+def _knowledge_rag_retriever(
+    *,
+    query: str,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
+    max_results: int = 3,
+) -> list[dict[str, Any]]:
+    """Shared RAG-backed retriever for no-case and side-question knowledge."""
+
+    from app.services.rag.constants import RAG_SHARED_TENANT_ID  # noqa: PLC0415
+    from app.services.rag.rag_orchestrator import hybrid_retrieve  # noqa: PLC0415
+
+    effective_tenant = (tenant_id or "").strip() or RAG_SHARED_TENANT_ID
+    try:
+        return list(
+            hybrid_retrieve(
+                query=query,
+                tenant=effective_tenant,
+                k=max(1, int(max_results or 3)),
+                user_id=user_id,
+            )
+            or []
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[runtime_dispatch] knowledge RAG lookup failed (%s: %s)",
+            type(exc).__name__,
+            exc,
+        )
+        return []
+
+
+def _knowledge_tenant_id(current_user: RequestUser | None) -> str:
+    from app.services.rag.constants import RAG_SHARED_TENANT_ID  # noqa: PLC0415
+
+    tenant_id = getattr(current_user, "tenant_id", None)
+    return str(tenant_id).strip() if tenant_id else RAG_SHARED_TENANT_ID
+
+
+def _knowledge_user_id(current_user: RequestUser | None) -> str | None:
+    user_id = getattr(current_user, "user_id", None)
+    return str(user_id).strip() if user_id else None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -104,6 +158,7 @@ class RuntimeDispatchResolution:
     conversation_route: ConversationRoutingDecision | None = None
     turn_decision: TurnDecision | None = None
     runtime_action: RuntimeAction | None = None
+    v91_policy: Any | None = None
 
 
 def _governed_state_has_active_case(state: GovernedSessionState | None) -> bool:
@@ -297,7 +352,7 @@ def _light_runtime_action(
     )
 
 
-async def _resolve_runtime_dispatch(
+async def _resolve_runtime_dispatch_impl(
     request: Any,  # ChatRequest
     *,
     current_user: RequestUser | None,
@@ -389,6 +444,24 @@ async def _resolve_runtime_dispatch(
                     ),
                 )
         if pre_gate.classification in FastResponderService.allowed_classifications:
+            if (
+                _FORCE_LLM_FAST_RESPONDER
+                and _ENABLE_CONVERSATION_RUNTIME
+                and pre_gate.classification is not PreGateClassification.BLOCKED
+            ):
+                runtime_mode = _runtime_mode_for_pre_gate(pre_gate.classification.value)
+                return RuntimeDispatchResolution(
+                    gate_route=runtime_mode,
+                    gate_reason=f"pre_gate_llm_fast_responder:{pre_gate.reasoning}",
+                    runtime_mode=runtime_mode,
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    conversation_route=conversation_route,
+                    runtime_action=_light_runtime_action(
+                        reason=f"pre_gate_llm_fast_responder:{pre_gate.reasoning}",
+                    ),
+                )
             fast_response = FastResponderService().respond(
                 request.message,
                 pre_gate.classification,
@@ -452,9 +525,13 @@ async def _resolve_runtime_dispatch(
                 KnowledgeCaseBridgeService,
             )  # noqa: PLC0415
 
-            knowledge_response = KnowledgeService().answer(
+            knowledge_response = KnowledgeService(
+                rag_retriever=_knowledge_rag_retriever,
+            ).answer(
                 request.message,
                 source_classification=pre_gate.classification,
+                tenant_id=_knowledge_tenant_id(current_user),
+                user_id=_knowledge_user_id(current_user),
             )
             recent_knowledge_history: tuple[Any, ...] = ()
             if request.session_id:
@@ -629,6 +706,69 @@ async def _resolve_runtime_dispatch(
                 decision_source="runtime_dispatch_exception",
             ),
         )
+
+
+@traceable(name="sealai.runtime_dispatch", run_type="chain")
+async def _resolve_runtime_dispatch(
+    request: Any,  # ChatRequest
+    *,
+    current_user: RequestUser | None,
+) -> RuntimeDispatchResolution:
+    resolution = await _resolve_runtime_dispatch_impl(
+        request,
+        current_user=current_user,
+    )
+    traced_resolution = _with_v91_policy_trace(resolution, request=request)
+    emit_quality_trace(
+        component="pre_gate_router",
+        tags=("runtime-dispatch", "router"),
+        request=request,
+        current_user=current_user,
+        route=traced_resolution.gate_route,
+        route_decision=traced_resolution.runtime_mode,
+        case_creation_allowed=traced_resolution.runtime_mode == "GOVERNED",
+        fallback_reason_hash=stable_trace_hash(traced_resolution.gate_reason),
+        fallback_reason_length=len(str(traced_resolution.gate_reason or "")),
+        pre_gate_classification=traced_resolution.pre_gate_classification,
+        conversation_route=getattr(traced_resolution.conversation_route, "route", None),
+        runtime_action_type=getattr(traced_resolution.runtime_action, "action", None)
+        or getattr(traced_resolution.runtime_action, "kind", None),
+        v91_policy_present=getattr(traced_resolution, "v91_policy", None) is not None,
+        v92_runtime_present=True,
+    )
+    return traced_resolution
+
+
+def _with_v91_policy_trace(
+    resolution: RuntimeDispatchResolution,
+    *,
+    request: Any,
+) -> RuntimeDispatchResolution:
+    try:
+        policy = build_v91_turn_policy(
+            message=str(getattr(request, "message", "") or ""),
+            pre_gate_classification=resolution.pre_gate_classification,
+            pre_gate_reason=resolution.pre_gate_reason or resolution.gate_reason,
+            governed_state=resolution.governed_state,
+            conversation_route=resolution.conversation_route,
+            turn_decision=resolution.turn_decision,
+            runtime_action=resolution.runtime_action,
+        )
+        return dataclasses.replace(
+            resolution,
+            v91_policy=policy,
+            runtime_action=merge_v91_trace_into_runtime_action(
+                resolution.runtime_action,
+                policy,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[runtime_dispatch] v9.1 policy adapter failed (%s: %s) — continuing with existing runtime action",
+            type(exc).__name__,
+            exc,
+        )
+        return resolution
 
 
 async def _compose_knowledge_answer_if_enabled(

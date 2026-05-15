@@ -8,6 +8,14 @@ def test_schema_applies(tmp_path):
     conn = connect(tmp_path / "seo.db")
     apply_migrations(conn, Path(__file__).parents[1] / "migrations")
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"schema_migrations", "gsc_sync_runs", "gsc_daily_page", "gsc_daily_page_query"} <= tables
+    assert {
+        "schema_migrations",
+        "gsc_sync_runs",
+        "gsc_daily_page",
+        "gsc_daily_page_query",
+        "pagespeed_sync_runs",
+        "pagespeed_url_metrics",
+    } <= tables
     indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
     assert "idx_gsc_page_query_query" in indexes
+    assert "idx_pagespeed_metrics_url" in indexes

@@ -45,6 +45,7 @@ from app.agent.runtime.response_renderer import render_chunk, render_response
 from app.agent.runtime.turn_context import build_turn_context_contract
 from app.agent.state.models import ConversationStrategyContract
 from app.llm.registry import get_model_for_role
+from app.observability.langsmith import wrap_openai_client
 from app.services.openai_payload import use_responses_api
 from prompts.builder import PromptBuilder
 
@@ -694,7 +695,7 @@ async def iter_conversation_events(
         yield {"type": "stream_end"}
         return
 
-    client = openai.AsyncOpenAI()
+    client = wrap_openai_client(openai.AsyncOpenAI())
     messages = _build_messages(message, history, case_summary=case_summary, mode=mode)
     suppress_preview_stream = _suppress_preview_stream_for_smalltalk(message, mode)
 

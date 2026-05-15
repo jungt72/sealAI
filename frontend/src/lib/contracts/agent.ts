@@ -213,6 +213,60 @@ export type AgentWorkspaceUi = {
     mapping_summary?: string | null;
     handover_notes?: string[];
   };
+  v92?: {
+    seal_system?: {
+      status?: string;
+      seal_family?: string;
+      seal_type?: string;
+      missing_fields?: string[];
+      validity_boundaries?: string[];
+    };
+    engineering?: {
+      status?: string;
+      route?: string;
+      next_best_engineering_action?: string;
+      blockers?: string[];
+    };
+    calculations?: {
+      status?: string;
+      result_count?: number;
+      blocked_calculations?: string[];
+      guardrail_violations?: string[];
+    };
+    standards?: {
+      status?: string;
+      registry_version?: string;
+      applicable_count?: number;
+      blocking_gaps?: string[];
+      claim_boundary?: string;
+    };
+    evidence_graph?: {
+      status?: string;
+      node_count?: number;
+      unresolved_gaps?: string[];
+    };
+    compound?: {
+      status?: string;
+      material_family_count?: number;
+      compound_count?: number;
+      product_count?: number;
+      separation_violations?: string[];
+    };
+    review?: {
+      status?: string;
+      blocking_findings?: string[];
+      required_corrections?: string[];
+    };
+    dossier?: {
+      status?: string;
+      dossier_id?: string | null;
+      fact_count?: number;
+      calculation_count?: number;
+      candidate_count?: number;
+      blockers?: string[];
+      no_final_technical_release?: boolean;
+    };
+  };
 };
 
 export type AssertionEntry = {
@@ -275,6 +329,9 @@ export type AgentStateUpdateEvent = {
 export type AgentStreamEvent =
   | { type: "case_bound"; caseId: string }
   | { type: "token"; text: string }
+  | { type: "text_chunk"; text: string }
+  | { type: "text_reset" }
+  | { type: "progress"; data?: unknown }
   | { type: "message_complete"; message: string }
   | AgentStateUpdateEvent
   | { type: "workspace_hint"; caseId: string }

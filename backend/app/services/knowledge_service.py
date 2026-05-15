@@ -15,6 +15,7 @@ from app.domain.pre_gate_classification import PreGateClassification
 from app.services.knowledge import FactCardStore
 from app.services.knowledge.material_comparison import (
     build_material_comparison_answer,
+    build_material_risk_comparison_answer,
     humanize_german_technical_text,
 )
 
@@ -251,7 +252,11 @@ class KnowledgeService:
                 answer_result=deterministic_answer,
             )
 
-        cards = self._store.match_query_to_cards((user_input or "").lower())[:max_cards]
+        cards = (
+            self._store.match_query_to_cards((user_input or "").lower())[:max_cards]
+            if _should_query_ptfe_factcards(user_input)
+            else []
+        )
         if not cards and self._rag_retriever is not None:
             rag_hits = self._rag_retriever(
                 query=user_input,
@@ -259,9 +264,11 @@ class KnowledgeService:
                 user_id=user_id,
                 max_results=max_cards,
             )
+            rag_hits = _filter_rag_hits_for_query(user_input, rag_hits)
             if rag_hits:
                 return self._response_from_rag_hits(
                     rag_hits,
+                    user_input=user_input,
                     source_classification=source_classification,
                 )
 
@@ -331,15 +338,16 @@ class KnowledgeService:
         self,
         hits: list[dict[str, Any]],
         *,
+        user_input: str,
         source_classification: PreGateClassification,
     ) -> KnowledgeResponse:
         sources: list[KnowledgeSource] = []
         evidence: list[KnowledgeEvidence] = []
-        lines = ["Aus dem kuratierten/RAG-Wissenskontext:"]
+        snippets: list[str] = []
         for index, hit in enumerate(hits, start=1):
             text = _clean_excerpt(hit.get("text") or hit.get("content") or "")
             if text:
-                lines.append(f"- {text}")
+                snippets.append(text)
             metadata = (
                 hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
             )
@@ -383,12 +391,11 @@ class KnowledgeService:
                     rank=index,
                 )
             )
-        lines.append(
-            "Das ist eine allgemeine technische Orientierung aus dokumentierten "
-            "Quellen, keine konkrete Eignungs-, Kompatibilitaets- oder "
-            "Herstellerfreigabe."
+        answer = _compose_user_facing_rag_answer(
+            user_input=user_input,
+            snippets=snippets,
+            sources=tuple(sources),
         )
-        answer = "\n".join(lines)
         result = _hit_result(answer, tuple(sources), knowledge_evidence=tuple(evidence))
         return KnowledgeResponse(
             content=answer,
@@ -493,6 +500,164 @@ def _hit_result(
     )
 
 
+def _compose_user_facing_rag_answer(
+    *,
+    user_input: str,
+    snippets: list[str],
+    sources: tuple[KnowledgeSource, ...],
+) -> str:
+    material = _detect_material_focus(user_input, snippets)
+    if material == "NBR":
+        answer = "\n".join(
+            [
+                "NBR steht für Acrylnitril-Butadien-Kautschuk, häufig auch "
+                "Nitrilkautschuk genannt. In der Dichtungstechnik ist NBR ein "
+                "verbreiteter Elastomerwerkstoff für O-Ringe, Formteile, "
+                "Radialwellendichtringe und klassische Maschinenbau-Dichtstellen.",
+                "",
+                "Typische Orientierung:",
+                "- NBR wird oft im Umfeld von mineralölbasierten Medien, "
+                "Fetten und vielen Hydraulikflüssigkeiten betrachtet.",
+                "- Kritisch können je nach Mischung Ozon, UV, Witterung, viele "
+                "polare Lösemittel, Aromaten, Ketone, Heißwasser, Dampf und "
+                "starke Oxidationsmittel sein.",
+                "",
+                "Für eine konkrete Eignung brauche ich Medium, Temperatur und "
+                "Betriebsart. Das ist technische Orientierung, keine technische "
+                "Freigabe.",
+            ]
+        )
+        return humanize_german_technical_text(answer)
+
+    if material == "FKM":
+        answer = "\n".join(
+            [
+                "FKM ist eine Fluorelastomer-Werkstofffamilie. In Dichtungen "
+                "wird FKM häufig dort betrachtet, wo Temperatur, Alterung, "
+                "Ozon/Witterung oder öl- und kraftstoffnahe Medien eine Rolle "
+                "spielen.",
+                "",
+                "Wichtig ist: FKM ist keine einzelne Universalrezeptur. "
+                "Tieftemperatur, Dampf, Heißwasser, polare Medien, Amine, "
+                "Bremsflüssigkeiten und konkrete Additive müssen compound- und "
+                "herstellerbezogen geprüft werden.",
+                "",
+                "Für eine konkrete Einschätzung brauche ich Medium, "
+                "Temperaturfenster, Druck, Bewegung und geforderte Nachweise. "
+                "Bis dahin ist das technische Orientierung aus der "
+                "dokumentierten Wissensbasis, keine Freigabe und keine "
+                "Kompatibilitätszusage.",
+            ]
+        )
+        return humanize_german_technical_text(answer)
+
+    if material == "PTFE":
+        answer = "\n".join(
+            [
+                "PTFE ist ein Fluorpolymer und wird in Dichtungsanwendungen "
+                "oft wegen niedriger Reibung, breiter chemischer Orientierung "
+                "und hoher Temperaturstabilität betrachtet.",
+                "",
+                "Gleichzeitig verhält sich PTFE nicht wie ein elastischer "
+                "Gummiwerkstoff: Rückstellung, Kaltfluss, Vorspannung, "
+                "Füllstoffe, Gegenlauffläche und Einbauraum sind für die "
+                "Dichtfunktion entscheidend.",
+                "",
+                "Für eine konkrete Einschätzung brauche ich Medium, "
+                "Temperaturfenster, Druck, Bewegung, Geometrie und ob ein "
+                "gefülltes PTFE oder ein Verbundaufbau vorgesehen ist. Bis "
+                "dahin ist das technische Orientierung aus der dokumentierten "
+                "Wissensbasis, keine Freigabe und keine "
+                "Kompatibilitätszusage.",
+            ]
+        )
+        return humanize_german_technical_text(answer)
+
+    points = _user_facing_snippet_points(snippets)
+    if points:
+        lines = ["Kurz gesagt:"]
+        lines.extend(f"- {point}" for point in points[:4])
+        lines.extend(
+            [
+                "",
+                "Das ist technische Orientierung aus der dokumentierten "
+                "Wissensbasis, keine konkrete Eignungs-, Kompatibilitäts- "
+                "oder Herstellerfreigabe.",
+            ]
+        )
+        return humanize_german_technical_text("\n".join(lines))
+
+    source_note = (
+        f"{len(sources)} dokumentierten Treffern"
+        if len(sources) != 1
+        else "einem dokumentierten Treffer"
+    )
+    answer = (
+        "Ich habe dazu Material in der kuratierten Wissensbasis gefunden, "
+        f"aber keinen ausreichend sauberen Antwortauszug aus {source_note}. "
+        "Ich gebe deshalb keine technische Aussage aus Rohzitaten aus. Für "
+        "eine konkrete Bewertung sollten wir Medium, Temperatur, Druck, "
+        "Bewegung und Dichtstelle strukturiert aufnehmen."
+    )
+    return humanize_german_technical_text(answer)
+
+
+def _detect_material_focus(user_input: str, snippets: list[str]) -> str | None:
+    haystack = f"{user_input} {' '.join(snippets[:3])}".casefold()
+    if (
+        re.search(r"\bnbr\b", haystack)
+        or "nitril" in haystack
+        or "acrylnitril" in haystack
+    ):
+        return "NBR"
+    if (
+        re.search(r"\bfkm\b|\bfpm\b", haystack)
+        or "fluorkautschuk" in haystack
+        or "fluorelastomer" in haystack
+    ):
+        return "FKM"
+    if re.search(r"\bptfe\b", haystack) or "polytetrafluor" in haystack:
+        return "PTFE"
+    return None
+
+
+def _user_facing_snippet_points(snippets: list[str]) -> list[str]:
+    points: list[str] = []
+    seen: set[str] = set()
+    for snippet in snippets:
+        for sentence in re.split(r"(?<=[.!?])\s+", snippet):
+            candidate = sentence.strip(" -•\t")
+            if not candidate or _contains_raw_rag_artifact(candidate):
+                continue
+            if len(candidate) < 32 or len(candidate) > 240:
+                continue
+            key = candidate.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            points.append(candidate)
+            if len(points) >= 4:
+                return points
+    return points
+
+
+def _contains_raw_rag_artifact(text: str) -> bool:
+    lowered = str(text or "").casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            "[document:",
+            "[dokument:",
+            "assumptions_and_scope",
+            "rfq-feld-mapping",
+            "rfq feld mapping",
+            "aus dem kuratierten/rag",
+            "source_type",
+            "validation_status",
+        )
+    ) or bool(re.search(r"\[q\d+\]", lowered))
+
+
 def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | None:
     """Return safe built-in orientation for high-frequency glossary questions.
 
@@ -543,6 +708,65 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                     title="PFAS in Dichtungswerkstoffen",
                     content=answer,
                     note="system_derived_domain_answer_currentness_limited",
+                ),
+            ),
+            event_names=(
+                "KnowledgeQuestionReceived",
+                "KnowledgeRAGLookupRequested",
+                "KnowledgeRAGAnswerMissing",
+                "SourceValidationStatusAssigned",
+                "KnowledgeAnswerGenerated",
+            ),
+        )
+
+    asks_epdm_hydraulic_oil = "epdm" in text and any(
+        token in text
+        for token in (
+            "hydrauliköl",
+            "hydraulikoel",
+            "hlp46",
+            "hlp 46",
+            "mineralöl",
+            "mineraloel",
+        )
+    )
+    if asks_epdm_hydraulic_oil:
+        answer = "\n".join(
+            [
+                "Kurz gesagt: Bei EPDM und mineralölbasiertem Hydrauliköl wie HLP46 wäre ich sehr vorsichtig.",
+                "",
+                "EPDM wird typischerweise eher bei Wasser, Heißwasser, Dampf, Glykolen und einigen polaren Medien betrachtet. Mineralölbasierte Hydrauliköle können bei EPDM zu Quellung, Erweichung oder Eigenschaftsverlust führen. Aus 80 °C und 10 bar allein würde ich deshalb keine Eignung ableiten.",
+                "",
+                "Wichtig ist die Medienfamilie: Ist es wirklich ein HLP/HVLP auf Mineralölbasis oder ein wasser- beziehungsweise esterbasierter Hydraulikflüssigkeitstyp? Danach zählen Datenblatt, Dichtungsart, Bewegung, Temperaturprofil, Druck direkt an der Dichtstelle und Herstellerdaten.",
+                "",
+                "Das ist eine Einordnung für die Anfragebasis, keine Freigabe und keine finale Werkstoffauswahl.",
+            ]
+        )
+        answer = humanize_german_technical_text(answer)
+        return KnowledgeAnswerResult(
+            answer=answer,
+            answer_available=True,
+            rag_lookup_attempted=True,
+            rag_answer_found=False,
+            rag_miss=True,
+            source_type=SourceType.system_derived,
+            validation_status=ValidationStatus.unvalidated,
+            use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+            not_final_release=True,
+            fallback_allowed=False,
+            fallback_used=False,
+            user_visible_label="SeaLAI-Werkstoffwissen - allgemeine Orientierung",
+            missing_reason="domain_epdm_hydraulic_oil_orientation_without_rag_hit",
+            next_step=(
+                "Mediumdatenblatt, Dichtungstyp, Temperaturprofil, Bewegung und "
+                "Druck direkt an der Dichtstelle als governed Case aufnehmen."
+            ),
+            knowledge_evidence=(
+                _knowledge_evidence(
+                    source_type="deterministic",
+                    title="EPDM und mineralölbasierte Hydrauliköle",
+                    content=answer,
+                    note="system_derived_epdm_hydraulic_oil_orientation",
                 ),
             ),
             event_names=(
@@ -616,7 +840,9 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
             ),
         )
 
-    material_comparison = build_material_comparison_answer(user_input)
+    material_comparison = build_material_risk_comparison_answer(user_input)
+    if material_comparison is None:
+        material_comparison = build_material_comparison_answer(user_input)
     if material_comparison is not None:
         answer = material_comparison.answer
         left, right = material_comparison.material_ids
@@ -988,8 +1214,112 @@ def _settings_fallback_enabled() -> bool:
         return False
 
 
+_PTFE_QUERY_PATTERN = re.compile(
+    r"\b(?:ptfe|tfm|fluoropolymer|fluorpolymer|polytetrafluorethylen|polytetrafluoroethylene)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_NON_PTFE_MATERIAL_QUERY_PATTERN = re.compile(
+    r"\b(?:fkm|ffkm|fpm|epdm|nbr|hnbr|pom|peek|pa6?|pa12|pu|tpu|vmq|silikon|silicone|viton)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _should_query_ptfe_factcards(user_input: str) -> bool:
+    """Avoid PTFE factcards overpowering RAG for other named materials."""
+
+    text = str(user_input or "")
+    if _NON_PTFE_MATERIAL_QUERY_PATTERN.search(text) and not _PTFE_QUERY_PATTERN.search(text):
+        return False
+    return True
+
+
+_MATERIAL_EVIDENCE_TOKENS = {
+    "ptfe",
+    "fkm",
+    "ffkm",
+    "fpm",
+    "epdm",
+    "nbr",
+    "hnbr",
+    "pom",
+    "peek",
+    "pa",
+    "pa6",
+    "pa12",
+    "pu",
+    "tpu",
+    "vmq",
+    "silikon",
+    "silicone",
+    "viton",
+}
+_PRODUCT_EVIDENCE_TOKENS = {
+    "klüber",
+    "klueber",
+    "klübersynth",
+    "kluebersynth",
+    "uh1",
+}
+
+
+def _filter_rag_hits_for_query(
+    user_input: str,
+    hits: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop RAG snippets that do not cover named materials or products."""
+
+    required_tokens = _named_evidence_tokens(user_input)
+    if not required_tokens:
+        return hits
+    filtered: list[dict[str, Any]] = []
+    for hit in hits:
+        haystack = _rag_hit_text_for_filtering(hit)
+        if any(token in haystack for token in required_tokens):
+            filtered.append(hit)
+    return filtered
+
+
+def _named_evidence_tokens(user_input: str) -> set[str]:
+    text = str(user_input or "").casefold()
+    product_tokens = {token for token in _PRODUCT_EVIDENCE_TOKENS if token in text}
+    if product_tokens:
+        return product_tokens
+    material_tokens = {token for token in _MATERIAL_EVIDENCE_TOKENS if re.search(rf"\b{re.escape(token)}\b", text)}
+    if "ptfe" in material_tokens and len(material_tokens) > 1:
+        material_tokens.remove("ptfe")
+    return material_tokens
+
+
+def _rag_hit_text_for_filtering(hit: dict[str, Any]) -> str:
+    metadata = hit.get("metadata") if isinstance(hit.get("metadata"), dict) else {}
+    parts = [
+        hit.get("text"),
+        hit.get("content"),
+        hit.get("title"),
+        hit.get("source"),
+        metadata.get("title"),
+        metadata.get("filename"),
+        metadata.get("source_id"),
+        metadata.get("document_id"),
+        metadata.get("material_code"),
+        metadata.get("entity"),
+    ]
+    return " ".join(str(part or "").casefold() for part in parts)
+
+
 def _clean_excerpt(value: Any, *, limit: int = 420) -> str:
-    text = " ".join(str(value or "").split())
+    text = str(value or "")
+    text = re.sub(r"\[(?:Document|Dokument):[^\]]+\]\s*", " ", text, flags=re.I)
+    text = re.sub(r"(?:\[(?:Q|F)\d+\])+", " ", text, flags=re.I)
+    text = re.sub(r"#{1,6}\s*", " ", text)
+    text = re.sub(
+        r"\b(?:ASSUMPTIONS_AND_SCOPE|RFQ[-\s]Feld[-\s]Mapping)\b[:\-]?",
+        " ",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b", " ", text)
+    text = " ".join(text.split())
     text = re.sub(r"\b[A-Z]{2,8}-[A-Z]-\d{2,4}\b", "", text).strip()
     text = re.sub(
         r"\b(?:chemical_resistance|weather_ozone_uv|temperature_window)/", "", text

@@ -16,6 +16,7 @@ import {
   buildRfqPreviewConsentReadPath,
   buildRfqPreviewReadPath,
 } from "@/lib/bff/workspace";
+import { trackSeoEvent } from "@/lib/analytics/events";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
 
@@ -122,6 +123,23 @@ function sectionItems(sections: RfqPreviewSection[], matcher: RegExp): string[] 
       return content ? [valueToText(content)] : [];
     })
     .filter(Boolean);
+}
+
+function uniqueTexts(items: string[], limit = 12): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const text = item.trim();
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    result.push(text);
+    if (result.length >= limit) {
+      break;
+    }
+  }
+  return result;
 }
 
 function getErrorMessage(body: unknown, fallback: string) {
@@ -236,11 +254,25 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
     [preview?.payload?.decision_understanding?.key_risks, sections],
   );
   const manufacturerReviewNeeds = useMemo(
-    () => [
-      ...sectionItems(sections, /Fragen an den Hersteller/i),
-      ...(preview?.payload?.decision_understanding?.manufacturer_review_needs ?? []),
+    () =>
+      uniqueTexts([
+        ...sectionItems(sections, /Fragen an den Hersteller/i),
+        ...(preview?.payload?.decision_understanding?.manufacturer_review_needs ?? []),
+        ...(workspace?.manufacturerQuestions?.mandatory ?? []),
+        ...(workspace?.manufacturerQuestions?.openQuestions ?? []).map((item) =>
+          item.reason ? `${item.question} — ${item.reason}` : item.question,
+        ),
+        ...(workspace?.rfq?.package?.manufacturerQuestionsMandatory ?? []),
+        ...(workspace?.matching?.openManufacturerQuestions ?? []),
+      ]),
+    [
+      preview?.payload?.decision_understanding?.manufacturer_review_needs,
+      sections,
+      workspace?.manufacturerQuestions?.mandatory,
+      workspace?.manufacturerQuestions?.openQuestions,
+      workspace?.matching?.openManufacturerQuestions,
+      workspace?.rfq?.package?.manufacturerQuestionsMandatory,
     ],
-    [preview?.payload?.decision_understanding?.manufacturer_review_needs, sections],
   );
   const consentReady =
     consent.noFinalRelease &&
@@ -266,7 +298,14 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
       if (!response.ok) {
         throw new Error(getErrorMessage(body, "Anfragevorschau konnte nicht vorbereitet werden."));
       }
-      setPreview(body as RfqPreviewResponse);
+      const nextPreview = body as RfqPreviewResponse;
+      setPreview(nextPreview);
+      trackSeoEvent("rfq_preview_generated", {
+        case_id: caseId,
+        preview_id: nextPreview.preview_id,
+        case_revision: nextPreview.case_revision,
+        dispatch_enabled: nextPreview.dispatch_enabled,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Anfragevorschau konnte nicht vorbereitet werden.";
       setError(friendlyRfqError(message));
@@ -358,6 +397,17 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
           readiness={readinessProjection}
           expectedCaseRevision={expectedCaseRevision}
         />
+
+        {manufacturerReviewNeeds.length > 0 ? (
+          <div className="mb-4">
+            <ListPanel
+              title="Automatisch vorbereitete Herstellerfragen"
+              items={manufacturerReviewNeeds}
+              empty="Noch keine Herstellerfragen aus dem Challenger vorbereitet."
+              tone="neutral"
+            />
+          </div>
+        ) : null}
 
         {!preview ? (
           <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-4">

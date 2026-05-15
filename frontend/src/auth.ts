@@ -3,13 +3,25 @@ import type { JWT } from "next-auth/jwt";
 import KeycloakProvider from "next-auth/providers/keycloak";
 
 const KEYCLOAK_ISSUER =
-  process.env.KEYCLOAK_ISSUER ?? "https://auth.sealai.net/realms/sealAI";
+  process.env.KEYCLOAK_ISSUER ?? "https://sealingai.com/realms/sealAI";
+const KEYCLOAK_CLIENT_ID =
+  process.env.KEYCLOAK_CLIENT_ID ??
+  (process.env.NODE_ENV === "production" ? undefined : "nextauth");
+const KEYCLOAK_CLIENT_SECRET =
+  process.env.KEYCLOAK_CLIENT_SECRET ??
+  (process.env.NODE_ENV === "production" ? undefined : "");
 const KEYCLOAK_AUTHORIZATION_URL =
   `${KEYCLOAK_ISSUER}/protocol/openid-connect/auth`;
 const KEYCLOAK_TOKEN_URL =
   `${KEYCLOAK_ISSUER}/protocol/openid-connect/token`;
 const KEYCLOAK_USERINFO_URL =
   `${KEYCLOAK_ISSUER}/protocol/openid-connect/userinfo`;
+const AUTH_SECRET =
+  process.env.AUTH_SECRET ??
+  process.env.NEXTAUTH_SECRET ??
+  (process.env.NODE_ENV === "production"
+    ? undefined
+    : "sealai-local-development-auth-secret-change-for-production");
 
 // ---------------------------------------------------------------------------
 // Type augmentation — avoids `as any` casts in callbacks
@@ -45,8 +57,8 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        client_id: process.env.KEYCLOAK_CLIENT_ID!,
-        client_secret: process.env.KEYCLOAK_CLIENT_SECRET!,
+        client_id: KEYCLOAK_CLIENT_ID!,
+        client_secret: KEYCLOAK_CLIENT_SECRET!,
         refresh_token: token.refreshToken!,
       }),
     });
@@ -75,10 +87,12 @@ async function refreshAccessToken(token: JWT): Promise<JWT> {
 // NextAuth configuration
 // ---------------------------------------------------------------------------
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: AUTH_SECRET,
+
   providers: [
     KeycloakProvider({
-      clientId: process.env.KEYCLOAK_CLIENT_ID as string,
-      clientSecret: process.env.KEYCLOAK_CLIENT_SECRET as string,
+      clientId: KEYCLOAK_CLIENT_ID as string,
+      clientSecret: KEYCLOAK_CLIENT_SECRET as string,
 
       // Issuer must match the external URL so JWT `iss` validation passes
       issuer: KEYCLOAK_ISSUER,

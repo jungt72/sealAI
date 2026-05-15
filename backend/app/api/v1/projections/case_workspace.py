@@ -25,9 +25,11 @@ from app.api.v1.projections.workspace_routing import (
 from app.agent.runtime.clarification_priority import (
     select_next_focus_from_known_context,
 )
+from app.agent.v91.intelligence_state import build_v91_workspace_projection
 from app.agent.services.material_intelligence import (
     build_material_intelligence_projection,
 )
+from app.agent.domain.challenge_engine import build_challenge_state
 from app.agent.communication.rfq_intent import (
     RfqReadinessIntent,
     build_rfq_readiness_projection,
@@ -64,6 +66,7 @@ from app.api.v1.schemas.case_workspace import (
     RiskEvaluationResult,
     CockpitSection,
     CockpitSectionCompletion,
+    ChallengeIntelligenceProjection,
     CommunicationContext,
     ConflictSummary,
     CycleInfo,
@@ -77,6 +80,7 @@ from app.api.v1.schemas.case_workspace import (
     MediumCaptureSummary,
     MediumClassificationSummary,
     MediumContextSummary,
+    ManufacturerQuestions,
     MaterialIntelligenceProjection,
     PartnerMatchingSummary,
     RequestType as WorkspaceRequestType,
@@ -110,6 +114,118 @@ def _compact_unique_strings(items: list[str], *, limit: int = 3) -> list[str]:
         if len(result) >= limit:
             break
     return result
+
+
+def _challenge_manufacturer_questions(
+    challenge_state: Dict[str, Any],
+) -> ManufacturerQuestions:
+    """Translate V9 challenger output into non-releasing manufacturer questions."""
+
+    mandatory: list[str] = []
+    open_questions: list[dict[str, Any]] = []
+
+    next_best = _d(challenge_state.get("next_best_question"))
+    if next_best.get("question"):
+        question = str(next_best.get("question") or "").strip()
+        reason = str(next_best.get("reason") or "").strip()
+        mandatory.append(question)
+        open_questions.append(
+            {
+                "id": "challenge.next_best_question",
+                "question": question,
+                "reason": reason
+                or "Diese Angabe begrenzt die technische Vorqualifikation.",
+                "priority": "critical",
+                "category": "next_best_question",
+            }
+        )
+
+    for index, finding in enumerate(_ls(challenge_state.get("findings"))):
+        if not isinstance(finding, dict):
+            continue
+        title = str(finding.get("title") or "").strip()
+        summary = str(finding.get("summary") or "").strip()
+        rfq_relevance = str(finding.get("rfq_relevance") or "").strip()
+        severity = str(finding.get("severity") or "watch").strip()
+        kind = str(finding.get("kind") or "risk").strip()
+        if not title or severity not in {"blocking", "watch"}:
+            continue
+        if kind == "missing_information":
+            question = f"Bitte fehlende Angabe klaeren: {title}."
+        elif kind == "contradiction":
+            question = f"Bitte Gegenindikator pruefen: {title}."
+        else:
+            question = f"Bitte Pruefpunkt bewerten: {title}."
+        reason = rfq_relevance or summary
+        mandatory.append(question)
+        open_questions.append(
+            {
+                "id": str(finding.get("finding_id") or f"challenge.finding.{index}"),
+                "question": question,
+                "reason": reason or "Als Herstellerpruefpunkt sichtbar halten.",
+                "priority": "critical" if severity == "blocking" else "important",
+                "category": kind,
+            }
+        )
+
+    for index, hypothesis in enumerate(_ls(challenge_state.get("hypotheses"))):
+        if not isinstance(hypothesis, dict):
+            continue
+        label = str(hypothesis.get("label") or "Pruefhypothese").strip()
+        hypothesis_id = str(hypothesis.get("hypothesis_id") or f"hypothesis.{index}")
+        rfq_relevance = str(hypothesis.get("rfq_relevance") or "").strip()
+        for check_index, check in enumerate(_ls(hypothesis.get("required_checks"))):
+            check_text = str(check or "").strip()
+            if not check_text:
+                continue
+            question = f"Bitte pruefen: {check_text} ({label})."
+            mandatory.append(question)
+            open_questions.append(
+                {
+                    "id": f"{hypothesis_id}.required_check.{check_index}",
+                    "question": question,
+                    "reason": rfq_relevance
+                    or "Pruefhypothese nur als Kontext fuer Herstellerpruefung nutzen.",
+                    "priority": "important",
+                    "category": "required_check",
+                }
+            )
+        for counter_index, counter in enumerate(
+            _ls(hypothesis.get("counterindicators"))
+        ):
+            counter_text = str(counter or "").strip()
+            if not counter_text:
+                continue
+            question = f"Bitte Gegenindikator bewerten: {counter_text} ({label})."
+            mandatory.append(question)
+            open_questions.append(
+                {
+                    "id": f"{hypothesis_id}.counterindicator.{counter_index}",
+                    "question": question,
+                    "reason": rfq_relevance
+                    or "Gegenindikator darf in der Anfragebasis nicht verschwinden.",
+                    "priority": "important",
+                    "category": "counterindicator",
+                }
+            )
+
+    unique_mandatory = _compact_unique_strings(mandatory, limit=12)
+    unique_open_questions: list[dict[str, Any]] = []
+    seen_questions: set[str] = set()
+    for item in open_questions:
+        question = str(item.get("question") or "").strip()
+        if not question or question in seen_questions:
+            continue
+        seen_questions.add(question)
+        unique_open_questions.append(item)
+        if len(unique_open_questions) >= 12:
+            break
+
+    return ManufacturerQuestions(
+        mandatory=unique_mandatory,
+        open_questions=unique_open_questions,
+        total_open=len(unique_open_questions),
+    )
 
 
 def _bounded_score(value: Any) -> float:
@@ -170,8 +286,42 @@ _FIELD_LABELS: dict[str, str] = {
     "medium": "Medium",
     "pressure_bar": "Betriebsdruck",
     "temperature_c": "Betriebstemperatur",
+    "sealing_type": "Dichtungstyp",
     "movement_type": "Bewegungsart",
     "application_context": "Anwendung",
+}
+
+_OPEN_POINT_FIELD_ALIASES: dict[str, str] = {
+    "medium": "medium",
+    "medium name": "medium",
+    "medium_name": "medium",
+    "betriebsmedium": "medium",
+    "temperatur": "temperature_c",
+    "temperature": "temperature_c",
+    "temperature c": "temperature_c",
+    "temperature_c": "temperature_c",
+    "betriebstemperatur": "temperature_c",
+    "druck": "pressure_bar",
+    "pressure": "pressure_bar",
+    "pressure bar": "pressure_bar",
+    "pressure_bar": "pressure_bar",
+    "betriebsdruck": "pressure_bar",
+    "differenzdruck": "pressure_bar",
+    "dichtungstyp": "sealing_type",
+    "seal type": "sealing_type",
+    "seal_type": "sealing_type",
+    "sealing type": "sealing_type",
+    "sealing_type": "sealing_type",
+}
+
+_OPEN_POINT_QUESTIONS: dict[str, str] = {
+    "pressure_bar": "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
+    "sealing_type": (
+        "Um welchen Dichtungstyp geht es, zum Beispiel O-Ring, Wellendichtring, "
+        "Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
+    ),
+    "temperature_c": "Welche Betriebstemperatur und welche Temperaturspitzen treten an der Dichtstelle auf?",
+    "medium": "Welches Medium berührt die Dichtung direkt?",
 }
 
 _CANONICAL_PARAMETER_KEYS: tuple[str, ...] = (
@@ -1444,6 +1594,9 @@ def _question_from_open_point(open_point: str | None) -> str | None:
     text = str(open_point or "").strip()
     if not text:
         return None
+    canonical = _canonical_open_point_field(text)
+    if canonical in _OPEN_POINT_QUESTIONS:
+        return _OPEN_POINT_QUESTIONS[canonical]
     label = _human_open_point_question_label(text)
     return f"Können Sie {label} noch einordnen?"
 
@@ -1483,8 +1636,29 @@ def _filter_stale_focus_points(
             continue
         if _is_stale_rotary_open_point(item, movement_type=movement_type):
             continue
+        canonical = _canonical_open_point_field(item)
+        if canonical and profile.get(canonical) not in (None, "", []):
+            continue
         result.append(item)
     return result
+
+
+def _canonical_open_point_field(value: Any) -> str | None:
+    text = " ".join(str(value or "").replace("_", " ").split()).casefold()
+    if not text:
+        return None
+    return _OPEN_POINT_FIELD_ALIASES.get(text)
+
+
+def _filter_open_points_for_profile(
+    items: list[Any], *, profile: Dict[str, Any]
+) -> list[str]:
+    return _compact_unique_strings(
+        _filter_stale_focus_points(
+            [str(item) for item in items if str(item or "").strip()],
+            profile=profile,
+        )
+    )
 
 
 def _build_communication_context(
@@ -1682,6 +1856,11 @@ def _governed_working_profile(state: GovernedSessionState) -> Dict[str, Any]:
         if claim.asserted_value is None:
             continue
         profile[field_name] = claim.asserted_value
+    for field_name, parameter in state.normalized.parameters.items():
+        value = getattr(parameter, "value", None)
+        if field_name in profile or value in (None, "", []):
+            continue
+        profile[field_name] = value
     motion_label = getattr(state.motion_hint, "label", None)
     if motion_label in {"rotary", "linear", "static"}:
         profile["movement_type"] = motion_label
@@ -1711,6 +1890,12 @@ def synthesize_workspace_state_from_governed(
     chat_id: str,
 ) -> Dict[str, Any]:
     working_profile = _governed_working_profile(state)
+    challenge_state = state.challenge
+    if getattr(challenge_state, "status", "not_run") in {"not_run", "unavailable", ""}:
+        challenge_state = build_challenge_state(
+            state,
+            compute_results=list(getattr(state, "compute_results", []) or []),
+        )
     technical_derivations: list[dict[str, Any]] = []
     for derived_item in derived_values_for_projection(state.derived):
         value_id = str(
@@ -1848,6 +2033,11 @@ def synthesize_workspace_state_from_governed(
             + list(getattr(state.governance, "preselection_blockers", []) or [])
         )
     )
+    missing_critical = [
+        field_name
+        for field_name in missing_critical
+        if working_profile.get(field_name) in (None, "", [])
+    ]
     tracked_basis_fields = (
         "medium",
         "pressure_bar",
@@ -1864,7 +2054,7 @@ def synthesize_workspace_state_from_governed(
             sum(
                 1
                 for field_name in tracked_basis_fields
-                if field_name in state.asserted.assertions
+                if working_profile.get(field_name) not in (None, "", [])
             )
             / len(tracked_basis_fields),
             2,
@@ -1963,6 +2153,7 @@ def synthesize_workspace_state_from_governed(
             "medium_capture": state.medium_capture.model_dump(),
             "medium_classification": state.medium_classification.model_dump(),
             "medium_context": state.medium_context.model_dump(),
+            "challenge_state": challenge_state.model_dump(mode="python"),
             "evidence_state": state.evidence.model_dump(),
             "technical_derivations": technical_derivations,
             "matching_state": matching_state,
@@ -2062,7 +2253,6 @@ def synthesize_workspace_state_from_ssot(
 
     messages = _serialize_ssot_messages(state.get("messages") or [])
     release_status = governance.get("release_status")
-    rfq_admissibility = governance.get("rfq_admissibility")
     phase = case_meta.get("phase") or cycle.get("phase")
     selected_partner_id = recipient_selection.get(
         "selected_partner_id"
@@ -2208,6 +2398,10 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     medium_capture = _d(system.get("medium_capture"))
     medium_classification = _d(system.get("medium_classification"))
     medium_context = _d(system.get("medium_context"))
+    challenge_state = _d(system.get("challenge_state"))
+    challenge_manufacturer_questions = _challenge_manufacturer_questions(
+        challenge_state
+    )
     evidence_state = _d(system.get("evidence_state"))
     rfq_admissibility = _d(system.get("rfq_admissibility"))
     answer_contract = _d(system.get("answer_contract"))
@@ -2227,10 +2421,13 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     )
     rfq_handover_initiated = bool(system.get("rfq_handover_initiated", False))
     rfq_state = _d(system.get("rfq_state"))
-    rfq_readiness_projection = _d(
-        state_values.get("rfq_readiness_projection")
-        or system.get("rfq_readiness_projection")
-    ) or None
+    rfq_readiness_projection = (
+        _d(
+            state_values.get("rfq_readiness_projection")
+            or system.get("rfq_readiness_projection")
+        )
+        or None
+    )
     matching_state = _d(system.get("matching_state"))
     manufacturer_state = _d(system.get("manufacturer_state"))
     state_revision = int(reasoning.get("state_revision") or 0)
@@ -2264,12 +2461,14 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
     # ── GovernanceStatus ───────────────────────────────────────────────────────
     governance_status = GovernanceStatus(
         release_status=release_status,
-        unknowns_release_blocking=list(
-            governance_metadata.get("unknowns_release_blocking") or []
+        unknowns_release_blocking=_filter_open_points_for_profile(
+            list(governance_metadata.get("unknowns_release_blocking") or []),
+            profile=routing_profile_for_enrichment,
         ),
-        unknowns_manufacturer_validation=list(
+        unknowns_manufacturer_validation=_filter_open_points_for_profile(
             list(governance_metadata.get("unknowns_manufacturer_validation") or [])
-            + list(evidence_state.get("unresolved_open_points") or [])
+            + list(evidence_state.get("unresolved_open_points") or []),
+            profile=routing_profile_for_enrichment,
         ),
         assumptions_active=list(
             list(governance_metadata.get("assumptions_active") or [])
@@ -2295,8 +2494,14 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         rfq_ready=rfq_ready,
         handover_ready=handover_ready,
         handover_initiated=rfq_handover_initiated,
-        blockers=list(rfq_admissibility.get("blockers") or []),
-        open_points=list(rfq_admissibility.get("open_points") or []),
+        blockers=_filter_open_points_for_profile(
+            list(rfq_admissibility.get("blockers") or []),
+            profile=routing_profile_for_enrichment,
+        ),
+        open_points=_filter_open_points_for_profile(
+            list(rfq_admissibility.get("open_points") or []),
+            profile=routing_profile_for_enrichment,
+        ),
         has_html_report=rfq_html_report_present,
     )
 
@@ -2308,8 +2513,10 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         operating_context_redacted=dict(
             rfq_draft.get("operating_context_redacted") or {}
         ),
-        manufacturer_questions_mandatory=list(
-            rfq_draft.get("manufacturer_questions_mandatory") or []
+        manufacturer_questions_mandatory=_compact_unique_strings(
+            list(rfq_draft.get("manufacturer_questions_mandatory") or [])
+            + list(challenge_manufacturer_questions.mandatory),
+            limit=12,
         ),
         conflicts_visible_count=int(rfq_draft.get("conflicts_visible_count") or 0),
         buyer_assumptions_acknowledged=list(
@@ -2385,6 +2592,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         for item in list(
             dict.fromkeys(
                 list(rfq_draft.get("manufacturer_questions_mandatory") or [])
+                + list(challenge_manufacturer_questions.mandatory)
                 + list(rfq_state.get("open_points") or [])
             )
         )
@@ -2514,6 +2722,9 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             seal_application_profile=seal_application_profile.model_dump(),
         )
     )
+    challenge_intelligence = ChallengeIntelligenceProjection.model_validate(
+        challenge_state or {}
+    )
     technical_derivations = _build_technical_derivations(
         working_profile_pillar=working_profile_pillar,
         system=system,
@@ -2599,6 +2810,17 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
             )
         }
     )
+    v91_workspace = build_v91_workspace_projection(
+        case_revision=cycle_info.state_revision,
+        medium_context=medium_context_summary,
+        material_intelligence=material_intelligence,
+        challenge_intelligence=challenge_intelligence,
+        evidence_summary=evidence_summary,
+        rfq_status=rfq_status,
+        manufacturer_questions=challenge_manufacturer_questions,
+        communication_context=communication_context,
+        completeness=completeness_status,
+    )
 
     return CaseWorkspaceProjection(
         case_type=case_type,
@@ -2620,6 +2842,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         claims_summary=claims_summary,
         evidence_summary=evidence_summary,
         conflicts=conflicts,
+        manufacturer_questions=challenge_manufacturer_questions,
         rfq_status=rfq_status,
         rfq_package=rfq_package,
         artifact_status=artifact_status,
@@ -2631,5 +2854,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         medium_classification=medium_classification_summary,
         medium_context=medium_context_summary,
         material_intelligence=material_intelligence,
+        challenge_intelligence=challenge_intelligence,
+        v91_workspace=v91_workspace,
         technical_derivations=technical_derivations,
     )

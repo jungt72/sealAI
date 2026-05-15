@@ -68,7 +68,7 @@ def generate(conn: sqlite3.Connection, *, report_dir: Path, location_code: int, 
             "## GSC Actions After Publishing",
             "",
             "1. Ensure the generated sitemap contains every published public URL.",
-            "2. Resubmit `https://sealai.net/sitemap.xml` in Google Search Console.",
+            "2. Resubmit `https://sealingai.com/sitemap.xml` in Google Search Console.",
             "3. Use URL inspection for the phase-1 pages only after deployment.",
             "4. Compare GSC query/page data against this roadmap after Google has recrawled and accumulated impressions.",
         ]

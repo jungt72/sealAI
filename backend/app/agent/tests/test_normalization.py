@@ -404,9 +404,20 @@ class TestMediumNormalization:
         e = normalize_parameter("medium", "Hydrauliköl")
         assert e.confidence == MappingConfidence.ESTIMATED
 
+    def test_hydraulikoel_hlp46_preserves_specific_grade(self):
+        e = normalize_parameter("medium", "Hydrauliköl HLP46")
+        assert e.normalized_value == "Hydrauliköl HLP 46"
+        assert e.confidence == MappingConfidence.ESTIMATED
+
+    def test_hlp46_capture_beats_generic_hydraulikoel(self):
+        from app.agent.domain.medium_registry import extract_medium_mentions
+
+        capture = extract_medium_mentions("RWDR mit Hydrauliköl HLP46 bei 80 °C")
+        assert capture.primary_raw_text == "HLP 46"
+
     def test_getriebeoel_is_estimated_as_oil(self):
         e = normalize_parameter("medium", "Getriebeöl")
-        assert e.normalized_value == "Öl"
+        assert e.normalized_value == "Getriebeöl"
         assert e.confidence == MappingConfidence.ESTIMATED
 
     def test_heissdampf_requires_confirmation(self):
@@ -687,9 +698,15 @@ class TestBackwardCompatLayer:
 
     def test_extract_parameters_preserves_getriebeoel_as_generic_oil(self):
         result = extract_parameters("Getriebeöl, 2 bar, 40 mm, 4000 U/min")
-        assert result["medium_normalized"] == "Öl"
+        assert result["medium_normalized"] == "Getriebeöl"
         assert result["medium_normalization_status"] == "estimated"
-        assert result["medium_followup_question"] == "Welcher Öltyp liegt genau an?"
+        assert "Getriebeöltyp" in result["medium_mapping_reason"]
+
+    def test_extract_parameters_prefers_specific_hlp46_over_generic_hydraulikoel(self):
+        result = extract_parameters("Hydrauliköl HLP46, 2 bar, 40 mm, 4000 U/min")
+        assert result["medium_normalized"] == "Hydrauliköl HLP 46"
+        assert result["medium_raw"] == "HLP 46"
+        assert "medium_followup_question" not in result
 
     def test_extract_parameters_detects_shaft_diameter_from_durchmesser_phrase(self):
         result = extract_parameters("der durchmesser liegt bei 40 mm")

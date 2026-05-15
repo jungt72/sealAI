@@ -202,13 +202,19 @@ async def _bootstrap_audit_log() -> None:
 
 def create_app() -> FastAPI:
     from app.observability import metrics as _metrics  # noqa: F401
+    from app.observability.langsmith import configure_langsmith_environment
 
     # LangSmith tracing
-    if settings.langchain_tracing_v2 and settings.langchain_api_key:
-        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
-        os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
-        os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
-        log.info("LangSmith tracing enabled (project=%s)", settings.langchain_project)
+    if configure_langsmith_environment(
+        tracing_enabled=bool(settings.langsmith_tracing or settings.langchain_tracing_v2),
+        api_key=settings.langsmith_api_key or settings.langchain_api_key,
+        project=settings.langsmith_project or settings.langchain_project,
+        endpoint=settings.langsmith_endpoint or settings.langchain_endpoint,
+    ):
+        log.info(
+            "LangSmith tracing enabled (project=%s)",
+            settings.langsmith_project or settings.langchain_project,
+        )
 
     app = FastAPI(
         title=settings.app_name,

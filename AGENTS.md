@@ -6,9 +6,9 @@ This repository builds **SeaLAI / sealingAI**.
 
 SeaLAI is not a generic chatbot, not a generic product catalog, not an ungoverned supplier directory, not a hidden advertising portal, not a price-comparison tool, and not a final engineering approval engine.
 
-SeaLAI is a **governed agentic RFQ qualification runtime for sealing technology**:
+SeaLAI is a **Governed Sealing Intelligence for sealing technology**:
 
-> SeaLAI helps users understand sealing situations, qualify technical cases, prepare manufacturer-review-ready RFQ artifacts, match cases to suitable paid partner manufacturers transparently, and support technical inquiries, compatibility questions, complaints, and failure-intake workflows with governed evidence, uncertainty, and consent.
+> SeaLAI understands chaotic human language, answers sealing knowledge generously, challenges sealing cases respectfully, asks only the next useful question, explains why information matters, stores technical truth only through governance, and turns uncertainty into manufacturer-review-ready RFQ evidence without pretending final approval.
 
 This file is the binding operating contract for autonomous coding agents working in this repository, especially Codex App, Codex CLI, and similar coding agents.
 
@@ -16,14 +16,14 @@ Keep this file practical. Product depth belongs in the concept files. Do not tur
 
 ---
 
-## Active mission
+## Active Mission
 
-The active implementation mission is **SealAI Architecture V8.0 — Governed Agentic RFQ Qualification Runtime** on the current stack, implemented safely and incrementally.
+The active implementation mission is **SealAI V9.1 Final — Governed Sealing Intelligence**, implemented safely and incrementally on the current stack.
 
 The active product direction is:
 
 ```text
-Understand → Qualify → Prepare RFQ basis → Manufacturer review → Capability context
+Understand chaotic human language → Answer knowledge generously → Govern technical facts → Enrich with medium/material intelligence → Challenge risks and blockers → Ask the next useful justified question → Prepare RFQ-ready evidence without false certainty
 ```
 
 SeaLAI must increasingly feel like:
@@ -32,9 +32,9 @@ SeaLAI must increasingly feel like:
 
 The active architecture target is now:
 
-> Communication Runtime entscheidet. Capability Registry liefert Fachkontext. LangGraph qualifiziert governed technical state. Governor/Services validieren technische Wahrheit. FinalAnswerLayer formuliert sichtbar. RFQ Layer erzeugt die Anfragebasis. Hersteller gibt final frei.
+> V9.1 Final frames the product and runtime. Semantic Boundary Manager erkennt die Situation. LLM Freedom / Red Flag Decision steuert Antwortfreiheit. Candidate Extraction erzeugt Vorschläge. Field Governance entscheidet Case-State. Knowledge Policy und RAG liefern Kontext. Domain Intelligence Engines erzeugen Medium-, Material-, Parameter-, Failure-, Compliance- und Document-Intelligence. Challenge Engine erzeugt Befunde. QuestionPlan entscheidet fachlich, was fehlt. CommunicationPlan entscheidet, was der Nutzer jetzt wie hören sollte. ClaimGuard, EvidenceGate und CommunicationGuard verhindern falsche Sicherheit. RFQ bleibt Ergebnis und Boundary.
 
-The current work must move the existing app toward V8 without big-bang rewrites, without destructive production actions, and without replacing the current stack. V7.1 remains supporting communication history and partial implementation context, but V8 is now the binding target concept.
+The current work must move the existing app toward the final V9.1 concept without big-bang rewrites, without destructive production actions, and without replacing the current stack. Earlier V9.1 drafts and V9 challenger documents are superseded as product SSoT. Older V8/V7 documents are supporting implementation history only where they do not conflict with the final V9.1 concept.
 
 ---
 
@@ -43,13 +43,9 @@ The current work must move the existing app toward V8 without big-bang rewrites,
 Before any non-trivial task, read from the repository root:
 
 1. `AGENTS.md`
-2. `docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md`
-3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md`
-4. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md`
-5. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md`
-6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md`
-7. relevant `docs/implementation/event_model/*` files for event-modeled behavior
-8. relevant source files and tests for the specific task
+2. `docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md`
+3. relevant source files and tests for the specific task
+4. only when needed for legacy wiring: older V8/V7/event-model documents, as supporting history and never as active SSoT
 
 For communication-runtime work that touches existing V7 seams, also read the supporting historical contracts:
 
@@ -68,20 +64,30 @@ Do not work from memory. Current repository content is the evidence.
 
 ---
 
+## LangSmith Observability
+
+Production LLM/graph observability is LangSmith. The backend supports both modern `LANGSMITH_*` and legacy `LANGCHAIN_*` environment names:
+
+- `LANGSMITH_TRACING=true`
+- `LANGSMITH_API_KEY=<secret>`
+- `LANGSMITH_PROJECT=sealai-production`
+- compatibility aliases: `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`
+
+Do not commit LangSmith API keys. Store production keys only in VPS `.env.prod` and local Codex keys only in a private shell/env store. The backend wraps direct OpenAI SDK clients through `app.observability.langsmith.wrap_openai_client()` and uses trace spans on the governed graph and dispatch boundaries. New LLM call sites must use the wrapper or the central LLM factory so LangSmith can inspect prompts, tool/graph boundaries, model calls, latency, errors, and generated responses.
+
+For Codex App/CLI inspection, configure the LangSmith MCP server as `langsmith` with a private API-key header/environment mapping. After changing MCP configuration, restart Codex App or open a new session so the tool inventory reloads.
+
+---
+
 ## Binding authority order
 
 Use this order when documents, code, or prior notes disagree:
 
 1. `AGENTS.md` for coding-agent operating rules and safety boundaries.
-2. `docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md` for the active target architecture, RuntimeAction gate, Capability Registry, LangGraph boundary, FinalAnswerLayer, RFQ readiness/preview boundary, claim policy, evidence policy, and V8 patch checklist.
-3. `docs/implementation/SEALAI_V08_3_EVENT_MODELED_CODEX_IMPLEMENTATION_CONCEPT.md` for event-modeled product and implementation foundations that V8 builds on.
-4. `docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md` for implementation sequencing where it does not conflict with V8.
-5. `docs/implementation/SEALAI_V08_2_STACK_AUDIT_IST.md` for current-stack evidence and implementation gaps.
-6. `docs/implementation/SEALAI_PILOT_READINESS_IMPLEMENTATION_CONCEPT.md` for pilot-readiness guardrails, RFQ governance, consent, IP/upload safety, and earlier implementation constraints.
-7. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior.
-8. Current code and tests as evidence of existing contracts and productive seams.
-9. `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V7_1_FINAL_IMPLEMENTATION_CONCEPT.md`, `docs/communication/*.md`, `docs/implementation/SEALAI_COMMUNICATION_ARCHITECTURE_V5_IMPLEMENTATION_CONCEPT.md`, and older communication notes as supporting historical context only.
-10. Older concept files, archived notes, audit notes, prompts, chat notes, or implementation history as context only.
+2. `docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md` as the single active product, communication, runtime, state, governance, knowledge, RAG, intelligence-tab, question-plan, communication-plan, claim/evidence, and RFQ-boundary SSoT.
+3. Current code and tests as evidence of existing contracts and productive seams.
+4. `frontend/DESIGN.md` for frontend design, layout, motion, spacing, cockpit, chat workspace, rails, tabs, and responsive behavior where it does not conflict with V9.1 Final.
+5. Older V9, V8, V7, event-model, pilot-readiness, communication, roadmap, archived notes, audit notes, prompts, chat notes, and implementation history as supporting context only where they do not conflict with V9.1 Final.
 
 Rules:
 
@@ -147,11 +153,30 @@ Forbidden language unless backed by explicit evidence:
 - final compatibility confirmation
 - final root cause
 
-## Active Architecture V8
+## Active Architecture V9.1 Final
 
-`docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md` is the active SSoT for all runtime, chat, knowledge, governed intake, capability, RFQ readiness, RFQ preview, projection, answer, evidence, and claim-policy work.
+`docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md` is the single active V9.1 SSoT. It replaces V9 Governed Dichtungsfall Challenger and all earlier V9.1 drafts.
 
-Coding agents must implement V8 as an architecture, not as example-specific fixes:
+Coding agents must implement V9.1 Final as an architecture, not as example-specific fixes:
+
+- SealAI communicates like an experienced sealing engineer: it answers knowledge generously, challenges cases respectfully, asks only the next useful question, explains why information matters, and never turns uncertainty into false certainty.
+- The core formula is "Frei erklären. Zusagen kontrollieren."
+- Do not hardcode long scenario lists when Semantic Boundary Manager, Red Flag Decision, Knowledge Policy, Response Policy, QuestionPlan, and CommunicationPlan should decide behavior.
+- Let LLMs explain freely for general knowledge, material profiles, material comparisons, parameter explanations, process questions, summaries, and gentle guidance.
+- Reduce answer freedom for concrete suitability, final material decisions, approvals, certificates, safety, ATEX, compliance, RFQ actions, orders, manufacturer/article equivalence, numeric limit claims, definite root cause, case-state mutation, contradictions, corrections, and document-based claims.
+- Raw chat is not case truth. Technical truth can only come from candidate extraction, field governance, normalized case state, calculated or derived intelligence, and claim/evidence/communication gates.
+- QuestionPlan decides fachlich which information is missing. CommunicationPlan decides kommunikativ what the user should hear now and how.
+- Prefer Intelligence tabs for deep material, medium, parameter, geometry, application, risk, completeness, document, failure, safety/compliance, and RFQ analysis. Keep chat concise and action-oriented.
+- Material and seal-type outputs must use screening language such as `prüfenswert`, `plausibel zu prüfen`, `bedingt prüfenswert`, `zurückgestellt`, `Review nötig`, or `blockiert durch Gegenindikator`.
+- Do not claim optimal solution, best seal, final material choice, suitability, chemical resistance, release, certification, or safety.
+- Do not expose percentages, probability scores, or `/100`-style material plausibility in the MVP unless a validated model and evidence contract exists.
+- Material and seal-type outputs must be framed as hypotheses with plausibility class (`low`, `medium`, `high`), reasons, blocking unknowns, counterindicators, RFQ relevance, and forbidden claims.
+- Question planning must produce a justified `QuestionPlan`, not just an isolated next question: intent, blocker addressed, why it matters, and what answer would unlock.
+- Each challenge finding must distinguish whether it is a risk, contradiction, missing blocker, derived signal, hypothesis, or counterindicator.
+- Every case analysis should answer: what stands out, why it matters, what hypothesis is allowed, and what the next best question is.
+- RFQ preview must remain explicit and consent-gated, and should carry challenge findings, derived calculations, active or rejected hypotheses, open blockers, and manufacturer review points as context, never as instructions or approvals.
+
+Existing runtime safety rules still apply unless V9.1 Final supersedes them:
 
 - SealAI does not build its own LLM. It uses existing model roles through the model registry.
 - The V8 Communication Runtime may use the `communication_runtime` model role (`SEALAI_COMMUNICATION_RUNTIME_MODEL`, enabled by `SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM`) to classify user intent, but it may only emit a bounded `TurnDecision` proposal; it must not answer users or set engineering truth.
@@ -176,7 +201,7 @@ Coding agents must implement V8 as an architecture, not as example-specific fixe
 - Active-case side questions such as material comparisons, roughness questions, PFAS questions, or "why do you ask that?" must be answered as side questions when the `RuntimeAction` says so, then intentionally resume, continue, or pause the primary task.
 - Fallback is safe degradation only; it is not the target UX when a composer is allowed, available, and passes guards.
 
-Every V8 patch report must explicitly answer:
+Every V9.1 Final runtime patch report must explicitly answer:
 
 1. Which boundary changes?
 2. Is `RuntimeAction` before LangGraph still intact?
@@ -188,6 +213,8 @@ Every V8 patch report must explicitly answer:
 8. Are Chat/SSE/Workspace/BFF/Frontend contracts affected?
 9. Which boundary tests were added or run?
 10. Is there still no manufacturer contact, RFQ export, or dispatch without explicit consent?
+11. Does the patch preserve V9.1 Final's "Frei erklären. Zusagen kontrollieren." split?
+12. Does it avoid turning raw chat into case truth?
 
 ## SeaLAI LLM Safety Rules
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,7 +59,8 @@ class KnowledgeAnswerComposer:
             max_tokens=self.max_tokens,
         )
         raw_content = response.choices[0].message.content
-        return parse_knowledge_answer_composer_output(raw_content)
+        output = parse_knowledge_answer_composer_output(raw_content)
+        return compact_simple_definition_answer(request, output)
 
 
 async def _create_completion_with_registry_fallback(
@@ -124,6 +126,97 @@ def parse_knowledge_answer_composer_output(raw_content: Any) -> KnowledgeAnswerC
     )
 
 
+_MATERIAL_TOKENS = ("NBR", "HNBR", "FKM", "FFKM", "EPDM", "PTFE", "VMQ")
+_SIMPLE_DEFINITION_PATTERNS = (
+    r"\bwas\s+ist\b",
+    r"\bwas\s+bedeutet\b",
+    r"\bwas\s+kannst\s+du\s+mir\s+zu\b",
+    r"\berkl[aä]r(?:e|en)?\b",
+)
+_COMPARISON_MARKERS = (
+    "vergleich",
+    "unterschied",
+    " vs ",
+    " versus ",
+    " gegenüber ",
+    " gegen ",
+)
+
+
+def compact_simple_definition_answer(
+    request: KnowledgeAnswerComposerInput,
+    output: KnowledgeAnswerComposerOutput,
+) -> KnowledgeAnswerComposerOutput:
+    """Keep simple material-definition answers direct and product-like."""
+
+    if not _is_simple_material_definition_question(request.user_message):
+        return output
+
+    compact = _compact_from_deterministic_answer(request.deterministic_answer)
+    if not compact:
+        return output
+    return KnowledgeAnswerComposerOutput(
+        answer_markdown=compact,
+        confidence_note=output.confidence_note,
+    )
+
+
+def _is_simple_material_definition_question(user_message: str) -> bool:
+    text = str(user_message or "").strip()
+    if not text:
+        return False
+    lowered = f" {text.casefold()} "
+    if any(marker in lowered for marker in _COMPARISON_MARKERS):
+        return False
+    if not any(re.search(pattern, lowered) for pattern in _SIMPLE_DEFINITION_PATTERNS):
+        return False
+    materials = set(re.findall(r"\b(?:NBR|HNBR|FKM|FFKM|EPDM|PTFE|VMQ)\b", text.upper()))
+    return len(materials) == 1
+
+
+def _compact_from_deterministic_answer(deterministic_answer: str) -> str:
+    text = str(deterministic_answer or "").strip()
+    if not text:
+        return ""
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+    lead_source = re.split(r"\bTypische Orientierung:\s*", text, maxsplit=1)[0]
+    lead = _single_line(lead_source or (paragraphs[0] if paragraphs else ""))
+    bullets = _extract_orientation_bullets(text)
+    selected_bullets = [bullet for bullet in bullets if bullet][:2]
+    closing = (
+        "Für eine konkrete Eignung brauche ich Medium, Temperatur und "
+        "Betriebsart; Herstellerprüfung bleibt erforderlich. Das ist "
+        "technische Orientierung, keine technische Freigabe."
+    )
+    parts = [lead]
+    if selected_bullets:
+        parts.append("Kurz eingeordnet:")
+        parts.extend(f"- {bullet}" for bullet in selected_bullets)
+    parts.append(closing)
+    return "\n".join(part for part in parts if part).strip()
+
+
+def _extract_orientation_bullets(text: str) -> list[str]:
+    match = re.search(r"\bTypische Orientierung:\s*(?P<section>.*)", text, flags=re.DOTALL)
+    if not match:
+        return [
+            _single_line(line.lstrip("- ").strip())
+            for line in text.splitlines()
+            if line.strip().startswith("- ")
+        ]
+    section = re.split(
+        r"\b(?:Für eine konkrete|Bis dahin|Wenn das Ihr konkreter)\b",
+        match.group("section"),
+        maxsplit=1,
+    )[0]
+    chunks = re.split(r"(?:^|\s)-\s+", section)
+    return [_single_line(chunk) for chunk in chunks if _single_line(chunk)]
+
+
+def _single_line(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
 def _system_prompt() -> str:
     return """You are SeaLAI's no-case knowledge answer composer.
 
@@ -138,6 +231,7 @@ Communication requirements:
 - Treat evidence_items as the grounding envelope and deterministic_answer as fallback grounding. If evidence is weak or only deterministic/fallback, say what is uncertain.
 - Use natural German, with a careful senior sealing-engineer tone.
 - Prefer structured markdown for comparisons when useful: short summary, compact table, practical implications, limits/assumptions, and one focused next question.
+- For simple definition questions about one material such as "Was ist NBR?", answer compactly: direct definition, 1-3 practical orientation points, and only one short caveat. Avoid generic section boilerplate such as "Limitierungen/Annahmen" unless the user asks for a deeper assessment.
 - Ask at most one focused follow-up question.
 - Do not force the answer into technical case intake.
 - Do not use "Noch kein technischer Fall" as the main answer.

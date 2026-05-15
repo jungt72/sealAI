@@ -62,6 +62,7 @@ from typing import Any, Optional
 from app.agent.runtime.policy import INTERACTION_POLICY_VERSION, InteractionPolicyDecision
 from app.agent.runtime.selection import STRUCTURED_REQUIRED_CORE_PARAMS
 from app.domain.pre_gate_classification import PreGateClassification
+from app.observability.langsmith import wrap_openai_client
 from app.services.output_classifier import OutputClass
 from app.services.pre_gate_classifier import PreGateClassifier
 
@@ -323,7 +324,7 @@ def _call_routing_llm(user_input: str) -> str:
     """
     import openai  # lazy import — keeps startup lean when routing is unused
 
-    client = openai.OpenAI()  # picks up OPENAI_API_KEY from environment
+    client = wrap_openai_client(openai.OpenAI())  # picks up OPENAI_API_KEY from environment
     response = client.chat.completions.create(
         model=_ROUTING_MODEL,
         messages=[
@@ -348,7 +349,7 @@ async def _call_routing_llm_async(user_input: str) -> str:
     """
     import openai  # lazy import
 
-    client = openai.AsyncOpenAI()
+    client = wrap_openai_client(openai.AsyncOpenAI())
     response = await client.chat.completions.create(
         model=_ROUTING_MODEL,
         messages=[

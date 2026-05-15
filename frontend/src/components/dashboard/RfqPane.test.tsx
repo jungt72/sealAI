@@ -215,7 +215,7 @@ describe("RfqPane", () => {
     expect(screen.getByText(/Diese Anfragevorschau ist veraltet/i)).toBeInTheDocument();
     expect(screen.getByText("Wellendurchmesser bestaetigen")).toBeInTheDocument();
     expect(screen.getByText("Temperaturspitzen offen")).toBeInTheDocument();
-    expect(screen.getByText("Bitte Werkstofffenster pruefen")).toBeInTheDocument();
+    expect(screen.getAllByText("Bitte Werkstofffenster pruefen")[0]).toBeInTheDocument();
     expect(screen.getByText("Documented values")).toBeInTheDocument();
     expect(screen.getByText("Needs confirmation")).toBeInTheDocument();
     expect(screen.getByText("medium_name")).toBeInTheDocument();
@@ -324,12 +324,32 @@ describe("RfqPane", () => {
         json: async () => ({ error: { code: "rfq_preview_not_found" } }),
       }),
     );
-    const workspace = workspaceWithReadiness(readinessProjection());
+    const workspace = {
+      ...workspaceWithReadiness(readinessProjection()),
+      manufacturerQuestions: {
+        mandatory: [
+          "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
+        ],
+        openQuestions: [
+          {
+            id: "challenge.nbr",
+            question: "Bitte Gegenindikator pruefen: NBR wirkt im bekannten Chemiefenster als Gegenindikator.",
+            reason: "Als Herstellerpruefpunkt sichtbar machen.",
+            priority: "critical",
+            category: "contradiction",
+          },
+        ],
+        totalOpen: 2,
+      },
+    } as WorkspaceView;
 
     render(<RfqPane data={cockpitData()} caseId="case-1" workspace={workspace} />);
 
     expect(await screen.findByText("Anfragebasis für Herstellerprüfung")).toBeInTheDocument();
     expect(screen.getByText("Anfragebasis offen")).toBeInTheDocument();
+    expect(screen.getByText("Automatisch vorbereitete Herstellerfragen")).toBeInTheDocument();
+    expect(screen.getByText(/Welcher Druck oder welche Druckdifferenz/)).toBeInTheDocument();
+    expect(screen.getByText(/NBR wirkt im bekannten Chemiefenster/)).toBeInTheDocument();
     expect(screen.getByText("shaft_diameter_mm")).toBeInTheDocument();
     expect(screen.getByText(/Nächste Frage: Welche Wellendurchmesser-Dokumentation liegt vor/i)).toBeInTheDocument();
     expect(screen.getByText("Druckspitzen offen")).toBeInTheDocument();

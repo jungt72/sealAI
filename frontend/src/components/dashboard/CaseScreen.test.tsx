@@ -371,20 +371,28 @@ describe("CaseScreen", () => {
     });
   });
 
-  it("renders chat with the tabbed cockpit workspace and parameter intake", () => {
+  it("renders an existing case with the cockpit overview as the first surface", () => {
     render(<CaseScreen caseId="case-42" initialRequestType="retrofit" />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane case-42");
     expect(screen.getByRole("tablist", { name: "SealingAI Cockpit" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Parameter" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Übersicht" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Medium" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Werkstoff" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Angaben direkt eintragen" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Medium")).toBeInTheDocument();
-    expect(screen.getByLabelText("Drehzahl")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Arbeitsbereich einklappen" })).toBeInTheDocument();
+  });
+
+  it("loads the durable workspace when opening an existing case URL", async () => {
+    render(<CaseScreen caseId="case-42" />);
+
+    await waitFor(() => expect(fetchWorkspaceMock).toHaveBeenCalledWith("case-42"));
+    expect(workspaceStoreMock.setWorkspaceLoading).toHaveBeenCalledWith(true);
+    expect(workspaceStoreMock.setWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ caseId: "case-42" }),
+    );
+    expect(workspaceStoreMock.setWorkspaceLoading).toHaveBeenLastCalledWith(false);
   });
 
   it("keeps /dashboard/new free of legacy mock values while showing the new intake surface", () => {

@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { getAccessTokenResult } from "@/lib/bff/auth-token";
+
 import { POST } from "./route";
 
 const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
@@ -11,7 +13,20 @@ const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
 );
 
 vi.mock("@/lib/bff/auth-token", () => ({
-  getAccessToken: vi.fn(async () => "test-token"),
+  getAccessTokenResult: vi.fn(async () => ({
+    accessToken: "test-token",
+    cookieUpdates: [],
+  })),
+  applyBffCookieUpdates: vi.fn(
+    (
+      response: { cookies: { set: (name: string, value: string, options: Record<string, unknown>) => void } },
+      updates: Array<{ name: string; value: string; options: Record<string, unknown> }>,
+    ) => {
+      for (const update of updates) {
+        response.cookies.set(update.name, update.value, update.options);
+      }
+    },
+  ),
 }));
 
 vi.mock("@/lib/bff/backend", () => ({
@@ -55,6 +70,7 @@ describe("BFF agent chat stream route", () => {
       new Response(
         buildBackendSseStream([
           'data: {"type":"text_chunk","text":"Preview"}\n\n',
+          'data: {"type":"text_reset"}\n\n',
           'data: {"type":"text_replacement","text":"Audit only"}\n\n',
           'data: {"type":"boundary_block","text":"Disclaimer"}\n\n',
           'data: {"type":"state_update","reply":"Finale Antwort","response_class":"conversational_answer"}\n\n',
@@ -77,16 +93,58 @@ describe("BFF agent chat stream route", () => {
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
 
-    expect(payloads).toHaveLength(4);
+    expect(payloads).toHaveLength(5);
     expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "Preview" });
-    expect(payloads[1]).toMatchObject({ type: "case_bound" });
-    expect(payloads[2]).toMatchObject({
+    expect(payloads[1]).toMatchObject({ type: "text_reset" });
+    expect(payloads[2]).toMatchObject({ type: "case_bound" });
+    expect(payloads[3]).toMatchObject({
       type: "state_update",
       caseId: expect.any(String),
       reply: "Finale Antwort",
       responseClass: "conversational_answer",
     });
-    expect(payloads[3]).toBe("[DONE]");
+    expect(payloads[4]).toBe("[DONE]");
+  });
+
+  it("persists rotated auth cookies on streaming responses", async () => {
+    vi.mocked(getAccessTokenResult).mockResolvedValueOnce({
+      accessToken: "fresh-token",
+      cookieUpdates: [
+        {
+          name: "__Secure-authjs.session-token",
+          value: "rotated-session",
+          options: {
+            httpOnly: true,
+            sameSite: "lax",
+            secure: true,
+            path: "/",
+            maxAge: 3600,
+          },
+        },
+      ],
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"ok","response_class":"conversational_answer"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo" }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.headers.get("set-cookie")).toContain("__Secure-authjs.session-token=rotated-session");
   });
 
   it("keeps backend no-case fast responses session-bound without creating a case", async () => {
@@ -121,6 +179,29 @@ describe("BFF agent chat stream route", () => {
     });
     expect(payloads[0]).not.toHaveProperty("caseId");
     expect(payloads[1]).toBe("[DONE]");
+  });
+
+  it("does not expose raw backend auth details when the token expired", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "token_expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Was ist NBR?" }),
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.error.message).toBe("Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.");
+    expect(body.error.message).not.toContain("token_expired");
+    expect(body.error.message).not.toContain("{");
   });
 
   it("forwards answer_markdown from backend state_update events", async () => {

@@ -86,7 +86,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD required — set in .env or .env.prod}
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME: "https://auth.sealai.net"
+      KC_HOSTNAME: ${KC_HOSTNAME:-https://sealingai.com}
       KC_HOSTNAME_STRICT: "true"
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
@@ -96,7 +96,7 @@ services:
 
   backend:
     container_name: backend
-    user: "1000:1000"
+    user: "10001:10001"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -111,11 +111,15 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_DB: ${POSTGRES_DB:-sealai}
       POSTGRES_SYNC_URL: ${POSTGRES_SYNC_URL:-postgresql://${POSTGRES_USER:-sealai}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-sealai}}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL required — set in .env or .env.prod}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:?QDRANT_COLLECTION required — set in .env or .env.prod}
       GOTENBERG_URL: ${GOTENBERG_URL:-http://gotenberg:3000}
       TIKA_URL: ${TIKA_URL:-http://tika:9998}
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/0"
+      APP_ENV: "${APP_ENV:-development}"
+      SEALAI_LANGGRAPH_CHECKPOINTING: "${SEALAI_LANGGRAPH_CHECKPOINTING:-false}"
+      LANGGRAPH_V2_REDIS_URL: "${LANGGRAPH_V2_REDIS_URL:-redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/0}"
       RAG_UPLOAD_DIR: "/app/data/uploads"
       HF_HOME: "/app/data/models"
       FASTEMBED_CACHE_PATH: "/app/data/models"
@@ -130,6 +134,7 @@ services:
       SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM: "${SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM:-true}"
       SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER: "${SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER:-true}"
       SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER: "${SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER:-true}"
+      SEALAI_FORCE_LLM_FAST_RESPONDER: "${SEALAI_FORCE_LLM_FAST_RESPONDER:-true}"
       HUMAN_COMMUNICATION_LAYER_ENABLED: "${HUMAN_COMMUNICATION_LAYER_ENABLED:-false}"
       GENERATION_MODEL: "gpt-5-large"
       GENERATION_TEMP: "0.2"
@@ -140,13 +145,24 @@ services:
       WS_AUTH_OPTIONAL: "${WS_AUTH_OPTIONAL:-0}"
       SEALAI_LG_TRACE: "${SEALAI_LG_TRACE:-0}"
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — set in .env or .env.prod}
-      # LangSmith tracing — set LANGCHAIN_TRACING_V2=true and LANGCHAIN_API_KEY to enable
+      # LangSmith tracing — prefer LANGSMITH_*; LANGCHAIN_* kept for compatibility
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-sealai-production}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
+      SEALAI_TRACE_HASH_SALT: ${SEALAI_TRACE_HASH_SALT:-}
+      LANGSMITH_CAPTURE_LLM_CONTENT: ${LANGSMITH_CAPTURE_LLM_CONTENT:-false}
+      LANGSMITH_TRACE_LANGGRAPH_CHILDREN: ${LANGSMITH_TRACE_LANGGRAPH_CHILDREN:-false}
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
       LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
-      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-sealai-phase-h}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-sealai-production}
+      LANGCHAIN_ENDPOINT: ${LANGCHAIN_ENDPOINT:-}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:?KEYCLOAK_ISSUER required — set in .env or .env.prod}
       KEYCLOAK_JWKS_URL: ${KEYCLOAK_JWKS_URL:?KEYCLOAK_JWKS_URL required — set in .env or .env.prod}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:?KEYCLOAK_CLIENT_ID required — set in .env or .env.prod}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET required — set in .env or .env.prod}
+      KEYCLOAK_EXPECTED_AZP: ${KEYCLOAK_EXPECTED_AZP:-${EXPECTED_AZP:-nextauth}}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?NEXTAUTH_URL required — set in .env or .env.prod}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET required — set in .env or .env.prod}
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET required — set in .env or .env.prod}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:?ALLOWED_ORIGIN required — set in .env or .env.prod}
@@ -154,6 +170,9 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
     expose:
       - "8000"
+    ports:
+      # Host-managed Next.js/PM2 uses this loopback-only route for BFF -> agent calls.
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null"]
       interval: 30s

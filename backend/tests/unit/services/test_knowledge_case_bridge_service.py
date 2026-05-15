@@ -57,6 +57,22 @@ def test_build_bridge_invitation_only_once_per_context() -> None:
     )
 
 
+def test_build_bridge_invitation_skips_plain_definition_even_with_existing_context() -> None:
+    service = KnowledgeCaseBridgeService()
+    context = service.update_context(
+        "Was ist PTFE bei 180 C und 12 bar Dampf?",
+        session_id="knowledge-definition",
+    )
+
+    assert (
+        service.build_bridge_invitation(
+            "Was ist NBR? Bitte antworte kurz und professionell.",
+            context=context,
+        )
+        is None
+    )
+
+
 def test_build_governed_seed_preserves_history_and_parameters() -> None:
     service = KnowledgeCaseBridgeService()
     context = service.update_context(

@@ -13,7 +13,9 @@ export default function LogoutButton({ showLabel = true, className }: LogoutButt
 
     const handleLogout = async () => {
         // 1. Construct the Keycloak End Session URL
-        const keycloakLogoutUrl = new URL("https://auth.sealai.net/realms/sealAI/protocol/openid-connect/logout");
+        const keycloakLogoutUrl = new URL(
+            "https://sealingai.com/realms/sealAI/protocol/openid-connect/logout",
+        );
 
         const idToken = (session as any)?.idToken;
 

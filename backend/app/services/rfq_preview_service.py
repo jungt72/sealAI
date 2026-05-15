@@ -170,6 +170,327 @@ class RfqExportBlockedError(RfqPreviewError):
         )
 
 
+def build_challenge_context(
+    *,
+    decision_understanding: Mapping[str, Any],
+    open_points: Sequence[str],
+) -> dict[str, Any]:
+    """Build V9 challenge context for RFQ preview without creating release claims."""
+
+    risks = tuple(
+        str(item).strip()
+        for item in _as_sequence(decision_understanding.get("key_risks"))
+        if str(item).strip()
+    )
+    plausible_directions = tuple(
+        str(item).strip()
+        for item in _as_sequence(decision_understanding.get("plausible_directions"))
+        if str(item).strip()
+    )
+    manufacturer_review_needs = tuple(
+        str(item).strip()
+        for item in _as_sequence(decision_understanding.get("manufacturer_review_needs"))
+        if str(item).strip()
+    )
+    blockers = tuple(str(item).strip() for item in open_points if str(item).strip())
+    findings = [
+        {
+            "finding_type": "risk",
+            "severity": "important",
+            "title": item,
+            "rfq_relevance": "Als Herstellerpruefpunkt sichtbar machen.",
+            "claim_level": "L2",
+            "creates_engineering_truth": False,
+            "status": "open",
+        }
+        for item in risks
+    ]
+    findings.extend(
+        {
+            "finding_type": "missing_blocker",
+            "severity": "critical",
+            "title": item,
+            "rfq_relevance": "Vor technischer Freigabe oder Auslegung klaeren.",
+            "claim_level": "L2",
+            "creates_engineering_truth": False,
+            "status": "open",
+        }
+        for item in blockers
+    )
+    hypotheses = [
+        {
+            "hypothesis_type": "technical_direction",
+            "label": item,
+            "plausibility": "medium",
+            "supporting_signals": [],
+            "blocking_unknowns": list(blockers),
+            "counterindicators": [],
+            "allowed_claim": "vorlaeufige Pruefhypothese",
+            "forbidden_claims": [
+                "geeignet",
+                "freigegeben",
+                "beste Loesung",
+                "finale Werkstoffauswahl",
+            ],
+            "rfq_relevance": "Als Kontext fuer Herstellerpruefung sichtbar, nicht als Vorgabe.",
+            "status": "active",
+        }
+        for item in plausible_directions
+    ]
+    return {
+        "schema_version": "challenge_context_v9_0",
+        "no_final_technical_release": True,
+        "findings": findings,
+        "active_hypotheses": hypotheses,
+        "rejected_hypotheses": [],
+        "open_blockers": list(blockers),
+        "manufacturer_review_points": list(manufacturer_review_needs),
+    }
+
+
+def build_v91_rfq_projection(
+    *,
+    decision_understanding: Mapping[str, Any],
+    challenge_context: Mapping[str, Any],
+    technical_field_envelopes: Sequence[Mapping[str, Any]],
+    open_points_summary: Mapping[str, Any],
+    evidence_refs_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build V9.1 RFQ projection without turning screening into release."""
+
+    open_points = tuple(
+        str(item).strip()
+        for item in _as_sequence(open_points_summary.get("items"))
+        if str(item).strip()
+    )
+    evidence_refs = tuple(
+        str(item).strip()
+        for item in _as_sequence(evidence_refs_summary.get("items"))
+        if str(item).strip()
+    )
+    material_candidates: list[dict[str, Any]] = []
+    for hypothesis in _as_sequence(challenge_context.get("active_hypotheses")):
+        if not isinstance(hypothesis, Mapping):
+            continue
+        label = str(hypothesis.get("label") or "").strip()
+        if not label:
+            continue
+        material_candidates.append(
+            _drop_empty(
+                {
+                    "label": label,
+                    "status": str(hypothesis.get("status") or "active"),
+                    "claim_level": "screening_hypothesis",
+                    "basis": tuple(
+                        str(item).strip()
+                        for item in _as_sequence(hypothesis.get("supporting_signals"))
+                        if str(item).strip()
+                    ),
+                    "blocking_unknowns": tuple(
+                        str(item).strip()
+                        for item in _as_sequence(hypothesis.get("blocking_unknowns"))
+                        if str(item).strip()
+                    ),
+                    "counterindicators": tuple(
+                        str(item).strip()
+                        for item in _as_sequence(hypothesis.get("counterindicators"))
+                        if str(item).strip()
+                    ),
+                    "allowed_claim": "vorlaeufige Pruefhypothese",
+                    "forbidden_claims": tuple(
+                        str(item).strip()
+                        for item in _as_sequence(hypothesis.get("forbidden_claims"))
+                        if str(item).strip()
+                    )
+                    or (
+                        "finale Werkstofffreigabe",
+                        "Herstellerfreigabe",
+                        "beste Loesung",
+                    ),
+                    "rfq_relevance": str(
+                        hypothesis.get("rfq_relevance")
+                        or "Kontext fuer Herstellerpruefung."
+                    ),
+                }
+            )
+        )
+
+    field_statuses = tuple(
+        _drop_empty(
+            {
+                "field": str(field.get("field") or "").strip(),
+                "status": str(field.get("status") or "unknown").strip(),
+                "source_type": str(field.get("source_type") or "unknown").strip(),
+                "validation_status": str(
+                    field.get("validation_status") or "unknown"
+                ).strip(),
+                "confirmation_required": bool(field.get("confirmation_required")),
+            }
+        )
+        for field in technical_field_envelopes
+        if str(field.get("field") or "").strip()
+    )
+    question_plan = {
+        "mode": "no_question" if not open_points else "ask_only",
+        "question_required": bool(open_points),
+        "max_questions_this_turn": 1,
+        "target_fields": open_points[:3],
+        "why_this_now": (
+            "Offene Punkte blockieren die belastbare Anfragebasis."
+            if open_points
+            else None
+        ),
+        "user_facing_reason": (
+            "Diese Angabe bestimmt, was der Hersteller pruefen muss."
+            if open_points
+            else None
+        ),
+        "forbidden_claims": (
+            "finale Freigabe",
+            "finale Werkstoffentscheidung",
+            "Compliance-Zertifizierung",
+            "automatischer Versand",
+        ),
+    }
+    return {
+        "schema_version": "sealingai_rfq_projection_v9_1",
+        "purpose": "manufacturer_review_basis",
+        "no_final_technical_release": True,
+        "dispatch_enabled": False,
+        "external_contact_allowed": False,
+        "claim_boundary": {
+            "allowed": (
+                "bestaetigte Fallfakten",
+                "offene Punkte",
+                "Pruefhypothesen",
+                "Herstellerprueffragen",
+            ),
+            "forbidden": question_plan["forbidden_claims"],
+        },
+        "question_plan": question_plan,
+        "technical_field_statuses": field_statuses,
+        "challenge_findings": tuple(
+            _as_sequence(challenge_context.get("findings"))
+        ),
+        "material_candidates_for_review": tuple(material_candidates),
+        "open_blockers": open_points,
+        "manufacturer_review_points": tuple(
+            str(item).strip()
+            for item in _as_sequence(
+                decision_understanding.get("manufacturer_review_needs")
+            )
+            if str(item).strip()
+        ),
+        "evidence_ref_ids": evidence_refs,
+    }
+
+
+def build_v92_rfq_dossier(
+    *,
+    technical_field_envelopes: Sequence[Mapping[str, Any]],
+    decision_understanding: Mapping[str, Any],
+    challenge_context: Mapping[str, Any],
+    open_points_summary: Mapping[str, Any],
+    evidence_refs_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build RFQ Dossier 2.0 with strict V9.2 section boundaries."""
+
+    facts: list[dict[str, Any]] = []
+    calculations: list[dict[str, Any]] = []
+    for field in technical_field_envelopes:
+        if not isinstance(field, Mapping):
+            continue
+        name = str(field.get("field") or field.get("field_name") or "").strip()
+        if not name:
+            continue
+        item = _drop_empty(
+            {
+                "field": name,
+                "value": field.get("value"),
+                "unit": field.get("unit"),
+                "status": field.get("status"),
+                "provenance": field.get("provenance"),
+                "claim_level": "L1_normalized",
+                "evidence_refs": tuple(_as_sequence(field.get("evidence_refs"))),
+            }
+        )
+        if str(field.get("provenance") or "") == "calculated" or name.startswith("calculated_"):
+            calculations.append({**item, "claim_level": "L2_screening"})
+        else:
+            facts.append(item)
+
+    blockers = tuple(
+        str(item).strip()
+        for item in _as_sequence(open_points_summary.get("items"))
+        if str(item).strip()
+    )
+    candidates: list[dict[str, Any]] = []
+    for hypothesis in _as_sequence(challenge_context.get("active_hypotheses")):
+        if not isinstance(hypothesis, Mapping):
+            continue
+        label = str(hypothesis.get("label") or "").strip()
+        if not label:
+            continue
+        candidates.append(
+            _drop_empty(
+                {
+                    "candidate_type": "technical_direction",
+                    "label": label,
+                    "status": hypothesis.get("status") or "active",
+                    "claim_level": "L2_screening",
+                    "blocking_unknowns": tuple(
+                        str(item).strip()
+                        for item in _as_sequence(hypothesis.get("blocking_unknowns"))
+                        if str(item).strip()
+                    ),
+                    "requires_manufacturer_review": True,
+                }
+            )
+        )
+    evidence_refs = tuple(
+        str(item).strip()
+        for item in _as_sequence(evidence_refs_summary.get("items"))
+        if str(item).strip()
+    )
+    return {
+        "schema_version": "rfq_dossier_v9_2",
+        "status": "partial" if blockers else "ready",
+        "no_final_technical_release": True,
+        "facts": tuple(facts),
+        "calculations": tuple(calculations),
+        "candidates": tuple(candidates),
+        "blockers": blockers,
+        "evidence_refs": evidence_refs,
+        "allowed_claims": (
+            "technische Vorqualifikation",
+            "pruefbare Richtung",
+            "offene Punkte fuer Herstellerpruefung",
+        ),
+        "forbidden_claims": (
+            "freigegeben",
+            "geeignet ohne Herstellerpruefung",
+            "zertifiziert",
+            "konform ohne Normpruefung",
+            "finale Auslegung",
+        ),
+        "sections": (
+            {"id": "facts", "title": "Fakten", "count": len(facts)},
+            {"id": "calculations", "title": "Berechnungen", "count": len(calculations)},
+            {"id": "candidates", "title": "Kandidaten", "count": len(candidates)},
+            {"id": "blockers", "title": "Blocker", "count": len(blockers)},
+            {"id": "claims", "title": "Claim-Grenzen", "count": 5},
+        ),
+        "decision_summary": _drop_empty(
+            {
+                "risk_count": len(_as_sequence(decision_understanding.get("key_risks"))),
+                "plausible_direction_count": len(
+                    _as_sequence(decision_understanding.get("plausible_directions"))
+                ),
+            }
+        ),
+    }
+
+
 class RfqPreviewService:
     """Create and govern Phase-1 RFQ preview artifacts.
 
@@ -458,6 +779,24 @@ def build_rfq_preview_payload(
             "missing_fields": open_points,
         }
     )
+    challenge_context = build_challenge_context(
+        decision_understanding=decision_understanding,
+        open_points=open_points,
+    )
+    v91_rfq_projection = build_v91_rfq_projection(
+        decision_understanding=decision_understanding,
+        challenge_context=challenge_context,
+        technical_field_envelopes=technical_field_envelopes,
+        open_points_summary=open_points_summary,
+        evidence_refs_summary=evidence_refs_summary,
+    )
+    v92_rfq_dossier = build_v92_rfq_dossier(
+        decision_understanding=decision_understanding,
+        challenge_context=challenge_context,
+        technical_field_envelopes=technical_field_envelopes,
+        open_points_summary=open_points_summary,
+        evidence_refs_summary=evidence_refs_summary,
+    )
     manufacturer_extract = InquiryExtractService().build_inquiry_extract_payload(
         context,
         artifact_type=RFQ_PREVIEW_ARTIFACT_TYPE,
@@ -493,6 +832,9 @@ def build_rfq_preview_payload(
             "dispatch_enabled": False,
             "automatic_dispatch_allowed": False,
             "decision_understanding": decision_understanding,
+            "challenge_context": challenge_context,
+            "v91_rfq_projection": v91_rfq_projection,
+            "v92_rfq_dossier": v92_rfq_dossier,
             "technical_field_groups": technical_field_groups,
             "technical_field_envelopes": technical_field_envelopes,
             "technical_field_statuses": technical_field_statuses,
@@ -513,6 +855,9 @@ def build_rfq_preview_payload(
             ),
         },
         "decision_understanding": decision_understanding,
+        "challenge_context": challenge_context,
+        "v91_rfq_projection": v91_rfq_projection,
+        "v92_rfq_dossier": v92_rfq_dossier,
         "manufacturer_extract": manufacturer_extract,
         "source_validation_summary": source_validation_summary,
         "open_points_summary": open_points_summary,
@@ -588,6 +933,10 @@ def build_rfq_export_document(
             "risks": _allowlisted_text_sequence(_risks_for_export(sections, payload)),
             "manufacturer_review_notes": _allowlisted_text_sequence(
                 _manufacturer_review_notes_for_export(sections, payload)
+            ),
+            "sealing_intelligence": _allowlisted_v91_rfq_projection(
+                rfq_preview.get("v91_rfq_projection")
+                or payload.get("v91_rfq_projection")
             ),
             "evidence_references": evidence_refs,
             "source_validation_summary": _allowlisted_source_validation_summary(
@@ -1161,6 +1510,62 @@ def _manufacturer_review_notes_for_export(
             for content in _flatten_text_items(section.get("content"))
         )
         + _as_sequence(decision.get("manufacturer_review_needs"))
+    )
+
+
+def _allowlisted_v91_rfq_projection(value: Any) -> dict[str, Any]:
+    projection = _object_mapping(value)
+    if not projection:
+        return {}
+    claim_boundary = _object_mapping(projection.get("claim_boundary"))
+    question_plan = _object_mapping(projection.get("question_plan"))
+    return _drop_empty(
+        {
+            "schema_version": _optional_text(projection.get("schema_version")),
+            "purpose": _optional_text(projection.get("purpose")),
+            "no_final_technical_release": bool(
+                projection.get("no_final_technical_release", True)
+            ),
+            "dispatch_enabled": False,
+            "external_contact_allowed": False,
+            "claim_boundary": _drop_empty(
+                {
+                    "allowed": _allowlisted_text_sequence(
+                        _as_sequence(claim_boundary.get("allowed"))
+                    ),
+                    "forbidden": _allowlisted_text_sequence(
+                        _as_sequence(claim_boundary.get("forbidden"))
+                    ),
+                }
+            ),
+            "question_plan": _drop_empty(
+                {
+                    "mode": _optional_text(question_plan.get("mode")),
+                    "question_required": bool(
+                        question_plan.get("question_required", False)
+                    ),
+                    "max_questions_this_turn": _optional_int(
+                        question_plan.get("max_questions_this_turn")
+                    ),
+                    "target_fields": _allowlisted_text_sequence(
+                        _as_sequence(question_plan.get("target_fields"))
+                    ),
+                    "why_this_now": _optional_text(question_plan.get("why_this_now")),
+                    "user_facing_reason": _optional_text(
+                        question_plan.get("user_facing_reason")
+                    ),
+                }
+            ),
+            "open_blockers": _allowlisted_text_sequence(
+                _as_sequence(projection.get("open_blockers"))
+            ),
+            "manufacturer_review_points": _allowlisted_text_sequence(
+                _as_sequence(projection.get("manufacturer_review_points"))
+            ),
+            "evidence_ref_ids": _allowlisted_evidence_refs(
+                _as_sequence(projection.get("evidence_ref_ids"))
+            ),
+        }
     )
 
 

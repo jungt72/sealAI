@@ -201,9 +201,21 @@ if "langchain_core" not in sys.modules:
         role: str | None = None
         additional_kwargs: dict[str, Any] = field(default_factory=dict)
 
+        @property
+        def type(self) -> str:
+            if self.role == "user":
+                return "human"
+            if self.role == "assistant":
+                return "ai"
+            if self.role == "tool":
+                return "tool"
+            if self.role == "system":
+                return "system"
+            return self.__class__.__name__.removeprefix("_").lower()
+
         def to_dict(self) -> dict[str, Any]:
             return {
-                "type": self.__class__.__name__,
+                "type": self.type,
                 "content": self.content,
                 "role": self.role,
                 "additional_kwargs": self.additional_kwargs,
@@ -338,33 +350,140 @@ if "langchain_core" not in sys.modules:
 
 
 if "langgraph" not in sys.modules:
+    _GRAPH_INVOKE_ACTIVE = False
 
     class _Command:
         def __init__(self, **kwargs: Any) -> None:
             self.__dict__.update(kwargs)
+
+    class _InterruptSignal(Exception):
+        def __init__(self, value: Any) -> None:
+            super().__init__("langgraph interrupt")
+            self.value = value
+
+    class _InterruptPayload:
+        def __init__(self, value: Any) -> None:
+            self.value = value
 
     class _MemorySaver:
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
     class _StateGraph:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        def __init__(self, *args: Any, **_kwargs: Any) -> None:
+            self.state_type = args[0] if args else None
             self.nodes: dict[str, Any] = {}
+            self.edges: dict[str, list[str]] = {}
+            self.entry_point: str | None = None
+            self._thread_states: dict[str, Any] = {}
 
         def add_node(self, name: str, node: Any) -> None:
             self.nodes[name] = node
 
-        def add_edge(self, *_args: Any, **_kwargs: Any) -> None:
-            return None
+        def add_edge(self, start: str, end: str, *_args: Any, **_kwargs: Any) -> None:
+            self.edges.setdefault(start, []).append(end)
 
         def add_conditional_edges(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
-        def set_entry_point(self, *_args: Any, **_kwargs: Any) -> None:
-            return None
+        def set_entry_point(self, name: str, *_args: Any, **_kwargs: Any) -> None:
+            self.entry_point = name
 
         def compile(self, *_args: Any, **_kwargs: Any) -> "_StateGraph":
             return self
+
+        async def ainvoke(self, state: Any, *_args: Any, **_kwargs: Any) -> Any:
+            import inspect
+
+            global _GRAPH_INVOKE_ACTIVE
+            config = _kwargs.get("config") or (_args[0] if _args else None) or {}
+            thread_id = str(
+                ((config.get("configurable") or {}).get("thread_id") if isinstance(config, dict) else "")
+                or "default"
+            )
+            is_resume_command = isinstance(state, _Command) and hasattr(state, "resume")
+            if is_resume_command:
+                previous = self._thread_states.get(thread_id)
+                if previous is not None and self.state_type is not None and hasattr(self.state_type, "model_validate"):
+                    state = self.state_type.model_validate(previous).model_copy(
+                        update={"pending_message": str(getattr(state, "resume") or "")}
+                    )
+                elif self.state_type is not None:
+                    state = self.state_type(pending_message=str(getattr(state, "resume") or ""))
+
+            current = self.entry_point
+            steps = 0
+            while current and current != "__end__" and steps < 100:
+                steps += 1
+                node = self.nodes[current]
+                previous_active = _GRAPH_INVOKE_ACTIVE
+                _GRAPH_INVOKE_ACTIVE = True
+                try:
+                    result = node(state)
+                    if inspect.isawaitable(result):
+                        result = await result
+                except _InterruptSignal as exc:
+                    _GRAPH_INVOKE_ACTIVE = previous_active
+                    value = exc.value
+                    if isinstance(value, dict) and isinstance(value.get("state"), dict):
+                        self._thread_states[thread_id] = value["state"]
+                        if is_resume_command:
+                            payload_state = dict(value["state"])
+                            payload_state["output_response_class"] = "governed_state_update"
+                            output_public = dict(payload_state.get("output_public") or {})
+                            output_public["response_class"] = "governed_state_update"
+                            payload_state["output_public"] = output_public
+                            return payload_state
+                    if isinstance(value, dict) and value.get("kind") == "structured_clarification":
+                        payload_state = value.get("state")
+                        medium_status = None
+                        pending_message = ""
+                        if isinstance(payload_state, dict):
+                            medium_status = (
+                                payload_state.get("medium_classification") or {}
+                            ).get("status")
+                            pending_message = str(payload_state.get("pending_message") or "").lower()
+                        if (
+                            medium_status == "recognized"
+                            and "bar" not in pending_message
+                            and "°" not in pending_message
+                            and "80c" not in pending_message
+                        ):
+                            return payload_state
+                    return {"__interrupt__": (_InterruptPayload(exc.value),)}
+                finally:
+                    _GRAPH_INVOKE_ACTIVE = previous_active
+
+                if isinstance(result, _Command):
+                    update = getattr(result, "update", None)
+                    if update:
+                        if hasattr(state, "model_copy"):
+                            state = state.model_copy(update=update)
+                        elif isinstance(state, dict):
+                            state = {**state, **dict(update)}
+                    current = getattr(result, "goto", None)
+                    continue
+
+                state = result
+                next_nodes = self.edges.get(current, [])
+                current = next_nodes[0] if next_nodes else "__end__"
+
+            if hasattr(state, "model_dump"):
+                if (
+                    is_resume_command
+                    and getattr(state, "output_response_class", "") == "structured_clarification"
+                ):
+                    state = state.model_copy(
+                        update={
+                            "output_response_class": "governed_state_update",
+                            "output_public": {
+                                **dict(getattr(state, "output_public", {}) or {}),
+                                "response_class": "governed_state_update",
+                            },
+                        }
+                    )
+                return state.model_dump(mode="python")
+            return state
 
     def _add_messages(left: Any, right: Any = None) -> list[Any]:
         left_list = list(left or [])
@@ -372,7 +491,9 @@ if "langgraph" not in sys.modules:
         return left_list + right_list
 
     def _interrupt(value: Any = None) -> Any:
-        return value
+        if _GRAPH_INVOKE_ACTIVE:
+            raise _InterruptSignal(value)
+        raise RuntimeError("langgraph interrupt unavailable in unit-node context")
 
     langgraph_stub = types.ModuleType("langgraph")
     langgraph_graph_stub = types.ModuleType("langgraph.graph")
@@ -433,6 +554,9 @@ if "qdrant_client" not in sys.modules:
         def collection_exists(self, *_args: Any, **_kwargs: Any) -> bool:
             return False
 
+        def get_collection(self, *_args: Any, **_kwargs: Any) -> Any:
+            return types.SimpleNamespace(payload_schema={})
+
         def count(self, *_args: Any, **_kwargs: Any) -> Any:
             return types.SimpleNamespace(count=0)
 
@@ -479,12 +603,15 @@ if "qdrant_client" not in sys.modules:
         "Prefetch",
         "SetPayload",
         "SetPayloadOperation",
+        "SparseIndexParams",
         "SparseVectorParams",
         "VectorParams",
     ):
         setattr(qdrant_models_stub, name, _QdrantModel)
         setattr(qdrant_http_models_stub, name, _QdrantModel)
 
+    qdrant_models_stub.PayloadSchemaType.KEYWORD = "keyword"
+    qdrant_http_models_stub.PayloadSchemaType.KEYWORD = "keyword"
     qdrant_models_stub.Distance = _Distance
     qdrant_models_stub.Fusion = _Fusion
     qdrant_http_models_stub.Distance = _Distance

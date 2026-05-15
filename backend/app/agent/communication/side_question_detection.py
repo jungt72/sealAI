@@ -13,10 +13,13 @@ _KNOWLEDGE_PATTERNS: tuple[str, ...] = (
     r"\bwas\s+bedeutet\b",
     r"\bwas\s+heisst\b",
     r"\bwas\s+hei[ßs]t\b",
+    r"\bwas\s+kannst\s+du\s+(?:mir\s+)?(?:zu|ueber|über)\b",
+    r"\b(?:sag|sage|erz[aä]hl|erzaehl)\w*\s+(?:mir\s+)?(?:etwas\s+|mehr\s+)?(?:zu|ueber|über)\b",
     r"\bwas\s+versteht\s+man\s+unter\b",
     r"\berkl[äa]r",
     r"\bwie\s+funktioniert\b",
     r"\bkannst\s+du.*erkl[äa]ren\b",
+    r"\b(?:vertr[aä]glich|vertraeglich|kompatibel|best[aä]ndig|bestaendig)\b",
 )
 
 _COMPARISON_PATTERNS: tuple[str, ...] = (

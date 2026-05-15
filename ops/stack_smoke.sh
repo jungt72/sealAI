@@ -36,11 +36,11 @@ dump_diagnostics() {
 
   echo
   echo "=== public backend health ==="
-  curl -k -i -sS --max-time 10 https://sealai.net/api/agent/health || true
+  curl -k -i -sS --max-time 10 https://sealingai.com/api/agent/health || true
 
   echo
   echo "=== keycloak oidc metadata ==="
-  curl -k -i -sS --max-time 10 https://auth.sealai.net/realms/sealAI/.well-known/openid-configuration || true
+  curl -k -i -sS --max-time 10 https://auth.sealingai.com/realms/sealAI/.well-known/openid-configuration || true
 
   echo
   echo "=== backend internal health ==="
@@ -164,14 +164,14 @@ http_get_with_retries() {
 
 check_public_backend_health() {
   http_get_with_retries \
-    "https://sealai.net/api/agent/health" \
+    "https://sealingai.com/api/agent/health" \
     '"status":"ok"' \
     "public backend health"
 }
 
 check_keycloak_oidc() {
   http_get_with_retries \
-    "https://auth.sealai.net/realms/sealAI/.well-known/openid-configuration" \
+    "https://auth.sealingai.com/realms/sealAI/.well-known/openid-configuration" \
     '"issuer"' \
     "keycloak oidc metadata"
 }

@@ -12,6 +12,8 @@ from app.agent.state.models import (
     GovernanceState,
     GovernedSessionState,
     MatchingState,
+    NormalizedParameter,
+    NormalizedState,
     PendingQuestion,
 )
 from app.api.v1.projections.case_workspace import (
@@ -72,7 +74,7 @@ def test_workspace_projection_includes_clarification_communication_context() -> 
     assert projection.communication_context.turn_goal == "clarify_primary_open_point"
     assert (
         projection.communication_context.primary_question
-        == "Können Sie Betriebsdruck noch einordnen?"
+        == "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?"
     )
     assert projection.communication_context.supporting_reason is not None
     assert "Medium: Dampf" in projection.communication_context.confirmed_facts_summary
@@ -160,6 +162,77 @@ def test_workspace_projection_exposes_medium_context_as_separate_orienting_slice
     assert projection.medium_context.medium_label == "Salzwasser"
     assert projection.medium_context.scope == "orientierend"
     assert projection.medium_context.not_for_release_decisions is True
+
+
+def test_workspace_projection_exposes_v91_backend_owned_intelligence_tabs() -> None:
+    projection = project_case_workspace(
+        {
+            "conversation": {"thread_id": "case-v91-tabs"},
+            "working_profile": {
+                "engineering_profile": {
+                    "medium": "Salzwasser",
+                    "temperature_c": 85,
+                    "pressure_bar": 4,
+                },
+                "completeness": {
+                    "coverage_score": 0.5,
+                    "coverage_gaps": ["shaft_diameter_mm"],
+                    "missing_critical_parameters": ["shaft_diameter_mm"],
+                },
+            },
+            "reasoning": {"phase": "clarification", "state_revision": 9},
+            "system": {
+                "governance_metadata": {
+                    "release_status": "precheck_only",
+                    "unknowns_release_blocking": ["shaft_diameter_mm"],
+                },
+                "rfq_admissibility": {
+                    "release_status": "precheck_only",
+                    "status": "precheck_only",
+                    "blockers": ["shaft_diameter_mm"],
+                },
+                "medium_context": {
+                    "medium_label": "Salzwasser",
+                    "status": "available",
+                    "summary": "Salzwasser ist korrosiv relevant.",
+                    "properties": ["wasserbasiert", "salzhaltig"],
+                    "challenges": ["Korrosion"],
+                    "followup_points": ["Konzentration"],
+                },
+                "evidence_state": {
+                    "evidence_present": True,
+                    "evidence_count": 2,
+                    "source_backed_findings": ["PTFE Deep Research"],
+                    "evidence_gaps": ["Compound-Datenblatt fehlt"],
+                },
+                "matching_state": {},
+                "rfq_state": {},
+                "manufacturer_state": {},
+            },
+        }
+    )
+
+    v91_workspace = projection.v91_workspace
+
+    assert v91_workspace.intelligence_state.schema_version == "sealing_intelligence_v9_1"
+    assert v91_workspace.intelligence_state.case_revision == 9
+    assert v91_workspace.intelligence_state.overall_status == "review_needed"
+    assert v91_workspace.intelligence_state.medium.status == "available"
+    assert "wasserbasiert" in v91_workspace.intelligence_state.medium.signals
+    assert v91_workspace.intelligence_state.document.status == "documented"
+    assert "Compound-Datenblatt fehlt" in v91_workspace.intelligence_state.document.blockers
+    assert {tab.tab_id for tab in v91_workspace.tab_state} >= {
+        "overview",
+        "parameters",
+        "medium",
+        "material",
+        "challenge",
+        "documents",
+        "rfq",
+    }
+    parameter_tab = next(tab for tab in v91_workspace.tab_state if tab.tab_id == "parameters")
+    assert parameter_tab.next_action
+    assert parameter_tab.not_for_release_decisions is True
 
 
 def test_workspace_projection_exposes_live_calc_as_technical_derivation() -> None:
@@ -680,6 +753,120 @@ def test_governed_workspace_projection_reframes_after_linear_and_medium_correcti
     assert projection.partner_matching.matching_ready is False
 
 
+def test_governed_workspace_projection_uses_normalized_confirmed_temperature() -> None:
+    projection = project_case_workspace_from_governed_state(
+        GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="Salzsäure",
+                    ),
+                },
+                blocking_unknowns=["pressure_bar", "temperature_c"],
+            ),
+            normalized=NormalizedState(
+                parameters={
+                    "temperature_c": NormalizedParameter(
+                        field_name="temperature_c",
+                        value=120.0,
+                        unit="degC",
+                        confidence="confirmed",
+                    )
+                }
+            ),
+            governance=GovernanceState(
+                gov_class="B",
+                rfq_admissible=False,
+                open_validation_points=["pressure_bar", "temperature_c"],
+            ),
+        ),
+        chat_id="case-normalized-temp",
+    )
+
+    assert projection.parameters["temperature_c"] == 120.0
+    assert "temperature_c" not in projection.completeness.missing_critical_parameters
+    assert "temperature_c" not in projection.communication_context.open_points_summary
+    assert "temperature_c" not in projection.governance_status.unknowns_release_blocking
+    assert (
+        "temperature_c"
+        not in projection.governance_status.unknowns_manufacturer_validation
+    )
+    assert (
+        projection.communication_context.primary_question
+        == "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?"
+    )
+    assert projection.challenge_intelligence.next_best_question is not None
+    assert (
+        projection.challenge_intelligence.next_best_question.focus_key == "pressure_bar"
+    )
+
+
+def test_governed_workspace_projection_turns_challenge_into_manufacturer_questions() -> (
+    None
+):
+    projection = project_case_workspace_from_governed_state(
+        GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="Salzsäure",
+                    ),
+                    "medium_qualifiers": AssertedClaim(
+                        field_name="medium_qualifiers",
+                        asserted_value=["chemistry_detail"],
+                    ),
+                    "material": AssertedClaim(
+                        field_name="material",
+                        asserted_value="NBR",
+                    ),
+                    "sealing_type": AssertedClaim(
+                        field_name="sealing_type",
+                        asserted_value="Radialwellendichtring",
+                    ),
+                    "motion_type": AssertedClaim(
+                        field_name="motion_type",
+                        asserted_value="rotierend",
+                    ),
+                    "shaft_diameter_mm": AssertedClaim(
+                        field_name="shaft_diameter_mm",
+                        asserted_value=40,
+                    ),
+                    "speed_rpm": AssertedClaim(
+                        field_name="speed_rpm",
+                        asserted_value=3000,
+                    ),
+                    "temperature_c": AssertedClaim(
+                        field_name="temperature_c",
+                        asserted_value=120,
+                    ),
+                },
+                blocking_unknowns=["pressure_bar"],
+            ),
+            governance=GovernanceState(
+                gov_class="B",
+                rfq_admissible=False,
+                open_validation_points=["pressure_bar"],
+            ),
+        ),
+        chat_id="case-challenge-rfq",
+    )
+
+    mandatory = " ".join(projection.manufacturer_questions.mandatory)
+    assert "Welcher Druck oder welche Druckdifferenz" in mandatory
+    assert "NBR wirkt im bekannten Chemiefenster" in mandatory
+    assert "Aggressives Medium braucht Konzentration" in mandatory
+    assert "geeignet" not in mandatory.casefold()
+    assert "freigegeben" not in mandatory.casefold()
+    assert projection.manufacturer_questions.total_open >= 3
+    assert projection.manufacturer_questions.open_questions[0]["category"] == (
+        "next_best_question"
+    )
+    assert projection.rfq_package.manufacturer_questions_mandatory
+    assert projection.partner_matching.open_manufacturer_questions
+
+
 def test_governed_workspace_projection_exposes_evidence_basis_classes() -> None:
     projection = project_case_workspace_from_governed_state(
         GovernedSessionState(
@@ -909,7 +1096,9 @@ def test_governed_workspace_projection_exposes_stale_derived_values() -> None:
     )
 
 
-def test_governed_workspace_projection_includes_durable_rfq_readiness_projection() -> None:
+def test_governed_workspace_projection_includes_durable_rfq_readiness_projection() -> (
+    None
+):
     expected = _rfq_readiness_contract_fixture()
     state = GovernedSessionState(
         pending_question=PendingQuestion(
@@ -958,7 +1147,9 @@ def test_governed_workspace_projection_includes_durable_rfq_readiness_projection
     assert "preview_id" not in payload
 
 
-def test_workspace_projection_preserves_rfq_readiness_contract_fixture_from_state_json() -> None:
+def test_workspace_projection_preserves_rfq_readiness_contract_fixture_from_state_json() -> (
+    None
+):
     expected = _rfq_readiness_contract_fixture()
     projection = project_case_workspace(
         {

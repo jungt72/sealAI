@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import type { WorkspaceRfqReadinessProjection } from "./contracts/workspace.ts";
 import { buildStreamWorkspaceView } from "./streamWorkspace.ts";
 
 const RFQ_READINESS_CONTRACT_FIXTURE = new URL(
@@ -9,10 +10,10 @@ const RFQ_READINESS_CONTRACT_FIXTURE = new URL(
   import.meta.url,
 );
 
-function rfqReadinessContractFixture(): Record<string, unknown> {
+function rfqReadinessContractFixture(): WorkspaceRfqReadinessProjection {
   return JSON.parse(
     readFileSync(RFQ_READINESS_CONTRACT_FIXTURE, "utf8"),
-  ) as Record<string, unknown>;
+  ) as WorkspaceRfqReadinessProjection;
 }
 
 test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
@@ -109,6 +110,43 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
         not_for_release_decisions: true,
         disclaimer: "Allgemeiner Medium-Kontext, nicht als Freigabe.",
       },
+      v92: {
+        seal_system: {
+          status: "ready",
+          seal_family: "rotary_shaft",
+          seal_type: "radial_shaft_seal",
+          missing_fields: [],
+          validity_boundaries: ["no release"],
+        },
+        engineering: {
+          status: "ready",
+          route: "radial_shaft_seal",
+          next_best_engineering_action: "review_engineering_dossier",
+          blockers: [],
+        },
+        calculations: {
+          status: "ready",
+          result_count: 1,
+          blocked_calculations: [],
+          guardrail_violations: [],
+        },
+        standards: {
+          status: "partial",
+          registry_version: "standards_registry_metadata_v1",
+          applicable_count: 1,
+          blocking_gaps: ["norm:field"],
+          claim_boundary: "metadata only",
+        },
+        dossier: {
+          status: "partial",
+          dossier_id: "rfq-dossier-v92-case-123",
+          fact_count: 4,
+          calculation_count: 1,
+          candidate_count: 1,
+          blockers: ["norm:field"],
+          no_final_technical_release: true,
+        },
+      },
     },
   });
 
@@ -125,6 +163,9 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.ui.medium_classification.canonical_label, "Salzwasser");
   assert.equal(view.ui.medium_classification.family, "waessrig_salzhaltig");
   assert.equal(view.ui.medium_context.medium_label, "Salzwasser");
+  assert.equal(view.ui.v92.seal_system?.seal_type, "radial_shaft_seal");
+  assert.equal(view.ui.v92.engineering?.next_best_engineering_action, "review_engineering_dossier");
+  assert.equal(view.ui.v92.dossier?.no_final_technical_release, true);
   assert.equal(view.turnContext?.conversationPhase, "clarification");
   assert.deepEqual(view.turnContext?.confirmedFactsSummary, ["Medium: Dampf"]);
   assert.equal(view.rfqReadinessProjection?.preview_action_name, "create_rfq_preview");
@@ -157,5 +198,7 @@ test("buildStreamWorkspaceView fills missing ui sections conservatively", () => 
   assert.equal(view.ui.rfq.dispatch_status, "pending");
   assert.equal(view.ui.medium_classification.status, "unavailable");
   assert.equal(view.ui.medium_context.status, "unavailable");
+  assert.equal(view.ui.v92.seal_system?.status, "pending");
+  assert.equal(view.ui.v92.dossier?.no_final_technical_release, false);
   assert.equal(view.rfqReadinessProjection, null);
 });

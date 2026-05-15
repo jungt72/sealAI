@@ -39,9 +39,12 @@ from app.agent.api.utils import (
     _with_case_event,
 )
 from app.agent.domain.critical_review import (
+    CriticalReviewGovernanceSummary,
+    CriticalReviewRfqBasis,
     CriticalReviewRecommendationPackage,
     CriticalReviewMatchingPackage,
     CriticalReviewSpecialistInput,
+    CriticalReviewSpecialistResult,
     run_critical_review_specialist,
     critical_review_result_to_dict,
 )
@@ -69,49 +72,135 @@ def _build_review_handover_response(
     state: AgentState,
     *,
     session_id: str,
-    outcome: Optional[CriticalReviewRecommendationPackage | CriticalReviewMatchingPackage] = None,
+    action: str,
+    outcome: Optional[CriticalReviewSpecialistResult] = None,
 ) -> ReviewResponse:
-    reply = "Die technische Überprüfung wurde abgeschlossen."
-    if isinstance(outcome, CriticalReviewRecommendationPackage):
-        reply = outcome.recommendation_text
-    elif isinstance(outcome, CriticalReviewMatchingPackage):
-        reply = f"Passender Hersteller identifiziert: {outcome.manufacturer_id}"
-
-    case_state = state.get("case_state") or {}
+    passed = bool(outcome and outcome.critical_review_passed)
+    review_state = (
+        "approved_scope"
+        if passed
+        else ("changes_required" if action == "approve" else "rejected")
+    )
+    release_status = "inquiry_ready" if passed else "inadmissible"
+    reply = (
+        "Die technische Überprüfung ist für den definierten Anfrageumfang freigegeben."
+        if passed
+        else "Die technische Überprüfung ist noch nicht freigegeben; offene Punkte bleiben sichtbar."
+    )
     return ReviewResponse(
         session_id=session_id,
-        **build_public_response_core(
-            reply=reply,
-            structured_state={
-                "view": project_for_ui(state.get("working_profile") or {}),
-                "narrative": build_visible_case_narrative(
-                    state=state,
-                    case_state=case_state,
-                    binding_level="CERTIFIED",
-                    policy_context={"policy_path": "review", "phase": "review_complete"},
-                ),
-            },
-            policy_path="review",
-            run_meta={
-                "review_outcome": critical_review_result_to_dict(outcome) if outcome else None,
-                "projection_version": PROJECTION_VERSION,
-            },
-        ),
+        action=action,
+        review_state=review_state,
+        release_status=release_status,
+        is_handover_ready=passed,
+        handover={
+            "critical_review": (
+                critical_review_result_to_dict(outcome) if outcome is not None else None
+            ),
+            "projection_version": PROJECTION_VERSION,
+        },
+        reply=reply,
     )
 
-def _is_review_handover_releasable(
-    outcome: Optional[CriticalReviewRecommendationPackage | CriticalReviewMatchingPackage],
-) -> bool:
-    if isinstance(outcome, CriticalReviewRecommendationPackage):
-        return outcome.is_releasable
-    return False
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_tuple(value: Any) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple, set)):
+        return tuple(str(item) for item in value if item is not None and str(item).strip())
+    if value is None or value == "":
+        return ()
+    return (str(value),)
+
+
+def _build_critical_review_input(
+    state: AgentState,
+    *,
+    review_required: bool,
+) -> CriticalReviewSpecialistInput:
+    case_state = _as_dict(state.get("case_state"))
+    governance_state = _as_dict(
+        state.get("governance_state")
+        or case_state.get("governance_state")
+        or case_state.get("governance")
+    )
+    rfq_state = _as_dict(
+        state.get("rfq_state") or case_state.get("rfq_state") or case_state.get("rfq")
+    )
+    matching_state = _as_dict(
+        state.get("matching_state")
+        or case_state.get("matching_state")
+        or case_state.get("matching")
+    )
+    requirement_class = _as_dict(
+        case_state.get("requirement_class")
+        or (case_state.get("result_contract") or {}).get("requirement_class")
+        or rfq_state.get("requirement_class")
+    )
+    selected_manufacturer = _as_dict(
+        matching_state.get("selected_manufacturer_ref")
+        or rfq_state.get("selected_manufacturer_ref")
+    )
+    rfq_admissibility = str(
+        governance_state.get("rfq_admissibility")
+        or rfq_state.get("rfq_admissibility")
+        or ("ready" if rfq_state.get("rfq_ready") is True else "inadmissible")
+    )
+    release_status = str(
+        governance_state.get("release_status")
+        or ("inquiry_ready" if rfq_admissibility == "ready" else "inadmissible")
+    )
+    return CriticalReviewSpecialistInput(
+        governance_summary=CriticalReviewGovernanceSummary(
+            release_status=release_status,
+            rfq_admissibility=rfq_admissibility,
+            unknowns_release_blocking=_as_tuple(
+                governance_state.get("unknowns_release_blocking")
+                or rfq_state.get("unknowns_release_blocking")
+            ),
+            unknowns_manufacturer_validation=_as_tuple(
+                governance_state.get("unknowns_manufacturer_validation")
+                or rfq_state.get("open_points")
+            ),
+            scope_of_validity=_as_tuple(
+                governance_state.get("scope_of_validity")
+                or governance_state.get("validity_limits")
+            ),
+            conflicts=_as_tuple(governance_state.get("conflicts")),
+            review_required=review_required,
+        ),
+        recommendation_package=CriticalReviewRecommendationPackage(
+            requirement_class=requirement_class or None,
+        ),
+        matching_package=CriticalReviewMatchingPackage(
+            status=str(
+                matching_state.get("status")
+                or rfq_state.get("matching_status")
+                or ""
+            ),
+            selected_manufacturer_ref=selected_manufacturer or None,
+        ),
+        rfq_basis=CriticalReviewRfqBasis(
+            rfq_object=_as_dict(rfq_state.get("rfq_object")) or None,
+            recipient_refs=tuple(
+                ref
+                for ref in (
+                    _as_dict(item)
+                    for item in list(rfq_state.get("recipient_refs") or [])
+                    if isinstance(item, dict)
+                )
+                if ref
+            ),
+        ),
+    )
 
 def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentState:
     from copy import deepcopy # noqa: PLC0415
     new_state = deepcopy(state)
     case_state = new_state.get("case_state") or {}
     case_meta = case_state.get("case_meta") or {}
-    case_meta["lifecycle_status"] = "review_completed"
+    case_meta["lifecycle_status"] = "review_completed" if request.action == "approve" else "review_rejected"
     case_state["case_meta"] = case_meta
     new_state["case_state"] = case_state
     return new_state
@@ -134,12 +223,12 @@ async def review_endpoint(
     state = await require_structured_review_state(current_user=current_user, session_id=request.session_id)
 
     outcome = None
-    if request.decision == "approve":
-        specialist_input = CriticalReviewSpecialistInput(
-            comment=request.comment or "Approved by engineering review",
-            reviewer_id=current_user.user_id or "human_reviewer",
+    if request.action == "approve":
+        specialist_input = _build_critical_review_input(
+            state,
+            review_required=False,
         )
-        outcome = await run_critical_review_specialist(state, specialist_input)
+        outcome = run_critical_review_specialist(specialist_input)
 
         if outcome:
             await _persist_review_outcome_to_live_governed_state(
@@ -147,7 +236,11 @@ async def review_endpoint(
                 session_id=request.session_id,
                 case_state=state.get("case_state"),
                 sealing_state=state,
-                assistant_reply=outcome.recommendation_text if isinstance(outcome, CriticalReviewRecommendationPackage) else None,
+                assistant_reply=(
+                    "Die technische Überprüfung ist abgeschlossen."
+                    if outcome.critical_review_passed
+                    else "Die technische Überprüfung ist blockiert; Korrekturen bleiben offen."
+                ),
             )
             # Re-load or overlay if needed, but the contract just needs to persist it
 
@@ -161,12 +254,18 @@ async def review_endpoint(
     return _build_review_handover_response(
         updated_state,
         session_id=request.session_id,
+        action=request.action,
         outcome=outcome,
     )
 
 @router.post("/review/seed", response_model=ReviewSeedResponse)
 async def review_seed_endpoint() -> ReviewSeedResponse:
-    return ReviewSeedResponse(status="ok")
+    return ReviewSeedResponse(
+        session_id="seed",
+        review_state="none",
+        release_status="inadmissible",
+        review_reason="seed_endpoint_available",
+    )
 
 @router.patch("/session/{session_id}/override", response_model=OverrideResponse)
 async def session_override_endpoint(

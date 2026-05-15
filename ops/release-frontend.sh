@@ -8,6 +8,36 @@ NODE_BIN="${NODE_BIN:-/usr/bin/node}"
 NPM_BIN="${NPM_BIN:-/usr/bin/npm}"
 export PATH="$(dirname "${NODE_BIN}"):${PATH}"
 
+echo ">> Preparing production build environment"
+awk -F= '
+  BEGIN {
+    wanted["NEXT_PUBLIC_SITE_URL"] = 1
+    wanted["NEXT_PUBLIC_ANALYTICS_ENABLED"] = 1
+    wanted["NEXT_PUBLIC_GTM_ID"] = 1
+    wanted["NEXT_PUBLIC_GA_MEASUREMENT_ID"] = 1
+    wanted["NEXT_PUBLIC_GOOGLE_CONSENT_DEFAULT"] = 1
+    wanted["SITE_URL"] = 1
+    wanted["NEXT_PUBLIC_API_BASE"] = 1
+    wanted["NEXTAUTH_URL"] = 1
+    wanted["AUTH_URL"] = 1
+    wanted["AUTH_TRUST_HOST"] = 1
+    wanted["KEYCLOAK_ISSUER"] = 1
+    wanted["SEALAI_BACKEND_ORIGIN"] = 1
+  }
+  /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+  {
+    key = $1
+    sub(/^[[:space:]]+/, "", key)
+    sub(/[[:space:]]+$/, "", key)
+    if (wanted[key]) print
+  }
+' "${REPO_ROOT}/.env.prod" > .env.production.local
+
+if grep -q 'sealai\.net' .env.production.local; then
+  echo "!! Refusing to build frontend with legacy sealai.net values in .env.production.local"
+  exit 1
+fi
+
 echo ">> Using Node runtime"
 "${NODE_BIN}" -v
 "${NPM_BIN}" -v
@@ -26,7 +56,8 @@ else
 fi
 
 pm2 delete sealai-frontend 2>/dev/null || true
-PORT=3000 pm2 start .next/standalone/server.js --name sealai-frontend --interpreter "${NODE_BIN}"
+NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-$(date +%Y%m%d%H%M%S)}" \
+  pm2 start ecosystem.config.js --only sealai-frontend --update-env
 pm2 save
 
 echo ">> Flushing old logs"
@@ -52,7 +83,7 @@ pm2 list
 
 if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
   echo ">> Running live pilot readiness smoke"
-  BASE_URL="${BASE_URL:-https://sealai.net}" "${REPO_ROOT}/ops/smoke-live-pilot-readiness.sh"
+  BASE_URL="${BASE_URL:-https://sealingai.com}" "${REPO_ROOT}/ops/smoke-live-pilot-readiness.sh"
 else
   echo ">> Live pilot readiness smoke skipped by SKIP_LIVE_SMOKE=1"
 fi

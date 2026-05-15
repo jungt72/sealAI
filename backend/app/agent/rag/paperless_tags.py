@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 PAPERLESS_TAG_PREFIXES: dict[str, str] = {
@@ -20,8 +21,11 @@ PAPERLESS_RAG_ENABLE_TAGS: frozenset[str] = frozenset(
         "rag:enable",
         "rag:yes",
         "sealai:rag",
+        "sealingai:rag",
         "sealai-rag",
         "sealai_rag",
+        "sealingai-rag",
+        "sealingai_rag",
     }
 )
 
@@ -36,6 +40,29 @@ PAPERLESS_PILOT_TAGS: tuple[str, ...] = (
 
 PAPERLESS_PILOT_FIELDS: tuple[str, ...] = ("doc_type", "sts_mat", "sts_type", "lang", "source")
 PAPERLESS_INGEST_BASIS_FIELDS: tuple[str, ...] = ("sts_mat", "sts_type", "sts_med", "sts_rs")
+
+_SMART_MATERIAL_TAGS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("STS-MAT-HNBR-A1", ("hnbr", "hydrierter nitrilkautschuk")),
+    ("STS-MAT-FFKM-A1", ("ffkm",)),
+    ("STS-MAT-PTFE-A1", ("ptfe", "teflon")),
+    ("STS-MAT-EPDM-A1", ("epdm",)),
+    ("STS-MAT-FKM-A1", ("fkm", "viton")),
+    ("STS-MAT-NBR-A1", ("nbr", "nitril", "nitrilkautschuk", "buna-n", "buna n", "perbunan")),
+    ("STS-MAT-SIC-A1", ("sic", "siliciumcarbid", "silicon carbide")),
+)
+
+_TECHNICAL_KNOWLEDGE_HINTS = (
+    "deep research",
+    "research",
+    "report",
+    "fachwissen",
+    "grundlagen",
+    "guide",
+    "application note",
+    "whitepaper",
+    "technical knowledge",
+)
+_DATASHEET_HINTS = ("datasheet", "datenblatt", "data sheet", "werkstoffdatenblatt")
 
 
 def _coerce_tags(raw_tags: Any) -> list[str]:
@@ -76,6 +103,63 @@ def _values_for_prefix(tags: list[str], prefix: str) -> list[str]:
 def has_paperless_rag_flag(raw_tags: Any) -> bool:
     tags = _coerce_tags(raw_tags)
     return any(tag.strip().lower() in PAPERLESS_RAG_ENABLE_TAGS for tag in tags)
+
+
+def _has_prefix(tags: list[str], prefix: str) -> bool:
+    prefix_lower = prefix.lower()
+    return any(tag.lower().startswith(prefix_lower) for tag in tags)
+
+
+def _append_tag(tags: list[str], value: str) -> None:
+    lowered = value.lower()
+    if lowered not in {tag.lower() for tag in tags}:
+        tags.append(value)
+
+
+def _contains_token(haystack: str, token: str) -> bool:
+    escaped = re.escape(token)
+    if re.search(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", haystack):
+        return True
+    return token in haystack
+
+
+def augment_paperless_tags_for_rag(
+    raw_tags: Any,
+    *,
+    title: str | None = None,
+    filename: str | None = None,
+) -> list[str]:
+    """Infer safe RAG routing tags from Paperless metadata.
+
+    The user-facing workflow should stay simple: one explicit RAG enable tag is
+    enough. We only add conservative, transparent metadata that can be inferred
+    from title/filename. The explicit RAG flag remains mandatory.
+    """
+    tags = _coerce_tags(raw_tags)
+    if not has_paperless_rag_flag(tags):
+        return tags
+
+    text = f"{title or ''} {filename or ''}".strip().lower()
+
+    if not _has_prefix(tags, PAPERLESS_TAG_PREFIXES["doc_type"]):
+        if any(hint in text for hint in _DATASHEET_HINTS):
+            _append_tag(tags, "doc_type:datasheet")
+        else:
+            _append_tag(tags, "doc_type:technical_knowledge")
+
+    if not any(tag.lower().startswith(("route:", "ingest_route:")) for tag in tags):
+        if any(hint in text for hint in _DATASHEET_HINTS):
+            _append_tag(tags, "route:material_datasheet")
+        elif any(hint in text for hint in _TECHNICAL_KNOWLEDGE_HINTS):
+            _append_tag(tags, "route:technical_knowledge")
+
+    if not _has_prefix(tags, PAPERLESS_TAG_PREFIXES["sts_mat"]):
+        for code, aliases in _SMART_MATERIAL_TAGS:
+            if any(_contains_token(text, alias) for alias in aliases):
+                _append_tag(tags, f"sts_mat:{code}")
+                break
+
+    return tags
 
 
 def parse_paperless_tags(raw_tags: Any) -> dict[str, Any]:

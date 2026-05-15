@@ -278,6 +278,14 @@ def test_phase_1_mvp_journey_builds_frozen_rfq_preview_without_dispatch() -> Non
     assert payload["consent_boundary"]["open_points_acknowledgement_required"] is True
     assert payload["consent_boundary"]["no_final_release_acknowledgement_required"] is True
     assert payload["consent_boundary"]["export_intent_acknowledgement_required"] is True
+    v91_projection = payload["rfq_preview"]["v91_rfq_projection"]
+    assert v91_projection["schema_version"] == "sealingai_rfq_projection_v9_1"
+    assert v91_projection["no_final_technical_release"] is True
+    assert v91_projection["dispatch_enabled"] is False
+    assert v91_projection["external_contact_allowed"] is False
+    assert "shaft_surface_finish" in v91_projection["open_blockers"]
+    assert v91_projection["question_plan"]["max_questions_this_turn"] == 1
+    assert "finale Freigabe" in v91_projection["claim_boundary"]["forbidden"]
 
     sections = payload["rfq_preview"]["sections"]
     assert [section["title"] for section in sections] == list(RFQ_PREVIEW_SECTIONS)

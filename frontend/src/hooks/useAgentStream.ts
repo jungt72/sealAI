@@ -6,6 +6,8 @@ import type {
   AgentStreamRequest,
   AgentStateUpdateEvent,
 } from "@/lib/contracts/agent";
+import { appendAssistantText, normalizeAssistantMarkdown } from "@/lib/assistantText";
+import { trackSeoEvent } from "@/lib/analytics/events";
 import { buildStreamWorkspaceView, type StreamWorkspaceView } from "@/lib/streamWorkspace";
 
 export type ChatMessage = {
@@ -16,6 +18,26 @@ export type ChatMessage = {
   /** ISO timestamp of when the message was added (optional, for display) */
   timestamp?: string;
 };
+
+function streamProgressText(data: unknown): string {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return "SealingAI prüft den Fall...";
+  }
+  const eventType = String((data as Record<string, unknown>).event_type || "");
+  if (eventType === "evidence_retrieved") {
+    return "SealingAI prüft passende Quellen...";
+  }
+  if (eventType === "compute_complete") {
+    return "SealingAI rechnet prüfbare Kenngrößen...";
+  }
+  if (eventType === "challenge_ready") {
+    return "SealingAI bewertet technische Risiken...";
+  }
+  if (eventType === "governance_ready") {
+    return "SealingAI formuliert die Antwort...";
+  }
+  return "SealingAI prüft den Fall...";
+}
 
 type UseAgentStreamOptions = {
   initialCaseId?: string;
@@ -66,10 +88,81 @@ function visibleAnswerTrace(
   };
 }
 
+function isHistoryMessage(value: unknown): value is { role: "user" | "assistant"; content: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const message = value as Record<string, unknown>;
+  return (
+    (message.role === "user" || message.role === "assistant") &&
+    typeof message.content === "string"
+  );
+}
+
+function parseHistoryMessages(data: unknown): ChatMessage[] {
+  const messages = Array.isArray(data)
+    ? data
+    : data && typeof data === "object" && Array.isArray((data as { messages?: unknown }).messages)
+      ? (data as { messages: unknown[] }).messages
+      : [];
+
+  return messages
+    .filter(isHistoryMessage)
+    .map((message) => ({ role: message.role, content: message.content }));
+}
+
+function rawErrorText(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return rawErrorText(record.message || record.detail || record.code);
+  }
+  return String(value);
+}
+
+function parseNestedJsonError(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return trimmed;
+  }
+  try {
+    return rawErrorText(JSON.parse(trimmed)) || trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+function userVisibleStreamError(value: unknown, status?: number): string {
+  const parsed = parseNestedJsonError(rawErrorText(value));
+  const lowered = parsed.toLowerCase();
+  if (
+    status === 401 ||
+    status === 403 ||
+    lowered.includes("token_expired") ||
+    lowered.includes("refresh token") ||
+    lowered.includes("unauthorized")
+  ) {
+    return "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.";
+  }
+  if (lowered.includes("method not allowed")) {
+    return "Die Anfrage konnte nicht gesendet werden. Bitte lade die Seite neu und versuche es erneut.";
+  }
+  if (lowered.includes("agent stream failed") || lowered.includes("agent_stream_failed")) {
+    return "Die Antwort konnte gerade nicht geladen werden. Bitte versuche es erneut.";
+  }
+  if (!parsed || parsed.startsWith("{") || parsed.startsWith("[")) {
+    return "Die Antwort konnte gerade nicht geladen werden. Bitte versuche es erneut.";
+  }
+  return parsed;
+}
+
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const { initialCaseId, onCaseBound, onTurnComplete } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
+  const [streamingStatusText, setStreamingStatusText] = useState("");
   const [streamingAnswerSource, setStreamingAnswerSource] = useState<ChatMessage["answerSource"] | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,16 +178,24 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const noCaseTurnRef = useRef(false);
   const finalAssistantAnswerSourceRef = useRef<ChatMessage["answerSource"] | null>(null);
   const finalAssistantAnswerTraceRef = useRef<AgentAnswerTrace | null>(null);
+  const trackedCaseIdsRef = useRef<Set<string>>(new Set());
+
+  const trackCaseBound = useCallback((caseId: string, source: string) => {
+    if (trackedCaseIdsRef.current.has(caseId)) {
+      return;
+    }
+    trackedCaseIdsRef.current.add(caseId);
+    trackSeoEvent("case_started", { case_id: caseId, source });
+    trackSeoEvent("rfq_started", { case_id: caseId, source: "agent_chat" });
+  }, []);
 
   const fetchHistory = useCallback(async (caseId: string) => {
     const response = await fetch(`/api/bff/agent/chat/history/${encodeURIComponent(caseId)}`);
     if (!response.ok) {
       return [];
     }
-    const data = (await response.json()) as { messages?: Array<{ role: string; content: string }> } | null;
-    return (data?.messages ?? [])
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+    const data = await response.json();
+    return parseHistoryMessages(data);
   }, []);
 
   const syncHistory = useCallback(
@@ -159,7 +260,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
       return;
     }
 
-    const finalText = finalAssistantTextRef.current.trim();
+    const finalText = normalizeAssistantMarkdown(finalAssistantTextRef.current).trim();
     const answerSource = finalAssistantAnswerSourceRef.current || undefined;
     const answerTrace = finalAssistantAnswerTraceRef.current;
     finalizedRequestIdRef.current = requestId;
@@ -167,6 +268,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     finalAssistantAnswerSourceRef.current = null;
     finalAssistantAnswerTraceRef.current = null;
     setStreamingText("");
+    setStreamingStatusText("");
     setStreamingAnswerSource(null);
 
     if (!finalText) {
@@ -202,6 +304,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
       setMessages((current) => [...current, { role: "user", content: trimmed, timestamp: new Date().toISOString() }]);
       setStreamingText("");
+      setStreamingStatusText("SealingAI prüft den Fall...");
       setStreamingAnswerSource(null);
       finalAssistantTextRef.current = "";
       finalAssistantAnswerSourceRef.current = null;
@@ -235,9 +338,12 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
             }
 
             const body = await response.json().catch(() => ({}));
-            const message =
-              body?.error?.message ||
-              `Agent stream could not be opened (${response.status}).`;
+            const message = userVisibleStreamError(
+              (body as { error?: { message?: unknown }; detail?: unknown })?.error?.message ||
+                (body as { detail?: unknown })?.detail ||
+                `Agent stream could not be opened (${response.status}).`,
+              response.status,
+            );
             setError(message);
             throw new Error(message);
           },
@@ -251,6 +357,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
             if (event.data === "[DONE]") {
               setIsStreaming(false);
+              setStreamingStatusText("");
               if (latestCaseIdRef.current && !noCaseTurnRef.current) {
                 void syncHistory(latestCaseIdRef.current);
               }
@@ -268,16 +375,38 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
             if (type === "case_bound" && typeof payload.caseId === "string") {
               latestCaseIdRef.current = payload.caseId;
               setActiveCaseId(payload.caseId);
+              trackCaseBound(payload.caseId, "case_bound_event");
               onCaseBound?.(payload.caseId);
               return;
             }
 
             if (type === "text_chunk" && typeof payload.text === "string") {
-              finalAssistantTextRef.current += payload.text;
+              finalAssistantTextRef.current = appendAssistantText(
+                finalAssistantTextRef.current,
+                payload.text,
+              );
               finalAssistantAnswerSourceRef.current = "text_chunk";
               finalAssistantAnswerTraceRef.current = unknownAnswerTrace("text_chunk");
-              setStreamingText(finalAssistantTextRef.current);
+              setStreamingStatusText("");
+              setStreamingText(normalizeAssistantMarkdown(finalAssistantTextRef.current));
               setStreamingAnswerSource("text_chunk");
+              return;
+            }
+
+            if (type === "text_reset") {
+              finalAssistantTextRef.current = "";
+              finalAssistantAnswerSourceRef.current = "text_chunk";
+              finalAssistantAnswerTraceRef.current = unknownAnswerTrace("text_chunk");
+              setStreamingStatusText("SealingAI schärft die Antwort...");
+              setStreamingText("");
+              setStreamingAnswerSource("text_chunk");
+              return;
+            }
+
+            if (type === "progress") {
+              if (!finalAssistantTextRef.current) {
+                setStreamingStatusText(streamProgressText(payload.data));
+              }
               return;
             }
 
@@ -286,12 +415,13 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               const answerMarkdown =
                 typeof stateUpdate.answer_markdown === "string" ? stateUpdate.answer_markdown.trim() : "";
               const reply = typeof stateUpdate.reply === "string" ? stateUpdate.reply : "";
-              const assistantText = answerMarkdown || reply;
+              const assistantText = normalizeAssistantMarkdown(answerMarkdown || reply);
               if (assistantText) {
                 const answerSource = answerMarkdown ? "answer_markdown" : "reply";
                 finalAssistantTextRef.current = assistantText;
                 finalAssistantAnswerSourceRef.current = answerSource;
                 finalAssistantAnswerTraceRef.current = visibleAnswerTrace(stateUpdate.runMeta, answerSource);
+                setStreamingStatusText("");
                 setStreamingText(assistantText);
                 setStreamingAnswerSource(answerSource);
               }
@@ -304,6 +434,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               noCaseTurnRef.current = false;
               const streamCaseId = stateUpdate.caseId;
               if (latestCaseIdRef.current !== streamCaseId) {
+                trackCaseBound(streamCaseId, "state_update");
                 onCaseBound?.(streamCaseId);
               }
               latestCaseIdRef.current = streamCaseId;
@@ -315,14 +446,16 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               return;
             }
 
-            if (type === "error" && typeof payload.message === "string") {
-              setError(payload.message);
+            if (type === "error") {
+              setError(userVisibleStreamError(payload.message || payload));
+              setStreamingStatusText("");
               setIsStreaming(false);
             }
           },
           onclose() {
             if (streamRequestIdRef.current === requestId) {
               setIsStreaming(false);
+              setStreamingStatusText("");
               if (latestCaseIdRef.current && !noCaseTurnRef.current) {
                 void syncHistory(latestCaseIdRef.current);
               }
@@ -330,7 +463,8 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
           },
           onerror(error) {
             if (streamRequestIdRef.current === requestId) {
-              setError(error instanceof Error ? error.message : "Agent stream failed.");
+              setError(userVisibleStreamError(error));
+              setStreamingStatusText("");
               setIsStreaming(false);
             }
             throw error;
@@ -341,7 +475,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
         setIsStreaming(false);
       }
     },
-    [activeCaseId, finalizeAssistantTurn, isStreaming, onCaseBound, syncHistory],
+    [activeCaseId, finalizeAssistantTurn, isStreaming, onCaseBound, syncHistory, trackCaseBound],
   );
 
   const cancelStream = useCallback(() => {
@@ -353,6 +487,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     finalAssistantAnswerTraceRef.current = null;
     noCaseTurnRef.current = false;
     setStreamingText("");
+    setStreamingStatusText("");
     setStreamingAnswerSource(null);
     setIsStreaming(false);
   }, []);
@@ -365,6 +500,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     cancelStream();
     setMessages([]);
     setStreamingText("");
+    setStreamingStatusText("");
     setStreamingAnswerSource(null);
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
@@ -378,6 +514,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     activeCaseId,
     messages,
     streamingText,
+    streamingStatusText,
     streamingAnswerSource,
     streamWorkspace,
     isStreaming,

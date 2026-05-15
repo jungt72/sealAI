@@ -75,7 +75,7 @@ describe("mediumStatusView", () => {
           disclaimer: null,
         },
       },
-    } as StreamWorkspaceView);
+    } as unknown as StreamWorkspaceView);
 
     const workspaceView = buildMediumStatusViewFromWorkspace({
       mediumClassification: {
@@ -95,7 +95,7 @@ describe("mediumStatusView", () => {
         sourceTurnRef: "turn:1",
         sourceTurnIndex: 1,
       },
-    } as WorkspaceView);
+    } as unknown as WorkspaceView);
 
     expect(streamView).toMatchObject({
       status: "recognized",
@@ -126,7 +126,7 @@ describe("mediumStatusView", () => {
         sourceTurnRef: "turn:2",
         sourceTurnIndex: 2,
       },
-    } as WorkspaceView);
+    } as unknown as WorkspaceView);
 
     expect(workspaceView.status).toBe("mentioned_unclassified");
     expect(workspaceView.label).toBe("XY-Compound 4711");

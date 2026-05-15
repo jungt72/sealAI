@@ -10,7 +10,32 @@ COMPOSE_ARGS=(
 )
 
 compose_prod() {
-  env -u BACKEND_IMAGE -u FRONTEND_IMAGE -u LANGCHAIN_TRACING_V2 -u LANGCHAIN_API_KEY -u LANGCHAIN_PROJECT docker compose "${COMPOSE_ARGS[@]}" "$@"
+  env \
+    -u BACKEND_IMAGE \
+    -u FRONTEND_IMAGE \
+    -u LANGSMITH_TRACING \
+    -u LANGSMITH_API_KEY \
+    -u LANGSMITH_PROJECT \
+    -u LANGSMITH_ENDPOINT \
+    -u SEALAI_TRACE_HASH_SALT \
+    -u LANGSMITH_TRACE_SALT \
+    -u LANGSMITH_CAPTURE_LLM_CONTENT \
+    -u LANGSMITH_TRACE_LANGGRAPH_CHILDREN \
+    -u LANGCHAIN_TRACING_V2 \
+    -u LANGCHAIN_API_KEY \
+    -u LANGCHAIN_PROJECT \
+    -u LANGCHAIN_ENDPOINT \
+    docker compose "${COMPOSE_ARGS[@]}" "$@"
+}
+
+set_env_key() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" .env.prod; then
+    sed -i "s|^${key}=.*|${key}=${value}|" .env.prod
+  else
+    printf '\n%s=%s\n' "${key}" "${value}" >> .env.prod
+  fi
 }
 
 SHA="$(git rev-parse HEAD)"
@@ -26,30 +51,46 @@ docker build \
   backend/
 
 echo ">> Pushing ${BACKEND_IMAGE_TAG}"
-PUSH_OUTPUT="$(docker push "${BACKEND_IMAGE_TAG}" 2>&1)"
-echo "${PUSH_OUTPUT}"
-
-BACKEND_DIGEST="$(echo "${PUSH_OUTPUT}" | grep -oP 'digest: \K\S+' | tail -1)"
-test -n "${BACKEND_DIGEST}"
-
-BACKEND_IMAGE_PINNED="${BACKEND_IMAGE_TAG}@${BACKEND_DIGEST}"
-echo ">> New pinned image: ${BACKEND_IMAGE_PINNED}"
-
 ROLLBACK_FILE=".env.prod.rollback-${TS}"
 cp .env.prod "${ROLLBACK_FILE}"
 echo ">> Rollback snapshot: ${ROLLBACK_FILE}"
 
-sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=${BACKEND_IMAGE_PINNED}|" .env.prod
+if PUSH_OUTPUT="$(docker push "${BACKEND_IMAGE_TAG}" 2>&1)"; then
+  echo "${PUSH_OUTPUT}"
+  BACKEND_DIGEST="$(echo "${PUSH_OUTPUT}" | grep -oP 'digest: \K\S+' | tail -1)"
+  test -n "${BACKEND_DIGEST}"
+
+  BACKEND_IMAGE_REF="${BACKEND_IMAGE_TAG}@${BACKEND_DIGEST}"
+  BACKEND_PULL_POLICY="always"
+  echo ">> New pinned image: ${BACKEND_IMAGE_REF}"
+else
+  echo "${PUSH_OUTPUT}" >&2
+  if [[ "${ALLOW_LOCAL_BACKEND_IMAGE_FALLBACK:-0}" != "1" ]]; then
+    echo "!! GHCR push failed. Fix package write permissions or rerun with ALLOW_LOCAL_BACKEND_IMAGE_FALLBACK=1 for this VPS-only deploy." >&2
+    exit 1
+  fi
+
+  BACKEND_IMAGE_REF="${BACKEND_IMAGE_TAG}"
+  BACKEND_PULL_POLICY="never"
+  echo "!! GHCR push failed; using VPS-local backend image fallback: ${BACKEND_IMAGE_REF}" >&2
+fi
+
+set_env_key BACKEND_IMAGE "${BACKEND_IMAGE_REF}"
+set_env_key BACKEND_PULL_POLICY "${BACKEND_PULL_POLICY}"
 
 echo ">> Validating pinned production refs"
-./ops/check-env-drift.sh prod
+if [[ "${BACKEND_PULL_POLICY}" == "always" ]]; then
+  ./ops/check-env-drift.sh prod
+else
+  echo "!! Skipping pinned-image drift gate for explicit local backend fallback"
+fi
 
-# Image ist lokal bereits getaggt — pull nur bei remote-only deploy nötig
 echo ">> Recreating backend only"
 compose_prod up -d --no-deps backend
 
-echo ">> Verifying image pin"
+echo ">> Verifying backend image ref"
 grep '^BACKEND_IMAGE=' .env.prod
+grep '^BACKEND_PULL_POLICY=' .env.prod
 compose_prod ps backend
 docker inspect backend --format '{{.Config.Image}}'
 
@@ -78,7 +119,7 @@ docker exec backend sh -lc "curl -fsS http://127.0.0.1:8000/health"
 
 if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
   echo ">> Running live pilot readiness smoke"
-  BASE_URL="${BASE_URL:-https://sealai.net}" ./ops/smoke-live-pilot-readiness.sh
+  BASE_URL="${BASE_URL:-https://sealingai.com}" ./ops/smoke-live-pilot-readiness.sh
 else
   echo ">> Live pilot readiness smoke skipped by SKIP_LIVE_SMOKE=1"
 fi

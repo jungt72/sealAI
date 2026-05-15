@@ -130,6 +130,8 @@ class KnowledgeCaseBridgeService:
         *,
         context: KnowledgeSessionContext | None = None,
     ) -> str | None:
+        if _is_simple_definition_question(turn_text):
+            return None
         signal = self.detect_transition_signal(turn_text, context=context)
         if signal.kind is not TransitionSignalKind.CONCRETE_CASE:
             return None
@@ -282,3 +284,21 @@ class KnowledgeCaseBridgeService:
         if context.explored_concepts:
             return ", ".join(context.explored_concepts[:3])
         return None
+
+
+def _is_simple_definition_question(text: str) -> bool:
+    normalized = str(text or "").casefold()
+    if not normalized.strip():
+        return False
+    if re.search(r"\d+(?:[.,]\d+)?\s*(mm|bar|rpm|u\.?/?min|c|grad)", normalized):
+        return False
+    if re.search(
+        r"\b(meine|mein|unsere|unser|ich\s+brauche|wir\s+brauchen|suche|benoetige|brauche)\b",
+        normalized,
+    ):
+        return False
+    return bool(
+        re.search(r"\bwas\s+ist\b", normalized)
+        or re.search(r"\bwas\s+bedeutet\b", normalized)
+        or re.search(r"\bwas\s+kannst\s+du\s+mir\s+zu\b", normalized)
+    )

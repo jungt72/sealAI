@@ -91,8 +91,30 @@ def test_meta_question_examples(classifier: PreGateClassifier, text: str) -> Non
 @pytest.mark.parametrize(
     "text",
     [
+        "Wetter morgen?",
+        "Wie ist das Wetter heute?",
+        "Schreibe mir eine E-Mail an den Lieferanten.",
+    ],
+)
+def test_non_sealing_utility_does_not_start_governed_case(
+    classifier: PreGateClassifier,
+    text: str,
+) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is PreGateClassification.META_QUESTION
+    assert result.reasoning == "deterministic_non_sealing_utility"
+    assert result.escalate_to_graph is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "Was ist der Unterschied zwischen FKM und PTFE?",
         "Erkläre mir Radialwellendichtringe.",
+        "Was kannst du mir zu NBR sagen?",
+        "Erzähl mir etwas über POM.",
+        "Bitte untersuche ob POM mit Klübersynth UH1 6-220 verträglich ist.",
         "What is PTFE?",
         "How does a radial shaft seal work?",
     ],
@@ -102,6 +124,24 @@ def test_knowledge_query_examples(classifier: PreGateClassifier, text: str) -> N
 
     assert result.classification is PreGateClassification.KNOWLEDGE_QUERY
     assert result.confidence > 0.7
+    assert result.escalate_to_graph is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ist EPDM für Hydrauliköl HLP46 bei 80 °C und 10 bar geeignet? Keine Freigabe, nur Einordnung.",
+        "Ist FKM bei Heißwasser kritisch? Nur grobe Einordnung.",
+    ],
+)
+def test_standalone_material_suitability_with_operating_values_stays_knowledge(
+    classifier: PreGateClassifier,
+    text: str,
+) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is PreGateClassification.KNOWLEDGE_QUERY
+    assert result.reasoning == "deterministic_material_suitability_knowledge"
     assert result.escalate_to_graph is False
 
 
@@ -130,6 +170,7 @@ def test_deep_dive_examples(classifier: PreGateClassifier, text: str) -> None:
         "Wir haben Leckage am Getriebe.",
         "I need a replacement seal for a pump.",
         "PTFE Dichtung für Welle prüfen.",
+        "Bitte prüfe eine Dichtung aus POM mit Klübersynth UH1 6-220 für meine Anlage.",
         "Pumpe mit Ethanol 150 °C und 10 bar.",
     ],
 )
@@ -138,6 +179,19 @@ def test_domain_inquiry_examples(classifier: PreGateClassifier, text: str) -> No
 
     assert result.classification is PreGateClassification.DOMAIN_INQUIRY
     assert result.confidence > 0.8
+    assert result.escalate_to_graph is True
+
+
+def test_concrete_material_comparison_with_case_values_routes_to_governed_graph(
+    classifier: PreGateClassifier,
+) -> None:
+    result = classifier.classify(
+        "RWDR für Hydrauliköl HLP46 bei 80 °C, 10 bar, Welle 40 mm, "
+        "1450 rpm. Ordne EPDM, FKM und NBR technisch ein."
+    )
+
+    assert result.classification is PreGateClassification.DOMAIN_INQUIRY
+    assert result.reasoning == "deterministic_domain_inquiry"
     assert result.escalate_to_graph is True
 
 

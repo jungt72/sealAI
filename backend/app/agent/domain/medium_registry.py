@@ -83,6 +83,57 @@ def _normalize_lookup_token(value: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+_HYDRAULIC_FLUID_GRADE_PATTERN = re.compile(
+    r"\b(?P<fluid_type>HLP|HVLP|HEES|HETG|HEPG|HFDU|HFAE|HFC)"
+    r"\s*[-/]?\s*(?P<viscosity>\d{1,3})?\b",
+    re.IGNORECASE,
+)
+
+
+def _hydraulic_fluid_grade_label(value: str | None) -> str | None:
+    match = _HYDRAULIC_FLUID_GRADE_PATTERN.search(str(value or ""))
+    if not match:
+        return None
+    fluid_type = str(match.group("fluid_type") or "").upper()
+    viscosity = str(match.group("viscosity") or "").strip()
+    if viscosity:
+        return f"{fluid_type} {viscosity}"
+    return fluid_type
+
+
+def _classify_hydraulic_fluid_grade(value: str | None) -> MediumClassificationDecision | None:
+    grade_label = _hydraulic_fluid_grade_label(value)
+    if not grade_label:
+        return None
+    fluid_type = grade_label.split()[0]
+    has_viscosity = bool(re.search(r"\d", grade_label))
+    canonical_prefix = (
+        "Bio-Hydraulikflüssigkeit"
+        if fluid_type in {"HEES", "HETG", "HEPG"}
+        else "Hydrauliköl"
+    )
+    canonical_label = f"{canonical_prefix} {grade_label}"
+    return MediumClassificationDecision(
+        raw_text=str(value or "").strip() or grade_label,
+        canonical_label=canonical_label,
+        family="oelhaltig",
+        status="recognized",
+        confidence="high" if has_viscosity else "medium",
+        normalization_source="deterministic_hydraulic_fluid_grade",
+        mapping_confidence="estimated",
+        mapping_reason=(
+            f"specific_hydraulic_fluid_grade:{grade_label}"
+            if has_viscosity
+            else f"hydraulic_fluid_type_without_viscosity:{grade_label}"
+        ),
+        registry_key=f"hydraulic_fluid_{_normalize_lookup_token(grade_label).replace(' ', '_')}",
+        matched_alias=grade_label,
+        followup_question=None
+        if has_viscosity
+        else "Welche ISO-VG-Klasse oder Viskosität hat das Hydraulikmedium?",
+    )
+
+
 _REGISTRY: tuple[MediumRegistryEntry, ...] = (
     MediumRegistryEntry(
         registry_key="salzwasser",
@@ -336,6 +387,10 @@ def extract_medium_mentions(text: str | None) -> MediumCaptureDecision:
     normalized_message = _normalize_lookup_token(message)
     mentions: list[str] = []
 
+    hydraulic_grade = _hydraulic_fluid_grade_label(message)
+    if hydraulic_grade:
+        mentions.append(hydraulic_grade)
+
     for pattern, alias in _ALIAS_PATTERNS:
         if pattern.search(normalized_message):
             mentions.append(alias)
@@ -394,6 +449,10 @@ def classify_medium_value(value: str | None) -> MediumClassificationDecision:
                 "oder ein chlorhaltiges Reinigungsmedium?"
             ),
         )
+
+    hydraulic_grade = _classify_hydraulic_fluid_grade(text)
+    if hydraulic_grade is not None:
+        return hydraulic_grade
 
     entry, matched_alias = resolve_medium_entry(text)
     if entry is not None:

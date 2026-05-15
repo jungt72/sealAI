@@ -229,6 +229,18 @@ class TestRenderResponse:
         assert "1500.0 1/min" not in result.text
         assert "1500 1/min" in result.text
 
+    def test_outward_contract_normalizes_visible_german_ascii_spellings(self):
+        raw = (
+            '"Die wichtigste Rueckfrage ist: Meinst du den Druckunterschied ueber '
+            'der Dichtung oder den Systemdruck fuer die Pumpe?"'
+        )
+        result = render_response(raw, path="GOVERNED")
+        assert result.text == (
+            "Die wichtigste Rückfrage ist: Meinst du den Druckunterschied über "
+            "der Dichtung oder den Systemdruck für die Pumpe?"
+        )
+        assert result.was_scrubbed is True
+
     def test_outward_contract_keeps_non_integer_decimals(self):
         raw = "Betriebsdruck: 2.5 bar, Temperaturfenster bis 59.5 °C."
         result = render_response(raw, path="GOVERNED")
@@ -322,6 +334,10 @@ class TestRenderChunk:
         assert "59.0 °C" not in result
         assert "2 bar" in result
         assert "59 °C" in result
+
+    def test_sse_chunk_normalizes_visible_german_ascii_spellings(self):
+        result = render_chunk(" Druckunterschied ueber der Dichtung", path="GOVERNED")
+        assert result == " Druckunterschied über der Dichtung"
 
     def test_sse_chunk_clean_passes_through(self):
         chunk = "FKM hat eine hohe Temperaturbeständigkeit."

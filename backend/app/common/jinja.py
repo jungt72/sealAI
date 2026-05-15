@@ -20,12 +20,13 @@ PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 @lru_cache(maxsize=1)
 def _env() -> jinja2.Environment:
+    undefined_cls = getattr(jinja2, "DebugUndefined", getattr(jinja2, "Undefined", object))
     return jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)),
         autoescape=False,
         # DebugUndefined renders missing vars as "{{ var_name }}" instead of ""
         # — makes missing variables visible in logs without raising exceptions.
-        undefined=jinja2.DebugUndefined,
+        undefined=undefined_cls,
         trim_blocks=True,
         lstrip_blocks=True,
     )

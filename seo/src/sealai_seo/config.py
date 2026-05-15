@@ -10,6 +10,13 @@ MAX_REQUESTS_PER_RUN = 50
 MAX_PROPERTIES_PER_RUN = 3
 DEFAULT_SEARCH_TYPE = "web"
 DEFAULT_DATAFORSEO_MAX_RUN_COST_USD = 0.25
+DEFAULT_PAGESPEED_URLS = (
+    "https://sealingai.com/",
+    "https://sealingai.com/wissen/wellendichtring",
+    "https://sealingai.com/werkstoffe/fkm",
+    "https://sealingai.com/werkstoffe/ptfe",
+    "https://sealingai.com/anfrage/dichtung-auslegen-lassen",
+)
 
 DEFAULT_DB_PATH = Path("/var/seo/data/seo.db")
 DEFAULT_REPORT_DIR = Path("/var/seo/reports")
@@ -47,6 +54,8 @@ class Settings:
     dataforseo_password: str | None
     dataforseo_base_url: str
     dataforseo_max_run_cost_usd: float
+    pagespeed_api_key: str | None
+    pagespeed_urls: tuple[str, ...]
 
 
 def settings() -> Settings:
@@ -61,7 +70,7 @@ def settings() -> Settings:
         db_path=Path(merged.get("SEO_DB_PATH", DEFAULT_DB_PATH)),
         report_dir=Path(merged.get("SEO_REPORT_DIR", DEFAULT_REPORT_DIR)),
         log_dir=Path(merged.get("SEO_LOG_DIR", DEFAULT_LOG_DIR)),
-        gsc_site_url=merged.get("GSC_SITE_URL", "sc-domain:sealai.net"),
+        gsc_site_url=merged.get("GSC_SITE_URL", "sc-domain:sealingai.com"),
         gsc_service_account_file=Path(merged["GSC_SERVICE_ACCOUNT_FILE"])
         if merged.get("GSC_SERVICE_ACCOUNT_FILE")
         else None,
@@ -73,5 +82,11 @@ def settings() -> Settings:
         dataforseo_base_url=merged.get("DATAFORSEO_BASE_URL", "https://api.dataforseo.com/v3"),
         dataforseo_max_run_cost_usd=float(
             merged.get("DATAFORSEO_MAX_RUN_COST_USD", DEFAULT_DATAFORSEO_MAX_RUN_COST_USD)
+        ),
+        pagespeed_api_key=merged.get("PAGESPEED_API_KEY"),
+        pagespeed_urls=tuple(
+            item.strip()
+            for item in merged.get("PAGESPEED_URLS", ",".join(DEFAULT_PAGESPEED_URLS)).split(",")
+            if item.strip()
         ),
     )

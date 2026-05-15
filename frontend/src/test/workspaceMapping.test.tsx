@@ -291,7 +291,6 @@ describe("mapWorkspaceView", () => {
         open_points: [],
         has_pdf: true,
         has_html_report: false,
-        document_url: "/legacy/rfq-document",
         handover_ready: false,
         handover_initiated: false,
       },

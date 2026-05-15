@@ -4,9 +4,17 @@ This registry is the binding map for future patches. If a file is not listed as 
 
 ## Product Focus
 
-- Current engineering MVP focus: PTFE radial shaft seals (`engineering_path=rwdr`, PTFE compound family).
-- SeaLAI is a structured clarification, preselection and RFQ-readiness system. It does not issue final approvals or manufacturer-independent release decisions.
+- Current product direction: V9.1 Final Governed Sealing Intelligence.
+- Current engineering MVP focus remains sealing-case qualification with strong PTFE radial shaft seal support (`engineering_path=rwdr`, PTFE compound family), expanded through governed medium/material intelligence where implemented.
+- SeaLAI is a governed sealing-intelligence, technical clarification, screening and RFQ-readiness system. It does not issue final approvals or manufacturer-independent release decisions.
 - LLM output may extract, normalize and propose. Backend-owned deterministic logic decides routing, gates, readiness, calculations, risk and release status.
+
+## Canonical Concepts
+
+| Concern | Canonical source | Role |
+| --- | --- | --- |
+| Active V9.1 Final SSoT | `docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md` | Single binding product, communication, runtime, governance, state, knowledge, RAG, intelligence-tab, question-plan, communication-plan, claim/evidence, and RFQ-boundary source. Replaces V9 Governed Dichtungsfall Challenger and all earlier V9.1 drafts. |
+| Older architecture/context | `docs/implementation/SEALAI_ARCHITECTURE_V9_GOVERNED_DICHTUNGSFALL_CHALLENGER.md`, `docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md`, V8/V7/event-model docs | Supporting implementation history only where non-conflicting with V9.1 Final. Not active product SSoT. |
 
 ## Canonical Runtime
 

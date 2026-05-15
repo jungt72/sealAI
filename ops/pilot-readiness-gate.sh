@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-/home/thorsten/sealai}"
-BASE_URL="${BASE_URL:-https://sealai.net}"
+BASE_URL="${BASE_URL:-https://sealingai.com}"
 SKIP_FRONTEND_BUILD="${SKIP_FRONTEND_BUILD:-0}"
 SKIP_LIVE_SMOKE="${SKIP_LIVE_SMOKE:-0}"
 
@@ -33,6 +33,11 @@ printf 'head: %s\n' "$(git rev-parse --short=8 HEAD)"
 section "Ops script syntax"
 bash -n ops/release-backend.sh
 bash -n ops/release-frontend.sh
+bash -n ops/promote-local-backend-image.sh
+bash -n ops/check-domain-readiness.sh
+bash -n ops/check-registry-readiness.sh
+bash -n ops/issue-sealingai-cert.sh
+bash -n ops/production-readiness-gate.sh
 bash -n ops/smoke-live-pilot-readiness.sh
 bash -n ops/stack_smoke.sh
 

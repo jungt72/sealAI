@@ -5,6 +5,7 @@ import os
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.observability.langsmith import configure_langsmith_environment
 
 logger = logging.getLogger("app.telemetry")
 
@@ -18,20 +19,12 @@ def _is_enabled(name: str, default: bool = True) -> bool:
 
 def _configure_langsmith() -> bool:
     """Configure LangSmith tracing if an API key is available."""
-    if not settings.langchain_tracing_v2:
-        return False
-
-    if not settings.langchain_api_key:
-        logger.info("LangSmith tracing requested but no API key provided – disabling LangSmith telemetry.")
-        return False
-
-    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
-    os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
-    if settings.langchain_endpoint:
-        os.environ.setdefault("LANGCHAIN_ENDPOINT", settings.langchain_endpoint)
-    if settings.langchain_project:
-        os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
-    return True
+    return configure_langsmith_environment(
+        tracing_enabled=bool(settings.langsmith_tracing or settings.langchain_tracing_v2),
+        api_key=settings.langsmith_api_key or settings.langchain_api_key,
+        project=settings.langsmith_project or settings.langchain_project,
+        endpoint=settings.langsmith_endpoint or settings.langchain_endpoint,
+    )
 
 
 def _instrument_fastapi(app: FastAPI) -> None:

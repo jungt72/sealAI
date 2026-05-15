@@ -444,17 +444,79 @@ def build_material_comparison_answer(user_input: str) -> MaterialComparisonAnswe
     )
 
 
+def build_material_risk_comparison_answer(user_input: str) -> MaterialComparisonAnswer | None:
+    text = str(user_input or "")
+    lowered = text.casefold()
+    materials = _extract_all_materials(text)
+    if len(materials) < 2:
+        return None
+    if not any(marker in lowered for marker in ("risiko", "risiken", "kritisch", "grenze", "grenzen")):
+        return None
+    if not any(marker in lowered for marker in ("heißwasser", "heisswasser", "dampf", "wasser")):
+        return None
+    lines = [
+        "## Werkstoffrisiken bei Heißwasser",
+        "",
+        "Kurz gesagt: Für Heißwasser bei 120 °C ist nicht der Werkstoffname allein entscheidend. Compound, Dichtungstyp, Vorspannung, Kontaktzeit, Druck, Wasserchemie und Herstellerdaten bestimmen, ob daraus ein prüfbarer Kandidat wird. Das ist eine technische Orientierung, keine Freigabe.",
+        "",
+        "| Werkstoff | Typische Richtung | Kritische Punkte |",
+        "| --- | --- | --- |",
+    ]
+    for material_id in materials:
+        if material_id == "PTFE":
+            lines.append(
+                "| PTFE | Chemisch sehr breit und temperaturfest, aber kein elastischer Gummiwerkstoff. | Kriechen, Kaltfluss, fehlende elastische Rückstellung, Vorspannkonzept, Einbauspalt, Füllstoff, Gegenlaufpartner und Dichtungsgeometrie prüfen. |"
+            )
+        elif material_id == "FKM":
+            lines.append(
+                "| FKM | Häufig stark bei Ölen, Kraftstoffen und vielen Kohlenwasserstoffen. | Heißwasser und Dampf sind je nach FKM-Typ oft kritisch; Alterung, Quellung, Hydrolyse-/Medieneffekte und Elastizitätsverlust müssen compoundbezogen geprüft werden. |"
+            )
+        elif material_id == "EPDM":
+            lines.append(
+                "| EPDM | Bei Wasser, Heißwasser, Dampf und Glykolen häufig eine naheliegende Prüfrichtung. | 120 °C liegt nahe an relevanten Dauergrenzen vieler Compounds; Wasserchemie, Additive, Druck, Setzverhalten und Langzeitkontakt prüfen. Nicht für Mineralöl ableiten. |"
+            )
+        else:
+            profile = _MATERIAL_PROFILES[material_id]
+            lines.append(
+                f"| {material_id} | {_join(profile.media_orientation)} | {_join(profile.critical_checks)} |"
+            )
+    lines.extend(
+        [
+            "",
+            "### Was ich früh klären würde",
+            "",
+            "- Ist es reines Wasser, Heißwasser mit Additiven, Dampf, Kondensat oder Reinigungsmedium?",
+            "- Dauerbetrieb und Spitzen: 120 °C konstant, zyklisch oder nur kurzzeitig?",
+            "- Dichtungstyp: O-Ring, Flachdichtung, RWDR, Membran, Formteil oder energisierte PTFE-Dichtung?",
+            "- Druck direkt an der Dichtstelle, Bewegung, Einbauspalt, Vorspannung und Gegenfläche.",
+            "- Geforderte Nachweise und Herstellerfreigaben, zum Beispiel Trinkwasser, Food, FDA oder USP.",
+            "",
+            "Als Vororientierung: EPDM ist für Heißwasser oft plausibler als FKM, PTFE kann konstruktiv interessant sein, braucht aber ein passendes Dichtprinzip. Eine konkrete Auswahl bleibt Hersteller- oder Spezialistenprüfung.",
+        ]
+    )
+    answer = humanize_german_technical_text("\n".join(lines))
+    return MaterialComparisonAnswer(
+        answer=answer,
+        title="Werkstoffrisiken bei Heißwasser",
+        material_ids=tuple(materials[:2]),
+    )
+
+
 
 def supported_material_ids() -> tuple[str, ...]:
     return tuple(_MATERIAL_PROFILES.keys())
 
 def _extract_materials(text: str) -> list[str]:
+    return _extract_all_materials(text)[:2]
+
+
+def _extract_all_materials(text: str) -> list[str]:
     seen: list[str] = []
     for match in _MATERIAL_TOKEN_RE.finditer(text.casefold()):
         canonical = _ALIAS_TO_CANONICAL.get(match.group(1).casefold())
         if canonical and canonical not in seen:
             seen.append(canonical)
-    return seen[:2]
+    return seen
 
 
 def _render_comparison(left: MaterialComparisonProfile, right: MaterialComparisonProfile) -> str:

@@ -14,6 +14,10 @@ with execution-context fields that are transient (not persisted to Redis):
     output_response_class — outward response class string
     output_public         — public payload dict (only this surfaces in the API)
     output_answer_markdown — optional composed markdown answer (text-only)
+    stream_visible_answer_composer — emits visible answer tokens through
+                                     LangGraph custom stream events
+    defer_visible_answer_composer — compatibility fallback for callers that
+                                    intentionally compose outside the graph
 
 Persistence: the caller strips execution-context fields before Redis save.
 Use GovernedSessionState.model_validate(state.model_dump()) to extract
@@ -101,4 +105,20 @@ class GraphState(GovernedSessionState):
     governed_answer_composer_error: str = Field(
         default="",
         description="Safe composer fallback reason. No stack traces, secrets, prompts, or raw payloads.",
+    )
+    stream_visible_answer_composer: bool = Field(
+        default=False,
+        description=(
+            "When true, governed_answer_composer_node streams visible answer "
+            "tokens through LangGraph custom events while still writing the "
+            "final validated answer_markdown into GraphState."
+        ),
+    )
+    defer_visible_answer_composer: bool = Field(
+        default=False,
+        description=(
+            "Compatibility fallback. When true, output_contract_node skips the "
+            "graph-internal answer composer so legacy callers can compose the "
+            "visible text outside the graph."
+        ),
     )

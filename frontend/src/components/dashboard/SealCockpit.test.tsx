@@ -5,7 +5,12 @@ import type { WorkspaceView } from "@/lib/contracts/workspace";
 import type { SealCockpitOverview } from "@/lib/engineering/sealCockpitViewModel";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 
-import { DesignIntakePanel, SealCockpit } from "./SealCockpit";
+import {
+  ChallengeIntelligencePanel,
+  DesignIntakePanel,
+  SealCockpit,
+  V91IntelligencePanel,
+} from "./SealCockpit";
 
 function workspaceWithDesignIntake(overrides: Partial<WorkspaceView["designIntake"]> = {}): WorkspaceView {
   return {
@@ -57,7 +62,7 @@ function workspaceWithDesignIntake(overrides: Partial<WorkspaceView["designIntak
       eventNames: ["SealDesignIntakeGenerated"],
       ...overrides,
     },
-  } as WorkspaceView;
+  } as unknown as WorkspaceView;
 }
 
 describe("DesignIntakePanel", () => {
@@ -86,6 +91,182 @@ describe("DesignIntakePanel", () => {
     render(<DesignIntakePanel workspace={workspace} />);
 
     expect(screen.queryByRole("heading", { name: "Neuauslegung" })).not.toBeInTheDocument();
+  });
+});
+
+function workspaceWithChallengeIntelligence(): WorkspaceView {
+  return {
+    caseId: "case-challenge",
+    challengeIntelligence: {
+      schemaVersion: "challenge_engine_v9.0",
+      status: "available",
+      findings: [
+        {
+          findingId: "missing.pressure_bar.0",
+          kind: "missing_information",
+          severity: "blocking",
+          status: "open",
+          title: "Druck oder Druckdifferenz fehlt für eine belastbare Einordnung",
+          summary: "Druck oder Druckdifferenz ist noch nicht als belastbarer Wert im Fall vorhanden.",
+          rfqRelevance: "Der Punkt gehört sichtbar in die Anfragebasis.",
+          relatedFields: ["pressure_bar"],
+          evidenceRefIds: [],
+          actionMode: "ASK_NEXT_BEST_QUESTION",
+          source: "challenge_engine_v9",
+        },
+      ],
+      hypotheses: [
+        {
+          hypothesisId: "hypothesis.ptfe",
+          label: "PTFE als Prüfhypothese",
+          plausibilityClass: "medium",
+          status: "active",
+          basis: ["Salzhaltiges Wasser verlangt frühe Prüfung."],
+          counterindicators: ["Kriechen, Füllung und Vorspannung bleiben offen."],
+          blockingUnknowns: ["Druck"],
+          requiredChecks: ["Mediumdatenblatt"],
+          rfqRelevance: "Nur als Kontext für die Herstellerprüfung sichtbar machen.",
+          forbiddenClaims: ["geeignet", "freigegeben"],
+          source: "challenge_engine_v9",
+        },
+      ],
+      nextBestQuestion: {
+        question: "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
+        reason: "Der Druck verschiebt Bauform, Stützringbedarf und Spaltmaß.",
+        focusKey: "pressure_bar",
+        priority: 1,
+        expectedAnswerType: "number",
+        closesFindings: ["missing.pressure_bar.0"],
+        source: "challenge_engine_v9",
+        maxQuestionsPolicy: "ask_one_highest_leverage_question",
+      },
+      actionModesRun: ["CHALLENGE_KNOWN_INPUTS", "ASK_NEXT_BEST_QUESTION"],
+      boundaryNotice: "Prüfhypothesen dienen der technischen Vorqualifikation; keine Freigabe.",
+    },
+  } as unknown as WorkspaceView;
+}
+
+describe("ChallengeIntelligencePanel", () => {
+  it("renders V9 findings, hypotheses and the next best question", () => {
+    render(<ChallengeIntelligencePanel workspace={workspaceWithChallengeIntelligence()} />);
+
+    expect(screen.getByRole("heading", { name: "Challenger" })).toBeInTheDocument();
+    expect(screen.getByText("Nächste beste Frage")).toBeInTheDocument();
+    expect(screen.getByText(/Welcher Druck oder welche Druckdifferenz/)).toBeInTheDocument();
+    expect(screen.getByText(/Druck oder Druckdifferenz fehlt/)).toBeInTheDocument();
+    expect(screen.getByText("PTFE als Prüfhypothese")).toBeInTheDocument();
+    expect(screen.getAllByText("Blocker")[0]).toBeInTheDocument();
+    expect(screen.getByText("Gegenchecks")).toBeInTheDocument();
+    expect(screen.getByText("Aktionen")).toBeInTheDocument();
+    expect(screen.getByText("offene Angabe")).toBeInTheDocument();
+    expect(screen.getAllByText("Druck")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("nächste Frage")[0]).toBeInTheDocument();
+    expect(screen.getByText(/RFQ: Der Punkt gehört sichtbar/)).toBeInTheDocument();
+    expect(screen.getByText("Mediumdatenblatt")).toBeInTheDocument();
+    expect(screen.getByText(/keine Freigabe/)).toBeInTheDocument();
+  });
+
+  it("stays hidden until the backend challenge projection is available", () => {
+    render(
+      <ChallengeIntelligencePanel workspace={{ caseId: "empty" } as unknown as WorkspaceView} />,
+    );
+
+    expect(screen.queryByRole("heading", { name: "Challenger" })).not.toBeInTheDocument();
+  });
+});
+
+describe("V91IntelligencePanel", () => {
+  it("renders backend-owned intelligence slices and next action", () => {
+    const workspace = {
+      caseId: "case-v91",
+      communication: {
+        primaryQuestion: "Welches Medium berührt die Dichtung genau?",
+      },
+      v91Workspace: {
+        intelligenceState: {
+          schemaVersion: "sealing_intelligence_v9_1",
+          caseRevision: 3,
+          overallStatus: "review_needed",
+          medium: {
+            sliceId: "medium",
+            status: "available",
+            claimLevel: "screening",
+            summary: "Salzwasser ist korrosiv relevant.",
+            signals: ["salzhaltig"],
+            blockers: ["Konzentration fehlt"],
+            evidenceRefIds: [],
+            notForReleaseDecisions: true,
+            source: "workspace_projection_v9_1",
+          },
+          material: {
+            sliceId: "material",
+            status: "insufficient_context",
+            claimLevel: "screening",
+            summary: "Werkstoff-Screening braucht mehr Fallkontext.",
+            signals: [],
+            blockers: [],
+            evidenceRefIds: [],
+            notForReleaseDecisions: true,
+            source: "workspace_projection_v9_1",
+          },
+          challenge: {
+            sliceId: "challenge",
+            status: "available",
+            claimLevel: "case_projection",
+            summary: "Ein kritischer Befund.",
+            signals: ["Druck fehlt"],
+            blockers: ["Druck fehlt"],
+            evidenceRefIds: [],
+            notForReleaseDecisions: true,
+            source: "workspace_projection_v9_1",
+          },
+          document: {
+            sliceId: "document",
+            status: "documented",
+            claimLevel: "screening",
+            summary: "2 Dokumentpunkte sichtbar.",
+            signals: ["PTFE Deep Research"],
+            blockers: [],
+            evidenceRefIds: [],
+            notForReleaseDecisions: true,
+            source: "workspace_projection_v9_1",
+          },
+          rfq: {
+            sliceId: "rfq",
+            status: "not_ready",
+            claimLevel: "manufacturer_review",
+            summary: "Anfragebasis bleibt blockiert.",
+            signals: [],
+            blockers: ["Druck fehlt"],
+            evidenceRefIds: [],
+            notForReleaseDecisions: true,
+            source: "workspace_projection_v9_1",
+          },
+        },
+        tabState: [
+          {
+            tabId: "overview",
+            label: "Überblick",
+            status: "review_needed",
+            sourceSliceId: "challenge",
+            summary: "Überblick",
+            primaryItems: [],
+            warnings: ["Druck fehlt"],
+            nextAction: "Welcher Druck liegt an?",
+            evidenceRefIds: [],
+            notForReleaseDecisions: true,
+          },
+        ],
+      },
+    } as unknown as WorkspaceView;
+
+    render(<V91IntelligencePanel workspace={workspace} />);
+
+    expect(screen.getByRole("heading", { name: "Sealing Intelligence" })).toBeInTheDocument();
+    expect(screen.getByText("Prüfung nötig")).toBeInTheDocument();
+    expect(screen.getByText("Salzwasser ist korrosiv relevant.")).toBeInTheDocument();
+    expect(screen.getByText(/Nächster sinnvoller Schritt/)).toBeInTheDocument();
+    expect(screen.getByText("Welcher Druck liegt an?")).toBeInTheDocument();
   });
 });
 
@@ -138,7 +319,7 @@ function workspaceWithMedium(): WorkspaceView {
     },
     completeness: { coverageGaps: [] },
     communication: { primaryQuestion: null },
-  } as WorkspaceView;
+  } as unknown as WorkspaceView;
 }
 
 function workspaceWithMaterialIntelligence(): WorkspaceView {
@@ -190,8 +371,13 @@ function workspaceWithMaterialIntelligence(): WorkspaceView {
           status: "candidate_to_check",
           statusLabel: "Kandidat im Prueffenster",
           confidence: "medium",
+          plausibility: "high",
           plausibilityScore: 78,
           plausibilityLabel: "hohe Pruefprioritaet",
+          counterindicators: ["Druck oder Druckdifferenz bleiben fuer Bauformgrenzen offen."],
+          allowedClaim: "Vorlaeufige Pruefhypothese fuer die Anfragebasis.",
+          forbiddenClaims: ["geeignet", "freigegeben", "sicher"],
+          rfqRelevance: "Als Kontext fuer die Herstellerpruefung sichtbar machen, nicht als Vorgabe verwenden.",
           scoreDrivers: ["Oel- oder Hydraulikoelkontakt stuetzt dieses Werkstofffenster."],
           scoreCautions: ["Druck oder Druckdifferenz bleiben fuer Bauformgrenzen offen."],
           whyConsidered: ["Oelkontakt grenzt das elastomere Prueffenster ein."],
@@ -207,8 +393,13 @@ function workspaceWithMaterialIntelligence(): WorkspaceView {
           status: "excluded_by_known_constraint",
           statusLabel: "bekannte Angabe spricht dagegen",
           confidence: "low",
+          plausibility: "low",
           plausibilityScore: 18,
           plausibilityLabel: "niedrige Pruefprioritaet",
+          counterindicators: ["Oel- oder Hydraulikoelkontakt spricht deutlich gegen EPDM als fruehe Richtung."],
+          allowedClaim: "Vorlaeufige Pruefhypothese fuer die Anfragebasis.",
+          forbiddenClaims: ["geeignet", "freigegeben", "sicher"],
+          rfqRelevance: "Als Gegenhypothese fuer die Herstellerpruefung sichtbar machen.",
           scoreDrivers: [],
           scoreCautions: ["Oel- oder Hydraulikoelkontakt spricht deutlich gegen EPDM als fruehe Richtung."],
           whyConsidered: ["Wassernahe Vergleichsfamilie."],
@@ -252,7 +443,7 @@ function workspaceWithMaterialIntelligence(): WorkspaceView {
     },
     completeness: { coverageGaps: [] },
     communication: { primaryQuestion: null },
-  } as WorkspaceView;
+  } as unknown as WorkspaceView;
 }
 
 describe("SealCockpit medium deep dive", () => {
@@ -439,10 +630,12 @@ describe("SealCockpit material intelligence", () => {
 
     expect(screen.getByRole("heading", { name: "Werkstoff" })).toBeInTheDocument();
     expect(screen.getByText("Werkstofffenster")).toBeInTheDocument();
-    expect(screen.getAllByText("Prüfpriorität")[0]).toBeInTheDocument();
-    expect(screen.getByText("78 / 100")).toBeInTheDocument();
-    expect(screen.getAllByText("Score-Treiber")[0]).toBeInTheDocument();
-    expect(screen.getAllByText("Warnpunkte")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Prüfhypothese")[0]).toBeInTheDocument();
+    expect(screen.getByText("hoch")).toBeInTheDocument();
+    expect(screen.queryByText("78 / 100")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Stützende Signale")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Prüfpunkte")[0]).toBeInTheDocument();
+    expect(screen.getAllByText("Gegenindikatoren")[0]).toBeInTheDocument();
     expect(screen.getByText("NBR")).toBeInTheDocument();
     expect(screen.getByText("EPDM")).toBeInTheDocument();
     expect(screen.getByText(/bekannte Angabe spricht dagegen/)).toBeInTheDocument();

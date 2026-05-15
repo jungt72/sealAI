@@ -655,18 +655,18 @@
       "clientId": "nextauth",
       "name": "",
       "description": "",
-      "rootUrl": "https://sealai.net",
+      "rootUrl": "https://sealingai.com",
       "adminUrl": "",
-      "baseUrl": "https://sealai.net",
+      "baseUrl": "https://sealingai.com",
       "surrogateAuthRequired": false,
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "https://sealai.net/*"
+        "https://sealingai.com/*"
       ],
       "webOrigins": [
-        "https://sealai.net"
+        "https://sealingai.com"
       ],
       "notBefore": 0,
       "bearerOnly": false,
@@ -682,7 +682,7 @@
         "oidc.ciba.grant.enabled": "false",
         "client.secret.creation.time": "1742978527",
         "backchannel.logout.session.required": "true",
-        "post.logout.redirect.uris": "https://sealai.net/login##https://sealai.net##https://sealai.net/logout##https://sealai.net/api/auth/logout",
+        "post.logout.redirect.uris": "https://sealingai.com/login##https://sealingai.com##https://sealingai.com/logout##https://sealingai.com/api/auth/logout",
         "display.on.consent.screen": "false",
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.revoke.offline.tokens": "false"

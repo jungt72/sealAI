@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
 import { Bot, UserRound } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
+import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { useAgentStream } from "@/hooks/useAgentStream";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/store/chatStore";
@@ -46,7 +46,7 @@ function MessageBubble({
           <p className="whitespace-pre-wrap">{content}</p>
         ) : (
           <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0 prose-strong:text-slate-950">
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <MarkdownRenderer variant="chat">{content}</MarkdownRenderer>
           </div>
         )}
       </div>
@@ -64,6 +64,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
     activeCaseId,
     messages,
     streamingText,
+    streamingStatusText,
     streamWorkspace,
     isStreaming,
     error,
@@ -155,7 +156,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
                   <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#0B5BD3]">
                     <Bot size={14} />
                   </div>
-                  sealingAI verbindet den LLM-Stream...
+                  {streamingStatusText || "SealingAI formuliert die Antwort..."}
                 </div>
               )}
 

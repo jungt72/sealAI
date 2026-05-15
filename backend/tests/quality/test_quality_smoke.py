@@ -72,7 +72,7 @@ def test_quality_golden_prompts_score_and_gates(
 
 def test_quality_templates_render_with_seed_state(minimal_settings_env: None, golden_prompts: List[Dict[str, Any]]) -> None:
     # Deterministic renderability gate: run Jinja render for the final templates using the seed_state.
-    from app.langgraph_v2.utils.jinja import render_template
+    from app.common.jinja import render_template
 
     for case in golden_prompts:
         seed = case.get("seed_state") or {}

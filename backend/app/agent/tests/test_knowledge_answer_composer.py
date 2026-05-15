@@ -62,6 +62,33 @@ class _FactcardStore:
         return list(self._cards)
 
 
+def test_knowledge_service_answers_epdm_hlp46_without_case_slot_question() -> None:
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([]),
+        llm_research_fallback_enabled=False,
+    ).answer("Ist EPDM für Hydrauliköl HLP46 bei 80 °C und 10 bar geeignet? Keine Freigabe, nur Einordnung.")
+
+    assert "EPDM" in response.content
+    assert "HLP46" in response.content
+    assert "mineralöl" in response.content.casefold()
+    assert "keine Freigabe" in response.content
+    assert "Meinst du mit 10 bar" not in response.content
+
+
+def test_knowledge_service_uses_deterministic_hot_water_risk_comparison() -> None:
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([]),
+        llm_research_fallback_enabled=False,
+    ).answer("Vergleiche PTFE, FKM und EPDM für Heißwasser bei 120 °C. Wo liegen die typischen Risiken?")
+
+    assert "PTFE" in response.content
+    assert "FKM" in response.content
+    assert "EPDM" in response.content
+    assert "Heißwasser" in response.content
+    assert "Evidenzkontext" not in response.content
+    assert "vorlaeufige" not in response.content
+
+
 @pytest.mark.asyncio
 async def test_knowledge_answer_composer_disabled_keeps_deterministic_answer(
     monkeypatch: pytest.MonkeyPatch,
@@ -330,6 +357,69 @@ async def test_knowledge_answer_composer_retries_registry_default_when_configure
 
     assert result.answer_markdown.startswith("**Kurzvergleich:**")
     assert completions.models == ["gpt-5.4-nano", "gpt-4o-mini"]
+
+
+@pytest.mark.asyncio
+async def test_simple_material_definition_answer_is_compacted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="Was ist NBR? Bitte antworte kurz und professionell.",
+        deterministic_answer=(
+            "NBR steht für Acrylnitril-Butadien-Kautschuk, häufig auch "
+            "Nitrilkautschuk genannt. In der Dichtungstechnik ist NBR ein "
+            "verbreiteter Elastomerwerkstoff. Typische Orientierung: "
+            "- NBR wird oft im Umfeld von mineralölbasierten Medien betrachtet. "
+            "- Kritisch können Ozon, UV, Witterung und manche Lösemittel sein. "
+            "- Das Verhalten hängt stark von Rezeptur und Temperatur ab. "
+            "Bis dahin ist das technische Orientierung, keine Freigabe."
+        ),
+    )
+
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            class Message:
+                content = (
+                    '{"answer_markdown":"### NBR (Acrylnitril-Butadien-Kautschuk)\\n\\n'
+                    'NBR ist ein Elastomerwerkstoff.\\n\\n'
+                    '### Typische Eigenschaften und Anwendungen\\n\\n'
+                    '- Medienverträglichkeit: mineralölbasierte Medien.\\n'
+                    '- Kritische Einflüsse: Ozon und UV.\\n\\n'
+                    '### Limitierungen/Annahmen\\n\\n'
+                    'Diese Informationen dienen nur der technischen Orientierung.\\n\\n'
+                    '### Nächste Frage\\n\\n'
+                    'Welche Anwendung liegt vor?",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+    assert result.answer_markdown.startswith("NBR steht für Acrylnitril")
+    assert "Limitierungen/Annahmen" not in result.answer_markdown
+    assert "Nächste Frage" not in result.answer_markdown
+    assert "Caveat" not in result.answer_markdown
+    assert "Das Verhalten hängt stark" not in result.answer_markdown
+    assert "keine technische Freigabe" in result.answer_markdown
+    assert len(result.answer_markdown) < 800
 
 
 @pytest.mark.asyncio

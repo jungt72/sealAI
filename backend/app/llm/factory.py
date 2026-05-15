@@ -7,6 +7,9 @@ pre-configured for specific functional roles using the central model registry.
 
 from typing import Tuple
 from openai import OpenAI, AsyncOpenAI
+
+from app.observability.langsmith import wrap_openai_client
+
 from .registry import get_model_for_role
 
 
@@ -18,7 +21,7 @@ def get_sync_llm(role: str) -> Tuple[OpenAI, str]:
         A tuple of (client, model_name).
     """
     model = get_model_for_role(role)
-    client = OpenAI()  # Automatically picks up OPENAI_API_KEY from env
+    client = wrap_openai_client(OpenAI())  # Automatically picks up OPENAI_API_KEY from env
     return client, model
 
 
@@ -30,5 +33,5 @@ def get_async_llm(role: str) -> Tuple[AsyncOpenAI, str]:
         A tuple of (async_client, model_name).
     """
     model = get_model_for_role(role)
-    client = AsyncOpenAI()  # Automatically picks up OPENAI_API_KEY from env
+    client = wrap_openai_client(AsyncOpenAI())  # Automatically picks up OPENAI_API_KEY from env
     return client, model

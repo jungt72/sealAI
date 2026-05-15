@@ -56,6 +56,11 @@ def test_salzwasser_rwdr_material_window_is_read_only_and_on_topic() -> None:
     assert "PTFE" in _labels(result)
     by_label = _by_label(result)
     assert by_label["EPDM"]["plausibility_score"] > by_label["NBR"]["plausibility_score"]
+    assert by_label["EPDM"]["plausibility"] in {"medium", "high"}
+    assert by_label["EPDM"]["allowed_claim"] == "vorlaeufige Pruefhypothese"
+    assert by_label["EPDM"]["counterindicators"] is not None
+    assert by_label["EPDM"]["rfq_relevance"]
+    assert {"geeignet", "freigegeben"}.issubset(set(by_label["EPDM"]["forbidden_claims"]))
     assert by_label["PTFE"]["score_cautions"]
     assert "Druck oder Druckdifferenz" in result["missing_field_hints"]
     assert "Temperatur" in result["missing_field_hints"]
@@ -131,6 +136,7 @@ def test_known_material_is_carried_as_candidate_without_release_claim() -> None:
     assert _labels(result)[0] == "FKM"
     assert result["candidate_materials"][0]["status"] == "candidate_to_check"
     assert isinstance(result["candidate_materials"][0]["plausibility_score"], int)
+    assert result["candidate_materials"][0]["plausibility"] in {"medium", "high"}
     assert result["candidate_materials"][0]["score_drivers"]
     joined = _joined(result)
     forbidden = ("geeignet", "freigegeben", "garantiert", "rfq-ready")

@@ -44,6 +44,10 @@ from app.agent.graph import GraphState
 from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding
 from app.agent.prompts import prompts
 from app.agent.state.models import ObservedExtraction, UserOverride
+from app.agent.v91.candidate_facts import (
+    append_candidate_facts,
+    candidate_fact_from_observed_extraction,
+)
 from app.llm.factory import get_async_llm
 
 log = logging.getLogger(__name__)
@@ -416,6 +420,7 @@ async def intake_observe_node(state: GraphState) -> GraphState:
 
     regex_extractions: list[ObservedExtraction] = []
     deterministic_extractions: list[ObservedExtraction] = []
+    v91_turn_candidate_facts = []
     slot_binding = None
 
     # ── Pass 1: deterministic regex extraction ────────────────────────────
@@ -440,6 +445,24 @@ async def intake_observe_node(state: GraphState) -> GraphState:
             ]
             slot_extractions = [_slot_binding_to_extraction(slot_binding, turn_index)]
         deterministic_extractions = regex_extractions + slot_extractions
+        v91_turn_candidate_facts.extend(
+            candidate_fact_from_observed_extraction(
+                extraction,
+                source_message=state.pending_message,
+                source_message_id=f"user_turn:{turn_index}",
+                extraction_method="regex",
+            )
+            for extraction in regex_extractions
+        )
+        v91_turn_candidate_facts.extend(
+            candidate_fact_from_observed_extraction(
+                extraction,
+                source_message=state.pending_message,
+                source_message_id=f"user_turn:{turn_index}",
+                extraction_method="manual",
+            )
+            for extraction in slot_extractions
+        )
         for extraction in deterministic_extractions:
             observed = observed.with_extraction(extraction)
         observed = _promote_primary_correction_overrides(
@@ -476,10 +499,24 @@ async def intake_observe_node(state: GraphState) -> GraphState:
             new_extractions=appended_llm_extractions,
             turn_index=turn_index,
         )
+        v91_turn_candidate_facts.extend(
+            candidate_fact_from_observed_extraction(
+                extraction,
+                source_message=state.pending_message,
+                source_message_id=f"user_turn:{turn_index}",
+                extraction_method="llm",
+            )
+            for extraction in appended_llm_extractions
+        )
 
     update: dict[str, object] = {"last_slot_answer_binding": slot_binding}
     if slot_binding is not None and state.pending_question is not None:
         update["pending_question"] = state.pending_question.model_copy(update={"status": "answered"})
+    if v91_turn_candidate_facts:
+        update["v91_candidate_facts"] = append_candidate_facts(
+            state.v91_candidate_facts,
+            v91_turn_candidate_facts,
+        )
 
     if observed is state.observed:
         # Nothing was extracted

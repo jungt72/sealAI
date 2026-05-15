@@ -33,6 +33,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from qdrant_client import QdrantClient, models
 
 from langchain_community.document_loaders import Docx2txtLoader
+from app.observability.langsmith import wrap_openai_client
 
 try:
     from langchain_qdrant import QdrantVectorStore
@@ -661,7 +662,7 @@ def _extract_dynamic_metadata_llm(
         from openai import OpenAI  # type: ignore
         excerpt = (text or "").strip()[:RAG_DYNAMIC_METADATA_MAX_CHARS]
 
-        client = OpenAI(api_key=api_key)
+        client = wrap_openai_client(OpenAI(api_key=api_key))
         system = render_template("rag_metadata_extractor.j2")
         response = client.chat.completions.create(
             model=RAG_DYNAMIC_METADATA_LLM_MODEL,
@@ -708,7 +709,7 @@ def _extract_platinum_structured_llm(
     if len(excerpt) > RAG_DYNAMIC_METADATA_MAX_CHARS:
         excerpt = excerpt[:RAG_DYNAMIC_METADATA_MAX_CHARS]
     
-    client = OpenAI(api_key=api_key)
+    client = wrap_openai_client(OpenAI(api_key=api_key))
     
     system = render_template("rag_platinum_extractor.j2")
     

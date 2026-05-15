@@ -438,7 +438,7 @@ function ParameterIntakePanel({ cockpit }: { cockpit: ReturnType<typeof useCockp
         "",
         facts,
         "",
-        "Bitte stelle keine stumpfe Parameterabfrage. Entwickle eine virtuelle Lösung nach Wahrscheinlichkeiten: plausible Dichtungs-/Werkstoffrichtungen, technische Risiken, fehlende Schlüsseldaten und kluge professionelle Rückfragen, die mich dazu bringen, die Dichtungssituation genauer zu durchdenken. Keine finale Freigabe behaupten.",
+        "Bitte stelle keine stumpfe Parameterabfrage. Challenge den Dichtungsfall: benenne kritische Punkte, abgeleitete Signale, vorsichtige Prüfhypothesen, Gegenindikatoren, fehlende Blocker und die nächste beste Rückfrage. Keine Prozentwerte, keine finale Freigabe, keine Materialentscheidung.",
       ].join("\n"),
     );
   };
@@ -1682,6 +1682,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const workspace = useWorkspaceStore((state) => state.workspace);
   const activeResponseClass = useWorkspaceStore((state) => state.activeResponseClass);
   const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
+  const setWorkspaceLoading = useWorkspaceStore((state) => state.setWorkspaceLoading);
   const timelineSteps = useMemo(() => deriveTimelineSteps(cockpit), [cockpit]);
   const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
@@ -1692,6 +1693,35 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
+
+  useEffect(() => {
+    if (!caseId) {
+      return;
+    }
+
+    let isCurrent = true;
+    setWorkspaceLoading(true);
+    fetchWorkspace(caseId)
+      .then((nextWorkspace) => {
+        if (isCurrent) {
+          setWorkspace(nextWorkspace);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setWorkspace(null);
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setWorkspaceLoading(false);
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [caseId, setWorkspace, setWorkspaceLoading]);
 
   useEffect(() => {
     if (!isResizingWorkspace) {
@@ -1766,7 +1796,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
             "",
             facts,
             "",
-            "Bitte stelle keine stumpfe Parameterabfrage. Entwickle eine virtuelle Lösung nach Wahrscheinlichkeiten: plausible Dichtungs-/Werkstoffrichtungen, technische Risiken, fehlende Schlüsseldaten und kluge professionelle Rückfragen. Keine finale Freigabe behaupten.",
+            "Bitte stelle keine stumpfe Parameterabfrage. Challenge den Dichtungsfall: benenne kritische Punkte, abgeleitete Signale, vorsichtige Prüfhypothesen, Gegenindikatoren, fehlende Blocker und die nächste beste Rückfrage. Keine Prozentwerte, keine finale Freigabe, keine Materialentscheidung.",
           ]
             .filter(Boolean)
             .join("\n"),
@@ -1836,7 +1866,6 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
             <button
               type="button"
               aria-label="Arbeitsbereichbreite anpassen"
-              aria-orientation="vertical"
               title="Arbeitsbereichbreite anpassen"
               onPointerDown={(event) => {
                 event.preventDefault();
@@ -1873,7 +1902,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
                   workspace={workspace}
                   isParameterSubmitting={isParameterSubmitting}
                   onParameterSubmit={handleParameterSubmit}
-                  preferredTab={workspace?.caseId ? null : "parameters"}
+                  preferredTab={canonicalCaseId ? null : "parameters"}
                 />
               </div>
             </aside>

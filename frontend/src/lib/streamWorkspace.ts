@@ -17,7 +17,7 @@ export type StreamWorkspaceView = {
   turnContext: AgentTurnContext | null;
   proposedCaseDelta: ProposedCaseDelta | null;
   rfqReadinessProjection: WorkspaceRfqReadinessProjection | null;
-  ui: Required<Pick<AgentWorkspaceUi, "parameter" | "assumption" | "recommendation" | "compute" | "matching" | "rfq" | "medium_classification" | "medium_context">> &
+  ui: Required<Pick<AgentWorkspaceUi, "parameter" | "assumption" | "recommendation" | "compute" | "matching" | "rfq" | "medium_classification" | "medium_context" | "v92">> &
     AgentWorkspaceUi;
 };
 
@@ -243,6 +243,102 @@ export function buildStreamWorkspaceView(
           typeof ui.medium_context?.disclaimer === "string"
             ? ui.medium_context.disclaimer
             : null,
+      },
+      v92: {
+        seal_system: {
+          status: typeof ui.v92?.seal_system?.status === "string" ? ui.v92.seal_system.status : "pending",
+          seal_family:
+            typeof ui.v92?.seal_system?.seal_family === "string"
+              ? ui.v92.seal_system.seal_family
+              : "unknown",
+          seal_type:
+            typeof ui.v92?.seal_system?.seal_type === "string"
+              ? ui.v92.seal_system.seal_type
+              : "unknown_seal",
+          missing_fields: asStringArray(ui.v92?.seal_system?.missing_fields),
+          validity_boundaries: asStringArray(ui.v92?.seal_system?.validity_boundaries),
+        },
+        engineering: {
+          status:
+            typeof ui.v92?.engineering?.status === "string" ? ui.v92.engineering.status : "pending",
+          route: typeof ui.v92?.engineering?.route === "string" ? ui.v92.engineering.route : "unknown",
+          next_best_engineering_action:
+            typeof ui.v92?.engineering?.next_best_engineering_action === "string"
+              ? ui.v92.engineering.next_best_engineering_action
+              : "identify_seal_system",
+          blockers: asStringArray(ui.v92?.engineering?.blockers),
+        },
+        calculations: {
+          status:
+            typeof ui.v92?.calculations?.status === "string" ? ui.v92.calculations.status : "pending",
+          result_count:
+            typeof ui.v92?.calculations?.result_count === "number"
+              ? ui.v92.calculations.result_count
+              : 0,
+          blocked_calculations: asStringArray(ui.v92?.calculations?.blocked_calculations),
+          guardrail_violations: asStringArray(ui.v92?.calculations?.guardrail_violations),
+        },
+        standards: {
+          status: typeof ui.v92?.standards?.status === "string" ? ui.v92.standards.status : "pending",
+          registry_version:
+            typeof ui.v92?.standards?.registry_version === "string"
+              ? ui.v92.standards.registry_version
+              : "standards_registry_metadata_v1",
+          applicable_count:
+            typeof ui.v92?.standards?.applicable_count === "number"
+              ? ui.v92.standards.applicable_count
+              : 0,
+          blocking_gaps: asStringArray(ui.v92?.standards?.blocking_gaps),
+          claim_boundary:
+            typeof ui.v92?.standards?.claim_boundary === "string"
+              ? ui.v92.standards.claim_boundary
+              : "",
+        },
+        evidence_graph: {
+          status:
+            typeof ui.v92?.evidence_graph?.status === "string"
+              ? ui.v92.evidence_graph.status
+              : "pending",
+          node_count:
+            typeof ui.v92?.evidence_graph?.node_count === "number"
+              ? ui.v92.evidence_graph.node_count
+              : 0,
+          unresolved_gaps: asStringArray(ui.v92?.evidence_graph?.unresolved_gaps),
+        },
+        compound: {
+          status: typeof ui.v92?.compound?.status === "string" ? ui.v92.compound.status : "pending",
+          material_family_count:
+            typeof ui.v92?.compound?.material_family_count === "number"
+              ? ui.v92.compound.material_family_count
+              : 0,
+          compound_count:
+            typeof ui.v92?.compound?.compound_count === "number" ? ui.v92.compound.compound_count : 0,
+          product_count:
+            typeof ui.v92?.compound?.product_count === "number" ? ui.v92.compound.product_count : 0,
+          separation_violations: asStringArray(ui.v92?.compound?.separation_violations),
+        },
+        review: {
+          status: typeof ui.v92?.review?.status === "string" ? ui.v92.review.status : "not_started",
+          blocking_findings: asStringArray(ui.v92?.review?.blocking_findings),
+          required_corrections: asStringArray(ui.v92?.review?.required_corrections),
+        },
+        dossier: {
+          status: typeof ui.v92?.dossier?.status === "string" ? ui.v92.dossier.status : "pending",
+          dossier_id:
+            typeof ui.v92?.dossier?.dossier_id === "string" ? ui.v92.dossier.dossier_id : null,
+          fact_count:
+            typeof ui.v92?.dossier?.fact_count === "number" ? ui.v92.dossier.fact_count : 0,
+          calculation_count:
+            typeof ui.v92?.dossier?.calculation_count === "number"
+              ? ui.v92.dossier.calculation_count
+              : 0,
+          candidate_count:
+            typeof ui.v92?.dossier?.candidate_count === "number"
+              ? ui.v92.dossier.candidate_count
+              : 0,
+          blockers: asStringArray(ui.v92?.dossier?.blockers),
+          no_final_technical_release: Boolean(ui.v92?.dossier?.no_final_technical_release),
+        },
       },
     },
   };

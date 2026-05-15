@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from app.agent.runtime.outward_names import normalize_outward_response_class, no
 from app.agent.runtime.response_renderer import render_chunk, render_response
 from app.agent.runtime.surface_claims import get_surface_claims_spec
 from app.agent.state.models import TurnContextContract
+from app.agent.prompts import prompts
+from app.observability.langsmith import traceable, wrap_openai_client
 from prompts.builder import PromptBuilder
 
 _log = logging.getLogger(__name__)
@@ -48,6 +51,30 @@ class GovernedVisibleReplyResult:
     answer_trace: AnswerTrace
 
 
+@dataclass(frozen=True, slots=True)
+class UnsafeInstructionContext:
+    next_question: str
+    compliance_terms: tuple[str, ...]
+
+
+_UNSAFE_REPLY_RESPONSE_FORMAT: dict[str, object] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "sealai_unsafe_instruction_visible_reply",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "assistant_message": {"type": "string"},
+            },
+            "required": ["assistant_message"],
+        },
+    },
+}
+
+
+@traceable(name="sealai.governed_visible_reply", run_type="chain")
 async def collect_governed_visible_reply(
     *,
     response_class: str,
@@ -97,20 +124,12 @@ async def collect_governed_visible_reply_with_trace(
     - On any LLM error: returns fallback_text directly.
     Adding or removing content is not permitted — only style.
     """
-    guarded_user_instruction = _guard_unsafe_user_instruction(
+    guarded_user_instruction = await collect_unsafe_user_instruction_reply_with_trace(
         latest_user_message=latest_user_message,
         turn_context=turn_context,
     )
     if guarded_user_instruction is not None:
-        return GovernedVisibleReplyResult(
-            text=guarded_user_instruction,
-            answer_trace=build_answer_trace(
-                reply_source="api_guard",
-                answer_markdown_source="deterministic_fallback",
-                final_visible_source="answer_markdown",
-                fallback_reason="unsafe_user_instruction_guard",
-            ),
-        )
+        return guarded_user_instruction
 
     claims_spec: GovernedAllowedSurfaceClaims | list[str]
     claims_spec = get_surface_claims_spec(
@@ -235,7 +254,7 @@ async def collect_governed_visible_reply_with_trace(
     try:
         import openai  # noqa: PLC0415
 
-        client = openai.AsyncOpenAI()
+        client = wrap_openai_client(openai.AsyncOpenAI())
         accumulated_chunks: list[str] = []
         stream = await client.chat.completions.create(
             model=_GOVERNED_REFORMULATE_MODEL,
@@ -291,11 +310,11 @@ async def collect_governed_visible_reply_with_trace(
         )
 
 
-def _guard_unsafe_user_instruction(
+def _unsafe_user_instruction_context(
     *,
     latest_user_message: str | None,
     turn_context: TurnContextContract | None,
-) -> str | None:
+) -> UnsafeInstructionContext | None:
     user_text = str(latest_user_message or "").strip()
     lowered = user_text.casefold()
     if not user_text:
@@ -304,15 +323,97 @@ def _guard_unsafe_user_instruction(
         return None
 
     next_question = str(getattr(turn_context, "primary_question", "") or "").strip()
-    parts = [
-        "Das kann ich so nicht seriös bestätigen.",
-        "Ob ein Werkstoff, Dichtungstyp oder eine Lösung passt, prüfe ich nur gegen den aktuellen Fallstand, offene Punkte und nachvollziehbare Quellen.",
-    ]
-    if next_question:
-        parts.append(next_question)
+    compliance_terms: list[str] = []
+    if "atex" in lowered:
+        compliance_terms.append("ATEX")
+    if "fda" in lowered:
+        compliance_terms.append("FDA")
+    if "freig" in lowered and not compliance_terms:
+        compliance_terms.append("Freigabe")
+    return UnsafeInstructionContext(
+        next_question=next_question,
+        compliance_terms=tuple(compliance_terms),
+    )
+
+
+async def collect_unsafe_user_instruction_reply_with_trace(
+    *,
+    latest_user_message: str | None,
+    turn_context: TurnContextContract | None,
+) -> GovernedVisibleReplyResult | None:
+    """Generate unsafe-instruction boundary wording via the LLM.
+
+    The regex decision is only a guard trigger. The visible wording is produced
+    by a strict, template-backed LLM call so production chat does not emit a
+    canned refusal.
+    """
+
+    context = _unsafe_user_instruction_context(
+        latest_user_message=latest_user_message,
+        turn_context=turn_context,
+    )
+    if context is None:
+        return None
+
+    fallback_reason: str | None = None
+    try:
+        import openai  # noqa: PLC0415
+
+        system_prompt = prompts.render(
+            "guard/unsafe_instruction_reply.j2",
+            {
+                "latest_user_message": str(latest_user_message or "").strip(),
+                "next_question": context.next_question,
+                "compliance_terms": list(context.compliance_terms),
+            },
+        )
+        client = wrap_openai_client(openai.AsyncOpenAI())
+        response = await client.chat.completions.create(
+            model=_GOVERNED_REFORMULATE_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": str(latest_user_message or "").strip()},
+            ],
+            response_format=_UNSAFE_REPLY_RESPONSE_FORMAT,
+            temperature=0.2,
+            max_tokens=220,
+        )
+        raw = response.choices[0].message.content if response.choices else "{}"
+        payload = json.loads(str(raw or "{}"))
+        text = str(payload.get("assistant_message") or "").strip()
+        if not text:
+            raise RuntimeError("unsafe_instruction_empty_llm_reply")
+    except Exception as exc:  # noqa: BLE001
+        fallback_reason = f"unsafe_instruction_llm_fallback:{exc.__class__.__name__}"
+        text = _fallback_unsafe_instruction_text(context)
+
+    rendered = render_response(text, path="GOVERNED")
+    return GovernedVisibleReplyResult(
+        text=str(rendered.text or text).strip(),
+        answer_trace=build_answer_trace(
+            reply_source="llm_guard",
+            answer_markdown_source="llm_guard",
+            final_visible_source="answer_markdown",
+            fallback_reason=fallback_reason or "unsafe_user_instruction_guard",
+        ),
+    )
+
+
+def _fallback_unsafe_instruction_text(context: UnsafeInstructionContext) -> str:
+    terms = [term for term in context.compliance_terms if term != "Freigabe"]
+    if terms:
+        evidence_label = " und ".join(f"{term}-Nachweise" for term in terms)
+        boundary = (
+            f"Für {evidence_label} bestätige ich keine Freigabe ohne konkreten Fall, "
+            "Hersteller- oder Normnachweis und geprüfte Dokumente."
+        )
     else:
-        parts.append("Wenn du möchtest, klären wir als Nächstes den fehlenden technischen Punkt im Fall.")
-    return "\n\n".join(parts)
+        boundary = (
+            "Eine Freigabe bestätige ich nicht ohne konkreten Fall, Hersteller- oder "
+            "Normnachweis und geprüfte Dokumente."
+        )
+    question = context.next_question or "Wenn du möchtest, klären wir als Nächstes den fehlenden technischen Punkt im Fall."
+    return f"Das kann ich so nicht seriös bestätigen. {boundary} {question}"
 
 
 def derive_public_response_class(

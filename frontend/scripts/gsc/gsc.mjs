@@ -1,14 +1,14 @@
 import { requireConfig } from "./env.mjs";
 
-const DEFAULT_SITE_URL = "sc-domain:sealai.net";
-const DEFAULT_INSPECTION_URL = "https://sealai.net/";
+const DEFAULT_SITE_URL = "sc-domain:sealingai.com";
+const DEFAULT_INSPECTION_URL = "https://sealingai.com/";
 
 function usage() {
   console.log(`Usage:
   npm run gsc -- sites
   npm run gsc -- sitemaps
-  npm run gsc -- submit-sitemap https://sealai.net/sitemap.xml
-  npm run gsc -- inspect https://sealai.net/
+  npm run gsc -- submit-sitemap https://sealingai.com/sitemap.xml
+  npm run gsc -- inspect https://sealingai.com/
   npm run gsc -- performance [days]
 `);
 }

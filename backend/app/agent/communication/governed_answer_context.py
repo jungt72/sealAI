@@ -6,6 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.communication.context import human_label
 from app.agent.state.models import PendingQuestion, SlotAnswerBinding
+from app.agent.v91.contracts import FinalAnswerContext, QuestionPlan
+from app.agent.v91.final_answer_context import build_v91_final_answer_context
+from app.agent.v91.question_planner import build_question_plan_from_strategy
 
 AnswerMarkdownSource = Literal["not_composed_yet"]
 
@@ -82,7 +85,11 @@ class GovernedAnswerContext(BaseModel):
     confirmed_facts: list[GovernedFact] = Field(default_factory=list)
     missing_fields: list[str] = Field(default_factory=list)
     open_points: list[str] = Field(default_factory=list)
+    challenge_findings: list[dict[str, Any]] = Field(default_factory=list)
+    challenge_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
     next_best_question: str | None = None
+    v91_question_plan: QuestionPlan | None = None
+    v91_final_answer_context: FinalAnswerContext | None = None
     response_class: str | None = None
     allowed_claims: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=lambda: list(_FORBIDDEN_CLAIMS))
@@ -155,6 +162,51 @@ def _open_points(state: Any, output_public: dict[str, Any] | None) -> list[str]:
         return _unique([str(item) for item in output_public.get("open_points") or []])
     governance = getattr(state, "governance", None)
     return _unique([str(item) for item in list(getattr(governance, "open_validation_points", []) or []) if item])
+
+
+def _challenge_findings(state: Any) -> list[dict[str, Any]]:
+    challenge = getattr(state, "challenge", None)
+    findings: list[dict[str, Any]] = []
+    for item in list(getattr(challenge, "findings", []) or [])[:6]:
+        if hasattr(item, "model_dump"):
+            payload = item.model_dump(mode="json")
+        elif isinstance(item, dict):
+            payload = dict(item)
+        else:
+            continue
+        findings.append(
+            {
+                "title": str(payload.get("title") or ""),
+                "summary": str(payload.get("summary") or ""),
+                "severity": str(payload.get("severity") or ""),
+                "related_fields": list(payload.get("related_fields") or [])[:5],
+            }
+        )
+    return findings
+
+
+def _challenge_hypotheses(state: Any) -> list[dict[str, Any]]:
+    challenge = getattr(state, "challenge", None)
+    hypotheses: list[dict[str, Any]] = []
+    for item in list(getattr(challenge, "hypotheses", []) or [])[:6]:
+        if hasattr(item, "model_dump"):
+            payload = item.model_dump(mode="json")
+        elif isinstance(item, dict):
+            payload = dict(item)
+        else:
+            continue
+        hypotheses.append(
+            {
+                "label": str(payload.get("label") or ""),
+                "plausibility_class": str(payload.get("plausibility_class") or ""),
+                "status": str(payload.get("status") or ""),
+                "basis": list(payload.get("basis") or [])[:5],
+                "counterindicators": list(payload.get("counterindicators") or [])[:5],
+                "blocking_unknowns": list(payload.get("blocking_unknowns") or [])[:5],
+                "required_checks": list(payload.get("required_checks") or [])[:5],
+            }
+        )
+    return hypotheses
 
 
 def _slot_answer_bindings(state: Any) -> list[SlotAnswerBinding]:
@@ -277,8 +329,23 @@ def build_governed_answer_context(
     confirmed = _confirmed_facts(state)
     missing = _missing_fields(state, output_public)
     open_points = _open_points(state, output_public)
+    challenge_findings = _challenge_findings(state)
+    challenge_hypotheses = _challenge_hypotheses(state)
     next_question = _next_best_question(strategy, ambiguous)
-    return GovernedAnswerContext(
+    question_plan = build_question_plan_from_strategy(
+        strategy=strategy,
+        state=state,
+        override_question=next_question,
+        override_target_field=(
+            ambiguous[0].field_key if ambiguous else None
+        ),
+        override_reason=(
+            "Der zuletzt genannte Wert ist noch mehrdeutig und braucht eine klare Einordnung."
+            if ambiguous
+            else None
+        ),
+    )
+    context = GovernedAnswerContext(
         latest_user_message=_latest_user_message(state),
         pending_question=pending_question if pending_question is not None else getattr(state, "pending_question", None),
         slot_answer_bindings=bindings,
@@ -288,7 +355,10 @@ def build_governed_answer_context(
         confirmed_facts=confirmed,
         missing_fields=missing,
         open_points=open_points,
+        challenge_findings=challenge_findings,
+        challenge_hypotheses=challenge_hypotheses,
         next_best_question=next_question,
+        v91_question_plan=question_plan,
         response_class=response_class or str(getattr(state, "output_response_class", "") or "") or None,
         allowed_claims=_allowed_claims(
             confirmed_facts=confirmed,
@@ -301,4 +371,12 @@ def build_governed_answer_context(
             if ambiguous
             else "acknowledge valid newly supplied information and ask the next best required question"
         ),
+    )
+    return context.model_copy(
+        update={
+            "v91_final_answer_context": build_v91_final_answer_context(
+                state=state,
+                governed_context=context,
+            )
+        }
     )

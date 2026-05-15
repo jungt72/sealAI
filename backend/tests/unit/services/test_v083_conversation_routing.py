@@ -126,6 +126,55 @@ async def test_general_knowledge_routes_to_knowledge_without_governed_case_intak
     load_state.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_nbr_about_question_routes_to_rag_knowledge_without_rfq_intake(
+    monkeypatch,
+) -> None:
+    load_state = AsyncMock(
+        side_effect=AssertionError("standalone knowledge must not create a case")
+    )
+    rag_calls: list[dict[str, object]] = []
+
+    def rag_retriever(**kwargs):
+        rag_calls.append(dict(kwargs))
+        return [
+            {
+                "text": "NBR ist ein polarer Acrylnitril-Butadien-Kautschuk mit typischer Oel- und Fettbestaendigkeit.",
+                "metadata": {
+                    "source_id": "paperless-nbr",
+                    "title": "NBR Deep Research",
+                    "chunk_id": "chunk-nbr-1",
+                },
+                "fused_score": 0.91,
+            }
+        ]
+
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+    monkeypatch.setattr("app.agent.api.dispatch._knowledge_rag_retriever", rag_retriever)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="Was kannst du mir zu NBR sagen?", session_id=None),
+        current_user=_user(),
+    )
+
+    assert dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    assert dispatch.knowledge_response is not None
+    assert dispatch.knowledge_response.no_case_created is True
+    assert dispatch.governed_state is None
+    assert "NBR steht für Acrylnitril" in dispatch.knowledge_response.content
+    assert "Typische Orientierung" in dispatch.knowledge_response.content
+    assert "Aus dem kuratierten/RAG-Wissenskontext" not in dispatch.knowledge_response.content
+    assert rag_calls == [
+        {
+            "query": "Was kannst du mir zu NBR sagen?",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "max_results": 3,
+        }
+    ]
+    load_state.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "message",
     [
@@ -152,6 +201,20 @@ def test_generic_material_comparison_routes_to_knowledge(message: str) -> None:
     assert route.intent is ConversationIntent.general_sealing_question
     assert route.response_mode is ResponseMode.knowledge_answer
     assert route.no_durable_engineering_case_state is True
+
+
+def test_standalone_product_material_compatibility_routes_to_knowledge() -> None:
+    message = "Bitte untersuche ob POM mit Klübersynth UH1 6-220 verträglich ist."
+    pre_gate = PreGateClassifier().classify(message)
+    route = classify_conversation_route(
+        message, pre_gate_classification=pre_gate.classification
+    )
+
+    assert pre_gate.classification is PreGateClassification.KNOWLEDGE_QUERY
+    assert route.intent is ConversationIntent.general_sealing_question
+    assert route.response_mode is ResponseMode.knowledge_answer
+    assert route.no_durable_engineering_case_state is True
+    assert route.selects_governed_case_intake is False
 
 
 @pytest.mark.parametrize(
@@ -217,9 +280,9 @@ def test_existing_no_case_knowledge_prompts_stay_knowledge(message: str) -> None
         ),
         (
             "Ist FKM gegen Wasser, Natrium und Kalium im Oel bestaendig?",
-            PreGateClassification.DOMAIN_INQUIRY,
-            ConversationIntent.compatibility_inquiry,
-            ResponseMode.support_flow,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            ConversationIntent.general_sealing_question,
+            ResponseMode.knowledge_answer,
         ),
         (
             "Diese Dichtung leckt schon wieder",

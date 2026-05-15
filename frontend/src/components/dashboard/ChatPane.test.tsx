@@ -12,6 +12,7 @@ const agentStreamMockState = vi.hoisted(() => ({
     timestamp?: string;
   }>,
   streamingText: "",
+  streamingStatusText: "",
   streamWorkspace: null as null | Record<string, unknown>,
   isStreaming: false,
   error: null as string | null,
@@ -62,6 +63,7 @@ describe("ChatPane", () => {
     agentStreamMockState.activeCaseId = "case-parameter";
     agentStreamMockState.messages = [];
     agentStreamMockState.streamingText = "";
+    agentStreamMockState.streamingStatusText = "";
     agentStreamMockState.streamWorkspace = null;
     agentStreamMockState.isStreaming = false;
     agentStreamMockState.error = null;
@@ -119,10 +121,11 @@ describe("ChatPane", () => {
 
   it("renders a restrained streaming placeholder before text chunks arrive", () => {
     agentStreamMockState.isStreaming = true;
+    agentStreamMockState.streamingStatusText = "SealingAI bewertet technische Risiken...";
 
     render(<ChatPane caseId="case-parameter" />);
 
-    expect(screen.getByText("sealingAI verbindet den LLM-Stream...")).toBeInTheDocument();
+    expect(screen.getByText("SealingAI bewertet technische Risiken...")).toBeInTheDocument();
   });
 
   it("forwards composer messages to the agent stream", async () => {
