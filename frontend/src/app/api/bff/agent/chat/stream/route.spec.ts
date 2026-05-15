@@ -54,6 +54,18 @@ function parseSsePayloads(raw: string): Array<string | Record<string, unknown>> 
     .map((payload) => (payload === "[DONE]" ? payload : JSON.parse(payload)));
 }
 
+function findPayload(
+  payloads: Array<string | Record<string, unknown>>,
+  type: string,
+): Record<string, unknown> {
+  const payload = payloads.find(
+    (candidate): candidate is Record<string, unknown> =>
+      typeof candidate !== "string" && candidate.type === type,
+  );
+  expect(payload).toBeDefined();
+  return payload as Record<string, unknown>;
+}
+
 function rfqReadinessContractFixture(): Record<string, unknown> {
   return JSON.parse(
     readFileSync(RFQ_READINESS_CONTRACT_FIXTURE_PATH, "utf8"),
@@ -93,17 +105,18 @@ describe("BFF agent chat stream route", () => {
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
 
-    expect(payloads).toHaveLength(5);
+    expect(payloads).toHaveLength(6);
     expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "Preview" });
     expect(payloads[1]).toMatchObject({ type: "text_reset" });
     expect(payloads[2]).toMatchObject({ type: "case_bound" });
-    expect(payloads[3]).toMatchObject({
+    expect(payloads[3]).toMatchObject({ type: "text_chunk", text: "Finale Antwort" });
+    expect(payloads[4]).toMatchObject({
       type: "state_update",
       caseId: expect.any(String),
       reply: "Finale Antwort",
       responseClass: "conversational_answer",
     });
-    expect(payloads[4]).toBe("[DONE]");
+    expect(payloads[5]).toBe("[DONE]");
   });
 
   it("persists rotated auth cookies on streaming responses", async () => {
@@ -169,16 +182,17 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads).toHaveLength(2);
-    expect(payloads[0]).toMatchObject({
+    expect(payloads[0]).toMatchObject({ type: "text_chunk" });
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       noCaseCreated: true,
       reply: "Hallo! Schoen, dass du da bist.",
       responseClass: "conversational_answer",
     });
-    expect(payloads[0]).not.toHaveProperty("caseId");
-    expect(payloads[1]).toBe("[DONE]");
+    expect(stateUpdate).not.toHaveProperty("caseId");
+    expect(payloads.at(-1)).toBe("[DONE]");
   });
 
   it("does not expose raw backend auth details when the token expired", async () => {
@@ -226,8 +240,10 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({
+    expect(payloads[1]).toMatchObject({ type: "text_chunk", text: "real assistant answer" });
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       reply: "deterministic fallback",
       answer_markdown: "real assistant answer",
@@ -272,8 +288,9 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       runMeta: { answer_trace: answerTrace },
     });
@@ -307,12 +324,13 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       rfq_readiness_projection: rfqReadinessProjection,
     });
-    expect((payloads[1] as Record<string, unknown>).rfq_readiness_projection).toEqual(
+    expect(stateUpdate.rfq_readiness_projection).toEqual(
       rfqReadinessProjection,
     );
   });
@@ -339,8 +357,9 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       assertions: { temperature_c: { asserted_value: 80, unit: "°C", confidence: 0.92 } },
     });
@@ -369,8 +388,9 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       proposedCaseDelta: {
         schema_version: "case_delta_v0_4",
@@ -401,8 +421,9 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({
+    expect(stateUpdate).toMatchObject({
       type: "state_update",
       reply: "Alte Klasse",
       responseClass: null,

@@ -16,6 +16,9 @@ function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+const SYNTHETIC_STREAM_SEGMENT_CHARS = 42;
+const SYNTHETIC_STREAM_SEGMENT_DELAY_MS = 14;
+
 const IGNORED_BACKEND_EVENT_TYPES = new Set([
   "text_replacement",
   "boundary_block",
@@ -49,6 +52,48 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function syntheticStreamSegments(text: string): string[] {
+  const clean = text || "";
+  if (!clean) {
+    return [];
+  }
+  if (clean.length <= SYNTHETIC_STREAM_SEGMENT_CHARS) {
+    return [clean];
+  }
+
+  const segments: string[] = [];
+  let current = "";
+  for (const token of clean.match(/\S+\s*/g) ?? []) {
+    if (current && current.length + token.length > SYNTHETIC_STREAM_SEGMENT_CHARS) {
+      segments.push(current);
+      current = token;
+    } else {
+      current += token;
+    }
+  }
+  if (current) {
+    segments.push(current);
+  }
+  return segments;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function enqueueSyntheticTextChunks(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  text: string,
+) {
+  const segments = syntheticStreamSegments(text);
+  for (const segment of segments) {
+    controller.enqueue(encodeSseEvent({ type: "text_chunk", text: segment }));
+    if (segments.length > 1) {
+      await sleep(SYNTHETIC_STREAM_SEGMENT_DELAY_MS);
+    }
+  }
 }
 
 function mapConversationStrategy(value: unknown): AgentConversationStrategy | null {
@@ -194,6 +239,7 @@ export async function POST(request: Request) {
 
     const reader = backendResponse.body.getReader();
     let emittedCaseBinding = false;
+    let hasVisibleTextChunk = false;
     let buffer = "";
 
     const stream = new ReadableStream<Uint8Array>({
@@ -247,6 +293,7 @@ export async function POST(request: Request) {
               if (eventType === "text_chunk") {
                 const text = typeof payload.text === "string" ? payload.text : "";
                 if (text) {
+                  hasVisibleTextChunk = true;
                   controller.enqueue(
                     encodeSseEvent({
                       type: "text_chunk",
@@ -258,6 +305,7 @@ export async function POST(request: Request) {
               }
 
               if (eventType === "text_reset") {
+                hasVisibleTextChunk = false;
                 controller.enqueue(encodeSseEvent({ type: "text_reset" }));
                 continue;
               }
@@ -279,6 +327,11 @@ export async function POST(request: Request) {
                 const shouldBindCase = !noCaseCreated;
                 if (shouldBindCase) {
                   pushCaseBinding();
+                }
+                const visibleText = (answerMarkdown || reply).trim();
+                if (!hasVisibleTextChunk && visibleText) {
+                  await enqueueSyntheticTextChunks(controller, visibleText);
+                  hasVisibleTextChunk = true;
                 }
                 controller.enqueue(
                   encodeSseEvent({
