@@ -56,6 +56,22 @@ test("getAccessToken reads the secure Auth.js session cookie from the request", 
   assert.equal(accessToken, "access-token-from-cookie");
 });
 
+test("getAccessToken detects secure Auth.js cookies even when proxy proto is absent", async () => {
+  process.env.AUTH_SECRET = AUTH_SECRET;
+  const cookie = await buildSessionCookie({
+    secureCookie: true,
+    accessToken: "access-token-from-secure-cookie",
+    expiresAt: Math.floor(Date.now() / 1000) + 300,
+  });
+  const request = new Request("http://sealingai.com/api/bff/agent/cases", {
+    headers: { cookie },
+  });
+
+  const accessToken = await getAccessToken(request);
+
+  assert.equal(accessToken, "access-token-from-secure-cookie");
+});
+
 test("getAccessToken refreshes expired Keycloak access tokens for BFF calls", async () => {
   process.env.AUTH_SECRET = AUTH_SECRET;
   process.env.KEYCLOAK_ISSUER = "https://keycloak.example/realms/sealAI";

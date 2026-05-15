@@ -62,6 +62,14 @@ function resolveKeycloakClientSecret(): string {
 }
 
 function shouldUseSecureCookies(request: Request): boolean {
+  const cookieNames = requestCookieNames(request);
+  if (
+    cookieNames.has("__Secure-authjs.session-token") ||
+    [...cookieNames].some((name) => name.startsWith("__Secure-authjs.session-token."))
+  ) {
+    return true;
+  }
+
   const forwardedProto = request.headers.get("x-forwarded-proto");
   if (forwardedProto) {
     return forwardedProto.split(",")[0]?.trim() === "https";
