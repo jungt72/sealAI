@@ -31,7 +31,7 @@ function MessageBubble({
   return (
     <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "justify-start")}>
       {!isUser && (
-        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#0B5BD3]">
+        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#041E49]">
           <Bot size={14} />
         </div>
       )}
@@ -134,7 +134,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
           ) : (
             <div className="flex flex-1 flex-col gap-5 pb-4">
               {!hasConversation && currentCaseId ? (
-                <div className="py-8 text-center text-sm text-[#8A94A6]">
+                <div className="py-8 text-center text-sm text-muted-foreground">
                   Dieser Fall ist bereit. Stelle eine Frage oder ergänze Parameter.
                 </div>
               ) : null}
@@ -153,7 +153,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
 
               {isStreaming && !streamingText && (
                 <div className="flex justify-start gap-3 text-sm text-slate-500">
-                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#0B5BD3]">
+                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#041E49]">
                     <Bot size={14} />
                   </div>
                   {streamingStatusText || "SealingAI formuliert die Antwort..."}

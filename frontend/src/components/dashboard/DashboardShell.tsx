@@ -197,10 +197,10 @@ export default function DashboardShell({
     : historyItems;
 
   return (
-    <div className="relative flex h-screen w-full overflow-hidden bg-[#F2F5F9] font-sans text-foreground">
+    <div className="relative flex h-screen w-full overflow-hidden bg-background font-sans text-foreground">
       <aside
         className={cn(
-          "relative z-40 flex h-full shrink-0 flex-col bg-[#EAF1F8] text-[#4F5862] transition-[width] duration-200 ease-out",
+          "relative z-40 flex h-full shrink-0 flex-col border-r border-border/80 bg-sidebar text-muted-foreground transition-[width] duration-200 ease-out",
           isHistoryOpen ? "w-[304px]" : "w-[72px]",
         )}
       >
@@ -211,7 +211,7 @@ export default function DashboardShell({
             aria-expanded={isHistoryOpen}
             title={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             onClick={() => setIsHistoryOpen((current) => !current)}
-            className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+            className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
           >
             <Menu size={20} />
           </button>
@@ -221,7 +221,7 @@ export default function DashboardShell({
               aria-label="Chats durchsuchen"
               title="Chats durchsuchen"
               onClick={() => setIsHistorySearchOpen((current) => !current)}
-              className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+              className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
             >
               <Search size={20} />
             </button>
@@ -246,10 +246,10 @@ export default function DashboardShell({
                       key={`${item.label}-${item.href}`}
                       href={item.href}
                       className={cn(
-                        "flex h-11 items-center gap-4 rounded-full px-4 text-[15px] font-medium transition-colors",
+                        "flex h-11 items-center gap-4 rounded-full border border-transparent px-4 text-[15px] font-medium transition-colors",
                         isActive
-                          ? "bg-[#DCE8F3] text-[#1F2933]"
-                          : "text-[#4F5862] hover:bg-[#DCE8F3] hover:text-[#1F2933]",
+                          ? "border-border bg-white text-seal-blue shadow-sm"
+                          : "text-muted-foreground hover:bg-white hover:text-seal-blue",
                       )}
                     >
                       <item.icon size={20} />
@@ -260,9 +260,9 @@ export default function DashboardShell({
               </div>
 
               <div className="mt-7">
-                <div className="mb-2 flex items-center justify-between px-3 text-[14px] font-semibold text-[#1F2933]">
+                <div className="mb-2 flex items-center justify-between px-3 text-[14px] font-semibold text-foreground">
                   <span>Bereiche</span>
-                  <ChevronRight size={16} className="text-[#7A848E]" />
+                  <ChevronRight size={16} className="text-muted-foreground" />
                 </div>
                 <div className="space-y-1">
                   {WORKSPACE_ITEMS.map((item) => {
@@ -272,10 +272,10 @@ export default function DashboardShell({
                         key={`${item.label}-${item.href}`}
                         href={item.href}
                         className={cn(
-                          "flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium transition-colors",
+                          "flex h-10 items-center gap-4 rounded-full border border-transparent px-4 text-[14px] font-medium transition-colors",
                           isActive
-                            ? "bg-[#DCE8F3] text-[#1F2933]"
-                            : "text-[#4F5862] hover:bg-[#DCE8F3] hover:text-[#1F2933]",
+                            ? "border-border bg-white text-seal-blue shadow-sm"
+                            : "text-muted-foreground hover:bg-white hover:text-seal-blue",
                         )}
                       >
                         <item.icon size={18} />
@@ -287,7 +287,7 @@ export default function DashboardShell({
               </div>
             </nav>
 
-            <div className="mb-2 px-6 text-[14px] font-semibold text-[#1F2933]">
+            <div className="mb-2 px-6 text-[14px] font-semibold text-foreground">
               Chats
             </div>
 
@@ -301,14 +301,14 @@ export default function DashboardShell({
                   value={historySearch}
                   onChange={(event) => setHistorySearch(event.target.value)}
                   placeholder="Chats suchen"
-                  className="h-10 w-full rounded-full border border-transparent bg-[#DCE8F3] px-4 text-[14px] text-[#1F2933] outline-none transition-colors placeholder:text-[#7A848E] focus:border-[#B8C8D8] focus:bg-white"
+                  className="h-10 w-full rounded-full border border-border bg-white px-4 text-[14px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-seal-blue"
                 />
               </div>
             ) : null}
 
             <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-4">
               {historyLoading ? (
-                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#68727D]">
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-muted-foreground">
                   Lade Gespräche...
                 </div>
               ) : historyError ? (
@@ -316,11 +316,11 @@ export default function DashboardShell({
                   {historyError}
                 </div>
               ) : historyItems.length === 0 ? (
-                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#68727D]">
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-muted-foreground">
                   Noch keine gespeicherten Chats.
                 </div>
               ) : visibleHistoryItems.length === 0 ? (
-                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#68727D]">
+                <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-muted-foreground">
                   Kein passender Chat.
                 </div>
               ) : (
@@ -335,10 +335,10 @@ export default function DashboardShell({
                         title={`${item.title} · ${item.subtitle}`}
                         aria-label={`${item.title} ${item.subtitle}`}
                         className={cn(
-                          "block rounded-full px-3 py-2 text-[14px] font-medium leading-6 transition-colors",
+                          "block rounded-full border border-transparent px-3 py-2 text-[14px] font-medium leading-6 transition-colors",
                           isActive
-                            ? "bg-[#DCE8F3] text-[#1F2933]"
-                            : "text-[#4F5862] hover:bg-[#DCE8F3] hover:text-[#1F2933]",
+                            ? "border-border bg-white text-seal-blue shadow-sm"
+                            : "text-muted-foreground hover:bg-white hover:text-seal-blue",
                         )}
                       >
                         <span className="block truncate">{item.title}</span>
@@ -353,7 +353,7 @@ export default function DashboardShell({
               <div className="space-y-1">
                 <Link
                   href="/dashboard/seo"
-                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
                 >
                   <Activity size={18} />
                   <span>Aktivitäten</span>
@@ -362,15 +362,15 @@ export default function DashboardShell({
                   type="button"
                   aria-label="Einstellungen"
                   title="Einstellungen"
-                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
                 >
                   <Settings size={18} />
                   <span>Einstellungen & Hilfe</span>
                 </button>
-                <LogoutButton className="rounded-full px-4 text-[#4F5862] hover:bg-[#DCE8F3] hover:text-red-600" />
+                <LogoutButton className="rounded-full px-4 text-muted-foreground hover:bg-white hover:text-red-600" />
               </div>
-              <div className="mt-5 px-4 text-[12px] leading-5 text-[#68727D]">
-                <div className="font-medium text-[#0B5BD3]">Anfragebasis</div>
+              <div className="mt-5 px-4 text-[12px] leading-5 text-muted-foreground">
+                <div className="font-medium text-seal-blue">Anfragebasis</div>
                 <div>Governed Workspace</div>
               </div>
             </div>
@@ -384,7 +384,7 @@ export default function DashboardShell({
                   href={item.href}
                   title={item.label}
                   aria-label={item.label}
-                  className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                  className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
                 >
                   <item.icon size={19} />
                 </Link>
@@ -395,7 +395,7 @@ export default function DashboardShell({
                 type="button"
                 aria-label="Einstellungen"
                 title="Einstellungen"
-                className="grid h-10 w-10 place-items-center rounded-full text-[#4F5862] transition-colors hover:bg-[#DCE8F3] hover:text-[#1F2933]"
+                className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white hover:text-seal-blue"
               >
                 <HelpCircle size={19} />
               </button>
@@ -406,17 +406,17 @@ export default function DashboardShell({
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between bg-[#F2F5F9] px-5 sm:px-7">
+        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-border/70 bg-white px-5 sm:px-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <div className="text-[18px] font-semibold tracking-tight text-[#0B5BD3]">SEALING</div>
-              <div className="h-5 w-px bg-[#D7DDE8]" />
-              <div className="text-[16px] font-medium text-[#374151]">INTELLIGENCE</div>
+              <div className="text-[18px] font-semibold tracking-tight text-seal-blue">SEALING</div>
+              <div className="h-5 w-px bg-border" />
+              <div className="text-[16px] font-medium text-foreground">INTELLIGENCE</div>
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
-            <div className="hidden text-sm text-[#6B7280] md:block">
-              Arbeitsraum: <span className="font-semibold text-[#0B5BD3]">Anfragebasis</span>
+            <div className="hidden text-sm text-muted-foreground md:block">
+              Arbeitsraum: <span className="font-semibold text-seal-blue">Anfragebasis</span>
             </div>
             <span className="inline-flex items-center rounded-full border border-[#D8EEDB] bg-[#EEF9F0] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#2F8F46]">
               Governed
@@ -424,29 +424,29 @@ export default function DashboardShell({
             <button
               type="button"
               title="Benachrichtigungen"
-              className="hidden h-10 w-10 items-center justify-center rounded-full border border-[#E7ECF3] text-[#6B7280] transition-colors hover:bg-[#F8FAFD] hover:text-[#111827] md:flex"
+              className="hidden h-10 w-10 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
             >
               <Bell size={18} />
             </button>
-            <div className="flex items-center gap-3 rounded-full border border-[#E7ECF3] bg-white px-2.5 py-1.5">
-              <div className="grid h-9 w-9 place-items-center rounded-full border border-[#D7DDE8] bg-[#F8FAFD] text-sm font-semibold text-[#6B7280]">
+            <div className="flex items-center gap-3 rounded-full border border-border bg-white px-2.5 py-1.5">
+              <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground">
                 {userName.slice(0, 2).toUpperCase()}
               </div>
               <div className="hidden text-left md:block">
-                <div className="text-sm font-medium text-[#111827]">{userName} Mustermann</div>
-                <div className="text-[12px] text-[#6B7280]">Ingenieur</div>
+                <div className="text-sm font-medium text-foreground">{userName} Mustermann</div>
+                <div className="text-[12px] text-muted-foreground">Ingenieur</div>
               </div>
             </div>
             <Link
               href="/dashboard/new"
               title="Neue Analyse"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0B5BD3] text-white transition-colors hover:bg-[#0A4FB9] lg:hidden"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-seal-blue text-white transition-colors hover:opacity-90 lg:hidden"
             >
               <Plus size={18} />
             </Link>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#F5F7FB]">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden bg-background">{children}</div>
       </main>
     </div>
   );

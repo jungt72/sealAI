@@ -412,7 +412,7 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
         {!preview ? (
           <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-4">
             <div className="flex items-start gap-3">
-              <FileText className="mt-0.5 shrink-0 text-[#0B57D0]" size={18} />
+              <FileText className="mt-0.5 shrink-0 text-[#041E49]" size={18} />
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-[#111827]">Für diesen Fall gibt es noch keine Anfragevorschau.</div>
                 <p className="mt-1 text-sm text-[#4B5563]">
@@ -427,7 +427,7 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
                   type="button"
                   onClick={() => void createPreview()}
                   disabled={isCreating || !canCreatePreview}
-                  className="mt-3 rounded-[14px] bg-[#0B57D0] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0847AD] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
+                  className="mt-3 rounded-[14px] bg-[#041E49] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#082A5F] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
                 >
                   {isCreating ? "Anfragevorschau wird vorbereitet..." : "Anfragevorschau vorbereiten"}
                 </button>
@@ -517,7 +517,7 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
                 type="button"
                 onClick={() => void grantConsent()}
                 disabled={!consentReady || isGrantingConsent}
-                className="mt-3 flex items-center gap-2 rounded-[14px] bg-[#0B57D0] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#0847AD] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
+                className="mt-3 flex items-center gap-2 rounded-[14px] bg-[#041E49] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#082A5F] disabled:cursor-not-allowed disabled:bg-[#D1D5DB]"
               >
                 <CheckCircle2 size={16} />
                 {isGrantingConsent ? "Nutzerbestätigung wird gespeichert..." : "Nutzerbestätigung speichern"}

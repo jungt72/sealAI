@@ -157,8 +157,8 @@ export function CockpitTabs({
             className={cn(
               "h-10 shrink-0 rounded-full border px-4 text-sm font-semibold shadow-sm transition-colors",
               isActive
-                ? "border-[#0B57D0] bg-[#0B57D0] text-white shadow-[0_8px_20px_rgba(11,87,208,0.18)]"
-                : "border-[#E5EAF2] bg-white/70 text-[#4B5563] hover:border-[#D7E5FF] hover:bg-white hover:text-[#111827]",
+                ? "border-seal-blue bg-seal-blue text-white shadow-[0_8px_20px_rgba(4,30,73,0.18)]"
+                : "border-[#D1D5DB] bg-white text-muted-foreground hover:bg-muted hover:text-seal-blue",
             )}
           >
             {tab.label}
@@ -173,9 +173,9 @@ export function CockpitStatusStrip({ items }: { items: SealCockpitOverview["stat
   return (
     <div className="grid grid-cols-1 gap-2 rounded-tl-[20px] px-4 pt-4 sm:grid-cols-2 xl:grid-cols-5">
       {items.map((item) => (
-        <div key={item.label} className="min-h-[78px] rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{item.label}</div>
-          <div className="mt-2 text-sm font-semibold leading-snug text-[#111827]">{item.value}</div>
+        <div key={item.label} className="min-h-[78px] rounded-[14px] border border-[#D1D5DB] bg-white px-3 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{item.label}</div>
+          <div className="mt-2 text-sm font-semibold leading-snug text-foreground">{item.value}</div>
         </div>
       ))}
     </div>
@@ -239,6 +239,13 @@ function formatQuickSummary(overrides: AgentOverrideItemRequest[], profile: Quic
       return `${label}: ${String(override.value)}${unit}`;
     })
     .join(", ");
+}
+
+function quickInputLabel(field: QuickParameterField): string {
+  if (field.label === "Medium") {
+    return "Schnelleingabe Medium";
+  }
+  return field.unit ? `${field.label} · ${field.unit}` : field.label;
 }
 
 function ParameterQuickEntry({
@@ -315,11 +322,11 @@ function ParameterQuickEntry({
   return (
     <form
       onSubmit={handleSubmit}
-      className="mx-4 mt-4 rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
+      className="mx-4 mt-4 rounded-[18px] border border-[#D1D5DB] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#0B57D0]">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-seal-blue">
             <ClipboardList size={14} />
             Direkteingabe
           </div>
@@ -333,7 +340,7 @@ function ParameterQuickEntry({
         <button
           type="button"
           onClick={() => setIsOpen((current) => !current)}
-          className="shrink-0 rounded-full border border-[#CFE0FF] bg-white px-3 py-1.5 text-xs font-semibold text-[#0B57D0] transition-colors hover:bg-[#EFF6FF]"
+          className="shrink-0 rounded-full border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs font-semibold text-seal-blue transition-colors hover:bg-muted"
         >
           {isOpen ? "Einklappen" : "Ausklappen"}
         </button>
@@ -361,8 +368,8 @@ function ParameterQuickEntry({
                   className={cn(
                     "h-9 shrink-0 rounded-full border px-3 text-xs font-semibold transition-colors",
                     isActive
-                      ? "border-[#0B57D0] bg-[#0B57D0] text-white"
-                      : "border-[#DCE7F7] bg-white text-[#4B5563] hover:border-[#BBD0F5] hover:text-[#111827]",
+                      ? "border-seal-blue bg-seal-blue text-white"
+                      : "border-[#D1D5DB] bg-white text-muted-foreground hover:bg-muted hover:text-seal-blue",
                   )}
                 >
                   {profile.label}
@@ -371,18 +378,19 @@ function ParameterQuickEntry({
             })}
           </div>
 
-          <div className="mt-3 rounded-[12px] border border-[#E5EAF2] bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#4B5563]">
+          <div className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2 text-xs leading-relaxed text-muted-foreground">
             {activeProfile.note}
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-2 xl:grid-cols-2">
             {activeFields.map((field) => (
-              <label key={field.fieldName} className="min-w-0">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+              <div key={field.fieldName} className="min-w-0">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                   {field.label}
-                  {field.unit ? <span className="normal-case tracking-normal text-[#9CA3AF]"> · {field.unit}</span> : null}
+                  {field.unit ? <span className="normal-case tracking-normal text-muted-foreground"> · {field.unit}</span> : null}
                 </span>
                 <input
+                  aria-label={quickInputLabel(field)}
                   type="text"
                   inputMode={field.kind === "number" ? "decimal" : "text"}
                   value={formState[field.fieldName] ?? ""}
@@ -394,9 +402,9 @@ function ParameterQuickEntry({
                   }
                   placeholder={field.placeholder}
                   disabled={isSubmitting}
-                  className="h-10 w-full rounded-[12px] border border-[#DDE5F0] bg-white px-3 text-sm text-[#111827] outline-none transition-colors placeholder:text-[#A3ADBB] focus:border-[#0B57D0] focus:ring-3 focus:ring-[#0B57D0]/10 disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="h-10 w-full rounded-[12px] border border-[#C9D1DC] bg-white px-3 text-sm text-foreground outline-none transition-colors placeholder:text-[#6B7280] focus:border-seal-blue focus:ring-3 focus:ring-seal-blue/10 disabled:cursor-not-allowed disabled:bg-slate-50"
                 />
-              </label>
+              </div>
             ))}
           </div>
 
@@ -414,7 +422,7 @@ function ParameterQuickEntry({
                 setFormState(quickInitialState(workspace));
                 setError(null);
               }}
-              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-2 text-xs font-semibold text-[#4B5563] transition-colors hover:bg-[#F0F2F5] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RotateCcw size={15} />
               Zurücksetzen
@@ -425,8 +433,8 @@ function ParameterQuickEntry({
               className={cn(
                 "inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-colors",
                 canSubmit
-                  ? "bg-[#0B57D0] text-white hover:bg-[#0847AD]"
-                  : "cursor-not-allowed bg-[#E5EAF2] text-[#9CA3AF]",
+                  ? "bg-seal-blue text-white hover:opacity-90"
+                  : "cursor-not-allowed bg-[#E5EAF2] text-[#6B7280]",
               )}
             >
               <Save size={15} />
@@ -521,8 +529,8 @@ export function CriticalDriversCard({ drivers }: { drivers: CriticalDriver[] }) 
 export function SolutionConsequenceCard({ solution }: { solution: SealCockpitOverview["solution"] }) {
   return (
     <OverviewCard title="Einordnung" icon={CheckCircle2}>
-      <div className="rounded-[14px] border border-[#CFE0FF] bg-[#EAF2FF] px-4 py-3">
-        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">{solution.assessmentTitle}</div>
+      <div className="rounded-[14px] border border-[#D1D5DB] bg-[#EAF2FF] px-4 py-3">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">{solution.assessmentTitle}</div>
         <p className="mt-2 text-sm font-medium leading-relaxed text-[#1F3B63]">{solution.assessment}</p>
       </div>
       <div className="mt-4 space-y-3">
@@ -546,7 +554,7 @@ function CalculationMetric({ metric }: { metric: CalculationEvidenceMetric }) {
         {metric.limit && <div>{metric.limit}</div>}
         {metric.reserve && <div>{metric.reserve}</div>}
       </div>
-      <div className="mt-3 inline-flex rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+      <div className="mt-3 inline-flex rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
         {metric.status}
       </div>
     </div>
@@ -601,7 +609,7 @@ function WorkspaceTabShell({
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">{intro}</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#041E49]">
           <ShieldCheck size={14} />
           Nur zur Ansicht
         </div>
@@ -626,7 +634,7 @@ function InfoTile({
     tone === "warning"
       ? "border-[#FDE2B8] bg-[#FFF4E5]"
       : tone === "info"
-        ? "border-[#D7E5FF] bg-[#EFF6FF]"
+        ? "border-[#D1D5DB] bg-[#EFF6FF]"
         : "border-[#E5E7EB] bg-[#FAFAFB]";
   return (
     <div className={cn("rounded-[14px] border p-3", toneClass)}>
@@ -670,7 +678,7 @@ function plausibilityTone(plausibility: string) {
     case "blocked":
       return "border-red-200 bg-red-50 text-red-800";
     case "medium":
-      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#0B57D0]";
+      return "border-[#D1D5DB] bg-[#EFF6FF] text-[#041E49]";
     default:
       return "border-amber-200 bg-amber-50 text-amber-800";
   }
@@ -683,7 +691,7 @@ function findingTone(severity: string) {
     case "watch":
       return "border-amber-200 bg-amber-50 text-amber-800";
     default:
-      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#0B57D0]";
+      return "border-[#D1D5DB] bg-[#EFF6FF] text-[#041E49]";
   }
 }
 
@@ -850,8 +858,8 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
     hypotheses.filter((hypothesis) => hypothesis.counterindicators.length > 0).length;
 
   return (
-    <section className="rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#DCE8FF] pb-3">
+    <section className="rounded-[18px] border border-[#D1D5DB] bg-[#FFFFFF] p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] pb-3">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
             <Brain size={17} />
@@ -861,7 +869,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
             Befunde, Prüfhypothesen und nächste beste Rückfrage aus dem V9-Kern.
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#BFD3FF] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
           {challenge.schemaVersion}
         </span>
       </div>
@@ -872,7 +880,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
           ["Gegenchecks", String(counterindicatorCount)],
           ["Aktionen", String(challenge.actionModesRun.length)],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-[12px] border border-[#DCE8FF] bg-white px-3 py-2">
+          <div key={label} className="rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2">
             <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">{label}</div>
             <div className="mt-1 text-lg font-semibold text-[#111827]">{value}</div>
           </div>
@@ -880,11 +888,11 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
       </div>
 
       {question ? (
-        <div className="mt-4 rounded-[14px] border border-[#BFD3FF] bg-white p-3">
+        <div className="mt-4 rounded-[14px] border border-[#D1D5DB] bg-white p-3">
           <div className="flex items-start gap-2">
-            <HelpCircle className="mt-0.5 shrink-0 text-[#0B57D0]" size={17} />
+            <HelpCircle className="mt-0.5 shrink-0 text-[#041E49]" size={17} />
             <div>
-              <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+              <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
                 Nächste beste Frage
               </div>
               <p className="mt-1 text-sm font-semibold leading-relaxed text-[#111827]">{question.question}</p>
@@ -980,7 +988,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
           {compactItems(challenge.actionModesRun.map(actionModeLabel), 8).map((mode) => (
             <span
               key={mode}
-              className="rounded-full border border-[#DCE8FF] bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-[#0B57D0]"
+              className="rounded-full border border-[#E5E7EB] bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-[#041E49]"
             >
               {mode}
             </span>
@@ -988,7 +996,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
         </div>
       ) : null}
 
-      <p className="mt-3 rounded-[12px] border border-[#DCE8FF] bg-white/70 px-3 py-2 text-[12px] leading-relaxed text-[#4B5563]">
+      <p className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-white/70 px-3 py-2 text-[12px] leading-relaxed text-[#4B5563]">
         {normalizeText(challenge.boundaryNotice) ||
           "Prüfhypothesen sind keine Freigabe und keine finale Auslegung."}
       </p>
@@ -1011,10 +1019,10 @@ function plausibilityLabel(plausibility: string) {
 
 function MaterialHypothesisSummary({ candidate }: { candidate: WorkspaceMaterialCandidate }) {
   return (
-    <div className="mt-3 rounded-[14px] border border-[#D7E5FF] bg-white p-3">
+    <div className="mt-3 rounded-[14px] border border-[#D1D5DB] bg-white p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
             Prüfhypothese
           </div>
           <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
@@ -1098,7 +1106,7 @@ export function DesignIntakePanel({ workspace }: { workspace: WorkspaceView | nu
             Mindestdaten, Vorchecks und Eskalationspunkte aus dem Backend. Nur als Anfragebasis für spätere Prüfung.
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
           {designStatusLabel(intake.status)}
         </span>
       </div>
@@ -1205,8 +1213,8 @@ export function V91IntelligencePanel({ workspace }: { workspace: WorkspaceView |
     null;
 
   return (
-    <section className="rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#DCE8FF] pb-3">
+    <section className="rounded-[18px] border border-[#D1D5DB] bg-[#FFFFFF] p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] pb-3">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
             <ShieldCheck size={17} />
@@ -1216,7 +1224,7 @@ export function V91IntelligencePanel({ workspace }: { workspace: WorkspaceView |
             Backend-owned V9.1 Workspace-Projektion aus Medium, Werkstoff, Challenge, Dokumenten und Anfragebasis.
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#BFD3FF] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
           {v91OverallLabel(intelligence.overallStatus)}
         </span>
       </div>
@@ -1241,7 +1249,7 @@ export function V91IntelligencePanel({ workspace }: { workspace: WorkspaceView |
         ))}
       </div>
       {nextAction ? (
-        <div className="mt-3 rounded-[14px] border border-[#D7E5FF] bg-white px-3 py-2 text-sm leading-relaxed text-[#374151]">
+        <div className="mt-3 rounded-[14px] border border-[#D1D5DB] bg-white px-3 py-2 text-sm leading-relaxed text-[#374151]">
           <span className="font-semibold text-[#111827]">Nächster sinnvoller Schritt:</span>{" "}
           {humanizeDisplayText(nextAction)}
         </div>
@@ -1314,7 +1322,7 @@ function MediumDeepDive({
 }) {
   if (loading) {
     return (
-      <section className="mt-4 rounded-[16px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+      <section className="mt-4 rounded-[16px] border border-[#D1D5DB] bg-[#FFFFFF] p-4">
         <h3 className="text-sm font-semibold text-[#111827]">Medium-Deep-Dive</h3>
         <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
           SeaLAI prüft gerade den kuratierten Medium-Kontext und interne Wissensquellen.
@@ -1354,7 +1362,7 @@ function MediumDeepDive({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold">
-          <span className="rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1 text-[#0B57D0]">
+          <span className="rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1 text-[#041E49]">
             {researchStatusLabel(data.research_status.rag, "RAG")}
           </span>
           <span className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-1 text-[#4B5563]">
@@ -1364,7 +1372,7 @@ function MediumDeepDive({
             type="button"
             onClick={onRunWebResearch}
             disabled={webResearchLoading}
-            className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-white px-3 py-1 text-[#0B57D0] shadow-sm transition-colors hover:bg-[#EFF6FF] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-[#041E49] shadow-sm transition-colors hover:bg-[#EFF6FF] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Search size={13} />
             {webResearchLoading
@@ -1383,12 +1391,12 @@ function MediumDeepDive({
       ) : null}
 
       {data.answer_markdown ? (
-        <div className="rounded-[14px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+        <div className="rounded-[14px] border border-[#D1D5DB] bg-[#FFFFFF] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
               LLM-Deep-Dive
             </div>
-            <span className="rounded-full border border-[#D7E5FF] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#0B57D0]">
+            <span className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#041E49]">
               {mediumAnswerSourceLabel(data)}
             </span>
           </div>
@@ -1625,8 +1633,8 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
         <InfoTile title="Bekannter Werkstoff" value={normalizeText(input?.knownMaterial)} />
       </div>
 
-      <div className="mt-4 rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] p-3">
-        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+      <div className="mt-4 rounded-[14px] border border-[#D1D5DB] bg-[#EFF6FF] p-3">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
           Werkstofffenster
         </div>
         <p className="mt-2 text-sm leading-relaxed text-[#1F3B63]">
@@ -1644,7 +1652,7 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
                   <h3 className="text-base font-semibold text-[#111827]">{candidate.label}</h3>
                   <p className="mt-1 text-sm text-[#6B7280]">{candidate.family}</p>
                 </div>
-                <span className="rounded-full border border-[#D7E5FF] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#0B57D0]">
+                <span className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
                   {normalizeText(candidate.statusLabel)}
                 </span>
               </div>

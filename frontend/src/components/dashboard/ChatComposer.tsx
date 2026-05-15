@@ -88,7 +88,7 @@ export default function ChatComposer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full rounded-[16px] border border-[#D1D5DB] bg-white p-2 shadow-[0_4px_18px_rgba(15,23,42,0.06)] transition-colors focus-within:border-[#0B57D0] focus-within:shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
+      className="w-full rounded-[16px] border border-[#C9D1DC] bg-white p-2 shadow-[0_4px_18px_rgba(15,23,42,0.06)] transition-colors focus-within:border-seal-blue focus-within:shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
     >
       <div className="flex items-end gap-2">
         <input
@@ -104,7 +104,7 @@ export default function ChatComposer({
           title="Anhang hinzufügen"
           onClick={() => fileInputRef.current?.click()}
           disabled={!canUpload}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Paperclip size={18} />
         </button>
@@ -116,7 +116,7 @@ export default function ChatComposer({
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="max-h-[220px] min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-slate-950 placeholder:text-slate-400 focus:outline-none"
+          className="max-h-[220px] min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-foreground placeholder:text-[#6B7280] focus:outline-none"
           disabled={isLoading}
           autoFocus={autoFocus}
         />
@@ -128,7 +128,7 @@ export default function ChatComposer({
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
             canSend
-              ? "bg-[#0B57D0] text-white hover:bg-[#0847AD]"
+              ? "bg-seal-blue text-white hover:opacity-90"
               : "cursor-not-allowed bg-slate-100 text-slate-400",
           )}
         >

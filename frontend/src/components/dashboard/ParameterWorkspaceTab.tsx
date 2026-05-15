@@ -462,7 +462,7 @@ function badgeClass(tone: BadgeTone) {
     case "success":
       return "border-[#B7E4C7] bg-[#EAF7EE] text-[#166534]";
     case "info":
-      return "border-[#CFE0FF] bg-[#EFF6FF] text-[#0B57D0]";
+      return "border-[#D1D5DB] bg-[#EFF6FF] text-seal-blue";
     case "warning":
       return "border-[#F6D8A8] bg-[#FFF4E5] text-[#92400E]";
     case "danger":
@@ -588,7 +588,7 @@ function ParameterFieldCard({
   const effectiveValidation = isChanged ? "user_stated" : meta.validationStatus;
 
   return (
-    <label className="block rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
+    <label className="block rounded-[14px] border border-[#D1D5DB] bg-white p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-[#111827]">{field.label}</div>
@@ -608,7 +608,7 @@ function ParameterFieldCard({
           onChange={(event) => onChange(event.target.value)}
           placeholder={field.placeholder}
           disabled={isSubmitting}
-          className="min-h-10 w-full rounded-[12px] border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-[#111827] outline-none transition-colors placeholder:text-[#9CA3AF] focus:border-[#0B57D0]"
+          className="min-h-10 w-full rounded-[12px] border border-[#C9D1DC] bg-white px-3 py-2 text-sm font-medium text-foreground outline-none transition-colors placeholder:text-[#6B7280] focus:border-seal-blue"
         />
       </div>
       <div className="mt-2 grid gap-2 text-[12px] leading-relaxed text-[#6B7280]">
@@ -646,7 +646,7 @@ function TypeSpecificParameterGuidance({ workspace }: { workspace: WorkspaceView
   }
 
   return (
-    <section className="rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+    <section className="rounded-[18px] border border-[#D1D5DB] bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-[#111827]">Passende Zusatzangaben</h3>
@@ -776,7 +776,7 @@ export function ParameterWorkspaceTab({
               Trage Werte ein, die du sicher kennst. SealingAI übernimmt neue oder geänderte Angaben, rechnet abhängige Hinweise neu und hält offene Punkte sichtbar.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#0B57D0]">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-seal-blue">
             <Info size={14} />
             Hersteller muss später prüfen
           </div>
@@ -805,7 +805,7 @@ export function ParameterWorkspaceTab({
         </div>
 
         {typeSpecificFields.length > 0 && (
-          <section className="mt-4 rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4">
+          <section className="mt-4 rounded-[18px] border border-[#D1D5DB] bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-[#111827]">Zusatzangaben für diesen Dichtungstyp</h3>
@@ -860,8 +860,8 @@ export function ParameterWorkspaceTab({
             className={cn(
               "inline-flex min-h-10 items-center gap-2 rounded-[12px] px-4 py-2 text-sm font-semibold transition-colors",
               canSubmit
-                ? "bg-[#0B57D0] text-white hover:bg-[#0847AD]"
-                : "cursor-not-allowed bg-[#F0F2F5] text-[#9CA3AF]",
+                ? "bg-seal-blue text-white hover:opacity-90"
+                : "cursor-not-allowed bg-[#F0F2F5] text-[#6B7280]",
             )}
           >
             <Save size={16} />

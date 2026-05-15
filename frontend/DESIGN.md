@@ -1,6 +1,6 @@
 ---
 title: SeaLAI Frontend Design System
-version: 1.0.0
+version: 1.0.1
 product: SeaLAI
 scope: frontend
 status: binding
@@ -9,10 +9,10 @@ tokens:
   colors:
     brand:
       primary:
-        value: "#0B57D0"
+        value: "#041E49"
         usage: "Primary actions, active states, key highlights, timeline active step"
       primary_hover:
-        value: "#0847AD"
+        value: "#082A5F"
         usage: "Hover state for primary actions"
       primary_soft:
         value: "#EAF2FF"
@@ -51,7 +51,7 @@ tokens:
         value: "#D1D5DB"
         usage: "Table dividers, stronger boundaries"
       active:
-        value: "#0B57D0"
+        value: "#041E49"
         usage: "Active tabs, active outlines, focused cards"
     state:
       success:

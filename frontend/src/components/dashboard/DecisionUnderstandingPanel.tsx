@@ -77,7 +77,7 @@ function badgeClasses(tone: BadgeTone) {
     case "success":
       return "border-[#BDECCB] bg-[#EAF7EE] text-[#166534]";
     case "info":
-      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#0B57D0]";
+      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#041E49]";
     case "warning":
       return "border-[#FDE2B8] bg-[#FFF4E5] text-[#9A3412]";
     case "danger":
@@ -249,7 +249,7 @@ export function DecisionUnderstandingPanel({ workspace }: { workspace: Workspace
 
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <div className="rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] p-3">
-          <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[#0B57D0]">
+          <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
             <FileQuestion size={14} />
             Nächste sinnvolle Frage
           </div>
