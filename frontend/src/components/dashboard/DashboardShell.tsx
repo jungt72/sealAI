@@ -421,9 +421,9 @@ export default function DashboardShell({
         <header className="flex h-[72px] shrink-0 items-center justify-between bg-white px-5 sm:px-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <div className="text-[18px] font-semibold tracking-tight text-seal-blue">SEALING</div>
+              <div className="text-[20px] font-semibold tracking-[0.045em] text-seal-blue">SEALING</div>
               <div className="h-6 w-px bg-seal-blue/35" />
-              <div className="text-[16px] font-medium text-foreground">INTELLIGENCE</div>
+              <div className="text-[14px] font-medium tracking-[0.02em] text-foreground">INTELLIGENCE</div>
             </div>
           </div>
           <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
