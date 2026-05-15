@@ -1,6 +1,6 @@
 ---
 title: SeaLAI Frontend Design System
-version: 1.0.1
+version: 1.0.2
 product: SeaLAI
 scope: frontend
 status: binding
@@ -19,8 +19,8 @@ tokens:
         usage: "Soft emphasis background for highlighted informational UI"
     surface:
       app:
-        value: "#F5F5F7"
-        usage: "Global app background"
+        value: "#FFFFFF"
+        usage: "Global app and dashboard background, aligned with the public frontpage"
       panel:
         value: "#FFFFFF"
         usage: "Primary cards, chat surface, cockpit cards"
@@ -28,7 +28,7 @@ tokens:
         value: "#FAFAFB"
         usage: "Sub-panels, secondary containers"
       panel_muted:
-        value: "#F0F2F5"
+        value: "#F5F5F7"
         usage: "Muted grouped sections, skeleton regions"
     text:
       primary:

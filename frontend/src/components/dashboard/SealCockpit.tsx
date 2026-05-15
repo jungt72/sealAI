@@ -460,7 +460,7 @@ export function OverviewCard({
     <section className="min-h-[276px] rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#F0F2F5] pb-3">
         <h2 className="text-base font-semibold tracking-tight text-[#111827]">{title}</h2>
-        <div className="grid h-9 w-9 place-items-center rounded-[14px] bg-[#F5F7FB] text-[#4B5563]">
+        <div className="grid h-9 w-9 place-items-center rounded-[14px] bg-muted text-[#4B5563]">
           <Icon size={17} />
         </div>
       </div>
