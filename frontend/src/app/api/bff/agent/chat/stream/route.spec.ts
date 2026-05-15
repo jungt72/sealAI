@@ -105,18 +105,18 @@ describe("BFF agent chat stream route", () => {
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
 
-    expect(payloads).toHaveLength(6);
+    expect(payloads).toHaveLength(5);
     expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "Preview" });
     expect(payloads[1]).toMatchObject({ type: "text_reset" });
-    expect(payloads[2]).toMatchObject({ type: "case_bound" });
-    expect(payloads[3]).toMatchObject({ type: "text_chunk", text: "Finale Antwort" });
-    expect(payloads[4]).toMatchObject({
+    expect(payloads[2]).toMatchObject({ type: "text_chunk", text: "Finale Antwort" });
+    expect(payloads[3]).toMatchObject({
       type: "state_update",
-      caseId: expect.any(String),
+      noCaseCreated: true,
       reply: "Finale Antwort",
       responseClass: "conversational_answer",
     });
-    expect(payloads[5]).toBe("[DONE]");
+    expect(payloads[3]).not.toHaveProperty("caseId");
+    expect(payloads[4]).toBe("[DONE]");
   });
 
   it("persists rotated auth cookies on streaming responses", async () => {
@@ -242,12 +242,14 @@ describe("BFF agent chat stream route", () => {
     const payloads = parseSsePayloads(await response.text());
     const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[1]).toMatchObject({ type: "text_chunk", text: "real assistant answer" });
+    expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "real assistant answer" });
     expect(stateUpdate).toMatchObject({
       type: "state_update",
+      noCaseCreated: true,
       reply: "deterministic fallback",
       answer_markdown: "real assistant answer",
     });
+    expect(stateUpdate).not.toHaveProperty("caseId");
   });
 
   it("forwards answer_trace under runMeta without rewriting it", async () => {

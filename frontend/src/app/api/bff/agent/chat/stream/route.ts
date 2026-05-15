@@ -152,6 +152,47 @@ function backendSaysNoCaseCreated(runMeta: Record<string, unknown> | null): bool
   );
 }
 
+function hasRecordEntries(value: Record<string, unknown> | null): boolean {
+  return Boolean(value && Object.keys(value).length > 0);
+}
+
+function shouldBindCaseFromStateUpdate({
+  requestHadCaseId,
+  backendNoCaseCreated,
+  responseClass,
+  structuredState,
+  proposedCaseDelta,
+  ui,
+  assertions,
+  rfqReadinessProjection,
+}: {
+  requestHadCaseId: boolean;
+  backendNoCaseCreated: boolean;
+  responseClass: string | null;
+  structuredState: Record<string, unknown> | null;
+  proposedCaseDelta: Record<string, unknown> | null;
+  ui: Record<string, unknown> | null;
+  assertions: Record<string, unknown> | null;
+  rfqReadinessProjection: Record<string, unknown> | null;
+}): boolean {
+  if (requestHadCaseId) {
+    return true;
+  }
+  if (backendNoCaseCreated) {
+    return false;
+  }
+  if (responseClass && responseClass !== "conversational_answer") {
+    return true;
+  }
+  return [
+    structuredState,
+    proposedCaseDelta,
+    assertions,
+    rfqReadinessProjection,
+    ui,
+  ].some(hasRecordEntries);
+}
+
 function rawErrorText(value: unknown): string {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -204,6 +245,7 @@ export async function POST(request: Request) {
     const authResult = await getAccessTokenResult(request);
     const token = authResult.accessToken;
     const body = (await request.json()) as AgentStreamRequest;
+    const requestHadCaseId = Boolean(body.caseId);
     const caseId = body.caseId || randomUUID();
 
     const backendResponse = await fetch(buildBackendUrl("/api/agent/chat/stream"), {
@@ -324,7 +366,18 @@ export async function POST(request: Request) {
                 const ui = asRecord(payload.ui);
                 const assertions = asRecord(payload.assertions);
                 const rfqReadinessProjection = asRecord(payload.rfq_readiness_projection);
-                const shouldBindCase = !noCaseCreated;
+                const shouldBindCase = shouldBindCaseFromStateUpdate({
+                  requestHadCaseId,
+                  backendNoCaseCreated: noCaseCreated,
+                  responseClass,
+                  structuredState,
+                  proposedCaseDelta,
+                  ui,
+                  assertions,
+                  rfqReadinessProjection,
+                });
+                const noCaseCreatedForClient =
+                  !shouldBindCase && !requestHadCaseId ? true : noCaseCreated;
                 if (shouldBindCase) {
                   pushCaseBinding();
                 }
@@ -337,7 +390,7 @@ export async function POST(request: Request) {
                   encodeSseEvent({
                     type: "state_update",
                     ...(shouldBindCase ? { caseId } : {}),
-                    noCaseCreated,
+                    noCaseCreated: noCaseCreatedForClient,
                     reply,
                     ...(answerMarkdown !== null ? { answer_markdown: answerMarkdown } : {}),
                     responseClass,

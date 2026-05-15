@@ -118,16 +118,16 @@ function MessageBubble({
   const isUser = role === "user";
 
   return (
-    <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "relative justify-start")}>
       {!isUser && (
-        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#041E49]">
+        <div className="absolute -left-10 top-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#041E49]">
           <Bot size={14} />
         </div>
       )}
       <div
         className={cn(
-          "max-w-[min(720px,84%)] px-1 py-1 text-[14px] leading-relaxed",
-          isUser ? "text-[#111827]" : "text-slate-900",
+          "min-w-0 px-1 py-1 text-[14px] leading-relaxed",
+          isUser ? "max-w-[min(720px,84%)] text-[#111827]" : "w-full max-w-none flex-1 text-slate-900",
           isStreaming && "text-[#1F3B63]",
         )}
       >
@@ -162,10 +162,13 @@ function EmptyChatStart({
   return (
     <div className="mx-auto flex w-full max-w-[800px] flex-col items-center">
       <div className="mb-8 w-full">
-        <p className="text-[22px] font-medium leading-tight text-[#202124]">
+        <p className="text-[22px] font-medium leading-tight text-seal-blue">
           {userName ? `Hallo ${userName}` : "Hallo"}
         </p>
-        <h1 className="mt-1 text-[42px] font-normal leading-[1.08] tracking-[0] text-[#202124] sm:text-[52px]">
+        <p className="mt-1 text-[22px] font-medium leading-tight text-seal-blue">
+          Schön, dass du wieder hier bist
+        </p>
+        <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-[#202124] sm:text-[52px]">
           Womit fangen wir an?
         </h1>
       </div>
