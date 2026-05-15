@@ -204,17 +204,18 @@ describe("ChatPane", () => {
     expect(screen.getByTestId("chat-composer-dock")).toHaveClass("shrink-0");
   });
 
-  it("anchors the latest user turn near the viewport top and freezes streaming growth", () => {
+  it("anchors the latest user turn from the composer near the viewport top and freezes streaming growth", async () => {
+    const user = userEvent.setup();
     agentStreamMockState.activeCaseId = "case-parameter";
     agentStreamMockState.messages = [{ role: "assistant", content: "Vorherige Antwort", timestamp: "1" }];
 
     const { rerender } = render(<ChatPane caseId="case-parameter" />);
-    const callbacks = chatStoreMock.registerCallbacks.mock.calls.at(-1)?.[0] as { sendMessage: (message: string) => void };
-    callbacks.sendMessage("Bitte generiere eine lange Antwort");
+    await user.click(screen.getByRole("button", { name: "ChatComposer" }));
+    expect(agentStreamMockState.sendMessage).toHaveBeenCalledWith("Composer text");
 
     agentStreamMockState.messages = [
       { role: "assistant", content: "Vorherige Antwort", timestamp: "1" },
-      { role: "user", content: "Bitte generiere eine lange Antwort", timestamp: "2" },
+      { role: "user", content: "Composer text", timestamp: "2" },
     ];
     agentStreamMockState.isStreaming = true;
     agentStreamMockState.streamingText = "Der erste Stream-Chunk";

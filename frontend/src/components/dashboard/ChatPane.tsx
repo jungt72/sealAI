@@ -304,11 +304,15 @@ export default function ChatPane({
     window.requestAnimationFrame(updateJumpToLiveState);
   }, [updateJumpToLiveState]);
 
+  const latestUserElement = useCallback(() => {
+    return latestUserRef.current || messageFlowRef.current?.querySelector<HTMLElement>('[data-latest-user="true"]') || null;
+  }, []);
+
   const alignLatestUserToTop = useCallback(() => {
     const viewport = viewportRef.current;
-    const latestUser = latestUserRef.current;
+    const latestUser = latestUserElement();
     if (!viewport || !latestUser) {
-      return;
+      return false;
     }
 
     const viewportBox = viewport.getBoundingClientRect();
@@ -322,7 +326,8 @@ export default function ChatPane({
       viewport.scrollTo({ top: nextTop, behavior: "auto" });
       frozenScrollTopRef.current = nextTop;
     });
-  }, [runProgrammaticScroll]);
+    return true;
+  }, [latestUserElement, runProgrammaticScroll]);
 
   const scrollToLiveBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const viewport = viewportRef.current;
@@ -448,7 +453,9 @@ export default function ChatPane({
     }
 
     if (pendingSubmitAnchorRef.current && latestUserKey && latestUserKey !== lastAnchoredUserKeyRef.current) {
-      alignLatestUserToTop();
+      if (!alignLatestUserToTop()) {
+        return;
+      }
       pendingSubmitAnchorRef.current = false;
       lastAnchoredUserKeyRef.current = latestUserKey;
       scrollModeRef.current = "frozen";
@@ -510,7 +517,7 @@ export default function ChatPane({
             <EmptyChatStart
               userName={userFirstName}
               initialGoal={initialGoal}
-              onSend={(message) => void sendMessage(message)}
+              onSend={(message) => void handleSend(message)}
               isStreaming={isStreaming}
             />
           ) : (
@@ -589,7 +596,7 @@ export default function ChatPane({
           <div className="mx-auto w-full" style={CHAT_SURFACE_STYLE}>
             <ChatComposer
               externalValue={null}
-              onSend={(message) => void sendMessage(message)}
+              onSend={(message) => void handleSend(message)}
               isLoading={isStreaming}
             />
           </div>
