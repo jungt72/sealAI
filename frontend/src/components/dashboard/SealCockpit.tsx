@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Beaker,
@@ -13,6 +13,8 @@ import {
   HelpCircle,
   Layers,
   Search,
+  RotateCcw,
+  Save,
   ShieldCheck,
 } from "lucide-react";
 
@@ -32,6 +34,101 @@ import {
 import { humanizeDisplayText, uniqueDisplayItems } from "@/lib/engineering/displayLabels";
 import { type MediumEvidenceItem, type MediumIntelligenceData, useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
+
+type QuickParameterKind = "text" | "number";
+
+type QuickParameterField = {
+  fieldName: string;
+  label: string;
+  kind: QuickParameterKind;
+  placeholder: string;
+  unit?: string;
+};
+
+type QuickParameterProfile = {
+  id: "rotary" | "hydraulic" | "static" | "oring";
+  label: string;
+  note: string;
+  sealingTypeHint: string;
+  fields: QuickParameterField[];
+};
+
+type QuickParameterFormState = Record<string, string>;
+
+const QUICK_PARAMETER_PROFILES: QuickParameterProfile[] = [
+  {
+    id: "rotary",
+    label: "Rotierend",
+    note: "Für RWDR, Gleitringdichtung, Rührwerk, Pumpe oder Getriebeausgang.",
+    sealingTypeHint: "rotierende Dichtstelle",
+    fields: [
+      { fieldName: "medium", label: "Medium", kind: "text", placeholder: "z. B. HLP 46, Wasser-Glykol" },
+      { fieldName: "temperature_c", label: "Temperatur", kind: "number", unit: "°C", placeholder: "80" },
+      { fieldName: "pressure_bar", label: "Druck", kind: "number", unit: "bar", placeholder: "10" },
+      { fieldName: "shaft_diameter_mm", label: "Welle", kind: "number", unit: "mm", placeholder: "40" },
+      { fieldName: "speed_rpm", label: "Drehzahl", kind: "number", unit: "rpm", placeholder: "1450" },
+      { fieldName: "sealing_type", label: "Dichtungstyp", kind: "text", placeholder: "RWDR, Gleitringdichtung" },
+      { fieldName: "counterface_surface", label: "Gegenlauf", kind: "text", placeholder: "gehärtet, Ra, eingelaufen" },
+      { fieldName: "installation", label: "Einbauort", kind: "text", placeholder: "Pumpe, Getriebe, Rührwerk" },
+    ],
+  },
+  {
+    id: "hydraulic",
+    label: "Hydraulik",
+    note: "Für Stangen-, Kolben-, Abstreif- und Führungssysteme.",
+    sealingTypeHint: "Hydraulikdichtung",
+    fields: [
+      { fieldName: "hydraulic_fluid", label: "Fluid", kind: "text", placeholder: "z. B. HLP 46, HFC, Bioöl" },
+      { fieldName: "temperature_c", label: "Temperatur", kind: "number", unit: "°C", placeholder: "80" },
+      { fieldName: "pressure_bar", label: "Arbeitsdruck", kind: "number", unit: "bar", placeholder: "160" },
+      { fieldName: "pressure_peaks", label: "Druckspitzen", kind: "number", unit: "bar", placeholder: "250" },
+      { fieldName: "rod_or_piston_diameter", label: "Stange/Kolben", kind: "number", unit: "mm", placeholder: "50" },
+      { fieldName: "speed_or_stroke", label: "Hub/Geschwindigkeit", kind: "text", placeholder: "0,3 m/s, Hub 500 mm" },
+      { fieldName: "groove_dimensions", label: "Nut/Bauraum", kind: "text", placeholder: "Nutmaß oder Zeichnung" },
+      { fieldName: "contamination", label: "Verschmutzung", kind: "text", placeholder: "Staub, Späne, außenliegend" },
+    ],
+  },
+  {
+    id: "static",
+    label: "Statisch",
+    note: "Für Flachdichtung, Flansch, Gehäusedeckel oder statische Abdichtung.",
+    sealingTypeHint: "statische Dichtung",
+    fields: [
+      { fieldName: "medium", label: "Medium", kind: "text", placeholder: "z. B. Dampf, Lauge, Öl" },
+      { fieldName: "temperature_c", label: "Temperatur", kind: "number", unit: "°C", placeholder: "120" },
+      { fieldName: "pressure_bar", label: "Druck", kind: "number", unit: "bar", placeholder: "16" },
+      { fieldName: "flange_standard", label: "Flansch/Norm", kind: "text", placeholder: "EN 1092-1, ASME" },
+      { fieldName: "flange_size_or_dimensions", label: "Größe/Maß", kind: "text", placeholder: "DN50 PN16, Zeichnung" },
+      { fieldName: "gasket_material", label: "Material", kind: "text", placeholder: "PTFE, Graphit, Faser" },
+      { fieldName: "thickness", label: "Dicke", kind: "number", unit: "mm", placeholder: "2" },
+      { fieldName: "certification_requirement", label: "Nachweise", kind: "text", placeholder: "FDA, TA-Luft, Trinkwasser" },
+    ],
+  },
+  {
+    id: "oring",
+    label: "O-Ring",
+    note: "Für O-Ringe, Stützringe und einfache Nut-/Schnurstärkenklärung.",
+    sealingTypeHint: "O-Ring",
+    fields: [
+      { fieldName: "medium", label: "Medium", kind: "text", placeholder: "z. B. Wasser, Öl, CIP" },
+      { fieldName: "temperature_c", label: "Temperatur", kind: "number", unit: "°C", placeholder: "60" },
+      { fieldName: "pressure_bar", label: "Druck", kind: "number", unit: "bar", placeholder: "10" },
+      { fieldName: "inner_diameter", label: "Innen-Ø", kind: "number", unit: "mm", placeholder: "32" },
+      { fieldName: "cross_section", label: "Schnurstärke", kind: "number", unit: "mm", placeholder: "3,53" },
+      { fieldName: "material", label: "Werkstoff", kind: "text", placeholder: "NBR, FKM, EPDM" },
+      { fieldName: "hardness", label: "Härte", kind: "text", placeholder: "70 Shore A" },
+      { fieldName: "static_or_dynamic", label: "Bewegung", kind: "text", placeholder: "statisch, dynamisch" },
+    ],
+  },
+];
+
+const QUICK_NUMERIC_UNITS: Record<string, string> = Object.fromEntries(
+  QUICK_PARAMETER_PROFILES.flatMap((profile) =>
+    profile.fields
+      .filter((field) => field.kind === "number" && field.unit)
+      .map((field) => [field.fieldName, field.unit as string]),
+  ),
+);
 
 export function CockpitTabs({
   tabs,
@@ -82,6 +179,263 @@ export function CockpitStatusStrip({ items }: { items: SealCockpitOverview["stat
         </div>
       ))}
     </div>
+  );
+}
+
+function workspaceParameterValue(workspace: WorkspaceView | null, fieldName: string): string {
+  const parameters = workspace?.parameters as Record<string, unknown> | undefined;
+  const value = parameters?.[fieldName];
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  return String(value);
+}
+
+function quickInitialState(workspace: WorkspaceView | null): QuickParameterFormState {
+  const fieldNames = new Set(
+    QUICK_PARAMETER_PROFILES.flatMap((profile) => profile.fields.map((field) => field.fieldName)),
+  );
+  const state: QuickParameterFormState = {};
+  fieldNames.forEach((fieldName) => {
+    state[fieldName] = workspaceParameterValue(workspace, fieldName);
+  });
+  return state;
+}
+
+function quickProfileIdFromWorkspace(workspace: WorkspaceView | null): QuickParameterProfile["id"] {
+  const path = String(
+    workspace?.sealApplicationProfile?.sealType ||
+      workspace?.sealApplicationProfile?.sealFamily ||
+      workspace?.engineeringPath ||
+      "",
+  ).toLowerCase();
+  if (path.includes("hyd")) return "hydraulic";
+  if (path.includes("o-ring") || path.includes("oring")) return "oring";
+  if (path.includes("flach") || path.includes("static")) return "static";
+  return "rotary";
+}
+
+function parseQuickParameterValue(field: QuickParameterField, rawValue: string): string | number | null {
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (field.kind !== "number") {
+    return trimmed;
+  }
+  const normalized = Number(trimmed.replace(",", "."));
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function formatQuickSummary(overrides: AgentOverrideItemRequest[], profile: QuickParameterProfile): string {
+  return overrides
+    .map((override) => {
+      const field = profile.fields.find((item) => item.fieldName === override.field_name);
+      const label = override.field_name === "sealing_type" ? "Dichtungstyp" : field?.label ?? override.field_name;
+      const unit = override.unit ? ` ${override.unit}` : "";
+      return `${label}: ${String(override.value)}${unit}`;
+    })
+    .join(", ");
+}
+
+function ParameterQuickEntry({
+  workspace,
+  isSubmitting,
+  onSubmit,
+}: {
+  workspace: WorkspaceView | null;
+  isSubmitting: boolean;
+  onSubmit: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
+}) {
+  const [activeProfileId, setActiveProfileId] = useState<QuickParameterProfile["id"]>(() =>
+    quickProfileIdFromWorkspace(workspace),
+  );
+  const [formState, setFormState] = useState<QuickParameterFormState>(() => quickInitialState(workspace));
+  const [isOpen, setIsOpen] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeProfile = useMemo(
+    () => QUICK_PARAMETER_PROFILES.find((profile) => profile.id === activeProfileId) ?? QUICK_PARAMETER_PROFILES[0],
+    [activeProfileId],
+  );
+
+  const activeFields = activeProfile.fields;
+  const filledCount = activeFields.filter((field) => formState[field.fieldName]?.trim()).length;
+  const canSubmit = filledCount > 0 && !isSubmitting;
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(null);
+
+    const invalidNumber = activeFields.find((field) => {
+      const raw = formState[field.fieldName] ?? "";
+      return field.kind === "number" && raw.trim() && parseQuickParameterValue(field, raw) === null;
+    });
+    if (invalidNumber) {
+      setError(`${invalidNumber.label} braucht einen numerischen Wert.`);
+      return;
+    }
+
+    const overrides: AgentOverrideItemRequest[] = activeFields.flatMap((field) => {
+      const value = parseQuickParameterValue(field, formState[field.fieldName] ?? "");
+      if (value === null) {
+        return [];
+      }
+      return [
+        {
+          field_name: field.fieldName,
+          value,
+          unit: field.unit ?? QUICK_NUMERIC_UNITS[field.fieldName] ?? null,
+        },
+      ];
+    });
+
+    if (
+      overrides.length > 0 &&
+      !overrides.some((override) => override.field_name === "sealing_type")
+    ) {
+      overrides.unshift({
+        field_name: "sealing_type",
+        value: activeProfile.sealingTypeHint,
+        unit: null,
+      });
+    }
+
+    if (overrides.length === 0) {
+      setError("Bitte mindestens einen bekannten Parameter eintragen.");
+      return;
+    }
+
+    await onSubmit(overrides, formatQuickSummary(overrides, activeProfile));
+  };
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mx-4 mt-4 rounded-[18px] border border-[#D7E5FF] bg-[#F8FBFF] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#0B57D0]">
+            <ClipboardList size={14} />
+            Direkteingabe
+          </div>
+          <h2 className="mt-1 text-base font-semibold tracking-tight text-[#111827]">
+            Bekannte Parameter in den State schreiben
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-[#4B5563]">
+            Wähle zuerst die Anwendung. Danach erscheinen die passenden Felder für diesen Dichtungstyp.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsOpen((current) => !current)}
+          className="shrink-0 rounded-full border border-[#CFE0FF] bg-white px-3 py-1.5 text-xs font-semibold text-[#0B57D0] transition-colors hover:bg-[#EFF6FF]"
+        >
+          {isOpen ? "Einklappen" : "Ausklappen"}
+        </button>
+      </div>
+
+      {isOpen ? (
+        <>
+          <div
+            role="tablist"
+            aria-label="Parameterprofil"
+            className="custom-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1"
+          >
+            {QUICK_PARAMETER_PROFILES.map((profile) => {
+              const isActive = profile.id === activeProfile.id;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => {
+                    setActiveProfileId(profile.id);
+                    setError(null);
+                  }}
+                  className={cn(
+                    "h-9 shrink-0 rounded-full border px-3 text-xs font-semibold transition-colors",
+                    isActive
+                      ? "border-[#0B57D0] bg-[#0B57D0] text-white"
+                      : "border-[#DCE7F7] bg-white text-[#4B5563] hover:border-[#BBD0F5] hover:text-[#111827]",
+                  )}
+                >
+                  {profile.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 rounded-[12px] border border-[#E5EAF2] bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#4B5563]">
+            {activeProfile.note}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-2 xl:grid-cols-2">
+            {activeFields.map((field) => (
+              <label key={field.fieldName} className="min-w-0">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+                  {field.label}
+                  {field.unit ? <span className="normal-case tracking-normal text-[#9CA3AF]"> · {field.unit}</span> : null}
+                </span>
+                <input
+                  type="text"
+                  inputMode={field.kind === "number" ? "decimal" : "text"}
+                  value={formState[field.fieldName] ?? ""}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      [field.fieldName]: event.target.value,
+                    }))
+                  }
+                  placeholder={field.placeholder}
+                  disabled={isSubmitting}
+                  className="h-10 w-full rounded-[12px] border border-[#DDE5F0] bg-white px-3 text-sm text-[#111827] outline-none transition-colors placeholder:text-[#A3ADBB] focus:border-[#0B57D0] focus:ring-3 focus:ring-[#0B57D0]/10 disabled:cursor-not-allowed disabled:bg-slate-50"
+                />
+              </label>
+            ))}
+          </div>
+
+          {error ? (
+            <div className="mt-3 rounded-[12px] border border-[#F7C8C8] bg-[#FDECEC] px-3 py-2 text-sm font-semibold text-[#991B1B]">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => {
+                setFormState(quickInitialState(workspace));
+                setError(null);
+              }}
+              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-2 text-xs font-semibold text-[#4B5563] transition-colors hover:bg-[#F0F2F5] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RotateCcw size={15} />
+              Zurücksetzen
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className={cn(
+                "inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-colors",
+                canSubmit
+                  ? "bg-[#0B57D0] text-white hover:bg-[#0847AD]"
+                  : "cursor-not-allowed bg-[#E5EAF2] text-[#9CA3AF]",
+              )}
+            >
+              <Save size={15} />
+              In State übernehmen
+            </button>
+          </div>
+        </>
+      ) : null}
+    </form>
   );
 }
 
@@ -1425,6 +1779,17 @@ export function SealCockpit({
 
   return (
     <aside className="flex min-h-0 min-w-0 flex-col overflow-visible rounded-[20px] border border-transparent bg-transparent">
+      <ParameterQuickEntry
+        key={[
+          workspace?.caseId ?? "new-case",
+          workspace?.engineeringPath ?? "no-path",
+          workspace?.sealApplicationProfile?.sealFamily ?? "no-family",
+          workspace?.sealApplicationProfile?.sealType ?? "no-type",
+        ].join(":")}
+        workspace={workspace}
+        isSubmitting={isParameterSubmitting}
+        onSubmit={onParameterSubmit ?? (async () => {})}
+      />
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="min-h-0 overflow-visible pb-4">
         {activeTab === "overview" ? (

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkspaceView } from "@/lib/contracts/workspace";
@@ -321,6 +322,51 @@ function workspaceWithMedium(): WorkspaceView {
     communication: { primaryQuestion: null },
   } as unknown as WorkspaceView;
 }
+
+describe("SealCockpit quick parameter intake", () => {
+  it("offers a collapsible right-column intake before the cockpit tabs", async () => {
+    const user = userEvent.setup();
+
+    render(<SealCockpit data={cockpitData} workspace={null} />);
+
+    expect(screen.getByRole("heading", { name: "Bekannte Parameter in den State schreiben" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Rotierend" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Hydraulik" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Welle · mm")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Einklappen" }));
+
+    expect(screen.queryByLabelText("Welle · mm")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ausklappen" })).toBeInTheDocument();
+  });
+
+  it("submits profile-specific hydraulic parameters into the governed state path", async () => {
+    const user = userEvent.setup();
+    const onParameterSubmit = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <SealCockpit
+        data={cockpitData}
+        workspace={null}
+        onParameterSubmit={onParameterSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Hydraulik" }));
+    await user.type(screen.getByLabelText("Fluid"), "HLP 46");
+    await user.type(screen.getByLabelText("Druckspitzen · bar"), "250");
+    await user.click(screen.getByRole("button", { name: "In State übernehmen" }));
+
+    expect(onParameterSubmit).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        { field_name: "sealing_type", value: "Hydraulikdichtung", unit: null },
+        { field_name: "hydraulic_fluid", value: "HLP 46", unit: null },
+        { field_name: "pressure_peaks", value: 250, unit: "bar" },
+      ]),
+      expect.stringContaining("Druckspitzen: 250 bar"),
+    );
+  });
+});
 
 function workspaceWithMaterialIntelligence(): WorkspaceView {
   return {
