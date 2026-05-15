@@ -1,7 +1,18 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { Bot, UserRound } from "lucide-react";
+import { useSession } from "next-auth/react";
+import type { Session } from "next-auth";
+import {
+  ArrowLeftRight,
+  Bot,
+  FileSearch,
+  FlaskConical,
+  ListChecks,
+  UserRound,
+  Wrench,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
@@ -13,11 +24,86 @@ import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 const CHAT_SURFACE_MAX_WIDTH = 800;
 const CHAT_SURFACE_STYLE: React.CSSProperties = { maxWidth: CHAT_SURFACE_MAX_WIDTH };
 
+type StarterPrompt = {
+  label: string;
+  prompt: string;
+  icon: LucideIcon;
+};
+
+const STARTER_PROMPTS: StarterPrompt[] = [
+  {
+    label: "Lösung erarbeiten",
+    icon: Wrench,
+    prompt:
+      "Ich möchte eine Dichtungslösung erarbeiten. Bitte führe mich Schritt für Schritt durch die wichtigsten Angaben und erkläre, warum sie relevant sind.",
+  },
+  {
+    label: "Material vergleichen",
+    icon: ArrowLeftRight,
+    prompt:
+      "Bitte vergleiche zwei Dichtungswerkstoffe für einen konkreten Einsatzfall. Ich nenne dir gleich Materialien, Medium, Temperatur und Randbedingungen.",
+  },
+  {
+    label: "Materialdetails",
+    icon: FlaskConical,
+    prompt:
+      "Bitte erkläre mir einen Dichtungswerkstoff mit typischen Medien, Temperaturrahmen, Stärken, Grenzen und wichtigen Prüfpunkten.",
+  },
+  {
+    label: "Ursache finden",
+    icon: FileSearch,
+    prompt:
+      "Ich möchte eine Dichtungsleckage oder einen Ausfall analysieren. Bitte hilf mir strukturiert bei der Ursachenforschung.",
+  },
+  {
+    label: "Anfrage vorbereiten",
+    icon: ListChecks,
+    prompt:
+      "Bitte hilf mir, eine belastbare Anfragebasis für einen Hersteller aufzubauen. Keine Freigabe, sondern offene Punkte und Prüffragen sichtbar machen.",
+  },
+];
+
 interface ChatPaneProps {
   caseId?: string;
   initialGoal?: string;
   onCaseBound?: (caseId: string) => void;
   onTurnComplete?: (caseId: string) => void;
+}
+
+function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
+  if (!token || typeof window === "undefined") {
+    return null;
+  }
+  const payload = token.split(".")[1];
+  if (!payload) {
+    return null;
+  }
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return JSON.parse(window.atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function stringClaim(payload: Record<string, unknown> | null, key: string): string | null {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function firstNameFromSession(session: Session | null | undefined): string | null {
+  const tokenPayload = decodeJwtPayload(session?.idToken);
+  const source =
+    stringClaim(tokenPayload, "given_name") ||
+    stringClaim(tokenPayload, "name") ||
+    session?.user?.name?.trim() ||
+    stringClaim(tokenPayload, "preferred_username") ||
+    session?.user?.email?.trim() ||
+    "";
+
+  const first = source.split(/[\s@._-]+/).find(Boolean);
+  return first || null;
 }
 
 function MessageBubble({
@@ -62,7 +148,57 @@ function MessageBubble({
   );
 }
 
+function EmptyChatStart({
+  userName,
+  initialGoal,
+  isStreaming,
+  onSend,
+}: {
+  userName: string | null;
+  initialGoal?: string;
+  isStreaming: boolean;
+  onSend: (message: string) => void;
+}) {
+  return (
+    <div className="mx-auto flex w-full max-w-[800px] flex-col items-center">
+      <div className="mb-8 w-full">
+        <p className="text-[22px] font-medium leading-tight text-[#202124]">
+          {userName ? `Hallo ${userName}` : "Hallo"}
+        </p>
+        <h1 className="mt-1 text-[42px] font-normal leading-[1.08] tracking-[0] text-[#202124] sm:text-[52px]">
+          Womit fangen wir an?
+        </h1>
+      </div>
+
+      <ChatComposer
+        externalValue={initialGoal}
+        onSend={onSend}
+        isLoading={isStreaming}
+        autoFocus
+        placeholder="SealingAI fragen"
+        variant="hero"
+      />
+
+      <div className="mt-6 flex w-full flex-wrap justify-center gap-3">
+        {STARTER_PROMPTS.map((starter) => (
+          <button
+            key={starter.label}
+            type="button"
+            disabled={isStreaming}
+            onClick={() => onSend(starter.prompt)}
+            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-transparent bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_0_rgba(15,23,42,0.04)] transition-colors hover:border-[#D7E0EC] hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <starter.icon size={17} />
+            <span>{starter.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnComplete }: ChatPaneProps) {
+  const { data: session } = useSession();
   const {
     activeCaseId,
     messages,
@@ -117,6 +253,7 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
   const hasConversation = messages.length > 0 || Boolean(streamingText);
   const currentCaseId = activeCaseId || caseId;
   const isFreshStart = !hasConversation && !currentCaseId;
+  const userFirstName = firstNameFromSession(session);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-transparent">
@@ -129,14 +266,12 @@ export default function ChatPane({ caseId, initialGoal, onCaseBound, onTurnCompl
           style={CHAT_SURFACE_STYLE}
         >
           {isFreshStart ? (
-            <div className="mx-auto w-full" style={CHAT_SURFACE_STYLE}>
-              <ChatComposer
-                externalValue={initialGoal}
-                onSend={(message) => void sendMessage(message)}
-                isLoading={isStreaming}
-                autoFocus
-              />
-            </div>
+            <EmptyChatStart
+              userName={userFirstName}
+              initialGoal={initialGoal}
+              onSend={(message) => void sendMessage(message)}
+              isStreaming={isStreaming}
+            />
           ) : (
             <div className="flex flex-1 flex-col gap-5 pb-4">
               {!hasConversation && currentCaseId ? (

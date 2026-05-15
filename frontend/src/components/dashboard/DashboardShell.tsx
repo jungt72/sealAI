@@ -43,10 +43,22 @@ type CaseHistoryItem = {
   updatedAt: string | null;
 };
 
-function firstNameFromSession(name?: string | null, email?: string | null) {
-  const source = (name || email || "Thorsten").trim();
-  const first = source.split(/[\s@]/)[0];
-  return first || "Thorsten";
+function identityFromSession(name?: string | null, email?: string | null) {
+  const source = (name || email || "Nutzer").trim();
+  const displayName = source || "Nutzer";
+  const parts = displayName.split(/[\s@._-]+/).filter(Boolean);
+  const firstName = parts[0] || displayName;
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return {
+    firstName,
+    displayName,
+    initials: initials || "SI",
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -132,7 +144,7 @@ export default function DashboardShell({
 }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const userName = firstNameFromSession(session?.user?.name, session?.user?.email);
+  const userIdentity = identityFromSession(session?.user?.name, session?.user?.email);
   const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -430,11 +442,11 @@ export default function DashboardShell({
             </button>
             <div className="flex items-center gap-3 rounded-full border border-border bg-white px-2.5 py-1.5">
               <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground">
-                {userName.slice(0, 2).toUpperCase()}
+                {userIdentity.initials}
               </div>
               <div className="hidden text-left md:block">
-                <div className="text-sm font-medium text-foreground">{userName} Mustermann</div>
-                <div className="text-[12px] text-muted-foreground">Ingenieur</div>
+                <div className="text-sm font-medium text-foreground">{userIdentity.displayName}</div>
+                <div className="text-[12px] text-muted-foreground">Angemeldet</div>
               </div>
             </div>
             <Link

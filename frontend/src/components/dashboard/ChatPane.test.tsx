@@ -38,6 +38,19 @@ vi.mock("@/components/dashboard/ChatComposer", () => ({
   ),
 }));
 
+vi.mock("next-auth/react", () => ({
+  useSession: () => ({
+    data: {
+      user: {
+        name: "Thorsten Jung",
+        email: "thorsten@example.com",
+      },
+      idToken: null,
+    },
+    status: "authenticated",
+  }),
+}));
+
 vi.mock("@/hooks/useAgentStream", () => ({
   useAgentStream: () => agentStreamMockState,
 }));
@@ -77,17 +90,23 @@ describe("ChatPane", () => {
     window.localStorage.clear();
   });
 
-  it("places the composer in a centered first-run state without prompt bubbles", async () => {
+  it("places the composer in a Gemini-style first-run state with sealing prompts", async () => {
     const user = userEvent.setup();
     agentStreamMockState.activeCaseId = "";
 
     render(<ChatPane />);
 
+    expect(screen.getByText("Hallo Thorsten")).toBeInTheDocument();
+    expect(screen.getByText("Womit fangen wir an?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ChatComposer" })).toBeInTheDocument();
     expect(screen.queryByText(/Governed RFQ Qualification/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/belastbare Anfragebasis/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Welche Angaben fehlen noch für eine belastbare Anfragebasis?" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Dichtungsfall mit Medium, Temperatur, Druck und Drehzahl analysieren." })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lösung erarbeiten" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Material vergleichen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Materialdetails" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Material vergleichen" }));
+    expect(agentStreamMockState.sendMessage).toHaveBeenCalledWith(expect.stringContaining("vergleiche zwei Dichtungswerkstoffe"));
 
     await user.click(screen.getByRole("button", { name: "ChatComposer" }));
 

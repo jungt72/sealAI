@@ -409,10 +409,17 @@ describe("CaseScreen", () => {
     expect(workspaceStoreMock.setWorkspaceLoading).toHaveBeenLastCalledWith(false);
   });
 
-  it("keeps /dashboard/new free of legacy mock values while showing the new intake surface", () => {
+  it("keeps /dashboard/new chat-focused and opens the intake surface on demand", async () => {
+    const user = userEvent.setup();
+
     render(<CaseScreen />);
 
     expect(screen.getByTestId("chat-pane")).toHaveTextContent("ChatPane new");
+    expect(screen.queryByRole("tab", { name: "Parameter" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Arbeitsbereich einblenden" })).toHaveTextContent("Arbeitsbereich öffnen");
+
+    await user.click(screen.getByRole("button", { name: "Arbeitsbereich einblenden" }));
+
     expect(screen.getByRole("tab", { name: "Parameter" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" })).toBeDisabled();
     expect(screen.queryByText("Glykolhaltiges Prozessmedium")).not.toBeInTheDocument();
@@ -505,6 +512,7 @@ describe("CaseScreen", () => {
 
     render(<CaseScreen />);
 
+    await user.click(screen.getByRole("button", { name: "Arbeitsbereich einblenden" }));
     await user.type(screen.getByLabelText("Medium"), "Wasser");
     await user.type(screen.getByLabelText("Temperatur"), "80");
     await user.click(screen.getByRole("button", { name: "Als Nutzerangaben übernehmen" }));

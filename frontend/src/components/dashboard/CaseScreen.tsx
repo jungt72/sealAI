@@ -1603,15 +1603,28 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
   const setWorkspaceLoading = useWorkspaceStore((state) => state.setWorkspaceLoading);
   const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
+  const activeCaseId = useChatStore((state) => state.activeCaseId);
+  const sendMessage = useChatStore((state) => state.sendMessage);
+  const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
-  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(true);
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(() => Boolean(canonicalCaseId));
   const [workspaceWidth, setWorkspaceWidth] = useState(DEFAULT_WORKSPACE_WIDTH);
   const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
   const hasUserResizedWorkspaceRef = useRef(false);
-  const activeCaseId = useChatStore((state) => state.activeCaseId);
-  const sendMessage = useChatStore((state) => state.sendMessage);
-  const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
+  const autoOpenedWorkspaceForRef = useRef<string | null>(canonicalCaseId);
+
+  useEffect(() => {
+    if (!canonicalCaseId) {
+      autoOpenedWorkspaceForRef.current = null;
+      setIsWorkspaceOpen(false);
+      return;
+    }
+    if (autoOpenedWorkspaceForRef.current !== canonicalCaseId) {
+      autoOpenedWorkspaceForRef.current = canonicalCaseId;
+      setIsWorkspaceOpen(true);
+    }
+  }, [canonicalCaseId]);
 
   useEffect(() => {
     if (!caseId) {
@@ -1783,10 +1796,10 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
             aria-label="Arbeitsbereich einblenden"
             title="Arbeitsbereich einblenden"
             onClick={() => setIsWorkspaceOpen(true)}
-            className="absolute right-5 top-5 z-30 inline-flex h-10 items-center gap-2 rounded-full border border-border bg-white px-3 text-xs font-semibold text-seal-blue shadow-[0_12px_30px_rgba(15,23,42,0.10)] transition-colors hover:bg-muted"
+            className="absolute right-5 top-5 z-30 inline-flex h-11 items-center gap-2 rounded-full border border-[#C7D2E2] bg-white px-4 text-xs font-semibold text-seal-blue shadow-[0_14px_34px_rgba(4,30,73,0.16)] transition-colors hover:bg-[#F6F9FD]"
           >
             <PanelRightOpen size={15} />
-            Arbeitsbereich
+            Arbeitsbereich öffnen
           </button>
         ) : null}
 

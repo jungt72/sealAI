@@ -12,6 +12,7 @@ interface ChatComposerProps {
   autoFocus?: boolean;
   externalValue?: string | null;
   placeholder?: string;
+  variant?: "default" | "hero";
 }
 
 export default function ChatComposer({
@@ -22,6 +23,7 @@ export default function ChatComposer({
   autoFocus,
   externalValue,
   placeholder = "Beschreibe deine Dichtungssituation ...",
+  variant = "default",
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(() => ({
     lastExternalValue: externalValue ?? null,
@@ -84,13 +86,47 @@ export default function ChatComposer({
 
   const canSend = Boolean(message.trim()) && !isLoading;
   const canUpload = Boolean(onUpload) && !isLoading && !isUploading;
+  const isHero = variant === "hero";
+  const uploadButton = (
+    <button
+      type="button"
+      title="Anhang hinzufügen"
+      onClick={() => fileInputRef.current?.click()}
+      disabled={!canUpload}
+      className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-50",
+        isHero ? "rounded-full" : "rounded-md",
+      )}
+    >
+      <Paperclip size={18} />
+    </button>
+  );
+  const sendButton = (
+    <button
+      type="submit"
+      title="Senden"
+      disabled={!canSend}
+      className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center transition-colors",
+        isHero ? "rounded-full" : "rounded-md",
+        canSend
+          ? "bg-seal-blue text-white hover:opacity-90"
+          : "cursor-not-allowed bg-slate-100 text-slate-400",
+      )}
+    >
+      <SendHorizontal size={18} />
+    </button>
+  );
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full rounded-[16px] border border-[#C9D1DC] bg-white p-2 shadow-[0_4px_18px_rgba(15,23,42,0.06)] transition-colors focus-within:border-seal-blue focus-within:shadow-[0_8px_24px_rgba(15,23,42,0.10)]"
+      className={cn(
+        "w-full border border-[#C9D1DC] bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)] transition-colors focus-within:border-seal-blue focus-within:shadow-[0_8px_24px_rgba(15,23,42,0.10)]",
+        isHero ? "rounded-[28px] p-4" : "rounded-[16px] p-2",
+      )}
     >
-      <div className="flex items-end gap-2">
+      <div className={cn(isHero ? "flex flex-col" : "flex items-end gap-2")}>
         <input
           ref={fileInputRef}
           type="file"
@@ -99,16 +135,7 @@ export default function ChatComposer({
           onChange={handleFileChange}
           disabled={!canUpload}
         />
-        <button
-          type="button"
-          title="Anhang hinzufügen"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={!canUpload}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Paperclip size={18} />
-        </button>
-
+        {!isHero ? uploadButton : null}
         <textarea
           ref={textareaRef}
           rows={1}
@@ -116,24 +143,17 @@ export default function ChatComposer({
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="max-h-[220px] min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-[15px] leading-6 text-foreground placeholder:text-[#6B7280] focus:outline-none"
+          className={cn(
+            "max-h-[220px] flex-1 resize-none bg-transparent text-foreground placeholder:text-[#6B7280] focus:outline-none",
+            isHero
+              ? "min-h-[58px] px-1 py-1 text-[16px] leading-7"
+              : "min-h-10 px-1 py-2.5 text-[15px] leading-6",
+          )}
           disabled={isLoading}
           autoFocus={autoFocus}
         />
 
-        <button
-          type="submit"
-          title="Senden"
-          disabled={!canSend}
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
-            canSend
-              ? "bg-seal-blue text-white hover:opacity-90"
-              : "cursor-not-allowed bg-slate-100 text-slate-400",
-          )}
-        >
-          <SendHorizontal size={18} />
-        </button>
+        {isHero ? <div className="mt-3 flex items-center justify-between">{uploadButton}{sendButton}</div> : sendButton}
       </div>
     </form>
   );
