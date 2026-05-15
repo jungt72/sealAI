@@ -551,6 +551,23 @@ class TestStreamConversation:
         assert [e.get("type") for e in parsed][-1] == "__DONE__"
 
     @pytest.mark.asyncio
+    async def test_CONVERSATION_accepts_legacy_dict_case_summary(self):
+        history = [HumanMessage(content="RWDR, HLP46, 10 bar.")]
+        with _patch_openai(["Gern. Ich bin da, wenn du weiter machen möchtest."]):
+            events = await _collect(
+                stream_conversation(
+                    "danke",
+                    history=history,
+                    case_summary={"topic": "Medium: HLP46 | Druck: 10 bar"},
+                    mode="CONVERSATION",
+                )
+            )
+
+        parsed = _parse_events(events)
+        state_update = next(e for e in parsed if e.get("type") == "state_update")
+        assert state_update["reply"] == "Gern. Ich bin da, wenn du weiter machen möchtest."
+
+    @pytest.mark.asyncio
     async def test_CONVERSATION_smalltalk_removes_technical_capture_sentences(self):
         with _patch_openai(
             [

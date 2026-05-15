@@ -636,7 +636,7 @@ async def _build_light_runtime_context(
     request: Any, # ChatRequest
     current_user: RequestUser,
     governed_state_override: GovernedSessionState | None = None,
-) -> tuple[GovernedSessionState, list[BaseMessage], dict[str, Any]]:
+) -> tuple[GovernedSessionState, list[BaseMessage], str | None]:
     governed = governed_state_override
     if governed is None:
         governed = await _load_live_governed_state(
@@ -647,7 +647,7 @@ async def _build_light_runtime_context(
 
     history = _governed_messages_as_langchain(governed)
     case_summary = _build_light_case_summary(governed)
-    return governed, history, {"topic": case_summary} if case_summary else {}
+    return governed, history, case_summary
 
 def _build_light_runtime_context_from_request_only(
     request: Any, # ChatRequest

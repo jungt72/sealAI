@@ -152,17 +152,35 @@ def _conversation_state_update_event(
 # History helpers
 # ---------------------------------------------------------------------------
 
+def _case_summary_text(case_summary: Any) -> str:
+    if case_summary is None:
+        return ""
+    if isinstance(case_summary, dict):
+        for key in ("topic", "summary", "case_summary", "text"):
+            value = case_summary.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        lines = [
+            f"{key}: {value}"
+            for key, value in case_summary.items()
+            if isinstance(value, str | int | float) and str(value).strip()
+        ]
+        return "\n".join(lines).strip()
+    return str(case_summary or "").strip()
+
+
 def _build_messages(
     message: str,
     history: list[Any] | None,
-    case_summary: str | None = None,
+    case_summary: Any | None = None,
     mode: ConversationLightMode | None = None,
 ) -> list[dict[str, str]]:
     """Build the OpenAI messages list from history + current message."""
+    case_summary_text = _case_summary_text(case_summary)
     turn_context = _build_conversation_turn_context(
         message,
         history=history,
-        case_summary=case_summary,
+        case_summary=case_summary_text or None,
         mode=mode,
     )
     phase_prompt = (
@@ -171,14 +189,14 @@ def _build_messages(
         else build_conversation_phase_prompt(
             turn_context=turn_context,
             latest_user_text=_last_user_turn_text(message, history),
-            case_summary=case_summary,
+            case_summary=case_summary_text or None,
         )
     )
     # CONVERSATION mode: minimal expert persona — no case_summary, no state context.
     system_prompt = (
         _prompt_builder.conversation(case_summary=None)
         if mode == "CONVERSATION"
-        else phase_prompt or _prompt_builder.conversation(case_summary=case_summary)
+        else phase_prompt or _prompt_builder.conversation(case_summary=case_summary_text or None)
     )
     msgs: list[dict[str, str]] = []
     if system_prompt:
@@ -224,12 +242,12 @@ def _build_messages(
     # confirmed params. This guards against the LLM ignoring history-based hints.
     # Skipped for CONVERSATION mode (smalltalk) — state facts must NOT surface
     # in greetings, thanks, or simple questions.
-    if mode != "CONVERSATION" and case_summary and case_summary.strip():
+    if mode != "CONVERSATION" and case_summary_text:
         msgs.append({
             "role": "system",
             "content": (
                 "BEREITS BEKANNTE PARAMETER — DIESE NICHT ERNEUT ERFRAGEN:\n"
-                + case_summary
+                + case_summary_text
                 + "\n\nFrage KEINEN dieser Parameter erneut ab. Baue stattdessen auf ihnen auf."
             ),
         })
@@ -302,13 +320,14 @@ def _build_conversation_turn_context(
     message: str,
     *,
     history: list[Any] | None = None,
-    case_summary: str | None = None,
+    case_summary: Any | None = None,
     mode: ConversationLightMode | None = None,
 ):
+    case_summary_text = _case_summary_text(case_summary)
     strategy = _build_conversation_strategy_contract(
         message,
         history=history,
-        case_summary=case_summary,
+        case_summary=case_summary_text or None,
         mode=mode,
     )
     # CONVERSATION mode (smalltalk / simple questions): no state context.
@@ -320,7 +339,7 @@ def _build_conversation_turn_context(
         strategy=strategy,
         confirmed_facts_summary=_build_light_confirmed_facts_summary(
             history=history,
-            case_summary=case_summary,
+            case_summary=case_summary_text or None,
         ),
         open_points_summary=_build_light_open_points_summary(strategy),
     )
@@ -329,10 +348,10 @@ def _build_conversation_turn_context(
 def _build_light_confirmed_facts_summary(
     *,
     history: list[Any] | None,
-    case_summary: str | None,
+    case_summary: Any | None,
 ) -> list[str]:
     facts: list[str] = []
-    for raw_line in str(case_summary or "").splitlines():
+    for raw_line in _case_summary_text(case_summary).splitlines():
         text = str(raw_line or "").strip()
         if text.startswith("-"):
             text = text[1:].strip()
@@ -412,7 +431,7 @@ def _normalize_smalltalk_address(reply: str) -> str:
     return text
 
 
-def _known_fields_from_case_summary(case_summary: str | None) -> set[str]:
+def _known_fields_from_case_summary(case_summary: Any | None) -> set[str]:
     labels = {
         "medium": "medium",
         "druck": "pressure_bar",
@@ -436,7 +455,7 @@ def _known_fields_from_case_summary(case_summary: str | None) -> set[str]:
     }
     known: set[str] = set()
     raw_segments: list[str] = []
-    for raw_line in str(case_summary or "").splitlines():
+    for raw_line in _case_summary_text(case_summary).splitlines():
         raw_segments.extend(segment.strip() for segment in raw_line.split("|"))
     for raw_line in raw_segments:
         text = str(raw_line or "").strip().lstrip("-").strip()
@@ -453,15 +472,16 @@ def _build_conversation_strategy_contract(
     message: str,
     *,
     history: list[Any] | None = None,
-    case_summary: str | None = None,
+    case_summary: Any | None = None,
     mode: ConversationLightMode | None = None,
 ) -> ConversationStrategyContract | None:
     """Return a small deterministic strategy hint for conversation turns."""
     text = str(message or "").strip()
     lowered = text.lower()
     turn_index = _count_user_turns(history) + 1
-    has_case_context = bool(case_summary and case_summary.strip())
-    known_fields = _known_fields_from_case_summary(case_summary)
+    case_summary_text = _case_summary_text(case_summary)
+    has_case_context = bool(case_summary_text)
+    known_fields = _known_fields_from_case_summary(case_summary_text)
 
     # ROOT CAUSE FIX: If medium is not yet in case_summary (e.g. pure fast-path session
     # where the governed graph was never run), scan the conversation history for medium
@@ -501,7 +521,7 @@ def _build_conversation_strategy_contract(
                 [
                     text,
                     *(turn["content"] for turn in list(_iter_normalized_history(history))[-4:] if turn["role"] == "user"),
-                    str(case_summary or "").strip(),
+                    case_summary_text,
                 ],
             )
         ),
@@ -682,7 +702,7 @@ async def iter_conversation_events(
     message: str,
     *,
     history: list[Any] | None = None,
-    case_summary: str | None = None,
+    case_summary: Any | None = None,
     mode: ConversationLightMode | None = None,
     direct_reply: str | None = None,
     structured_state: dict[str, Any] | None = None,
@@ -796,7 +816,7 @@ async def run_conversation(
     message: str,
     *,
     history: list[Any] | None = None,
-    case_summary: str | None = None,
+    case_summary: Any | None = None,
     mode: ConversationLightMode | None = None,
     direct_reply: str | None = None,
     structured_state: dict[str, Any] | None = None,
@@ -836,7 +856,7 @@ async def stream_conversation(
     message: str,
     *,
     history: list[Any] | None = None,
-    case_summary: str | None = None,
+    case_summary: Any | None = None,
     mode: ConversationLightMode | None = None,
     direct_reply: str | None = None,
     structured_state: dict[str, Any] | None = None,
