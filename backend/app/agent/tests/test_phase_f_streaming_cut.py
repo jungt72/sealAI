@@ -556,6 +556,71 @@ class TestPhase1LiveCanon:
         assert any("state_update" in frame for frame in frames)
 
     @pytest.mark.asyncio
+    async def test_active_case_side_answer_is_persisted_for_reload_history(self):
+        import app.agent.api.router as router_module
+        from app.agent.communication.v7_contracts import (
+            AnswerMode,
+            MutationPolicy,
+            RuntimeAction,
+            RuntimeActionType,
+            RuntimeAnswerBuilder,
+        )
+
+        fake_redis = _FakeRedis()
+        governed_state = GovernedSessionState(
+            conversation_messages=[
+                ConversationMessage(role="user", content="RWDR fuer HLP46 bei 80 Grad."),
+                ConversationMessage(role="assistant", content="EPDM ist ein Warnpunkt."),
+            ]
+        )
+        runtime_action = RuntimeAction(
+            action_type=RuntimeActionType.ANSWER_THEN_RESUME,
+            answer_mode=AnswerMode.ACTIVE_CASE_SIDE_QUESTION,
+            mutation_policy=MutationPolicy.FORBIDDEN,
+            answer_builder=RuntimeAnswerBuilder.ACTIVE_CASE_SIDE,
+            graph_allowed=False,
+            reason="side question answer only",
+        )
+        dispatch_resolution = RuntimeDispatchResolution(
+            gate_route="GOVERNED",
+            gate_reason="active_case_side_question",
+            runtime_mode="GOVERNED",
+            gate_applied=True,
+            pre_gate_classification="DOMAIN_INQUIRY",
+            governed_state=governed_state,
+            runtime_action=runtime_action,
+        )
+
+        payload = {
+            "type": "state_update",
+            "reply": "PEEK ist steif und temperaturfest, aber kein Elastomer.",
+            "answer_markdown": "PEEK ist steif und temperaturfest, aber kein Elastomer.",
+            "assistant_message": "PEEK ist steif und temperaturfest, aber kein Elastomer.",
+        }
+
+        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
+             patch("app.agent.api.routes.chat._build_active_case_side_payload", AsyncMock(return_value=payload)), \
+             patch.dict("os.environ", {"REDIS_URL": "redis://fake"}, clear=False), \
+             patch("redis.asyncio.Redis.from_url", return_value=fake_redis), \
+             patch("app.agent.api.loaders.save_governed_state_snapshot_async", AsyncMock(return_value=None)):
+
+            frames = await _collect_frames(
+                router_module.event_generator(
+                    _make_request(message="Und wie ist PEEK einzuordnen?"),
+                    current_user=_make_current_user(),
+                )
+            )
+
+        persisted = GovernedSessionState.model_validate_json(
+            fake_redis._store["governed_state:tenant-1:sess-1"]
+        )
+        assert [message.content for message in persisted.conversation_messages[-2:]] == [
+            "Und wie ist PEEK einzuordnen?",
+            "PEEK ist steif und temperaturfest, aber kein Elastomer.",
+        ]
+        assert any("state_update" in frame for frame in frames)
+
+    @pytest.mark.asyncio
     async def test_workspace_projection_prefers_live_governed_state(self):
         import app.agent.api.routes.workspace as workspace_routes
 

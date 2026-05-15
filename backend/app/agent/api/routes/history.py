@@ -14,6 +14,7 @@ from app.agent.api.utils import _serialize_governed_history_payload
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
+_CHAT_HISTORY_READ_LIMIT = 200
 
 @router.get("/chat/history/{case_id}", response_model=List[ConversationResponse])
 async def get_live_chat_history(
@@ -39,7 +40,10 @@ async def get_live_chat_history(
     if governed:
         return [
             ConversationResponse(**m)
-            for m in _serialize_governed_history_payload(state=governed)
+            for m in _serialize_governed_history_payload(
+                state=governed,
+                limit=_CHAT_HISTORY_READ_LIMIT,
+            )
         ]
 
     state = await load_structured_case(

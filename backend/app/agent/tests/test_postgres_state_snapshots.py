@@ -39,6 +39,7 @@ from app.agent.state.models import (
     EvidenceState,
     AssertedClaim,
     AssertedState,
+    ConversationMessage,
     GovernedPersistenceMarker,
     GovernedSessionState,
     NormalizedParameter,
@@ -472,6 +473,16 @@ class _FakeCaseService:
         if not snapshots:
             return None
         return int(max(snapshot.revision for snapshot in snapshots))
+
+    async def get_latest_snapshot_for_case_id(self, case_id):
+        snapshots = [
+            snapshot
+            for snapshot in self._session._store.snapshots
+            if snapshot.case_id == case_id
+        ]
+        if not snapshots:
+            return None
+        return max(snapshots, key=lambda snapshot: snapshot.revision)
 
 
 def _install_fake_snapshot_backend():
@@ -1436,7 +1447,14 @@ async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() 
             tenant_id="tenant-1",
         )
         await save_governed_state_snapshot_async(
-            _state(analysis_cycle=3),
+            _state(analysis_cycle=3).model_copy(
+                update={
+                    "conversation_messages": [
+                        ConversationMessage(role="user", content="RWDR fuer HLP46 pruefen"),
+                        ConversationMessage(role="assistant", content="Welche Druckdifferenz liegt an?"),
+                    ]
+                }
+            ),
             case_number="case-b",
             user_id="user-1",
             tenant_id="tenant-1",
@@ -1453,6 +1471,9 @@ async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() 
         items = await list_cases_async(user_id="user-1", tenant_id="tenant-1")
 
     assert [item["case_number"] for item in items] == ["case-b", "case-a"]
+    assert [item["thread_id"] for item in items] == ["case-b", "case-a"]
+    assert items[0]["title"] == "RWDR fuer HLP46 pruefen"
+    assert items[0]["last_preview"] == "Welche Druckdifferenz liegt an?"
     assert [item["latest_revision"] for item in items] == [1, 1]
 
 

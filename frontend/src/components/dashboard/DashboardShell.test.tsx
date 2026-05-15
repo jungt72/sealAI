@@ -15,6 +15,7 @@ vi.mock("next-auth/react", () => ({
 
 describe("DashboardShell", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -22,6 +23,8 @@ describe("DashboardShell", () => {
         json: async () => ({
           items: [
             {
+              id: "internal-db-id",
+              case_number: "case-42",
               case_id: "case-42",
               title: "RWDR Wasser-Glykol",
               status: "Analyse",
@@ -63,12 +66,16 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("link", { name: "SealingPedia Upload" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Einstellungen" })).toBeInTheDocument();
-    expect(screen.queryByText("Verlauf")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chats")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
 
-    expect(screen.getByText("Verlauf")).toBeInTheDocument();
+    expect(screen.getByText("Chats")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toHaveAttribute(
+      "href",
+      "/dashboard/case-42",
+    );
   });
 
   it("collapses and restores the left history column", async () => {
@@ -84,12 +91,12 @@ describe("DashboardShell", () => {
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Historie ausblenden" }));
 
-    expect(screen.queryByText("Verlauf")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chats")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /RWDR Wasser-Glykol/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Historie einblenden" }));
 
-    expect(screen.getByText("Verlauf")).toBeInTheDocument();
+    expect(screen.getByText("Chats")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
   });
 });

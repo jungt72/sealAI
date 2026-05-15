@@ -242,6 +242,66 @@ async def _persist_live_governed_state(
         )
 
 
+async def persist_visible_governed_turn(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    user_message: str,
+    assistant_message: str,
+    governed_state: GovernedSessionState | None = None,
+    pre_gate_classification: str | None = None,
+    create_if_missing: bool = True,
+) -> GovernedSessionState | None:
+    """Persist visible non-graph turns into the governed transcript canon."""
+
+    if not session_id or not str(assistant_message or "").strip():
+        return None
+    state = governed_state
+    if state is None:
+        state = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=session_id,
+            create_if_missing=create_if_missing,
+        )
+    if state is None:
+        return None
+
+    from app.agent.api.utils import _with_governed_conversation_turn  # noqa: PLC0415
+
+    updated = state
+    user_text = str(user_message or "").strip()
+    assistant_text = str(assistant_message or "").strip()
+    existing_messages = list(updated.conversation_messages)
+    if user_text and not (
+        existing_messages
+        and existing_messages[-1].role == "user"
+        and existing_messages[-1].content == user_text
+    ):
+        updated = _with_governed_conversation_turn(
+            updated,
+            role="user",
+            content=user_text,
+        )
+        existing_messages = list(updated.conversation_messages)
+    if assistant_text and not (
+        existing_messages
+        and existing_messages[-1].role == "assistant"
+        and existing_messages[-1].content == assistant_text
+    ):
+        updated = _with_governed_conversation_turn(
+            updated,
+            role="assistant",
+            content=assistant_text,
+        )
+    await _persist_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        state=updated,
+        pre_gate_classification=pre_gate_classification,
+    )
+    return updated
+
+
 def _merge_seed_into_governed_state(
     *,
     governed_state: GovernedSessionState,

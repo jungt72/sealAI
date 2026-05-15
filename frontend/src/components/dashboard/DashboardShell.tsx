@@ -51,11 +51,15 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function caseIdFromPayload(item: Record<string, unknown>) {
   return String(
-    item.case_id ||
-      item.caseId ||
-      item.id ||
+    item.thread_id ||
+      item.threadId ||
+      item.case_number ||
+      item.caseNumber ||
       item.session_id ||
       item.conversation_id ||
+      item.case_id ||
+      item.caseId ||
+      item.id ||
       "",
   );
 }
@@ -92,6 +96,8 @@ function normalizeCaseHistory(payload: unknown): CaseHistoryItem[] {
       if (!id) return null;
       const title = String(
         item.title ||
+          item.last_preview ||
+          item.lastPreview ||
           item.name ||
           item.case_number ||
           item.summary ||
@@ -124,7 +130,20 @@ export default function DashboardShell({
   const [historyItems, setHistoryItems] = useState<CaseHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    const stored = window.localStorage.getItem("sealai:historyOpen");
+    if (stored === "1" || stored === "0") {
+      return stored === "1";
+    }
+    return window.matchMedia?.("(min-width: 1024px)").matches ?? false;
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem("sealai:historyOpen", isHistoryOpen ? "1" : "0");
+  }, [isHistoryOpen]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -230,7 +249,7 @@ export default function DashboardShell({
       {isHistoryOpen ? (
         <aside
           aria-label="Verlauf"
-          className="absolute bottom-0 left-[72px] top-0 z-30 flex w-[286px] flex-col border-r border-[#E7ECF3] bg-[#FBFCFE] shadow-[18px_0_45px_rgba(15,23,42,0.12)]"
+          className="absolute bottom-0 left-[72px] top-0 z-30 flex w-[286px] flex-col border-r border-[#E7ECF3] bg-[#FBFCFE] shadow-[18px_0_45px_rgba(15,23,42,0.12)] lg:relative lg:inset-auto lg:h-full lg:w-[300px] lg:shadow-none"
         >
           <div className="flex h-[72px] items-center gap-2 border-b border-[#E7ECF3] px-4">
             <Link
@@ -253,7 +272,7 @@ export default function DashboardShell({
 
           <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-4">
             <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A94A6]">
-              Verlauf
+              Chats
             </div>
             {historyLoading ? (
               <div className="rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-3 text-sm text-[#6B7280]">
@@ -296,7 +315,7 @@ export default function DashboardShell({
           </div>
 
           <div className="border-t border-[#E7ECF3] px-4 py-3 text-[11px] leading-4 text-[#8A94A6]">
-            Fälle bleiben über die Case-ID wiederaufrufbar. Aktive Chats wechseln nach dem ersten Turn automatisch auf die Fall-URL.
+            Chats bleiben über die Thread-ID wiederaufrufbar. Aktive Analysen wechseln nach dem ersten Turn automatisch auf die Fall-URL.
           </div>
         </aside>
       ) : null}

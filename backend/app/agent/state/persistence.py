@@ -20,6 +20,7 @@ Architecture rule:
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from typing import Any, Optional
 
 from app.agent.prompts import REASONING_PROMPT_VERSION
 from app.agent.state.models import GovernedPersistenceMarker, GovernedSessionState
+from app.services.chat.conversations import derive_conversation_title, upsert_conversation
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +99,79 @@ def _ontology_version(state: GovernedSessionState) -> str:
     if state.sealai_norm.identity.norm_version:
         return str(state.sealai_norm.identity.norm_version).strip()
     return _DEFAULT_ONTOLOGY_VERSION
+
+
+def _message_text_from_payload(message: Any) -> str:
+    if message is None:
+        return ""
+    if isinstance(message, str):
+        return message.strip()
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if content is not None:
+            return str(content).strip()
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    if content is not None:
+        return str(content).strip()
+    return ""
+
+
+def _message_role_from_payload(message: Any) -> str:
+    if isinstance(message, dict):
+        return str(message.get("role") or message.get("type") or "").strip()
+    return str(getattr(message, "role", None) or getattr(message, "type", "") or "").strip()
+
+
+def _governed_conversation_messages(state_json: dict[str, Any] | None) -> list[dict[str, str]]:
+    raw_messages = []
+    if isinstance(state_json, dict):
+        raw_messages = list(state_json.get("conversation_messages") or [])
+    messages: list[dict[str, str]] = []
+    for raw in raw_messages:
+        role = _message_role_from_payload(raw)
+        content = _message_text_from_payload(raw)
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content})
+    return messages
+
+
+def _first_user_message_from_governed_state(state_json: dict[str, Any] | None) -> str | None:
+    for message in _governed_conversation_messages(state_json):
+        if message["role"] == "user":
+            return message["content"]
+    return None
+
+
+def _latest_preview_from_governed_state(state_json: dict[str, Any] | None) -> str | None:
+    messages = _governed_conversation_messages(state_json)
+    for message in reversed(messages):
+        if message["role"] == "assistant":
+            return message["content"]
+    if messages:
+        return messages[-1]["content"]
+    return None
+
+
+async def _upsert_governed_conversation_metadata(
+    *,
+    state: GovernedSessionState,
+    owner_id: str,
+    tenant_id: str,
+    case_id: str,
+) -> None:
+    state_json = state.model_dump(mode="json")
+    await asyncio.to_thread(
+        upsert_conversation,
+        owner_id=owner_id,
+        conversation_id=case_id,
+        tenant_id=tenant_id,
+        first_user_message=_first_user_message_from_governed_state(state_json),
+        last_preview=_latest_preview_from_governed_state(state_json),
+    )
 
 
 def _with_decision_basis_hash(state: GovernedSessionState) -> GovernedSessionState:
@@ -298,6 +373,12 @@ async def save_governed_state_snapshot_async(
                 },
             )
             case_revision = int(created_case.case_revision or 1)
+            await _upsert_governed_conversation_metadata(
+                state=persisted_state,
+                owner_id=user_id,
+                tenant_id=tenant_id,
+                case_id=case_number,
+            )
             return GovernedStateSnapshotPersistenceResult(
                 case_id=str(created_case.id),
                 case_number=str(created_case.case_number),
@@ -327,6 +408,12 @@ async def save_governed_state_snapshot_async(
         case_revision = int(
             getattr(case_row, "case_revision", snapshot_row.revision)
             or snapshot_row.revision
+        )
+        await _upsert_governed_conversation_metadata(
+            state=persisted_state,
+            owner_id=user_id,
+            tenant_id=tenant_id,
+            case_id=case_number,
         )
         return GovernedStateSnapshotPersistenceResult(
             case_id=str(case_row.id),
@@ -414,13 +501,21 @@ async def list_cases_async(
         service = CaseService(session)
         items: list[dict[str, Any]] = []
         for case_row in case_rows:
-            latest_revision = await service.get_latest_snapshot_revision_for_case_id(
+            latest_snapshot = await service.get_latest_snapshot_for_case_id(
                 str(case_row.id)
             )
+            latest_revision = int(latest_snapshot.revision) if latest_snapshot is not None else None
+            raw_state_json = getattr(latest_snapshot, "state_json", None)
+            state_json = raw_state_json if isinstance(raw_state_json, dict) else {}
+            first_user_message = _first_user_message_from_governed_state(state_json)
+            last_preview = _latest_preview_from_governed_state(state_json)
             items.append(
                 {
                     "id": str(case_row.id),
                     "case_number": str(case_row.case_number),
+                    "thread_id": str(case_row.case_number),
+                    "title": derive_conversation_title(first_user_message),
+                    "last_preview": last_preview,
                     "status": str(case_row.status),
                     "subsegment": case_row.subsegment,
                     "updated_at": getattr(case_row, "updated_at", None),

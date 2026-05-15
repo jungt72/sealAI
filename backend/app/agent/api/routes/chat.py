@@ -28,6 +28,7 @@ from app.agent.api.utils import (
 from app.agent.api.loaders import (
     _persist_live_governed_state,
     _build_light_runtime_context,
+    persist_visible_governed_turn,
 )
 from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.api.assembly import (
@@ -892,9 +893,35 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
                 conversation_route=dispatch.conversation_route,
                 runtime_action=runtime_action,
             )
+            await persist_visible_governed_turn(
+                current_user=current_user,
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=str(
+                    payload.get("assistant_message")
+                    or payload.get("answer_markdown")
+                    or payload.get("reply")
+                    or ""
+                ),
+                governed_state=dispatch.governed_state,
+                pre_gate_classification=dispatch.pre_gate_classification,
+            )
             return ChatResponse(session_id=request.session_id, **payload)
         if not _runtime_action_allows_graph(dispatch):
             payload = _runtime_action_blocked_graph_payload(runtime_action)
+            await persist_visible_governed_turn(
+                current_user=current_user,
+                session_id=request.session_id,
+                user_message=request.message,
+                assistant_message=str(
+                    payload.get("assistant_message")
+                    or payload.get("answer_markdown")
+                    or payload.get("reply")
+                    or ""
+                ),
+                governed_state=dispatch.governed_state,
+                pre_gate_classification=dispatch.pre_gate_classification,
+            )
             return ChatResponse(session_id=request.session_id, **payload)
         _log.debug(
             "[runtime_authority] json session=%s authority=governed_graph reason=%s",

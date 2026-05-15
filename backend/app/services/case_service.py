@@ -375,6 +375,11 @@ class CaseService:
             return None
         return int(latest.revision)
 
+    async def get_latest_snapshot_for_case_id(self, case_id: str) -> CaseStateSnapshot | None:
+        """Return the latest snapshot row for a case row, if one exists."""
+
+        return await self._latest_snapshot(case_id)
+
     async def _load_case_for_update(self, case_id: str) -> CaseRecord | None:
         result = await self._session.execute(
             select(CaseRecord)

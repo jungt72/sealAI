@@ -54,8 +54,14 @@ async def test_chat_history_uses_latest_snapshot_before_structured_fallback(
     captured: dict[str, object] = {}
     snapshot_state = _governed_state("Snapshot governed")
 
-    async def _load_snapshot(*, case_number: str, user_id: str | None = None):
+    async def _load_snapshot(
+        *,
+        case_number: str,
+        tenant_id: str,
+        user_id: str | None = None,
+    ):
         captured["case_number"] = case_number
+        captured["tenant_id"] = tenant_id
         captured["user_id"] = user_id
         return types.SimpleNamespace(state_json=snapshot_state.model_dump(mode="json"))
 
@@ -70,7 +76,11 @@ async def test_chat_history_uses_latest_snapshot_before_structured_fallback(
     payload = await history_routes.get_live_chat_history("case-2", current_user=_user())
 
     assert [(item.role, item.content) for item in payload] == [("user", "Snapshot governed")]
-    assert captured == {"case_number": "case-2", "user_id": "user-1"}
+    assert captured == {
+        "case_number": "case-2",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+    }
 
 
 @pytest.mark.asyncio

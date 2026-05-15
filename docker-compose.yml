@@ -30,6 +30,8 @@ services:
         --save 900 1
         --save 300 10
         --save 60 10000
+        --maxmemory ${REDIS_MAXMEMORY:-1024mb}
+        --maxmemory-policy noeviction
     volumes:
       - redis-data:/data
     healthcheck:

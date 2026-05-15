@@ -193,6 +193,9 @@ class GovernedSnapshotResponse(BaseModel):
 class CaseListItemResponse(BaseModel):
     id: str
     case_number: str
+    thread_id: Optional[str] = None
+    title: Optional[str] = None
+    last_preview: Optional[str] = None
     status: str
     subsegment: Optional[str] = None
     updated_at: Optional[Any] = None
