@@ -19,8 +19,8 @@ export default function MarketingLayout({
               width={1977}
               height={324}
               priority
-              sizes="(max-width: 768px) 150px, 190px"
-              className="h-7 w-auto object-contain sm:h-8"
+              sizes="(max-width: 768px) 128px, 148px"
+              className="h-auto w-32 object-contain sm:w-[148px]"
             />
           </Link>
           
@@ -68,8 +68,8 @@ export default function MarketingLayout({
                 alt="sealingAI"
                 width={1977}
                 height={324}
-                sizes="150px"
-                className="h-7 w-auto object-contain"
+                sizes="140px"
+                className="h-auto w-36 object-contain"
               />
               <p className="text-sm text-muted-foreground max-w-xs">
                 Klär deinen Dichtungsfall, bevor du fragst. Neutral, strukturiert und ohne heimliche Weitergabe.
