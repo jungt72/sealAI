@@ -49,7 +49,53 @@
   }
 }
 
+@keyframes sealai-hero-drift {
+  0%,
+  100% {
+    transform: translate3d(-0.7%, 0, 0) scale(1.025);
+  }
+
+  50% {
+    transform: translate3d(0.7%, -0.6%, 0) scale(1.045);
+  }
+}
+
+@keyframes sealai-hero-sheen {
+  0%,
+  100% {
+    opacity: 0.08;
+    transform: translate3d(-12%, 0, 0);
+  }
+
+  50% {
+    opacity: 0.18;
+    transform: translate3d(12%, 0, 0);
+  }
+}
+
+.sealai-hero-motion {
+  animation: sealai-hero-drift 22s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.sealai-hero-sheen {
+  animation: sealai-hero-sheen 18s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sealai-hero-motion {
+    animation: none;
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+
+  .sealai-hero-sheen {
+    animation: none;
+    opacity: 0.12;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 @layer utilities {
+
   .seal-card {
     @apply rounded-xl bg-surface border border-border shadow-sm;
   }

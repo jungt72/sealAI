@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, ShieldCheck, Factory, Beaker, BookOpen, Settings, Clock3, GraduationCap, FolderClock } from "lucide-react";
+import { HeroMotionBackground } from "@/components/marketing/HeroMotionBackground";
 import { createMetadata } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = createMetadata({
@@ -13,13 +14,14 @@ export default function LandingPage() {
   return (
     <div className="flex flex-col">
       {/* 1. HERO SECTION */}
-      <section className="relative overflow-hidden py-24 md:py-32">
-        <div className="mx-auto max-w-7xl px-6">
+      <section className="relative -mt-16 min-h-[82svh] overflow-hidden pb-20 pt-36 md:min-h-[76svh] md:pb-24 md:pt-44">
+        <HeroMotionBackground />
+        <div className="relative mx-auto max-w-7xl px-6">
           <div className="max-w-3xl">
             <h1 className="mb-6 text-4xl font-bold text-seal-blue sm:text-5xl md:text-6xl lg:text-7xl">
               SEALING | Intelligence
             </h1>
-            <p className="text-xl md:text-2xl text-muted-foreground font-medium leading-relaxed mb-10">
+            <p className="mb-10 max-w-2xl text-xl font-medium leading-relaxed text-slate-700 md:text-2xl">
               sealingAI hilft dir, deine Dichtungssituation zu verstehen, offene Punkte zu erkennen und souverän mit Herstellern zu sprechen.
             </p>
             <div className="flex flex-wrap gap-4">
