@@ -462,7 +462,7 @@ function badgeClass(tone: BadgeTone) {
     case "success":
       return "border-[#B7E4C7] bg-[#EAF7EE] text-[#166534]";
     case "info":
-      return "border-[#D1D5DB] bg-[#EFF6FF] text-seal-blue";
+      return "border-[#D1D5DB] bg-seal-blue/10 text-seal-blue";
     case "warning":
       return "border-[#F6D8A8] bg-[#FFF4E5] text-[#92400E]";
     case "danger":
@@ -776,7 +776,7 @@ export function ParameterWorkspaceTab({
               Trage Werte ein, die du sicher kennst. SealingAI übernimmt neue oder geänderte Angaben, rechnet abhängige Hinweise neu und hält offene Punkte sichtbar.
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-seal-blue">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1.5 text-[12px] font-semibold text-seal-blue">
             <Info size={14} />
             Hersteller muss später prüfen
           </div>

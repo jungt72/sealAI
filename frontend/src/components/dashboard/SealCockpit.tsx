@@ -157,7 +157,7 @@ export function CockpitTabs({
             className={cn(
               "h-10 shrink-0 rounded-full border px-4 text-sm font-semibold shadow-sm transition-colors",
               isActive
-                ? "border-seal-blue bg-seal-blue text-white shadow-[0_8px_20px_rgba(4,30,73,0.18)]"
+                ? "border-seal-blue bg-seal-blue text-white shadow-[0_8px_20px_rgba(0,42,91,0.18)]"
                 : "border-[#D1D5DB] bg-white text-muted-foreground hover:bg-muted hover:text-seal-blue",
             )}
           >
@@ -529,9 +529,9 @@ export function CriticalDriversCard({ drivers }: { drivers: CriticalDriver[] }) 
 export function SolutionConsequenceCard({ solution }: { solution: SealCockpitOverview["solution"] }) {
   return (
     <OverviewCard title="Einordnung" icon={CheckCircle2}>
-      <div className="rounded-[14px] border border-[#D1D5DB] bg-[#EAF2FF] px-4 py-3">
-        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">{solution.assessmentTitle}</div>
-        <p className="mt-2 text-sm font-medium leading-relaxed text-[#1F3B63]">{solution.assessment}</p>
+      <div className="rounded-[14px] border border-[#D1D5DB] bg-seal-blue/10 px-4 py-3">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">{solution.assessmentTitle}</div>
+        <p className="mt-2 text-sm font-medium leading-relaxed text-seal-blue">{solution.assessment}</p>
       </div>
       <div className="mt-4 space-y-3">
         {solution.rows.map((row) => (
@@ -554,7 +554,7 @@ function CalculationMetric({ metric }: { metric: CalculationEvidenceMetric }) {
         {metric.limit && <div>{metric.limit}</div>}
         {metric.reserve && <div>{metric.reserve}</div>}
       </div>
-      <div className="mt-3 inline-flex rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
+      <div className="mt-3 inline-flex rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-seal-blue">
         {metric.status}
       </div>
     </div>
@@ -609,7 +609,7 @@ function WorkspaceTabShell({
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">{intro}</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-semibold text-[#041E49]">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1.5 text-[12px] font-semibold text-seal-blue">
           <ShieldCheck size={14} />
           Nur zur Ansicht
         </div>
@@ -634,7 +634,7 @@ function InfoTile({
     tone === "warning"
       ? "border-[#FDE2B8] bg-[#FFF4E5]"
       : tone === "info"
-        ? "border-[#D1D5DB] bg-[#EFF6FF]"
+        ? "border-[#D1D5DB] bg-seal-blue/10"
         : "border-[#E5E7EB] bg-[#FAFAFB]";
   return (
     <div className={cn("rounded-[14px] border p-3", toneClass)}>
@@ -678,7 +678,7 @@ function plausibilityTone(plausibility: string) {
     case "blocked":
       return "border-red-200 bg-red-50 text-red-800";
     case "medium":
-      return "border-[#D1D5DB] bg-[#EFF6FF] text-[#041E49]";
+      return "border-[#D1D5DB] bg-seal-blue/10 text-seal-blue";
     default:
       return "border-amber-200 bg-amber-50 text-amber-800";
   }
@@ -691,7 +691,7 @@ function findingTone(severity: string) {
     case "watch":
       return "border-amber-200 bg-amber-50 text-amber-800";
     default:
-      return "border-[#D1D5DB] bg-[#EFF6FF] text-[#041E49]";
+      return "border-[#D1D5DB] bg-seal-blue/10 text-seal-blue";
   }
 }
 
@@ -869,7 +869,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
             Befunde, Prüfhypothesen und nächste beste Rückfrage aus dem V9-Kern.
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
+        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-seal-blue">
           {challenge.schemaVersion}
         </span>
       </div>
@@ -890,9 +890,9 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
       {question ? (
         <div className="mt-4 rounded-[14px] border border-[#D1D5DB] bg-white p-3">
           <div className="flex items-start gap-2">
-            <HelpCircle className="mt-0.5 shrink-0 text-[#041E49]" size={17} />
+            <HelpCircle className="mt-0.5 shrink-0 text-seal-blue" size={17} />
             <div>
-              <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
+              <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">
                 Nächste beste Frage
               </div>
               <p className="mt-1 text-sm font-semibold leading-relaxed text-[#111827]">{question.question}</p>
@@ -988,7 +988,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
           {compactItems(challenge.actionModesRun.map(actionModeLabel), 8).map((mode) => (
             <span
               key={mode}
-              className="rounded-full border border-[#E5E7EB] bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-[#041E49]"
+              className="rounded-full border border-[#E5E7EB] bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-seal-blue"
             >
               {mode}
             </span>
@@ -1022,7 +1022,7 @@ function MaterialHypothesisSummary({ candidate }: { candidate: WorkspaceMaterial
     <div className="mt-3 rounded-[14px] border border-[#D1D5DB] bg-white p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">
             Prüfhypothese
           </div>
           <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
@@ -1106,7 +1106,7 @@ export function DesignIntakePanel({ workspace }: { workspace: WorkspaceView | nu
             Mindestdaten, Vorchecks und Eskalationspunkte aus dem Backend. Nur als Anfragebasis für spätere Prüfung.
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
+        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-seal-blue">
           {designStatusLabel(intake.status)}
         </span>
       </div>
@@ -1224,7 +1224,7 @@ export function V91IntelligencePanel({ workspace }: { workspace: WorkspaceView |
             Backend-owned V9.1 Workspace-Projektion aus Medium, Werkstoff, Challenge, Dokumenten und Anfragebasis.
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
+        <span className="inline-flex rounded-full border border-[#D1D5DB] bg-white/80 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.08em] text-seal-blue">
           {v91OverallLabel(intelligence.overallStatus)}
         </span>
       </div>
@@ -1362,7 +1362,7 @@ function MediumDeepDive({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold">
-          <span className="rounded-full border border-[#D1D5DB] bg-[#EFF6FF] px-3 py-1 text-[#041E49]">
+          <span className="rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1 text-seal-blue">
             {researchStatusLabel(data.research_status.rag, "RAG")}
           </span>
           <span className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-1 text-[#4B5563]">
@@ -1372,7 +1372,7 @@ function MediumDeepDive({
             type="button"
             onClick={onRunWebResearch}
             disabled={webResearchLoading}
-            className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-[#041E49] shadow-sm transition-colors hover:bg-[#EFF6FF] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-seal-blue shadow-sm transition-colors hover:bg-seal-blue/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Search size={13} />
             {webResearchLoading
@@ -1393,10 +1393,10 @@ function MediumDeepDive({
       {data.answer_markdown ? (
         <div className="rounded-[14px] border border-[#D1D5DB] bg-[#FFFFFF] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">
               LLM-Deep-Dive
             </div>
-            <span className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#041E49]">
+            <span className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-semibold text-seal-blue">
               {mediumAnswerSourceLabel(data)}
             </span>
           </div>
@@ -1633,11 +1633,11 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
         <InfoTile title="Bekannter Werkstoff" value={normalizeText(input?.knownMaterial)} />
       </div>
 
-      <div className="mt-4 rounded-[14px] border border-[#D1D5DB] bg-[#EFF6FF] p-3">
-        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#041E49]">
+      <div className="mt-4 rounded-[14px] border border-[#D1D5DB] bg-seal-blue/10 p-3">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">
           Werkstofffenster
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-[#1F3B63]">
+        <p className="mt-2 text-sm leading-relaxed text-seal-blue">
           Kandidaten werden nur als Prüfrahmen gezeigt. SeaLAI setzt daraus keine Materialentscheidung,
           keinen Anfrage-Status und keine Auslegung.
         </p>
@@ -1652,7 +1652,7 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
                   <h3 className="text-base font-semibold text-[#111827]">{candidate.label}</h3>
                   <p className="mt-1 text-sm text-[#6B7280]">{candidate.family}</p>
                 </div>
-                <span className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#041E49]">
+                <span className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-seal-blue">
                   {normalizeText(candidate.statusLabel)}
                 </span>
               </div>

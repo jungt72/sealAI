@@ -9,14 +9,14 @@ tokens:
   colors:
     brand:
       primary:
-        value: "#041E49"
+        value: "#002A5B"
         usage: "Primary actions, active states, key highlights, timeline active step"
       primary_hover:
-        value: "#082A5F"
+        value: "#002A5B"
         usage: "Hover state for primary actions"
       primary_soft:
-        value: "#EAF2FF"
-        usage: "Soft emphasis background for highlighted informational UI"
+        value: "color-mix(in srgb, #002A5B 10%, #FFFFFF)"
+        usage: "Soft emphasis background derived from the primary brand color"
     surface:
       app:
         value: "#FFFFFF"
@@ -51,7 +51,7 @@ tokens:
         value: "#D1D5DB"
         usage: "Table dividers, stronger boundaries"
       active:
-        value: "#041E49"
+        value: "#002A5B"
         usage: "Active tabs, active outlines, focused cards"
     state:
       success:
@@ -73,17 +73,17 @@ tokens:
         value: "#FDECEC"
         usage: "Soft critical background"
       info:
-        value: "#2563EB"
+        value: "#002A5B"
         usage: "Informational badges, helper accents"
       info_soft:
-        value: "#EFF6FF"
-        usage: "Soft info background"
+        value: "color-mix(in srgb, #002A5B 10%, #FFFFFF)"
+        usage: "Soft info background derived from the primary brand color"
     material:
       medium:
         value: "#7C3AED"
         usage: "Medium intelligence emphasis and medium labels"
       calculations:
-        value: "#2563EB"
+        value: "#002A5B"
         usage: "Calculation emphasis"
       open_points:
         value: "#D97706"

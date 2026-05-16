@@ -212,7 +212,7 @@ export default function DashboardShell({
     <div className="relative flex h-screen w-full overflow-hidden bg-white font-sans text-foreground">
       <aside
         className={cn(
-          "relative z-40 flex h-full shrink-0 flex-col border-r border-[#CFE0F6] bg-sidebar text-seal-blue transition-[width] duration-200 ease-out",
+          "relative z-40 flex h-full shrink-0 flex-col border-r border-seal-blue/20 bg-sidebar text-seal-blue transition-[width] duration-200 ease-out",
           isHistoryOpen ? "w-[304px]" : "w-[72px]",
         )}
       >
@@ -260,8 +260,8 @@ export default function DashboardShell({
                       className={cn(
                         "flex h-11 items-center gap-4 rounded-full border border-transparent px-4 text-[15px] font-medium transition-colors",
                         isActive
-                          ? "border-[#C7D8F0] bg-white/75 text-seal-blue shadow-sm"
-                          : "text-[#1F3B63] hover:bg-white/60 hover:text-seal-blue",
+                          ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
+                          : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
                       )}
                     >
                       <item.icon size={20} />
@@ -286,8 +286,8 @@ export default function DashboardShell({
                         className={cn(
                           "flex h-10 items-center gap-4 rounded-full border border-transparent px-4 text-[14px] font-medium transition-colors",
                           isActive
-                            ? "border-[#C7D8F0] bg-white/75 text-seal-blue shadow-sm"
-                            : "text-[#1F3B63] hover:bg-white/60 hover:text-seal-blue",
+                            ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
+                            : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
                         )}
                       >
                         <item.icon size={18} />
@@ -349,8 +349,8 @@ export default function DashboardShell({
                         className={cn(
                           "block rounded-full border border-transparent px-3 py-2 text-[14px] font-medium leading-6 transition-colors",
                           isActive
-                            ? "border-[#C7D8F0] bg-white/75 text-seal-blue shadow-sm"
-                            : "text-[#1F3B63] hover:bg-white/60 hover:text-seal-blue",
+                            ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
+                            : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
                         )}
                       >
                         <span className="block truncate">{item.title}</span>
@@ -365,7 +365,7 @@ export default function DashboardShell({
               <div className="space-y-1">
                 <Link
                   href="/dashboard/seo"
-                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-[#1F3B63] transition-colors hover:bg-white/60 hover:text-seal-blue"
+                  className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-seal-blue transition-colors hover:bg-white/60 hover:text-seal-blue"
                 >
                   <Activity size={18} />
                   <span>Aktivitäten</span>
@@ -374,12 +374,12 @@ export default function DashboardShell({
                   type="button"
                   aria-label="Einstellungen"
                   title="Einstellungen"
-                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-[#1F3B63] transition-colors hover:bg-white/60 hover:text-seal-blue"
+                  className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-seal-blue transition-colors hover:bg-white/60 hover:text-seal-blue"
                 >
                   <Settings size={18} />
                   <span>Einstellungen & Hilfe</span>
                 </button>
-                <LogoutButton className="rounded-full px-4 !text-[#1F3B63] hover:!bg-white/60 hover:!text-seal-blue" />
+                <LogoutButton className="rounded-full px-4 !text-seal-blue hover:!bg-white/60 hover:!text-seal-blue" />
               </div>
               <div className="mt-5 px-4 text-[12px] leading-5 text-[#4B5563]">
                 <div className="font-medium text-seal-blue">Anfragebasis</div>

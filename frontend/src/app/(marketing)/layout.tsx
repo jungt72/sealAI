@@ -14,13 +14,13 @@ export default function MarketingLayout({
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <Link href="/" className="flex items-center" aria-label="sealingAI Startseite">
             <Image
-              src="/images/logo/sealingai-wordmark-transparent.png"
+              src="/images/logo/sealingai-wordmark-seal-blue.svg"
               alt="sealingAI"
-              width={1977}
-              height={324}
+              width={1225}
+              height={249}
               priority
-              sizes="(max-width: 768px) 128px, 148px"
-              className="h-auto w-32 object-contain sm:w-[148px]"
+              sizes="(max-width: 768px) 108px, 118px"
+              className="h-auto w-[108px] object-contain sm:w-[118px]"
             />
           </Link>
           
@@ -64,12 +64,12 @@ export default function MarketingLayout({
           <div className="flex flex-col md:flex-row justify-between gap-10">
             <div className="flex flex-col gap-4">
               <Image
-                src="/images/logo/sealingai-wordmark-transparent.png"
+                src="/images/logo/sealingai-wordmark-seal-blue.svg"
                 alt="sealingAI"
-                width={1977}
-                height={324}
-                sizes="140px"
-                className="h-auto w-36 object-contain"
+                width={1225}
+                height={249}
+                sizes="122px"
+                className="h-auto w-[122px] object-contain"
               />
               <p className="text-sm text-muted-foreground max-w-xs">
                 Klär deinen Dichtungsfall, bevor du fragst. Neutral, strukturiert und ohne heimliche Weitergabe.

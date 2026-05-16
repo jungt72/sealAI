@@ -28,7 +28,7 @@ function badgeClasses(tone: BadgeTone) {
     case "success":
       return "border-[#BDECCB] bg-[#EAF7EE] text-[#166534]";
     case "info":
-      return "border-[#D7E5FF] bg-[#EFF6FF] text-[#041E49]";
+      return "border-seal-blue/20 bg-seal-blue/10 text-seal-blue";
     case "warning":
       return "border-[#FDE2B8] bg-[#FFF4E5] text-[#9A3412]";
     default:
@@ -117,7 +117,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
         <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
           SeaLAI zeigt hier später passende Partnerprofile, sobald dafür genügend geprüfte Informationen vorliegen.
         </p>
-        <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-2 text-sm leading-relaxed text-[#041E49]">
+        <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-seal-blue/20 bg-seal-blue/10 px-3 py-2 text-sm leading-relaxed text-seal-blue">
           <Info className="mt-0.5 shrink-0" size={15} />
           <span>{FALLBACK_DISCLOSURE}</span>
         </div>
@@ -146,7 +146,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
         </div>
       </div>
 
-      <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-[#D7E5FF] bg-[#EFF6FF] px-3 py-2 text-sm leading-relaxed text-[#041E49]">
+      <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-seal-blue/20 bg-seal-blue/10 px-3 py-2 text-sm leading-relaxed text-seal-blue">
         <ShieldCheck className="mt-0.5 shrink-0" size={15} />
         <span>{disclosure}</span>
       </div>

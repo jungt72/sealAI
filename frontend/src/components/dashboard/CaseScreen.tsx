@@ -1010,7 +1010,7 @@ function ParameterApplicationCard({
                 className={cn(
                   "rounded-[14px] border px-3 py-2 text-sm font-medium transition-colors",
                   isActive
-                    ? "border-[#041E49] bg-[#041E49] text-white"
+                    ? "border-seal-blue bg-seal-blue text-white"
                     : "border-[#E5E7EB] bg-[#FAFAFB] text-[#4B5563] hover:bg-[#F0F2F5] hover:text-[#111827]",
                 )}
               >
@@ -1119,7 +1119,7 @@ function MediumIntelligenceCard({
                   {cockpit.view.mediumContext.properties.slice(0, 4).map((property) => (
                     <span
                       key={property}
-                      className="rounded-full border border-[#E5E7EB] bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#2563EB]"
+                      className="rounded-full border border-[#E5E7EB] bg-seal-blue/10 px-2.5 py-1 text-xs font-medium text-seal-blue"
                     >
                       {property}
                     </span>
@@ -1391,7 +1391,7 @@ function KnowledgeDeepDiveMode({
             {data.properties.map((item) => (
               <span
                 key={item}
-                className="rounded-full border border-[#E5E7EB] bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#2563EB]"
+                className="rounded-full border border-[#E5E7EB] bg-seal-blue/10 px-2.5 py-1 text-xs font-medium text-seal-blue"
               >
                 {item}
               </span>
@@ -1799,7 +1799,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
             aria-label="Arbeitsbereich einblenden"
             title="Arbeitsbereich einblenden"
             onClick={() => setIsWorkspaceOpen(true)}
-            className="absolute right-5 top-5 z-30 inline-flex h-11 items-center gap-2 rounded-full border border-[#C7D2E2] bg-white px-4 text-xs font-semibold text-seal-blue shadow-[0_14px_34px_rgba(4,30,73,0.16)] transition-colors hover:bg-[#F6F9FD]"
+            className="absolute right-5 top-5 z-30 inline-flex h-11 items-center gap-2 rounded-full border border-[#C7D2E2] bg-white px-4 text-xs font-semibold text-seal-blue shadow-[0_14px_34px_rgba(0,42,91,0.16)] transition-colors hover:bg-[#F6F9FD]"
           >
             <PanelRightOpen size={15} />
             Arbeitsbereich öffnen
@@ -1847,9 +1847,9 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
               >
                 <span
                   className={cn(
-                    "sticky top-[50vh] flex h-12 w-10 -translate-y-1/2 items-center justify-center gap-0.5 rounded-full border border-[#C7D2E2] bg-white text-seal-blue shadow-[0_14px_35px_rgba(4,30,73,0.20)] transition-all duration-150",
-                    "hover:border-seal-blue hover:shadow-[0_18px_42px_rgba(4,30,73,0.26)]",
-                    isResizingWorkspace && "border-seal-blue bg-[#F8FAFF] shadow-[0_18px_45px_rgba(4,30,73,0.30)]",
+                    "sticky top-[50vh] flex h-12 w-10 -translate-y-1/2 items-center justify-center gap-0.5 rounded-full border border-[#C7D2E2] bg-white text-seal-blue shadow-[0_14px_35px_rgba(0,42,91,0.20)] transition-all duration-150",
+                    "hover:border-seal-blue hover:shadow-[0_18px_42px_rgba(0,42,91,0.26)]",
+                    isResizingWorkspace && "border-seal-blue bg-seal-blue/5 shadow-[0_18px_45px_rgba(0,42,91,0.30)]",
                   )}
                 >
                   <ChevronLeft size={14} strokeWidth={2.4} />

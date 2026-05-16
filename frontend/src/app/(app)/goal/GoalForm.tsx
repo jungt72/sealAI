@@ -47,9 +47,9 @@ export default function GoalForm() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#F7F9FC]">
-      <div className="border-b border-[#E7ECF3] bg-white px-6 py-5">
+      <div className="border-b border-seal-blue/10 bg-white px-6 py-5">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#EEF4FF] text-[#0B5BD3]">
+          <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-seal-blue/10 text-seal-blue">
             <Target size={20} />
           </span>
           <div>
@@ -69,7 +69,7 @@ export default function GoalForm() {
               if (!canSubmit) return;
               router.push(`/dashboard/new?goal=${encodeURIComponent(prompt)}`);
             }}
-            className="space-y-4 rounded-[20px] border border-[#E7ECF3] bg-white p-5 shadow-sm"
+            className="space-y-4 rounded-[20px] border border-seal-blue/10 bg-white p-5 shadow-sm"
           >
             <Field
               icon={Target}
@@ -108,7 +108,7 @@ export default function GoalForm() {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="inline-flex items-center gap-2 rounded-full bg-[#0B5BD3] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#0A4FB9] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                className="inline-flex items-center gap-2 rounded-full bg-seal-blue px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
               >
                 Goal in Chat übernehmen
                 <ArrowRight size={17} />
@@ -117,7 +117,7 @@ export default function GoalForm() {
           </form>
 
           <aside className="space-y-4">
-            <div className="rounded-[20px] border border-[#E7ECF3] bg-white p-5 shadow-sm">
+            <div className="rounded-[20px] border border-seal-blue/10 bg-white p-5 shadow-sm">
               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
                 Vorschau
               </div>
@@ -126,7 +126,7 @@ export default function GoalForm() {
               </pre>
             </div>
 
-            <div className="rounded-[20px] border border-[#E7ECF3] bg-white p-5 shadow-sm">
+            <div className="rounded-[20px] border border-seal-blue/10 bg-white p-5 shadow-sm">
               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
                 Beispiele
               </div>
@@ -136,7 +136,7 @@ export default function GoalForm() {
                     key={example}
                     type="button"
                     onClick={() => setGoal(example)}
-                    className="w-full rounded-[14px] border border-[#E7ECF3] bg-white px-3 py-2.5 text-left text-sm leading-5 text-[#374151] transition-colors hover:border-[#CFE0FF] hover:bg-[#F8FBFF]"
+                    className="w-full rounded-[14px] border border-seal-blue/10 bg-white px-3 py-2.5 text-left text-sm leading-5 text-[#374151] transition-colors hover:border-seal-blue/25 hover:bg-seal-blue/5"
                   >
                     {example}
                   </button>
@@ -168,16 +168,16 @@ function Field({
   return (
     <label className="block">
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#111827]">
-        <Icon size={16} className="text-[#0B5BD3]" />
+        <Icon size={16} className="text-seal-blue" />
         {label}
-        {required && <span className="text-[#0B5BD3]">*</span>}
+        {required && <span className="text-seal-blue">*</span>}
       </div>
       <textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         rows={label === "Goal" ? 3 : 4}
-        className="min-h-[96px] w-full resize-y rounded-[14px] border border-[#DDE5F0] bg-white px-4 py-3 text-sm leading-6 text-[#111827] outline-none transition-colors placeholder:text-[#9CA3AF] focus:border-[#0B5BD3] focus:ring-4 focus:ring-[#0B5BD3]/10"
+        className="min-h-[96px] w-full resize-y rounded-[14px] border border-seal-blue/15 bg-white px-4 py-3 text-sm leading-6 text-[#111827] outline-none transition-colors placeholder:text-[#9CA3AF] focus:border-seal-blue focus:ring-4 focus:ring-seal-blue/10"
       />
     </label>
   );

@@ -152,7 +152,7 @@ const MessageBubble = React.memo(function MessageBubble({
   return (
     <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "relative justify-start")}>
       {!isUser && (
-        <div className="absolute -left-10 top-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#041E49]">
+        <div className="absolute -left-10 top-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue">
           <Bot size={14} />
         </div>
       )}
@@ -160,7 +160,7 @@ const MessageBubble = React.memo(function MessageBubble({
         className={cn(
           "min-w-0 px-1 py-1 text-[14px] leading-relaxed",
           isUser ? "max-w-[min(720px,84%)] text-[#111827]" : "w-full max-w-none flex-1 text-slate-900",
-          isStreaming && "text-[#1F3B63]",
+          isStreaming && "text-seal-blue",
         )}
       >
         {isUser ? (
@@ -172,7 +172,7 @@ const MessageBubble = React.memo(function MessageBubble({
         )}
       </div>
       {isUser && (
-        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-[#DDE6F2] bg-white/70 text-slate-500">
+        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-seal-blue/15 bg-white/70 text-slate-500">
           <UserRound size={14} />
         </div>
       )}
@@ -221,7 +221,7 @@ function EmptyChatStart({
             type="button"
             disabled={isStreaming}
             onClick={() => onSend(starter.prompt)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[#E0E7F1] bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-[#C9D6E6] hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-seal-blue/15 bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-seal-blue/20 hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
           >
             <starter.icon size={17} />
             <span>{starter.label}</span>
@@ -589,7 +589,7 @@ export default function ChatPane({
 
               {isStreaming && !streamingText && (
                 <div className="flex justify-start gap-3 text-sm text-slate-500">
-                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#EAF1FF] text-[#041E49]">
+                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue">
                     <Bot size={14} />
                   </div>
                   {streamingStatusText || "SealingAI formuliert die Antwort..."}
@@ -629,7 +629,7 @@ export default function ChatPane({
           <button
             type="button"
             onClick={() => scrollToLiveBottom("smooth")}
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-[#C9D6E6] bg-white px-4 py-2 text-sm font-semibold text-seal-blue shadow-[0_12px_32px_rgba(4,30,73,0.16)] transition-colors hover:border-seal-blue"
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-seal-blue/20 bg-white px-4 py-2 text-sm font-semibold text-seal-blue shadow-[0_12px_32px_rgba(0,42,91,0.16)] transition-colors hover:border-seal-blue"
           >
             <ArrowDown size={16} />
             Zum aktuellen Ende

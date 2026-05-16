@@ -1,7 +1,7 @@
 import { getSiteUrl } from "@/lib/site";
 
 const SITE_NAME = "sealingAI";
-const DEFAULT_LOGO = `${getSiteUrl()}/images/logo/sealingai-wordmark-transparent.png`;
+const DEFAULT_LOGO = `${getSiteUrl()}/images/logo/sealingai-wordmark-seal-blue.svg`;
 
 type BreadcrumbItem = {
   name: string;

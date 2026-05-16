@@ -55,7 +55,7 @@ export default function LogoutButton({ showLabel = true, className }: LogoutButt
             <LogOut className={`${showLabel ? "mr-3" : ""} h-5 w-5 shrink-0`} />
             {showLabel && <span className="animate-in fade-in duration-300">Abmelden</span>}
             {!showLabel && (
-                <div className="absolute left-full ml-4 px-2 py-1 bg-[#041E49] text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] whitespace-nowrap">
+                <div className="absolute left-full ml-4 px-2 py-1 bg-seal-blue text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] whitespace-nowrap">
                     Abmelden
                 </div>
             )}

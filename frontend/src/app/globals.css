@@ -8,10 +8,10 @@
   --color-foreground: #1F1F1F;
 
   /* SealingAI Professional B2B Palette */
-  --color-seal-blue: #041E49;
-  --color-seal-light-blue: #D3E3FD;
-  
-  --color-sidebar: #EAF2FF;
+  --color-seal-blue: #002A5B;
+  --color-seal-light-blue: color-mix(in srgb, var(--color-seal-blue) 14%, #FFFFFF);
+
+  --color-sidebar: color-mix(in srgb, var(--color-seal-blue) 8%, #FFFFFF);
   --color-surface: #FFFFFF;
   --color-border: #E3E3E3;
   --color-muted: #F5F5F7;

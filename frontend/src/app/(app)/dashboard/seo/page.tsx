@@ -564,7 +564,7 @@ function StatusPill({ tone, children }: { tone: StatusTone; children: React.Reac
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]",
         tone === "ready" && "border-emerald-200 bg-emerald-50 text-emerald-700",
         tone === "attention" && "border-amber-200 bg-amber-50 text-amber-700",
-        tone === "quiet" && "border-[#DDE6F2] bg-white text-[#64748B]",
+        tone === "quiet" && "border-seal-blue/15 bg-white text-[#64748B]",
       )}
     >
       {children}
@@ -584,10 +584,10 @@ function Metric({
   icon: typeof BarChart3;
 }) {
   return (
-    <div className="rounded-[16px] border border-[#E3EAF4] bg-white/80 px-4 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <div className="rounded-[16px] border border-seal-blue/10 bg-white/80 px-4 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between gap-3">
         <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">{label}</div>
-        <Icon size={18} className="text-[#0B57D0]" />
+        <Icon size={18} className="text-seal-blue" />
       </div>
       <div className="mt-3 text-2xl font-semibold tracking-tight text-[#111827]">{value}</div>
       <div className="mt-1 text-sm leading-5 text-[#64748B]">{detail}</div>
@@ -653,9 +653,9 @@ export default async function SeoDashboardPage() {
   return (
     <main className="h-full overflow-y-auto bg-[#F5F7FB] px-5 py-5 text-[#111827]">
       <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-5">
-        <section className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E4EAF3] pb-5">
+        <section className="flex flex-wrap items-start justify-between gap-4 border-b border-seal-blue/10 pb-5">
           <div>
-            <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-[#0B57D0]">
+            <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-seal-blue">
               <Radar size={16} />
               Interne SEO-Zentrale
             </div>
@@ -695,11 +695,11 @@ export default async function SeoDashboardPage() {
           <Metric label="Letzter Report" value={reports[0] ? formatDate(reports[0].modifiedAt) : "noch keiner"} detail={reports[0]?.name ?? "GSC-Reports nach erstem Sync sichtbar"} icon={Clock3} />
         </section>
 
-        <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+        <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <BarChart3 size={18} className="text-[#0B57D0]" />
+                <BarChart3 size={18} className="text-seal-blue" />
                 <h2 className="text-lg font-semibold">Ranking-Positionen</h2>
               </div>
               <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
@@ -713,7 +713,7 @@ export default async function SeoDashboardPage() {
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[960px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E6ECF5] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                <tr className="border-b border-seal-blue/10 text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
                   <th className="py-3 pr-4">Keyword</th>
                   <th className="py-3 pr-4">Domain / Property</th>
                   <th className="py-3 pr-4">Zielseite</th>
@@ -728,12 +728,12 @@ export default async function SeoDashboardPage() {
                 {ROADMAP.map((row) => {
                   const ranking = rankingRowsByKeyword.get(row.primaryKeyword);
                   return (
-                    <tr key={`ranking-${row.primaryKeyword}`} className="border-b border-[#EEF2F7] align-top last:border-0">
+                    <tr key={`ranking-${row.primaryKeyword}`} className="border-b border-seal-blue/10 align-top last:border-0">
                       <td className="py-3 pr-4 font-medium">{row.primaryKeyword}</td>
                       <td className="py-3 pr-4 text-[#4B5563]">{ranking?.siteUrl ?? TARGET_DOMAINS[0]}</td>
                       <td className="py-3 pr-4">
                         {ranking ? (
-                          <a href={ranking.page} className="font-medium text-[#0B57D0] hover:underline">
+                          <a href={ranking.page} className="font-medium text-seal-blue hover:underline">
                             {ranking.page.replace(/^https?:\/\//, "")}
                           </a>
                         ) : (
@@ -759,16 +759,16 @@ export default async function SeoDashboardPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-3 rounded-[14px] border border-[#D9E5F7] bg-[#F8FBFF] px-3 py-2 text-[12px] leading-5 text-[#526179]">
+          <div className="mt-3 rounded-[14px] border border-seal-blue/20 bg-seal-blue/5 px-3 py-2 text-[12px] leading-5 text-[#526179]">
             Quelle: Google Search Console Search Analytics, gewichtete durchschnittliche Position. {rankings.dbFound ? "SEO-Datenbank gefunden." : "SEO-Datenbank noch nicht gefunden."} {rankings.latestDataDate ? `Letzter GSC-Datentag: ${formatShortDate(rankings.latestDataDate)}.` : "Noch kein GSC-Query-Datensatz vorhanden."} Für keywords ohne Impressionen ist ein separater DataForSEO-SERP-Rankcheck nötig.
           </div>
         </section>
 
-        <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+        <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <Activity size={18} className="text-[#0B57D0]" />
+                <Activity size={18} className="text-seal-blue" />
                 <h2 className="text-lg font-semibold">Core Web Vitals / PageSpeed</h2>
               </div>
               <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
@@ -783,7 +783,7 @@ export default async function SeoDashboardPage() {
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#E6ECF5] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                  <tr className="border-b border-seal-blue/10 text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
                     <th className="py-3 pr-4">URL</th>
                     <th className="py-3 pr-4 text-right">Score</th>
                     <th className="py-3 pr-4 text-right">LCP</th>
@@ -795,7 +795,7 @@ export default async function SeoDashboardPage() {
                 </thead>
                 <tbody>
                   {pageSpeed.rows.map((row) => (
-                    <tr key={`${row.url}-${row.strategy}`} className="border-b border-[#EEF2F7] last:border-0">
+                    <tr key={`${row.url}-${row.strategy}`} className="border-b border-seal-blue/10 last:border-0">
                       <td className="py-3 pr-4 font-medium text-[#111827]">{row.url.replace(/^https?:\/\//, "")}</td>
                       <td className="py-3 pr-4 text-right font-semibold">{row.performanceScore === null ? "-" : Math.round(row.performanceScore * 100)}</td>
                       <td className="py-3 pr-4 text-right text-[#4B5563]">{row.lcpMs === null ? "-" : `${Math.round(row.lcpMs)} ms`}</td>
@@ -816,17 +816,17 @@ export default async function SeoDashboardPage() {
         </section>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <div className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Keyword- und Content-Map</h2>
                 <p className="mt-1 text-sm text-[#64748B]">Run-0 Priorisierung mit V9-Grenze: Challenge, Prüfhypothesen und RFQ-Qualifizierung statt finaler Auslegung.</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Link href="/wissen" className="inline-flex items-center gap-1.5 rounded-full border border-[#D9E5F7] bg-white px-3 py-1.5 text-sm font-semibold text-[#0B57D0] hover:bg-[#F8FBFF]">
+                <Link href="/wissen" className="inline-flex items-center gap-1.5 rounded-full border border-seal-blue/20 bg-white px-3 py-1.5 text-sm font-semibold text-seal-blue hover:bg-seal-blue/5">
                   SealingPedia ansehen <ArrowUpRight size={14} />
                 </Link>
-                <Link href="/rag" className="inline-flex items-center gap-1.5 rounded-full border border-[#D9E5F7] bg-white px-3 py-1.5 text-sm font-semibold text-[#0B57D0] hover:bg-[#F8FBFF]">
+                <Link href="/rag" className="inline-flex items-center gap-1.5 rounded-full border border-seal-blue/20 bg-white px-3 py-1.5 text-sm font-semibold text-seal-blue hover:bg-seal-blue/5">
                   Markdown hochladen <ArrowUpRight size={14} />
                 </Link>
               </div>
@@ -834,7 +834,7 @@ export default async function SeoDashboardPage() {
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[860px] border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#E6ECF5] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                  <tr className="border-b border-seal-blue/10 text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
                     <th className="py-3 pr-4">Phase</th>
                     <th className="py-3 pr-4">Pfad</th>
                     <th className="py-3 pr-4">Keyword</th>
@@ -845,10 +845,10 @@ export default async function SeoDashboardPage() {
                 </thead>
                 <tbody>
                   {ROADMAP.map((row) => (
-                    <tr key={row.path} className="border-b border-[#EEF2F7] align-top last:border-0">
-                      <td className="py-3 pr-4 font-semibold text-[#0B57D0]">{row.phase}</td>
+                    <tr key={row.path} className="border-b border-seal-blue/10 align-top last:border-0">
+                      <td className="py-3 pr-4 font-semibold text-seal-blue">{row.phase}</td>
                       <td className="py-3 pr-4">
-                        <Link href={row.path} className="font-medium text-[#111827] hover:text-[#0B57D0]">{row.path}</Link>
+                        <Link href={row.path} className="font-medium text-[#111827] hover:text-seal-blue">{row.path}</Link>
                       </td>
                       <td className="py-3 pr-4 font-medium">{row.primaryKeyword}</td>
                       <td className="py-3 pr-4 text-[#4B5563]">{row.cluster}</td>
@@ -866,11 +866,11 @@ export default async function SeoDashboardPage() {
           </div>
 
           <aside className="flex flex-col gap-5">
-            <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <h2 className="text-lg font-semibold">Nächste Schritte</h2>
               <div className="mt-4 space-y-3">
                 {actions.map((action) => (
-                  <div key={action.title} className="rounded-[14px] border border-[#E7ECF3] bg-[#FBFCFE] p-3">
+                  <div key={action.title} className="rounded-[14px] border border-seal-blue/10 bg-[#FBFCFE] p-3">
                     <div className="flex items-start gap-2">
                       {action.tone === "ready" ? <CheckCircle2 size={17} className="mt-0.5 text-emerald-600" /> : <AlertTriangle size={17} className="mt-0.5 text-amber-600" />}
                       <div>
@@ -886,11 +886,11 @@ export default async function SeoDashboardPage() {
               </div>
             </section>
 
-            <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <h2 className="text-lg font-semibold">Letzte Reports</h2>
               <div className="mt-4 space-y-3">
                 {reports.length ? reports.map((report) => (
-                  <div key={report.path} className="rounded-[14px] border border-[#E7ECF3] bg-[#FBFCFE] p-3">
+                  <div key={report.path} className="rounded-[14px] border border-seal-blue/10 bg-[#FBFCFE] p-3">
                     <div className="text-sm font-semibold">{report.title}</div>
                     <div className="mt-1 text-[12px] text-[#7A8699]">{formatDate(report.modifiedAt)} · {report.name}</div>
                     <p className="mt-2 text-sm leading-5 text-[#4B5563]">{report.summary}</p>
@@ -905,23 +905,23 @@ export default async function SeoDashboardPage() {
           </aside>
         </section>
 
-        <section className="rounded-[18px] border border-[#E3EAF4] bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+        <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
           <div className="flex items-center gap-2">
-            <Activity size={18} className="text-[#0B57D0]" />
+            <Activity size={18} className="text-seal-blue" />
             <h2 className="text-lg font-semibold">Keyword-Cluster</h2>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
             {KEYWORD_CLUSTERS.map((cluster) => (
-              <div key={cluster.cluster} className="rounded-[14px] border border-[#E7ECF3] bg-[#FBFCFE] p-3">
+              <div key={cluster.cluster} className="rounded-[14px] border border-seal-blue/10 bg-[#FBFCFE] p-3">
                 <div className="font-semibold">{cluster.cluster}</div>
                 <p className="mt-2 text-sm leading-5 text-[#4B5563]">{cluster.keywords}</p>
-                <div className="mt-3 text-[12px] font-medium text-[#0B57D0]">{cluster.intent}</div>
+                <div className="mt-3 text-[12px] font-medium text-seal-blue">{cluster.intent}</div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-[18px] border border-[#D9E5F7] bg-[#F8FBFF] p-4 text-sm leading-6 text-[#4B5563]">
+        <section className="rounded-[18px] border border-seal-blue/20 bg-seal-blue/5 p-4 text-sm leading-6 text-[#4B5563]">
           <div className="font-semibold text-[#111827]">Governance-Regel für alle SEO-Inhalte</div>
           SealingAI darf technische Orientierung, strukturierte Rückfragen und eine prüfbare Anfragebasis liefern.
           Die Seite darf keine finale Materialeignung, Dichtungsauslegung oder Herstellerfreigabe behaupten.
