@@ -21,6 +21,29 @@ _STRONG_NEW_REQUEST_RE = re.compile(
     r"\b(?:ich brauche|ich habe|wir haben|bitte lege|auslegen|vergleiche|was ist|was bedeutet|wie funktioniert)\b",
     re.IGNORECASE,
 )
+_PRESSURE_DIRECT_RE = re.compile(
+    r"\b(?:direkt\s+(?:an|auf)\s+der\s+(?:dichtung|dichtstelle|dichtlippe)|"
+    r"an\s+der\s+(?:dichtung|dichtstelle|dichtlippe)|dichtstelle|dichtlippe)\b",
+    re.IGNORECASE,
+)
+_PRESSURE_SYSTEM_RE = re.compile(
+    r"\b(?:systemdruck|system\s*druck|system|anlage|leitungsdruck|pumpendruck)\b",
+    re.IGNORECASE,
+)
+_PRESSURE_DIFFERENTIAL_RE = re.compile(
+    r"\b(?:differenzdruck|druckdifferenz|druckunterschied|delta\s*p|dp|"
+    r"ueber\s+der\s+dichtung|über\s+der\s+dichtung)\b",
+    re.IGNORECASE,
+)
+_PRESSURE_GAUGE_RE = re.compile(
+    r"\b(?:barg|bar\s*g|ueberdruck|überdruck|relativdruck|gauge)\b",
+    re.IGNORECASE,
+)
+_PRESSURE_ABSOLUTE_RE = re.compile(
+    r"\b(?:bara|bar\s*a|absolutdruck|absolute?r?\s+druck|absolute?)\b",
+    re.IGNORECASE,
+)
+_NUMBER_RE = re.compile(r"^\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:bar|°?\s*c|grad|mm|rpm|u[/.]?\s*min)?\s*$", re.IGNORECASE)
 
 
 def _clean_short_answer(message: str) -> str:
@@ -48,6 +71,16 @@ def _looks_like_short_slot_answer(message: str) -> bool:
 def _titlecase_answer(raw: str) -> str:
     text = _clean_short_answer(raw)
     return text[:1].upper() + text[1:]
+
+
+def _numeric_answer(message: str) -> float | None:
+    match = _NUMBER_RE.match(str(message or "").strip())
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
 
 
 def _resolve_medium_answer(
@@ -122,6 +155,91 @@ def _resolve_explicit_medium_answer(
     )
 
 
+def _resolve_pressure_answer(
+    *,
+    pending_question: PendingQuestion,
+    message: str,
+    turn_index: int,
+) -> SlotAnswerBinding | None:
+    expected_type = str(pending_question.expected_answer_type or "")
+    text = " ".join(str(message or "").strip().split())
+    if not text or "?" in text:
+        return None
+    lowered = text.casefold()
+
+    pressure_context: str | None = None
+    if _PRESSURE_DIRECT_RE.search(text):
+        pressure_context = "direct_at_seal"
+    elif _PRESSURE_DIFFERENTIAL_RE.search(text):
+        pressure_context = "differential"
+    elif _PRESSURE_SYSTEM_RE.search(text):
+        pressure_context = "system_pressure"
+    elif _PRESSURE_GAUGE_RE.search(text):
+        pressure_context = "gauge"
+    elif _PRESSURE_ABSOLUTE_RE.search(text):
+        pressure_context = "absolute"
+
+    if pressure_context is not None and expected_type in {
+        "pressure_context",
+        "pressure_value_or_context",
+    }:
+        return SlotAnswerBinding(
+            target_field="pressure_bar",
+            raw_value=text,
+            normalized_value={"pressure_context": pressure_context},
+            source="pending_question",
+            confidence=0.94,
+            ambiguity=False,
+            needs_clarification=False,
+            turn_index=turn_index,
+        )
+
+    if expected_type in {"pressure_value", "pressure_value_or_context"}:
+        value = _numeric_answer(text)
+        if value is not None and "bar" in lowered:
+            return SlotAnswerBinding(
+                target_field="pressure_bar",
+                raw_value=text,
+                normalized_value=value,
+                source="pending_question",
+                confidence=0.92,
+                ambiguity=False,
+                needs_clarification=False,
+                turn_index=turn_index,
+            )
+    return None
+
+
+def _resolve_numeric_slot_answer(
+    *,
+    pending_question: PendingQuestion,
+    message: str,
+    turn_index: int,
+) -> SlotAnswerBinding | None:
+    target_field = str(pending_question.target_field or "").strip()
+    expected_type = str(pending_question.expected_answer_type or "")
+    if target_field not in {"temperature_c", "shaft_diameter_mm", "speed_rpm"}:
+        return None
+    if expected_type not in {"temperature_value", "length_mm_value", "rotational_speed_value"}:
+        return None
+    text = str(message or "").strip()
+    if not text or "?" in text:
+        return None
+    value = _numeric_answer(text)
+    if value is None:
+        return None
+    return SlotAnswerBinding(
+        target_field=target_field,
+        raw_value=text,
+        normalized_value=value,
+        source="pending_question",
+        confidence=0.92,
+        ambiguity=False,
+        needs_clarification=False,
+        turn_index=turn_index,
+    )
+
+
 def resolve_slot_answer_binding(
     *,
     pending_question: PendingQuestion | None,
@@ -131,8 +249,8 @@ def resolve_slot_answer_binding(
 ) -> SlotAnswerBinding | None:
     """Bind a short current user answer to a structured pending slot.
 
-    The function is generic by contract and dispatches to field adapters. For
-    this patch only `medium` is actively supported.
+    The function is generic by contract and dispatches to field adapters. It
+    intentionally uses the pending slot metadata, not previous assistant text.
     """
 
     if pending_question is None or pending_question.status != "open":
@@ -147,4 +265,17 @@ def resolve_slot_answer_binding(
             message=message,
             turn_index=turn_index,
         )
+    if target_field == "pressure_bar":
+        return _resolve_pressure_answer(
+            pending_question=pending_question,
+            message=message,
+            turn_index=turn_index,
+        )
+    numeric = _resolve_numeric_slot_answer(
+        pending_question=pending_question,
+        message=message,
+        turn_index=turn_index,
+    )
+    if numeric is not None:
+        return numeric
     return None

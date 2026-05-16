@@ -1073,17 +1073,50 @@ def _pending_question_from_strategy(
         return None
     if strategy.response_mode != "single_question":
         return None
-    if strategy.focus_key != "medium" or not strategy.primary_question:
+    if not strategy.focus_key or not strategy.primary_question:
         return None
+    expected_answer_type = _expected_answer_type_for_focus(
+        strategy.focus_key,
+        strategy.primary_question,
+    )
     return PendingQuestion(
-        target_field="medium",
-        expected_answer_type="medium_value",
+        target_field=strategy.focus_key,
+        expected_answer_type=expected_answer_type,
         question_text=strategy.primary_question,
         asked_at_turn_id=state.user_turn_index,
         source="governed_next_question",
         ambiguity_policy="clarify_if_broad_or_hazardous",
         status="open",
     )
+
+
+def _expected_answer_type_for_focus(focus_key: str, question: str | None = None) -> str:
+    question_text = str(question or "").casefold()
+    if focus_key == "medium":
+        return "medium_value"
+    if focus_key == "pressure_bar":
+        if any(
+            marker in question_text
+            for marker in (
+                "druck direkt",
+                "systemdruck",
+                "druckunterschied",
+                "differenzdruck",
+            )
+        ):
+            return "pressure_context"
+        return "pressure_value_or_context"
+    if focus_key == "temperature_c":
+        return "temperature_value"
+    if focus_key in {"shaft_diameter_mm", "clearance_gap_mm"}:
+        return "length_mm_value"
+    if focus_key == "speed_rpm":
+        return "rotational_speed_value"
+    if focus_key == "sealing_type":
+        return "seal_type_value"
+    if focus_key == "pressure_direction":
+        return "pressure_direction_value"
+    return "free_text_value"
 
 
 def _confirmed_core_tech_count(state: GraphState) -> int:

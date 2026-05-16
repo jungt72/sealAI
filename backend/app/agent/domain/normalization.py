@@ -218,6 +218,12 @@ _PRESSURE_PATTERN = re.compile(
     r"^([+-]?\d+(?:[.,]\d+)?)\s*(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)\s*$",
     re.IGNORECASE,
 )
+_PRESSURE_WITH_CONTEXT_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*"
+    r"(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)"
+    r"(?:\s+(direct_at_seal|system_pressure|differential|gauge|absolute))?\s*$",
+    re.IGNORECASE,
+)
 
 _RPM_PATTERN = re.compile(
     r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:rpm|u[/.]?\s*min|1\s*/\s*min|min-?1)\s*$",
@@ -469,6 +475,8 @@ def _parse_pressure_input(raw: Any) -> Optional[tuple[float, str]]:
     text = str(raw).strip().replace(",", ".")
     m = _PRESSURE_PATTERN.match(text)
     if not m:
+        m = _PRESSURE_WITH_CONTEXT_PATTERN.match(text)
+    if not m:
         return None
     unit = re.sub(r"[\s\(\)\[\]]", "", m.group(2).lower())
     if unit in {"barg", "bara"}:
@@ -493,6 +501,10 @@ def _normalize_pressure_entity(raw: Any) -> NormalizedEntity:
 
 def _pressure_interpretation(raw: Any, unit: str | None = None) -> str:
     text = f"{raw or ''} {unit or ''}".casefold()
+    if re.search(r"\b(?:direct_at_seal|direkt\s+(?:an|auf)\s+der\s+(?:dichtung|dichtstelle|dichtlippe)|dichtstelle|dichtlippe)\b", text):
+        return "direct_at_seal"
+    if re.search(r"\b(?:system_pressure|systemdruck|system\s*druck|leitungsdruck|pumpendruck)\b", text):
+        return "system_pressure"
     if re.search(r"\b(?:delta\s*p|differential|differenzdruck|dp|Δp)\b", text):
         return "differential"
     if re.search(r"\b(?:barg|bar\s*[\(\[]?\s*g\s*[\)\]]?|gauge|ueberdruck|überdruck)\b", text):

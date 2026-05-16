@@ -125,7 +125,34 @@ _CORRECTION_OVERRIDE_FIELDS: frozenset[str] = frozenset({
 _PRIMARY_OVERRIDE_FIELDS: frozenset[str] = _UNCONDITIONAL_OVERRIDE_FIELDS | _CORRECTION_OVERRIDE_FIELDS
 
 
-def _slot_binding_to_extraction(binding, turn_index: int) -> ObservedExtraction:
+def _format_pressure_context_value(value: Any, context: str) -> str | None:
+    if value in (None, "", [], {}):
+        return None
+    try:
+        pressure = float(value)
+    except (TypeError, ValueError):
+        return None
+    display = int(pressure) if pressure == int(pressure) else pressure
+    return f"{display} bar {context}"
+
+
+def _slot_binding_to_extraction(state: GraphState, binding, turn_index: int) -> ObservedExtraction | None:
+    if binding.target_field == "pressure_bar" and isinstance(binding.normalized_value, dict):
+        context = str(binding.normalized_value.get("pressure_context") or "").strip()
+        raw_value = _format_pressure_context_value(
+            _current_state_value(state, "pressure_bar"),
+            context,
+        )
+        if raw_value is None:
+            return None
+        return ObservedExtraction(
+            field_name="pressure_bar",
+            raw_value=raw_value,
+            raw_unit=None,
+            source="user",
+            confidence=binding.confidence,
+            turn_index=turn_index,
+        )
     return ObservedExtraction(
         field_name=binding.target_field,
         raw_value=binding.normalized_value if binding.normalized_value is not None else binding.raw_value,
@@ -133,6 +160,29 @@ def _slot_binding_to_extraction(binding, turn_index: int) -> ObservedExtraction:
         source="user",
         confidence=binding.confidence,
         turn_index=turn_index,
+    )
+
+
+def _promote_slot_binding_override(
+    *,
+    observed,
+    slot_binding,
+    slot_extraction: ObservedExtraction | None,
+    turn_index: int,
+):
+    if slot_binding is None or slot_extraction is None:
+        return observed
+    if slot_binding.target_field != "pressure_bar":
+        return observed
+    if not isinstance(slot_binding.normalized_value, dict):
+        return observed
+    return observed.with_override(
+        UserOverride(
+            field_name="pressure_bar",
+            override_value=slot_extraction.raw_value,
+            override_unit=slot_extraction.raw_unit,
+            turn_index=turn_index,
+        )
     )
 
 
@@ -443,7 +493,8 @@ async def intake_observe_node(state: GraphState) -> GraphState:
                 for extraction in regex_extractions
                 if extraction.field_name != slot_binding.target_field
             ]
-            slot_extractions = [_slot_binding_to_extraction(slot_binding, turn_index)]
+            slot_extraction = _slot_binding_to_extraction(state, slot_binding, turn_index)
+            slot_extractions = [slot_extraction] if slot_extraction is not None else []
         deterministic_extractions = regex_extractions + slot_extractions
         v91_turn_candidate_facts.extend(
             candidate_fact_from_observed_extraction(
@@ -465,6 +516,13 @@ async def intake_observe_node(state: GraphState) -> GraphState:
         )
         for extraction in deterministic_extractions:
             observed = observed.with_extraction(extraction)
+        if slot_extractions:
+            observed = _promote_slot_binding_override(
+                observed=observed,
+                slot_binding=slot_binding,
+                slot_extraction=slot_extractions[0],
+                turn_index=turn_index,
+            )
         observed = _promote_primary_correction_overrides(
             state=state,
             observed=observed,

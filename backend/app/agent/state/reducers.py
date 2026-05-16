@@ -713,14 +713,25 @@ def reduce_normalized_to_asserted(
             assertion_confidence: ConfidenceLevel = (
                 "confirmed" if pressure_value_accepted else confidence
             )
-            asserted_case_field = _asserted_case_field(
-                field_name=field_name,
-                value=param.value,
-                unit=param.unit,
-                confidence=assertion_confidence,
-                evidence_refs=[],
-                provenance="user_stated",
-            )
+            if param.case_field is not None:
+                asserted_case_field = param.case_field.model_copy(
+                    update={
+                        "confidence": assertion_confidence,
+                        "status": "confirmed",
+                        "confirmation_required": False,
+                        "evidence_refs": [],
+                        "provenance": "user_stated",
+                    }
+                )
+            else:
+                asserted_case_field = _asserted_case_field(
+                    field_name=field_name,
+                    value=param.value,
+                    unit=param.unit,
+                    confidence=assertion_confidence,
+                    evidence_refs=[],
+                    provenance="user_stated",
+                )
             assertions[field_name] = AssertedClaim(
                 field_name=field_name,
                 asserted_value=param.value,
