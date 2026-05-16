@@ -887,12 +887,25 @@ def _v92_public(state: GraphState) -> dict[str, Any]:
             "route": state.engineering.route,
             "next_best_engineering_action": state.engineering.next_best_engineering_action,
             "blockers": list(state.engineering.blockers),
+            "risk_findings": [
+                item.model_dump() if hasattr(item, "model_dump") else dict(item)
+                for item in list(state.engineering.risk_findings)
+            ],
+            "completeness_matrix": (
+                state.engineering.completeness_matrix.model_dump()
+                if state.engineering.completeness_matrix is not None
+                else None
+            ),
         },
         "calculations": {
             "status": state.calculation.status,
             "result_count": len(state.calculation.results),
             "blocked_calculations": list(state.calculation.blocked_calculations),
             "guardrail_violations": list(state.calculation.guardrail_violations),
+            "guard_results": [
+                item.model_dump() if hasattr(item, "model_dump") else dict(item)
+                for item in list(state.calculation.guard_results)
+            ],
         },
         "standards": {
             "status": state.standards.status,
@@ -930,6 +943,8 @@ def _v92_public(state: GraphState) -> dict[str, Any]:
             "status": state.review_state.status,
             "required_review_types": list(state.review_state.required_review_types),
             "review_guard_notes": list(state.review_state.review_guard_notes),
+            "decisions": list(state.review_state.decisions),
+            "approved_claim_level": state.review_state.approved_claim_level,
             "blocking_findings": list(state.review_state.blocking_findings),
             "required_corrections": list(state.review_state.required_corrections),
         },
@@ -938,6 +953,11 @@ def _v92_public(state: GraphState) -> dict[str, Any]:
             "dossier_id": state.dossier.dossier_id,
             "readiness_band": state.dossier.readiness_band,
             "allowed_next_actions": list(state.dossier.allowed_next_actions),
+            "risk_finding_count": len(state.dossier.risk_findings),
+            "document_ref_count": len(state.dossier.document_refs),
+            "evidence_ref_count": len(state.dossier.evidence_summary),
+            "standards_ref_count": len(state.dossier.standards_refs),
+            "expert_review_status": state.dossier.expert_review_status,
             "fact_count": len(state.dossier.facts),
             "calculation_count": len(state.dossier.calculations),
             "candidate_count": len(state.dossier.candidates),

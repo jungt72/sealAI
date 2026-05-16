@@ -13,7 +13,34 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-ClaimLevel = Literal["L0_raw", "L1_normalized", "L2_screening", "L3_reviewed"]
+ClaimLevel = Literal[
+    "L0_raw",
+    "L1_normalized",
+    "L2_screening",
+    "L3_deterministic_calculation",
+    "L4_source_backed_screening",
+    "L5_document_backed",
+    "L6_expert_approved",
+    "L3_reviewed",
+]
+CalculationValidityStatus = Literal[
+    "valid_for_screening",
+    "valid_with_assumptions",
+    "input_missing",
+    "out_of_scope",
+    "stale",
+    "requires_expert_review",
+]
+ReadinessBand = Literal[
+    "intake_started",
+    "screening_possible",
+    "engineering_checks_partial",
+    "review_ready_with_open_items",
+    "rfq_ready_for_expert_review",
+    "blocked_missing_core_data",
+    "blocked_safety_or_compliance",
+    "not_ready",
+]
 ReviewDecision = Literal["not_started", "pending", "approved_scope", "changes_required", "blocked"]
 V92Status = Literal["pending", "partial", "ready", "blocked"]
 
@@ -82,6 +109,8 @@ class EngineeringState(BaseModel):
     decisions: list[EngineeringDecision] = Field(default_factory=list)
     assumptions: list[EngineeringAssumption] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
+    risk_findings: list["EngineeringRiskFinding"] = Field(default_factory=list)
+    completeness_matrix: Optional["CompletenessMatrix"] = None
     next_best_engineering_action: str = "identify_seal_system"
 
 
@@ -99,10 +128,32 @@ class CalculationResult(BaseModel):
     claim_level: ClaimLevel = "L2_screening"
     input_snapshot_hash: str = ""
     outputs: dict[str, Any] = Field(default_factory=dict)
+    units: dict[str, str] = Field(default_factory=dict)
+    formula_refs: list[str] = Field(default_factory=list)
+    assumptions: list[dict[str, Any]] = Field(default_factory=list)
+    output_snapshot_hash: str = ""
+    validity_status: CalculationValidityStatus = "input_missing"
+    engineering_signals: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
     missing_inputs: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     guardrail_violations: list[str] = Field(default_factory=list)
+
+
+class CalculationGuardResult(BaseModel):
+    calculation_id: str
+    calculator_exists: bool = True
+    required_inputs_present: bool = False
+    units_normalized: bool = False
+    formula_version_present: bool = False
+    output_units_present: bool = False
+    assumptions_marked: bool = True
+    stale_inputs_detected: bool = False
+    no_final_claim_from_calculation: bool = True
+    allowed_user_facing: bool = False
+    violations: list[str] = Field(default_factory=list)
 
 
 class CalculationState(BaseModel):
@@ -115,16 +166,29 @@ class CalculationState(BaseModel):
     stale_result_ids: list[str] = Field(default_factory=list)
     blocked_calculations: list[str] = Field(default_factory=list)
     guardrail_violations: list[str] = Field(default_factory=list)
+    guard_results: list[CalculationGuardResult] = Field(default_factory=list)
 
 
 class StandardsRegistryEntry(BaseModel):
     standard_id: str
     title: str
+    publisher: str = "unknown"
     version: str = "metadata_only"
+    edition: Optional[str] = None
+    publication_date: Optional[str] = None
     region: Optional[str] = None
     scope: str = ""
     lifecycle: str = "active_or_unknown"
+    applies_to_seal_types: list[str] = Field(default_factory=list)
+    relevant_fields: list[str] = Field(default_factory=list)
     license_boundary: str = "metadata_only_no_norm_text"
+    licensed_content_available: bool = False
+    license_constraints: list[str] = Field(default_factory=lambda: ["metadata_only_no_norm_text"])
+    internal_rule_refs: list[str] = Field(default_factory=list)
+    review_owner: Optional[str] = None
+    next_review_due: Optional[str] = None
+    source_url: Optional[str] = None
+    source_checked_at: Optional[str] = None
     claim_level: ClaimLevel = "L2_screening"
     conformity_claim_allowed: bool = False
     source_module_id: Optional[str] = None
@@ -149,7 +213,28 @@ class EvidenceGraphNode(BaseModel):
     title: str
     source_ref: Optional[str] = None
     claim_level: ClaimLevel = "L1_normalized"
-    applicability: Literal["direct", "indirect", "unknown"] = "unknown"
+    applicability: Literal[
+        "direct",
+        "indirect",
+        "unknown",
+        "general_background",
+        "material_family_level",
+        "compound_level",
+        "product_level",
+        "case_specific",
+        "not_applicable",
+    ] = "unknown"
+    source_owner: Optional[str] = None
+    version: Optional[str] = None
+    issue_date: Optional[str] = None
+    valid_until: Optional[str] = None
+    retrieved_at: Optional[str] = None
+    region: Optional[str] = None
+    manufacturer: Optional[str] = None
+    compound_id: Optional[str] = None
+    source_scope: Optional[str] = None
+    permitted_claim_levels: list[ClaimLevel] = Field(default_factory=lambda: ["L2_screening"])
+    confidence: Optional[float] = None
     supports: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 
@@ -213,6 +298,8 @@ class DocumentEvidenceState(BaseModel):
     documents_seen: list[dict[str, Any]] = Field(default_factory=list)
     drawing_fields: dict[str, Any] = Field(default_factory=dict)
     sds_fields: dict[str, Any] = Field(default_factory=dict)
+    medium_exposures: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_facts: list[dict[str, Any]] = Field(default_factory=list)
     supported_document_types: list[str] = Field(
         default_factory=lambda: ["drawing", "datasheet", "sds", "certificate", "standard_metadata"]
     )
@@ -226,6 +313,7 @@ class FailureObservationState(BaseModel):
     schema_version: str = "failure_observation_v9_2"
     status: V92Status = "pending"
     morphology_indicators: list[str] = Field(default_factory=list)
+    morphology_tags: list[dict[str, Any]] = Field(default_factory=list)
     possible_causes: list[str] = Field(default_factory=list)
     required_diagnostics: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(
@@ -248,6 +336,9 @@ class ReviewState(BaseModel):
     required_review_types: list[str] = Field(default_factory=list)
     review_guard_notes: list[str] = Field(default_factory=list)
     dossier_modules: list[str] = Field(default_factory=list)
+    decisions: list[dict[str, Any]] = Field(default_factory=list)
+    override_log_required: bool = True
+    approved_claim_level: Optional[ClaimLevel] = None
     decision_summary: str = ""
     blocking_findings: list[str] = Field(default_factory=list)
     soft_findings: list[str] = Field(default_factory=list)
@@ -265,12 +356,23 @@ class DossierState(BaseModel):
     schema_version: str = "rfq_dossier_v9_2"
     status: V92Status = "pending"
     dossier_id: Optional[str] = None
+    case_revision: int = 0
+    seal_system_summary: dict[str, Any] = Field(default_factory=dict)
     facts: list[dict[str, Any]] = Field(default_factory=list)
     calculations: list[dict[str, Any]] = Field(default_factory=list)
     candidates: list[dict[str, Any]] = Field(default_factory=list)
+    material_family_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    compound_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    product_candidates: list[dict[str, Any]] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
+    risk_findings: list[dict[str, Any]] = Field(default_factory=list)
+    document_refs: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_summary: list[dict[str, Any]] = Field(default_factory=list)
+    standards_refs: list[dict[str, Any]] = Field(default_factory=list)
+    compliance_notes: list[dict[str, Any]] = Field(default_factory=list)
+    expert_review_status: str = "not_started"
     allowed_claims: list[str] = Field(default_factory=list)
-    readiness_band: str = "not_ready"
+    readiness_band: ReadinessBand = "not_ready"
     allowed_next_actions: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(
         default_factory=lambda: [
@@ -283,3 +385,41 @@ class DossierState(BaseModel):
     )
     sections: list[DossierSection] = Field(default_factory=list)
     no_final_technical_release: bool = True
+
+
+class EngineeringRiskFinding(BaseModel):
+    finding_id: str
+    category: Literal[
+        "medium",
+        "material",
+        "compound",
+        "geometry",
+        "motion",
+        "pressure",
+        "temperature",
+        "surface",
+        "environment",
+        "compliance",
+        "evidence",
+        "document",
+        "failure",
+    ]
+    severity: Literal["low", "medium", "high", "blocking"] = "medium"
+    title: str
+    technical_reason: str
+    user_facing_reason: str
+    affected_calculations: list[str] = Field(default_factory=list)
+    affected_claims: list[str] = Field(default_factory=list)
+    required_next_evidence: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class CompletenessMatrix(BaseModel):
+    seal_type: str
+    required_fields: list[dict[str, Any]] = Field(default_factory=list)
+    present_fields: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    blocking_missing_fields: list[str] = Field(default_factory=list)
+    optional_but_useful_fields: list[str] = Field(default_factory=list)
+    readiness_band: ReadinessBand = "not_ready"
+    next_best_blocker: Optional[str] = None

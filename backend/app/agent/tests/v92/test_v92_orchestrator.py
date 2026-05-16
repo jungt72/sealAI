@@ -60,7 +60,9 @@ async def test_v92_engineering_node_builds_rwdr_ledger_from_compute_results() ->
     assert result.seal_system.seal_family == "rotary_shaft"
     assert result.seal_system.seal_type == "radial_shaft_seal"
     assert result.calculation.status == "ready"
-    assert result.calculation.results[0].claim_level == "L2_screening"
+    assert result.calculation.results[0].claim_level == "L3_deterministic_calculation"
+    assert result.calculation.results[0].validity_status == "valid_for_screening"
+    assert result.calculation.guard_results[0].no_final_claim_from_calculation is True
     assert result.engineering.next_best_engineering_action == "review_engineering_dossier"
 
 
@@ -94,8 +96,52 @@ async def test_v92_engineering_node_runs_oring_screening_without_release_claims(
     oring = next(item for item in result.calculation.results if item.calculation_id == "oring.groove_screening")
     assert oring.status == "ok"
     assert oring.outputs["norm_ref"] == "DIN 3770 / ISO 3601-2"
-    assert oring.claim_level == "L2_screening"
+    assert oring.claim_level == "L3_deterministic_calculation"
     assert "freigegeben" not in " ".join(oring.notes).lower()
+
+
+@pytest.mark.asyncio
+async def test_v92_oring_geometry_core_runs_only_with_complete_inputs() -> None:
+    complete = _state(
+        sealing_type="O-Ring",
+        medium="Wasser",
+        pressure_bar=120,
+        temperature_c=40,
+        oring_cross_section_mm=3.53,
+        groove_depth_mm=2.7,
+        groove_width_mm=4.8,
+        seal_inner_diameter_mm=19.0,
+        shaft_diameter_mm=20.0,
+        radial_gap_mm=0.25,
+    )
+
+    result = await v92_engineering_node(complete)
+    calc_ids = {item.calculation_id for item in result.calculation.results}
+
+    assert {
+        "oring.groove_screening",
+        "oring.squeeze_pct",
+        "oring.gland_fill_pct",
+        "oring.stretch_pct",
+        "oring.extrusion_gap_screening",
+    }.issubset(calc_ids)
+    stretch = next(item for item in result.calculation.results if item.calculation_id == "oring.stretch_pct")
+    assert stretch.units == {"stretch_pct": "%"}
+    assert stretch.output_snapshot_hash
+    assert stretch.validity_status == "valid_for_screening"
+
+    incomplete = _state(
+        sealing_type="O-Ring",
+        medium="Wasser",
+        pressure_bar=120,
+        temperature_c=40,
+        oring_cross_section_mm=3.53,
+    )
+    incomplete_result = await v92_engineering_node(incomplete)
+    incomplete_ids = {item.calculation_id for item in incomplete_result.calculation.results}
+    assert "oring.squeeze_pct" not in incomplete_ids
+    assert "oring.gland_fill_pct" not in incomplete_ids
+    assert "oring.stretch_pct" not in incomplete_ids
 
 
 @pytest.mark.asyncio
@@ -158,6 +204,7 @@ async def test_v92_document_evidence_neutralizes_prompt_injection_and_tracks_sds
     assert result.document_evidence.documents_seen[0]["accepted_as_instruction"] is False
     assert result.document_evidence.prompt_injection_findings
     assert result.document_evidence.sds_limitations
+    assert result.document_evidence.medium_exposures[0]["composition_status"] == "product_name_only"
 
 
 @pytest.mark.asyncio
@@ -168,7 +215,7 @@ async def test_v92_failure_observations_require_diagnostics_without_root_cause_c
 
     result = await v92_engineering_node(state)
 
-    assert {"leakage", "wear", "chemical_attack"}.issubset(set(result.failure_observation.morphology_indicators))
+    assert {"leakage", "abrasion", "chemical_swelling"}.issubset(set(result.failure_observation.morphology_indicators))
     assert "medium_analysis" in result.failure_observation.required_diagnostics
     assert "definitive_root_cause" in result.failure_observation.forbidden_claims
 
@@ -193,6 +240,75 @@ async def test_v92_review_and_dossier_expose_final_readiness_guards() -> None:
     assert "manufacturer_product_review" in result.review_state.required_review_types
     assert "compound_datasheet_review" in result.review_state.required_review_types
     assert result.review_state.review_guard_notes
-    assert result.dossier.readiness_band in {"needs_review_or_missing_inputs", "screening_ready"}
+    assert result.dossier.readiness_band in {"engineering_checks_partial", "review_ready_with_open_items", "blocked_missing_core_data"}
     assert "request_manufacturer_review" in result.dossier.allowed_next_actions
     assert result.dossier.no_final_technical_release is True
+
+
+@pytest.mark.asyncio
+async def test_v92_evidence_lifecycle_and_risk_findings_feed_dossier() -> None:
+    state = _state(
+        sealing_type="rwdr",
+        medium="Wasser",
+        pressure_bar=10,
+        temperature_c=60,
+        shaft_diameter_mm=40,
+        speed_rpm=1000,
+        material="FKM",
+    ).model_copy(
+        update={
+            "rag_evidence": [
+                {
+                    "source_id": "ds-1",
+                    "title": "FKM Datenblatt",
+                    "type": "datasheet",
+                    "manufacturer": "ACME",
+                    "version": "2026-01",
+                    "retrieved_at": "2026-05-16",
+                    "valid_until": "2027-05-16",
+                    "applicability": "material_family_level",
+                }
+            ]
+        }
+    )
+
+    engineered = await v92_engineering_node(state)
+    result = await v92_dossier_node(engineered)
+
+    assert result.evidence_graph.nodes[0].permitted_claim_levels == [
+        "L2_screening",
+        "L5_document_backed",
+    ]
+    assert result.evidence_graph.unresolved_gaps == []
+    assert result.dossier.evidence_summary[0]["source_ref"] == "ds-1"
+    assert result.dossier.risk_findings
+
+
+@pytest.mark.asyncio
+async def test_v92_scoped_review_requires_reviewer_and_decision_for_l6() -> None:
+    class Rfq:
+        critical_review_passed = True
+        critical_review_reviewer_id = "application-engineer-1"
+        critical_review_decision = "accepted_for_rfq"
+        critical_review_status = "passed"
+        blocking_findings = []
+        soft_findings = []
+        required_corrections = []
+
+    state = await v92_engineering_node(
+        _state(
+            sealing_type="rwdr",
+            medium="Wasser",
+            pressure_bar=10,
+            temperature_c=60,
+            shaft_diameter_mm=40,
+            speed_rpm=1000,
+            material="FKM",
+        ).model_copy(update={"rfq": Rfq()})
+    )
+    result = await v92_dossier_node(state)
+
+    assert result.review_state.status == "approved_scope"
+    assert result.review_state.approved_claim_level == "L6_expert_approved"
+    assert result.review_state.decisions[0]["reviewer_id"] == "application-engineer-1"
+    assert result.dossier.expert_review_status == "approved_scope"
