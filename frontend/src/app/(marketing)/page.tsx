@@ -16,8 +16,8 @@ export default function LandingPage() {
       <section className="relative overflow-hidden py-24 md:py-32">
         <div className="mx-auto max-w-7xl px-6">
           <div className="max-w-3xl">
-            <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-seal-blue mb-6">
-              SEALING | intelligence für deinen Dichtungsfall.
+            <h1 className="mb-6 text-4xl font-bold text-seal-blue sm:text-5xl md:text-6xl lg:text-7xl">
+              SEALING | Intelligence
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground font-medium leading-relaxed mb-10">
               sealingAI hilft dir, deine Dichtungssituation zu verstehen, offene Punkte zu erkennen und souverän mit Herstellern zu sprechen.
