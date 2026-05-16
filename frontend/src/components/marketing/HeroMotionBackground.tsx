@@ -3,7 +3,7 @@ export function HeroMotionBackground() {
     <div className="absolute inset-0 overflow-hidden" aria-hidden="true" data-testid="hero-motion-background">
       <div
         data-testid="hero-motion-image"
-        className="sealai-hero-motion absolute inset-[-2%] bg-[url('/images/marketing/hero-background.jpg')] bg-cover bg-[position:center_top] will-change-transform"
+        className="sealai-hero-motion absolute inset-[-2%] bg-[url('/images/marketing/hero-background.png')] bg-cover bg-[position:center_top] will-change-transform"
       />
       <div
         data-testid="hero-motion-sheen"
