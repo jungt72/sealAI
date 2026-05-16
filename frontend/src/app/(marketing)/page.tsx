@@ -32,12 +32,6 @@ export default function LandingPage() {
                 Dichtungsfall klären
                 <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
               </Link>
-              <Link
-                href="/wissen"
-                className="flex items-center gap-2 rounded-full border border-border bg-white px-8 py-4 text-lg font-medium text-foreground transition-all hover:bg-slate-50 active:scale-95"
-              >
-                SealingPedia lesen
-              </Link>
             </div>
           </div>
         </div>
