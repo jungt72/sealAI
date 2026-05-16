@@ -309,6 +309,24 @@ def test_contextual_answer_discipline_rejects_routine_restatement() -> None:
         )
 
 
+def test_contextual_answer_discipline_rejects_bare_medium_intake_question() -> None:
+    context = GovernedAnswerContext(
+        latest_user_message="Hallo, ich habe eine Leckage an einer Pumpe und möchte die Dichtung auslegen.",
+        next_best_question="Welches Medium soll abgedichtet werden?",
+        missing_fields=["medium"],
+        response_class="structured_clarification",
+    )
+
+    with pytest.raises(GovernedAnswerComposerError, match="bare_medium_intake_question"):
+        composer_module._validate_contextual_answer_discipline(
+            (
+                "Eine Leckage würde ich zuerst als Fallbild sauber eingrenzen.\n\n"
+                "Dafür muss ich zuerst wissen: Welches Medium soll abgedichtet werden?"
+            ),
+            context,
+        )
+
+
 def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_installation() -> None:
     state = GraphState(
         asserted=AssertedState(
@@ -344,6 +362,7 @@ def test_governed_answer_composer_prompt_requires_next_best_question_and_no_rout
     assert "next_best_question" in system_prompt
     assert "Do not ask the user to confirm a value they just supplied" in system_prompt
     assert "without thanking or repeating them routinely" in system_prompt
+    assert 'do not write the bare question "Welches Medium soll abgedichtet werden?"' in system_prompt
 
 
 async def _run_structured_output_contract(

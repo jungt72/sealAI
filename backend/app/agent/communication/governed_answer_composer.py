@@ -57,6 +57,7 @@ _FORBIDDEN_APPROVAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 
 _RECOVERABLE_REPAIR_REASONS = {
+    "bare_medium_intake_question",
     "missing_material_orientation",
     "slot_question_before_orientation",
     "routine_confirmation_or_restatement",
@@ -345,6 +346,12 @@ def build_governed_answer_composer_messages(
             f"Repair the previous governed answer. Reason: {repair_reason}. "
             "Use deterministic_reply and governed_answer_context as the only grounding. "
         )
+        if repair_reason == "bare_medium_intake_question":
+            repair_instruction += (
+                "For this first intake, do not write the bare question 'Welches Medium soll abgedichtet werden?'. "
+                "Ask naturally what touches or leaks at the sealing point, including concentration, additives, "
+                "or cleaning media if relevant. "
+            )
         if terms:
             repair_instruction += (
                 f"The user explicitly named these material families: {terms}. "
@@ -731,8 +738,16 @@ def _validate_contextual_answer_discipline(
     """
 
     latest = str(context.latest_user_message or "")
+    lowered_answer = answer_markdown.casefold()
+    if (
+        _human_intake_orientation(latest)
+        and not context.accepted_updates
+        and not context.ambiguous_values
+        and "welches medium soll abgedichtet werden" in lowered_answer
+    ):
+        raise GovernedAnswerComposerError("bare_medium_intake_question")
+
     if _technical_orientation_for_user_task(latest):
-        lowered_answer = answer_markdown.casefold()
         latest_lowered = latest.casefold()
         material_terms = {"epdm", "fkm", "nbr", "hnbr", "ptfe", "ffkm", "pu"}
         material_task = bool(
