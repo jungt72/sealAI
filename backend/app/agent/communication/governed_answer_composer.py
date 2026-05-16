@@ -458,6 +458,8 @@ def should_render_governed_contextual_fallback(
         return False
     if _technical_orientation_for_user_task(context.latest_user_message):
         return True
+    if _needs_human_intake_fallback(context, deterministic_reply):
+        return True
     return has_v9_challenge_context(context)
 
 
@@ -488,8 +490,92 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
 
     question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
     if question:
+        intake_orientation = _human_intake_orientation(context.latest_user_message)
+        if intake_orientation:
+            return _join_intake_orientation_and_question(
+                intake_orientation,
+                _humanize_intake_question(question),
+            )
         return _join_orientation_and_question(orientation, question)
     return ""
+
+
+def _needs_human_intake_fallback(
+    context: GovernedAnswerContext,
+    deterministic_reply: str,
+) -> bool:
+    """Detect bare governed intake questions that would feel form-like in chat."""
+
+    if str(context.response_class or "").strip() != "structured_clarification":
+        return False
+    question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
+    if not question:
+        return False
+    if context.accepted_updates or context.ambiguous_values or context.rejected_updates:
+        return False
+    if _human_intake_orientation(context.latest_user_message):
+        return True
+    reply = str(deterministic_reply or "").strip()
+    if not reply:
+        return False
+    return reply.rstrip() == question.rstrip() or reply.count("?") == 1
+
+
+def _human_intake_orientation(latest_user_message: str | None) -> str:
+    text = str(latest_user_message or "").casefold()
+    if not text:
+        return ""
+    problem_markers = (
+        "leck",
+        "undicht",
+        "ausfall",
+        "schaden",
+        "verschleiß",
+        "verschleiss",
+        "problem",
+    )
+    goal_markers = (
+        "auslegen",
+        "dichtung",
+        "dichtungsfall",
+        "dichtstelle",
+        "pumpe",
+        "welle",
+        "getriebe",
+        "rührwerk",
+        "ruehrwerk",
+    )
+    if any(marker in text for marker in problem_markers):
+        return (
+            "Verstanden, eine Leckage würde ich zuerst als Fallbild sauber eingrenzen, "
+            "damit wir Ursache, Betriebsbedingungen und Dichtprinzip nicht vermischen."
+        )
+    if any(marker in text for marker in goal_markers):
+        return (
+            "Verstanden, wir grenzen die Anwendung Schritt für Schritt ein und halten nur "
+            "belastbare Angaben als Arbeitsstand fest."
+        )
+    return ""
+
+
+def _humanize_intake_question(question: str) -> str:
+    text = str(question or "").strip()
+    lowered = text.casefold()
+    if "medium" in lowered and "welches medium" in lowered:
+        return (
+            "Was kommt an der Dichtstelle genau an, inklusive Konzentration, "
+            "Additiven oder Reinigungsmedien?"
+        )
+    if "dichtungstyp" in lowered or "dichtprinzip" in lowered:
+        return (
+            "Wo sitzt die Leckage genau und welches Dichtprinzip ist dort verbaut, "
+            "zum Beispiel RWDR, Gleitringdichtung, O-Ring oder Flachdichtung?"
+        )
+    if "druck" in lowered:
+        return "Welcher Druck liegt direkt an der Dichtstelle an?"
+    if "temperatur" in lowered:
+        return "In welchem Temperaturbereich arbeitet die Dichtstelle?"
+    return text
 
 
 def _technical_orientation_for_user_task(latest_user_message: str | None) -> str:
@@ -564,6 +650,14 @@ def _join_orientation_and_question(orientation: str, question: str) -> str:
     clean_question = str(question or "").strip()
     if clean_orientation and clean_question:
         return f"{clean_orientation}\n\nDie wichtigste Rückfrage ist: {clean_question}"
+    return clean_question or clean_orientation
+
+
+def _join_intake_orientation_and_question(orientation: str, question: str) -> str:
+    clean_orientation = str(orientation or "").strip()
+    clean_question = str(question or "").strip()
+    if clean_orientation and clean_question:
+        return f"{clean_orientation}\n\nDafür muss ich zuerst wissen: {clean_question}"
     return clean_question or clean_orientation
 
 

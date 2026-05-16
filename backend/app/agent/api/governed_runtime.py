@@ -164,7 +164,9 @@ async def run_governed_graph_turn(
     governed_graph = await get_governed_graph()
 
     progress_events: list[Any] = []
-    suppress_langgraph_child_traces = not settings.langsmith_trace_langgraph_children
+    suppress_langgraph_child_traces = not bool(
+        getattr(settings, "langsmith_trace_langgraph_children", False)
+    )
     with langsmith_tracing_disabled(disabled=suppress_langgraph_child_traces):
         if collect_progress and hasattr(governed_graph, "astream"):
             latest_values: GraphState | dict[str, Any] = graph_input

@@ -194,6 +194,34 @@ def test_contextual_fallback_adds_risk_orientation_before_slot_question() -> Non
     assert "Die wichtigste Rückfrage ist" in answer
 
 
+def test_contextual_fallback_humanizes_first_leakage_intake_question() -> None:
+    context = GovernedAnswerContext(
+        latest_user_message=(
+            "Hallo, ich habe eine Leckage an einer Pumpe und möchte die Dichtung "
+            "sauber auslegen."
+        ),
+        next_best_question="Welches Medium soll abgedichtet werden?",
+        missing_fields=["medium", "pressure_bar", "temperature_c"],
+        response_class="structured_clarification",
+    )
+
+    assert composer_module.should_render_governed_contextual_fallback(
+        context,
+        "Welches Medium soll abgedichtet werden?",
+    )
+
+    answer = render_governed_contextual_fallback(
+        context,
+        "Welches Medium soll abgedichtet werden?",
+    )
+
+    assert "Leckage" in answer
+    assert "Fallbild" in answer
+    assert "Dafür muss ich zuerst wissen" in answer
+    assert "Was kommt an der Dichtstelle genau an" in answer
+    assert answer.strip() != "Welches Medium soll abgedichtet werden?"
+
+
 def test_v91_guard_is_backward_compatible_when_context_field_is_missing() -> None:
     legacy_context = object()
 
@@ -357,6 +385,27 @@ async def test_feature_flag_disabled_does_not_call_composer(monkeypatch: pytest.
     assert result.output_answer_markdown_source == "composer_fallback"
     assert "Für die technische Einordnung" in result.output_answer_markdown
     assert result.governed_answer_composer_error == ""
+
+
+@pytest.mark.asyncio
+async def test_feature_flag_disabled_humanizes_first_leakage_intake(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", raising=False)
+
+    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+        pytest.fail("governed composer must not be called while disabled")
+
+    monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
+    state = await _run_turn(
+        "Hallo, ich habe eine Leckage an einer Pumpe und möchte die Dichtung sauber auslegen."
+    )
+
+    result = await governed_answer_composer_node(state)
+
+    assert result.output_answer_markdown_source == "composer_fallback"
+    assert "Leckage" in result.output_answer_markdown
+    assert "Dafür muss ich zuerst wissen" in result.output_answer_markdown
+    assert "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
+    assert result.output_answer_markdown != result.output_reply
 
 
 @pytest.mark.asyncio
@@ -710,7 +759,7 @@ async def test_structured_clarification_output_contract_uses_composer_for_visibl
 
 
 @pytest.mark.asyncio
-async def test_structured_clarification_composer_disabled_preserves_deterministic_markdown(
+async def test_structured_clarification_composer_disabled_uses_contextual_markdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", raising=False)
@@ -723,8 +772,9 @@ async def test_structured_clarification_composer_disabled_preserves_deterministi
     _payload, materialized = await _run_structured_output_contract()
 
     assert materialized.output_reply
-    assert materialized.output_answer_markdown == materialized.output_reply
-    assert materialized.output_answer_markdown_source == "deterministic_reply"
+    assert materialized.output_answer_markdown != materialized.output_reply
+    assert materialized.output_answer_markdown_source == "composer_fallback"
+    assert "Dafür muss ich zuerst wissen" in materialized.output_answer_markdown
     assert materialized.governed_answer_composer_error == ""
 
 
