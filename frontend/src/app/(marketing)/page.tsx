@@ -18,7 +18,7 @@ export default function LandingPage() {
         <HeroMotionBackground />
         <div className="relative mx-auto max-w-7xl px-6">
           <div className="max-w-3xl">
-            <h1 className="mb-6 text-4xl font-bold text-seal-blue sm:text-5xl md:text-6xl lg:text-7xl">
+            <h1 className="mb-6 max-w-2xl text-4xl font-bold text-seal-blue sm:text-5xl md:text-6xl">
               SEALING | Intelligence
             </h1>
             <p className="mb-10 max-w-2xl text-xl font-medium leading-relaxed text-slate-700 md:text-2xl">
