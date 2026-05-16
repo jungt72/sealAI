@@ -14,9 +14,9 @@ export default function LandingPage() {
   return (
     <div className="flex flex-col">
       {/* 1. HERO SECTION */}
-      <section className="relative -mt-16 min-h-[82svh] overflow-hidden pb-20 pt-36 md:min-h-[76svh] md:pb-24 md:pt-44">
+      <section className="relative -mt-16 flex min-h-[82svh] items-center overflow-hidden pb-20 pt-24 md:min-h-[76svh] md:pb-24 md:pt-32">
         <HeroMotionBackground />
-        <div className="relative mx-auto max-w-7xl px-6">
+        <div className="relative mx-auto w-full max-w-7xl px-6">
           <div className="max-w-3xl">
             <h1 className="mb-6 max-w-2xl text-4xl font-bold text-seal-blue sm:text-5xl md:text-6xl">
               SEALING | Intelligence
