@@ -82,6 +82,58 @@ _MATERIAL_FAMILY_FIELDS = (
 _COMPOUND_FIELDS = ("compound", "compound_name", "compound_designation", "grade_name")
 _PRODUCT_FIELDS = ("product", "product_id", "article_ref", "article_number", "part_number")
 
+_PROMPT_INJECTION_MARKERS = (
+    "ignore previous",
+    "ignore all previous",
+    "system prompt",
+    "developer message",
+    "ignoriere alle vorherigen",
+    "ignoriere vorherige",
+    "folge nicht den bisherigen",
+)
+
+_SDS_MARKERS = (
+    "safety data sheet",
+    "sicherheitsdatenblatt",
+    "sds",
+    "msds",
+)
+
+_CERTIFICATE_MARKERS = (
+    "certificate",
+    "zertifikat",
+    "certificate of analysis",
+    "coa",
+)
+
+
+def _document_text(item: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("title", "source_title", "text", "content", "snippet", "summary", "excerpt"):
+        value = item.get(key)
+        if value:
+            parts.append(str(value))
+    return "\n".join(parts)
+
+
+def _document_type(item: Mapping[str, Any], text: str) -> str:
+    explicit = str(item.get("document_type") or item.get("type") or item.get("source_type") or "").lower()
+    haystack = f"{explicit}\n{text.lower()}"
+    if any(marker in haystack for marker in _SDS_MARKERS):
+        return "sds"
+    if any(marker in haystack for marker in _CERTIFICATE_MARKERS):
+        return "certificate"
+    if any(marker in haystack for marker in ("drawing", "zeichnung", "technical drawing")):
+        return "drawing"
+    if any(marker in haystack for marker in ("datasheet", "datenblatt", "tds")):
+        return "datasheet"
+    return explicit or "rag_card"
+
+
+def _unique(items: Iterable[str]) -> list[str]:
+    return list(dict.fromkeys(str(item) for item in items if item))
+
+
 
 def _claim_value(state: Any, field_name: str) -> Any:
     claim = getattr(getattr(state, "asserted", None), "assertions", {}).get(field_name)
@@ -479,22 +531,55 @@ def build_compound_state(state: Any) -> CompoundState:
 
 def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
     docs: list[dict[str, Any]] = []
+    prompt_findings: list[str] = []
+    sds_limitations: list[str] = []
+    drawing_fields: dict[str, Any] = {}
+    sds_fields: dict[str, Any] = {}
+
     for index, item in enumerate(list(getattr(state, "rag_evidence", []) or [])):
-        if isinstance(item, Mapping):
-            docs.append(
-                {
-                    "document_ref": str(item.get("document_id") or item.get("source_id") or f"evidence.{index}"),
-                    "title": str(item.get("title") or item.get("source_title") or ""),
-                    "claim_level": "L1_normalized",
-                }
-            )
-    status = "partial" if docs else "pending"
+        if not isinstance(item, Mapping):
+            continue
+        text = _document_text(item)
+        lower_text = text.lower()
+        document_ref = str(item.get("document_id") or item.get("source_id") or f"evidence.{index}")
+        doc_type = _document_type(item, text)
+        docs.append(
+            {
+                "document_ref": document_ref,
+                "title": str(item.get("title") or item.get("source_title") or ""),
+                "document_type": doc_type,
+                "claim_level": "L1_normalized",
+                "accepted_as_instruction": False,
+            }
+        )
+        for marker in _PROMPT_INJECTION_MARKERS:
+            if marker in lower_text:
+                prompt_findings.append(f"{document_ref}:prompt_instruction_marker:{marker}")
+        if doc_type == "sds":
+            sds_fields[document_ref] = {"source_ref": document_ref, "claim_level": "L1_normalized"}
+            if not any(marker in lower_text for marker in ("revision", "version", "ausgabedatum", "revision date")):
+                sds_limitations.append(f"{document_ref}:missing_revision_metadata")
+            if not any(marker in lower_text for marker in ("composition", "zusammensetzung", "section 3", "abschnitt 3")):
+                sds_limitations.append(f"{document_ref}:composition_not_structured")
+        if doc_type == "drawing":
+            drawing_fields[document_ref] = {"source_ref": document_ref, "claim_level": "L1_normalized"}
+
+    extraction_gaps: list[str] = []
+    if not docs:
+        extraction_gaps.append("no_structured_document_evidence")
+    elif not drawing_fields and not sds_fields:
+        extraction_gaps.append("no_governed_drawing_or_sds_fields")
+    extraction_gaps.extend(prompt_findings)
+    status = "ready" if docs and not extraction_gaps and not sds_limitations else ("partial" if docs else "pending")
     return DocumentEvidenceState(
         status=status,
         documents_seen=docs,
-        extraction_gaps=[] if docs else ["no_structured_document_evidence"],
+        drawing_fields=drawing_fields,
+        sds_fields=sds_fields,
+        prompt_injection_findings=_unique(prompt_findings),
+        sds_limitations=_unique(sds_limitations),
+        extraction_gaps=_unique(extraction_gaps),
     )
-
 
 def build_failure_observation_state(state: Any) -> FailureObservationState:
     text = " ".join(
@@ -516,18 +601,30 @@ def build_failure_observation_state(state: Any) -> FailureObservationState:
     for key, pattern in patterns.items():
         if re.search(pattern, text):
             indicators.append(key)
-    possible = []
+    possible: list[str] = []
+    diagnostics: list[str] = []
     if "leakage" in indicators:
         possible.append("installation_gap_or_surface_or_pressure_boundary")
+        diagnostics.extend(["installation_review", "surface_finish_measurement", "pressure_profile_check"])
+    if "wear" in indicators:
+        possible.append("friction_or_lubrication_or_surface_boundary")
+        diagnostics.extend(["wear_track_inspection", "lubrication_review", "counterface_hardness_check"])
+    if "extrusion" in indicators:
+        possible.append("gap_or_pressure_or_hardness_boundary")
+        diagnostics.extend(["extrusion_gap_measurement", "pressure_peak_review", "hardness_check"])
+    if "thermal_damage" in indicators:
+        possible.append("thermal_or_speed_boundary")
+        diagnostics.extend(["temperature_history_review", "surface_speed_recalculation"])
     if "chemical_attack" in indicators:
         possible.append("medium_material_incompatibility")
+        diagnostics.extend(["medium_analysis", "compound_datasheet_review", "sds_review"])
     status = "partial" if indicators else "pending"
     return FailureObservationState(
         status=status,
-        morphology_indicators=indicators,
-        possible_causes=possible,
+        morphology_indicators=_unique(indicators),
+        possible_causes=_unique(possible),
+        required_diagnostics=_unique(diagnostics),
     )
-
 
 def build_engineering_update(state: Any) -> dict[str, Any]:
     seal_system = build_seal_system_state(state)
@@ -586,25 +683,63 @@ def build_review_state(state: Any) -> ReviewState:
     blocking = [str(item) for item in list(getattr(rfq, "blocking_findings", []) or []) if item]
     soft = [str(item) for item in list(getattr(rfq, "soft_findings", []) or []) if item]
     corrections = [str(item) for item in list(getattr(rfq, "required_corrections", []) or []) if item]
+    required_reviews = ["rfq_scope_review", "claim_boundary_review"]
+    dossier_modules = ["facts", "calculations", "candidates", "blockers"]
+
+    compound_state = getattr(state, "compound_state", None)
+    document_evidence = getattr(state, "document_evidence", None)
+    failure_observation = getattr(state, "failure_observation", None)
+    standards = getattr(state, "standards", None)
+
+    if list(getattr(compound_state, "product_candidates", []) or []):
+        required_reviews.append("manufacturer_product_review")
+    if list(getattr(compound_state, "compound_candidates", []) or []) or list(getattr(compound_state, "material_family_candidates", []) or []):
+        required_reviews.append("compound_datasheet_review")
+    if list(getattr(standards, "applicable_entries", []) or []):
+        required_reviews.append("licensed_standards_review")
+    if dict(getattr(document_evidence, "sds_fields", {}) or {}):
+        required_reviews.append("sds_review")
+    if list(getattr(document_evidence, "prompt_injection_findings", []) or []):
+        required_reviews.append("document_security_review")
+    if list(getattr(failure_observation, "morphology_indicators", []) or []):
+        required_reviews.append("failure_diagnostics_review")
+
+    blocking.extend(str(item) for item in list(getattr(standards, "blocking_gaps", []) or []) if item)
+    blocking.extend(str(item) for item in list(getattr(document_evidence, "prompt_injection_findings", []) or []) if item)
+    blocking.extend(str(item) for item in list(getattr(compound_state, "separation_violations", []) or []) if item)
+    blocking = _unique(blocking)
+
+    reviewer_id = getattr(rfq, "critical_review_reviewer_id", None) or getattr(rfq, "reviewer_id", None)
     if blocking:
         status = "blocked"
     elif corrections:
         status = "changes_required"
-    elif getattr(rfq, "critical_review_passed", False):
+    elif getattr(rfq, "critical_review_passed", False) and reviewer_id:
         status = "approved_scope"
+    elif getattr(rfq, "critical_review_passed", False):
+        status = "pending"
+        soft.append("critical_review_passed_without_reviewer_id")
     elif getattr(rfq, "critical_review_status", "") not in {"", "not_run"}:
         status = "pending"
     else:
         status = "not_started"
     return ReviewState(
         status=status,  # type: ignore[arg-type]
+        reviewer_id=str(reviewer_id) if reviewer_id else None,
         scope=["rfq_handover", "claim_boundary", "manufacturer_review"],
+        required_review_types=_unique(required_reviews),
+        review_guard_notes=[
+            "No expert-review status without reviewer_id and decision.",
+            "No approved_claim_level is created by AI.",
+            "Certificate claims require certificate evidence.",
+            "Overrides must be logged before scoped claims change.",
+        ],
+        dossier_modules=dossier_modules,
         decision_summary=str(getattr(rfq, "critical_review_status", "") or ""),
         blocking_findings=blocking,
-        soft_findings=soft,
+        soft_findings=_unique(soft),
         required_corrections=corrections,
     )
-
 
 def _facts_from_assertions(state: Any) -> list[dict[str, Any]]:
     facts: list[dict[str, Any]] = []
@@ -687,9 +822,28 @@ def build_dossier_state(state: Any) -> DossierState:
     blockers.extend(str(item) for item in list(getattr(getattr(state, "engineering", None), "blockers", []) or []) if item)
     blockers.extend(str(item) for item in list(getattr(getattr(state, "standards", None), "blocking_gaps", []) or []) if item)
     blockers.extend(str(item) for item in list(getattr(getattr(state, "compound_state", None), "separation_violations", []) or []) if item)
+    blockers.extend(str(item) for item in list(getattr(getattr(state, "document_evidence", None), "extraction_gaps", []) or []) if item)
+    blockers.extend(str(item) for item in list(getattr(getattr(state, "document_evidence", None), "sds_limitations", []) or []) if item)
+    blockers.extend(str(item) for item in list(getattr(getattr(state, "evidence_graph", None), "unresolved_gaps", []) or []) if item)
     blockers.extend(str(item) for item in list(getattr(getattr(state, "rfq", None), "blocking_findings", []) or []) if item)
-    blockers = list(dict.fromkeys(blockers))
+    failure = getattr(state, "failure_observation", None)
+    if list(getattr(failure, "morphology_indicators", []) or []):
+        blockers.append("failure_observation_requires_diagnostics_review")
+    blockers = _unique(blockers)
     status = "ready" if facts and not blockers else ("partial" if facts or calculation_items or candidates else "pending")
+    if status == "ready" and getattr(getattr(state, "review_state", None), "status", "") == "approved_scope":
+        readiness_band = "reviewed_screening_ready"
+    elif facts and calculation_items and not blockers:
+        readiness_band = "screening_ready"
+    elif facts or calculation_items or candidates:
+        readiness_band = "needs_review_or_missing_inputs"
+    else:
+        readiness_band = "not_ready"
+    allowed_next_actions = ["collect_missing_inputs", "request_datasheets", "request_manufacturer_review"]
+    if calculation_items:
+        allowed_next_actions.append("export_screening_rfq_dossier")
+    if list(getattr(failure, "required_diagnostics", []) or []):
+        allowed_next_actions.append("run_failure_diagnostics_review")
     sections = [
         DossierSection(section_id="facts", title="Governed Facts", items=facts),
         DossierSection(section_id="calculations", title="Deterministic Calculations", items=calculation_items),
@@ -709,9 +863,10 @@ def build_dossier_state(state: Any) -> DossierState:
         candidates=candidates,
         blockers=blockers,
         allowed_claims=_allowed_claims(state),
+        readiness_band=readiness_band,
+        allowed_next_actions=_unique(allowed_next_actions),
         sections=sections,
     )
-
 
 def build_dossier_update(state: Any) -> dict[str, Any]:
     standards = build_standards_state(state)
@@ -730,10 +885,12 @@ __all__ = [
     "build_calculation_state",
     "build_compound_state",
     "build_dossier_state",
+    "build_document_evidence_state",
     "build_dossier_update",
     "build_engineering_state",
     "build_engineering_update",
     "build_evidence_graph_state",
+    "build_failure_observation_state",
     "build_seal_system_state",
     "build_standards_state",
 ]

@@ -213,6 +213,11 @@ class DocumentEvidenceState(BaseModel):
     documents_seen: list[dict[str, Any]] = Field(default_factory=list)
     drawing_fields: dict[str, Any] = Field(default_factory=dict)
     sds_fields: dict[str, Any] = Field(default_factory=dict)
+    supported_document_types: list[str] = Field(
+        default_factory=lambda: ["drawing", "datasheet", "sds", "certificate", "standard_metadata"]
+    )
+    prompt_injection_findings: list[str] = Field(default_factory=list)
+    sds_limitations: list[str] = Field(default_factory=list)
     extraction_gaps: list[str] = Field(default_factory=list)
     boundary_notice: str = "Document data remains evidence until accepted into governed fields."
 
@@ -222,6 +227,14 @@ class FailureObservationState(BaseModel):
     status: V92Status = "pending"
     morphology_indicators: list[str] = Field(default_factory=list)
     possible_causes: list[str] = Field(default_factory=list)
+    required_diagnostics: list[str] = Field(default_factory=list)
+    forbidden_claims: list[str] = Field(
+        default_factory=lambda: [
+            "definitive_root_cause",
+            "final_failure_cause_from_image",
+            "warranty_or_liability_decision",
+        ]
+    )
     image_claim_boundary: str = (
         "Images and descriptions may indicate failure morphology, not prove root cause."
     )
@@ -232,6 +245,9 @@ class ReviewState(BaseModel):
     status: ReviewDecision = "not_started"
     reviewer_id: Optional[str] = None
     scope: list[str] = Field(default_factory=list)
+    required_review_types: list[str] = Field(default_factory=list)
+    review_guard_notes: list[str] = Field(default_factory=list)
+    dossier_modules: list[str] = Field(default_factory=list)
     decision_summary: str = ""
     blocking_findings: list[str] = Field(default_factory=list)
     soft_findings: list[str] = Field(default_factory=list)
@@ -254,6 +270,8 @@ class DossierState(BaseModel):
     candidates: list[dict[str, Any]] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     allowed_claims: list[str] = Field(default_factory=list)
+    readiness_band: str = "not_ready"
+    allowed_next_actions: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(
         default_factory=lambda: [
             "freigegeben",
