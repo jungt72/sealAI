@@ -78,6 +78,21 @@ def test_v8_deterministic_routes_information_request_as_active_side_question() -
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
 
 
+def test_v8_deterministic_routes_short_material_info_as_active_side_question() -> None:
+    decision = CommunicationRuntimeV8().decide_deterministic(
+        ConversationControllerInput(
+            user_message="infos zu NBR",
+            pre_gate_classification=PreGateClassification.KNOWLEDGE_QUERY,
+            pre_gate_confidence=0.81,
+            pre_gate_reason="deterministic_standalone_technical_knowledge",
+            active_case_exists=True,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+
+
 def test_v8_deterministic_routes_context_recall_as_active_process_question() -> None:
     decision = CommunicationRuntimeV8().decide_deterministic(
         ConversationControllerInput(

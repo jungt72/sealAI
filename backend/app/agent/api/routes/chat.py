@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
@@ -59,7 +60,6 @@ from app.agent.communication.active_case_side_claim_policy import (
     enforce_active_case_side_claim_policy,
 )
 from app.agent.communication.templates import render_communication_template
-from app.agent.runtime.output_guard import check_fast_path_output
 from app.agent.communication.v7_contracts import (
     RuntimeAction,
     RuntimeActionType,
@@ -588,18 +588,35 @@ async def _compose_active_case_side_answer_with_llm(
     answer = str(data.get("answer_markdown") or "").strip()
     if not answer:
         raise ValueError("empty_active_case_side_answer")
-    safe, category = check_fast_path_output(answer)
-    if not safe:
-        raise ValueError(f"unsafe_active_case_side_answer:{category}")
     resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
     target_question = str(resume_trace.get("resume_target_question") or "").strip()
     target_field = str(resume_trace.get("resume_target_field") or "").strip()
-    answer_lower = answer.casefold()
-    if target_question and target_question.casefold() in answer_lower:
-        raise ValueError("side_answer_repeated_pending_question")
-    if target_field == "medium" and "welches medium" in answer_lower:
-        raise ValueError("side_answer_rephrased_pending_medium_question")
+    answer = _strip_pending_question_leak(
+        answer,
+        target_question=target_question,
+        target_field=target_field,
+    )
+    if not answer:
+        raise ValueError("empty_active_case_side_answer_after_pending_question_strip")
     return answer
+
+
+def _strip_pending_question_leak(
+    answer: str,
+    *,
+    target_question: str,
+    target_field: str,
+) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return ""
+    if target_question:
+        text = text.replace(target_question, "").strip()
+    if target_field == "medium" and "welches medium" in text.casefold():
+        parts = re.split(r"(?<=[.!?])\s+|\n+", text)
+        parts = [part.strip() for part in parts if part.strip() and "welches medium" not in part.casefold()]
+        text = " ".join(parts).strip()
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 async def _compose_active_case_side_answer(
@@ -622,6 +639,14 @@ async def _compose_active_case_side_answer(
             ),
             timeout=float(os.getenv("SEALAI_ACTIVE_CASE_SIDE_ANSWER_TIMEOUT_S", "8.0")),
         )
+        resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+        answer = _strip_pending_question_leak(
+            answer,
+            target_question=str(resume_trace.get("resume_target_question") or "").strip(),
+            target_field=str(resume_trace.get("resume_target_field") or "").strip(),
+        )
+        if not answer:
+            raise ValueError("empty_active_case_side_answer_after_pending_question_strip")
         return answer, True, True, None
     except Exception as exc:  # noqa: BLE001
         fallback_reason = safe_fallback_reason(f"side_composer:{exc.__class__.__name__}")

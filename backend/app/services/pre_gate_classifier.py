@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from typing import Pattern
 
 from app.domain.pre_gate_classification import PreGateClassification
-from app.services.knowledge_intent import is_information_request_about_technical_subject
+from app.services.knowledge_intent import (
+    is_information_request_about_technical_subject,
+    is_standalone_technical_subject,
+)
 from app.services.knowledge.material_comparison import is_material_comparison_question
 
 
@@ -176,6 +179,8 @@ class PreGateClassifier:
         if PreGateClassifier._matches(_CASE_INTAKE_CONTEXT_PATTERNS, text):
             return False
         if is_information_request_about_technical_subject(text):
+            return True
+        if is_standalone_technical_subject(text):
             return True
         if PreGateClassifier._matches(_TECHNICAL_ABOUT_PATTERNS, text):
             return PreGateClassifier._matches(_TECHNICAL_SUBJECT_PATTERNS, text)

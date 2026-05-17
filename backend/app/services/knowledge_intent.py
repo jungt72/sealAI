@@ -17,6 +17,8 @@ TECHNICAL_SUBJECT_PATTERNS = _compile(
 )
 
 KNOWLEDGE_INFORMATION_REQUEST_PATTERNS = _compile(
+    r"\b(?:infos?|informationen|details|einordnung|einsch[aä]tzung|überblick|ueberblick|hintergrund|wissen)"
+    r"\s+(?:zu|ueber|über)\b",
     r"\b(?:bitte\s+)?(?:gib|geb|gebe|geben|nenn|nenne|liefer|liefere|zeig|zeige|beschreib|beschreibe)\w*"
     r"\s+(?:mir|uns)?\s*(?:bitte\s+)?(?:detaillierte\s+|mehr\s+|kurze\s+|eine\s+)?"
     r"(?:informationen|infos|details|einordnung|einsch[aä]tzung|überblick|ueberblick|hintergrund|wissen)"
@@ -52,6 +54,14 @@ def is_information_request_about_technical_subject(message: str) -> bool:
     if not text:
         return False
     return _matches(KNOWLEDGE_INFORMATION_REQUEST_PATTERNS, text) and has_technical_knowledge_subject(text)
+
+
+def is_standalone_technical_subject(message: str) -> bool:
+    text = str(message or "").strip()
+    if not text:
+        return False
+    words = re.findall(r"[\wäöüÄÖÜß+-]+", text, flags=re.UNICODE)
+    return 1 <= len(words) <= 4 and has_technical_knowledge_subject(text)
 
 
 def contains_concrete_case_marker(message: str) -> bool:

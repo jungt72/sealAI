@@ -44,6 +44,8 @@ def _user() -> RequestUser:
         ("Was wollte ich von dir?", PreGateClassification.META_QUESTION, "CONVERSATION"),
         ("Worum ging es gerade?", PreGateClassification.META_QUESTION, "CONVERSATION"),
         ("Was ist PTFE?", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
+        ("infos zu NBR", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
+        ("NBR", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
         (
             "Warum ist PTFE in meinem Fall kritisch?",
             PreGateClassification.DEEP_DIVE,

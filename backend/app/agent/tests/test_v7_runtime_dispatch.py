@@ -918,7 +918,8 @@ async def test_active_case_side_answer_uses_llm_composer_without_blunt_resume(
         return (
             "PTFE ist fuer deinen Kontext vor allem als chemisch sehr bestaendiger, "
             "nicht elastischer Werkstoff interessant. Ich wuerde ihn im laufenden "
-            "Fall nur als Werkstoffoption betrachten, nicht als Freigabe."
+            "Fall nur als Werkstoffoption betrachten, nicht als Freigabe. "
+            "Welches Medium soll abgedichtet werden?"
         )
 
     monkeypatch.setattr(

@@ -6,6 +6,7 @@ from typing import Literal
 from app.services.knowledge_intent import (
     contains_concrete_case_marker,
     is_information_request_about_technical_subject,
+    is_standalone_technical_subject,
 )
 from app.services.knowledge.material_comparison import is_material_comparison_question
 
@@ -71,6 +72,9 @@ def classify_message_as_knowledge_side_question(
         return "exploration_answer"
 
     if is_information_request_about_technical_subject(lowered):
+        return "conversational_answer"
+
+    if is_standalone_technical_subject(lowered):
         return "conversational_answer"
 
     if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _KNOWLEDGE_PATTERNS):

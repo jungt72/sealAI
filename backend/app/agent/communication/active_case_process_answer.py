@@ -354,8 +354,19 @@ async def _compose_process_answer_with_llm(
     if context.get("context_recall"):
         repeated_question = str(context.get("resume_target_question") or "").strip()
         if repeated_question and repeated_question.casefold() in answer.casefold():
-            raise ValueError("context_recall_but_pending_question_repeated")
+            answer = _strip_pending_question_leak(answer, repeated_question)
+            if not answer:
+                raise ValueError("context_recall_but_pending_question_repeated")
     return answer
+
+
+def _strip_pending_question_leak(answer: str, repeated_question: str) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return ""
+    if repeated_question:
+        text = text.replace(repeated_question, "").strip()
+    return " ".join(part.strip() for part in text.splitlines() if part.strip()).strip()
 
 
 def _pending_question_text(pending: PendingQuestion | None) -> str:
