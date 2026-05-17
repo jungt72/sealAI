@@ -630,6 +630,76 @@ async def test_composer_rejects_unscoped_eignung_label(
 
 
 @pytest.mark.asyncio
+async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="bitte gebe mir detaillierte informationen zu NBR",
+        deterministic_answer=KnowledgeService(
+            factcard_store=_FactcardStore([]),
+            llm_research_fallback_enabled=False,
+        ).answer("bitte gebe mir detaillierte informationen zu NBR").content,
+    )
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.repair_payload_seen = False
+
+        async def create(self, **kwargs):
+            self.calls += 1
+            payload = str(kwargs["messages"][-1]["content"])
+            if "repair_instruction" in payload:
+                self.repair_payload_seen = True
+
+            class Message:
+                content = (
+                    '{"answer_markdown":"NBR ist gut geeignet für Mineralöle.",'
+                    '"confidence_note":null}'
+                )
+
+            if self.calls > 1:
+                Message.content = (
+                    '{"answer_markdown":"NBR wird bei Mineralölen und Schmierfetten häufig '
+                    'als naheliegende Prüfrichtung betrachtet. Das bleibt technische '
+                    'Orientierung, keine Freigabe.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    completions = FakeCompletions()
+
+    class FakeChat:
+        pass
+
+    FakeChat.completions = completions
+
+    class FakeClient:
+        pass
+
+    FakeClient.chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+    assert completions.calls == 2
+    assert completions.repair_payload_seen is True
+    assert "gut geeignet" not in result.answer_markdown
+    assert "naheliegende Prüfrichtung" in result.answer_markdown
+
+
+@pytest.mark.asyncio
 async def test_material_comparison_answer_markdown_does_not_use_cockpit_placeholders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

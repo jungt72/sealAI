@@ -52,6 +52,35 @@ class KnowledgeAnswerComposer:
     async def compose(self, request: KnowledgeAnswerComposerInput) -> KnowledgeAnswerComposerOutput:
         client, model = get_async_llm("knowledge_answer_composer")
         messages = build_knowledge_answer_composer_messages(request)
+        try:
+            return await self._compose_with_messages(
+                request=request,
+                client=client,
+                model=model,
+                messages=messages,
+            )
+        except KnowledgeAnswerComposerError as exc:
+            if not _should_retry_visible_answer(exc):
+                raise
+            repair_messages = build_knowledge_answer_repair_messages(
+                request,
+                rejected_reason=str(exc),
+            )
+            return await self._compose_with_messages(
+                request=request,
+                client=client,
+                model=model,
+                messages=repair_messages,
+            )
+
+    async def _compose_with_messages(
+        self,
+        *,
+        request: KnowledgeAnswerComposerInput,
+        client: Any,
+        model: str,
+        messages: list[dict[str, str]],
+    ) -> KnowledgeAnswerComposerOutput:
         response = await _create_completion_with_registry_fallback(
             client=client,
             model=model,
@@ -105,6 +134,40 @@ def build_knowledge_answer_composer_messages(
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
     ]
+
+
+def build_knowledge_answer_repair_messages(
+    request: KnowledgeAnswerComposerInput,
+    *,
+    rejected_reason: str,
+) -> list[dict[str, str]]:
+    messages = build_knowledge_answer_composer_messages(request)
+    repair_payload = {
+        "repair_instruction": (
+            "Rewrite the visible answer using the same payload. Return only the "
+            "required JSON schema. Keep the latest user material subject "
+            "authoritative. Avoid final suitability wording, especially 'ist "
+            "geeignet', 'geeignet ist', 'gut geeignet' and 'gute Eignung fuer'. "
+            "Use cautious wording such as 'wird geprueft', 'wird betrachtet', "
+            "'naheliegend zu pruefen' or 'kann ein Kandidat sein'."
+        ),
+        "rejected_reason": rejected_reason,
+    }
+    return [
+        *messages,
+        {"role": "user", "content": json.dumps(repair_payload, ensure_ascii=True)},
+    ]
+
+
+def _should_retry_visible_answer(exc: KnowledgeAnswerComposerError) -> bool:
+    reason = str(exc)
+    return reason.startswith(
+        (
+            "unsafe_answer_markdown",
+            "unsafe_material_suitability",
+            "requested_subject_",
+        )
+    )
 
 
 def parse_knowledge_answer_composer_output(raw_content: Any) -> KnowledgeAnswerComposerOutput:
