@@ -17,6 +17,7 @@ const agentStreamMockState = vi.hoisted(() => ({
   isStreaming: false,
   error: null as string | null,
   sendMessage: vi.fn(),
+  appendAssistantMessage: vi.fn(),
   clearError: vi.fn(),
 }));
 
@@ -88,6 +89,7 @@ describe("ChatPane", () => {
     agentStreamMockState.error = null;
     viewportScrollHeight = 1200;
     agentStreamMockState.sendMessage.mockReset();
+    agentStreamMockState.appendAssistantMessage.mockReset();
     agentStreamMockState.clearError.mockReset();
     workspaceStoreMock.setStreamWorkspace.mockReset();
     workspaceStoreMock.setActiveResponseClass.mockReset();

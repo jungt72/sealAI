@@ -512,6 +512,34 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     setStreamWorkspace(null);
   }, [cancelStream]);
 
+  const appendAssistantMessage = useCallback((message: string) => {
+    const trimmed = normalizeAssistantMarkdown(message).trim();
+    if (!trimmed) {
+      return;
+    }
+    finalAssistantTextRef.current = "";
+    finalAssistantAnswerSourceRef.current = null;
+    finalAssistantAnswerTraceRef.current = null;
+    setStreamingText("");
+    setStreamingStatusText("");
+    setStreamingAnswerSource(null);
+    setMessages((current) => {
+      const lastMessage = current[current.length - 1];
+      if (lastMessage?.role === "assistant" && lastMessage.content === trimmed) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          role: "assistant",
+          content: trimmed,
+          answerSource: "answer_markdown",
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    });
+  }, []);
+
   return {
     activeCaseId,
     messages,
@@ -525,5 +553,6 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     cancelStream,
     clearError,
     resetConversation,
+    appendAssistantMessage,
   };
 }
