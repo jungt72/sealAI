@@ -14,8 +14,10 @@ from app.domain.source_validation import SourceType, ValidationStatus
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.knowledge import FactCardStore
 from app.services.knowledge.material_comparison import (
+    build_material_definition_answer,
     build_material_comparison_answer,
     build_material_risk_comparison_answer,
+    extract_material_ids,
     humanize_german_technical_text,
 )
 
@@ -257,6 +259,14 @@ class KnowledgeService:
             if _should_query_ptfe_factcards(user_input)
             else []
         )
+        if not cards:
+            material_definition = _material_definition_result(user_input)
+            if material_definition is not None:
+                return KnowledgeResponse(
+                    source_classification=source_classification,
+                    content=material_definition.answer,
+                    answer_result=material_definition,
+                )
         if not cards and self._rag_retriever is not None:
             rag_hits = self._rag_retriever(
                 query=user_input,
@@ -500,6 +510,48 @@ def _hit_result(
     )
 
 
+def _material_definition_result(user_input: str) -> KnowledgeAnswerResult | None:
+    material_definition = build_material_definition_answer(user_input)
+    if material_definition is None:
+        return None
+    answer = material_definition.answer
+    material_id = material_definition.material_id
+    return KnowledgeAnswerResult(
+        answer=answer,
+        answer_available=True,
+        rag_lookup_attempted=True,
+        rag_answer_found=False,
+        rag_miss=True,
+        source_type=SourceType.system_derived,
+        validation_status=ValidationStatus.unvalidated,
+        use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+        not_final_release=True,
+        fallback_allowed=False,
+        fallback_used=False,
+        user_visible_label="SeaLAI-Werkstoffwissen - allgemeine Orientierung",
+        missing_reason="domain_material_definition_without_rag_hit",
+        next_step=(
+            "Bei konkreter Anwendung Medium, Temperatur, Druck, Bewegung "
+            "und Dichtstelle als governed Case aufnehmen."
+        ),
+        knowledge_evidence=(
+            _knowledge_evidence(
+                source_type="deterministic",
+                title=material_definition.title,
+                content=answer,
+                note=f"system_derived_material_definition:{material_id}",
+            ),
+        ),
+        event_names=(
+            "KnowledgeQuestionReceived",
+            "KnowledgeRAGLookupRequested",
+            "KnowledgeRAGAnswerMissing",
+            "SourceValidationStatusAssigned",
+            "KnowledgeAnswerGenerated",
+        ),
+    )
+
+
 def _compose_user_facing_rag_answer(
     *,
     user_input: str,
@@ -603,7 +655,13 @@ def _compose_user_facing_rag_answer(
 
 
 def _detect_material_focus(user_input: str, snippets: list[str]) -> str | None:
-    haystack = f"{user_input} {' '.join(snippets[:3])}".casefold()
+    user_materials = extract_material_ids(user_input)
+    if len(user_materials) == 1:
+        return user_materials[0]
+    if len(user_materials) > 1:
+        return None
+
+    haystack = " ".join(snippets[:3]).casefold()
     if (
         re.search(r"\bnbr\b", haystack)
         or "nitril" in haystack
@@ -886,6 +944,7 @@ def _deterministic_domain_answer(user_input: str) -> KnowledgeAnswerResult | Non
                 "KnowledgeAnswerGenerated",
             ),
         )
+
     asks_explanation = any(
         token in text
         for token in (

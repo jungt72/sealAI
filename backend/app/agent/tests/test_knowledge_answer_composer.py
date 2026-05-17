@@ -9,6 +9,7 @@ from app.agent.api.dispatch import _compose_knowledge_answer_if_enabled
 from app.agent.api.routes.chat import chat_endpoint
 from app.agent.communication.answer_composer import (
     KnowledgeAnswerComposer,
+    KnowledgeAnswerComposerError,
     KnowledgeAnswerComposerOutput,
     KnowledgeAnswerComposerInput,
     build_knowledge_answer_composer_messages,
@@ -87,6 +88,23 @@ def test_knowledge_service_uses_deterministic_hot_water_risk_comparison() -> Non
     assert "Heißwasser" in response.content
     assert "Evidenzkontext" not in response.content
     assert "vorlaeufige" not in response.content
+
+
+@pytest.mark.parametrize("material", ["FFKM", "NBR", "PTFE"])
+def test_knowledge_service_answers_single_material_from_profile(material: str) -> None:
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([]),
+        llm_research_fallback_enabled=False,
+    ).answer(f"bitte gebe mir detaillierte informationen zu {material}")
+
+    assert material in response.content
+    assert "Welches Medium soll abgedichtet werden" not in response.content
+    assert "keine Freigabe" in response.content
+    assert response.answer_trace is None
+    assert response.knowledge_answer_view.knowledge_evidence
+    assert response.knowledge_answer_view.knowledge_evidence[0].note == (
+        f"system_derived_material_definition:{material}"
+    )
 
 
 @pytest.mark.asyncio
@@ -423,6 +441,107 @@ async def test_simple_material_definition_answer_is_compacted(
 
 
 @pytest.mark.asyncio
+async def test_simple_definition_compaction_respects_requested_material(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="Was ist FFKM?",
+        deterministic_answer=(
+            "NBR steht für Acrylnitril-Butadien-Kautschuk. Typische Orientierung: "
+            "- NBR wird oft im Umfeld von mineralölbasierten Medien betrachtet. "
+            "Das ist technische Orientierung, keine technische Freigabe."
+        ),
+    )
+
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            class Message:
+                content = (
+                    '{"answer_markdown":"FFKM ist ein Perfluorelastomer. Das ist technische '
+                    'Orientierung, keine Freigabe.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+    assert result.answer_markdown.startswith("FFKM ist")
+    assert "Acrylnitril" not in result.answer_markdown
+
+
+@pytest.mark.asyncio
+async def test_composer_rejects_material_subject_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="bitte gebe mir detaillierte informationen zu FFKM",
+        deterministic_answer=KnowledgeService(
+            factcard_store=_FactcardStore([]),
+            llm_research_fallback_enabled=False,
+        ).answer("bitte gebe mir detaillierte informationen zu FFKM").content,
+        recent_history=(
+            KnowledgeConversationTurn(
+                role="user",
+                content="bitte gebe mir detaillierte infos zu NBR",
+            ),
+            KnowledgeConversationTurn(
+                role="assistant",
+                content="NBR steht für Acrylnitril-Butadien-Kautschuk.",
+            ),
+        ),
+    )
+
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            class Message:
+                content = (
+                    '{"answer_markdown":"NBR steht für Acrylnitril-Butadien-Kautschuk. '
+                    'Das ist technische Orientierung, keine Freigabe.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    with pytest.raises(KnowledgeAnswerComposerError, match="requested_subject"):
+        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+
+@pytest.mark.asyncio
 async def test_material_comparison_answer_markdown_does_not_use_cockpit_placeholders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -471,3 +590,21 @@ def test_pfas_prompt_requires_current_topic_limitation() -> None:
     assert "not current legal advice" in prompt_text
     assert "No live regulatory source was retrieved" in prompt_text
     assert "regulatory_currentness_required" in prompt_text
+
+
+def test_composer_prompt_carries_requested_subject_contract() -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="Was ist FFKM?",
+        deterministic_answer="FFKM ist ein Perfluorelastomer.",
+        recent_history=(
+            KnowledgeConversationTurn(role="user", content="Was ist NBR?"),
+            KnowledgeConversationTurn(role="assistant", content="NBR steht für ..."),
+        ),
+    )
+    messages = build_knowledge_answer_composer_messages(
+        KnowledgeAnswerComposerInput(context=context)
+    )
+
+    prompt_text = "\n".join(message["content"] for message in messages)
+    assert '"requested_subjects": ["FFKM"]' in prompt_text
+    assert "latest user message is authoritative" in prompt_text

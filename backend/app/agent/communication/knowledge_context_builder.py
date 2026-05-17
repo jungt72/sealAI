@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Literal
 
+from app.services.knowledge.material_comparison import extract_material_ids
+
 
 KnowledgeEvidenceSourceType = Literal[
     "fact_card",
@@ -72,6 +74,7 @@ class KnowledgeEvidenceItem:
 class KnowledgeAnswerContext:
     user_message: str
     deterministic_answer: str
+    requested_subjects: tuple[str, ...] = field(default_factory=tuple)
     recent_history: tuple[ConversationTurn, ...] = field(default_factory=tuple)
     evidence_items: tuple[KnowledgeEvidenceItem, ...] = field(default_factory=tuple)
     route_label: str | None = None
@@ -86,6 +89,7 @@ class KnowledgeAnswerContext:
         return {
             "user_message": self.user_message,
             "deterministic_answer": self.deterministic_answer,
+            "requested_subjects": list(self.requested_subjects),
             "recent_history": [turn.as_dict() for turn in self.recent_history],
             "evidence_items": [item.as_dict() for item in self.evidence_items],
             "route_label": self.route_label,
@@ -143,6 +147,7 @@ class KnowledgeContextBuilder:
         return KnowledgeAnswerContext(
             user_message=_safe_text(user_message, limit=_MAX_HISTORY_CHARS),
             deterministic_answer=deterministic_text,
+            requested_subjects=extract_material_ids(user_message),
             recent_history=self._recent_history(recent_history),
             evidence_items=evidence_items,
             route_label=_optional_text(route_label),

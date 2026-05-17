@@ -10,6 +10,7 @@ from app.agent.communication.templates import render_communication_template
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
 from app.llm.registry import get_registry_default_model_for_role
+from app.services.knowledge.material_comparison import extract_material_ids
 
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 
@@ -61,7 +62,9 @@ class KnowledgeAnswerComposer:
         )
         raw_content = response.choices[0].message.content
         output = parse_knowledge_answer_composer_output(raw_content)
-        return compact_simple_definition_answer(request, output)
+        output = enforce_requested_subject_fidelity(request, output)
+        output = compact_simple_definition_answer(request, output)
+        return enforce_requested_subject_fidelity(request, output)
 
 
 async def _create_completion_with_registry_fallback(
@@ -127,7 +130,6 @@ def parse_knowledge_answer_composer_output(raw_content: Any) -> KnowledgeAnswerC
     )
 
 
-_MATERIAL_TOKENS = ("NBR", "HNBR", "FKM", "FFKM", "EPDM", "PTFE", "VMQ")
 _SIMPLE_DEFINITION_PATTERNS = (
     r"\bwas\s+ist\b",
     r"\bwas\s+bedeutet\b",
@@ -153,6 +155,10 @@ def compact_simple_definition_answer(
     if not _is_simple_material_definition_question(request.user_message):
         return output
 
+    requested = _single_requested_material(request)
+    if requested and requested not in extract_material_ids(request.deterministic_answer):
+        return output
+
     compact = _compact_from_deterministic_answer(request.deterministic_answer)
     if not compact:
         return output
@@ -171,8 +177,40 @@ def _is_simple_material_definition_question(user_message: str) -> bool:
         return False
     if not any(re.search(pattern, lowered) for pattern in _SIMPLE_DEFINITION_PATTERNS):
         return False
-    materials = set(re.findall(r"\b(?:NBR|HNBR|FKM|FFKM|EPDM|PTFE|VMQ)\b", text.upper()))
+    materials = set(extract_material_ids(text))
     return len(materials) == 1
+
+
+def enforce_requested_subject_fidelity(
+    request: KnowledgeAnswerComposerInput,
+    output: KnowledgeAnswerComposerOutput,
+) -> KnowledgeAnswerComposerOutput:
+    """Reject visible answers that drift away from the latest requested material."""
+
+    requested = _single_requested_material(request)
+    if not requested:
+        return output
+
+    answer = str(output.answer_markdown or "")
+    answer_materials = extract_material_ids(answer)
+    if requested not in answer_materials and requested.casefold() not in answer.casefold():
+        raise KnowledgeAnswerComposerError("requested_subject_missing")
+
+    first_materials = extract_material_ids(answer[:500])
+    if first_materials and first_materials[0] != requested:
+        raise KnowledgeAnswerComposerError("requested_subject_drift")
+
+    return output
+
+
+def _single_requested_material(request: KnowledgeAnswerComposerInput) -> str | None:
+    requested = tuple(getattr(request.context, "requested_subjects", ()) or ())
+    if len(requested) == 1:
+        return requested[0]
+    fallback = extract_material_ids(request.user_message)
+    if len(fallback) == 1:
+        return fallback[0]
+    return None
 
 
 def _compact_from_deterministic_answer(deterministic_answer: str) -> str:
@@ -228,6 +266,7 @@ Scope:
 
 Communication requirements:
 - Answer the user's actual knowledge question directly.
+- If requested_subjects contains exactly one material, the latest user message is authoritative: start with that material and do not switch to a different material from recent_history or evidence_items.
 - Use recent_history only for continuity. Do not treat history as confirmed engineering truth and do not invent missing facts from it.
 - Treat evidence_items as the grounding envelope and deterministic_answer as fallback grounding. If evidence is weak or only deterministic/fallback, say what is uncertain.
 - Use natural German, with a careful senior sealing-engineer tone.

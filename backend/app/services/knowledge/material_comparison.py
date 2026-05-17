@@ -23,7 +23,14 @@ class MaterialComparisonProfile:
 class MaterialComparisonAnswer:
     answer: str
     title: str
-    material_ids: tuple[str, str]
+    material_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MaterialDefinitionAnswer:
+    answer: str
+    title: str
+    material_id: str
 
 
 
@@ -106,6 +113,7 @@ _GERMAN_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Oelanteilen", "Ölanteilen"),
     ("Oelanwendungen", "Ölanwendungen"),
     ("Oeltyp", "Öltyp"),
+    ("Mineralol", "Mineralöl"),
     ("Mineraloele", "Mineralöle"),
     ("Mineralole", "Mineralöle"),
     ("Oelen", "Ölen"),
@@ -126,6 +134,7 @@ _GERMAN_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Flexibilitaet", "Flexibilität"),
     ("Abriebbestaendigkeit", "Abriebbeständigkeit"),
     ("Witterungsbestaendigkeit", "Witterungsbeständigkeit"),
+    ("Wetterung", "Witterung"),
     ("Alterungsbestaendigkeit", "Alterungsbeständigkeit"),
     ("Temperaturbestaendigkeit", "Temperaturbeständigkeit"),
     ("Chemiefaellen", "Chemiefällen"),
@@ -506,6 +515,37 @@ def build_material_risk_comparison_answer(user_input: str) -> MaterialComparison
 def supported_material_ids() -> tuple[str, ...]:
     return tuple(_MATERIAL_PROFILES.keys())
 
+
+def extract_material_ids(text: str) -> tuple[str, ...]:
+    """Return canonical material IDs mentioned in text, preserving first mention order."""
+
+    return tuple(_extract_all_materials(text))
+
+
+def build_material_definition_answer(user_input: str) -> MaterialDefinitionAnswer | None:
+    """Return a guarded one-material orientation answer for generic material questions."""
+
+    text = str(user_input or "").strip()
+    if not text:
+        return None
+    if is_material_comparison_question(text):
+        return None
+    if _CONCRETE_CASE_RE.search(text):
+        return None
+    materials = _extract_all_materials(text)
+    if len(materials) != 1:
+        return None
+    if not _looks_like_generic_material_information_request(text, materials[0]):
+        return None
+
+    profile = _MATERIAL_PROFILES[materials[0]]
+    answer = _render_definition(profile)
+    return MaterialDefinitionAnswer(
+        answer=answer,
+        title=f"{profile.canonical} - Werkstofforientierung",
+        material_id=profile.canonical,
+    )
+
 def _extract_materials(text: str) -> list[str]:
     return _extract_all_materials(text)[:2]
 
@@ -517,6 +557,118 @@ def _extract_all_materials(text: str) -> list[str]:
         if canonical and canonical not in seen:
             seen.append(canonical)
     return seen
+
+
+_GENERIC_MATERIAL_INFO_RE = re.compile(
+    r"\b(?:was\s+ist|was\s+sind|was\s+bedeutet|bedeutet|"
+    r"info(?:s|rmation(?:en)?)?|details?|detailliert|erkl[aä]r(?:e|en)?|"
+    r"kurz\s+zu|mehr\s+zu|wissen\s+zu)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _looks_like_generic_material_information_request(text: str, material_id: str) -> bool:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if compact.casefold() == material_id.casefold():
+        return True
+    return bool(_GENERIC_MATERIAL_INFO_RE.search(compact))
+
+
+_MATERIAL_DEFINITION_LEADS: dict[str, str] = {
+    "NBR": (
+        "NBR steht für Acrylnitril-Butadien-Kautschuk, häufig auch "
+        "Nitrilkautschuk genannt. In der Dichtungstechnik ist NBR ein "
+        "elastischer Standardwerkstoff für viele öl- und fettnahe "
+        "Dichtstellen, wenn Temperatur, Medium und Compound dazu passen."
+    ),
+    "HNBR": (
+        "HNBR ist hydrierter Nitrilkautschuk. Er wird oft betrachtet, wenn "
+        "NBR mechanisch oder thermisch an Grenzen kommt, die Anwendung aber "
+        "weiter in öl- oder kraftstoffnahen Bereichen liegt."
+    ),
+    "FKM": (
+        "FKM ist eine Fluorelastomer-Werkstofffamilie. In Dichtungen wird "
+        "FKM häufig für öl-, kraftstoff-, alterungs- und temperaturbelastete "
+        "Anwendungen geprüft; die konkrete Rezeptur bleibt entscheidend."
+    ),
+    "FFKM": (
+        "FFKM steht für Perfluorelastomer beziehungsweise Perfluorkautschuk. "
+        "In der Dichtungstechnik ist FFKM eine sehr hochwertige "
+        "Elastomer-Richtung für chemisch und thermisch anspruchsvolle Fälle, "
+        "aber stark compound-, hersteller- und kostenabhängig."
+    ),
+    "EPDM": (
+        "EPDM ist Ethylen-Propylen-Dien-Kautschuk. In Dichtungen wird EPDM "
+        "häufig für wasser-, dampf-, glykol- und witterungsnahe Anwendungen "
+        "geprüft, während Öl- und Kraftstoffkontakt besonders kritisch ist."
+    ),
+    "PTFE": (
+        "PTFE ist Polytetrafluorethylen, ein Fluorpolymer und kein "
+        "elastischer Gummiwerkstoff. Es wird oft wegen breiter "
+        "Chemieorientierung und niedriger Reibung betrachtet, braucht aber "
+        "ein passendes Dichtprinzip."
+    ),
+    "PU": (
+        "PU beziehungsweise Polyurethan ist eine Werkstofffamilie, die in "
+        "Dichtungen häufig für mechanisch robuste Hydraulik- und "
+        "Abstreiferanwendungen geprüft wird. Temperatur, Hydrolyse und "
+        "Medientyp grenzen die Auswahl stark ein."
+    ),
+    "VMQ": (
+        "VMQ ist Silikonkautschuk. In Dichtungen wird VMQ häufig für "
+        "Tieftemperatur-, Wärmealterungs- oder Hygieneanwendungen betrachtet, "
+        "mechanisch aber vorsichtiger bewertet als viele technische Elastomere."
+    ),
+    "PEEK": (
+        "PEEK ist ein Hochleistungsthermoplast. In der Dichtungstechnik ist "
+        "PEEK eher Stütz-, Führungs- oder Sonderbauteilwerkstoff als ein "
+        "elastisches Dichtmaterial."
+    ),
+}
+
+
+def _render_definition(profile: MaterialComparisonProfile) -> str:
+    lead = _MATERIAL_DEFINITION_LEADS.get(
+        profile.canonical,
+        (
+            f"{profile.canonical} ist {article(profile.material_type)} "
+            f"{profile.material_type.lower()} aus der Familie {profile.family}. "
+            "In Dichtungsanwendungen wird diese Werkstoffrichtung immer im "
+            "Zusammenspiel mit Medium, Temperatur, Bewegung, Geometrie und "
+            "Herstellerdaten bewertet."
+        ),
+    )
+    orientation_points = _first_non_empty(
+        profile.key_strengths[:1],
+        profile.media_orientation[:1],
+        profile.key_limits[:1],
+    )
+    check_points = _first_non_empty(
+        profile.critical_checks[:3],
+        profile.dynamics_orientation[:1],
+    )
+    lines = [
+        lead,
+        "",
+        "Typische Orientierung:",
+        *(f"- {point}" for point in orientation_points),
+        "",
+        "Worauf ich fachlich achten würde:",
+        *(f"- {point}" for point in check_points),
+        "",
+        "Für eine konkrete Einschätzung brauche ich Medium inklusive Konzentration/Additiven, Temperaturprofil, Druck, Bewegung/Dichtungsart, Einbauraum und Herstellerdaten. Das ist technische Orientierung, keine Freigabe und keine Kompatibilitätszusage.",
+    ]
+    return humanize_german_technical_text("\n".join(lines))
+
+
+def _first_non_empty(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    values: list[str] = []
+    for group in groups:
+        for value in group:
+            clean = str(value or "").strip()
+            if clean:
+                values.append(clean)
+    return tuple(values)
 
 
 def _render_comparison(left: MaterialComparisonProfile, right: MaterialComparisonProfile) -> str:
