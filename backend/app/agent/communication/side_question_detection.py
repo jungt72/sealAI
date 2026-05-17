@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from app.services.knowledge_intent import (
+    contains_concrete_case_marker,
+    is_information_request_about_technical_subject,
+)
 from app.services.knowledge.material_comparison import is_material_comparison_question
 
 KnowledgeSideQuestionClass = Literal["conversational_answer", "exploration_answer"]
@@ -40,21 +44,6 @@ _PARAM_UPDATE_MARKERS: tuple[str, ...] = (
     r"\bkorrekt(?:ur)?\b",
 )
 
-_CONCRETE_CASE_MARKERS: tuple[str, ...] = (
-    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|barg|bara|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b",
-    r"\b(salzwasser|wasser|öl|oel|ethanol|dampf|medium)\b.*\b(\d|bar|grad|welle|pumpe|ruehrwerk|rührwerk)\b",
-    r"\b(rotierende?\s+welle|welle|pumpe|ruehrwerk|rührwerk|getriebe)\b.*\b(salzwasser|wasser|öl|oel|ethanol|medium|ptfe|fkm|nbr|epdm)\b",
-)
-
-
-def contains_concrete_case_marker(message: str) -> bool:
-    lowered = str(message or "").strip().casefold()
-    return any(
-        re.search(pattern, lowered, re.IGNORECASE)
-        for pattern in _CONCRETE_CASE_MARKERS
-    )
-
-
 def classify_message_as_knowledge_side_question(
     message: str,
 ) -> KnowledgeSideQuestionClass | None:
@@ -80,6 +69,9 @@ def classify_message_as_knowledge_side_question(
 
     if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _COMPARISON_PATTERNS):
         return "exploration_answer"
+
+    if is_information_request_about_technical_subject(lowered):
+        return "conversational_answer"
 
     if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _KNOWLEDGE_PATTERNS):
         return "conversational_answer"

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Pattern
 
 from app.domain.pre_gate_classification import PreGateClassification
+from app.services.knowledge_intent import is_information_request_about_technical_subject
 from app.services.knowledge.material_comparison import is_material_comparison_question
 
 
@@ -174,6 +175,8 @@ class PreGateClassifier:
 
         if PreGateClassifier._matches(_CASE_INTAKE_CONTEXT_PATTERNS, text):
             return False
+        if is_information_request_about_technical_subject(text):
+            return True
         if PreGateClassifier._matches(_TECHNICAL_ABOUT_PATTERNS, text):
             return PreGateClassifier._matches(_TECHNICAL_SUBJECT_PATTERNS, text)
         if PreGateClassifier._matches(_STANDALONE_COMPATIBILITY_PATTERNS, text):
@@ -279,6 +282,8 @@ _META_QUESTION_PATTERNS = _compile(
     r"\b(was\s+fehlt\s+(noch|mir|dir)?|welche\s+(angaben|parameter|daten)\s+fehlen)\b",
     r"\b(wie\s+ist\s+der\s+(aktuelle\s+)?(stand|fortschritt))\b",
     r"\b(was\s+(hast\s+du|haben\s+sie)\s+(schon\s+)?(verstanden|erfasst|gespeichert))\b",
+    r"\b(was\s+wollte\s+ich\s+(?:von\s+dir|gerade)|was\s+war\s+meine\s+(?:frage|anfrage)|worum\s+ging\s+es\s+gerade|wo\s+waren\s+wir)\b",
+    r"\b(was\s+ist\s+(?:aktuell\s+|noch\s+)?offen|was\s+steht\s+(?:aktuell\s+|noch\s+)?aus)\b",
     r"\b(welche\s+(angaben|parameter)\s+(brauche|benötige)\s+ich\s+noch)\b",
     r"\bzeig\s+(mir\s+)?(den\s+)?(fortschritt|stand|übersicht|status)\b",
     r"\b(what\s+can\s+(sealai|this\s+tool|you)\s+do\b)",

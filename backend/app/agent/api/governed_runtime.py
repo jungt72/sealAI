@@ -111,12 +111,17 @@ def build_governed_graph_input(
     session_id: str,
     defer_visible_answer_composer: bool = False,
     stream_visible_answer_composer: bool = False,
+    append_user_message: bool = True,
 ) -> GraphState:
     """Build the governed graph input from the live governed session state."""
 
     tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
-    governed_with_user = _with_governed_conversation_turn(
-        governed_state, role="user", content=message
+    governed_with_user = (
+        _with_governed_conversation_turn(
+            governed_state, role="user", content=message
+        )
+        if append_user_message
+        else governed_state
     )
     payload = governed_with_user.model_dump(mode="python")
     payload.update(
@@ -140,6 +145,7 @@ async def run_governed_graph_turn(
     pre_gate_classification: str | None = None,
     collect_progress: bool = False,
     progress_callback: ProgressCallback | None = None,
+    append_user_message: bool = True,
 ) -> GovernedGraphTurnResult:
     """Run one governed graph turn and commit it using the current live-state behavior."""
 
@@ -159,6 +165,7 @@ async def run_governed_graph_turn(
         session_id=session_id,
         defer_visible_answer_composer=False,
         stream_visible_answer_composer=collect_progress,
+        append_user_message=append_user_message,
     )
     graph_config = _graph_thread_config(current_user=current_user, session_id=session_id)
     governed_graph = await get_governed_graph()

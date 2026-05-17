@@ -41,10 +41,17 @@ def _user() -> RequestUser:
     [
         ("Hallo", PreGateClassification.GREETING, "CONVERSATION"),
         ("Was kann SeaLAI?", PreGateClassification.META_QUESTION, "CONVERSATION"),
+        ("Was wollte ich von dir?", PreGateClassification.META_QUESTION, "CONVERSATION"),
+        ("Worum ging es gerade?", PreGateClassification.META_QUESTION, "CONVERSATION"),
         ("Was ist PTFE?", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
         (
             "Warum ist PTFE in meinem Fall kritisch?",
             PreGateClassification.DEEP_DIVE,
+            "CONVERSATION",
+        ),
+        (
+            "Bitte gebe mir detaillierte Informationen über PTFE",
+            PreGateClassification.KNOWLEDGE_QUERY,
             "CONVERSATION",
         ),
         (

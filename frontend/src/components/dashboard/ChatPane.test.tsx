@@ -175,6 +175,7 @@ describe("ChatPane", () => {
     render(<ChatPane caseId="case-parameter" />);
 
     expect(chatStoreMock.registerCallbacks).toHaveBeenCalledWith({
+      appendAssistantMessage: expect.any(Function),
       sendMessage: expect.any(Function),
       startNewChat: expect.any(Function),
     });

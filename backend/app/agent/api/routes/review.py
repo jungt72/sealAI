@@ -1,9 +1,9 @@
 import logging
 import os
-from typing import Any, Dict, Optional
+from types import SimpleNamespace
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path
-from langchain_core.messages import AIMessage
 
 from app.agent.api.models import (
     ReviewRequest,
@@ -14,7 +14,6 @@ from app.agent.api.models import (
     OverrideGovernanceResult,
     CaseDeltaDecisionRequest,
     CaseDeltaDecisionResponse,
-    build_public_response_core,
 )
 from app.agent.state.agent_state import AgentState
 from app.agent.state.models import GovernedPersistenceMarker, UserOverride
@@ -24,7 +23,6 @@ from app.agent.state.reducers import (
     reduce_asserted_to_governance,
 )
 from app.agent.api.deps import (
-    _canonical_scope,
     SESSION_STORE,
     RequestUser,
     get_current_request_user,
@@ -35,7 +33,6 @@ from app.agent.api.loaders import (
     _persist_review_outcome_to_live_governed_state,
 )
 from app.agent.api.utils import (
-    _overlay_live_governed_snapshot,
     _with_case_event,
 )
 from app.agent.domain.critical_review import (
@@ -48,19 +45,96 @@ from app.agent.domain.critical_review import (
     run_critical_review_specialist,
     critical_review_result_to_dict,
 )
-from app.agent.state.case_state import build_visible_case_narrative, PROJECTION_VERSION
-from app.agent.state.projections import project_for_ui
+from app.agent.state.case_state import PROJECTION_VERSION
 from app.agent.domain.case_delta import (
     acceptance_block_reason,
+    build_assistant_delta_event,
     build_case_delta_decision_event,
     latest_proposed_delta_event,
     select_delta_fields,
 )
+from app.domain.pre_gate_classification import PreGateClassification
 from app.agent.domain.dependency_graph import mark_stale_derived_values
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _override_analysis_message(applied_fields: list[str]) -> str:
+    field_list = ", ".join(applied_fields) if applied_fields else "Parameter"
+    return (
+        "Direkteingabe wurde als Nutzerangabe übernommen. "
+        f"Aktualisierte Felder: {field_list}. "
+        "Bitte analysiere den aktuellen Dichtungsfall mit diesen bekannten Angaben, "
+        "benenne kritische Punkte, fehlende Blocker und die nächste sinnvolle Rückfrage. "
+        "Keine finale Freigabe und keine Materialentscheidung."
+    )
+
+
+async def _run_override_analysis_turn(
+    *,
+    current_user: RequestUser,
+    session_id: str,
+    applied_fields: list[str],
+) -> dict[str, Any]:
+    from app.agent.api.assembly import (  # noqa: PLC0415
+        _assemble_governed_stream_payload,
+        _build_governed_reply_context,
+    )
+    from app.agent.api.governed_runtime import run_governed_graph_turn  # noqa: PLC0415
+    from app.agent.api.loaders import _persist_live_governed_state  # noqa: PLC0415
+    from app.agent.api.utils import (  # noqa: PLC0415
+        _with_case_event,
+        _with_governed_conversation_turn,
+    )
+
+    graph_request = SimpleNamespace(
+        session_id=session_id,
+        message=_override_analysis_message(applied_fields),
+    )
+    turn_result = await run_governed_graph_turn(
+        request=graph_request,
+        current_user=current_user,
+        pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY.value,
+        append_user_message=False,
+    )
+    context = _build_governed_reply_context(
+        result_state=turn_result.result_state,
+        persisted_state=turn_result.persisted_state,
+    )
+    payload = _assemble_governed_stream_payload(context=context)
+    assistant_message = str(
+        payload.get("assistant_message")
+        or payload.get("answer_markdown")
+        or payload.get("reply")
+        or ""
+    ).strip()
+    if assistant_message:
+        updated_state = _with_governed_conversation_turn(
+            turn_result.persisted_state,
+            role="assistant",
+            content=assistant_message,
+        )
+        case_event = build_assistant_delta_event(
+            case_id=session_id,
+            turn_index=int(
+                getattr(turn_result.result_state, "user_turn_index", 0)
+                or turn_result.result_state.analysis_cycle
+                or 0
+            ),
+            assistant_message=assistant_message,
+            delta=context.proposed_case_delta,
+            persistence_marker=turn_result.persisted_state.persistence_marker,
+        )
+        updated_state = _with_case_event(updated_state, event=case_event)
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=session_id,
+            state=updated_state,
+            pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY.value,
+        )
+    return payload
 
 def _find_session(session_id: str) -> AgentState | None:
     return SESSION_STORE.get(session_id)
@@ -326,17 +400,40 @@ async def session_override_endpoint(
         state=governed,
     )
 
+    analysis_payload: dict[str, Any] = {}
+    response_governed = governed
+    if request.run_analysis:
+        analysis_payload = await _run_override_analysis_turn(
+            current_user=current_user,
+            session_id=session_id,
+            applied_fields=applied_fields,
+        )
+        from app.agent.api.loaders import _load_live_governed_state  # noqa: PLC0415
+
+        analyzed_governed = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=session_id,
+            create_if_missing=False,
+        )
+        if analyzed_governed is not None:
+            response_governed = analyzed_governed
+
     return OverrideResponse(
         session_id=session_id,
         applied_fields=applied_fields,
         governance=OverrideGovernanceResult(
-            gov_class=governed.governance.gov_class,
-            rfq_admissible=governed.governance.rfq_admissible,
-            blocking_unknowns=list(governed.asserted.blocking_unknowns),
-            conflict_flags=list(governed.asserted.conflict_flags),
-            validity_limits=list(governed.governance.validity_limits),
-            open_validation_points=list(governed.governance.open_validation_points),
+            gov_class=response_governed.governance.gov_class,
+            rfq_admissible=response_governed.governance.rfq_admissible,
+            blocking_unknowns=list(response_governed.asserted.blocking_unknowns),
+            conflict_flags=list(response_governed.asserted.conflict_flags),
+            validity_limits=list(response_governed.governance.validity_limits),
+            open_validation_points=list(response_governed.governance.open_validation_points),
         ),
+        reply=analysis_payload.get("reply") if analysis_payload else None,
+        answer_markdown=analysis_payload.get("answer_markdown") if analysis_payload else None,
+        response_class=analysis_payload.get("response_class") if analysis_payload else None,
+        structured_state=analysis_payload.get("structured_state") if analysis_payload else None,
+        run_meta=analysis_payload.get("run_meta") if analysis_payload else None,
     )
 
 @router.post("/session/{session_id}/case-delta", response_model=CaseDeltaDecisionResponse)

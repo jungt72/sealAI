@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from app.agent.communication.conversation_controller_v7 import (
     ConversationControllerInput,
@@ -17,6 +17,7 @@ from app.agent.communication.side_question_detection import (
 from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import AnswerMode, TurnDecision
 from app.domain.pre_gate_classification import PreGateClassification
+from app.services.knowledge_intent import has_technical_knowledge_subject
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class CommunicationRuntimeV8(ConversationControllerV7):
         return self._apply_safe_llm_proposal(payload, deterministic, proposal)
 
     def decide_deterministic(self, payload: ConversationControllerInput) -> TurnDecision:
-        # V8 priority: safety, pending slot, side questions, process/meta,
+        # V8 priority: safety, pending slot, process/meta, side questions,
         # knowledge, smalltalk, then governed intake.
         if payload.pre_gate_classification is PreGateClassification.BLOCKED:
             return self._blocked(payload)
@@ -69,13 +70,13 @@ class CommunicationRuntimeV8(ConversationControllerV7):
         if payload.slot_answer_binding is not None:
             return self._pending_slot_answer(payload)
 
-        if payload.active_case_exists and self._looks_like_side_question(payload.user_message):
-            return self._knowledge_or_side_question(payload)
-
         if self._looks_like_process_question(payload.user_message):
             if payload.active_case_exists:
                 return self._active_case_process_question(payload)
             return self._meta(payload)
+
+        if payload.active_case_exists and self._looks_like_side_question(payload.user_message):
+            return self._knowledge_or_side_question(payload)
 
         if payload.pre_gate_classification in {
             PreGateClassification.KNOWLEDGE_QUERY,
@@ -202,8 +203,11 @@ class CommunicationRuntimeV8(ConversationControllerV7):
 
         if proposal.intent in {"knowledge", "active_case_side_question"}:
             # Concrete operating data still belongs to governed intake.
-            if classify_message_as_knowledge_side_question(payload.user_message) is None:
+            if contains_concrete_case_marker(payload.user_message):
                 return deterministic
+            if classify_message_as_knowledge_side_question(payload.user_message) is None:
+                if proposal.intent != "knowledge" or not has_technical_knowledge_subject(payload.user_message):
+                    return deterministic
             return self._knowledge_or_side_question(payload)
 
         return deterministic

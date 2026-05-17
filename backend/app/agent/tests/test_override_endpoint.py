@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -136,6 +137,52 @@ async def test_session_override_endpoint_uses_canonical_user_scope_without_tenan
         session_id="case-tenantless",
         redis_client=fake_redis,
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_session_override_endpoint_can_run_analysis_after_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_redis = _FakeRedisClient()
+    monkeypatch.setenv("REDIS_URL", "redis://fake")
+    import redis.asyncio as redis_asyncio
+
+    monkeypatch.setattr(redis_asyncio, "Redis", _FakeRedisFactory(fake_redis))
+    import app.agent.api.loaders as loaders_module
+
+    monkeypatch.setattr(
+        loaders_module,
+        "save_governed_state_snapshot_async",
+        _skip_snapshot_persistence,
+    )
+    analysis_runner = AsyncMock(
+        return_value={
+            "reply": "Die übernommenen Parameter sind jetzt fachlich eingeordnet.",
+            "answer_markdown": "Die übernommenen Parameter sind jetzt fachlich eingeordnet.",
+            "response_class": "structured_clarification",
+            "structured_state": {"status": "updated"},
+            "run_meta": {"answer_trace": {"final_visible_source": "answer_markdown"}},
+        }
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.review._run_override_analysis_turn",
+        analysis_runner,
+    )
+
+    response = await session_override_endpoint(
+        session_id="case-analyze",
+        request=OverrideRequest(
+            overrides=[OverrideItem(field_name="speed_rpm", value=1450, unit="rpm")],
+            run_analysis=True,
+        ),
+        current_user=_user(),
+    )
+
+    assert response.session_id == "case-analyze"
+    assert response.answer_markdown == "Die übernommenen Parameter sind jetzt fachlich eingeordnet."
+    assert response.response_class == "structured_clarification"
+    assert response.structured_state == {"status": "updated"}
+    analysis_runner.assert_awaited_once()
 
 
 @pytest.mark.asyncio

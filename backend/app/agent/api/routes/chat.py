@@ -1,4 +1,7 @@
+import asyncio
+import json
 import logging
+import os
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
@@ -7,7 +10,11 @@ from fastapi.responses import StreamingResponse
 from app.agent.api.models import ChatRequest, ChatResponse, build_public_response_core
 from app.agent.state.models import GovernedSessionState
 from app.agent.graph import GraphState
-from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
+from app.agent.runtime.answer_trace import (
+    build_answer_trace,
+    safe_fallback_reason,
+    with_answer_trace,
+)
 from app.agent.runtime.final_answer_layer import (
     FinalAnswerEnvelope,
     answer_mode_for_fast_classification,
@@ -52,6 +59,7 @@ from app.agent.communication.active_case_side_claim_policy import (
     enforce_active_case_side_claim_policy,
 )
 from app.agent.communication.templates import render_communication_template
+from app.agent.runtime.output_guard import check_fast_path_output
 from app.agent.communication.v7_contracts import (
     RuntimeAction,
     RuntimeActionType,
@@ -61,6 +69,11 @@ from app.agent.communication.v7_contracts import (
 
 _log = logging.getLogger(__name__)
 
+_TRUE_VALUES = {"1", "true", "yes", "y", "on", "enabled"}
+
+
+def _active_case_side_answer_composer_enabled() -> bool:
+    return os.getenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "true").strip().lower() in _TRUE_VALUES
 
 
 def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
@@ -380,6 +393,9 @@ def _side_answer_trace(
     claim_policy_result: Any,
     evidence_context: Any,
     evidence_used_in_answer: bool,
+    composer_attempted: bool = False,
+    composer_succeeded: bool = False,
+    fallback_reason: str | None = None,
     runtime_action: Any | None = None,
 ) -> dict[str, Any]:
     existing_trace = getattr(knowledge_response, "answer_trace", None)
@@ -417,6 +433,12 @@ def _side_answer_trace(
     if hasattr(evidence_context, "as_trace"):
         trace.update(evidence_context.as_trace())
     trace["evidence_used_in_answer"] = bool(evidence_used_in_answer)
+    trace["composer_attempted"] = bool(composer_attempted)
+    trace["composer_succeeded"] = bool(composer_succeeded)
+    trace["fallback_reason"] = safe_fallback_reason(fallback_reason)
+    if composer_succeeded:
+        trace["reply_source"] = "governed_output_contract"
+        trace["answer_markdown_source"] = "governed_composer"
     trace.update(_runtime_action_trace(runtime_action))
     return trace
 
@@ -475,6 +497,128 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
                 fallback=f"{base}\n\n{target_question}",
             )
     return base
+
+
+def _active_case_context_payload(governed_state: GovernedSessionState | None) -> dict[str, Any]:
+    if governed_state is None:
+        return {"known_facts": [], "open_points": [], "recent_messages": []}
+    assertions = getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
+    known_facts: list[dict[str, str]] = []
+    for field_name, claim in list(assertions.items())[:8]:
+        value = getattr(claim, "asserted_value", None)
+        if value is None or str(value).strip() == "":
+            continue
+        known_facts.append({"field": str(field_name), "value": str(value)})
+    open_points = [
+        str(field)
+        for field in list(getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", []) or [])[:8]
+        if str(field).strip()
+    ]
+    recent_messages = [
+        {
+            "role": str(getattr(message, "role", "") or ""),
+            "content": str(getattr(message, "content", "") or ""),
+        }
+        for message in list(getattr(governed_state, "conversation_messages", []) or [])[-8:]
+        if str(getattr(message, "content", "") or "").strip()
+    ]
+    pending = getattr(governed_state, "pending_question", None)
+    return {
+        "known_facts": known_facts,
+        "open_points": open_points,
+        "recent_messages": recent_messages,
+        "pending_question": {
+            "target_field": str(getattr(pending, "target_field", "") or ""),
+            "question_text": str(getattr(pending, "question_text", "") or ""),
+        }
+        if pending is not None
+        else None,
+    }
+
+
+async def _compose_active_case_side_answer_with_llm(
+    *,
+    message: str,
+    grounded_answer: str,
+    governed_state: GovernedSessionState | None,
+    resume_decision: Any,
+) -> str:
+    from app.llm.factory import get_async_llm  # noqa: PLC0415
+
+    client, model = get_async_llm("governed_answer_composer")
+    resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    payload = {
+        "latest_user_message": message,
+        "grounded_answer": grounded_answer,
+        "active_case_context": _active_case_context_payload(governed_state),
+        "resume_trace": resume_trace,
+        "instructions": [
+            "Answer the user's latest side question first.",
+            "Use grounded_answer as the technical basis; do not invent stronger claims.",
+            "Briefly connect to the active sealing case context when useful.",
+            "Do not automatically repeat an old slot question such as 'Welches Medium'.",
+            "If a next step is useful, phrase it naturally as an optional continuation, not as a blunt intake fallback.",
+            "Ask at most one question.",
+            "Do not claim final suitability, manufacturer approval, compliance approval, or final release.",
+        ],
+    }
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": render_communication_template(
+                    "active_case_side_answer_system",
+                    fallback=(
+                        "You are SealAI's senior sealing-engineering communication layer. "
+                        "You produce the final visible German answer for a side question inside "
+                        "an active sealing case. Be warm, precise, human, and technically careful. "
+                        "Return JSON with key answer_markdown only."
+                    ),
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
+        ],
+        temperature=0.25,
+        max_tokens=800,
+        response_format={"type": "json_object"},
+    )
+    raw = response.choices[0].message.content if response.choices else ""
+    data = json.loads(str(raw or "{}"))
+    answer = str(data.get("answer_markdown") or "").strip()
+    if not answer:
+        raise ValueError("empty_active_case_side_answer")
+    safe, category = check_fast_path_output(answer)
+    if not safe:
+        raise ValueError(f"unsafe_active_case_side_answer:{category}")
+    return answer
+
+
+async def _compose_active_case_side_answer(
+    *,
+    message: str,
+    grounded_answer: str,
+    governed_state: GovernedSessionState | None,
+    resume_decision: Any,
+) -> tuple[str, bool, bool, str | None]:
+    if not _active_case_side_answer_composer_enabled():
+        return _side_answer_with_resume(grounded_answer, resume_decision), False, False, "composer_disabled"
+
+    try:
+        answer = await asyncio.wait_for(
+            _compose_active_case_side_answer_with_llm(
+                message=message,
+                grounded_answer=grounded_answer,
+                governed_state=governed_state,
+                resume_decision=resume_decision,
+            ),
+            timeout=float(os.getenv("SEALAI_ACTIVE_CASE_SIDE_ANSWER_TIMEOUT_S", "8.0")),
+        )
+        return answer, True, True, None
+    except Exception as exc:  # noqa: BLE001
+        fallback_reason = safe_fallback_reason(f"side_composer:{exc.__class__.__name__}")
+        _log.warning("[active_case_side_answer] composer fallback reason=%s", fallback_reason)
+        return grounded_answer, True, False, fallback_reason
 
 
 async def _build_active_case_process_payload(
@@ -563,10 +707,24 @@ async def _build_active_case_side_payload(
         answer_markdown=evidence_enrichment.answer_markdown,
         speakable_facts=speakable_facts,
     )
-    answer_markdown = _side_answer_with_resume(
-        claim_policy_result.answer_markdown,
-        resume_decision,
+    (
+        answer_markdown,
+        composer_attempted,
+        composer_succeeded,
+        fallback_reason,
+    ) = await _compose_active_case_side_answer(
+        message=message,
+        grounded_answer=claim_policy_result.answer_markdown,
+        governed_state=governed_state,
+        resume_decision=resume_decision,
     )
+    if composer_succeeded:
+        claim_policy_result = enforce_active_case_side_claim_policy(
+            latest_user_message=message,
+            answer_markdown=answer_markdown,
+            speakable_facts=speakable_facts,
+        )
+        answer_markdown = claim_policy_result.answer_markdown
     answer_trace = _side_answer_trace(
         knowledge_response=knowledge_response,
         resume_decision=resume_decision,
@@ -574,6 +732,9 @@ async def _build_active_case_side_payload(
         claim_policy_result=claim_policy_result,
         evidence_context=evidence_context,
         evidence_used_in_answer=evidence_enrichment.evidence_used_in_answer,
+        composer_attempted=composer_attempted,
+        composer_succeeded=composer_succeeded,
+        fallback_reason=fallback_reason,
         runtime_action=runtime_action,
     )
 

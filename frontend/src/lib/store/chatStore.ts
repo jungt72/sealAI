@@ -27,6 +27,8 @@ interface ChatStore {
   // ── Registrierte Aktionen (werden von CaseScreen eingehängt) ──────────────
   /** Sendet eine neue Nutzernachricht an den Agent */
   sendMessage: (msg: string) => Promise<void>;
+  /** Fügt eine backend-erzeugte Assistant-Antwort aus nicht-streamenden Aktionen ein */
+  appendAssistantMessage: (msg: string) => void;
   /** Startet einen neuen leeren Chat und navigiert zu /dashboard/new */
   startNewChat: () => void;
 
@@ -40,6 +42,7 @@ interface ChatStore {
   // ── Registrierung ─────────────────────────────────────────────────────────
   registerCallbacks: (callbacks: {
     sendMessage: (msg: string) => Promise<void>;
+    appendAssistantMessage?: (msg: string) => void;
     startNewChat: () => void;
   }) => void;
 }
@@ -47,6 +50,7 @@ interface ChatStore {
 // Leere No-Op-Defaults, damit die Komponenten immer aufrufbare Funktionen
 // vorfinden — auch bevor CaseScreen die echten Implementierungen registriert.
 const noopSend = async (_msg: string): Promise<void> => {};
+const noopAppend = (_msg: string): void => {};
 const noopStart = (): void => {};
 
 export const useChatStore = create<ChatStore>()((set) => ({
@@ -57,6 +61,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   error: null,
 
   sendMessage: noopSend,
+  appendAssistantMessage: noopAppend,
   startNewChat: noopStart,
 
   setMessages: (msgs) => set({ messages: msgs }),
@@ -65,6 +70,6 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setIsStreaming: (v) => set({ isStreaming: v }),
   setError: (e) => set({ error: e }),
 
-  registerCallbacks: ({ sendMessage, startNewChat }) =>
-    set({ sendMessage, startNewChat }),
+  registerCallbacks: ({ sendMessage, appendAssistantMessage, startNewChat }) =>
+    set({ sendMessage, appendAssistantMessage: appendAssistantMessage ?? noopAppend, startNewChat }),
 }));

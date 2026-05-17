@@ -446,6 +446,29 @@ export default function ChatPane({
   useEffect(() => {
     registerChatCallbacks({
       sendMessage: handleSend,
+      appendAssistantMessage: (message: string) => {
+        const trimmed = message.trim();
+        if (!trimmed) {
+          return;
+        }
+        setStreamingText("");
+        setStreamingStatusText("");
+        setMessages((current) => {
+          const lastMessage = current[current.length - 1];
+          if (lastMessage?.role === "assistant" && lastMessage.content === trimmed) {
+            return current;
+          }
+          return [
+            ...current,
+            {
+              role: "assistant",
+              content: trimmed,
+              answerSource: "answer_markdown",
+              timestamp: new Date().toISOString(),
+            },
+          ];
+        });
+      },
       startNewChat: () => {
         window.location.href = "/dashboard/new";
       },

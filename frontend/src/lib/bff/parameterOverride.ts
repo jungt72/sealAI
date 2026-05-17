@@ -7,6 +7,7 @@ export type AgentOverrideItemRequest = {
 export type AgentOverrideRequest = {
   overrides: AgentOverrideItemRequest[];
   turn_index?: number;
+  run_analysis?: boolean;
 };
 
 export type AgentOverrideResponse = {
@@ -20,6 +21,11 @@ export type AgentOverrideResponse = {
     validity_limits: string[];
     open_validation_points: string[];
   };
+  reply?: string | null;
+  answer_markdown?: string | null;
+  response_class?: string | null;
+  structured_state?: Record<string, unknown> | null;
+  run_meta?: Record<string, unknown> | null;
 };
 
 export async function patchAgentOverrides(

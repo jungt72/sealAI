@@ -61,3 +61,59 @@ async def test_v8_llm_smalltalk_proposal_cannot_override_concrete_case_data(
 
     assert decision.answer_mode == AnswerMode.GOVERNED_INTAKE
     assert decision.mutation_policy == MutationPolicy.PROPOSED
+
+
+def test_v8_deterministic_routes_information_request_as_active_side_question() -> None:
+    decision = CommunicationRuntimeV8().decide_deterministic(
+        ConversationControllerInput(
+            user_message="Bitte gebe mir detaillierte Informationen über PTFE",
+            pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY,
+            pre_gate_confidence=0.55,
+            pre_gate_reason="forced_domain_for_regression",
+            active_case_exists=True,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+
+
+def test_v8_deterministic_routes_context_recall_as_active_process_question() -> None:
+    decision = CommunicationRuntimeV8().decide_deterministic(
+        ConversationControllerInput(
+            user_message="Was wollte ich von dir?",
+            pre_gate_classification=PreGateClassification.META_QUESTION,
+            pre_gate_confidence=0.9,
+            pre_gate_reason="deterministic_meta_question",
+            active_case_exists=True,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_v8_llm_knowledge_proposal_can_rescue_technical_subject_without_case_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def propose(self, payload, deterministic):  # noqa: ANN001
+        return CommunicationRuntimeV8DecisionProposal(
+            intent="knowledge",
+            confidence=0.91,
+            reason="technical subject without operating data",
+        )
+
+    monkeypatch.setattr(CommunicationRuntimeV8, "_llm_decision_proposal", propose)
+    decision = await CommunicationRuntimeV8().decide(
+        ConversationControllerInput(
+            user_message="PTFE",
+            pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY,
+            pre_gate_confidence=0.55,
+            pre_gate_reason="ambiguous_fail_safe_domain_inquiry",
+            active_case_exists=False,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.NO_CASE_KNOWLEDGE
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN

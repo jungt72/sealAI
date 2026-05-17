@@ -61,6 +61,12 @@ def _user() -> RequestUser:
     )
 
 
+@pytest.fixture(autouse=True)
+def _disable_active_case_llm_composers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_ACTIVE_CASE_PROCESS_ANSWER_COMPOSER", "false")
+    monkeypatch.setenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "false")
+
+
 def _pending_medium_question() -> PendingQuestion:
     return PendingQuestion(
         target_field="medium",
@@ -172,6 +178,30 @@ async def test_active_case_social_thanks_uses_light_conversation_not_governed_gr
     assert dispatch.runtime_action.graph_invocation_skipped_reason == (
         "light_runtime_does_not_require_governed_graph"
     )
+    load_state.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_active_case_context_recall_routes_to_process_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="Was wollte ich von dir?", session_id="active-case"),
+        current_user=_user(),
+    )
+
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.governed_state is state
+    assert dispatch.turn_decision is not None
+    assert dispatch.turn_decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_PROCESS
+    assert dispatch.runtime_action.graph_allowed is False
     load_state.assert_awaited_once()
 
 
@@ -848,6 +878,75 @@ async def test_active_case_why_medium_important_side_answer_uses_claim_policy(
     assert trace["evidence_used_in_answer"] is False
     assert trace["runtime_action_type"] == "answer_then_resume"
     assert trace["graph_allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_active_case_side_answer_uses_llm_composer_without_blunt_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Bitte gebe mir detaillierte Informationen ueber PTFE"
+    monkeypatch.setenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "true")
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="v7_active_case_side_question:test",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=pre_gate.classification.value,
+        pre_gate_reason=pre_gate.reasoning,
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    side_answer = KnowledgeResponse(
+        content="PTFE ist ein thermoplastischer Fluorpolymer-Werkstoff.",
+        answer_markdown="PTFE ist ein thermoplastischer Fluorpolymer-Werkstoff.",
+    )
+
+    async def fake_side_composer(**kwargs):  # noqa: ANN003
+        assert kwargs["message"] == message
+        assert "PTFE" in kwargs["grounded_answer"]
+        return (
+            "PTFE ist fuer deinen Kontext vor allem als chemisch sehr bestaendiger, "
+            "nicht elastischer Werkstoff interessant. Ich wuerde ihn im laufenden "
+            "Fall nur als Werkstoffoption betrachten, nicht als Freigabe."
+        )
+
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._compose_active_case_side_answer_with_llm",
+        fake_side_composer,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message=message, session_id="active-case"),
+        current_user=_user(),
+    )
+
+    answer = response.answer_markdown or ""
+    assert "PTFE ist fuer deinen Kontext" in answer
+    assert "Welches Medium soll abgedichtet werden?" not in answer
+    trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["composer_attempted"] is True
+    assert trace["composer_succeeded"] is True
+    assert trace["answer_markdown_source"] == "governed_composer"
 
 
 @pytest.mark.asyncio

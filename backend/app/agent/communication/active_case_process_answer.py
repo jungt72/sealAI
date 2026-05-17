@@ -35,7 +35,7 @@ class ActiveCaseProcessAnswerResult:
 
 
 def is_active_case_process_answer_composer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_ACTIVE_CASE_PROCESS_ANSWER_COMPOSER", "").strip().lower() in _TRUE_VALUES
+    return os.getenv("SEALAI_ENABLE_ACTIVE_CASE_PROCESS_ANSWER_COMPOSER", "true").strip().lower() in _TRUE_VALUES
 
 
 async def build_active_case_process_answer(
@@ -76,7 +76,7 @@ async def build_active_case_process_answer(
     try:
         answer = await asyncio.wait_for(
             _compose_process_answer_with_llm(context=context, deterministic_fallback=fallback),
-            timeout=float(os.getenv("SEALAI_ACTIVE_CASE_PROCESS_ANSWER_TIMEOUT_S", "3.0")),
+            timeout=float(os.getenv("SEALAI_ACTIVE_CASE_PROCESS_ANSWER_TIMEOUT_S", "8.0")),
         )
         return ActiveCaseProcessAnswerResult(
             answer_markdown=answer,
@@ -110,6 +110,7 @@ def _build_process_context(
     resume_decision: ActiveCaseResumeDecision,
 ) -> dict[str, Any]:
     pending = getattr(governed_state, "pending_question", None) if governed_state is not None else None
+    recent_messages = list(getattr(governed_state, "conversation_messages", []) or [])[-8:] if governed_state is not None else []
     assertions = getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
     missing_fields = list(getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", []) or [])
     known_facts = []
@@ -135,6 +136,11 @@ def _build_process_context(
     )
     return {
         "latest_user_message": str(latest_user_message or "").strip(),
+        "recent_messages": [
+            {"role": str(getattr(message, "role", "") or ""), "content": str(getattr(message, "content", "") or "")}
+            for message in recent_messages
+            if str(getattr(message, "content", "") or "").strip()
+        ],
         "known_facts": known_facts,
         "missing_fields": [_field_label(str(field)) for field in missing_fields[:6]],
         "pending_question_text": pending_text,
@@ -160,8 +166,11 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
     slot_answer_detected = bool(context.get("slot_answer_detected"))
     pending_reason = str(context.get("pending_reason") or "").strip()
     known_facts = context.get("known_facts") if isinstance(context.get("known_facts"), list) else []
+    context_recall = _asks_context_recall(message)
 
-    if _asks_why_current_field(message) and pending_reason:
+    if context_recall:
+        intro = _context_recall_intro(context)
+    elif _asks_why_current_field(message) and pending_reason:
         intro = pending_reason
     elif "analyse" in message or "analysis" in message:
         intro = (
@@ -191,7 +200,12 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
         state_line = "Aktuell ist dein Fall noch nicht vollstaendig eingeordnet."
 
     bridge = ""
-    if slot_answer_detected:
+    if context_recall:
+        bridge = (
+            "Ich halte den aktuellen Fallkontext weiter zusammen und trenne dabei "
+            "gesicherte Angaben von offenen Punkten."
+        )
+    elif slot_answer_detected:
         field_label = _field_label(str(context.get("detected_slot_field") or ""))
         value = str(context.get("detected_slot_value") or "").strip()
         bridge = (
@@ -208,7 +222,7 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
         )
 
     follow_up = ""
-    if not slot_answer_detected:
+    if not slot_answer_detected and not context_recall:
         follow_up = pending_question or (
             resume_target_question
             if resume_strategy == "answer_then_reprioritize_next_question"
@@ -228,6 +242,54 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
     )
 
 
+def _asks_context_recall(message: str) -> bool:
+    return any(
+        phrase in message
+        for phrase in (
+            "was wollte ich von dir",
+            "was wollte ich gerade",
+            "was war meine frage",
+            "was war meine anfrage",
+            "worum ging es gerade",
+            "wo waren wir",
+        )
+    )
+
+
+def _context_recall_intro(context: dict[str, Any]) -> str:
+    latest = str(context.get("latest_user_message") or "").strip().casefold()
+    recent = context.get("recent_messages") if isinstance(context.get("recent_messages"), list) else []
+    for item in reversed(recent):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("role") or "") != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content or content.casefold() == latest or _looks_like_social_ack(content):
+            continue
+        return (
+            f"Du hattest mich zuletzt hierzu abgeholt: \"{_truncate(content, 180)}\". "
+            "Ich habe das im laufenden Dichtungsfall als fachliche Frage im Kontext "
+            "deiner Auslegung behandelt."
+        )
+    return (
+        "Wir waren dabei, deine Dichtungssituation fachlich einzuordnen und die "
+        "offenen Angaben fuer eine belastbare Anfragebasis sauber zu klaeren."
+    )
+
+
+def _looks_like_social_ack(message: str) -> bool:
+    normalized = " ".join(message.casefold().split())
+    return normalized.startswith(("danke", "vielen dank", "dankeschoen", "dankeschön"))
+
+
+def _truncate(value: str, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "..."
+
+
 async def _compose_process_answer_with_llm(
     *,
     context: dict[str, Any],
@@ -245,6 +307,8 @@ async def _compose_process_answer_with_llm(
                     "question first, mention the active case state briefly, then follow the "
                     "provided resume_strategy. Do not ask the old pending question when "
                     "slot_answer_detected is true. Ask at most one question. Do not "
+                    "fall back into generic slot intake. If the user asks what they wanted, "
+                    "use recent_messages and active case context to answer that directly. "
                     "claim final suitability, RFQ readiness, compliance approval, or "
                     "manufacturer release. Return JSON with key answer_markdown only."
                 ),

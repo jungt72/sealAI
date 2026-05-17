@@ -29,6 +29,7 @@ const workspaceStoreMock = vi.hoisted(() => ({
 const chatStoreMock = vi.hoisted(() => ({
   activeCaseId: null as string | null,
   sendMessage: vi.fn(),
+  appendAssistantMessage: vi.fn(),
   isStreaming: false,
 }));
 
@@ -71,6 +72,7 @@ vi.mock("@/lib/store/chatStore", () => ({
     selector({
       activeCaseId: chatStoreMock.activeCaseId,
       sendMessage: chatStoreMock.sendMessage,
+      appendAssistantMessage: chatStoreMock.appendAssistantMessage,
       isStreaming: chatStoreMock.isStreaming,
     }),
 }));
@@ -346,6 +348,7 @@ describe("CaseScreen", () => {
     chatStoreMock.activeCaseId = null;
     chatStoreMock.isStreaming = false;
     chatStoreMock.sendMessage.mockReset();
+    chatStoreMock.appendAssistantMessage.mockReset();
     workspaceStoreMock.setWorkspace.mockReset();
     workspaceStoreMock.setWorkspaceLoading.mockReset();
     workspaceStoreMock.setUserParameterOverride.mockReset();
@@ -491,6 +494,20 @@ describe("CaseScreen", () => {
   it("persists prepared parameter intake values into the case file", async () => {
     const user = userEvent.setup();
     workspaceHookState.workspace = workspaceFixture();
+    patchAgentOverridesMock.mockResolvedValueOnce({
+      session_id: "case-42",
+      applied_fields: ["speed_rpm"],
+      governance: {
+        gov_class: "B",
+        rfq_admissible: false,
+        blocking_unknowns: [],
+        conflict_flags: [],
+        validity_limits: [],
+        open_validation_points: [],
+      },
+      answer_markdown: "Ich habe die Angaben eingeordnet und sehe als nächsten Punkt die Gegenlauffläche.",
+      reply: null,
+    });
 
     render(<CaseScreen caseId="case-42" />);
 
@@ -502,7 +519,11 @@ describe("CaseScreen", () => {
 
     await waitFor(() => expect(patchAgentOverridesMock).toHaveBeenCalledWith("case-42", {
       overrides: expect.arrayContaining([{ field_name: "speed_rpm", value: 1450, unit: "rpm" }]),
+      run_analysis: true,
     }));
+    expect(chatStoreMock.appendAssistantMessage).toHaveBeenCalledWith(
+      "Ich habe die Angaben eingeordnet und sehe als nächsten Punkt die Gegenlauffläche.",
+    );
     expect(fetchWorkspaceMock).toHaveBeenCalledWith("case-42");
     expect(workspaceStoreMock.setWorkspace).toHaveBeenCalledWith(expect.objectContaining({ caseId: "case-42" }));
   });

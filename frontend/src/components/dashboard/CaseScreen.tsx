@@ -1605,6 +1605,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
   const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const appendAssistantMessage = useChatStore((state) => state.appendAssistantMessage);
   const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(() => Boolean(canonicalCaseId));
@@ -1766,13 +1767,20 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
       }
       setIsParameterSubmitting(true);
       try {
-        await patchAgentOverrides(canonicalCaseId, { overrides });
+        const result = await patchAgentOverrides(canonicalCaseId, {
+          overrides,
+          run_analysis: true,
+        });
+        const assistantText = (result.answer_markdown || result.reply || "").trim();
+        if (assistantText) {
+          appendAssistantMessage(assistantText);
+        }
         await handleWorkspaceRefresh(canonicalCaseId);
       } finally {
         setIsParameterSubmitting(false);
       }
     },
-    [canonicalCaseId, handleWorkspaceRefresh, sendMessage],
+    [appendAssistantMessage, canonicalCaseId, handleWorkspaceRefresh, sendMessage],
   );
   const handleCaseBound = useCallback(
     (nextCaseId: string) => {

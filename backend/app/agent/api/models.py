@@ -9,9 +9,6 @@ from app.agent.runtime.user_facing_reply import (
     assemble_user_facing_reply,
     derive_public_response_class,
 )
-from app.agent.state.models import ConfidenceLevel
-
-
 BindingLevel = Literal["KNOWLEDGE", "ORIENTATION", "CALCULATION", "QUALIFIED_PRESELECTION", "RFQ_BASIS"]
 # Legacy -> blueprint v1.1 outward class mapping:
 # - legacy "guidance" + "_response"          -> conversational_answer
@@ -58,6 +55,10 @@ class OverrideRequest(BaseModel):
 
     overrides: list[OverrideItem] = Field(..., min_length=1)
     turn_index: int = Field(default=0, ge=0, description="Current turn number")
+    run_analysis: bool = Field(
+        default=False,
+        description="When true, recompute the governed graph after applying overrides.",
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -89,6 +90,11 @@ class OverrideResponse(BaseModel):
     session_id: str
     applied_fields: list[str]
     governance: OverrideGovernanceResult
+    reply: Optional[str] = None
+    answer_markdown: Optional[str] = None
+    response_class: Optional[str] = None
+    structured_state: Optional[Dict[str, Any]] = None
+    run_meta: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="forbid")
 
