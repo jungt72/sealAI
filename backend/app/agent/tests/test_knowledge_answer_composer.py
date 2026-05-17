@@ -586,6 +586,50 @@ async def test_composer_rejects_unscoped_material_suitability_claim(
 
 
 @pytest.mark.asyncio
+async def test_composer_rejects_unscoped_eignung_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="bitte gebe mir detaillierte informationen zu NBR",
+        deterministic_answer=KnowledgeService(
+            factcard_store=_FactcardStore([]),
+            llm_research_fallback_enabled=False,
+        ).answer("bitte gebe mir detaillierte informationen zu NBR").content,
+    )
+
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            class Message:
+                content = (
+                    '{"answer_markdown":"### NBR\\n\\n- **Gute Eignung für**: '
+                    'Mineralöle und Fette. Das ist technische Orientierung.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    with pytest.raises(KnowledgeAnswerComposerError, match="unsafe_material_suitability_label"):
+        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+
+@pytest.mark.asyncio
 async def test_material_comparison_answer_markdown_does_not_use_cockpit_placeholders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

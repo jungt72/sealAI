@@ -221,14 +221,24 @@ _MATERIAL_CLAIM_RE = re.compile(
     + r")\b[^.\n]{0,180}\b(?:ist\s+(?:gut\s+)?geeignet|geeignet\s+ist)\b",
     re.IGNORECASE | re.UNICODE,
 )
+_UNSCOPED_SUITABILITY_LABEL_RE = re.compile(
+    r"\b(?:gute|sehr\s+gute|breite|klare|typische)\s+eignung\s+für\b",
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 def _reject_unscoped_material_suitability_claim(answer_markdown: str) -> None:
-    for match in _MATERIAL_CLAIM_RE.finditer(str(answer_markdown or "")):
-        window = str(answer_markdown or "")[max(0, match.start() - 60) : match.end()].casefold()
+    answer = str(answer_markdown or "")
+    for match in _MATERIAL_CLAIM_RE.finditer(answer):
+        window = answer[max(0, match.start() - 60) : match.end()].casefold()
         if "nicht geeignet" in window or "nicht automatisch geeignet" in window:
             continue
         raise KnowledgeAnswerComposerError("unsafe_material_suitability_claim")
+    for match in _UNSCOPED_SUITABILITY_LABEL_RE.finditer(answer):
+        window = answer[max(0, match.start() - 40) : match.end()].casefold()
+        if "keine" in window or "nicht" in window:
+            continue
+        raise KnowledgeAnswerComposerError("unsafe_material_suitability_label")
 
 
 def _compact_from_deterministic_answer(deterministic_answer: str) -> str:
@@ -241,7 +251,7 @@ def _compact_from_deterministic_answer(deterministic_answer: str) -> str:
     bullets = _extract_orientation_bullets(text)
     selected_bullets = [bullet for bullet in bullets if bullet][:2]
     closing = (
-        "Für eine konkrete Eignung brauche ich Medium, Temperatur und "
+        "Für eine konkrete Einschätzung brauche ich Medium, Temperatur und "
         "Betriebsart; Herstellerprüfung bleibt erforderlich. Das ist "
         "technische Orientierung, keine technische Freigabe."
     )
@@ -290,7 +300,7 @@ Communication requirements:
 - Use natural German, with a careful senior sealing-engineer tone.
 - Prefer structured markdown for comparisons when useful: short summary, compact table, practical implications, limits/assumptions, and one focused next question.
 - For simple definition questions about one material such as "Was ist NBR?", answer compactly: direct definition, 1-3 practical orientation points, and only one short caveat. Avoid generic section boilerplate such as "Limitierungen/Annahmen" unless the user asks for a deeper assessment.
-- Prefer wording such as "wird geprüft", "wird betrachtet", "ist naheliegend zu prüfen" or "kann ein Kandidat sein". Do not write that a material "ist geeignet" or "für ... geeignet ist" in this knowledge path.
+- Prefer wording such as "wird geprüft", "wird betrachtet", "ist naheliegend zu prüfen" or "kann ein Kandidat sein". Do not write that a material "ist geeignet", "für ... geeignet ist" or has "gute Eignung für" in this knowledge path.
 - Ask at most one focused follow-up question.
 - Do not force the answer into technical case intake.
 - Do not use "Noch kein technischer Fall" as the main answer.
