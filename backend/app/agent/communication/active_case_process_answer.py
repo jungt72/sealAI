@@ -136,6 +136,7 @@ def _build_process_context(
     )
     return {
         "latest_user_message": str(latest_user_message or "").strip(),
+        "context_recall": _asks_context_recall(str(latest_user_message or "").casefold()),
         "recent_messages": [
             {"role": str(getattr(message, "role", "") or ""), "content": str(getattr(message, "content", "") or "")}
             for message in recent_messages
@@ -350,6 +351,10 @@ async def _compose_process_answer_with_llm(
         repeated_question = str(context.get("resume_target_question") or "").strip()
         if repeated_question and repeated_question in answer:
             raise ValueError("slot_answer_detected_but_pending_question_repeated")
+    if context.get("context_recall"):
+        repeated_question = str(context.get("resume_target_question") or "").strip()
+        if repeated_question and repeated_question.casefold() in answer.casefold():
+            raise ValueError("context_recall_but_pending_question_repeated")
     return answer
 
 

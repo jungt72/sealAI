@@ -591,6 +591,14 @@ async def _compose_active_case_side_answer_with_llm(
     safe, category = check_fast_path_output(answer)
     if not safe:
         raise ValueError(f"unsafe_active_case_side_answer:{category}")
+    resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    target_question = str(resume_trace.get("resume_target_question") or "").strip()
+    target_field = str(resume_trace.get("resume_target_field") or "").strip()
+    answer_lower = answer.casefold()
+    if target_question and target_question.casefold() in answer_lower:
+        raise ValueError("side_answer_repeated_pending_question")
+    if target_field == "medium" and "welches medium" in answer_lower:
+        raise ValueError("side_answer_rephrased_pending_medium_question")
     return answer
 
 
