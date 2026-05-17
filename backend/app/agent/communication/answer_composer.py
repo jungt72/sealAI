@@ -10,7 +10,7 @@ from app.agent.communication.templates import render_communication_template
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
 from app.llm.registry import get_registry_default_model_for_role
-from app.services.knowledge.material_comparison import extract_material_ids
+from app.services.knowledge.material_comparison import extract_material_ids, supported_material_ids
 
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 
@@ -200,6 +200,8 @@ def enforce_requested_subject_fidelity(
     if first_materials and first_materials[0] != requested:
         raise KnowledgeAnswerComposerError("requested_subject_drift")
 
+    _reject_unscoped_material_suitability_claim(answer)
+
     return output
 
 
@@ -211,6 +213,22 @@ def _single_requested_material(request: KnowledgeAnswerComposerInput) -> str | N
     if len(fallback) == 1:
         return fallback[0]
     return None
+
+
+_MATERIAL_CLAIM_RE = re.compile(
+    r"\b(?:"
+    + "|".join(re.escape(material_id) for material_id in supported_material_ids())
+    + r")\b[^.\n]{0,180}\b(?:ist\s+(?:gut\s+)?geeignet|geeignet\s+ist)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _reject_unscoped_material_suitability_claim(answer_markdown: str) -> None:
+    for match in _MATERIAL_CLAIM_RE.finditer(str(answer_markdown or "")):
+        window = str(answer_markdown or "")[max(0, match.start() - 60) : match.end()].casefold()
+        if "nicht geeignet" in window or "nicht automatisch geeignet" in window:
+            continue
+        raise KnowledgeAnswerComposerError("unsafe_material_suitability_claim")
 
 
 def _compact_from_deterministic_answer(deterministic_answer: str) -> str:
@@ -272,6 +290,7 @@ Communication requirements:
 - Use natural German, with a careful senior sealing-engineer tone.
 - Prefer structured markdown for comparisons when useful: short summary, compact table, practical implications, limits/assumptions, and one focused next question.
 - For simple definition questions about one material such as "Was ist NBR?", answer compactly: direct definition, 1-3 practical orientation points, and only one short caveat. Avoid generic section boilerplate such as "Limitierungen/Annahmen" unless the user asks for a deeper assessment.
+- Prefer wording such as "wird geprüft", "wird betrachtet", "ist naheliegend zu prüfen" or "kann ein Kandidat sein". Do not write that a material "ist geeignet" or "für ... geeignet ist" in this knowledge path.
 - Ask at most one focused follow-up question.
 - Do not force the answer into technical case intake.
 - Do not use "Noch kein technischer Fall" as the main answer.
