@@ -117,6 +117,13 @@ done
 
 docker exec backend sh -lc "curl -fsS http://127.0.0.1:8000/health"
 
+echo ">> Reloading nginx to refresh backend upstream"
+if docker ps --format '{{.Names}}' | grep -qx nginx; then
+  docker exec nginx nginx -s reload
+else
+  echo ">> nginx container not running; skipping reload"
+fi
+
 if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
   echo ">> Running live pilot readiness smoke"
   BASE_URL="${BASE_URL:-https://sealingai.com}" ./ops/smoke-live-pilot-readiness.sh
