@@ -4,9 +4,10 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.agent.communication.templates import render_communication_template
+from app.agent.communication.v7_contracts import TurnDecision
 from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding
 from app.agent.state.models import GovernedSessionState, PendingQuestion, SlotAnswerBinding
-from app.agent.communication.v7_contracts import TurnDecision
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +214,15 @@ def _pending_question_text(pending: PendingQuestion | None) -> str:
 
 
 def _question_for_field(field: str) -> str:
+    field = str(field or "").strip()
+    return render_communication_template(
+        "active_case_pending_question",
+        {"field": field},
+        fallback=_fallback_question_for_field(field),
+    )
+
+
+def _fallback_question_for_field(field: str) -> str:
     if field == "medium":
         return "Welches Medium soll abgedichtet werden?"
     if field == "temperature_c":

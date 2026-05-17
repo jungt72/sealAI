@@ -24,6 +24,7 @@ function loadEnvFile(filePath) {
 
 const productionEnvPath = path.resolve(__dirname, "..", ".env.prod");
 const productionEnv = loadEnvFile(productionEnvPath);
+const frontendBindHost = productionEnv.FRONTEND_BIND_HOST || "172.17.0.1";
 
 module.exports = {
   apps: [
@@ -39,6 +40,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: 3000,
+        HOST: frontendBindHost,
+        HOSTNAME: frontendBindHost,
         AUTH_TRUST_HOST: productionEnv.AUTH_TRUST_HOST,
         AUTH_URL: productionEnv.AUTH_URL,
         AUTH_SECRET: productionEnv.AUTH_SECRET,

@@ -35,7 +35,7 @@ const FIELD_LABELS: Record<string, string> = {
   pump: "Pumpe",
   radial_shaft_seal: "Radialwellendichtring",
   readiness: "Anfrage-Reife",
-  rfq_preparable_with_open_points: "RFQ mit offenen Punkten vorbereitbar",
+  rfq_preparable_with_open_points: "Anfrageentwurf mit offenen Punkten prüfbar",
   rotary: "rotierend",
   rotary_shaft: "rotierende Welle",
   rwdr: "RWDR",
@@ -212,7 +212,7 @@ export function humanizeDisplayText(value: unknown): string {
     .replace(/\bshaft surface\b/gi, "Gegenlauffläche")
     .replace(/\binstallation direction\b/gi, "Einbaurichtung")
     .replace(/\bpressure interpretation\b/gi, "Druckangabe")
-    .replace(/\brfq preparable with open points\b/gi, "RFQ mit offenen Punkten vorbereitbar")
+    .replace(/\brfq preparable with open points\b/gi, "Anfrageentwurf mit offenen Punkten prüfbar")
     .replace(/\btechnical direction plausible\b/gi, "Richtung ist plausibel")
     .replace(/\bkeine finale technische freigabe\b/gi, "keine Auslegungsfreigabe")
     .replace(/\bfinale technische freigabe\b/gi, "Auslegungsfreigabe");

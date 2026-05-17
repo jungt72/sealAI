@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import RuntimeActionType
 
 
@@ -216,11 +217,15 @@ def build_rfq_readiness_answer(
     action_type = _runtime_action_type(intent=intent, active_case_exists=active_case_exists, has_missing=bool(missing_fields))
 
     if not active_case_exists:
-        answer = (
-            "Ich kann eine Anfragebasis oder RFQ-Basis vorbereiten, aber dafuer brauche ich zuerst "
-            "einen qualifizierten Dichtungsfall. Ohne Fall, Revision und technische Eckdaten erstelle "
-            "ich keine Herstelleranfrage und sende nichts extern.\n\n"
-            "Der sichere naechste Schritt ist die Qualifikation: Um welche Dichtung oder Anwendung geht es?"
+        answer = render_communication_template(
+            "rfq_readiness_answer",
+            {"mode": "no_active_case"},
+            fallback=(
+                "Ich kann eine Anfragebasis oder RFQ-Basis vorbereiten, aber dafuer brauche ich zuerst "
+                "einen qualifizierten Dichtungsfall. Ohne Fall, Revision und technische Eckdaten erstelle "
+                "ich keine Herstelleranfrage und sende nichts extern.\n\n"
+                "Der sichere naechste Schritt ist die Qualifikation: Um welche Dichtung oder Anwendung geht es?"
+            ),
         )
     elif intent.asks_external_contact:
         answer = _active_contact_answer(
@@ -348,21 +353,32 @@ def _active_readiness_answer(
     rfq_ready: bool,
 ) -> str:
     if rfq_ready and not missing_fields:
-        return (
-            "Deine Anfragebasis wirkt aus dem aktuellen governed State grundsaetzlich fuer eine "
-            "Herstellerpruefung vorbereitet. Das ist keine technische Endentscheidung und kein "
-            "automatischer Herstellerentscheid; vor externem Teilen braucht es weiterhin den geregelten "
-            "RFQ-/Consent-Schritt.\n\n"
-            "Ich sende nichts automatisch an Hersteller."
+        return render_communication_template(
+            "rfq_readiness_answer",
+            {"mode": "readiness_ready"},
+            fallback=(
+                "Deine Anfragebasis wirkt aus dem aktuellen governed State grundsaetzlich fuer eine "
+                "Herstellerpruefung vorbereitet. Das ist keine technische Endentscheidung und kein "
+                "automatischer Herstellerentscheid; vor externem Teilen braucht es weiterhin den geregelten "
+                "RFQ-/Consent-Schritt.\n\n"
+                "Ich sende nichts automatisch an Hersteller."
+            ),
         )
     open_points = _open_points_text(missing_fields)
-    resume = f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question else ""
-    return (
-        "Die Anfragebasis ist fuer eine Herstellerpruefung noch nicht vollstaendig genug. "
-        "Ich kann den RFQ-Status nur aus dem vorhandenen governed State ableiten und erfinde keine "
-        f"fehlenden Werte.\n\nOffene Punkte: {open_points}.\n\n"
-        "Das ist eine RFQ-Basis fuer die Klaerung mit einem Hersteller oder Spezialisten, keine technische Endentscheidung."
-        f"{resume}"
+    return render_communication_template(
+        "rfq_readiness_answer",
+        {
+            "mode": "readiness_open",
+            "open_points": open_points,
+            "pending_question": pending_question,
+        },
+        fallback=(
+            "Die Anfragebasis ist fuer eine Herstellerpruefung noch nicht vollstaendig genug. "
+            "Ich kann den RFQ-Status nur aus dem vorhandenen governed State ableiten und erfinde keine "
+            f"fehlenden Werte.\n\nOffene Punkte: {open_points}.\n\n"
+            "Das ist eine RFQ-Basis fuer die Klaerung mit einem Hersteller oder Spezialisten, keine technische Endentscheidung."
+            + (f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question else "")
+        ),
     )
 
 
@@ -375,23 +391,35 @@ def _active_build_answer(
 ) -> str:
     artifact = "PDF-/RFQ-Vorschau" if preview_requested else "Anfragebasis"
     if rfq_ready and not missing_fields:
-        return (
-            f"Ich kann die {artifact} als manufacturer-review-ready RFQ-Basis vorbereiten, "
-            "aber die dauerhafte Anfragevorschau entsteht erst ueber die explizite Aktion "
-            "'Anfragevorschau vorbereiten'. Das Teilen oder Exportieren laeuft danach ueber den "
-            "geregelten Preview- und Consent-Fluss. "
-            "Ich sende nichts automatisch extern und treffe keine technische Endentscheidung."
+        return render_communication_template(
+            "rfq_readiness_answer",
+            {"mode": "build_ready", "artifact": artifact},
+            fallback=(
+                f"Ich kann die {artifact} als prueffaehigen Anfrageentwurf vorbereiten, "
+                "aber die dauerhafte Anfragevorschau entsteht erst ueber die explizite Aktion "
+                "'Anfragevorschau vorbereiten'. Das Teilen oder Exportieren laeuft danach ueber den "
+                "geregelten Preview- und Consent-Fluss. "
+                "Ich sende nichts automatisch extern und treffe keine technische Endentscheidung."
+            ),
         )
     open_points = _open_points_text(missing_fields)
-    resume = f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question else ""
-    return (
-        f"Ich kann daraus eine {artifact} vorbereiten, aber im aktuellen Fall fehlen noch Angaben "
-        f"fuer eine belastbare Herstellerpruefung. Offene Punkte: {open_points}.\n\n"
-        "Sobald die Pflichtangaben im governed Fall sauber vorliegen, kann daraus eine RFQ-Basis fuer "
-        "die Herstellerpruefung entstehen. Die dauerhafte Anfragevorschau wird ueber die explizite "
-        "Aktion 'Anfragevorschau vorbereiten' erstellt. Das ist keine technische Endentscheidung "
-        "und kein automatischer Versand."
-        f"{resume}"
+    return render_communication_template(
+        "rfq_readiness_answer",
+        {
+            "mode": "build_open",
+            "artifact": artifact,
+            "open_points": open_points,
+            "pending_question": pending_question,
+        },
+        fallback=(
+            f"Ich kann daraus eine {artifact} vorbereiten, aber im aktuellen Fall fehlen noch Angaben "
+            f"fuer eine belastbare Herstellerpruefung. Offene Punkte: {open_points}.\n\n"
+            "Sobald die Pflichtangaben im governed Fall sauber vorliegen, kann daraus eine RFQ-Basis fuer "
+            "die Herstellerpruefung entstehen. Die dauerhafte Anfragevorschau wird ueber die explizite "
+            "Aktion 'Anfragevorschau vorbereiten' erstellt. Das ist keine technische Endentscheidung "
+            "und kein automatischer Versand."
+            + (f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question else "")
+        ),
     )
 
 
@@ -404,21 +432,34 @@ def _active_contact_answer(
 ) -> str:
     open_points = _open_points_text(missing_fields)
     status = (
-        "Die Anfragebasis wirkt im aktuellen State vorbereitet"
+        "Die Anfragebasis wirkt im aktuellen Arbeitsstand vorbereitet"
         if rfq_ready and not missing_fields
         else f"Die Anfragebasis ist noch nicht vollstaendig; offene Punkte: {open_points}"
     )
-    resume = f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question and missing_fields else ""
     dispatch_note = (
         "Ein Versand ist trotzdem nur nach expliziter Zustimmung und ueber den geregelten Dispatch-Fluss erlaubt."
         if dispatch_ready
         else "Ein Versand an Hersteller ist hier nicht erlaubt; dafuer braucht es bestaetigte Daten, explizite Zustimmung und den geregelten Dispatch-Fluss."
     )
-    return (
-        f"{status}. {dispatch_note}\n\n"
-        "Ich kann die Anfragebasis fuer eine Herstellerpruefung vorbereiten und offene Punkte sichtbar machen, "
-        "aber ich kontaktiere keinen Hersteller automatisch und treffe keine technische Endentscheidung."
-        f"{resume}"
+    return render_communication_template(
+        "rfq_readiness_answer",
+        {
+            "mode": "contact",
+            "status": status,
+            "dispatch_note": dispatch_note,
+            "pending_question": pending_question,
+            "has_missing": bool(missing_fields),
+        },
+        fallback=(
+            f"{status}. {dispatch_note}\n\n"
+            "Ich kann die Anfragebasis fuer eine Herstellerpruefung vorbereiten und offene Punkte sichtbar machen, "
+            "aber ich kontaktiere keinen Hersteller automatisch und treffe keine technische Endentscheidung."
+            + (
+                f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}"
+                if pending_question and missing_fields
+                else ""
+            )
+        ),
     )
 
 

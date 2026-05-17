@@ -11,6 +11,7 @@ from app.agent.communication.active_case_resume import (
     ActiveCaseResumeDecision,
     reevaluate_active_case_resume,
 )
+from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import TurnDecision
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.agent.state.models import GovernedSessionState, PendingQuestion
@@ -214,8 +215,17 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
             else ""
         )
 
-    parts = [intro, state_line, bridge, follow_up]
-    return "\n\n".join(part for part in parts if str(part).strip())
+    fallback = "\n\n".join(part for part in (intro, state_line, bridge, follow_up) if str(part).strip())
+    return render_communication_template(
+        "active_case_process_answer",
+        {
+            "intro": intro,
+            "state_line": state_line,
+            "bridge": bridge,
+            "follow_up": follow_up,
+        },
+        fallback=fallback,
+    )
 
 
 async def _compose_process_answer_with_llm(
@@ -227,14 +237,17 @@ async def _compose_process_answer_with_llm(
     messages = [
         {
             "role": "system",
-            "content": (
-                "You write concise German process/help answers for an active SealAI "
-                "sealing case. Use only the provided context. Answer the latest user "
-                "question first, mention the active case state briefly, then follow the "
-                "provided resume_strategy. Do not ask the old pending question when "
-                "slot_answer_detected is true. Ask at most one question. Do not "
-                "claim final suitability, RFQ readiness, compliance approval, or "
-                "manufacturer release. Return JSON with key answer_markdown only."
+            "content": render_communication_template(
+                "active_case_process_system",
+                fallback=(
+                    "You write concise German process/help answers for an active SealAI "
+                    "sealing case. Use only the provided context. Answer the latest user "
+                    "question first, mention the active case state briefly, then follow the "
+                    "provided resume_strategy. Do not ask the old pending question when "
+                    "slot_answer_detected is true. Ask at most one question. Do not "
+                    "claim final suitability, RFQ readiness, compliance approval, or "
+                    "manufacturer release. Return JSON with key answer_markdown only."
+                ),
             ),
         },
         {
@@ -283,35 +296,49 @@ def _pending_question_text(pending: PendingQuestion | None) -> str:
     if explicit:
         return explicit
     target = str(getattr(pending, "target_field", "") or "").strip()
-    if target == "medium":
-        return "Welches Medium soll abgedichtet werden?"
-    if target == "temperature_c":
-        return "Welche Betriebstemperatur liegt an?"
-    if target == "pressure_bar":
-        return "Wie hoch ist der Betriebsdruck?"
-    return "Welche Angabe klaeren wir als Naechstes?"
+    return render_communication_template(
+        "active_case_pending_question",
+        {"field": target},
+        fallback=_fallback_question_for_field(target),
+    )
 
 
 def _pending_reason(field: str) -> str:
     if field == "medium":
-        return (
-            "Der naechste sinnvolle Hebel ist das Medium, weil es Werkstoffauswahl, "
-            "Bestaendigkeit und Risikobewertung stark beeinflusst."
+        return render_communication_template(
+            "active_case_pending_reason",
+            {"field": field, "label": _field_label(field)},
+            fallback=(
+                "Der naechste sinnvolle Hebel ist das Medium, weil es Werkstoffauswahl, "
+                "Bestaendigkeit und Risikobewertung stark beeinflusst."
+            ),
         )
     if field == "temperature_c":
-        return (
-            "Die Temperatur ist wichtig, weil sie Werkstoffverhalten, Alterung und "
-            "Einsatzgrenzen der Dichtung stark beeinflusst."
+        return render_communication_template(
+            "active_case_pending_reason",
+            {"field": field, "label": _field_label(field)},
+            fallback=(
+                "Die Temperatur ist wichtig, weil sie Werkstoffverhalten, Alterung und "
+                "Einsatzgrenzen der Dichtung stark beeinflusst."
+            ),
         )
     if field == "pressure_bar":
-        return (
-            "Der Druck ist wichtig, weil er Belastung, Verformung, Extrusionsrisiko "
-            "und die passende Dichtungsbauart beeinflusst."
+        return render_communication_template(
+            "active_case_pending_reason",
+            {"field": field, "label": _field_label(field)},
+            fallback=(
+                "Der Druck ist wichtig, weil er Belastung, Verformung, Extrusionsrisiko "
+                "und die passende Dichtungsbauart beeinflusst."
+            ),
         )
     if field:
-        return (
-            f"{_field_label(field)} ist jetzt wichtig, weil diese Angabe den Fall "
-            "technisch weiter eingrenzt."
+        return render_communication_template(
+            "active_case_pending_reason",
+            {"field": field, "label": _field_label(field)},
+            fallback=(
+                f"{_field_label(field)} ist jetzt wichtig, weil diese Angabe den Fall "
+                "technisch weiter eingrenzt."
+            ),
         )
     return ""
 
@@ -328,6 +355,20 @@ def _field_label(field: str) -> str:
         "installation": "Einbausituation",
     }
     return labels.get(field, field.replace("_", " ").strip() or "offene Angabe")
+
+
+def _fallback_question_for_field(field: str) -> str:
+    if field == "medium":
+        return "Welches Medium soll abgedichtet werden?"
+    if field == "temperature_c":
+        return "Welche Betriebstemperatur liegt an?"
+    if field == "pressure_bar":
+        return "Wie hoch ist der Betriebsdruck?"
+    if field == "sealing_type":
+        return "Um welchen Dichtungstyp geht es?"
+    if field == "motion_type":
+        return "Welche Bewegung liegt an?"
+    return "Welche Angabe klaeren wir als Naechstes?"
 
 
 def _asks_why_current_field(message: str) -> bool:

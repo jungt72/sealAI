@@ -1,0 +1,11 @@
+{% if kind == "medium" -%}
+Was kommt an der Dichtstelle genau an, inklusive Konzentration, Additiven oder Reinigungsmedien?
+{%- elif kind == "sealing_principle" -%}
+Wo sitzt die Leckage genau und welches Dichtprinzip ist dort verbaut, zum Beispiel RWDR, Gleitringdichtung, O-Ring oder Flachdichtung?
+{%- elif kind == "pressure" -%}
+Welcher Druck liegt direkt an der Dichtstelle an?
+{%- elif kind == "temperature" -%}
+In welchem Temperaturbereich arbeitet die Dichtstelle?
+{%- else -%}
+{{ question }}
+{%- endif %}

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 import types
+import importlib.util
 from pathlib import Path
 from typing import Any
 from dataclasses import dataclass, field
@@ -120,9 +121,12 @@ if "python_multipart" not in sys.modules:
     sys.modules["python_multipart"] = python_multipart_stub
 
 
-if "jinja2" not in sys.modules:
+if "jinja2" not in sys.modules and importlib.util.find_spec("jinja2") is None:
 
     class _TemplateNotFound(Exception):
+        pass
+
+    class _UndefinedError(Exception):
         pass
 
     class _Template:
@@ -153,6 +157,7 @@ if "jinja2" not in sys.modules:
     jinja2_stub.FileSystemLoader = _FileSystemLoader
     jinja2_stub.StrictUndefined = object
     jinja2_stub.TemplateNotFound = _TemplateNotFound
+    jinja2_stub.UndefinedError = _UndefinedError
     sys.modules["jinja2"] = jinja2_stub
 
 
@@ -315,9 +320,19 @@ if "langchain_core" not in sys.modules:
                 restored.append(_AIMessage(content))
         return restored
 
+    class _BaseLoader:
+        def load(self) -> list[Any]:
+            return []
+
+    class _BaseBlobParser:
+        def lazy_parse(self, _blob: Any) -> list[Any]:
+            return []
+
     langchain_core_stub = types.ModuleType("langchain_core")
+    langchain_core_stub.__path__ = []
     langchain_messages_stub = types.ModuleType("langchain_core.messages")
     langchain_documents_stub = types.ModuleType("langchain_core.documents")
+    langchain_document_loaders_stub = types.ModuleType("langchain_core.document_loaders")
     langchain_schema_stub = types.ModuleType("langchain_core.schema")
     langchain_tools_stub = types.ModuleType("langchain_core.tools")
 
@@ -331,6 +346,8 @@ if "langchain_core" not in sys.modules:
     langchain_messages_stub.messages_from_dict = _messages_from_dict
 
     langchain_documents_stub.Document = _Document
+    langchain_document_loaders_stub.BaseLoader = _BaseLoader
+    langchain_document_loaders_stub.BaseBlobParser = _BaseBlobParser
     langchain_schema_stub.Document = _Document
 
     langchain_tools_stub.BaseTool = _BaseTool
@@ -339,14 +356,34 @@ if "langchain_core" not in sys.modules:
 
     langchain_core_stub.messages = langchain_messages_stub
     langchain_core_stub.documents = langchain_documents_stub
+    langchain_core_stub.document_loaders = langchain_document_loaders_stub
     langchain_core_stub.schema = langchain_schema_stub
     langchain_core_stub.tools = langchain_tools_stub
 
     sys.modules["langchain_core"] = langchain_core_stub
     sys.modules["langchain_core.messages"] = langchain_messages_stub
     sys.modules["langchain_core.documents"] = langchain_documents_stub
+    sys.modules["langchain_core.document_loaders"] = langchain_document_loaders_stub
     sys.modules["langchain_core.schema"] = langchain_schema_stub
     sys.modules["langchain_core.tools"] = langchain_tools_stub
+
+
+if "langchain_community" not in sys.modules:
+
+    class _Docx2txtLoader:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+        def load(self) -> list[Any]:
+            return []
+
+    langchain_community_stub = types.ModuleType("langchain_community")
+    langchain_community_stub.__path__ = []
+    langchain_community_loaders_stub = types.ModuleType("langchain_community.document_loaders")
+    langchain_community_loaders_stub.Docx2txtLoader = _Docx2txtLoader
+    langchain_community_stub.document_loaders = langchain_community_loaders_stub
+    sys.modules["langchain_community"] = langchain_community_stub
+    sys.modules["langchain_community.document_loaders"] = langchain_community_loaders_stub
 
 
 if "langgraph" not in sys.modules:
@@ -695,6 +732,12 @@ if "redis" not in sys.modules:
         def from_url(cls, *_args: Any, **_kwargs: Any) -> "_AsyncRedis":
             return cls()
 
+        async def __aenter__(self) -> "_AsyncRedis":
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            await self.aclose()
+
         async def get(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
@@ -705,6 +748,9 @@ if "redis" not in sys.modules:
             return 1
 
         async def expire(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+        async def delete(self, *_args: Any, **_kwargs: Any) -> None:
             return None
 
         async def ping(self) -> bool:

@@ -12,6 +12,7 @@ from app.agent.communication.models import (
     ConversationMode,
     LLMResponseContract,
 )
+from app.agent.communication.templates import render_communication_template
 from app.observability.langsmith import traceable, wrap_openai_client
 
 
@@ -90,7 +91,7 @@ class OpenAIHumanCommunicationLLMService:
 
 
 def build_human_communication_system_prompt() -> str:
-    return """You are SealAI's Human Communication Layer.
+    fallback = """You are SealAI's Human Communication Layer.
 
 You communicate like a careful, helpful senior sealing-technology engineer. Your job is to make the backend's technical state understandable to the user.
 
@@ -125,6 +126,7 @@ If critical data is missing, ask for the most important missing fields.
 If the user asks for a final decision and the backend does not provide one, explain what is still needed and state that final approval must come from the responsible manufacturer, engineering authority, or qualified expert.
 
 Return only valid JSON matching the required response contract."""
+    return render_communication_template("human_communication_system", fallback=fallback)
 
 
 def _response_schema() -> dict[str, Any]:

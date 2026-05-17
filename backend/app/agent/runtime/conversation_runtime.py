@@ -32,6 +32,7 @@ from typing import Any, AsyncGenerator, Literal
 
 import openai
 
+from app.agent.communication.templates import render_communication_template
 from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
 from app.agent.runtime.clarification_priority import select_next_focus_from_known_context
@@ -205,17 +206,20 @@ def _build_messages(
         msgs.append(
             {
                 "role": "system",
-                "content": (
-                    "STRICT SMALL-TALK TURN:\n"
-                    "- Antworte nur auf die Begruessung oder die Frage, wie es dir geht.\n"
-                    "- Antworte frei, warm, menschlich und natuerlich in 1 bis 3 kurzen Saetzen.\n"
-                    "- Du darfst locker und umgangssprachlich antworten, zum Beispiel sinngemaess, dass es dir gut geht und du gern hilfst.\n"
-                    "- Keine erzwungene KI-Disclaimer-Formulierung."
-                    "- Sprich den Nutzer mit du an, nicht mit Sie.\n"
-                    "- Keine technischen Rueckfragen.\n"
-                    "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
-                    "- Keine Fallanlage und keine Checkliste.\n"
-                    "- Optional: Frage locker, wobei du heute helfen kannst."
+                "content": render_communication_template(
+                    "conversation_smalltalk_system",
+                    fallback=(
+                        "STRICT SMALL-TALK TURN:\n"
+                        "- Antworte nur auf die Begruessung oder die Frage, wie es dir geht.\n"
+                        "- Antworte frei, warm, menschlich und natuerlich in 1 bis 3 kurzen Saetzen.\n"
+                        "- Du darfst locker und umgangssprachlich antworten, zum Beispiel sinngemaess, dass es dir gut geht und du gern hilfst.\n"
+                        "- Keine erzwungene KI-Disclaimer-Formulierung."
+                        "- Sprich den Nutzer mit du an, nicht mit Sie.\n"
+                        "- Keine technischen Rueckfragen.\n"
+                        "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
+                        "- Keine Fallanlage und keine Checkliste.\n"
+                        "- Optional: Frage locker, wobei du heute helfen kannst."
+                    ),
                 ),
             }
         )
@@ -410,7 +414,10 @@ def _trim_smalltalk_technical_capture(reply: str, *, message: str, mode: Convers
     ]
     if kept:
         return _normalize_smalltalk_address(" ".join(kept[:3]).strip())
-    return "Mir geht es gut, danke. Ich bin da, wenn du mit einer Dichtungsfrage starten willst."
+    return render_communication_template(
+        "smalltalk_trim_fallback",
+        fallback="Mir geht es gut, danke. Ich bin da, wenn du mit einer Dichtungsfrage starten willst.",
+    )
 
 
 def _normalize_smalltalk_address(reply: str) -> str:
@@ -777,7 +784,13 @@ async def iter_conversation_events(
 
     except Exception as exc:
         log.error("[conversation_runtime] LLM stream error: %s: %s", type(exc).__name__, exc)
-        yield {"type": "error", "message": "Momentan nicht verfügbar — bitte erneut versuchen."}
+        yield {
+            "type": "error",
+            "message": render_communication_template(
+                "generic_unavailable",
+                fallback="Momentan nicht verfügbar — bitte erneut versuchen.",
+            ),
+        }
         return
 
     full_text = "".join(accumulated)

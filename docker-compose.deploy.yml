@@ -102,7 +102,8 @@ services:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: ${BACKEND_PULL_POLICY:-always}
     env_file:
-    - ./.env.prod
+    - path: ./.env.prod
+      required: false
     volumes:
     - backend-data:/app/data
   frontend:
@@ -155,7 +156,8 @@ services:
     image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: ${KEYCLOAK_PULL_POLICY:-always}
     env_file:
-    - ./.env.prod
+    - path: ./.env.prod
+      required: false
   nginx:
     image: nginx:1.29.4
     container_name: nginx

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.agent.communication.knowledge_context_builder import KnowledgeAnswerContext
+from app.agent.communication.templates import render_communication_template
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
 from app.llm.registry import get_registry_default_model_for_role
@@ -218,7 +219,7 @@ def _single_line(value: str) -> str:
 
 
 def _system_prompt() -> str:
-    return """You are SeaLAI's no-case knowledge answer composer.
+    fallback = """You are SeaLAI's no-case knowledge answer composer.
 
 Scope:
 - Compose only the final chat answer for general sealing-technology knowledge questions.
@@ -246,6 +247,7 @@ Technical safety:
 - If application details are required for a final recommendation, answer generally first, then ask one focused follow-up question.
 
 Return only JSON matching the schema."""
+    return render_communication_template("knowledge_answer_composer_system", fallback=fallback)
 
 
 def _response_format() -> dict[str, Any]:

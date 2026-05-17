@@ -51,6 +51,7 @@ from app.agent.communication.active_case_side_claim_policy import (
     enrich_active_case_side_answer_with_evidence,
     enforce_active_case_side_claim_policy,
 )
+from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import (
     RuntimeAction,
     RuntimeActionType,
@@ -140,9 +141,12 @@ def _with_runtime_action_trace(
 
 
 def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[str, Any]:
-    reply = (
-        "Ich kann diesen Schritt gerade nicht sicher in den geregelten Fallfluss geben. "
-        "Bitte formuliere die naechste technische Angabe oder Frage noch einmal."
+    reply = render_communication_template(
+        "runtime_action_blocked",
+        fallback=(
+            "Ich kann diesen Schritt gerade nicht sicher in den geregelten Fallfluss geben. "
+            "Bitte formuliere die naechste technische Angabe oder Frage noch einmal."
+        ),
     )
     trace = build_answer_trace(
         reply_source="runtime_action_guard",
@@ -420,23 +424,39 @@ def _side_answer_trace(
 def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
     base = str(answer_markdown or "").strip()
     if not base:
-        base = "Ich beantworte die Nebenfrage allgemein und ohne technische Freigabe."
+        return render_communication_template(
+            "side_answer_resume",
+            {"mode": "empty_base", "base": ""},
+            fallback="Ich beantworte die Nebenfrage allgemein und ohne technische Freigabe.",
+        )
 
     if bool(getattr(resume_decision, "slot_answer_detected", False)):
         detected_value = str(getattr(resume_decision, "detected_slot_value", "") or "").strip()
         detected_field = str(getattr(resume_decision, "detected_slot_field", "") or "").strip()
         if detected_value and detected_field == "medium":
-            return (
+            return render_communication_template(
+                "side_answer_resume",
+                {
+                    "mode": "medium_candidate",
+                    "base": base,
+                    "detected_value": detected_value,
+                },
+                fallback=(
+                    f"{base}\n\n"
+                    f"Ich habe {detected_value} als moegliche Angabe zum Medium erkannt. "
+                    "Die technische Uebernahme laeuft nicht ueber diese Erklaerung, "
+                    "sondern ueber den geregelten Fallfluss."
+                ),
+            )
+        return render_communication_template(
+            "side_answer_resume",
+            {"mode": "technical_candidate", "base": base},
+            fallback=(
                 f"{base}\n\n"
-                f"Ich habe {detected_value} als moegliche Angabe zum Medium erkannt. "
-                "Die technische Uebernahme laeuft nicht ueber diese Erklaerung, "
-                "sondern ueber den geregelten Fallfluss."
-            ).strip()
-        return (
-            f"{base}\n\n"
-            "Ich habe in deiner Nachricht eine moegliche technische Angabe erkannt. "
-            "Die Erklaerung selbst bestaetigt diesen Wert nicht als technische Wahrheit."
-        ).strip()
+                "Ich habe in deiner Nachricht eine moegliche technische Angabe erkannt. "
+                "Die Erklaerung selbst bestaetigt diesen Wert nicht als technische Wahrheit."
+            ),
+        )
 
     target_question = str(getattr(resume_decision, "resume_target_question", "") or "").strip()
     next_action = str(getattr(resume_decision, "next_runtime_action", "") or "")
@@ -445,7 +465,15 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
         "ask_reprioritized_question",
     }:
         if target_question.casefold() not in base.casefold():
-            return f"{base}\n\n{target_question}".strip()
+            return render_communication_template(
+                "side_answer_resume",
+                {
+                    "mode": "resume_question",
+                    "base": base,
+                    "target_question": target_question,
+                },
+                fallback=f"{base}\n\n{target_question}",
+            )
     return base
 
 

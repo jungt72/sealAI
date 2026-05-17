@@ -551,7 +551,7 @@ function RfqReadinessPanel({
   }
 
   const status = readiness.rfq_basis_ready || readiness.manufacturer_review_ready
-    ? "Anfragebasis vorbereitbar"
+    ? "Anfrageentwurf prüfbar"
     : "Anfragebasis offen";
   const previewStatus =
     readiness.preview_action_available && readiness.preview_possible
@@ -577,8 +577,8 @@ function RfqReadinessPanel({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <MetaTile label="Herstellerprüfung" value={readiness.manufacturer_review_ready ? "vorbereitbar" : "noch offen"} />
-        <MetaTile label="RFQ-Basis" value={readiness.rfq_basis_ready ? "vorbereitbar" : "noch offen"} />
+        <MetaTile label="Herstellerprüfung" value={readiness.manufacturer_review_ready ? "prüfbar vorbereitet" : "noch offen"} />
+        <MetaTile label="Anfrageentwurf" value={readiness.rfq_basis_ready ? "prüfbar vorbereitet" : "noch offen"} />
         <MetaTile label="Fallstand" value={expectedCaseRevision !== null ? expectedCaseRevision : "nicht geliefert"} />
       </div>
 

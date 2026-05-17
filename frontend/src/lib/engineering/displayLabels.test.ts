@@ -7,7 +7,7 @@ describe("humanizeDisplayText", () => {
     expect(humanizeDisplayText("static or dynamic")).toBe("statisch oder dynamisch");
     expect(humanizeDisplayText("shaft surface")).toBe("Gegenlauffläche");
     expect(humanizeDisplayText("installation direction")).toBe("Einbaurichtung");
-    expect(humanizeDisplayText("rfq preparable with open points")).toBe("RFQ mit offenen Punkten vorbereitbar");
+    expect(humanizeDisplayText("rfq preparable with open points")).toBe("Anfrageentwurf mit offenen Punkten prüfbar");
     expect(humanizeDisplayText("radial shaft seal · rotary shaft")).toBe("Radialwellendichtring · rotierende Welle");
   });
 

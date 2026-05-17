@@ -14,6 +14,7 @@ from app.agent.communication.side_question_detection import (
     classify_message_as_knowledge_side_question,
     contains_concrete_case_marker,
 )
+from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import AnswerMode, TurnDecision
 from app.domain.pre_gate_classification import PreGateClassification
 
@@ -120,13 +121,16 @@ class CommunicationRuntimeV8(ConversationControllerV7):
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You are SeaLAI Communication Runtime V8. Classify the "
-                            "latest user turn only. Return JSON with keys intent, "
-                            "confidence, reason. Do not answer the user. Do not set "
-                            "engineering truth. Valid intents: smalltalk, meta, "
-                            "knowledge, active_case_side_question, governed_intake, "
-                            "blocked, unclear."
+                        "content": render_communication_template(
+                            "communication_runtime_v8_system",
+                            fallback=(
+                                "You are SeaLAI Communication Runtime V8. Classify the "
+                                "latest user turn only. Return JSON with keys intent, "
+                                "confidence, reason. Do not answer the user. Do not set "
+                                "engineering truth. Valid intents: smalltalk, meta, "
+                                "knowledge, active_case_side_question, governed_intake, "
+                                "blocked, unclear."
+                            ),
                         ),
                     },
                     {

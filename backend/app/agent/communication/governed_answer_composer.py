@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator, Literal
 
 from app.agent.communication.governed_answer_context import GovernedAnswerContext
 from app.agent.communication.context import human_label
+from app.agent.communication.templates import render_communication_template
 from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.agent.v91.final_answer_guard import validate_v91_final_answer
@@ -553,14 +554,22 @@ def _human_intake_orientation(latest_user_message: str | None) -> str:
         "ruehrwerk",
     )
     if any(marker in text for marker in problem_markers):
-        return (
-            "Verstanden, eine Leckage würde ich zuerst als Fallbild sauber eingrenzen, "
-            "damit wir Ursache, Betriebsbedingungen und Dichtprinzip nicht vermischen."
+        return render_communication_template(
+            "governed_human_intake_orientation",
+            {"mode": "leakage"},
+            fallback=(
+                "Verstanden, eine Leckage würde ich zuerst als Fallbild sauber eingrenzen, "
+                "damit wir Ursache, Betriebsbedingungen und Dichtprinzip nicht vermischen."
+            ),
         )
     if any(marker in text for marker in goal_markers):
-        return (
-            "Verstanden, wir grenzen die Anwendung Schritt für Schritt ein und halten nur "
-            "belastbare Angaben als Arbeitsstand fest."
+        return render_communication_template(
+            "governed_human_intake_orientation",
+            {"mode": "goal"},
+            fallback=(
+                "Verstanden, wir grenzen die Anwendung Schritt für Schritt ein und halten nur "
+                "belastbare Angaben als Arbeitsstand fest."
+            ),
         )
     return ""
 
@@ -569,20 +578,40 @@ def _humanize_intake_question(question: str) -> str:
     text = str(question or "").strip()
     lowered = text.casefold()
     if "medium" in lowered and "welches medium" in lowered:
-        return (
-            "Was kommt an der Dichtstelle genau an, inklusive Konzentration, "
-            "Additiven oder Reinigungsmedien?"
+        return render_communication_template(
+            "governed_humanize_intake_question",
+            {"kind": "medium", "question": text},
+            fallback=(
+                "Was kommt an der Dichtstelle genau an, inklusive Konzentration, "
+                "Additiven oder Reinigungsmedien?"
+            ),
         )
     if "dichtungstyp" in lowered or "dichtprinzip" in lowered:
-        return (
-            "Wo sitzt die Leckage genau und welches Dichtprinzip ist dort verbaut, "
-            "zum Beispiel RWDR, Gleitringdichtung, O-Ring oder Flachdichtung?"
+        return render_communication_template(
+            "governed_humanize_intake_question",
+            {"kind": "sealing_principle", "question": text},
+            fallback=(
+                "Wo sitzt die Leckage genau und welches Dichtprinzip ist dort verbaut, "
+                "zum Beispiel RWDR, Gleitringdichtung, O-Ring oder Flachdichtung?"
+            ),
         )
     if "druck" in lowered:
-        return "Welcher Druck liegt direkt an der Dichtstelle an?"
+        return render_communication_template(
+            "governed_humanize_intake_question",
+            {"kind": "pressure", "question": text},
+            fallback="Welcher Druck liegt direkt an der Dichtstelle an?",
+        )
     if "temperatur" in lowered:
-        return "In welchem Temperaturbereich arbeitet die Dichtstelle?"
-    return text
+        return render_communication_template(
+            "governed_humanize_intake_question",
+            {"kind": "temperature", "question": text},
+            fallback="In welchem Temperaturbereich arbeitet die Dichtstelle?",
+        )
+    return render_communication_template(
+        "governed_humanize_intake_question",
+        {"kind": "default", "question": text},
+        fallback=text,
+    )
 
 
 def _technical_orientation_for_user_task(latest_user_message: str | None) -> str:
@@ -620,52 +649,86 @@ def _technical_orientation_for_user_task(latest_user_message: str | None) -> str
         ("rwdr" in text or "wellendichtring" in text or "radialwellendichtring" in text)
         and any(marker in text for marker in ("leckt", "leckage", "ursachen", "systematisch"))
     ):
-        return (
-            "Bei früher Leckage an einem RWDR würde ich nicht zuerst den Werkstoff allein "
-            "bewerten, sondern das Schadbild systematisch trennen. Typische Ursachencluster "
-            "sind Gegenlauffläche, Laufspur, Rundlauf, Montage, Dichtlippe, Schmierung, "
-            "Druck direkt an der Dichtstelle, Temperatur, Mediumverträglichkeit und "
-            "Verschmutzung. Das ist eine technische Orientierung, keine Freigabe."
+        return render_communication_template(
+            "governed_technical_orientation",
+            {"mode": "rwdr_leakage"},
+            fallback=(
+                "Bei früher Leckage an einem RWDR würde ich nicht zuerst den Werkstoff allein "
+                "bewerten, sondern das Schadbild systematisch trennen. Typische Ursachencluster "
+                "sind Gegenlauffläche, Laufspur, Rundlauf, Montage, Dichtlippe, Schmierung, "
+                "Druck direkt an der Dichtstelle, Temperatur, Mediumverträglichkeit und "
+                "Verschmutzung. Das ist eine technische Orientierung, keine Freigabe."
+            ),
         )
     if {"ptfe", "fkm", "epdm", "nbr", "hnbr"}.intersection(set(re.findall(r"\b[a-z0-9]+\b", text))):
         if ("hydraulik" in text or "hlp" in text or "öl" in text or "oel" in text) and "epdm" in text:
-            return (
-                "Bei mineralöl- oder hydraulikölnahen Medien ist EPDM eher ein Warnpunkt, "
-                "während NBR, HNBR oder FKM je nach Temperatur, Bauform und Compound eher "
-                "als Prüfhypothesen betrachtet werden. Das ist eine Vororientierung, keine "
-                "Werkstofffreigabe."
+            return render_communication_template(
+                "governed_technical_orientation",
+                {"mode": "hydraulic_epdm"},
+                fallback=(
+                    "Bei mineralöl- oder hydraulikölnahen Medien ist EPDM eher ein Warnpunkt, "
+                    "während NBR, HNBR oder FKM je nach Temperatur, Bauform und Compound eher "
+                    "als Prüfhypothesen betrachtet werden. Das ist eine Vororientierung, keine "
+                    "Werkstofffreigabe."
+                ),
             )
-        return (
-            "Bei diesem Werkstoffvergleich sind Medium, Temperatur, Dichtungstyp, Vorspannung, "
-            "Geometrie und Kontaktzeit die Haupttreiber. Das ist eine Vororientierung, keine "
-            "Werkstofffreigabe."
+        return render_communication_template(
+            "governed_technical_orientation",
+            {"mode": "material_comparison"},
+            fallback=(
+                "Bei diesem Werkstoffvergleich sind Medium, Temperatur, Dichtungstyp, Vorspannung, "
+                "Geometrie und Kontaktzeit die Haupttreiber. Das ist eine Vororientierung, keine "
+                "Werkstofffreigabe."
+            ),
         )
     if "rwdr" in text or "wellendichtring" in text or "radialwellendichtring" in text:
-        return (
-            "Technisch kritisch sind bei einem RWDR vor allem Druck direkt an der Dichtlippe, "
-            "Umfangsgeschwindigkeit, Reibwärme, Schmierung, Gegenlauffläche, Rundlauf und "
-            "Medium-/Temperaturbelastung. Das ist eine technische Orientierung, keine Freigabe."
+        return render_communication_template(
+            "governed_technical_orientation",
+            {"mode": "rwdr_general"},
+            fallback=(
+                "Technisch kritisch sind bei einem RWDR vor allem Druck direkt an der Dichtlippe, "
+                "Umfangsgeschwindigkeit, Reibwärme, Schmierung, Gegenlauffläche, Rundlauf und "
+                "Medium-/Temperaturbelastung. Das ist eine technische Orientierung, keine Freigabe."
+            ),
         )
-    return (
-        "Technisch relevant sind zuerst Medium, Temperaturprofil, Druck direkt an der Dichtstelle, "
-        "Bewegung, Geometrie und Nachweise. Das ist eine Vororientierung, keine Freigabe."
+    return render_communication_template(
+        "governed_technical_orientation",
+        {"mode": "general"},
+        fallback=(
+            "Technisch relevant sind zuerst Medium, Temperaturprofil, Druck direkt an der Dichtstelle, "
+            "Bewegung, Geometrie und Nachweise. Das ist eine Vororientierung, keine Freigabe."
+        ),
     )
 
 
 def _join_orientation_and_question(orientation: str, question: str) -> str:
     clean_orientation = str(orientation or "").strip()
     clean_question = str(question or "").strip()
-    if clean_orientation and clean_question:
-        return f"{clean_orientation}\n\nDie wichtigste Rückfrage ist: {clean_question}"
-    return clean_question or clean_orientation
+    fallback = (
+        f"{clean_orientation}\n\nDie wichtigste Rückfrage ist: {clean_question}"
+        if clean_orientation and clean_question
+        else clean_question or clean_orientation
+    )
+    return render_communication_template(
+        "governed_orientation_question_join",
+        {"orientation": clean_orientation, "question": clean_question},
+        fallback=fallback,
+    )
 
 
 def _join_intake_orientation_and_question(orientation: str, question: str) -> str:
     clean_orientation = str(orientation or "").strip()
     clean_question = str(question or "").strip()
-    if clean_orientation and clean_question:
-        return f"{clean_orientation}\n\nDafür muss ich zuerst wissen: {clean_question}"
-    return clean_question or clean_orientation
+    fallback = (
+        f"{clean_orientation}\n\nDafür muss ich zuerst wissen: {clean_question}"
+        if clean_orientation and clean_question
+        else clean_question or clean_orientation
+    )
+    return render_communication_template(
+        "governed_intake_question_join",
+        {"orientation": clean_orientation, "question": clean_question},
+        fallback=fallback,
+    )
 
 
 def _display_value(value: Any) -> str:
@@ -691,18 +754,34 @@ def _question_for_missing_fields(missing_fields: list[str]) -> str:
     for key in normalized:
         lowered = key.casefold()
         if "pressure" in lowered or "druck" in lowered:
-            return "Welcher Druck liegt direkt an der Dichtstelle an?"
+            return render_communication_template(
+                "governed_missing_field_question",
+                {"kind": "pressure"},
+                fallback="Welcher Druck liegt direkt an der Dichtstelle an?",
+            )
         if "temperature" in lowered or "temperatur" in lowered:
-            return "In welchem Temperaturbereich arbeitet die Dichtstelle?"
+            return render_communication_template(
+                "governed_missing_field_question",
+                {"kind": "temperature"},
+                fallback="In welchem Temperaturbereich arbeitet die Dichtstelle?",
+            )
         if "sealing_type" in lowered or "dichtungstyp" in lowered or "dichtprinzip" in lowered:
-            return (
-                "Um welches Dichtprinzip geht es, zum Beispiel O-Ring, Wellendichtring, "
-                "Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
+            return render_communication_template(
+                "governed_missing_field_question",
+                {"kind": "sealing_principle"},
+                fallback=(
+                    "Um welches Dichtprinzip geht es, zum Beispiel O-Ring, Wellendichtring, "
+                    "Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
+                ),
             )
         if "asset" in lowered or "anlage" in lowered or "pump" in lowered or "aggregate" in lowered:
-            return (
-                "Wo sitzt die Dichtung genau, zum Beispiel an Pumpe, Welle, Flansch, "
-                "Zylinder oder Behälter?"
+            return render_communication_template(
+                "governed_missing_field_question",
+                {"kind": "asset"},
+                fallback=(
+                    "Wo sitzt die Dichtung genau, zum Beispiel an Pumpe, Welle, Flansch, "
+                    "Zylinder oder Behälter?"
+                ),
             )
     return ""
 

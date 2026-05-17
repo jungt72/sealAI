@@ -1,0 +1,11 @@
+{% if mode == "rwdr_leakage" -%}
+Bei früher Leckage an einem RWDR würde ich nicht zuerst den Werkstoff allein bewerten, sondern das Schadbild systematisch trennen. Typische Ursachencluster sind Gegenlauffläche, Laufspur, Rundlauf, Montage, Dichtlippe, Schmierung, Druck direkt an der Dichtstelle, Temperatur, Mediumverträglichkeit und Verschmutzung. Das ist eine technische Orientierung, keine Freigabe.
+{%- elif mode == "hydraulic_epdm" -%}
+Bei mineralöl- oder hydraulikölnahen Medien ist EPDM eher ein Warnpunkt, während NBR, HNBR oder FKM je nach Temperatur, Bauform und Compound eher als Prüfhypothesen betrachtet werden. Das ist eine Vororientierung, keine Werkstofffreigabe.
+{%- elif mode == "material_comparison" -%}
+Bei diesem Werkstoffvergleich sind Medium, Temperatur, Dichtungstyp, Vorspannung, Geometrie und Kontaktzeit die Haupttreiber. Das ist eine Vororientierung, keine Werkstofffreigabe.
+{%- elif mode == "rwdr_general" -%}
+Technisch kritisch sind bei einem RWDR vor allem Druck direkt an der Dichtlippe, Umfangsgeschwindigkeit, Reibwärme, Schmierung, Gegenlauffläche, Rundlauf und Medium-/Temperaturbelastung. Das ist eine technische Orientierung, keine Freigabe.
+{%- elif mode == "general" -%}
+Technisch relevant sind zuerst Medium, Temperaturprofil, Druck direkt an der Dichtstelle, Bewegung, Geometrie und Nachweise. Das ist eine Vororientierung, keine Freigabe.
+{%- endif %}

@@ -23,6 +23,7 @@ awk -F= '
     wanted["AUTH_TRUST_HOST"] = 1
     wanted["KEYCLOAK_ISSUER"] = 1
     wanted["SEALAI_BACKEND_ORIGIN"] = 1
+    wanted["FRONTEND_BIND_HOST"] = 1
   }
   /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
   {
@@ -64,8 +65,17 @@ echo ">> Flushing old logs"
 pm2 flush sealai-frontend
 
 echo ">> Waiting for frontend health"
+FRONTEND_HEALTH_HOST="${FRONTEND_BIND_HOST:-$(awk -F= '
+  $1 == "FRONTEND_BIND_HOST" {
+    value = $2
+    sub(/^[[:space:]]+/, "", value)
+    sub(/[[:space:]]+$/, "", value)
+    print value
+  }
+' "${REPO_ROOT}/.env.prod" | tail -n 1)}"
+FRONTEND_HEALTH_HOST="${FRONTEND_HEALTH_HOST:-172.17.0.1}"
 for i in {1..20}; do
-  if curl -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then
+  if curl -fsS "http://${FRONTEND_HEALTH_HOST}:3000" >/dev/null 2>&1; then
     echo ">> Frontend healthy"
     break
   fi

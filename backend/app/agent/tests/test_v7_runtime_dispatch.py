@@ -428,7 +428,7 @@ async def test_active_case_rfq_readiness_question_answers_open_points_without_gr
 
     answer = response.answer_markdown or ""
     assert "Anfragebasis" in answer
-    assert "Herstellerpruefung" in answer
+    assert "Herstellerprüfung" in answer or "Herstellerpruefung" in answer
     assert "Offene Punkte" in answer
     assert "Medium" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
@@ -525,7 +525,7 @@ async def test_active_case_create_inquiry_deferred_until_fields_and_consent(
 
     answer = response.answer_markdown or ""
     assert "Anfragebasis" in answer
-    assert "Herstellerpruefung" in answer
+    assert "Herstellerprüfung" in answer or "Herstellerpruefung" in answer
     assert "kein automatischer Versand" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
     projection = response.rfq_readiness_projection or {}

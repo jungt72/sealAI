@@ -1,0 +1,9 @@
+{% if orientation and question -%}
+{{ orientation }}
+
+Dafür muss ich zuerst wissen: {{ question }}
+{%- elif question -%}
+{{ question }}
+{%- else -%}
+{{ orientation }}
+{%- endif %}

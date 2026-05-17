@@ -39,6 +39,11 @@ def _ensure_stubs() -> None:
         _Base = _orm.declarative_base()
         _db_stub.Base = _Base  # type: ignore[attr-defined]
         _db_stub.AsyncSessionLocal = None  # type: ignore[attr-defined]
+
+        async def _get_db():  # type: ignore[no-untyped-def]
+            yield None
+
+        _db_stub.get_db = _get_db  # type: ignore[attr-defined]
         sys.modules["app.database"] = _db_stub
 
     _Base = sys.modules["app.database"].Base  # type: ignore[attr-defined]
