@@ -46,14 +46,14 @@ _ENABLE_CONVERSATION_RUNTIME: bool = (
     os.environ.get("SEALAI_ENABLE_CONVERSATION_RUNTIME", "true").lower() == "true"
 )
 _FORCE_LLM_FAST_RESPONDER: bool = (
-    os.environ.get("SEALAI_FORCE_LLM_FAST_RESPONDER", "false").lower()
+    os.environ.get("SEALAI_FORCE_LLM_FAST_RESPONDER", "true").lower()
     in {"1", "true", "yes", "on"}
 )
 
 
 def _knowledge_answer_composer_enabled() -> bool:
     return os.environ.get(
-        "SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false"
+        "SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true"
     ).lower() in {
         "1",
         "true",

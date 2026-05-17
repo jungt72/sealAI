@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 import pytest
@@ -107,11 +108,27 @@ def test_knowledge_service_answers_single_material_from_profile(material: str) -
     )
 
 
+def test_knowledge_service_builds_rich_ptfe_grounding_for_broad_questions() -> None:
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([]),
+        llm_research_fallback_enabled=False,
+    ).answer("was kannst du mir über PTFE sagen?")
+
+    assert len(response.content) > 2500
+    assert "PTFE in der Dichtungstechnik" in response.content
+    assert "Kaltfluss" in response.content
+    assert "Gegenlauffläche" in response.content
+    assert "Füllstoff" in response.content
+    assert "Herstellerdaten" in response.content
+    assert "keine Freigabe" in response.content
+    assert "Welches Medium soll abgedichtet werden" not in response.content
+
+
 @pytest.mark.asyncio
 async def test_knowledge_answer_composer_disabled_keeps_deterministic_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false")
     _block_case_mutation(monkeypatch)
 
     async def fail_compose(*_args, **_kwargs):
@@ -697,6 +714,82 @@ async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
     assert completions.repair_payload_seen is True
     assert "gut geeignet" not in result.answer_markdown
     assert "naheliegende Prüfrichtung" in result.answer_markdown
+
+
+@pytest.mark.asyncio
+async def test_composer_repairs_shallow_ptfe_overview_with_second_llm_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="was kannst du mir über PTFE sagen?",
+        deterministic_answer=KnowledgeService(
+            factcard_store=_FactcardStore([]),
+            llm_research_fallback_enabled=False,
+        ).answer("was kannst du mir über PTFE sagen?").content,
+    )
+
+    rich_answer = "\n\n".join(
+        [
+            "## PTFE in der Dichtungstechnik\nPTFE ist ein Fluorpolymer und kein elastischer Gummiwerkstoff. In der Dichtungstechnik wird es betrachtet, wenn Chemie, Temperatur oder Reibung die Auslegung prägen.",
+            "### Praktische Stärken\n- Chemische Orientierung: Medien, Konzentration, Additive und Reinigungsmedien müssen konkret geprüft werden.\n- Temperatur: Sorte, Füllstoff, Last, Wärmeabfuhr und Herstellerdaten begrenzen das nutzbare Fenster.\n- Reibung und Gleiten: PTFE kann bei dynamischen Dichtungen helfen, wenn Gegenlauf, Schmierung und PV-Belastung passen.",
+            "### Kritische Grenzen\n- Kaltfluss und Kriechen können Vorspannung und Dichtkraft reduzieren.\n- Die geringe Rückstellung verlangt ein sauberes Geometrie-, Feder- oder Energizer-Konzept.\n- Gegenlauffläche, Rauheit, Härte, Exzentrizität und Welle entscheiden bei PTFE-Lippen oft über Verschleiß.",
+            "### Füllstoffe und Anwendungen\nGefüllte PTFE-Typen mit Glas, Carbon, Graphit, Bronze oder PEEK verändern Verschleiß, Wärmeleitung, Druckfestigkeit und Gegenflächenbelastung. Typische Rollen sind PTFE-RWDR, federunterstützte Dichtungen, Ventilsitze, Führungen und Chemie-/Pharma-/Food-Systeme, wenn Nachweise vorliegen.",
+            "### Einordnung\nPTFE allein ist keine Produktspezifikation und keine Herstellerfreigabe. Für eine konkrete Einschätzung brauche ich Medium, Temperaturprofil, Druck, Bewegung, Geometrie, Gegenlauffläche und geforderte Nachweise.",
+        ]
+    )
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def create(self, **_kwargs):
+            self.calls += 1
+            answer = (
+                "PTFE ist ein Fluorpolymer mit guter chemischer und thermischer Orientierung. "
+                "Das ist allgemeine Orientierung, keine Freigabe."
+            )
+            if self.calls > 1:
+                answer = rich_answer
+
+            class Message:
+                content = json.dumps(
+                    {"answer_markdown": answer, "confidence_note": None},
+                    ensure_ascii=False,
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    completions = FakeCompletions()
+
+    class FakeChat:
+        pass
+
+    FakeChat.completions = completions
+
+    class FakeClient:
+        pass
+
+    FakeClient.chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+    assert completions.calls == 2
+    assert len(result.answer_markdown) > 900
+    assert "Kaltfluss" in result.answer_markdown
+    assert "Gegenlauffläche" in result.answer_markdown
+    assert "Füllstoffe" in result.answer_markdown
+    assert "Herstellerfreigabe" in result.answer_markdown
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -389,7 +389,7 @@ async def _run_structured_output_contract(
 
 @pytest.mark.asyncio
 async def test_feature_flag_disabled_does_not_call_composer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
     async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not be called while disabled")
@@ -408,7 +408,7 @@ async def test_feature_flag_disabled_does_not_call_composer(monkeypatch: pytest.
 
 @pytest.mark.asyncio
 async def test_feature_flag_disabled_humanizes_first_leakage_intake(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
     async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not be called while disabled")
@@ -781,7 +781,7 @@ async def test_structured_clarification_output_contract_uses_composer_for_visibl
 async def test_structured_clarification_composer_disabled_uses_contextual_markdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
     async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not run in full graph while disabled")

@@ -65,7 +65,8 @@ class TestBuildMessages:
     def test_system_prompt_first(self):
         msgs = _build_messages("Hallo", history=None)
         assert msgs[0]["role"] == "system"
-        assert "primary_question" in msgs[0]["content"]
+        assert "ruhiger, erfahrener Dichtungstechnik-Ingenieur" in msgs[0]["content"]
+        assert "primary_question" not in msgs[0]["content"]
 
     def test_user_message_last(self):
         msgs = _build_messages("Was ist FKM?", history=None)
@@ -393,17 +394,18 @@ class _FakeStream:
             yield chunk
 
 
-def _patch_openai(chunks: list[str]):
-    """Return a context manager that patches OpenAI with the given text chunks."""
+def _patch_openai(chunks: list[str], *, model: str = "gpt-4o-mini"):
+    """Return a context manager that patches the conversation LLM with text chunks."""
     fake_stream = _FakeStream(_make_stream_chunks(chunks))
     fake_responses_stream = _FakeStream(_make_responses_stream_chunks(chunks))
     mock_client = MagicMock()
     # create() is now called with `await` — AsyncMock makes the return value awaitable.
     mock_client.chat.completions.create = AsyncMock(return_value=fake_stream)
     mock_client.responses.create = AsyncMock(return_value=fake_responses_stream)
-    mock_openai = MagicMock()
-    mock_openai.AsyncOpenAI.return_value = mock_client
-    return patch("app.agent.runtime.conversation_runtime.openai", mock_openai)
+    return patch(
+        "app.agent.runtime.conversation_runtime.get_async_llm",
+        return_value=(mock_client, model),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +442,7 @@ def _parse_events(events: list[str]) -> list[dict]:
 class TestStreamConversation:
     @pytest.mark.asyncio
     async def test_direct_reply_fast_path_skips_openai_stream_and_emits_state_update(self):
-        with patch("app.agent.runtime.conversation_runtime.openai.AsyncOpenAI") as mock_openai:
+        with patch("app.agent.runtime.conversation_runtime.get_async_llm") as mock_get_llm:
             events = await _collect(
                 stream_conversation(
                     "Danke",
@@ -448,7 +450,7 @@ class TestStreamConversation:
                     mode="CONVERSATION",
                 )
             )
-        mock_openai.assert_not_called()
+        mock_get_llm.assert_not_called()
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"]
@@ -593,12 +595,9 @@ class TestStreamConversation:
         mock_client.chat.completions.create = AsyncMock(
             side_effect=AssertionError("gpt-5 conversation must not use chat completions")
         )
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai), patch(
-            "app.agent.runtime.conversation_runtime._CONVERSATION_MODEL",
-            "gpt-5-nano",
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-5-nano"),
         ):
             events = await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
 
@@ -648,10 +647,10 @@ class TestStreamConversation:
             return _FakeStream(_make_stream_chunks(["Hallo."]))
 
         mock_client.chat.completions.create.side_effect = _capture_create
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
 
         joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
@@ -667,16 +666,16 @@ class TestStreamConversation:
             return _FakeStream(_make_stream_chunks(["Verstanden."]))
 
         mock_client.chat.completions.create.side_effect = _capture_create
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             await _collect(stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION"))
 
         joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
         assert "Relevanter offener Fokus" in joined
-        assert joined.count("In welcher Situation zeigt sich die Leckage oder das Problem am deutlichsten?") == 1
-        assert joined.count("Der sichtbarste Auftretensmoment macht die naechste Eingrenzung am belastbarsten.") == 1
+        assert joined.count("In welcher Situation zeigt sich die Leckage oder das Problem am deutlichsten") == 1
+        assert joined.count("Offene Punkte:") == 1
         assert "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz" not in joined
 
     @pytest.mark.asyncio
@@ -739,10 +738,10 @@ class TestStreamConversation:
         """LLM exception → error SSE event + [DONE], no crash."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = ConnectionError("network down")
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             events = await _collect(stream_conversation("Test"))
 
         parsed = _parse_events(events)
@@ -755,10 +754,10 @@ class TestStreamConversation:
         """On LLM error, boundary block is NOT appended (no partial output)."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = TimeoutError("timeout")
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             events = await _collect(stream_conversation("Test"))
 
         parsed = _parse_events(events)
@@ -791,14 +790,14 @@ class TestStreamConversation:
             return _FakeStream(["OK"])
 
         mock_client.chat.completions.create.side_effect = _capture_create
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
         history = [
             {"role": "user", "content": "Hallo"},
             {"role": "assistant", "content": "Guten Tag!"},
         ]
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             await _collect(stream_conversation("Was ist NBR?", history=history))
 
         contents = [m["content"] for m in captured_messages]
@@ -816,10 +815,10 @@ class TestStreamConversation:
         fake_stream = _FakeStream(chunks)
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = fake_stream
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             events = await _collect(stream_conversation("Was ist FKM?"))
 
         parsed = _parse_events(events)
@@ -857,12 +856,15 @@ class TestConversationParity:
     async def test_run_conversation_returns_same_error_text_as_stream(self):
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = TimeoutError("timeout")
-        mock_openai = MagicMock()
-        mock_openai.AsyncOpenAI.return_value = mock_client
-
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             result = await run_conversation("Test")
-        with patch("app.agent.runtime.conversation_runtime.openai", mock_openai):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm",
+            return_value=(mock_client, "gpt-4o-mini"),
+        ):
             events = await _collect(stream_conversation("Test"))
 
         parsed = _parse_events(events)

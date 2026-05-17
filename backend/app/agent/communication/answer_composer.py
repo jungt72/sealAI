@@ -45,7 +45,7 @@ class KnowledgeAnswerComposerError(ValueError):
 class KnowledgeAnswerComposer:
     """Read-only final answer composer for no-case knowledge answers."""
 
-    def __init__(self, *, temperature: float = 0.3, max_tokens: int = 1000) -> None:
+    def __init__(self, *, temperature: float = 0.35, max_tokens: int = 1800) -> None:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
@@ -92,6 +92,7 @@ class KnowledgeAnswerComposer:
         raw_content = response.choices[0].message.content
         output = parse_knowledge_answer_composer_output(raw_content)
         output = enforce_requested_subject_fidelity(request, output)
+        output = enforce_material_overview_depth(request, output)
         output = compact_simple_definition_answer(request, output)
         return enforce_requested_subject_fidelity(request, output)
 
@@ -149,7 +150,10 @@ def build_knowledge_answer_repair_messages(
             "authoritative. Avoid final suitability wording, especially 'ist "
             "geeignet', 'geeignet ist', 'gut geeignet' and 'gute Eignung fuer'. "
             "Use cautious wording such as 'wird geprueft', 'wird betrachtet', "
-            "'naheliegend zu pruefen' or 'kann ein Kandidat sein'."
+            "'naheliegend zu pruefen' or 'kann ein Kandidat sein'. If the "
+            "rejected reason is material_overview_too_shallow, expand the answer "
+            "with practical sealing-engineering depth instead of returning a "
+            "glossary card."
         ),
         "rejected_reason": rejected_reason,
     }
@@ -166,6 +170,7 @@ def _should_retry_visible_answer(exc: KnowledgeAnswerComposerError) -> bool:
             "unsafe_answer_markdown",
             "unsafe_material_suitability",
             "requested_subject_",
+            "material_overview_too_shallow",
         )
     )
 
@@ -196,8 +201,6 @@ def parse_knowledge_answer_composer_output(raw_content: Any) -> KnowledgeAnswerC
 _SIMPLE_DEFINITION_PATTERNS = (
     r"\bwas\s+ist\b",
     r"\bwas\s+bedeutet\b",
-    r"\bwas\s+kannst\s+du\s+mir\s+zu\b",
-    r"\berkl[aä]r(?:e|en)?\b",
 )
 _COMPARISON_MARKERS = (
     "vergleich",
@@ -240,8 +243,67 @@ def _is_simple_material_definition_question(user_message: str) -> bool:
         return False
     if not any(re.search(pattern, lowered) for pattern in _SIMPLE_DEFINITION_PATTERNS):
         return False
+    if not _explicitly_requests_short_answer(lowered):
+        return False
     materials = set(extract_material_ids(text))
     return len(materials) == 1
+
+
+def _is_broad_material_information_request(user_message: str) -> bool:
+    text = str(user_message or "").strip()
+    if not text:
+        return False
+    lowered = f" {text.casefold()} "
+    if any(marker in lowered for marker in _COMPARISON_MARKERS):
+        return False
+    if _explicitly_requests_short_answer(lowered):
+        return False
+    if len(set(extract_material_ids(text))) != 1:
+        return False
+    return bool(
+        re.search(
+            r"\b(was\s+kannst\s+du|detailliert|details?|info(?:s|rmation(?:en)?)?|"
+            r"erkl[aä]r(?:e|en)?|erz[aä]hl|über|ueber|mehr\s+zu)\b",
+            lowered,
+        )
+    )
+
+
+def _explicitly_requests_short_answer(lowered_text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(kurz|kompakt|knapp|in\s+einem\s+satz|in\s+2\s+sätzen|in\s+zwei\s+sätzen)\b",
+            lowered_text,
+        )
+    )
+
+
+def enforce_material_overview_depth(
+    request: KnowledgeAnswerComposerInput,
+    output: KnowledgeAnswerComposerOutput,
+) -> KnowledgeAnswerComposerOutput:
+    requested = _single_requested_material(request)
+    if requested != "PTFE":
+        return output
+    if not _is_broad_material_information_request(request.user_message):
+        return output
+
+    answer = str(output.answer_markdown or "").strip()
+    lowered = answer.casefold()
+    topic_patterns = (
+        r"chem",
+        r"temperatur",
+        r"reibung|gleit",
+        r"kaltfluss|kriech|creep",
+        r"füllstoff|fuellstoff|compound",
+        r"gegenlauf|rauheit|welle",
+        r"anwendung|dichtungs",
+        r"freigabe|hersteller|nachweis",
+    )
+    topic_hits = sum(1 for pattern in topic_patterns if re.search(pattern, lowered))
+    if len(answer) < 900 or topic_hits < 5:
+        raise KnowledgeAnswerComposerError("material_overview_too_shallow")
+    return output
 
 
 def enforce_requested_subject_fidelity(
@@ -360,9 +422,10 @@ Communication requirements:
 - If requested_subjects contains exactly one material, the latest user message is authoritative: start with that material and do not switch to a different material from recent_history or evidence_items.
 - Use recent_history only for continuity. Do not treat history as confirmed engineering truth and do not invent missing facts from it.
 - Treat evidence_items as the grounding envelope and deterministic_answer as fallback grounding. If evidence is weak or only deterministic/fallback, say what is uncertain.
-- Use natural German, with a careful senior sealing-engineer tone.
-- Prefer structured markdown for comparisons when useful: short summary, compact table, practical implications, limits/assumptions, and one focused next question.
-- For simple definition questions about one material such as "Was ist NBR?", answer compactly: direct definition, 1-3 practical orientation points, and only one short caveat. Avoid generic section boilerplate such as "Limitierungen/Annahmen" unless the user asks for a deeper assessment.
+- Use natural German, with a careful senior sealing-engineer tone. The answer must feel like an experienced specialist is thinking with the user, not like a form or glossary card.
+- Prefer structured markdown when useful: direct answer, practical sealing relevance, strengths, limits, typical applications, critical design checks, and one focused next step.
+- For broad questions such as "Was kannst du mir über PTFE sagen?", "Bitte detaillierte Informationen zu PTFE" or "Erkläre PTFE" give a rich, useful engineering overview. Make the practical value obvious: chemical/media orientation, temperature/mechanics, friction/dynamics, creep/cold flow, fillers/compounds, applications, common mistakes, and what must be checked before a case decision.
+- Only answer compactly when the user explicitly asks for a short/brief answer. Otherwise do not compress a material explanation into a three-bullet glossary response.
 - Prefer wording such as "wird geprüft", "wird betrachtet", "ist naheliegend zu prüfen" or "kann ein Kandidat sein". Do not write that a material "ist geeignet", "für ... geeignet ist" or has "gute Eignung für" in this knowledge path.
 - Ask at most one focused follow-up question.
 - Do not force the answer into technical case intake.

@@ -30,6 +30,7 @@ from app.agent.api.deps import (
 from app.agent.api.utils import (
     _with_case_event,
     _with_governed_conversation_turn,
+    _light_case_active,
     _with_light_route_progress,
     _light_structured_state,
 )
@@ -848,6 +849,7 @@ async def _run_light_chat_response(
         request=request,
         current_user=current_user,
         governed_state_override=governed_state_override,
+        create_if_missing=False,
     )
 
     result = await run_conversation(
@@ -858,7 +860,7 @@ async def _run_light_chat_response(
         direct_reply=direct_reply,
     )
     structured_state: dict[str, Any] | None = None
-    if result.reply_text:
+    if result.reply_text and governed is not None and _light_case_active(governed):
         updated = _with_light_route_progress(
             governed,
             role="assistant",

@@ -27,6 +27,7 @@ from app.agent.api.utils import (
     _fast_response_run_meta,
     _with_case_event,
     _with_governed_conversation_turn,
+    _light_case_active,
     _with_light_route_progress,
     _light_structured_state,
 )
@@ -512,14 +513,17 @@ async def _stream_light_runtime(
         request=request,
         current_user=current_user,
         governed_state_override=governed_state_override,
+        create_if_missing=False,
     )
     final_reply = ""
     persisted_light_state: GovernedSessionState | None = None
 
-    async def _persist_light_turn_once() -> GovernedSessionState:
+    async def _persist_light_turn_once() -> GovernedSessionState | None:
         nonlocal governed, persisted_light_state
         if persisted_light_state is not None:
             return persisted_light_state
+        if governed is None or not _light_case_active(governed):
+            return governed
         updated = _with_light_route_progress(
             governed,
             role="user",
@@ -627,7 +631,11 @@ async def _stream_light_runtime(
             if request.session_id:
                 state_for_projection = await _persist_light_turn_once()
             payload["response_class"] = "conversational_answer"
-            payload["structured_state"] = _light_structured_state(state_for_projection)
+            payload["structured_state"] = (
+                _light_structured_state(state_for_projection)
+                if state_for_projection is not None
+                else None
+            )
             payload["policy_path"] = mode.lower()
             source = "exploration_stream" if mode == "EXPLORATION" else "light_conversation"
             payload["run_meta"] = with_answer_trace(

@@ -294,9 +294,18 @@ class KnowledgeService:
                 answer_result=result,
             )
 
-        lines = [
-            "Ich habe dazu kuratierte SeaLAI-Hinweise gefunden. Kurz eingeordnet:",
-        ]
+        material_definition = build_material_definition_answer(user_input)
+        lines: list[str] = []
+        if material_definition is not None:
+            lines.extend(
+                [
+                    material_definition.answer,
+                    "",
+                    "### Kuratierte Hinweise aus der Wissensbasis",
+                ]
+            )
+        else:
+            lines.append("Ich habe dazu kuratierte SeaLAI-Hinweise gefunden. Kurz eingeordnet:")
         sources: list[KnowledgeSource] = []
         evidence: list[KnowledgeEvidence] = []
         seen_sources: set[str] = set()
@@ -324,17 +333,27 @@ class KnowledgeService:
                 if source is not None:
                     sources.append(source)
                     seen_sources.add(source_id)
+        if material_definition is not None:
+            evidence.append(
+                _knowledge_evidence(
+                    source_type="deterministic",
+                    title=material_definition.title,
+                    content=material_definition.answer,
+                    note=f"system_derived_material_definition:{material_definition.material_id}",
+                )
+            )
 
         if sources:
             lines.append(
                 "Quelle: "
                 + "; ".join(f"{source.source_id}: {source.title}" for source in sources)
             )
-        lines.append(
-            "Das ist allgemeine Orientierung, keine konkrete Auswahl und keine "
-            "Herstellerfreigabe. Fuer deinen konkreten Fall brauchen wir Medium, "
-            "Temperatur, Druck, Bewegung und Einbausituation."
-        )
+        if material_definition is None:
+            lines.append(
+                "Das ist allgemeine Orientierung, keine konkrete Auswahl und keine "
+                "Herstellerfreigabe. Fuer deinen konkreten Fall brauchen wir Medium, "
+                "Temperatur, Druck, Bewegung und Einbausituation."
+            )
         answer = "\n".join(lines)
         result = _hit_result(answer, tuple(sources), knowledge_evidence=tuple(evidence))
         return KnowledgeResponse(
@@ -604,26 +623,11 @@ def _compose_user_facing_rag_answer(
         return humanize_german_technical_text(answer)
 
     if material == "PTFE":
-        answer = "\n".join(
-            [
-                "PTFE ist ein Fluorpolymer und wird in Dichtungsanwendungen "
-                "oft wegen niedriger Reibung, breiter chemischer Orientierung "
-                "und hoher Temperaturstabilität betrachtet.",
-                "",
-                "Gleichzeitig verhält sich PTFE nicht wie ein elastischer "
-                "Gummiwerkstoff: Rückstellung, Kaltfluss, Vorspannung, "
-                "Füllstoffe, Gegenlauffläche und Einbauraum sind für die "
-                "Dichtfunktion entscheidend.",
-                "",
-                "Für eine konkrete Einschätzung brauche ich Medium, "
-                "Temperaturfenster, Druck, Bewegung, Geometrie und ob ein "
-                "gefülltes PTFE oder ein Verbundaufbau vorgesehen ist. Bis "
-                "dahin ist das technische Orientierung aus der dokumentierten "
-                "Wissensbasis, keine Freigabe und keine "
-                "Kompatibilitätszusage.",
-            ]
+        material_definition = build_material_definition_answer(
+            "Bitte gib mir detaillierte Informationen zu PTFE."
         )
-        return humanize_german_technical_text(answer)
+        if material_definition is not None:
+            return material_definition.answer
 
     points = _user_facing_snippet_points(snippets)
     if points:

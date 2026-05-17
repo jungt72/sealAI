@@ -561,8 +561,9 @@ def _extract_all_materials(text: str) -> list[str]:
 
 _GENERIC_MATERIAL_INFO_RE = re.compile(
     r"\b(?:was\s+ist|was\s+sind|was\s+bedeutet|bedeutet|"
+    r"was\s+kannst\s+du|erz[aä]hl(?:e)?|"
     r"info(?:s|rmation(?:en)?)?|details?|detailliert|erkl[aä]r(?:e|en)?|"
-    r"kurz\s+zu|mehr\s+zu|wissen\s+zu)\b",
+    r"kurz\s+zu|mehr\s+zu|wissen\s+zu|über|ueber)\b",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -628,6 +629,9 @@ _MATERIAL_DEFINITION_LEADS: dict[str, str] = {
 
 
 def _render_definition(profile: MaterialComparisonProfile) -> str:
+    if profile.canonical == "PTFE":
+        return _render_ptfe_definition(profile)
+
     lead = _MATERIAL_DEFINITION_LEADS.get(
         profile.canonical,
         (
@@ -659,6 +663,93 @@ def _render_definition(profile: MaterialComparisonProfile) -> str:
         "Für eine konkrete Einschätzung brauche ich Medium inklusive Konzentration/Additiven, Temperaturprofil, Druck, Bewegung/Dichtungsart, Einbauraum und Herstellerdaten. Das ist technische Orientierung, keine Freigabe und keine Kompatibilitätszusage.",
     ]
     return humanize_german_technical_text("\n".join(lines))
+
+
+def _render_ptfe_definition(profile: MaterialComparisonProfile) -> str:
+    answer = "\n".join(
+        [
+            "## PTFE in der Dichtungstechnik",
+            "",
+            "PTFE, Polytetrafluorethylen, ist ein Fluorpolymer und kein elastischer "
+            "Gummiwerkstoff. Viele kennen PTFE unter dem Markennamen Teflon; in der "
+            "Dichtungstechnik ist es aber vor allem ein Konstruktionswerkstoff für "
+            "chemisch, thermisch oder reibungstechnisch anspruchsvolle Aufgaben.",
+            "",
+            "### Was PTFE besonders macht",
+            "",
+            "- **Chemische Orientierung:** PTFE wird häufig dort betrachtet, wo Säuren, "
+            "Laugen, Lösungsmittel, Kraftstoffe, Öle, Reinigungsmedien oder aggressive "
+            "Prozesschemie Elastomere stark einschränken können. Die konkrete Medienlage "
+            "bleibt trotzdem fall- und compoundbezogen zu prüfen.",
+            "- **Temperaturfenster:** PTFE wird typischerweise in einem sehr breiten "
+            "Temperaturbereich betrachtet; der genaue Bereich hängt von Sorte, Füllstoff, "
+            "Dichtprinzip, Last und Herstellerdaten ab.",
+            "- **Reibung und Gleiten:** PTFE hat sehr niedrige Reibwerte. Das ist bei "
+            "dynamischen Dichtungen, Führungen, Lippengeometrien, Ventilsitzen oder "
+            "Trockenlaufanteilen oft der Grund, warum PTFE überhaupt ins Spiel kommt.",
+            "",
+            "### Die kritischen Punkte",
+            "",
+            "- **Kaltfluss und Kriechen:** Unter Dauerlast kann PTFE nachgeben. Dadurch "
+            "können Vorspannung, Spaltkontrolle und Dichtkraft über die Zeit kritisch werden.",
+            "- **Geringe elastische Rückstellung:** PTFE verhält sich nicht wie NBR, EPDM "
+            "oder FKM. Bei Toleranzen, Exzentrizität, Druckwechseln oder Montagefehlern "
+            "braucht es meist ein sauberes Vorspann- und Geometriekonzept.",
+            "- **Wärmeausdehnung und Wärmeabfuhr:** Temperaturwechsel, Reibwärme und "
+            "enge Einbauräume können die Funktion stark beeinflussen.",
+            "- **Gegenlauffläche:** Rauheit, Härte, Beschichtung, Schmierung, Schmutz und "
+            "Wellenlauf entscheiden bei dynamischen PTFE-Systemen häufig stärker als das "
+            "Materialetikett allein.",
+            "",
+            "### Gefüllte PTFE-Typen",
+            "",
+            "| Füllstoff / Modifikation | Typischer Zweck | Kritischer Blickpunkt |",
+            "| --- | --- | --- |",
+            "| Glasfaser | Verschleiß- und Formstabilität verbessern | kann Gegenflächen stärker beanspruchen |",
+            "| Kohle / Carbon | Wärmeleitung und Verschleißverhalten verbessern | Compound- und Medienfreigaben prüfen |",
+            "| Graphit | Trockenlauf- und Reibverhalten verbessern | Druck, Temperatur und Abrieb prüfen |",
+            "| Bronze | Druckfestigkeit und Maßstabilität verbessern | Medien- und Korrosionsthema prüfen |",
+            "| PEEK / Hochleistungsfüller | mechanische Stabilität erhöhen | Herstellerdaten und PV-Grenzen prüfen |",
+            "",
+            "### Typische Dichtungsrollen",
+            "",
+            "- PTFE-Radialwellendichtringe und PTFE-Lippendichtungen",
+            "- federunterstützte oder elastomerunterstützte PTFE-Dichtungen",
+            "- Kolben- und Stangendichtungen mit niedriger Reibung",
+            "- Ventilsitze, Flachdichtungen, Führungs- und Gleitelemente",
+            "- Chemie-, Pharma-, Food- oder Hochtemperaturumgebungen, wenn die nötigen "
+            "Nachweise für den konkreten Werkstoff vorliegen",
+            "",
+            "### Typische Denkfehler",
+            "",
+            "- **Chemische Breite ersetzt keine Auslegung.** Ein PTFE-System kann chemisch "
+            "naheliegend wirken und mechanisch trotzdem früh ausfallen.",
+            "- **PTFE ist kein Elastomer.** Rückstellung, Vorspannung und Einbauspalt müssen "
+            "konstruktiv gelöst werden.",
+            "- **PTFE allein ist keine Produktspezifikation.** Ungefüllt, glasgefüllt, "
+            "carbongefüllt oder federenergisiert sind technisch unterschiedliche Fälle.",
+            "- **Nachweise sind compound- und herstellerbezogen.** Food, Pharma, FDA, EU "
+            "1935/2004, USP, ATEX oder PFAS/REACH-Themen dürfen nicht aus dem Wort PTFE "
+            "abgeleitet werden.",
+            "",
+            "### Was ich vor einer konkreten Einschätzung wissen müsste",
+            "",
+            "- Medium inklusive Konzentration, Additive, Reinigungsmedien und Kontaktzeit",
+            "- Temperaturprofil mit Normalbetrieb, Spitzen, CIP/SIP oder Stillstand",
+            "- Druck direkt an der Dichtstelle und Druckrichtung",
+            "- Bewegung: statisch, rotierend, linear oder oszillierend; bei Dynamik auch "
+            "Geschwindigkeit, Drehzahl und Schmierzustand",
+            "- Geometrie, Spalt, Gegenlauffläche, Rauheit, Härte, Exzentrizität und Montage",
+            "- geforderte Nachweise und gewünschte Standzeit",
+            "",
+            "Kurz: PTFE ist oft eine starke Prüfrichtung, wenn Chemie, Temperatur oder "
+            "Reibung anspruchsvoll werden. Der Mehrwert entsteht aber erst in der "
+            "Systembetrachtung aus Medium, Konstruktion, Gegenlaufpartner, Last und "
+            "Herstellerdaten. Das ist technische Orientierung, keine Freigabe und keine "
+            "Kompatibilitätszusage.",
+        ]
+    )
+    return humanize_german_technical_text(answer)
 
 
 def _first_non_empty(*groups: tuple[str, ...]) -> tuple[str, ...]:

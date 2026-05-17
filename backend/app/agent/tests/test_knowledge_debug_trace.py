@@ -65,7 +65,7 @@ async def test_knowledge_debug_trace_disabled_keeps_existing_response_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("SEALAI_ENABLE_KNOWLEDGE_DEBUG_TRACE", raising=False)
-    monkeypatch.delenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false")
     _block_case_mutation(monkeypatch)
     _no_bridge_context(monkeypatch)
 

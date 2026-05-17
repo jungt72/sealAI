@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock
 
-from app.agent.api.models import ChatRequest
+from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.api.router import (
     chat_endpoint,
     event_generator,
@@ -32,6 +32,25 @@ def _user() -> RequestUser:
         roles=[],
         scopes=[],
         tenant_id="tenant-1",
+    )
+
+
+def _mock_light_response(session_id: str, text: str = "LLM conversation answer") -> ChatResponse:
+    return ChatResponse(
+        session_id=session_id,
+        reply=text,
+        answer_markdown=text,
+        response_class="conversational_answer",
+        policy_path="conversation",
+        run_meta={
+            "answer_trace": {
+                "reply_source": "light_conversation",
+                "answer_markdown_source": "light_conversation",
+                "final_visible_source": "answer_markdown",
+                "composer_attempted": True,
+            }
+        },
+        structured_state=None,
     )
 
 
@@ -83,12 +102,15 @@ async def test_runtime_dispatch_uses_pre_gate_before_three_mode_gate(
     )
     assert dispatch.gate_route == expected_gate_route
     assert dispatch.gate_applied is False
-    assert dispatch.gate_reason.startswith("pre_gate:")
+    assert dispatch.gate_reason.startswith(("pre_gate:", "pre_gate_llm_fast_responder:"))
     if classification in {
         PreGateClassification.META_QUESTION,
         PreGateClassification.GREETING,
-        PreGateClassification.BLOCKED,
     }:
+        assert dispatch.fast_response is None
+        assert dispatch.knowledge_response is None
+        assert dispatch.runtime_action is not None
+    elif classification is PreGateClassification.BLOCKED:
         assert dispatch.fast_response is not None
         assert dispatch.fast_response.no_case_created is True
         assert dispatch.fast_response.source_classification is classification
@@ -172,8 +194,8 @@ async def test_domain_inquiry_dispatch_goes_directly_to_governed_without_second_
 async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(
     monkeypatch,
 ) -> None:
-    async def fail_light_runtime(*args, **kwargs):
-        raise AssertionError("Fast Responder must not enter light runtime")
+    async def fake_light_runtime(*args, **kwargs):
+        return _mock_light_response("fast-no-persist", "SeaLAI hilft dir, Dichtungsfragen sauber zu strukturieren.")
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Fast Responder must not persist state")
@@ -182,7 +204,7 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(
         raise AssertionError("Fast Responder must not invoke governed graph")
 
     monkeypatch.setattr(
-        "app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime
+        "app.agent.api.routes.chat._run_light_chat_response", fake_light_runtime
     )
     monkeypatch.setattr(
         "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
@@ -197,15 +219,10 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(
     )
 
     assert response.response_class == "conversational_answer"
-    assert (
-        response.run_meta["fast_responder"]["source_classification"] == "META_QUESTION"
-    )
-    assert response.run_meta["fast_responder"]["no_case_created"] is True
-    assert response.run_meta["answer_trace"]["reply_source"] == "fast_responder"
-    assert (
-        response.run_meta["answer_trace"]["answer_markdown_source"] == "fast_responder"
-    )
-    assert response.run_meta["answer_trace"]["composer_attempted"] is False
+    assert "fast_responder" not in response.run_meta
+    assert response.run_meta["answer_trace"]["reply_source"] == "light_conversation"
+    assert response.run_meta["answer_trace"]["answer_markdown_source"] == "light_conversation"
+    assert response.run_meta["answer_trace"]["composer_attempted"] is True
     assert response.structured_state is None
 
 
@@ -213,8 +230,8 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(
 async def test_greeting_chat_path_uses_fast_responder_without_case_persistence(
     monkeypatch,
 ) -> None:
-    async def fail_light_runtime(*args, **kwargs):
-        raise AssertionError("Greeting fast path must not enter light runtime")
+    async def fake_light_runtime(*args, **kwargs):
+        return _mock_light_response("greeting-no-case", "Hallo, schoen dass du da bist.")
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Greeting must not persist governed state")
@@ -223,7 +240,7 @@ async def test_greeting_chat_path_uses_fast_responder_without_case_persistence(
         raise AssertionError("Greeting must not invoke governed graph")
 
     monkeypatch.setattr(
-        "app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime
+        "app.agent.api.routes.chat._run_light_chat_response", fake_light_runtime
     )
     monkeypatch.setattr(
         "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
@@ -238,11 +255,10 @@ async def test_greeting_chat_path_uses_fast_responder_without_case_persistence(
     )
 
     assert response.response_class == "conversational_answer"
-    assert "schoen, dass du da bist" in response.reply.lower()
-    assert response.run_meta["fast_responder"]["source_classification"] == "GREETING"
-    assert response.run_meta["fast_responder"]["no_case_created"] is True
-    assert response.run_meta["answer_trace"]["reply_source"] == "fast_responder"
-    assert response.run_meta["answer_trace"]["composer_attempted"] is False
+    assert "schoen" in response.reply.lower()
+    assert "fast_responder" not in response.run_meta
+    assert response.run_meta["answer_trace"]["reply_source"] == "light_conversation"
+    assert response.run_meta["answer_trace"]["composer_attempted"] is True
     assert response.structured_state is None
 
 
@@ -250,8 +266,8 @@ async def test_greeting_chat_path_uses_fast_responder_without_case_persistence(
 async def test_bare_compound_greeting_uses_fast_responder_without_case_persistence(
     monkeypatch,
 ) -> None:
-    async def fail_light_runtime(*args, **kwargs):
-        raise AssertionError("Bare greeting must not enter light runtime")
+    async def fake_light_runtime(*args, **kwargs):
+        return _mock_light_response("bare-greeting-no-case", "Guten Morgen, ich bin da.")
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Bare greeting must not persist governed state")
@@ -260,7 +276,7 @@ async def test_bare_compound_greeting_uses_fast_responder_without_case_persisten
         raise AssertionError("Bare greeting must not invoke governed graph")
 
     monkeypatch.setattr(
-        "app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime
+        "app.agent.api.routes.chat._run_light_chat_response", fake_light_runtime
     )
     monkeypatch.setattr(
         "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
@@ -277,8 +293,8 @@ async def test_bare_compound_greeting_uses_fast_responder_without_case_persisten
     )
 
     assert response.response_class == "conversational_answer"
-    assert response.run_meta["fast_responder"]["source_classification"] == "GREETING"
-    assert response.run_meta["fast_responder"]["no_case_created"] is True
+    assert "fast_responder" not in response.run_meta
+    assert response.run_meta["answer_trace"]["reply_source"] == "light_conversation"
     assert response.structured_state is None
     assert "welches medium" not in response.reply.lower()
 
@@ -292,11 +308,8 @@ async def test_greeting_plus_smalltalk_routes_to_conversation_runtime() -> None:
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
     assert dispatch.runtime_mode == "CONVERSATION"
-    assert dispatch.fast_response is not None
-    assert dispatch.fast_response.no_case_created is True
-    assert (
-        dispatch.fast_response.source_classification is PreGateClassification.GREETING
-    )
+    assert dispatch.fast_response is None
+    assert dispatch.gate_reason.startswith("pre_gate_llm_fast_responder:")
     assert dispatch.knowledge_response is None
 
 
@@ -304,8 +317,8 @@ async def test_greeting_plus_smalltalk_routes_to_conversation_runtime() -> None:
 async def test_social_conversation_with_typo_uses_fast_responder_without_graph(
     monkeypatch,
 ) -> None:
-    async def fail_light_runtime(*args, **kwargs):
-        raise AssertionError("Social conversation must not enter light runtime")
+    async def fake_light_runtime(*args, **kwargs):
+        return _mock_light_response("social-typo-no-case", "Guten Morgen, mir geht es gut.")
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Social conversation must not persist governed state")
@@ -314,7 +327,7 @@ async def test_social_conversation_with_typo_uses_fast_responder_without_graph(
         raise AssertionError("Social conversation must not invoke governed graph")
 
     monkeypatch.setattr(
-        "app.agent.api.routes.chat._run_light_chat_response", fail_light_runtime
+        "app.agent.api.routes.chat._run_light_chat_response", fake_light_runtime
     )
     monkeypatch.setattr(
         "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
@@ -332,8 +345,8 @@ async def test_social_conversation_with_typo_uses_fast_responder_without_graph(
     )
 
     assert response.response_class == "conversational_answer"
-    assert response.run_meta["fast_responder"]["source_classification"] == "GREETING"
-    assert response.run_meta["fast_responder"]["no_case_created"] is True
+    assert "fast_responder" not in response.run_meta
+    assert response.run_meta["answer_trace"]["reply_source"] == "light_conversation"
     assert response.structured_state is None
     assert "welches medium" not in response.reply.lower()
 
@@ -349,10 +362,9 @@ async def test_social_conversation_dispatch_with_typo_does_not_enter_governed() 
     )
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
-    assert dispatch.gate_reason == "pre_gate:deterministic_social_conversation"
+    assert dispatch.gate_reason == "pre_gate_llm_fast_responder:deterministic_social_conversation"
     assert dispatch.runtime_mode == "CONVERSATION"
-    assert dispatch.fast_response is not None
-    assert dispatch.fast_response.no_case_created is True
+    assert dispatch.fast_response is None
     assert dispatch.governed_state is None
     assert dispatch.knowledge_response is None
 
@@ -370,10 +382,9 @@ async def test_social_conversation_colloquial_wellbeing_does_not_enter_governed(
     )
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
-    assert dispatch.gate_reason == "pre_gate:deterministic_social_conversation"
+    assert dispatch.gate_reason == "pre_gate_llm_fast_responder:deterministic_social_conversation"
     assert dispatch.runtime_mode == "CONVERSATION"
-    assert dispatch.fast_response is not None
-    assert dispatch.fast_response.no_case_created is True
+    assert dispatch.fast_response is None
     assert dispatch.governed_state is None
     assert dispatch.knowledge_response is None
 
@@ -382,6 +393,8 @@ async def test_social_conversation_colloquial_wellbeing_does_not_enter_governed(
 async def test_knowledge_chat_path_uses_knowledge_service_without_case_creation(
     monkeypatch,
 ) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "false")
+
     async def fail_light_runtime(*args, **kwargs):
         raise AssertionError("Knowledge query must not enter light runtime")
 

@@ -8,7 +8,7 @@ Handles the CONVERSATION routing zone:
 - Explanation of governed results to the user
 
 Properties (Umbauplan F-A.4):
-- Direct LLM call (OpenAI async streaming)
+- Role-based LLM call via the central LLM factory
 - No RAG, no LangGraph, no graph state
 - Stateless, caller provides history slice
 - Productive SSE exposes live text_chunk events plus a final state_update.reply
@@ -24,13 +24,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import inspect
 import re
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Literal
-
-import openai
 
 from app.agent.communication.templates import render_communication_template
 from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
@@ -45,8 +42,7 @@ from app.agent.runtime.reply_composition import (
 from app.agent.runtime.response_renderer import render_chunk, render_response
 from app.agent.runtime.turn_context import build_turn_context_contract
 from app.agent.state.models import ConversationStrategyContract
-from app.llm.registry import get_model_for_role
-from app.observability.langsmith import wrap_openai_client
+from app.llm.factory import get_async_llm
 from app.services.openai_payload import use_responses_api
 from prompts.builder import PromptBuilder
 
@@ -55,8 +51,6 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
-_CONVERSATION_MODEL = os.environ.get("SEALAI_CONVERSATION_MODEL", get_model_for_role("conversation"))
 
 _prompt_builder = PromptBuilder()
 
@@ -658,12 +652,17 @@ def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str,
     return "\n\n".join(instructions), response_input
 
 
-async def _create_completion_stream(client: openai.AsyncOpenAI, *, messages: list[dict[str, str]]):
+async def _create_completion_stream(
+    client: Any,
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+):
     """Support both awaitable SDK responses and direct test doubles."""
-    if use_responses_api(_CONVERSATION_MODEL):
+    if use_responses_api(model):
         instructions, response_input = _responses_input_from_messages(messages)
         stream_or_awaitable = client.responses.create(
-            model=_CONVERSATION_MODEL,
+            model=model,
             instructions=instructions or None,
             input=response_input,
             stream=True,
@@ -671,7 +670,7 @@ async def _create_completion_stream(client: openai.AsyncOpenAI, *, messages: lis
         )
     else:
         stream_or_awaitable = client.chat.completions.create(
-            model=_CONVERSATION_MODEL,
+            model=model,
             messages=messages,
             stream=True,
             temperature=0.3,
@@ -764,13 +763,13 @@ async def iter_conversation_events(
         yield {"type": "stream_end"}
         return
 
-    client = wrap_openai_client(openai.AsyncOpenAI())
+    client, model = get_async_llm("conversation")
     messages = _build_messages(message, history, case_summary=case_summary, mode=mode)
     suppress_preview_stream = _suppress_preview_stream_for_smalltalk(message, mode)
 
     accumulated: list[str] = []
     try:
-        stream = await _create_completion_stream(client, messages=messages)
+        stream = await _create_completion_stream(client, model=model, messages=messages)
         async for chunk in stream:
             text = _text_from_stream_chunk(chunk)
             if not text:
@@ -836,7 +835,6 @@ async def run_conversation(
 ) -> ConversationResult:
     """Execute the conversation path and return the canonical reply text."""
     reply_text = ""
-    replacement_echo: str | None = None
 
     async for event in iter_conversation_events(
         message,
@@ -848,11 +846,9 @@ async def run_conversation(
     ):
         event_type = str(event.get("type") or "")
         if event_type == "text_replacement":
-            replacement_echo = str(event.get("text") or "")
             continue
         if event_type == "state_update":
             reply_text = str(event.get("reply") or "").strip()
-            replacement_echo = None
             continue
         if event_type == "text_chunk":
             text = str(event.get("text") or "")

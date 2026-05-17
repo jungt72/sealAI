@@ -92,7 +92,7 @@ class GovernedAnswerComposerError(ValueError):
 
 
 def is_governed_answer_composer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "").strip().lower() in _TRUE_VALUES
+    return os.getenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true").strip().lower() in _TRUE_VALUES
 
 
 class GovernedAnswerComposer:

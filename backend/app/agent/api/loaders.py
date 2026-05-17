@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException
 from langchain_core.messages import BaseMessage
@@ -696,14 +696,17 @@ async def _build_light_runtime_context(
     request: Any, # ChatRequest
     current_user: RequestUser,
     governed_state_override: GovernedSessionState | None = None,
-) -> tuple[GovernedSessionState, list[BaseMessage], str | None]:
+    create_if_missing: bool = False,
+) -> tuple[GovernedSessionState | None, list[BaseMessage], str | None]:
     governed = governed_state_override
     if governed is None:
         governed = await _load_live_governed_state(
             current_user=current_user,
             session_id=request.session_id,
-            create_if_missing=True,
+            create_if_missing=create_if_missing,
         )
+    if governed is None:
+        return None, [], None
 
     history = _governed_messages_as_langchain(governed)
     case_summary = _build_light_case_summary(governed)

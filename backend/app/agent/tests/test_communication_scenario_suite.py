@@ -40,7 +40,7 @@ from app.agent.state.models import (
 @pytest.fixture(autouse=True)
 def _offline_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(intake_module, "_ENABLE_LLM_EXTRACTION", False)
-    monkeypatch.delenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", raising=False)
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
 
 async def _run_governed_turn(
