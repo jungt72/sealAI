@@ -74,7 +74,8 @@ _CASE_UPDATE_RE = re.compile(
     re.IGNORECASE,
 )
 _KNOWLEDGE_RE = re.compile(
-    r"\b(?:was ist|was bedeutet|erkl[aä]r|unterschied|vergleich|definition|wissen)\b",
+    r"\b(?:was ist|was bedeutet|erkl[aä]r|unterschied|vergleich|definition|wissen|"
+    r"grenzwerte?|einsatzgrenzen?|materialdaten|kennwerte|limits?)\b",
     re.IGNORECASE,
 )
 _LEAKAGE_RE = re.compile(

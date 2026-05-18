@@ -102,6 +102,13 @@ class PreGateClassifier:
                 "deterministic_material_suitability_knowledge",
             )
 
+        if self._is_standalone_material_limit_question(text):
+            return self._result(
+                PreGateClassification.KNOWLEDGE_QUERY,
+                0.83,
+                "deterministic_material_limits_knowledge",
+            )
+
         if self._matches(_DEEP_DIVE_PATTERNS, text):
             return self._result(
                 PreGateClassification.DEEP_DIVE,
@@ -215,6 +222,16 @@ class PreGateClassifier:
         if not PreGateClassifier._matches(_MEDIUM_OR_FLUID_PATTERNS, text):
             return False
         if PreGateClassifier._matches(_MATERIAL_RISK_COMPARISON_CASE_PATTERNS, text):
+            return False
+        return True
+
+    @staticmethod
+    def _is_standalone_material_limit_question(text: str) -> bool:
+        if not PreGateClassifier._matches(_MATERIAL_LIMIT_QUESTION_PATTERNS, text):
+            return False
+        if not PreGateClassifier._matches(_MATERIAL_TOKEN_PATTERNS, text):
+            return False
+        if PreGateClassifier._matches(_MATERIAL_LIMIT_CASE_CONTEXT_PATTERNS, text):
             return False
         return True
 
@@ -369,6 +386,24 @@ _MATERIAL_SUITABILITY_QUESTION_PATTERNS = _compile(
     r"\b(?:geeignet|kritisch|problematisch|vertr[aä]glich|vertraeglich|best[aä]ndig|"
     r"bestaendig|kompatibel)\b.*\b(?:für|fuer|bei|in|gegen)\b",
     r"\b(?:keine\s+freigabe|nur\s+einordnung|ohne\s+freigabe)\b",
+)
+
+_MATERIAL_LIMIT_QUESTION_PATTERNS = _compile(
+    r"\b(?:grenzwerte?|einsatzgrenzen?|belastungsgrenzen?|temperaturgrenzen?|"
+    r"druckgrenzen?|temperaturfenster|temperaturbereich|betriebsgrenzen?|"
+    r"kennwerte|materialdaten|datenblattwerte|limits?|limitierungen)\b",
+    r"\b(?:welche|was\s+f[üu]r|was\s+sind|nenn(?:e)?|gib|geb|gebe|"
+    r"ben[oö]tige|brauche)\b.*\b(?:werte|daten|grenzen)\b",
+)
+
+_MATERIAL_LIMIT_CASE_CONTEXT_PATTERNS = _compile(
+    r"\b(meine[rmn]?\s+anwendung|bei\s+meiner\s+anlage|in\s+unserer\s+anwendung|"
+    r"ich\s+habe|wir\s+haben|bei\s+uns|unsere[rmn]?)\b",
+    r"\b(dichtung|dichtring|dichtstelle|seal|rwdr|radialwellendichtring|"
+    r"gleitringdichtung|o[- ]?ring)\b",
+    r"\b(leckage|undicht|ausgefallen|verschlei[ßs]|ersatzteil|replacement)\b",
+    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|barg|bara|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b",
+    r"\b(rotierende?\s+welle|welle|pumpe|ruehrwerk|rührwerk|getriebe)\b",
 )
 
 _MATERIAL_COMPARISON_KNOWLEDGE_PATTERNS = _compile(

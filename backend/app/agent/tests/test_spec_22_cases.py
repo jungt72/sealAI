@@ -43,6 +43,23 @@ def test_22_3_ptfe_vs_fkm_stays_knowledge_query() -> None:
     assert route.escalate_to_graph is False
 
 
+def test_22_3b_standalone_ptfe_limits_request_stays_knowledge_query() -> None:
+    route = PreGateClassifier().classify("ich benötige die grenzwerte von PTFE")
+
+    assert route.classification is PreGateClassification.KNOWLEDGE_QUERY
+    assert route.reasoning == "deterministic_material_limits_knowledge"
+    assert route.escalate_to_graph is False
+
+
+def test_22_3c_ptfe_limits_with_concrete_seal_context_stays_governed() -> None:
+    route = PreGateClassifier().classify(
+        "Ich benötige die Grenzwerte von PTFE für eine RWDR Dichtung mit Welle 40 mm."
+    )
+
+    assert route.classification is PreGateClassification.DOMAIN_INQUIRY
+    assert route.escalate_to_graph is True
+
+
 def test_22_4_pumpe_ethanol_high_temperature_pressure_flags_risk_without_rfq_ready() -> (
     None
 ):
