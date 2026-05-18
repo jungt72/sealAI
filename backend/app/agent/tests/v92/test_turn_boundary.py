@@ -64,6 +64,23 @@ def test_turn_boundary_routes_standalone_material_limits_as_knowledge() -> None:
     assert decision.short_path_allowed is True
 
 
+def test_turn_boundary_promotes_case_specific_material_assessment_to_recommendation() -> None:
+    decision = resolve_turn_boundary(
+        user_message=(
+            "Bitte bewerte PTFE fuer RWDR bei Wasser-Glykol, 80 C, "
+            "10 bar, Welle 40 mm, 1450 rpm. Nur Screening, keine Freigabe."
+        ),
+        session_id="case-1",
+        state=_state_with_case(),
+        pre_gate_classification="KNOWLEDGE_QUERY",
+    )
+
+    assert decision.route == "engineering_recommendation"
+    assert decision.requires_engine is True
+    assert decision.requires_adversarial_review is True
+    assert decision.streaming_policy == "status_only_until_guarded_final"
+
+
 def test_turn_boundary_uses_pre_gate_knowledge_without_regex_fallback() -> None:
     decision = resolve_turn_boundary(
         user_message="Bitte gib mir detaillierte Infos zu NBR",

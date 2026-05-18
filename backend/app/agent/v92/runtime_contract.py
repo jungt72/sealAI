@@ -166,6 +166,11 @@ def infer_turn_route(
         return "leakage_failure_analysis"
     if any(token in message for token in ("norm", "standard", "konform", "atex", "fda", "reach")):
         return "standards_or_compliance"
+    if any(
+        token in message
+        for token in ("bewerte", "beurteile", "einschaetz", "einschätz", "screening", "eignung")
+    ):
+        return "engineering_recommendation"
     if response_class in {"technical_preselection", "candidate_shortlist"}:
         return "engineering_recommendation"
     if response_class in {"structured_clarification", "governed_state_update"}:

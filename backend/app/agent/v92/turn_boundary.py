@@ -66,7 +66,8 @@ _SMALLTALK_RE = re.compile(
     re.IGNORECASE,
 )
 _RECOMMENDATION_RE = re.compile(
-    r"\b(?:empfiehl|empfehlen|geeignet|nehmen|verwenden|werkstoff|material|compound|produkt|dichtungsl(?:oe|ö)sung)\b",
+    r"\b(?:bewerte|beurteile|einsch[aä]tz\w*|screening|empfiehl|empfehlen|geeignet|"
+    r"eignung|nehmen|verwenden|werkstoff|material|compound|produkt|dichtungsl(?:oe|ö)sung)\b",
     re.IGNORECASE,
 )
 _CASE_UPDATE_RE = re.compile(

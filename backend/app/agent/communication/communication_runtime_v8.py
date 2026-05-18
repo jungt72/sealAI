@@ -21,6 +21,37 @@ from app.services.knowledge_intent import has_technical_knowledge_subject
 
 log = logging.getLogger(__name__)
 
+_ENGINEERING_ASSESSMENT_MARKERS = (
+    "bewerte",
+    "beurteile",
+    "einschaetzung",
+    "einschätzung",
+    "screening",
+    "empfehl",
+    "geeignet",
+    "eignung",
+    "kann ich",
+    "soll ich",
+    "nehmen",
+    "verwenden",
+)
+_CASE_ENGINEERING_SUBJECT_MARKERS = (
+    "ptfe",
+    "fkm",
+    "ffkm",
+    "epdm",
+    "nbr",
+    "hnbr",
+    "rwdr",
+    "radialwellendichtring",
+    "gleitringdichtung",
+    "o-ring",
+    "oring",
+    "werkstoff",
+    "material",
+    "dichtung",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class CommunicationRuntimeV8DecisionProposal:
@@ -75,6 +106,11 @@ class CommunicationRuntimeV8(ConversationControllerV7):
                 return self._active_case_process_question(payload)
             return self._meta(payload)
 
+        if payload.active_case_exists and self._looks_like_case_specific_engineering_request(
+            payload.user_message
+        ):
+            return self._governed_intake(payload)
+
         if payload.active_case_exists and self._looks_like_side_question(payload.user_message):
             return self._knowledge_or_side_question(payload)
 
@@ -96,6 +132,20 @@ class CommunicationRuntimeV8(ConversationControllerV7):
         if classify_message_as_knowledge_side_question(message) is not None:
             return True
         return super()._looks_like_side_question(message)
+
+    def _looks_like_case_specific_engineering_request(self, message: str) -> bool:
+        normalized = " ".join((message or "").casefold().split())
+        if not normalized:
+            return False
+        if not contains_concrete_case_marker(normalized):
+            return False
+        has_assessment_intent = any(
+            marker in normalized for marker in _ENGINEERING_ASSESSMENT_MARKERS
+        )
+        has_engineering_subject = any(
+            marker in normalized for marker in _CASE_ENGINEERING_SUBJECT_MARKERS
+        )
+        return has_assessment_intent and has_engineering_subject
 
     async def _llm_decision_proposal(
         self,

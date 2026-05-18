@@ -288,6 +288,42 @@ async def test_active_case_material_limit_question_routes_as_side_question_not_i
 
 
 @pytest.mark.asyncio
+async def test_active_case_material_assessment_with_operating_data_enters_governed_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message=(
+                "Bitte bewerte PTFE fuer RWDR bei Wasser-Glykol, 80 C, "
+                "10 bar, Welle 40 mm, 1450 rpm. Nur Screening, keine Freigabe."
+            ),
+            session_id="active-case",
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.knowledge_response is None
+    assert dispatch.governed_state is state
+    assert dispatch.turn_decision is not None
+    assert dispatch.turn_decision.answer_mode == AnswerMode.GOVERNED_INTAKE
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    assert dispatch.runtime_action.graph_allowed is True
+    assert dispatch.runtime_action.reason == "knowledge_pre_gate_promoted_to_governed_graph"
+    load_state.assert_awaited_once_with(
+        current_user=_user(),
+        session_id="active-case",
+        create_if_missing=False,
+    )
+
+
+@pytest.mark.asyncio
 async def test_active_case_explanatory_term_question_routes_as_v7_side_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

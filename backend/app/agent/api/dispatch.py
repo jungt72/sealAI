@@ -595,6 +595,29 @@ async def _resolve_runtime_dispatch_impl(
                         reason="active_case_side_or_process_question_before_governed_graph",
                     ),
                 )
+            if (
+                governed_state is not None
+                and _v7_answer_mode(turn_decision)
+                in {
+                    AnswerMode.GOVERNED_INTAKE.value,
+                    AnswerMode.PENDING_SLOT_ANSWER.value,
+                }
+            ):
+                return RuntimeDispatchResolution(
+                    gate_route="GOVERNED",
+                    gate_reason=f"v7_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
+                    runtime_mode="GOVERNED",
+                    gate_applied=False,
+                    pre_gate_classification=pre_gate.classification.value,
+                    pre_gate_reason=pre_gate.reasoning,
+                    governed_state=governed_state,
+                    conversation_route=conversation_route,
+                    turn_decision=turn_decision,
+                    runtime_action=_v7_runtime_action(
+                        turn_decision,
+                        reason="knowledge_pre_gate_promoted_to_governed_graph",
+                    ),
+                )
 
             from dataclasses import replace  # noqa: PLC0415
             from app.services.knowledge_service import KnowledgeService  # noqa: PLC0415
