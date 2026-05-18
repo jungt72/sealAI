@@ -7,8 +7,10 @@ from app.domain.conversation_intent import ConversationRoutingDecision
 from app.agent.state.models import GovernedSessionState
 from app.agent.communication.v7_contracts import (
     AnswerMode,
+    MutationPolicy,
     RuntimeAction,
     RuntimeAnswerBuilder,
+    RuntimeActionType,
     TurnDecision,
     build_answer_only_runtime_action,
     build_rfq_readiness_runtime_action,
@@ -352,6 +354,40 @@ def _light_runtime_action(
     )
 
 
+def _rfq_readiness_graph_runtime_action(
+    *,
+    rfq_action_type: str,
+    reason: str,
+    trace: dict[str, Any] | None = None,
+) -> RuntimeAction:
+    safe_trace = {
+        "rfq_intent_detected": True,
+        "rfq_action_type": rfq_action_type,
+        "consent_required": True,
+        "dispatch_allowed": False,
+        "external_contact_allowed": False,
+        "manufacturer_review_framing": True,
+        "final_approval_claim_allowed": False,
+        "governed_graph_bypassed": False,
+        "v92_route_hint": "rfq_readiness",
+    }
+    safe_trace.update(trace or {})
+    return RuntimeAction(
+        action_type=RuntimeActionType.ENTER_GOVERNED_GRAPH,
+        answer_mode=AnswerMode.RFQ_READINESS,
+        mutation_policy=MutationPolicy.FORBIDDEN,
+        graph_allowed=True,
+        graph_entry_reason="rfq_readiness_requires_governed_graph",
+        answer_builder=RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT,
+        resume_strategy=None,
+        next_runtime_action="enter_governed_langgraph",
+        reason=reason,
+        decision_source="rfq_readiness_intent",
+        rfq_action=rfq_action_type,
+        trace=safe_trace,
+    )
+
+
 async def _resolve_runtime_dispatch_impl(
     request: Any,  # ChatRequest
     *,
@@ -391,6 +427,22 @@ async def _resolve_runtime_dispatch_impl(
                     request=request,
                     current_user=current_user,
                 )
+                if _governed_state_has_active_case(governed_state):
+                    return RuntimeDispatchResolution(
+                        gate_route="GOVERNED",
+                        gate_reason=f"runtime_action_rfq_readiness_graph:{rfq_intent.reason}",
+                        runtime_mode="GOVERNED",
+                        gate_applied=False,
+                        pre_gate_classification=pre_gate.classification.value,
+                        pre_gate_reason=pre_gate.reasoning,
+                        governed_state=governed_state,
+                        conversation_route=conversation_route,
+                        runtime_action=_rfq_readiness_graph_runtime_action(
+                            rfq_action_type=rfq_intent.rfq_action_type,
+                            reason=rfq_intent.reason,
+                            trace=rfq_intent.as_trace(),
+                        ),
+                    )
                 rfq_answer = build_rfq_readiness_answer(
                     latest_user_message=request.message,
                     governed_state=governed_state,
@@ -756,7 +808,11 @@ async def _resolve_runtime_dispatch(
         pre_gate_classification=traced_resolution.pre_gate_classification,
         conversation_route=getattr(traced_resolution.conversation_route, "route", None),
         runtime_action_type=getattr(traced_resolution.runtime_action, "action", None)
+        or getattr(traced_resolution.runtime_action, "action_type", None)
         or getattr(traced_resolution.runtime_action, "kind", None),
+        runtime_action_answer_mode=getattr(traced_resolution.runtime_action, "answer_mode", None),
+        runtime_action_graph_allowed=getattr(traced_resolution.runtime_action, "graph_allowed", None),
+        runtime_action_decision_source=getattr(traced_resolution.runtime_action, "decision_source", None),
         v91_policy_present=getattr(traced_resolution, "v91_policy", None) is not None,
         v92_runtime_present=True,
     )

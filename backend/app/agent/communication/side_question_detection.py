@@ -36,6 +36,18 @@ _COMPARISON_PATTERNS: tuple[str, ...] = (
     r"\boder.*\bbesser\b",
 )
 
+_MATERIAL_LIMIT_PATTERNS: tuple[str, ...] = (
+    r"\b(?:grenzwerte?|einsatzgrenzen?|belastungsgrenzen?|temperaturgrenzen?|"
+    r"druckgrenzen?|temperaturfenster|temperaturbereich|betriebsgrenzen?|"
+    r"kennwerte|materialdaten|datenblattwerte|limits?|limitierungen)\b",
+)
+
+_MATERIAL_TOKEN_PATTERN = re.compile(
+    r"\b(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|pom|peek|pa6?|pa12|vmq|"
+    r"silikon|silicone|viton)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
 _PARAM_UPDATE_MARKERS: tuple[str, ...] = (
     r"\bstatt\b",
     r"\bkorrig",
@@ -70,6 +82,12 @@ def classify_message_as_knowledge_side_question(
 
     if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _COMPARISON_PATTERNS):
         return "exploration_answer"
+
+    if _MATERIAL_TOKEN_PATTERN.search(lowered) and any(
+        re.search(pattern, lowered, re.IGNORECASE)
+        for pattern in _MATERIAL_LIMIT_PATTERNS
+    ):
+        return "conversational_answer"
 
     if is_information_request_about_technical_subject(lowered):
         return "conversational_answer"

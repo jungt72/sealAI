@@ -514,6 +514,9 @@ def should_render_governed_contextual_fallback(
 
 def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
     orientation = _technical_orientation_for_user_task(context.latest_user_message)
+    calculation_orientation = _calculation_orientation(context)
+    if calculation_orientation:
+        orientation = _join_sentences(orientation, calculation_orientation)
     if context.ambiguous_values:
         item = context.ambiguous_values[0]
         value = _display_value(item.normalized_value or item.raw_value)
@@ -547,6 +550,67 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
             )
         return _join_orientation_and_question(orientation, question)
     return ""
+
+
+_CALC_OUTPUT_LABELS = {
+    "v_surface_m_s": "Umfangsgeschwindigkeit",
+    "pv_value_mpa_m_s": "p-v-Wert",
+    "dn_value": "DN-Wert",
+    "temperature_headroom_c": "Temperaturreserve",
+    "temp_min_c": "Temperatur minimum",
+    "temp_max_c": "Temperatur maximum",
+    "temp_peak_c": "Temperaturspitze",
+}
+
+
+def _join_sentences(left: str, right: str) -> str:
+    clean_left = str(left or "").strip()
+    clean_right = str(right or "").strip()
+    if not clean_left:
+        return clean_right
+    if not clean_right:
+        return clean_left
+    return f"{clean_left} {clean_right}"
+
+
+def _format_calc_value(value: Any) -> str:
+    if isinstance(value, float):
+        text = f"{value:.3f}".rstrip("0").rstrip(".")
+        return text.replace(".", ",")
+    return str(value)
+
+
+def _calculation_orientation(context: GovernedAnswerContext) -> str:
+    facts = list(getattr(context, "calculation_results", []) or [])
+    if not facts:
+        return ""
+    text = str(context.latest_user_message or "").casefold()
+    if not any(marker in text for marker in ("berech", "umfang", "geschwindigkeit", "grenzwert", "pv", "dn", "wert")):
+        return ""
+    parts: list[str] = []
+    for fact in facts:
+        outputs = dict(getattr(fact, "outputs", {}) or {})
+        units = dict(getattr(fact, "units", {}) or {})
+        for key, value in outputs.items():
+            if key in {"status", "calc_type", "pressure_window"} or value in (None, "", [], {}):
+                continue
+            label = _CALC_OUTPUT_LABELS.get(str(key), str(key))
+            unit = str(units.get(key) or "").strip()
+            rendered = f"{label}: {_format_calc_value(value)}"
+            if unit and unit != "text":
+                rendered += f" {unit}"
+            parts.append(rendered)
+            if len(parts) >= 3:
+                break
+        if len(parts) >= 3:
+            break
+    if not parts:
+        return ""
+    return (
+        "Deterministisch berechnet: "
+        + "; ".join(parts)
+        + ". Das ist ein Screening-Zwischenwert, keine Freigabe."
+    )
 
 
 def _needs_human_intake_fallback(

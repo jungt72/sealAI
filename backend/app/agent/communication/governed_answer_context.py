@@ -75,6 +75,19 @@ class GovernedFact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class GovernedCalculationFact(BaseModel):
+    calculation_id: str
+    label: str
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    units: dict[str, str] = Field(default_factory=dict)
+    status: str = "unknown"
+    claim_level: str = "L3_deterministic_calculation"
+    validity_status: str = "unknown"
+    limitation: str = "Berechneter Screening-Zwischenwert, keine technische Freigabe."
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class GovernedAnswerContext(BaseModel):
     latest_user_message: str | None = None
     pending_question: PendingQuestion | None = None
@@ -83,6 +96,7 @@ class GovernedAnswerContext(BaseModel):
     ambiguous_values: list[GovernedAmbiguousValue] = Field(default_factory=list)
     rejected_updates: list[GovernedRejectedUpdate] = Field(default_factory=list)
     confirmed_facts: list[GovernedFact] = Field(default_factory=list)
+    calculation_results: list[GovernedCalculationFact] = Field(default_factory=list)
     missing_fields: list[str] = Field(default_factory=list)
     open_points: list[str] = Field(default_factory=list)
     challenge_findings: list[dict[str, Any]] = Field(default_factory=list)
@@ -209,6 +223,58 @@ def _challenge_hypotheses(state: Any) -> list[dict[str, Any]]:
     return hypotheses
 
 
+_CALCULATION_LABELS = {
+    "rwdr.surface_speed": "Umfangsgeschwindigkeit",
+    "surface_speed_from_rpm_and_diameter": "Umfangsgeschwindigkeit",
+    "material.temperature_window_screening": "Temperaturfenster-Screening",
+    "material_family_counterindication_check": "Werkstofffamilien-Screening",
+}
+
+
+def _calculation_results(state: Any) -> list[GovernedCalculationFact]:
+    calculation = getattr(state, "calculation", None)
+    results = list(getattr(calculation, "results", []) or [])
+    facts: list[GovernedCalculationFact] = []
+    for item in results:
+        status = str(getattr(item, "status", "") or "")
+        if status not in {"ok", "warning"}:
+            continue
+        validity_status = str(getattr(item, "validity_status", "") or "unknown")
+        if validity_status == "stale":
+            continue
+        outputs = dict(getattr(item, "outputs", {}) or {})
+        if not outputs:
+            continue
+        calculation_id = str(getattr(item, "calculation_id", "") or "")
+        calculator = str(getattr(item, "calculator", "") or "")
+        label = (
+            _CALCULATION_LABELS.get(calculation_id)
+            or _CALCULATION_LABELS.get(calculator)
+            or human_label(calculation_id or calculator)
+        )
+        limitations = list(getattr(item, "limitations", []) or [])
+        facts.append(
+            GovernedCalculationFact(
+                calculation_id=calculation_id or calculator,
+                label=label,
+                outputs=outputs,
+                units=dict(getattr(item, "units", {}) or {}),
+                status=status,
+                claim_level=str(
+                    getattr(item, "claim_level", "")
+                    or "L3_deterministic_calculation"
+                ),
+                validity_status=validity_status,
+                limitation=(
+                    str(limitations[0])
+                    if limitations
+                    else "Berechneter Screening-Zwischenwert, keine technische Freigabe."
+                ),
+            )
+        )
+    return facts[:6]
+
+
 def _slot_answer_bindings(state: Any) -> list[SlotAnswerBinding]:
     binding = getattr(state, "last_slot_answer_binding", None)
     return [binding] if isinstance(binding, SlotAnswerBinding) else []
@@ -327,6 +393,7 @@ def build_governed_answer_context(
     bindings = _slot_answer_bindings(state)
     ambiguous = _ambiguous_values(state, bindings)
     confirmed = _confirmed_facts(state)
+    calculations = _calculation_results(state)
     missing = _missing_fields(state, output_public)
     open_points = _open_points(state, output_public)
     challenge_findings = _challenge_findings(state)
@@ -353,6 +420,7 @@ def build_governed_answer_context(
         ambiguous_values=ambiguous,
         rejected_updates=_rejected_updates(state),
         confirmed_facts=confirmed,
+        calculation_results=calculations,
         missing_fields=missing,
         open_points=open_points,
         challenge_findings=challenge_findings,

@@ -78,6 +78,7 @@ from app.agent.runtime.clarification_priority import (
 from app.agent.runtime.outward_names import build_admissibility_payload
 from app.agent.runtime.reply_composition import (
     compose_clarification_reply,
+    compose_user_facing_mouth_reply,
     compose_result_reply,
 )
 from app.agent.runtime.turn_context import build_governed_turn_context
@@ -1249,6 +1250,31 @@ def _reply_clarification(
         ),
         response_class=_STRUCTURED_CLARIFICATION,
     )
+    calculation_sentence = _calculation_screening_sentence(state)
+    is_rfq_turn = _v92_turn_route(state) == "rfq_readiness"
+
+    if is_rfq_turn:
+        question = primary_question
+        if not question:
+            priority = select_clarification_priority(state, missing) if missing else None
+            question = priority.question if priority is not None else ""
+        parts = [
+            (
+                "Ich kann daraus eine Anfragebasis für die Herstellerprüfung vorbereiten, "
+                "aber noch keine technische Freigabe oder Herstellerfreigabe ableiten."
+            ),
+            calculation_sentence,
+        ]
+        if missing:
+            labels = [_CORE_FIELD_LABELS.get(f, f) for f in missing[:4]]
+            parts.append("Noch offen für eine belastbare Anfragebasis: " + ", ".join(labels) + ".")
+        if question:
+            parts.append(question)
+        return compose_user_facing_mouth_reply(
+            " ".join(part for part in parts if part),
+            turn_context,
+            response_class=_STRUCTURED_CLARIFICATION,
+        )
 
     # ── Fast-confirm path: 4+ core params confirmed, only optional fields missing ──
     # When enough technical context is present, assume the optional fields and
@@ -1289,6 +1315,14 @@ def _reply_clarification(
         if (
             primary_missing or priority is not None
         ) and response_mode == "single_question":
+            if calculation_sentence:
+                return compose_user_facing_mouth_reply(
+                    f"{calculation_sentence} {question}",
+                    turn_context.model_copy(
+                        update={"primary_question": question, "supporting_reason": reason}
+                    ),
+                    response_class=_STRUCTURED_CLARIFICATION,
+                )
             return compose_clarification_reply(
                 turn_context.model_copy(
                     update={"primary_question": question, "supporting_reason": reason}
@@ -1305,6 +1339,60 @@ def _reply_clarification(
         "Mit den Betriebsbedingungen kann ich die Anwendung sauber eingrenzen. "
         "Welches Medium, welcher Druck und welche Temperatur liegen an?"
     )
+
+
+_CALC_OUTPUT_LABELS: dict[str, str] = {
+    "v_surface_m_s": "Umfangsgeschwindigkeit",
+    "pv_value_mpa_m_s": "p-v-Wert",
+    "dn_value": "DN-Wert",
+    "temperature_headroom_c": "Temperaturreserve",
+}
+
+
+def _format_calc_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}".rstrip("0").rstrip(".").replace(".", ",")
+    return str(value)
+
+
+def _calculation_screening_sentence(state: GraphState) -> str:
+    calculation = getattr(state, "calculation", None)
+    results = list(getattr(calculation, "results", []) or [])
+    parts: list[str] = []
+    for result in results:
+        if str(getattr(result, "status", "") or "") not in {"ok", "warning"}:
+            continue
+        if str(getattr(result, "validity_status", "") or "") == "stale":
+            continue
+        outputs = dict(getattr(result, "outputs", {}) or {})
+        units = dict(getattr(result, "units", {}) or {})
+        for key, value in outputs.items():
+            if key in {"status", "calc_type", "pressure_window"} or value in (None, "", [], {}):
+                continue
+            label = _CALC_OUTPUT_LABELS.get(str(key), str(key))
+            unit = str(units.get(key) or "").strip()
+            rendered = f"{label}: {_format_calc_value(value)}"
+            if unit and unit != "text":
+                rendered += f" {unit}"
+            parts.append(rendered)
+            if len(parts) >= 3:
+                break
+        if len(parts) >= 3:
+            break
+    if not parts:
+        return ""
+    return (
+        "Deterministisch berechnet: "
+        + "; ".join(parts)
+        + ". Das ist ein Screening-Zwischenwert, keine Freigabe."
+    )
+
+
+def _v92_turn_route(state: GraphState) -> str:
+    decision = getattr(state, "v92_turn_boundary_decision", None)
+    if isinstance(decision, dict):
+        return str(decision.get("route") or "").strip()
+    return ""
 
 
 def _reply_state_update(state: GraphState) -> str:

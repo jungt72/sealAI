@@ -24,6 +24,7 @@ from app.agent.communication.governed_answer_composer import (
 from app.agent.communication.governed_answer_context import (
     GovernedAnswerContext,
     GovernedAnswerUpdate,
+    GovernedCalculationFact,
 )
 from app.agent.graph import GraphState
 from app.agent.graph import output_contract_assembly as output_assembly
@@ -192,6 +193,38 @@ def test_contextual_fallback_adds_risk_orientation_before_slot_question() -> Non
     assert "Technisch kritisch" in answer
     assert "Druck direkt an der Dichtlippe" in answer
     assert "Die wichtigste Rückfrage ist" in answer
+
+
+def test_contextual_fallback_states_deterministic_calculation_before_question() -> None:
+    context = GovernedAnswerContext(
+        latest_user_message=(
+            "Berechne mir bitte die Umfangsgeschwindigkeit fuer einen RWDR "
+            "mit 50 mm Welle und 3000 rpm."
+        ),
+        calculation_results=[
+            GovernedCalculationFact(
+                calculation_id="rwdr.surface_speed",
+                label="Umfangsgeschwindigkeit",
+                outputs={"v_surface_m_s": 7.854},
+                units={"v_surface_m_s": "m/s"},
+                status="ok",
+                claim_level="L3_deterministic_calculation",
+                validity_status="valid_for_screening",
+            )
+        ],
+        next_best_question="Welcher Druck liegt direkt an der Dichtstelle an?",
+        missing_fields=["pressure_bar"],
+    )
+
+    answer = render_governed_contextual_fallback(
+        context,
+        "Welcher Druck liegt direkt an der Dichtstelle an?",
+    )
+
+    assert "Deterministisch berechnet" in answer
+    assert "Umfangsgeschwindigkeit: 7,854 m/s" in answer
+    assert "keine Freigabe" in answer
+    assert "Welcher Druck liegt direkt an der Dichtstelle an?" in answer
 
 
 def test_contextual_fallback_humanizes_first_leakage_intake_question() -> None:

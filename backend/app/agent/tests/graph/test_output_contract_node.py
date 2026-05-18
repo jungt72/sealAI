@@ -73,6 +73,7 @@ from app.agent.state.models import (
     SealaiNormMaterial,
     SealaiNormState,
 )
+from app.agent.v92.models import CalculationResult, CalculationState
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +146,31 @@ def _b_state(missing: list[str] | None = None) -> GraphState:
             blocking_unknowns=missing or ["temperature_c"],
         ),
         governance=governance,
+    )
+
+
+def _b_state_with_surface_speed_calculation() -> GraphState:
+    return _b_state(missing=["pressure_bar"]).model_copy(
+        update={
+            "pending_message": "Berechne die Umfangsgeschwindigkeit fuer den RWDR.",
+            "calculation": CalculationState(
+                status="ready",
+                results=[
+                    CalculationResult(
+                        calculation_id="rwdr.surface_speed",
+                        version="1.0",
+                        calculator="surface_speed_from_rpm_and_diameter",
+                        status="ok",
+                        claim_level="L3_deterministic_calculation",
+                        input_snapshot_hash="input-hash",
+                        outputs={"v_surface_m_s": 7.854},
+                        units={"v_surface_m_s": "m/s"},
+                        output_snapshot_hash="output-hash",
+                        validity_status="valid_for_screening",
+                    )
+                ],
+            ),
+        }
     )
 
 
@@ -1210,6 +1236,16 @@ class TestReplyText:
 
         assert "temperatur" in reply.lower()
         assert "einsatzfenster" not in reply.lower()
+
+    def test_clarification_reply_surfaces_deterministic_calculation_before_next_question(
+        self,
+    ):
+        reply = _reply_clarification(_b_state_with_surface_speed_calculation(), None)
+
+        assert "Deterministisch berechnet" in reply
+        assert "Umfangsgeschwindigkeit: 7,854 m/s" in reply
+        assert "keine Freigabe" in reply
+        assert reply.count("?") == 1
 
     def test_governed_state_update_uses_priority_question_when_one_decisive_field_is_missing(
         self,

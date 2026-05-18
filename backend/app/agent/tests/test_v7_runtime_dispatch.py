@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -37,17 +36,6 @@ from app.services.knowledge_service import (
     KnowledgeResponse,
 )
 from app.services.pre_gate_classifier import ClassificationResult, PreGateClassifier
-
-
-RFQ_READINESS_CONTRACT_FIXTURE = (
-    Path(__file__).resolve().parents[4]
-    / "contracts"
-    / "rfq_readiness_projection_v1.fixture.json"
-)
-
-
-def _rfq_readiness_contract_fixture() -> dict:
-    return json.loads(RFQ_READINESS_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
 
 
 def _user() -> RequestUser:
@@ -267,6 +255,39 @@ async def test_active_case_material_followup_routes_as_v7_side_question(
 
 
 @pytest.mark.asyncio
+async def test_active_case_material_limit_question_routes_as_side_question_not_intake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="Ich benötige die Grenzwerte von PTFE.",
+            session_id="active-case",
+        ),
+        current_user=_user(),
+    )
+
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.knowledge_response is None
+    assert dispatch.governed_state is state
+    assert dispatch.turn_decision is not None
+    assert dispatch.turn_decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert dispatch.turn_decision.mutation_policy == MutationPolicy.FORBIDDEN
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
+    assert dispatch.runtime_action.graph_allowed is False
+    load_state.assert_awaited_once_with(
+        current_user=_user(),
+        session_id="active-case",
+        create_if_missing=False,
+    )
+
+
+@pytest.mark.asyncio
 async def test_active_case_explanatory_term_question_routes_as_v7_side_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -433,179 +454,107 @@ async def test_domain_inquiry_builds_runtime_action_for_governed_graph(
     )
 
 
-@pytest.mark.asyncio
-async def test_active_case_rfq_readiness_question_answers_open_points_without_graph(
-    monkeypatch: pytest.MonkeyPatch,
+def _assert_active_rfq_graph_dispatch(
+    dispatch: RuntimeDispatchResolution,
+    *,
+    rfq_action_type: str,
 ) -> None:
-    state = _active_state()
-    monkeypatch.setattr(
-        "app.agent.api.dispatch._load_live_governed_state",
-        AsyncMock(return_value=state),
-    )
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.rfq_response is None
+    assert dispatch.rfq_readiness_projection is None
+    assert dispatch.governed_state is not None
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+    assert dispatch.runtime_action.answer_mode == AnswerMode.RFQ_READINESS
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    assert dispatch.runtime_action.mutation_policy == MutationPolicy.FORBIDDEN
+    assert dispatch.runtime_action.graph_allowed is True
+    assert dispatch.runtime_action.graph_entry_reason == "rfq_readiness_requires_governed_graph"
+    assert dispatch.runtime_action.decision_source == "rfq_readiness_intent"
 
-    async def fail_governed(*args, **kwargs):
-        raise AssertionError("RFQ readiness status must not enter governed graph")
-
-    monkeypatch.setattr(
-        "app.agent.api.routes.chat._run_governed_chat_response",
-        fail_governed,
-    )
-
-    response = await chat_endpoint(
-        ChatRequest(message="Ist meine Anfrage vollstaendig?", session_id="active-case"),
-        current_user=_user(),
-    )
-
-    answer = response.answer_markdown or ""
-    assert "Anfragebasis" in answer
-    assert "Herstellerprüfung" in answer or "Herstellerpruefung" in answer
-    assert "Offene Punkte" in answer
-    assert "Medium" in answer
-    assert "Welches Medium soll abgedichtet werden?" in answer
-    assert "keine technische Endentscheidung" in answer
-    assert "garantiert" not in answer.casefold()
-    assert "approved" not in answer.casefold()
-    assert response.proposed_case_delta is None
-    projection = response.rfq_readiness_projection or {}
-    assert projection["manufacturer_review_ready"] is False
-    assert projection["rfq_basis_ready"] is False
-    assert projection["known_missing_fields"] == ["Medium"]
-    assert projection["blocking_reasons"] == ["Medium"]
-    assert projection["pending_question"]["target_field"] == "medium"
-    assert projection["consent_required"] is True
-    assert projection["dispatch_allowed"] is False
-    assert projection["external_contact_allowed"] is False
-    assert projection["preview_available"] is False
-    assert projection["preview_possible"] is True
-    assert projection["preview_requires_explicit_endpoint"] is True
-    assert projection["preview_action_available"] is True
-    assert projection["preview_action_name"] == "create_rfq_preview"
-    assert projection["preview_endpoint"] == "/api/v1/rfq/preview"
-    assert projection["preview_creation_requires_explicit_user_intent"] is True
-    assert projection["preview_export_requires_consent"] is True
-    assert "preview_id" not in projection
-    trace = response.run_meta["answer_trace"]
+    trace = dispatch.runtime_action.as_trace()
     assert trace["answer_mode"] == "rfq_readiness"
-    assert trace["runtime_action_type"] == "show_rfq_readiness"
-    assert trace["runtime_answer_builder"] == "rfq_readiness"
-    assert trace["graph_allowed"] is False
+    assert trace["runtime_action_type"] == "enter_governed_graph"
+    assert trace["runtime_answer_builder"] == "governed_output_contract"
+    assert trace["graph_allowed"] is True
+    assert trace["graph_entry_reason"] == "rfq_readiness_requires_governed_graph"
     assert trace["rfq_intent_detected"] is True
-    assert trace["rfq_action_type"] == "show_readiness"
+    assert trace["rfq_action_type"] == rfq_action_type
     assert trace["dispatch_allowed"] is False
     assert trace["external_contact_allowed"] is False
     assert trace["consent_required"] is True
     assert trace["manufacturer_review_framing"] is True
     assert trace["final_approval_claim_allowed"] is False
-    assert trace["rfq_readiness_projection_built"] is True
-    assert trace["manufacturer_review_ready"] is False
-    assert trace["rfq_basis_ready"] is False
-    assert trace["known_missing_fields_count"] == 1
-    assert trace["preview_available"] is False
-    assert trace["preview_possible"] is True
-    assert trace["preview_requires_explicit_endpoint"] is True
-    assert trace["preview_action_available"] is True
-    assert trace["preview_action_name"] == "create_rfq_preview"
-    assert trace["preview_endpoint"] == "/api/v1/rfq/preview"
-    assert trace["preview_creation_requires_explicit_user_intent"] is True
-    assert trace["preview_export_requires_consent"] is True
+    assert trace["governed_graph_bypassed"] is False
+    assert trace["v92_route_hint"] == "rfq_readiness"
+
+
+@pytest.mark.asyncio
+async def test_active_case_rfq_readiness_question_enters_governed_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="Ist meine Anfrage vollstaendig?", session_id="active-case"),
+        current_user=_user(),
+    )
+
+    _assert_active_rfq_graph_dispatch(dispatch, rfq_action_type="show_readiness")
+    load_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_active_case_rfq_missing_for_manufacturer_preserves_next_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.agent.api.dispatch._load_live_governed_state",
-        AsyncMock(return_value=_active_state()),
-    )
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
-    response = await chat_endpoint(
+    dispatch = await _resolve_runtime_dispatch(
         ChatRequest(message="Was fehlt noch fuer den Hersteller?", session_id="active-case"),
         current_user=_user(),
     )
 
-    answer = response.answer_markdown or ""
-    assert "Offene Punkte" in answer
-    assert "Medium" in answer
-    assert "Welches Medium soll abgedichtet werden?" in answer
-    projection = response.rfq_readiness_projection or {}
-    assert projection["known_missing_fields"] == ["Medium"]
-    assert projection["open_points"] == []
-    assert projection["manufacturer_review_ready"] is False
-    trace = response.run_meta["answer_trace"]
-    assert trace["rfq_intent_detected"] is True
-    assert trace["rfq_action_type"] == "show_missing_fields"
-    assert trace["graph_allowed"] is False
-    assert trace["case_delta_allowed"] is False
+    _assert_active_rfq_graph_dispatch(dispatch, rfq_action_type="show_missing_fields")
+    load_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_active_case_create_inquiry_deferred_until_fields_and_consent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.agent.api.dispatch._load_live_governed_state",
-        AsyncMock(return_value=_active_state()),
-    )
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
-    response = await chat_endpoint(
+    dispatch = await _resolve_runtime_dispatch(
         ChatRequest(message="Erstelle mir eine Anfrage", session_id="active-case"),
         current_user=_user(),
     )
 
-    answer = response.answer_markdown or ""
-    assert "Anfragebasis" in answer
-    assert "Herstellerprüfung" in answer or "Herstellerpruefung" in answer
-    assert "kein automatischer Versand" in answer
-    assert "Welches Medium soll abgedichtet werden?" in answer
-    projection = response.rfq_readiness_projection or {}
-    assert projection["preview_available"] is False
-    assert projection["preview_possible"] is True
-    assert projection["preview_requires_explicit_endpoint"] is True
-    assert projection["preview_action_available"] is True
-    assert projection["preview_action_name"] == "create_rfq_preview"
-    assert projection["preview_endpoint"] == "/api/v1/rfq/preview"
-    assert projection["preview_creation_requires_explicit_user_intent"] is True
-    assert projection["preview_export_requires_consent"] is True
-    assert projection["preview_blocking_reason"] == (
-        "preview_creation_requires_durable_case_endpoint_and_consent_flow"
-    )
-    trace = response.run_meta["answer_trace"]
-    assert trace["runtime_action_type"] == "defer_rfq_until_required_fields"
-    assert trace["rfq_action_type"] == "build_rfq_basis"
-    assert trace["dispatch_allowed"] is False
-    assert trace["rfq_preview_invoked"] is False
-    assert trace["preview_requires_explicit_endpoint"] is True
+    _assert_active_rfq_graph_dispatch(dispatch, rfq_action_type="build_rfq_basis")
+    load_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_active_case_manufacturer_send_requires_consent_and_no_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.agent.api.dispatch._load_live_governed_state",
-        AsyncMock(return_value=_active_state()),
-    )
+    state = _active_state()
+    load_state = AsyncMock(return_value=state)
+    monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
-    response = await chat_endpoint(
+    dispatch = await _resolve_runtime_dispatch(
         ChatRequest(message="Kann ich das an einen Hersteller schicken?", session_id="active-case"),
         current_user=_user(),
     )
 
-    answer = response.answer_markdown or ""
-    assert "explizite Zustimmung" in answer
-    assert "kontaktiere keinen Hersteller automatisch" in answer
-    assert "keine technische Endentscheidung" in answer
-    projection = response.rfq_readiness_projection or {}
-    assert projection["external_contact_allowed"] is False
-    assert projection["dispatch_allowed"] is False
-    assert projection["consent_required"] is True
-    trace = response.run_meta["answer_trace"]
-    assert trace["runtime_action_type"] == "answer_rfq_status"
-    assert trace["rfq_action_type"] == "external_contact_request"
-    assert trace["external_contact_allowed"] is False
-    assert trace["dispatch_allowed"] is False
-    assert trace["consent_required"] is True
+    _assert_active_rfq_graph_dispatch(dispatch, rfq_action_type="external_contact_request")
+    load_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1472,12 +1421,38 @@ async def test_stream_active_case_side_question_final_state_update_uses_resume_t
 
 
 @pytest.mark.asyncio
-async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
+async def test_stream_active_case_rfq_readiness_enters_governed_graph_with_trace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "app.agent.api.dispatch._load_live_governed_state",
         AsyncMock(return_value=_active_state()),
+    )
+
+    async def fake_stream_governed_graph(
+        request,
+        *,
+        current_user,
+        pre_gate_classification=None,
+        runtime_action=None,
+    ):
+        assert runtime_action is not None
+        assert runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+        assert runtime_action.answer_mode == AnswerMode.RFQ_READINESS
+        assert runtime_action.graph_allowed is True
+        assert runtime_action.graph_entry_reason == "rfq_readiness_requires_governed_graph"
+        yield "data: " + json.dumps(
+            {
+                "type": "state_update",
+                "answer_markdown": "Graph RFQ readiness path",
+                "run_meta": {"answer_trace": runtime_action.as_trace()},
+            }
+        ) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(
+        "app.agent.api.streaming._stream_governed_graph",
+        fake_stream_governed_graph,
     )
 
     payloads = await _collect_sse_payloads(
@@ -1488,35 +1463,15 @@ async def test_stream_rfq_readiness_state_update_contains_runtime_action_trace(
     )
 
     state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
-    answer = state_update.get("answer_markdown") or ""
-    assert "Offene Punkte" in answer
-    assert "Welches Medium soll abgedichtet werden?" in answer
-    projection = state_update["rfq_readiness_projection"]
-    assert projection == _rfq_readiness_contract_fixture()
-    assert projection["known_missing_fields"] == ["Medium"]
-    assert projection["manufacturer_review_ready"] is False
-    assert projection["dispatch_allowed"] is False
-    assert projection["external_contact_allowed"] is False
-    assert projection["preview_requires_explicit_endpoint"] is True
-    assert projection["preview_action_available"] is True
-    assert projection["preview_action_name"] == "create_rfq_preview"
-    assert projection["preview_endpoint"] == "/api/v1/rfq/preview"
-    assert projection["preview_creation_requires_explicit_user_intent"] is True
-    assert projection["preview_export_requires_consent"] is True
     trace = state_update["run_meta"]["answer_trace"]
     assert trace["answer_mode"] == "rfq_readiness"
-    assert trace["runtime_action_type"] == "show_rfq_readiness"
-    assert trace["runtime_answer_builder"] == "rfq_readiness"
+    assert trace["runtime_action_type"] == "enter_governed_graph"
+    assert trace["runtime_answer_builder"] == "governed_output_contract"
     assert trace["rfq_action_type"] == "show_missing_fields"
-    assert trace["graph_allowed"] is False
+    assert trace["graph_allowed"] is True
+    assert trace["graph_entry_reason"] == "rfq_readiness_requires_governed_graph"
     assert trace["dispatch_allowed"] is False
     assert trace["external_contact_allowed"] is False
     assert trace["consent_required"] is True
-    assert trace["rfq_readiness_projection_built"] is True
-    assert trace["preview_requires_explicit_endpoint"] is True
-    assert trace["preview_action_available"] is True
-    assert trace["preview_action_name"] == "create_rfq_preview"
-    assert trace["preview_endpoint"] == "/api/v1/rfq/preview"
-    assert trace["preview_creation_requires_explicit_user_intent"] is True
-    assert trace["preview_export_requires_consent"] is True
+    assert trace["governed_graph_bypassed"] is False
     assert trace["operational_contract_version"] == "runtime_action_v1"

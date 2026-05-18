@@ -483,9 +483,10 @@ def _runtime_action_type(
 def _missing_fields(state: Any | None) -> tuple[str, ...]:
     if state is None:
         return ()
+    known_fields = _known_asserted_fields(state)
     fields: list[str] = []
     pending = _pending_question(state)
-    if pending.get("target_field"):
+    if pending.get("target_field") and pending.get("target_field") not in known_fields:
         fields.append(str(pending["target_field"]))
     asserted = getattr(state, "asserted", None)
     fields.extend(getattr(asserted, "blocking_unknowns", ()) or ())
@@ -500,7 +501,12 @@ def _missing_fields(state: Any | None) -> tuple[str, ...]:
     fields.extend(getattr(rfq, "required_corrections", ()) or ())
     action_readiness = getattr(state, "action_readiness", None)
     fields.extend(getattr(action_readiness, "missing_for_inquiry", ()) or ())
-    return tuple(_field_label(field) for field in _unique_nonempty(fields))[:8]
+    unresolved = [
+        field
+        for field in _unique_nonempty(fields)
+        if _field_key(field) not in known_fields
+    ]
+    return tuple(_field_label(field) for field in unresolved)[:8]
 
 
 def _open_points(state: Any | None) -> tuple[str, ...]:
@@ -549,8 +555,11 @@ def _pending_question(state: Any | None) -> dict[str, str]:
     pending = getattr(state, "pending_question", None)
     if pending is None:
         return {}
+    target_field = str(getattr(pending, "target_field", "") or "").strip()
+    if target_field and _field_key(target_field) in _known_asserted_fields(state):
+        return {}
     return {
-        "target_field": str(getattr(pending, "target_field", "") or "").strip(),
+        "target_field": target_field,
         "question_text": str(getattr(pending, "question_text", "") or "").strip(),
     }
 
@@ -589,10 +598,43 @@ def _known_case_fact_count(state: Any | None) -> int:
     return len(assertions) if isinstance(assertions, dict) else 0
 
 
+def _known_asserted_fields(state: Any | None) -> set[str]:
+    asserted = getattr(state, "asserted", None)
+    assertions = getattr(asserted, "assertions", {}) or {}
+    if not isinstance(assertions, dict):
+        return set()
+    known: set[str] = set()
+    for field, claim in assertions.items():
+        value = getattr(claim, "asserted_value", None)
+        if value not in (None, "", [], {}):
+            known.add(_field_key(field))
+    return known
+
+
 def _open_points_text(missing_fields: tuple[str, ...]) -> str:
     if not missing_fields:
         return "keine konkreten offenen Pflichtfelder im aktuellen Runtime-Kontext sichtbar"
     return ", ".join(missing_fields[:6])
+
+
+def _field_key(field: Any) -> str:
+    value = str(field or "").strip()
+    aliases = {
+        "Temperatur": "temperature_c",
+        "Betriebstemperatur": "temperature_c",
+        "temperature": "temperature_c",
+        "temperature_c": "temperature_c",
+        "Druck": "pressure_bar",
+        "pressure": "pressure_bar",
+        "pressure_bar": "pressure_bar",
+        "Medium": "medium",
+        "medium": "medium",
+        "Wellendurchmesser": "shaft_diameter_mm",
+        "shaft_diameter_mm": "shaft_diameter_mm",
+        "Drehzahl": "speed_rpm",
+        "speed_rpm": "speed_rpm",
+    }
+    return aliases.get(value, value)
 
 
 def _field_label(field: Any) -> str:

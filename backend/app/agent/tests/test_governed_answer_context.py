@@ -13,6 +13,7 @@ import app.agent.graph.nodes.intake_observe_node as intake_module
 from app.agent.graph.nodes.normalize_node import normalize_node
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
 from app.agent.state.models import ConversationMessage, ObservedExtraction, PendingQuestion
+from app.agent.v92.models import CalculationResult, CalculationState
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.pre_gate_classifier import PreGateClassifier
 
@@ -168,6 +169,68 @@ async def test_context_confirmed_facts_exclude_unvalidated_extraction_candidate(
 
     assert context.confirmed_facts == []
     assert context.accepted_updates == []
+
+
+def test_context_builder_exposes_deterministic_calculation_results() -> None:
+    state = GraphState(
+        pending_message="Berechne die Umfangsgeschwindigkeit fuer 50 mm und 3000 rpm.",
+        calculation=CalculationState(
+            status="ready",
+            results=[
+                CalculationResult(
+                    calculation_id="rwdr.surface_speed",
+                    version="1.0",
+                    calculator="surface_speed_from_rpm_and_diameter",
+                    status="ok",
+                    claim_level="L3_deterministic_calculation",
+                    input_snapshot_hash="input-hash",
+                    outputs={"v_surface_m_s": 7.854},
+                    units={"v_surface_m_s": "m/s"},
+                    output_snapshot_hash="output-hash",
+                    validity_status="valid_for_screening",
+                    limitations=["Screening-Zwischenwert, keine Freigabe."],
+                )
+            ],
+        ),
+    )
+
+    context = build_governed_answer_context(state)
+
+    assert len(context.calculation_results) == 1
+    fact = context.calculation_results[0]
+    assert fact.calculation_id == "rwdr.surface_speed"
+    assert fact.label == "Umfangsgeschwindigkeit"
+    assert fact.outputs["v_surface_m_s"] == pytest.approx(7.854)
+    assert fact.units == {"v_surface_m_s": "m/s"}
+    assert fact.claim_level == "L3_deterministic_calculation"
+    assert fact.validity_status == "valid_for_screening"
+    assert "keine Freigabe" in fact.limitation
+
+
+def test_context_builder_excludes_stale_calculation_results_from_answer_context() -> None:
+    state = GraphState(
+        calculation=CalculationState(
+            status="ready",
+            results=[
+                CalculationResult(
+                    calculation_id="rwdr.surface_speed",
+                    version="1.0",
+                    calculator="surface_speed_from_rpm_and_diameter",
+                    status="ok",
+                    claim_level="L3_deterministic_calculation",
+                    input_snapshot_hash="old-input",
+                    outputs={"v_surface_m_s": 7.854},
+                    units={"v_surface_m_s": "m/s"},
+                    output_snapshot_hash="old-output",
+                    validity_status="stale",
+                )
+            ],
+        ),
+    )
+
+    context = build_governed_answer_context(state)
+
+    assert context.calculation_results == []
 
 
 @pytest.mark.asyncio
