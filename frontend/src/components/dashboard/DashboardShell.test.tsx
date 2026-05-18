@@ -63,11 +63,8 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("link", { name: "Neuer Chat" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Meine Inhalte" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "SEO" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute(
-      "href",
-      "https://analytics.sealingai.com",
-    );
-    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute("href", "/dashboard/analytics");
+    expect(screen.getByRole("link", { name: "Analytics" })).not.toHaveAttribute("target");
     expect(screen.getByRole("link", { name: "Goal" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "SealingPedia" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dokumente" })).toBeInTheDocument();

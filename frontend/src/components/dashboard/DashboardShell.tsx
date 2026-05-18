@@ -37,12 +37,9 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: "/rag", icon: Sparkles, label: "Meine Inhalte" },
 ];
 
-const analyticsDashboardUrl =
-  process.env.NEXT_PUBLIC_RYBBIT_DASHBOARD_URL?.trim() || "https://analytics.sealingai.com";
-
 const WORKSPACE_ITEMS: SidebarItem[] = [
   { href: "/dashboard/seo", icon: BarChart3, label: "SEO" },
-  { href: analyticsDashboardUrl, icon: Activity, label: "Analytics", external: true },
+  { href: "/dashboard/analytics", icon: Activity, label: "Analytics" },
   { href: "/goal", icon: Target, label: "Goal" },
   { href: "/rag", icon: Database, label: "SealingPedia" },
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
