@@ -20,17 +20,29 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import LogoutButton from "@/components/dashboard/LogoutButton";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+type SidebarItem = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  external?: boolean;
+};
+
+const NAV_ITEMS: SidebarItem[] = [
   { href: "/dashboard/new", icon: PencilLine, label: "Neuer Chat" },
   { href: "/rag", icon: Sparkles, label: "Meine Inhalte" },
 ];
 
-const WORKSPACE_ITEMS = [
+const analyticsDashboardUrl =
+  process.env.NEXT_PUBLIC_RYBBIT_DASHBOARD_URL?.trim() || "https://analytics.sealingai.com";
+
+const WORKSPACE_ITEMS: SidebarItem[] = [
   { href: "/dashboard/seo", icon: BarChart3, label: "SEO" },
+  { href: analyticsDashboardUrl, icon: Activity, label: "Analytics", external: true },
   { href: "/goal", icon: Target, label: "Goal" },
   { href: "/rag", icon: Database, label: "SealingPedia" },
   { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
@@ -278,19 +290,33 @@ export default function DashboardShell({
                 </div>
                 <div className="space-y-1">
                   {WORKSPACE_ITEMS.map((item) => {
-                    const isActive = item.href !== "/dashboard/new" && pathname.startsWith(item.href);
-                    return (
+                    const isActive =
+                      !item.external && item.href !== "/dashboard/new" && pathname.startsWith(item.href);
+                    const className = cn(
+                      "flex h-10 items-center gap-4 rounded-full border border-transparent px-4 text-[14px] font-medium transition-colors",
+                      isActive
+                        ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
+                        : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
+                    );
+                    const Icon = item.icon;
+                    return item.external ? (
+                      <a
+                        key={`${item.label}-${item.href}`}
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={className}
+                      >
+                        <Icon size={18} />
+                        <span className="truncate">{item.label}</span>
+                      </a>
+                    ) : (
                       <Link
                         key={`${item.label}-${item.href}`}
                         href={item.href}
-                        className={cn(
-                          "flex h-10 items-center gap-4 rounded-full border border-transparent px-4 text-[14px] font-medium transition-colors",
-                          isActive
-                            ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
-                            : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
-                        )}
+                        className={className}
                       >
-                        <item.icon size={18} />
+                        <Icon size={18} />
                         <span className="truncate">{item.label}</span>
                       </Link>
                     );
@@ -391,15 +417,29 @@ export default function DashboardShell({
           <>
             <nav className="flex flex-1 flex-col items-center gap-3 px-3 py-3">
               {[...NAV_ITEMS, ...WORKSPACE_ITEMS].map((item) => (
-                <Link
-                  key={`${item.label}-${item.href}-collapsed`}
-                  href={item.href}
-                  title={item.label}
-                  aria-label={item.label}
-                  className="grid h-10 w-10 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
-                >
-                  <item.icon size={19} />
-                </Link>
+                item.external ? (
+                  <a
+                    key={`${item.label}-${item.href}-collapsed`}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={item.label}
+                    aria-label={item.label}
+                    className="grid h-10 w-10 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
+                  >
+                    <item.icon size={19} />
+                  </a>
+                ) : (
+                  <Link
+                    key={`${item.label}-${item.href}-collapsed`}
+                    href={item.href}
+                    title={item.label}
+                    aria-label={item.label}
+                    className="grid h-10 w-10 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
+                  >
+                    <item.icon size={19} />
+                  </Link>
+                )
               ))}
             </nav>
             <div className="flex flex-col items-center gap-3 px-3 pb-5">
