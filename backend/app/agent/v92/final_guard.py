@@ -31,8 +31,9 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "compliance_or_certification",
         re.compile(
-            r"\b(?:fda|atex|ehedg|trinkwasser|pharma|lebensmittel|reach|norm|standard).{0,80}"
-            r"\b(?:konform|zertifiziert|zugelassen|freigegeben|bestaetigt|bestätigt)\b",
+            r"\b(?:(?:fda|atex|ehedg|trinkwasser|pharma|lebensmittel|reach|norm|standard).{0,80}"
+            r"\b(?:konform|zertifiziert|zugelassen|freigegeben|bestaetigt|bestätigt)"
+            r"|norm(?:en)?[-\s]?konform)\b",
             re.IGNORECASE | re.UNICODE,
         ),
     ),
@@ -137,7 +138,9 @@ def validate_final_output(
             )
 
     if context.standards_summary.get("blocking_gaps") and re.search(
-        r"\b(?:konform|zertifiziert|zugelassen|freigegeben)\b", text, re.IGNORECASE
+        r"\b(?:norm(?:en)?[-\s]?konform|konform|zertifiziert|zugelassen|freigegeben)\b",
+        text,
+        re.IGNORECASE | re.UNICODE,
     ):
         standards_failures.append(
             {
