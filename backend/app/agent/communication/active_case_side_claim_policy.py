@@ -309,6 +309,18 @@ def enforce_active_case_side_claim_policy(
             evidence_context_available=speakable_facts.evidence_context_available,
         )
 
+    if _is_material_limit_question(_normalize(latest_user_message)):
+        bounded_answer = _deterministic_safe_side_answer(
+            latest_user_message=latest_user_message,
+            speakable_facts=speakable_facts,
+        )
+        return ActiveCaseSideClaimPolicyResult(
+            answer_markdown=bounded_answer,
+            claim_policy_result="material_limit_bounded",
+            answer_safety_rewritten=bounded_answer != answer,
+            evidence_context_available=speakable_facts.evidence_context_available,
+        )
+
     enriched = _ensure_required_context(
         latest_user_message=latest_user_message,
         answer_markdown=answer,
@@ -420,12 +432,30 @@ def _deterministic_safe_side_answer(
         materials = _extract_material_tokens(message)
         label = materials[0].upper() if materials else "den genannten Werkstoff"
         evidence_note = _evidence_orientation_note(speakable_facts)
+        if label == "PTFE":
+            return (
+                "Als vorlaeufige technische Einordnung zu PTFE-Grenzwerten: PTFE-Grenzen sind "
+                "keine reine Materialfamilien-Wahrheit. Fuer eine Dichtung zaehlen Compound, "
+                "Produktaufbau, Medium, Temperaturprofil, Druck, Bewegung, "
+                "PV-/Umfangsgeschwindigkeit, Gegenlaufflaeche, Einbauraum und Herstellerdaten.\n\n"
+                "Materialfamilien-Orientierung aus der kuratierten PTFE-Wissensbasis: "
+                "eine haeufige Dauergebrauchs-Orientierung liegt bis etwa 260 °C; der "
+                "Schmelzbereich um 327 °C ist keine sichere Dauerbetriebsgrenze; oberhalb "
+                "von etwa 300 °C muessen Zersetzungs- und HF-Risiken gesondert betrachtet "
+                "werden. Im Tieftemperaturbereich bleibt PTFE eine Pruefrichtung, aber "
+                "Steifigkeit, Rueckstellung und Energisierung muessen konstruktiv geprueft "
+                "werden.\n\n"
+                "Ich behandle diese Angaben als Screening- und Anfragebasis, nicht als "
+                "konkrete Eignung, Produktgrenze, Normkonformitaet oder Freigabe."
+                f"{evidence_note}\n\n"
+                f"{_manufacturer_review_phrase()}"
+            )
         return (
             f"Als vorlaeufige technische Einordnung zu {label}: Grenzwerte sind bei Dichtungen "
             "nicht allein Materialfamilien-Wahrheit, sondern haengen an Compound, Produkt, Medium, "
             "Temperaturprofil, Druck, Bewegung, PV-/Umfangsgeschwindigkeit, Gegenlaufflaeche, "
             "Einbauraum und Herstellerdaten. Ich behandle solche Angaben deshalb als Screening- und "
-            "Anfragebasis, nicht als konkrete Eignung oder Freigabe."
+            "Anfragebasis, nicht als konkrete Eignung, Produktgrenze oder Freigabe."
             f"{evidence_note}\n\n"
             f"{_manufacturer_review_phrase()}"
         )

@@ -97,6 +97,31 @@ def test_active_case_side_claim_policy_detects_unscoped_suitability_label() -> N
     assert "unscoped_suitability_label" in result.forbidden_claims_detected
 
 
+def test_active_case_side_claim_policy_bounds_material_limit_answers_even_without_forbidden_claim() -> None:
+    facts = build_active_case_side_speakable_facts(
+        GovernedSessionState(pending_question=_pending_medium_question())
+    )
+
+    result = enforce_active_case_side_claim_policy(
+        latest_user_message="Ich benoetige die Grenzwerte von PTFE.",
+        answer_markdown=(
+            "PTFE Grenzwerte: Dauergebrauch bis 260 °C, Schmelzpunkt 327 °C, "
+            "Tieftemperatur moeglich."
+        ),
+        speakable_facts=facts,
+    )
+
+    answer = result.answer_markdown.casefold()
+    assert result.claim_policy_result == "material_limit_bounded"
+    assert result.answer_safety_rewritten is True
+    assert "ptfe-grenzwerten" in answer
+    assert "compound" in answer
+    assert "produktgrenze" in answer
+    assert "nicht als konkrete eignung" in answer
+    assert "schmelzbereich um 327" in answer
+    assert "keine sichere dauerbetriebsgrenze" in answer
+
+
 def test_active_case_side_evidence_context_uses_existing_knowledge_evidence() -> None:
     knowledge_response = KnowledgeResponse(
         content="FKM und NBR unterscheiden sich.",
