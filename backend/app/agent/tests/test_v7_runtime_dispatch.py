@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -948,6 +948,8 @@ async def test_active_case_side_llm_composer_output_is_claim_guarded(
         "app.agent.api.routes.chat._compose_active_case_side_answer_with_llm",
         unsafe_side_composer,
     )
+    quality_trace = Mock()
+    monkeypatch.setattr("app.agent.api.routes.chat.emit_quality_trace", quality_trace)
 
     response = await chat_endpoint(
         ChatRequest(message=message, session_id="active-case"),
@@ -965,6 +967,13 @@ async def test_active_case_side_llm_composer_output_is_claim_guarded(
     assert trace["composer_succeeded"] is True
     assert trace["claim_policy_result"] == "fallback"
     assert "unscoped_material_suitability" in trace["forbidden_claims_detected"]
+    quality_trace.assert_called_once()
+    quality_kwargs = quality_trace.call_args.kwargs
+    assert quality_kwargs["component"] == "active_case_side_answer"
+    assert quality_kwargs["claim_policy_result"] == "fallback"
+    assert quality_kwargs["forbidden_claims_count"] == 1
+    assert quality_kwargs["answer_safety_fallback_used"] is True
+    assert quality_kwargs["graph_allowed"] is False
 
 
 @pytest.mark.asyncio

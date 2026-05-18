@@ -71,6 +71,8 @@ from app.agent.communication.v7_contracts import (
     RuntimeAnswerBuilder,
     build_runtime_action_from_turn_decision,
 )
+from app.observability.langsmith import traceable
+from app.observability.sealai_quality import emit_quality_trace
 
 _log = logging.getLogger(__name__)
 
@@ -725,6 +727,7 @@ async def _build_active_case_process_payload(
     )
 
 
+@traceable(name="sealai.active_case_side_answer", run_type="chain")
 async def _build_active_case_side_payload(
     *,
     message: str,
@@ -797,6 +800,24 @@ async def _build_active_case_side_payload(
         composer_succeeded=composer_succeeded,
         fallback_reason=fallback_reason,
         runtime_action=runtime_action,
+    )
+    emit_quality_trace(
+        component="active_case_side_answer",
+        tags=("active-case-side-answer", "claim-policy"),
+        session_id=session_id,
+        route="active_case_side_question",
+        answer_mode="active_case_side_question",
+        mutation_policy=answer_trace.get("mutation_policy"),
+        claim_policy_result=answer_trace.get("claim_policy_result"),
+        forbidden_claims_count=len(answer_trace.get("forbidden_claims_detected") or []),
+        answer_safety_rewritten=answer_trace.get("answer_safety_rewritten"),
+        answer_safety_fallback_used=answer_trace.get("answer_safety_fallback_used"),
+        evidence_context_available=answer_trace.get("evidence_context_available"),
+        evidence_refs_count=answer_trace.get("evidence_refs_count"),
+        composer_attempted=answer_trace.get("composer_attempted"),
+        composer_succeeded=answer_trace.get("composer_succeeded"),
+        runtime_action_type=answer_trace.get("runtime_action_type"),
+        graph_allowed=answer_trace.get("graph_allowed"),
     )
 
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
