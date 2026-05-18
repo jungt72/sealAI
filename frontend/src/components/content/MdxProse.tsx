@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
 import { ArrowRight, Info } from "lucide-react";
+import { trackProductEvent } from "@/lib/analytics/events";
 import { cn } from "@/lib/utils";
 
 interface MdxProseProps {
@@ -237,6 +238,13 @@ export default function MdxProse({ content, type, slug, title }: MdxProseProps) 
         </div>
         <Link
           href={`/dashboard/new?${contextParam}=${slug}`}
+          onClick={() =>
+            trackProductEvent("pedia_to_case_clicked", {
+              article_type: type,
+              source: "article_cta",
+              slug,
+            })
+          }
           className="group flex items-center gap-3 bg-white text-seal-blue px-6 py-3 rounded-full font-bold transition-all hover:bg-seal-light-blue active:scale-95 whitespace-nowrap"
         >
           <span>Fall jetzt klären</span>

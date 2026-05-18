@@ -157,6 +157,7 @@ const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
       <div
+        data-private
         className={cn(
           "min-w-0 px-1 py-1 text-[14px] leading-relaxed",
           isUser ? "max-w-[min(720px,84%)] text-[#111827]" : "w-full max-w-none flex-1 text-slate-900",

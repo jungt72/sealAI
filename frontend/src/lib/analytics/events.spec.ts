@@ -1,6 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-import { cleanAnalyticsPayload, trackSeoEvent } from "./events";
+import {
+  cleanAnalyticsPayload,
+  cleanProductAnalyticsPayload,
+  trackProductEvent,
+  trackSeoEvent,
+} from "./events";
 
 describe("analytics events", () => {
   const originalEnv = { ...process.env };
@@ -9,12 +14,14 @@ describe("analytics events", () => {
     process.env = { ...originalEnv };
     window.dataLayer = [];
     window.gtag = vi.fn();
+    window.rybbit = { event: vi.fn() };
   });
 
   afterEach(() => {
     process.env = originalEnv;
     delete window.dataLayer;
     delete window.gtag;
+    delete window.rybbit;
   });
 
   it("removes empty values from payloads", () => {
@@ -56,5 +63,49 @@ describe("analytics events", () => {
 
     expect(window.dataLayer).toEqual([]);
     expect(window.gtag).not.toHaveBeenCalled();
+  });
+
+  it("allowlists Rybbit product event metadata and drops sensitive free-form fields", () => {
+    expect(
+      cleanProductAnalyticsPayload("case_step_completed", {
+        step: "temperature_c",
+        has_value: true,
+        source: "direct parameter intake",
+        cta: "not allowed here",
+      }),
+    ).toEqual({
+      event_category: "sealingai_product",
+      has_value: true,
+      source: "direct_parameter_intake",
+      step: "temperature_c",
+    });
+  });
+
+  it("sends Rybbit events only when a site id is configured", () => {
+    process.env.NEXT_PUBLIC_RYBBIT_ENABLED = "true";
+    process.env.NEXT_PUBLIC_RYBBIT_SITE_ID = "site-test";
+
+    trackProductEvent("landing_cta_clicked", {
+      cta: "Dichtungsfall klären",
+      location: "Hero CTA",
+    });
+
+    expect(window.rybbit?.event).toHaveBeenCalledWith("landing_cta_clicked", {
+      event_category: "sealingai_product",
+      cta: "dichtungsfall_klaren",
+      location: "hero_cta",
+    });
+  });
+
+  it("does not send Rybbit events while disabled", () => {
+    process.env.NEXT_PUBLIC_RYBBIT_ENABLED = "false";
+    process.env.NEXT_PUBLIC_RYBBIT_SITE_ID = "site-test";
+
+    trackProductEvent("case_started", {
+      case_present: true,
+      source: "case_bound_event",
+    });
+
+    expect(window.rybbit?.event).not.toHaveBeenCalled();
   });
 });

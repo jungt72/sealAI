@@ -54,7 +54,7 @@ export async function fetchWorkspace(caseId: string): Promise<WorkspaceView> {
   return ensureJson<WorkspaceView>(response);
 }
 
-export async function submitRfq(caseId: string, payload: any): Promise<any> {
+export async function submitRfq(caseId: string, payload: unknown): Promise<never> {
   void caseId;
   void payload;
   throw new Error(

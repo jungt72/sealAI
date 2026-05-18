@@ -7,7 +7,7 @@ import type {
   AgentStateUpdateEvent,
 } from "@/lib/contracts/agent";
 import { appendAssistantText, normalizeAssistantMarkdown } from "@/lib/assistantText";
-import { trackSeoEvent } from "@/lib/analytics/events";
+import { trackProductEvent, trackSeoEvent } from "@/lib/analytics/events";
 import { buildStreamWorkspaceView, type StreamWorkspaceView } from "@/lib/streamWorkspace";
 
 export type ChatMessage = {
@@ -189,14 +189,20 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const finalAssistantAnswerSourceRef = useRef<ChatMessage["answerSource"] | null>(null);
   const finalAssistantAnswerTraceRef = useRef<AgentAnswerTrace | null>(null);
   const trackedCaseIdsRef = useRef<Set<string>>(new Set());
+  const trackedFirstInputCaseIdsRef = useRef<Set<string>>(new Set());
 
   const trackCaseBound = useCallback((caseId: string, source: string) => {
     if (trackedCaseIdsRef.current.has(caseId)) {
       return;
     }
     trackedCaseIdsRef.current.add(caseId);
-    trackSeoEvent("case_started", { case_id: caseId, source });
-    trackSeoEvent("rfq_started", { case_id: caseId, source: "agent_chat" });
+    trackProductEvent("case_started", { case_present: true, source });
+    trackSeoEvent("case_started", { source });
+    trackSeoEvent("rfq_started", { source: "agent_chat" });
+    if (!trackedFirstInputCaseIdsRef.current.has(caseId)) {
+      trackedFirstInputCaseIdsRef.current.add(caseId);
+      trackProductEvent("case_first_input_added", { case_present: true, source });
+    }
   }, []);
 
   const fetchHistory = useCallback(async (caseId: string) => {

@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, ShieldCheck, Factory, Beaker, BookOpen, Settings, Clock3, GraduationCap, FolderClock } from "lucide-react";
+import { TrackedLink } from "@/components/analytics/TrackedLink";
 import { HeroMotionBackground } from "@/components/marketing/HeroMotionBackground";
 import { createMetadata } from "@/lib/seo/metadata";
 
@@ -25,13 +26,15 @@ export default function LandingPage() {
               sealingAI hilft dir, deine Dichtungssituation zu verstehen, offene Punkte zu erkennen und souverän mit Herstellern zu sprechen.
             </p>
             <div className="flex flex-wrap gap-4">
-              <Link
+              <TrackedLink
                 href="/dashboard/new"
+                analyticsEvent="landing_cta_clicked"
+                analyticsPayload={{ cta: "dichtungsfall_klaeren", location: "hero" }}
                 className="group flex items-center gap-3 rounded-full bg-seal-blue px-8 py-4 text-lg font-bold text-white shadow-xl transition-all hover:opacity-90 active:scale-95"
               >
                 Dichtungsfall klären
                 <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
-              </Link>
+              </TrackedLink>
             </div>
           </div>
         </div>
@@ -129,9 +132,14 @@ export default function LandingPage() {
                   Beschreibe dein Problem in normalen Worten. sealingAI macht sichtbar, was bekannt ist, was fehlt und welche Frage zuerst geklärt werden sollte.
                 </p>
               </div>
-              <Link href="/dashboard/new" className="text-sm font-bold text-seal-blue flex items-center gap-2 hover:underline">
+              <TrackedLink
+                href="/dashboard/new"
+                analyticsEvent="landing_cta_clicked"
+                analyticsPayload={{ cta: "fall_starten", location: "feature_card" }}
+                className="text-sm font-bold text-seal-blue flex items-center gap-2 hover:underline"
+              >
                 Fall starten <ArrowRight size={14} />
-              </Link>
+              </TrackedLink>
             </div>
             <div className="rounded-3xl border border-border p-10 flex flex-col justify-between bg-seal-blue text-white">
               <div>
@@ -192,13 +200,15 @@ export default function LandingPage() {
           <p className="text-xl text-muted-foreground mb-12">
             Stelle bessere Fragen, erkenne offene Punkte und halte deinen Fall fest, bevor du ihn weitergibst.
           </p>
-          <Link
+          <TrackedLink
             href="/dashboard/new"
+            analyticsEvent="landing_cta_clicked"
+            analyticsPayload={{ cta: "dichtungsfall_klaeren", location: "final_cta" }}
             className="inline-flex items-center gap-3 rounded-full bg-seal-blue px-10 py-5 text-xl font-bold text-white shadow-2xl transition-all hover:scale-105 active:scale-95"
           >
             Dichtungsfall klären
             <ArrowRight size={22} />
-          </Link>
+          </TrackedLink>
         </div>
       </section>
     </div>

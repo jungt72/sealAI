@@ -126,7 +126,7 @@ test("workspace path builders target canonical agent read contracts", () => {
   );
 });
 
-test("workspace path builders keep RFQ document reads on BFF while actions stay absent", () => {
+test("workspace path builders keep RFQ reads on BFF and legacy dispatch disabled", async () => {
   assert.equal(
     workspaceBff.buildWorkspaceReadPath("case/42"),
     "/api/bff/workspace/case%2F42",
@@ -135,13 +135,30 @@ test("workspace path builders keep RFQ document reads on BFF while actions stay 
     workspaceBff.buildRfqDocumentReadPath("case/42"),
     "/api/bff/rfq/case%2F42/document",
   );
+  assert.equal(
+    workspaceBff.buildRfqPreviewReadPath("case/42"),
+    "/api/bff/rfq/case%2F42/preview",
+  );
+  assert.equal(
+    workspaceBff.buildRfqPreviewConsentReadPath("case/42", "preview/1"),
+    "/api/bff/rfq/case%2F42/preview/preview%2F1/consent",
+  );
 
   const exportedKeys = Object.keys(workspaceBff).sort();
   assert.deepEqual(exportedKeys, [
     "buildRfqDocumentBackendReadPath",
     "buildRfqDocumentReadPath",
+    "buildRfqPreviewBackendPath",
+    "buildRfqPreviewConsentBackendPath",
+    "buildRfqPreviewConsentReadPath",
+    "buildRfqPreviewReadPath",
     "buildWorkspaceBackendReadPath",
     "buildWorkspaceReadPath",
     "fetchWorkspace",
+    "submitRfq",
   ]);
+  await assert.rejects(
+    workspaceBff.submitRfq("case/42", {}),
+    /Legacy RFQ document submission is disabled/,
+  );
 });

@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/Providers";
 import { GoogleMarketingTags } from "@/components/analytics/GoogleMarketingTags";
+import { RybbitAnalytics } from "@/components/analytics/RybbitAnalytics";
 import { getSiteOrigin } from "@/lib/site";
 
 const inter = Inter({
@@ -29,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="de" className="light" suppressHydrationWarning>
       <body className={cn(inter.variable, "font-sans bg-background text-[#1F1F1F] antialiased")}>
+        <RybbitAnalytics />
         <GoogleMarketingTags />
         <Providers>
           {children}

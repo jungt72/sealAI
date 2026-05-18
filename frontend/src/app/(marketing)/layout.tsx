@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { TrackedLink } from "@/components/analytics/TrackedLink";
 
 export default function MarketingLayout({
   children,
@@ -34,13 +35,15 @@ export default function MarketingLayout({
             <Link href="/wissen" className="text-sm font-medium text-muted-foreground hover:text-seal-blue transition-colors">
               SealingPedia
             </Link>
-            <Link 
-              href="/dashboard/new" 
+            <TrackedLink
+              href="/dashboard/new"
+              analyticsEvent="landing_cta_clicked"
+              analyticsPayload={{ cta: "fall_klaeren", location: "header" }}
               className="flex items-center gap-2 rounded-full bg-seal-blue px-5 py-2 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-95"
             >
               Fall klären
               <ArrowRight size={14} />
-            </Link>
+            </TrackedLink>
           </nav>
 
           {/* Mobile Menu Placeholder (Phase 8) */}
@@ -48,9 +51,14 @@ export default function MarketingLayout({
             <Link href="/wissen" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               SealingPedia
             </Link>
-            <Link href="/dashboard/new" className="text-xs font-bold uppercase tracking-wider text-seal-blue">
+            <TrackedLink
+              href="/dashboard/new"
+              analyticsEvent="landing_cta_clicked"
+              analyticsPayload={{ cta: "start", location: "mobile_header" }}
+              className="text-xs font-bold uppercase tracking-wider text-seal-blue"
+            >
               Start
-            </Link>
+            </TrackedLink>
           </div>
         </div>
       </header>

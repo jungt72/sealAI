@@ -16,7 +16,7 @@ import {
   buildRfqPreviewConsentReadPath,
   buildRfqPreviewReadPath,
 } from "@/lib/bff/workspace";
-import { trackSeoEvent } from "@/lib/analytics/events";
+import { trackProductEvent, trackSeoEvent } from "@/lib/analytics/events";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { cn } from "@/lib/utils";
 
@@ -234,6 +234,16 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
+  useEffect(() => {
+    if (!caseId) {
+      return;
+    }
+    trackProductEvent("case_summary_viewed", {
+      case_present: true,
+      source: "rfq_pane",
+    });
+  }, [caseId]);
+
   const sections = useMemo(
     () => preview?.payload?.rfq_preview?.sections ?? EMPTY_SECTIONS,
     [preview?.payload?.rfq_preview?.sections],
@@ -301,8 +311,6 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
       const nextPreview = body as RfqPreviewResponse;
       setPreview(nextPreview);
       trackSeoEvent("rfq_preview_generated", {
-        case_id: caseId,
-        preview_id: nextPreview.preview_id,
         case_revision: nextPreview.case_revision,
         dispatch_enabled: nextPreview.dispatch_enabled,
       });
@@ -341,6 +349,11 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
         throw new Error(getErrorMessage(body, "Nutzerbestätigung konnte nicht gespeichert werden."));
       }
       setPreview(body as RfqPreviewResponse);
+      trackProductEvent("handover_clicked", {
+        case_present: true,
+        consent_status: "granted",
+        source: "rfq_manual_export_consent",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nutzerbestätigung konnte nicht gespeichert werden.");
     } finally {
@@ -357,7 +370,7 @@ export default function RfqPane({ data, caseId, workspace }: RfqPaneProps) {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4" data-private>
       <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
           <div>

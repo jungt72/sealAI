@@ -121,6 +121,7 @@ export default function ChatComposer({
   return (
     <form
       onSubmit={handleSubmit}
+      data-private
       className={cn(
         "w-full border border-[#C9D1DC] bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)]",
         isHero ? "rounded-[28px] p-4" : "rounded-[16px] p-2",

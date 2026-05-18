@@ -1,6 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, FileText, Gauge, SearchCheck, ShieldCheck } from "lucide-react";
+import { TrackedLink } from "@/components/analytics/TrackedLink";
 import { createMetadata } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = createMetadata({
@@ -57,13 +58,15 @@ export default function DichtungAuslegenLassenPage() {
               klare, herstellerprüfbare Anfragebasis.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
-              <Link
+              <TrackedLink
                 href="/dashboard/new?request_type=new_design"
+                analyticsEvent="landing_cta_clicked"
+                analyticsPayload={{ cta: "fall_jetzt_klaeren", location: "rfq_landing_hero" }}
                 className="group inline-flex items-center gap-3 rounded-full bg-seal-blue px-8 py-4 text-lg font-bold text-white shadow-xl transition-all hover:opacity-90 active:scale-95"
               >
                 Fall jetzt klären
                 <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
-              </Link>
+              </TrackedLink>
               <Link
                 href="/wissen/wellendichtring"
                 className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-8 py-4 text-lg font-medium text-foreground transition-all hover:bg-slate-50 active:scale-95"
@@ -186,13 +189,15 @@ export default function DichtungAuslegenLassenPage() {
               Starte mit dem, was bekannt ist. sealingAI führt dich zum nächsten sinnvollen Schritt und hält deinen Fall fest.
             </p>
           </div>
-          <Link
+          <TrackedLink
             href="/dashboard/new?request_type=new_design"
+            analyticsEvent="landing_cta_clicked"
+            analyticsPayload={{ cta: "dichtungsfall_klaeren", location: "rfq_landing_final_cta" }}
             className="inline-flex shrink-0 items-center gap-3 rounded-full bg-white px-8 py-4 text-lg font-bold text-seal-blue transition-all hover:bg-seal-light-blue active:scale-95"
           >
             Dichtungsfall klären
             <ArrowRight size={20} />
-          </Link>
+          </TrackedLink>
         </div>
       </section>
     </div>

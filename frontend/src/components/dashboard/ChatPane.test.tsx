@@ -104,7 +104,11 @@ describe("ChatPane", () => {
       writable: true,
       value: function scrollTo() {},
     });
-    vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(function scrollTo(options?: ScrollToOptions | number, y?: number) {
+    vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(function scrollTo(
+      this: HTMLElement,
+      options?: ScrollToOptions | number,
+      y?: number,
+    ) {
       const nextTop = typeof options === "number" ? y ?? 0 : options?.top ?? this.scrollTop;
       Object.defineProperty(this, "scrollTop", {
         configurable: true,
@@ -112,8 +116,10 @@ describe("ChatPane", () => {
         value: nextTop,
       });
     });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getBoundingClientRect() {
-      const element = this as HTMLElement;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getBoundingClientRect(
+      this: HTMLElement,
+    ) {
+      const element = this;
       const top = element.dataset.testid === "chat-scroll-region" ? 100 : element.dataset.latestUser ? 260 : 0;
       return {
         x: 0,

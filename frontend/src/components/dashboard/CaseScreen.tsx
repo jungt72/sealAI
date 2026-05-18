@@ -26,6 +26,7 @@ import ChatPane from "@/components/dashboard/ChatPane";
 import { StatusBadge } from "@/components/dashboard/CockpitElements";
 import { SealCockpit } from "@/components/dashboard/SealCockpit";
 import { useCockpitData } from "@/hooks/useCockpitData";
+import { trackProductEvent } from "@/lib/analytics/events";
 import { patchAgentOverrides, type AgentOverrideItemRequest } from "@/lib/bff/parameterOverride";
 import { fetchWorkspace } from "@/lib/bff/workspace";
 import { useChatStore } from "@/lib/store/chatStore";
@@ -422,6 +423,13 @@ function ParameterIntakePanel({ cockpit }: { cockpit: ReturnType<typeof useCockp
       const nextWorkspace = await fetchWorkspace(canonicalCaseId).catch(() => null);
       if (nextWorkspace) {
         setWorkspace(nextWorkspace);
+      }
+      for (const override of overrides) {
+        trackProductEvent("case_step_completed", {
+          has_value: true,
+          source: "direct_parameter_intake",
+          step: override.field_name,
+        });
       }
       setSaveState("saved");
       setSaveMessage(`${result.applied_fields.length} Parameter in der Fallakte gespeichert.`);
@@ -1771,6 +1779,13 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
           overrides,
           run_analysis: true,
         });
+        for (const override of overrides) {
+          trackProductEvent("case_step_completed", {
+            has_value: true,
+            source: "quick_parameter_intake",
+            step: override.field_name,
+          });
+        }
         const assistantText = (result.answer_markdown || result.reply || "").trim();
         if (assistantText) {
           appendAssistantMessage(assistantText);
