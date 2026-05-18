@@ -131,6 +131,7 @@ frontend/public/sitemap*.xml
 
 # Restore / diagnostics artefacts
 nginx/*.pre-restore-*
+nginx/certs/
 /serverinfo.json
 /401
 /BFF-

@@ -179,6 +179,7 @@ services:
     - ./nginx/00-tuning.conf:/etc/nginx/conf.d/00-tuning.conf:ro
     - ./nginx/www:/var/www/certbot:ro
     - /etc/letsencrypt:/etc/letsencrypt:ro
+    - ./nginx/certs/config:/etc/letsencrypt-analytics:ro
     healthcheck:
       test:
       - CMD-SHELL
