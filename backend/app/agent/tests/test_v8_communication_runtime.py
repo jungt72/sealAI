@@ -93,6 +93,21 @@ def test_v8_deterministic_routes_short_material_info_as_active_side_question() -
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
 
 
+def test_v8_deterministic_routes_material_limits_as_active_side_question() -> None:
+    decision = CommunicationRuntimeV8().decide_deterministic(
+        ConversationControllerInput(
+            user_message="ich benötige die grenzwerte von PTFE",
+            pre_gate_classification=PreGateClassification.KNOWLEDGE_QUERY,
+            pre_gate_confidence=0.83,
+            pre_gate_reason="deterministic_material_limits_knowledge",
+            active_case_exists=True,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+
+
 def test_v8_deterministic_routes_context_recall_as_active_process_question() -> None:
     decision = CommunicationRuntimeV8().decide_deterministic(
         ConversationControllerInput(
