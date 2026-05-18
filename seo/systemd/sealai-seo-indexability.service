@@ -1,0 +1,7 @@
+[Unit]
+Description=SealAI SEO indexability control crawl
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/thorsten/sealai
+ExecStart=/home/thorsten/sealai/seo/scripts/run_indexability_check.sh

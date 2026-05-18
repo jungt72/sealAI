@@ -49,6 +49,27 @@ class DataForSeoClient:
             ],
         )
 
+    def serp_google_organic_live_advanced(
+        self,
+        *,
+        keywords: list[str],
+        location_code: int,
+        language_code: str,
+        depth: int = 20,
+    ) -> dict[str, Any]:
+        return self.post(
+            "/serp/google/organic/live/advanced",
+            [
+                {
+                    "keyword": keyword,
+                    "location_code": location_code,
+                    "language_code": language_code,
+                    "depth": depth,
+                }
+                for keyword in keywords
+            ],
+        )
+
 
 def summarize_user_data(payload: dict[str, Any]) -> dict[str, Any]:
     task = (payload.get("tasks") or [{}])[0]

@@ -17,7 +17,6 @@ Phase 4:
 
 Phase 5:
 
-- DataForSEO SERP/keyword snapshots
 - no backlinks in v1
 
 Phase 6:

@@ -13,10 +13,13 @@ from .config import DEFAULT_DB_PATH, DEFAULT_REPORT_DIR, DEFAULT_LOG_DIR, DEFAUL
 from .dataforseo_budget import check_budget
 from .dataforseo_client import DataForSeoClient, summarize_user_data
 from .gsc_client import GscClient
+from .indexability import crawl
 from .keyword_foundation import load_seed_csv, run_search_volume, seed_keywords_for_run, upsert_seed_keywords
 from .pagespeed import sync_pagespeed
-from .reports import anomaly, content_roadmap, keyword_foundation, quick_wins
+from .reports import anomaly, content_roadmap, indexability, keyword_foundation, quick_wins
+from .serp_snapshot import run_serp_snapshot
 from .sync_gsc import sync
+from .url_inspection import inspect_urls, urls_from_sitemap_or_args
 
 
 def parse_date(value: str) -> date:
@@ -79,6 +82,56 @@ def cmd_report_weekly(args) -> None:
         site_url=args.site_url or s.gsc_site_url,
         report_dir=Path(args.report_dir or s.report_dir),
         period_end=parse_date(args.period_end) if args.period_end else None,
+    )
+    print(path)
+
+
+def cmd_crawl_indexability(args) -> None:
+    s = settings()
+    conn = db.connect(Path(args.db or s.db_path))
+    db.apply_migrations(conn, Path(args.migrations))
+    result = crawl(
+        conn,
+        base_url=args.base_url,
+        sitemap_url=args.sitemap_url,
+        limit=args.limit,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+def cmd_sync_url_inspection(args) -> None:
+    s = settings()
+    conn = db.connect(Path(args.db or s.db_path))
+    db.apply_migrations(conn, Path(args.migrations))
+    urls = urls_from_sitemap_or_args(
+        sitemap_url=args.sitemap_url,
+        urls=args.url,
+        limit=args.limit,
+    )
+    client = GscClient(
+        site_url=args.site_url or s.gsc_site_url,
+        service_account_file=s.gsc_service_account_file,
+        client_id=s.gsc_client_id,
+        client_secret=s.gsc_client_secret,
+        refresh_token=s.gsc_refresh_token,
+    )
+    result = inspect_urls(
+        conn,
+        client=client,
+        site_url=args.site_url or s.gsc_site_url,
+        urls=urls,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+def cmd_report_indexability(args) -> None:
+    s = settings()
+    conn = db.connect(Path(args.db or s.db_path))
+    db.apply_migrations(conn, Path(args.migrations))
+    path = indexability.generate(
+        conn,
+        report_dir=Path(args.report_dir or s.report_dir),
     )
     print(path)
 
@@ -192,6 +245,32 @@ def cmd_dataforseo_keyword_volume(args) -> None:
         raise SystemExit(2)
 
 
+def cmd_dataforseo_serp_snapshot(args) -> None:
+    s = settings()
+    conn = db.connect(Path(args.db or s.db_path))
+    db.apply_migrations(conn, Path(args.migrations))
+    client = dataforseo_client_from_settings()
+    if args.keyword:
+        keywords = [item.strip().lower() for item in args.keyword if item.strip()]
+    else:
+        keywords = seed_keywords_for_run(conn, args.limit)
+    result = run_serp_snapshot(
+        conn,
+        client=client,
+        keywords=keywords,
+        location_code=args.location_code,
+        language_code=args.language_code,
+        planned_cost_usd=args.planned_cost,
+        max_run_cost_usd=float(args.max_run_cost if args.max_run_cost is not None else s.dataforseo_max_run_cost_usd),
+        target_domains=args.target_domain or ["sealingai.com"],
+        depth=args.depth,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    if not result.get("allowed"):
+        raise SystemExit(2)
+
+
 def cmd_report_keyword_foundation(args) -> None:
     s = settings()
     conn = db.connect(Path(args.db or s.db_path))
@@ -264,6 +343,30 @@ def build_parser() -> argparse.ArgumentParser:
     weekly.add_argument("--report-dir")
     weekly.set_defaults(func=cmd_report_weekly)
 
+    index_crawl = sub.add_parser("crawl-indexability")
+    index_crawl.add_argument("--base-url", default="https://sealingai.com")
+    index_crawl.add_argument("--sitemap-url", default="https://sealingai.com/sitemap.xml")
+    index_crawl.add_argument("--limit", type=int, default=500)
+    index_crawl.add_argument("--db")
+    index_crawl.add_argument("--migrations", default="seo/migrations")
+    index_crawl.set_defaults(func=cmd_crawl_indexability)
+
+    url_inspect = sub.add_parser("sync-url-inspection")
+    url_inspect.add_argument("--site-url")
+    url_inspect.add_argument("--sitemap-url")
+    url_inspect.add_argument("--url", action="append")
+    url_inspect.add_argument("--limit", type=int, default=20)
+    url_inspect.add_argument("--db")
+    url_inspect.add_argument("--migrations", default="seo/migrations")
+    url_inspect.add_argument("--dry-run", action="store_true")
+    url_inspect.set_defaults(func=cmd_sync_url_inspection)
+
+    index_report = sub.add_parser("report-indexability")
+    index_report.add_argument("--db")
+    index_report.add_argument("--report-dir")
+    index_report.add_argument("--migrations", default="seo/migrations")
+    index_report.set_defaults(func=cmd_report_indexability)
+
     backup = sub.add_parser("backup")
     backup.add_argument("--db")
     backup.add_argument("--backup-dir")
@@ -299,6 +402,20 @@ def build_parser() -> argparse.ArgumentParser:
     dfs_volume.add_argument("--db")
     dfs_volume.add_argument("--migrations", default="seo/migrations")
     dfs_volume.set_defaults(func=cmd_dataforseo_keyword_volume)
+
+    dfs_serp = sub.add_parser("dataforseo-serp-snapshot")
+    dfs_serp.add_argument("--limit", type=int, default=10)
+    dfs_serp.add_argument("--keyword", action="append")
+    dfs_serp.add_argument("--location-code", type=int, default=2276)
+    dfs_serp.add_argument("--language-code", default="de")
+    dfs_serp.add_argument("--planned-cost", type=float, default=0.20)
+    dfs_serp.add_argument("--max-run-cost", type=float)
+    dfs_serp.add_argument("--target-domain", action="append")
+    dfs_serp.add_argument("--depth", type=int, default=20)
+    dfs_serp.add_argument("--dry-run", action="store_true")
+    dfs_serp.add_argument("--db")
+    dfs_serp.add_argument("--migrations", default="seo/migrations")
+    dfs_serp.set_defaults(func=cmd_dataforseo_serp_snapshot)
 
     kw_foundation = sub.add_parser("report-keyword-foundation")
     kw_foundation.add_argument("--location-code", type=int, default=2276)

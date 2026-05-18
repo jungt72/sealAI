@@ -1,6 +1,6 @@
 # SealAI SEO Pipeline
 
-Phase 1 is a deterministic Google SEO data foundation. It mirrors GSC Search Analytics signals into SQLite, enriches the keyword foundation with DataForSEO, records PageSpeed/Core-Web-Vitals lab checks, and emits Markdown reports.
+Phase 1 is a deterministic Google SEO control foundation. It mirrors GSC Search Analytics signals into SQLite, enriches the keyword foundation with DataForSEO, records PageSpeed/Core-Web-Vitals lab checks, crawls sitemap URLs for indexability and internal-link signals, and emits Markdown reports.
 
 Included:
 
@@ -8,11 +8,14 @@ Included:
 - SQLite storage with idempotent upserts
 - Daily anomaly report
 - Weekly quick-win keyword report
+- Sitemap indexability crawler and internal link graph
+- GSC URL Inspection persistence for selected URLs
 - DataForSEO keyword-volume foundation with explicit budget guard
+- DataForSEO SERP snapshots with explicit budget guard
 - PageSpeed Insights / Lighthouse lab checks for key landing pages
 - Runtime scripts, backups, tests
 
-Not included in Phase 1: LangGraph, MCP, Claude/LLM jobs, crawling, backlinks, competitor analysis, Merchant Center, Looker Studio provisioning, Google Business Profile management, or automated content generation.
+Not included in Phase 1: LangGraph, MCP, Claude/LLM jobs, backlinks, Merchant Center, Looker Studio provisioning, Google Business Profile management, or automated content generation.
 
 DataForSEO is configured as an optional external signal connector. Keep it gated behind explicit runs because most keyword, SERP, and backlink endpoints can consume account balance.
 
@@ -31,8 +34,12 @@ PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-user-data
 PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-budget-check --planned-cost 0.25
 PYTHONPATH=seo/src python -m sealai_seo.cli seed-keywords
 PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-keyword-volume --dry-run --planned-cost 0.10
+PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-serp-snapshot --dry-run --planned-cost 0.20
 PYTHONPATH=seo/src python -m sealai_seo.cli report-keyword-foundation
 PYTHONPATH=seo/src python -m sealai_seo.cli report-content-roadmap
+PYTHONPATH=seo/src python -m sealai_seo.cli crawl-indexability
+PYTHONPATH=seo/src python -m sealai_seo.cli report-indexability
+PYTHONPATH=seo/src python -m sealai_seo.cli sync-url-inspection --sitemap-url https://sealingai.com/sitemap.xml --limit 10 --dry-run
 PYTHONPATH=seo/src python -m sealai_seo.cli sync-pagespeed --dry-run
 ```
 
@@ -61,7 +68,7 @@ PAGESPEED_URLS=https://sealingai.com/,https://sealingai.com/wissen/wellendichtri
 
 Run `dataforseo-budget-check` before any paid DataForSEO workflow. It blocks when the planned cost exceeds the per-run limit or the current account balance.
 
-Run 0 uses `seo/data/run0_keywords.csv` and the DataForSEO Google Ads Search Volume live endpoint for a small German-language seed validation. Plan `$0.10` for the initial seed-volume run; use SERP APIs only after the top keyword set is known.
+Run 0 uses `seo/data/run0_keywords.csv` and the DataForSEO Google Ads Search Volume live endpoint for a small German-language seed validation. Plan `$0.10` for the initial seed-volume run. SERP snapshots are available through `dataforseo-serp-snapshot` and must stay explicit and budget-gated.
 
 Tests:
 

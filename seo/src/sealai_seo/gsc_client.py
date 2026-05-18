@@ -130,6 +130,19 @@ class GscClient:
         }
         return _post_json(url, self.token(), payload, operation="GSC Search Analytics query")
 
+    def inspect_url(self, *, inspection_url: str, site_url: str | None = None, language_code: str = "de-DE") -> dict:
+        payload = {
+            "inspectionUrl": inspection_url,
+            "siteUrl": site_url or self.site_url,
+            "languageCode": language_code,
+        }
+        return _post_json(
+            "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect",
+            self.token(),
+            payload,
+            operation="GSC URL Inspection",
+        )
+
 
 class MockGscClient:
     def __init__(self, responses: dict[tuple[str, tuple[str, ...], int], list[dict]]):

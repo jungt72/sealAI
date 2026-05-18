@@ -30,6 +30,25 @@ Manual sync:
 PYTHONPATH=seo/src python -m sealai_seo.cli sync-gsc --date-from 2026-05-02 --date-to 2026-05-02
 ```
 
+Indexability control:
+
+```bash
+PYTHONPATH=seo/src python -m sealai_seo.cli crawl-indexability --sitemap-url https://sealingai.com/sitemap.xml
+PYTHONPATH=seo/src python -m sealai_seo.cli report-indexability
+```
+
+GSC URL Inspection uses the same OAuth credentials as Search Analytics and should be run for priority URLs, not every deploy by default:
+
+```bash
+PYTHONPATH=seo/src python -m sealai_seo.cli sync-url-inspection --sitemap-url https://sealingai.com/sitemap.xml --limit 10
+```
+
+SERP snapshots are paid DataForSEO calls and must stay budget-gated:
+
+```bash
+PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-serp-snapshot --dry-run --planned-cost 0.20
+```
+
 D-1 and D-2 are provisional. D-3 and older are treated as final. Deterministic reports default to final dates.
 
 Backups:

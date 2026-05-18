@@ -68,6 +68,17 @@ type PageSpeedSnapshot = {
   rows: PageSpeedMetricRow[];
 };
 
+type IndexabilitySnapshot = {
+  dbFound: boolean;
+  latestRunAt: string | null;
+  latestStatus: string | null;
+  urlsDiscovered: number;
+  urlsChecked: number;
+  indexableUrls: number;
+  issueUrls: number;
+  issueRows: IndexabilityIssueRow[];
+};
+
 type GscRankingRow = {
   keyword: string;
   siteUrl: string;
@@ -90,6 +101,16 @@ type PageSpeedMetricRow = {
   fcpMs: number | null;
   ttfbMs: number | null;
   fetchedAt: string;
+};
+
+type IndexabilityIssueRow = {
+  url: string;
+  statusCode: number | null;
+  indexable: boolean;
+  inboundInternalLinks: number;
+  internalLinks: number;
+  issueCount: number;
+  issues: string[];
 };
 
 const ROADMAP: RoadmapRow[] = [
@@ -354,6 +375,8 @@ async function seoStackStatus() {
     pagespeedTimer: checks[5],
     sqliteSchema: checks[6],
     googleToolchainSchema: checks[7],
+    indexabilityScript: seoRoot ? await pathExists(path.join(seoRoot, "scripts", "run_indexability_check.sh")) : false,
+    indexabilityTimer: seoRoot ? await pathExists(path.join(seoRoot, "systemd", "sealai-seo-indexability.timer")) : false,
   };
 }
 
@@ -557,6 +580,111 @@ print(json.dumps({
   }
 }
 
+function normalizeIndexabilityRows(value: unknown): IndexabilityIssueRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    const url = typeof row.url === "string" ? row.url : "";
+    if (!url) {
+      return [];
+    }
+    let issues: string[] = [];
+    if (typeof row.issues_json === "string") {
+      try {
+        const parsed = JSON.parse(row.issues_json);
+        issues = Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        issues = [];
+      }
+    }
+    return [{
+      url,
+      statusCode: row.status_code === null ? null : Number(row.status_code ?? 0),
+      indexable: Boolean(row.indexable),
+      inboundInternalLinks: Number(row.inbound_internal_links_count ?? 0),
+      internalLinks: Number(row.internal_links_count ?? 0),
+      issueCount: Number(row.issue_count ?? 0),
+      issues,
+    }];
+  });
+}
+
+async function indexabilitySnapshot(): Promise<IndexabilitySnapshot> {
+  const dbPath = await firstExistingPath([
+    process.env.SEO_DB_PATH || "",
+    "/var/seo/data/seo.db",
+    "/home/thorsten/var/seo/data/seo.db",
+    path.resolve(process.cwd(), "..", "seo", "data", "seo.db"),
+  ].filter(Boolean));
+
+  if (!dbPath) {
+    return { dbFound: false, latestRunAt: null, latestStatus: null, urlsDiscovered: 0, urlsChecked: 0, indexableUrls: 0, issueUrls: 0, issueRows: [] };
+  }
+
+  const script = `
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+conn.row_factory = sqlite3.Row
+tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+if not {"seo_crawl_runs", "seo_url_checks"} <= tables:
+    print(json.dumps({"latest_run_at": None, "latest_status": None, "urls_discovered": 0, "urls_checked": 0, "indexable_urls": 0, "issue_urls": 0, "rows": []}))
+    raise SystemExit(0)
+
+run = conn.execute("""
+    SELECT run_id, started_at_utc, status, urls_discovered, urls_checked, indexable_urls, issue_urls
+    FROM seo_crawl_runs
+    ORDER BY started_at_utc DESC
+    LIMIT 1
+""").fetchone()
+if not run:
+    print(json.dumps({"latest_run_at": None, "latest_status": None, "urls_discovered": 0, "urls_checked": 0, "indexable_urls": 0, "issue_urls": 0, "rows": []}))
+    raise SystemExit(0)
+rows = conn.execute("""
+    SELECT url, status_code, indexable, inbound_internal_links_count, internal_links_count, issue_count, issues_json
+    FROM seo_url_checks
+    WHERE run_id = ? AND issue_count > 0
+    ORDER BY issue_count DESC, inbound_internal_links_count ASC, url ASC
+    LIMIT 10
+""", (run["run_id"],)).fetchall()
+print(json.dumps({
+    "latest_run_at": run["started_at_utc"],
+    "latest_status": run["status"],
+    "urls_discovered": run["urls_discovered"],
+    "urls_checked": run["urls_checked"],
+    "indexable_urls": run["indexable_urls"],
+    "issue_urls": run["issue_urls"],
+    "rows": [dict(row) for row in rows],
+}, ensure_ascii=False))
+`;
+
+  try {
+    const { stdout } = await execFileAsync("python3", ["-c", script, dbPath], {
+      maxBuffer: 1024 * 1024,
+    });
+    const payload = JSON.parse(stdout) as Record<string, unknown>;
+    return {
+      dbFound: true,
+      latestRunAt: typeof payload.latest_run_at === "string" ? payload.latest_run_at : null,
+      latestStatus: typeof payload.latest_status === "string" ? payload.latest_status : null,
+      urlsDiscovered: Number(payload.urls_discovered ?? 0),
+      urlsChecked: Number(payload.urls_checked ?? 0),
+      indexableUrls: Number(payload.indexable_urls ?? 0),
+      issueUrls: Number(payload.issue_urls ?? 0),
+      issueRows: normalizeIndexabilityRows(payload.rows),
+    };
+  } catch {
+    return { dbFound: true, latestRunAt: null, latestStatus: null, urlsDiscovered: 0, urlsChecked: 0, indexableUrls: 0, issueUrls: 0, issueRows: [] };
+  }
+}
+
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
     <span
@@ -596,7 +724,7 @@ function Metric({
 }
 
 export default async function SeoDashboardPage() {
-  const [wissen, werkstoffe, medien, reports, stack, rankings, pageSpeed] = await Promise.all([
+  const [wissen, werkstoffe, medien, reports, stack, rankings, pageSpeed, indexability] = await Promise.all([
     getAllSlugs("wissen"),
     getAllSlugs("werkstoffe"),
     getAllSlugs("medien"),
@@ -604,14 +732,16 @@ export default async function SeoDashboardPage() {
     seoStackStatus(),
     gscRankingSnapshot(),
     pageSpeedSnapshot(),
+    indexabilitySnapshot(),
   ]);
   const publishedCount = wissen.length + werkstoffe.length + medien.length + 1;
   const onlineRoadmap = ROADMAP.filter((row) => row.status === "online").length;
   const reportsReady = reports.length > 0;
-  const automationReady = stack.gscScript && stack.dataForSeoScript && stack.pagespeedScript && stack.gscTimer && stack.weeklyTimer && stack.pagespeedTimer;
+  const automationReady = stack.gscScript && stack.dataForSeoScript && stack.pagespeedScript && stack.gscTimer && stack.weeklyTimer && stack.pagespeedTimer && stack.indexabilityScript && stack.indexabilityTimer;
   const rankingRowsByKeyword = new Map(rankings.rows.map((row) => [row.keyword, row]));
   const rankingCoverage = ROADMAP.filter((row) => rankingRowsByKeyword.has(row.primaryKeyword)).length;
   const pageSpeedScore = pageSpeed.rows[0]?.performanceScore;
+  const indexabilityRate = indexability.urlsChecked > 0 ? indexability.indexableUrls / indexability.urlsChecked : null;
 
   const actions = [
     {
@@ -641,6 +771,14 @@ export default async function SeoDashboardPage() {
         : "Noch kein PageSpeed-Datensatz gefunden. Nächster Schritt: Mobile-Run für zentrale Landingpages starten.",
       command: "PYTHONPATH=seo/src python -m sealai_seo.cli sync-pagespeed --strategy mobile",
       tone: pageSpeed.latestRunAt ? "ready" : "attention",
+    },
+    {
+      title: indexability.latestRunAt ? "Indexability-Issues priorisieren" : "Ersten Indexability-Crawl starten",
+      detail: indexability.latestRunAt
+        ? "Sitemap-URLs, Canonicals, H1, Meta, JSON-LD und interne Links sind in der SEO-Datenbank bewertbar."
+        : "Noch kein technischer URL-Crawl vorhanden. Nächster Schritt: Sitemap gegen Indexierbarkeit und Linkgraph prüfen.",
+      command: "PYTHONPATH=seo/src python -m sealai_seo.cli crawl-indexability && PYTHONPATH=seo/src python -m sealai_seo.cli report-indexability",
+      tone: indexability.latestRunAt ? "ready" : "attention",
     },
     {
       title: "Neutralen SERP-Rankcheck vorbereiten",
@@ -678,6 +816,9 @@ export default async function SeoDashboardPage() {
             <StatusPill tone={stack.pagespeedScript && stack.pagespeedTimer ? "ready" : "attention"}>
               <Activity size={13} /> PageSpeed
             </StatusPill>
+            <StatusPill tone={stack.indexabilityScript && stack.indexabilityTimer ? "ready" : "attention"}>
+              <Search size={13} /> Indexability
+            </StatusPill>
             <StatusPill tone={reportsReady ? "ready" : "attention"}>
               <FileText size={13} /> Reports
             </StatusPill>
@@ -691,8 +832,57 @@ export default async function SeoDashboardPage() {
           <Metric label="Public Content" value={String(publishedCount)} detail={`${wissen.length} Wissen, ${werkstoffe.length} Werkstoffe, ${medien.length} Medien, 1 RFQ-Landingpage`} icon={FileText} />
           <Metric label="Run-0 Roadmap" value={`${onlineRoadmap}/${ROADMAP.length}`} detail="erste Keyword- und Content-Architektur online abbildbar" icon={ListChecks} />
           <Metric label="Automation" value={automationReady ? "bereit" : "offen"} detail="GSC/DataForSEO Skripte und Report-Timer im SEO-Stack" icon={Workflow} />
+          <Metric label="Indexierbarkeit" value={indexabilityRate === null ? "offen" : `${Math.round(indexabilityRate * 100)} %`} detail={indexability.latestRunAt ? `${indexability.indexableUrls}/${indexability.urlsChecked} URLs indexierbar, ${indexability.issueUrls} mit Issues` : "Sitemap-Crawl noch starten"} icon={Search} />
           <Metric label="PageSpeed" value={pageSpeedScore == null ? "offen" : `${Math.round(pageSpeedScore * 100)}/100`} detail={pageSpeed.latestRunAt ? `letzter Run ${formatDate(pageSpeed.latestRunAt)}` : "Mobile-Lighthouse für zentrale Seiten noch starten"} icon={Activity} />
-          <Metric label="Letzter Report" value={reports[0] ? formatDate(reports[0].modifiedAt) : "noch keiner"} detail={reports[0]?.name ?? "GSC-Reports nach erstem Sync sichtbar"} icon={Clock3} />
+        </section>
+
+        <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Search size={18} className="text-seal-blue" />
+                <h2 className="text-lg font-semibold">Indexability Control</h2>
+              </div>
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
+                Deterministische Kontrolle der Sitemap-URLs: HTTP-Status, Canonical, noindex, H1, Meta Description, JSON-LD und interne Linksignale.
+              </p>
+            </div>
+            <StatusPill tone={indexability.latestStatus === "success" && indexability.issueUrls === 0 ? "ready" : indexability.latestRunAt ? "attention" : "quiet"}>
+              {indexability.latestRunAt ? `${indexability.issueUrls} URLs mit Issues` : "noch kein Crawl"}
+            </StatusPill>
+          </div>
+          {indexability.issueRows.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-seal-blue/10 text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                    <th className="py-3 pr-4">URL</th>
+                    <th className="py-3 pr-4 text-right">HTTP</th>
+                    <th className="py-3 pr-4 text-right">Indexierbar</th>
+                    <th className="py-3 pr-4 text-right">Inbound Links</th>
+                    <th className="py-3">Issues</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {indexability.issueRows.map((row) => (
+                    <tr key={row.url} className="border-b border-seal-blue/10 align-top last:border-0">
+                      <td className="py-3 pr-4 font-medium text-[#111827]">{row.url.replace(/^https?:\/\//, "")}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.statusCode ?? "-"}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.indexable ? "ja" : "nein"}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.inboundInternalLinks}</td>
+                      <td className="py-3 text-[#4B5563]">{row.issues.join(", ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[14px] border border-seal-blue/20 bg-seal-blue/5 p-3 text-sm leading-5 text-[#526179]">
+              {indexability.latestRunAt
+                ? `Letzter Crawl ${formatDate(indexability.latestRunAt)}: ${indexability.indexableUrls}/${indexability.urlsChecked} URLs indexierbar.`
+                : "Noch kein Indexability-Crawl vorhanden. Starte `PYTHONPATH=seo/src python -m sealai_seo.cli crawl-indexability`."}
+            </div>
+          )}
         </section>
 
         <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
