@@ -6,6 +6,7 @@ from hashlib import sha256
 import json
 import time
 from pathlib import Path
+from urllib import error
 from urllib import parse, request
 
 from .config import MAX_ROWS_PER_REQUEST
@@ -15,23 +16,69 @@ def _b64url(data: bytes) -> str:
     return urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _post_form(url: str, data: dict[str, str]) -> dict:
+class GscApiError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        operation: str,
+        status: int,
+        reason: str | None = None,
+        description: str | None = None,
+    ) -> None:
+        parts = [f"{operation} failed with HTTP {status}"]
+        if reason:
+            parts.append(reason)
+        if description:
+            parts.append(description)
+        super().__init__(": ".join(parts))
+        self.operation = operation
+        self.status = status
+        self.reason = reason
+        self.description = description
+
+
+def _safe_http_error(exc: error.HTTPError, *, operation: str) -> GscApiError:
+    raw = exc.read().decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+    reason = payload.get("error")
+    description = payload.get("error_description")
+    if not description and isinstance(payload.get("error"), dict):
+        description = payload["error"].get("message")
+        reason = payload["error"].get("status") or reason
+    return GscApiError(
+        operation=operation,
+        status=exc.code,
+        reason=reason,
+        description=description,
+    )
+
+
+def _post_form(url: str, data: dict[str, str], *, operation: str) -> dict:
     body = parse.urlencode(data).encode("utf-8")
     req = request.Request(url, data=body, headers={"content-type": "application/x-www-form-urlencoded"})
-    with request.urlopen(req, timeout=30) as res:
-        return json.loads(res.read().decode("utf-8"))
+    try:
+        with request.urlopen(req, timeout=30) as res:
+            return json.loads(res.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        raise _safe_http_error(exc, operation=operation) from exc
 
 
-def _post_json(url: str, token: str, payload: dict) -> dict:
+def _post_json(url: str, token: str, payload: dict, *, operation: str = "GSC API request") -> dict:
     body = json.dumps(payload).encode("utf-8")
     req = request.Request(
         url,
         data=body,
         headers={"authorization": f"Bearer {token}", "content-type": "application/json"},
     )
-    with request.urlopen(req, timeout=60) as res:
-        text = res.read().decode("utf-8")
-        return json.loads(text) if text else {}
+    try:
+        with request.urlopen(req, timeout=60) as res:
+            text = res.read().decode("utf-8")
+            return json.loads(text) if text else {}
+    except error.HTTPError as exc:
+        raise _safe_http_error(exc, operation=operation) from exc
 
 
 @dataclass
@@ -55,6 +102,7 @@ class GscClient:
                     "refresh_token": self.refresh_token,
                     "grant_type": "refresh_token",
                 },
+                operation="GSC OAuth token refresh",
             )
             self.access_token = payload["access_token"]
             return self.access_token
@@ -80,7 +128,7 @@ class GscClient:
             "rowLimit": MAX_ROWS_PER_REQUEST,
             "startRow": start_row,
         }
-        return _post_json(url, self.token(), payload)
+        return _post_json(url, self.token(), payload, operation="GSC Search Analytics query")
 
 
 class MockGscClient:

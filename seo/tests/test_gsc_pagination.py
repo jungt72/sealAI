@@ -20,6 +20,6 @@ def test_pagination_uses_start_row(tmp_path):
         ("2026-05-01", ("page",), MAX_ROWS_PER_REQUEST * 2): [],
         ("2026-05-01", ("page", "query"), 0): [],
     })
-    sync(conn, client=client, site_url="sc-domain:sealai.net", date_from=date(2026, 5, 1), date_to=date(2026, 5, 1), log_dir=tmp_path)
+    sync(conn, client=client, site_url="sc-domain:sealingai.com", date_from=date(2026, 5, 1), date_to=date(2026, 5, 1), log_dir=tmp_path)
     assert ("2026-05-01", ("page",), MAX_ROWS_PER_REQUEST) in client.calls
     assert ("2026-05-01", ("page",), MAX_ROWS_PER_REQUEST * 2) in client.calls
