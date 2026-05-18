@@ -208,6 +208,10 @@ def test_apply_v92_contracts_revises_material_family_claim_before_payload_leaves
     assert "ist geeignet" not in result["answer_markdown"].casefold()
     assert result["final_guard_result"]["final_stream_allowed"] is True
     assert result["v92_dashboard"]["schema_version"] == "v92_dashboard_contract_1"
+    assert result["run_meta"]["v92"]["adversarial_review_source"] == "deterministic"
+    assert result["run_meta"]["v92"]["adversarial_review_decision"] == "revise"
+    assert result["run_meta"]["v92"]["revision_applied"] is True
+    assert result["run_meta"]["v92"]["guarded_fallback_used"] is False
 
 
 def test_project_for_ui_exposes_legacy_v92_tile() -> None:

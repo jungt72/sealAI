@@ -27,6 +27,8 @@ from app.agent.v92.dashboard_contract import (
 from app.agent.v92.final_guard import guarded_fallback_answer, validate_final_output
 from app.agent.v92.revision_composer import revise_answer_once
 from app.agent.v92.turn_boundary import resolve_turn_boundary
+from app.observability.langsmith import traceable
+from app.observability.sealai_quality import emit_quality_trace, stable_trace_hash
 
 
 _TECHNICAL_ROUTES: frozenset[str] = frozenset(
@@ -65,6 +67,77 @@ def _dump_list(values: Any) -> list[dict[str, Any]]:
 def _trace_id(session_id: str, user_message: str, route: str) -> str:
     digest = sha256(f"{session_id}|{route}|{user_message}".encode("utf-8")).hexdigest()
     return f"trace_{digest[:24]}"
+
+
+def _adversarial_review_source(
+    verdict: AdversarialReviewVerdict | None,
+    *,
+    llm_reviewer_enabled: bool | None = None,
+) -> str:
+    if verdict is None:
+        return "not_required"
+    if bool(verdict.prompt_trace):
+        return "llm"
+    return "deterministic_fallback" if llm_reviewer_enabled else "deterministic"
+
+
+def _emit_v92_output_quality_trace(
+    *,
+    envelope: TurnEnvelope,
+    final_guard: FinalGuardResult,
+    adversarial_review: AdversarialReviewVerdict | None,
+    revision_applied: bool,
+    guarded_fallback_used: bool,
+    initial_guard: FinalGuardResult | None,
+    component: str,
+    llm_reviewer_enabled: bool | None = None,
+) -> None:
+    emit_quality_trace(
+        component=component,
+        tags=("v92-output-contract", "final-guard"),
+        session_id=envelope.session_id,
+        case_id=envelope.case_id,
+        turn_id_hash=stable_trace_hash(envelope.turn_id),
+        trace_id_hash=stable_trace_hash(envelope.trace_id),
+        route=envelope.route,
+        intent=envelope.intent,
+        is_technical=envelope.is_technical,
+        streaming_policy=envelope.streaming_policy,
+        requires_engine=envelope.requires_engine,
+        requires_evidence=envelope.requires_evidence,
+        requires_adversarial_review=envelope.requires_adversarial_review,
+        adversarial_review_source=_adversarial_review_source(
+            adversarial_review,
+            llm_reviewer_enabled=llm_reviewer_enabled,
+        ),
+        adversarial_review_decision=getattr(adversarial_review, "decision", None),
+        adversarial_review_severity=getattr(adversarial_review, "severity", None),
+        unsupported_claims_count=len(getattr(adversarial_review, "unsupported_claims", []) or []),
+        forbidden_claims_count=len(getattr(adversarial_review, "forbidden_claims", []) or []),
+        required_revision_count=len(
+            getattr(adversarial_review, "required_revision_instructions", []) or []
+        ),
+        revision_applied=revision_applied,
+        guarded_fallback_used=guarded_fallback_used,
+        initial_final_guard_decision=getattr(initial_guard, "decision", None),
+        initial_final_guard_severity=getattr(initial_guard, "severity", None),
+        final_guard_decision=final_guard.decision,
+        final_guard_severity=final_guard.severity,
+        final_stream_allowed=final_guard.final_stream_allowed,
+        human_review_required=final_guard.human_review_required,
+        final_guard_blocked_reasons_count=len(final_guard.blocked_reasons),
+        final_guard_required_revisions_count=len(final_guard.required_revisions),
+        llm_reviewer_enabled=llm_reviewer_enabled,
+        llm_reviewer_succeeded=(
+            _adversarial_review_source(
+                adversarial_review,
+                llm_reviewer_enabled=llm_reviewer_enabled,
+            )
+            == "llm"
+            if llm_reviewer_enabled is not None
+            else None
+        ),
+    )
 
 
 def infer_turn_route(
@@ -362,6 +435,9 @@ def apply_v92_contracts_to_payload(
     final_guard: FinalGuardResult
     final_context: FinalAnswerContext | None = None
     nontechnical_context: NonTechnicalAnswerContext | None = None
+    revision_applied = False
+    guarded_fallback_used = False
+    initial_guard: FinalGuardResult | None = None
 
     if envelope.is_technical:
         final_context = build_final_answer_context(
@@ -373,6 +449,7 @@ def apply_v92_contracts_to_payload(
         if envelope.requires_adversarial_review:
             adversarial_review = review_answer_draft(visible_answer, final_context)
             if adversarial_review.decision == "revise":
+                revision_applied = True
                 visible_answer = revise_answer_once(
                     visible_answer,
                     context=final_context,
@@ -383,7 +460,9 @@ def apply_v92_contracts_to_payload(
             context=final_context,
             adversarial_review=adversarial_review,
         )
+        initial_guard = final_guard
         if final_guard.decision in {"block", "human_review"} or not final_guard.final_stream_allowed:
+            guarded_fallback_used = True
             visible_answer = guarded_fallback_answer(
                 context=final_context,
                 guard_result=final_guard,
@@ -430,13 +509,32 @@ def apply_v92_contracts_to_payload(
         "route": envelope.route,
         "streaming_policy": envelope.streaming_policy,
         "final_guard_decision": final_guard.decision,
+        "final_guard_severity": final_guard.severity,
+        "final_stream_allowed": final_guard.final_stream_allowed,
+        "human_review_required": final_guard.human_review_required,
+        "initial_final_guard_decision": getattr(initial_guard, "decision", None),
+        "guarded_fallback_used": guarded_fallback_used,
+        "adversarial_review_source": _adversarial_review_source(adversarial_review),
+        "adversarial_review_decision": getattr(adversarial_review, "decision", None),
+        "adversarial_review_severity": getattr(adversarial_review, "severity", None),
+        "revision_applied": revision_applied,
         "dashboard_contract_version": dashboard.schema_version,
         "turn_boundary_decision": boundary.model_dump(mode="json"),
     }
     updated["run_meta"] = run_meta
+    _emit_v92_output_quality_trace(
+        envelope=envelope,
+        final_guard=final_guard,
+        adversarial_review=adversarial_review,
+        revision_applied=revision_applied,
+        guarded_fallback_used=guarded_fallback_used,
+        initial_guard=initial_guard,
+        component="v92_output_contract",
+    )
     return updated
 
 
+@traceable(name="sealai.v92_adversarial_review", run_type="chain")
 async def apply_async_adversarial_review_to_payload(
     payload: dict[str, Any],
     *,
@@ -469,7 +567,9 @@ async def apply_async_adversarial_review_to_payload(
         updated.get("answer_markdown") or updated.get("assistant_message") or updated.get("reply") or ""
     ).strip()
     verdict = await review_answer_draft_with_llm_fallback(visible_answer, final_context)
+    revision_applied = False
     if verdict.decision == "revise":
+        revision_applied = True
         visible_answer = revise_answer_once(
             visible_answer,
             context=final_context,
@@ -480,7 +580,10 @@ async def apply_async_adversarial_review_to_payload(
         context=final_context,
         adversarial_review=verdict,
     )
+    initial_guard = guard
+    guarded_fallback_used = False
     if guard.decision in {"block", "human_review"} or not guard.final_stream_allowed:
+        guarded_fallback_used = True
         visible_answer = guarded_fallback_answer(context=final_context, guard_result=guard)
         guard = validate_final_output(visible_answer, context=final_context)
 
@@ -506,9 +609,55 @@ async def apply_async_adversarial_review_to_payload(
     updated["ui"] = ui
     run_meta = dict(updated.get("run_meta") or {})
     v92_meta = dict(run_meta.get("v92") or {})
-    v92_meta["adversarial_review_source"] = "llm_or_deterministic_fallback"
+    review_source = _adversarial_review_source(verdict, llm_reviewer_enabled=use_llm)
+    v92_meta["adversarial_review_source"] = review_source
     v92_meta["adversarial_review_decision"] = verdict.decision
+    v92_meta["adversarial_review_severity"] = verdict.severity
+    v92_meta["revision_applied"] = revision_applied
+    v92_meta["guarded_fallback_used"] = guarded_fallback_used
+    v92_meta["initial_final_guard_decision"] = initial_guard.decision
     v92_meta["final_guard_decision"] = guard.decision
+    v92_meta["final_guard_severity"] = guard.severity
+    v92_meta["final_stream_allowed"] = guard.final_stream_allowed
+    v92_meta["human_review_required"] = guard.human_review_required
+    v92_meta["llm_reviewer_enabled"] = use_llm
+    v92_meta["llm_reviewer_succeeded"] = review_source == "llm"
     run_meta["v92"] = v92_meta
     updated["run_meta"] = run_meta
+    try:
+        envelope_model = TurnEnvelope.model_validate(envelope)
+    except Exception:  # noqa: BLE001
+        envelope_model = TurnEnvelope(
+            turn_id=str(envelope.get("turn_id") or final_context.turn_id),
+            session_id=str(envelope.get("session_id") or final_context.case_id or "unknown"),
+            case_id=final_context.case_id,
+            case_revision_before=None,
+            case_revision_after=final_context.case_revision,
+            user_message=final_context.user_message,
+            route=final_context.route,
+            intent=final_context.intent,
+            is_technical=final_context.is_technical,
+            state_mutation_policy=str(  # type: ignore[arg-type]
+                envelope.get("state_mutation_policy") or "case_revision_allowed"
+            ),
+            requires_engine=bool(envelope.get("requires_engine", True)),
+            requires_evidence=bool(envelope.get("requires_evidence", True)),
+            requires_adversarial_review=bool(envelope.get("requires_adversarial_review", True)),
+            requires_final_guard=bool(envelope.get("requires_final_guard", True)),
+            streaming_policy=str(  # type: ignore[arg-type]
+                envelope.get("streaming_policy") or "status_only_until_guarded_final"
+            ),
+            created_at=str(envelope.get("created_at") or datetime.now(UTC).isoformat()),
+            trace_id=str(envelope.get("trace_id") or final_context.turn_id),
+        )
+    _emit_v92_output_quality_trace(
+        envelope=envelope_model,
+        final_guard=guard,
+        adversarial_review=verdict,
+        revision_applied=revision_applied,
+        guarded_fallback_used=guarded_fallback_used,
+        initial_guard=initial_guard,
+        component="v92_adversarial_review",
+        llm_reviewer_enabled=use_llm,
+    )
     return updated
