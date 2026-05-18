@@ -263,6 +263,9 @@ if "langchain_core" not in sys.modules:
             self.func = func
             self.name = name or getattr(func, "__name__", self.__class__.__name__)
             self.description = description or getattr(func, "__doc__", "") or ""
+            self.args_schema = _kwargs.get("args_schema")
+            self.input_schema = self.args_schema
+            self.tool_call_schema = self.args_schema
 
         def invoke(self, tool_input: Any = None, **kwargs: Any) -> Any:
             if self.func is None:

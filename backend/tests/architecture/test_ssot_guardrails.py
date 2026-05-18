@@ -21,17 +21,6 @@ NON_CANONICAL_TREES = (
 )
 
 
-LEGACY_TEST_QUARANTINE = (
-    "backend/app/agent/tests/test_commercial_handover.py",
-    "backend/app/agent/tests/test_governed_stream_payload.py",
-    "backend/app/agent/tests/test_state_integration.py",
-    "backend/tests/contract/test_optional_rag_contract.py",
-    "backend/tests/contract/test_prompt_render_contract.py",
-    "backend/tests/contract/test_tool_contracts.py",
-    "backend/tests/contract/test_sse_contract.py",
-)
-
-
 CANONICAL_PATHS = (
     "backend/app/agent/api/router.py",
     "backend/app/agent/api/routes/chat.py",
@@ -145,26 +134,41 @@ def test_v1_state_facade_mutations_fail_closed() -> None:
     )
 
 
-def test_architecture_docs_mark_legacy_tests_as_non_canonical() -> None:
+def test_architecture_docs_mark_removed_legacy_layers_as_non_canonical() -> None:
     deprecated = DEPRECATED_MAP.read_text(encoding="utf-8")
-    assert "backend/tests/contract/*" in deprecated
     assert "app.langgraph_v2" in deprecated
+    assert "backend/app/agent/agent/*" in deprecated
+    assert "Removed historical test quarantines" in deprecated
     registry = SSOT_REGISTRY.read_text(encoding="utf-8")
     assert "backend/app/agent/state/models.py" in registry
     assert "backend/app/api/v1/projections/case_workspace.py" in registry
 
 
-def test_legacy_test_quarantine_is_explicit_and_documented() -> None:
-    deprecated = DEPRECATED_MAP.read_text(encoding="utf-8")
-    cleanup = (
-        REPO_ROOT / "docs" / "architecture" / "ARCHITECTURE_CLEANUP_PLAN.md"
-    ).read_text(encoding="utf-8")
-    docs = deprecated + "\n" + cleanup
+def test_no_module_level_legacy_test_quarantines_remain() -> None:
+    roots = (
+        REPO_ROOT / "backend" / "tests",
+        REPO_ROOT / "backend" / "app" / "agent" / "tests",
+    )
+    offenders: list[str] = []
+    legacy_terms = (
+        "legacy",
+        "pre-ssot",
+        "app.langgraph_v2",
+        "router-facade",
+        "quarantine",
+    )
+    for root in roots:
+        for path in _python_files(root):
+            if path == Path(__file__).resolve():
+                continue
+            text = path.read_text(encoding="utf-8")
+            lowered = text.casefold()
+            if "allow_module_level=true" not in lowered and "pytestmark = pytest.mark.skip" not in lowered:
+                continue
+            if any(term in lowered for term in legacy_terms):
+                offenders.append(str(path.relative_to(REPO_ROOT)))
 
-    for rel in LEGACY_TEST_QUARANTINE:
-        path = REPO_ROOT / rel
-        assert path.exists(), f"Legacy quarantine file is missing: {rel}"
-        text = path.read_text(encoding="utf-8")
-        assert "pytest.skip(" in text, f"Legacy test must module-skip: {rel}"
-        assert "allow_module_level=True" in text, f"Legacy skip must be module-level: {rel}"
-        assert rel in docs, f"Legacy quarantine must be documented: {rel}"
+    assert not offenders, (
+        "Legacy module-level test quarantines must be deleted or migrated:\n"
+        + "\n".join(offenders)
+    )

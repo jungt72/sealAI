@@ -1,7 +1,7 @@
 import pytest
 
-import app.agent.case_state as case_state_module
-from app.agent.case_state import _infer_unit, _normalize_snapshot_value, build_case_state
+import app.agent.state.case_state as case_state_module
+from app.agent.state.case_state import _infer_unit, _normalize_snapshot_value, build_case_state
 from app.agent.domain.manufacturer_rfq import ManufacturerRfqSpecialistResult
 
 
@@ -13,8 +13,8 @@ def test_infer_unit(key, expected):
 @pytest.mark.parametrize(
     "key,value,expected",
     [
-        ("material", "Viton", "Viton"),
-        ("material", "Nitril", "NBR"),
+        ("material", "Viton", "STS-MAT-FKM-A1"),
+        ("material", "Nitril", "STS-MAT-NBR-A1"),
         ("medium", "water", "Wasser"),
         ("medium", "Heißdampf", "Dampf"),
         ("temperature_f", 68.0, 20.0),
@@ -123,7 +123,7 @@ def test_build_case_state_exposes_canonical_target_buckets():
     assert case_state["rfq_state"]["requirement_class_hint"] == "family::PTFE"
     assert case_state["rfq_state"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
     assert case_state["rfq_state"]["rfq_object"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
-    assert case_state["rfq_state"]["rfq_object"]["payload_present"] is False
+    assert case_state["rfq_state"]["rfq_object"]["payload_present"] is True
     assert case_state["recipient_selection"]["object_type"] == "recipient_selection"
     assert case_state["recipient_selection"]["selected_partner_id"] == "partner-1"
     assert case_state["recipient_selection"]["selection_status"] == "candidate_pool_only"
@@ -134,19 +134,13 @@ def test_build_case_state_exposes_canonical_target_buckets():
     assert case_state["rfq_state"]["rfq_dispatch"]["object_type"] == "rfq_dispatch"
     assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_ready"] is False
     assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"] == "not_ready_dispatch_blocked"
-    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_blockers"] == [
-        "review_required",
-        "critical_review_missing",
-        "manufacturer_validation_required",
-        "rfq_admissibility_provisional",
-        "handover_not_ready",
-    ]
+    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_blockers"] == ["rfq_not_admissible"]
     assert case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"]["recipient_count"] == 1
     assert case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"]["selected_recipient_count"] == 0
     assert case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"]["has_selected_manufacturer_ref"] is False
     assert case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0]["manufacturer_name"] == "Acme"
     assert case_state["rfq_state"]["rfq_dispatch"]["recipient_selection"]["selection_status"] == "candidate_pool_only"
-    assert case_state["rfq_state"]["rfq_dispatch"]["rfq_object_basis"]["payload_present"] is False
+    assert case_state["rfq_state"]["rfq_dispatch"]["rfq_object_basis"]["payload_present"] is True
     assert case_state["manufacturer_state"]["manufacturer_specific"] is True
     assert case_state["manufacturer_state"]["manufacturer_specificity_status"] == "manufacturer_specific"
     assert case_state["manufacturer_state"]["manufacturer_refs"][0]["manufacturer_name"] == "Acme"

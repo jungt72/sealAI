@@ -32,11 +32,13 @@ describe("useAgentStream", () => {
     );
   });
 
-  it("streams text chunks live and finalizes with state_update.reply once", async () => {
+  it("streams guarded answer tokens and finalizes with state_update.reply once", async () => {
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "Preview " }) });
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "text" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.stream.start", source: "reply" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.token", text: "Preview " }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.token", text: "text" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.done" }) });
       handlers.onmessage?.({ data: JSON.stringify({ type: "case_bound", caseId: "case-1" }) });
       handlers.onmessage?.({
         data: JSON.stringify({ type: "state_update", caseId: "case-1", reply: "Finale Antwort" }),
@@ -66,7 +68,7 @@ describe("useAgentStream", () => {
     ]);
   });
 
-  it("surfaces live graph progress until text chunks arrive", async () => {
+  it("surfaces live graph progress until guarded answer tokens arrive", async () => {
     const hold = deferred<void>();
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
@@ -77,8 +79,10 @@ describe("useAgentStream", () => {
         }),
       });
       await hold.promise;
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "Live " }) });
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "Antwort" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.stream.start", source: "reply" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.token", text: "Live " }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.token", text: "Antwort" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.done" }) });
       handlers.onmessage?.({ data: JSON.stringify({ type: "state_update", caseId: "case-1", reply: "Live Antwort" }) });
       handlers.onmessage?.({ data: "[DONE]" });
       handlers.onclose?.();
@@ -112,12 +116,13 @@ describe("useAgentStream", () => {
     ]);
   });
 
-  it("normalizes German visible text while token chunks are still streaming", async () => {
+  it("normalizes German visible text while guarded answer tokens are still streaming", async () => {
     const hold = deferred<void>();
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "Druckunterschied ue" }) });
-      handlers.onmessage?.({ data: JSON.stringify({ type: "text_chunk", text: "ber der Dichtung" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.stream.start", source: "answer_markdown" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.token", text: "Druckunterschied ue" }) });
+      handlers.onmessage?.({ data: JSON.stringify({ type: "answer.token", text: "ber der Dichtung" }) });
       await hold.promise;
       handlers.onmessage?.({
         data: JSON.stringify({
@@ -156,7 +161,7 @@ describe("useAgentStream", () => {
     ]);
   });
 
-  it("resets live preview when backend repairs a governed stream", async () => {
+  it("ignores obsolete preview repair events and renders only the final contract", async () => {
     const hold = deferred<void>();
     mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function>) => {
       await handlers.onopen?.(new Response(null, { status: 200 }));
@@ -184,7 +189,7 @@ describe("useAgentStream", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.streamingText).toBe("EPDM Warnpunkt. ");
+      expect(result.current.streamingText).toBe("");
     });
 
     await act(async () => {

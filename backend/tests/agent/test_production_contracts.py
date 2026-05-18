@@ -1,9 +1,8 @@
-import pytest
 import json
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
 from app.main import create_app
-from app.services.auth.dependencies import RequestUser
+import pytest
 
 @pytest.fixture
 def client(mock_user):
@@ -56,7 +55,7 @@ def test_chat_stream_endpoint_contract(client, mock_user):
 
 def test_workspace_projection_contract(client, mock_user):
     """Verifies that /api/agent/workspace/{case_id} returns a valid projection."""
-    with patch("app.agent.api.routes.workspace._load_governed_state_snapshot_projection_source", new=AsyncMock()) as mock_load:
+    with patch("app.agent.api.routes.workspace._load_guarded_workspace_projection_source", new=AsyncMock()) as mock_load:
         
         # Mock a minimal governed state
         from app.agent.state.models import GovernedSessionState
@@ -113,7 +112,10 @@ def test_dispatch_logic_isolation(client, mock_user):
         
         res = asyncio.run(_resolve_runtime_dispatch(request, current_user=mock_user))
         assert res.runtime_mode == "CONVERSATION"
-        assert res.fast_response is not None
+        assert res.runtime_action is not None
+        assert res.runtime_action.answer_mode == "clarification"
+        assert res.runtime_action.answer_builder == "light_runtime"
+        assert res.fast_response is None
         
         # Case 2: Domain Inquiry -> GOVERNED (failure to connect to redis/session manager should fail-open to governed)
         mock_classify.return_value = ClassificationResult(

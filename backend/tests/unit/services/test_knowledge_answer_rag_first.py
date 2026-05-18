@@ -64,10 +64,10 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
         calls.append(dict(kwargs))
         return [
             {
-                "text": "FKM ist eine Fluorelastomer-Werkstofffamilie.",
+                "text": "Das Spezialprofil XQ-77 ist fuer eine dokumentierte Sonderdichtungsgeometrie beschrieben.",
                 "metadata": {
-                    "source_id": "doc-fkm",
-                    "title": "FKM Grundlagen",
+                    "source_id": "doc-xq77",
+                    "title": "XQ-77 Grundlagen",
                     "chunk_id": "chunk-1",
                     "vector_id": "internal-vector-123",
                     "embedding": [0.12, 0.34],
@@ -80,13 +80,17 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
     response = KnowledgeService(
         factcard_store=_FactcardStore([]),
         rag_retriever=rag_retriever,
-    ).answer("Was ist FKM?", tenant_id="tenant-1", user_id="user-1")
+    ).answer(
+        "Bitte ordne diese Dichtungsfrage aus dem Dokumentenkontext ein.",
+        tenant_id="tenant-1",
+        user_id="user-1",
+    )
 
     view = response.knowledge_answer_view
 
     assert calls == [
         {
-            "query": "Was ist FKM?",
+            "query": "Bitte ordne diese Dichtungsfrage aus dem Dokumentenkontext ein.",
             "tenant_id": "tenant-1",
             "user_id": "user-1",
             "max_results": 3,
@@ -97,12 +101,12 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
     assert view.rag_miss is False
     assert view.source_type is SourceType.rag_verified
     assert view.validation_status is ValidationStatus.documented
-    assert view.sources[0].source_id == "doc-fkm"
+    assert view.sources[0].source_id == "doc-xq77"
     assert view.sources[0].evidence_ref == "chunk-1"
     assert view.sources[0].confidence == 0.82
     assert view.knowledge_evidence[0].source_type == "rag"
-    assert view.knowledge_evidence[0].title == "FKM Grundlagen"
-    assert "FKM ist eine Fluorelastomer" in view.knowledge_evidence[0].content
+    assert view.knowledge_evidence[0].title == "XQ-77 Grundlagen"
+    assert "Spezialprofil XQ-77" in view.knowledge_evidence[0].content
     evidence_payload = str(view.knowledge_evidence[0].as_dict())
     assert "internal-vector-123" not in evidence_payload
     assert "embedding" not in evidence_payload
@@ -110,8 +114,11 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
     assert view.fallback_used is False
 
 
-def test_named_material_query_ignores_unrelated_ptfe_factcards_and_uses_rag() -> None:
+def test_named_material_query_ignores_unrelated_ptfe_factcards_and_uses_domain_definition() -> None:
+    calls: list[dict[str, object]] = []
+
     def rag_retriever(**kwargs):
+        calls.append(dict(kwargs))
         return [
             {
                 "text": "NBR ist eine Acrylnitril-Butadien-Kautschuk-Familie.",
@@ -126,7 +133,12 @@ def test_named_material_query_ignores_unrelated_ptfe_factcards_and_uses_rag() ->
         user_id="user-1",
     )
 
-    assert response.knowledge_answer_view.rag_answer_found is True
+    view = response.knowledge_answer_view
+
+    assert calls == []
+    assert view.rag_answer_found is False
+    assert view.rag_miss is True
+    assert view.source_type is SourceType.system_derived
     assert "NBR steht für Acrylnitril" in response.content
 
 
@@ -148,15 +160,17 @@ def test_rag_answer_sanitizes_document_artifacts_for_user_chat() -> None:
             }
         ]
 
-    response = KnowledgeService(rag_retriever=rag_retriever).answer(
-        "Was ist NBR?",
+    response = KnowledgeService(
+        factcard_store=_FactcardStore([]),
+        rag_retriever=rag_retriever,
+    ).answer(
+        "Bitte fasse den Dokumententreffer zur Sonderdichtung XQ-77 zusammen.",
         tenant_id="sealai",
         user_id="user-1",
     )
 
     assert response.knowledge_answer_view.rag_answer_found is True
     assert "NBR steht für Acrylnitril" in response.content
-    assert "Typische Orientierung" in response.content
     assert "Aus dem kuratierten/RAG-Wissenskontext" not in response.content
     assert "[Document:" not in response.content
     assert "[Q4]" not in response.content

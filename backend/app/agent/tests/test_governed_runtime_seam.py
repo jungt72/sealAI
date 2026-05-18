@@ -212,10 +212,10 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
         "type": "progress",
         "data": {"event_type": "evidence_retrieved"},
     }
-    assert payloads[1]["type"] == "state_update"
-    assert payloads[1]["reply"] == "Bitte Medium angeben."
-    assert payloads[1]["answer_markdown"] == payloads[1]["reply"]
-    assert payloads[1]["response_class"] == "structured_clarification"
+    state_update = next(payload for payload in payloads if payload["type"] == "state_update")
+    assert state_update["reply"] == "Bitte Medium angeben."
+    assert state_update["answer_markdown"] == state_update["reply"]
+    assert state_update["response_class"] == "structured_clarification"
     persist.assert_awaited_once()
     persisted_state_arg = persist.await_args.kwargs["state"]
     assert persist.await_args.kwargs["session_id"] == "case-sse"

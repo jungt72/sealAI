@@ -32,9 +32,7 @@ def _user() -> RequestUser:
 async def test_greeting_routes_to_frontdoor_without_governed_case_intake(
     monkeypatch,
 ) -> None:
-    load_state = AsyncMock(
-        side_effect=AssertionError("greeting must not load/create governed case state")
-    )
+    load_state = AsyncMock(return_value=None)
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
@@ -43,9 +41,16 @@ async def test_greeting_routes_to_frontdoor_without_governed_case_intake(
     )
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
-    assert dispatch.fast_response is not None
+    assert dispatch.fast_response is None
     assert dispatch.knowledge_response is None
     assert dispatch.governed_state is None
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.answer_builder == "light_runtime"
+    assert dispatch.runtime_action.graph_allowed is False
+    assert (
+        dispatch.runtime_action.graph_invocation_skipped_reason
+        == "light_runtime_does_not_require_governed_graph"
+    )
     assert dispatch.conversation_route is not None
     assert dispatch.conversation_route.intent is ConversationIntent.small_talk
     assert dispatch.conversation_route.response_mode is ResponseMode.fast_responder
@@ -54,18 +59,15 @@ async def test_greeting_routes_to_frontdoor_without_governed_case_intake(
         is ConversationRouteView.conversation_frontdoor
     )
     assert dispatch.conversation_route.no_durable_engineering_case_state is True
-    load_state.assert_not_awaited()
+    load_state.assert_awaited_once()
+    assert load_state.await_args.kwargs["create_if_missing"] is False
 
 
 @pytest.mark.asyncio
 async def test_bare_compound_greeting_routes_to_frontdoor_without_governed_case_intake(
     monkeypatch,
 ) -> None:
-    load_state = AsyncMock(
-        side_effect=AssertionError(
-            "bare greeting must not load/create governed case state"
-        )
-    )
+    load_state = AsyncMock(return_value=None)
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
@@ -76,9 +78,16 @@ async def test_bare_compound_greeting_routes_to_frontdoor_without_governed_case_
     )
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
-    assert dispatch.fast_response is not None
+    assert dispatch.fast_response is None
     assert dispatch.knowledge_response is None
     assert dispatch.governed_state is None
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.answer_builder == "light_runtime"
+    assert dispatch.runtime_action.graph_allowed is False
+    assert (
+        dispatch.runtime_action.graph_invocation_skipped_reason
+        == "light_runtime_does_not_require_governed_graph"
+    )
     assert dispatch.conversation_route is not None
     assert dispatch.conversation_route.intent is ConversationIntent.small_talk
     assert dispatch.conversation_route.response_mode is ResponseMode.fast_responder
@@ -87,7 +96,8 @@ async def test_bare_compound_greeting_routes_to_frontdoor_without_governed_case_
         is ConversationRouteView.conversation_frontdoor
     )
     assert dispatch.conversation_route.no_durable_engineering_case_state is True
-    load_state.assert_not_awaited()
+    load_state.assert_awaited_once()
+    assert load_state.await_args.kwargs["create_if_missing"] is False
 
 
 @pytest.mark.asyncio
@@ -127,7 +137,7 @@ async def test_general_knowledge_routes_to_knowledge_without_governed_case_intak
 
 
 @pytest.mark.asyncio
-async def test_nbr_about_question_routes_to_rag_knowledge_without_rfq_intake(
+async def test_nbr_about_question_uses_deterministic_knowledge_without_rfq_intake(
     monkeypatch,
 ) -> None:
     load_state = AsyncMock(
@@ -164,14 +174,14 @@ async def test_nbr_about_question_routes_to_rag_knowledge_without_rfq_intake(
     assert "NBR steht für Acrylnitril" in dispatch.knowledge_response.content
     assert "Typische Orientierung" in dispatch.knowledge_response.content
     assert "Aus dem kuratierten/RAG-Wissenskontext" not in dispatch.knowledge_response.content
-    assert rag_calls == [
-        {
-            "query": "Was kannst du mir zu NBR sagen?",
-            "tenant_id": "tenant-1",
-            "user_id": "user-1",
-            "max_results": 3,
-        }
-    ]
+    assert dispatch.knowledge_response.answer_result is not None
+    assert dispatch.knowledge_response.answer_result.rag_answer_found is False
+    assert dispatch.knowledge_response.answer_result.source_type.value == "system_derived"
+    assert {
+        evidence.source_type
+        for evidence in dispatch.knowledge_response.answer_result.knowledge_evidence
+    } == {"deterministic"}
+    assert rag_calls == []
     load_state.assert_not_awaited()
 
 

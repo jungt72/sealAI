@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.case_record import CaseRecord  # noqa: F401
+from app.models import case_record as _case_record  # noqa: F401
 from app.models.mutation_event_model import MutationEventModel
 
 

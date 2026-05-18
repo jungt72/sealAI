@@ -625,9 +625,15 @@ def test_workspace_projection_prefers_case_state_lifecycle_fields(monkeypatch) -
         },
     }
 
-    with patch(
-        "app.agent.api.router.load_structured_residual_state",
-        new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+    with (
+        patch(
+            "app.agent.api.router._load_preferred_governed_workspace_source",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.agent.api.router.load_structured_residual_state",
+            new=AsyncMock(return_value=copy.deepcopy(persisted_state)),
+        ),
     ):
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))

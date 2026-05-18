@@ -520,7 +520,7 @@ async def test_governed_reply_blocks_forced_case_claim_before_reformulation() ->
     )
 
     assert "nicht seriös bestätigen" in reply
-    assert "Welche Gegenlaufflaeche ist bekannt?" in reply
+    assert "Welche Gegenlauffläche ist bekannt?" in reply
     assert "FKM ist geeignet" not in reply
 
 

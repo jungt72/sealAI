@@ -985,6 +985,9 @@ class TestNoDirectWriteToNormalized:
         # graph/tests — test helpers that build NormalizedState for assertion setup
         "test_assert_node.py",
         "test_turn_context.py",
+        "test_case_workspace_projection.py",
+        "test_challenge_engine.py",
+        "test_v91_candidate_facts.py",
         # H1.1 — admissibility test builds NormalizedState fixtures
         "test_inquiry_admissibility.py",
         # H1.2 — confirmation test builds NormalizedState fixtures
@@ -1028,6 +1031,7 @@ class TestNoDirectWriteToGovernance:
         "test_cycle_control.py",
         "test_turn_context.py",
         "test_case_workspace_projection.py",
+        "test_communication_scenario_suite.py",
         "test_projections.py",
         "test_api_router.py",
         # H1.2 — confirmation test builds GovernanceState fixtures

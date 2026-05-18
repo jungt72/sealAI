@@ -32,8 +32,6 @@ export type AgentAnswerTrace = {
   final_visible_source:
     | "answer_markdown"
     | "reply"
-    | "text_chunk"
-    | "frontend_legacy_humanizer"
     | "unknown";
   composer_attempted: boolean;
   composer_succeeded: boolean;
@@ -375,9 +373,9 @@ export type AgentStateUpdateEvent = {
 
 export type AgentStreamEvent =
   | { type: "case_bound"; caseId: string }
-  | { type: "token"; text: string }
-  | { type: "text_chunk"; text: string }
-  | { type: "text_reset" }
+  | { type: "answer.stream.start"; source?: "answer_markdown" | "reply" }
+  | { type: "answer.token"; text: string }
+  | { type: "answer.done" }
   | { type: "progress"; data?: unknown }
   | { type: "message_complete"; message: string }
   | AgentStateUpdateEvent

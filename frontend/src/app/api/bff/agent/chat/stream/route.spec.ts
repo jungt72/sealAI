@@ -77,7 +77,7 @@ describe("BFF agent chat stream route", () => {
     vi.restoreAllMocks();
   });
 
-  it("forwards live text chunks and keeps state_update as the canonical final contract", async () => {
+  it("drops legacy backend preview chunks and streams only the guarded final answer", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         buildBackendSseStream([
@@ -106,9 +106,9 @@ describe("BFF agent chat stream route", () => {
     const payloads = parseSsePayloads(await response.text());
 
     expect(payloads).toHaveLength(5);
-    expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "Preview" });
-    expect(payloads[1]).toMatchObject({ type: "text_reset" });
-    expect(payloads[2]).toMatchObject({ type: "text_chunk", text: "Finale Antwort" });
+    expect(payloads[0]).toMatchObject({ type: "answer.stream.start", source: "reply" });
+    expect(payloads[1]).toMatchObject({ type: "answer.token", text: "Finale Antwort" });
+    expect(payloads[2]).toMatchObject({ type: "answer.done" });
     expect(payloads[3]).toMatchObject({
       type: "state_update",
       noCaseCreated: true,
@@ -184,7 +184,7 @@ describe("BFF agent chat stream route", () => {
     const payloads = parseSsePayloads(await response.text());
     const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[0]).toMatchObject({ type: "text_chunk" });
+    expect(payloads[0]).toMatchObject({ type: "answer.stream.start", source: "reply" });
     expect(stateUpdate).toMatchObject({
       type: "state_update",
       noCaseCreated: true,
@@ -295,7 +295,8 @@ describe("BFF agent chat stream route", () => {
     const payloads = parseSsePayloads(await response.text());
     const stateUpdate = findPayload(payloads, "state_update");
 
-    expect(payloads[0]).toMatchObject({ type: "text_chunk", text: "real assistant answer" });
+    expect(payloads[0]).toMatchObject({ type: "answer.stream.start", source: "answer_markdown" });
+    expect(payloads[1]).toMatchObject({ type: "answer.token", text: "real assistant answer" });
     expect(stateUpdate).toMatchObject({
       type: "state_update",
       noCaseCreated: true,

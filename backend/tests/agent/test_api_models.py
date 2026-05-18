@@ -181,7 +181,7 @@ def test_build_public_response_core_guards_legacy_governed_recommendation_reply(
     )
 
     assert core["response_class"] == "technical_preselection"
-    assert core["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Pruefpunkte klar benennen."
+    assert core["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Prüfpunkte klar benennen."
     assert core["answer_markdown"] == core["reply"]
 
 

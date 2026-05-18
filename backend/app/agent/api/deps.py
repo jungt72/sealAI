@@ -10,11 +10,10 @@ _log = logging.getLogger(__name__)
 
 SESSION_STORE: Dict[str, AgentState] = {}
 
-# --- Legacy Constants (Inlined from legacy_graph) ---
+# Runtime provenance constants used by public response metadata.
 _GRAPH_MODEL_ID = "gpt-4o-mini"
 VISIBLE_REPLY_PROMPT_VERSION = "visible_reply_prompt_v2"
 VISIBLE_REPLY_PROMPT_HASH = "12c09ed4061d"  # sha256 of VISIBLE_REPLY_SYSTEM_PROMPT[:12]
-# ----------------------------------------------------
 
 def _case_cache_key(tenant_id: str, owner_id: str, case_id: str) -> str:
     return f"{tenant_id}:{owner_id}:{case_id}"
@@ -67,5 +66,4 @@ def _lg_trace_enabled() -> bool:
 def _is_light_runtime_mode(runtime_mode: Optional[str]) -> bool:
     return runtime_mode in {"CONVERSATION", "EXPLORATION"}
 
-_RESIDUAL_LEGACY_RUNTIME_LABEL = "residual_legacy_compat_only"
 _LIGHT_HISTORY_MESSAGES = 20

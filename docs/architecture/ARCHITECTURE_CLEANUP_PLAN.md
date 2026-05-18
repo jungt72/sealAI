@@ -48,36 +48,26 @@ Exit criteria:
 
 ## Phase 2 - Test Surface Cleanup
 
-Current risk: `backend/pytest.ini` only discovers `backend/tests`, while active agent tests live under `backend/app/agent/tests`.
+Current risk: `backend/pytest.ini` only discovers `backend/tests`, while many active agent tests live under `backend/app/agent/tests`.
 
 Steps:
 
 1. Run collection for `backend/app/agent/tests` and classify failures - done.
-2. Quarantine stale pre-SSoT modules with module-level skips and documented migration targets - done for:
-   - `backend/app/agent/tests/test_commercial_handover.py`
-   - `backend/app/agent/tests/test_governed_stream_payload.py`
-   - `backend/app/agent/tests/test_state_integration.py`
-3. Move productive tests to `backend/tests/agent/` or add a second test path after fixing collection/runtime issues.
+2. Delete stale pre-SSoT module-level skip tests instead of preserving historical quarantines - done.
+3. Keep productive tests under their canonical package or move them to `backend/tests/agent/` when CI scope is expanded.
 4. Keep architecture guardrails in default test path permanently.
+5. Fail the build when a legacy module-level skipped quarantine is reintroduced.
 
 ## Phase 3 - Legacy Contract Migration
 
-Current risk: `backend/tests/contract/*` still imports `app.langgraph_v2`, which no longer exists in `backend/app`.
+Current risk: obsolete contract tests can silently reappear as skipped modules instead of validating the current `app.agent` runtime.
 
 Steps:
 
-1. For every `app.langgraph_v2` import, decide:
-   - migrate to `app.agent.*`
-   - replace with projection/service contract test
-   - delete as obsolete
-2. Quarantine obsolete LangGraph v2 contract modules with explicit replacement targets - done for:
-   - `backend/tests/contract/test_optional_rag_contract.py`
-   - `backend/tests/contract/test_prompt_render_contract.py`
-   - `backend/tests/contract/test_tool_contracts.py`
-3. Quarantine obsolete router-private SSE contract - done for `backend/tests/contract/test_sse_contract.py`.
-4. Keep `backend/tests/contract/test_rag_embedding_config_contract.py` active with explicit minimal settings env.
-5. Add a guard that fails if legacy quarantines lose their module-level skip or documentation.
-6. Remove or rename misleading `langgraph` wording in productive health/docs where it no longer describes runtime truth.
+1. Delete obsolete `app.langgraph_v2` and router-private SSE contract tests - done.
+2. Keep `backend/tests/contract/test_rag_embedding_config_contract.py` active with explicit minimal settings env.
+3. Add current `app.agent` contract tests instead of resurrecting skipped legacy contracts.
+4. Remove or rename misleading `langgraph` wording in productive health/docs where it no longer describes runtime truth.
 
 ## Phase 4 - Frontend Authority Tightening
 
@@ -104,6 +94,7 @@ Steps:
 
 - One documented SSoT map exists and is enforced by tests.
 - Productive imports cannot point to removed LangGraph v2 code.
+- Legacy module-level skipped quarantines cannot be reintroduced.
 - `/api/agent` remains the single runtime mount.
 - Compatibility routes are read-only unless explicitly listed otherwise.
 - PTFE-RWDR routing cannot be overridden by generic hydraulic wording.

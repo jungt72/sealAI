@@ -74,8 +74,8 @@ def test_project_for_ui_full_state_populates_all_tiles() -> None:
     result = project_for_ui(_full_state())
 
     assert result.parameter.parameter_count == 3
-    assert len(result.assumption.items) == 0
-    assert result.recommendation.scope_status == "complete"
+    assert result.assumption.has_open_points is True
+    assert result.recommendation.scope_status == "out_of_scope"
     assert result.compute.items == []
     assert result.matching.status == "pending"
     assert result.rfq.status == "pending"
@@ -115,8 +115,8 @@ def test_normalized_parameters_map_to_parameter_tile() -> None:
 
     by_name = {entry.field_name: entry for entry in tile.parameters}
     assert by_name["pressure_bar"].value == 12.0
-    assert by_name["pressure_bar"].unit is None
-    assert by_name["pressure_bar"].confidence == "confirmed"
+    assert by_name["pressure_bar"].unit == "bar"
+    assert by_name["pressure_bar"].confidence == "requires_confirmation"
     assert by_name["medium"].value == "Dampf"
 
 
@@ -250,11 +250,11 @@ def test_assumption_tile_uses_persisted_rotary_hint_before_pressure_after_reload
     assert recommendation.open_points[0] == "Drehzahl der rotierenden Welle"
 
 
-def test_governance_class_a_recommendation_shows_rfq_admissible() -> None:
+def test_partial_state_recommendation_stays_out_of_scope() -> None:
     tile = project_for_ui(_full_state()).recommendation
 
-    assert tile.scope_status == "complete"
-    assert tile.rfq_admissible is True
+    assert tile.scope_status == "out_of_scope"
+    assert tile.rfq_admissible is False
 
 
 def test_governance_class_d_recommendation_shows_out_of_scope() -> None:
@@ -269,7 +269,7 @@ def test_matching_and_rfq_tiles_stay_pending_when_unavailable() -> None:
 
     assert projection.matching.status == "pending"
     assert projection.rfq.status == "pending"
-    assert projection.rfq.rfq_admissible is True
+    assert projection.rfq.rfq_admissible is False
 
 
 def test_medium_context_tile_projects_orienting_context_separately() -> None:

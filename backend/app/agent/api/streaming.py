@@ -121,14 +121,12 @@ def _graph_custom_event_to_sse_payload(progress: Any) -> dict[str, Any] | None:
             },
         }
     if event_type == "text_chunk":
-        text = render_chunk(str(progress.get("text") or ""), path="GOVERNED")
-        if not text:
-            return None
         return {
-            "type": "text_chunk",
-            "text": text,
-            "preview_only": True,
-            "source": "langgraph_custom",
+            "type": "progress",
+            "data": {
+                "event_type": "draft.created_internal",
+                "source": "langgraph_custom",
+            },
         }
     if event_type == "governed_answer_text_reset":
         return {
@@ -139,7 +137,13 @@ def _graph_custom_event_to_sse_payload(progress: Any) -> dict[str, Any] | None:
             },
         }
     if event_type == "text_reset":
-        return {"type": "text_reset", "source": "langgraph_custom"}
+        return {
+            "type": "progress",
+            "data": {
+                "event_type": "draft.revised_internal",
+                "source": "langgraph_custom",
+            },
+        }
     if event_type in {"governed_answer_answer_final", "answer_final"}:
         return None
     return None
@@ -149,15 +153,6 @@ async def _yield_graph_progress_frame(progress: Any) -> AsyncGenerator[str, None
     payload = _graph_custom_event_to_sse_payload(progress)
     if payload is None:
         yield f"data: {json.dumps({'type': 'progress', 'data': progress}, default=str)}\n\n"
-        return
-    if payload.get("type") == "text_chunk":
-        text = str(payload.get("text") or "")
-        for segment in _visible_stream_segments(text):
-            chunk_payload = dict(payload)
-            chunk_payload["text"] = segment
-            yield f"data: {json.dumps(chunk_payload, default=str)}\n\n"
-            if len(text) > _VISIBLE_STREAM_SEGMENT_CHARS:
-                await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
         return
     yield f"data: {json.dumps(payload, default=str)}\n\n"
 

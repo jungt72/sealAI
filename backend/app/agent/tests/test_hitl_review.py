@@ -17,18 +17,18 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.agent.boundaries import (
+from app.agent.runtime.boundaries import (
     REVIEW_PENDING_PREFIX,
     STRUCTURED_PATH_SUFFIX,
     build_boundary_block,
 )
-from app.agent.agent.review import (
+from app.agent.domain.review import (
     REASON_DEMO_DATA,
     REASON_MANUFACTURER_VALIDATION,
     evaluate_review_trigger,
 )
-from app.agent.agent.selection import build_final_reply, NO_CANDIDATES_REPLY
-from app.agent.agent.state import ReviewLayer, SealingAIState
+from app.agent.runtime.selection import build_final_reply, NO_CANDIDATES_REPLY
+from app.agent.state.agent_state import ReviewLayer, SealingAIState
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ class TestBoundaryBlockReviewNotice:
 
     def test_fast_path_ignores_review_flags(self):
         """Fast-path disclaimer is invariant — review kwargs must be ignored."""
-        from app.agent.agent.boundaries import FAST_PATH_DISCLAIMER
+        from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
         block = build_boundary_block(
             "fast",
             review_required=True,
@@ -283,6 +283,6 @@ class TestBuildFinalReplyReview:
             review_required=True,
             review_reason=REASON_MANUFACTURER_VALIDATION,
         )
-        from app.agent.agent.selection import MANUFACTURER_VALIDATION_REPLY
+        from app.agent.runtime.selection import MANUFACTURER_VALIDATION_REPLY
         assert MANUFACTURER_VALIDATION_REPLY in reply
         assert REVIEW_PENDING_PREFIX in reply

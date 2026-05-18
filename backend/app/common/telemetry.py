@@ -20,10 +20,16 @@ def _is_enabled(name: str, default: bool = True) -> bool:
 def _configure_langsmith() -> bool:
     """Configure LangSmith tracing if an API key is available."""
     return configure_langsmith_environment(
-        tracing_enabled=bool(settings.langsmith_tracing or settings.langchain_tracing_v2),
-        api_key=settings.langsmith_api_key or settings.langchain_api_key,
-        project=settings.langsmith_project or settings.langchain_project,
-        endpoint=settings.langsmith_endpoint or settings.langchain_endpoint,
+        tracing_enabled=bool(
+            getattr(settings, "langsmith_tracing", False)
+            or getattr(settings, "langchain_tracing_v2", False)
+        ),
+        api_key=getattr(settings, "langsmith_api_key", None)
+        or getattr(settings, "langchain_api_key", None),
+        project=getattr(settings, "langsmith_project", None)
+        or getattr(settings, "langchain_project", None),
+        endpoint=getattr(settings, "langsmith_endpoint", None)
+        or getattr(settings, "langchain_endpoint", None),
     )
 
 

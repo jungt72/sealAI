@@ -4,7 +4,7 @@ This registry is the binding map for future patches. If a file is not listed as 
 
 ## Product Focus
 
-- Current product direction: V9.1 Final Governed Sealing Intelligence.
+- Current product direction: V9.2 Clean Runtime.
 - Current engineering MVP focus remains sealing-case qualification with strong PTFE radial shaft seal support (`engineering_path=rwdr`, PTFE compound family), expanded through governed medium/material intelligence where implemented.
 - SeaLAI is a governed sealing-intelligence, technical clarification, screening and RFQ-readiness system. It does not issue final approvals or manufacturer-independent release decisions.
 - LLM output may extract, normalize and propose. Backend-owned deterministic logic decides routing, gates, readiness, calculations, risk and release status.
@@ -13,8 +13,8 @@ This registry is the binding map for future patches. If a file is not listed as 
 
 | Concern | Canonical source | Role |
 | --- | --- | --- |
-| Active V9.1 Final SSoT | `docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md` | Single binding product, communication, runtime, governance, state, knowledge, RAG, intelligence-tab, question-plan, communication-plan, claim/evidence, and RFQ-boundary source. Replaces V9 Governed Dichtungsfall Challenger and all earlier V9.1 drafts. |
-| Older architecture/context | `docs/implementation/SEALAI_ARCHITECTURE_V9_GOVERNED_DICHTUNGSFALL_CHALLENGER.md`, `docs/implementation/SEALAI_ARCHITECTURE_V8_GOVERNED_AGENTIC_RFQ_RUNTIME.md`, V8/V7/event-model docs | Supporting implementation history only where non-conflicting with V9.1 Final. Not active product SSoT. |
+| Active V9.2 runtime contract | `AGENTS.md`, `docs/architecture/SSOT_REGISTRY.md`, current `app.agent` contracts and tests | Binding engineering target for turn envelopes, guarded streaming, deterministic engine context, final guard, and dashboard contract alignment. |
+| Product concept context | `docs/implementation/SEALAI_V9_1_FINAL_KONZEPT.md` if present | Product intent and domain framing. It does not override the V9.2 runtime contract. |
 
 ## Canonical Runtime
 
@@ -75,7 +75,7 @@ This registry is the binding map for future patches. If a file is not listed as 
 
 - `archive/**`, `_trash/**`, `_local_keep/**`, `backups/**`, `langgraph_backup/**`, `erpnext-stack/**`, `crm-stack/**`: historical or operational material, never source of truth for product patches.
 - `konzept/archive/**` and `konzept/audit/**`: historical context only. Current concept sources are the top-level files in `konzept/`, especially `SEALAI_KONZEPT_FINAL.md`, `sealai_ssot_architecture_plan.md`, `sealai_ssot_supplement_v3.md`, and `sealai_engineering_depth_ptfe_rwdr.md`.
-- `backend/tests/contract/*` files that import `app.langgraph_v2`: legacy contract residue. They are not productive SSoT and should be migrated or removed in a dedicated cleanup.
+- Historical contract tests importing `app.langgraph_v2`: removed. Do not recreate them; current contract coverage belongs under `backend/tests/architecture`, `backend/tests/agent`, and `backend/app/agent/tests`.
 - Any frontend heuristic that derives `engineering_path`, release state, readiness or matching truth is a rendering fallback only and must not supersede backend projection fields.
 
 ## Patch Rules

@@ -34,7 +34,15 @@ def _case_revision(state: GovernedSessionState | None) -> int | None:
         int(getattr(event, "case_revision_after", 0) or getattr(event, "state_revision_after", 0) or 0)
         for event in case_events
     ]
-    return max(revisions) if revisions else None
+    if revisions:
+        return max(revisions)
+    for value in (
+        getattr(state, "user_turn_index", None),
+        getattr(state, "analysis_cycle", None),
+    ):
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
 
 
 def extract_case_revision(state: GovernedSessionState | None) -> int | None:

@@ -13,7 +13,8 @@ def test_reducer_uses_tolerance_aware_conflict_detection() -> None:
     normalized = reduce_observed_to_normalized(state)
 
     assert normalized.conflicts == []
-    assert normalized.parameters["temperature_c"].value == "80.4 C"
+    assert normalized.parameters["temperature_c"].value == 80.4
+    assert normalized.parameters["temperature_c"].unit == "degC"
 
 
 def test_reducer_reports_real_observed_conflict() -> None:

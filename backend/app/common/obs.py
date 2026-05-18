@@ -93,8 +93,10 @@ def emit_routing_event(metrics: RoutingMetrics, *, extra: Optional[Dict[str, Any
     payload = metrics.to_dict()
     if extra:
         payload.update(extra)
+    if log.disabled:
+        log.disabled = False
     try:
-        log.info("routing_event", extra={"json": json.dumps(payload, ensure_ascii=False)})
+        log.info("routing_event %s", json.dumps(payload, ensure_ascii=False))
     except Exception:
         log.info("routing_event %s", payload)
 

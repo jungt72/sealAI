@@ -179,7 +179,7 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
     assert debug["history_count"] == len(context.recent_history)
     assert response.reply
     assert response.answer_markdown == "**PTFE kurz:** Zusammengesetzte Expertenantwort."
-    assert response.answer_markdown != response.reply
+    assert response.answer_markdown == response.reply
 
 
 @pytest.mark.asyncio

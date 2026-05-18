@@ -59,7 +59,7 @@ def test_conversation_no_laws(builder: PromptBuilder) -> None:
 
 def test_conversation_with_case_summary(builder: PromptBuilder) -> None:
     prompt = builder.conversation(case_summary="User fragt nach PTFE-Dichtung.")
-    assert "BISHERIGER GESPRÄCHSKONTEXT" in prompt
+    assert "AKTUELLER FALL-KONTEXT" in prompt
     assert "PTFE-Dichtung" in prompt
 
 

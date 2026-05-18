@@ -2,7 +2,7 @@
 Selection — candidate aggregation, classification, and governed output orchestration.
 
 Canonical location for build_selection_state and supporting helpers.
-Moved from app.agent.agent.selection (G1.1 Move 11).
+Canonical runtime selection module.
 """
 import re
 from typing import Any, Dict, List, Optional

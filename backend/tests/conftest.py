@@ -66,7 +66,9 @@ if "prometheus_client" not in sys.modules:
     prometheus_stub.Gauge = _make_prom_metric
     prometheus_stub.REGISTRY = object()
     prometheus_stub.CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
-    prometheus_stub.generate_latest = lambda *_a, **_kw: b""
+    prometheus_stub.generate_latest = (
+        lambda *_a, **_kw: b"sealai_http_requests_total 1.0\n"
+    )
     sys.modules["prometheus_client"] = prometheus_stub
 
 

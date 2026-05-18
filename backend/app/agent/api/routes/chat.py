@@ -326,6 +326,7 @@ async def _chat_response_from_rfq_readiness(
     answer_markdown: str,
     projection: dict[str, Any] | None = None,
     runtime_action: Any | None = None,
+    state: Any | None = None,
 ) -> ChatResponse:
     payload = _build_rfq_readiness_payload(
         answer_markdown=answer_markdown,
@@ -336,9 +337,9 @@ async def _chat_response_from_rfq_readiness(
         payload,
         session_id=str(request.session_id or "default"),
         user_message=request.message,
-        state=None,
-        route_hint="rfq_readiness",
-        case_id=str(request.session_id or "default") if request.session_id else None,
+        state=state,
+        route_hint="rfq_readiness" if state is not None else "knowledge_general",
+        case_id=str(request.session_id or "default") if request.session_id and state is not None else None,
     )
     return ChatResponse(
         session_id=str(request.session_id or "default"),
@@ -1136,6 +1137,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             answer_markdown=dispatch.rfq_response,
             projection=dispatch.rfq_readiness_projection,
             runtime_action=_v7_dispatch_runtime_action(dispatch),
+            state=dispatch.governed_state,
         )
     if dispatch.fast_response is not None:
         return await _chat_response_from_fast_response(

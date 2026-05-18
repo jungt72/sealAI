@@ -481,7 +481,7 @@ class TestGateSessionIntegration:
         )
         assert updated.session_zone == "governed"
 
-    def test_trivial_message_keeps_conversation_zone(self):
+    def test_definition_question_uses_exploration_but_keeps_conversation_zone(self):
         from unittest.mock import patch
         from app.agent.runtime.gate import decide_route, LLMGateResult
 
@@ -491,7 +491,7 @@ class TestGateSessionIntegration:
         llm_result = LLMGateResult(route="CONVERSATION", confidence=0.92)
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Was ist ein O-Ring?", env)
-        assert decision.route == "CONVERSATION"
+        assert decision.route == "EXPLORATION"
 
         updated = apply_gate_decision_and_persist(
             env,

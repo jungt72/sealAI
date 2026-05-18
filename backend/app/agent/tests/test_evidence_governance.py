@@ -14,8 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.agent.agent.boundaries import build_boundary_block, _NO_EVIDENCE_NOTE, STRUCTURED_PATH_SUFFIX
-from app.agent.agent.selection import build_final_reply
+from app.agent.runtime.boundaries import build_boundary_block, _NO_EVIDENCE_NOTE, STRUCTURED_PATH_SUFFIX
+from app.agent.runtime.selection import build_final_reply
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ class TestBoundaryEvidenceFlag:
 
     def test_fast_path_ignores_evidence_flag(self):
         """Fast path boundary is invariant — evidence_available has no effect."""
-        from app.agent.agent.boundaries import FAST_PATH_DISCLAIMER
+        from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
         block_with = build_boundary_block("fast", evidence_available=False)
         block_without = build_boundary_block("fast", evidence_available=True)
         assert block_with == FAST_PATH_DISCLAIMER
@@ -232,7 +232,7 @@ class TestBuildFinalReplyEvidenceFlag:
 
 def _make_empty_sealing_state():
     """Minimal SealingAIState with fully empty asserted layer — no core params."""
-    from app.agent.agent.logic import _ensure_state_shape
+    from app.agent.domain.logic import _ensure_state_shape
     state = {}
     _ensure_state_shape(state)
     return state
@@ -240,7 +240,7 @@ def _make_empty_sealing_state():
 
 def _make_partial_sealing_state(*, medium=None, pressure=None, temperature=None):
     """SealingAIState with selectively populated asserted core params."""
-    from app.agent.agent.logic import _ensure_state_shape
+    from app.agent.domain.logic import _ensure_state_shape
     state = {}
     _ensure_state_shape(state)
     asserted = state["asserted"]
@@ -258,31 +258,31 @@ class TestNamedGateConstants:
     """Gate constants exist and have the canonical string values."""
 
     def test_gate_insufficient_required_inputs_constant(self):
-        from app.agent.agent.logic import GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import GATE_INSUFFICIENT_REQUIRED_INPUTS
         assert GATE_INSUFFICIENT_REQUIRED_INPUTS == "insufficient_required_inputs"
 
     def test_gate_demo_data_in_scope_constant(self):
-        from app.agent.agent.logic import GATE_DEMO_DATA_IN_SCOPE
+        from app.agent.domain.logic import GATE_DEMO_DATA_IN_SCOPE
         assert GATE_DEMO_DATA_IN_SCOPE == "demo_data_in_scope"
 
     def test_gate_review_required_constant(self):
-        from app.agent.agent.logic import GATE_REVIEW_REQUIRED
+        from app.agent.domain.logic import GATE_REVIEW_REQUIRED
         assert GATE_REVIEW_REQUIRED == "review_required"
 
     def test_gate_evidence_missing_constant(self):
-        from app.agent.agent.logic import GATE_EVIDENCE_MISSING
+        from app.agent.domain.logic import GATE_EVIDENCE_MISSING
         assert GATE_EVIDENCE_MISSING == "evidence_missing"
 
     def test_gate_evidence_insufficient_constant(self):
-        from app.agent.agent.logic import GATE_EVIDENCE_INSUFFICIENT
+        from app.agent.domain.logic import GATE_EVIDENCE_INSUFFICIENT
         assert GATE_EVIDENCE_INSUFFICIENT == "evidence_insufficient"
 
     def test_gate_out_of_scope_constant(self):
-        from app.agent.agent.logic import GATE_OUT_OF_SCOPE
+        from app.agent.domain.logic import GATE_OUT_OF_SCOPE
         assert GATE_OUT_OF_SCOPE == "out_of_scope"
 
     def test_gate_blocked_by_boundary_constant(self):
-        from app.agent.agent.logic import GATE_BLOCKED_BY_BOUNDARY
+        from app.agent.domain.logic import GATE_BLOCKED_BY_BOUNDARY
         assert GATE_BLOCKED_BY_BOUNDARY == "blocked_by_boundary"
 
 
@@ -290,7 +290,7 @@ class TestInsufficientRequiredInputsGate:
     """GATE_INSUFFICIENT_REQUIRED_INPUTS fires when no core param is in asserted."""
 
     def test_empty_asserted_produces_insufficient_required_inputs_gate(self):
-        from app.agent.agent.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
         state = _make_empty_sealing_state()
         _derive_governance_from_state(state)
         assert GATE_INSUFFICIENT_REQUIRED_INPUTS in state["governance"]["unknowns_release_blocking"], (
@@ -298,7 +298,7 @@ class TestInsufficientRequiredInputsGate:
         )
 
     def test_empty_asserted_results_in_inadmissible(self):
-        from app.agent.agent.logic import _derive_governance_from_state
+        from app.agent.domain.logic import _derive_governance_from_state
         state = _make_empty_sealing_state()
         _derive_governance_from_state(state)
         assert state["governance"]["release_status"] == "inadmissible"
@@ -306,7 +306,7 @@ class TestInsufficientRequiredInputsGate:
     def test_medium_only_does_not_fire_insufficient_gate(self):
         """Medium confirmed but pressure/temperature missing → gate must NOT fire
         (we have something to work with; the issue is incompleteness, not total absence)."""
-        from app.agent.agent.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
         state = _make_partial_sealing_state(medium="Hydrauliköl")
         _derive_governance_from_state(state)
         assert GATE_INSUFFICIENT_REQUIRED_INPUTS not in state["governance"]["unknowns_release_blocking"], (
@@ -314,20 +314,20 @@ class TestInsufficientRequiredInputsGate:
         )
 
     def test_pressure_only_does_not_fire_insufficient_gate(self):
-        from app.agent.agent.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
         state = _make_partial_sealing_state(pressure=10.0)
         _derive_governance_from_state(state)
         assert GATE_INSUFFICIENT_REQUIRED_INPUTS not in state["governance"]["unknowns_release_blocking"]
 
     def test_all_three_core_params_no_insufficient_gate(self):
-        from app.agent.agent.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
         state = _make_partial_sealing_state(medium="Wasser", pressure=5.0, temperature=80.0)
         _derive_governance_from_state(state)
         assert GATE_INSUFFICIENT_REQUIRED_INPUTS not in state["governance"]["unknowns_release_blocking"]
 
     def test_gate_not_duplicated_on_second_call(self):
         """Running _derive_governance_from_state twice must not duplicate gate entries."""
-        from app.agent.agent.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
         state = _make_empty_sealing_state()
         _derive_governance_from_state(state)
         _derive_governance_from_state(state)
@@ -380,7 +380,7 @@ class TestOutputReadinessDecision:
     """Phase 1B PATCH 1: evaluate_output_readiness() is the single source of truth."""
 
     def test_releasable_when_all_conditions_met(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _green_governance(),
             review_state=None, evidence_available=True, demo_data_present=False,
@@ -390,18 +390,18 @@ class TestOutputReadinessDecision:
         assert decision.blocking_reason == ""
 
     def test_insufficient_inputs_when_no_params(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(None, _green_governance())
         assert decision.releasable is False
         assert decision.status == "insufficient_inputs"
 
     def test_insufficient_inputs_takes_priority_over_governance_blocked(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(None, _blocking_governance())
         assert decision.status == "insufficient_inputs"
 
     def test_demo_data_quarantine_when_demo_data_present(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _green_governance(), demo_data_present=True,
         )
@@ -410,7 +410,7 @@ class TestOutputReadinessDecision:
 
     def test_demo_data_takes_priority_over_evidence_missing(self):
         """demo_data_quarantine fires before evidence_missing when both apply."""
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _green_governance(),
             demo_data_present=True, evidence_available=False,
@@ -418,7 +418,7 @@ class TestOutputReadinessDecision:
         assert decision.status == "demo_data_quarantine"
 
     def test_evidence_missing_when_not_available(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _green_governance(), evidence_available=False,
         )
@@ -426,7 +426,7 @@ class TestOutputReadinessDecision:
         assert decision.status == "evidence_missing"
 
     def test_review_pending_when_review_required(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _green_governance(), review_state=_pending_review(),
         )
@@ -434,14 +434,14 @@ class TestOutputReadinessDecision:
         assert decision.status == "review_pending"
 
     def test_review_pending_includes_reason_in_blocking_reason(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _green_governance(), review_state=_pending_review(),
         )
         assert "Hersteller-Validierung" in decision.blocking_reason
 
     def test_governance_blocked_when_governance_not_ready(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         decision = evaluate_output_readiness(
             _full_asserted(), _blocking_governance(),
             review_state=None, evidence_available=True, demo_data_present=False,
@@ -450,27 +450,27 @@ class TestOutputReadinessDecision:
         assert decision.status == "governance_blocked"
 
     def test_governance_blocked_when_gate_failures_present(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         gov = {**_green_governance(), "gate_failures": ["evidence_insufficient"]}
         decision = evaluate_output_readiness(_full_asserted(), gov)
         assert decision.status == "governance_blocked"
 
     def test_governance_blocked_when_blocking_unknowns_present(self):
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         gov = {**_green_governance(), "unknowns_release_blocking": ["review_required"]}
         decision = evaluate_output_readiness(_full_asserted(), gov)
         assert decision.status == "governance_blocked"
 
     def test_decision_is_deterministic(self):
         """Same inputs must always return identical decision."""
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         d1 = evaluate_output_readiness(_full_asserted(), _green_governance())
         d2 = evaluate_output_readiness(_full_asserted(), _green_governance())
         assert d1 == d2
 
     def test_blocking_reason_non_empty_when_not_releasable(self):
         """Every non-releasable decision must have an explanatory blocking_reason."""
-        from app.agent.agent.selection import evaluate_output_readiness
+        from app.agent.runtime.selection import evaluate_output_readiness
         for scenario in [
             (None, _green_governance(), {}),
             (_full_asserted(), _green_governance(), {"demo": True}),
@@ -491,14 +491,14 @@ class TestOutputReadinessDecision:
 
 class TestEvidenceProvenanceProjection:
     def test_no_source_refs_project_no_evidence(self):
-        from app.agent.agent.selection import project_evidence_provenance_state
+        from app.agent.runtime.selection import project_evidence_provenance_state
 
         projection = project_evidence_provenance_state([], [])
         assert projection["status"] == "no_evidence"
         assert projection["provenance_refs"] == []
 
     def test_single_provenance_ref_projects_thin_evidence(self):
-        from app.agent.agent.selection import project_evidence_provenance_state
+        from app.agent.runtime.selection import project_evidence_provenance_state
 
         projection = project_evidence_provenance_state(
             [_qualified_fact_card("fc_1", grade_name="F1")],
@@ -508,7 +508,7 @@ class TestEvidenceProvenanceProjection:
         assert projection["provenance_refs"] == ["source::fc_1"]
 
     def test_multiple_provenance_refs_project_grounded_evidence(self):
-        from app.agent.agent.selection import project_evidence_provenance_state
+        from app.agent.runtime.selection import project_evidence_provenance_state
 
         projection = project_evidence_provenance_state(
             [
@@ -521,7 +521,7 @@ class TestEvidenceProvenanceProjection:
         assert projection["provenance_refs"] == ["source::fc_1", "source::fc_2"]
 
     def test_projection_ignores_cards_outside_evidence_basis(self):
-        from app.agent.agent.selection import project_evidence_provenance_state
+        from app.agent.runtime.selection import project_evidence_provenance_state
 
         projection = project_evidence_provenance_state(
             [
@@ -569,7 +569,7 @@ def _qualified_fact_card(
 
 class TestGovernedRecommendationArtifact:
     def test_releasable_artifact_projects_single_candidate_non_binding(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -590,7 +590,7 @@ class TestGovernedRecommendationArtifact:
         assert "eingeschränkt" in artifact["rationale_summary"]
 
     def test_insufficient_inputs_produce_no_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -606,7 +606,7 @@ class TestGovernedRecommendationArtifact:
         assert artifact["provenance_refs"] == ["source::fc_1"]
 
     def test_review_required_withholds_normal_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -623,7 +623,7 @@ class TestGovernedRecommendationArtifact:
         assert artifact["evidence_status"] == "thin_evidence"
 
     def test_missing_evidence_produces_restricted_artifact_state(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -641,7 +641,7 @@ class TestGovernedRecommendationArtifact:
         assert "Referenzdaten" in artifact["rationale_summary"]
 
     def test_demo_data_quarantine_has_no_normal_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -657,7 +657,7 @@ class TestGovernedRecommendationArtifact:
         assert artifact["evidence_status"] == "thin_evidence"
 
     def test_multiple_viable_candidates_do_not_claim_single_best_candidate(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[
@@ -678,7 +678,7 @@ class TestGovernedRecommendationArtifact:
         assert artifact["provenance_refs"] == ["source::fc_1", "source::fc_2"]
 
     def test_rationale_summary_avoids_soft_recommendation_claims(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -693,7 +693,7 @@ class TestGovernedRecommendationArtifact:
         assert "empfohlen" not in summary
 
     def test_artifact_with_no_provenance_stays_no_evidence(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[],
@@ -708,7 +708,7 @@ class TestGovernedRecommendationArtifact:
         assert artifact["candidate_projection"] is None
 
     def test_unresolved_conflict_withholds_normal_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -731,7 +731,7 @@ class TestGovernedRecommendationArtifact:
         assert state["correction_projection"]["conflict_still_open"] is True
 
     def test_corrected_value_keeps_projection_consistent(self):
-        from app.agent.agent.selection import build_selection_state, CORRECTION_APPLIED_PREFIX
+        from app.agent.runtime.selection import build_selection_state, CORRECTION_APPLIED_PREFIX
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -754,7 +754,7 @@ class TestGovernedRecommendationArtifact:
         assert CORRECTION_APPLIED_PREFIX in artifact["rationale_summary"]
 
     def test_integrity_warning_keeps_releasable_projection_but_marks_warning(self):
-        from app.agent.agent.selection import build_selection_state, INTEGRITY_WARNING_PREFIX
+        from app.agent.runtime.selection import build_selection_state, INTEGRITY_WARNING_PREFIX
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -799,7 +799,7 @@ class TestGovernedRecommendationArtifact:
         assert INTEGRITY_WARNING_PREFIX in artifact["rationale_summary"]
 
     def test_unit_ambiguous_integrity_withholds_normal_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -844,7 +844,7 @@ class TestGovernedRecommendationArtifact:
         assert state["parameter_integrity_projection"]["blocking_keys"] == ["temperature"]
 
     def test_domain_warning_keeps_candidate_projection_but_marks_scope_warning(self):
-        from app.agent.agent.selection import build_selection_state, DOMAIN_WARNING_PREFIX
+        from app.agent.runtime.selection import build_selection_state, DOMAIN_WARNING_PREFIX
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -865,7 +865,7 @@ class TestGovernedRecommendationArtifact:
         assert DOMAIN_WARNING_PREFIX in artifact["rationale_summary"]
 
     def test_out_of_domain_withholds_normal_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -885,7 +885,7 @@ class TestGovernedRecommendationArtifact:
         assert artifact["domain_scope_status"] == "out_of_domain_scope"
 
     def test_threshold_escalation_withholds_normal_candidate_projection(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -907,7 +907,7 @@ class TestGovernedRecommendationArtifact:
 
 class TestReviewEscalationProjection:
     def test_review_required_projects_review_pending(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -924,7 +924,7 @@ class TestReviewEscalationProjection:
         assert projection["handover_possible"] is True
 
     def test_no_evidence_projects_withheld_no_evidence(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -940,7 +940,7 @@ class TestReviewEscalationProjection:
         assert projection["review_meaningful"] is False
 
     def test_demo_data_projects_withheld_demo_data(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -955,7 +955,7 @@ class TestReviewEscalationProjection:
         assert projection["handover_possible"] is False
 
     def test_missing_core_inputs_project_withheld_missing_core_inputs(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -969,7 +969,7 @@ class TestReviewEscalationProjection:
         assert "temperature" in projection["missing_items"]
 
     def test_multiple_viable_candidates_project_ambiguous_but_reviewable(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[
@@ -988,7 +988,7 @@ class TestReviewEscalationProjection:
         assert projection["provenance_refs"] == ["source::fc_1", "source::fc_2"]
 
     def test_blocked_no_viable_candidates_project_escalation_needed(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
@@ -1002,7 +1002,7 @@ class TestReviewEscalationProjection:
         assert projection["handover_possible"] is True
 
     def test_open_conflict_projects_escalation_needed_without_handover(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1024,7 +1024,7 @@ class TestReviewEscalationProjection:
         assert projection["handover_possible"] is False
 
     def test_integrity_unusable_projects_escalation_needed(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1060,7 +1060,7 @@ class TestReviewEscalationProjection:
         assert "temperature" in projection["affected_keys"]
 
     def test_domain_scope_block_projects_escalation_needed(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1080,7 +1080,7 @@ class TestReviewEscalationProjection:
 
 class TestClarificationEvidenceBinding:
     def test_clarification_keeps_missing_inputs_separate_from_evidence_absence(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1095,7 +1095,7 @@ class TestClarificationEvidenceBinding:
         assert projection["provenance_refs"] == ["source::fc_1"]
 
     def test_clarification_pauses_when_no_evidence_is_canonical_blocker(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1110,7 +1110,7 @@ class TestClarificationEvidenceBinding:
         assert projection["reason_if_not"]
 
     def test_conflict_and_no_evidence_prefer_no_evidence_over_clarification(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1130,7 +1130,7 @@ class TestClarificationEvidenceBinding:
         assert state["clarification_projection"]["clarification_still_meaningful"] is False
 
     def test_integrity_unusable_drives_targeted_clarification(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1165,7 +1165,7 @@ class TestClarificationEvidenceBinding:
         assert projection["next_question_key"] == "temperature"
 
     def test_domain_scope_block_pauses_clarification(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1185,7 +1185,7 @@ class TestClarificationEvidenceBinding:
 
 class TestUserFacingOutputContract:
     def test_clarification_case_projects_clarification_needed(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1200,7 +1200,7 @@ class TestUserFacingOutputContract:
         assert contract["suppress_recommendation_details"] is True
 
     def test_review_case_projects_withheld_review(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1216,7 +1216,7 @@ class TestUserFacingOutputContract:
         assert contract["suppress_recommendation_details"] is True
 
     def test_no_evidence_case_projects_withheld_no_evidence(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1232,7 +1232,7 @@ class TestUserFacingOutputContract:
         assert contract["suppress_recommendation_details"] is True
 
     def test_out_of_domain_case_projects_withheld_domain_block(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1252,7 +1252,7 @@ class TestUserFacingOutputContract:
         assert contract["suppress_recommendation_details"] is True
 
     def test_releasable_case_projects_governed_non_binding_result(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1269,7 +1269,7 @@ class TestUserFacingOutputContract:
 
 class TestProjectionInvariants:
     def test_consistent_releasable_state_has_no_invariant_violations(self):
-        from app.agent.agent.selection import build_selection_state, project_projection_invariants
+        from app.agent.runtime.selection import build_selection_state, project_projection_invariants
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1292,7 +1292,7 @@ class TestProjectionInvariants:
         assert projection == {"invariant_ok": True, "invariant_violations": []}
 
     def test_projection_invariants_report_deterministic_violations_for_impossible_combo(self):
-        from app.agent.agent.selection import project_projection_invariants
+        from app.agent.runtime.selection import project_projection_invariants
 
         projection = project_projection_invariants(
             recommendation_artifact={
@@ -1320,7 +1320,7 @@ class TestProjectionInvariants:
         ]
 
     def test_build_selection_state_downgrades_when_invariant_violation_is_introduced(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         def _contradictory_contract(**_: object) -> dict:
             return {
@@ -1360,7 +1360,7 @@ class TestProjectionInvariants:
 
 class TestStateTraceAuditProjection:
     def test_clarification_case_projects_trace_reason(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1374,7 +1374,7 @@ class TestStateTraceAuditProjection:
         assert trace["blocking_reasons"] == []
 
     def test_review_case_projects_trace_reason(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1389,7 +1389,7 @@ class TestStateTraceAuditProjection:
         assert "review_pending" in trace["contributing_reasons"]
 
     def test_escalation_case_projects_trace_reason(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
@@ -1402,7 +1402,7 @@ class TestStateTraceAuditProjection:
         assert trace["blocking_reasons"] == ["no_viable_candidates"]
 
     def test_invariant_blocked_case_projects_trace_reason(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         def _contradictory_contract(**_: object) -> dict:
             return {
@@ -1431,7 +1431,7 @@ class TestStateTraceAuditProjection:
         assert "invariant_violation" in trace["trace_flags"]
 
     def test_releasable_governed_case_projects_trace_reason(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1445,7 +1445,7 @@ class TestStateTraceAuditProjection:
         assert "thin_evidence" in trace["trace_flags"]
 
     def test_trace_helpers_expose_primary_reason_and_blockers(self):
-        from app.agent.agent.selection import get_primary_trace_reason, is_blocked_by_trace
+        from app.agent.runtime.selection import get_primary_trace_reason, is_blocked_by_trace
 
         trace = {
             "primary_status_reason": "review_pending",
@@ -1461,7 +1461,7 @@ class TestStateTraceAuditProjection:
 
 class TestCaseSummaryProjection:
     def test_releasable_case_projects_summary(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1477,7 +1477,7 @@ class TestCaseSummaryProjection:
         assert summary["next_step"] == "confirmed_result_review"
 
     def test_clarification_case_projects_summary(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1493,7 +1493,7 @@ class TestCaseSummaryProjection:
         assert summary["next_step"] == "answer_next_question"
 
     def test_review_case_projects_summary(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1508,7 +1508,7 @@ class TestCaseSummaryProjection:
         assert summary["next_step"] == "human_review"
 
     def test_escalation_case_projects_summary(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
@@ -1522,7 +1522,7 @@ class TestCaseSummaryProjection:
         assert summary["next_step"] == "engineering_escalation"
 
     def test_invariant_blocked_case_projects_summary(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         def _contradictory_contract(**_: object) -> dict:
             return {
@@ -1550,7 +1550,7 @@ class TestCaseSummaryProjection:
         assert summary["next_step"] == "engineering_escalation"
 
     def test_summary_helpers_expose_status_step_and_blockers(self):
-        from app.agent.agent.selection import get_case_status, get_next_case_step, has_active_blockers
+        from app.agent.runtime.selection import get_case_status, get_next_case_step, has_active_blockers
 
         summary = {
             "current_case_status": "withheld_review",
@@ -1566,7 +1566,7 @@ class TestCaseSummaryProjection:
 
 class TestActionabilityProjection:
     def test_clarification_case_projects_actionability(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1581,7 +1581,7 @@ class TestActionabilityProjection:
         assert "consume_governed_result" in projection["blocked_actions"]
 
     def test_review_case_projects_actionability(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1596,7 +1596,7 @@ class TestActionabilityProjection:
         assert projection["next_expected_user_action"] == "human_review"
 
     def test_escalation_case_projects_actionability(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
@@ -1610,7 +1610,7 @@ class TestActionabilityProjection:
         assert projection["next_expected_user_action"] == "engineering_escalation"
 
     def test_releasable_governed_case_projects_actionability(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1624,7 +1624,7 @@ class TestActionabilityProjection:
         assert projection["next_expected_user_action"] == "confirmed_result_review"
 
     def test_handoverable_but_not_releasable_projects_actionability(self):
-        from app.agent.agent.selection import build_actionability_projection
+        from app.agent.runtime.selection import build_actionability_projection
 
         projection = build_actionability_projection(
             case_summary_projection={
@@ -1653,7 +1653,7 @@ class TestActionabilityProjection:
         assert projection["next_expected_user_action"] == "human_review"
 
     def test_invariant_blocked_case_projects_actionability(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         def _contradictory_contract(**_: object) -> dict:
             return {
@@ -1681,7 +1681,7 @@ class TestActionabilityProjection:
         assert projection["next_expected_user_action"] == "engineering_escalation"
 
     def test_actionability_helpers_expose_primary_action_and_blockers(self):
-        from app.agent.agent.selection import (
+        from app.agent.runtime.selection import (
             get_primary_allowed_action,
             get_next_expected_user_action,
             is_action_blocked,
@@ -1701,7 +1701,7 @@ class TestActionabilityProjection:
 
 class TestStateDeltaProjection:
     def test_single_parameter_flip_projects_neutral_to_warning(self):
-        from app.agent.agent.selection import build_state_delta_projection
+        from app.agent.runtime.selection import build_state_delta_projection
 
         previous_state = _delta_selection_state(
             case_status="governed_non_binding_result",
@@ -1732,7 +1732,7 @@ class TestStateDeltaProjection:
         assert projection["changed_statuses"]["domain_scope_status"]["delta"] == "neutral_to_warning"
 
     def test_single_parameter_flip_projects_warning_to_blocked(self):
-        from app.agent.agent.selection import build_state_delta_projection
+        from app.agent.runtime.selection import build_state_delta_projection
 
         previous_state = _delta_selection_state(
             case_status="governed_non_binding_result",
@@ -1767,7 +1767,7 @@ class TestStateDeltaProjection:
         assert "blocked_actions" in projection["changed_keys"]
 
     def test_conflict_correction_projects_improved_delta(self):
-        from app.agent.agent.selection import build_state_delta_projection
+        from app.agent.runtime.selection import build_state_delta_projection
 
         previous_state = _delta_selection_state(
             case_status="withheld_escalation",
@@ -1799,7 +1799,7 @@ class TestStateDeltaProjection:
         assert projection["changed_statuses"]["output_status"]["delta"] == "withheld_escalation_to_governed_non_binding_result"
 
     def test_summary_and_actionability_changes_are_tracked_without_noise(self):
-        from app.agent.agent.selection import build_state_delta_projection
+        from app.agent.runtime.selection import build_state_delta_projection
 
         previous_state = _delta_selection_state(
             case_status="clarification_needed",
@@ -1831,7 +1831,7 @@ class TestStateDeltaProjection:
         assert projection["changed_statuses"]["next_step"]["delta"] == "answer_next_question_to_human_review"
 
     def test_irrelevant_internal_change_projects_no_delta(self):
-        from app.agent.agent.selection import build_state_delta_projection
+        from app.agent.runtime.selection import build_state_delta_projection
 
         previous_state = _delta_selection_state(
             case_status="governed_non_binding_result",
@@ -1860,7 +1860,7 @@ class TestStateDeltaProjection:
         assert projection["delta_direction"] == "unchanged"
 
     def test_delta_helpers_expose_case_actionability_and_threshold_transitions(self):
-        from app.agent.agent.selection import compare_actionability, compare_case_status, compare_threshold_scope
+        from app.agent.runtime.selection import compare_actionability, compare_case_status, compare_threshold_scope
 
         previous_summary = {"current_case_status": "withheld_review"}
         current_summary = {"current_case_status": "governed_non_binding_result"}
@@ -1879,7 +1879,7 @@ class TestStateDeltaProjection:
 
 class TestStructuredSnapshotContract:
     def test_releasable_case_projects_snapshot_contract(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1898,7 +1898,7 @@ class TestStructuredSnapshotContract:
         }
 
     def test_review_case_projects_snapshot_contract(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1916,7 +1916,7 @@ class TestStructuredSnapshotContract:
         assert snapshot["active_blockers"] == ["review_pending"]
 
     def test_clarification_case_projects_snapshot_contract(self):
-        from app.agent.agent.selection import build_selection_state
+        from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1932,7 +1932,7 @@ class TestStructuredSnapshotContract:
         assert snapshot["primary_allowed_action"] == "provide_missing_input"
 
     def test_domain_block_case_projects_snapshot_contract(self):
-        from app.agent.agent.selection import build_structured_snapshot
+        from app.agent.runtime.selection import build_structured_snapshot
 
         state = _delta_selection_state(
             case_status="withheld_domain_block",
@@ -1964,7 +1964,7 @@ class TestStructuredSnapshotContract:
 
 class TestStructuredSnapshotComparisonContract:
     def test_review_to_releasable_projects_comparison_contract(self):
-        from app.agent.agent.selection import (
+        from app.agent.runtime.selection import (
             build_state_delta_projection,
             build_structured_snapshot,
             compare_structured_snapshots,
@@ -2017,7 +2017,7 @@ class TestStructuredSnapshotComparisonContract:
         assert comparison["delta_direction"] == "improved"
 
     def test_warning_to_blocked_projects_comparison_contract(self):
-        from app.agent.agent.selection import (
+        from app.agent.runtime.selection import (
             build_state_delta_projection,
             build_structured_snapshot,
             compare_structured_snapshots,
@@ -2073,7 +2073,7 @@ class TestStructuredSnapshotComparisonContract:
         assert comparison["delta_direction"] == "more_blocked"
 
     def test_clarification_to_review_projects_comparison_contract(self):
-        from app.agent.agent.selection import (
+        from app.agent.runtime.selection import (
             build_state_delta_projection,
             build_structured_snapshot,
             compare_structured_snapshots,
@@ -2126,7 +2126,7 @@ class TestStructuredSnapshotComparisonContract:
         assert comparison["delta_direction"] == "degraded"
 
     def test_unchanged_core_status_projects_stable_comparison_contract(self):
-        from app.agent.agent.selection import (
+        from app.agent.runtime.selection import (
             build_state_delta_projection,
             build_structured_snapshot,
             compare_structured_snapshots,
@@ -2179,7 +2179,7 @@ class TestStructuredSnapshotComparisonContract:
 
 class TestFinalReplyRecommendationCoupling:
     def test_artifact_absent_returns_safeguarded_reply(self):
-        from app.agent.agent.selection import build_final_reply, SAFEGUARDED_WITHHELD_REPLY
+        from app.agent.runtime.selection import build_final_reply, SAFEGUARDED_WITHHELD_REPLY
 
         state = _minimal_selection_state()
         state["recommendation_artifact"] = None
@@ -2187,7 +2187,7 @@ class TestFinalReplyRecommendationCoupling:
         assert SAFEGUARDED_WITHHELD_REPLY in reply
 
     def test_invariant_violation_returns_safe_reply_without_recommendation_details(self):
-        from app.agent.agent.selection import build_final_reply, INVARIANT_BLOCKED_REPLY
+        from app.agent.runtime.selection import build_final_reply, INVARIANT_BLOCKED_REPLY
 
         state = _minimal_selection_state()
         state["selection_status"] = "winner_selected"
@@ -2218,7 +2218,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_review_reply_stays_consistent_with_trace_reason(self):
-        from app.agent.agent.selection import build_final_reply, REVIEW_PENDING_REPLY
+        from app.agent.runtime.selection import build_final_reply, REVIEW_PENDING_REPLY
 
         state = _minimal_selection_state()
         state["state_trace_audit_projection"] = {
@@ -2238,7 +2238,7 @@ class TestFinalReplyRecommendationCoupling:
         assert REVIEW_PENDING_REPLY in reply
 
     def test_escalation_reply_stays_consistent_with_trace_reason(self):
-        from app.agent.agent.selection import build_final_reply, UNRESOLVED_CONFLICT_REPLY
+        from app.agent.runtime.selection import build_final_reply, UNRESOLVED_CONFLICT_REPLY
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2267,7 +2267,7 @@ class TestFinalReplyRecommendationCoupling:
         assert UNRESOLVED_CONFLICT_REPLY in reply
 
     def test_clarification_reply_stays_consistent_with_trace_reason(self):
-        from app.agent.agent.selection import build_final_reply
+        from app.agent.runtime.selection import build_final_reply
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2295,7 +2295,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Welches Medium soll abgedichtet werden?" in reply
 
     def test_releasable_reply_stays_consistent_with_trace_reason(self):
-        from app.agent.agent.selection import build_final_reply, build_selection_state
+        from app.agent.runtime.selection import build_final_reply, build_selection_state
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2308,7 +2308,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Orientierungsrahmen" in reply
 
     def test_review_reply_stays_consistent_with_case_summary_blocker(self):
-        from app.agent.agent.selection import build_final_reply, REVIEW_PENDING_REPLY
+        from app.agent.runtime.selection import build_final_reply, REVIEW_PENDING_REPLY
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2330,7 +2330,7 @@ class TestFinalReplyRecommendationCoupling:
         assert REVIEW_PENDING_REPLY in reply
 
     def test_escalation_reply_stays_consistent_with_case_summary_blocker(self):
-        from app.agent.agent.selection import build_final_reply, ESCALATION_NEEDED_REPLY
+        from app.agent.runtime.selection import build_final_reply, ESCALATION_NEEDED_REPLY
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2352,7 +2352,7 @@ class TestFinalReplyRecommendationCoupling:
         assert ESCALATION_NEEDED_REPLY in reply
 
     def test_clarification_reply_stays_consistent_with_allowed_action(self):
-        from app.agent.agent.selection import build_final_reply
+        from app.agent.runtime.selection import build_final_reply
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2380,7 +2380,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Welches Medium soll abgedichtet werden?" in reply
 
     def test_review_reply_stays_consistent_with_await_review(self):
-        from app.agent.agent.selection import build_final_reply, REVIEW_PENDING_REPLY
+        from app.agent.runtime.selection import build_final_reply, REVIEW_PENDING_REPLY
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2394,7 +2394,7 @@ class TestFinalReplyRecommendationCoupling:
         assert REVIEW_PENDING_REPLY in reply
 
     def test_governed_result_reply_stays_consistent_with_consume_action(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply
+        from app.agent.runtime.selection import build_selection_state, build_final_reply
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2407,7 +2407,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Orientierungsrahmen" in reply
 
     def test_handoverable_case_reply_stays_consistent_with_prepare_handover(self):
-        from app.agent.agent.selection import build_final_reply, AMBIGUOUS_CANDIDATE_REPLY
+        from app.agent.runtime.selection import build_final_reply, AMBIGUOUS_CANDIDATE_REPLY
 
         state = _minimal_selection_state()
         state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
@@ -2428,7 +2428,7 @@ class TestFinalReplyRecommendationCoupling:
         assert AMBIGUOUS_CANDIDATE_REPLY in reply
 
     def test_delta_projection_remains_read_only_for_releasable_reply_surface(self):
-        from app.agent.agent.selection import build_final_reply, build_selection_state, build_state_delta_projection
+        from app.agent.runtime.selection import build_final_reply, build_selection_state, build_state_delta_projection
 
         previous_state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2454,7 +2454,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Orientierungsrahmen" in reply
 
     def test_blocked_artifact_reply_matches_artifact_rationale(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply
+        from app.agent.runtime.selection import build_selection_state, build_final_reply
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2474,7 +2474,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_releasable_artifact_reply_matches_artifact_rationale(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply
+        from app.agent.runtime.selection import build_selection_state, build_final_reply
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2491,7 +2491,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "eingeschränkt" in reply
 
     def test_ambiguous_projection_reply_matches_ambiguity_class(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, AMBIGUOUS_CANDIDATE_REPLY
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, AMBIGUOUS_CANDIDATE_REPLY
 
         state = build_selection_state(
             relevant_fact_cards=[
@@ -2508,7 +2508,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_escalation_projection_reply_matches_escalation_class(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, ESCALATION_NEEDED_REPLY
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, ESCALATION_NEEDED_REPLY
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
@@ -2522,7 +2522,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_corrected_value_reply_mentions_update_without_losing_governed_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, CORRECTION_APPLIED_PREFIX
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, CORRECTION_APPLIED_PREFIX
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2542,7 +2542,7 @@ class TestFinalReplyRecommendationCoupling:
         assert state["recommendation_artifact"]["candidate_projection"]["candidate_id"] not in reply
 
     def test_unresolved_conflict_reply_has_no_normal_governed_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, UNRESOLVED_CONFLICT_REPLY
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, UNRESOLVED_CONFLICT_REPLY
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2562,7 +2562,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_integrity_warning_reply_mentions_warning_but_keeps_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, INTEGRITY_WARNING_PREFIX
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, INTEGRITY_WARNING_PREFIX
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2593,7 +2593,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Orientierungsrahmen" in reply
 
     def test_integrity_unusable_reply_has_no_normal_governed_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, INTEGRITY_UNUSABLE_REPLY
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, INTEGRITY_UNUSABLE_REPLY
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2624,7 +2624,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_domain_warning_reply_mentions_scope_warning_but_keeps_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, DOMAIN_WARNING_PREFIX
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, DOMAIN_WARNING_PREFIX
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2646,7 +2646,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Orientierungsrahmen" in reply
 
     def test_out_of_domain_reply_has_no_normal_governed_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, OUT_OF_DOMAIN_REPLY
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, OUT_OF_DOMAIN_REPLY
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2668,7 +2668,7 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_threshold_escalation_reply_has_no_normal_governed_projection(self):
-        from app.agent.agent.selection import build_selection_state, build_final_reply, THRESHOLD_ESCALATION_REPLY
+        from app.agent.runtime.selection import build_selection_state, build_final_reply, THRESHOLD_ESCALATION_REPLY
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],

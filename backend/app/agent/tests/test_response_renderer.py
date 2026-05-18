@@ -258,7 +258,7 @@ class TestRenderResponse:
 
     def test_conversation_path_applies_content_policy(self):
         """Fast-path LLM output is checked by output_guard."""
-        from app.agent.agent.output_guard import FAST_PATH_GUARD_FALLBACK
+        from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
         raw = "Ich empfehle FKM für diese Anwendung."
         result = render_response(raw, path="CONVERSATION")
         assert result.policy_violation is not None
@@ -273,7 +273,7 @@ class TestRenderResponse:
         ],
     )
     def test_conversational_answer_blocks_requirement_class_matching_and_rfq_readiness_language(self, raw):
-        from app.agent.agent.output_guard import FAST_PATH_GUARD_FALLBACK
+        from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
 
         result = render_response(raw, path="CONVERSATION")
 

@@ -34,6 +34,19 @@ class ToolCallRecord:
     tenant_id: Any = None
     metadata: Any = None
 
+    @property
+    def duration_ms(self) -> float:
+        if self.started_at is None or self.finished_at is None:
+            return 0.0
+        try:
+            return round((self.finished_at - self.started_at).total_seconds() * 1000, 3)
+        except Exception:
+            return 0.0
+
+    @property
+    def status(self) -> str:
+        return "error" if self.error else "ok"
+
     def model_dump(self, **_: Any) -> dict[str, Any]:
         return self.__dict__.copy()
 

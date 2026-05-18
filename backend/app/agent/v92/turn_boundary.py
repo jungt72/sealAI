@@ -138,6 +138,21 @@ def _route_from_hint(
     response_class: str | None,
     answer_mode: str | None,
 ) -> tuple[TurnRoute | None, str]:
+    explicit_hint = _as_value(route_hint).casefold()
+    if explicit_hint in {
+        "smalltalk",
+        "abusive_or_shit_chat",
+        "knowledge_general",
+        "knowledge_case_side_question",
+        "engineering_case_update",
+        "engineering_recommendation",
+        "leakage_failure_analysis",
+        "standards_or_compliance",
+        "rfq_readiness",
+        "expert_review_action",
+        "unsafe_or_blocked",
+    }:
+        return explicit_hint, "hint_explicit_route"  # type: ignore[return-value]
     value = " ".join(
         item
         for item in (

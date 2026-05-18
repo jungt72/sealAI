@@ -43,7 +43,7 @@ def test_fallback_disabled_by_default(monkeypatch) -> None:
     response = KnowledgeService(
         factcard_store=_FactcardStore([]),
         llm_fallback_runner=fallback_runner,
-    ).answer("Was ist ein unbekannter Dichtungswerkstoff?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
 
@@ -99,8 +99,8 @@ def test_rag_hit_does_not_call_enabled_fallback_after_curated_miss() -> None:
     def rag_retriever(**kwargs):
         return [
             {
-                "text": "FKM ist eine Fluorelastomer-Werkstofffamilie.",
-                "metadata": {"source_id": "rag-fkm", "title": "FKM Grundlagen"},
+                "text": "Das Spezialprofil XQ-77 ist fuer eine dokumentierte Sonderdichtungsgeometrie beschrieben.",
+                "metadata": {"source_id": "rag-xq77", "title": "XQ-77 Grundlagen"},
             }
         ]
 
@@ -113,7 +113,7 @@ def test_rag_hit_does_not_call_enabled_fallback_after_curated_miss() -> None:
         rag_retriever=rag_retriever,
         llm_fallback_runner=fallback_runner,
         llm_research_fallback_enabled=True,
-    ).answer("Was ist FKM?")
+    ).answer("Bitte ordne diese Dichtungsfrage aus dem Dokumentenkontext ein.")
 
     view = response.knowledge_answer_view
 
@@ -140,7 +140,7 @@ def test_rag_miss_with_fallback_disabled_returns_safe_miss() -> None:
         rag_retriever=rag_retriever,
         llm_fallback_runner=fallback_runner,
         llm_research_fallback_enabled=False,
-    ).answer("Was ist ein Spezialwerkstoff ohne Wissensbasis?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
 
@@ -156,7 +156,7 @@ def test_enabled_fallback_without_provider_returns_safe_miss() -> None:
     response = KnowledgeService(
         factcard_store=_FactcardStore([]),
         llm_research_fallback_enabled=True,
-    ).answer("Was ist ein Spezialwerkstoff ohne Wissensbasis?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
 
@@ -178,14 +178,18 @@ def test_enabled_fallback_returns_unvalidated_general_orientation_contract() -> 
         factcard_store=_FactcardStore([]),
         llm_fallback_runner=fallback_runner,
         llm_research_fallback_enabled=True,
-    ).answer("Was ist eine seltene Dichtung?", tenant_id="tenant-1", user_id="user-1")
+    ).answer(
+        "Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.",
+        tenant_id="tenant-1",
+        user_id="user-1",
+    )
 
     view = response.knowledge_answer_view
     payload = view.as_dict()
 
     assert calls == [
         {
-            "query": "Was ist eine seltene Dichtung?",
+            "query": "Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.",
             "tenant_id": "tenant-1",
             "user_id": "user-1",
             "use_scope": "general_orientation_only",
@@ -216,7 +220,7 @@ def test_fallback_result_is_not_authoritative_by_source_validation_helpers() -> 
         factcard_store=_FactcardStore([]),
         llm_fallback_runner=lambda **kwargs: "General orientation only.",
         llm_research_fallback_enabled=True,
-    ).answer("Was ist eine seltene Dichtung?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
     metadata = source_validation_metadata(
@@ -237,7 +241,7 @@ def test_fallback_provider_exception_returns_safe_miss_without_leaking_details()
         factcard_store=_FactcardStore([]),
         llm_fallback_runner=fallback_runner,
         llm_research_fallback_enabled=True,
-    ).answer("Was ist eine seltene Dichtung?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
     payload = view.as_dict()
@@ -259,7 +263,7 @@ def test_unsafe_fallback_text_is_replaced_before_user_visible_answer() -> None:
             "Dieses Material ist geeignet und final freigegeben."
         ),
         llm_research_fallback_enabled=True,
-    ).answer("Ist dieser Werkstoff geeignet?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
     lowered = view.answer.lower()
@@ -276,7 +280,7 @@ def test_fallback_does_not_create_case_rfq_or_compliance_evidence_contract() -> 
         factcard_store=_FactcardStore([]),
         llm_fallback_runner=lambda **kwargs: "General orientation only.",
         llm_research_fallback_enabled=True,
-    ).answer("Was ist eine seltene Dichtung?")
+    ).answer("Bitte gib eine allgemeine Orientierung zu einer seltenen Dichtungsfrage.")
 
     view = response.knowledge_answer_view
     payload = view.as_dict()

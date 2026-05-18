@@ -531,7 +531,7 @@ def test_correction_mouth_reframes_linear_context_and_sets_new_focus() -> None:
     reply = compose_clarification_reply(context, fallback_text="Fallback")
 
     assert "kein rotativer, sondern ein linearer Dichtkontext" in reply
-    assert "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?" in reply
+    assert "Wie hoch ist der Betriebsdruck ungefähr?" in reply
 
 
 def test_medium_focus_is_invalidated_once_medium_is_already_set() -> None:
@@ -565,7 +565,7 @@ def test_medium_focus_is_invalidated_once_medium_is_already_set() -> None:
     strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
     context = build_governed_turn_context(state=state, strategy=strategy)
 
-    assert strategy.primary_question == "Wie ist die Einbausituation bei Ihnen ausgeführt?"
+    assert strategy.primary_question == "Wie hoch ist der Betriebsdruck ungefähr?"
     assert all("Medium" not in item for item in context.open_points_summary)
 
 

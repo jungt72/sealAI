@@ -168,7 +168,7 @@ class TestBothFlagsOnConversationUsesNewRuntime:
         import app.agent.api.router as router_module
 
         stream_conv_called = []
-        agent_sse_called = []
+        governed_graph_called = []
 
         async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
             stream_conv_called.append({"message": message, "mode": mode})
@@ -176,8 +176,8 @@ class TestBothFlagsOnConversationUsesNewRuntime:
             yield "data: {\"type\": \"state_update\", \"reply\": \"Hallo\", \"response_class\": \"conversational_answer\"}\n\n"
             yield "data: [DONE]\n\n"
 
-        async def _fake_sse_gen(state, *, graph, on_complete=None):
-            agent_sse_called.append(True)
+        async def _fake_governed_graph(state, *, graph, on_complete=None):
+            governed_graph_called.append(True)
             yield "data: [DONE]\n\n"
 
         dispatch_resolution = RuntimeDispatchResolution(
@@ -191,7 +191,7 @@ class TestBothFlagsOnConversationUsesNewRuntime:
 
         with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
              patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_sse_gen):
+             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_graph):
 
             frames = await _collect_frames(
                 router_module.event_generator(
@@ -202,7 +202,7 @@ class TestBothFlagsOnConversationUsesNewRuntime:
 
         assert stream_conv_called, "stream_conversation must be called for light route"
         assert stream_conv_called[0]["mode"] == "CONVERSATION"
-        assert not agent_sse_called, "agent_sse_generator must NOT be called for light route"
+        assert not governed_graph_called, "_stream_governed_graph must NOT be called for light route"
         assert any("text_chunk" in f for f in frames), "SSE preview text chunks should be forwarded"
         assert any("state_update" in f for f in frames), "canonical state_update frame must be forwarded"
 
@@ -213,16 +213,16 @@ class TestBothFlagsOnConversationUsesNewRuntime:
 
 class TestGovernedUsesNewGraphPath:
     @pytest.mark.asyncio
-    async def test_governed_uses_new_graph_and_no_legacy_sse_path(self):
-        """Gate decides GOVERNED → GOVERNED_GRAPH is used, not agent_sse_generator."""
+    async def test_governed_uses_canonical_governed_graph_path(self):
+        """Gate decides GOVERNED, so the canonical governed graph stream is used."""
         import app.agent.api.router as router_module
 
         stream_conv_called = []
-        agent_sse_called = []
+        light_runtime_called = []
         governed_graph_called = []
 
-        async def _fake_sse_gen(state, *, graph, on_complete=None):
-            agent_sse_called.append(True)
+        async def _fake_light_runtime(state, *, graph, on_complete=None):
+            light_runtime_called.append(True)
             yield "data: [DONE]\n\n"
 
         async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None):
@@ -245,7 +245,7 @@ class TestGovernedUsesNewGraphPath:
         with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
              patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None), \
              patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming._stream_light_runtime", side_effect=_fake_sse_gen), \
+             patch("app.agent.api.streaming._stream_light_runtime", side_effect=_fake_light_runtime), \
              patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_stream):
 
             frames = await _collect_frames(
@@ -256,7 +256,7 @@ class TestGovernedUsesNewGraphPath:
         )
 
         assert governed_graph_called, "_stream_governed_graph must be called for GOVERNED route"
-        assert not agent_sse_called, "_stream_light_runtime must NOT remain the governed primary path"
+        assert not light_runtime_called, "_stream_light_runtime must NOT be the governed primary path"
         assert not stream_conv_called, "stream_conversation must NOT be called for GOVERNED route"
         payloads = []
         for frame in frames:
@@ -323,23 +323,23 @@ class TestLegacyFacadeUsesCanonicalAuthority:
 
 class TestLegacyPolicyFallbackUsesConversationRuntime:
     @pytest.mark.asyncio
-    async def test_legacy_policy_fallback_for_light_turn_uses_conversation_runtime(self):
+    async def test_unknown_runtime_mode_fails_closed_to_governed_stream(self):
         import app.agent.api.router as router_module
 
-        legacy_resolution = RuntimeDispatchResolution(
+        unknown_mode_resolution = RuntimeDispatchResolution(
             gate_route="GOVERNED",
-            gate_reason="legacy_router_state",
-            runtime_mode="legacy_fallback",
+            gate_reason="unknown_router_state",
+            runtime_mode="unknown_fallback",
             gate_applied=False,
         )
-        agent_sse_called = []
+        governed_graph_called = []
 
-        async def _fake_sse_gen(*_args, **_kwargs):
-            agent_sse_called.append(True)
+        async def _fake_governed_graph(*_args, **_kwargs):
+            governed_graph_called.append(True)
             yield "data: [DONE]\n\n"
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=legacy_resolution)), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_sse_gen):
+        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=unknown_mode_resolution)), \
+             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_graph):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="Hallo"),
@@ -348,7 +348,7 @@ class TestLegacyPolicyFallbackUsesConversationRuntime:
             )
 
         assert frames == ["data: [DONE]\n\n"]
-        assert agent_sse_called == [True]
+        assert governed_graph_called == [True]
 
 
 # ---------------------------------------------------------------------------
@@ -367,15 +367,15 @@ class TestGateRoutesConversationToStreamConversation:
 
         exploration_called = []
         stream_conv_called = []
-        agent_sse_called = []
+        governed_graph_called = []
 
         async def _fake_exploration_reply(message, *, tenant_id):
             exploration_called.append({"message": message, "tenant_id": tenant_id})
             yield f"data: {json.dumps({'type': 'state_update', 'reply': 'RAG-Antwort'})}\n\n"
             yield "data: [DONE]\n\n"
 
-        async def _fake_sse_gen(state, *, graph, on_complete=None):
-            agent_sse_called.append(True)
+        async def _fake_governed_graph(state, *, graph, on_complete=None):
+            governed_graph_called.append(True)
             yield "data: [DONE]\n\n"
 
         async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
@@ -393,7 +393,7 @@ class TestGateRoutesConversationToStreamConversation:
         with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
              patch("app.agent.api.streaming._stream_exploration_reply", side_effect=_fake_exploration_reply), \
              patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_sse_gen):
+             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_graph):
 
             frames = await _collect_frames(
                 router_module.event_generator(
@@ -406,8 +406,8 @@ class TestGateRoutesConversationToStreamConversation:
         assert not stream_conv_called, (
             "EXPLORATION must NOT go through stream_conversation (Bug 1 fix)"
         )
-        assert not agent_sse_called, (
-            "Light route must NOT fall through to agent_sse_generator"
+        assert not governed_graph_called, (
+            "EXPLORATION route must NOT fall through to _stream_governed_graph"
         )
 
 

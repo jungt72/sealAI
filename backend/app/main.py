@@ -218,38 +218,52 @@ def create_app() -> FastAPI:
     from app.observability import metrics as _metrics  # noqa: F401
     from app.observability.langsmith import configure_langsmith_environment
 
+    app_name = getattr(settings, "app_name", "sealAI-backend")
+    app_version = getattr(settings, "app_version", os.getenv("GIT_SHA", "dev"))
+    fastapi_docs_enabled = bool(getattr(settings, "fastapi_docs_enabled", False))
+    enable_cors = bool(getattr(settings, "enable_cors", True))
+    frontend_origin = getattr(settings, "frontend_origin", "http://localhost:3000")
+    prometheus_enabled = bool(getattr(settings, "prometheus_enabled", True))
+
     # LangSmith tracing
     if configure_langsmith_environment(
-        tracing_enabled=bool(settings.langsmith_tracing or settings.langchain_tracing_v2),
-        api_key=settings.langsmith_api_key or settings.langchain_api_key,
-        project=settings.langsmith_project or settings.langchain_project,
-        endpoint=settings.langsmith_endpoint or settings.langchain_endpoint,
+        tracing_enabled=bool(
+            getattr(settings, "langsmith_tracing", False)
+            or getattr(settings, "langchain_tracing_v2", False)
+        ),
+        api_key=getattr(settings, "langsmith_api_key", None)
+        or getattr(settings, "langchain_api_key", None),
+        project=getattr(settings, "langsmith_project", None)
+        or getattr(settings, "langchain_project", None),
+        endpoint=getattr(settings, "langsmith_endpoint", None)
+        or getattr(settings, "langchain_endpoint", None),
     ):
         log.info(
             "LangSmith tracing enabled (project=%s)",
-            settings.langsmith_project or settings.langchain_project,
+            getattr(settings, "langsmith_project", None)
+            or getattr(settings, "langchain_project", None),
         )
 
     app = FastAPI(
-        title=settings.app_name,
-        version=settings.app_version,
-        docs_url="/docs" if settings.fastapi_docs_enabled else None,
-        redoc_url="/redoc" if settings.fastapi_docs_enabled else None,
-        openapi_url="/openapi.json" if settings.fastapi_docs_enabled else None,
+        title=app_name,
+        version=app_version,
+        docs_url="/docs" if fastapi_docs_enabled else None,
+        redoc_url="/redoc" if fastapi_docs_enabled else None,
+        openapi_url="/openapi.json" if fastapi_docs_enabled else None,
         lifespan=lifespan,
     )
 
-    if settings.enable_cors:
+    if enable_cors:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=[settings.frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
+            allow_origins=[frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
         )
 
     # Prometheus middleware
-    if settings.prometheus_enabled:
+    if prometheus_enabled:
         app.add_middleware(_PrometheusMiddleware)
         try:
             from prometheus_fastapi_instrumentator import Instrumentator
@@ -270,11 +284,11 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     async def root():
-        return {"ok": True, "name": settings.app_name, "version": settings.app_version}
+        return {"ok": True, "name": app_name, "version": app_version}
 
     @app.get("/version")
     async def version():
-        return {"version": settings.app_version}
+        return {"version": app_version}
 
     @app.get("/healthz")
     async def health():

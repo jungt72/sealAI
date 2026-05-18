@@ -38,8 +38,6 @@ AnswerMarkdownSource = Literal[
 FinalVisibleSource = Literal[
     "answer_markdown",
     "reply",
-    "text_chunk",
-    "frontend_legacy_humanizer",
     "unknown",
 ]
 

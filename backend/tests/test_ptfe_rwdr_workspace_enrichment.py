@@ -79,7 +79,7 @@ def test_ptfe_rwdr_workspace_enrichment_runs_cascade_and_advisories() -> None:
         and check.value == 140
         for check in projection.cockpit_view.checks
     )
-    assert projection.medium_context.status == "recognized"
+    assert projection.medium_context.status == "available"
     assert (
         projection.partner_matching.data_source == "ptfe_rwdr_deterministic_projection"
     )

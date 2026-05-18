@@ -9,7 +9,18 @@ from threading import RLock
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.services.rag.document import Document
-from langchain_community.retrievers import bm25
+try:
+    from langchain_community.retrievers import bm25
+except ModuleNotFoundError:
+    class _MissingBM25Retriever:
+        @classmethod
+        def from_documents(cls, *_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("langchain_community.retrievers.bm25_unavailable")
+
+    class _MissingBM25Module:
+        BM25Retriever = _MissingBM25Retriever
+
+    bm25 = _MissingBM25Module()
 
 _DEFAULT_UPLOAD_ROOT = "/app/data/uploads"
 _DEFAULT_MODELS_ROOT = "/app/data/models"

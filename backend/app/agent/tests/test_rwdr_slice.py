@@ -424,7 +424,7 @@ class TestMaterialProfiles:
 
 class TestToolWrapper:
     def test_tool_returns_json_string(self):
-        from app.agent.agent.tools import calculate_rwdr_specifications
+        from app.agent.graph.tools import calculate_rwdr_specifications
         result = calculate_rwdr_specifications.invoke({
             "shaft_diameter_mm": 80.0,
             "rpm": 1450.0,
@@ -436,7 +436,7 @@ class TestToolWrapper:
 
     def test_tool_all_optional_params_none(self):
         """Calling with only required params must not crash."""
-        from app.agent.agent.tools import calculate_rwdr_specifications
+        from app.agent.graph.tools import calculate_rwdr_specifications
         result = calculate_rwdr_specifications.invoke({
             "shaft_diameter_mm": 50.0,
             "rpm": 1000.0,
@@ -446,7 +446,7 @@ class TestToolWrapper:
 
     def test_tool_full_params(self):
         """Full parameter set must work end-to-end."""
-        from app.agent.agent.tools import calculate_rwdr_specifications
+        from app.agent.graph.tools import calculate_rwdr_specifications
         result = calculate_rwdr_specifications.invoke({
             "shaft_diameter_mm": 80.0,
             "rpm": 1450.0,
@@ -469,7 +469,7 @@ class TestToolWrapper:
 
     def test_tool_registered_in_reasoning_node(self):
         """calculate_rwdr_specifications must be importable from tools and in tools list."""
-        from app.agent.agent.tools import calculate_rwdr_specifications, submit_claim
+        from app.agent.graph.tools import calculate_rwdr_specifications, submit_claim
         from langchain_core.tools import BaseTool
         assert isinstance(calculate_rwdr_specifications, BaseTool)
         assert calculate_rwdr_specifications.name == "calculate_rwdr_specifications"

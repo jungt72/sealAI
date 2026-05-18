@@ -139,35 +139,21 @@ class TestEnsurePayloadIndices:
 
 # ── Live-Integration-Tests ──────────────────────────────────────────
 
-# Diese Tests laufen nur wenn QDRANT_TEST_URL gesetzt ist oder
-# der qdrant_live Marker explizit angefordert wird.
+# Diese Tests laufen nur, wenn QDRANT_TEST_URL explizit gesetzt ist.
 
 
 def _get_qdrant_url() -> str | None:
-    """Versuche eine erreichbare Qdrant-URL zu ermitteln."""
+    """Return an explicit live Qdrant URL.
+
+    The default test bootstrap can install a lightweight qdrant_client stub.
+    Auto-discovering a Docker container here makes these tests look live while
+    they are actually exercising a stubbed client. Keep live integration opt-in.
+    """
     import os
 
     url = os.environ.get("QDRANT_TEST_URL")
     if url:
         return url
-    # Versuche Container-IP zu finden
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            [
-                "docker", "inspect", "qdrant",
-                "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        ip = result.stdout.strip()
-        if ip:
-            return f"http://{ip}:6333"
-    except Exception:
-        pass
     return None
 
 

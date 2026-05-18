@@ -30,6 +30,16 @@ def _ensure_stubs() -> None:
     Only stubs the modules that transitively import asyncpg via app.database.
     sqlalchemy itself is real (installed) — only app.database is bypassed.
     """
+    try:
+        import app.database  # noqa: F401
+        import app.models.case_record  # noqa: F401
+        import app.models.case_state_snapshot  # noqa: F401
+        import app.models.inquiry_delivery  # noqa: F401
+        import app.models.inquiry_audit  # noqa: F401
+        return
+    except Exception:
+        pass
+
     import sqlalchemy as _sa
     import sqlalchemy.orm as _orm
 

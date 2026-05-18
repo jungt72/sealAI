@@ -183,7 +183,7 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
     )
 
     assert response.policy_path == "knowledge"
-    assert response.reply != response.answer_markdown
+    assert response.reply == response.answer_markdown
     assert response.reply
     assert "FKM und EPDM" in str(response.answer_markdown)
     assert response.proposed_case_delta is None
@@ -248,7 +248,7 @@ async def test_knowledge_answer_composer_receives_enriched_history_and_evidence(
     assert "PTFE ist ein Fluorpolymer" in request.context.recent_history[1].content
     assert request.context.evidence_items
     assert response.reply
-    assert response.answer_markdown != response.reply
+    assert response.answer_markdown == response.reply
     assert response.proposed_case_delta is None
 
 

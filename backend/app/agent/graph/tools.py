@@ -10,7 +10,7 @@ from app.agent.evidence.models import Claim, ClaimType
 from typing import List, Optional
 
 
-@tool("submit_claim")
+@tool("submit_claim", args_schema=Claim)
 def submit_claim(
     claim_type: ClaimType,
     statement: str,

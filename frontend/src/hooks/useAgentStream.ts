@@ -13,7 +13,7 @@ import { buildStreamWorkspaceView, type StreamWorkspaceView } from "@/lib/stream
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
-  answerSource?: "answer_markdown" | "reply" | "text_chunk";
+  answerSource?: "answer_markdown" | "reply";
   answerTrace?: AgentAnswerTrace | null;
   /** ISO timestamp of when the message was added (optional, for display) */
   timestamp?: string;
@@ -390,26 +390,31 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               return;
             }
 
-            if (type === "text_chunk" && typeof payload.text === "string") {
+            if (type === "answer.stream.start") {
+              const source =
+                payload.source === "answer_markdown" || payload.source === "reply"
+                  ? payload.source
+                  : null;
+              finalAssistantTextRef.current = "";
+              finalAssistantAnswerSourceRef.current = source;
+              finalAssistantAnswerTraceRef.current = null;
+              setStreamingStatusText("");
+              setStreamingText("");
+              setStreamingAnswerSource(source);
+              return;
+            }
+
+            if (type === "answer.token" && typeof payload.text === "string") {
               finalAssistantTextRef.current = appendAssistantText(
                 finalAssistantTextRef.current,
                 payload.text,
               );
-              finalAssistantAnswerSourceRef.current = "text_chunk";
-              finalAssistantAnswerTraceRef.current = unknownAnswerTrace("text_chunk");
               setStreamingStatusText("");
               setStreamingText(normalizeAssistantMarkdown(finalAssistantTextRef.current));
-              setStreamingAnswerSource("text_chunk");
               return;
             }
 
-            if (type === "text_reset") {
-              finalAssistantTextRef.current = "";
-              finalAssistantAnswerSourceRef.current = "text_chunk";
-              finalAssistantAnswerTraceRef.current = unknownAnswerTrace("text_chunk");
-              setStreamingStatusText("SealingAI schärft die Antwort...");
-              setStreamingText("");
-              setStreamingAnswerSource("text_chunk");
+            if (type === "answer.done") {
               return;
             }
 

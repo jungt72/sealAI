@@ -49,6 +49,9 @@ os.environ.setdefault("keycloak_expected_azp", "sealai-frontend")
 
 
 class _MetricStub:
+    def __init__(self) -> None:
+        self._value = type("_MetricValue", (), {"get": lambda _self: 0.0})()
+
     def labels(self, **_: object) -> "_MetricStub":
         return self
 
@@ -67,6 +70,11 @@ if "prometheus_client" not in sys.modules:
     prometheus_client.Counter = lambda *args, **kwargs: _MetricStub()
     prometheus_client.Gauge = lambda *args, **kwargs: _MetricStub()
     prometheus_client.Histogram = lambda *args, **kwargs: _MetricStub()
+    prometheus_client.REGISTRY = object()
+    prometheus_client.CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
+    prometheus_client.generate_latest = (
+        lambda *args, **kwargs: b"sealai_http_requests_total 1.0\n"
+    )
     sys.modules["prometheus_client"] = prometheus_client
 
 from app.api.v1.endpoints.langgraph_health import langgraph_health

@@ -695,7 +695,7 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
 
     payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_answer_markdown)
 
-    assert payload["reply"] == state.output_reply
+    assert payload["reply"] == state.output_answer_markdown
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
     assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
@@ -837,7 +837,7 @@ async def test_structured_clarification_assembly_preserves_composed_markdown_fro
 
     payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_answer_markdown)
 
-    assert payload["reply"] == state.output_reply
+    assert payload["reply"] == state.output_answer_markdown
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
     assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
@@ -865,7 +865,7 @@ async def test_assembly_traces_governed_composer_fallback_without_leaking_except
 
     payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_reply)
 
-    assert payload["reply"] == state.output_reply
+    assert payload["reply"] == state.output_answer_markdown
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["answer_markdown"] != state.output_reply
     trace = payload["run_meta"]["answer_trace"]
