@@ -248,6 +248,13 @@ class TurnBoundaryOrchestrator:
             route = "knowledge_case_side_question" if _has_case_state(state) else "smalltalk"
             reason = "fallback_case_side" if _has_case_state(state) else "fallback_smalltalk"
 
+        if (
+            route in {"engineering_case_update", "knowledge_case_side_question", "knowledge_general"}
+            and _RECOMMENDATION_RE.search(text)
+            and _CASE_UPDATE_RE.search(text)
+        ):
+            route, reason = "engineering_recommendation", "message_case_specific_recommendation"
+
         mutation_policy = _mutation_policy(route)
         is_technical = route in _TECHNICAL_ROUTES
         unsafe = route == "unsafe_or_blocked"

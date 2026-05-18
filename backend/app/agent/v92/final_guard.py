@@ -51,6 +51,14 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE | re.UNICODE,
         ),
     ),
+    (
+        "placeholder_or_template_artifact",
+        re.compile(
+            r"(?:\b(?:bewertung|rating|score)\s*:\s*x\b|\b(?:tbd|todo|platzhalter)\b|"
+            r"\{\{|\}\}|\[\[|\]\]|(?:nächste|naechste)\s+frage\s*:\s*$)",
+            re.IGNORECASE | re.UNICODE,
+        ),
+    ),
 )
 
 

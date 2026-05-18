@@ -118,6 +118,27 @@ def test_final_guard_blocks_norm_conformity_when_standards_have_gaps() -> None:
     assert result.final_stream_allowed is False
 
 
+def test_final_guard_blocks_placeholder_or_template_artifacts() -> None:
+    context = FinalAnswerContext(
+        turn_id="turn-1",
+        case_id="case-1",
+        case_revision=1,
+        route="engineering_recommendation",
+        intent="engineering_recommendation",
+        is_technical=True,
+        user_message="Bitte bewerte PTFE.",
+    )
+
+    result = validate_final_output(
+        "Deterministisch berechnet: Material: PTFE; Bewertung: X.",
+        context=context,
+    )
+
+    assert result.decision == "block"
+    assert "placeholder_or_template_artifact" in result.detected_forbidden_claims
+    assert result.final_stream_allowed is False
+
+
 def test_final_guard_revises_stale_calculation_usage() -> None:
     context = FinalAnswerContext(
         turn_id="turn-1",
