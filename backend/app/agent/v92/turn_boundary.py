@@ -70,7 +70,8 @@ _RECOMMENDATION_RE = re.compile(
     re.IGNORECASE,
 )
 _CASE_UPDATE_RE = re.compile(
-    r"\b(?:medium|temperatur|druck|rpm|drehzahl|durchmesser|welle|o-ring|oring|rwdr|radialwellendichtring|leckage)\b",
+    r"\b(?:medium|temperatur|druck|bar|grad|°\s*c|rpm|drehzahl|durchmesser|welle|"
+    r"o-ring|oring|rwdr|radialwellendichtring|leckage|pumpe|getriebe|hlp\s*46|öl|oel)\b",
     re.IGNORECASE,
 )
 _KNOWLEDGE_RE = re.compile(
@@ -79,7 +80,7 @@ _KNOWLEDGE_RE = re.compile(
     re.IGNORECASE,
 )
 _LEAKAGE_RE = re.compile(
-    r"\b(?:leckage|leckt|schaden|ausfall|root cause|ursache|abrieb|quellung|riss)\b",
+    r"\b(?:leckage|leckt|schaden|ausfall|ausgefall\w*|root cause|ursache|abrieb|quellung|riss)\b",
     re.IGNORECASE,
 )
 _STANDARDS_RE = re.compile(
@@ -87,7 +88,10 @@ _STANDARDS_RE = re.compile(
     re.IGNORECASE,
 )
 _RFQ_RE = re.compile(r"\b(?:rfq|anfrage|angebot|dossier|hersteller|freigabeumfang)\b", re.IGNORECASE)
-_REVIEW_RE = re.compile(r"\b(?:review|prüf|pruef|freigeben|ablehnen|approve|reject)\b", re.IGNORECASE)
+_REVIEW_RE = re.compile(
+    r"\b(?:review|prüf\w*|pruef\w*|experte|expert|freigeben|ablehnen|approve|reject)\b",
+    re.IGNORECASE,
+)
 
 
 def _as_value(value: Any) -> str:
@@ -188,6 +192,7 @@ class TurnBoundaryOrchestrator:
         lowered = text.casefold()
         answer_trace = _answer_trace_from_payload(payload)
         trace_answer_mode = str(answer_trace.get("answer_mode") or "")
+        pre_gate_value = _as_value(pre_gate_classification).upper()
         route, reason = _route_from_hint(
             route_hint=route_hint,
             policy_path=policy_path,
@@ -195,7 +200,9 @@ class TurnBoundaryOrchestrator:
             answer_mode=answer_mode or trace_answer_mode,
         )
 
-        if any(marker in lowered for marker in _UNSAFE_MARKERS):
+        if pre_gate_value == "BLOCKED":
+            route, reason = "unsafe_or_blocked", "pre_gate_blocked"
+        elif any(marker in lowered for marker in _UNSAFE_MARKERS):
             route, reason = "unsafe_or_blocked", "unsafe_marker"
         elif route is None and _LEAKAGE_RE.search(text):
             route, reason = "leakage_failure_analysis", "message_leakage"
@@ -207,9 +214,14 @@ class TurnBoundaryOrchestrator:
             route, reason = "expert_review_action", "message_review"
         elif route is None and _RECOMMENDATION_RE.search(text):
             route, reason = "engineering_recommendation", "message_recommendation"
+        elif route is None and _KNOWLEDGE_RE.search(text) and _CASE_UPDATE_RE.search(text):
+            route, reason = "engineering_case_update", "message_knowledge_with_case_markers"
         elif route is None and _KNOWLEDGE_RE.search(text):
             route = "knowledge_case_side_question" if _has_case_state(state) else "knowledge_general"
             reason = "message_knowledge_with_case" if _has_case_state(state) else "message_knowledge"
+        elif route is None and pre_gate_value in {"KNOWLEDGE_QUERY", "DEEP_DIVE"}:
+            route = "knowledge_case_side_question" if _has_case_state(state) else "knowledge_general"
+            reason = "pre_gate_knowledge_with_case" if _has_case_state(state) else "pre_gate_knowledge"
         elif route is None and _SMALLTALK_RE.search(text):
             route, reason = "smalltalk", "message_smalltalk"
         elif route is None and any(marker in lowered for marker in _ABUSIVE_MARKERS):

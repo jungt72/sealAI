@@ -87,7 +87,9 @@ async def test_v92_engineering_node_uses_registry_surface_speed_when_compute_res
     assert surface_speed.outputs["v_surface_m_s"] == pytest.approx(7.854, rel=1e-3)
     assert surface_speed.claim_level == "L3_deterministic_calculation"
     assert surface_speed.validity_status == "valid_for_screening"
-    assert result.calculation.blocked_calculations == []
+    assert "rwdr.surface_speed" not in " ".join(result.calculation.blocked_calculations)
+    assert "material.temperature_missing:material" in result.calculation.blocked_calculations
+    assert "material.chemical_resistance_missing:material" in result.calculation.blocked_calculations
 
 
 @pytest.mark.asyncio

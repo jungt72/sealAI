@@ -316,16 +316,16 @@ _META_QUESTION_PATTERNS = _compile(
 _BLOCKED_PATTERNS = _compile(
     r"\bwelch\w*\s+hersteller\b",
     r"\bhersteller[- ]?empfehlung\b",
-    r"\b(empfiehl|empfehle)\s+mir\b",
-    r"\bwas\s+empfiehlst\s+du\b",
-    r"\bwelche[rs]?\s+(werkstoff|material|dichtring)\s+soll\b",
-    r"\bwelche\s+dichtung\s+soll\b",
+    r"\b(?:ignore\s+(?:all\s+)?previous|system\s+prompt|developer\s+message|show\s+secrets|print\s+secrets)\b",
+    r"\b(?:ignoriere\s+(?:alle\s+)?vorherige|systemprompt|system[- ]?prompt|entwicklernachricht|zeige\s+secrets?|secrets?\s+anzeigen)\b",
     r"\b(kill\s+yourself|kys)\b",
     r"\b(du\s+bist|you\s+are)\s+(dumm|idiot|stupid|idiot)\b",
 )
 
 _DOMAIN_INQUIRY_PATTERNS = _compile(
     r"\b(ich\s+brauche|wir\s+brauchen|benötige|suche)\b.*\b(dichtung|dichtring|seal|rwdr|radialwellendichtring)\b",
+    r"\b(?:empfiehl|empfehle|was\s+empfiehlst\s+du)\b",
+    r"\bwelche[rs]?\s+(?:werkstoff|material|dichtring|dichtung)\s+soll\b",
     r"\b(auslegung|auslegen|berechne|berechnen|prüfe|prüfen|validieren|validation)\b",
     r"\b(leckage|undicht|ausgefallen|verschleiß|failure|leaking|replacement|ersatzteil)\b",
     r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|psi|°?\s*[cCfF]|rpm|u\.?/?min)\b",
