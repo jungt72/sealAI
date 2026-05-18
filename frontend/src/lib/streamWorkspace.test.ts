@@ -33,6 +33,12 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
       openPointsSummary: ["Betriebsdruck"],
     },
     structuredState: { output_status: "governed_non_binding_result" },
+    v92Dashboard: {
+      schema_version: "v92_dashboard_contract_1",
+      turn_id: "turn-1",
+      route: "engineering_case_update",
+      readiness_band: "screening_possible",
+    },
     rfq_readiness_projection: rfqReadinessProjection,
     ui: {
       parameter: {
@@ -166,6 +172,8 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.ui.v92.seal_system?.seal_type, "radial_shaft_seal");
   assert.equal(view.ui.v92.engineering?.next_best_engineering_action, "review_engineering_dossier");
   assert.equal(view.ui.v92.dossier?.no_final_technical_release, true);
+  assert.equal(view.v92Dashboard?.schema_version, "v92_dashboard_contract_1");
+  assert.equal(view.v92Dashboard?.readiness_band, "screening_possible");
   assert.equal(view.turnContext?.conversationPhase, "clarification");
   assert.deepEqual(view.turnContext?.confirmedFactsSummary, ["Medium: Dampf"]);
   assert.equal(view.rfqReadinessProjection?.preview_action_name, "create_rfq_preview");
@@ -200,5 +208,6 @@ test("buildStreamWorkspaceView fills missing ui sections conservatively", () => 
   assert.equal(view.ui.medium_context.status, "unavailable");
   assert.equal(view.ui.v92.seal_system?.status, "pending");
   assert.equal(view.ui.v92.dossier?.no_final_technical_release, false);
+  assert.equal(view.v92Dashboard, null);
   assert.equal(view.rfqReadinessProjection, null);
 });

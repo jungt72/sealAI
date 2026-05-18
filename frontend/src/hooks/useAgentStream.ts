@@ -36,6 +36,15 @@ function streamProgressText(data: unknown): string {
   if (eventType === "governance_ready") {
     return "SealingAI formuliert die Antwort...";
   }
+  if (eventType === "draft.created_internal") {
+    return "SealingAI erstellt intern einen geprüften Antwortentwurf...";
+  }
+  if (eventType === "final_guard.running") {
+    return "SealingAI prüft Claims und Evidenzgrenzen...";
+  }
+  if (eventType === "final_guard.done") {
+    return "SealingAI gibt die geprüfte Antwort frei...";
+  }
   return "SealingAI prüft den Fall...";
 }
 

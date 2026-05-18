@@ -122,41 +122,10 @@ from prompts.builder import PromptBuilder  # top-level prompts package
 REASONING_PROMPT_VERSION: str = PromptBuilder.PROMPT_VERSION
 REASONING_PROMPT_HASH: str = hashlib.sha256(REASONING_PROMPT_VERSION.encode()).hexdigest()[:12]
 
-FAST_GUIDANCE_PROMPT_TEMPLATE = """
-Du bist SealAI — ein erfahrener Dichtungstechniker mit 20+ Jahren Praxis in der industriellen Anwendung.
-Du denkst wie ein Ingenieur, nicht wie ein Formular.
-
-Antwortmodus: {answer_mode}
-
----
-BISHERIGER GESPRÄCHSVERLAUF (Zusammenfassung):
-{history}
----
-
-AKTUELL BEKANNTE PARAMETER:
-{current_params}
----
-
-WISSENSKONTEXT (FactCards):
-{context}
----
-
-DEIN KOMMUNIKATIONSSTIL:
-1. Geh ZUERST auf das ein, was der User gerade gesagt hat. Immer.
-2. Stelle NIE eine Frage, die bereits beantwortet wurde. Prüfe die Parameter oben.
-3. Stelle maximal EINE Folgefrage pro Antwort.
-4. Wenn der User korrigiert ("eigentlich ist es...", "nein, ich meinte..."),
-   bestätige das kurz: "Ah, lineare Bewegung — gut, das ändert einiges!"
-5. Erkläre kurz WARUM du bestimmte Infos brauchst.
-6. Fasse dein Verständnis gelegentlich zusammen.
-7. Deutsch, fachlich korrekt, aber natürlich — kein Formularjargon.
-8. Keine unnötigen Disclaimer.
-
-REGEL: Wenn ein Parameter bereits oben unter AKTUELL BEKANNTE PARAMETER steht,
-frage NICHT erneut danach. Niemals.
-
-Du darfst KEINE bindenden technischen Freigaben, RFQ-Entscheidungen oder Herstellerfreigaben treffen.
-"""
+FAST_GUIDANCE_PROMPT_TEMPLATE_ID = "fast/guidance.j2"
+# Backward-compatible export for old imports. This is the template id, not the
+# prompt body; productive prompt text lives in Jinja2.
+FAST_GUIDANCE_PROMPT_TEMPLATE = FAST_GUIDANCE_PROMPT_TEMPLATE_ID
 
 _FAST_GUIDANCE_PROMPT_MODE = {
     "direct_answer": "Direkte Antwort — kurz, präzise, faktenbasiert.",
@@ -166,7 +135,9 @@ _FAST_GUIDANCE_PROMPT_MODE = {
 }
 
 FAST_GUIDANCE_PROMPT_VERSION = "fast_guidance_prompt_v1"
-FAST_GUIDANCE_PROMPT_HASH = hashlib.sha256(FAST_GUIDANCE_PROMPT_TEMPLATE.encode()).hexdigest()[:12]
+FAST_GUIDANCE_PROMPT_HASH = hashlib.sha256(
+    (PROMPTS_DIR / FAST_GUIDANCE_PROMPT_TEMPLATE_ID).read_text(encoding="utf-8").encode()
+).hexdigest()[:12]
 
 
 def build_fast_guidance_prompt(
@@ -178,9 +149,12 @@ def build_fast_guidance_prompt(
 ) -> str:
     """Return the fast-path system prompt adapted to the result_form."""
     mode = _FAST_GUIDANCE_PROMPT_MODE.get(result_form, _FAST_GUIDANCE_PROMPT_MODE["direct_answer"])
-    return FAST_GUIDANCE_PROMPT_TEMPLATE.format(
-        context=context or "Kein spezifischer Kontext verfügbar.",
-        answer_mode=mode,
-        history=history or "Noch kein Verlauf.",
-        current_params=current_params or "Noch keine Parameter erfasst.",
+    return prompts.render(
+        FAST_GUIDANCE_PROMPT_TEMPLATE_ID,
+        {
+            "context": context or "Kein spezifischer Kontext verfügbar.",
+            "answer_mode": mode,
+            "history": history or "Noch kein Verlauf.",
+            "current_params": current_params or "Noch keine Parameter erfasst.",
+        },
     )

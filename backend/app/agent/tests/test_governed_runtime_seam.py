@@ -228,7 +228,7 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
 
 
 @pytest.mark.asyncio
-async def test_sse_governed_path_forwards_langgraph_native_answer_tokens() -> None:
+async def test_sse_governed_path_masks_langgraph_native_answer_tokens_until_guarded_final() -> None:
     result_state = GraphState(
         output_reply="Fallback",
         output_answer_markdown="Native Antwort.",
@@ -275,10 +275,12 @@ async def test_sse_governed_path_forwards_langgraph_native_answer_tokens() -> No
         for frame in frames
         if frame.startswith("data: ") and not frame.startswith("data: [DONE]")
     ]
-    assert [payload["text"] for payload in payloads if payload["type"] == "text_chunk"] == [
-        "Native ",
-        "Antwort.",
-    ]
+    assert [payload for payload in payloads if payload["type"] == "text_chunk"] == []
+    assert [
+        payload["data"]["event_type"]
+        for payload in payloads
+        if payload["type"] == "progress" and isinstance(payload.get("data"), dict)
+    ].count("draft.created_internal") == 2
     assert next(payload for payload in payloads if payload["type"] == "state_update")[
         "answer_markdown"
     ] == "Native Antwort."
@@ -286,10 +288,9 @@ async def test_sse_governed_path_forwards_langgraph_native_answer_tokens() -> No
 
 
 @pytest.mark.asyncio
-async def test_sse_governed_path_streams_composer_chunks_before_state_update() -> None:
+async def test_sse_governed_path_composes_internally_before_state_update() -> None:
     from app.agent.communication.governed_answer_composer import (  # noqa: PLC0415
         GovernedAnswerComposerOutput,
-        GovernedAnswerComposerStreamEvent,
     )
     from app.agent.communication.governed_answer_context import GovernedAnswerContext  # noqa: PLC0415
 
@@ -312,19 +313,9 @@ async def test_sse_governed_path_streams_composer_chunks_before_state_update() -
         )
     )
 
-    async def fake_stream(self, request):  # noqa: ANN001
-        yield GovernedAnswerComposerStreamEvent(event_type="chunk", text="Slotfrage")
-        yield GovernedAnswerComposerStreamEvent(event_type="reset")
-        yield GovernedAnswerComposerStreamEvent(event_type="chunk", text="Gern. ")
-        yield GovernedAnswerComposerStreamEvent(
-            event_type="chunk",
-            text="Welches Medium liegt an?",
-        )
-        yield GovernedAnswerComposerStreamEvent(
-            event_type="final",
-            output=GovernedAnswerComposerOutput(
-                answer_markdown="Gern. Welches Medium liegt an?",
-            ),
+    async def fake_compose(self, request):  # noqa: ANN001
+        return GovernedAnswerComposerOutput(
+            answer_markdown="Gern. Welches Medium liegt an?",
         )
 
     request = SimpleNamespace(session_id="case-sse", message="Ich brauche eine Dichtung")
@@ -332,7 +323,8 @@ async def test_sse_governed_path_streams_composer_chunks_before_state_update() -
         patch("app.agent.api.streaming.run_governed_graph_turn", seam),
         patch("app.agent.api.streaming._persist_live_governed_state", AsyncMock()),
         patch("app.agent.api.streaming.is_governed_answer_composer_enabled", return_value=True),
-        patch("app.agent.api.streaming.GovernedAnswerComposer.stream", fake_stream),
+        patch("app.agent.api.streaming.GovernedAnswerComposer.compose", fake_compose),
+        patch("app.agent.api.streaming.GovernedAnswerComposer.stream") as legacy_stream,
     ):
         frames = [
             frame
@@ -348,15 +340,14 @@ async def test_sse_governed_path_streams_composer_chunks_before_state_update() -
         for frame in frames
         if frame.startswith("data: ") and not frame.startswith("data: [DONE]")
     ]
-    assert [payload["text"] for payload in payloads if payload["type"] == "text_chunk"] == [
-        "Slotfrage",
-        "Gern. ",
-        "Welches Medium liegt an?",
-    ]
-    assert any(payload["type"] == "text_reset" for payload in payloads)
+    assert [payload for payload in payloads if payload["type"] == "text_chunk"] == []
+    assert not any(payload["type"] == "text_reset" for payload in payloads)
     state_update = next(payload for payload in payloads if payload["type"] == "state_update")
     assert state_update["answer_markdown"] == "Gern. Welches Medium liegt an?"
     assert state_update["run_meta"]["answer_trace"]["answer_markdown_source"] == "governed_composer"
+    assert state_update["final_guard_result"]["decision"] == "pass"
+    assert state_update["turn_envelope"]["streaming_policy"] == "status_only_until_guarded_final"
+    legacy_stream.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -16,6 +16,7 @@ from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
 from app.agent.api.utils import _governed_structured_state
 from app.agent.api.deps import _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_VERSION, VISIBLE_REPLY_PROMPT_HASH
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
+from app.agent.v92.runtime_contract import apply_v92_contracts_to_payload
 from app.agent.state.case_state import (
     PROJECTION_VERSION,
     CASE_STATE_BUILDER_VERSION,
@@ -151,6 +152,7 @@ def _build_governed_reply_context(
             "governed_answer_composer": {
                 "source": answer_markdown_source,
                 "error": answer_markdown_error,
+                "prompt_trace": dict(getattr(result_state, "governed_answer_prompt_trace", {}) or {}),
             },
             "v91": {
                 "field_governance_decisions": [
@@ -191,6 +193,9 @@ def _build_governed_reply_context(
 def _assemble_governed_stream_payload(
     *,
     context: GovernedReplyAssemblyContext,
+    session_id: str = "default",
+    user_message: str = "",
+    state: GovernedSessionState | None = None,
     visible_reply: str | None = None,
     visible_reply_trace: AnswerTrace | None = None,
 ) -> dict[str, Any]:
@@ -287,7 +292,7 @@ def _assemble_governed_stream_payload(
         public_reply.get("answer_markdown") or public_reply.get("reply") or ""
     ).strip()
 
-    return {
+    payload = {
         "type": "state_update",
         **public_reply,
         "assistant_message": assistant_message,
@@ -323,3 +328,11 @@ def _assemble_governed_stream_payload(
         ),
         "ui": context.ui_payload,
     }
+    return apply_v92_contracts_to_payload(
+        payload,
+        session_id=session_id,
+        user_message=user_message,
+        state=state,
+        route_hint="governed",
+        case_id=session_id,
+    )

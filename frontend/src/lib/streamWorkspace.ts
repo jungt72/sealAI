@@ -15,6 +15,7 @@ export type StreamWorkspaceView = {
   assertions: Record<string, AssertionEntry> | null;
   structuredState: Record<string, unknown> | null;
   turnContext: AgentTurnContext | null;
+  v92Dashboard: Record<string, unknown> | null;
   proposedCaseDelta: ProposedCaseDelta | null;
   rfqReadinessProjection: WorkspaceRfqReadinessProjection | null;
   ui: Required<Pick<AgentWorkspaceUi, "parameter" | "assumption" | "recommendation" | "compute" | "matching" | "rfq" | "medium_classification" | "medium_context" | "v92">> &
@@ -89,6 +90,10 @@ export function buildStreamWorkspaceView(
         ? event.structuredState
         : null,
     turnContext: normalizeTurnContext(event.turnContext),
+    v92Dashboard:
+      event.v92Dashboard && typeof event.v92Dashboard === "object"
+        ? event.v92Dashboard
+        : null,
     proposedCaseDelta:
       event.proposedCaseDelta && Array.isArray(event.proposedCaseDelta.fields)
         ? event.proposedCaseDelta

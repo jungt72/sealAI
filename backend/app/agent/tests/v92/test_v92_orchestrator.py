@@ -6,6 +6,7 @@ from app.agent.graph import GraphState
 from app.agent.graph.nodes.v92_dossier_node import v92_dossier_node
 from app.agent.graph.nodes.v92_engineering_node import v92_engineering_node
 from app.agent.state.models import AssertedClaim, AssertedState, SealaiNormState
+from app.agent.v92.dashboard_contract import build_v92_dashboard_contract
 
 
 def _claim(field: str, value) -> AssertedClaim:
@@ -64,6 +65,71 @@ async def test_v92_engineering_node_builds_rwdr_ledger_from_compute_results() ->
     assert result.calculation.results[0].validity_status == "valid_for_screening"
     assert result.calculation.guard_results[0].no_final_claim_from_calculation is True
     assert result.engineering.next_best_engineering_action == "review_engineering_dossier"
+
+
+@pytest.mark.asyncio
+async def test_v92_engineering_node_uses_registry_surface_speed_when_compute_result_is_absent() -> None:
+    state = _state(
+        sealing_type="rwdr",
+        medium="HLP46",
+        pressure_bar=10,
+        temperature_c=80,
+        shaft_diameter_mm=50,
+        speed_rpm=3000,
+    )
+
+    result = await v92_engineering_node(state)
+
+    surface_speed = next(
+        item for item in result.calculation.results if item.calculation_id == "rwdr.surface_speed"
+    )
+    assert surface_speed.calculator == "surface_speed_from_rpm_and_diameter"
+    assert surface_speed.outputs["v_surface_m_s"] == pytest.approx(7.854, rel=1e-3)
+    assert surface_speed.claim_level == "L3_deterministic_calculation"
+    assert surface_speed.validity_status == "valid_for_screening"
+    assert result.calculation.blocked_calculations == []
+
+
+@pytest.mark.asyncio
+async def test_v92_engineering_node_runs_material_screening_calculators() -> None:
+    state = _state(
+        sealing_type="rwdr",
+        medium="HLP",
+        pressure_bar=10,
+        temperature_c=80,
+        shaft_diameter_mm=50,
+        speed_rpm=3000,
+        material="EPDM",
+    )
+
+    result = await v92_engineering_node(state)
+    calc_by_id = {item.calculation_id: item for item in result.calculation.results}
+
+    assert calc_by_id["material.temperature_window_screening"].outputs["material"] == "EPDM"
+    chemical = calc_by_id["material.chemical_resistance_screening"]
+    assert chemical.outputs["rating"] == "C"
+    assert chemical.validity_status == "requires_expert_review"
+    assert "counterindication_rating_c" in chemical.guardrail_violations
+
+
+@pytest.mark.asyncio
+async def test_v92_engineering_node_marks_registry_surface_speed_missing_inputs() -> None:
+    state = _state(
+        sealing_type="rwdr",
+        medium="HLP46",
+        pressure_bar=10,
+        temperature_c=80,
+        shaft_diameter_mm=50,
+    )
+
+    result = await v92_engineering_node(state)
+
+    surface_speed = next(
+        item for item in result.calculation.results if item.calculation_id == "rwdr.surface_speed"
+    )
+    assert surface_speed.status == "insufficient_data"
+    assert surface_speed.missing_inputs == ["speed_rpm"]
+    assert "rwdr.surface_speed_missing:speed_rpm" in result.calculation.blocked_calculations
 
 
 @pytest.mark.asyncio
@@ -243,6 +309,39 @@ async def test_v92_review_and_dossier_expose_final_readiness_guards() -> None:
     assert result.dossier.readiness_band in {"engineering_checks_partial", "review_ready_with_open_items", "blocked_missing_core_data"}
     assert "request_manufacturer_review" in result.dossier.allowed_next_actions
     assert result.dossier.no_final_technical_release is True
+
+
+@pytest.mark.asyncio
+async def test_v92_dashboard_contract_exposes_rfq_and_review_boundaries() -> None:
+    state = await v92_dossier_node(
+        await v92_engineering_node(
+            _state(
+                sealing_type="rwdr",
+                medium="Wasser",
+                pressure_bar=10,
+                temperature_c=60,
+                shaft_diameter_mm=40,
+                speed_rpm=1000,
+                material="FKM",
+                product="ACME-123",
+            )
+        )
+    )
+
+    contract = build_v92_dashboard_contract(
+        state,
+        turn_id="turn-1",
+        route="rfq_readiness",
+        case_id="case-1",
+    )
+
+    assert contract.review_status["human_review_required"] is True
+    assert "manufacturer_product_review" in contract.review_status["required_review_types"]
+    assert contract.rfq_dossier_preview is not None
+    assert contract.rfq_dossier_preview["accepted_facts"]
+    assert contract.rfq_dossier_preview["calculated_values"]
+    assert contract.rfq_dossier_preview["no_final_technical_release"] is True
+    assert "request_manufacturer_review" in contract.rfq_dossier_preview["allowed_next_actions"]
 
 
 @pytest.mark.asyncio

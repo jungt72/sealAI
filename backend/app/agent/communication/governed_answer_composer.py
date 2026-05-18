@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import re
@@ -12,6 +13,8 @@ from app.agent.communication.context import human_label
 from app.agent.communication.templates import render_communication_template
 from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
+from app.agent.v92.contracts import PromptTrace
+from app.agent.v92.prompt_audit import build_prompt_trace
 from app.agent.v91.final_answer_guard import validate_v91_final_answer
 from app.llm.factory import get_async_llm
 from app.llm.registry import get_registry_default_model_for_role
@@ -78,6 +81,7 @@ class GovernedAnswerComposerInput:
 class GovernedAnswerComposerOutput:
     answer_markdown: str
     confidence_note: str | None = None
+    prompt_trace: PromptTrace | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +199,11 @@ class GovernedAnswerComposer:
         raw_content = response.choices[0].message.content
         output = parse_governed_answer_composer_output(raw_content)
         _validate_complete_answer(output.answer_markdown, request.context)
-        return output
+        return GovernedAnswerComposerOutput(
+            answer_markdown=output.answer_markdown,
+            confidence_note=output.confidence_note,
+            prompt_trace=_prompt_trace_for_messages(request=request, messages=messages),
+        )
 
     async def _stream_once(
         self,
@@ -236,6 +244,7 @@ class GovernedAnswerComposer:
             output=GovernedAnswerComposerOutput(
                 answer_markdown=answer_markdown,
                 confidence_note=None,
+                prompt_trace=_prompt_trace_for_messages(request=request, messages=messages),
             ),
         )
 
@@ -361,6 +370,38 @@ def build_governed_answer_composer_messages(
         repair_instruction += "Return only the requested output format."
         messages.append({"role": "user", "content": repair_instruction})
     return messages
+
+
+def _prompt_trace_for_messages(
+    *,
+    request: GovernedAnswerComposerInput,
+    messages: list[dict[str, str]],
+) -> PromptTrace:
+    trace_source = json.dumps(
+        {
+            "latest_user_message": request.context.latest_user_message,
+            "response_class": request.context.response_class,
+            "deterministic_reply_hash_basis": bool(request.deterministic_reply),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        default=str,
+    )
+    trace_id = "prompt_" + re.sub(
+        r"[^a-f0-9]",
+        "",
+        hashlib.sha256(trace_source.encode("utf-8")).hexdigest(),
+    )[:24]
+    return build_prompt_trace(
+        prompt_template_id="governed/answer_composer.j2",
+        prompt_template_version=GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION,
+        messages=messages,
+        input_schema_version="GovernedAnswerComposerInput.v1",
+        output_schema_version="GovernedAnswerComposerOutput.v1",
+        model_role="governed_answer_composer",
+        case_revision=None,
+        trace_id=trace_id,
+    )
 
 
 def parse_governed_answer_composer_output(raw_content: Any) -> GovernedAnswerComposerOutput:

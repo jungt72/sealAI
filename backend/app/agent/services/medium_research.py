@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.agent.services.medium_context import MediumContext, resolve_medium_context
 from app.llm.factory import get_async_llm
@@ -25,6 +26,7 @@ AnswerDepth = Literal["instant", "deep"]
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 _MAX_MEDIUM_ANSWER_CHARS = 9000
+MEDIUM_ANSWER_COMPOSER_PROMPT_VERSION = "sealai_medium_answer_composer_v2"
 
 _INTERNAL_LEAKAGE_FRAGMENTS = (
     "```json",
@@ -367,34 +369,10 @@ def _medium_answer_messages(
 
 
 def _medium_answer_system_prompt() -> str:
-    return """You are SealAI's Medium Intelligence final answer composer.
-
-Your task is to write a user-facing German markdown deep dive for exactly one sealing medium.
-Use only the supplied deterministic sections and evidence excerpts. Do not create engineering truth.
-
-Write like a careful senior sealing-technology engineer:
-- direct, useful, detailed, and understandable
-- deep enough that a user learns why the medium matters for seals
-- structured with headings, bullets, and a compact practical checklist
-- no generic filler, no route names, no internal JSON, no model names
-
-Required content:
-- identify the medium and why it matters for sealing technology
-- explain relevant chemical/physical risk themes from supplied context
-- explain what matters for elastomers, PTFE/fluoropolymers, metals, springs, shafts, housings, surfaces, deposits, cleaning, temperature, pressure, and exposure only when supported by supplied sections/evidence
-- distinguish curated system context, RAG, and live web evidence by plain wording without exposing internal labels
-- state uncertainty and missing data
-- include the most useful next data points for a manufacturer-review-ready inquiry
-- state clearly that this is orientation, not material release, compliance approval, or manufacturer approval
-
-Forbidden:
-- final suitability, final compatibility, final release, compliance/certification, or manufacturer approval claims
-- invented norms, legal deadlines, data sheet claims, product names, sources, or values
-- manufacturer contact, RFQ export, matching, or dispatch language
-- saying a material "is suitable" for the concrete case
-
-Return only JSON:
-{"answer_markdown": "...", "confidence_note": null}"""
+    return prompts.render(
+        "medium/answer_composer.j2",
+        {"prompt_version": MEDIUM_ANSWER_COMPOSER_PROMPT_VERSION},
+    )
 
 
 def _medium_answer_response_format() -> dict[str, Any]:

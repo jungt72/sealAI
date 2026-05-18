@@ -54,6 +54,10 @@ from app.agent.communication.governed_answer_context import GovernedAnswerContex
 from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.runtime.response_renderer import render_chunk
+from app.agent.v92.runtime_contract import (
+    apply_async_adversarial_review_to_payload,
+    apply_v92_contracts_to_payload,
+)
 from app.agent.communication.v7_contracts import (
     RuntimeAction,
     RuntimeActionType,
@@ -108,7 +112,15 @@ def _graph_custom_event_to_sse_payload(progress: Any) -> dict[str, Any] | None:
     if not isinstance(progress, dict):
         return None
     event_type = str(progress.get("event_type") or progress.get("type") or "")
-    if event_type in {"governed_answer_text_chunk", "text_chunk"}:
+    if event_type == "governed_answer_text_chunk":
+        return {
+            "type": "progress",
+            "data": {
+                "event_type": "draft.created_internal",
+                "source": "governed_answer_composer_node",
+            },
+        }
+    if event_type == "text_chunk":
         text = render_chunk(str(progress.get("text") or ""), path="GOVERNED")
         if not text:
             return None
@@ -118,7 +130,15 @@ def _graph_custom_event_to_sse_payload(progress: Any) -> dict[str, Any] | None:
             "preview_only": True,
             "source": "langgraph_custom",
         }
-    if event_type in {"governed_answer_text_reset", "text_reset"}:
+    if event_type == "governed_answer_text_reset":
+        return {
+            "type": "progress",
+            "data": {
+                "event_type": "draft.revised_internal",
+                "source": "governed_answer_composer_node",
+            },
+        }
+    if event_type == "text_reset":
         return {"type": "text_reset", "source": "langgraph_custom"}
     if event_type in {"governed_answer_answer_final", "answer_final"}:
         return None
@@ -263,6 +283,7 @@ def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
 
 async def _stream_fast_response(
     *,
+    request: Any,
     fast_response: Any,
     runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
@@ -290,12 +311,21 @@ async def _stream_fast_response(
             composer_tier="tier_a",
         ),
     )
+    state_update_event = apply_v92_contracts_to_payload(
+        state_update_event,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=None,
+        route_hint="fast",
+        case_id=str(request.session_id or "default") if request.session_id else None,
+    )
     yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
     yield "data: [DONE]\n\n"
 
 
 async def _stream_knowledge_response(
     *,
+    request: Any,
     knowledge_response: Any,
     runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
@@ -334,6 +364,14 @@ async def _stream_knowledge_response(
             existing_reply_source="knowledge_service",
             composer_tier="tier_b" if composer_attempted else "tier_a",
         ),
+    )
+    state_update_event = apply_v92_contracts_to_payload(
+        state_update_event,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=None,
+        route_hint="knowledge",
+        case_id=str(request.session_id or "default") if request.session_id else None,
     )
     yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
     yield "data: [DONE]\n\n"
@@ -650,6 +688,14 @@ async def _stream_light_runtime(
                 payload.get("run_meta"),
                 runtime_action,
             )
+            payload = apply_v92_contracts_to_payload(
+                payload,
+                session_id=str(request.session_id or "default"),
+                user_message=message,
+                state=state_for_projection,
+                route_hint=mode.lower(),
+                case_id=str(request.session_id or "default") if request.session_id else None,
+            )
             yield f"data: {json.dumps(payload, default=str)}\n\n"
             continue
 
@@ -743,33 +789,25 @@ async def _stream_governed_graph(
             )
             if not str(composer_basis_reply or "").strip():
                 composer_basis_reply = deterministic_reply
-            final_answer = ""
             composer = GovernedAnswerComposer()
-            async for event in composer.stream(
+            result = await composer.compose(
                 GovernedAnswerComposerInput(
                     context=governed_context,
                     deterministic_reply=str(composer_basis_reply or ""),
                 )
-            ):
-                if event.event_type == "chunk":
-                    clean_chunk = render_chunk(str(event.text or ""), path="GOVERNED")
-                    if clean_chunk:
-                        for segment in _visible_stream_segments(clean_chunk):
-                            yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment, 'preview_only': True}, default=str)}\n\n"
-                            if len(clean_chunk) > _VISIBLE_STREAM_SEGMENT_CHARS:
-                                await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
-                    continue
-                if event.event_type == "reset":
-                    yield f"data: {json.dumps({'type': 'text_reset'}, default=str)}\n\n"
-                    continue
-                if event.event_type == "final" and event.output is not None:
-                    final_answer = event.output.answer_markdown
+            )
+            final_answer = result.answer_markdown
 
             if final_answer:
                 run_meta = dict(context.run_meta or {})
                 run_meta["governed_answer_composer"] = {
                     "source": "governed_composer",
                     "error": None,
+                    "prompt_trace": (
+                        result.prompt_trace.model_dump(mode="json")
+                        if result.prompt_trace
+                        else {}
+                    ),
                 }
                 context = dataclasses.replace(
                     context,
@@ -804,9 +842,16 @@ async def _stream_governed_graph(
                 answer_markdown_error=reason,
                 run_meta=run_meta,
             )
+    yield f"data: {json.dumps({'type': 'progress', 'data': {'event_type': 'final_guard.running'}}, default=str)}\n\n"
     payload = _assemble_governed_stream_payload(
         context=context,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=turn_result.result_state,
     )
+    payload = await apply_async_adversarial_review_to_payload(payload)
+    final_guard_result = payload.get("final_guard_result") if isinstance(payload, dict) else None
+    yield f"data: {json.dumps({'type': 'progress', 'data': {'event_type': 'final_guard.done', 'result': final_guard_result}}, default=str)}\n\n"
     assistant_message = str(
         payload.get("assistant_message")
         or payload.get("answer_markdown")
@@ -863,6 +908,14 @@ async def event_generator(
                 early_guard_reply.answer_trace,
             ),
         }
+        state_update_event = apply_v92_contracts_to_payload(
+            state_update_event,
+            session_id=str(request.session_id or "default"),
+            user_message=request.message,
+            state=None,
+            route_hint="unsafe_or_blocked",
+            case_id=str(request.session_id or "default") if request.session_id else None,
+        )
         yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
         yield "data: [DONE]\n\n"
         return
@@ -883,12 +936,21 @@ async def event_generator(
             projection=getattr(dispatch, "rfq_readiness_projection", None),
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
+        payload = apply_v92_contracts_to_payload(
+            payload,
+            session_id=str(request.session_id or "default"),
+            user_message=request.message,
+            state=getattr(dispatch, "governed_state", None),
+            route_hint="rfq_readiness",
+            case_id=str(request.session_id or "default") if request.session_id else None,
+        )
         yield f"data: {json.dumps(payload, default=str)}\n\n"
         yield "data: [DONE]\n\n"
         return
 
     if dispatch.fast_response is not None:
         async for frame in _stream_fast_response(
+            request=request,
             fast_response=dispatch.fast_response,
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         ):
@@ -896,6 +958,7 @@ async def event_generator(
         return
     if dispatch.knowledge_response is not None:
         async for frame in _stream_knowledge_response(
+            request=request,
             knowledge_response=dispatch.knowledge_response,
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         ):
@@ -931,6 +994,7 @@ async def event_generator(
 
             payload = await _build_active_case_process_payload(
                 message=request.message,
+                session_id=request.session_id,
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
                 runtime_action=runtime_action,
@@ -952,6 +1016,7 @@ async def event_generator(
 
             payload = await _build_active_case_side_payload(
                 message=request.message,
+                session_id=request.session_id,
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
                 conversation_route=dispatch.conversation_route,
@@ -979,6 +1044,14 @@ async def event_generator(
             )
 
             payload = _runtime_action_blocked_graph_payload(runtime_action)
+            payload = apply_v92_contracts_to_payload(
+                payload,
+                session_id=str(request.session_id or "default"),
+                user_message=request.message,
+                state=dispatch.governed_state,
+                route_hint="unsafe_or_blocked",
+                case_id=str(request.session_id or "default") if request.session_id else None,
+            )
             await persist_visible_governed_turn(
                 current_user=current_user,
                 session_id=request.session_id,

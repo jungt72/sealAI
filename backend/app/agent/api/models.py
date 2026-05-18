@@ -161,6 +161,25 @@ class ReviewSeedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class HumanReviewDecisionRequest(BaseModel):
+    action: Literal["approve_scope", "request_changes", "block"]
+    reviewer_id: str = Field(..., min_length=1)
+    scope: list[str] = Field(default_factory=list)
+    reviewer_notes: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class HumanReviewWorkflowResponse(BaseModel):
+    session_id: str
+    workflow: Dict[str, Any]
+    review_state: Dict[str, Any]
+    v92_dashboard: Dict[str, Any]
+    reply: str = ""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ConversationResponse(BaseModel):
     role: str
     content: str
@@ -354,6 +373,12 @@ class ChatResponse(BaseModel):
     assertions: Optional[Dict[str, Any]] = None
     conversation_strategy: Optional[Dict[str, Any]] = None
     turn_context: Optional[Dict[str, Any]] = None
+    turn_envelope: Optional[Dict[str, Any]] = None
+    turn_boundary_decision: Optional[Dict[str, Any]] = None
+    final_answer_context: Optional[Dict[str, Any]] = None
+    nontechnical_answer_context: Optional[Dict[str, Any]] = None
+    final_guard_result: Optional[Dict[str, Any]] = None
+    v92_dashboard: Optional[Dict[str, Any]] = None
     ui: Optional[Dict[str, Any]] = None
     type: Optional[str] = None
 

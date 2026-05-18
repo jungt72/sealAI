@@ -881,6 +881,7 @@ class CaseWorkspaceProjection(BaseModel):
         default_factory=ChallengeIntelligenceProjection
     )
     v91_workspace: V91WorkspaceProjection = Field(default_factory=V91WorkspaceProjection)
+    v92_dashboard: Optional[Dict[str, Any]] = None
     technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)
 

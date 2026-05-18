@@ -19,6 +19,8 @@ from app.agent.api.utils import (
 from app.agent.graph import GraphState
 from app.agent.graph.topology import get_governed_graph
 from app.agent.state.models import GovernedSessionState
+from app.agent.v92.runtime_contract import build_turn_envelope
+from app.agent.v92.turn_boundary import resolve_turn_boundary
 from app.core.config import settings
 from app.observability.langsmith import (
     langsmith_tracing_disabled,
@@ -112,6 +114,7 @@ def build_governed_graph_input(
     defer_visible_answer_composer: bool = False,
     stream_visible_answer_composer: bool = False,
     append_user_message: bool = True,
+    pre_gate_classification: str | None = None,
 ) -> GraphState:
     """Build the governed graph input from the live governed session state."""
 
@@ -123,12 +126,30 @@ def build_governed_graph_input(
         if append_user_message
         else governed_state
     )
+    boundary = resolve_turn_boundary(
+        user_message=message,
+        session_id=session_id,
+        state=governed_state,
+        route_hint="governed",
+        runtime_mode="GOVERNED",
+        pre_gate_classification=pre_gate_classification,
+    )
+    envelope = build_turn_envelope(
+        session_id=session_id,
+        user_message=message,
+        route=boundary.route,
+        state=governed_state,
+        case_id=session_id,
+        intent=boundary.intent,
+    )
     payload = governed_with_user.model_dump(mode="python")
     payload.update(
         {
             "tenant_id": tenant_id,
             "session_id": session_id,
             "pending_message": message,
+            "v92_turn_boundary_decision": boundary.model_dump(mode="json"),
+            "v92_turn_envelope": envelope.model_dump(mode="json"),
             "defer_visible_answer_composer": bool(defer_visible_answer_composer),
             "stream_visible_answer_composer": bool(stream_visible_answer_composer)
             and not bool(defer_visible_answer_composer),
@@ -164,8 +185,12 @@ async def run_governed_graph_turn(
         current_user=current_user,
         session_id=session_id,
         defer_visible_answer_composer=False,
-        stream_visible_answer_composer=collect_progress,
+        # V9.2: governed technical draft tokens stay internal until the final
+        # guard approves the complete answer. Progress still streams through
+        # LangGraph custom events, but composer text does not.
+        stream_visible_answer_composer=False,
         append_user_message=append_user_message,
+        pre_gate_classification=pre_gate_classification,
     )
     graph_config = _graph_thread_config(current_user=current_user, session_id=session_id)
     governed_graph = await get_governed_graph()
@@ -229,6 +254,16 @@ async def run_governed_graph_turn(
             else None
         ),
         answer_mode=_state_value(result_state, "answer_mode"),
+        v92_route=(
+            result_state.v92_turn_boundary_decision.get("route")
+            if isinstance(result_state.v92_turn_boundary_decision, dict)
+            else None
+        ),
+        v92_streaming_policy=(
+            result_state.v92_turn_boundary_decision.get("streaming_policy")
+            if isinstance(result_state.v92_turn_boundary_decision, dict)
+            else None
+        ),
         uncertainty_level=_state_value(result_state, "uncertainty_level"),
         forbidden_claim_check=_state_value(result_state, "forbidden_claim_check"),
         v92_present=bool(_state_value(result_state, "seal_system", "engineering", "dossier")),

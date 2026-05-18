@@ -63,6 +63,14 @@ class GraphState(GovernedSessionState):
         default="",
         description="User message for this turn. Set by the caller before ainvoke().",
     )
+    v92_turn_boundary_decision: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Canonical V9.2 turn-boundary decision for this invocation.",
+    )
+    v92_turn_envelope: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Canonical V9.2 turn envelope created before graph execution.",
+    )
     rag_evidence: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Evidence cards retrieved by evidence_node. Populated in-flight.",
@@ -101,6 +109,10 @@ class GraphState(GovernedSessionState):
     output_answer_markdown_source: str = Field(
         default="",
         description="Answer markdown source: deterministic_reply, governed_composer, or composer_fallback.",
+    )
+    governed_answer_prompt_trace: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Hash-only prompt metadata for the governed answer composer. No rendered prompt text.",
     )
     governed_answer_composer_error: str = Field(
         default="",

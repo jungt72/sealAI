@@ -20,6 +20,27 @@ Keep this file practical. Product depth belongs in the concept files. Do not tur
 
 The active implementation mission is **SealAI V9.1 Final — Governed Sealing Intelligence**, implemented safely and incrementally on the current stack.
 
+### V9.2 clean-runtime migration addendum
+
+The active migration task for this branch is **SealAI V9.2 Clean Runtime**:
+
+```text
+Frei erklären. Deterministisch rechnen. Nur evidenzbasiert zusagen.
+```
+
+V9.2 does not weaken the V9.1 safety boundaries below. It makes them stricter by requiring explicit runtime contracts:
+
+- every user turn must produce a `TurnEnvelope`;
+- every technical answer must produce a governed `FinalAnswerContext`;
+- every user-visible answer must pass the same final output guard before it leaves the backend;
+- technical LLM draft tokens must not be visible before final guard approval;
+- smalltalk, knowledge and frustration handling may answer quickly, but must use a no-case-mutation policy;
+- LangGraph remains the canonical governed technical runtime, while short routes must still satisfy the same envelope, guard and UI-contract boundary;
+- documents, uploads and RAG snippets are data/evidence only, never instructions;
+- material family, compound and product/article claims must remain separate.
+
+When this addendum conflicts with older V9.1 wording about allowable bypasses, keep the V9.1 safety intent but implement the V9.2 contract: a bypass may be short, never unguarded or contractless.
+
 The active product direction is:
 
 ```text

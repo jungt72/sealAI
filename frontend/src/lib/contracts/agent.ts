@@ -46,6 +46,47 @@ export type AgentRunMeta = Record<string, unknown> & {
   answer_trace?: AgentAnswerTrace;
 };
 
+export type TurnEnvelope = {
+  turn_id: string;
+  session_id: string;
+  case_id?: string | null;
+  case_revision_before?: number | null;
+  case_revision_after?: number | null;
+  user_message: string;
+  route: string;
+  intent: string;
+  is_technical: boolean;
+  state_mutation_policy: string;
+  requires_engine: boolean;
+  requires_evidence: boolean;
+  requires_adversarial_review: boolean;
+  requires_final_guard: boolean;
+  streaming_policy: string;
+  created_at: string;
+  trace_id: string;
+};
+
+export type FinalGuardResult = {
+  decision: string;
+  severity: string;
+  blocked_reasons?: string[];
+  required_revisions?: string[];
+  allowed_claim_level?: string;
+  detected_forbidden_claims?: string[];
+  human_review_required?: boolean;
+  user_visible_limitations?: string[];
+  final_stream_allowed?: boolean;
+};
+
+export type V92DashboardContract = Record<string, unknown> & {
+  schema_version?: string;
+  case_id?: string | null;
+  case_revision?: number | null;
+  turn_id?: string;
+  route?: string;
+  readiness_band?: string;
+};
+
 export const OUTWARD_RESPONSE_CLASSES = [
   "conversational_answer",
   "structured_clarification",
@@ -320,6 +361,12 @@ export type AgentStateUpdateEvent = {
   structuredState?: Record<string, unknown> | null;
   conversationStrategy?: AgentConversationStrategy | null;
   turnContext?: AgentTurnContext | null;
+  turnEnvelope?: TurnEnvelope | null;
+  turnBoundaryDecision?: Record<string, unknown> | null;
+  finalAnswerContext?: Record<string, unknown> | null;
+  nonTechnicalAnswerContext?: Record<string, unknown> | null;
+  finalGuardResult?: FinalGuardResult | null;
+  v92Dashboard?: V92DashboardContract | null;
   proposedCaseDelta?: ProposedCaseDelta | null;
   rfq_readiness_projection?: WorkspaceRfqReadinessProjection | null;
   ui?: AgentWorkspaceUi;

@@ -48,6 +48,10 @@ from app.agent.domain.case_delta import build_assistant_delta_event
 from app.agent.api.streaming import event_generator, _build_fast_path_version_provenance
 from app.agent.api.dispatch import _resolve_runtime_dispatch
 from app.agent.api.knowledge_override import build_case_side_knowledge_response
+from app.agent.v92.runtime_contract import (
+    apply_async_adversarial_review_to_payload,
+    apply_v92_contracts_to_payload,
+)
 from app.agent.communication.active_case_process_answer import (
     build_active_case_process_answer,
 )
@@ -323,13 +327,22 @@ async def _chat_response_from_rfq_readiness(
     projection: dict[str, Any] | None = None,
     runtime_action: Any | None = None,
 ) -> ChatResponse:
+    payload = _build_rfq_readiness_payload(
+        answer_markdown=answer_markdown,
+        projection=projection,
+        runtime_action=runtime_action,
+    )
+    payload = apply_v92_contracts_to_payload(
+        payload,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=None,
+        route_hint="rfq_readiness",
+        case_id=str(request.session_id or "default") if request.session_id else None,
+    )
     return ChatResponse(
         session_id=str(request.session_id or "default"),
-        **_build_rfq_readiness_payload(
-            answer_markdown=answer_markdown,
-            projection=projection,
-            runtime_action=runtime_action,
-        ),
+        **payload,
     )
 
 
@@ -658,6 +671,7 @@ async def _compose_active_case_side_answer(
 async def _build_active_case_process_payload(
     *,
     message: str,
+    session_id: str | None = None,
     governed_state: GovernedSessionState | None,
     decision: Any,
     runtime_action: Any | None = None,
@@ -696,12 +710,20 @@ async def _build_active_case_process_payload(
         payload.get("answer_markdown") or payload.get("reply") or ""
     ).strip()
     payload["type"] = "state_update"
-    return payload
+    return apply_v92_contracts_to_payload(
+        payload,
+        session_id=str(session_id or "default"),
+        user_message=message,
+        state=governed_state,
+        route_hint="active_case_process_question",
+        case_id=str(session_id) if session_id else None,
+    )
 
 
 async def _build_active_case_side_payload(
     *,
     message: str,
+    session_id: str | None = None,
     governed_state: GovernedSessionState | None,
     decision: Any,
     conversation_route: Any | None,
@@ -801,7 +823,14 @@ async def _build_active_case_side_payload(
         payload.get("answer_markdown") or payload.get("reply") or ""
     ).strip()
     payload["type"] = "state_update"
-    return payload
+    return apply_v92_contracts_to_payload(
+        payload,
+        session_id=str(session_id or "default"),
+        user_message=message,
+        state=governed_state,
+        route_hint="active_case_side_question",
+        case_id=str(session_id) if session_id else None,
+    )
 
 
 async def _persist_active_case_process_turn(
@@ -885,14 +914,23 @@ async def _run_light_chat_response(
             final_visible_source="answer_markdown",
         ),
     )
+    payload = build_public_response_core(
+        reply=result.reply_text,
+        structured_state=structured_state,
+        policy_path=mode.lower(),
+        run_meta=_with_runtime_action_trace(run_meta, runtime_action),
+    )
+    payload = apply_v92_contracts_to_payload(
+        payload,
+        session_id=str(request.session_id or "default"),
+        user_message=message,
+        state=governed,
+        route_hint=mode.lower(),
+        case_id=str(request.session_id or "default"),
+    )
     return ChatResponse(
         session_id=request.session_id,
-        **build_public_response_core(
-            reply=result.reply_text,
-            structured_state=structured_state,
-            policy_path=mode.lower(),
-            run_meta=_with_runtime_action_trace(run_meta, runtime_action),
-        ),
+        **payload,
     )
 
 async def _run_governed_graph_once(
@@ -924,11 +962,17 @@ async def _run_governed_chat_response(
         result_state=result_state,
         persisted_state=persisted_state,
     )
-    payload = _assemble_governed_stream_payload(context=context)
+    payload = _assemble_governed_stream_payload(
+        context=context,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=result_state,
+    )
     payload["run_meta"] = _with_runtime_action_trace(
         payload.get("run_meta"),
         runtime_action,
     )
+    payload = await apply_async_adversarial_review_to_payload(payload)
     assistant_message = str(
         payload.get("assistant_message")
         or payload.get("answer_markdown")
@@ -992,6 +1036,14 @@ async def _chat_response_from_fast_response(
             composer_tier="tier_a",
         ),
     )
+    payload = apply_v92_contracts_to_payload(
+        payload,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=None,
+        route_hint="fast",
+        case_id=str(request.session_id or "default") if request.session_id else None,
+    )
     return ChatResponse(session_id=request.session_id, **payload)
 
 
@@ -1035,6 +1087,14 @@ async def _chat_response_from_knowledge_response(
             composer_tier="tier_b" if composer_attempted else "tier_a",
         ),
     )
+    payload = apply_v92_contracts_to_payload(
+        payload,
+        session_id=str(request.session_id or "default"),
+        user_message=request.message,
+        state=None,
+        route_hint="knowledge",
+        case_id=str(request.session_id or "default") if request.session_id else None,
+    )
     return ChatResponse(
         session_id=request.session_id,
         **payload,
@@ -1047,17 +1107,26 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         turn_context=None,
     )
     if early_guard_reply is not None:
+        payload = build_public_response_core(
+            reply=early_guard_reply.text,
+            structured_state=None,
+            policy_path="governed_guard",
+            run_meta=with_answer_trace(
+                {"guard": "unsafe_forced_case_claim"},
+                early_guard_reply.answer_trace,
+            ),
+        )
+        payload = apply_v92_contracts_to_payload(
+            payload,
+            session_id=str(request.session_id or "default"),
+            user_message=request.message,
+            state=None,
+            route_hint="unsafe_or_blocked",
+            case_id=str(request.session_id or "default") if request.session_id else None,
+        )
         return ChatResponse(
             session_id=request.session_id,
-            **build_public_response_core(
-                reply=early_guard_reply.text,
-                structured_state=None,
-                policy_path="governed_guard",
-                run_meta=with_answer_trace(
-                    {"guard": "unsafe_forced_case_claim"},
-                    early_guard_reply.answer_trace,
-                ),
-            ),
+            **payload,
         )
 
     dispatch = await _resolve_runtime_dispatch(request, current_user=current_user)
@@ -1097,6 +1166,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         if _is_v7_active_case_process_question(dispatch):
             payload = await _build_active_case_process_payload(
                 message=request.message,
+                session_id=request.session_id,
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
                 runtime_action=runtime_action,
@@ -1112,6 +1182,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         if _is_v7_active_case_side_question(dispatch):
             payload = await _build_active_case_side_payload(
                 message=request.message,
+                session_id=request.session_id,
                 governed_state=dispatch.governed_state,
                 decision=dispatch.turn_decision,
                 conversation_route=dispatch.conversation_route,
@@ -1133,6 +1204,14 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             return ChatResponse(session_id=request.session_id, **payload)
         if not _runtime_action_allows_graph(dispatch):
             payload = _runtime_action_blocked_graph_payload(runtime_action)
+            payload = apply_v92_contracts_to_payload(
+                payload,
+                session_id=str(request.session_id or "default"),
+                user_message=request.message,
+                state=dispatch.governed_state,
+                route_hint="unsafe_or_blocked",
+                case_id=str(request.session_id or "default") if request.session_id else None,
+            )
             await persist_visible_governed_turn(
                 current_user=current_user,
                 session_id=request.session_id,

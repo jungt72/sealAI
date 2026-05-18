@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.agent.runtime.clarification_priority import prioritized_open_point_labels
 from app.agent.services.medium_context import MediumContext
 from app.agent.state.models import GovernedSessionState
+from app.agent.v92.dashboard_contract import build_legacy_v92_ui_tile
 
 
 class ParameterEntry(BaseModel):
@@ -186,6 +187,7 @@ class UiProjection(BaseModel):
     export_profile: ExportProfileTileProjection
     manufacturer_mapping: ManufacturerMappingTileProjection
     dispatch_contract: DispatchContractTileProjection
+    v92: dict[str, Any] = Field(default_factory=dict)
 
 
 _SCOPE_STATUS: dict[str | None, str] = {
@@ -527,4 +529,5 @@ def project_for_ui(state: GovernedSessionState | None) -> UiProjection:
         export_profile=_build_export_profile_tile(coerced),
         manufacturer_mapping=_build_manufacturer_mapping_tile(coerced),
         dispatch_contract=_build_dispatch_contract_tile(coerced),
+        v92=build_legacy_v92_ui_tile(coerced),
     )

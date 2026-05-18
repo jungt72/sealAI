@@ -356,6 +356,7 @@ describe("BFF agent chat stream route", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         buildBackendSseStream([
+          'data: {"type":"progress","data":{"event_type":"final_guard.done"}}\n\n',
           `data: ${JSON.stringify({
             type: "state_update",
             reply: "Die Anfragebasis kann vorbereitet werden.",
@@ -379,8 +380,13 @@ describe("BFF agent chat stream route", () => {
 
     const response = await POST(request);
     const payloads = parseSsePayloads(await response.text());
+    const progress = findPayload(payloads, "progress");
     const stateUpdate = findPayload(payloads, "state_update");
 
+    expect(progress).toMatchObject({
+      type: "progress",
+      data: { event_type: "final_guard.done" },
+    });
     expect(stateUpdate).toMatchObject({
       type: "state_update",
       rfq_readiness_projection: rfqReadinessProjection,
@@ -482,6 +488,88 @@ describe("BFF agent chat stream route", () => {
       type: "state_update",
       reply: "Alte Klasse",
       responseClass: null,
+    });
+  });
+
+  it("forwards V9.2 turn, guard and dashboard contracts from backend state_update events", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify({
+            type: "state_update",
+            reply: "Geprüfte Antwort",
+            response_class: "structured_clarification",
+            turn_envelope: {
+              turn_id: "turn-1",
+              session_id: "case-1",
+              user_message: "Technische Frage",
+              route: "engineering_case_update",
+              intent: "engineering_case_update",
+              is_technical: true,
+              state_mutation_policy: "case_revision_allowed",
+              requires_engine: true,
+              requires_evidence: true,
+              requires_adversarial_review: false,
+              requires_final_guard: true,
+              streaming_policy: "status_only_until_guarded_final",
+              created_at: "2026-05-18T00:00:00+00:00",
+              trace_id: "trace-1",
+            },
+            turn_boundary_decision: {
+              route: "engineering_case_update",
+              state_mutation_policy: "case_revision_allowed",
+              requires_engine: true,
+              streaming_policy: "status_only_until_guarded_final",
+            },
+            final_guard_result: {
+              decision: "pass",
+              severity: "none",
+              final_stream_allowed: true,
+            },
+            v92_dashboard: {
+              schema_version: "v92_dashboard_contract_1",
+              turn_id: "turn-1",
+              route: "engineering_case_update",
+              readiness_band: "screening_possible",
+            },
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Technische Frage" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(stateUpdate).toMatchObject({
+      type: "state_update",
+      turnEnvelope: {
+        turn_id: "turn-1",
+        streaming_policy: "status_only_until_guarded_final",
+      },
+      turnBoundaryDecision: {
+        route: "engineering_case_update",
+        streaming_policy: "status_only_until_guarded_final",
+      },
+      finalGuardResult: {
+        decision: "pass",
+        final_stream_allowed: true,
+      },
+      v92Dashboard: {
+        schema_version: "v92_dashboard_contract_1",
+        readiness_band: "screening_possible",
+      },
     });
   });
 });

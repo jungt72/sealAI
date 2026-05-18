@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from langgraph.config import get_stream_writer
 
@@ -89,6 +90,7 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
                     if fallback_answer != fallback_reply
                     else "deterministic_reply"
                 ),
+                "governed_answer_prompt_trace": {},
                 "governed_answer_composer_error": "",
             }
         )
@@ -107,6 +109,7 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
                     if fallback_answer != fallback_reply
                     else "deterministic_reply"
                 ),
+                "governed_answer_prompt_trace": {},
                 "governed_answer_composer_error": "",
             }
         )
@@ -127,6 +130,7 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
             if getattr(state, "stream_visible_answer_composer", False)
             else None
         )
+        prompt_trace: dict[str, Any] = {}
         if writer is not None:
             final_answer = ""
             async for event in composer.stream(composer_input):
@@ -138,6 +142,11 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
                     continue
                 if event.event_type == "final" and event.output is not None:
                     final_answer = event.output.answer_markdown
+                    prompt_trace = (
+                        event.output.prompt_trace.model_dump(mode="json")
+                        if event.output.prompt_trace
+                        else {}
+                    )
                     _emit_composer_stream_event(
                         writer,
                         "answer_final",
@@ -147,10 +156,12 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
         else:
             result = await composer.compose(composer_input)
             result_answer = result.answer_markdown
+            prompt_trace = result.prompt_trace.model_dump(mode="json") if result.prompt_trace else {}
         return state.model_copy(
             update={
                 "output_answer_markdown": result_answer,
                 "output_answer_markdown_source": "governed_composer",
+                "governed_answer_prompt_trace": prompt_trace,
                 "governed_answer_composer_error": "",
             }
         )
@@ -166,6 +177,7 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
             update={
                 "output_answer_markdown": fallback_answer,
                 "output_answer_markdown_source": "composer_fallback",
+                "governed_answer_prompt_trace": {},
                 "governed_answer_composer_error": reason,
             }
         )

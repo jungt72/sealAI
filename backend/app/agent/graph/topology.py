@@ -5,7 +5,7 @@ Assembles the governed StateGraph for the GOVERNED execution path.
 
 Graph topology (Phase F-C.2 — with cycle control):
 
-    intake_observe → normalize → assert → medium_intelligence → evidence → compute → v92_engineering → challenge → governance
+    turn_boundary → intake_observe → normalize → assert → medium_intelligence → evidence → compute → v92_engineering → challenge → governance
                                                                     │
                                             ┌───────────────────────┤ decide_cycle()
                                             │                       │
@@ -31,6 +31,7 @@ Graph topology (Phase F-C.2 — with cycle control):
                                                               output_contract → governed_answer_composer → END
 
 Zone assignments (Blaupause V1.1 §6.4):
+    Zone 0  turn_boundary_node   — Semantic boundary → V9.2 route/stream/mutation contract
     Zone 1  intake_observe_node  — LLM extraction → ObservedState
     Zone 2  normalize_node       — Deterministic → NormalizedState
     Zone 3  assert_node          — Deterministic → AssertedState
@@ -104,6 +105,7 @@ from app.agent.graph.nodes.norm_node import norm_node
 from app.agent.graph.nodes.output_contract_node import output_contract_node
 from app.agent.graph.nodes.dispatch_node import dispatch_node
 from app.agent.graph.nodes.rfq_handover_node import rfq_handover_node
+from app.agent.graph.nodes.turn_boundary_node import turn_boundary_node
 from app.agent.graph.nodes.v92_dossier_node import v92_dossier_node
 from app.agent.graph.nodes.v92_engineering_node import v92_engineering_node
 
@@ -269,6 +271,7 @@ async def close_governed_graph_resources() -> None:
 # ---------------------------------------------------------------------------
 
 NODE_INTAKE_OBSERVE = "intake_observe"
+NODE_TURN_BOUNDARY = "turn_boundary"
 NODE_NORMALIZE = "normalize"
 NODE_ASSERT = "assert"
 NODE_MEDIUM_INTELLIGENCE = "medium_intelligence"
@@ -302,7 +305,7 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     Call this once at startup and reuse the returned object.
 
     Topology (Phase F-C.2):
-        Linear path through 6 analysis zones, then a conditional edge at
+        Linear path through boundary and analysis zones, then a conditional edge at
         governance_node routed by decide_cycle():
             CONTINUE  → cycle_increment_node → intake_observe_node (next turn)
             TERMINATE → matching → rfq_handover → dispatch → norm → export_profile → manufacturer_mapping → dispatch_contract → output_contract_node → governed_answer_composer_node → END
@@ -310,6 +313,7 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     graph = StateGraph(GraphState)
 
     # ── Register nodes ────────────────────────────────────────────────────
+    graph.add_node(NODE_TURN_BOUNDARY, turn_boundary_node)
     graph.add_node(NODE_INTAKE_OBSERVE, intake_observe_node)
     graph.add_node(NODE_NORMALIZE, normalize_node)
     graph.add_node(NODE_ASSERT, assert_node)
@@ -332,9 +336,10 @@ def build_governed_graph(*, checkpointer: Any = None) -> StateGraph:
     graph.add_node(NODE_GOVERNED_ANSWER_COMPOSER, governed_answer_composer_node)
 
     # ── Entry point ───────────────────────────────────────────────────────
-    graph.set_entry_point(NODE_INTAKE_OBSERVE)
+    graph.set_entry_point(NODE_TURN_BOUNDARY)
 
-    # ── Linear edges: intake_observe → ... → governance ──────────────────
+    # ── Linear edges: turn_boundary → intake_observe → ... → governance ───
+    graph.add_edge(NODE_TURN_BOUNDARY, NODE_INTAKE_OBSERVE)
     graph.add_edge(NODE_INTAKE_OBSERVE, NODE_NORMALIZE)
     graph.add_edge(NODE_NORMALIZE, NODE_ASSERT)
     graph.add_edge(NODE_ASSERT, NODE_MEDIUM_INTELLIGENCE)

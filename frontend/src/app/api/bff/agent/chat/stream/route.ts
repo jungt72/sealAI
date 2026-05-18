@@ -352,6 +352,16 @@ export async function POST(request: Request) {
                 continue;
               }
 
+              if (eventType === "progress") {
+                controller.enqueue(
+                  encodeSseEvent({
+                    type: "progress",
+                    data: payload.data,
+                  }),
+                );
+                continue;
+              }
+
               if (eventType === "state_update") {
                 const reply = typeof payload.reply === "string" ? payload.reply : "";
                 const answerMarkdown =
@@ -366,6 +376,12 @@ export async function POST(request: Request) {
                 const ui = asRecord(payload.ui);
                 const assertions = asRecord(payload.assertions);
                 const rfqReadinessProjection = asRecord(payload.rfq_readiness_projection);
+                const turnEnvelope = asRecord(payload.turn_envelope);
+                const turnBoundaryDecision = asRecord(payload.turn_boundary_decision);
+                const finalAnswerContext = asRecord(payload.final_answer_context);
+                const nonTechnicalAnswerContext = asRecord(payload.nontechnical_answer_context);
+                const finalGuardResult = asRecord(payload.final_guard_result);
+                const v92Dashboard = asRecord(payload.v92_dashboard);
                 const shouldBindCase = shouldBindCaseFromStateUpdate({
                   requestHadCaseId,
                   backendNoCaseCreated: noCaseCreated,
@@ -396,6 +412,12 @@ export async function POST(request: Request) {
                     structuredState,
                     conversationStrategy: mapConversationStrategy(payload.conversation_strategy),
                     turnContext: mapTurnContext(payload.turn_context),
+                    turnEnvelope,
+                    turnBoundaryDecision,
+                    finalAnswerContext,
+                    nonTechnicalAnswerContext,
+                    finalGuardResult,
+                    v92Dashboard,
                     proposedCaseDelta,
                     rfq_readiness_projection: rfqReadinessProjection,
                     ui,

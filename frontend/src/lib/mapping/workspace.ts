@@ -463,6 +463,7 @@ type LegacyWorkspaceProjection = {
   material_intelligence?: RawMaterialIntelligence | null;
   challenge_intelligence?: RawChallengeIntelligence | null;
   v91_workspace?: RawV91Workspace | null;
+  v92_dashboard?: Record<string, unknown> | null;
   case_summary: {
     thread_id: string | null;
     intent_goal?: string | null;
@@ -1374,6 +1375,10 @@ export function mapWorkspaceView(
     materialIntelligence: mapMaterialIntelligence(projection.material_intelligence),
     challengeIntelligence: mapChallengeIntelligence(projection.challenge_intelligence),
     v91Workspace: mapV91Workspace(projection.v91_workspace),
+    v92Dashboard:
+      projection.v92_dashboard && typeof projection.v92_dashboard === "object"
+        ? projection.v92_dashboard
+        : null,
     deepDiveTabs: mapDeepDiveTabs(projection.deep_dive_tabs),
     technicalDerivations: (projection.technical_derivations || []).map((item) => ({
       calcType: item.calc_type || "unknown",

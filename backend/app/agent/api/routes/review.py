@@ -9,6 +9,8 @@ from app.agent.api.models import (
     ReviewRequest,
     ReviewResponse,
     ReviewSeedResponse,
+    HumanReviewDecisionRequest,
+    HumanReviewWorkflowResponse,
     OverrideRequest,
     OverrideResponse,
     OverrideGovernanceResult,
@@ -28,6 +30,8 @@ from app.agent.api.deps import (
     get_current_request_user,
 )
 from app.agent.api.loaders import (
+    _load_live_governed_state,
+    _persist_live_governed_state,
     require_structured_review_state,
     persist_structured_review_commit,
     _persist_review_outcome_to_live_governed_state,
@@ -55,6 +59,10 @@ from app.agent.domain.case_delta import (
 )
 from app.domain.pre_gate_classification import PreGateClassification
 from app.agent.domain.dependency_graph import mark_stale_derived_values
+from app.agent.v92.review_workflow import (
+    apply_human_review_decision,
+    build_review_workflow_contract,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -339,6 +347,73 @@ async def review_seed_endpoint() -> ReviewSeedResponse:
         review_state="none",
         release_status="inadmissible",
         review_reason="seed_endpoint_available",
+    )
+
+
+@router.get("/review/workflow/{session_id}", response_model=HumanReviewWorkflowResponse)
+async def review_workflow_endpoint(
+    session_id: str = Path(...),
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> HumanReviewWorkflowResponse:
+    governed = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        create_if_missing=False,
+    )
+    if governed is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    workflow = build_review_workflow_contract(
+        governed,
+        session_id=session_id,
+        turn_id="review-workflow",
+    )
+    return HumanReviewWorkflowResponse(
+        session_id=session_id,
+        workflow=workflow,
+        review_state=governed.review_state.model_dump(mode="json"),
+        v92_dashboard=dict(workflow.get("dashboard_contract") or {}),
+        reply="Review workflow loaded.",
+    )
+
+
+@router.post("/review/workflow/{session_id}/decision", response_model=HumanReviewWorkflowResponse)
+async def review_workflow_decision_endpoint(
+    request: HumanReviewDecisionRequest,
+    session_id: str = Path(...),
+    current_user: RequestUser = Depends(get_current_request_user),
+) -> HumanReviewWorkflowResponse:
+    governed = await _load_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        create_if_missing=False,
+    )
+    if governed is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    updated = apply_human_review_decision(
+        governed,
+        session_id=session_id,
+        reviewer_id=request.reviewer_id,
+        action=request.action,
+        scope=request.scope,
+        notes=request.reviewer_notes,
+    )
+    await _persist_live_governed_state(
+        current_user=current_user,
+        session_id=session_id,
+        state=updated,
+        pre_gate_classification="EXPERT_REVIEW",
+    )
+    workflow = build_review_workflow_contract(
+        updated,
+        session_id=session_id,
+        turn_id="review-workflow",
+    )
+    return HumanReviewWorkflowResponse(
+        session_id=session_id,
+        workflow=workflow,
+        review_state=updated.review_state.model_dump(mode="json"),
+        v92_dashboard=dict(workflow.get("dashboard_contract") or {}),
+        reply="Review decision persisted.",
     )
 
 @router.patch("/session/{session_id}/override", response_model=OverrideResponse)

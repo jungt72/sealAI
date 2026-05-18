@@ -26,6 +26,7 @@ from app.agent.runtime.clarification_priority import (
     select_next_focus_from_known_context,
 )
 from app.agent.v91.intelligence_state import build_v91_workspace_projection
+from app.agent.v92.dashboard_contract import build_v92_dashboard_contract
 from app.agent.services.material_intelligence import (
     build_material_intelligence_projection,
 )
@@ -2379,8 +2380,17 @@ def project_case_workspace_from_governed_state(
     chat_id: str,
 ) -> CaseWorkspaceProjection:
     """Project live governed state into the public workspace contract."""
-    return project_case_workspace(
+    projection = project_case_workspace(
         synthesize_workspace_state_from_governed(state, chat_id=chat_id)
+    )
+    v92_dashboard = build_v92_dashboard_contract(
+        state,
+        turn_id="durable-workspace",
+        route="engineering_case_update",
+        case_id=chat_id,
+    )
+    return projection.model_copy(
+        update={"v92_dashboard": v92_dashboard.model_dump(mode="json")}
     )
 
 
@@ -2877,5 +2887,6 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         material_intelligence=material_intelligence,
         challenge_intelligence=challenge_intelligence,
         v91_workspace=v91_workspace,
+        v92_dashboard=None,
         technical_derivations=technical_derivations,
     )

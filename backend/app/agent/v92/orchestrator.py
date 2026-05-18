@@ -15,6 +15,7 @@ import re
 from dataclasses import asdict
 from typing import Any, Iterable, Mapping
 
+from app.agent.v92.calculator_registry import get_calculator_registry
 from app.agent.v92.models import (
     CalculationGuardResult,
     CalculationInputSnapshot,
@@ -655,6 +656,7 @@ def build_calculation_state(state: Any) -> CalculationState:
         if isinstance(result, Mapping)
     ]
     results.extend(_oring_calculations(state, snapshot_hash=snapshot_hash))
+    registry = get_calculator_registry()
 
     blocked: list[str] = []
     stale_result_ids = [
@@ -663,29 +665,37 @@ def build_calculation_state(state: Any) -> CalculationState:
         if item
     ]
     seal_system = build_seal_system_state(state)
-    if seal_system.seal_family == SealFamily.rotary_shaft.value and not any(
-        item.calculation_id == "rwdr" for item in results
-    ):
-        missing = [
-            field
-            for field in ("shaft_diameter_mm", "speed_rpm")
-            if _is_missing(inputs.get(field))
-        ]
-        blocked.append("rwdr.surface_speed_missing:" + ",".join(missing or ["unknown"]))
-        results.append(
-            CalculationResult(
-                calculation_id="rwdr.surface_speed",
-                version="v9_2_missing_input_guard",
-                calculator="CascadingCalculationEngine",
-                status="insufficient_data",
-                input_snapshot_hash=snapshot_hash,
-                validity_status="input_missing",
-                formula_refs=["ptfe_rwdr.circumferential_speed"],
-                limitations=["Calculation is blocked until required inputs are present."],
-                missing_inputs=missing,
-                dependencies=["shaft_diameter_mm", "speed_rpm"],
-            )
+    if any(not _is_missing(inputs.get(field)) for field in ("material", "material_family", "temperature_c")):
+        temp_screening = registry.calculate(
+            "temperature_window_screening",
+            inputs=inputs,
+            case_revision=snapshot.case_revision,
         )
+        results.append(temp_screening)
+        if temp_screening.missing_inputs:
+            blocked.append("material.temperature_missing:" + ",".join(temp_screening.missing_inputs))
+    if any(not _is_missing(inputs.get(field)) for field in ("material", "material_family", "medium")):
+        resistance = registry.calculate(
+            "material_family_counterindication_check",
+            inputs=inputs,
+            case_revision=snapshot.case_revision,
+        )
+        results.append(resistance)
+        if resistance.missing_inputs:
+            blocked.append("material.chemical_resistance_missing:" + ",".join(resistance.missing_inputs))
+    if seal_system.seal_family == SealFamily.rotary_shaft.value:
+        existing_calculations = {item.calculation_id for item in results} | {item.calculator for item in results}
+        if not existing_calculations.intersection(
+            {"rwdr", "rwdr.surface_speed", "surface_speed_from_rpm_and_diameter"}
+        ):
+            surface_speed = registry.calculate(
+                "surface_speed_from_rpm_and_diameter",
+                inputs=inputs,
+                case_revision=snapshot.case_revision,
+            )
+            results.append(surface_speed)
+            if surface_speed.missing_inputs:
+                blocked.append("rwdr.surface_speed_missing:" + ",".join(surface_speed.missing_inputs))
     guard_results = [_calculation_guard(result, stale_result_ids) for result in results]
     guardrail_violations = _unique(
         f"{guard.calculation_id}:{violation}"
