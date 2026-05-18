@@ -361,6 +361,7 @@ def _rfq_readiness_graph_runtime_action(
     trace: dict[str, Any] | None = None,
 ) -> RuntimeAction:
     safe_trace = {
+        "answer_mode": AnswerMode.RFQ_READINESS.value,
         "rfq_intent_detected": True,
         "rfq_action_type": rfq_action_type,
         "consent_required": True,

@@ -543,7 +543,7 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
     question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
     if question:
         intake_orientation = _human_intake_orientation(context.latest_user_message)
-        if intake_orientation:
+        if intake_orientation and not orientation:
             return _join_intake_orientation_and_question(
                 intake_orientation,
                 _humanize_intake_question(question),
