@@ -21,6 +21,20 @@ _FORBIDDEN_CLAIM_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("final_approval", re.compile(r"\bfinal\s+approval\b", re.IGNORECASE)),
     ("guaranteed_suitable", re.compile(r"\bguaranteed\s+suitable\b", re.IGNORECASE)),
     ("sicher_geeignet", re.compile(r"\bsicher\s+geeignet\b", re.IGNORECASE)),
+    (
+        "unscoped_material_suitability",
+        re.compile(
+            r"\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe|vmq|hnbr)\b[^\n.]{0,180}\bgeeignet\b",
+            re.IGNORECASE | re.UNICODE,
+        ),
+    ),
+    (
+        "unscoped_suitability_label",
+        re.compile(
+            r"\b(?:gute|sehr\s+gute|breite|klare|typische)\s+eignung\s+f(?:ue|ü)r\b",
+            re.IGNORECASE | re.UNICODE,
+        ),
+    ),
 )
 
 
@@ -336,10 +350,21 @@ def _detect_forbidden_claims(text: str) -> list[str]:
 def _is_negated_or_scoped(text: str, start: int, end: int) -> bool:
     lowered = (text or "").casefold()
     before = lowered[max(0, start - 48):start]
-    after = lowered[end:end + 48]
+    window = lowered[max(0, start - 80):min(len(lowered), end + 80)]
     if any(token in before for token in ("keine ", "kein ", "nicht ", "ohne ", "no ")):
         return True
-    return any(token in after for token in (" nur durch hersteller", " muss geprueft", " muss geprüft"))
+    return any(
+        token in window
+        for token in (
+            "nicht geeignet",
+            "nicht automatisch geeignet",
+            "keine eignung",
+            "keine konkrete eignung",
+            "keine eignungsaussage",
+            "kein eignungsnachweis",
+            "ohne eignungsaussage",
+        )
+    )
 
 
 def _ensure_required_context(
@@ -391,14 +416,31 @@ def _deterministic_safe_side_answer(
     speakable_facts: ActiveCaseSideSpeakableFacts,
 ) -> str:
     message = _normalize(latest_user_message)
+    if _is_material_limit_question(message):
+        materials = _extract_material_tokens(message)
+        label = materials[0].upper() if materials else "den genannten Werkstoff"
+        evidence_note = _evidence_orientation_note(speakable_facts)
+        return (
+            f"Als vorlaeufige technische Einordnung zu {label}: Grenzwerte sind bei Dichtungen "
+            "nicht allein Materialfamilien-Wahrheit, sondern haengen an Compound, Produkt, Medium, "
+            "Temperaturprofil, Druck, Bewegung, PV-/Umfangsgeschwindigkeit, Gegenlaufflaeche, "
+            "Einbauraum und Herstellerdaten. Ich behandle solche Angaben deshalb als Screening- und "
+            "Anfragebasis, nicht als konkrete Eignung oder Freigabe."
+            f"{evidence_note}\n\n"
+            f"{_manufacturer_review_phrase()}"
+        )
     if _is_material_question(message):
         materials = _extract_material_tokens(message)
-        label = " und ".join(materials[:2]).upper() if len(materials) >= 2 else "die genannten Werkstoffe"
+        label = (
+            " und ".join(materials[:2]).upper()
+            if len(materials) >= 2
+            else (materials[0].upper() if materials else "die genannten Werkstoffe")
+        )
         return (
             f"Als vorlaeufige technische Einordnung zu {label}: FKM wird haeufig betrachtet, wenn Oele, "
             "Kraftstoffe, Temperatur oder chemische Belastung eine Rolle spielen. NBR wird haeufig bei "
-            "Oelen, Fetten und moderaten Bedingungen betrachtet. PTFE ist eher ein chemisch breiter "
-            "einsetzbarer Hochleistungswerkstoff, aber mit anderem mechanischem Verhalten. "
+            "Oelen, Fetten und moderaten Bedingungen betrachtet. PTFE wird eher als chemisch breit "
+            "zu pruefender Hochleistungswerkstoff betrachtet, aber mit anderem mechanischem Verhalten. "
             "Die konkrete Bewertung haengt von Medium, Temperatur, Druck, Bewegung, Drehzahl, Welle, "
             "Einbauraum und Compliance-Anforderungen ab.\n\n"
             f"{_manufacturer_review_phrase()}"
@@ -434,9 +476,52 @@ def _manufacturer_review_phrase() -> str:
 
 def _is_material_question(normalized_message: str) -> bool:
     material_count = len(_extract_material_tokens(normalized_message))
-    return material_count >= 2 or any(
+    return _is_material_limit_question(normalized_message) or material_count >= 2 or any(
         phrase in normalized_message
         for phrase in ("vergleich", "unterschied zwischen", "unterschied von")
+    )
+
+
+def _is_material_limit_question(normalized_message: str) -> bool:
+    if not _extract_material_tokens(normalized_message):
+        return False
+    return any(
+        phrase in normalized_message
+        for phrase in (
+            "grenzwert",
+            "grenzwerte",
+            "einsatzgrenze",
+            "einsatzgrenzen",
+            "temperaturfenster",
+            "temperaturbereich",
+            "kennwert",
+            "kennwerte",
+            "materialdaten",
+            "datenblattwert",
+            "datenblattwerte",
+            "limit",
+            "limits",
+            "limitierung",
+            "limitierungen",
+        )
+    )
+
+
+def _evidence_orientation_note(speakable_facts: ActiveCaseSideSpeakableFacts) -> str:
+    context = speakable_facts.evidence_context
+    if context is None or not context.evidence_available:
+        return ""
+    source = context.source_titles[0] if context.source_titles else "dem vorhandenen Wissenskontext"
+    snippet = context.short_evidence_snippets[0] if context.short_evidence_snippets else ""
+    if snippet:
+        return (
+            f"\n\nEvidenzhinweis aus {source}: {snippet} "
+            "Ich uebernehme solche Werte nur als Quelle fuer die weitere Pruefung, "
+            "nicht als Case-Freigabe."
+        )
+    return (
+        f"\n\nEvidenzhinweis: {source} liefert Kontext fuer die weitere Pruefung, "
+        "aber keine Case-Freigabe."
     )
 
 

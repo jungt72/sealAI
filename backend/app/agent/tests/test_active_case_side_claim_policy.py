@@ -55,6 +55,48 @@ def test_active_case_side_claim_policy_detects_unsafe_material_claim_and_falls_b
     }
 
 
+def test_active_case_side_claim_policy_detects_unscoped_suitability_claim() -> None:
+    facts = build_active_case_side_speakable_facts(
+        GovernedSessionState(pending_question=_pending_medium_question())
+    )
+
+    result = enforce_active_case_side_claim_policy(
+        latest_user_message="Ich benoetige die Grenzwerte von PTFE.",
+        answer_markdown=(
+            "PTFE Grenzwerte: PTFE ist fuer Anwendungen bei hohen Temperaturen geeignet. "
+            "Das ist allgemeine Orientierung."
+        ),
+        speakable_facts=facts,
+    )
+
+    assert result.claim_policy_result == "fallback"
+    assert result.answer_safety_fallback_used is True
+    assert (
+        "ist fuer anwendungen bei hohen temperaturen geeignet"
+        not in result.answer_markdown.casefold()
+    )
+    assert "ist geeignet" not in result.answer_markdown.casefold()
+    assert "nicht als konkrete eignung" in result.answer_markdown.casefold()
+    assert "unscoped_material_suitability" in result.forbidden_claims_detected
+
+
+def test_active_case_side_claim_policy_detects_unscoped_suitability_label() -> None:
+    facts = build_active_case_side_speakable_facts(
+        GovernedSessionState(pending_question=_pending_medium_question())
+    )
+
+    result = enforce_active_case_side_claim_policy(
+        latest_user_message="Welche Grenzwerte hat PTFE?",
+        answer_markdown="- Gute Eignung für hohe Temperaturen.",
+        speakable_facts=facts,
+    )
+
+    assert result.claim_policy_result == "fallback"
+    assert result.answer_safety_fallback_used is True
+    assert "gute eignung" not in result.answer_markdown.casefold()
+    assert "unscoped_suitability_label" in result.forbidden_claims_detected
+
+
 def test_active_case_side_evidence_context_uses_existing_knowledge_evidence() -> None:
     knowledge_response = KnowledgeResponse(
         content="FKM und NBR unterscheiden sich.",

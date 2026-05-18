@@ -900,6 +900,74 @@ async def test_active_case_side_answer_uses_llm_composer_without_blunt_resume(
 
 
 @pytest.mark.asyncio
+async def test_active_case_side_llm_composer_output_is_claim_guarded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    message = "Ich benoetige die Grenzwerte von PTFE."
+    monkeypatch.setenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "true")
+    pre_gate = PreGateClassifier().classify(message)
+    decision = ConversationControllerV7().decide(
+        ConversationControllerInput(
+            user_message=message,
+            pre_gate_classification=pre_gate.classification,
+            pre_gate_confidence=pre_gate.confidence,
+            pre_gate_reason=pre_gate.reasoning,
+            active_case_exists=True,
+            pending_question=_pending_medium_question(),
+        )
+    )
+    dispatch = RuntimeDispatchResolution(
+        gate_route="GOVERNED",
+        gate_reason="v7_active_case_side_question:test",
+        runtime_mode="GOVERNED",
+        gate_applied=False,
+        pre_gate_classification=pre_gate.classification.value,
+        pre_gate_reason=pre_gate.reasoning,
+        governed_state=_active_state(),
+        turn_decision=decision,
+    )
+    side_answer = _knowledge_response_with_fact_evidence(
+        "PTFE-Grenzwerte sind compound-, produkt- und anwendungsabhaengig."
+    )
+
+    async def unsafe_side_composer(**_kwargs):  # noqa: ANN003
+        return (
+            "PTFE Grenzwerte: PTFE ist fuer Anwendungen bei hohen Temperaturen geeignet. "
+            "Welches Medium soll abgedichtet werden?"
+        )
+
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._resolve_runtime_dispatch",
+        AsyncMock(return_value=dispatch),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat.build_case_side_knowledge_response",
+        AsyncMock(return_value=side_answer),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._compose_active_case_side_answer_with_llm",
+        unsafe_side_composer,
+    )
+
+    response = await chat_endpoint(
+        ChatRequest(message=message, session_id="active-case"),
+        current_user=_user(),
+    )
+
+    answer = response.answer_markdown or ""
+    assert "ist fuer anwendungen bei hohen temperaturen geeignet" not in answer.casefold()
+    assert "welches medium soll abgedichtet werden" not in answer.casefold()
+    assert "screening" in answer.casefold()
+    assert "nicht als konkrete eignung" in answer.casefold()
+    trace = response.run_meta["answer_trace"]
+    assert trace["answer_mode"] == "active_case_side_question"
+    assert trace["composer_attempted"] is True
+    assert trace["composer_succeeded"] is True
+    assert trace["claim_policy_result"] == "fallback"
+    assert "unscoped_material_suitability" in trace["forbidden_claims_detected"]
+
+
+@pytest.mark.asyncio
 async def test_active_case_help_question_answer_markdown_answers_question_before_medium(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

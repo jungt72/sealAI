@@ -575,6 +575,10 @@ async def _compose_active_case_side_answer_with_llm(
             "If a next step is useful, phrase it naturally as an optional continuation, not as a blunt intake fallback.",
             "Ask at most one question.",
             "Do not claim final suitability, manufacturer approval, compliance approval, or final release.",
+            (
+                "Do not use positive suitability wording such as 'ist geeignet', "
+                "'geeignet fuer', 'gut geeignet' or 'gute Eignung'."
+            ),
         ],
     }
     response = await client.chat.completions.create(
