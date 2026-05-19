@@ -21,6 +21,7 @@ SERVICE_ATTEMPTS="${STACK_SMOKE_SERVICE_ATTEMPTS:-45}"
 SERVICE_SLEEP_SECONDS="${STACK_SMOKE_SERVICE_SLEEP_SECONDS:-2}"
 HTTP_ATTEMPTS="${STACK_SMOKE_HTTP_ATTEMPTS:-45}"
 HTTP_SLEEP_SECONDS="${STACK_SMOKE_HTTP_SLEEP_SECONDS:-2}"
+KEYCLOAK_OIDC_URL="${KEYCLOAK_OIDC_URL:-https://sealingai.com/realms/sealAI/.well-known/openid-configuration}"
 
 dump_diagnostics() {
   set +e
@@ -40,7 +41,7 @@ dump_diagnostics() {
 
   echo
   echo "=== keycloak oidc metadata ==="
-  curl -k -i -sS --max-time 10 https://auth.sealingai.com/realms/sealAI/.well-known/openid-configuration || true
+  curl -k -i -sS --max-time 10 "$KEYCLOAK_OIDC_URL" || true
 
   echo
   echo "=== backend internal health ==="
@@ -171,7 +172,7 @@ check_public_backend_health() {
 
 check_keycloak_oidc() {
   http_get_with_retries \
-    "https://auth.sealingai.com/realms/sealAI/.well-known/openid-configuration" \
+    "$KEYCLOAK_OIDC_URL" \
     '"issuer"' \
     "keycloak oidc metadata"
 }
