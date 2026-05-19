@@ -168,7 +168,16 @@ _CORE_FIELD_LABELS: dict[str, str] = {
     "geometry_context": "Geometrie / Bauform",
     "pressure_direction": "Druckrichtung",
     "contamination": "Schmutz / Partikel",
+    "contamination_condition": "Verschmutzung / Abrasion",
     "counterface_surface": "Gegenlaufpartner / Oberflaeche",
+    "counterface_surface_condition": "Zustand der Gegenlaufflaeche",
+    "shaft_roughness_ra_um": "Rauheit Ra der Gegenlaufflaeche [µm]",
+    "shaft_hardness_hrc": "Haerte der Gegenlaufflaeche [HRC]",
+    "runout_mm": "Rundlauf / Wellenschlag [mm]",
+    "eccentricity_mm": "Exzentrizitaet [mm]",
+    "axial_movement_mm": "axiale Bewegung [mm]",
+    "lubrication_condition": "Schmierung an der Dichtlippe",
+    "installation_space_summary": "Einbauraum / Bauraum",
     "tolerances": "Rundlauf / Toleranzen",
     "industry": "Branche",
     "compliance": "regulatorische Anforderungen",
@@ -188,6 +197,20 @@ _CLARIFICATION_FIELD_META: dict[str, dict[str, str | int]] = {
         "question": "Wie hoch ist der Betriebsdruck ungefähr?",
         "conflict_question": "Welcher Betriebsdruck ist hier der richtige Wert?",
         "reason": "Der Druck bestimmt, welche Belastung die Dichtung sicher aufnehmen muss.",
+        "priority": 1,
+    },
+    "pressure_at_seal_bar": {
+        "label": "Druck direkt an der Dichtung [bar]",
+        "question": "Welcher Druck liegt direkt an der Dichtung an?",
+        "conflict_question": "Welcher Dichtstellendruck ist hier der richtige Wert?",
+        "reason": "Für die technische Einordnung zählt der tatsächlich an der Dichtstelle anliegende Druck.",
+        "priority": 1,
+    },
+    "pressure_delta_bar": {
+        "label": "Differenzdruck über der Dichtung [bar]",
+        "question": "Welcher Differenzdruck liegt über der Dichtung an?",
+        "conflict_question": "Welcher Differenzdruck ist hier der richtige Wert?",
+        "reason": "Der Differenzdruck beschreibt die wirksame Druckbelastung über der Dichtung.",
         "priority": 1,
     },
     "temperature_c": {
@@ -253,6 +276,13 @@ _CLARIFICATION_FIELD_META: dict[str, dict[str, str | int]] = {
         "reason": "Partikel und abrasive Anteile koennen Werkstoff- und Bauartgrenzen frueh verschieben.",
         "priority": 10,
     },
+    "contamination_condition": {
+        "label": "Verschmutzung / Abrasion",
+        "question": "Gibt es Staub, Schmutz oder abrasive Partikel an der Dichtstelle?",
+        "conflict_question": "Welche Angabe zur Verschmutzung ist hier der richtige Stand?",
+        "reason": "Verschmutzung und Abrasion sind bei RWDR wichtige Pruefgroessen.",
+        "priority": 10,
+    },
     "counterface_surface": {
         "label": "Gegenlaufpartner / Oberflaeche",
         "question": "Wie sehen Gegenlaufpartner und Oberflaechen an der Dichtstelle aus?",
@@ -260,12 +290,68 @@ _CLARIFICATION_FIELD_META: dict[str, dict[str, str | int]] = {
         "reason": "Oberflaeche und Gegenlaufpartner beeinflussen Dichtverhalten und Verschleiss stark mit.",
         "priority": 11,
     },
+    "counterface_surface_condition": {
+        "label": "Zustand der Gegenlaufflaeche",
+        "question": "Wie ist die Gegenlaufflaeche der Welle ausgefuehrt bzw. in welchem Zustand ist sie?",
+        "conflict_question": "Welche Angabe zur Gegenlaufflaeche ist hier der richtige Stand?",
+        "reason": "Das ist bei einem RWDR wichtig, weil die Dichtlippe direkt auf dieser Flaeche laeuft.",
+        "priority": 11,
+    },
+    "shaft_roughness_ra_um": {
+        "label": "Rauheit Ra der Gegenlaufflaeche [µm]",
+        "question": "Welche Rauheit Ra hat die Gegenlaufflaeche der Welle?",
+        "conflict_question": "Welche Rauheit Ra ist hier der richtige Wert?",
+        "reason": "Die Rauheit ist bei RWDR ein zentraler Vorcheck-Wert fuer Reibung, Schmierfilm und Verschleiss.",
+        "priority": 12,
+    },
+    "shaft_hardness_hrc": {
+        "label": "Haerte der Gegenlaufflaeche [HRC]",
+        "question": "Welche Haerte hat die Gegenlaufflaeche, idealerweise in HRC?",
+        "conflict_question": "Welche Haerte ist hier der richtige Wert?",
+        "reason": "Die Haerte begrenzt bei RWDR die Belastbarkeit der Laufflaeche.",
+        "priority": 13,
+    },
+    "runout_mm": {
+        "label": "Rundlauf / Wellenschlag [mm]",
+        "question": "Welcher Rundlauf oder Wellenschlag liegt an der Welle an?",
+        "conflict_question": "Welcher Rundlaufwert ist hier der richtige Wert?",
+        "reason": "Rundlauf/Wellenschlag bestimmt, wie stark die RWDR-Dichtlippe dynamisch ausgelenkt wird.",
+        "priority": 14,
+    },
+    "eccentricity_mm": {
+        "label": "Exzentrizitaet [mm]",
+        "question": "Welche Exzentrizitaet liegt an der Welle an?",
+        "conflict_question": "Welche Exzentrizitaet ist hier der richtige Wert?",
+        "reason": "Exzentrizitaet ist bei RWDR eine relevante dynamische Belastungsgroesse.",
+        "priority": 15,
+    },
+    "axial_movement_mm": {
+        "label": "axiale Bewegung [mm]",
+        "question": "Welche axiale Bewegung oder welcher axiale Versatz der Welle ist zu erwarten?",
+        "conflict_question": "Welche axiale Bewegung ist hier der richtige Wert?",
+        "reason": "Axiale Bewegung kann die Lage der Dichtlippe und die Beanspruchung der Laufflaeche veraendern.",
+        "priority": 16,
+    },
+    "lubrication_condition": {
+        "label": "Schmierung an der Dichtlippe",
+        "question": "Wie ist die Schmierung an der Dichtlippe: geschmiert, zeitweise trocken oder Mangelschmierung?",
+        "conflict_question": "Welche Angabe zur Schmierung ist hier der richtige Stand?",
+        "reason": "Der Schmierzustand entscheidet bei RWDR wesentlich ueber Waerme, Reibung und Verschleiss.",
+        "priority": 17,
+    },
+    "installation_space_summary": {
+        "label": "Einbauraum / Bauraum",
+        "question": "Welcher Einbauraum oder welche vorhandene Nut-/Gehaeusesituation liegt vor?",
+        "conflict_question": "Welche Angabe zum Einbauraum ist hier der richtige Stand?",
+        "reason": "Der Einbauraum begrenzt bei RWDR Bauform, Montage und Nebenfunktionen.",
+        "priority": 18,
+    },
     "tolerances": {
         "label": "Rundlauf / Toleranzen",
         "question": "Gibt es Angaben zu Rundlauf, Exzentrizitaet, Spalt oder Toleranzen?",
         "conflict_question": "Welche Toleranzangabe ist hier der richtige Stand?",
         "reason": "Toleranzen und Rundlauf bestimmen, wie belastbar die Dichtstelle technisch einzuordnen ist.",
-        "priority": 12,
+        "priority": 19,
     },
 }
 
@@ -666,6 +752,14 @@ def _challenge_public(state: GraphState) -> dict[str, Any]:
                 "related_fields": list(item.related_fields),
                 "evidence_ref_ids": list(item.evidence_ref_ids),
                 "action_mode": item.action_mode,
+                "claim_id": item.claim_id,
+                "claim_type": item.claim_type,
+                "subject_field": item.subject_field,
+                "evidence_fields": list(item.evidence_fields),
+                "missing_fields": list(item.missing_fields),
+                "blocked_reason": item.blocked_reason,
+                "allowed_user_wording": item.allowed_user_wording,
+                "forbidden_user_wording": list(item.forbidden_user_wording),
                 "source": item.source,
             }
             for item in challenge.findings
@@ -1095,6 +1189,13 @@ def _expected_answer_type_for_focus(focus_key: str, question: str | None = None)
     question_text = str(question or "").casefold()
     if focus_key == "medium":
         return "medium_value"
+    if focus_key in {
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+    }:
+        return "pressure_value_or_context"
     if focus_key == "pressure_bar":
         if any(
             marker in question_text

@@ -194,6 +194,13 @@ def _challenge_findings(state: Any) -> list[dict[str, Any]]:
                 "summary": str(payload.get("summary") or ""),
                 "severity": str(payload.get("severity") or ""),
                 "related_fields": list(payload.get("related_fields") or [])[:5],
+                "claim_id": str(payload.get("claim_id") or ""),
+                "claim_type": str(payload.get("claim_type") or ""),
+                "subject_field": str(payload.get("subject_field") or ""),
+                "evidence_fields": list(payload.get("evidence_fields") or [])[:5],
+                "missing_fields": list(payload.get("missing_fields") or [])[:5],
+                "allowed_user_wording": str(payload.get("allowed_user_wording") or ""),
+                "forbidden_user_wording": list(payload.get("forbidden_user_wording") or [])[:5],
             }
         )
     return findings

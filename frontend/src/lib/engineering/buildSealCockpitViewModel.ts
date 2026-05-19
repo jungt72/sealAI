@@ -93,6 +93,14 @@ function readableMissingInput(input: string) {
       return "Werkstofffamilie";
     case "pressure_bar":
       return "Druck";
+    case "pressure_system_bar":
+      return "Systemdruck";
+    case "pressure_at_seal_bar":
+      return "Druck an der Dichtung";
+    case "pressure_delta_bar":
+      return "Differenzdruck";
+    case "ambiguous_pressure_bar":
+      return "Druckrolle unklar";
     case "speed_rpm":
       return "Drehzahl";
     case "shaft_diameter_mm":
@@ -224,6 +232,18 @@ function missingInputsFor(workspace: WorkspaceView | null, requiredInputs: reado
 }
 
 function buildCalculations(workspace: WorkspaceView | null): CalculationEvidenceMetric[] {
+  if (workspace?.cockpit?.checks?.length) {
+    return workspace.cockpit.checks.map((check) => ({
+      label: check.label,
+      value: hasDisplayValue(check.value)
+        ? formatValue(check.value as string | number, check.unit ?? undefined)
+        : MISSING_CALCULATION_VALUE,
+      limit: check.humanReadableReason || check.blockingReason || check.notes[0],
+      reserve: check.guardrails[0],
+      status: check.status,
+    }));
+  }
+
   return CALCULATION_DEFINITIONS.map((definition) => {
     if (workspace) {
       const check = findConcreteCheck(workspace, definition.outputKeys);
@@ -274,15 +294,23 @@ function buildCalculations(workspace: WorkspaceView | null): CalculationEvidence
   });
 }
 
-function countLoadBearingCalculations(calculations: CalculationEvidenceMetric[]) {
-  return calculations.filter((calculation) => calculation.value !== MISSING_CALCULATION_VALUE).length;
+function coverageStatusValue(workspace: WorkspaceView | null) {
+  const metrics = workspace?.cockpit?.completenessMetrics;
+  if (metrics) {
+    return `${metrics.completenessPercent} % geklärt`;
+  }
+  if (workspace?.completeness.requiredTotal && workspace.completeness.requiredTotal > 0) {
+    return `${workspace.completeness.coveragePercent} % geklärt`;
+  }
+  return "Backend-Metrik fehlt";
 }
 
-function coveragePercent(workspace: WorkspaceView | null) {
-  if (!workspace) {
-    return 0;
+function checkMetricStatusValue(workspace: WorkspaceView | null) {
+  const metrics = workspace?.cockpit?.checkMetrics;
+  if (!metrics) {
+    return "Backend-Metrik fehlt";
   }
-  return workspace.completeness.coveragePercent || Math.round(workspace.completeness.coverageScore * 100) || 0;
+  return `${metrics.checkAvailableCount} von ${metrics.checkTotal} Checks verfügbar`;
 }
 
 function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["solution"] {
@@ -319,7 +347,6 @@ function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["so
 
 export function buildSealCockpitViewModel(workspace: WorkspaceView | null): SealCockpitOverview {
   const calculations = buildCalculations(workspace);
-  const calculationCount = countLoadBearingCalculations(calculations);
   const openPointSummary = buildOpenPointSummary(workspace);
   const solution = buildSolution(workspace);
 
@@ -327,10 +354,10 @@ export function buildSealCockpitViewModel(workspace: WorkspaceView | null): Seal
     tabs: sealCockpitTabs,
     statusStrip: [
       { label: "Dichtungsfall", value: workspace ? pathLabel(workspace.engineeringPath) : "Noch nicht eingeordnet" },
-      { label: "Stand", value: `${coveragePercent(workspace)} % geklärt` },
+      { label: "Stand", value: coverageStatusValue(workspace) },
       { label: "Lösungsraum", value: workspace ? solution.rows[0]?.value ?? OPEN_VALUE : OPEN_VALUE },
       { label: "Noch offen", value: openPointSummary },
-      { label: "Gerechnet", value: `${calculationCount} von ${CALCULATION_DEFINITIONS.length} Checks vorhanden` },
+      { label: "Gerechnet", value: checkMetricStatusValue(workspace) },
     ],
     parameters: {
       rows: buildParameterRows(workspace),

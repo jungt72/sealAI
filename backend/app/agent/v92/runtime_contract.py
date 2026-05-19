@@ -307,6 +307,7 @@ def build_final_answer_context(
     dashboard_projection: dict[str, Any],
 ) -> FinalAnswerContext:
     engineering = getattr(state, "engineering", None) if state is not None else None
+    challenge = getattr(state, "challenge", None) if state is not None else None
     calculation = getattr(state, "calculation", None) if state is not None else None
     evidence = getattr(state, "evidence_graph", None) if state is not None else None
     standards = getattr(state, "standards", None) if state is not None else None
@@ -349,7 +350,8 @@ def build_final_answer_context(
             "blocking_gaps": list(getattr(standards, "blocking_gaps", []) or []),
             "claim_boundary": str(getattr(standards, "claim_boundary", "") or ""),
         },
-        risk_findings=_dump_list(getattr(engineering, "risk_findings", []) or []),
+        risk_findings=_dump_list(getattr(engineering, "risk_findings", []) or [])
+        + _dump_list(getattr(challenge, "findings", []) or []),
         completeness=_dump(completeness) or None,
         material_candidates=_dump_list(getattr(compound, "material_family_candidates", []) or []),
         compound_candidates=_dump_list(getattr(compound, "compound_candidates", []) or []),

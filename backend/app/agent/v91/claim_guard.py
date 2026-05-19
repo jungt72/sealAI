@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from app.agent.domain.risk_claims import unsupported_measured_claim_failures
 from app.agent.v91.contracts import FinalAnswerContext, GuardResult
 
 
@@ -55,6 +56,9 @@ def validate_claim_guard(
     for finding, pattern in _FORBIDDEN_CLAIM_PATTERNS:
         if pattern.search(text):
             findings.append(f"claim_guard:{finding}")
+
+    for failure in unsupported_measured_claim_failures(context, text):
+        findings.append(f"claim_guard:{failure['kind']}")
 
     forbidden = set(context.freedom_decision.forbidden_actions)
     if "final_material_recommendation" in forbidden and _material_finality(text):

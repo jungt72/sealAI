@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.agent.domain.medium_registry import is_medium_placeholder_value
 from app.agent.state.models import GovernedSessionState
 
 
@@ -10,9 +11,13 @@ def _text(value: str | None) -> str:
 def _state_has_medium_value(state: GovernedSessionState) -> bool:
     asserted = state.asserted.assertions.get("medium")
     if asserted is not None and getattr(asserted, "asserted_value", None) not in (None, ""):
+        if is_medium_placeholder_value(str(getattr(asserted, "asserted_value", "") or "")):
+            return False
         return True
     normalized = state.normalized.parameters.get("medium")
-    return normalized is not None and getattr(normalized, "value", None) not in (None, "")
+    if normalized is None or getattr(normalized, "value", None) in (None, ""):
+        return False
+    return not is_medium_placeholder_value(str(getattr(normalized, "value", "") or ""))
 
 
 def medium_status_open_point(state: GovernedSessionState) -> str:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.agent.domain.medium_registry import is_medium_placeholder_value
 from app.agent.domain.risk_readiness import evaluate_risks
 from app.agent.services.material_intelligence import (
     build_material_intelligence_projection,
@@ -211,6 +212,13 @@ def _profile_number(profile: dict[str, Any], *keys: str) -> float | None:
     return None
 
 
+def _profile_present_field(profile: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        if profile.get(key) not in (None, "", [], {}):
+            return key
+    return None
+
+
 def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     lowered = text.casefold()
     return any(marker in lowered for marker in markers)
@@ -326,6 +334,18 @@ def _findings_from_missing(
                 ),
                 related_fields=[field_name],
                 action_mode="ASK_NEXT_BEST_QUESTION",
+                claim_id=f"challenge_engine.missing.{field_name}",
+                claim_type="missing_input_risk",
+                subject_field=field_name,
+                missing_fields=[field_name],
+                blocked_reason="required_case_field_missing",
+                allowed_user_wording=(
+                    f"{label} ist noch offen und sollte fuer die technische Bewertung geklaert werden."
+                ),
+                forbidden_user_wording=[
+                    f"{label} ist technisch kritisch.",
+                    f"{label} ist freigegeben.",
+                ],
             )
         )
     return findings
@@ -347,6 +367,7 @@ def _findings_from_risks(
     for index, risk in enumerate(risks):
         if risk.score == 0:
             continue
+        risk_payload = risk.to_dict()
         severity = "blocking" if risk.score == 9 or risk.score >= 4 else "watch"
         related_fields = [
             field
@@ -368,6 +389,14 @@ def _findings_from_risks(
                 related_fields=_compact_unique(related_fields, limit=5),
                 evidence_ref_ids=list(risk.rule_ids),
                 action_mode="RUN_RISK_COMPLETENESS",
+                claim_id=str(risk_payload.get("claim_id") or ""),
+                claim_type=str(risk_payload.get("claim_type") or "context_advisory"),
+                subject_field=str(risk_payload.get("subject_field") or ""),
+                evidence_fields=list(risk_payload.get("evidence_fields") or []),
+                missing_fields=list(risk_payload.get("missing_fields") or []),
+                blocked_reason=risk_payload.get("blocked_reason"),
+                allowed_user_wording=str(risk_payload.get("allowed_user_wording") or ""),
+                forbidden_user_wording=list(risk_payload.get("forbidden_user_wording") or []),
             )
         )
     for index, result in enumerate(compute_results):
@@ -398,6 +427,14 @@ def _findings_from_risks(
                 ),
                 related_fields=["shaft_diameter_mm", "speed_rpm"],
                 action_mode="RUN_DERIVED_CALCULATIONS",
+                claim_id=_finding_id("derived_claim", str(result.get("calc_type") or "calc"), index),
+                claim_type="context_advisory",
+                subject_field="technical_derivation",
+                evidence_fields=["shaft_diameter_mm", "speed_rpm"],
+                allowed_user_wording=(
+                    "Berechnete Signale veraendern die Pruefprioritaet, sind aber keine Freigabe."
+                ),
+                forbidden_user_wording=["Die Berechnung ist eine technische Freigabe."],
             )
         )
     return findings
@@ -410,7 +447,7 @@ def _findings_from_medium(
     summary = dict(material_projection.get("input_summary") or {})
     medium = _text(summary.get("medium") or profile.get("medium"))
     family = _text(summary.get("medium_family"))
-    if not medium and family in {"", "unknown"}:
+    if (not medium or is_medium_placeholder_value(medium)) and family in {"", "unknown"}:
         return []
     triggers = (
         "salz",
@@ -444,6 +481,23 @@ def _findings_from_medium(
             ),
             related_fields=["medium", "medium_qualifiers", "temperature_c"],
             action_mode="RUN_MEDIUM_CHALLENGE",
+            claim_id=_finding_id("medium_claim", medium or family),
+            claim_type="context_advisory",
+            subject_field="medium",
+            evidence_fields=["medium"] if medium and not is_medium_placeholder_value(medium) else [],
+            missing_fields=["medium"] if not medium or is_medium_placeholder_value(medium) else [],
+            blocked_reason=(
+                "medium_missing_or_placeholder"
+                if not medium or is_medium_placeholder_value(medium)
+                else None
+            ),
+            allowed_user_wording=(
+                "Das bekannte Medium braucht Kontext wie Konzentration, Temperatur, Additive und Kontaktpartner."
+            ),
+            forbidden_user_wording=[
+                "Das Medium ist chemisch kritisch.",
+                "Der Werkstoff ist freigegeben.",
+            ],
         )
     ]
 
@@ -457,26 +511,52 @@ def _findings_from_scenario_matrix(
 
     findings: list[ChallengeFinding] = []
     medium_text = _profile_text(profile, "medium", "medium_name")
+    medium_known = bool(medium_text and not is_medium_placeholder_value(medium_text))
     material_text = _profile_text(profile, "material", "sealing_material_family")
     seal_text = _profile_text(profile, "sealing_type", "seal_type", "installation")
     motion_text = _profile_text(profile, "motion_type", "movement_type")
     has_medium_depth = _has_specific_medium_depth(profile.get("medium_qualifiers"))
     speed_rpm = _profile_number(profile, "speed_rpm", "rpm")
     diameter_mm = _profile_number(profile, "shaft_diameter_mm", "shaft_diameter")
-    pressure_bar = _profile_number(profile, "pressure_bar", "pressure_nominal")
+    pressure_bar = _profile_number(
+        profile,
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "pressure_bar",
+        "pressure_nominal",
+    )
+    pressure_evidence_field = _profile_present_field(
+        profile,
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "pressure_bar",
+        "pressure_nominal",
+    )
+    system_pressure_bar = _profile_number(profile, "pressure_system_bar")
+    ambiguous_pressure_bar = _profile_number(profile, "ambiguous_pressure_bar")
     has_counterface = bool(
         _profile_text(
             profile,
+            "counterface_surface_condition",
             "counterface_surface",
+            "shaft_roughness_ra_um",
             "surface_roughness",
+            "shaft_hardness_hrc",
             "shaft_hardness",
             "runout_mm",
+            "eccentricity_mm",
         )
     )
     has_lubrication_context = bool(
-        _profile_text(profile, "lubrication_context", "flush_plan", "duty_profile")
+        _profile_text(
+            profile,
+            "lubrication_condition",
+            "lubrication_context",
+            "flush_plan",
+            "duty_profile",
+        )
     )
-    aggressive_medium = _contains_any(
+    aggressive_medium = medium_known and _contains_any(
         medium_text,
         (
             "salzsäure",
@@ -514,6 +594,16 @@ def _findings_from_scenario_matrix(
                 ),
                 related_fields=["medium", "medium_qualifiers", "temperature_c"],
                 action_mode="RUN_SCENARIO_MATRIX",
+                claim_id="challenge_engine.medium_depth",
+                claim_type="context_advisory",
+                subject_field="medium",
+                evidence_fields=["medium"],
+                missing_fields=["medium_qualifiers"],
+                blocked_reason="medium_details_missing",
+                allowed_user_wording=(
+                    "Das bekannte Medium braucht Konzentration, Additive, Reinigungsmedien und Kontaktpartner als Pruefkontext."
+                ),
+                forbidden_user_wording=["Das Medium ist chemisch kritisch."],
             )
         )
 
@@ -535,6 +625,18 @@ def _findings_from_scenario_matrix(
                 ),
                 related_fields=["material", "medium", "medium_qualifiers"],
                 action_mode="RUN_COUNTERINDICATOR_CHALLENGE",
+                claim_id="challenge_engine.nbr_aggressive_medium",
+                claim_type="context_advisory",
+                subject_field="material",
+                evidence_fields=["material", "medium"],
+                missing_fields=["medium_qualifiers"],
+                allowed_user_wording=(
+                    "NBR ist im bekannten aggressiven Medienkontext ein Gegenindikator und bleibt Pruefhypothese."
+                ),
+                forbidden_user_wording=[
+                    "NBR ist ungeeignet.",
+                    "NBR ist freigegeben.",
+                ],
             )
         )
 
@@ -563,6 +665,23 @@ def _findings_from_scenario_matrix(
                         "counterface_surface",
                     ],
                     action_mode="RUN_SURFACE_SPEED_CHALLENGE",
+                    claim_id="challenge_engine.rotary_counterface_missing",
+                    claim_type="missing_input_risk",
+                    subject_field="counterface_surface",
+                    evidence_fields=["shaft_diameter_mm", "speed_rpm"],
+                    missing_fields=[
+                        "counterface_surface_condition",
+                        "runout_mm",
+                        "shaft_hardness_hrc",
+                    ],
+                    blocked_reason="rotary_counterface_data_missing",
+                    allowed_user_wording=(
+                        "Bei rotierender Welle sind Oberflaeche, Haerte und Rundlauf offene Pruefgroessen."
+                    ),
+                    forbidden_user_wording=[
+                        "Der Wellenschlag ist hoch.",
+                        "Die Gegenlaufflaeche ist ungeeignet.",
+                    ],
                 )
             )
 
@@ -584,6 +703,16 @@ def _findings_from_scenario_matrix(
                 ),
                 related_fields=["lubrication_context", "duty_profile", "medium"],
                 action_mode="RUN_SUPPORT_SYSTEM_CHALLENGE",
+                claim_id="challenge_engine.lubrication_context_missing",
+                claim_type="missing_input_risk",
+                subject_field="lubrication_context",
+                evidence_fields=["medium"] if medium_known else [],
+                missing_fields=["lubrication_context"],
+                blocked_reason="lubrication_context_missing",
+                allowed_user_wording=(
+                    "Schmierfilm, Flush oder Trockenlauf sind noch nicht beschrieben."
+                ),
+                forbidden_user_wording=["Die Schmierung ist unzureichend."],
             )
         )
 
@@ -603,8 +732,89 @@ def _findings_from_scenario_matrix(
                     "Druckniveau und Druckrichtung sollten nicht als Systemdruck "
                     "übernommen, sondern an der Dichtstelle verifiziert werden."
                 ),
-                related_fields=["pressure_bar", "pressure_direction", "sealing_type"],
+                related_fields=[
+                    pressure_evidence_field or "pressure_at_seal_bar",
+                    "pressure_direction",
+                    "sealing_type",
+                ],
                 action_mode="RUN_PRESSURE_DIRECTION_CHALLENGE",
+                claim_id="challenge_engine.rwdr_pressure_at_seal",
+                claim_type="context_advisory",
+                subject_field=pressure_evidence_field or "pressure_at_seal_bar",
+                evidence_fields=[pressure_evidence_field or "pressure_at_seal_bar"],
+                missing_fields=["pressure_direction"],
+                allowed_user_wording=(
+                    "Der angegebene Druck direkt an der Dichtstelle bzw. Differenzdruck ist fuer RWDR ein Pruefpunkt."
+                ),
+                forbidden_user_wording=[
+                    "RWDR ist ungeeignet.",
+                    "RWDR ist freigegeben.",
+                ],
+            )
+        )
+    elif engineering_path == "rwdr" and system_pressure_bar is not None:
+        findings.append(
+            ChallengeFinding(
+                finding_id=_finding_id("scenario", "rwdr_system_pressure"),
+                kind="application_challenge",
+                severity="watch",
+                title="Systemdruck ist nicht der Dichtstellendruck",
+                summary=(
+                    f"{system_pressure_bar:g} bar ist als Systemdruck bekannt. Offen ist, "
+                    "welcher Druck direkt an der Dichtstelle oder als Differenzdruck wirkt."
+                ),
+                rfq_relevance=(
+                    "Systemdruck und Dichtstellendruck muessen in der Anfragebasis getrennt bleiben."
+                ),
+                related_fields=[
+                    "pressure_system_bar",
+                    "pressure_at_seal_bar",
+                    "pressure_delta_bar",
+                ],
+                action_mode="RUN_PRESSURE_DIRECTION_CHALLENGE",
+                claim_id="challenge_engine.rwdr_seal_pressure_missing",
+                claim_type="missing_input_risk",
+                subject_field="pressure_at_seal_bar",
+                evidence_fields=["pressure_system_bar"],
+                missing_fields=["pressure_at_seal_bar"],
+                blocked_reason="seal_pressure_missing_system_pressure_only",
+                allowed_user_wording=(
+                    "Der Systemdruck ist bekannt. Offen ist noch, welcher Druck direkt an der Dichtstelle anliegt."
+                ),
+                forbidden_user_wording=["Der Dichtungsdruck ist kritisch."],
+            )
+        )
+    elif engineering_path == "rwdr" and ambiguous_pressure_bar is not None:
+        findings.append(
+            ChallengeFinding(
+                finding_id=_finding_id("scenario", "rwdr_ambiguous_pressure"),
+                kind="application_challenge",
+                severity="blocking",
+                title="Druckrolle ist unklar",
+                summary=(
+                    f"{ambiguous_pressure_bar:g} bar ist als Druckwert vorhanden, aber die Rolle "
+                    "als Systemdruck, Dichtstellendruck oder Differenzdruck ist noch unklar."
+                ),
+                rfq_relevance=(
+                    "Der Druckwert darf nicht als Dichtstellenbelastung uebernommen werden, "
+                    "bis seine Rolle geklaert ist."
+                ),
+                related_fields=[
+                    "ambiguous_pressure_bar",
+                    "pressure_at_seal_bar",
+                    "pressure_delta_bar",
+                ],
+                action_mode="RUN_PRESSURE_DIRECTION_CHALLENGE",
+                claim_id="challenge_engine.rwdr_pressure_ambiguous",
+                claim_type="ambiguity_risk",
+                subject_field="ambiguous_pressure_bar",
+                evidence_fields=["ambiguous_pressure_bar"],
+                missing_fields=["pressure_at_seal_bar"],
+                blocked_reason="pressure_role_ambiguous",
+                allowed_user_wording=(
+                    "Ein Druckwert ist vorhanden, aber die Rolle ist unklar: Systemdruck, Dichtstellendruck oder Differenzdruck."
+                ),
+                forbidden_user_wording=["Der Dichtungsdruck ist kritisch."],
             )
         )
 

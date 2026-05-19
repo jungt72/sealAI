@@ -31,7 +31,7 @@ def test_workspace_projection_exposes_source_and_validation_for_cockpit_fields()
         profile={
             "medium": "Salzwasser",
             "temperature_c": 40.0,
-            "pressure_bar": 5.0,
+            "pressure_at_seal_bar": 5.0,
         },
         system={
             "request_type": "new_design",
@@ -40,8 +40,8 @@ def test_workspace_projection_exposes_source_and_validation_for_cockpit_fields()
     state["reasoning"] = {
         "phase": "clarification",
         "state_revision": 1,
-        "parameter_provenance": {"pressure_bar": "user_override"},
-        "parameter_confidence": {"pressure_bar": "confirmed"},
+        "parameter_provenance": {"pressure_at_seal_bar": "user_override"},
+        "parameter_confidence": {"pressure_at_seal_bar": "confirmed"},
     }
     projection = project_case_workspace(
         state

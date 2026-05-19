@@ -29,6 +29,10 @@ OPERATING_CONDITION_FIELDS: frozenset[str] = frozenset(
         "pressure_nominal",
         "pressure_peak",
         "pressure_bar",
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
         "pressure_profile",
         "speed_rpm",
         "rpm",
@@ -38,6 +42,7 @@ OPERATING_CONDITION_FIELDS: frozenset[str] = frozenset(
         "lubrication",
         "lubrication_condition",
         "contamination",
+        "contamination_condition",
         "particles_present",
         "abrasive_content",
     }
@@ -54,6 +59,7 @@ GEOMETRY_FIELDS: frozenset[str] = frozenset(
         "geometry",
         "geometry_context",
         "geometry_space",
+        "installation_space_summary",
         "available_space",
         "tolerance_gap",
         "radial_gap_mm",
@@ -66,6 +72,7 @@ GEOMETRY_FIELDS: frozenset[str] = frozenset(
         "dynamic_runout_mm",
         "eccentricity",
         "eccentricity_mm",
+        "axial_movement_mm",
         "misalignment",
     }
 )
@@ -75,12 +82,15 @@ SURFACE_FIELDS: frozenset[str] = frozenset(
         "shaft_material",
         "surface_finish",
         "counterface_surface",
+        "counterface_surface_condition",
         "shaft_surface",
         "surface_roughness",
         "surface_roughness_ra_um",
         "surface_roughness_rz_um",
+        "shaft_roughness_ra_um",
         "roughness",
         "shaft_hardness",
+        "shaft_hardness_hrc",
         "surface_hardness_hrc",
         "hardness",
         "hardness_shore_a",
@@ -133,7 +143,16 @@ TEMPERATURE_FIELDS: frozenset[str] = frozenset(
     {"temperature_min", "temperature_max", "temperature_c", "temperature_profile"}
 )
 PRESSURE_FIELDS: frozenset[str] = frozenset(
-    {"pressure_nominal", "pressure_peak", "pressure_bar", "pressure_profile"}
+    {
+        "pressure_nominal",
+        "pressure_peak",
+        "pressure_bar",
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+        "pressure_profile",
+    }
 )
 RPM_FIELDS: frozenset[str] = frozenset({"speed_rpm", "rpm", "speed"})
 LENGTH_FIELDS: frozenset[str] = frozenset(
@@ -156,6 +175,7 @@ RUNOUT_FIELDS: frozenset[str] = frozenset(
         "dynamic_runout_mm",
         "eccentricity",
         "eccentricity_mm",
+        "axial_movement_mm",
         "misalignment",
     }
 )
@@ -163,6 +183,13 @@ ROUGHNESS_FIELDS: frozenset[str] = frozenset(
     {
         "surface_roughness_ra_um",
         "surface_roughness_rz_um",
+        "shaft_roughness_ra_um",
+    }
+)
+HARDNESS_FIELDS: frozenset[str] = frozenset(
+    {
+        "shaft_hardness_hrc",
+        "surface_hardness_hrc",
     }
 )
 MM_FIELDS: frozenset[str] = frozenset(LENGTH_FIELDS | RUNOUT_FIELDS)
@@ -181,4 +208,5 @@ def is_critical_technical_field(field_name: str) -> bool:
         | RPM_FIELDS
         | MM_FIELDS
         | ROUGHNESS_FIELDS
+        | HARDNESS_FIELDS
     )

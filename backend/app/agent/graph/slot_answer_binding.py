@@ -9,7 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.agent.domain.medium_registry import classify_medium_value
+from app.agent.domain.medium_registry import classify_medium_value, is_medium_placeholder_value
+from app.agent.domain.normalization import normalize_sealing_type_value
 from app.agent.state.models import PendingQuestion, SlotAnswerBinding
 
 _SHORT_SLOT_MAX_CHARS = 36
@@ -44,6 +45,21 @@ _PRESSURE_ABSOLUTE_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMBER_RE = re.compile(r"^\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:bar|°?\s*c|grad|mm|rpm|u[/.]?\s*min)?\s*$", re.IGNORECASE)
+_PRESSURE_VALUE_RE = re.compile(r"\b([+-]?\d+(?:[.,]\d+)?)\s*bar\b", re.IGNORECASE)
+
+_PRESSURE_CONTEXT_TARGET_FIELD: dict[str, str] = {
+    "system_pressure": "pressure_system_bar",
+    "direct_at_seal": "pressure_at_seal_bar",
+    "differential": "pressure_delta_bar",
+}
+_PRESSURE_ROLE_FIELDS: frozenset[str] = frozenset(
+    {
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+    }
+)
 
 
 def _clean_short_answer(message: str) -> str:
@@ -83,6 +99,16 @@ def _numeric_answer(message: str) -> float | None:
         return None
 
 
+def _pressure_value_answer(message: str) -> float | None:
+    match = _PRESSURE_VALUE_RE.search(str(message or "").strip())
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _resolve_medium_answer(
     *,
     pending_question: PendingQuestion,
@@ -101,6 +127,8 @@ def _resolve_medium_answer(
         return None
 
     raw = _clean_short_answer(message)
+    if is_medium_placeholder_value(raw):
+        return None
     decision = classify_medium_value(raw)
     normalized: Any = decision.canonical_label or _titlecase_answer(raw)
     confidence = 0.92 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.72
@@ -137,7 +165,7 @@ def _resolve_explicit_medium_answer(
     if not match:
         return None
     raw = match.group(1).strip(" .,!;:")
-    if not raw:
+    if not raw or is_medium_placeholder_value(raw):
         return None
     decision = classify_medium_value(raw)
     normalized: Any = decision.canonical_label or _titlecase_answer(raw)
@@ -183,6 +211,19 @@ def _resolve_pressure_answer(
         "pressure_context",
         "pressure_value_or_context",
     }:
+        value = _pressure_value_answer(text)
+        target_field = _PRESSURE_CONTEXT_TARGET_FIELD.get(pressure_context)
+        if target_field is not None and value is not None and "bar" in lowered:
+            return SlotAnswerBinding(
+                target_field=target_field,
+                raw_value=text,
+                normalized_value=value,
+                source="pending_question",
+                confidence=0.94,
+                ambiguity=False,
+                needs_clarification=False,
+                turn_index=turn_index,
+            )
         return SlotAnswerBinding(
             target_field="pressure_bar",
             raw_value=text,
@@ -195,16 +236,20 @@ def _resolve_pressure_answer(
         )
 
     if expected_type in {"pressure_value", "pressure_value_or_context"}:
-        value = _numeric_answer(text)
+        value = _pressure_value_answer(text)
         if value is not None and "bar" in lowered:
+            if str(pending_question.target_field or "").strip() in _PRESSURE_ROLE_FIELDS:
+                target_field = str(pending_question.target_field).strip()
+            else:
+                target_field = "ambiguous_pressure_bar"
             return SlotAnswerBinding(
-                target_field="pressure_bar",
+                target_field=target_field,
                 raw_value=text,
                 normalized_value=value,
                 source="pending_question",
                 confidence=0.92,
-                ambiguity=False,
-                needs_clarification=False,
+                ambiguity=target_field == "ambiguous_pressure_bar",
+                needs_clarification=target_field == "ambiguous_pressure_bar",
                 turn_index=turn_index,
             )
     return None
@@ -240,6 +285,36 @@ def _resolve_numeric_slot_answer(
     )
 
 
+def _resolve_sealing_type_answer(
+    *,
+    pending_question: PendingQuestion,
+    message: str,
+    turn_index: int,
+) -> SlotAnswerBinding | None:
+    target_field = str(pending_question.target_field or "").strip()
+    expected_type = str(pending_question.expected_answer_type or "")
+    if target_field not in {"sealing_type", "seal_type"}:
+        return None
+    if expected_type not in {"seal_type_value", "free_text_value"}:
+        return None
+    text = _clean_short_answer(message)
+    if not text or "?" in text:
+        return None
+    normalized = normalize_sealing_type_value(text)
+    if normalized is None:
+        return None
+    return SlotAnswerBinding(
+        target_field="sealing_type",
+        raw_value=text,
+        normalized_value=normalized,
+        source="pending_question",
+        confidence=0.94,
+        ambiguity=False,
+        needs_clarification=False,
+        turn_index=turn_index,
+    )
+
+
 def resolve_slot_answer_binding(
     *,
     pending_question: PendingQuestion | None,
@@ -257,7 +332,8 @@ def resolve_slot_answer_binding(
         return None
     already_extracted_fields = set(already_extracted_fields or set())
     target_field = str(pending_question.target_field or "").strip()
-    if not target_field or target_field in already_extracted_fields:
+    canonical_target_field = "sealing_type" if target_field == "seal_type" else target_field
+    if not target_field or canonical_target_field in already_extracted_fields:
         return None
     if target_field == "medium":
         return _resolve_medium_answer(
@@ -265,12 +341,19 @@ def resolve_slot_answer_binding(
             message=message,
             turn_index=turn_index,
         )
-    if target_field == "pressure_bar":
+    if target_field == "pressure_bar" or target_field in _PRESSURE_ROLE_FIELDS:
         return _resolve_pressure_answer(
             pending_question=pending_question,
             message=message,
             turn_index=turn_index,
         )
+    sealing_type = _resolve_sealing_type_answer(
+        pending_question=pending_question,
+        message=message,
+        turn_index=turn_index,
+    )
+    if sealing_type is not None:
+        return sealing_type
     numeric = _resolve_numeric_slot_answer(
         pending_question=pending_question,
         message=message,

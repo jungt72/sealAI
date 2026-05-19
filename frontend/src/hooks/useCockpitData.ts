@@ -180,7 +180,8 @@ function projectEngineeringView(
       phase: workspace?.communication?.conversationPhase || null,
       lastNode: null,
       routing: {
-        authority: "frontend_placeholder",
+        authority: "frontend_non_authoritative_placeholder",
+        non_authoritative: true,
         note: "Backend cockpit truth is not available yet.",
       },
     },

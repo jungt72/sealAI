@@ -31,6 +31,7 @@ def build_v91_final_answer_context(
     response_class = str(getattr(governed_context, "response_class", "") or "")
     question_plan = getattr(governed_context, "v91_question_plan", None)
     evidence_ref_ids = _collect_evidence_ref_ids(state, governed_context)
+    risk_claims = _collect_risk_claims(state)
     red_flags = _red_flags_for_final_context(state=state, response_class=response_class)
     freedom = LLMFreedomDecision(
         level=LLMFreedomLevel.RESTRICTED_CASE_CLAIMS,
@@ -112,6 +113,7 @@ def build_v91_final_answer_context(
             "planned_next_question",
         ],
         evidence_ref_ids=evidence_ref_ids,
+        risk_claims=risk_claims,
     )
 
 
@@ -190,3 +192,19 @@ def _collect_evidence_ref_ids(state: Any, governed_context: Any) -> list[str]:
             refs.append(str(claim).split(":", 1)[1])
 
     return list(dict.fromkeys(ref for ref in refs if str(ref or "").strip()))
+
+
+def _collect_risk_claims(state: Any) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    for owner in ("engineering", "challenge"):
+        source = getattr(state, owner, None)
+        for item in list(getattr(source, "risk_findings", []) or []) + list(getattr(source, "findings", []) or []):
+            if hasattr(item, "model_dump"):
+                payload = item.model_dump(mode="json")
+            elif isinstance(item, dict):
+                payload = dict(item)
+            else:
+                continue
+            if payload.get("claim_type") or payload.get("claim_id"):
+                claims.append(payload)
+    return claims

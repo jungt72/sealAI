@@ -130,7 +130,7 @@ def _build_ptfe_rwdr_case_for_services(profile: Dict[str, Any]) -> Dict[str, Any
     )
     speed_rpm = _float_or_none(_first_present(profile, "speed_rpm", "rpm", "speed"))
     pressure_bar = _float_or_none(
-        _first_present(profile, "pressure_bar", "pressure_max_bar", "pressure")
+        _first_present(profile, "pressure_at_seal_bar", "pressure_delta_bar")
     )
     sealing_type = _first_present(profile, "sealing_type", "seal_type")
     temperature_c = _float_or_none(
@@ -196,7 +196,7 @@ def _ptfe_required_missing(profile: Dict[str, Any]) -> list[str]:
         "shaft_diameter_mm": ("shaft_diameter_mm", "shaft_diameter", "diameter"),
         "speed_rpm": ("speed_rpm", "rpm", "speed"),
         "temperature_c": ("temperature_c", "temperature_max_c", "temperature"),
-        "pressure_bar": ("pressure_bar", "pressure_max_bar", "pressure"),
+        "pressure_at_seal_bar": ("pressure_at_seal_bar", "pressure_delta_bar"),
         "quantity_requested": ("quantity_requested", "quantity_pieces", "pieces"),
         "shaft_surface_finish_ra_um": (
             "shaft_surface_finish_ra_um",

@@ -37,7 +37,10 @@ from app.agent.domain.requirement_class import (
 from app.agent.domain.normalization import (
     MappingConfidence,
     normalize_critical_field_value,
+    normalize_parameter,
+    pressure_field_for_interpretation,
 )
+from app.agent.domain.medium_registry import is_medium_placeholder_value
 from app.services.conflict_detection_service import (
     ConflictCandidate,
     ConflictDetectionService,
@@ -90,11 +93,28 @@ DEPENDENCY_MAP: dict[str, list[str]] = {
     "installation": ["requirement_class", "preselection"],
     "geometry_context": ["requirement_class", "preselection"],
     "contamination": ["material_suitability", "requirement_class", "preselection"],
+    "contamination_condition": [
+        "material_suitability",
+        "requirement_class",
+        "preselection",
+    ],
     "counterface_surface": [
         "material_suitability",
         "requirement_class",
         "preselection",
     ],
+    "counterface_surface_condition": [
+        "material_suitability",
+        "requirement_class",
+        "preselection",
+    ],
+    "shaft_roughness_ra_um": ["material_suitability", "requirement_class", "preselection"],
+    "shaft_hardness_hrc": ["material_suitability", "requirement_class", "preselection"],
+    "runout_mm": ["material_suitability", "requirement_class", "preselection"],
+    "eccentricity_mm": ["material_suitability", "requirement_class", "preselection"],
+    "axial_movement_mm": ["material_suitability", "requirement_class", "preselection"],
+    "lubrication_condition": ["material_suitability", "requirement_class", "preselection"],
+    "installation_space_summary": ["requirement_class", "preselection"],
     "tolerances": ["material_suitability", "requirement_class", "preselection"],
     "industry": ["requirement_class", "applicable_norms", "preselection"],
     "compliance": ["requirement_class", "applicable_norms", "preselection"],
@@ -157,6 +177,16 @@ _PRESELECTION_BLOCKER_BASE_FIELDS: tuple[str, ...] = (
     "pressure_bar",
     "temperature_c",
     "sealing_type",
+)
+
+_PRESSURE_DESIGN_FIELDS: tuple[str, ...] = (
+    "pressure_at_seal_bar",
+    "pressure_delta_bar",
+)
+_PRESSURE_ROLE_FIELDS: tuple[str, ...] = (
+    "pressure_system_bar",
+    "pressure_at_seal_bar",
+    "pressure_delta_bar",
 )
 
 _ASSUMABLE_FIELDS: tuple[str, ...] = (
@@ -233,7 +263,17 @@ def _has_asserted(assertions: dict[str, AssertedClaim], field_name: str) -> bool
 def _missing(
     assertions: dict[str, AssertedClaim], fields: tuple[str, ...]
 ) -> list[str]:
-    return [field for field in fields if not _has_asserted(assertions, field)]
+    missing: list[str] = []
+    for field in fields:
+        if field == "pressure_bar" and _has_design_pressure(assertions):
+            continue
+        if not _has_asserted(assertions, field):
+            missing.append(field)
+    return missing
+
+
+def _has_design_pressure(assertions: dict[str, AssertedClaim]) -> bool:
+    return any(_has_asserted(assertions, field) for field in _PRESSURE_DESIGN_FIELDS)
 
 
 @dataclass(frozen=True)
@@ -361,6 +401,12 @@ def _normalize_case_field_value(
     unit: str | None,
     confidence: ConfidenceLevel,
 ) -> tuple[Any, str | None, ConfidenceLevel]:
+    if field_name == "medium":
+        normalized_medium = normalize_parameter("medium", raw_value)
+        if normalized_medium.normalized_value in (None, ""):
+            return None, None, "requires_confirmation"
+        return normalized_medium.normalized_value, None, confidence
+
     normalized = normalize_critical_field_value(field_name, raw_value, unit=unit)
     if normalized is None:
         return raw_value, unit, confidence
@@ -384,6 +430,8 @@ def _case_field_from_normalized(
     source_turn: int | None,
 ) -> CaseField:
     status = _field_status_for_normalized(source=source, confidence=confidence)
+    if field_name == "medium" and is_medium_placeholder_value(str(raw_value or "")):
+        status = "invalid"
     provenance = _provenance_for_normalized(source=source, confidence=confidence)
     return CaseField(
         field_name=field_name,
@@ -398,7 +446,7 @@ def _case_field_from_normalized(
         status=status,
         provenance=provenance,
         confidence=confidence,
-        confirmation_required=status in {"candidate", "inferred", "unknown"},
+        confirmation_required=status in {"candidate", "inferred", "unknown", "invalid"},
         source_revision=source_turn or 0,
     )
 
@@ -634,6 +682,8 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             case_field=case_field,
         )
 
+    _add_pressure_role_parameters(parameters, parameter_status)
+
     return NormalizedState(
         parameters=parameters,
         unit_system="SI",
@@ -646,6 +696,52 @@ def reduce_observed_to_normalized(observed: ObservedState) -> NormalizedState:
             if param.case_field is not None
         },
     )
+
+
+def _add_pressure_role_parameters(
+    parameters: dict[str, NormalizedParameter],
+    parameter_status: dict[str, str],
+) -> None:
+    legacy = parameters.get("pressure_bar")
+    if legacy is None or legacy.value in (None, ""):
+        return
+
+    engineering_value = legacy.engineering_value
+    interpretation = str(getattr(engineering_value, "interpretation", "") or "").strip()
+    target_field = pressure_field_for_interpretation(interpretation)
+    confidence = legacy.confidence
+    if target_field is None:
+        if any(field in parameters for field in _PRESSURE_ROLE_FIELDS):
+            return
+        target_field = "ambiguous_pressure_bar"
+        confidence = "requires_confirmation"
+
+    if target_field in parameters:
+        return
+
+    case_field = _case_field_from_normalized(
+        field_name=target_field,
+        value=legacy.value,
+        raw_value=getattr(engineering_value, "raw_value", legacy.value),
+        unit="bar",
+        raw_unit="bar",
+        confidence=confidence,
+        source=legacy.source,
+        source_turn=legacy.source_turn,
+    )
+    parameters[target_field] = NormalizedParameter(
+        field_name=target_field,
+        value=legacy.value,
+        unit="bar",
+        confidence=confidence,
+        source=legacy.source,
+        source_turn=legacy.source_turn,
+        status=case_field.status,
+        provenance=case_field.provenance,
+        engineering_value=case_field.engineering_value,
+        case_field=case_field,
+    )
+    parameter_status[target_field] = parameter_status.get("pressure_bar", "observed")
 
 
 def _canonical_value(v: Any) -> str:
@@ -794,6 +890,8 @@ def reduce_normalized_to_asserted(
 
     # ── Core fields missing entirely → blocking unknowns ─────────────────
     for core_field in _CORE_REQUIRED_FIELDS:
+        if core_field == "pressure_bar" and _has_design_pressure(assertions):
+            continue
         if core_field not in assertions and core_field not in blocking_unknowns:
             blocking_unknowns.append(core_field)
 

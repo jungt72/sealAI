@@ -16,7 +16,7 @@ Coverage:
     5.  RWDR result has calc_type="rwdr"
     6.  RWDR result has status field
     7.  v_surface_m_s computed correctly (DIN 3760: π * d * n / 60000)
-    8.  Optional pressure_bar forwarded to calc
+    8.  Optional pressure_at_seal_bar forwarded to calc
     9.  Optional temperature_c forwarded as temperature_max_c
     10. Optional material forwarded to calc
     11. Calc exception → fail-open, compute_results stays []
@@ -213,9 +213,9 @@ class TestDIN3760Calculation:
 
 class TestOptionalFieldsForwarded:
     @pytest.mark.asyncio
-    async def test_pressure_bar_forwarded(self):
-        """With pressure_bar, pv_value_mpa_m_s must be non-None."""
-        state = _rwdr_state(shaft_mm=50.0, rpm=1500.0, pressure_bar=10.0)
+    async def test_pressure_at_seal_bar_forwarded(self):
+        """With seal pressure, pv_value_mpa_m_s must be non-None."""
+        state = _rwdr_state(shaft_mm=50.0, rpm=1500.0, pressure_at_seal_bar=10.0)
         result = await compute_node(state)
         assert result.compute_results[0]["pv_value_mpa_m_s"] is not None
 
@@ -224,7 +224,7 @@ class TestOptionalFieldsForwarded:
         state = _rwdr_state(
             shaft_mm=50.0,
             rpm=1500.0,
-            pressure_bar=5.0,
+            pressure_at_seal_bar=5.0,
             sealing_type="PTFE-RWDR",
         )
         result = await compute_node(state)

@@ -181,6 +181,7 @@ function legacyProjection() {
     },
     completeness: {
       coverage_score: 0.65,
+      coverage_percent: 65,
       coverage_gaps: ["surface_finish"],
       completeness_depth: "prequalification",
       missing_critical_parameters: ["speed_rpm"],

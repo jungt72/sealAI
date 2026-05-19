@@ -56,7 +56,7 @@ _RWDR_REQUIRED_FIELDS = (
     "sealing_type",
     "medium",
     "temperature_c",
-    "pressure_bar",
+    "pressure_at_seal_bar",
     "shaft_diameter_mm",
     "speed_rpm",
 )
@@ -64,7 +64,7 @@ _ORING_REQUIRED_FIELDS = (
     "sealing_type",
     "medium",
     "temperature_c",
-    "pressure_bar",
+    "pressure_at_seal_bar",
     "oring_cross_section_mm",
     "groove_depth_mm",
     "groove_width_mm",
@@ -73,7 +73,7 @@ _HYDRAULIC_REQUIRED_FIELDS = (
     "sealing_type",
     "medium",
     "temperature_c",
-    "pressure_bar",
+    "pressure_at_seal_bar",
     "rod_diameter_mm",
     "stroke_speed_mm_s",
 )
@@ -146,12 +146,17 @@ _STANDARD_METADATA = {
 
 _OPTIONAL_FIELDS_BY_FAMILY = {
     SealFamily.rotary_shaft.value: [
+        "counterface_surface_condition",
         "shaft_roughness_ra_um",
         "shaft_hardness_hrc",
         "runout_mm",
         "eccentricity_mm",
+        "axial_movement_mm",
+        "lubrication_condition",
+        "contamination_condition",
         "dust_lip_required",
         "installation_space",
+        "installation_space_summary",
     ],
     SealFamily.static_elastomer.value: [
         "tolerance_stack",
@@ -329,7 +334,7 @@ def _required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
         return _ORING_REQUIRED_FIELDS
     if seal_family in {SealFamily.hydraulic.value, SealFamily.pneumatic.value}:
         return _HYDRAULIC_REQUIRED_FIELDS
-    return ("sealing_type", "medium", "temperature_c", "pressure_bar")
+    return ("sealing_type", "medium", "temperature_c", "pressure_at_seal_bar")
 
 
 def build_seal_system_state(state: Any) -> SealSystemState:
@@ -512,13 +517,13 @@ def _oring_calculations(state: Any, *, snapshot_hash: str) -> list[CalculationRe
     seal_id = _float_value(state, "seal_inner_diameter_mm", "oring_inner_diameter_mm", "o_ring_inner_diameter_mm")
     shaft_diameter = _float_value(state, "shaft_diameter_mm", "rod_diameter_mm", "bore_diameter_mm")
     radial_gap = _float_value(state, "radial_gap_mm", "extrusion_gap_mm")
-    pressure = _float_value(state, "pressure_bar")
+    pressure = _float_value(state, "pressure_at_seal_bar", "pressure_delta_bar")
     results: list[CalculationResult] = []
     if cross_section is None:
         return results
     missing = []
     if pressure is None:
-        missing.append("pressure_bar")
+        missing.append("pressure_at_seal_bar")
         pressure = 0.0
     motion = _string_value(state, "motion_type", "dynamic_type").lower()
     situation = "dynamisch" if any(marker in motion for marker in ("dynam", "rot", "hub", "rezip")) else "statisch"
@@ -549,7 +554,7 @@ def _oring_calculations(state: Any, *, snapshot_hash: str) -> list[CalculationRe
                 "hinweis": "text",
             },
             missing_inputs=missing,
-            dependencies=["oring_cross_section_mm", "pressure_bar", "motion_type"],
+            dependencies=["oring_cross_section_mm", "pressure_at_seal_bar", "motion_type"],
             formula_refs=["din3770_iso3601_2_metadata_v1.lookup_nut"],
             validity_status="valid_for_screening" if not missing else "input_missing",
             engineering_signals=["o_ring_groove_metadata_screening"],
@@ -625,11 +630,11 @@ def _oring_calculations(state: Any, *, snapshot_hash: str) -> list[CalculationRe
                 snapshot_hash=snapshot_hash,
                 outputs={
                     "radial_gap_mm": radial_gap,
-                    "pressure_bar": pressure,
+                    "pressure_at_seal_bar": pressure,
                     "expert_review_required": severity == "requires_expert_review",
                 },
-                units={"radial_gap_mm": "mm", "pressure_bar": "bar", "expert_review_required": "bool"},
-                dependencies=["radial_gap_mm", "pressure_bar"],
+                units={"radial_gap_mm": "mm", "pressure_at_seal_bar": "bar", "expert_review_required": "bool"},
+                dependencies=["radial_gap_mm", "pressure_at_seal_bar"],
                 formula_refs=["pressure_gap_screening_rule_v1"],
                 validity_status=severity,
                 engineering_signals=["o_ring_extrusion_gap_screening"],
@@ -782,6 +787,16 @@ def _risk_findings(
                 affected_calculations=[item.calculation_id for item in calculation.results],
                 affected_claims=["technical_screening", "rfq_dossier"],
                 required_next_evidence=[field],
+                claim_id=f"deterministic_rule.missing_core.{field}",
+                claim_type="missing_input_risk",
+                subject_field=field,
+                missing_fields=[field],
+                blocked_reason="missing_core_input",
+                allowed_user_wording=f"Für diesen Dichtungsfall fehlt noch: {field}.",
+                forbidden_user_wording=[
+                    f"{field} ist fachlich bewertet.",
+                    "Der Fall ist freigegeben.",
+                ],
             )
         )
     for violation in compound_state.separation_violations:
@@ -795,6 +810,15 @@ def _risk_findings(
                 user_facing_reason="Ein Produkt- oder Compound-Hinweis ersetzt keine Datenblatt- oder Herstellerprüfung.",
                 affected_claims=["material_fit", "product_release"],
                 required_next_evidence=["compound_datasheet", "manufacturer_review"],
+                claim_id=f"deterministic_rule.compound.{violation}",
+                claim_type="blocked_claim",
+                subject_field="compound",
+                missing_fields=["compound_datasheet", "manufacturer_review"],
+                blocked_reason="compound_product_layer_boundary",
+                allowed_user_wording=(
+                    "Ein Produkt- oder Compound-Hinweis ersetzt keine Datenblatt- oder Herstellerpruefung."
+                ),
+                forbidden_user_wording=["Das Produkt ist geeignet.", "Das Compound ist freigegeben."],
             )
         )
     for gap in document_evidence.extraction_gaps + document_evidence.sds_limitations:
@@ -808,6 +832,15 @@ def _risk_findings(
                 user_facing_reason="Dokumentdaten bleiben begrenzt prüfbare Evidenz, bis die relevanten Felder strukturiert bestätigt sind.",
                 affected_claims=["document_backed_claim", "medium_compatibility"],
                 required_next_evidence=["structured_document_fields"],
+                claim_id=f"deterministic_rule.document.{_stable_hash({'gap': gap})}",
+                claim_type="blocked_claim",
+                subject_field="document_evidence",
+                missing_fields=["structured_document_fields"],
+                blocked_reason="document_evidence_limitation",
+                allowed_user_wording=(
+                    "Dokumentdaten bleiben begrenzt pruefbare Evidenz, bis relevante Felder strukturiert bestaetigt sind."
+                ),
+                forbidden_user_wording=["Das Dokument beweist die Freigabe."],
             )
         )
     if failure_observation.morphology_indicators:
@@ -821,6 +854,15 @@ def _risk_findings(
                 user_facing_reason="Das Schadbild ist ein Indiz. Für eine Ursache brauchen wir Diagnose- und Vergleichsdaten.",
                 affected_claims=["root_cause"],
                 required_next_evidence=list(failure_observation.required_diagnostics),
+                claim_id="deterministic_rule.failure.requires_diagnostics",
+                claim_type="context_advisory",
+                subject_field="failure_observation",
+                evidence_fields=["failure_observation"],
+                missing_fields=list(failure_observation.required_diagnostics),
+                allowed_user_wording=(
+                    "Das Schadbild ist ein Indiz; fuer eine Ursache brauchen wir Diagnose- und Vergleichsdaten."
+                ),
+                forbidden_user_wording=["Die eindeutige Schadensursache ist bewiesen."],
             )
         )
     return findings

@@ -508,6 +508,11 @@ export type WorkspaceView = {
     coverageGaps: string[];
     completenessDepth: string;
     missingCriticalParameters: string[];
+    requiredTotal?: number;
+    requiredKnown?: number;
+    requiredMissing?: string[];
+    requiredInvalid?: string[];
+    requiredFields?: Array<Record<string, unknown>>;
     analysisComplete: boolean;
     recommendationReady: boolean;
   };

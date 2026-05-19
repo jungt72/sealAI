@@ -12,10 +12,10 @@ export const sealCockpitOverview: SealCockpitOverview = {
   ],
   statusStrip: [
     { label: "Dichtungsfall", value: "Rotierende Welle · Rührwerk" },
-    { label: "Stand", value: "61 % geklärt" },
+    { label: "Stand", value: "Demo-Fallback, nicht backend-berechnet" },
     { label: "Lösungsraum", value: "PTFE-RWDR als Richtung" },
     { label: "Noch offen", value: "Medium · Temperatur · Rundlauf" },
-    { label: "Gerechnet", value: "3 von 5 Checks vorhanden" },
+    { label: "Gerechnet", value: "Demo-Fallback, nicht backend-berechnet" },
   ],
   parameters: {
     rows: [
@@ -83,5 +83,5 @@ export const sealCockpitOverview: SealCockpitOverview = {
     },
   ],
   footerNote:
-    "SeaLAI ordnet den Fall, zeigt offene Punkte und bereitet eine klare Anfragevorschau vor.",
+    "Demo-Daten: nicht als technische Backend-Wahrheit verwenden.",
 };

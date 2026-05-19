@@ -62,9 +62,15 @@ class CaseSummary(BaseModel):
 
 class CompletenessStatus(BaseModel):
     coverage_score: float = 0.0
+    coverage_percent: int = 0
     coverage_gaps: List[str] = Field(default_factory=list)
     completeness_depth: str = "precheck"
     missing_critical_parameters: List[str] = Field(default_factory=list)
+    required_total: int = 0
+    required_known: int = 0
+    required_missing: List[str] = Field(default_factory=list)
+    required_invalid: List[str] = Field(default_factory=list)
+    required_fields: List[Dict[str, Any]] = Field(default_factory=list)
     discovery_missing: List[str] = Field(default_factory=list)
     analysis_complete: bool = False
     recommendation_ready: bool = False
@@ -428,6 +434,14 @@ class ChallengeFindingProjection(BaseModel):
     related_fields: List[str] = Field(default_factory=list)
     evidence_ref_ids: List[str] = Field(default_factory=list)
     action_mode: str = "RUN_RISK_COMPLETENESS"
+    claim_id: Optional[str] = None
+    claim_type: str = "context_advisory"
+    subject_field: str = ""
+    evidence_fields: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    blocked_reason: Optional[str] = None
+    allowed_user_wording: str = ""
+    forbidden_user_wording: List[str] = Field(default_factory=list)
     source: str = "challenge_engine_v9"
 
     model_config = ConfigDict(extra="forbid")
@@ -601,24 +615,89 @@ class RiskEvaluationResult(BaseModel):
     explanation_short: str = ""
     confidence: str = "medium"
     ruleset_version: str = "v0.4-mvp-2026-04-25"
+    claim_id: Optional[str] = None
+    claim_type: str = "context_advisory"
+    subject_field: str = ""
+    severity: str = "low"
+    evidence_fields: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    blocked_reason: Optional[str] = None
+    allowed_user_wording: str = ""
+    forbidden_user_wording: List[str] = Field(default_factory=list)
+    source: str = "risk_readiness"
 
     model_config = ConfigDict(extra="forbid")
 
 
 class EngineeringCheckResult(BaseModel):
     calc_id: str
+    check_id: Optional[str] = None
+    claim_id: Optional[str] = None
+    claim_type: str = "context_advisory"
+    subject_field: str = ""
     label: str
     formula_version: str
     required_inputs: List[str] = Field(default_factory=list)
+    required_fields: List[str] = Field(default_factory=list)
     missing_inputs: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
     valid_paths: List[EngineeringPath] = Field(default_factory=list)
     output_key: str
     unit: Optional[str] = None
-    status: str = "insufficient_data"
+    status: str = "unknown"
     value: Any = None
     fallback_behavior: str = "insufficient_data_when_required_inputs_missing"
     guardrails: List[str] = Field(default_factory=list)
+    blocked_reason: Optional[str] = None
+    blocking_reason: Optional[str] = None
+    evidence_fields: List[str] = Field(default_factory=list)
+    allowed_user_wording: str = ""
+    forbidden_user_wording: List[str] = Field(default_factory=list)
+    source: str = "check_registry"
+    derived_from: List[str] = Field(default_factory=list)
+    severity: str = "screening"
+    human_readable_reason: str = ""
+    raw_status: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
+    requirement_tier: str = "required_for_rwdr_precheck"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitCheckMetrics(BaseModel):
+    check_total: int = 0
+    check_available_count: int = 0
+    check_blocked_count: int = 0
+    check_pending_count: int = 0
+    check_failed_count: int = 0
+    check_passed_count: int = 0
+    checks: List[EngineeringCheckResult] = Field(default_factory=list)
+    source: str = "backend_check_registry"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitRequiredFieldMetric(BaseModel):
+    field_id: str
+    label: str
+    status: str = "missing"
+    value_summary: Optional[str] = None
+    provenance_summary: Optional[str] = None
+    reason_required: str = ""
+    blocks_next_step: bool = True
+    requirement_tier: str = "required_for_basic_orientation"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CockpitCompletenessMetrics(BaseModel):
+    completeness_percent: int = 0
+    required_total: int = 0
+    required_known: int = 0
+    required_missing: List[str] = Field(default_factory=list)
+    required_invalid: List[str] = Field(default_factory=list)
+    required_fields: List[CockpitRequiredFieldMetric] = Field(default_factory=list)
+    source: str = "backend_required_field_policy"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -631,6 +710,10 @@ class EngineeringCockpitView(BaseModel):
     )
     sections: List[CockpitSection] = Field(default_factory=list)
     checks: List[EngineeringCheckResult] = Field(default_factory=list)
+    check_metrics: CockpitCheckMetrics = Field(default_factory=CockpitCheckMetrics)
+    completeness_metrics: CockpitCompletenessMetrics = Field(
+        default_factory=CockpitCompletenessMetrics
+    )
     risk_evaluations: List[RiskEvaluationResult] = Field(default_factory=list)
     missing_mandatory_keys: List[str] = Field(default_factory=list)
     blockers: List[str] = Field(default_factory=list)

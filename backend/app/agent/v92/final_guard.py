@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.agent.domain.risk_claims import unsupported_measured_claim_failures
 from app.agent.v92.contracts import (
     AdversarialReviewVerdict,
     FinalAnswerContext,
@@ -107,6 +108,17 @@ def validate_final_output(
             continue
         detected_forbidden.append(name)
         required_revisions.append(f"remove_or_downgrade:{name}")
+
+    for failure in unsupported_measured_claim_failures(context, text):
+        detected_forbidden.append(str(failure["kind"]))
+        evidence_failures.append(
+            {
+                "kind": failure["kind"],
+                "reason": failure["reason"],
+            }
+        )
+        required_revisions.append(f"replace_with_safe_wording:{failure['kind']}")
+        limitations.append(str(failure["safe_wording"]))
 
     has_compound_release_language = bool(
         re.search(

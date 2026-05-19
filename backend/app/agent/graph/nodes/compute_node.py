@@ -116,7 +116,9 @@ def _build_canonical_case(assertions: dict) -> dict[str, Any]:
         },
     }
 
-    pressure = _float_or_none(assertions, "pressure_bar")
+    pressure = _float_or_none(assertions, "pressure_at_seal_bar")
+    if pressure is None:
+        pressure = _float_or_none(assertions, "pressure_delta_bar")
     if pressure is not None:
         case["operating"]["pressure"] = {"max_bar": pressure}
 

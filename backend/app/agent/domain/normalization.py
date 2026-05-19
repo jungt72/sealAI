@@ -26,6 +26,7 @@ from typing import Any, Optional
 
 from app.domain.critical_field_contract import (
     CRITICAL_CASE_FIELDS,
+    HARDNESS_FIELDS,
     MM_FIELDS,
     PRESSURE_FIELDS,
     ROUGHNESS_FIELDS,
@@ -37,6 +38,7 @@ from app.domain.critical_field_contract import (
 from app.agent.domain.medium_registry import (
     classify_medium_value,
     extract_medium_mentions,
+    is_medium_placeholder_value,
     medium_registry_entries,
 )
 from app.observability.langsmith import wrap_openai_client
@@ -240,6 +242,11 @@ _UM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_HRC_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:hrc|rockwell\s*c)?\s*$",
+    re.IGNORECASE,
+)
+
 _SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN = re.compile(
     r"\b(?:wellen?durchmesser|wellendurchmesser|durchmesser|diameter)\b"
     r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
@@ -259,6 +266,39 @@ _SHAFT_DIAMETER_MM_WITH_CONTEXT_PATTERN = re.compile(
 
 _SHAFT_DIAMETER_CONTEXT_RE = re.compile(
     r"\b(?:welle|shaft|durchmesser|diameter|rwdr|radialwellendichtring)\b",
+    re.IGNORECASE,
+)
+
+_ROUGHNESS_RA_VALUE_PATTERN = re.compile(
+    r"\b(?:rauheit\s*)?ra\s*(?:=|:)?\s*([+-]?\d+(?:[.,]\d+)?)\s*"
+    r"(?:µm|μm|um|mikrometer)?\b",
+    re.IGNORECASE,
+)
+
+_HARDNESS_HRC_VALUE_PATTERN = re.compile(
+    r"\b(?:h(?:ä|ae)rte|hardness)\s*(?:=|:)?\s*([+-]?\d+(?:[.,]\d+)?)\s*"
+    r"(?:hrc|rockwell\s*c)?\b|\b([+-]?\d+(?:[.,]\d+)?)\s*(?:hrc|rockwell\s*c)\b",
+    re.IGNORECASE,
+)
+
+_RUNOUT_VALUE_PATTERN = re.compile(
+    r"\b(?:rundlauf|wellenschlag|runout)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_ECCENTRICITY_VALUE_PATTERN = re.compile(
+    r"\b(?:exzentrizitaet|exzentrizität|eccentricity)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_AXIAL_MOVEMENT_VALUE_PATTERN = re.compile(
+    r"\b(?:axial(?:e|er)?\s+(?:bewegung|versatz|verschiebung)|axialversatz|axial\s*movement)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
     re.IGNORECASE,
 )
 
@@ -316,6 +356,7 @@ def _extract_candidate_media_tokens(text: str) -> list[str]:
         if (
             raw_medium
             and raw_medium.lower() not in _MEDIUM_FALLBACK_STOPWORDS
+            and not is_medium_placeholder_value(raw_medium)
             and not re.match(r"^\d", raw_medium)
         ):
             candidates.append(raw_medium)
@@ -514,6 +555,28 @@ def _pressure_interpretation(raw: Any, unit: str | None = None) -> str:
     return "unknown"
 
 
+_PRESSURE_FIELD_INTERPRETATION: dict[str, str] = {
+    "pressure_system_bar": "system_pressure",
+    "pressure_at_seal_bar": "direct_at_seal",
+    "pressure_delta_bar": "differential",
+    "ambiguous_pressure_bar": "unknown",
+}
+
+_PRESSURE_INTERPRETATION_FIELD: dict[str, str] = {
+    "system_pressure": "pressure_system_bar",
+    "direct_at_seal": "pressure_at_seal_bar",
+    "differential": "pressure_delta_bar",
+}
+
+
+def pressure_field_for_interpretation(interpretation: str | None) -> str | None:
+    return _PRESSURE_INTERPRETATION_FIELD.get(str(interpretation or "").strip())
+
+
+def pressure_interpretation_from_text(text: str | None, unit: str | None = None) -> str:
+    return _pressure_interpretation(text, unit)
+
+
 def _critical_field_quantity(field_name: str) -> tuple[str, str | None]:
     if field_name in TEMPERATURE_FIELDS:
         return "temperature", "degC"
@@ -523,6 +586,8 @@ def _critical_field_quantity(field_name: str) -> tuple[str, str | None]:
         return "rotational_speed", "rpm"
     if field_name in ROUGHNESS_FIELDS:
         return "surface_roughness", "um"
+    if field_name in HARDNESS_FIELDS:
+        return "surface_hardness", "HRC"
     if field_name in MM_FIELDS:
         return "length", "mm"
     return field_name, None
@@ -573,7 +638,10 @@ def normalize_critical_field_value(
         if entity.warning_message:
             warnings.append(entity.warning_message)
         confidence = entity.confidence
-        interpretation = _pressure_interpretation(raw_value, unit)
+        interpretation = _PRESSURE_FIELD_INTERPRETATION.get(
+            field_name,
+            _pressure_interpretation(raw_value, unit),
+        )
         if interpretation == "unknown":
             warnings.append("pressure_interpretation_unknown")
             confidence = MappingConfidence.REQUIRES_CONFIRMATION
@@ -602,6 +670,17 @@ def normalize_critical_field_value(
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("roughness_unit_required")
         interpretation = "surface_roughness"
+    elif field_name in HARDNESS_FIELDS:
+        text_value = str(raw_with_unit).strip().replace(",", ".")
+        hrc_match = _HRC_PATTERN.match(text_value)
+        if hrc_match:
+            canonical_value = float(hrc_match.group(1))
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name.endswith("_hrc") else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("hardness_unit_required")
+        interpretation = "rockwell_c_hardness"
     elif field_name in MM_FIELDS:
         text_value = str(raw_with_unit).strip().replace(",", ".")
         mm_match = _MM_PATTERN.match(text_value)
@@ -661,6 +740,10 @@ def _normalize_medium_entity(raw: Any) -> NormalizedEntity:
         return NormalizedEntity(None, None, "medium",
                                 MappingConfidence.REQUIRES_CONFIRMATION,
                                 "Kein Mediumwert übergeben")
+    if is_medium_placeholder_value(str(raw)):
+        return NormalizedEntity(raw, None, "medium",
+                                MappingConfidence.REQUIRES_CONFIRMATION,
+                                "medium_placeholder_or_unknown")
     decision = classify_medium_value(str(raw))
     if decision.canonical_label and decision.mapping_confidence == "confirmed":
         return NormalizedEntity(raw, decision.canonical_label, "medium",
@@ -1048,7 +1131,7 @@ _SEALING_TYPE_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:abstreifer|wiper\s+seal)\b", "hydraulic_wiper"),
     (r"\b(?:f[uü]hrungsring|guide\s+ring)\b", "hydraulic_guide_ring"),
     (r"\b(?:gleitringdichtung|gleitring|mechanical\s+seal)\b", "mechanical_seal"),
-    (r"\b(?:rwdr|radialwellendichtring|simmerring|wellendichtring)\b", "rwdr"),
+    (r"\b(?:rwdr|radialwellendichtring|simmerring|simmering|wellendichtring)\b", "rwdr"),
     (r"\b(?:o[- ]?ring|oring)\b", "o_ring"),
     (r"\b(?:flachdichtung|flat\s+gasket|cut\s+gasket|gasket)\b", "flat_gasket"),
     (r"\b(?:packung|stopfbuchse)\b", "packing"),
@@ -1092,9 +1175,32 @@ _COUNTERFACE_SURFACE_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:huelse|hülse|buchse|wellenwerkstoff)\b", "counterface_material_context"),
 ]
 
+_COUNTERFACE_SURFACE_CONDITION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:beschädigt|beschaedigt|riefen|damage(?:d)?)\b", "damaged"),
+    (r"\b(?:eingelaufen|verschlissen|verschleiss|verschleiß|worn)\b", "worn"),
+    (r"\b(?:korrodiert|korrosion|corroded|corrosion)\b", "corroded"),
+    (r"\b(?:beschichtet|coated)\b", "coated"),
+    (r"\b(?:neu|new)\b", "new"),
+    (r"\b(?:unbekannt|unknown|unklar)\b", "unknown"),
+]
+
 _TOLERANCE_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:rundlauf|runout|exzentrizitaet|exzentrizität)\b", "runout_or_eccentricity"),
     (r"\b(?:toleranz\w*|spiel|spalt|clearance)\b", "tolerance_or_clearance"),
+]
+
+_LUBRICATION_CONDITION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:trockenlauf|dry\s*run(?:ning)?|dry-run)\b", "dry_run_possible"),
+    (r"\b(?:mangelschmierung|mangel\s*schmierung|insufficient\s+lubrication|poor\s+lubrication)\b", "insufficient_lubrication"),
+    (r"\b(?:geschmiert|oelgeschmiert|ölgeschmiert|lubricated)\b", "lubricated"),
+    (r"\b(?:schmierung\s+unbekannt|lubrication\s+unknown)\b", "unknown"),
+]
+
+_CONTAMINATION_CONDITION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:abrasiver?\s+staub|abrasive\s+dust)\b", "abrasive_dust"),
+    (r"\b(?:abrasiv\w*|sand|staub|schmutz|partikel|feststoff\w*|solids?)\b", "particles_or_abrasive"),
+    (r"\b(?:sauber|keine\s+(?:verschmutzung|partikel)|clean|no\s+(?:dirt|particles))\b", "clean"),
+    (r"\b(?:verschmutzung\s+unbekannt|contamination\s+unknown)\b", "unknown"),
 ]
 
 _INDUSTRY_PATTERNS: list[tuple[str, str]] = [
@@ -1165,12 +1271,30 @@ def _sealing_type_value(text: str, patterns: list[tuple[str, str]]) -> str | Non
     return best_value
 
 
+def normalize_sealing_type_value(text: str | None) -> str | None:
+    """Normalize a user supplied seal-type alias using the productive patterns."""
+
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    return _sealing_type_value(raw, _SEALING_TYPE_PATTERNS)
+
+
 def _all_pattern_values(text: str, patterns: list[tuple[str, str]]) -> list[str]:
     values: list[str] = []
     for pattern, value in patterns:
         if re.search(pattern, text, re.IGNORECASE) and value not in values:
             values.append(value)
     return values
+
+
+def _float_from_match(match: re.Match[str] | None) -> float | None:
+    if match is None:
+        return None
+    for group in match.groups():
+        if group:
+            return float(group.replace(",", "."))
+    return None
 
 
 def extract_parameters(text: str) -> dict[str, Any]:
@@ -1206,10 +1330,19 @@ def extract_parameters(text: str) -> dict[str, Any]:
         value = float(pressure_match.group(1).replace(",", "."))
         raw_unit = pressure_match.group(2)
         pressure_value, normalized_unit = normalize_unit_value(value, raw_unit)
+        pressure_role = pressure_interpretation_from_text(text, raw_unit)
         extracted["pressure_raw"] = raw
         extracted["pressure_bar"] = pressure_value
         extracted["pressure_unit"] = raw_unit
         extracted["pressure_normalized_unit"] = normalized_unit
+        if pressure_role == "system_pressure":
+            extracted["pressure_system_bar"] = pressure_value
+        elif pressure_role == "direct_at_seal":
+            extracted["pressure_at_seal_bar"] = pressure_value
+        elif pressure_role == "differential":
+            extracted["pressure_delta_bar"] = pressure_value
+        else:
+            extracted["ambiguous_pressure_bar"] = pressure_value
     diameter_value = extract_shaft_diameter_mm(text)
     if diameter_value is not None:
         extracted["diameter_mm"] = diameter_value
@@ -1219,13 +1352,33 @@ def extract_parameters(text: str) -> dict[str, Any]:
         # Store as int when there's no fractional part (6000.0 → 6000)
         extracted["speed_rpm"] = int(raw_rpm) if raw_rpm == int(raw_rpm) else raw_rpm
 
+    roughness_value = _float_from_match(_ROUGHNESS_RA_VALUE_PATTERN.search(text))
+    if roughness_value is not None:
+        extracted["shaft_roughness_ra_um"] = roughness_value
+
+    hardness_value = _float_from_match(_HARDNESS_HRC_VALUE_PATTERN.search(text))
+    if hardness_value is not None:
+        extracted["shaft_hardness_hrc"] = hardness_value
+
+    runout_value = _float_from_match(_RUNOUT_VALUE_PATTERN.search(text))
+    if runout_value is not None:
+        extracted["runout_mm"] = runout_value
+
+    eccentricity_value = _float_from_match(_ECCENTRICITY_VALUE_PATTERN.search(text))
+    if eccentricity_value is not None:
+        extracted["eccentricity_mm"] = eccentricity_value
+
+    axial_movement_value = _float_from_match(_AXIAL_MOVEMENT_VALUE_PATTERN.search(text))
+    if axial_movement_value is not None:
+        extracted["axial_movement_mm"] = axial_movement_value
+
     motion_type = _extract_motion_type(text)
     if motion_type is not None:
         extracted["motion_type"] = motion_type
 
     # sealing_type uses negation-aware extraction to handle corrections like
     # "kein Gleitring sondern RWDR" correctly.
-    sealing_type_value = _sealing_type_value(text, _SEALING_TYPE_PATTERNS)
+    sealing_type_value = normalize_sealing_type_value(text)
     if sealing_type_value is not None:
         extracted["sealing_type"] = sealing_type_value
 
@@ -1236,12 +1389,18 @@ def extract_parameters(text: str) -> dict[str, Any]:
         ("geometry_context", _GEOMETRY_CONTEXT_PATTERNS),
         ("contamination", _CONTAMINATION_PATTERNS),
         ("counterface_surface", _COUNTERFACE_SURFACE_PATTERNS),
+        ("counterface_surface_condition", _COUNTERFACE_SURFACE_CONDITION_PATTERNS),
+        ("lubrication_condition", _LUBRICATION_CONDITION_PATTERNS),
+        ("contamination_condition", _CONTAMINATION_CONDITION_PATTERNS),
         ("tolerances", _TOLERANCE_PATTERNS),
         ("industry", _INDUSTRY_PATTERNS),
     ):
         value = _first_pattern_value(text, patterns)
         if value is not None:
             extracted[field_name] = value
+
+    if extracted.get("installation") == "limited_installation_space":
+        extracted["installation_space_summary"] = extracted["installation"]
 
     compliance = _all_pattern_values(text, _COMPLIANCE_PATTERNS)
     if compliance:

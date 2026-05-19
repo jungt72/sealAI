@@ -67,6 +67,10 @@ _ENABLE_LLM_EXTRACTION: bool = (
 _ALLOWED_FIELD_NAMES: frozenset[str] = frozenset({
     "medium",
     "pressure_bar",
+    "pressure_system_bar",
+    "pressure_at_seal_bar",
+    "pressure_delta_bar",
+    "ambiguous_pressure_bar",
     "temperature_c",
     "material",
     "shaft_diameter_mm",
@@ -78,7 +82,16 @@ _ALLOWED_FIELD_NAMES: frozenset[str] = frozenset({
     "installation",
     "geometry_context",
     "contamination",
+    "contamination_condition",
     "counterface_surface",
+    "counterface_surface_condition",
+    "shaft_roughness_ra_um",
+    "shaft_hardness_hrc",
+    "runout_mm",
+    "eccentricity_mm",
+    "axial_movement_mm",
+    "lubrication_condition",
+    "installation_space_summary",
     "tolerances",
     "industry",
     "compliance",
@@ -117,8 +130,17 @@ _UNCONDITIONAL_OVERRIDE_FIELDS: frozenset[str] = frozenset({
 _CORRECTION_OVERRIDE_FIELDS: frozenset[str] = frozenset({
     "shaft_diameter_mm",
     "pressure_bar",
+    "pressure_system_bar",
+    "pressure_at_seal_bar",
+    "pressure_delta_bar",
+    "ambiguous_pressure_bar",
     "temperature_c",
     "speed_rpm",
+    "shaft_roughness_ra_um",
+    "shaft_hardness_hrc",
+    "runout_mm",
+    "eccentricity_mm",
+    "axial_movement_mm",
 })
 
 # Union used by tests and callers that need the full set.
@@ -172,13 +194,19 @@ def _promote_slot_binding_override(
 ):
     if slot_binding is None or slot_extraction is None:
         return observed
-    if slot_binding.target_field != "pressure_bar":
+    if slot_binding.target_field not in {
+        "pressure_bar",
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+    }:
         return observed
-    if not isinstance(slot_binding.normalized_value, dict):
+    if slot_binding.target_field == "pressure_bar" and not isinstance(slot_binding.normalized_value, dict):
         return observed
     return observed.with_override(
         UserOverride(
-            field_name="pressure_bar",
+            field_name=slot_extraction.field_name,
             override_value=slot_extraction.raw_value,
             override_unit=slot_extraction.raw_unit,
             turn_index=turn_index,
@@ -277,10 +305,32 @@ def _regex_params_to_extractions(
         _add("temperature_c", params["temperature_c"], _REGEX_CONFIDENCE, "°C")
     if "pressure_bar" in params:
         _add("pressure_bar", params["pressure_bar"], _REGEX_CONFIDENCE, params.get("pressure_unit") or "bar")
+    for pressure_role_field in (
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+    ):
+        if pressure_role_field in params:
+            _add(
+                pressure_role_field,
+                params[pressure_role_field],
+                _REGEX_CONFIDENCE,
+                params.get("pressure_unit") or "bar",
+            )
     if "diameter_mm" in params:
         _add("shaft_diameter_mm", params["diameter_mm"], _REGEX_CONFIDENCE, "mm")
     if "speed_rpm" in params:
         _add("speed_rpm", params["speed_rpm"], _REGEX_CONFIDENCE, "rpm")
+    for field_name, unit in (
+        ("shaft_roughness_ra_um", "µm"),
+        ("shaft_hardness_hrc", "HRC"),
+        ("runout_mm", "mm"),
+        ("eccentricity_mm", "mm"),
+        ("axial_movement_mm", "mm"),
+    ):
+        if field_name in params:
+            _add(field_name, params[field_name], _REGEX_CONFIDENCE, unit)
 
     # Medium: prefer confirmed/estimated normalized values, fall back to
     # confirmation-required or inferred values at lower confidence.
@@ -313,7 +363,11 @@ def _regex_params_to_extractions(
         "installation",
         "geometry_context",
         "contamination",
+        "contamination_condition",
         "counterface_surface",
+        "counterface_surface_condition",
+        "lubrication_condition",
+        "installation_space_summary",
         "tolerances",
         "industry",
         "compliance",

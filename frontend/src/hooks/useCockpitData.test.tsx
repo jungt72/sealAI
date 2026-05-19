@@ -270,7 +270,10 @@ describe("useCockpitData", () => {
     expect(result.current?.view.readiness.status).toBe("review_needed");
     expect(result.current?.view.readiness.blockers).toContain("backend_cockpit_pending");
     expect(result.current?.view.sections.application_function.completion.mandatoryTotal).toBe(0);
-    expect(result.current?.view.routingMetadata?.routing?.authority).toBe("frontend_placeholder");
+    expect(result.current?.view.routingMetadata?.routing?.authority).toBe(
+      "frontend_non_authoritative_placeholder",
+    );
+    expect(result.current?.view.routingMetadata?.routing?.non_authoritative).toBe(true);
   });
 
   it("prefers backend cockpit view over local fallback reconstruction", () => {

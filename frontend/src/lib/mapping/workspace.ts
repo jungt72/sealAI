@@ -45,10 +45,13 @@ type RawCockpitSection = {
 
 type RawEngineeringCheckResult = {
   calc_id?: string;
+  check_id?: string | null;
   label?: string;
   formula_version?: string;
   required_inputs?: string[];
+  required_fields?: string[];
   missing_inputs?: string[];
+  missing_fields?: string[];
   valid_paths?: string[];
   output_key?: string;
   unit?: string | null;
@@ -56,6 +59,12 @@ type RawEngineeringCheckResult = {
   value?: unknown;
   fallback_behavior?: string;
   guardrails?: string[];
+  blocking_reason?: string | null;
+  evidence_fields?: string[];
+  derived_from?: string[];
+  severity?: string;
+  human_readable_reason?: string;
+  raw_status?: string | null;
   notes?: string[];
 };
 
@@ -81,6 +90,32 @@ type RawCockpitView = {
   } | null;
   sections?: RawCockpitSection[];
   checks?: RawEngineeringCheckResult[];
+  check_metrics?: {
+    check_total?: number;
+    check_available_count?: number;
+    check_blocked_count?: number;
+    check_pending_count?: number;
+    check_failed_count?: number;
+    check_passed_count?: number;
+    source?: string;
+  } | null;
+  completeness_metrics?: {
+    completeness_percent?: number;
+    required_total?: number;
+    required_known?: number;
+    required_missing?: string[];
+    required_invalid?: string[];
+    required_fields?: Array<{
+      field_id?: string;
+      label?: string;
+      status?: string;
+      value_summary?: string | null;
+      provenance_summary?: string | null;
+      reason_required?: string;
+      blocks_next_step?: boolean;
+    }>;
+    source?: string;
+  } | null;
   risk_evaluations?: RawRiskEvaluationResult[];
   missing_mandatory_keys?: string[];
   blockers?: string[];
@@ -472,9 +507,15 @@ type LegacyWorkspaceProjection = {
   };
   completeness: {
     coverage_score: number;
+    coverage_percent?: number;
     coverage_gaps: string[];
     completeness_depth: string;
     missing_critical_parameters: string[];
+    required_total?: number;
+    required_known?: number;
+    required_missing?: string[];
+    required_invalid?: string[];
+    required_fields?: Array<Record<string, unknown>>;
     analysis_complete: boolean;
     recommendation_ready: boolean;
   };
@@ -791,10 +832,13 @@ function normalizeSectionId(id: string | null | undefined): EngineeringSectionId
 function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): EngineeringCheckResult[] {
   return (rawChecks || []).map((check) => ({
     calcId: check.calc_id || "",
+    checkId: check.check_id ?? check.calc_id ?? "",
     label: check.label || check.calc_id || "",
     formulaVersion: check.formula_version || "",
     requiredInputs: check.required_inputs || [],
+    requiredFields: check.required_fields || check.required_inputs || [],
     missingInputs: check.missing_inputs || [],
+    missingFields: check.missing_fields || check.missing_inputs || [],
     validPaths: (check.valid_paths || []).flatMap((path) => {
       const engineeringPath = toEngineeringPath(path);
       return engineeringPath ? [engineeringPath] : [];
@@ -805,8 +849,48 @@ function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): E
     value: check.value ?? null,
     fallbackBehavior: check.fallback_behavior || "insufficient_data_when_required_inputs_missing",
     guardrails: check.guardrails || [],
+    blockingReason: check.blocking_reason ?? null,
+    evidenceFields: check.evidence_fields || [],
+    derivedFrom: check.derived_from || [],
+    severity: check.severity || "screening",
+    humanReadableReason: check.human_readable_reason || "",
+    rawStatus: check.raw_status ?? null,
     notes: check.notes || [],
   }));
+}
+
+function mapCheckMetrics(raw: RawCockpitView["check_metrics"] | undefined | null) {
+  if (!raw) return null;
+  return {
+    checkTotal: raw.check_total ?? 0,
+    checkAvailableCount: raw.check_available_count ?? 0,
+    checkBlockedCount: raw.check_blocked_count ?? 0,
+    checkPendingCount: raw.check_pending_count ?? 0,
+    checkFailedCount: raw.check_failed_count ?? 0,
+    checkPassedCount: raw.check_passed_count ?? 0,
+    source: raw.source || "backend_check_registry",
+  };
+}
+
+function mapCompletenessMetrics(raw: RawCockpitView["completeness_metrics"] | undefined | null) {
+  if (!raw) return null;
+  return {
+    completenessPercent: raw.completeness_percent ?? 0,
+    requiredTotal: raw.required_total ?? 0,
+    requiredKnown: raw.required_known ?? 0,
+    requiredMissing: raw.required_missing || [],
+    requiredInvalid: raw.required_invalid || [],
+    requiredFields: (raw.required_fields || []).map((field) => ({
+      fieldId: field.field_id || "",
+      label: field.label || field.field_id || "",
+      status: field.status || "missing",
+      valueSummary: field.value_summary ?? null,
+      provenanceSummary: field.provenance_summary ?? null,
+      reasonRequired: field.reason_required || "",
+      blocksNextStep: field.blocks_next_step !== false,
+    })),
+    source: raw.source || "backend_required_field_policy",
+  };
 }
 
 function mapRiskEvaluations(rawRisks: RawRiskEvaluationResult[] | undefined): EngineeringCockpitView["riskEvaluations"] {
@@ -1218,6 +1302,8 @@ function mapCockpitView(projection: LegacyWorkspaceProjection): EngineeringCockp
     },
     sections,
     checks: mapCockpitChecks(raw.checks),
+    checkMetrics: mapCheckMetrics(raw.check_metrics),
+    completenessMetrics: mapCompletenessMetrics(raw.completeness_metrics),
     riskEvaluations: mapRiskEvaluations(raw.risk_evaluations),
     readiness: {
       isRfqReady: Boolean(raw.readiness?.is_rfq_ready),
@@ -1318,10 +1404,15 @@ export function mapWorkspaceView(
     },
     completeness: {
       coverageScore: projection.completeness.coverage_score,
-      coveragePercent: Math.round(projection.completeness.coverage_score * 100),
+      coveragePercent: projection.completeness.coverage_percent ?? 0,
       coverageGaps: projection.completeness.coverage_gaps,
       completenessDepth: projection.completeness.completeness_depth,
       missingCriticalParameters: projection.completeness.missing_critical_parameters,
+      requiredTotal: projection.completeness.required_total ?? 0,
+      requiredKnown: projection.completeness.required_known ?? 0,
+      requiredMissing: projection.completeness.required_missing || [],
+      requiredInvalid: projection.completeness.required_invalid || [],
+      requiredFields: projection.completeness.required_fields || [],
       analysisComplete: projection.completeness.analysis_complete,
       recommendationReady: projection.completeness.recommendation_ready,
     },

@@ -317,7 +317,7 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
                     "installation": "Radialwellendichtring",
                     "shaft_diameter_mm": 50.0,
                     "speed_rpm": 1500.0,
-                    "pressure_bar": 1.0,
+                    "pressure_at_seal_bar": 1.0,
                     "sealing_type": "PTFE-RWDR",
                 },
                 "completeness": {"missing_critical_parameters": []},
@@ -347,13 +347,13 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
     checks_by_id = {check.calc_id: check for check in projection.cockpit_view.checks}
 
     assert projection.cockpit_view.engineering_path == "rwdr"
-    assert set(checks_by_id) == {
+    assert {
         "rwdr_circumferential_speed",
         "rwdr_pv_precheck",
         "rwdr_dn_value",
         "rwdr_temperature_headroom",
         "rwdr_pressure_window",
-    }
+    }.issubset(checks_by_id)
     assert checks_by_id["rwdr_circumferential_speed"].output_key == "v_surface_m_s"
     assert checks_by_id["rwdr_circumferential_speed"].value == pytest.approx(
         3.93, abs=0.01
@@ -367,7 +367,7 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
         "not a final effective contact-pressure PV model"
         in checks_by_id["rwdr_pv_precheck"].guardrails
     )
-    assert checks_by_id["rwdr_temperature_headroom"].status == "insufficient_data"
+    assert checks_by_id["rwdr_temperature_headroom"].status == "blocked"
     assert checks_by_id["rwdr_temperature_headroom"].missing_inputs == [
         "temperature_c",
         "sealing_material_family",
@@ -375,7 +375,7 @@ def test_workspace_projection_exposes_registered_checks_in_cockpit() -> None:
     assert checks_by_id["rwdr_pressure_window"].value == (
         "1 bar · Druck für RWDR vom Hersteller prüfen lassen"
     )
-    assert checks_by_id["rwdr_pressure_window"].status == "ok"
+    assert checks_by_id["rwdr_pressure_window"].status == "passed"
 
 
 def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asserted_fields() -> (
@@ -395,8 +395,8 @@ def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asser
                         asserted_value=1450.0,
                         confidence="confirmed",
                     ),
-                    "pressure_bar": AssertedClaim(
-                        field_name="pressure_bar",
+                    "pressure_at_seal_bar": AssertedClaim(
+                        field_name="pressure_at_seal_bar",
                         asserted_value=4.0,
                         confidence="confirmed",
                     ),
@@ -434,12 +434,12 @@ def test_governed_workspace_projection_calculates_current_rwdr_checks_from_asser
     assert checks_by_id["rwdr_circumferential_speed"].value == pytest.approx(
         3.19, abs=0.01
     )
-    assert checks_by_id["rwdr_circumferential_speed"].status == "ok"
+    assert checks_by_id["rwdr_circumferential_speed"].status == "passed"
     assert checks_by_id["rwdr_pv_precheck"].value == pytest.approx(1.28, abs=0.01)
-    assert checks_by_id["rwdr_pv_precheck"].status == "ok"
+    assert checks_by_id["rwdr_pv_precheck"].status == "passed"
     assert checks_by_id["rwdr_dn_value"].value == 60900.0
     assert checks_by_id["rwdr_temperature_headroom"].value == 140.0
-    assert checks_by_id["rwdr_temperature_headroom"].status == "ok"
+    assert checks_by_id["rwdr_temperature_headroom"].status == "passed"
     assert checks_by_id["rwdr_pressure_window"].value == (
         "4 bar · Druck für RWDR vom Hersteller prüfen lassen"
     )
@@ -481,15 +481,15 @@ def test_workspace_projection_exposes_missing_input_fallback_for_registered_chec
 
     checks_by_id = {check.calc_id: check for check in projection.cockpit_view.checks}
 
-    assert checks_by_id["rwdr_circumferential_speed"].status == "insufficient_data"
+    assert checks_by_id["rwdr_circumferential_speed"].status == "blocked"
     assert checks_by_id["rwdr_circumferential_speed"].missing_inputs == ["speed_rpm"]
     assert checks_by_id["rwdr_circumferential_speed"].value is None
     assert checks_by_id["rwdr_pv_precheck"].missing_inputs == [
         "speed_rpm",
-        "pressure_bar",
+        "pressure_at_seal_bar",
     ]
     assert checks_by_id["rwdr_pressure_window"].missing_inputs == [
-        "pressure_bar",
+        "pressure_at_seal_bar",
         "sealing_type",
     ]
     assert checks_by_id["rwdr_pv_precheck"].fallback_behavior == (
@@ -553,7 +553,7 @@ def test_workspace_projection_derives_ssot_routing_fields() -> None:
             "working_profile": {
                 "engineering_profile": {
                     "medium": "Salzwasser",
-                    "pressure_bar": 6.0,
+                    "pressure_at_seal_bar": 6.0,
                     "temperature_c": 35.0,
                     "movement_type": "rotary",
                     "installation": "Chemiepumpe",
@@ -676,7 +676,7 @@ def test_workspace_projection_derives_top_level_completeness_when_payload_score_
 
     assert projection.completeness.coverage_score > 0
     assert projection.completeness.coverage_score == (
-        projection.completeness_score.score
+        projection.cockpit_view.completeness_metrics.completeness_percent / 100
     )
     assert projection.cockpit_view.readiness.coverage_score == (
         projection.completeness.coverage_score
@@ -695,7 +695,7 @@ def test_workspace_projection_exposes_cockpit_property_provenance_when_available
                 "engineering_profile": {
                     "medium": "Salzwasser",
                     "temperature_c": 40.0,
-                    "pressure_bar": 5.0,
+                    "pressure_at_seal_bar": 5.0,
                 },
                 "completeness": {
                     "coverage_score": 0.5,
@@ -704,8 +704,8 @@ def test_workspace_projection_exposes_cockpit_property_provenance_when_available
             },
             "reasoning": {
                 "phase": "clarification",
-                "parameter_provenance": {"pressure_bar": "user_override"},
-                "parameter_confidence": {"pressure_bar": "confirmed"},
+                "parameter_provenance": {"pressure_at_seal_bar": "user_override"},
+                "parameter_confidence": {"pressure_at_seal_bar": "confirmed"},
             },
             "system": {
                 "governance_metadata": {"release_status": "precheck_only"},
@@ -981,7 +981,7 @@ def test_workspace_projection_adds_v04_deterministic_readiness_and_risks() -> No
                 "engineering_profile": {
                     "medium": "Salzwasser",
                     "temperature_c": 80.0,
-                    "pressure_bar": 4.0,
+                    "pressure_at_seal_bar": 4.0,
                     "movement_type": "rotary",
                     "installation": "Radialwellendichtring",
                     "shaft_diameter_mm": 35.0,

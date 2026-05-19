@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
+from app.agent.domain.medium_registry import is_medium_placeholder_value
 from app.agent.runtime.medium_status_text import medium_status_primary_question, render_open_point_label
 from app.agent.state.models import GovernedSessionState
 
@@ -70,6 +71,10 @@ _QUESTION_META: dict[str, tuple[str, str]] = {
         "Gibt es Schmutz, Partikel oder abrasive Anteile im Umfeld oder Medium?",
         "Partikel und abrasive Anteile koennen Werkstoff- und Bauartgrenzen frueh verschieben.",
     ),
+    "contamination_condition": (
+        "Gibt es Staub, Schmutz oder abrasive Partikel an der Dichtstelle?",
+        "Verschmutzung und Abrasion sind bei RWDR wichtige Pruefgroessen fuer Dichtlippe und Gegenlaufflaeche.",
+    ),
     "tolerances": (
         "Gibt es Angaben zu Rundlauf, Exzentrizitaet, Spalt oder Toleranzen?",
         "Toleranzen und Rundlauf bestimmen, wie belastbar die Dichtstelle technisch einzuordnen ist.",
@@ -106,6 +111,38 @@ _QUESTION_META: dict[str, tuple[str, str]] = {
         "Wie sehen Gegenlaufpartner und Oberflaechen an der Dichtstelle aus?",
         "Oberflaeche und Gegenlaufpartner beeinflussen Dichtverhalten und Verschleiss stark mit.",
     ),
+    "counterface_surface_condition": (
+        "Wie ist die Gegenlaufflaeche der Welle ausgefuehrt bzw. in welchem Zustand ist sie?",
+        "Das ist bei einem RWDR wichtig, weil die Dichtlippe direkt auf dieser Flaeche laeuft.",
+    ),
+    "shaft_roughness_ra_um": (
+        "Welche Rauheit Ra hat die Gegenlaufflaeche der Welle?",
+        "Die Rauheit ist bei RWDR ein zentraler Vorcheck-Wert fuer Reibung, Schmierfilm und Verschleiss.",
+    ),
+    "shaft_hardness_hrc": (
+        "Welche Haerte hat die Gegenlaufflaeche, idealerweise in HRC?",
+        "Die Haerte begrenzt bei RWDR die Belastbarkeit der Laufflaeche gegen Einlaufen und Verschleiss.",
+    ),
+    "runout_mm": (
+        "Welcher Rundlauf oder Wellenschlag liegt an der Welle an?",
+        "Rundlauf/Wellenschlag bestimmt, wie stark die RWDR-Dichtlippe dynamisch ausgelenkt wird.",
+    ),
+    "eccentricity_mm": (
+        "Welche Exzentrizitaet liegt an der Welle an?",
+        "Exzentrizitaet ist bei RWDR eine relevante dynamische Belastungsgroesse.",
+    ),
+    "axial_movement_mm": (
+        "Welche axiale Bewegung oder welcher axiale Versatz der Welle ist zu erwarten?",
+        "Axiale Bewegung kann die Lage der Dichtlippe und die Beanspruchung der Laufflaeche veraendern.",
+    ),
+    "lubrication_condition": (
+        "Wie ist die Schmierung an der Dichtlippe: geschmiert, zeitweise trocken oder Mangelschmierung?",
+        "Der Schmierzustand entscheidet bei RWDR wesentlich ueber Waerme, Reibung und Verschleiss.",
+    ),
+    "installation_space_summary": (
+        "Welcher Einbauraum oder welche vorhandene Nut-/Gehaeusesituation liegt vor?",
+        "Der Einbauraum begrenzt bei RWDR Bauform, Montage und Nebenfunktionen.",
+    ),
     "counterface_material": (
         "Aus welchem Werkstoff besteht der Gegenlaufpartner an der Dichtstelle?",
         "Der Werkstoff des Gegenlaufpartners bestimmt zusammen mit Oberflaeche und Medium die tribologische Grenze.",
@@ -113,6 +150,14 @@ _QUESTION_META: dict[str, tuple[str, str]] = {
     "pressure_bar": (
         "Wie hoch ist der Betriebsdruck ungefähr?",
         "Der Druck bestimmt, welche Belastung die Dichtung sicher aufnehmen muss.",
+    ),
+    "pressure_at_seal_bar": (
+        "Welcher Druck liegt direkt an der Dichtung an?",
+        "Für die technische Einordnung zählt der tatsächlich an der Dichtstelle anliegende Druck, nicht automatisch der Systemdruck.",
+    ),
+    "pressure_delta_bar": (
+        "Welcher Differenzdruck liegt über der Dichtung an?",
+        "Der Differenzdruck beschreibt die wirksame Druckbelastung über der Dichtung.",
     ),
     "temperature_c": (
         "In welchem Temperaturbereich arbeiten Sie?",
@@ -134,9 +179,15 @@ def _nested_text(container: object, key: str) -> str:
 def _has_value(state: GovernedSessionState, field_name: str) -> bool:
     asserted = state.asserted.assertions.get(field_name)
     if asserted is not None and asserted.asserted_value is not None:
+        if field_name == "medium" and is_medium_placeholder_value(str(asserted.asserted_value)):
+            return False
         return True
     normalized = state.normalized.parameters.get(field_name)
-    return normalized is not None and normalized.value is not None
+    if normalized is None or normalized.value is None:
+        return False
+    if field_name == "medium" and is_medium_placeholder_value(str(normalized.value)):
+        return False
+    return True
 
 
 def _observed_unasserted_value(state: GovernedSessionState, field_name: str) -> object | None:
@@ -163,12 +214,79 @@ def _pressure_interpretation(state: GovernedSessionState) -> str:
     return str(getattr(engineering_value, "interpretation", "") or "").strip()
 
 
+def _pressure_value(state: GovernedSessionState, field_name: str) -> object | None:
+    asserted = state.asserted.assertions.get(field_name)
+    if asserted is not None and asserted.asserted_value is not None:
+        return asserted.asserted_value
+    normalized = state.normalized.parameters.get(field_name)
+    if normalized is not None and normalized.value is not None:
+        return normalized.value
+    return None
+
+
+def _state_value(state: GovernedSessionState, field_name: str) -> object | None:
+    asserted = state.asserted.assertions.get(field_name)
+    if asserted is not None and asserted.asserted_value is not None:
+        return asserted.asserted_value
+    normalized = state.normalized.parameters.get(field_name)
+    if normalized is not None and normalized.value is not None:
+        return normalized.value
+    return None
+
+
+def _has_design_pressure_value(state: GovernedSessionState) -> bool:
+    return _has_value(state, "pressure_at_seal_bar") or _has_value(state, "pressure_delta_bar")
+
+
+def _pressure_role_priority(state: GovernedSessionState) -> ClarificationPriority | None:
+    if _has_design_pressure_value(state):
+        return None
+
+    ambiguous = _pressure_value(state, "ambiguous_pressure_bar")
+    if ambiguous is None:
+        ambiguous = _observed_unasserted_value(state, "pressure_bar")
+    if ambiguous is not None:
+        display = _display_value(ambiguous)
+        return ClarificationPriority(
+            focus_key="pressure_bar",
+            question=(
+                f"Sind die {display} bar der Systemdruck, der Druck direkt an der Dichtung "
+                "oder der Druckunterschied beziehungsweise Differenzdruck ueber der Dichtung?"
+            ),
+            reason=(
+                "Das ist wichtig, weil RWDR, Gleitringdichtung oder andere Dichtprinzipien "
+                "je nach tatsaechlich anliegendem Dichtungsdruck unterschiedlich bewertet werden."
+            ),
+            open_point_label=f"Druckrolle klaeren ({display} bar erkannt)",
+        )
+
+    system_pressure = _pressure_value(state, "pressure_system_bar")
+    if system_pressure is not None:
+        display = _display_value(system_pressure)
+        return ClarificationPriority(
+            focus_key="pressure_at_seal_bar",
+            question=(
+                f"Liegt der Systemdruck von {display} bar auch direkt an der Dichtung an, "
+                "oder ist der Dichtungsdruck durch Einbausituation oder Entlastung niedriger?"
+            ),
+            reason=(
+                "Der Systemdruck ist bekannt, aber fuer die Auslegung zaehlt die Druckbelastung "
+                "direkt an der Dichtstelle."
+            ),
+            open_point_label="Druck an der Dichtstelle klaeren",
+        )
+    return None
+
+
 def _observed_confirmation_priority(
     state: GovernedSessionState,
     field_name: str,
 ) -> ClarificationPriority | None:
     if field_name not in {"pressure_bar"}:
         return None
+    pressure_role = _pressure_role_priority(state)
+    if pressure_role is not None:
+        return pressure_role
     value = _observed_unasserted_value(state, field_name)
     if value is None:
         return None
@@ -234,8 +352,17 @@ def _rotary_context_detected(state: GovernedSessionState) -> bool:
     return bool(_ROTARY_CONTEXT_RE.search(current_text))
 
 
+def _rwdr_context_detected(state: GovernedSessionState) -> bool:
+    sealing_type = str(_state_value(state, "sealing_type") or "").casefold()
+    if "rwdr" in sealing_type or "radialwellendichtring" in sealing_type or "wellendichtring" in sealing_type:
+        return True
+    return bool(re.search(r"\b(?:rwdr|radialwellendichtring|wellendichtring|simmerring|simmering)\b", _current_turn_text(state), re.IGNORECASE))
+
+
 def _application_anchor_present(state: GovernedSessionState) -> bool:
     if _has_value(state, "installation"):
+        return True
+    if _has_value(state, "sealing_type"):
         return True
     if _application_hint_label(state) or _motion_hint_label(state):
         return True
@@ -284,6 +411,7 @@ def select_next_focus_from_known_context(
     current_text: str = "",
     application_anchor_present: bool = False,
     rotary_context_detected: bool = False,
+    rwdr_context_detected: bool = False,
 ) -> ClarificationPriority | None:
     known = {str(field) for field in known_fields if isinstance(field, str) and field}
     current = _text(current_text)
@@ -303,6 +431,8 @@ def select_next_focus_from_known_context(
         rotary_context_detected = False
     if not linear_context_detected and not rotary_context_detected and _ROTARY_CONTEXT_RE.search(current):
         rotary_context_detected = True
+    if rwdr_context_detected:
+        rotary_context_detected = True
     geometry_context_present = _geometry_context_present(
         known_fields=known,
         current_text=current,
@@ -319,6 +449,10 @@ def select_next_focus_from_known_context(
         known_fields=known,
         current_text=current,
     )
+    pressure_present = bool(
+        known
+        & {"pressure_bar", "pressure_at_seal_bar", "pressure_delta_bar"}
+    )
 
     if medium_status == "recognized":
         if not application_anchor_present:
@@ -327,13 +461,33 @@ def select_next_focus_from_known_context(
                 return priority
         if rotary_context_detected:
             for field_name in (
-                "speed_rpm",
-                "shaft_diameter_mm",
                 "pressure_bar",
                 "temperature_c",
-                "installation",
-                "geometry_context",
+                "speed_rpm",
+                "shaft_diameter_mm",
             ):
+                if field_name == "pressure_bar" and pressure_present:
+                    continue
+                if field_name not in known:
+                    priority = _priority_from_field(field_name)
+                    if priority is not None:
+                        return priority
+            if rwdr_context_detected:
+                for field_name in (
+                    "counterface_surface_condition",
+                    "shaft_roughness_ra_um",
+                    "shaft_hardness_hrc",
+                    "runout_mm",
+                    "eccentricity_mm",
+                    "lubrication_condition",
+                    "contamination_condition",
+                    "installation_space_summary",
+                ):
+                    if field_name not in known:
+                        priority = _priority_from_field(field_name)
+                        if priority is not None:
+                            return priority
+            for field_name in ("installation", "geometry_context"):
                 if field_name not in known:
                     priority = _priority_from_field(field_name)
                     if priority is not None:
@@ -372,11 +526,14 @@ def select_clarification_priority(
     structured_focus_fields = {
         "medium",
         "pressure_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
         "temperature_c",
         "sealing_type",
         "duty_profile",
         "pressure_direction",
         "contamination",
+        "contamination_condition",
         "tolerances",
         "industry",
         "compliance",
@@ -386,6 +543,14 @@ def select_clarification_priority(
         "geometry_context",
         "clearance_gap_mm",
         "counterface_surface",
+        "counterface_surface_condition",
+        "shaft_roughness_ra_um",
+        "shaft_hardness_hrc",
+        "runout_mm",
+        "eccentricity_mm",
+        "axial_movement_mm",
+        "lubrication_condition",
+        "installation_space_summary",
         "counterface_material",
         "speed_rpm",
         "shaft_diameter_mm",
@@ -415,14 +580,25 @@ def select_clarification_priority(
 
     has_explicit_medium_context = _nested_text(state.medium_classification, "status") == "recognized"
 
-    for field_name in ("pressure_bar", "temperature_c", "speed_rpm", "shaft_diameter_mm"):
+    for field_name in (
+        "pressure_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "temperature_c",
+        "speed_rpm",
+        "shaft_diameter_mm",
+    ):
         if field_name in field_set:
+            if field_name in {"pressure_bar", "pressure_at_seal_bar", "pressure_delta_bar"}:
+                pressure_role = _pressure_role_priority(state)
+                if pressure_role is not None:
+                    return pressure_role
+                if _has_design_pressure_value(state):
+                    continue
             confirmation_priority = _observed_confirmation_priority(state, field_name)
             if confirmation_priority is not None:
                 return confirmation_priority
-            if _has_value(state, field_name) and (
-                field_name not in set(field_list) or has_explicit_medium_context
-            ):
+            if _has_value(state, field_name):
                 continue
             if field_name in {"pressure_bar", "temperature_c"}:
                 if has_explicit_medium_context:
@@ -436,6 +612,8 @@ def select_clarification_priority(
 
     for field_name in ("sealing_type", "compliance"):
         if field_name in field_set:
+            if _has_value(state, field_name):
+                continue
             priority = _priority_from_field(field_name)
             if priority is not None:
                 return priority
@@ -453,8 +631,19 @@ def select_clarification_priority(
             "geometry_context",
             "clearance_gap_mm",
             "counterface_surface",
+            "counterface_surface_condition",
+            "shaft_roughness_ra_um",
+            "shaft_hardness_hrc",
+            "runout_mm",
+            "eccentricity_mm",
+            "axial_movement_mm",
+            "lubrication_condition",
+            "contamination_condition",
+            "installation_space_summary",
             "counterface_material",
             "pressure_bar",
+            "pressure_at_seal_bar",
+            "pressure_delta_bar",
             "temperature_c",
             "sealing_type",
             "duty_profile",
@@ -473,6 +662,7 @@ def select_clarification_priority(
         current_text=_current_turn_text(state),
         application_anchor_present=_application_anchor_present(state),
         rotary_context_detected=_rotary_context_detected(state),
+        rwdr_context_detected=_rwdr_context_detected(state),
     )
     contextual_override_fields = {
         "application_context",
@@ -480,6 +670,15 @@ def select_clarification_priority(
         "geometry_context",
         "clearance_gap_mm",
         "counterface_surface",
+        "counterface_surface_condition",
+        "shaft_roughness_ra_um",
+        "shaft_hardness_hrc",
+        "runout_mm",
+        "eccentricity_mm",
+        "axial_movement_mm",
+        "lubrication_condition",
+        "contamination_condition",
+        "installation_space_summary",
         "counterface_material",
         "speed_rpm",
         "shaft_diameter_mm",
@@ -497,7 +696,16 @@ def select_clarification_priority(
         "pressure_direction",
         "medium_qualifiers",
         "contamination",
+        "contamination_condition",
         "counterface_surface",
+        "counterface_surface_condition",
+        "shaft_roughness_ra_um",
+        "shaft_hardness_hrc",
+        "runout_mm",
+        "eccentricity_mm",
+        "axial_movement_mm",
+        "lubrication_condition",
+        "installation_space_summary",
         "tolerances",
         "industry",
         "speed_rpm",

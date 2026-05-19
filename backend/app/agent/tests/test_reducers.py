@@ -341,7 +341,8 @@ class TestReducerObservedToNormalized:
             _ext("temperature_c", 80.0),
         )
         result = reduce_observed_to_normalized(obs)
-        assert len(result.parameters) == 3
+        assert len(result.parameters) == 4
+        assert result.parameters["ambiguous_pressure_bar"].value == 6.0
 
     def test_returns_new_state_does_not_mutate(self):
         obs = _observed(_ext("medium", "Wasser"))

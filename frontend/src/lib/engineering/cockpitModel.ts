@@ -42,10 +42,13 @@ export interface EngineeringSection {
 
 export interface EngineeringCheckResult {
   calcId: string;
+  checkId?: string | null;
   label: string;
   formulaVersion: string;
   requiredInputs: string[];
+  requiredFields?: string[];
   missingInputs: string[];
+  missingFields?: string[];
   validPaths: EngineeringPath[];
   outputKey: string;
   unit?: string | null;
@@ -53,7 +56,43 @@ export interface EngineeringCheckResult {
   value: unknown;
   fallbackBehavior: string;
   guardrails: string[];
+  blockingReason?: string | null;
+  evidenceFields?: string[];
+  derivedFrom?: string[];
+  severity?: string;
+  humanReadableReason?: string;
+  rawStatus?: string | null;
   notes: string[];
+}
+
+export interface CockpitCheckMetrics {
+  checkTotal: number;
+  checkAvailableCount: number;
+  checkBlockedCount: number;
+  checkPendingCount: number;
+  checkFailedCount: number;
+  checkPassedCount: number;
+  source: string;
+}
+
+export interface CockpitRequiredFieldMetric {
+  fieldId: string;
+  label: string;
+  status: string;
+  valueSummary?: string | null;
+  provenanceSummary?: string | null;
+  reasonRequired: string;
+  blocksNextStep: boolean;
+}
+
+export interface CockpitCompletenessMetrics {
+  completenessPercent: number;
+  requiredTotal: number;
+  requiredKnown: number;
+  requiredMissing: string[];
+  requiredInvalid: string[];
+  requiredFields: CockpitRequiredFieldMetric[];
+  source: string;
 }
 
 export interface ReadinessState {
@@ -98,6 +137,8 @@ export interface EngineeringCockpitView {
   routingMetadata?: RoutingMetadata;
   sections: Record<EngineeringSectionId, EngineeringSection>;
   checks: EngineeringCheckResult[];
+  checkMetrics?: CockpitCheckMetrics | null;
+  completenessMetrics?: CockpitCompletenessMetrics | null;
   riskEvaluations: RiskEvaluationResult[];
   readiness: ReadinessState;
   mediumContext: {

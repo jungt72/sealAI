@@ -70,12 +70,12 @@ def test_ptfe_rwdr_workspace_enrichment_runs_cascade_and_advisories() -> None:
     )
     assert any("shaft_requirements_concern" in note for note in derivation.notes)
     assert any(
-        check.calc_id == "rwdr_circumferential_speed" and check.status == "ok"
+        check.calc_id == "rwdr_circumferential_speed" and check.status == "passed"
         for check in projection.cockpit_view.checks
     )
     assert any(
         check.calc_id == "rwdr_temperature_headroom"
-        and check.status == "ok"
+        and check.status == "passed"
         and check.value == 140
         for check in projection.cockpit_view.checks
     )

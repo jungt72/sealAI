@@ -8,6 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from app.agent.domain.medium_registry import is_medium_placeholder_value
+from app.agent.domain.risk_claims import severity_from_score, unique_text
+
 RULESET_VERSION = "v0.4-mvp-2026-04-25"
 
 RISK_LABELS: dict[int, str] = {
@@ -35,15 +38,19 @@ _ALIAS_MAP: dict[str, tuple[str, ...]] = {
     "medium_name": ("medium_name", "medium"),
     "temperature_min": ("temperature_min", "temperature_min_c"),
     "temperature_max": ("temperature_max", "temperature_max_c", "temperature_c"),
-    "pressure_nominal": ("pressure_nominal", "pressure_bar", "pressure"),
+    "pressure_nominal": ("pressure_nominal", "pressure_at_seal_bar", "pressure_delta_bar"),
     "speed_rpm": ("speed_rpm", "rpm"),
     "shaft_diameter": ("shaft_diameter", "shaft_diameter_mm"),
     "geometry": ("geometry", "geometry_context", "housing_bore", "housing_bore_mm", "installation_width", "installation_width_mm"),
     "food_contact": ("food_contact", "compliance", "industry"),
     "atex": ("atex", "compliance", "industry"),
-    "contamination": ("contamination", "medium_qualifiers"),
-    "surface_finish": ("surface_finish", "counterface_surface"),
-    "runout": ("shaft_runout", "runout_mm"),
+    "contamination": ("contamination", "contamination_condition", "medium_qualifiers"),
+    "surface_finish": (
+        "surface_finish",
+        "counterface_surface_condition",
+        "counterface_surface",
+    ),
+    "runout": ("runout_mm", "shaft_runout", "eccentricity_mm"),
     "sealing_type": ("sealing_type", "seal_type"),
 }
 
@@ -96,6 +103,13 @@ def _float(value: Any) -> float | None:
         return None
 
 
+def _first_present_field(profile: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        if key in profile and profile.get(key) not in (None, "", [], {}):
+            return key
+    return None
+
+
 def _add_unique(items: list[str], values: Iterable[str]) -> list[str]:
     for item in values:
         text = str(item or "").strip()
@@ -114,12 +128,25 @@ class RiskEvaluationResult:
     explanation_short: str = ""
     confidence: str = "medium"
     ruleset_version: str = RULESET_VERSION
+    claim_id: str | None = None
+    claim_type: str = "context_advisory"
+    subject_field: str = ""
+    severity: str | None = None
+    evidence_fields: list[str] = field(default_factory=list)
+    missing_fields: list[str] = field(default_factory=list)
+    blocked_reason: str | None = None
+    allowed_user_wording: str = ""
+    forbidden_user_wording: list[str] = field(default_factory=list)
+    source: str = "risk_readiness"
 
     @property
     def label(self) -> str:
         return RISK_LABELS.get(self.score, "unknown")
 
     def to_dict(self) -> dict[str, Any]:
+        missing_fields = unique_text(self.missing_fields or self.missing_inputs)
+        evidence_fields = unique_text(self.evidence_fields)
+        claim_id = self.claim_id or f"{self.source}.{self.risk_name}"
         return {
             "risk_name": self.risk_name,
             "score": self.score,
@@ -130,6 +157,16 @@ class RiskEvaluationResult:
             "explanation_short": self.explanation_short,
             "confidence": self.confidence,
             "ruleset_version": self.ruleset_version,
+            "claim_id": claim_id,
+            "claim_type": self.claim_type,
+            "subject_field": self.subject_field or self.risk_name,
+            "severity": self.severity or severity_from_score(self.score),
+            "evidence_fields": evidence_fields,
+            "missing_fields": missing_fields,
+            "blocked_reason": self.blocked_reason,
+            "allowed_user_wording": self.allowed_user_wording or self.explanation_short,
+            "forbidden_user_wording": list(self.forbidden_user_wording),
+            "source": self.source,
         }
 
 
@@ -194,6 +231,20 @@ def evaluate_risks(
                 else "Keine kritischen Pflichtdaten als fehlend markiert."
             ),
             confidence="high",
+            claim_id="risk_readiness.unknowns_risk",
+            claim_type="missing_input_risk" if unknowns_missing else "context_advisory",
+            subject_field="critical_inputs",
+            missing_fields=unknowns_missing,
+            blocked_reason="critical_inputs_missing" if unknowns_missing else None,
+            allowed_user_wording=(
+                "Kritische Eingangsdaten fehlen; technische Bewertung bleibt begrenzt."
+                if unknowns_missing
+                else "Kritische Pflichtdaten sind im aktuellen Arbeitsstand nicht als fehlend markiert."
+            ),
+            forbidden_user_wording=[
+                "Der Fall ist freigegeben.",
+                "Die technische Bewertung ist abgeschlossen.",
+            ],
         )
     )
 
@@ -203,14 +254,69 @@ def evaluate_risks(
     pressure = _float(_value(profile, "pressure_nominal"))
     speed = _float(_value(profile, "speed_rpm"))
 
-    corrosive = _contains(medium, ("salz", "salt", "seawater", "meerwasser", "chlorid", "chloride", "saeure", "acid")) or _contains(qualifiers, ("chlorid", "chloride", "salinity"))
-    if medium is None:
-        results.append(RiskEvaluationResult("corrosion_risk", 9, missing_inputs=["medium_name"], rule_ids=["risk.corrosion.medium_missing.v0"], explanation_short="Korrosionsrisiko ohne Medium nicht bewertbar.", confidence="high"))
+    medium_known = medium is not None and not is_medium_placeholder_value(str(medium))
+    corrosive = medium_known and (
+        _contains(medium, ("salz", "salt", "seawater", "meerwasser", "chlorid", "chloride", "saeure", "acid"))
+        or _contains(qualifiers, ("chlorid", "chloride", "salinity"))
+    )
+    if not medium_known:
+        results.append(
+            RiskEvaluationResult(
+                "corrosion_risk",
+                9,
+                missing_inputs=["medium_name"],
+                rule_ids=["risk.corrosion.medium_missing.v0"],
+                explanation_short="Korrosionsrisiko ohne eindeutig benanntes Medium nicht bewertbar.",
+                confidence="high",
+                claim_id="risk_readiness.corrosion.medium_missing",
+                claim_type="missing_input_risk",
+                subject_field="medium_name",
+                missing_fields=["medium_name"],
+                blocked_reason="medium_missing_or_placeholder",
+                allowed_user_wording=(
+                    "Das Medium ist noch nicht eindeutig benannt; die Werkstoffvertraeglichkeit bleibt offen."
+                ),
+                forbidden_user_wording=[
+                    "Das Medium ist chemisch kritisch.",
+                    "Die Werkstoffvertraeglichkeit ist kritisch.",
+                ],
+            )
+        )
     elif corrosive:
         score = 3 if (temp is not None and temp >= 60) else 2
-        results.append(RiskEvaluationResult("corrosion_risk", score, drivers=["corrosive_or_saline_medium"] + (["temperature_elevated"] if score >= 3 else []), rule_ids=["risk.corrosion.saline_or_acidic.v0"], explanation_short="Mediumhinweise deuten auf Korrosions-/Werkstoffrisiko.", confidence="medium"))
+        results.append(
+            RiskEvaluationResult(
+                "corrosion_risk",
+                score,
+                drivers=["corrosive_or_saline_medium"] + (["temperature_elevated"] if score >= 3 else []),
+                rule_ids=["risk.corrosion.saline_or_acidic.v0"],
+                explanation_short="Mediumhinweise deuten auf Korrosions-/Werkstoffrisiko.",
+                confidence="medium",
+                claim_id="risk_readiness.corrosion.medium_hint",
+                claim_type="context_advisory",
+                subject_field="medium_name",
+                evidence_fields=[_first_present_field(profile, "medium_name", "medium") or "medium_name"],
+                allowed_user_wording=(
+                    "Das bekannte Medium erzeugt einen Pruefpunkt fuer Korrosion und Werkstoffvertraeglichkeit."
+                ),
+                forbidden_user_wording=["Der Werkstoff ist freigegeben.", "Das Material ist geeignet."],
+            )
+        )
     else:
-        results.append(RiskEvaluationResult("corrosion_risk", 0, drivers=["no_corrosive_hint"], rule_ids=["risk.corrosion.no_hint.v0"], explanation_short="Kein eindeutiger Korrosionshinweis aus den bekannten Angaben.", confidence="low"))
+        results.append(
+            RiskEvaluationResult(
+                "corrosion_risk",
+                0,
+                drivers=["no_corrosive_hint"],
+                rule_ids=["risk.corrosion.no_hint.v0"],
+                explanation_short="Kein eindeutiger Korrosionshinweis aus den bekannten Angaben.",
+                confidence="low",
+                claim_id="risk_readiness.corrosion.no_hint",
+                claim_type="context_advisory",
+                subject_field="medium_name",
+                evidence_fields=[_first_present_field(profile, "medium_name", "medium") or "medium_name"],
+            )
+        )
 
     abrasive = _contains(qualifiers, ("abras", "partikel", "particle", "sand", "feststoff", "solids", "schmutz"))
     results.append(
@@ -225,7 +331,25 @@ def evaluate_risks(
     )
 
     if temp is None:
-        results.append(RiskEvaluationResult("temperature_risk", 9, missing_inputs=["temperature_max"], rule_ids=["risk.temperature.missing.v0"], explanation_short="Temperatur fehlt; Werkstofffenster nicht belastbar pruefbar.", confidence="high"))
+        results.append(
+            RiskEvaluationResult(
+                "temperature_risk",
+                9,
+                missing_inputs=["temperature_max"],
+                rule_ids=["risk.temperature.missing.v0"],
+                explanation_short="Temperatur fehlt; Werkstofffenster nicht belastbar pruefbar.",
+                confidence="high",
+                claim_id="risk_readiness.temperature.missing",
+                claim_type="missing_input_risk",
+                subject_field="temperature_c",
+                missing_fields=["temperature_c"],
+                blocked_reason="temperature_missing",
+                allowed_user_wording=(
+                    "Die Temperatur ist noch offen; das Werkstofffenster ist nicht belastbar pruefbar."
+                ),
+                forbidden_user_wording=["Die Temperatur ueberschreitet das Materialfenster."],
+            )
+        )
     else:
         if temp >= 200:
             score = 4
@@ -235,10 +359,76 @@ def evaluate_risks(
             score = 2
         else:
             score = 0
-        results.append(RiskEvaluationResult("temperature_risk", score, drivers=[f"temperature_max={temp:g}C"], rule_ids=["risk.temperature.thresholds.v0"], explanation_short="Temperatur wird gegen MVP-Schwellen bewertet.", confidence="medium"))
+        temp_field = _first_present_field(profile, "temperature_c", "temperature_max_c", "temperature_max")
+        results.append(
+            RiskEvaluationResult(
+                "temperature_risk",
+                score,
+                drivers=[f"temperature_max={temp:g}C"],
+                rule_ids=["risk.temperature.thresholds.v0"],
+                explanation_short="Temperatur wird gegen MVP-Schwellen bewertet.",
+                confidence="medium",
+                claim_id="risk_readiness.temperature.threshold",
+                claim_type="measured_risk" if score > 0 else "context_advisory",
+                subject_field=temp_field or "temperature_c",
+                evidence_fields=[temp_field or "temperature_c"],
+                allowed_user_wording=(
+                    f"Die angegebene Temperatur von {temp:g} C wird als Screeningwert bewertet."
+                ),
+                forbidden_user_wording=["Die Temperatur ist als finale Freigabe ausreichend."],
+            )
+        )
 
-    if pressure is None:
-        results.append(RiskEvaluationResult("pressure_risk", 9, missing_inputs=["pressure_nominal"], rule_ids=["risk.pressure.missing.v0"], explanation_short="Druck fehlt; Auspress-/Bauartgrenzen nicht bewertbar.", confidence="high"))
+    pressure_field = _first_present_field(profile, "pressure_at_seal_bar", "pressure_delta_bar", "pressure_nominal")
+    system_pressure_field = _first_present_field(profile, "pressure_system_bar")
+    ambiguous_pressure_field = _first_present_field(profile, "ambiguous_pressure_bar")
+    if pressure is None and ambiguous_pressure_field is not None:
+        results.append(
+            RiskEvaluationResult(
+                "pressure_risk",
+                9,
+                drivers=["ambiguous_pressure_value_present"],
+                missing_inputs=["pressure_at_seal_bar"],
+                rule_ids=["risk.pressure.ambiguous_role.v0"],
+                explanation_short="Druckwert vorhanden, aber Rolle als System-, Dichtstellen- oder Differenzdruck ist unklar.",
+                confidence="high",
+                claim_id="risk_readiness.pressure.ambiguous_role",
+                claim_type="ambiguity_risk",
+                subject_field=ambiguous_pressure_field,
+                evidence_fields=[ambiguous_pressure_field],
+                missing_fields=["pressure_at_seal_bar"],
+                blocked_reason="pressure_role_ambiguous",
+                allowed_user_wording=(
+                    "Ein Druckwert ist vorhanden, aber die Rolle ist unklar: Systemdruck, Dichtstellendruck oder Differenzdruck."
+                ),
+                forbidden_user_wording=["Der Dichtungsdruck ist kritisch."],
+            )
+        )
+    elif pressure is None:
+        evidence = [system_pressure_field] if system_pressure_field is not None else []
+        results.append(
+            RiskEvaluationResult(
+                "pressure_risk",
+                9,
+                drivers=["system_pressure_known"] if evidence else [],
+                missing_inputs=["pressure_at_seal_bar"],
+                rule_ids=["risk.pressure.missing.v0"],
+                explanation_short="Druck direkt an der Dichtstelle fehlt; Bauartgrenzen nicht bewertbar.",
+                confidence="high",
+                claim_id="risk_readiness.pressure.seal_pressure_missing",
+                claim_type="missing_input_risk",
+                subject_field="pressure_at_seal_bar",
+                evidence_fields=evidence,
+                missing_fields=["pressure_at_seal_bar"],
+                blocked_reason="seal_pressure_missing",
+                allowed_user_wording=(
+                    "Der Systemdruck ist bekannt. Offen ist noch, welcher Druck direkt an der Dichtstelle anliegt."
+                    if evidence
+                    else "Der Druck direkt an der Dichtstelle ist noch offen."
+                ),
+                forbidden_user_wording=["Der Dichtungsdruck ist kritisch."],
+            )
+        )
     else:
         if pressure >= 25:
             score = 3
@@ -248,7 +438,24 @@ def evaluate_risks(
             score = 2
         else:
             score = 0
-        results.append(RiskEvaluationResult("pressure_risk", score, drivers=[f"pressure_nominal={pressure:g}bar"], rule_ids=["risk.pressure.thresholds.v0"], explanation_short="Druck wird gegen MVP-Schwellen bewertet.", confidence="medium"))
+        results.append(
+            RiskEvaluationResult(
+                "pressure_risk",
+                score,
+                drivers=[f"pressure_nominal={pressure:g}bar"],
+                rule_ids=["risk.pressure.thresholds.v0"],
+                explanation_short="Dichtstellen- oder Differenzdruck wird gegen MVP-Schwellen bewertet.",
+                confidence="medium",
+                claim_id="risk_readiness.pressure.threshold",
+                claim_type="measured_risk" if score > 0 else "context_advisory",
+                subject_field=pressure_field or "pressure_at_seal_bar",
+                evidence_fields=[pressure_field or "pressure_at_seal_bar"],
+                allowed_user_wording=(
+                    f"Der angegebene Druck direkt an der Dichtstelle bzw. Differenzdruck von {pressure:g} bar wird als Screeningwert bewertet."
+                ),
+                forbidden_user_wording=["Der Systemdruck beweist die Dichtstellenbelastung."],
+            )
+        )
 
     pv_scores: list[int] = []
     pv_missing: list[str] = []
@@ -270,24 +477,111 @@ def evaluate_risks(
         elif calc_id == "rwdr_circumferential_speed":
             pv_scores.append(3 if value >= 12 else 2 if value >= 8 else 0)
     if pv_scores:
-        results.append(RiskEvaluationResult("speed_pv_risk", max(pv_scores), drivers=["registered_check_results"], rule_ids=["risk.speed_pv.registered_checks.v0"], explanation_short="Drehzahl/PV wird aus registrierten Berechnungen bewertet.", confidence="medium"))
+        pv_score = max(pv_scores)
+        results.append(
+            RiskEvaluationResult(
+                "speed_pv_risk",
+                pv_score,
+                drivers=["registered_check_results"],
+                rule_ids=["risk.speed_pv.registered_checks.v0"],
+                explanation_short="Drehzahl/PV wird aus registrierten Berechnungen bewertet.",
+                confidence="medium",
+                claim_id="risk_readiness.speed_pv.registered_checks",
+                claim_type="measured_risk" if pv_score > 0 else "context_advisory",
+                subject_field="speed_rpm",
+                evidence_fields=["registered_check_results"],
+                allowed_user_wording=(
+                    "Drehzahl/PV ist aus registrierten Backend-Berechnungen als Screening-Pruefpunkt bewertet."
+                ),
+            )
+        )
     elif speed is None and str(engineering_path or "") in {"rwdr", "ms_pump", "unclear_rotary"}:
-        results.append(RiskEvaluationResult("speed_pv_risk", 9, missing_inputs=list(dict.fromkeys(pv_missing or ["speed_rpm"])), rule_ids=["risk.speed_pv.missing.v0"], explanation_short="Drehzahl/PV nicht bewertbar, weil Eingaben fehlen.", confidence="high"))
+        missing_speed = list(dict.fromkeys(pv_missing or ["speed_rpm"]))
+        results.append(
+            RiskEvaluationResult(
+                "speed_pv_risk",
+                9,
+                missing_inputs=missing_speed,
+                rule_ids=["risk.speed_pv.missing.v0"],
+                explanation_short="Drehzahl/PV nicht bewertbar, weil Eingaben fehlen.",
+                confidence="high",
+                claim_id="risk_readiness.speed_pv.missing",
+                claim_type="missing_input_risk",
+                subject_field="speed_rpm",
+                missing_fields=missing_speed,
+                blocked_reason="speed_or_geometry_missing",
+                allowed_user_wording="Drehzahl/PV ist offen, weil benoetigte Eingaben fehlen.",
+            )
+        )
 
     compliance = _value(profile, "food_contact")
     regulated = _contains(compliance, ("food", "lebensmittel", "pharma", "hygiene"))
     if regulated and not _contains(compliance, ("confirmed", "yes", "true", "food_contact")):
         results.append(RiskEvaluationResult("hygiene_risk", 2, drivers=["regulated_context_unclear"], rule_ids=["risk.hygiene.regulated_context.v0"], explanation_short="Hygiene-/Lebensmittelkontext braucht explizite Klaerung.", confidence="medium"))
 
+    runout_field = _first_present_field(profile, "runout_mm", "shaft_runout")
+    eccentricity_field = _first_present_field(profile, "eccentricity_mm")
+    measured_runout_field = runout_field or eccentricity_field
+    measured_runout = _float(profile.get(measured_runout_field)) if measured_runout_field else None
+    if str(engineering_path or "") == "rwdr" and measured_runout is not None:
+        score = 3 if measured_runout >= 0.2 else 0
+        results.append(
+            RiskEvaluationResult(
+                "runout_risk",
+                score,
+                drivers=[f"{measured_runout_field}={measured_runout:g}mm"],
+                rule_ids=["risk.runout.rwdr_screening_threshold.v0"],
+                explanation_short=(
+                    "Gemessener/angegebener Rundlauf wird fuer RWDR als Screening-Pruefpunkt bewertet."
+                ),
+                confidence="medium",
+                claim_id="risk_readiness.runout.threshold",
+                claim_type="measured_risk" if score > 0 else "context_advisory",
+                subject_field=measured_runout_field,
+                evidence_fields=[measured_runout_field],
+                allowed_user_wording=(
+                    f"Der gemessene Rundlauf/Wellenschlag von {measured_runout:g} mm ist fuer RWDR ein Pruefpunkt."
+                ),
+                forbidden_user_wording=[
+                    "RWDR versagt wegen Wellenschlag.",
+                    "RWDR ist ungeeignet.",
+                ],
+            )
+        )
+
     surface_missing = not _has(profile, "surface_finish")
     runout_missing = not _has(profile, "runout")
     if str(engineering_path or "") == "rwdr" and (surface_missing or runout_missing):
         missing = []
         if surface_missing:
-            missing.append("surface_finish")
+            missing.append("counterface_surface_condition")
         if runout_missing:
-            missing.append("shaft_runout")
-        results.append(RiskEvaluationResult("surface_risk", 9, missing_inputs=missing, rule_ids=["risk.surface.rwdr_missing.v0"], explanation_short="RWDR-Funktion haengt stark von Gegenlaufflaeche und Rundlauf ab.", confidence="high"))
+            missing.append("runout_mm")
+        results.append(
+            RiskEvaluationResult(
+                "surface_risk",
+                9,
+                missing_inputs=missing,
+                rule_ids=["risk.surface.rwdr_missing.v0"],
+                explanation_short="RWDR-Funktion haengt stark von Gegenlaufflaeche und Rundlauf ab.",
+                confidence="high",
+                claim_id="risk_readiness.surface.rwdr_missing",
+                claim_type="missing_input_risk",
+                subject_field="counterface_surface_condition",
+                missing_fields=missing,
+                blocked_reason="rwdr_surface_or_runout_missing",
+                allowed_user_wording=(
+                    "Rundlauf/Wellenschlag ist noch nicht angegeben. Fuer RWDR ist das wichtig, weil erhoehte dynamische Abweichungen die Dichtlippe staerker belasten koennen."
+                    if "runout_mm" in missing
+                    else "Die Gegenlaufflaeche ist fuer RWDR noch offen und sollte geprueft werden."
+                ),
+                forbidden_user_wording=[
+                    "Der Wellenschlag ist hoch.",
+                    "Die Gegenlaufflaeche ist ungeeignet.",
+                    "RWDR versagt wegen Wellenschlag.",
+                ],
+            )
+        )
 
     return sorted(results, key=lambda item: (item.score != 9, item.score), reverse=True)
 

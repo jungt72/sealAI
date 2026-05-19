@@ -642,7 +642,7 @@ class TestResponseClassConsistency:
         assert "Druckunterschied" in strategy.primary_question
         assert "Wie hoch ist der Betriebsdruck" not in strategy.primary_question
 
-    def test_barg_pressure_interpretation_is_not_asked_again(self):
+    def test_barg_pressure_reference_still_asks_for_pressure_role(self):
         state = GraphState(
             normalized=reduce_observed_to_normalized(
                 ObservedState().with_extraction(
@@ -677,12 +677,9 @@ class TestResponseClassConsistency:
 
         assert strategy.primary_question is not None
         assert "Betriebsdruck" not in strategy.primary_question
-        assert "Differenzdruck" not in strategy.primary_question
-        assert "Ueberdruck" not in strategy.primary_question
-        assert (
-            "Einbausituation" in strategy.primary_question
-            or "Temperatur" in strategy.primary_question
-        )
+        assert "Systemdruck" in strategy.primary_question
+        assert "Druck direkt an der Dichtung" in strategy.primary_question
+        assert "Differenzdruck" in strategy.primary_question
 
 
     def test_filled_shaft_diameter_is_not_asked_again(self):
@@ -1152,7 +1149,14 @@ class TestReplyText:
     async def test_clarification_reply_prioritizes_single_missing_question_without_formula_reason_block(
         self,
     ):
-        state = _b_state(missing=["pressure_bar", "temperature_c"])
+        state = _b_state(missing=["pressure_bar", "temperature_c"]).model_copy(
+            update={
+                "asserted": AssertedState(
+                    assertions={"medium": _claim("medium", "Dampf", "confirmed")},
+                    blocking_unknowns=["pressure_bar", "temperature_c"],
+                )
+            }
+        )
         result = await output_contract_node(state)
 
         assert result.output_response_class == "structured_clarification"

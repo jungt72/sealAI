@@ -37,7 +37,10 @@ from app.agent.communication.rfq_intent import (
     build_rfq_readiness_projection,
 )
 from app.agent.state.models import GovernedSessionState
-from app.agent.domain.checks_registry import build_registered_check_results
+from app.agent.domain.checks_registry import (
+    build_check_metrics,
+    build_registered_check_results,
+)
 from app.agent.domain.delta_conflicts import build_governed_conflict_summary
 from app.agent.domain.dependency_graph import derived_values_for_projection
 from app.agent.domain.medium_registry import classify_medium_value
@@ -62,7 +65,10 @@ from app.api.v1.schemas.case_workspace import (
     ClaimItem,
     ClaimsSummary,
     CockpitProperty,
+    CockpitCheckMetrics,
+    CockpitCompletenessMetrics,
     CockpitReadinessSummary,
+    CockpitRequiredFieldMetric,
     CockpitRoutingMetadata,
     CompletenessStatus,
     RiskEvaluationResult,
@@ -245,10 +251,13 @@ def _build_completeness_status(
     payload: Dict[str, Any],
     score: Any,
     missing_fields: list[str],
+    metrics: CockpitCompletenessMetrics | None = None,
 ) -> CompletenessStatus:
     payload_score = _bounded_score(payload.get("coverage_score"))
     projected_score = _bounded_score(score)
     coverage_score = payload_score if payload_score > 0 else projected_score
+    if metrics is not None and metrics.required_total > 0:
+        coverage_score = _bounded_score(metrics.completeness_percent / 100)
     missing_critical = _compact_unique_strings(
         [
             str(item)
@@ -273,9 +282,19 @@ def _build_completeness_status(
     )
     return CompletenessStatus(
         coverage_score=round(coverage_score, 2),
+        coverage_percent=int(round(coverage_score * 100)),
         coverage_gaps=coverage_gaps,
         completeness_depth=depth,
         missing_critical_parameters=missing_critical,
+        required_total=metrics.required_total if metrics is not None else 0,
+        required_known=metrics.required_known if metrics is not None else 0,
+        required_missing=list(metrics.required_missing) if metrics is not None else [],
+        required_invalid=list(metrics.required_invalid) if metrics is not None else [],
+        required_fields=[
+            item.model_dump(mode="json") for item in list(metrics.required_fields)
+        ]
+        if metrics is not None
+        else [],
         discovery_missing=[
             str(item) for item in _ls(payload.get("discovery_missing")) if item
         ],
@@ -287,8 +306,23 @@ def _build_completeness_status(
 _FIELD_LABELS: dict[str, str] = {
     "medium": "Medium",
     "pressure_bar": "Betriebsdruck",
+    "pressure_system_bar": "Systemdruck",
+    "pressure_at_seal_bar": "Druck direkt an der Dichtung",
+    "pressure_delta_bar": "Differenzdruck über der Dichtung",
+    "ambiguous_pressure_bar": "Druckwert mit unklarem Bezug",
     "temperature_c": "Betriebstemperatur",
     "sealing_type": "Dichtungstyp",
+    "shaft_diameter_mm": "Wellendurchmesser",
+    "speed_rpm": "Drehzahl",
+    "counterface_surface_condition": "Zustand der Gegenlauffläche",
+    "shaft_roughness_ra_um": "Rauheit Ra der Gegenlauffläche",
+    "shaft_hardness_hrc": "Härte der Gegenlauffläche",
+    "runout_mm": "Rundlauf / Wellenschlag",
+    "eccentricity_mm": "Exzentrizität",
+    "axial_movement_mm": "Axiale Bewegung",
+    "lubrication_condition": "Schmierung an der Dichtlippe",
+    "contamination_condition": "Verschmutzung / Abrasion",
+    "installation_space_summary": "Einbauraum / Bauraum",
     "movement_type": "Bewegungsart",
     "application_context": "Anwendung",
 }
@@ -308,7 +342,14 @@ _OPEN_POINT_FIELD_ALIASES: dict[str, str] = {
     "pressure bar": "pressure_bar",
     "pressure_bar": "pressure_bar",
     "betriebsdruck": "pressure_bar",
-    "differenzdruck": "pressure_bar",
+    "systemdruck": "pressure_system_bar",
+    "pressure_system_bar": "pressure_system_bar",
+    "dichtstellendruck": "pressure_at_seal_bar",
+    "druck an der dichtung": "pressure_at_seal_bar",
+    "pressure_at_seal_bar": "pressure_at_seal_bar",
+    "differenzdruck": "pressure_delta_bar",
+    "druckdifferenz": "pressure_delta_bar",
+    "pressure_delta_bar": "pressure_delta_bar",
     "dichtungstyp": "sealing_type",
     "seal type": "sealing_type",
     "seal_type": "sealing_type",
@@ -318,6 +359,9 @@ _OPEN_POINT_FIELD_ALIASES: dict[str, str] = {
 
 _OPEN_POINT_QUESTIONS: dict[str, str] = {
     "pressure_bar": "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?",
+    "pressure_at_seal_bar": "Welcher Druck liegt direkt an der Dichtung an?",
+    "pressure_delta_bar": "Welcher Differenzdruck liegt über der Dichtung an?",
+    "ambiguous_pressure_bar": "Ist der genannte Druck Systemdruck, Dichtstellendruck oder Differenzdruck?",
     "sealing_type": (
         "Um welchen Dichtungstyp geht es, zum Beispiel O-Ring, Wellendichtring, "
         "Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
@@ -330,6 +374,10 @@ _CANONICAL_PARAMETER_KEYS: tuple[str, ...] = (
     "medium",
     "temperature_c",
     "pressure_bar",
+    "pressure_system_bar",
+    "pressure_at_seal_bar",
+    "pressure_delta_bar",
+    "ambiguous_pressure_bar",
     "sealing_type",
     "pressure_direction",
     "duty_profile",
@@ -338,7 +386,16 @@ _CANONICAL_PARAMETER_KEYS: tuple[str, ...] = (
     "installation",
     "geometry_context",
     "contamination",
+    "contamination_condition",
     "counterface_surface",
+    "counterface_surface_condition",
+    "shaft_roughness_ra_um",
+    "shaft_hardness_hrc",
+    "runout_mm",
+    "eccentricity_mm",
+    "axial_movement_mm",
+    "lubrication_condition",
+    "installation_space_summary",
     "tolerances",
     "industry",
     "compliance",
@@ -475,7 +532,7 @@ _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
                 "key": "particles_present",
                 "label": "Partikel",
                 "unit": None,
-                "aliases": ("solids_percent", "contamination"),
+                "aliases": ("solids_percent", "contamination", "contamination_condition"),
             },
             {
                 "key": "cleaning_media",
@@ -522,15 +579,27 @@ _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
             {"key": "speed_rpm", "label": "Drehzahl", "unit": "rpm", "aliases": ()},
             {
                 "key": "pressure_nominal",
-                "label": "Betriebsdruck",
+                "label": "Druck an Dichtstelle",
                 "unit": "bar",
-                "aliases": ("pressure_bar",),
+                "aliases": ("pressure_at_seal_bar", "pressure_delta_bar"),
             },
             {
                 "key": "surface_finish",
                 "label": "Oberfläche",
                 "unit": None,
-                "aliases": ("counterface_surface",),
+                "aliases": ("counterface_surface_condition", "counterface_surface"),
+            },
+            {
+                "key": "shaft_roughness_ra_um",
+                "label": "Rauheit Ra",
+                "unit": "µm",
+                "aliases": ("surface_roughness_ra_um", "surface_roughness"),
+            },
+            {
+                "key": "shaft_hardness_hrc",
+                "label": "Härte",
+                "unit": "HRC",
+                "aliases": ("surface_hardness_hrc", "shaft_hardness"),
             },
             {
                 "key": "shaft_material",
@@ -543,6 +612,12 @@ _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
                 "label": "Rundlauf",
                 "unit": "mm",
                 "aliases": ("runout_mm",),
+            },
+            {
+                "key": "lubrication_condition",
+                "label": "Schmierung",
+                "unit": None,
+                "aliases": ("lubrication",),
             },
         ),
     },
@@ -591,7 +666,7 @@ _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
 )
 
 _DEFAULT_COCKPIT_RULES: dict[str, tuple[str, ...]] = {
-    "mandatory": ("medium", "temperature_c", "pressure_bar"),
+    "mandatory": ("medium", "temperature_c", "pressure_at_seal_bar"),
     "hidden": (),
 }
 
@@ -600,7 +675,7 @@ _COCKPIT_PATH_RULES: dict[str, dict[str, tuple[str, ...]]] = {
         "mandatory": (
             "medium",
             "temperature_c",
-            "pressure_bar",
+            "pressure_at_seal_bar",
             "shaft_diameter_mm",
             "speed_rpm",
             "motion_type",
@@ -615,15 +690,20 @@ _COCKPIT_PATH_RULES: dict[str, dict[str, tuple[str, ...]]] = {
         "mandatory": (
             "medium",
             "temperature_c",
+            "sealing_type",
+            "pressure_at_seal_bar",
             "shaft_diameter_mm",
             "speed_rpm",
-            "shaft_material",
-            "shaft_hardness",
         ),
         "hidden": ("pressure_max_bar",),
     },
     "static": {
-        "mandatory": ("medium", "temperature_c", "pressure_bar", "geometry_context"),
+        "mandatory": (
+            "medium",
+            "temperature_c",
+            "pressure_at_seal_bar",
+            "geometry_context",
+        ),
         "hidden": ("speed_rpm", "shaft_diameter_mm", "runout_mm"),
     },
     "labyrinth": {
@@ -631,7 +711,12 @@ _COCKPIT_PATH_RULES: dict[str, dict[str, tuple[str, ...]]] = {
         "hidden": ("pressure_bar",),
     },
     "hyd_pneu": {
-        "mandatory": ("medium", "temperature_c", "pressure_bar", "geometry_context"),
+        "mandatory": (
+            "medium",
+            "temperature_c",
+            "pressure_at_seal_bar",
+            "geometry_context",
+        ),
         "hidden": (),
     },
     "unclear_rotary": {
@@ -731,6 +816,226 @@ def _cockpit_field_value(
     return None
 
 
+_REQUIRED_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "pressure_at_seal_bar": ("pressure_at_seal_bar", "pressure_delta_bar"),
+    "medium": ("medium", "medium_name"),
+    "motion_type": ("motion_type", "movement_type"),
+    "shaft_material": ("shaft_material", "material"),
+    "counterface_surface_condition": (
+        "counterface_surface_condition",
+        "counterface_surface",
+        "surface_finish",
+    ),
+    "shaft_roughness_ra_um": (
+        "shaft_roughness_ra_um",
+        "surface_roughness_ra_um",
+        "surface_roughness",
+        "roughness",
+    ),
+    "shaft_hardness_hrc": (
+        "shaft_hardness_hrc",
+        "surface_hardness_hrc",
+        "shaft_hardness",
+        "hardness",
+    ),
+    "runout_mm": ("runout_mm", "shaft_runout", "runout"),
+    "eccentricity_mm": ("eccentricity_mm", "eccentricity"),
+    "axial_movement_mm": ("axial_movement_mm",),
+    "lubrication_condition": ("lubrication_condition", "lubrication"),
+    "contamination_condition": ("contamination_condition", "contamination"),
+    "installation_space_summary": (
+        "installation_space_summary",
+        "installation_space",
+        "installation",
+        "geometry_context",
+    ),
+}
+
+
+def _required_field_label(field_id: str) -> str:
+    return _FIELD_LABELS.get(field_id) or field_id.replace("_", " ")
+
+
+def _required_field_value(profile: Dict[str, Any], field_id: str) -> Any:
+    return _cockpit_field_value(
+        profile,
+        field_id,
+        _REQUIRED_FIELD_ALIASES.get(field_id, ()),
+    )
+
+
+def _required_field_status(profile: Dict[str, Any], field_id: str, value: Any) -> str:
+    if field_id == "medium" and classify_medium_value(value).status == "unavailable":
+        return "invalid"
+    if isinstance(value, str) and value.strip().casefold() in {
+        "unknown",
+        "unbekannt",
+        "unklar",
+        "nicht bekannt",
+    }:
+        return "missing"
+    if field_id == "pressure_at_seal_bar":
+        if value not in (None, "", []):
+            return "known"
+        if profile.get("ambiguous_pressure_bar") not in (None, "", []):
+            return "ambiguous"
+    if value in (None, "", []):
+        return "missing"
+    return "known"
+
+
+def _check_required_reasons(
+    checks: list[EngineeringCheckResult],
+) -> dict[str, list[str]]:
+    reasons: dict[str, list[str]] = {}
+    for check in checks:
+        for field_id in check.required_fields or check.required_inputs:
+            reasons.setdefault(str(field_id), []).append(check.label)
+    return reasons
+
+
+def _check_required_tiers(
+    checks: list[EngineeringCheckResult],
+) -> dict[str, list[str]]:
+    tiers: dict[str, list[str]] = {}
+    for check in checks:
+        tier = str(check.requirement_tier or "recommended_for_professional_review")
+        for field_id in check.required_fields or check.required_inputs:
+            tiers.setdefault(str(field_id), []).append(tier)
+    return tiers
+
+
+def _required_field_ids(
+    *,
+    engineering_path: WorkspaceEngineeringPath | None,
+    checks: list[EngineeringCheckResult],
+) -> list[str]:
+    rules = _COCKPIT_PATH_RULES.get(
+        str(engineering_path or ""),
+        _DEFAULT_COCKPIT_RULES,
+    )
+    ids: list[str] = []
+    for field_id in rules["mandatory"]:
+        if field_id not in ids:
+            ids.append(field_id)
+    for check in checks:
+        for field_id in check.required_fields or check.required_inputs:
+            if field_id not in ids:
+                ids.append(field_id)
+    return ids
+
+
+def _field_requirement_tier(
+    *,
+    field_id: str,
+    engineering_path: WorkspaceEngineeringPath | None,
+    check_tiers: dict[str, list[str]],
+) -> str:
+    mandatory = set(
+        _COCKPIT_PATH_RULES.get(str(engineering_path or ""), _DEFAULT_COCKPIT_RULES)[
+            "mandatory"
+        ]
+    )
+    if field_id in mandatory:
+        if str(engineering_path or "") == "rwdr" and field_id == "pressure_at_seal_bar":
+            return "required_for_rwdr_precheck"
+        return "required_for_basic_orientation"
+    tiers = check_tiers.get(field_id, [])
+    priority = {
+        "required_for_basic_orientation": 0,
+        "required_for_rwdr_precheck": 1,
+        "recommended_for_professional_review": 2,
+    }
+    if not tiers:
+        return "recommended_for_professional_review"
+    return min(tiers, key=lambda item: priority.get(item, 9))
+
+
+def _build_completeness_metrics(
+    *,
+    profile: Dict[str, Any],
+    engineering_path: WorkspaceEngineeringPath | None,
+    reasoning: Dict[str, Any],
+    checks: list[EngineeringCheckResult],
+) -> CockpitCompletenessMetrics:
+    provenance_map = _parameter_provenance_map(reasoning)
+    confidence_map = _parameter_confidence_map(reasoning)
+    check_reasons = _check_required_reasons(checks)
+    check_tiers = _check_required_tiers(checks)
+    required_fields: list[CockpitRequiredFieldMetric] = []
+    required_missing: list[str] = []
+    required_invalid: list[str] = []
+
+    for field_id in _required_field_ids(
+        engineering_path=engineering_path,
+        checks=checks,
+    ):
+        aliases = _REQUIRED_FIELD_ALIASES.get(field_id, ())
+        value = _required_field_value(profile, field_id)
+        status = _required_field_status(profile, field_id, value)
+        if status in {"missing", "ambiguous", "conflict"}:
+            required_missing.append(field_id)
+        if status == "invalid":
+            required_invalid.append(field_id)
+        provenance_value = _first_mapping_value(provenance_map, field_id, aliases)
+        confidence_value = _first_mapping_value(confidence_map, field_id, aliases)
+        provenance = (
+            str(confidence_value).strip()
+            if confidence_value not in (None, "")
+            else _provenance_origin(provenance_value)
+            or _provenance_confidence(provenance_value)
+        )
+        reason_parts: list[str] = []
+        if field_id in set(
+            _COCKPIT_PATH_RULES.get(str(engineering_path or ""), _DEFAULT_COCKPIT_RULES)[
+                "mandatory"
+            ]
+        ):
+            reason_parts.append("Pflichtfeld fuer den aktuellen Engineering-Pfad")
+        if check_reasons.get(field_id):
+            reason_parts.append(
+                "Benoetigt fuer registrierte Checks: "
+                + ", ".join(dict.fromkeys(check_reasons[field_id]))
+            )
+        requirement_tier = _field_requirement_tier(
+            field_id=field_id,
+            engineering_path=engineering_path,
+            check_tiers=check_tiers,
+        )
+        required_fields.append(
+            CockpitRequiredFieldMetric(
+                field_id=field_id,
+                label=_required_field_label(field_id),
+                status=status,
+                value_summary=_stringify_value(value),
+                provenance_summary=provenance,
+                reason_required="; ".join(reason_parts)
+                or "Backend-Pflichtfeld fuer Cockpit-Completeness",
+                blocks_next_step=(
+                    status not in {"known", "not_applicable"}
+                    and requirement_tier != "recommended_for_professional_review"
+                ),
+                requirement_tier=requirement_tier,
+            )
+        )
+
+    required_total = len(required_fields)
+    required_known = sum(1 for item in required_fields if item.status == "known")
+    completeness_percent = (
+        int(round((required_known / required_total) * 100))
+        if required_total
+        else 0
+    )
+    return CockpitCompletenessMetrics(
+        completeness_percent=completeness_percent,
+        required_total=required_total,
+        required_known=required_known,
+        required_missing=required_missing,
+        required_invalid=required_invalid,
+        required_fields=required_fields,
+    )
+
+
 def _build_cockpit_sections(
     *,
     profile: Dict[str, Any],
@@ -769,6 +1074,9 @@ def _build_cockpit_sections(
             required_key = _required_key_for_field(key, aliases, mandatory_keys)
             is_mandatory = required_key is not None
             is_confirmed = confidence == "confirmed"
+            if required_key == "medium" and classify_medium_value(value).status == "unavailable":
+                value = None
+                origin = origin or "invalid_placeholder"
             if value in (None, "", []):
                 value = None
                 if required_key is not None:
@@ -881,7 +1189,14 @@ def _build_cockpit_view(
         engineering_path=engineering_path,
         reasoning=reasoning,
     )
-    coverage_score = _bounded_score(completeness_payload.get("coverage_score"))
+    completeness_metrics = _build_completeness_metrics(
+        profile=cockpit_profile,
+        engineering_path=engineering_path,
+        reasoning=reasoning,
+        checks=checks,
+    )
+    check_metrics = CockpitCheckMetrics.model_validate(build_check_metrics(checks))
+    coverage_score = _bounded_score(completeness_metrics.completeness_percent / 100)
     is_rfq_ready = bool(rfq_status.rfq_ready or readiness_eval.rfq_possible)
     status = (
         "rfq_ready"
@@ -902,6 +1217,8 @@ def _build_cockpit_view(
         ),
         sections=sections,
         checks=checks,
+        check_metrics=check_metrics,
+        completeness_metrics=completeness_metrics,
         risk_evaluations=risk_evaluations,
         missing_mandatory_keys=missing_mandatory_keys,
         blockers=blockers,
@@ -1416,9 +1733,7 @@ def _technical_derivation_from_current_profile(
         and speed_rpm is not None
         else None
     )
-    pressure_bar = _float_from_profile(
-        profile, "pressure_bar", "pressure_nominal", "pressure_max_bar", "pressure"
-    )
+    pressure_bar = _float_from_profile(profile, "pressure_at_seal_bar", "pressure_delta_bar")
     sealing_type = _deep_value(profile, "sealing_type", "seal_type")
     pv_value_mpa_m_s = (
         pressure_bar * 0.1 * v_surface_m_s
@@ -2833,6 +3148,7 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         payload=completeness_payload,
         score=nbq_projection.completeness_score.score,
         missing_fields=nbq_projection.current_state_analysis.missing_fields,
+        metrics=cockpit_view.completeness_metrics,
     )
     cockpit_view = cockpit_view.model_copy(
         update={

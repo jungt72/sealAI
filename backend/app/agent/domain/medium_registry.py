@@ -83,6 +83,57 @@ def _normalize_lookup_token(value: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+_PLACEHOLDER_MEDIUM_KEYS: frozenset[str] = frozenset(
+    {
+        "-",
+        "--",
+        "/",
+        "n/a",
+        "n.a.",
+        "na",
+        "none",
+        "null",
+        "medium",
+        "das medium",
+        "fluid",
+        "das fluid",
+        "fluessigkeit",
+        "die fluessigkeit",
+        "stoff",
+        "der stoff",
+        "unbekannt",
+        "unbekanntes medium",
+        "nicht bekannt",
+        "weiss ich nicht",
+        "weis ich nicht",
+        "ich weiss es nicht",
+        "ich weis es nicht",
+        "keine ahnung",
+    }
+)
+
+_GENERIC_MEDIUM_PLACEHOLDER_RE = re.compile(
+    r"^(?:das|der|die|ein|eine|einen)?\s*(?:medium|fluid|fluessigkeit|stoff)\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_medium_placeholder_value(value: str | None) -> bool:
+    """Return True for generic or explicitly unknown medium placeholders."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return True
+    if raw in {"?", "-", "--", "/"}:
+        return True
+    key = _normalize_lookup_token(raw)
+    if not key:
+        return True
+    if key in _PLACEHOLDER_MEDIUM_KEYS:
+        return True
+    return bool(_GENERIC_MEDIUM_PLACEHOLDER_RE.fullmatch(key))
+
+
 _HYDRAULIC_FLUID_GRADE_PATTERN = re.compile(
     r"\b(?P<fluid_type>HLP|HVLP|HEES|HETG|HEPG|HFDU|HFAE|HFC)"
     r"\s*[-/]?\s*(?P<viscosity>\d{1,3})?\b",
@@ -305,6 +356,16 @@ _REGISTRY: tuple[MediumRegistryEntry, ...] = (
         followup_question="Welche Lauge liegt an, in welcher Konzentration und bei welcher Temperatur?",
     ),
     MediumRegistryEntry(
+        registry_key="natronlauge",
+        canonical_label="Natronlauge",
+        family="chemisch_aggressiv",
+        aliases=("natronlauge", "naoh"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="medium_ambiguous:Natronlauge — Konzentration und Temperatur erforderlich",
+        followup_question="Welche Natronlauge-Konzentration liegt an und bei welcher Temperatur?",
+    ),
+    MediumRegistryEntry(
         registry_key="loesungsmittel",
         canonical_label="Lösungsmittel",
         family="loesemittelhaltig",
@@ -410,7 +471,7 @@ def extract_medium_mentions(text: str | None) -> MediumCaptureDecision:
         if not match:
             continue
         candidate = str(match.group(1) or "").strip(" ,.;:")
-        if candidate:
+        if candidate and not is_medium_placeholder_value(candidate):
             mentions.append(candidate)
 
     unique: list[str] = []
@@ -430,15 +491,17 @@ def extract_medium_mentions(text: str | None) -> MediumCaptureDecision:
 
 def classify_medium_value(value: str | None) -> MediumClassificationDecision:
     text = str(value or "").strip()
-    if not text:
+    if not text or is_medium_placeholder_value(text):
         return MediumClassificationDecision(
-            raw_text=None,
+            raw_text=text or None,
             canonical_label=None,
             family="unknown",
             status="unavailable",
             confidence="low",
             normalization_source=None,
             mapping_confidence="requires_confirmation",
+            mapping_reason="medium_placeholder_or_unknown" if text else None,
+            followup_question="Welches Medium liegt an der Dichtung an?" if text else None,
         )
 
     normalized = _normalize_lookup_token(text)

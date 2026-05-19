@@ -412,6 +412,21 @@ class EngineeringRiskFinding(BaseModel):
     affected_claims: list[str] = Field(default_factory=list)
     required_next_evidence: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
+    claim_id: str = ""
+    claim_type: Literal[
+        "measured_risk",
+        "missing_input_risk",
+        "ambiguity_risk",
+        "context_advisory",
+        "blocked_claim",
+    ] = "context_advisory"
+    subject_field: str = ""
+    evidence_fields: list[str] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    blocked_reason: str | None = None
+    allowed_user_wording: str = ""
+    forbidden_user_wording: list[str] = Field(default_factory=list)
+    source: str = "deterministic_rule"
 
 
 class CompletenessMatrix(BaseModel):

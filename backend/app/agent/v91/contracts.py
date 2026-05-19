@@ -288,6 +288,7 @@ class FinalAnswerContext(BaseModel):
     communication_plan: CommunicationPlan | None = None
     allowed_claim_levels: list[str] = Field(default_factory=list)
     evidence_ref_ids: list[str] = Field(default_factory=list)
+    risk_claims: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
