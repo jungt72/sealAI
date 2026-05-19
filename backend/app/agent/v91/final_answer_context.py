@@ -14,6 +14,7 @@ from app.agent.v91.contracts import (
     LLMFreedomLevel,
     RedFlag,
     RedFlagType,
+    ResponseMove,
     ResponseAction,
     ResponsePolicy,
     SemanticBoundaryDecision,
@@ -77,17 +78,13 @@ def build_v91_final_answer_context(
         source_scope="case_orientation",
         reason="final answer may use governed facts and documented evidence refs only",
     )
-    communication_plan = CommunicationPlan(
-        response_mode=(
-            "clarification"
-            if getattr(question_plan, "ask_now", False)
-            else "guided_explanation"
-        ),
-        answer_depth=response_policy.answer_depth,
-        include_boundary_notice=True,
-        primary_question=getattr(question_plan, "primary_question", None),
-        primary_question_reason=getattr(question_plan, "reason", None),
-        forbidden_claims=freedom.forbidden_actions,
+    communication_plan = _build_communication_plan(
+        response_class=response_class,
+        question_plan=question_plan,
+        response_policy=response_policy,
+        freedom=freedom,
+        evidence_ref_ids=evidence_ref_ids,
+        state=state,
     )
     return FinalAnswerContext(
         semantic_boundary=SemanticBoundaryDecision(
@@ -115,6 +112,125 @@ def build_v91_final_answer_context(
         evidence_ref_ids=evidence_ref_ids,
         risk_claims=risk_claims,
     )
+
+
+def _build_communication_plan(
+    *,
+    response_class: str,
+    question_plan: Any | None,
+    response_policy: ResponsePolicy,
+    freedom: LLMFreedomDecision,
+    evidence_ref_ids: list[str],
+    state: Any,
+) -> CommunicationPlan:
+    asks_question = bool(getattr(question_plan, "ask_now", False))
+    is_boundary = bool(
+        response_class in {"inquiry_ready", "rfq_preview", "rfq_readiness"}
+        or any(
+            getattr(flag.type, "value", flag.type)
+            in {
+                RedFlagType.RFQ_EXPORT_OR_DISPATCH.value,
+                RedFlagType.COMPLIANCE_OR_CERTIFICATION.value,
+                RedFlagType.SAFETY_CRITICAL.value,
+            }
+            for flag in freedom.red_flags
+        )
+    )
+    tab_updates = _pending_tab_updates(state)
+    response_moves: list[ResponseMove] = [ResponseMove.ACKNOWLEDGE]
+    if response_policy.answer_first:
+        response_moves.append(ResponseMove.ANSWER)
+    if is_boundary:
+        response_moves.append(ResponseMove.BOUNDARY)
+        if any(
+            getattr(flag.type, "value", flag.type) == RedFlagType.COMPLIANCE_OR_CERTIFICATION.value
+            for flag in freedom.red_flags
+        ):
+            response_moves.append(ResponseMove.ESCALATE)
+    if asks_question:
+        response_moves.extend([ResponseMove.JUSTIFY_QUESTION, ResponseMove.CLARIFY])
+    elif not is_boundary:
+        response_moves.append(ResponseMove.EXPLAIN)
+    if tab_updates:
+        response_moves.append(ResponseMove.MENTION_TAB_UPDATE)
+    if evidence_ref_ids:
+        response_moves.append(ResponseMove.DISCLOSE_SOURCE)
+
+    return CommunicationPlan(
+        goal=(
+            "answer_and_clarify"
+            if asks_question and response_policy.answer_first
+            else "clarify_only"
+            if asks_question
+            else "boundary"
+            if is_boundary
+            else "answer"
+        ),
+        response_mode=(
+            "clarification"
+            if asks_question
+            else "boundary_refusal"
+            if is_boundary
+            else "guided_explanation"
+        ),
+        response_moves=_dedupe_response_moves(response_moves),
+        response_depth=_communication_response_depth(response_policy.answer_depth),
+        answer_depth=response_policy.answer_depth,
+        answer_first=response_policy.answer_first,
+        ask_user_question=asks_question,
+        max_new_questions=1 if asks_question else 0,
+        question_justification_required=asks_question,
+        include_boundary_notice=True,
+        include_tab_update_notice=bool(tab_updates),
+        tab_update_visibility="concise" if tab_updates else "silent",
+        source_disclosure_mode="on_claims" if evidence_ref_ids else "none",
+        user_question_must_be_answered=response_policy.answer_first,
+        primary_question=getattr(question_plan, "primary_question", None),
+        primary_question_reason=getattr(question_plan, "reason", None),
+        must_mention=["current_boundary"] if is_boundary else [],
+        may_mention=list(tab_updates[:2]),
+        must_not_mention=[
+            "final_engineering_release",
+            "external_utility_answer",
+            "unplanned_question_chain",
+        ],
+        forbidden_claims=freedom.forbidden_actions,
+        allowed_claim_level="planned_next_question" if asks_question else "confirmed_case_fact_summary",
+    )
+
+
+def _communication_response_depth(answer_depth: AnswerDepth | str) -> str:
+    value = _enum_value(answer_depth)
+    if value == AnswerDepth.SHORT.value:
+        return "short"
+    if value == AnswerDepth.DEEP.value:
+        return "deep"
+    return "standard"
+
+
+def _dedupe_response_moves(moves: list[ResponseMove]) -> list[ResponseMove]:
+    seen: set[str] = set()
+    result: list[ResponseMove] = []
+    for move in moves:
+        value = _enum_value(move)
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(move)
+    return result
+
+
+def _enum_value(value: Any) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
+def _pending_tab_updates(state: Any) -> list[str]:
+    dialogue_debt = getattr(state, "v91_dialogue_debt", None)
+    return [
+        str(item)
+        for item in list(getattr(dialogue_debt, "pending_tab_updates", []) or [])
+        if str(item or "").strip()
+    ]
 
 
 def _intent_from_response_class(response_class: str) -> SemanticIntent:

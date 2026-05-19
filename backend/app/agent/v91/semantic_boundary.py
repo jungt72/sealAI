@@ -14,6 +14,7 @@ from app.agent.v91.contracts import (
     LLMFreedomLevel,
     RedFlag,
     RedFlagType,
+    ResponseMove,
     ResponseAction,
     ResponsePolicy,
     SemanticBoundaryDecision,
@@ -122,15 +123,41 @@ def build_v91_turn_policy(
         response_policy=response_policy,
     )
     communication_plan = CommunicationPlan(
+        goal=_communication_goal(intent, freedom_decision, response_policy),
         response_mode=_communication_response_mode(intent, freedom_decision),
+        response_moves=_communication_response_moves(intent, freedom_decision, response_policy),
+        response_depth=_communication_response_depth(response_policy.answer_depth),
         answer_depth=response_policy.answer_depth,
+        answer_first=_communication_answer_first(intent, freedom_decision, response_policy),
+        ask_user_question=_enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value,
+        max_new_questions=(
+            1 if _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value else 0
+        ),
+        question_justification_required=(
+            _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value
+        ),
         include_boundary_notice=bool(red_flags)
         or _enum_value(freedom_decision.level)
         in {
             LLMFreedomLevel.RESTRICTED_CASE_CLAIMS.value,
             LLMFreedomLevel.BLOCKED_OR_REFUSAL.value,
         },
+        tab_update_visibility="silent",
+        source_disclosure_mode=(
+            "on_claims"
+            if _enum_value(knowledge_policy.rag_policy)
+            in {KnowledgeRagPolicy.OPTIONAL.value, KnowledgeRagPolicy.REQUIRED.value}
+            else "none"
+        ),
+        user_question_must_be_answered=_communication_answer_first(
+            intent, freedom_decision, response_policy
+        ),
+        must_mention=["sealing_boundary"]
+        if intent in {SemanticIntent.NON_SEALING_UTILITY, SemanticIntent.BLOCKED}
+        else [],
+        must_not_mention=["external_utility_answer", "final_engineering_release"],
         forbidden_claims=freedom_decision.forbidden_actions,
+        allowed_claim_level="general_orientation",
     )
     return V91TurnPolicyBundle(
         semantic_boundary=semantic_boundary,
@@ -497,6 +524,80 @@ def _communication_response_mode(
     if intent in {SemanticIntent.GENERAL_KNOWLEDGE, SemanticIntent.MATERIAL_OR_MEDIUM_KNOWLEDGE}:
         return "direct_answer"
     return "guided_explanation"
+
+
+def _communication_goal(
+    intent: SemanticIntent,
+    freedom_decision: LLMFreedomDecision,
+    response_policy: ResponsePolicy,
+) -> str:
+    if _enum_value(freedom_decision.level) == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value:
+        return "boundary"
+    if intent is SemanticIntent.NON_SEALING_UTILITY:
+        return "redirect"
+    if _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value:
+        return "answer_and_clarify" if response_policy.answer_first else "clarify_only"
+    if intent in {SemanticIntent.SAFETY_OR_COMPLIANCE, SemanticIntent.RFQ_OR_EXPORT}:
+        return "escalate"
+    return "answer"
+
+
+def _communication_answer_first(
+    intent: SemanticIntent,
+    freedom_decision: LLMFreedomDecision,
+    response_policy: ResponsePolicy,
+) -> bool:
+    if intent is SemanticIntent.NON_SEALING_UTILITY:
+        return False
+    if _enum_value(freedom_decision.level) == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value:
+        return False
+    return bool(response_policy.answer_first)
+
+
+def _communication_response_moves(
+    intent: SemanticIntent,
+    freedom_decision: LLMFreedomDecision,
+    response_policy: ResponsePolicy,
+) -> list[ResponseMove]:
+    moves: list[ResponseMove] = []
+    if intent in {SemanticIntent.SMALLTALK, SemanticIntent.PROCESS_OR_META}:
+        moves.append(ResponseMove.SMALLTALK_BRIDGE)
+    else:
+        moves.append(ResponseMove.ACKNOWLEDGE)
+    if _communication_answer_first(intent, freedom_decision, response_policy):
+        moves.append(ResponseMove.ANSWER)
+    if intent is SemanticIntent.NON_SEALING_UTILITY:
+        moves.extend([ResponseMove.BOUNDARY, ResponseMove.REDIRECT])
+    elif _enum_value(freedom_decision.level) == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value:
+        moves.append(ResponseMove.BOUNDARY)
+    elif intent in {SemanticIntent.SAFETY_OR_COMPLIANCE, SemanticIntent.RFQ_OR_EXPORT}:
+        moves.extend([ResponseMove.BOUNDARY, ResponseMove.ESCALATE])
+    elif _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value:
+        moves.extend([ResponseMove.JUSTIFY_QUESTION, ResponseMove.CLARIFY])
+    else:
+        moves.append(ResponseMove.EXPLAIN)
+    return _dedupe_response_moves(moves)
+
+
+def _communication_response_depth(answer_depth: AnswerDepth | str) -> str:
+    value = _enum_value(answer_depth)
+    if value == AnswerDepth.SHORT.value:
+        return "short"
+    if value == AnswerDepth.DEEP.value:
+        return "deep"
+    return "standard"
+
+
+def _dedupe_response_moves(moves: list[ResponseMove]) -> list[ResponseMove]:
+    seen: set[str] = set()
+    result: list[ResponseMove] = []
+    for move in moves:
+        value = _enum_value(move)
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(move)
+    return result
 
 
 def _requires_documented_evidence(red_flags: list[RedFlag]) -> bool:

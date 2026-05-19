@@ -71,6 +71,11 @@ _RECOVERABLE_REPAIR_REASONS = {
     "restates_recently_supplied_value",
     "communication_guard:planned_question_missing",
     "communication_guard:too_many_questions",
+    "communication_guard:unplanned_question",
+    "communication_guard:missing_question_reason",
+    "communication_guard:answer_first_missing",
+    "communication_guard:external_utility_answer",
+    "communication_guard:tab_spam",
 }
 
 

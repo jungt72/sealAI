@@ -90,6 +90,27 @@ class AnswerDepth(str, Enum):
     DEEP = "deep"
 
 
+class ResponseMove(str, Enum):
+    ACKNOWLEDGE = "acknowledge"
+    ANSWER = "answer"
+    EXPLAIN = "explain"
+    COMPARE = "compare"
+    CHALLENGE = "challenge"
+    CLARIFY = "clarify"
+    JUSTIFY_QUESTION = "justify_question"
+    SUMMARIZE_STATE = "summarize_state"
+    CONFIRM_UPDATE = "confirm_update"
+    MENTION_TAB_UPDATE = "mention_tab_update"
+    DISCLOSE_SOURCE = "disclose_source"
+    BOUNDARY = "boundary"
+    EMPATHIZE = "empathize"
+    RECOVER = "recover"
+    REDIRECT = "redirect"
+    OFFER_UI_ACTION = "offer_ui_action"
+    ESCALATE = "escalate"
+    SMALLTALK_BRIDGE = "smalltalk_bridge"
+
+
 class SemanticBoundaryDecision(BaseModel):
     intent: SemanticIntent
     domain_relevance: DomainRelevance
@@ -239,6 +260,16 @@ class QuestionPlan(BaseModel):
 
 
 class CommunicationPlan(BaseModel):
+    goal: Literal[
+        "answer",
+        "answer_and_clarify",
+        "clarify_only",
+        "boundary",
+        "recover",
+        "summarize",
+        "redirect",
+        "escalate",
+    ] = "answer"
     response_mode: Literal[
         "direct_answer",
         "guided_explanation",
@@ -246,12 +277,28 @@ class CommunicationPlan(BaseModel):
         "clarification",
         "boundary_refusal",
     ] = "guided_explanation"
+    response_moves: list[ResponseMove] = Field(
+        default_factory=lambda: [ResponseMove.ACKNOWLEDGE, ResponseMove.ANSWER]
+    )
+    response_depth: Literal["micro", "short", "standard", "deep", "dossier"] = "standard"
     answer_depth: AnswerDepth = AnswerDepth.NORMAL
+    answer_first: bool = False
+    ask_user_question: bool = False
+    max_new_questions: int = Field(default=1, ge=0, le=1)
+    question_justification_required: bool = False
     include_boundary_notice: bool = True
     include_tab_update_notice: bool = False
+    tab_update_visibility: Literal["silent", "concise", "explicit"] = "silent"
+    source_disclosure_mode: Literal["none", "on_claims", "on_request", "always"] = "none"
+    user_question_must_be_answered: bool = False
+    max_findings_to_mention: int = Field(default=2, ge=0, le=8)
     primary_question: str | None = None
     primary_question_reason: str | None = None
+    must_mention: list[str] = Field(default_factory=list)
+    may_mention: list[str] = Field(default_factory=list)
+    must_not_mention: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=list)
+    allowed_claim_level: str = "general_orientation"
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
