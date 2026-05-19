@@ -18,19 +18,26 @@ def _card(
     material: str = "FKM",
     medium: str = "HLP",
     status: str = "supported_precheck",
-    claim_level: str = "L2_screening",
+    claim_level: str = "L2",
     source_type: str = "fact_card",
     **extra: object,
 ) -> dict[str, object]:
     return {
+        "schema_version": "material_evidence_card.v1",
         "card_id": card_id,
         "material": material,
         "medium": medium,
         "compatibility_status": status,
         "claim_level": claim_level,
+        "claim_type": "compatibility_precheck",
         "source_type": source_type,
         "source_title": "Curated compatibility orientation",
+        "source_hash": f"sha256:{card_id}",
         "excerpt_short": "Evidence-backed precheck context only.",
+        "statement_short": "Evidence-backed precheck context only.",
+        "limitations": [],
+        "final_approval_claim_allowed": False,
+        "compliance_claim_allowed": False,
         **extra,
     }
 
@@ -127,10 +134,19 @@ def test_family_level_card_is_only_orientation() -> None:
             compatibility_evidence_cards=[
                 {
                     "card_id": "compat-family-oil",
+                    "schema_version": "material_evidence_card.v1",
                     "material_family": "FKM",
                     "medium_family": "oelhaltig",
                     "compatibility_status": "supported_precheck",
-                    "claim_level": "L2_screening",
+                    "claim_level": "L2",
+                    "claim_type": "compatibility_precheck",
+                    "source_type": "fact_card",
+                    "source_title": "Curated family orientation",
+                    "source_hash": "sha256:compat-family-oil",
+                    "statement_short": "Evidence-backed family orientation only.",
+                    "limitations": ["family_level_only"],
+                    "final_approval_claim_allowed": False,
+                    "compliance_claim_allowed": False,
                 }
             ]
         )

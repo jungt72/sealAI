@@ -14,6 +14,10 @@ from app.agent.domain.medium_registry import (
     is_medium_placeholder_value,
     normalize_medium_lookup_key,
 )
+from app.agent.domain.material_evidence_cards import (
+    validate_material_evidence_cards,
+    valid_compliance_evidence_present,
+)
 from app.mcp.calculations.chemical_resistance import lookup as lookup_chemical_resistance
 
 
@@ -588,7 +592,12 @@ def lookup_material_compatibility_evidence(
     medium_key = normalize_medium_lookup_key(medium_text) or medium_text.casefold()
     material_key = _normalize_material_key(material_text)
     matched: list[tuple[dict[str, Any], str]] = []
-    for card in _iter_evidence_cards(profile):
+    validation_limitations: list[str] = []
+    for result in validate_material_evidence_cards(_iter_evidence_cards(profile)):
+        if not result.valid or result.normalized_card is None:
+            validation_limitations.append(f"invalid_evidence_card:{result.to_limitation()}")
+            continue
+        card = result.normalized_card
         match_level = _card_match_level(
             card,
             medium_key=medium_key,
@@ -602,7 +611,9 @@ def lookup_material_compatibility_evidence(
         return CompatibilityEvidenceLookup(
             evidence_status="no_evidence",
             evidence_summary="Keine passende Material/Medium-Evidenzkarte im aktuellen Wissensbestand gefunden.",
-            evidence_limitations=["missing_compatibility_knowledge_card"],
+            evidence_limitations=_dedupe(
+                ["missing_compatibility_knowledge_card", *validation_limitations]
+            ),
         )
 
     refs: list[CompatibilityEvidenceRef] = []
@@ -616,6 +627,7 @@ def lookup_material_compatibility_evidence(
     has_concentration_gap = False
     has_weak_claim_level = False
 
+    limitations.extend(validation_limitations)
     for card, match_level in matched:
         ref = _evidence_ref_from_card(card)
         refs.append(ref)
@@ -815,7 +827,10 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
         )
 
     compliance_evidence_fields, has_compliance_evidence = _has_explicit_evidence(profile)
-    if _compliance_requested(profile, medium_text) and not has_compliance_evidence:
+    has_card_compliance_evidence = valid_compliance_evidence_present(_iter_evidence_cards(profile))
+    if _compliance_requested(profile, medium_text) and not (
+        has_compliance_evidence or has_card_compliance_evidence
+    ):
         return _base_item(
             medium_field=medium_field,
             material_field=material_field,
@@ -834,6 +849,10 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             evidence_limitations=["compliance_certificate_required"],
         )
     evidence_fields.extend(compliance_evidence_fields)
+    if has_card_compliance_evidence:
+        for alias in _EVIDENCE_CARD_ALIASES:
+            if _is_known_text(profile.get(alias)) and alias not in evidence_fields:
+                evidence_fields.append(alias)
 
     if temperature_raw in (None, "", [], {}):
         return _base_item(

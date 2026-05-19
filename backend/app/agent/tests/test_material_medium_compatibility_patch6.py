@@ -84,14 +84,21 @@ def _compat_check(profile: dict[str, object]) -> dict[str, object]:
 
 def _support_card() -> dict[str, object]:
     return {
+        "schema_version": "material_evidence_card.v1",
         "card_id": "compat-fkm-hlp",
         "material": "FKM",
         "medium": "HLP",
-        "claim_level": "L2_screening",
+        "claim_level": "L2",
+        "claim_type": "compatibility_precheck",
         "source_type": "fact_card",
         "source_title": "Curated FKM/HLP orientation card",
+        "source_hash": "sha256:patch6-fkm-hlp",
+        "limitations": [],
+        "final_approval_claim_allowed": False,
+        "compliance_claim_allowed": False,
         "compatibility_status": "supported_precheck",
         "excerpt_short": "FKM/HLP orientation under bounded precheck conditions.",
+        "statement_short": "Evidence-backed precheck context only.",
     }
 
 
