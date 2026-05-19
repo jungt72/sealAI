@@ -13,6 +13,7 @@ import type {
 import type {
   EngineeringCockpitView,
   EngineeringCheckResult,
+  EngineeringEvidenceRef,
   EngineeringPath,
   EngineeringSection,
   EngineeringSectionId,
@@ -48,6 +49,21 @@ type RawEngineeringCheckResult = {
   check_id?: string | null;
   label?: string;
   formula_version?: string;
+  compatibility_status?: string | null;
+  evidence_status?: string | null;
+  evidence_refs?: Array<{
+    ref_id?: string | null;
+    card_id?: string | null;
+    source_title?: string | null;
+    source_type?: string | null;
+    claim_level?: string | null;
+    material?: string | null;
+    medium?: string | null;
+    excerpt_short?: string | null;
+    limitations?: string[];
+  }>;
+  evidence_summary?: string | null;
+  evidence_limitations?: string[];
   required_inputs?: string[];
   required_fields?: string[];
   missing_inputs?: string[];
@@ -65,6 +81,8 @@ type RawEngineeringCheckResult = {
   severity?: string;
   human_readable_reason?: string;
   raw_status?: string | null;
+  ambiguous_fields?: string[];
+  final_approval_claim_allowed?: boolean;
   notes?: string[];
 };
 
@@ -829,12 +847,36 @@ function normalizeSectionId(id: string | null | undefined): EngineeringSectionId
   return id ? LEGACY_SECTION_ID_MAP[id] ?? null : null;
 }
 
+function mapEvidenceRefs(rawRefs: RawEngineeringCheckResult["evidence_refs"]): EngineeringEvidenceRef[] | undefined {
+  if (!rawRefs) {
+    return undefined;
+  }
+  return rawRefs
+    .map((ref) => ({
+      refId: String(ref.ref_id || "").trim() || undefined,
+      cardId: String(ref.card_id || "").trim() || undefined,
+      sourceTitle: String(ref.source_title || "").trim() || undefined,
+      sourceType: String(ref.source_type || "").trim() || undefined,
+      claimLevel: String(ref.claim_level || "").trim() || undefined,
+      material: String(ref.material || "").trim() || undefined,
+      medium: String(ref.medium || "").trim() || undefined,
+      excerptShort: String(ref.excerpt_short || "").trim() || undefined,
+      limitations: asStrings(ref.limitations),
+    }))
+    .filter((ref) => ref.refId || ref.cardId || ref.sourceTitle || ref.excerptShort);
+}
+
 function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): EngineeringCheckResult[] {
   return (rawChecks || []).map((check) => ({
     calcId: check.calc_id || "",
     checkId: check.check_id ?? check.calc_id ?? "",
     label: check.label || check.calc_id || "",
     formulaVersion: check.formula_version || "",
+    compatibilityStatus: check.compatibility_status ?? undefined,
+    evidenceStatus: check.evidence_status ?? undefined,
+    evidenceRefs: mapEvidenceRefs(check.evidence_refs),
+    evidenceSummary: check.evidence_summary ?? undefined,
+    evidenceLimitations: check.evidence_limitations,
     requiredInputs: check.required_inputs || [],
     requiredFields: check.required_fields || check.required_inputs || [],
     missingInputs: check.missing_inputs || [],
@@ -855,6 +897,8 @@ function mapCockpitChecks(rawChecks: RawEngineeringCheckResult[] | undefined): E
     severity: check.severity || "screening",
     humanReadableReason: check.human_readable_reason || "",
     rawStatus: check.raw_status ?? null,
+    ambiguousFields: check.ambiguous_fields,
+    finalApprovalClaimAllowed: check.final_approval_claim_allowed,
     notes: check.notes || [],
   }));
 }

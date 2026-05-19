@@ -44,6 +44,24 @@ export type CalculationEvidenceMetric = {
   limit?: string;
   reserve?: string;
   status: string;
+  compatibilityStatus?: string;
+  evidenceStatus?: string;
+  evidenceRefs?: Array<{
+    refId?: string;
+    cardId?: string;
+    sourceTitle?: string;
+    sourceType?: string;
+    claimLevel?: string;
+    material?: string;
+    medium?: string;
+    excerptShort?: string;
+    limitations?: string[];
+  }>;
+  evidenceSummary?: string;
+  evidenceLimitations?: string[];
+  missingFields?: string[];
+  ambiguousFields?: string[];
+  finalApprovalClaimAllowed?: boolean;
 };
 
 export type SealCockpitOverview = {

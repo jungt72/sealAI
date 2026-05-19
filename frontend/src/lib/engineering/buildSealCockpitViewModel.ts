@@ -241,6 +241,14 @@ function buildCalculations(workspace: WorkspaceView | null): CalculationEvidence
       limit: check.humanReadableReason || check.blockingReason || check.notes[0],
       reserve: check.guardrails[0],
       status: check.status,
+      compatibilityStatus: check.compatibilityStatus,
+      evidenceStatus: check.evidenceStatus,
+      evidenceRefs: check.evidenceRefs,
+      evidenceSummary: check.evidenceSummary,
+      evidenceLimitations: check.evidenceLimitations,
+      missingFields: check.missingFields,
+      ambiguousFields: check.ambiguousFields,
+      finalApprovalClaimAllowed: check.finalApprovalClaimAllowed,
     }));
   }
 

@@ -385,3 +385,67 @@ test("mapWorkspaceView normalizes legacy workspace sections", () => {
   expect(workspace.evidence.sourceBackedFindings).toEqual(["medium"]);
   expect(workspace.evidence.evidenceGaps).toEqual(["missing_source_for_compliance"]);
 });
+
+test("workspace mapper preserves compatibility evidence fields", () => {
+  const projection = legacyProjection() as any;
+  projection.cockpit_view.checks[0] = {
+    ...projection.cockpit_view.checks[0],
+    compatibility_status: "candidate_supported",
+    evidence_status: "evidence_found",
+    evidence_refs: [
+      {
+        ref_id: "ref-1",
+        card_id: "card-1",
+        source_title: "Material evidence card",
+        source_type: "knowledge_card",
+        claim_level: "screening",
+        material: "NBR",
+        medium: "HLP 46",
+        excerpt_short: "Family-level screening evidence.",
+        limitations: ["nur Werkstofffamilie, kein konkreter Compound"],
+      },
+    ],
+    evidence_summary: "Backend meldet eine quellenmarkierte Screening-Grundlage.",
+    evidence_limitations: ["Hersteller-/Datenblattnachweis erforderlich"],
+    missing_fields: ["concentration"],
+    ambiguous_fields: ["temperature_c"],
+    final_approval_claim_allowed: false,
+  };
+
+  const workspace = mapWorkspaceView("case-123", projection);
+  const check = workspace.cockpit?.checks[0];
+
+  expect(check?.compatibilityStatus).toBe("candidate_supported");
+  expect(check?.evidenceStatus).toBe("evidence_found");
+  expect(check?.evidenceRefs).toEqual([
+    {
+      refId: "ref-1",
+      cardId: "card-1",
+      sourceTitle: "Material evidence card",
+      sourceType: "knowledge_card",
+      claimLevel: "screening",
+      material: "NBR",
+      medium: "HLP 46",
+      excerptShort: "Family-level screening evidence.",
+      limitations: ["nur Werkstofffamilie, kein konkreter Compound"],
+    },
+  ]);
+  expect(check?.evidenceSummary).toBe("Backend meldet eine quellenmarkierte Screening-Grundlage.");
+  expect(check?.evidenceLimitations).toEqual(["Hersteller-/Datenblattnachweis erforderlich"]);
+  expect(check?.missingFields).toEqual(["concentration"]);
+  expect(check?.ambiguousFields).toEqual(["temperature_c"]);
+  expect(check?.finalApprovalClaimAllowed).toBe(false);
+});
+
+test("workspace mapper does not invent evidence metadata when missing", () => {
+  const workspace = mapWorkspaceView("case-123", legacyProjection());
+  const check = workspace.cockpit?.checks[0];
+
+  expect(check?.compatibilityStatus).toBeUndefined();
+  expect(check?.evidenceStatus).toBeUndefined();
+  expect(check?.evidenceRefs).toBeUndefined();
+  expect(check?.evidenceSummary).toBeUndefined();
+  expect(check?.evidenceLimitations).toBeUndefined();
+  expect(check?.ambiguousFields).toBeUndefined();
+  expect(check?.finalApprovalClaimAllowed).toBeUndefined();
+});

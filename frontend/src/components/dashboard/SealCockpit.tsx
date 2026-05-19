@@ -546,6 +546,7 @@ export function SolutionConsequenceCard({ solution }: { solution: SealCockpitOve
 }
 
 function CalculationMetric({ metric }: { metric: CalculationEvidenceMetric }) {
+  const evidenceVisible = hasCompatibilityEvidence(metric);
   return (
     <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
       <div className="text-[12px] font-semibold text-[#4B5563]">{metric.label}</div>
@@ -554,9 +555,105 @@ function CalculationMetric({ metric }: { metric: CalculationEvidenceMetric }) {
         {metric.limit && <div>{metric.limit}</div>}
         {metric.reserve && <div>{metric.reserve}</div>}
       </div>
+      {evidenceVisible ? <CompatibilityEvidenceBlock metric={metric} /> : null}
       <div className="mt-3 inline-flex rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-seal-blue">
         {metric.status}
       </div>
+    </div>
+  );
+}
+
+function hasCompatibilityEvidence(metric: CalculationEvidenceMetric) {
+  return Boolean(
+    metric.compatibilityStatus ||
+      metric.evidenceStatus ||
+      metric.evidenceSummary ||
+      metric.evidenceLimitations?.length ||
+      metric.evidenceRefs?.length ||
+      metric.missingFields?.length ||
+      metric.ambiguousFields?.length ||
+      typeof metric.finalApprovalClaimAllowed === "boolean",
+  );
+}
+
+function compatibilityPrecheckLabel(status: string | undefined) {
+  switch (status) {
+    case "candidate_supported":
+    case "screening_supported":
+    case "precheck_supported":
+      return "Kandidat zur Prüfung";
+    case "blocked":
+    case "contraindicated":
+      return "Gegenindikator gemeldet";
+    case "insufficient_context":
+    case "missing_data":
+      return "Nachweis erforderlich";
+    default:
+      return "nicht final bewertet";
+  }
+}
+
+function evidenceStatusDisplay(status: string | undefined) {
+  switch (status) {
+    case "evidence_found":
+    case "documented_evidence":
+      return "Evidenz: vorhanden";
+    case "no_evidence":
+      return "Evidenz: nicht vorhanden";
+    case "insufficient_evidence":
+      return "Evidenz: unzureichend";
+    case "conflicting_evidence":
+      return "Evidenz: widersprüchlich";
+    default:
+      return status ? `Evidenzstatus: ${humanizeDisplayText(status)}` : "Evidenzstatus nicht verfügbar";
+  }
+}
+
+function evidenceRefLabel(ref: NonNullable<CalculationEvidenceMetric["evidenceRefs"]>[number]) {
+  return ref.sourceTitle || ref.cardId || ref.refId || ref.excerptShort || null;
+}
+
+function CompatibilityEvidenceBlock({ metric }: { metric: CalculationEvidenceMetric }) {
+  const evidenceRefLabels = compactItems((metric.evidenceRefs ?? []).map(evidenceRefLabel), 3);
+  const openItems = compactItems([...(metric.missingFields ?? []), ...(metric.ambiguousFields ?? [])].map(fieldLabel), 4);
+  const limitations = compactItems(metric.evidenceLimitations ?? [], 3);
+  const hasConflict = metric.evidenceStatus === "conflicting_evidence";
+
+  return (
+    <div className="mt-3 rounded-[12px] border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] leading-relaxed text-[#374151]">
+      <div className="flex flex-wrap gap-1.5">
+        <span className="rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-2 py-0.5 font-semibold text-seal-blue">
+          Precheck: {compatibilityPrecheckLabel(metric.compatibilityStatus)}
+        </span>
+        <span className="rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-2 py-0.5 font-semibold text-[#4B5563]">
+          {evidenceStatusDisplay(metric.evidenceStatus)}
+        </span>
+        {typeof metric.finalApprovalClaimAllowed === "boolean" && !metric.finalApprovalClaimAllowed ? (
+          <span className="rounded-full border border-[#FDE2B8] bg-[#FFF4E5] px-2 py-0.5 font-semibold text-[#9A3412]">
+            Keine Freigabeaussage
+          </span>
+        ) : null}
+      </div>
+      {hasConflict ? (
+        <p className="mt-2 font-semibold text-[#9A3412]">Datenlage nicht eindeutig.</p>
+      ) : null}
+      {metric.evidenceSummary ? <p className="mt-2">{metric.evidenceSummary}</p> : null}
+      {metric.evidenceRefs?.length ? (
+        <p className="mt-2 text-[#4B5563]">
+          Nachweise: {metric.evidenceRefs.length}
+          {evidenceRefLabels.length ? ` · ${evidenceRefLabels.join(" · ")}` : ""}
+        </p>
+      ) : null}
+      {openItems.length ? (
+        <p className="mt-2 text-[#4B5563]">Offen: {openItems.join(" · ")}</p>
+      ) : null}
+      {limitations.length ? (
+        <ul className="mt-2 space-y-1 text-[#4B5563]">
+          {limitations.map((limitation) => (
+            <li key={limitation}>Limitation: {limitation}</li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -758,6 +855,8 @@ function fieldLabel(field: string) {
       return "Medium";
     case "medium_qualifiers":
       return "Mediumdetails";
+    case "concentration":
+      return "Konzentration";
     case "temperature_c":
       return "Temperatur";
     case "pressure_bar":

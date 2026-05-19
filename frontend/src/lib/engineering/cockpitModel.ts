@@ -27,6 +27,18 @@ export interface EngineeringProperty {
   isMandatory: boolean;
 }
 
+export interface EngineeringEvidenceRef {
+  refId?: string;
+  cardId?: string;
+  sourceTitle?: string;
+  sourceType?: string;
+  claimLevel?: string;
+  material?: string;
+  medium?: string;
+  excerptShort?: string;
+  limitations?: string[];
+}
+
 export interface EngineeringSectionCompletion {
   mandatoryPresent: number;
   mandatoryTotal: number;
@@ -57,11 +69,18 @@ export interface EngineeringCheckResult {
   fallbackBehavior: string;
   guardrails: string[];
   blockingReason?: string | null;
+  compatibilityStatus?: string;
+  evidenceStatus?: string;
+  evidenceRefs?: EngineeringEvidenceRef[];
+  evidenceSummary?: string;
+  evidenceLimitations?: string[];
   evidenceFields?: string[];
   derivedFrom?: string[];
   severity?: string;
   humanReadableReason?: string;
   rawStatus?: string | null;
+  ambiguousFields?: string[];
+  finalApprovalClaimAllowed?: boolean;
   notes: string[];
 }
 

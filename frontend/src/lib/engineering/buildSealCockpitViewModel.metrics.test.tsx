@@ -202,4 +202,52 @@ describe("buildSealCockpitViewModel backend metrics", () => {
     expect(viewModel.statusStrip).toContainEqual({ label: "Stand", value: "Backend-Metrik fehlt" });
     expect(viewModel.statusStrip).toContainEqual({ label: "Gerechnet", value: "Backend-Metrik fehlt" });
   });
+
+  it("keeps backend compatibility evidence metadata on calculation metrics", () => {
+    const cockpit = cockpitFixture();
+    cockpit.checks = [
+      {
+        calcId: "material.compatibility_precheck",
+        checkId: "material.compatibility_precheck",
+        label: "Werkstoff-/Medium-Precheck",
+        formulaVersion: "compatibility_precheck_v1",
+        requiredInputs: ["medium", "sealing_material_family"],
+        requiredFields: ["medium", "sealing_material_family"],
+        missingInputs: [],
+        missingFields: ["concentration"],
+        validPaths: ["rwdr"],
+        outputKey: "compatibility_precheck",
+        unit: null,
+        status: "screening",
+        value: null,
+        fallbackBehavior: "precheck_only_when_evidence_is_limited",
+        guardrails: ["Keine Freigabeaussage"],
+        evidenceFields: [],
+        derivedFrom: [],
+        severity: "screening",
+        humanReadableReason: "Backend meldet nur einen Precheck.",
+        rawStatus: null,
+        notes: [],
+        compatibilityStatus: "candidate_supported",
+        evidenceStatus: "evidence_found",
+        evidenceRefs: [{ refId: "ref-1", sourceTitle: "Material evidence card" }],
+        evidenceSummary: "Backend meldet eine quellenmarkierte Screening-Grundlage.",
+        evidenceLimitations: ["Hersteller-/Datenblattnachweis erforderlich"],
+        ambiguousFields: ["temperature_c"],
+        finalApprovalClaimAllowed: false,
+      },
+    ];
+
+    const viewModel = buildSealCockpitViewModel(workspaceWithCockpit(cockpit));
+    const metric = viewModel.calculations[0];
+
+    expect(metric.compatibilityStatus).toBe("candidate_supported");
+    expect(metric.evidenceStatus).toBe("evidence_found");
+    expect(metric.evidenceRefs).toEqual([{ refId: "ref-1", sourceTitle: "Material evidence card" }]);
+    expect(metric.evidenceSummary).toBe("Backend meldet eine quellenmarkierte Screening-Grundlage.");
+    expect(metric.evidenceLimitations).toEqual(["Hersteller-/Datenblattnachweis erforderlich"]);
+    expect(metric.missingFields).toEqual(["concentration"]);
+    expect(metric.ambiguousFields).toEqual(["temperature_c"]);
+    expect(metric.finalApprovalClaimAllowed).toBe(false);
+  });
 });

@@ -8,6 +8,7 @@ import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 
 import {
   ChallengeIntelligencePanel,
+  CalculationsEvidenceCard,
   DesignIntakePanel,
   SealCockpit,
   V91IntelligencePanel,
@@ -688,5 +689,88 @@ describe("SealCockpit material intelligence", () => {
     expect(screen.getByText(/NBR und FKM liegen/)).toBeInTheDocument();
     expect(screen.getByText(/SeaLAI Werkstoffrahmen: NBR/)).toBeInTheDocument();
     expect(screen.getByText(/SeaLAI setzt daraus keine Materialentscheidung/)).toBeInTheDocument();
+  });
+});
+
+describe("CalculationsEvidenceCard compatibility evidence", () => {
+  it("renders precheck evidence without approval wording", () => {
+    render(
+      <CalculationsEvidenceCard
+        metrics={[
+          {
+            label: "Werkstoff-/Medium-Precheck",
+            value: "Noch nicht möglich",
+            status: "screening",
+            compatibilityStatus: "candidate_supported",
+            evidenceStatus: "evidence_found",
+            evidenceRefs: [{ refId: "ref-1", sourceTitle: "Material evidence card" }],
+            evidenceSummary: "Backend meldet eine quellenmarkierte Screening-Grundlage.",
+            evidenceLimitations: ["nur Werkstofffamilie, kein konkreter Compound"],
+            missingFields: ["concentration"],
+            finalApprovalClaimAllowed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Precheck: Kandidat zur Prüfung/)).toBeInTheDocument();
+    expect(screen.getByText("Evidenz: vorhanden")).toBeInTheDocument();
+    expect(screen.getByText("Keine Freigabeaussage")).toBeInTheDocument();
+    expect(screen.getByText(/Backend meldet eine quellenmarkierte Screening-Grundlage/)).toBeInTheDocument();
+    expect(screen.getByText(/Nachweise: 1 · Material evidence card/)).toBeInTheDocument();
+    expect(screen.getByText(/Offen: Konzentration/)).toBeInTheDocument();
+    expect(screen.getByText(/Limitation: nur Werkstofffamilie/)).toBeInTheDocument();
+    expect(screen.queryByText(/\bgeeignet\b/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bfreigegeben\b/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bzugelassen\b/i)).not.toBeInTheDocument();
+  });
+
+  it("renders missing evidence limitations without final claims", () => {
+    render(
+      <CalculationsEvidenceCard
+        metrics={[
+          {
+            label: "Werkstoff-/Medium-Precheck",
+            value: "Noch nicht möglich",
+            status: "screening",
+            evidenceStatus: "insufficient_evidence",
+            evidenceSummary: "Nachweis erforderlich, bevor daraus eine Anfragebasis wird.",
+            evidenceLimitations: ["Hersteller-/Datenblattnachweis erforderlich"],
+            missingFields: ["temperature_c"],
+            ambiguousFields: ["medium"],
+            finalApprovalClaimAllowed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Evidenz: unzureichend")).toBeInTheDocument();
+    expect(screen.getByText(/Nachweis erforderlich/)).toBeInTheDocument();
+    expect(screen.getByText(/Offen: Temperatur · Medium/)).toBeInTheDocument();
+    expect(screen.getByText(/Hersteller-\/Datenblattnachweis erforderlich/)).toBeInTheDocument();
+    expect(screen.queryByText(/\bvalidiert\b/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bgeeignet\b/i)).not.toBeInTheDocument();
+  });
+
+  it("renders conflicting evidence as non-final data state", () => {
+    render(
+      <CalculationsEvidenceCard
+        metrics={[
+          {
+            label: "Werkstoff-/Medium-Precheck",
+            value: "Noch nicht möglich",
+            status: "screening",
+            evidenceStatus: "conflicting_evidence",
+            evidenceSummary: "Zwei Quellen zeigen unterschiedliche Grenzen.",
+            finalApprovalClaimAllowed: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Evidenz: widersprüchlich")).toBeInTheDocument();
+    expect(screen.getByText("Datenlage nicht eindeutig.")).toBeInTheDocument();
+    expect(screen.getByText("Keine Freigabeaussage")).toBeInTheDocument();
+    expect(screen.queryByText(/\bfreigegeben\b/i)).not.toBeInTheDocument();
   });
 });
