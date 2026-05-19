@@ -50,6 +50,8 @@ _FORBIDDEN_APPROVAL_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"\brfq[-\s]?ready\b",
         r"\bherstellerreif(?:e|er|es|en)?\b",
         r"\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe)\s+ist\s+(?:gut\s+)?geeignet\b",
+        r"\b(?:material|werkstoff|compound|fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\b.{0,100}\b(?:ist|sind|is|are)\s+(?:chemisch\s+|fully\s+|absolutely\s+|sicher\s+)?(?:best[aä]ndig|bestaendig|resistant|compatible|suitable|safe\s+for)\b",
+        r"\b(?:material|werkstoff|compound|fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\b.{0,100}\b(?:freigegeben|zugelassen|approved|validated|validiert)\b",
         r"\b(?:nehmen\s+sie|nimm|verwenden\s+sie|verwende)\b.{0,80}\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe|pom|peek)\b",
         r"\b(?:material|werkstoff|fkm|ffkm|epdm|nbr|ptfe|pom|peek)\b.{0,80}\b(?:ist\s+die\s+beste|beste\s+l(?:oe|ö)sung)\b",
         r"\b(?:keine\s+weitere[n]?\s+pruefung|keine\s+weitere[n]?\s+prüfung|keine\s+herstellerpruefung|keine\s+herstellerprüfung)\b",

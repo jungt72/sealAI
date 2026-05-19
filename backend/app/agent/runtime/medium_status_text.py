@@ -140,8 +140,16 @@ def render_open_point_label(state: GovernedSessionState | None, field_name: str)
         return "Branche / Einsatzumfeld"
     if field_name == "compliance":
         return "Regulatorische Anforderungen"
+    if field_name == "compliance_evidence":
+        return "Nachweis fuer regulatorische Anforderungen"
     if field_name == "medium_qualifiers":
         return "Mediumdetails wie Konzentration, Chloride oder Feststoffe"
+    if field_name == "concentration":
+        return "Konzentration oder Zusammensetzung des Mediums"
+    if field_name == "ph":
+        return "pH-Wert des Mediums"
+    if field_name == "material":
+        return "Werkstoff oder Werkstofffamilie"
     if field_name == "speed_rpm":
         return "Drehzahl der rotierenden Welle"
     if field_name == "shaft_diameter_mm":

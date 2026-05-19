@@ -91,6 +91,22 @@ _QUESTION_META: dict[str, tuple[str, str]] = {
         "Welche Mediumdetails sind bekannt, zum Beispiel Konzentration, Chloride oder Feststoffanteile?",
         "Diese Mediumdetails koennen die Werkstoff- und Korrosionsgrenzen entscheidend veraendern.",
     ),
+    "concentration": (
+        "Welche genaue Konzentration oder Zusammensetzung liegt an der Dichtung an?",
+        "Das ist wichtig, weil die Werkstoffvertraeglichkeit stark von Medium, Konzentration und Temperatur abhaengt.",
+    ),
+    "ph": (
+        "Welcher pH-Wert oder pH-Bereich liegt am Medium an?",
+        "Der pH-Kontext kann den Werkstoff-Precheck bei Saeuren, Laugen und Reinigungsmedien deutlich verschieben.",
+    ),
+    "material": (
+        "Welcher Werkstoff oder welche Werkstofffamilie ist vorhanden oder geplant?",
+        "Ohne Werkstoffangabe kann der Material/Medium-Precheck keine belastbare Pruefhypothese bilden.",
+    ),
+    "compliance_evidence": (
+        "Welcher konkrete Nachweis liegt fuer die regulatorische Anforderung vor, zum Beispiel Datenblatt, Zertifikat oder Herstellerbestaetigung?",
+        "Regulatorische Anforderungen duerfen nicht aus einer Material-/Medium-Orientierung abgeleitet werden.",
+    ),
     "shaft_diameter_mm": (
         "Wie groß ist der Wellendurchmesser ungefähr?",
         "Bei einer rotierenden Welle brauche ich den Wellendurchmesser, um die technische Richtung sauber einzugrenzen.",
@@ -537,7 +553,11 @@ def select_clarification_priority(
         "tolerances",
         "industry",
         "compliance",
+        "compliance_evidence",
         "medium_qualifiers",
+        "concentration",
+        "ph",
+        "material",
         "application_context",
         "installation",
         "geometry_context",
@@ -577,6 +597,14 @@ def select_clarification_priority(
                 reason="Das Medium entscheidet zuerst ueber Werkstoffwahl und Einsatzrahmen.",
                 open_point_label=render_open_point_label(state, "medium"),
             )
+
+    for field_name in ("concentration", "ph", "material", "temperature_c", "compliance_evidence"):
+        if field_name in field_set:
+            if _has_value(state, field_name):
+                continue
+            priority = _priority_from_field(field_name)
+            if priority is not None:
+                return priority
 
     has_explicit_medium_context = _nested_text(state.medium_classification, "status") == "recognized"
 
@@ -652,7 +680,11 @@ def select_clarification_priority(
             "tolerances",
             "industry",
             "compliance",
+            "compliance_evidence",
             "medium_qualifiers",
+            "concentration",
+            "ph",
+            "material",
         )
         if _has_value(state, field_name)
     }
@@ -708,6 +740,10 @@ def select_clarification_priority(
         "installation_space_summary",
         "tolerances",
         "industry",
+        "compliance_evidence",
+        "concentration",
+        "ph",
+        "material",
         "speed_rpm",
         "shaft_diameter_mm",
     ):

@@ -10,6 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from app.agent.domain.compatibility_precheck import (
+    build_material_medium_compatibility_precheck,
+    compatibility_check_status,
+)
 from app.agent.domain.risk_claims import risk_claim_payload
 
 
@@ -143,6 +147,14 @@ _UNKNOWN_TEXT_VALUES = {
 _ROUGHNESS_RA_ORIENTATION_MAX_UM = 0.8
 _HARDNESS_ORIENTATION_MIN_HRC = 55.0
 _RUNOUT_ORIENTATION_MAX_MM = 0.2
+_COMPATIBILITY_VALID_PATHS = (
+    "rwdr",
+    "static",
+    "hyd_pneu",
+    "ms_pump",
+    "labyrinth",
+    "unclear_rotary",
+)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -581,6 +593,102 @@ def _build_rwdr_professional_check_results(
     return results
 
 
+def _compatibility_claim_type(status: str) -> str:
+    if status == "missing_input":
+        return "missing_input_risk"
+    if status == "ambiguous_input":
+        return "ambiguity_risk"
+    if status in {"blocked_claim", "insufficient_evidence"}:
+        return "blocked_claim"
+    return "context_advisory"
+
+
+def _build_material_medium_compatibility_check_result(
+    profile: dict[str, Any],
+    engineering_path: str | None,
+) -> dict[str, Any] | None:
+    if engineering_path is None and not any(
+        _profile_value(profile, key) not in (None, "", [], {})
+        for key in (
+            "medium",
+            "medium_name",
+            "material",
+            "material_family",
+            "sealing_material_family",
+            "compliance",
+            "industry",
+            "certification_requirement",
+        )
+    ):
+        return None
+
+    precheck = build_material_medium_compatibility_precheck(profile)
+    compatibility_status = precheck.status
+    status = compatibility_check_status(precheck)
+    required_fields = ["medium", "material", "temperature_c"]
+    for field_name in precheck.missing_fields:
+        if field_name and field_name not in required_fields:
+            required_fields.append(field_name)
+    claim_payload = risk_claim_payload(
+        claim_id="check_registry.material_medium_compatibility_precheck",
+        claim_type=_compatibility_claim_type(compatibility_status),
+        subject_field="material_medium_compatibility",
+        severity=precheck.severity,
+        evidence_fields=precheck.evidence_fields,
+        missing_fields=precheck.missing_fields,
+        blocked_reason=(
+            f"compatibility_{compatibility_status}"
+            if status == "blocked"
+            else None
+        ),
+        allowed_user_wording=precheck.allowed_user_wording,
+        forbidden_user_wording=precheck.forbidden_user_wording,
+        source="check_registry",
+    )
+    return {
+        "calc_id": precheck.check_id,
+        "check_id": precheck.check_id,
+        **claim_payload,
+        "label": "Material/Medium-Vertraeglichkeits-Precheck",
+        "formula_version": "material_medium_compatibility_precheck_v1",
+        "required_inputs": required_fields,
+        "required_fields": required_fields,
+        "missing_inputs": list(precheck.missing_fields),
+        "missing_fields": list(precheck.missing_fields),
+        "valid_paths": list(_COMPATIBILITY_VALID_PATHS),
+        "output_key": "material_medium_compatibility",
+        "unit": None,
+        "status": status,
+        "value": compatibility_status if status == "passed" else None,
+        "fallback_behavior": "compatibility_precheck_only_no_approval_claim",
+        "guardrails": [
+            "deterministic precheck/orientation only",
+            "no final material approval, manufacturer release, or compliance approval",
+            "missing or ambiguous medium/material/temperature blocks compatibility claims",
+        ],
+        "blocking_reason": claim_payload["blocked_reason"],
+        "derived_from": [
+            "material_medium_compatibility_precheck_v1",
+            "medium",
+            "material",
+            "temperature_c",
+        ],
+        "human_readable_reason": precheck.human_readable_reason,
+        "raw_status": compatibility_status,
+        "notes": [],
+        "requirement_tier": "recommended_for_professional_review",
+        "compatibility_status": compatibility_status,
+        "compatibility_claim_type": precheck.compatibility_claim_type,
+        "medium_field": precheck.medium_field,
+        "material_field": precheck.material_field,
+        "temperature_field": precheck.temperature_field,
+        "concentration_field": precheck.concentration_field,
+        "ph_field": precheck.ph_field,
+        "ambiguous_fields": list(precheck.ambiguous_fields),
+        "final_approval_claim_allowed": False,
+    }
+
+
 def _canonical_status(
     *,
     raw_status: str,
@@ -731,6 +839,13 @@ def build_registered_check_results(
                 "requirement_tier": definition.requirement_tier,
             }
         )
+
+    compatibility_check = _build_material_medium_compatibility_check_result(
+        profile,
+        engineering_path,
+    )
+    if compatibility_check is not None:
+        results.append(compatibility_check)
 
     results.extend(_build_rwdr_professional_check_results(profile, engineering_path))
 

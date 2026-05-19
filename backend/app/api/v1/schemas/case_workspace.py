@@ -634,6 +634,8 @@ class EngineeringCheckResult(BaseModel):
     check_id: Optional[str] = None
     claim_id: Optional[str] = None
     claim_type: str = "context_advisory"
+    compatibility_claim_type: Optional[str] = None
+    compatibility_status: Optional[str] = None
     subject_field: str = ""
     label: str
     formula_version: str
@@ -653,6 +655,13 @@ class EngineeringCheckResult(BaseModel):
     evidence_fields: List[str] = Field(default_factory=list)
     allowed_user_wording: str = ""
     forbidden_user_wording: List[str] = Field(default_factory=list)
+    medium_field: Optional[str] = None
+    material_field: Optional[str] = None
+    temperature_field: Optional[str] = None
+    concentration_field: Optional[str] = None
+    ph_field: Optional[str] = None
+    ambiguous_fields: List[str] = Field(default_factory=list)
+    final_approval_claim_allowed: bool = False
     source: str = "check_registry"
     derived_from: List[str] = Field(default_factory=list)
     severity: str = "screening"

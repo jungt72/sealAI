@@ -325,6 +325,10 @@ _FIELD_LABELS: dict[str, str] = {
     "installation_space_summary": "Einbauraum / Bauraum",
     "movement_type": "Bewegungsart",
     "application_context": "Anwendung",
+    "material": "Werkstoff",
+    "concentration": "Konzentration",
+    "ph": "pH-Wert",
+    "compliance_evidence": "Compliance-/Nachweisquelle",
 }
 
 _OPEN_POINT_FIELD_ALIASES: dict[str, str] = {
@@ -848,6 +852,37 @@ _REQUIRED_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "installation_space",
         "installation",
         "geometry_context",
+    ),
+    "material": (
+        "material",
+        "material_family",
+        "sealing_material_family",
+        "compound_family",
+        "ptfe_compound_family",
+    ),
+    "temperature_c": (
+        "temperature_c",
+        "temperature_max_c",
+        "temperature_max",
+        "operating_temperature_c",
+    ),
+    "concentration": (
+        "concentration",
+        "concentration_percent",
+        "medium_concentration",
+        "concentration_wt_percent",
+        "chemistry_concentration",
+    ),
+    "ph": ("ph", "pH", "ph_value", "medium_ph"),
+    "compliance_evidence": (
+        "compatibility_evidence",
+        "compliance_evidence",
+        "certificate",
+        "certification_evidence",
+        "manufacturer_datasheet",
+        "datasheet",
+        "document_evidence",
+        "evidence_source",
     ),
 }
 

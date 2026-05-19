@@ -52,7 +52,7 @@ def test_backend_check_metrics_are_registry_derived() -> None:
     metrics = projection.cockpit_view.check_metrics
     statuses = [check.status for check in projection.cockpit_view.checks]
 
-    assert metrics.check_total == len(projection.cockpit_view.checks) == 12
+    assert metrics.check_total == len(projection.cockpit_view.checks) == 13
     assert metrics.check_passed_count == statuses.count("passed")
     assert metrics.check_blocked_count == statuses.count("blocked")
     assert metrics.check_available_count == metrics.check_passed_count + metrics.check_failed_count
