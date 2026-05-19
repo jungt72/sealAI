@@ -26,3 +26,8 @@ cd "$REPO_ROOT"
 prepare_backend_volume
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml pull backend keycloak gotenberg tika
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml up -d --remove-orphans backend keycloak gotenberg tika
+
+# Nginx resolves Docker upstream container IPs at startup. Refresh it after
+# backend/Keycloak recreation so public smoke does not hit stale upstreams.
+echo ">> Refreshing nginx upstreams"
+docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml restart nginx
