@@ -82,6 +82,19 @@ def _compat_check(profile: dict[str, object]) -> dict[str, object]:
     )
 
 
+def _support_card() -> dict[str, object]:
+    return {
+        "card_id": "compat-fkm-hlp",
+        "material": "FKM",
+        "medium": "HLP",
+        "claim_level": "L2_screening",
+        "source_type": "fact_card",
+        "source_title": "Curated FKM/HLP orientation card",
+        "compatibility_status": "supported_precheck",
+        "excerpt_short": "FKM/HLP orientation under bounded precheck conditions.",
+    }
+
+
 def test_unknown_medium_blocks_compatibility_claim() -> None:
     item = build_material_medium_compatibility_precheck(
         {"medium": "das medium", "material": "FKM", "temperature_c": 80}
@@ -141,11 +154,18 @@ def test_material_medium_precheck_requires_temperature_when_temperature_dependen
 
 def test_supported_precheck_is_not_final_approval() -> None:
     check = _compat_check(
-        {"medium": "HLP", "material": "FKM", "temperature_c": 80}
+        {
+            "medium": "HLP",
+            "material": "FKM",
+            "temperature_c": 80,
+            "compatibility_evidence_cards": [_support_card()],
+        }
     )
 
     assert check["status"] == "passed"
     assert check["compatibility_status"] == "supported_precheck"
+    assert check["evidence_status"] == "evidence_found"
+    assert check["evidence_refs"]
     assert check["final_approval_claim_allowed"] is False
     wording = str(check["allowed_user_wording"]).casefold()
     assert "precheck" in wording

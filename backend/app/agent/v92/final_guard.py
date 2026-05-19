@@ -36,7 +36,9 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"\b(?:material|werkstoff|compound|fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\b"
             r".{0,100}\b(?:ist|sind|is|are)\s+"
             r"(?:chemisch\s+|fully\s+|absolutely\s+|sicher\s+)?"
-            r"(?:best[aä]ndig|bestaendig|resistant|compatible|suitable|safe\s+for)\b|"
+            r"(?:best[aä]ndig|bestaendig|resistant|compatible|suitable|safe\s+for|chemisch\s+sicher)\b|"
+            r"\b(?:material|werkstoff|compound|fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\b"
+            r".{0,100}\b(?:geeignet\s+f(?:ü|u|ue)r|trinkwassergeeignet)\b|"
             r"\b(?:material|werkstoff|compound|fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\b"
             r".{0,100}\b(?:freigegeben|zugelassen|approved|validated)\b",
             re.IGNORECASE | re.UNICODE,

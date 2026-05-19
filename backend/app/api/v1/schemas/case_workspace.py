@@ -629,6 +629,22 @@ class RiskEvaluationResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CompatibilityEvidenceRef(BaseModel):
+    ref_id: Optional[str] = None
+    card_id: Optional[str] = None
+    material: Optional[str] = None
+    medium: Optional[str] = None
+    claim_level: Optional[str] = None
+    source_type: str = "knowledge_card"
+    source_title: Optional[str] = None
+    source_url: Optional[str] = None
+    excerpt_short: Optional[str] = None
+    confidence: Any = None
+    limitations: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class EngineeringCheckResult(BaseModel):
     calc_id: str
     check_id: Optional[str] = None
@@ -636,6 +652,10 @@ class EngineeringCheckResult(BaseModel):
     claim_type: str = "context_advisory"
     compatibility_claim_type: Optional[str] = None
     compatibility_status: Optional[str] = None
+    evidence_status: Optional[str] = None
+    evidence_refs: List[CompatibilityEvidenceRef] = Field(default_factory=list)
+    evidence_summary: str = ""
+    evidence_limitations: List[str] = Field(default_factory=list)
     subject_field: str = ""
     label: str
     formula_version: str
