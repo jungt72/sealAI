@@ -30,6 +30,7 @@ from app.models.rag_document import RagDocument
 from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin
 
 from app.services.rag.route_resolver import resolve_route_key
+from app.services.rag.material_evidence_dry_run import build_material_evidence_dry_run_report
 from app.services.rag.utils import (
     MAGIC_READ_BYTES,
     RAG_UPLOAD_MAX_BYTES,
@@ -51,6 +52,14 @@ logger = structlog.get_logger("api.rag")
 
 def _request_tenant_id(current_user: RequestUser) -> str:
     return str(current_user.tenant_id or current_user.user_id)
+
+
+def _material_evidence_dry_run_limit(limit: int) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = 25
+    return max(1, min(value, 100))
 
 
 async def _check_upload_rate_limit(tenant_id: str) -> None:
@@ -126,6 +135,26 @@ async def _load_rag_document_for_user(
         .limit(1)
     )
     return shared_result.scalar_one_or_none()
+
+
+async def _load_material_evidence_dry_run_documents(
+    *,
+    session: AsyncSession,
+    source_system: str,
+    route: str | None,
+    limit: int,
+) -> list[RagDocument]:
+    stmt = (
+        select(RagDocument)
+        .where(RagDocument.tenant_id == RAG_SHARED_TENANT_ID)
+        .where(RagDocument.enabled.is_not(False))
+        .where(RagDocument.source_system == source_system)
+    )
+    if route:
+        stmt = stmt.where(RagDocument.route_key == route)
+    stmt = stmt.order_by(RagDocument.updated_at.desc(), RagDocument.created_at.desc()).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
 
 
 def _require_paperless_webhook_token(received_token: str | None) -> None:
@@ -537,6 +566,37 @@ async def sync_paperless(
         result = dict(result)
         result["processing"] = await process_pending_paperless_documents(session, limit=limit)
     return result
+
+
+@router.get("/material-evidence/dry-run")
+async def material_evidence_dry_run(
+    source_system: str = Query(default="paperless", min_length=1, max_length=64),
+    route: Optional[str] = Query(default=None, max_length=80),
+    limit: int = Query(default=25, ge=1, le=100),
+    include_invalid: bool = Query(default=True),
+    current_user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Read-only admin report for Paperless/RAG material evidence card readiness."""
+    if not is_rag_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin rights required for material evidence dry-run")
+
+    normalized_source_system = (source_system or "paperless").strip() or "paperless"
+    normalized_route = (route or "").strip() or None
+    capped_limit = _material_evidence_dry_run_limit(limit)
+    docs = await _load_material_evidence_dry_run_documents(
+        session=session,
+        source_system=normalized_source_system,
+        route=normalized_route,
+        limit=capped_limit,
+    )
+    return build_material_evidence_dry_run_report(
+        docs,
+        include_invalid=include_invalid,
+        source_system=normalized_source_system,
+        route=normalized_route,
+        limit=capped_limit,
+    )
 
 
 @internal_router.post("/ingest")
