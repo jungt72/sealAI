@@ -1,10 +1,10 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: "Google Sans Flex Variable", "Google Sans Flex", "Google Sans", "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-  --color-background: #FFFFFF;
+  --color-background: #FCFCFC;
   --color-foreground: #1F1F1F;
 
   /* SealingAI Professional B2B Palette */
@@ -45,7 +45,13 @@
 
   body {
     @apply antialiased bg-background text-foreground;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    color: #1F1F1F;
+    font-family: "Google Sans Flex Variable", "Google Sans Flex", "Google Sans", "Helvetica Neue", sans-serif;
+    font-feature-settings: "kern", "liga";
+    font-optical-sizing: auto;
+    font-variation-settings: "GRAD" 0, "slnt" 0;
+    letter-spacing: 0;
+    text-rendering: optimizeLegibility;
   }
 }
 
@@ -73,6 +79,57 @@
   }
 }
 
+@keyframes sealai-thinking-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sealai-thinking-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.92);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+.sealai-thinking-icon {
+  position: relative;
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #E3E7EE;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: var(--color-seal-blue);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+.sealai-thinking-icon::before {
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: conic-gradient(from 40deg, transparent 0 34%, rgba(0, 42, 91, 0.58) 42%, transparent 58% 100%);
+  content: "";
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  animation: sealai-thinking-orbit 1.35s linear infinite;
+}
+
+.sealai-thinking-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  animation: sealai-thinking-breathe 1.55s ease-in-out infinite;
+}
+
 .sealai-hero-motion {
   animation: sealai-hero-drift 22s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
@@ -91,6 +148,11 @@
     animation: none;
     opacity: 0.12;
     transform: translate3d(0, 0, 0);
+  }
+
+  .sealai-thinking-icon::before,
+  .sealai-thinking-core {
+    animation: none;
   }
 }
 

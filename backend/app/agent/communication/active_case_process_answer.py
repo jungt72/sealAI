@@ -281,7 +281,24 @@ def _context_recall_intro(context: dict[str, Any]) -> str:
 
 def _looks_like_social_ack(message: str) -> bool:
     normalized = " ".join(message.casefold().split())
-    return normalized.startswith(("danke", "vielen dank", "dankeschoen", "dankeschön"))
+    return normalized.startswith(
+        (
+            "danke",
+            "vielen dank",
+            "dankeschoen",
+            "dankeschön",
+            "prima",
+            "super",
+            "klasse",
+            "top",
+            "perfekt",
+            "passt",
+            "gern",
+            "gerne",
+            "los geht",
+            "lass uns loslegen",
+        )
+    )
 
 
 def _truncate(value: str, limit: int) -> str:

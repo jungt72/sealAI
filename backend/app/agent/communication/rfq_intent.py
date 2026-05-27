@@ -5,8 +5,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agent.domain.checks_registry import build_registered_check_results
 from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import RuntimeActionType
+from app.agent.v92.calculation_projection import calculation_ledger_derivations
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +53,9 @@ class RfqReadinessProjection(BaseModel):
     pending_question: dict[str, str | None] | None = None
     known_case_facts_count: int = 0
     known_case_summary: list[str] = Field(default_factory=list)
+    professional_check_groups: list[dict[str, Any]] = Field(default_factory=list)
+    professional_check_blockers: list[str] = Field(default_factory=list)
+    evidence_status: str = "not_available"
     consent_required: bool = True
     dispatch_allowed: bool = False
     external_contact_allowed: bool = False
@@ -80,6 +85,9 @@ class RfqReadinessProjection(BaseModel):
             "open_points_count": len(self.open_points),
             "blocking_reasons_count": len(self.blocking_reasons),
             "known_case_facts_count": self.known_case_facts_count,
+            "professional_check_groups_count": len(self.professional_check_groups),
+            "professional_check_blockers_count": len(self.professional_check_blockers),
+            "evidence_status": self.evidence_status,
             "preview_available": self.preview_available,
             "preview_possible": self.preview_possible,
             "preview_id": self.preview_id,
@@ -301,7 +309,16 @@ def build_rfq_readiness_projection(
 
     missing_fields = list(_missing_fields(governed_state))
     open_points = list(_open_points(governed_state))
+    professional_projection = _professional_check_projection(governed_state)
+    professional_check_groups = list(professional_projection["groups"])
+    professional_check_blockers = list(professional_projection["blockers"])
+    for blocker in professional_check_blockers:
+        if blocker not in open_points:
+            open_points.append(blocker)
     blocking_reasons = list(_blocking_reasons(governed_state, missing_fields, open_points))
+    for blocker in professional_check_blockers:
+        if blocker not in blocking_reasons:
+            blocking_reasons.append(blocker)
     pending = _pending_question(governed_state)
     known_summary = _known_case_summary(governed_state)
     rfq_ready = _bool_attr(getattr(governed_state, "rfq", None), "rfq_ready")
@@ -327,6 +344,9 @@ def build_rfq_readiness_projection(
         pending_question=pending or None,
         known_case_facts_count=_known_case_fact_count(governed_state),
         known_case_summary=known_summary,
+        professional_check_groups=professional_check_groups,
+        professional_check_blockers=professional_check_blockers,
+        evidence_status=str(professional_projection["evidence_status"]),
         consent_required=True,
         dispatch_allowed=False,
         external_contact_allowed=False,
@@ -598,6 +618,157 @@ def _known_case_fact_count(state: Any | None) -> int:
     return len(assertions) if isinstance(assertions, dict) else 0
 
 
+def _professional_check_projection(state: Any | None) -> dict[str, Any]:
+    profile = _governed_profile(state)
+    engineering_path = _engineering_path(profile)
+    if not profile or engineering_path is None:
+        return {"groups": [], "blockers": [], "evidence_status": "not_available"}
+    technical_derivations = list(getattr(state, "compute_results", ()) or ())
+    existing_derivation_keys = {
+        str(item.get("calc_type") or item.get("calculation_id") or "")
+        for item in technical_derivations
+        if isinstance(item, dict)
+    }
+    for item in calculation_ledger_derivations(getattr(state, "calculation", None)):
+        calc_key = str(item.get("calc_type") or item.get("calculation_id") or "")
+        if calc_key in existing_derivation_keys:
+            continue
+        technical_derivations.append(item)
+        existing_derivation_keys.add(calc_key)
+
+    checks = build_registered_check_results(
+        profile=profile,
+        engineering_path=engineering_path,
+        technical_derivations=technical_derivations,
+    )
+    groups = _group_professional_checks(checks)
+    blockers = _professional_check_blockers(checks)
+    return {
+        "groups": groups,
+        "blockers": blockers,
+        "evidence_status": _professional_evidence_status(checks, blockers),
+    }
+
+
+def _governed_profile(state: Any | None) -> dict[str, Any]:
+    if state is None:
+        return {}
+    profile: dict[str, Any] = {}
+    asserted = getattr(state, "asserted", None)
+    assertions = getattr(asserted, "assertions", {}) or {}
+    if isinstance(assertions, dict):
+        for field, claim in assertions.items():
+            value = getattr(claim, "asserted_value", None)
+            if value in (None, "", [], {}):
+                value = getattr(claim, "value", None)
+            if value not in (None, "", [], {}):
+                profile[str(field)] = value
+
+    normalized = getattr(state, "normalized", None)
+    parameters = getattr(normalized, "parameters", {}) or {}
+    if isinstance(parameters, dict):
+        for field, parameter in parameters.items():
+            if str(field) in profile:
+                continue
+            value = getattr(parameter, "value", None)
+            if value not in (None, "", [], {}):
+                profile[str(field)] = value
+    return profile
+
+
+def _engineering_path(profile: dict[str, Any]) -> str | None:
+    raw = " ".join(
+        str(profile.get(key) or "")
+        for key in ("engineering_path", "sealing_type", "seal_type", "application")
+    ).casefold()
+    if any(token in raw for token in ("rwdr", "radialwellendichtring", "wellendichtring", "radial_shaft_seal")):
+        return "rwdr"
+    return None
+
+
+def _group_professional_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for check in checks:
+        group_id = _check_group_id(check)
+        group = buckets.setdefault(
+            group_id,
+            {
+                "group_id": group_id,
+                "label": _check_group_label(group_id),
+                "status_counts": {},
+                "checks": [],
+            },
+        )
+        status = str(check.get("status") or "unknown")
+        group["status_counts"][status] = int(group["status_counts"].get(status, 0)) + 1
+        group["checks"].append(_safe_check_payload(check))
+    return list(buckets.values())
+
+
+def _check_group_id(check: dict[str, Any]) -> str:
+    calc_id = str(check.get("calc_id") or check.get("check_id") or "")
+    formula = str(check.get("formula_version") or "")
+    if formula == "rwdr_professional_precheck_v1":
+        return "rwdr_professional_checks"
+    if calc_id.startswith("material_medium_"):
+        return "material_medium_evidence"
+    return "rwdr_core_checks"
+
+
+def _check_group_label(group_id: str) -> str:
+    return {
+        "rwdr_core_checks": "RWDR core precheck",
+        "rwdr_professional_checks": "RWDR professional checks",
+        "material_medium_evidence": "Material/medium evidence",
+    }.get(group_id, group_id)
+
+
+def _safe_check_payload(check: dict[str, Any]) -> dict[str, Any]:
+    allowed = (
+        "calc_id",
+        "check_id",
+        "label",
+        "status",
+        "claim_type",
+        "severity",
+        "requirement_tier",
+        "missing_fields",
+        "ambiguous_fields",
+        "evidence_fields",
+        "human_readable_reason",
+        "allowed_user_wording",
+        "blocking_reason",
+    )
+    payload = {key: check.get(key) for key in allowed if check.get(key) not in (None, "", [])}
+    payload["final_approval_claim_allowed"] = False
+    return payload
+
+
+def _professional_check_blockers(checks: list[dict[str, Any]]) -> list[str]:
+    blockers: list[str] = []
+    for check in checks:
+        status = str(check.get("status") or "")
+        requirement_tier = str(check.get("requirement_tier") or "")
+        if not requirement_tier.startswith("required"):
+            continue
+        missing = check.get("missing_fields") or check.get("missing_inputs") or []
+        if missing and status in {"blocked", "pending"}:
+            blockers.extend(_field_label(field) for field in missing)
+    return list(dict.fromkeys(blockers))[:8]
+
+
+def _professional_evidence_status(checks: list[dict[str, Any]], blockers: list[str]) -> str:
+    if not checks:
+        return "not_available"
+    if blockers:
+        return "insufficient_evidence"
+    if any(str(check.get("status") or "") == "failed" for check in checks):
+        return "evidence_found_with_risks"
+    if any(str(check.get("evidence_fields") or "") for check in checks):
+        return "evidence_found"
+    return "no_evidence"
+
+
 def _known_asserted_fields(state: Any | None) -> set[str]:
     asserted = getattr(state, "asserted", None)
     assertions = getattr(asserted, "assertions", {}) or {}
@@ -627,6 +798,9 @@ def _field_key(field: Any) -> str:
         "Druck": "pressure_bar",
         "pressure": "pressure_bar",
         "pressure_bar": "pressure_bar",
+        "pressure_at_seal_bar": "pressure_at_seal_bar",
+        "pressure_delta_bar": "pressure_at_seal_bar",
+        "ambiguous_pressure_bar": "ambiguous_pressure_bar",
         "Medium": "medium",
         "medium": "medium",
         "Wellendurchmesser": "shaft_diameter_mm",
@@ -644,6 +818,9 @@ def _field_label(field: Any) -> str:
         "temperature_c": "Temperatur",
         "temperature": "Temperatur",
         "pressure_bar": "Druck",
+        "pressure_at_seal_bar": "Druck",
+        "pressure_delta_bar": "Druck",
+        "ambiguous_pressure_bar": "Druckbezug",
         "pressure": "Druck",
         "motion_type": "Bewegung",
         "seal_type": "Dichtungstyp",

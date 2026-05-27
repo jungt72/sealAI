@@ -48,6 +48,7 @@ class OpenAIHumanCommunicationLLMService:
         self.model_name = model_name or os.environ.get("SEALAI_CONVERSATION_MODEL", "gpt-4o-mini")
         self._client_factory = client_factory or openai.AsyncOpenAI
 
+    @traceable(name="sealai.human_communication_response", run_type="llm")
     async def create_response(
         self,
         *,

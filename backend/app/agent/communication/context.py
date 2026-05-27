@@ -14,6 +14,7 @@ from app.agent.communication.models import (
     RiskFact,
     StaleField,
 )
+from app.agent.v92.calculation_projection import calculation_ledger_derivations
 from app.domain.critical_field_contract import is_critical_case_field
 
 
@@ -323,10 +324,12 @@ class CaseContextAssembler:
 
     def _calculations(self, state: Any) -> list[CalculationFact]:
         result: list[CalculationFact] = []
+        seen_ids: set[str] = set()
         for item in list(getattr(state, "compute_results", []) or []):
             if not isinstance(item, dict):
                 continue
             calc_id = str(item.get("id") or item.get("calc_type") or "calculation")
+            seen_ids.add(calc_id)
             status = "available" if item.get("status") in {"ok", "available", "computed"} else "blocked_by_missing_inputs"
             result.append(
                 CalculationFact(
@@ -335,6 +338,39 @@ class CaseContextAssembler:
                     value=item.get("value") or item.get("v_surface_m_s") or item.get("pv_value_mpa_m_s"),
                     unit=item.get("unit"),
                     inputs=[str(v) for v in list(item.get("inputs") or [])],
+                    status=status,
+                )
+            )
+        for item in calculation_ledger_derivations(getattr(state, "calculation", None)):
+            calc_id = str(item.get("calculation_id") or item.get("calc_type") or "calculation")
+            if calc_id in seen_ids:
+                continue
+            seen_ids.add(calc_id)
+            outputs = dict(item.get("outputs") or {})
+            value = item.get("value")
+            unit = None
+            if value is None:
+                for key in ("v_surface_m_s", "pv_value_mpa_m_s", "dn_value", "temperature_headroom_c"):
+                    if item.get(key) is not None:
+                        value = item.get(key)
+                        unit = dict(item.get("units") or {}).get(key)
+                        break
+            if unit is None and outputs:
+                first_key = next(iter(outputs))
+                unit = dict(item.get("units") or {}).get(first_key)
+            status = (
+                "available"
+                if item.get("status") in {"ok", "warning", "available", "computed"}
+                and not item.get("missing_inputs")
+                else "blocked_by_missing_inputs"
+            )
+            result.append(
+                CalculationFact(
+                    id=calc_id,
+                    label=str(item.get("label") or calc_id),
+                    value=value,
+                    unit=unit,
+                    inputs=[str(v) for v in list(item.get("dependencies") or [])],
                     status=status,
                 )
             )

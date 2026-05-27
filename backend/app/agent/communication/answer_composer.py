@@ -93,6 +93,7 @@ class KnowledgeAnswerComposer:
         raw_content = response.choices[0].message.content
         output = parse_knowledge_answer_composer_output(raw_content)
         output = enforce_requested_subject_fidelity(request, output)
+        output = enforce_material_comparison_depth(request, output)
         output = enforce_material_overview_depth(request, output)
         output = compact_simple_definition_answer(request, output)
         return enforce_requested_subject_fidelity(request, output)
@@ -149,12 +150,18 @@ def build_knowledge_answer_repair_messages(
             "Rewrite the visible answer using the same payload. Return only the "
             "required JSON schema. Keep the latest user material subject "
             "authoritative. Avoid final suitability wording, especially 'ist "
-            "geeignet', 'geeignet ist', 'gut geeignet' and 'gute Eignung fuer'. "
+            "geeignet', 'geeignet ist', 'gut geeignet', 'eignet sich fuer', "
+            "'geeignet macht' and 'gute Eignung fuer'. "
             "Use cautious wording such as 'wird geprueft', 'wird betrachtet', "
             "'naheliegend zu pruefen' or 'kann ein Kandidat sein'. If the "
             "rejected reason is material_overview_too_shallow, expand the answer "
             "with practical sealing-engineering depth instead of returning a "
-            "glossary card."
+            "glossary card. If the rejected reason is "
+            "material_comparison_too_shallow, provide a real engineering "
+            "comparison with hard orientation values, limits and decision "
+            "criteria for exactly the requested materials. If the rejected "
+            "reason is material_comparison_too_broad, keep the same comparison "
+            "axes but remove encyclopedia-style background and repetition."
         ),
         "rejected_reason": rejected_reason,
     }
@@ -172,6 +179,8 @@ def _should_retry_visible_answer(exc: KnowledgeAnswerComposerError) -> bool:
             "unsafe_material_suitability",
             "requested_subject_",
             "material_overview_too_shallow",
+            "material_comparison_too_shallow",
+            "material_comparison_too_broad",
         )
     )
 
@@ -284,27 +293,112 @@ def enforce_material_overview_depth(
     output: KnowledgeAnswerComposerOutput,
 ) -> KnowledgeAnswerComposerOutput:
     requested = _single_requested_material(request)
-    if requested != "PTFE":
+    if not requested:
         return output
     if not _is_broad_material_information_request(request.user_message):
         return output
 
     answer = str(output.answer_markdown or "").strip()
     lowered = answer.casefold()
-    topic_patterns = (
-        r"chem",
-        r"temperatur",
-        r"reibung|gleit",
-        r"kaltfluss|kriech|creep",
-        r"füllstoff|fuellstoff|compound",
-        r"gegenlauf|rauheit|welle",
-        r"anwendung|dichtungs",
-        r"freigabe|hersteller|nachweis",
-    )
+    topic_patterns = _material_overview_topic_patterns(requested)
     topic_hits = sum(1 for pattern in topic_patterns if re.search(pattern, lowered))
-    if len(answer) < 900 or topic_hits < 5:
+    min_length = 900 if requested == "PTFE" else 850
+    min_hits = 5 if requested == "PTFE" else 6
+    value_hits = _material_overview_value_hits(requested, lowered)
+    min_value_hits = 7 if requested == "PTFE" else 0
+    if len(answer) < min_length or topic_hits < min_hits or value_hits < min_value_hits:
         raise KnowledgeAnswerComposerError("material_overview_too_shallow")
     return output
+
+
+def _material_overview_value_hits(material_id: str, lowered_answer: str) -> int:
+    if material_id != "PTFE":
+        return 0
+    value_patterns = (
+        r"327",
+        r"260",
+        r"2[,.]1",
+        r"2[,.]14|2[,.]20",
+        r"shore\s*d",
+        r"mpa",
+        r"0[,.]20|0[,.]25",
+        r"10\^-?5|10\^-?17|10\^-?18",
+        r"kv/mm",
+        r"0[,.]0002",
+        r"0[,.]06",
+        r"wasseraufnahme",
+    )
+    return sum(1 for pattern in value_patterns if re.search(pattern, lowered_answer))
+
+
+def enforce_material_comparison_depth(
+    request: KnowledgeAnswerComposerInput,
+    output: KnowledgeAnswerComposerOutput,
+) -> KnowledgeAnswerComposerOutput:
+    requested = _requested_materials(request)
+    if len(requested) < 2:
+        return output
+    if not _is_contextual_material_comparison_request(request, requested):
+        return output
+
+    answer = str(output.answer_markdown or "").strip()
+    lowered = answer.casefold()
+    topic_patterns = (
+        r"temperatur|°c|\bc\b",
+        r"medium|medien|chem|öl|oel|wasser|dampf|fluid",
+        r"härte|haerte|shore|compound|rezeptur|acn|vernetzung",
+        r"dynamik|reibung|verschlei[ßs]|rwdr|o-ring|dicht",
+        r"grenze|kritisch|limit|risiko|alterung|quellung",
+        r"hersteller|datenblatt|freigabe|nachweis|kompatibilit",
+        r"kosten|verfügbarkeit|verfuegbarkeit|wirtschaft",
+    )
+    topic_hits = sum(1 for pattern in topic_patterns if re.search(pattern, lowered))
+    if len(answer) < 950 or topic_hits < 5:
+        raise KnowledgeAnswerComposerError("material_comparison_too_shallow")
+    if set(requested[:2]) == {"PTFE", "FKM"} and len(answer) > 2400:
+        raise KnowledgeAnswerComposerError("material_comparison_too_broad")
+    return output
+
+
+def _material_overview_topic_patterns(material_id: str) -> tuple[str, ...]:
+    generic = (
+        r"temperatur|°c|\bc\b",
+        r"medium|medien|chem|öl|oel|wasser|dampf|fluid",
+        r"härte|haerte|shore|compound|rezeptur|vernetzung",
+        r"dynamik|reibung|verschlei[ßs]|o-ring|rwdr|dichtung",
+        r"grenze|kritisch|limit|alterung|quellung|druckverform",
+        r"hersteller|datenblatt|freigabe|nachweis|kompatibilit",
+    )
+    if material_id == "PTFE":
+        return (
+            r"chem",
+            r"temperatur",
+            r"reibung|gleit",
+            r"kaltfluss|kriech|creep",
+            r"füllstoff|fuellstoff|compound",
+            r"gegenlauf|rauheit|welle",
+            r"anwendung|dichtungs",
+            r"freigabe|hersteller|nachweis",
+        )
+    if material_id == "NBR":
+        return (*generic, r"acn|acrylnitril|nitril", r"ozon|uv|witter")
+    if material_id == "FFKM":
+        return (*generic, r"perfluor|premium|kosten|lieferzeit", r"compression|druckverform")
+    return generic
+
+
+def _is_contextual_material_comparison_request(
+    request: KnowledgeAnswerComposerInput,
+    requested: tuple[str, ...],
+) -> bool:
+    text = f" {str(request.user_message or '').casefold()} "
+    if any(marker in text for marker in _COMPARISON_MARKERS):
+        return True
+    if len(set(extract_material_ids(request.user_message))) >= 2:
+        return True
+    deterministic = str(request.deterministic_answer or "")
+    title = deterministic.splitlines()[0] if deterministic else ""
+    return all(material in title for material in requested[:2]) and "vergleich" in title.casefold()
 
 
 def enforce_requested_subject_fidelity(
@@ -313,12 +407,44 @@ def enforce_requested_subject_fidelity(
 ) -> KnowledgeAnswerComposerOutput:
     """Reject visible answers that drift away from the latest requested material."""
 
-    requested = _single_requested_material(request)
-    if not requested:
+    requested_materials = _requested_materials(request)
+    if not requested_materials:
         return output
 
     answer = str(output.answer_markdown or "")
     answer_materials = extract_material_ids(answer)
+    if len(requested_materials) >= 2:
+        missing = [
+            material
+            for material in requested_materials
+            if material not in answer_materials and material.casefold() not in answer.casefold()
+        ]
+        if missing:
+            raise KnowledgeAnswerComposerError(
+                f"requested_subject_missing:{','.join(missing)}"
+            )
+
+        heading_materials = _first_heading_materials(answer)
+        if heading_materials:
+            expected_heading = requested_materials[: len(heading_materials)]
+            if heading_materials[: len(expected_heading)] != expected_heading:
+                raise KnowledgeAnswerComposerError("requested_subject_drift")
+            unexpected_heading = [
+                material for material in heading_materials if material not in requested_materials
+            ]
+            if unexpected_heading:
+                raise KnowledgeAnswerComposerError("requested_subject_drift")
+
+        first_materials = extract_material_ids(answer[:700])
+        if first_materials and first_materials[0] != requested_materials[0]:
+            raise KnowledgeAnswerComposerError("requested_subject_drift")
+        if len(first_materials) >= 2 and first_materials[:2] != requested_materials[:2]:
+            raise KnowledgeAnswerComposerError("requested_subject_drift")
+
+        _reject_unscoped_material_suitability_claim(answer)
+        return output
+
+    requested = requested_materials[0]
     if requested not in answer_materials and requested.casefold() not in answer.casefold():
         raise KnowledgeAnswerComposerError("requested_subject_missing")
 
@@ -332,13 +458,44 @@ def enforce_requested_subject_fidelity(
 
 
 def _single_requested_material(request: KnowledgeAnswerComposerInput) -> str | None:
-    requested = tuple(getattr(request.context, "requested_subjects", ()) or ())
+    requested = _requested_materials(request)
     if len(requested) == 1:
         return requested[0]
-    fallback = extract_material_ids(request.user_message)
-    if len(fallback) == 1:
-        return fallback[0]
     return None
+
+
+def _requested_materials(request: KnowledgeAnswerComposerInput) -> tuple[str, ...]:
+    requested = tuple(
+        str(material).strip().upper()
+        for material in (getattr(request.context, "requested_subjects", ()) or ())
+        if str(material or "").strip()
+    )
+    known = set(supported_material_ids())
+    requested = tuple(material for material in requested if material in known)
+    if requested:
+        return _unique_materials(requested)
+    return _unique_materials(extract_material_ids(request.user_message))
+
+
+def _unique_materials(materials: tuple[str, ...]) -> tuple[str, ...]:
+    seen: list[str] = []
+    for material in materials:
+        if material not in seen:
+            seen.append(material)
+    return tuple(seen)
+
+
+def _first_heading_materials(answer_markdown: str) -> tuple[str, ...]:
+    for raw_line in str(answer_markdown or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            return extract_material_ids(line)
+        if len(line) <= 160:
+            return extract_material_ids(line)
+        return ()
+    return ()
 
 
 _MATERIAL_CLAIM_RE = re.compile(

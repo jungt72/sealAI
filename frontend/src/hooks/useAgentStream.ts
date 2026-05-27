@@ -364,7 +364,6 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     }
     latestCaseIdRef.current = caseId;
     conversationIdRef.current = caseId;
-    setActiveCaseId(caseId);
     let isCurrent = true;
     const historyCaseId = caseId;
     historyLoadedCaseIdRef.current = historyCaseId;

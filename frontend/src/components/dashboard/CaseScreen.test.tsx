@@ -439,12 +439,20 @@ describe("CaseScreen", () => {
 
     render(<CaseScreen caseId="case-42" />);
 
-    expect(screen.getByText(/72 % geklärt/)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Direkteingabe")).toBeInTheDocument();
+    expect(screen.queryByText("Bekannte Parameter in den State schreiben")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Anwendung" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Berechnungen" })).toBeInTheDocument();
     expect(screen.getAllByText("Wasser-Glykol").length).toBeGreaterThan(0);
-    expect(screen.getByText("85 °C")).toBeInTheDocument();
-    expect(screen.getByText("1.8 bar")).toBeInTheDocument();
-    expect(screen.getByText("1200 rpm")).toBeInTheDocument();
-    expect(screen.getByText("42 mm")).toBeInTheDocument();
+    expect(screen.getByLabelText("Temperatur · °C")).toHaveValue("85");
+    expect(screen.getByLabelText("Druck · bar")).toHaveValue("1.8");
+    expect(screen.getByLabelText("Drehzahl · rpm")).toHaveValue("1200");
+    expect(screen.getByLabelText("Welle · mm")).toHaveValue("42");
+    expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
+    expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();
+    expect(screen.getByText("50400")).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Berechnung" }));
     expect(screen.getByText("2.64 m/s")).toBeInTheDocument();
     expect(screen.getByText("0.48 MPa·m/s")).toBeInTheDocument();

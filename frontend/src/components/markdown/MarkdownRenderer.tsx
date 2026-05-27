@@ -80,8 +80,8 @@ export default function MarkdownRenderer({ children, className, variant = "defau
       remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[rehypeKatex]}
       className={cn(
-        "seal-markdown break-words text-foreground",
-        isChat ? "text-[14px] leading-[1.65]" : "text-[15px] leading-relaxed",
+        "seal-markdown break-words text-[#1F1F1F]",
+        isChat ? "text-[16px] leading-[1.625]" : "text-[16px] leading-relaxed",
         className,
       )}
       components={{
@@ -105,7 +105,7 @@ export default function MarkdownRenderer({ children, className, variant = "defau
           <h1
             className={cn(
               "font-bold tracking-tight",
-              isChat ? "mb-2 mt-1 text-[15px]" : "mb-6 mt-8 text-2xl",
+              isChat ? "mb-2 mt-1 text-[16px]" : "mb-6 mt-8 text-2xl",
             )}
             {...props}
           />
@@ -114,7 +114,7 @@ export default function MarkdownRenderer({ children, className, variant = "defau
           <h2
             className={cn(
               "font-bold tracking-tight",
-              isChat ? "mb-2 mt-1 text-[15px]" : "mb-4 mt-6 text-xl",
+              isChat ? "mb-2 mt-1 text-[16px]" : "mb-4 mt-6 text-xl",
             )}
             {...props}
           />
@@ -123,12 +123,12 @@ export default function MarkdownRenderer({ children, className, variant = "defau
           <h3
             className={cn(
               "font-bold tracking-tight",
-              isChat ? "mb-1.5 mt-1 text-[14px]" : "mb-3 mt-5 text-lg",
+              isChat ? "mb-1.5 mt-1 text-[16px]" : "mb-3 mt-5 text-lg",
             )}
             {...props}
           />
         ),
-        strong: ({ node, ...props }) => <strong className="font-semibold text-slate-950" {...props} />,
+        strong: ({ node, ...props }) => <strong className="font-semibold text-[#1F1F1F]" {...props} />,
         hr: ({ node, ...props }) => <hr className="my-8 border-border" {...props} />,
         blockquote: ({ node, ...props }) => (
           <blockquote

@@ -1,6 +1,7 @@
 import logging
 import os
 import dataclasses
+import re
 from typing import Any, Literal
 
 from app.domain.conversation_intent import ConversationRoutingDecision
@@ -117,6 +118,139 @@ def _knowledge_user_id(current_user: RequestUser | None) -> str | None:
     return str(user_id).strip() if user_id else None
 
 
+_CONTEXTUAL_MATERIAL_COMPARISON_RE = re.compile(
+    r"\b(?:vergleiche?|vergleich|unterschied|gegen[üu]ber|gegenueber|vs\.?|versus|mit|gegen|besser|schlechter)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_CONTEXTUAL_MATERIAL_PAIR_ANAPHORA_RE = re.compile(
+    r"\b(?:die\s+beiden|beide)\b"
+    r"|\b(?:vergleiche?|vergleich|unterschied(?:e)?|im\s+vergleich|besser|schlechter|"
+    r"welche[rs]?\s+ist\s+besser)\b.*\b(?:das|damit|daf[uü]r|hier|anwendung)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _contextualized_knowledge_message(
+    message: str,
+    *,
+    recent_history: tuple[Any, ...] = (),
+) -> str:
+    """Resolve elliptical material follow-ups before KnowledgeService answers.
+
+    The answer composer receives recent_history, but the deterministic
+    KnowledgeService runs first. Without this resolver, "bitte vergleiche mit
+    NBR" after a PTFE question is answered as a single-material NBR definition.
+    """
+
+    raw_message = str(message or "").strip()
+    if not raw_message:
+        return raw_message
+    try:
+        from app.services.knowledge.material_comparison import extract_material_ids  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return raw_message
+
+    latest_materials = list(extract_material_ids(raw_message))
+    if len(latest_materials) >= 2:
+        return raw_message
+    if len(latest_materials) == 0:
+        if not _CONTEXTUAL_MATERIAL_PAIR_ANAPHORA_RE.search(raw_message):
+            return raw_message
+        pair = _last_prior_material_pair(recent_history)
+        if pair is None:
+            return raw_message
+        left, right = pair
+        return (
+            f"Vergleiche {left} mit {right}. "
+            f"Die aktuelle Nutzer-Folgefrage lautet: {raw_message}"
+        )
+    if len(latest_materials) != 1:
+        return raw_message
+    if not _CONTEXTUAL_MATERIAL_COMPARISON_RE.search(raw_message):
+        return raw_message
+
+    anchor = _last_prior_material_subject(
+        recent_history,
+        exclude=set(latest_materials),
+    )
+    if not anchor:
+        return raw_message
+
+    comparison_material = latest_materials[0]
+    return (
+        f"Vergleiche {anchor} mit {comparison_material}. "
+        f"Die aktuelle Nutzer-Folgefrage lautet: {raw_message}"
+    )
+
+
+def _last_prior_material_pair(
+    recent_history: tuple[Any, ...],
+) -> tuple[str, str] | None:
+    try:
+        from app.services.knowledge.material_comparison import extract_material_ids  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+
+    def collect(roles: set[str]) -> list[str]:
+        recent: list[str] = []
+        for turn in recent_history:
+            role = _history_turn_value(turn, "role")
+            content = _history_turn_value(turn, "content")
+            if role not in roles or not content:
+                continue
+            for material in extract_material_ids(content):
+                if material in recent:
+                    recent.remove(material)
+                recent.append(material)
+        return recent
+
+    user_materials = collect({"user"})
+    if len(user_materials) >= 2:
+        return user_materials[-2], user_materials[-1]
+    all_materials = collect({"user", "assistant"})
+    if len(all_materials) >= 2:
+        return all_materials[-2], all_materials[-1]
+    return None
+
+
+def _last_prior_material_subject(
+    recent_history: tuple[Any, ...],
+    *,
+    exclude: set[str],
+) -> str | None:
+    try:
+        from app.services.knowledge.material_comparison import extract_material_ids  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+
+    user_candidates: list[str] = []
+    assistant_candidates: list[str] = []
+    for turn in recent_history:
+        role = _history_turn_value(turn, "role")
+        content = _history_turn_value(turn, "content")
+        if role not in {"user", "assistant"} or not content:
+            continue
+        for material in extract_material_ids(content):
+            if material in exclude:
+                continue
+            if role == "user":
+                user_candidates.append(material)
+            else:
+                assistant_candidates.append(material)
+    for material in reversed(user_candidates):
+        return material
+    for material in reversed(assistant_candidates):
+        return material
+    return None
+
+
+def _history_turn_value(turn: Any, key: str) -> str:
+    if isinstance(turn, dict):
+        return str(turn.get(key) or "").strip()
+    return str(getattr(turn, key, "") or "").strip()
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class KnowledgeDebugTrace:
     route: str | None
@@ -161,6 +295,7 @@ class RuntimeDispatchResolution:
     turn_decision: TurnDecision | None = None
     runtime_action: RuntimeAction | None = None
     v91_policy: Any | None = None
+    semantic_pre_gate_trace: dict[str, Any] | None = None
 
 
 def _governed_state_has_active_case(state: GovernedSessionState | None) -> bool:
@@ -415,8 +550,43 @@ async def _resolve_runtime_dispatch_impl(
         from app.domain.conversation_intent import classify_conversation_route  # noqa: PLC0415
         from app.services.fast_responder_service import FastResponderService  # noqa: PLC0415
         from app.services.pre_gate_classifier import PreGateClassifier  # noqa: PLC0415
+        from app.services.semantic_intent_router import (  # noqa: PLC0415
+            refine_pre_gate_classification,
+            semantic_pre_gate_candidate,
+        )
 
         pre_gate = PreGateClassifier().classify(request.message)
+        semantic_pre_gate_trace: dict[str, Any] | None = None
+        if semantic_pre_gate_candidate(request.message, pre_gate):
+            semantic_recent_history: tuple[Any, ...] = ()
+            if request.session_id:
+                try:
+                    semantic_knowledge_context = await _load_live_knowledge_session_context(
+                        current_user=current_user,
+                        session_id=request.session_id,
+                    )
+                    if semantic_knowledge_context is not None:
+                        semantic_recent_history = tuple(
+                            getattr(
+                                semantic_knowledge_context,
+                                "conversation_turns",
+                                (),
+                            )
+                            or ()
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "[runtime_dispatch] semantic pre-gate history load failed (%s: %s) — routing without knowledge history",
+                        type(exc).__name__,
+                        exc,
+                    )
+            semantic_decision = await refine_pre_gate_classification(
+                message=request.message,
+                deterministic=pre_gate,
+                recent_history=semantic_recent_history,
+            )
+            semantic_pre_gate_trace = semantic_decision.as_trace()
+            pre_gate = semantic_decision.classification_result(pre_gate)
         conversation_route = classify_conversation_route(
             request.message,
             pre_gate_classification=pre_gate.classification,
@@ -438,6 +608,7 @@ async def _resolve_runtime_dispatch_impl(
                         pre_gate_reason=pre_gate.reasoning,
                         governed_state=governed_state,
                         conversation_route=conversation_route,
+                        semantic_pre_gate_trace=semantic_pre_gate_trace,
                         runtime_action=_rfq_readiness_graph_runtime_action(
                             rfq_action_type=rfq_intent.rfq_action_type,
                             reason=rfq_intent.reason,
@@ -460,6 +631,7 @@ async def _resolve_runtime_dispatch_impl(
                     rfq_readiness_projection=rfq_answer.projection.public_dict(),
                     governed_state=governed_state,
                     conversation_route=conversation_route,
+                    semantic_pre_gate_trace=semantic_pre_gate_trace,
                     runtime_action=build_rfq_readiness_runtime_action(
                         rfq_action_type=rfq_answer.rfq_action_type,
                         action_type=rfq_answer.action_type,
@@ -490,6 +662,7 @@ async def _resolve_runtime_dispatch_impl(
                     pre_gate_reason=pre_gate.reasoning,
                     governed_state=governed_state,
                     conversation_route=conversation_route,
+                    semantic_pre_gate_trace=semantic_pre_gate_trace,
                     turn_decision=turn_decision,
                     runtime_action=_v7_runtime_action(
                         turn_decision,
@@ -506,6 +679,51 @@ async def _resolve_runtime_dispatch_impl(
                 current_user=current_user,
             )
             if _governed_state_has_active_case(governed_state):
+                turn_decision = await _resolve_v8_turn_decision(
+                    request=request,
+                    pre_gate=pre_gate,
+                    governed_state=governed_state,
+                )
+                if _v7_answer_mode(turn_decision) in {
+                    AnswerMode.GOVERNED_INTAKE.value,
+                    AnswerMode.PENDING_SLOT_ANSWER.value,
+                }:
+                    return RuntimeDispatchResolution(
+                        gate_route="GOVERNED",
+                        gate_reason=f"active_case_social_semantic_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
+                        runtime_mode="GOVERNED",
+                        gate_applied=False,
+                        pre_gate_classification=pre_gate.classification.value,
+                        pre_gate_reason=pre_gate.reasoning,
+                        governed_state=governed_state,
+                        conversation_route=conversation_route,
+                        semantic_pre_gate_trace=semantic_pre_gate_trace,
+                        turn_decision=turn_decision,
+                        runtime_action=_v7_runtime_action(
+                            turn_decision,
+                            reason="active_case_social_turn_semantic_slot_or_intake",
+                        ),
+                    )
+                if _v7_answer_mode(turn_decision) in {
+                    AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value,
+                    AnswerMode.ACTIVE_CASE_PROCESS_QUESTION.value,
+                }:
+                    return RuntimeDispatchResolution(
+                        gate_route="GOVERNED",
+                        gate_reason=f"active_case_social_semantic_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
+                        runtime_mode="GOVERNED",
+                        gate_applied=False,
+                        pre_gate_classification=pre_gate.classification.value,
+                        pre_gate_reason=pre_gate.reasoning,
+                        governed_state=governed_state,
+                        conversation_route=conversation_route,
+                        semantic_pre_gate_trace=semantic_pre_gate_trace,
+                        turn_decision=turn_decision,
+                        runtime_action=_v7_runtime_action(
+                            turn_decision,
+                            reason="active_case_social_turn_semantic_answer_first",
+                        ),
+                    )
                 return RuntimeDispatchResolution(
                     gate_route="CONVERSATION",
                     gate_reason=f"active_case_social_turn:{pre_gate.reasoning}",
@@ -515,6 +733,8 @@ async def _resolve_runtime_dispatch_impl(
                     pre_gate_reason=pre_gate.reasoning,
                     governed_state=governed_state,
                     conversation_route=conversation_route,
+                    semantic_pre_gate_trace=semantic_pre_gate_trace,
+                    turn_decision=turn_decision,
                     runtime_action=_light_runtime_action(
                         reason=f"active_case_social_turn:{pre_gate.reasoning}",
                         decision_source="pre_gate_active_case_social_turn",
@@ -535,6 +755,7 @@ async def _resolve_runtime_dispatch_impl(
                     pre_gate_classification=pre_gate.classification.value,
                     pre_gate_reason=pre_gate.reasoning,
                     conversation_route=conversation_route,
+                    semantic_pre_gate_trace=semantic_pre_gate_trace,
                     runtime_action=_light_runtime_action(
                         reason=f"pre_gate_llm_fast_responder:{pre_gate.reasoning}",
                     ),
@@ -552,6 +773,7 @@ async def _resolve_runtime_dispatch_impl(
                 pre_gate_reason=pre_gate.reasoning,
                 fast_response=fast_response,
                 conversation_route=conversation_route,
+                semantic_pre_gate_trace=semantic_pre_gate_trace,
                 runtime_action=_fast_response_runtime_action(
                     pre_gate.classification,
                     reason=f"pre_gate:{pre_gate.reasoning}",
@@ -589,6 +811,7 @@ async def _resolve_runtime_dispatch_impl(
                     pre_gate_reason=pre_gate.reasoning,
                     governed_state=governed_state,
                     conversation_route=conversation_route,
+                    semantic_pre_gate_trace=semantic_pre_gate_trace,
                     turn_decision=turn_decision,
                     runtime_action=_v7_runtime_action(
                         turn_decision,
@@ -612,6 +835,7 @@ async def _resolve_runtime_dispatch_impl(
                     pre_gate_reason=pre_gate.reasoning,
                     governed_state=governed_state,
                     conversation_route=conversation_route,
+                    semantic_pre_gate_trace=semantic_pre_gate_trace,
                     turn_decision=turn_decision,
                     runtime_action=_v7_runtime_action(
                         turn_decision,
@@ -625,18 +849,11 @@ async def _resolve_runtime_dispatch_impl(
                 KnowledgeCaseBridgeService,
             )  # noqa: PLC0415
 
-            knowledge_response = KnowledgeService(
-                rag_retriever=_knowledge_rag_retriever,
-            ).answer(
-                request.message,
-                source_classification=pre_gate.classification,
-                tenant_id=_knowledge_tenant_id(current_user),
-                user_id=_knowledge_user_id(current_user),
-            )
             recent_knowledge_history: tuple[Any, ...] = ()
+            knowledge_context = None
+            bridge_service = KnowledgeCaseBridgeService()
             if request.session_id:
                 try:
-                    bridge_service = KnowledgeCaseBridgeService()
                     knowledge_context = await _load_live_knowledge_session_context(
                         current_user=current_user,
                         session_id=request.session_id,
@@ -645,6 +862,27 @@ async def _resolve_runtime_dispatch_impl(
                         recent_knowledge_history = tuple(
                             getattr(knowledge_context, "conversation_turns", ()) or ()
                         )
+                except Exception as exc:  # noqa: BLE001
+                    _log.warning(
+                        "[runtime_dispatch] knowledge context load failed (%s: %s) — answering without prior knowledge-session context",
+                        type(exc).__name__,
+                        exc,
+                    )
+
+            knowledge_query = _contextualized_knowledge_message(
+                request.message,
+                recent_history=recent_knowledge_history,
+            )
+            knowledge_response = KnowledgeService(
+                rag_retriever=_knowledge_rag_retriever,
+            ).answer(
+                knowledge_query,
+                source_classification=pre_gate.classification,
+                tenant_id=_knowledge_tenant_id(current_user),
+                user_id=_knowledge_user_id(current_user),
+            )
+            if request.session_id:
+                try:
                     knowledge_context = bridge_service.update_context(
                         request.message,
                         context=knowledge_context,
@@ -694,6 +932,7 @@ async def _resolve_runtime_dispatch_impl(
                 pre_gate_reason=pre_gate.reasoning,
                 knowledge_response=knowledge_response,
                 conversation_route=conversation_route,
+                semantic_pre_gate_trace=semantic_pre_gate_trace,
                 turn_decision=turn_decision,
                 runtime_action=_v7_runtime_action(
                     turn_decision,
@@ -715,6 +954,7 @@ async def _resolve_runtime_dispatch_impl(
                 pre_gate_classification=pre_gate.classification.value,
                 pre_gate_reason=pre_gate.reasoning,
                 conversation_route=conversation_route,
+                semantic_pre_gate_trace=semantic_pre_gate_trace,
                 runtime_action=_light_runtime_action(
                     reason=f"pre_gate:{pre_gate.reasoning}",
                 ),
@@ -773,6 +1013,23 @@ async def _resolve_runtime_dispatch_impl(
             turn_decision,
             reason="governed_domain_or_slot_turn",
         )
+        if _v7_answer_mode(turn_decision) in {
+            AnswerMode.SMALLTALK.value,
+            AnswerMode.META_QUESTION.value,
+        }:
+            return RuntimeDispatchResolution(
+                gate_route="CONVERSATION",
+                gate_reason=f"v8_semantic_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
+                runtime_mode="CONVERSATION",
+                gate_applied=False,
+                pre_gate_classification=pre_gate.classification.value,
+                pre_gate_reason=pre_gate.reasoning,
+                governed_state=governed_state,
+                conversation_route=conversation_route,
+                semantic_pre_gate_trace=semantic_pre_gate_trace,
+                turn_decision=turn_decision,
+                runtime_action=runtime_action,
+            )
         return RuntimeDispatchResolution(
             gate_route="GOVERNED",
             gate_reason=f"pre_gate:{pre_gate.reasoning}",
@@ -782,6 +1039,7 @@ async def _resolve_runtime_dispatch_impl(
             pre_gate_reason=pre_gate.reasoning,
             governed_state=governed_state,
             conversation_route=conversation_route,
+            semantic_pre_gate_trace=semantic_pre_gate_trace,
             turn_decision=turn_decision,
             runtime_action=runtime_action,
         )
@@ -830,6 +1088,27 @@ async def _resolve_runtime_dispatch(
         fallback_reason_hash=stable_trace_hash(traced_resolution.gate_reason),
         fallback_reason_length=len(str(traced_resolution.gate_reason or "")),
         pre_gate_classification=traced_resolution.pre_gate_classification,
+        semantic_pre_gate_trace=traced_resolution.semantic_pre_gate_trace,
+        semantic_pre_gate_applied=(
+            (traced_resolution.semantic_pre_gate_trace or {}).get(
+                "semantic_pre_gate_applied"
+            )
+        ),
+        semantic_pre_gate_intent=(
+            (traced_resolution.semantic_pre_gate_trace or {}).get(
+                "semantic_pre_gate_intent"
+            )
+        ),
+        semantic_pre_gate_classification=(
+            (traced_resolution.semantic_pre_gate_trace or {}).get(
+                "semantic_pre_gate_classification"
+            )
+        ),
+        semantic_pre_gate_confidence=(
+            (traced_resolution.semantic_pre_gate_trace or {}).get(
+                "semantic_pre_gate_confidence"
+            )
+        ),
         conversation_route=getattr(traced_resolution.conversation_route, "route", None),
         runtime_action_type=getattr(traced_resolution.runtime_action, "action", None)
         or getattr(traced_resolution.runtime_action, "action_type", None)
@@ -881,6 +1160,7 @@ async def _compose_knowledge_answer_if_enabled(
     knowledge_response: Any,
     conversation_route: ConversationRoutingDecision | None,
     recent_history: tuple[Any, ...] = (),
+    full_history_context: bool = False,
 ) -> Any:
     composer_enabled = _knowledge_answer_composer_enabled()
     debug_enabled = _knowledge_debug_trace_enabled()
@@ -916,7 +1196,12 @@ async def _compose_knowledge_answer_if_enabled(
             )
             or None
         )
-        context = KnowledgeContextBuilder().build(
+        context_builder = (
+            KnowledgeContextBuilder(history_limit=None, history_char_limit=None)
+            if full_history_context
+            else KnowledgeContextBuilder()
+        )
+        context = context_builder.build(
             user_message=user_message,
             deterministic_answer=str(getattr(knowledge_response, "content", "") or ""),
             knowledge_response=knowledge_response,
@@ -951,6 +1236,24 @@ async def _compose_knowledge_answer_if_enabled(
                 composer_succeeded=False,
                 answer_markdown_source="reply_passthrough",
             )
+
+        if _should_passthrough_high_fidelity_knowledge_answer(knowledge_response):
+            response = _with_knowledge_answer_trace(
+                knowledge_response,
+                answer_markdown_source="knowledge_service",
+                composer_attempted=False,
+                composer_succeeded=False,
+            )
+            if debug_enabled:
+                response = _with_knowledge_debug_trace(
+                    response,
+                    context=context,
+                    composer_enabled=True,
+                    composer_attempted=False,
+                    composer_succeeded=False,
+                    answer_markdown_source="reply_passthrough",
+                )
+            return response
 
         from app.agent.communication.answer_composer import (  # noqa: PLC0415
             KnowledgeAnswerComposer,
@@ -1013,6 +1316,24 @@ async def _compose_knowledge_answer_if_enabled(
             answer_markdown_source="composer_fallback",
             composer_fallback_reason=_safe_composer_fallback_reason(exc),
         )
+
+
+def _should_passthrough_high_fidelity_knowledge_answer(knowledge_response: Any) -> bool:
+    """Avoid slow/fragile LLM rewriting when deterministic material answer is complete."""
+
+    answer = str(getattr(knowledge_response, "content", "") or "")
+    if len(answer) < 2400:
+        return False
+    if "### Kennwerte" not in answer and "### Technische Richtwerte" not in answer:
+        return False
+
+    answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
+    evidence_items = tuple(getattr(answer_view, "knowledge_evidence", ()) or ())
+    for item in evidence_items:
+        note = str(getattr(item, "note", "") or "")
+        if note.startswith("system_derived_material_definition:"):
+            return True
+    return False
 
 
 def _with_knowledge_answer_trace(

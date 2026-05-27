@@ -189,6 +189,25 @@ def test_runtime_action_maps_pending_slot_answer_to_governed_graph_entry() -> No
     assert action.slot_candidate_detected is True
 
 
+def test_runtime_action_maps_technical_case_challenge_to_governed_graph_entry() -> None:
+    decision = TurnDecision(
+        turn_kind=TurnKind.CASE_INTAKE,
+        primary_interpretation="technical_case_challenge",
+        answer_mode=AnswerMode.TECHNICAL_CASE_CHALLENGE,
+        mutation_policy=MutationPolicy.PROPOSED,
+        resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
+    )
+
+    action = build_runtime_action_from_turn_decision(decision)
+
+    assert action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+    assert action.answer_mode == AnswerMode.TECHNICAL_CASE_CHALLENGE
+    assert action.answer_builder == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    assert action.graph_allowed is True
+    assert action.graph_entry_reason == "technical_case_challenge_requires_governed_graph"
+    assert action.next_runtime_action == "enter_governed_langgraph_for_technical_case_challenge"
+
+
 def test_runtime_action_rejects_graph_allowed_for_answer_only_actions() -> None:
     with pytest.raises(ValidationError):
         RuntimeAction(

@@ -1,5 +1,14 @@
 # SealAI Current Implementation Concept - IST State
 
+> Current SSoT note, 2026-05-20: this document is historical IST evidence from
+> the V9.2/V10 transition. The binding current concept is
+> `docs/implementation/SEALAI_V10_CONVERSATIONAL_SEALING_INTELLIGENCE_CONCEPT.md`.
+> The binding map is `docs/architecture/SSOT_REGISTRY.md`. Where this document
+> still mentions the old host-managed frontend on `172.17.0.1:3000`, that is
+> superseded: production SealAI frontend now runs as the Docker `frontend`
+> service behind Nginx via Docker DNS `frontend:3000`; the PM2 process
+> `sealai-frontend` is retired.
+
 ## 0. Document Metadata
 
 - Date: 2026-05-19
@@ -81,9 +90,9 @@ Evidence:
 
 ## 4. Runtime / Deployment Architecture
 
-Current deployed/runtime architecture:
+Current deployed/runtime architecture at the original audit date:
 - Public edge: `nginx` on ports 80/443.
-- Frontend: host-managed Next.js on the Docker host, reached by nginx via `172.17.0.1:3000`; the frontend container service exists only under a Compose profile.
+- Frontend at audit time: host-managed Next.js on the Docker host, reached by nginx via `172.17.0.1:3000`; the frontend container service existed only under a Compose profile.
 - Backend: FastAPI container `backend`, image `ghcr.io/jungt72/sealai-backend:a3ec2dfb`, local port bound to `127.0.0.1:8000`.
 - Auth: Keycloak container behind `https://sealingai.com/realms/sealAI`.
 - Data/services: Postgres 15, Redis Stack, Qdrant, Tika, Gotenberg.
@@ -99,7 +108,18 @@ Build/deploy path:
 Nginx routing:
 - `/api/agent/health` and `/api/` proxy to `backend:8000`.
 - `/realms/`, `/resources/`, `/login-actions/`, `/admin/` proxy to `keycloak:8080`.
-- `/api/auth/` and `/api/bff/` proxy to the host frontend at `172.17.0.1:3000`.
+- Historical audit state: `/api/auth/` and `/api/bff/` proxied to the host frontend at `172.17.0.1:3000`.
+
+Current V10 deployment update, 2026-05-20:
+- SealAI frontend is the Docker `frontend` service under the Compose
+  `frontend-container` profile.
+- Nginx proxies SealAI frontend, Auth.js and BFF routes to `frontend:3000`.
+- The PM2-managed `sealai-frontend` host Next.js process on
+  `172.17.0.1:3000` has been stopped, deleted from PM2 and removed from the
+  saved PM2 process list.
+- Frontend container auth/BFF environment is provided through
+  `docker-compose.deploy.yml` and `.env.prod`, including `SEALAI_BACKEND_ORIGIN`
+  for backend-internal stream calls.
 
 Evidence:
 - Compose services and env wiring: `docker-compose.deploy.yml:1-190`.

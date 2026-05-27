@@ -54,8 +54,6 @@ from app.agent.state.models import (
     AssumptionRef,
     ConflictRef,
     ConfidenceLevel,
-    DecisionState,
-    DerivedState,
     EngineeringValue,
     FieldStatus,
     GovernanceState,
@@ -264,11 +262,11 @@ def _missing(
     assertions: dict[str, AssertedClaim], fields: tuple[str, ...]
 ) -> list[str]:
     missing: list[str] = []
-    for field in fields:
-        if field == "pressure_bar" and _has_design_pressure(assertions):
+    for field_name in fields:
+        if field_name == "pressure_bar" and _has_design_pressure(assertions):
             continue
-        if not _has_asserted(assertions, field):
-            missing.append(field)
+        if not _has_asserted(assertions, field_name):
+            missing.append(field_name)
     return missing
 
 
@@ -497,6 +495,108 @@ def _is_user_accepted_pressure_value(param: NormalizedParameter) -> bool:
         and engineering_value.canonical_value not in (None, "", [], {})
         and engineering_value.interpretation == "unknown"
     )
+
+
+_DIRECT_USER_STATED_CALCULATION_FIELDS: frozenset[str] = frozenset(
+    {
+        "shaft_diameter_mm",
+        "speed_rpm",
+        "rpm",
+        "rotational_speed_rpm",
+        "housing_bore_mm",
+        "installation_width_mm",
+        "seal_width_mm",
+        "oring_cross_section_mm",
+        "cord_diameter_mm",
+        "schnurdurchmesser_mm",
+        "cross_section_mm",
+        "groove_depth_mm",
+        "nuttiefe_mm",
+        "groove_width_mm",
+        "nutbreite_mm",
+        "seal_inner_diameter_mm",
+        "oring_inner_diameter_mm",
+        "o_ring_inner_diameter_mm",
+        "rod_diameter_mm",
+        "bore_diameter_mm",
+        "radial_gap_mm",
+        "sealing_type",
+        "seal_type",
+        "motion_type",
+        "movement_type",
+        "installation",
+        "duty_profile",
+        "geometry_context",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "pressure_system_bar",
+        "shaft_roughness_ra_um",
+        "surface_roughness_ra_um",
+        "shaft_hardness_hrc",
+        "surface_hardness_hrc",
+        "runout_mm",
+        "eccentricity_mm",
+        "axial_movement_mm",
+        "lubrication_condition",
+        "contamination_condition",
+        "installation_space_summary",
+    }
+)
+
+_CASE_CONTEXT_FOR_USER_STATED_CALCULATIONS: frozenset[str] = frozenset(
+    {
+        "sealing_type",
+        "seal_type",
+        "motion_type",
+        "movement_type",
+        "installation",
+        "shaft_diameter_mm",
+        "speed_rpm",
+        "oring_cross_section_mm",
+        "groove_depth_mm",
+        "groove_width_mm",
+    }
+)
+
+_CONTEXTUAL_USER_STATED_CALCULATION_FIELDS: frozenset[str] = frozenset(
+    {
+        "temperature_c",
+        "temperature_max_c",
+        "material",
+        "material_family",
+        "sealing_material_family",
+        "compound_family",
+    }
+)
+
+
+def _should_promote_user_stated_calculation_input(
+    field_name: str,
+    param: NormalizedParameter,
+    *,
+    normalized_field_names: set[str],
+) -> bool:
+    """Promote explicit chat values only when they are safe calculator inputs.
+
+    This is intentionally narrower than "any confirmed LLM extraction": free
+    dialogue can contain acknowledgements, examples or knowledge terms that must
+    not become case facts. Numeric/geometric inputs and clearly typed case
+    context are safe to promote; bare pressure_bar still requires role
+    clarification unless it came from an explicit UI override.
+    """
+    if param.source != "llm":
+        return False
+    if param.confidence != "confirmed":
+        return False
+    if param.value in (None, "", [], {}):
+        return False
+    if field_name in {"pressure_bar", "ambiguous_pressure_bar"}:
+        return False
+    if field_name in _DIRECT_USER_STATED_CALCULATION_FIELDS:
+        return True
+    if field_name in _CONTEXTUAL_USER_STATED_CALCULATION_FIELDS:
+        return bool(normalized_field_names & _CASE_CONTEXT_FOR_USER_STATED_CALCULATIONS)
+    return False
 
 
 @dataclass(frozen=True)
@@ -767,10 +867,12 @@ def reduce_normalized_to_asserted(
     1. Normalized candidates from LLM/regex extraction are not asserted by
        confidence alone.
     2. User overrides are explicit promotion and may become AssertedClaim.
-    3. Matching confirmed/estimated evidence claims may promote a candidate.
-    4. Parameters at 'requires_confirmation' → blocking_unknowns.
-    5. Blocking ConflictRefs → conflict_flags.
-    6. Core required fields that are absent entirely → blocking_unknowns.
+    3. Explicit user-stated, unambiguous calculation inputs may be promoted so
+       deterministic calculators can run from chat intake without UI overrides.
+    4. Matching confirmed/estimated evidence claims may promote a candidate.
+    5. Parameters at 'requires_confirmation' → blocking_unknowns.
+    6. Blocking ConflictRefs → conflict_flags.
+    7. Core required fields that are absent entirely → blocking_unknowns.
 
     Returns a new AssertedState. Never mutates inputs.
     """
@@ -794,6 +896,7 @@ def reduce_normalized_to_asserted(
     assertions: dict[str, AssertedClaim] = {}
     blocking_unknowns: list[str] = []
     conflict_flags: list[str] = []
+    normalized_field_names = set(normalized.parameters)
 
     # ── Process normalized parameters ────────────────────────────────────
     for field_name, param in normalized.parameters.items():
@@ -833,6 +936,42 @@ def reduce_normalized_to_asserted(
                 asserted_value=param.value,
                 evidence_refs=[],
                 confidence=assertion_confidence,
+                status=asserted_case_field.status,
+                provenance=asserted_case_field.provenance,
+                engineering_value=asserted_case_field.engineering_value,
+                case_field=asserted_case_field,
+            )
+            continue
+
+        if _should_promote_user_stated_calculation_input(
+            field_name,
+            param,
+            normalized_field_names=normalized_field_names,
+        ):
+            if param.case_field is not None:
+                asserted_case_field = param.case_field.model_copy(
+                    update={
+                        "confidence": "confirmed",
+                        "status": "confirmed",
+                        "confirmation_required": False,
+                        "evidence_refs": [],
+                        "provenance": "user_stated",
+                    }
+                )
+            else:
+                asserted_case_field = _asserted_case_field(
+                    field_name=field_name,
+                    value=param.value,
+                    unit=param.unit,
+                    confidence="confirmed",
+                    evidence_refs=[],
+                    provenance="user_stated",
+                )
+            assertions[field_name] = AssertedClaim(
+                field_name=field_name,
+                asserted_value=param.value,
+                evidence_refs=[],
+                confidence="confirmed",
                 status=asserted_case_field.status,
                 provenance=asserted_case_field.provenance,
                 engineering_value=asserted_case_field.engineering_value,

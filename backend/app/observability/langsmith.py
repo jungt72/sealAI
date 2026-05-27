@@ -29,6 +29,7 @@ R = TypeVar("R")
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _WRAP_UNAVAILABLE_LOGGED = False
+_OBSERVATION_SPAN_UNAVAILABLE_LOGGED = False
 
 
 def _truthy(value: str | bool | None) -> bool:
@@ -93,6 +94,19 @@ def langsmith_trace_langgraph_children(default: bool = False) -> bool:
 
     if "LANGSMITH_TRACE_LANGGRAPH_CHILDREN" in os.environ:
         return _truthy(os.getenv("LANGSMITH_TRACE_LANGGRAPH_CHILDREN"))
+    return default
+
+
+def langsmith_redacted_observation_spans(default: bool = True) -> bool:
+    """Return whether SealAI should emit redacted quality spans.
+
+    These spans are intentionally separate from raw SDK/LangGraph tracing: they
+    make graph decisions, expected interrupts, and model calls searchable in
+    LangSmith without requiring raw customer prompts or full state snapshots.
+    """
+
+    if "LANGSMITH_REDACTED_OBSERVATION_SPANS" in os.environ:
+        return _truthy(os.getenv("LANGSMITH_REDACTED_OBSERVATION_SPANS"))
     return default
 
 
@@ -312,3 +326,72 @@ def traceable(
 
         return _wrapped
     return _decorator
+
+
+@traceable(
+    name="sealai.redacted_observation",
+    run_type="chain",
+    tags=["sealai", "redacted-observation"],
+)
+async def _record_redacted_observation_span(
+    *,
+    span_name: str,
+    component: str,
+    status: str = "success",
+    inputs: dict[str, Any] | None = None,
+    outputs: dict[str, Any] | None = None,
+    langsmith_extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create a lightweight LangSmith child run with sanitized payloads."""
+
+    return {
+        "span_name": span_name,
+        "component": component,
+        "status": status,
+        "inputs": inputs or {},
+        "outputs": outputs or {},
+    }
+
+
+async def emit_redacted_observation_span(
+    *,
+    span_name: str,
+    component: str,
+    status: str = "success",
+    inputs: dict[str, Any] | None = None,
+    outputs: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Emit a best-effort, redacted LangSmith span for audit visibility.
+
+    This function never changes runtime behavior. If LangSmith is not
+    configured, or the SDK rejects a span, the application path continues.
+    """
+
+    if not langsmith_enabled() or not langsmith_redacted_observation_spans():
+        return
+    safe_metadata = redact_trace_value(
+        {
+            "sealai_span_name": span_name,
+            "sealai_component": component,
+            "sealai_observation_status": status,
+            **(metadata or {}),
+        }
+    )
+    try:
+        await _record_redacted_observation_span(
+            span_name=span_name,
+            component=component,
+            status=status,
+            inputs=inputs or {},
+            outputs=outputs or {},
+            langsmith_extra={"metadata": safe_metadata},
+        )
+    except Exception as exc:  # noqa: BLE001
+        global _OBSERVATION_SPAN_UNAVAILABLE_LOGGED
+        if not _OBSERVATION_SPAN_UNAVAILABLE_LOGGED:
+            log.warning(
+                "LangSmith redacted observation span unavailable; continuing without span: %s",
+                exc,
+            )
+            _OBSERVATION_SPAN_UNAVAILABLE_LOGGED = True

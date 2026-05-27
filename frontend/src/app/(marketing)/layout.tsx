@@ -10,8 +10,7 @@ export default function MarketingLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      {/* HEADER */}
-      <header className="sticky top-0 z-50 w-full border-b border-transparent bg-transparent">
+      <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <Link href="/" className="flex items-center" aria-label="sealingAI Startseite">
             <Image
@@ -24,29 +23,28 @@ export default function MarketingLayout({
               className="h-auto w-[108px] object-contain sm:w-[118px]"
             />
           </Link>
-          
-          <nav className="hidden md:flex items-center gap-8">
-            <Link href="/medien" className="text-sm font-medium text-muted-foreground hover:text-seal-blue transition-colors">
+
+          <nav className="hidden items-center gap-8 md:flex">
+            <Link href="/medien" className="text-sm font-medium text-muted-foreground transition-colors hover:text-seal-blue">
               Medien
             </Link>
-            <Link href="/werkstoffe" className="text-sm font-medium text-muted-foreground hover:text-seal-blue transition-colors">
+            <Link href="/werkstoffe" className="text-sm font-medium text-muted-foreground transition-colors hover:text-seal-blue">
               Werkstoffe
             </Link>
-            <Link href="/wissen" className="text-sm font-medium text-muted-foreground hover:text-seal-blue transition-colors">
+            <Link href="/wissen" className="text-sm font-medium text-muted-foreground transition-colors hover:text-seal-blue">
               SealingPedia
             </Link>
             <TrackedLink
               href="/dashboard/new"
               analyticsEvent="landing_cta_clicked"
               analyticsPayload={{ cta: "fall_klaeren", location: "header" }}
-              className="flex items-center gap-2 rounded-full bg-seal-blue px-5 py-2 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-95"
+              className="flex items-center gap-2 bg-seal-blue px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-[#082b64] active:scale-[0.98]"
             >
               Fall klären
               <ArrowRight size={14} />
             </TrackedLink>
           </nav>
 
-          {/* Mobile Menu Placeholder (Phase 8) */}
           <div className="flex items-center gap-4 md:hidden">
             <Link href="/wissen" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               SealingPedia
@@ -63,13 +61,11 @@ export default function MarketingLayout({
         </div>
       </header>
 
-      {/* MAIN CONTENT */}
       <main className="flex-1">{children}</main>
 
-      {/* FOOTER */}
-      <footer className="border-t border-border bg-slate-50 py-12">
+      <footer className="border-t border-slate-200 bg-[#f6f8fa] py-12">
         <div className="mx-auto max-w-7xl px-6">
-          <div className="flex flex-col md:flex-row justify-between gap-10">
+          <div className="flex flex-col justify-between gap-10 md:flex-row">
             <div className="flex flex-col gap-4">
               <Image
                 src="/images/logo/sealingai-wordmark-seal-blue.svg"
@@ -79,11 +75,11 @@ export default function MarketingLayout({
                 sizes="122px"
                 className="h-auto w-[122px] object-contain"
               />
-              <p className="text-sm text-muted-foreground max-w-xs">
+              <p className="max-w-xs text-sm text-muted-foreground">
                 Klär deinen Dichtungsfall, bevor du fragst. Neutral, strukturiert und ohne heimliche Weitergabe.
               </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-10">
+            <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
               <div className="flex flex-col gap-3">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-foreground/40">Plattform</span>
                 <Link href="/medien" className="text-sm text-muted-foreground hover:text-seal-blue">Medien</Link>

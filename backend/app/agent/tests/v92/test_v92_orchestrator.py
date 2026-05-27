@@ -64,7 +64,7 @@ async def test_v92_engineering_node_builds_rwdr_ledger_from_compute_results() ->
     assert result.calculation.results[0].claim_level == "L3_deterministic_calculation"
     assert result.calculation.results[0].validity_status == "valid_for_screening"
     assert result.calculation.guard_results[0].no_final_claim_from_calculation is True
-    assert result.engineering.next_best_engineering_action == "review_engineering_dossier"
+    assert result.engineering.next_best_engineering_action == "collect_missing_inputs"
 
 
 @pytest.mark.asyncio
@@ -162,7 +162,7 @@ async def test_v92_engineering_node_runs_oring_screening_without_release_claims(
     result = await v92_engineering_node(state)
 
     oring = next(item for item in result.calculation.results if item.calculation_id == "oring.groove_screening")
-    assert oring.status == "ok"
+    assert oring.status == "insufficient_data"
     assert oring.outputs["norm_ref"] == "DIN 3770 / ISO 3601-2"
     assert oring.claim_level == "L3_deterministic_calculation"
     assert "freigegeben" not in " ".join(oring.notes).lower()

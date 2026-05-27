@@ -4,7 +4,10 @@ import type { WorkspaceView } from "@/lib/contracts/workspace";
 
 import { buildSealCockpitViewModel } from "./buildSealCockpitViewModel";
 
-function workspaceWithCockpit(cockpit: WorkspaceView["cockpit"]): WorkspaceView {
+function workspaceWithCockpit(
+  cockpit: WorkspaceView["cockpit"],
+  overrides: Partial<WorkspaceView> = {},
+): WorkspaceView {
   return {
     caseId: "case-metrics",
     engineeringPath: "rwdr",
@@ -128,6 +131,7 @@ function workspaceWithCockpit(cockpit: WorkspaceView["cockpit"]): WorkspaceView 
       },
     },
     cockpit,
+    ...overrides,
   } as WorkspaceView;
 }
 
@@ -249,5 +253,86 @@ describe("buildSealCockpitViewModel backend metrics", () => {
     expect(metric.missingFields).toEqual(["concentration"]);
     expect(metric.ambiguousFields).toEqual(["temperature_c"]);
     expect(metric.finalApprovalClaimAllowed).toBe(false);
+  });
+
+  it("adds persisted deterministic derivations beside cockpit checks", () => {
+    const cockpit = cockpitFixture();
+    cockpit.checks = [
+      {
+        calcId: "material.compatibility_precheck",
+        checkId: "material.compatibility_precheck",
+        label: "Material/Medium-Vertraeglichkeits-Precheck",
+        formulaVersion: "material_medium_compatibility_precheck_v1",
+        requiredInputs: ["medium", "material"],
+        requiredFields: ["medium", "material"],
+        missingInputs: ["medium"],
+        missingFields: ["medium"],
+        validPaths: ["rwdr"],
+        outputKey: "material_medium_compatibility",
+        unit: null,
+        status: "blocked",
+        value: null,
+        fallbackBehavior: "precheck_only",
+        guardrails: ["Keine Freigabeaussage"],
+        evidenceFields: [],
+        derivedFrom: [],
+        severity: "screening",
+        humanReadableReason: "Mediumangabe ist zu generisch.",
+        rawStatus: null,
+        notes: [],
+      },
+    ];
+    cockpit.checkMetrics = {
+      checkTotal: 1,
+      checkAvailableCount: 0,
+      checkBlockedCount: 1,
+      checkPendingCount: 0,
+      checkFailedCount: 0,
+      checkPassedCount: 0,
+      source: "backend_check_registry",
+    };
+
+    const viewModel = buildSealCockpitViewModel(
+      workspaceWithCockpit(cockpit, {
+        parameters: {
+          medium: "Oel",
+          pressure_bar: 5,
+          temperature_c: 80,
+          sealing_type: "rwdr",
+          shaft_diameter_mm: 50,
+          speed_rpm: 3000,
+        },
+        technicalDerivations: [
+          {
+            calcType: "rwdr",
+            status: "ok",
+            vSurfaceMPerS: 7.853981633974483,
+            pvValueMpaMPerS: null,
+            dnValue: 150000,
+            temperatureHeadroomC: 180,
+            notes: ["Calculated value is a screening intermediate."],
+          },
+        ],
+      }),
+    );
+
+    expect(viewModel.statusStrip).toContainEqual({
+      label: "Gerechnet",
+      value: "3 Rechenwerte · 0 von 1 Checks verfügbar",
+    });
+    expect(viewModel.calculations).toContainEqual(
+      expect.objectContaining({
+        label: "Umfangsgeschwindigkeit",
+        value: "7.854 m/s",
+        status: "backend-berechnet",
+      }),
+    );
+    expect(viewModel.calculations).toContainEqual(
+      expect.objectContaining({
+        label: "Drehzahl x Durchmesser",
+        value: "150000",
+        status: "backend-berechnet",
+      }),
+    );
   });
 });

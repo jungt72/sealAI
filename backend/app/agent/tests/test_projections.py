@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from app.agent.api.utils import _light_structured_state
 from app.agent.graph import GraphState
 from app.agent.state.models import (
     AssertedClaim,
@@ -110,13 +112,27 @@ def test_projection_output_does_not_expose_internal_state_keys() -> None:
     assert "partner_id" not in str(dumped)
 
 
+def test_light_structured_state_exposes_json_object_view() -> None:
+    structured = _light_structured_state(_full_state())
+    encoded = json.loads(json.dumps(structured, default=str))
+    field_names = {
+        entry["field_name"]
+        for entry in encoded["view"]["parameter"]["parameters"]
+    }
+
+    assert isinstance(encoded["view"], dict)
+    assert encoded["view"]["parameter"]["parameter_count"] == 3
+    assert "medium" in field_names
+
+
 def test_normalized_parameters_map_to_parameter_tile() -> None:
     tile = project_for_ui(_full_state()).parameter
 
     by_name = {entry.field_name: entry for entry in tile.parameters}
-    assert by_name["pressure_bar"].value == 12.0
-    assert by_name["pressure_bar"].unit == "bar"
-    assert by_name["pressure_bar"].confidence == "requires_confirmation"
+    assert "pressure_bar" not in by_name
+    assert by_name["ambiguous_pressure_bar"].value == 12.0
+    assert by_name["ambiguous_pressure_bar"].unit == "bar"
+    assert by_name["ambiguous_pressure_bar"].confidence == "requires_confirmation"
     assert by_name["medium"].value == "Dampf"
 
 

@@ -454,6 +454,9 @@ class KnowledgeService:
         tenant_id: str | None,
         user_id: str | None,
     ) -> KnowledgeAnswerResult:
+        known_medium_orientation = _known_medium_orientation_result(user_input)
+        if known_medium_orientation is not None:
+            return known_medium_orientation
         term_orientation = _unknown_term_orientation_result(user_input)
         if term_orientation is not None:
             return term_orientation
@@ -577,6 +580,9 @@ def _compose_user_facing_rag_answer(
     snippets: list[str],
     sources: tuple[KnowledgeSource, ...],
 ) -> str:
+    if _is_hlp_46_question(user_input):
+        return _compose_hlp_46_orientation()
+
     material = _detect_material_focus(user_input, snippets)
     if material == "NBR":
         answer = "\n".join(
@@ -654,6 +660,29 @@ def _compose_user_facing_rag_answer(
         "Ich gebe deshalb keine technische Aussage aus Rohzitaten aus. Für "
         "eine konkrete Bewertung sollten wir Medium, Temperatur, Druck, "
         "Bewegung und Dichtstelle strukturiert aufnehmen."
+    )
+    return humanize_german_technical_text(answer)
+
+
+def _is_hlp_46_question(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    return bool(
+        re.search(r"\bhlp\s*46\b", text)
+        or (re.search(r"\bhlp\b", text) and "hydraul" in text)
+    )
+
+
+def _compose_hlp_46_orientation() -> str:
+    answer = "\n".join(
+        [
+            "HLP 46 ist im Dichtungskontext als Hydrauliköl einzuordnen, typischerweise mineralölbasiert mit Additivierung für Verschleißschutz, Oxidationsbeständigkeit und Korrosionsschutz.",
+            "",
+            "Die Zahl 46 steht für die ISO-Viskositätsklasse: ungefähr 46 mm²/s bei 40 °C. Für eine Dichtungsauslegung ist damit noch nicht alles geklärt, aber es ist ein wichtiger Hinweis auf die Medienfamilie und das Viskositätsniveau.",
+            "",
+            "Wichtig: HLP 46 ist nicht automatisch biologisch abbaubar. Biologisch abbaubare Hydraulikflüssigkeiten laufen üblicherweise unter anderen Medienfamilien oder Herstellerbezeichnungen. Für die Dichtung zählt deshalb das konkrete Datenblatt: Basisöl, Additive, Temperaturbereich, Druck an der Dichtstelle und Werkstoffvorgaben.",
+            "",
+            "Für deinen Fall würde ich HLP 46 zunächst als mineralölbasiertes Hydrauliköl behandeln, bis ein Datenblatt etwas anderes zeigt. Das ist technische Orientierung, keine Freigabe.",
+        ]
     )
     return humanize_german_technical_text(answer)
 
@@ -1112,6 +1141,46 @@ def _unknown_term_orientation_result(user_input: str) -> KnowledgeAnswerResult |
     )
 
 
+def _known_medium_orientation_result(user_input: str) -> KnowledgeAnswerResult | None:
+    if not _is_hlp_46_question(user_input):
+        return None
+    answer = _compose_hlp_46_orientation()
+    return KnowledgeAnswerResult(
+        answer=answer,
+        answer_available=True,
+        rag_lookup_attempted=True,
+        rag_answer_found=False,
+        rag_miss=True,
+        source_type=SourceType.system_derived,
+        validation_status=ValidationStatus.unvalidated,
+        use_scope=KNOWLEDGE_FALLBACK_GENERAL_ORIENTATION_SCOPE,
+        not_final_release=True,
+        fallback_allowed=False,
+        fallback_used=False,
+        user_visible_label="SeaLAI-Medienwissen - allgemeine Orientierung",
+        missing_reason="domain_hlp46_orientation_without_rag_hit",
+        next_step=(
+            "Mediumdatenblatt, Basisöl, Additivierung, Temperatur, Druck an der "
+            "Dichtstelle und Dichtungswerkstoff erfassen."
+        ),
+        knowledge_evidence=(
+            _knowledge_evidence(
+                source_type="deterministic",
+                title="HLP 46 Hydrauliköl",
+                content=answer,
+                note="system_derived_medium_orientation:hlp46",
+            ),
+        ),
+        event_names=(
+            "KnowledgeQuestionReceived",
+            "KnowledgeRAGLookupRequested",
+            "KnowledgeRAGAnswerMissing",
+            "SourceValidationStatusAssigned",
+            "KnowledgeAnswerGenerated",
+        ),
+    )
+
+
 def _miss_result(
     answer: str,
     *,
@@ -1323,6 +1392,20 @@ _PRODUCT_EVIDENCE_TOKENS = {
     "kluebersynth",
     "uh1",
 }
+_MEDIUM_EVIDENCE_TOKENS = {
+    "hlp",
+    "hvlp",
+    "hfa",
+    "hfb",
+    "hfc",
+    "hfd",
+    "hees",
+    "hetg",
+    "hydrauliköl",
+    "hydraulikoel",
+    "mineralöl",
+    "mineraloel",
+}
 
 
 def _filter_rag_hits_for_query(
@@ -1347,6 +1430,9 @@ def _named_evidence_tokens(user_input: str) -> set[str]:
     product_tokens = {token for token in _PRODUCT_EVIDENCE_TOKENS if token in text}
     if product_tokens:
         return product_tokens
+    medium_tokens = {token for token in _MEDIUM_EVIDENCE_TOKENS if token in text}
+    if medium_tokens:
+        return medium_tokens
     material_tokens = {token for token in _MATERIAL_EVIDENCE_TOKENS if re.search(rf"\b{re.escape(token)}\b", text)}
     if "ptfe" in material_tokens and len(material_tokens) > 1:
         material_tokens.remove("ptfe")

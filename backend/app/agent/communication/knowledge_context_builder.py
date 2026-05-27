@@ -108,10 +108,14 @@ class KnowledgeContextBuilder:
     def __init__(
         self,
         *,
-        history_limit: int = _DEFAULT_HISTORY_LIMIT,
+        history_limit: int | None = _DEFAULT_HISTORY_LIMIT,
+        history_char_limit: int | None = _MAX_HISTORY_CHARS,
         evidence_limit: int = _DEFAULT_EVIDENCE_LIMIT,
     ) -> None:
-        self.history_limit = max(0, int(history_limit))
+        self.history_limit = None if history_limit is None else max(0, int(history_limit))
+        self.history_char_limit = (
+            None if history_char_limit is None else max(0, int(history_char_limit))
+        )
         self.evidence_limit = max(1, int(evidence_limit))
 
     def build(
@@ -127,6 +131,7 @@ class KnowledgeContextBuilder:
         intent: str | None = None,
         language_hint: str = "de",
     ) -> KnowledgeAnswerContext:
+        history_source = tuple(recent_history or ())
         answer_view = answer_view or getattr(
             knowledge_response,
             "knowledge_answer_view",
@@ -145,10 +150,14 @@ class KnowledgeContextBuilder:
             regulatory_currentness_required=regulatory_currentness_required,
         )
         return KnowledgeAnswerContext(
-            user_message=_safe_text(user_message, limit=_MAX_HISTORY_CHARS),
+            user_message=_safe_text(user_message, limit=self.history_char_limit),
             deterministic_answer=deterministic_text,
-            requested_subjects=extract_material_ids(user_message),
-            recent_history=self._recent_history(recent_history),
+            requested_subjects=_requested_material_subjects(
+                user_message,
+                history_source,
+                deterministic_answer=deterministic_text,
+            ),
+            recent_history=self._recent_history(history_source),
             evidence_items=evidence_items,
             route_label=_optional_text(route_label),
             knowledge_mode=_optional_text(knowledge_mode),
@@ -170,7 +179,7 @@ class KnowledgeContextBuilder:
                 continue
             content = _safe_text(
                 _turn_value(raw_turn, "content"),
-                limit=_MAX_HISTORY_CHARS,
+                limit=self.history_char_limit,
             )
             if not content:
                 continue
@@ -181,6 +190,8 @@ class KnowledgeContextBuilder:
             return ()
         if self.history_limit == 0:
             return ()
+        if self.history_limit is None:
+            return tuple(visible_turns)
         return tuple(visible_turns[-self.history_limit :])
 
     def _evidence_items(
@@ -252,6 +263,91 @@ class KnowledgeContextBuilder:
 
 def build_knowledge_answer_context(**kwargs: Any) -> KnowledgeAnswerContext:
     return KnowledgeContextBuilder().build(**kwargs)
+
+
+_CONTEXTUAL_COMPARISON_RE = re.compile(
+    r"\b(?:vergleiche?|vergleich|unterschied|gegen[üu]ber|gegenueber|vs\.?|versus|mit|gegen)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _requested_material_subjects(
+    user_message: str,
+    recent_history: tuple[Any, ...],
+    *,
+    deterministic_answer: str = "",
+) -> tuple[str, ...]:
+    latest = list(extract_material_ids(user_message))
+    if len(latest) == 0 and _looks_like_contextual_material_comparison(user_message):
+        from_answer = _comparison_subjects_from_answer(deterministic_answer)
+        if from_answer:
+            return from_answer
+    if len(latest) != 1 or not _CONTEXTUAL_COMPARISON_RE.search(str(user_message or "")):
+        return tuple(latest)
+
+    anchor = _last_history_material_subject(
+        recent_history,
+        exclude=set(latest),
+    )
+    if not anchor:
+        return tuple(latest)
+
+    subjects = [anchor]
+    subjects.extend(material for material in latest if material != anchor)
+    return tuple(subjects)
+
+
+def _looks_like_contextual_material_comparison(user_message: str) -> bool:
+    text = str(user_message or "").casefold()
+    return bool(
+        re.search(
+            r"\b(?:die\s+beiden|beide(?:n|s)?\s+materialien|beide|"
+            r"welche[rs]?\s+ist\s+besser|besser\s+für|besser\s+fuer|vergleich)\b",
+            text,
+        )
+    )
+
+
+def _comparison_subjects_from_answer(deterministic_answer: str) -> tuple[str, ...]:
+    answer = str(deterministic_answer or "")
+    if not answer:
+        return ()
+    first_screen = "\n".join(answer.splitlines()[:12])
+    if "vergleich" not in first_screen.casefold() and " vs " not in first_screen.casefold():
+        return ()
+    subjects: list[str] = []
+    for material in extract_material_ids(first_screen):
+        if material not in subjects:
+            subjects.append(material)
+        if len(subjects) >= 2:
+            break
+    return tuple(subjects)
+
+
+def _last_history_material_subject(
+    recent_history: tuple[Any, ...],
+    *,
+    exclude: set[str],
+) -> str | None:
+    user_candidates: list[str] = []
+    assistant_candidates: list[str] = []
+    for turn in recent_history:
+        role = _turn_value(turn, "role")
+        content = _turn_value(turn, "content")
+        if role not in {"user", "assistant"} or not content:
+            continue
+        for material in extract_material_ids(content):
+            if material in exclude:
+                continue
+            if role == "user":
+                user_candidates.append(material)
+            else:
+                assistant_candidates.append(material)
+    for material in reversed(user_candidates):
+        return material
+    for material in reversed(assistant_candidates):
+        return material
+    return None
 
 
 def _evidence_from_source(source: Any) -> KnowledgeEvidenceItem | None:

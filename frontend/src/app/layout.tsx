@@ -1,18 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import "@fontsource-variable/google-sans-flex/standard.css";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/Providers";
 import { GoogleMarketingTags } from "@/components/analytics/GoogleMarketingTags";
 import { RybbitAnalytics } from "@/components/analytics/RybbitAnalytics";
 import { getSiteOrigin } from "@/lib/site";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  adjustFontFallback: true,
-  display: "swap",
-});
 
 const siteOrigin = getSiteOrigin();
 
@@ -29,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de" className="light" suppressHydrationWarning>
-      <body className={cn(inter.variable, "font-sans bg-background text-[#1F1F1F] antialiased")}>
+      <body className={cn("font-sans bg-background text-[#1F1F1F] antialiased")}>
         <RybbitAnalytics />
         <GoogleMarketingTags />
         <Providers>

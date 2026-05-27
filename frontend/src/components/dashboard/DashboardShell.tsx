@@ -1,48 +1,50 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  Activity,
-  BarChart3,
   Bell,
-  Database,
   ChevronRight,
-  FileText,
-  HelpCircle,
-  Menu,
-  PencilLine,
   Plus,
   Search,
-  Settings,
-  Sparkles,
-  Target,
+  X,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
+import {
+  CaseStateIcon,
+  CommunicationIcon,
+  DecisionMatrixIcon,
+  DemandAnalysisIcon,
+  EvidenceRagIcon,
+  ParameterIcon,
+  RfqPreviewIcon,
+  SealAiCornerMark,
+  UncertaintyIcon,
+  type SealAiIconComponent,
+} from "@/components/brand/SealAiBrand";
 import LogoutButton from "@/components/dashboard/LogoutButton";
 import { cn } from "@/lib/utils";
 
 type SidebarItem = {
   href: string;
-  icon: LucideIcon;
+  icon: SealAiIconComponent;
   label: string;
   external?: boolean;
 };
 
 const NAV_ITEMS: SidebarItem[] = [
-  { href: "/dashboard/new", icon: PencilLine, label: "Neuer Chat" },
-  { href: "/rag", icon: Sparkles, label: "Meine Inhalte" },
+  { href: "/dashboard/new", icon: CommunicationIcon, label: "Neuer Chat" },
+  { href: "/rag", icon: EvidenceRagIcon, label: "Meine Inhalte" },
 ];
 
 const WORKSPACE_ITEMS: SidebarItem[] = [
-  { href: "/dashboard/seo", icon: BarChart3, label: "SEO" },
-  { href: "/dashboard/analytics", icon: Activity, label: "Analytics" },
-  { href: "/goal", icon: Target, label: "Goal" },
-  { href: "/rag", icon: Database, label: "SealingPedia" },
-  { href: "/dashboard/new", icon: FileText, label: "Dokumente" },
+  { href: "/dashboard/seo", icon: DecisionMatrixIcon, label: "SEO" },
+  { href: "/dashboard/analytics", icon: DemandAnalysisIcon, label: "Analytics" },
+  { href: "/goal", icon: CaseStateIcon, label: "Goal" },
+  { href: "/rag", icon: EvidenceRagIcon, label: "SealingPedia" },
+  { href: "/dashboard/new", icon: RfqPreviewIcon, label: "Dokumente" },
 ];
 
 type CaseHistoryItem = {
@@ -146,6 +148,24 @@ function normalizeCaseHistory(payload: unknown): CaseHistoryItem[] {
     .slice(0, 30);
 }
 
+function SealAiHeaderWordmark({ testId }: { testId: string }) {
+  return (
+    <div
+      aria-label="SEALING Intelligence"
+      data-testid={testId}
+      className="flex items-center gap-3"
+    >
+      <div className="text-[20px] font-semibold uppercase tracking-[0.045em] text-seal-blue">
+        SEALING
+      </div>
+      <div className="h-6 w-px bg-seal-blue/35" />
+      <div className="text-[14px] font-medium uppercase tracking-[0.02em] text-[#1F1F1F]">
+        INTELLIGENCE
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardShell({
   children,
 }: {
@@ -159,6 +179,7 @@ export default function DashboardShell({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [isHistorySearchOpen, setIsHistorySearchOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
+  const historySearchInputRef = useRef<HTMLInputElement>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -173,6 +194,12 @@ export default function DashboardShell({
   useEffect(() => {
     window.localStorage.setItem("sealai:historyOpen", isHistoryOpen ? "1" : "0");
   }, [isHistoryOpen]);
+
+  useEffect(() => {
+    if (isHistorySearchOpen) {
+      historySearchInputRef.current?.focus();
+    }
+  }, [isHistorySearchOpen]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -216,37 +243,36 @@ export default function DashboardShell({
           item.subtitle.toLowerCase().includes(normalizedHistorySearch),
       )
     : historyItems;
+  const closeHistorySearch = () => {
+    setHistorySearch("");
+    setIsHistorySearchOpen(false);
+  };
 
   return (
     <div className="relative flex h-screen w-full overflow-hidden bg-white font-sans text-foreground">
       <aside
         className={cn(
-          "relative z-40 flex h-full shrink-0 flex-col border-r border-seal-blue/20 bg-sidebar text-seal-blue transition-[width] duration-200 ease-out",
+          "relative z-40 flex h-full shrink-0 flex-col border-none bg-white text-seal-blue transition-[width] duration-200 ease-out",
           isHistoryOpen ? "w-[304px]" : "w-[72px]",
         )}
       >
-        <div className={cn("flex h-[72px] items-center", isHistoryOpen ? "justify-between px-5" : "justify-center")}>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-px bg-slate-950/[0.035]"
+        />
+        <div className={cn("flex h-[72px] items-center", isHistoryOpen ? "justify-start gap-3 px-5" : "justify-center")}>
           <button
             type="button"
             aria-label={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             aria-expanded={isHistoryOpen}
             title={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             onClick={() => setIsHistoryOpen((current) => !current)}
-            className="grid h-10 w-10 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
+            data-testid="sealai-sidebar-corner-logo"
+            className="grid h-11 w-11 place-items-center rounded-full text-[#0B0F19] transition-colors hover:bg-white/70 hover:text-seal-blue"
           >
-            <Menu size={20} />
+            <SealAiCornerMark size={34} decorative />
           </button>
-          {isHistoryOpen ? (
-            <button
-              type="button"
-              aria-label="Chats durchsuchen"
-              title="Chats durchsuchen"
-              onClick={() => setIsHistorySearchOpen((current) => !current)}
-              className="grid h-10 w-10 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
-            >
-              <Search size={20} />
-            </button>
-          ) : null}
+          {isHistoryOpen ? <SealAiHeaderWordmark testId="sealai-sidebar-wordmark" /> : null}
         </div>
 
         {isHistoryOpen ? (
@@ -262,16 +288,18 @@ export default function DashboardShell({
                     item.href === "/dashboard/new"
                       ? isAnalysisRoute
                       : pathname.startsWith(item.href);
+                  const className = cn(
+                    "flex h-11 items-center gap-4 rounded-full border border-transparent px-4 text-[15px] font-medium transition-colors",
+                    isActive
+                      ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
+                      : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
+                  );
+
                   return (
                     <Link
                       key={`${item.label}-${item.href}`}
                       href={item.href}
-                      className={cn(
-                        "flex h-11 items-center gap-4 rounded-full border border-transparent px-4 text-[15px] font-medium transition-colors",
-                        isActive
-                          ? "border-seal-blue/20 bg-white/75 text-seal-blue shadow-sm"
-                          : "text-seal-blue hover:bg-white/60 hover:text-seal-blue",
-                      )}
+                      className={className}
                     >
                       <item.icon size={20} />
                       <span className="truncate">{item.label}</span>
@@ -322,8 +350,29 @@ export default function DashboardShell({
               </div>
             </nav>
 
-            <div className="mb-2 px-6 text-[14px] font-semibold text-seal-blue">
-              Chats
+            <div className="mb-2 flex items-center justify-between px-6 text-[14px] font-semibold text-seal-blue">
+              <span>Chats</span>
+              {isHistorySearchOpen ? (
+                <button
+                  type="button"
+                  aria-label="Suche schließen"
+                  title="Suche schließen"
+                  onClick={closeHistorySearch}
+                  className="grid h-8 w-8 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
+                >
+                  <X size={17} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Chats durchsuchen"
+                  title="Chats durchsuchen"
+                  onClick={() => setIsHistorySearchOpen(true)}
+                  className="grid h-8 w-8 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
+                >
+                  <Search size={17} />
+                </button>
+              )}
             </div>
 
             {isHistorySearchOpen ? (
@@ -333,8 +382,14 @@ export default function DashboardShell({
                 </label>
                 <input
                   id="dashboard-history-search"
+                  ref={historySearchInputRef}
                   value={historySearch}
                   onChange={(event) => setHistorySearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      closeHistorySearch();
+                    }
+                  }}
                   placeholder="Chats suchen"
                   className="h-10 w-full rounded-full border border-border bg-white px-4 text-[14px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-seal-blue"
                 />
@@ -356,7 +411,7 @@ export default function DashboardShell({
                 </div>
               ) : visibleHistoryItems.length === 0 ? (
                 <div className="rounded-[22px] px-3 py-2.5 text-[14px] text-[#4B5563]">
-                  Kein passender Chat.
+                  Keine Chats gefunden.
                 </div>
               ) : (
                 <div className="space-y-0.5">
@@ -390,7 +445,7 @@ export default function DashboardShell({
                   href="/dashboard/seo"
                   className="flex h-10 items-center gap-4 rounded-full px-4 text-[14px] font-medium text-seal-blue transition-colors hover:bg-white/60 hover:text-seal-blue"
                 >
-                  <Activity size={18} />
+                  <DemandAnalysisIcon size={18} />
                   <span>Aktivitäten</span>
                 </Link>
                 <button
@@ -399,7 +454,7 @@ export default function DashboardShell({
                   title="Einstellungen"
                   className="flex h-10 w-full items-center gap-4 rounded-full px-4 text-[14px] font-medium text-seal-blue transition-colors hover:bg-white/60 hover:text-seal-blue"
                 >
-                  <Settings size={18} />
+                  <ParameterIcon size={18} />
                   <span>Einstellungen & Hilfe</span>
                 </button>
                 <LogoutButton className="rounded-full px-4 !text-seal-blue hover:!bg-white/60 hover:!text-seal-blue" />
@@ -446,7 +501,7 @@ export default function DashboardShell({
                 title="Einstellungen"
                 className="grid h-10 w-10 place-items-center rounded-full text-seal-blue transition-colors hover:bg-white/70 hover:text-seal-blue"
               >
-                <HelpCircle size={19} />
+                <UncertaintyIcon size={19} />
               </button>
               <LogoutButton showLabel={false} className="h-10 w-10 rounded-full p-0 !text-seal-blue hover:!bg-white/70 hover:!text-seal-blue" />
             </div>
@@ -456,14 +511,12 @@ export default function DashboardShell({
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-[72px] shrink-0 items-center justify-between bg-white px-5 sm:px-7">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="text-[20px] font-semibold tracking-[0.045em] text-seal-blue">SEALING</div>
-              <div className="h-6 w-px bg-seal-blue/35" />
-              <div className="text-[14px] font-medium tracking-[0.02em] text-foreground">INTELLIGENCE</div>
+          {!isHistoryOpen ? (
+            <div className="min-w-0">
+              <SealAiHeaderWordmark testId="sealai-header-wordmark" />
             </div>
-          </div>
-          <div className="ml-4 flex shrink-0 items-center gap-2 sm:gap-3">
+          ) : null}
+          <div className={cn("flex shrink-0 items-center gap-2 sm:gap-3", isHistoryOpen ? "ml-auto" : "ml-4")}>
             <button
               type="button"
               title="Benachrichtigungen"

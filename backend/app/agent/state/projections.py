@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.agent.runtime.clarification_priority import prioritized_open_point_labels
 from app.agent.services.medium_context import MediumContext
 from app.agent.state.models import GovernedSessionState
+from app.agent.v92.calculation_projection import calculation_ledger_derivations
 from app.agent.v92.dashboard_contract import build_legacy_v92_ui_tile
 
 
@@ -228,7 +229,17 @@ def _sanitize_public_notes(notes: list[str]) -> list[str]:
 
 
 def _build_parameter_tile(state: GovernedSessionState) -> ParameterTileProjection:
-    params = state.normalized.parameters
+    params = dict(state.normalized.parameters)
+    if "pressure_bar" in params and any(
+        field in params
+        for field in (
+            "pressure_system_bar",
+            "pressure_at_seal_bar",
+            "pressure_delta_bar",
+            "ambiguous_pressure_bar",
+        )
+    ):
+        params.pop("pressure_bar", None)
     entries = [
         ParameterEntry(
             field_name=parameter.field_name,
@@ -285,12 +296,30 @@ def _build_recommendation_tile(state: GovernedSessionState) -> RecommendationTil
 
 def _build_compute_tile(state: GovernedSessionState) -> ComputeTileProjection:
     items: list[ComputeResultProjection] = []
+    seen_calc_types: set[str] = set()
     for result in list(getattr(state, "compute_results", []) or []):
         if not isinstance(result, dict):
             continue
+        calc_type = str(result.get("calc_type") or "unknown")
+        seen_calc_types.add(calc_type)
         items.append(
             ComputeResultProjection(
-                calc_type=str(result.get("calc_type") or "unknown"),
+                calc_type=calc_type,
+                status=str(result.get("status") or "insufficient_data"),
+                v_surface_m_s=result.get("v_surface_m_s"),
+                pv_value_mpa_m_s=result.get("pv_value_mpa_m_s"),
+                dn_value=result.get("dn_value"),
+                notes=[str(item) for item in list(result.get("notes") or []) if item],
+            )
+        )
+    for result in calculation_ledger_derivations(getattr(state, "calculation", None)):
+        calc_type = str(result.get("calc_type") or "unknown")
+        if calc_type in seen_calc_types:
+            continue
+        seen_calc_types.add(calc_type)
+        items.append(
+            ComputeResultProjection(
+                calc_type=calc_type,
                 status=str(result.get("status") or "insufficient_data"),
                 v_surface_m_s=result.get("v_surface_m_s"),
                 pv_value_mpa_m_s=result.get("pv_value_mpa_m_s"),

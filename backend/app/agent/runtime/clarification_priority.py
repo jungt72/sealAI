@@ -477,10 +477,10 @@ def select_next_focus_from_known_context(
                 return priority
         if rotary_context_detected:
             for field_name in (
-                "pressure_bar",
-                "temperature_c",
                 "speed_rpm",
                 "shaft_diameter_mm",
+                "pressure_bar",
+                "temperature_c",
             ):
                 if field_name == "pressure_bar" and pressure_present:
                     continue
@@ -598,7 +598,7 @@ def select_clarification_priority(
                 open_point_label=render_open_point_label(state, "medium"),
             )
 
-    for field_name in ("concentration", "ph", "material", "temperature_c", "compliance_evidence"):
+    for field_name in ("concentration", "ph", "material", "compliance_evidence"):
         if field_name in field_set:
             if _has_value(state, field_name):
                 continue

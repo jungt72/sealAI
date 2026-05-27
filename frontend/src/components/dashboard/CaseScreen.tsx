@@ -38,6 +38,7 @@ import {
 } from "@/lib/engineering/cockpitModel";
 import { buildSealCockpitViewModel } from "@/lib/engineering/buildSealCockpitViewModel";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
+import { streamWorkspaceToWorkspaceView } from "@/lib/streamWorkspaceAdapter";
 import { cn } from "@/lib/utils";
 
 interface CaseScreenProps {
@@ -1607,10 +1608,19 @@ function UtilityRail({
 export default function CaseScreen({ caseId, initialGoal, initialRequestType }: CaseScreenProps) {
   const cockpit = useCockpitData();
   const workspace = useWorkspaceStore((state) => state.workspace);
+  const streamWorkspace = useWorkspaceStore((state) => state.streamWorkspace);
   const activeResponseClass = useWorkspaceStore((state) => state.activeResponseClass);
   const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
   const setWorkspaceLoading = useWorkspaceStore((state) => state.setWorkspaceLoading);
-  const cockpitViewModel = useMemo(() => buildSealCockpitViewModel(workspace), [workspace]);
+  const streamWorkspaceView = useMemo(
+    () => streamWorkspaceToWorkspaceView(streamWorkspace),
+    [streamWorkspace],
+  );
+  const displayWorkspace = workspace ?? streamWorkspaceView;
+  const cockpitViewModel = useMemo(
+    () => buildSealCockpitViewModel(displayWorkspace),
+    [displayWorkspace],
+  );
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const appendAssistantMessage = useChatStore((state) => state.appendAssistantMessage);
@@ -1892,7 +1902,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
                 <div className="custom-scrollbar min-h-0 pr-12 lg:h-full lg:overflow-y-auto">
                   <SealCockpit
                     data={cockpitViewModel}
-                    workspace={workspace}
+                    workspace={displayWorkspace}
                     isParameterSubmitting={isParameterSubmitting}
                     onParameterSubmit={handleParameterSubmit}
                     preferredTab={canonicalCaseId ? null : "parameters"}

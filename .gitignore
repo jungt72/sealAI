@@ -88,6 +88,8 @@ test_input.json
 .trash/
 _audits/
 frontend_backup_*/
+_deploy_backups/
+_release_backups/
 
 # editor/backup files
 *.save

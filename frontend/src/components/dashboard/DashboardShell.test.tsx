@@ -43,6 +43,9 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
 
+    expect(screen.getByTestId("sealai-header-wordmark")).toHaveAccessibleName("SEALING Intelligence");
+    expect(screen.getByTestId("sealai-sidebar-corner-logo")).toBeInTheDocument();
+    expect(screen.getByTestId("sealai-circular-s-logo")).toBeInTheDocument();
     expect(screen.getByText("SEALING")).toBeInTheDocument();
     expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
     expect(screen.queryByText(/Arbeitsraum:/)).not.toBeInTheDocument();

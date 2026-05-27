@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Paperclip, SendHorizontal } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronDown, Mic, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
@@ -91,71 +91,101 @@ export default function ChatComposer({
     <button
       type="button"
       title="Anhang hinzufügen"
+      aria-label="Anhang hinzufügen"
       onClick={() => fileInputRef.current?.click()}
       disabled={!canUpload}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-50",
-        isHero ? "rounded-full" : "rounded-md",
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#1F1F1F] transition-colors hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40",
       )}
     >
-      <Paperclip size={18} />
+      <Plus size={21} strokeWidth={2} />
+    </button>
+  );
+  const modeButton = (
+    <button
+      type="button"
+      title="Antwortlänge"
+      aria-label="Antwortlänge"
+      className="hidden h-8 shrink-0 items-center gap-1 rounded-full px-3 text-[14px] font-medium text-[#5F6368] transition-colors hover:bg-[#F3F4F6] sm:inline-flex"
+    >
+      <span>Länger</span>
+      <ChevronDown size={15} strokeWidth={2} />
+    </button>
+  );
+  const micButton = (
+    <button
+      type="button"
+      title="Spracheingabe"
+      aria-label="Spracheingabe"
+      className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#1F1F1F] transition-colors hover:bg-[#F3F4F6] sm:inline-flex"
+    >
+      <Mic size={19} strokeWidth={2} />
     </button>
   );
   const sendButton = (
     <button
       type="submit"
-      title="Senden"
+      title={canSend ? "Senden" : "Sprachmodus"}
+      aria-label={canSend ? "Senden" : "Sprachmodus"}
       disabled={!canSend}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center transition-colors",
-        isHero ? "rounded-full" : "rounded-md",
-        canSend
-          ? "bg-seal-blue text-white hover:opacity-90"
-          : "cursor-not-allowed bg-slate-100 text-slate-400",
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
+        "bg-[#0F0F0F] text-white shadow-[0_3px_10px_rgba(0,0,0,0.14)]",
+        canSend ? "hover:bg-[#1F2937]" : "cursor-not-allowed opacity-95",
       )}
     >
-      <SendHorizontal size={18} />
+      {canSend ? <ArrowUp size={19} strokeWidth={2.3} /> : <AudioLines size={19} strokeWidth={2.2} />}
     </button>
   );
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      data-private
-      className={cn(
-        "w-full border border-[#C9D1DC] bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)]",
-        isHero ? "rounded-[28px] p-4" : "rounded-[16px] p-2",
-      )}
-    >
-      <div className={cn(isHero ? "flex flex-col" : "flex items-end gap-2")}>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          accept=".pdf,.txt,.md,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          onChange={handleFileChange}
-          disabled={!canUpload}
-        />
-        {!isHero ? uploadButton : null}
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          className={cn(
-            "max-h-[220px] flex-1 resize-none bg-transparent text-foreground placeholder:text-[#6B7280] focus:outline-none",
-            isHero
-              ? "min-h-[58px] px-1 py-1 text-[16px] leading-7"
-              : "min-h-10 px-1 py-2.5 text-[15px] leading-6",
-          )}
-          disabled={isLoading}
-          autoFocus={autoFocus}
-        />
+    <div className="w-full">
+      <form
+        onSubmit={handleSubmit}
+        data-private
+        className={cn(
+          "w-full rounded-[999px] border border-[#DADDE3] bg-[#FFFFFF] shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-shadow focus-within:border-[#C9CED8] focus-within:shadow-[0_14px_38px_rgba(15,23,42,0.12)]",
+          isHero ? "px-4 py-2 sm:px-5" : "px-3 py-1.5",
+        )}
+      >
+        <div className="flex min-h-[40px] items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".pdf,.txt,.md,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={handleFileChange}
+            disabled={!canUpload}
+          />
+          {uploadButton}
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className={cn(
+              "max-h-[220px] min-w-0 flex-1 resize-none bg-transparent text-[#1F1F1F] placeholder:text-[#747775] focus:outline-none",
+              isHero
+                ? "min-h-[36px] px-1 py-[6px] text-[16px] leading-6"
+                : "min-h-[36px] px-1 py-[6px] text-[16px] leading-6",
+            )}
+            disabled={isLoading}
+            autoFocus={autoFocus}
+          />
 
-        {isHero ? <div className="mt-3 flex items-center justify-between">{uploadButton}{sendButton}</div> : sendButton}
-      </div>
-    </form>
+          <div className="flex shrink-0 items-center gap-1">
+            {modeButton}
+            {micButton}
+            {sendButton}
+          </div>
+        </div>
+      </form>
+      <p className="mx-auto mt-4 max-w-[920px] px-2 text-center text-[11.5px] leading-[17px] text-[#6B7280]">
+        <span className="block">Ergebnisse sind eine technische Vorqualifikation, keine Herstellerfreigabe und keine finale Auslegung.</span>
+        <span className="block">SealingAI ist KI-gestützt und kann Fehler machen.</span>
+      </p>
+    </div>
   );
 }

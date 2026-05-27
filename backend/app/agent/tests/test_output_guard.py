@@ -90,6 +90,16 @@ class TestSuitabilityViolations:
         assert safe is False
         assert cat == "suitability"
 
+    def test_eignet_sich_fuer_blocked(self):
+        safe, cat = check_fast_path_output("PTFE eignet sich hervorragend für aggressive Medien.")
+        assert safe is False
+        assert cat == "suitability"
+
+    def test_geeignet_macht_blocked(self):
+        safe, cat = check_fast_path_output("Das macht PTFE für Hochtemperaturanwendungen geeignet.")
+        assert safe is False
+        assert cat == "suitability"
+
     def test_kein_problem_blocked(self):
         safe, cat = check_fast_path_output("Das ist kein Problem bei 80°C.")
         assert safe is False

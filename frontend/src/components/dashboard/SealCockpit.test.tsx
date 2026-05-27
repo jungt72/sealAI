@@ -279,7 +279,6 @@ const cockpitData: SealCockpitOverview = {
     { id: "medium", label: "Medium" },
     { id: "application", label: "Anwendung" },
     { id: "material", label: "Werkstoff" },
-    { id: "calculation", label: "Berechnung" },
     { id: "briefing", label: "Briefing" },
   ],
   statusStrip: [],
@@ -325,12 +324,20 @@ function workspaceWithMedium(): WorkspaceView {
 }
 
 describe("SealCockpit quick parameter intake", () => {
-  it("offers a collapsible right-column intake before the cockpit tabs", async () => {
+  it("renders cockpit tabs first and keeps quick intake inside the overview grid", async () => {
     const user = userEvent.setup();
 
     render(<SealCockpit data={cockpitData} workspace={null} />);
 
-    expect(screen.getByRole("heading", { name: "Bekannte Parameter in den State schreiben" })).toBeInTheDocument();
+    const cockpitTabs = screen.getByRole("tablist", { name: "SealingAI Cockpit" });
+    const directEntryMarker = screen.getByText("Direkteingabe");
+    expect(cockpitTabs.compareDocumentPosition(directEntryMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Anfragebasis" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Berechnung" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Bekannte Parameter in den State schreiben")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Anwendung" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Berechnungen" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Rotierend" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Hydraulik" })).toBeInTheDocument();
     expect(screen.getByLabelText("Welle · mm")).toBeInTheDocument();
@@ -356,7 +363,7 @@ describe("SealCockpit quick parameter intake", () => {
     await user.click(screen.getByRole("tab", { name: "Hydraulik" }));
     await user.type(screen.getByLabelText("Fluid"), "HLP 46");
     await user.type(screen.getByLabelText("Druckspitzen · bar"), "250");
-    await user.click(screen.getByRole("button", { name: "In State übernehmen" }));
+    await user.click(screen.getByRole("button", { name: "Übernehmen" }));
 
     expect(onParameterSubmit).toHaveBeenCalledWith(
       expect.arrayContaining([
@@ -692,85 +699,51 @@ describe("SealCockpit material intelligence", () => {
   });
 });
 
-describe("CalculationsEvidenceCard compatibility evidence", () => {
-  it("renders precheck evidence without approval wording", () => {
+describe("CalculationsEvidenceCard compact overview", () => {
+  it("renders missing calculation metrics as compact N/N tiles without verbose status text", () => {
     render(
       <CalculationsEvidenceCard
         metrics={[
           {
-            label: "Werkstoff-/Medium-Precheck",
+            label: "Umfangsgeschwindigkeit",
             value: "Noch nicht möglich",
             status: "screening",
-            compatibilityStatus: "candidate_supported",
-            evidenceStatus: "evidence_found",
-            evidenceRefs: [{ refId: "ref-1", sourceTitle: "Material evidence card" }],
-            evidenceSummary: "Backend meldet eine quellenmarkierte Screening-Grundlage.",
-            evidenceLimitations: ["nur Werkstofffamilie, kein konkreter Compound"],
-            missingFields: ["concentration"],
-            finalApprovalClaimAllowed: false,
+            limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
+            reserve: "Noch keine technischen Daten vorhanden",
+          },
+          {
+            label: "Druck x Geschwindigkeit",
+            value: "Noch nicht möglich",
+            status: "screening",
+            limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
+            reserve: "Noch keine technischen Daten vorhanden",
+          },
+          {
+            label: "Drehzahl x Durchmesser",
+            value: "Noch nicht möglich",
+            status: "screening",
+            limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
+            reserve: "Noch keine technischen Daten vorhanden",
+          },
+          {
+            label: "Temperatur-Reserve",
+            value: "Noch nicht möglich",
+            status: "screening",
+            limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
+            reserve: "Noch keine technischen Daten vorhanden",
           },
         ]}
       />,
     );
 
-    expect(screen.getByText(/Precheck: Kandidat zur Prüfung/)).toBeInTheDocument();
-    expect(screen.getByText("Evidenz: vorhanden")).toBeInTheDocument();
-    expect(screen.getByText("Keine Freigabeaussage")).toBeInTheDocument();
-    expect(screen.getByText(/Backend meldet eine quellenmarkierte Screening-Grundlage/)).toBeInTheDocument();
-    expect(screen.getByText(/Nachweise: 1 · Material evidence card/)).toBeInTheDocument();
-    expect(screen.getByText(/Offen: Konzentration/)).toBeInTheDocument();
-    expect(screen.getByText(/Limitation: nur Werkstofffamilie/)).toBeInTheDocument();
-    expect(screen.queryByText(/\bgeeignet\b/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/\bfreigegeben\b/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/\bzugelassen\b/i)).not.toBeInTheDocument();
-  });
-
-  it("renders missing evidence limitations without final claims", () => {
-    render(
-      <CalculationsEvidenceCard
-        metrics={[
-          {
-            label: "Werkstoff-/Medium-Precheck",
-            value: "Noch nicht möglich",
-            status: "screening",
-            evidenceStatus: "insufficient_evidence",
-            evidenceSummary: "Nachweis erforderlich, bevor daraus eine Anfragebasis wird.",
-            evidenceLimitations: ["Hersteller-/Datenblattnachweis erforderlich"],
-            missingFields: ["temperature_c"],
-            ambiguousFields: ["medium"],
-            finalApprovalClaimAllowed: false,
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("Evidenz: unzureichend")).toBeInTheDocument();
-    expect(screen.getByText(/Nachweis erforderlich/)).toBeInTheDocument();
-    expect(screen.getByText(/Offen: Temperatur · Medium/)).toBeInTheDocument();
-    expect(screen.getByText(/Hersteller-\/Datenblattnachweis erforderlich/)).toBeInTheDocument();
-    expect(screen.queryByText(/\bvalidiert\b/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/\bgeeignet\b/i)).not.toBeInTheDocument();
-  });
-
-  it("renders conflicting evidence as non-final data state", () => {
-    render(
-      <CalculationsEvidenceCard
-        metrics={[
-          {
-            label: "Werkstoff-/Medium-Precheck",
-            value: "Noch nicht möglich",
-            status: "screening",
-            evidenceStatus: "conflicting_evidence",
-            evidenceSummary: "Zwei Quellen zeigen unterschiedliche Grenzen.",
-            finalApprovalClaimAllowed: false,
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("Evidenz: widersprüchlich")).toBeInTheDocument();
-    expect(screen.getByText("Datenlage nicht eindeutig.")).toBeInTheDocument();
-    expect(screen.getByText("Keine Freigabeaussage")).toBeInTheDocument();
-    expect(screen.queryByText(/\bfreigegeben\b/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Umfang")).toBeInTheDocument();
+    expect(screen.getByText("p x v")).toBeInTheDocument();
+    expect(screen.getByText("n x d")).toBeInTheDocument();
+    expect(screen.getByText("T-Reserve")).toBeInTheDocument();
+    expect(screen.getAllByText("N/N")).toHaveLength(4);
+    expect(screen.queryByText("Noch nicht möglich")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Startet, sobald/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Noch keine technischen Daten/)).not.toBeInTheDocument();
+    expect(screen.queryByText("screening")).not.toBeInTheDocument();
   });
 });

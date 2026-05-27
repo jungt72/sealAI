@@ -52,11 +52,26 @@ class PreGateClassifier:
                 "deterministic_social_conversation",
             )
 
+        if self._is_explicit_material_information_request(text):
+            return self._result(
+                PreGateClassification.KNOWLEDGE_QUERY,
+                0.84,
+                "deterministic_material_information_knowledge",
+            )
+
         if self._matches(_META_QUESTION_PATTERNS, text):
             return self._result(
                 PreGateClassification.META_QUESTION,
                 0.9,
                 "deterministic_meta_question",
+            )
+
+        if self._is_governed_manufacturer_handover_request(text):
+            return self._result(
+                PreGateClassification.DOMAIN_INQUIRY,
+                0.86,
+                "deterministic_governed_manufacturer_handover",
+                escalate_to_graph=True,
             )
 
         if self._matches(_BLOCKED_PATTERNS, text):
@@ -107,6 +122,13 @@ class PreGateClassifier:
                 PreGateClassification.KNOWLEDGE_QUERY,
                 0.83,
                 "deterministic_material_limits_knowledge",
+            )
+
+        if self._is_contextual_material_followup_knowledge(text):
+            return self._result(
+                PreGateClassification.KNOWLEDGE_QUERY,
+                0.8,
+                "deterministic_contextual_material_followup_knowledge",
             )
 
         if self._matches(_DEEP_DIVE_PATTERNS, text):
@@ -180,9 +202,19 @@ class PreGateClassifier:
         return is_material_comparison_question(text)
 
     @staticmethod
+    def _is_explicit_material_information_request(text: str) -> bool:
+        if not PreGateClassifier._matches(_MATERIAL_TOKEN_PATTERNS, text):
+            return False
+        if not PreGateClassifier._matches(_MATERIAL_INFORMATION_REQUEST_PATTERNS, text):
+            return False
+        return not PreGateClassifier._matches(_CONCRETE_APPLICATION_FACT_PATTERNS, text)
+
+    @staticmethod
     def _is_standalone_technical_knowledge_question(text: str) -> bool:
         """Route glossary and compatibility questions to knowledge, not RFQ intake."""
 
+        if PreGateClassifier._is_explicit_material_information_request(text):
+            return True
         if PreGateClassifier._matches(_CASE_INTAKE_CONTEXT_PATTERNS, text):
             return False
         if is_information_request_about_technical_subject(text):
@@ -236,6 +268,26 @@ class PreGateClassifier:
         return True
 
     @staticmethod
+    def _is_contextual_material_followup_knowledge(text: str) -> bool:
+        if PreGateClassifier._matches(_CONCRETE_APPLICATION_FACT_PATTERNS, text):
+            return False
+        return PreGateClassifier._matches(_CONTEXTUAL_MATERIAL_FOLLOWUP_PATTERNS, text)
+
+    @staticmethod
+    def _is_governed_manufacturer_handover_request(text: str) -> bool:
+        """Allow bounded manufacturer/RFQ work only when tied to case data.
+
+        A free manufacturer recommendation stays blocked. A request to select
+        the best-fit candidate, shortlist recipients, or prepare an RFQ from
+        existing case data belongs in the governed runtime because deterministic
+        matching/RFQ state, not chat wording, owns that decision.
+        """
+
+        if not PreGateClassifier._matches(_MANUFACTURER_OR_RFQ_PATTERNS, text):
+            return False
+        return PreGateClassifier._matches(_GOVERNED_MANUFACTURER_CONTEXT_PATTERNS, text)
+
+    @staticmethod
     def _result(
         classification: PreGateClassification,
         confidence: float,
@@ -266,12 +318,14 @@ _GREETING_PATTERNS = _compile(
     r"^(hallo|hi|hey|moin|servus|grüß\s*(gott|dich)|guten\s*(morgen|tag|abend))[\s!.?,]*$",
     r"^(hallo|hi|hey|moin|servus|guten\s*(morgen|tag|abend))[\s,!.?]+(wie\s+geht('?s|\s+es\s+dir)(?:\s+heute)?)[\s?!.]*$",
     r"^(danke|vielen\s+dank|dankeschön|merci|thanks|thank\s+you)[\s!.?,]*$",
+    r"^(prima|super|klasse|top|perfekt|sehr\s+gut|klingt\s+gut|passt|gern|gerne|los\s+geht'?s|lass\s+uns\s+loslegen|ich\s+bin\s+(?:auch\s+)?gespannt)[\s!.?,]*$",
     r"^(tschüss|auf\s+wiedersehen|bis\s+dann|ciao|bye)[\s!.?,]*$",
     r"^wie\s+geht('?s|\s+es\s+dir)[\s?!.]*$",
 )
 
 _SOCIAL_CONVERSATION_PATTERNS = _compile(
     r"^\s*(?:danke|vielen\s+dank|dankesch[oö]n|merci|thanks|thank\s+you)\b.*$",
+    r"^\s*(?:prima|super|klasse|top|perfekt|sehr\s+gut|klingt\s+gut|passt|gern|gerne|los\s+geht'?s|lass\s+uns\s+loslegen|ich\s+bin\s+(?:auch\s+)?gespannt)[\s!.?,]*$",
     r"^\s*(?:hallo|hi|hey|moin|servus|grüß\s*(?:gott|dich)|gruss|gruß|"
     r"guten\s+\w+|gute[nr]?\s+\w+)(?:\s*(?:,|und)?\s*"
     r"(?:hallo|hi|hey|moin|servus|grüß\s*(?:gott|dich)|gruss|gruß|"
@@ -322,8 +376,24 @@ _BLOCKED_PATTERNS = _compile(
     r"\b(du\s+bist|you\s+are)\s+(dumm|idiot|stupid|idiot)\b",
 )
 
+_MANUFACTURER_OR_RFQ_PATTERNS = _compile(
+    r"\bhersteller\w*\b",
+    r"\bmanufacturer\w*\b",
+    r"\b(?:rfq|anfrage|ausschreibung|angebot(?:sanfrage)?|inquiry|shortlist|kandidat(?:en)?)\b",
+)
+
+_GOVERNED_MANUFACTURER_CONTEXT_PATTERNS = _compile(
+    r"\b(?:auf\s+basis|anhand|basierend\s+auf|aus\s+den|mit\s+den)\b.*\b(?:daten|falldaten|case|parameter|anfragebasis|rfq|anforderungen)\b",
+    r"\b(?:passendst\w*|geeignetst\w*|best[- ]?fit|fit\s*score|shortlist|kandidat(?:en)?|rangfolge|ranking|auswahl)\b",
+    r"\b(?:erstelle|erstellen|bereite|vorbereiten|formuliere|generiere|baue)\b.*\b(?:anfrage|rfq|angebot(?:sanfrage)?|hersteller)\b",
+    r"\b(?:anfrage|rfq|angebot(?:sanfrage)?|handover|dispatch|versand)\b.*\b(?:hersteller|empf[aä]nger|recipient)\b",
+)
+
 _DOMAIN_INQUIRY_PATTERNS = _compile(
     r"\b(ich\s+brauche|wir\s+brauchen|benötige|suche)\b.*\b(dichtung|dichtring|seal|rwdr|radialwellendichtring)\b",
+    r"\b(?:dichtungssituation|dichtungsfall|dichtungsl[oö]sung|dichtungsloesung)\b",
+    r"\b(?:kannst|könntest|koenntest|hilf|hilfe|unterstütz\w*|unterstuetz\w*)\b.*\b(dichtung|dichtungs\w*|dichtstelle|seal)\b",
+    r"\b(dichtung|dichtungs\w*|dichtstelle|seal)\b.*\b(?:helfen|hilfe|unterstütz\w*|unterstuetz\w*)\b",
     r"\b(?:empfiehl|empfehle|was\s+empfiehlst\s+du)\b",
     r"\bwelche[rs]?\s+(?:werkstoff|material|dichtring|dichtung)\s+soll\b",
     r"\b(auslegung|auslegen|berechne|berechnen|prüfe|prüfen|validieren|validation)\b",
@@ -374,6 +444,22 @@ _MATERIAL_TOKEN_PATTERNS = _compile(
     r"\b(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|pom|peek|pa6?|pa12|vmq|silikon|silicone|viton)\b",
 )
 
+_MATERIAL_INFORMATION_REQUEST_PATTERNS = _compile(
+    r"\b(?:info(?:s|rmation(?:en)?)?|details?|detailliert|erkl[aä]r(?:e|en)?|"
+    r"kennwerte|materialdaten|datenblattwerte|eigenschaften|wissen)\b",
+    r"\b(?:über|ueber|zu)\s+(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|pom|peek|pa6?|pa12|vmq|silikon|silicone|viton)\b",
+    r"\b(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|pom|peek|pa6?|pa12|vmq|silikon|silicone|viton)\s+(?:erkl[aä]ren|info|infos|information(?:en)?|daten|werte|eigenschaften)\b",
+)
+
+_CONCRETE_APPLICATION_FACT_PATTERNS = _compile(
+    r"\b(?:ich\s+habe|wir\s+haben|bei\s+uns|bei\s+meiner\s+anlage|in\s+unserer\s+anwendung)\b",
+    r"\b(?:brauche|ben[oö]tige|suche)\s+(?:eine\s+)?(?:dichtung|dichtring|seal|rwdr|o[- ]?ring)\b",
+    r"\b(?:medium|fluid)\s*(?:ist|=)\b",
+    r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|barg|bara|psi|°?\s*[cCfF]|grad|rpm|u\.?/?min)\b",
+    r"\b(?:rotierende?\s+welle|welle|pumpe|getriebe|r[üu]hrwerk|kolben|flansch)\b.*"
+    r"\b(?:dichtung|dichtstelle|seal|medium|[oö]l|bar|grad|rpm|mm)\b",
+)
+
 _MEDIUM_OR_FLUID_PATTERNS = _compile(
     r"\b(?:hydraulik[oö]l|hydraulikoel|hlp\s*46|hvlp|mineral[oö]l|mineraloel|"
     r"heißwasser|heisswasser|wasser|dampf|öl|oel|fett|kraftstoff|ethanol|"
@@ -414,6 +500,17 @@ _MATERIAL_COMPARISON_KNOWLEDGE_PATTERNS = _compile(
     r"\b(alternative\s+zu|durch\s+\w+\s+ersetzen)\b",
 )
 
+_CONTEXTUAL_MATERIAL_FOLLOWUP_PATTERNS = _compile(
+    r"^\s*(?:bitte\s+)?(?:jetzt|nun|weiter|als\s+n[aä]chstes)\s+"
+    r"(?:zu|ueber|über)\s+(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|pom|peek|pa6?|pa12|vmq|silikon|silicone|viton)\b",
+    r"^\s*(?:und|auch)\s+(?:noch\s+)?(?:zu\s+|ueber\s+|über\s+)?"
+    r"(?:ptfe|fkm|ffkm|fpm|epdm|nbr|hnbr|pu|tpu|pom|peek|pa6?|pa12|vmq|silikon|silicone|viton)\??\s*$",
+    r"\b(?:vergleiche?|vergleich|unterschied(?:e)?|im\s+vergleich|besser|schlechter|"
+    r"welche[rs]?\s+ist\s+besser)\b.*\b(?:die\s+beiden|beide|das|damit|daf[uü]r|hier|anwendung)\b",
+    r"\b(?:die\s+beiden|beide)\b.*\b(?:vergleiche?|vergleich|unterschied(?:e)?|besser|schlechter)\b",
+    r"\bwelche[rs]?\s+ist\s+besser\b.*\b(?:anwendung|daf[uü]r|hier)\b",
+)
+
 _MATERIAL_RISK_COMPARISON_PATTERNS = _compile(
     r"\b(vergleiche|vergleich(?:e|en)?|gegen[üu]ber|vs\.?|versus)\b",
     r"\b(risiken?|grenzen?|kritisch|problematisch|typisch(?:e|en)?\s+risiken?)\b",
@@ -442,7 +539,7 @@ _MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS = _compile(
 )
 
 _KNOWLEDGE_QUERY_PATTERNS = _compile(
-    r"^\s*(was\s+(?:genau\s+|eigentlich\s+)?(?:ist|sind)|was\s+bedeutet|was\s+versteht|erklär\w*|erklaer\w*|definiere)\b",
+    r"^\s*(was\s+(?:genau\s+|eigentlich\s+)?(?:ist|sind|bedeutet|heisst|heißt)|was\s+(?:bedeutet|versteht|meint)|wof[uü]r\s+steht|erklär\w*|erklaer\w*|definiere)\b",
     r"^\s*(what\s+is|explain|define)\b",
     r"\b(unterschied\s+zwischen|vergleich\s+zwischen|difference\s+between)\b",
     r"^\s*vergleich\b",
@@ -458,7 +555,7 @@ _RECOVERY_PATTERNS = _compile(
 
 _NON_SEALING_UTILITY_PATTERNS = _compile(
     r"^\s*(?:wie\s+wird|wie\s+ist|was\s+ist)\s+das\s+wetter\b",
-    r"^\s*wetter\s+(?:heute|morgen|uebermorgen|übermorgen|in\s+\w+)?\s*[?.!]*$",
+    r"^\s*wetter(?:\s+(?:heute|morgen|uebermorgen|übermorgen))?(?:\s+in\s+[\wäöüÄÖÜß .-]+)?\s*[?.!]*$",
     r"^\s*(?:news|nachrichten|sport|fu[ßs]ball|börse|boerse)\b",
     r"^\s*(?:schreib|schreibe|verfasse)\s+(?:mir\s+)?(?:eine\s+)?(?:email|e-mail|mail|bewerbung)\b",
 )

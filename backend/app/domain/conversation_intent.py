@@ -243,7 +243,7 @@ def _matches(patterns: tuple[Pattern[str], ...], text: str) -> bool:
 
 
 _GENERAL_QUESTION_PATTERNS = _compile(
-    r"^(was\s+ist|was\s+bedeutet|erkl[aä]r\w*|definiere)\b",
+    r"^(was\s+(?:genau\s+|eigentlich\s+)?(?:ist|sind|bedeutet|heisst|heißt)|was\s+(?:versteht|meint)|wof[uü]r\s+steht|erkl[aä]r\w*|definiere)\b",
     r"^(what\s+is|explain|define)\b",
     r"\b(unterschied\s+zwischen|vergleich\s+zwischen|difference\s+between)\b",
 )

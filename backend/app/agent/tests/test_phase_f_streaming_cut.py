@@ -95,15 +95,15 @@ class TestFlagOffUsesGovernedAuthority:
 
         mock_decide_route = AsyncMock()
         mock_stream_conversation = AsyncMock()
-        governed_called = []
+        sidecar_called = []
 
-        async def _fake_governed_stream(*_args, **_kwargs):
-            governed_called.append(True)
+        async def _fake_sidecar_stream(*_args, **_kwargs):
+            sidecar_called.append(True)
             yield "data: [DONE]\n\n"
 
         with patch.object(dispatch_module, "_ENABLE_BINARY_GATE", False), \
              patch.object(dispatch_module, "_ENABLE_CONVERSATION_RUNTIME", False), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_stream), \
+             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream), \
              patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None):
 
             frames = await _collect_frames(
@@ -112,7 +112,7 @@ class TestFlagOffUsesGovernedAuthority:
 
         mock_decide_route.assert_not_called()
         mock_stream_conversation.assert_not_called()
-        assert governed_called == [True]
+        assert sidecar_called == [True]
         assert frames == ["data: [DONE]\n\n"]
 
 
@@ -132,10 +132,10 @@ class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
         """Gate=on, ConvRuntime=off → productive path stays governed, not legacy graph."""
         import app.agent.api.router as router_module
 
-        governed_called = []
+        sidecar_called = []
 
-        async def _fake_governed_stream(*_args, **_kwargs):
-            governed_called.append(True)
+        async def _fake_sidecar_stream(*_args, **_kwargs):
+            sidecar_called.append(True)
             yield "data: [DONE]\n\n"
 
         dispatch_resolution = RuntimeDispatchResolution(
@@ -146,14 +146,14 @@ class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
         )
 
         with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_stream), \
+             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream), \
              patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None):
 
             frames = await _collect_frames(
                 router_module.event_generator(_make_request(), current_user=_make_current_user())
             )
 
-        assert governed_called == [True]
+        assert sidecar_called == [True]
         assert frames == ["data: [DONE]\n\n"]
 
 
@@ -211,15 +211,15 @@ class TestBothFlagsOnConversationUsesNewRuntime:
 # 4. GOVERNED uses the new governed graph path
 # ---------------------------------------------------------------------------
 
-class TestGovernedUsesNewGraphPath:
+class TestGovernedUsesConversationFirstSidecar:
     @pytest.mark.asyncio
-    async def test_governed_uses_canonical_governed_graph_path(self):
-        """Gate decides GOVERNED, so the canonical governed graph stream is used."""
+    async def test_governed_uses_conversation_first_engine_sidecar_path(self):
+        """Gate decides GOVERNED, so V10 streams conversation-first with engine sidecar."""
         import app.agent.api.router as router_module
 
         stream_conv_called = []
         light_runtime_called = []
-        governed_graph_called = []
+        sidecar_called = []
 
         async def _fake_light_runtime(state, *, graph, on_complete=None):
             light_runtime_called.append(True)
@@ -229,9 +229,8 @@ class TestGovernedUsesNewGraphPath:
             stream_conv_called.append(True)
             yield "data: [DONE]\n\n"
 
-        async def _fake_governed_stream(request, **_kwargs):
-            state = GraphState()
-            governed_graph_called.append(state)
+        async def _fake_sidecar_stream(request, **_kwargs):
+            sidecar_called.append(True)
             yield f"data: {json.dumps({'type': 'state_update', 'ui': {}, 'response_class': 'structured_clarification'})}\n\n"
             yield "data: [DONE]\n\n"
 
@@ -246,7 +245,7 @@ class TestGovernedUsesNewGraphPath:
              patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None), \
              patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
              patch("app.agent.api.streaming._stream_light_runtime", side_effect=_fake_light_runtime), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_stream):
+             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream):
 
             frames = await _collect_frames(
                 router_module.event_generator(
@@ -255,9 +254,8 @@ class TestGovernedUsesNewGraphPath:
                 )
         )
 
-        assert governed_graph_called, "_stream_governed_graph must be called for GOVERNED route"
+        assert sidecar_called, "_stream_conversation_first_with_engine_sidecar must be called for GOVERNED route"
         assert not light_runtime_called, "_stream_light_runtime must NOT be the governed primary path"
-        assert not stream_conv_called, "stream_conversation must NOT be called for GOVERNED route"
         payloads = []
         for frame in frames:
             if not frame.startswith("data: "):
@@ -292,11 +290,11 @@ class TestLegacyFacadeUsesCanonicalAuthority:
         import app.agent.api.router as router_module
         import app.agent.api.dispatch as dispatch_module
 
-        governed_called = []
+        sidecar_called = []
         stream_conv_called = []
 
-        async def _fake_governed_stream(*_args, **_kwargs):
-            governed_called.append(True)
+        async def _fake_sidecar_stream(*_args, **_kwargs):
+            sidecar_called.append(True)
             yield "data: [DONE]\n\n"
 
         async def _fake_stream_conv(message, *, history=None):
@@ -305,7 +303,7 @@ class TestLegacyFacadeUsesCanonicalAuthority:
 
         with patch.object(dispatch_module, "_ENABLE_BINARY_GATE", False), \
              patch.object(dispatch_module, "_ENABLE_CONVERSATION_RUNTIME", False), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_stream), \
+             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream), \
              patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
              patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None):
 
@@ -317,7 +315,7 @@ class TestLegacyFacadeUsesCanonicalAuthority:
                 )
             )
 
-        assert governed_called == [True]
+        assert sidecar_called == [True]
         assert not stream_conv_called, "legacy facade must not trigger stream_conversation"
 
 

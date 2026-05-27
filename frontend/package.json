@@ -14,12 +14,13 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:node": "node --test src/proxy-auth.test.ts src/lib/site.test.ts src/lib/lifecycleSteps.test.ts src/lib/streamWorkspace.test.ts src/lib/workspaceActionAvailability.test.ts src/lib/bff/workspace.test.ts src/lib/bff/http.test.ts",
+    "test:node": "tsx --test src/proxy-auth.test.ts src/lib/site.test.ts src/lib/lifecycleSteps.test.ts src/lib/streamWorkspace.test.ts src/lib/workspaceActionAvailability.test.ts src/lib/bff/workspace.test.ts src/lib/bff/http.test.ts",
     "test:all": "npm run test:node && npm run test:run",
     "gsc": "node scripts/gsc/gsc.mjs",
     "gsc:auth": "node scripts/gsc/oauth.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/google-sans-flex": "^5.2.3",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@next/bundle-analyzer": "^16.2.1",
     "clsx": "^2.1.1",
@@ -59,6 +60,7 @@
     "jsdom": "^29.0.1",
     "postcss": "^8.5.13",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.22.3",
     "typescript": "^5",
     "vitest": "^4.1.2"
   },

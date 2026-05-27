@@ -123,6 +123,24 @@ def redact_trace_value(value: Any, *, key: str | None = None, depth: int = 0) ->
     if key and _IDENTITY_KEY_RE.search(key):
         return _redacted_identifier(value)
     if key and _CONTENT_KEY_RE.search(key):
+        if isinstance(value, Mapping):
+            return {
+                str(raw_key): redact_trace_value(item, key=str(raw_key), depth=depth + 1)
+                for raw_key, item in list(value.items())[:MAX_TRACE_ITEMS]
+            }
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            items = list(value)
+            safe_items = [
+                redact_trace_value(
+                    item,
+                    key=("content" if isinstance(item, str) else None),
+                    depth=depth + 1,
+                )
+                for item in items[:MAX_TRACE_ITEMS]
+            ]
+            if len(items) > MAX_TRACE_ITEMS:
+                safe_items.append({"_truncated_items": len(items) - MAX_TRACE_ITEMS})
+            return safe_items
         return _redacted_content_summary(value)
     if isinstance(value, str):
         return redact_text(value)

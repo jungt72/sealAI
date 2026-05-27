@@ -191,6 +191,17 @@ async def test_short_answer_without_pending_question_does_not_bind_chlor() -> No
     assert "medium" in state.asserted.blocking_unknowns
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["prima", "super", "passt", "los geht's"])
+async def test_social_acknowledgement_does_not_bind_as_pending_medium(message: str) -> None:
+    state = await _run_answer_to_pending_medium(message)
+
+    assert state.last_slot_answer_binding is None
+    assert "medium" not in state.normalized.parameters
+    assert "medium" not in state.asserted.assertions
+    assert "medium" in state.asserted.blocking_unknowns
+
+
 def test_existing_routing_boundaries_remain_unchanged() -> None:
     classifier = PreGateClassifier()
 

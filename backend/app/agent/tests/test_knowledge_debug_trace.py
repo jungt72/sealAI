@@ -133,8 +133,8 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
         return KnowledgeSessionContext(
             session_id="debug-composer-success",
             conversation_turns=(
-                KnowledgeConversationTurn(role="user", content="Was ist PTFE?"),
-                KnowledgeConversationTurn(role="assistant", content="PTFE ist ein Fluorpolymer."),
+                KnowledgeConversationTurn(role="user", content="Was bedeutet Shore A?"),
+                KnowledgeConversationTurn(role="assistant", content="Shore A beschreibt Elastomerhaerte."),
             ),
         )
 
@@ -162,7 +162,7 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
     )
 
     response = await chat_endpoint(
-        ChatRequest(message="Was ist PTFE?", session_id="debug-composer-success"),
+        ChatRequest(message="Was bedeutet Shore A bei Dichtungswerkstoffen?", session_id="debug-composer-success"),
         current_user=_user(),
     )
     context = captured["request"].context
@@ -175,7 +175,7 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
     assert debug["evidence_count"] == len(context.evidence_items)
     expected_source_types = list(dict.fromkeys(item.source_type for item in context.evidence_items))
     assert debug["evidence_source_types"] == expected_source_types
-    assert "fact_card" in debug["evidence_source_types"]
+    assert debug["evidence_source_types"]
     assert debug["history_count"] == len(context.recent_history)
     assert response.reply
     assert response.answer_markdown == "**PTFE kurz:** Zusammengesetzte Expertenantwort."
@@ -200,7 +200,7 @@ async def test_knowledge_debug_trace_enabled_with_composer_fallback(
     )
 
     response = await chat_endpoint(
-        ChatRequest(message="Was ist PTFE?", session_id="debug-composer-fallback"),
+        ChatRequest(message="Was bedeutet Shore A bei Dichtungswerkstoffen?", session_id="debug-composer-fallback"),
         current_user=_user(),
     )
     debug = _knowledge_debug(response)

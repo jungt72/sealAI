@@ -31,6 +31,40 @@ function asStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function uiSection<T>(
+  eventUi: AgentWorkspaceUi,
+  structuredUi: AgentWorkspaceUi,
+  key: keyof AgentWorkspaceUi,
+): T | undefined {
+  return (eventUi[key] ?? structuredUi[key]) as T | undefined;
+}
+
+function workspaceUiFromEvent(event: AgentStateUpdateEvent): AgentWorkspaceUi {
+  const eventUi = (asRecord(event.ui) ?? {}) as AgentWorkspaceUi;
+  const structuredState = asRecord(event.structuredState);
+  const structuredUi = (asRecord(structuredState?.view) ?? {}) as AgentWorkspaceUi;
+
+  return {
+    ...structuredUi,
+    ...eventUi,
+    parameter: uiSection(eventUi, structuredUi, "parameter"),
+    assumption: uiSection(eventUi, structuredUi, "assumption"),
+    recommendation: uiSection(eventUi, structuredUi, "recommendation"),
+    compute: uiSection(eventUi, structuredUi, "compute"),
+    matching: uiSection(eventUi, structuredUi, "matching"),
+    rfq: uiSection(eventUi, structuredUi, "rfq"),
+    medium_classification: uiSection(eventUi, structuredUi, "medium_classification"),
+    medium_context: uiSection(eventUi, structuredUi, "medium_context"),
+    v92: uiSection(eventUi, structuredUi, "v92"),
+  };
+}
+
 function normalizeTurnContext(value: AgentStateUpdateEvent["turnContext"]): AgentTurnContext | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -73,7 +107,7 @@ function asNumber(value: unknown): number | null {
 export function buildStreamWorkspaceView(
   event: AgentStateUpdateEvent & { caseId: string },
 ): StreamWorkspaceView {
-  const ui = event.ui || {};
+  const ui = workspaceUiFromEvent(event);
 
   const assertions: Record<string, AssertionEntry> | null =
     event.assertions && typeof event.assertions === "object" && Object.keys(event.assertions).length > 0

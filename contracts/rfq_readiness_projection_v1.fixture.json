@@ -13,10 +13,13 @@
   ],
   "manufacturer_review_ready": false,
   "open_points": [],
+  "evidence_status": "not_available",
   "pending_question": {
     "question_text": "Welches Medium soll abgedichtet werden?",
     "target_field": "medium"
   },
+  "professional_check_blockers": [],
+  "professional_check_groups": [],
   "preview_action_available": true,
   "preview_action_name": "create_rfq_preview",
   "preview_available": false,

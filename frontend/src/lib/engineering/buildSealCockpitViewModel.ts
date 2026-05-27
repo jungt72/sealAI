@@ -64,6 +64,14 @@ function formatValue(value: string | number | null | undefined, unit?: string) {
   return unit ? `${value} ${unit}` : String(value);
 }
 
+function formatNumericValue(value: string | number, unit?: string) {
+  if (typeof value !== "number") {
+    return formatValue(value, unit);
+  }
+  const rounded = Math.round(value * 1000) / 1000;
+  return unit ? `${rounded} ${unit}` : String(rounded);
+}
+
 function pathLabel(path: string | null | undefined) {
   switch (path) {
     case "rwdr":
@@ -198,21 +206,31 @@ function findConcreteCheck(workspace: WorkspaceView, outputKeys: readonly string
 }
 
 function findConcreteDerivation(workspace: WorkspaceView, outputKey: string) {
-  const derivation = workspace.technicalDerivations?.find((item) => item.status === "ok");
+  const derivation = workspace.technicalDerivations?.find((item) => {
+    if (item.status !== "ok") return false;
+    if (outputKey === "v_surface_m_s") return hasDisplayValue(item.vSurfaceMPerS);
+    if (outputKey === "pv_value_mpa_m_s") return hasDisplayValue(item.pvValueMpaMPerS);
+    if (outputKey === "dn_value") return hasDisplayValue(item.dnValue);
+    if (outputKey === "temperature_headroom_c") return hasDisplayValue(item.temperatureHeadroomC);
+    if (outputKey === "pressure_window") return hasDisplayValue(item.pressureWindow);
+    return false;
+  });
   if (!derivation) {
     return null;
   }
 
   switch (outputKey) {
     case "v_surface_m_s":
-      return hasDisplayValue(derivation.vSurfaceMPerS) ? `${derivation.vSurfaceMPerS} m/s` : null;
+      return hasDisplayValue(derivation.vSurfaceMPerS) ? formatNumericValue(derivation.vSurfaceMPerS, "m/s") : null;
     case "pv_value_mpa_m_s":
-      return hasDisplayValue(derivation.pvValueMpaMPerS) ? `${derivation.pvValueMpaMPerS} MPa·m/s` : null;
+      return hasDisplayValue(derivation.pvValueMpaMPerS)
+        ? formatNumericValue(derivation.pvValueMpaMPerS, "MPa·m/s")
+        : null;
     case "dn_value":
-      return hasDisplayValue(derivation.dnValue) ? `${derivation.dnValue}` : null;
+      return hasDisplayValue(derivation.dnValue) ? formatNumericValue(derivation.dnValue) : null;
     case "temperature_headroom_c":
       return hasDisplayValue(derivation.temperatureHeadroomC)
-        ? `${derivation.temperatureHeadroomC} °C`
+        ? formatNumericValue(derivation.temperatureHeadroomC, "°C")
         : null;
     case "pressure_window":
       return hasDisplayValue(derivation.pressureWindow) ? derivation.pressureWindow : null;
@@ -231,75 +249,97 @@ function missingInputsFor(workspace: WorkspaceView | null, requiredInputs: reado
     .map(readableMissingInput);
 }
 
-function buildCalculations(workspace: WorkspaceView | null): CalculationEvidenceMetric[] {
-  if (workspace?.cockpit?.checks?.length) {
-    return workspace.cockpit.checks.map((check) => ({
-      label: check.label,
-      value: hasDisplayValue(check.value)
-        ? formatValue(check.value as string | number, check.unit ?? undefined)
-        : MISSING_CALCULATION_VALUE,
-      limit: check.humanReadableReason || check.blockingReason || check.notes[0],
-      reserve: check.guardrails[0],
-      status: check.status,
-      compatibilityStatus: check.compatibilityStatus,
-      evidenceStatus: check.evidenceStatus,
-      evidenceRefs: check.evidenceRefs,
-      evidenceSummary: check.evidenceSummary,
-      evidenceLimitations: check.evidenceLimitations,
-      missingFields: check.missingFields,
-      ambiguousFields: check.ambiguousFields,
-      finalApprovalClaimAllowed: check.finalApprovalClaimAllowed,
-    }));
-  }
+type CalculationDefinition = (typeof CALCULATION_DEFINITIONS)[number];
 
-  return CALCULATION_DEFINITIONS.map((definition) => {
-    if (workspace) {
-      const check = findConcreteCheck(workspace, definition.outputKeys);
-      if (check) {
-        return {
-          label: check.label || definition.label,
-          value: formatValue(check.value as string | number, check.unit ?? undefined),
-          limit: check.notes[0],
-          reserve: check.guardrails[0],
-          status: check.status,
-        };
-      }
-
-      for (const outputKey of definition.outputKeys) {
-        const value = findConcreteDerivation(workspace, outputKey);
-        if (value) {
-          return {
-            label: definition.label,
-            value,
-            limit: workspace.technicalDerivations?.[0]?.notes[0],
-            status: "backend-berechnet",
-          };
-        }
-      }
-    }
-
-    if (!workspace) {
+function buildCalculationFromDefinition(
+  workspace: WorkspaceView | null,
+  definition: CalculationDefinition,
+): CalculationEvidenceMetric {
+  if (workspace) {
+    const check = findConcreteCheck(workspace, definition.outputKeys);
+    if (check) {
       return {
-        label: definition.label,
-        value: MISSING_CALCULATION_VALUE,
-        limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
-        reserve: "Noch keine technischen Daten vorhanden",
-        status: "offen",
+        label: check.label || definition.label,
+        value: formatValue(check.value as string | number, check.unit ?? undefined),
+        limit: check.notes[0],
+        reserve: check.guardrails[0],
+        status: check.status,
       };
     }
 
-    const missingInputs = missingInputsFor(workspace, definition.requiredInputs);
+    for (const outputKey of definition.outputKeys) {
+      const value = findConcreteDerivation(workspace, outputKey);
+      if (value) {
+        return {
+          label: definition.label,
+          value,
+          limit: workspace.technicalDerivations?.[0]?.notes[0],
+          status: "backend-berechnet",
+        };
+      }
+    }
+  }
+
+  if (!workspace) {
     return {
       label: definition.label,
       value: MISSING_CALCULATION_VALUE,
-      limit:
-        missingInputs.length > 0
-          ? `Dafür fehlt noch: ${missingInputs.join(" · ")}`
-          : "Dafür gibt es noch keinen festen Check",
-      reserve: definition.reason,
+      limit: "Startet, sobald ein Dichtungsfall beschrieben ist",
+      reserve: "Noch keine technischen Daten vorhanden",
       status: "offen",
     };
-  });
+  }
+
+  const missingInputs = missingInputsFor(workspace, definition.requiredInputs);
+  return {
+    label: definition.label,
+    value: MISSING_CALCULATION_VALUE,
+    limit:
+      missingInputs.length > 0
+        ? `Dafür fehlt noch: ${missingInputs.join(" · ")}`
+        : "Dafür gibt es noch keinen festen Check",
+    reserve: definition.reason,
+    status: "offen",
+  };
+}
+
+function buildDefinitionCalculations(workspace: WorkspaceView | null): CalculationEvidenceMetric[] {
+  return CALCULATION_DEFINITIONS.map((definition) => buildCalculationFromDefinition(workspace, definition));
+}
+
+function buildCockpitCheckCalculations(workspace: WorkspaceView): CalculationEvidenceMetric[] {
+  return (workspace.cockpit?.checks ?? []).map((check) => ({
+    label: check.label,
+    value: hasDisplayValue(check.value)
+      ? formatValue(check.value as string | number, check.unit ?? undefined)
+      : MISSING_CALCULATION_VALUE,
+    limit: check.humanReadableReason || check.blockingReason || check.notes[0],
+    reserve: check.guardrails[0],
+    status: check.status,
+    compatibilityStatus: check.compatibilityStatus,
+    evidenceStatus: check.evidenceStatus,
+    evidenceRefs: check.evidenceRefs,
+    evidenceSummary: check.evidenceSummary,
+    evidenceLimitations: check.evidenceLimitations,
+    missingFields: check.missingFields,
+    ambiguousFields: check.ambiguousFields,
+    finalApprovalClaimAllowed: check.finalApprovalClaimAllowed,
+  }));
+}
+
+function buildCalculations(workspace: WorkspaceView | null): CalculationEvidenceMetric[] {
+  if (workspace?.cockpit?.checks?.length) {
+    const registeredOutputKeys = new Set(workspace.cockpit.checks.map((check) => check.outputKey).filter(Boolean));
+    const supplementalDefinitions = CALCULATION_DEFINITIONS.filter(
+      (definition) => !definition.outputKeys.some((outputKey) => registeredOutputKeys.has(outputKey)),
+    );
+    return [
+      ...buildCockpitCheckCalculations(workspace),
+      ...supplementalDefinitions.map((definition) => buildCalculationFromDefinition(workspace, definition)),
+    ];
+  }
+
+  return buildDefinitionCalculations(workspace);
 }
 
 function coverageStatusValue(workspace: WorkspaceView | null) {
@@ -307,7 +347,10 @@ function coverageStatusValue(workspace: WorkspaceView | null) {
   if (metrics) {
     return `${metrics.completenessPercent} % geklärt`;
   }
-  if (workspace?.completeness.requiredTotal && workspace.completeness.requiredTotal > 0) {
+  if (workspace?.cockpit) {
+    return "Backend-Metrik fehlt";
+  }
+  if (typeof workspace?.completeness.coveragePercent === "number") {
     return `${workspace.completeness.coveragePercent} % geklärt`;
   }
   return "Backend-Metrik fehlt";
@@ -315,10 +358,29 @@ function coverageStatusValue(workspace: WorkspaceView | null) {
 
 function checkMetricStatusValue(workspace: WorkspaceView | null) {
   const metrics = workspace?.cockpit?.checkMetrics;
+  const derivationCount = calculatedDerivationValueCount(workspace);
   if (!metrics) {
-    return "Backend-Metrik fehlt";
+    return derivationCount > 0 ? `${derivationCount} Rechenwerte` : "Backend-Metrik fehlt";
+  }
+  if (derivationCount > 0) {
+    return `${derivationCount} Rechenwerte · ${metrics.checkAvailableCount} von ${metrics.checkTotal} Checks verfügbar`;
   }
   return `${metrics.checkAvailableCount} von ${metrics.checkTotal} Checks verfügbar`;
+}
+
+function calculatedDerivationValueCount(workspace: WorkspaceView | null) {
+  if (!workspace?.technicalDerivations?.length) {
+    return 0;
+  }
+  const keys = new Set<string>();
+  for (const item of workspace.technicalDerivations) {
+    if (hasDisplayValue(item.vSurfaceMPerS)) keys.add("v_surface_m_s");
+    if (hasDisplayValue(item.pvValueMpaMPerS)) keys.add("pv_value_mpa_m_s");
+    if (hasDisplayValue(item.dnValue)) keys.add("dn_value");
+    if (hasDisplayValue(item.temperatureHeadroomC)) keys.add("temperature_headroom_c");
+    if (hasDisplayValue(item.pressureWindow)) keys.add("pressure_window");
+  }
+  return keys.size;
 }
 
 function buildSolution(workspace: WorkspaceView | null): SealCockpitOverview["solution"] {

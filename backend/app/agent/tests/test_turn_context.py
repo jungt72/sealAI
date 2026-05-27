@@ -88,7 +88,7 @@ def test_build_governed_turn_context_stays_small_and_compatible() -> None:
     assert len(context.confirmed_facts_summary) <= 3
     assert len(context.open_points_summary) <= 3
     assert "Medium: Hydraulikoel" in context.confirmed_facts_summary
-    assert any("Konflikt" in item or "Betriebsdruck" in item for item in context.open_points_summary)
+    assert any("Bewegungsart" in item or "shaft_diameter" in item for item in context.open_points_summary)
 
 
 def test_build_governed_turn_context_uses_governance_open_points_for_technical_preselection() -> None:

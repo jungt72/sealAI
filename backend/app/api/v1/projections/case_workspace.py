@@ -26,6 +26,7 @@ from app.agent.runtime.clarification_priority import (
     select_next_focus_from_known_context,
 )
 from app.agent.v91.intelligence_state import build_v91_workspace_projection
+from app.agent.v92.calculation_projection import calculation_ledger_derivations
 from app.agent.v92.dashboard_contract import build_v92_dashboard_contract
 from app.agent.services.material_intelligence import (
     build_material_intelligence_projection,
@@ -2292,6 +2293,16 @@ def synthesize_workspace_state_from_governed(
                 ],
             }
         )
+    existing_derivation_keys = {
+        str(item.get("calc_type") or item.get("calculation_id") or "")
+        for item in technical_derivations
+    }
+    for result in calculation_ledger_derivations(getattr(state, "calculation", None)):
+        calc_key = str(result.get("calc_type") or result.get("calculation_id") or "")
+        if calc_key in existing_derivation_keys:
+            continue
+        technical_derivations.append(result)
+        existing_derivation_keys.add(calc_key)
     if technical_derivations:
         working_profile["live_calc_tile"] = {
             "status": technical_derivations[0].get("status"),

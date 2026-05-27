@@ -78,6 +78,40 @@ def test_v8_deterministic_routes_information_request_as_active_side_question() -
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
 
 
+def test_v8_deterministic_routes_explicit_case_challenge_to_challenge_mode() -> None:
+    decision = CommunicationRuntimeV8().decide_deterministic(
+        ConversationControllerInput(
+            user_message=(
+                "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall. "
+                "Medium: Salzwasser; Druck: 2 bar; Drehzahl: 3000 rpm; Wellendurchmesser: 40 mm; "
+                "Dichtungstyp-Richtung: RWDR. Bitte keine stumpfe Parameterabfrage. Challenge den Dichtungsfall."
+            ),
+            pre_gate_classification=PreGateClassification.DOMAIN_INQUIRY,
+            pre_gate_confidence=0.84,
+            pre_gate_reason="deterministic_domain",
+            active_case_exists=False,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.TECHNICAL_CASE_CHALLENGE
+    assert decision.mutation_policy == MutationPolicy.PROPOSED
+
+
+def test_v8_deterministic_keeps_ptfe_fkm_comparison_in_knowledge_mode() -> None:
+    decision = CommunicationRuntimeV8().decide_deterministic(
+        ConversationControllerInput(
+            user_message="Was ist der Unterschied zwischen PTFE und FKM?",
+            pre_gate_classification=PreGateClassification.KNOWLEDGE_QUERY,
+            pre_gate_confidence=0.86,
+            pre_gate_reason="deterministic_material_comparison",
+            active_case_exists=False,
+        )
+    )
+
+    assert decision.answer_mode == AnswerMode.MATERIAL_COMPARISON
+    assert decision.mutation_policy == MutationPolicy.FORBIDDEN
+
+
 def test_v8_deterministic_routes_short_material_info_as_active_side_question() -> None:
     decision = CommunicationRuntimeV8().decide_deterministic(
         ConversationControllerInput(

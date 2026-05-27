@@ -10,13 +10,17 @@ import {
   ArrowUpRight,
   BarChart3,
   CheckCircle2,
-  Clock3,
+  Database,
+  Eye,
   FileText,
+  Gauge,
   KeyRound,
   ListChecks,
   Radar,
   Search,
   ShieldCheck,
+  Target,
+  TrendingUp,
   Workflow,
 } from "lucide-react";
 
@@ -58,7 +62,20 @@ type RankingSnapshot = {
   dbFound: boolean;
   hasGscRows: boolean;
   latestDataDate: string | null;
+  syncStatus: GscSyncStatus | null;
   rows: GscRankingRow[];
+  topQueries: GscRankingRow[];
+};
+
+type GscSyncStatus = {
+  startedAt: string;
+  finishedAt: string | null;
+  status: string;
+  siteUrl: string;
+  dateFrom: string | null;
+  dateTo: string | null;
+  rowsFetched: number;
+  errorMessage: string | null;
 };
 
 type PageSpeedSnapshot = {
@@ -111,6 +128,62 @@ type IndexabilityIssueRow = {
   internalLinks: number;
   issueCount: number;
   issues: string[];
+};
+
+type AgencySeoSnapshot = {
+  dbFound: boolean;
+  visibleTargetPages: number;
+  visibilityGapRows: VisibilityGapRow[];
+  keywordRows: KeywordOpportunityRow[];
+  serpStatus: SerpRunStatus | null;
+  serpRows: SerpResultRow[];
+};
+
+type VisibilityGapRow = {
+  url: string;
+  title: string;
+  inboundInternalLinks: number;
+  issueCount: number;
+  issues: string[];
+};
+
+type KeywordOpportunityRow = {
+  keyword: string;
+  cluster: string;
+  intent: string;
+  pageType: string;
+  rfqRelevance: string;
+  priority: number;
+  searchVolume: number | null;
+  cpc: number | null;
+  competition: string | null;
+  competitionIndex: number | null;
+  opportunityScore: number;
+  collectedAt: string | null;
+};
+
+type SerpRunStatus = {
+  startedAt: string;
+  finishedAt: string | null;
+  status: string;
+  plannedCostUsd: number | null;
+  actualCostUsd: number | null;
+  locationCode: number | null;
+  languageCode: string;
+  keywordsCount: number;
+  errorMessage: string | null;
+};
+
+type SerpResultRow = {
+  keyword: string;
+  domain: string;
+  url: string;
+  title: string;
+  rankGroup: number | null;
+  rankAbsolute: number | null;
+  resultType: string;
+  isTargetDomain: boolean;
+  collectedAt: string;
 };
 
 const ROADMAP: RoadmapRow[] = [
@@ -277,6 +350,61 @@ function formatPercent(value: number) {
   }).format(value);
 }
 
+function formatCurrency(value: number | null) {
+  if (value === null || Number.isNaN(value)) {
+    return "-";
+  }
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function freshnessDays(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  const timestamp = value.includes("T") ? new Date(value).getTime() : new Date(`${value}T00:00:00Z`).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
+}
+
+function freshnessLabel(value: string | null) {
+  const days = freshnessDays(value);
+  if (days === null) {
+    return "keine Daten";
+  }
+  if (days === 0) {
+    return "heute";
+  }
+  if (days === 1) {
+    return "gestern";
+  }
+  return `vor ${days} Tagen`;
+}
+
+function freshnessTone(value: string | null, warnAfterDays = 3): StatusTone {
+  const days = freshnessDays(value);
+  if (days === null) {
+    return "attention";
+  }
+  return days <= warnAfterDays ? "ready" : "attention";
+}
+
+function compactUrl(value: string) {
+  return value.replace(/^https?:\/\//, "").replace(/\/$/, "");
+}
+
+function healthTone(healthy: boolean, degraded = false): StatusTone {
+  if (healthy) {
+    return "ready";
+  }
+  return degraded ? "attention" : "quiet";
+}
+
 async function pathExists(candidate: string) {
   try {
     await fs.access(candidate);
@@ -418,6 +546,28 @@ function normalizeRankingRows(value: unknown): GscRankingRow[] {
   });
 }
 
+function normalizeGscSyncStatus(value: unknown): GscSyncStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  const startedAt = typeof row.started_at_utc === "string" ? row.started_at_utc : "";
+  const status = typeof row.status === "string" ? row.status : "";
+  if (!startedAt || !status) {
+    return null;
+  }
+  return {
+    startedAt,
+    finishedAt: typeof row.finished_at_utc === "string" ? row.finished_at_utc : null,
+    status,
+    siteUrl: typeof row.site_url === "string" ? row.site_url : "",
+    dateFrom: typeof row.date_from === "string" ? row.date_from : null,
+    dateTo: typeof row.date_to === "string" ? row.date_to : null,
+    rowsFetched: Number(row.rows_fetched ?? 0),
+    errorMessage: typeof row.error_message === "string" ? row.error_message : null,
+  };
+}
+
 async function gscRankingSnapshot(): Promise<RankingSnapshot> {
   const dbPath = await firstExistingPath([
     process.env.SEO_DB_PATH || "",
@@ -427,7 +577,7 @@ async function gscRankingSnapshot(): Promise<RankingSnapshot> {
   ].filter(Boolean));
 
   if (!dbPath) {
-    return { dbFound: false, hasGscRows: false, latestDataDate: null, rows: [] };
+    return { dbFound: false, hasGscRows: false, latestDataDate: null, syncStatus: null, rows: [], topQueries: [] };
   }
 
   const keywords = ROADMAP.map((row) => row.primaryKeyword.toLowerCase());
@@ -435,43 +585,80 @@ async function gscRankingSnapshot(): Promise<RankingSnapshot> {
 import json
 import sqlite3
 import sys
+from urllib.parse import quote
 
 db_path = sys.argv[1]
 keywords = json.loads(sys.argv[2])
-conn = sqlite3.connect(db_path)
+conn = sqlite3.connect("file:" + quote(db_path, safe="/") + "?mode=ro&immutable=1", uri=True)
 conn.row_factory = sqlite3.Row
 tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-if "gsc_daily_page_query" not in tables:
-    print(json.dumps({"has_gsc_rows": False, "latest_data_date": None, "rows": []}))
-    raise SystemExit(0)
+sync_status = None
+if "gsc_sync_runs" in tables:
+    sync_row = conn.execute("""
+        SELECT started_at_utc, finished_at_utc, status, site_url, date_from, date_to, rows_fetched, error_message
+        FROM gsc_sync_runs
+        ORDER BY started_at_utc DESC
+        LIMIT 1
+    """).fetchone()
+    sync_status = dict(sync_row) if sync_row else None
+query_total = 0
+query_latest = None
+page_total = 0
+page_latest = None
+rows = []
+top_rows = []
 
-total = conn.execute("SELECT COUNT(*) FROM gsc_daily_page_query").fetchone()[0]
-latest = conn.execute("SELECT MAX(data_date) FROM gsc_daily_page_query").fetchone()[0]
-if not total:
-    print(json.dumps({"has_gsc_rows": False, "latest_data_date": latest, "rows": []}))
-    raise SystemExit(0)
+if "gsc_daily_page_query" in tables:
+    query_total = conn.execute("SELECT COUNT(*) FROM gsc_daily_page_query").fetchone()[0]
+    query_latest = conn.execute("SELECT MAX(data_date) FROM gsc_daily_page_query").fetchone()[0]
 
-placeholders = ",".join("?" for _ in keywords)
-rows = conn.execute(f"""
-    SELECT
-      LOWER(query_sanitized) AS keyword,
-      site_url,
-      page,
-      SUM(clicks) AS clicks,
-      SUM(impressions) AS impressions,
-      CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) / SUM(impressions) ELSE 0 END AS ctr,
-      CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE AVG(position) END AS position,
-      MIN(data_date) AS first_date,
-      MAX(data_date) AS last_date
-    FROM gsc_daily_page_query
-    WHERE LOWER(query_sanitized) IN ({placeholders})
-    GROUP BY keyword, site_url, page
-    ORDER BY impressions DESC, position ASC
-""", keywords).fetchall()
+if "gsc_daily_page" in tables:
+    page_total = conn.execute("SELECT COUNT(*) FROM gsc_daily_page").fetchone()[0]
+    page_latest = conn.execute("SELECT MAX(data_date) FROM gsc_daily_page").fetchone()[0]
+
+latest_candidates = [value for value in (query_latest, page_latest) if value]
+latest = max(latest_candidates) if latest_candidates else None
+
+if query_total:
+    placeholders = ",".join("?" for _ in keywords)
+    rows = conn.execute(f"""
+        SELECT
+          LOWER(query_sanitized) AS keyword,
+          site_url,
+          page,
+          SUM(clicks) AS clicks,
+          SUM(impressions) AS impressions,
+          CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) / SUM(impressions) ELSE 0 END AS ctr,
+          CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE AVG(position) END AS position,
+          MIN(data_date) AS first_date,
+          MAX(data_date) AS last_date
+        FROM gsc_daily_page_query
+        WHERE LOWER(query_sanitized) IN ({placeholders})
+        GROUP BY keyword, site_url, page
+        ORDER BY impressions DESC, position ASC
+    """, keywords).fetchall()
+    top_rows = conn.execute("""
+        SELECT
+          LOWER(query_sanitized) AS keyword,
+          site_url,
+          page,
+          SUM(clicks) AS clicks,
+          SUM(impressions) AS impressions,
+          CASE WHEN SUM(impressions) > 0 THEN SUM(clicks) / SUM(impressions) ELSE 0 END AS ctr,
+          CASE WHEN SUM(impressions) > 0 THEN SUM(position * impressions) / SUM(impressions) ELSE AVG(position) END AS position,
+          MIN(data_date) AS first_date,
+          MAX(data_date) AS last_date
+        FROM gsc_daily_page_query
+        GROUP BY keyword, site_url, page
+        ORDER BY impressions DESC, position ASC
+        LIMIT 12
+    """).fetchall()
 print(json.dumps({
-    "has_gsc_rows": bool(total),
+    "has_gsc_rows": bool(query_total or page_total),
     "latest_data_date": latest,
+    "sync_status": sync_status,
     "rows": [dict(row) for row in rows],
+    "top_rows": [dict(row) for row in top_rows],
 }, ensure_ascii=False))
 `;
 
@@ -484,10 +671,12 @@ print(json.dumps({
       dbFound: true,
       hasGscRows: Boolean(payload.has_gsc_rows),
       latestDataDate: typeof payload.latest_data_date === "string" ? payload.latest_data_date : null,
+      syncStatus: normalizeGscSyncStatus(payload.sync_status),
       rows: normalizeRankingRows(payload.rows),
+      topQueries: normalizeRankingRows(payload.top_rows),
     };
   } catch {
-    return { dbFound: true, hasGscRows: false, latestDataDate: null, rows: [] };
+    return { dbFound: true, hasGscRows: false, latestDataDate: null, syncStatus: null, rows: [], topQueries: [] };
   }
 }
 
@@ -534,8 +723,10 @@ async function pageSpeedSnapshot(): Promise<PageSpeedSnapshot> {
 import json
 import sqlite3
 import sys
+from urllib.parse import quote
 
-conn = sqlite3.connect(sys.argv[1])
+db_path = sys.argv[1]
+conn = sqlite3.connect("file:" + quote(db_path, safe="/") + "?mode=ro&immutable=1", uri=True)
 conn.row_factory = sqlite3.Row
 tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 if not {"pagespeed_sync_runs", "pagespeed_url_metrics"} <= tables:
@@ -614,6 +805,119 @@ function normalizeIndexabilityRows(value: unknown): IndexabilityIssueRow[] {
   });
 }
 
+function normalizeVisibilityGapRows(value: unknown): VisibilityGapRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    const url = typeof row.url === "string" ? row.url : "";
+    if (!url) {
+      return [];
+    }
+    let issues: string[] = [];
+    if (typeof row.issues_json === "string") {
+      try {
+        const parsed = JSON.parse(row.issues_json);
+        issues = Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        issues = [];
+      }
+    }
+    return [{
+      url,
+      title: typeof row.title === "string" ? row.title : "",
+      inboundInternalLinks: Number(row.inbound_internal_links_count ?? 0),
+      issueCount: Number(row.issue_count ?? 0),
+      issues,
+    }];
+  });
+}
+
+function normalizeKeywordOpportunityRows(value: unknown): KeywordOpportunityRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    const keyword = typeof row.keyword === "string" ? row.keyword : "";
+    if (!keyword) {
+      return [];
+    }
+    return [{
+      keyword,
+      cluster: typeof row.cluster === "string" ? row.cluster : "",
+      intent: typeof row.intent === "string" ? row.intent : "",
+      pageType: typeof row.page_type === "string" ? row.page_type : "",
+      rfqRelevance: typeof row.rfq_relevance === "string" ? row.rfq_relevance : "",
+      priority: Number(row.priority ?? 0),
+      searchVolume: row.search_volume === null || row.search_volume === undefined ? null : Number(row.search_volume),
+      cpc: row.cpc === null || row.cpc === undefined ? null : Number(row.cpc),
+      competition: typeof row.competition === "string" ? row.competition : null,
+      competitionIndex: row.competition_index === null || row.competition_index === undefined ? null : Number(row.competition_index),
+      opportunityScore: Number(row.opportunity_score ?? 0),
+      collectedAt: typeof row.collected_at_utc === "string" ? row.collected_at_utc : null,
+    }];
+  });
+}
+
+function normalizeSerpStatus(value: unknown): SerpRunStatus | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const row = value as Record<string, unknown>;
+  const startedAt = typeof row.started_at_utc === "string" ? row.started_at_utc : "";
+  const status = typeof row.status === "string" ? row.status : "";
+  if (!startedAt || !status) {
+    return null;
+  }
+  return {
+    startedAt,
+    finishedAt: typeof row.finished_at_utc === "string" ? row.finished_at_utc : null,
+    status,
+    plannedCostUsd: row.planned_cost_usd === null || row.planned_cost_usd === undefined ? null : Number(row.planned_cost_usd),
+    actualCostUsd: row.actual_cost_usd === null || row.actual_cost_usd === undefined ? null : Number(row.actual_cost_usd),
+    locationCode: row.location_code === null || row.location_code === undefined ? null : Number(row.location_code),
+    languageCode: typeof row.language_code === "string" ? row.language_code : "",
+    keywordsCount: Number(row.keywords_count ?? 0),
+    errorMessage: typeof row.error_message === "string" ? row.error_message : null,
+  };
+}
+
+function normalizeSerpRows(value: unknown): SerpResultRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    const keyword = typeof row.keyword === "string" ? row.keyword : "";
+    const url = typeof row.url === "string" ? row.url : "";
+    if (!keyword || !url) {
+      return [];
+    }
+    return [{
+      keyword,
+      domain: typeof row.domain === "string" ? row.domain : "",
+      url,
+      title: typeof row.title === "string" ? row.title : "",
+      rankGroup: row.rank_group === null || row.rank_group === undefined ? null : Number(row.rank_group),
+      rankAbsolute: row.rank_absolute === null || row.rank_absolute === undefined ? null : Number(row.rank_absolute),
+      resultType: typeof row.result_type === "string" ? row.result_type : "",
+      isTargetDomain: Boolean(row.is_target_domain),
+      collectedAt: typeof row.collected_at_utc === "string" ? row.collected_at_utc : "",
+    }];
+  });
+}
+
 async function indexabilitySnapshot(): Promise<IndexabilitySnapshot> {
   const dbPath = await firstExistingPath([
     process.env.SEO_DB_PATH || "",
@@ -630,8 +934,10 @@ async function indexabilitySnapshot(): Promise<IndexabilitySnapshot> {
 import json
 import sqlite3
 import sys
+from urllib.parse import quote
 
-conn = sqlite3.connect(sys.argv[1])
+db_path = sys.argv[1]
+conn = sqlite3.connect("file:" + quote(db_path, safe="/") + "?mode=ro&immutable=1", uri=True)
 conn.row_factory = sqlite3.Row
 tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 if not {"seo_crawl_runs", "seo_url_checks"} <= tables:
@@ -685,6 +991,169 @@ print(json.dumps({
   }
 }
 
+async function agencySeoSnapshot(): Promise<AgencySeoSnapshot> {
+  const dbPath = await firstExistingPath([
+    process.env.SEO_DB_PATH || "",
+    "/var/seo/data/seo.db",
+    "/home/thorsten/var/seo/data/seo.db",
+    path.resolve(process.cwd(), "..", "seo", "data", "seo.db"),
+  ].filter(Boolean));
+
+  if (!dbPath) {
+    return { dbFound: false, visibleTargetPages: 0, visibilityGapRows: [], keywordRows: [], serpStatus: null, serpRows: [] };
+  }
+
+  const script = `
+import json
+import sqlite3
+import sys
+from urllib.parse import quote
+
+db_path = sys.argv[1]
+target_domain = sys.argv[2]
+target_prefix = "https://" + target_domain + "%"
+target_property = "sc-domain:" + target_domain
+conn = sqlite3.connect("file:" + quote(db_path, safe="/") + "?mode=ro&immutable=1", uri=True)
+conn.row_factory = sqlite3.Row
+tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+visible_target_pages = 0
+visible_source_table = None
+if "gsc_daily_page_query" in tables:
+    visible_target_pages = conn.execute("""
+        SELECT COUNT(DISTINCT page)
+        FROM gsc_daily_page_query
+        WHERE impressions > 0
+          AND (site_url = ? OR page LIKE ?)
+    """, (target_property, target_prefix)).fetchone()[0]
+    if visible_target_pages:
+        visible_source_table = "gsc_daily_page_query"
+if not visible_target_pages and "gsc_daily_page" in tables:
+    visible_target_pages = conn.execute("""
+        SELECT COUNT(DISTINCT page)
+        FROM gsc_daily_page
+        WHERE impressions > 0
+          AND (site_url = ? OR page LIKE ?)
+    """, (target_property, target_prefix)).fetchone()[0]
+    if visible_target_pages:
+        visible_source_table = "gsc_daily_page"
+
+visibility_gap_rows = []
+if {"seo_crawl_runs", "seo_url_checks"} <= tables:
+    run = conn.execute("""
+        SELECT run_id
+        FROM seo_crawl_runs
+        ORDER BY started_at_utc DESC
+        LIMIT 1
+    """).fetchone()
+    if run:
+        if visible_source_table:
+            visibility_gap_rows = conn.execute(f"""
+                SELECT c.url, c.title, c.inbound_internal_links_count, c.issue_count, c.issues_json
+                FROM seo_url_checks c
+                LEFT JOIN (
+                  SELECT DISTINCT RTRIM(page, '/') AS normalized_page
+                  FROM {visible_source_table}
+                  WHERE impressions > 0
+                    AND (site_url = ? OR page LIKE ?)
+                ) g ON g.normalized_page = RTRIM(c.url, '/')
+                WHERE c.run_id = ?
+                  AND c.indexable = 1
+                  AND c.url LIKE ?
+                  AND g.normalized_page IS NULL
+                ORDER BY c.inbound_internal_links_count DESC, c.issue_count DESC, c.url ASC
+                LIMIT 12
+            """, (target_property, target_prefix, run["run_id"], target_prefix)).fetchall()
+        else:
+            visibility_gap_rows = conn.execute("""
+                SELECT c.url, c.title, c.inbound_internal_links_count, c.issue_count, c.issues_json
+                FROM seo_url_checks c
+                WHERE c.run_id = ?
+                  AND c.indexable = 1
+                  AND c.url LIKE ?
+                ORDER BY c.inbound_internal_links_count DESC, c.issue_count DESC, c.url ASC
+                LIMIT 12
+            """, (run["run_id"], target_prefix)).fetchall()
+
+keyword_rows = []
+if {"keyword_seed", "keyword_metrics"} <= tables:
+    keyword_rows = conn.execute("""
+        SELECT
+          s.keyword, s.cluster, s.intent, s.page_type, s.rfq_relevance, s.priority,
+          m.search_volume, m.cpc, m.competition, m.competition_index, m.collected_at_utc,
+          ROUND(
+            (MIN(COALESCE(m.search_volume, 0), 5000) / 50.0)
+            + COALESCE(s.priority, 0)
+            + (COALESCE(m.cpc, 0) * 6.0)
+            + (COALESCE(m.competition_index, 0) / 6.0)
+            + CASE WHEN LOWER(COALESCE(s.rfq_relevance, '')) = 'high' THEN 20 ELSE 8 END,
+            2
+          ) AS opportunity_score
+        FROM keyword_seed s
+        LEFT JOIN keyword_metrics m
+          ON m.keyword = s.keyword
+         AND m.location_code = 2276
+         AND m.language_code = 'de'
+         AND m.source = 'dataforseo_google_ads_search_volume'
+        ORDER BY opportunity_score DESC, COALESCE(m.search_volume, -1) DESC, s.keyword ASC
+        LIMIT 14
+    """).fetchall()
+
+serp_status = None
+serp_rows = []
+if "dataforseo_serp_runs" in tables:
+    serp_status_row = conn.execute("""
+        SELECT started_at_utc, finished_at_utc, status, planned_cost_usd, actual_cost_usd,
+               location_code, language_code, keywords_count, error_message
+        FROM dataforseo_serp_runs
+        ORDER BY started_at_utc DESC
+        LIMIT 1
+    """).fetchone()
+    serp_status = dict(serp_status_row) if serp_status_row else None
+    if serp_status_row and "dataforseo_serp_results" in tables:
+        latest_run = conn.execute("""
+            SELECT run_id
+            FROM dataforseo_serp_runs
+            ORDER BY started_at_utc DESC
+            LIMIT 1
+        """).fetchone()
+        if latest_run:
+            serp_rows = conn.execute("""
+                SELECT keyword, domain, url, title, rank_group, rank_absolute, result_type,
+                       is_target_domain, collected_at_utc
+                FROM dataforseo_serp_results
+                WHERE run_id = ?
+                ORDER BY is_target_domain DESC, keyword ASC, COALESCE(rank_absolute, 9999) ASC
+                LIMIT 16
+            """, (latest_run["run_id"],)).fetchall()
+
+print(json.dumps({
+    "visible_target_pages": visible_target_pages,
+    "visibility_gap_rows": [dict(row) for row in visibility_gap_rows],
+    "keyword_rows": [dict(row) for row in keyword_rows],
+    "serp_status": serp_status,
+    "serp_rows": [dict(row) for row in serp_rows],
+}, ensure_ascii=False))
+`;
+
+  try {
+    const { stdout } = await execFileAsync("python3", ["-c", script, dbPath, TARGET_DOMAINS[0]], {
+      maxBuffer: 1024 * 1024,
+    });
+    const payload = JSON.parse(stdout) as Record<string, unknown>;
+    return {
+      dbFound: true,
+      visibleTargetPages: Number(payload.visible_target_pages ?? 0),
+      visibilityGapRows: normalizeVisibilityGapRows(payload.visibility_gap_rows),
+      keywordRows: normalizeKeywordOpportunityRows(payload.keyword_rows),
+      serpStatus: normalizeSerpStatus(payload.serp_status),
+      serpRows: normalizeSerpRows(payload.serp_rows),
+    };
+  } catch {
+    return { dbFound: true, visibleTargetPages: 0, visibilityGapRows: [], keywordRows: [], serpStatus: null, serpRows: [] };
+  }
+}
+
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
     <span
@@ -724,7 +1193,7 @@ function Metric({
 }
 
 export default async function SeoDashboardPage() {
-  const [wissen, werkstoffe, medien, reports, stack, rankings, pageSpeed, indexability] = await Promise.all([
+  const [wissen, werkstoffe, medien, reports, stack, rankings, pageSpeed, indexability, agency] = await Promise.all([
     getAllSlugs("wissen"),
     getAllSlugs("werkstoffe"),
     getAllSlugs("medien"),
@@ -733,6 +1202,7 @@ export default async function SeoDashboardPage() {
     gscRankingSnapshot(),
     pageSpeedSnapshot(),
     indexabilitySnapshot(),
+    agencySeoSnapshot(),
   ]);
   const publishedCount = wissen.length + werkstoffe.length + medien.length + 1;
   const onlineRoadmap = ROADMAP.filter((row) => row.status === "online").length;
@@ -742,8 +1212,34 @@ export default async function SeoDashboardPage() {
   const rankingCoverage = ROADMAP.filter((row) => rankingRowsByKeyword.has(row.primaryKeyword)).length;
   const pageSpeedScore = pageSpeed.rows[0]?.performanceScore;
   const indexabilityRate = indexability.urlsChecked > 0 ? indexability.indexableUrls / indexability.urlsChecked : null;
+  const gscHealthy = rankings.syncStatus?.status === "success" && freshnessTone(rankings.latestDataDate, 4) === "ready";
+  const crawlHealthy = indexability.latestStatus === "success" && freshnessTone(indexability.latestRunAt, 2) === "ready";
+  const pageSpeedHealthy = pageSpeed.latestStatus === "success" && pageSpeed.rows.length > 0 && freshnessTone(pageSpeed.latestRunAt, 2) === "ready";
+  const keywordHealthy = agency.keywordRows.some((row) => row.searchVolume !== null);
+  const serpHealthy = agency.serpStatus?.status === "success" && agency.serpRows.length > 0;
+  const targetSerpHits = agency.serpRows.filter((row) => row.isTargetDomain).length;
+  const agencyChecks = [
+    { label: "GSC frisch", ok: gscHealthy, detail: rankings.latestDataDate ? `letzter Datentag ${formatShortDate(rankings.latestDataDate)}` : "keine Ziel-Daten" },
+    { label: "SERP-Monitor", ok: serpHealthy, detail: serpHealthy ? `${targetSerpHits} Treffer für ${TARGET_DOMAINS[0]}` : "Rankcheck nicht gelaufen" },
+    { label: "Keyword-Markt", ok: keywordHealthy, detail: keywordHealthy ? `${agency.keywordRows.length} Opportunity-Zeilen` : "keine Volumina" },
+    { label: "Technik-Crawl", ok: crawlHealthy, detail: indexability.latestRunAt ? `${indexability.urlsChecked} URLs geprüft` : "kein Crawl" },
+    { label: "CWV/Lighthouse", ok: pageSpeedHealthy, detail: pageSpeed.latestRunAt ? `Score ${pageSpeedScore == null ? "-" : Math.round(pageSpeedScore * 100)}/100` : "kein Run" },
+    { label: "Reporting", ok: reportsReady, detail: reportsReady ? `${reports.length} Reports` : "keine Reports" },
+  ];
+  const agencyScore = Math.round((agencyChecks.filter((check) => check.ok).length / agencyChecks.length) * 10);
+  const readinessTone: StatusTone = agencyScore >= 9 ? "ready" : agencyScore >= 6 ? "attention" : "quiet";
+  const strongestKeyword = agency.keywordRows[0];
+  const topVisibilityGap = agency.visibilityGapRows[0];
 
   const actions = [
+    {
+      title: rankings.syncStatus?.status === "failed" ? "P0: Google Search Console reautorisieren" : "Google Search Console Datenfrische sichern",
+      detail: rankings.syncStatus?.status === "failed"
+        ? "Ohne frischen OAuth-Token ist das Ranking-Modul nicht live. Das Dashboard zeigt dann nur gespeicherte Alt-Daten."
+        : "GSC bleibt die Primärquelle für echte Impressions, Klicks, CTR und Suchanfragen.",
+      command: "GSC OAuth erneuern, danach: PYTHONPATH=seo/src python -m sealai_seo.cli sync-gsc && PYTHONPATH=seo/src python -m sealai_seo.cli report-daily",
+      tone: rankings.syncStatus?.status === "failed" ? "attention" : "ready",
+    },
     {
       title: reportsReady ? "Aktuellen GSC-Report prüfen" : "Ersten GSC-Report erzeugen",
       detail: reportsReady
@@ -783,8 +1279,8 @@ export default async function SeoDashboardPage() {
     {
       title: "Neutralen SERP-Rankcheck vorbereiten",
       detail: "GSC zeigt nur Keywords mit Impressionen. Für echte Positionsprüfung von sealingai.com ohne Impressionen brauchen wir einen kostenkontrollierten DataForSEO-SERP-Check.",
-      command: "DataForSEO SERP organic live: Domain sealingai.com, location 2276, language de, Top-10 Run-0 Keywords",
-      tone: "quiet",
+      command: "PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-serp-snapshot --dry-run --planned-cost 0.20 && PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-serp-snapshot --planned-cost 0.20 --target-domain sealingai.com",
+      tone: serpHealthy ? "ready" : "attention",
     },
   ] as const;
 
@@ -834,6 +1330,102 @@ export default async function SeoDashboardPage() {
           <Metric label="Automation" value={automationReady ? "bereit" : "offen"} detail="GSC/DataForSEO Skripte und Report-Timer im SEO-Stack" icon={Workflow} />
           <Metric label="Indexierbarkeit" value={indexabilityRate === null ? "offen" : `${Math.round(indexabilityRate * 100)} %`} detail={indexability.latestRunAt ? `${indexability.indexableUrls}/${indexability.urlsChecked} URLs indexierbar, ${indexability.issueUrls} mit Issues` : "Sitemap-Crawl noch starten"} icon={Search} />
           <Metric label="PageSpeed" value={pageSpeedScore == null ? "offen" : `${Math.round(pageSpeedScore * 100)}/100`} detail={pageSpeed.latestRunAt ? `letzter Run ${formatDate(pageSpeed.latestRunAt)}` : "Mobile-Lighthouse für zentrale Seiten noch starten"} icon={Activity} />
+        </section>
+
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[390px_minmax(0,1fr)]">
+          <div className="rounded-[18px] border border-seal-blue/10 bg-white/90 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-seal-blue">
+                  <Gauge size={16} />
+                  Agentur-Readiness
+                </div>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight">{agencyScore}/10</h2>
+              </div>
+              <StatusPill tone={readinessTone}>
+                {agencyScore >= 9 ? "production grade" : agencyScore >= 6 ? "degraded" : "kritisch"}
+              </StatusPill>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#526179]">
+              Bewertet wie eine SEO-Agentur: frische Quellen, echte SERP-Sicht, Opportunity-Daten, technische Hygiene, Performance und Reporting.
+            </p>
+            <div className="mt-4 space-y-2">
+              {agencyChecks.map((check) => (
+                <div key={check.label} className="flex items-start justify-between gap-3 rounded-[12px] border border-seal-blue/10 bg-[#FBFCFE] px-3 py-2">
+                  <div>
+                    <div className="text-sm font-semibold text-[#111827]">{check.label}</div>
+                    <div className="text-[12px] leading-5 text-[#64748B]">{check.detail}</div>
+                  </div>
+                  {check.ok ? <CheckCircle2 size={17} className="mt-0.5 shrink-0 text-emerald-600" /> : <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-600" />}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[18px] border border-seal-blue/10 bg-white/90 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Database size={18} className="text-seal-blue" />
+                  <h2 className="text-lg font-semibold">Live-Datenquellen</h2>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#64748B]">
+                  Führende SEO-Teams trennen Rohdaten, Datenfrische und Entscheidungssicherheit. Diese Kacheln zeigen, welche Quelle belastbar ist und wo die Suite noch blockiert.
+                </p>
+              </div>
+              <StatusPill tone={agency.dbFound ? "ready" : "attention"}>{agency.dbFound ? "DB verbunden" : "DB fehlt"}</StatusPill>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">GSC Performance</div>
+                  <StatusPill tone={healthTone(gscHealthy, Boolean(rankings.syncStatus))}>{rankings.syncStatus?.status ?? "offen"}</StatusPill>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{agency.visibleTargetPages} sichtbare Ziel-URLs</div>
+                <div className="mt-1 text-xs leading-5 text-[#64748B]">Datentag {freshnessLabel(rankings.latestDataDate)}</div>
+              </div>
+              <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">SERP Monitor</div>
+                  <StatusPill tone={healthTone(serpHealthy, Boolean(agency.serpStatus))}>{agency.serpStatus?.status ?? "nicht gelaufen"}</StatusPill>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{targetSerpHits} Target-Hits</div>
+                <div className="mt-1 text-xs leading-5 text-[#64748B]">{agency.serpStatus ? `${agency.serpStatus.keywordsCount} Keywords, ${agency.serpStatus.languageCode || "de"}` : "DataForSEO Snapshot offen"}</div>
+              </div>
+              <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Keyword Demand</div>
+                  <StatusPill tone={keywordHealthy ? "ready" : "attention"}>{keywordHealthy ? "bereit" : "offen"}</StatusPill>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{strongestKeyword ? formatNumber(strongestKeyword.searchVolume ?? 0) : "-"} Suchen</div>
+                <div className="mt-1 text-xs leading-5 text-[#64748B]">{strongestKeyword ? `${strongestKeyword.keyword}, Score ${formatDecimal(strongestKeyword.opportunityScore)}` : "keine Keyword-Metriken"}</div>
+              </div>
+              <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Sichtbarkeitslücke</div>
+                  <StatusPill tone={agency.visibilityGapRows.length ? "attention" : "ready"}>{agency.visibilityGapRows.length ? "prüfen" : "keine"}</StatusPill>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{agency.visibilityGapRows.length} Top-URLs</div>
+                <div className="mt-1 text-xs leading-5 text-[#64748B]">{topVisibilityGap ? compactUrl(topVisibilityGap.url) : "Keine indexierbare URL ohne Sichtbarkeit gefunden."}</div>
+              </div>
+              <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Technical Crawl</div>
+                  <StatusPill tone={crawlHealthy ? "ready" : "attention"}>{indexability.latestStatus ?? "offen"}</StatusPill>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{indexability.issueUrls} Issue-URLs</div>
+                <div className="mt-1 text-xs leading-5 text-[#64748B]">Crawl {freshnessLabel(indexability.latestRunAt)}</div>
+              </div>
+              <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Performance</div>
+                  <StatusPill tone={pageSpeedHealthy ? "ready" : "attention"}>{pageSpeed.latestStatus ?? "offen"}</StatusPill>
+                </div>
+                <div className="mt-2 text-lg font-semibold">{pageSpeedScore == null ? "-" : `${Math.round(pageSpeedScore * 100)}/100`}</div>
+                <div className="mt-1 text-xs leading-5 text-[#64748B]">Run {freshnessLabel(pageSpeed.latestRunAt)}</div>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
@@ -900,6 +1492,74 @@ export default async function SeoDashboardPage() {
               {rankingCoverage}/{ROADMAP.length} Keywords mit Position
             </StatusPill>
           </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Letzter GSC-Sync</div>
+              <div className="mt-2 text-base font-semibold text-[#111827]">
+                {rankings.syncStatus ? rankings.syncStatus.status : "nicht gefunden"}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-[#64748B]">
+                {rankings.syncStatus ? formatDate(rankings.syncStatus.startedAt) : "Kein Sync-Run in der SEO-Datenbank."}
+              </div>
+            </div>
+            <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">GSC-Property</div>
+              <div className="mt-2 text-base font-semibold text-[#111827]">
+                {rankings.syncStatus?.siteUrl || rankings.topQueries[0]?.siteUrl || TARGET_DOMAINS[0]}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-[#64748B]">
+                Datenzeitraum: {rankings.syncStatus?.dateFrom ? `${formatShortDate(rankings.syncStatus.dateFrom)} - ${formatShortDate(rankings.syncStatus.dateTo)}` : "offen"}
+              </div>
+            </div>
+            <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Live-Query-Daten</div>
+              <div className="mt-2 text-base font-semibold text-[#111827]">
+                {rankings.topQueries.length ? `${rankings.topQueries.length} Queries` : "keine Queries"}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-[#64748B]">
+                {rankings.latestDataDate ? `Letzter Datentag: ${formatShortDate(rankings.latestDataDate)}` : "Noch kein GSC-Datensatz vorhanden."}
+              </div>
+            </div>
+          </div>
+          {rankings.syncStatus?.status === "failed" ? (
+            <div className="mt-3 rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-800">
+              GSC-Sync fehlgeschlagen: {rankings.syncStatus.errorMessage || "kein Fehlertext gespeichert"}. Die Tabelle zeigt die zuletzt gespeicherten Search-Console-Daten.
+            </div>
+          ) : null}
+          {rankings.topQueries.length ? (
+            <div className="mt-4 overflow-x-auto rounded-[14px] border border-seal-blue/10">
+              <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-seal-blue/10 bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                    <th className="px-3 py-3">Live Query</th>
+                    <th className="px-3 py-3">Property</th>
+                    <th className="px-3 py-3">URL</th>
+                    <th className="px-3 py-3 text-right">Impr.</th>
+                    <th className="px-3 py-3 text-right">Klicks</th>
+                    <th className="px-3 py-3 text-right">Ø-Position</th>
+                    <th className="px-3 py-3 text-right">Zeitraum</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankings.topQueries.map((row) => (
+                    <tr key={`live-query-${row.keyword}-${row.page}`} className="border-b border-seal-blue/10 align-top last:border-0">
+                      <td className="px-3 py-3 font-medium text-[#111827]">{row.keyword}</td>
+                      <td className="px-3 py-3 text-[#4B5563]">{row.siteUrl}</td>
+                      <td className="px-3 py-3">
+                        <a href={row.page} className="font-medium text-seal-blue hover:underline">
+                          {row.page.replace(/^https?:\/\//, "")}
+                        </a>
+                      </td>
+                      <td className="px-3 py-3 text-right text-[#4B5563]">{formatNumber(row.impressions)}</td>
+                      <td className="px-3 py-3 text-right text-[#4B5563]">{formatNumber(row.clicks)}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-[#111827]">{formatDecimal(row.position)}</td>
+                      <td className="px-3 py-3 text-right text-[#4B5563]">{formatShortDate(row.firstDate)} - {formatShortDate(row.lastDate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[960px] border-collapse text-left text-sm">
               <thead>
@@ -952,6 +1612,166 @@ export default async function SeoDashboardPage() {
           <div className="mt-3 rounded-[14px] border border-seal-blue/20 bg-seal-blue/5 px-3 py-2 text-[12px] leading-5 text-[#526179]">
             Quelle: Google Search Console Search Analytics, gewichtete durchschnittliche Position. {rankings.dbFound ? "SEO-Datenbank gefunden." : "SEO-Datenbank noch nicht gefunden."} {rankings.latestDataDate ? `Letzter GSC-Datentag: ${formatShortDate(rankings.latestDataDate)}.` : "Noch kein GSC-Query-Datensatz vorhanden."} Für keywords ohne Impressionen ist ein separater DataForSEO-SERP-Rankcheck nötig.
           </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <TrendingUp size={18} className="text-seal-blue" />
+                  <h2 className="text-lg font-semibold">Search Demand & Opportunity</h2>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#64748B]">
+                  Agentur-Priorisierung aus Suchvolumen, CPC, Wettbewerb, RFQ-Nähe und Seed-Priorität. Das macht aus Keyword-Daten eine Arbeitsliste.
+                </p>
+              </div>
+              <StatusPill tone={keywordHealthy ? "ready" : "attention"}>{keywordHealthy ? "DataForSEO aktiv" : "Metriken offen"}</StatusPill>
+            </div>
+            {agency.keywordRows.length ? (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full min-w-[820px] border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-seal-blue/10 text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                      <th className="py-3 pr-4">Keyword</th>
+                      <th className="py-3 pr-4">Cluster</th>
+                      <th className="py-3 pr-4 text-right">Volumen</th>
+                      <th className="py-3 pr-4 text-right">CPC</th>
+                      <th className="py-3 pr-4 text-right">Wettbewerb</th>
+                      <th className="py-3 text-right">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agency.keywordRows.slice(0, 10).map((row) => (
+                      <tr key={`kw-${row.keyword}`} className="border-b border-seal-blue/10 align-top last:border-0">
+                        <td className="py-3 pr-4">
+                          <div className="font-semibold text-[#111827]">{row.keyword}</div>
+                          <div className="mt-1 text-[12px] text-[#64748B]">{row.intent}</div>
+                        </td>
+                        <td className="py-3 pr-4 text-[#4B5563]">{row.cluster}</td>
+                        <td className="py-3 pr-4 text-right font-semibold">{row.searchVolume === null ? "-" : formatNumber(row.searchVolume)}</td>
+                        <td className="py-3 pr-4 text-right text-[#4B5563]">{formatCurrency(row.cpc)}</td>
+                        <td className="py-3 pr-4 text-right text-[#4B5563]">{row.competitionIndex === null ? row.competition ?? "-" : formatDecimal(row.competitionIndex)}</td>
+                        <td className="py-3 text-right font-semibold text-seal-blue">{formatDecimal(row.opportunityScore)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-800">
+                Keine Keyword-Metriken geladen. Für Agency-Niveau müssen Suchvolumen, Wettbewerb und CPC regelmäßig aktualisiert werden.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Target size={18} className="text-seal-blue" />
+                  <h2 className="text-lg font-semibold">SERP Monitor</h2>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#64748B]">
+                  Neutrale Ranking-Snapshots ergänzen GSC dort, wo neue Seiten noch keine Impressionen haben. Kostenpflichtige Live-Abfragen bleiben budget-gesteuert.
+                </p>
+              </div>
+              <StatusPill tone={serpHealthy ? "ready" : agency.serpStatus ? "attention" : "quiet"}>{agency.serpStatus?.status ?? "nicht gelaufen"}</StatusPill>
+            </div>
+            {agency.serpStatus ? (
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Letzter Snapshot</div>
+                  <div className="mt-2 text-base font-semibold">{formatDate(agency.serpStatus.startedAt)}</div>
+                </div>
+                <div className="rounded-[14px] border border-seal-blue/10 bg-[#F8FAFC] p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8699]">Kosten / Keywords</div>
+                  <div className="mt-2 text-base font-semibold">{formatCurrency(agency.serpStatus.actualCostUsd)} / {agency.serpStatus.keywordsCount}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-800">
+                Noch kein SERP-Snapshot vorhanden. Für 10/10-Agenturqualität fehlt damit die unabhängige Google-Ergebnisprüfung.
+              </div>
+            )}
+            {agency.serpRows.length ? (
+              <div className="mt-4 overflow-x-auto rounded-[14px] border border-seal-blue/10">
+                <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-seal-blue/10 bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                      <th className="px-3 py-3">Keyword</th>
+                      <th className="px-3 py-3">Domain</th>
+                      <th className="px-3 py-3">Titel</th>
+                      <th className="px-3 py-3 text-right">Rank</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agency.serpRows.slice(0, 10).map((row) => (
+                      <tr key={`serp-${row.keyword}-${row.url}`} className="border-b border-seal-blue/10 align-top last:border-0">
+                        <td className="px-3 py-3 font-semibold">{row.keyword}</td>
+                        <td className="px-3 py-3 text-[#4B5563]">{row.domain}</td>
+                        <td className="px-3 py-3">
+                          <a href={row.url} className={cn("font-medium hover:underline", row.isTargetDomain ? "text-seal-blue" : "text-[#111827]")}>
+                            {row.title || compactUrl(row.url)}
+                          </a>
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold">{row.rankAbsolute ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <code className="mt-4 block rounded-[12px] bg-[#F1F5FA] px-3 py-2 text-[11px] leading-4 text-[#475569]">
+                PYTHONPATH=seo/src python -m sealai_seo.cli dataforseo-serp-snapshot --dry-run --planned-cost 0.20
+              </code>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Eye size={18} className="text-seal-blue" />
+                <h2 className="text-lg font-semibold">Visibility Gap</h2>
+              </div>
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-[#64748B]">
+                Indexierbare Seiten ohne GSC-Impressionen sind die wichtigste frühe Wachstumsfläche: technisch erreichbar, aber im Suchmarkt noch nicht sichtbar.
+              </p>
+            </div>
+            <StatusPill tone={agency.visibilityGapRows.length ? "attention" : "ready"}>{agency.visibilityGapRows.length ? `${agency.visibilityGapRows.length} priorisierte URLs` : "keine Lücke"}</StatusPill>
+          </div>
+          {agency.visibilityGapRows.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-seal-blue/10 text-[11px] uppercase tracking-[0.12em] text-[#7A8699]">
+                    <th className="py-3 pr-4">URL</th>
+                    <th className="py-3 pr-4">Titel</th>
+                    <th className="py-3 pr-4 text-right">Interne Links</th>
+                    <th className="py-3 pr-4 text-right">Issues</th>
+                    <th className="py-3">Nächster Agentur-Schritt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agency.visibilityGapRows.map((row) => (
+                    <tr key={`gap-${row.url}`} className="border-b border-seal-blue/10 align-top last:border-0">
+                      <td className="py-3 pr-4 font-medium text-[#111827]">{compactUrl(row.url)}</td>
+                      <td className="py-3 pr-4 text-[#4B5563]">{row.title || "-"}</td>
+                      <td className="py-3 pr-4 text-right font-semibold">{row.inboundInternalLinks}</td>
+                      <td className="py-3 pr-4 text-right text-[#4B5563]">{row.issueCount}</td>
+                      <td className="py-3 text-[#4B5563]">{row.issues.includes("title_too_long") ? "Title intent-scharf kürzen und SERP-Snippet prüfen" : "Query-Zuordnung, interne Links und Snippet testen"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[14px] border border-emerald-200 bg-emerald-50 p-3 text-sm leading-5 text-emerald-800">
+              Keine indexierbare Ziel-URL ohne Suchsichtbarkeit gefunden.
+            </div>
+          )}
         </section>
 
         <section className="rounded-[18px] border border-seal-blue/10 bg-white/80 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">

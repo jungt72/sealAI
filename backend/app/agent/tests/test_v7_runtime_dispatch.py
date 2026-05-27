@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from app.agent.api.dispatch import RuntimeDispatchResolution, _resolve_runtime_dispatch
 from app.agent.api.models import ChatRequest, ChatResponse
+from app.agent.api.routes import chat as chat_routes
 from app.agent.api.routes.chat import chat_endpoint
 from app.agent.api.streaming import event_generator
 from app.agent.communication.conversation_controller_v7 import (
@@ -454,6 +456,75 @@ async def test_active_case_knowledge_question_forced_domain_is_v8_side_question(
         "active_case_side_question_answered_by_communication_runtime"
     )
     assert dispatch.runtime_action.as_trace()["decision_source"] == "communication_runtime_v8"
+
+
+@pytest.mark.asyncio
+async def test_domain_pending_slot_social_ack_semantic_llm_stays_conversation_without_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _active_state()
+    monkeypatch.setenv("SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM", "true")
+    monkeypatch.setattr(
+        PreGateClassifier,
+        "classify",
+        lambda self, message, language_hint=None: ClassificationResult(
+            classification=PreGateClassification.DOMAIN_INQUIRY,
+            confidence=0.88,
+            reasoning="forced_domain_for_semantic_ack",
+            escalate_to_graph=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._load_live_knowledge_session_context",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._load_live_governed_state",
+        AsyncMock(return_value=state),
+    )
+
+    response = Mock(
+        choices=[
+            Mock(
+                message=Mock(
+                    content=json.dumps(
+                        {
+                            "intent": "smalltalk",
+                            "confidence": 0.94,
+                            "reason": "social acknowledgement, not a medium value",
+                        }
+                    )
+                )
+            )
+        ]
+    )
+    completion_create = AsyncMock(return_value=response)
+    fake_client = Mock()
+    fake_client.chat = Mock(completions=Mock(create=completion_create))
+    monkeypatch.setattr(
+        "app.llm.factory.get_async_llm",
+        lambda _role: (fake_client, "gpt-4o-mini"),
+    )
+
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="priiima", session_id="active-case"),
+        current_user=_user(),
+    )
+
+    assert dispatch.runtime_mode == "CONVERSATION"
+    assert dispatch.governed_state is state
+    assert dispatch.turn_decision is not None
+    assert dispatch.turn_decision.answer_mode == AnswerMode.SMALLTALK
+    assert dispatch.turn_decision.state_actions == []
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_ONLY
+    assert dispatch.runtime_action.graph_allowed is False
+
+    sent_payload = json.loads(
+        completion_create.await_args.kwargs["messages"][1]["content"]
+    )
+    assert sent_payload["pending_question"]["target_field"] == "medium"
+    assert sent_payload["deterministic_slot_binding"]["raw_value"] == "priiima"
 
 
 @pytest.mark.asyncio
@@ -935,6 +1006,91 @@ async def test_active_case_side_answer_uses_llm_composer_without_blunt_resume(
     assert trace["answer_markdown_source"] == "governed_composer"
 
 
+def test_active_case_side_context_payload_is_prompt_bounded() -> None:
+    huge_text = "Hydraulikoel HLP 46 " * 500
+    state = GovernedSessionState(
+        conversation_messages=[
+            ConversationMessage(role="user", content=f"{index}: {huge_text}")
+            for index in range(20)
+        ],
+        pending_question=_pending_medium_question(),
+        asserted=AssertedState(
+            assertions={
+                "medium": AssertedClaim(
+                    field_name="medium",
+                    asserted_value=huge_text,
+                    confidence="confirmed",
+                )
+            },
+            blocking_unknowns=[f"field_{index}" for index in range(40)],
+        ),
+        user_turn_index=20,
+    )
+
+    payload = chat_routes._active_case_context_payload(state)
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert "governed_state" not in payload
+    assert "conversation_messages" not in payload
+    assert payload["context_policy"] == "bounded_active_case_side_context"
+    assert payload["conversation_message_count"] == 20
+    assert len(payload["recent_messages"]) == 8
+    assert len(payload["open_points"]) == 16
+    assert "[gekürzt:" in serialized
+    assert len(serialized) < 12_000
+
+
+@pytest.mark.asyncio
+async def test_active_case_side_llm_prompt_bounds_grounded_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        async def create(self, **kwargs):  # noqa: ANN003
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=json.dumps(
+                                {"answer_markdown": "Kurze, fachlich begrenzte Antwort."}
+                            )
+                        )
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions())
+    )
+    monkeypatch.setattr(
+        "app.llm.factory.get_async_llm",
+        lambda _role: (fake_client, "gpt-test"),
+    )
+    state = GovernedSessionState(
+        conversation_messages=[
+            ConversationMessage(role="assistant", content="Antwort " * 2000)
+        ],
+        pending_question=_pending_medium_question(),
+        user_turn_index=1,
+    )
+
+    answer = await chat_routes._compose_active_case_side_answer_with_llm(
+        message="Was genau bedeutet HLP 46?",
+        grounded_answer="HLP 46 " * 20_000,
+        governed_state=state,
+        resume_decision=Mock(as_trace=lambda: {}),
+    )
+
+    user_payload = json.loads(captured["messages"][1]["content"])  # type: ignore[index]
+    serialized = json.dumps(user_payload, ensure_ascii=False)
+    assert answer == "Kurze, fachlich begrenzte Antwort."
+    assert "[gekürzt:" in user_payload["grounded_answer"]
+    assert len(user_payload["grounded_answer"]) < 6_200
+    assert len(serialized) < 18_000
+
+
 @pytest.mark.asyncio
 async def test_active_case_side_llm_composer_output_is_claim_guarded(
     monkeypatch: pytest.MonkeyPatch,
@@ -1105,12 +1261,13 @@ async def test_chat_endpoint_enters_governed_graph_for_enter_graph_runtime_actio
         AsyncMock(return_value=dispatch),
     )
 
-    async def fake_governed(
+    async def fake_conversation_first_sidecar(
         request,
         *,
         current_user,
         pre_gate_classification=None,
         runtime_action=None,
+        governed_state=None,
     ):
         assert runtime_action is not None
         assert runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
@@ -1127,10 +1284,10 @@ async def test_chat_endpoint_enters_governed_graph_for_enter_graph_runtime_actio
             },
         )
 
-    run_governed = AsyncMock(side_effect=fake_governed)
+    run_sidecar = AsyncMock(side_effect=fake_conversation_first_sidecar)
     monkeypatch.setattr(
-        "app.agent.api.routes.chat._run_governed_chat_response",
-        run_governed,
+        "app.agent.api.routes.chat._run_conversation_first_with_engine_sidecar",
+        run_sidecar,
     )
 
     response = await chat_endpoint(
@@ -1140,7 +1297,7 @@ async def test_chat_endpoint_enters_governed_graph_for_enter_graph_runtime_actio
 
     assert response.answer_markdown == "Graph path"
     assert response.run_meta["answer_trace"]["runtime_action_type"] == "enter_governed_graph"
-    run_governed.assert_awaited_once()
+    run_sidecar.assert_awaited_once()
 
 
 @pytest.mark.asyncio

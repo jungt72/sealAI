@@ -80,10 +80,10 @@ export type SealCockpitOverview = {
 export const sealCockpitTabs: CockpitTab[] = [
   { id: "overview", label: "Übersicht" },
   { id: "parameters", label: "Parameter" },
-  { id: "rfq", label: "Anfragebasis" },
   { id: "medium", label: "Medium" },
   { id: "application", label: "Anwendung" },
   { id: "material", label: "Werkstoff" },
   { id: "calculation", label: "Berechnung" },
+  { id: "rfq", label: "Anfragebasis" },
   { id: "briefing", label: "Briefing" },
 ];

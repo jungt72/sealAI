@@ -1,24 +1,24 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  Beaker,
-  Brain,
-  Calculator,
-  CheckCircle2,
-  ClipboardList,
-  Factory,
-  FileText,
-  HelpCircle,
-  Layers,
-  Search,
-  RotateCcw,
-  Save,
-  ShieldCheck,
-} from "lucide-react";
+import { RotateCcw, Save } from "lucide-react";
 
-import { DecisionUnderstandingPanel } from "@/components/dashboard/DecisionUnderstandingPanel";
+import {
+  ApplicationIcon,
+  CaseStateIcon,
+  ConsentIcon,
+  DecisionMatrixIcon,
+  DemandAnalysisIcon,
+  EvidenceRagIcon,
+  MaterialIcon,
+  MediumIcon,
+  ParameterIcon,
+  RfqPreviewIcon,
+  RiskIcon,
+  SealAiSymbol,
+  UncertaintyIcon,
+  type SealAiIconComponent,
+} from "@/components/brand/SealAiBrand";
 import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { ParameterWorkspaceTab } from "@/components/dashboard/ParameterWorkspaceTab";
 import RfqPane from "@/components/dashboard/RfqPane";
@@ -143,7 +143,7 @@ export function CockpitTabs({
     <div
       role="tablist"
       aria-label="SealingAI Cockpit"
-      className="custom-scrollbar flex gap-2 overflow-x-auto bg-transparent px-4 pb-2 pt-4"
+      className="custom-scrollbar flex gap-2 overflow-x-auto bg-transparent px-4 pb-2 pt-0"
     >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
@@ -205,6 +205,15 @@ function quickInitialState(workspace: WorkspaceView | null): QuickParameterFormS
   return state;
 }
 
+function quickParameterSignature(workspace: WorkspaceView | null): string {
+  const state = quickInitialState(workspace);
+  return JSON.stringify(
+    Object.keys(state)
+      .sort()
+      .map((fieldName) => [fieldName, state[fieldName]]),
+  );
+}
+
 function quickProfileIdFromWorkspace(workspace: WorkspaceView | null): QuickParameterProfile["id"] {
   const path = String(
     workspace?.sealApplicationProfile?.sealType ||
@@ -252,10 +261,45 @@ function ParameterQuickEntry({
   workspace,
   isSubmitting,
   onSubmit,
+  className,
 }: {
   workspace: WorkspaceView | null;
   isSubmitting: boolean;
   onSubmit: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
+  className?: string;
+}) {
+  const workspaceParameterSignature = useMemo(
+    () => quickParameterSignature(workspace),
+    [workspace],
+  );
+
+  return (
+    <ParameterQuickEntryForm
+      key={[
+        workspace?.caseId ?? "no-case",
+        workspace?.engineeringPath ?? "no-path",
+        workspace?.sealApplicationProfile?.sealFamily ?? "no-family",
+        workspace?.sealApplicationProfile?.sealType ?? "no-type",
+        workspaceParameterSignature,
+      ].join("|")}
+      workspace={workspace}
+      isSubmitting={isSubmitting}
+      onSubmit={onSubmit}
+      className={className}
+    />
+  );
+}
+
+function ParameterQuickEntryForm({
+  workspace,
+  isSubmitting,
+  onSubmit,
+  className,
+}: {
+  workspace: WorkspaceView | null;
+  isSubmitting: boolean;
+  onSubmit: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
+  className?: string;
 }) {
   const [activeProfileId, setActiveProfileId] = useState<QuickParameterProfile["id"]>(() =>
     quickProfileIdFromWorkspace(workspace),
@@ -322,20 +366,17 @@ function ParameterQuickEntry({
   return (
     <form
       onSubmit={handleSubmit}
-      className="mx-4 mt-4 rounded-[18px] border border-[#D1D5DB] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]"
+      className={cn(
+        "rounded-[18px] border border-[#D1D5DB] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]",
+        className ?? "mx-4 mt-4",
+      )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-seal-blue">
-            <ClipboardList size={14} />
+            <ParameterIcon size={14} />
             Direkteingabe
           </div>
-          <h2 className="mt-1 text-base font-semibold tracking-tight text-[#111827]">
-            Bekannte Parameter in den State schreiben
-          </h2>
-          <p className="mt-1 text-sm leading-relaxed text-[#4B5563]">
-            Wähle zuerst die Anwendung. Danach erscheinen die passenden Felder für diesen Dichtungstyp.
-          </p>
         </div>
         <button
           type="button"
@@ -438,7 +479,7 @@ function ParameterQuickEntry({
               )}
             >
               <Save size={15} />
-              In State übernehmen
+              Übernehmen
             </button>
           </div>
         </>
@@ -451,13 +492,15 @@ export function OverviewCard({
   title,
   icon: Icon,
   children,
+  className,
 }: {
   title: string;
-  icon: typeof ClipboardList;
+  icon: SealAiIconComponent;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="min-h-[276px] rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+    <section className={cn("min-h-[276px] rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]", className)}>
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#F0F2F5] pb-3">
         <h2 className="text-base font-semibold tracking-tight text-[#111827]">{title}</h2>
         <div className="grid h-9 w-9 place-items-center rounded-[14px] bg-muted text-[#4B5563]">
@@ -477,7 +520,7 @@ export function ParameterDataCard({
   warning: string;
 }) {
   return (
-    <OverviewCard title="Angaben zum Fall" icon={ClipboardList}>
+    <OverviewCard title="Angaben zum Fall" icon={ParameterIcon}>
       <div className="space-y-2">
         {rows.map((row) => (
           <div key={row.label} className="flex items-start justify-between gap-3 border-b border-[#F0F2F5] pb-2 last:border-b-0">
@@ -508,7 +551,7 @@ function riskTone(risk: CriticalDriver["risk"]) {
 
 export function CriticalDriversCard({ drivers }: { drivers: CriticalDriver[] }) {
   return (
-    <OverviewCard title="Was noch wichtig ist" icon={AlertTriangle}>
+    <OverviewCard title="Was noch wichtig ist" icon={RiskIcon}>
       <div className="space-y-2">
         {drivers.map((driver) => (
           <div key={driver.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5">
@@ -528,7 +571,7 @@ export function CriticalDriversCard({ drivers }: { drivers: CriticalDriver[] }) 
 
 export function SolutionConsequenceCard({ solution }: { solution: SealCockpitOverview["solution"] }) {
   return (
-    <OverviewCard title="Einordnung" icon={CheckCircle2}>
+    <OverviewCard title="Einordnung" icon={CaseStateIcon}>
       <div className="rounded-[14px] border border-[#D1D5DB] bg-seal-blue/10 px-4 py-3">
         <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">{solution.assessmentTitle}</div>
         <p className="mt-2 text-sm font-medium leading-relaxed text-seal-blue">{solution.assessment}</p>
@@ -546,21 +589,42 @@ export function SolutionConsequenceCard({ solution }: { solution: SealCockpitOve
 }
 
 function CalculationMetric({ metric }: { metric: CalculationEvidenceMetric }) {
-  const evidenceVisible = hasCompatibilityEvidence(metric);
+  const value = compactCalculationValue(metric.value);
   return (
-    <div className="rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] p-3">
-      <div className="text-[12px] font-semibold text-[#4B5563]">{metric.label}</div>
-      <div className="mt-2 text-lg font-semibold tracking-tight text-[#111827]">{metric.value}</div>
-      <div className="mt-2 space-y-1 text-[12px] text-[#6B7280]">
-        {metric.limit && <div>{metric.limit}</div>}
-        {metric.reserve && <div>{metric.reserve}</div>}
+    <div className="min-h-[58px] rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-2.5 py-2">
+      <div className="truncate text-[11px] font-semibold leading-tight text-[#4B5563]" title={metric.label}>
+        {compactCalculationLabel(metric.label)}
       </div>
-      {evidenceVisible ? <CompatibilityEvidenceBlock metric={metric} /> : null}
-      <div className="mt-3 inline-flex rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-seal-blue">
-        {metric.status}
+      <div className={cn("mt-1 text-[20px] font-semibold leading-none tracking-tight", value === "N/N" ? "text-[#6B7280]" : "text-[#111827]")}>
+        {value}
       </div>
     </div>
   );
+}
+
+function compactCalculationValue(value: string | undefined) {
+  const normalized = normalizeText(value);
+  if (!normalized || normalized.toLowerCase() === "noch nicht möglich") {
+    return "N/N";
+  }
+  return normalized;
+}
+
+function compactCalculationLabel(label: string) {
+  switch (label) {
+    case "Umfangsgeschwindigkeit":
+      return "Umfang";
+    case "Druck x Geschwindigkeit":
+      return "p x v";
+    case "Drehzahl x Durchmesser":
+      return "n x d";
+    case "Temperatur-Reserve":
+      return "T-Reserve";
+    case "Werkstoff-/Medium-Precheck":
+      return "Precheck";
+    default:
+      return label;
+  }
 }
 
 function hasCompatibilityEvidence(metric: CalculationEvidenceMetric) {
@@ -658,13 +722,73 @@ function CompatibilityEvidenceBlock({ metric }: { metric: CalculationEvidenceMet
   );
 }
 
-export function CalculationsEvidenceCard({ metrics }: { metrics: CalculationEvidenceMetric[] }) {
+export function CalculationsEvidenceCard({
+  metrics,
+  title = "Rechencheck",
+}: {
+  metrics: CalculationEvidenceMetric[];
+  title?: string;
+}) {
   return (
-    <OverviewCard title="Rechencheck" icon={Calculator}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {metrics.map((metric) => (
-          <CalculationMetric key={metric.label} metric={metric} />
-        ))}
+    <OverviewCard title={title} icon={DecisionMatrixIcon} className="h-full">
+      {metrics.length ? (
+        <div className="grid grid-cols-2 gap-2">
+          {metrics.map((metric) => (
+            <CalculationMetric key={metric.label} metric={metric} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="min-h-[58px] rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-2.5 py-2">
+            <div className="truncate text-[11px] font-semibold leading-tight text-[#4B5563]">Rechenwerte</div>
+            <div className="mt-1 text-[20px] font-semibold leading-none tracking-tight text-[#6B7280]">N/N</div>
+          </div>
+        </div>
+      )}
+    </OverviewCard>
+  );
+}
+
+function MediumOverviewCard({ workspace }: { workspace: WorkspaceView | null }) {
+  const mediumLabel = normalizeText(workspace?.mediumContext?.mediumLabel ?? workspace?.parameters?.medium);
+  return (
+    <OverviewCard title="Medium" icon={MediumIcon} className="h-full">
+      <div className="grid grid-cols-1 gap-3">
+        <InfoTile title="Erkanntes Medium" value={mediumLabel} tone="info" />
+        <InfoTile
+          title="Einordnung"
+          value={normalizeText(workspace?.mediumClassification?.canonicalLabel ?? workspace?.mediumClassification?.family)}
+          note={sourceStatusLine(workspace)}
+        />
+        <ItemList title="Eigenschaften" items={workspace?.mediumContext?.properties ?? []} empty="Noch keine Medium-Eigenschaften erkannt" />
+        <ItemList
+          title="Risiken / offene Punkte"
+          items={[...(workspace?.mediumContext?.challenges ?? []), ...(workspace?.mediumContext?.followupPoints ?? [])]}
+          empty="Noch keine Medium-Risiken projiziert"
+        />
+      </div>
+    </OverviewCard>
+  );
+}
+
+function ApplicationOverviewCard({ workspace }: { workspace: WorkspaceView | null }) {
+  const profile = workspace?.sealApplicationProfile;
+  return (
+    <OverviewCard title="Anwendung" icon={ApplicationIcon} className="h-full">
+      <div className="grid grid-cols-1 gap-3">
+        <InfoTile title="Anlage / Einbauort" value={normalizeText(workspace?.parameters?.installation)} tone="info" />
+        <InfoTile title="Dichtprinzip" value={normalizeText(profile?.sealType ?? workspace?.parameters?.sealing_type)} />
+        <InfoTile title="Bewegung" value={normalizeText(profile?.motionType ?? workspace?.parameters?.motion_type)} />
+        <ItemList
+          title="Bekannt"
+          items={workspace?.decisionUnderstanding?.currentStateAnalysis.knownFields ?? workspace?.communication?.confirmedFactsSummary ?? []}
+          empty="Noch keine belastbaren Anwendungsdaten erkannt"
+        />
+        <ItemList
+          title="Noch offen"
+          items={workspace?.decisionUnderstanding?.currentStateAnalysis.missingFields ?? workspace?.completeness.missingCriticalParameters ?? []}
+          empty="Keine Anwendungslücke gemeldet"
+        />
       </div>
     </OverviewCard>
   );
@@ -692,7 +816,7 @@ function WorkspaceTabShell({
   children,
 }: {
   title: string;
-  icon: typeof ClipboardList;
+  icon: SealAiIconComponent;
   intro: string;
   children: React.ReactNode;
 }) {
@@ -707,7 +831,7 @@ function WorkspaceTabShell({
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">{intro}</p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1.5 text-[12px] font-semibold text-seal-blue">
-          <ShieldCheck size={14} />
+          <ConsentIcon size={14} />
           Nur zur Ansicht
         </div>
       </div>
@@ -961,7 +1085,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] pb-3">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
-            <Brain size={17} />
+            <DemandAnalysisIcon size={17} />
             Challenger
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
@@ -989,7 +1113,7 @@ export function ChallengeIntelligencePanel({ workspace }: { workspace: Workspace
       {question ? (
         <div className="mt-4 rounded-[14px] border border-[#D1D5DB] bg-white p-3">
           <div className="flex items-start gap-2">
-            <HelpCircle className="mt-0.5 shrink-0 text-seal-blue" size={17} />
+            <UncertaintyIcon className="mt-0.5 shrink-0 text-seal-blue" size={17} />
             <div>
               <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-seal-blue">
                 Nächste beste Frage
@@ -1198,7 +1322,7 @@ export function DesignIntakePanel({ workspace }: { workspace: WorkspaceView | nu
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#F0F2F5] pb-3">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
-            <ClipboardList size={17} />
+            <CaseStateIcon size={17} />
             Neuauslegung
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
@@ -1270,10 +1394,10 @@ function sourceStatusLine(workspace: WorkspaceView | null) {
   if (!workspace) {
     return "Herkunft noch offen";
   }
-  const source = normalizeText(workspace.mediumContext.sourceType) || "Herkunft unklar";
-  const status = workspace.mediumContext.notForReleaseDecisions
+  const source = normalizeText(workspace.mediumContext?.sourceType) || "Herkunft unklar";
+  const status = workspace.mediumContext?.notForReleaseDecisions
     ? "noch nicht geprüft"
-    : normalizeText(workspace.mediumContext.validationStatus) || "Status unklar";
+    : normalizeText(workspace.mediumContext?.validationStatus) || "Status unklar";
   return `${source} · ${status}`;
 }
 
@@ -1316,7 +1440,7 @@ export function V91IntelligencePanel({ workspace }: { workspace: WorkspaceView |
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] pb-3">
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
-            <ShieldCheck size={17} />
+            <SealAiSymbol size={17} />
             Sealing Intelligence
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
@@ -1473,7 +1597,7 @@ function MediumDeepDive({
             disabled={webResearchLoading}
             className="inline-flex items-center gap-2 rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-seal-blue shadow-sm transition-colors hover:bg-seal-blue/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Search size={13} />
+            <EvidenceRagIcon size={13} />
             {webResearchLoading
               ? "Websearch läuft"
               : data.research_status.web.status === "ok"
@@ -1663,7 +1787,7 @@ function MediumTab({ workspace }: { workspace: WorkspaceView | null }) {
   return (
     <WorkspaceTabShell
       title="Medium"
-      icon={Beaker}
+      icon={MediumIcon}
       intro="Hier siehst du, welches Medium erkannt wurde, welche Risiken daran hängen und woher die Info kommt."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1693,7 +1817,7 @@ function ApplicationTab({ workspace }: { workspace: WorkspaceView | null }) {
   return (
     <WorkspaceTabShell
       title="Anwendung"
-      icon={Factory}
+      icon={ApplicationIcon}
       intro="Anlage, Einbauort und Bewegung helfen, den Fall richtig einzuordnen, bevor eine Anfrage vorbereitet wird."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1720,7 +1844,7 @@ function MaterialTab({ workspace }: { workspace: WorkspaceView | null }) {
   return (
     <WorkspaceTabShell
       title="Werkstoff"
-      icon={Layers}
+      icon={MaterialIcon}
       intro="SealingAI entwickelt hier ein Werkstofffenster aus dem aktuellen Fallzustand. Die Entscheidung bleibt bis zur Herstellerprüfung offen."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1803,7 +1927,7 @@ function CalculationTab({
   return (
     <WorkspaceTabShell
       title="Berechnung"
-      icon={Calculator}
+      icon={DecisionMatrixIcon}
       intro="SeaLAI zeigt einfache Rechenchecks nur dann, wenn genug Angaben vorhanden sind. Fehlende Eingaben bleiben sichtbar."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1828,7 +1952,7 @@ function RfqQualificationTab({
   return (
     <WorkspaceTabShell
       title="Anfragebasis"
-      icon={FileText}
+      icon={RfqPreviewIcon}
       intro="RFQ-Readiness, offene Punkte und Vorschau für die spätere Herstellerprüfung. Hier wird nichts automatisch versendet."
     >
       <div className="mt-4">
@@ -1849,7 +1973,7 @@ function BriefingTab({
   return (
     <WorkspaceTabShell
       title="Briefing"
-      icon={FileText}
+      icon={EvidenceRagIcon}
       intro="Kurze Zusammenfassung für interne Klärung und eine spätere Anfragevorschau. Hier wird nichts versendet."
     >
       <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1886,44 +2010,26 @@ export function SealCockpit({
 
   return (
     <aside className="flex min-h-0 min-w-0 flex-col overflow-visible rounded-[20px] border border-transparent bg-transparent">
-      <ParameterQuickEntry
-        key={[
-          workspace?.caseId ?? "new-case",
-          workspace?.engineeringPath ?? "no-path",
-          workspace?.sealApplicationProfile?.sealFamily ?? "no-family",
-          workspace?.sealApplicationProfile?.sealType ?? "no-type",
-        ].join(":")}
-        workspace={workspace}
-        isSubmitting={isParameterSubmitting}
-        onSubmit={onParameterSubmit ?? (async () => {})}
-      />
       <CockpitTabs tabs={data.tabs} activeTab={activeTab} onTabChange={setActiveTab} />
       <div className="min-h-0 overflow-visible pb-4">
         {activeTab === "overview" ? (
-          <>
-            <CockpitStatusStrip items={data.statusStrip} />
-            <div className="px-4 pt-4">
-              <V91IntelligencePanel workspace={workspace} />
-            </div>
-            <div className="px-4 pt-4">
-              <DecisionUnderstandingPanel workspace={workspace} />
-            </div>
-            <div className="px-4 pt-4">
-              <ChallengeIntelligencePanel workspace={workspace} />
-            </div>
-            <div className="px-4 pt-4">
-              <DesignIntakePanel workspace={workspace} />
-            </div>
-            <div className="grid grid-cols-1 gap-4 px-4 pt-4 xl:grid-cols-2">
-              <ParameterDataCard rows={data.parameters.rows} warning={data.parameters.warning} />
-              <CriticalDriversCard drivers={data.criticalDrivers} />
-              <SolutionConsequenceCard solution={data.solution} />
-              <CalculationsEvidenceCard metrics={data.calculations} />
-            </div>
-            <div className="mx-4 mt-4 rounded-[14px] border border-[#E5E7EB] bg-[#FAFAFB] px-4 py-3 text-sm font-medium text-[#4B5563]">
-              {data.footerNote}
-            </div>
-          </>
+          <div className="grid grid-cols-1 gap-4 px-4 pt-4 xl:grid-cols-2">
+            <ParameterQuickEntry
+              key={[
+                workspace?.caseId ?? "new-case",
+                workspace?.engineeringPath ?? "no-path",
+                workspace?.sealApplicationProfile?.sealFamily ?? "no-family",
+                workspace?.sealApplicationProfile?.sealType ?? "no-type",
+              ].join(":")}
+              workspace={workspace}
+              isSubmitting={isParameterSubmitting}
+              onSubmit={onParameterSubmit ?? (async () => {})}
+              className="h-full"
+            />
+            <MediumOverviewCard workspace={workspace} />
+            <ApplicationOverviewCard workspace={workspace} />
+            <CalculationsEvidenceCard title="Berechnungen" metrics={data.calculations} />
+          </div>
         ) : activeTab === "parameters" ? (
           <ParameterWorkspaceTab
             key={workspace?.caseId ?? "new-parameter-case"}

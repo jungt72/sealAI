@@ -422,7 +422,8 @@ class TestNoLLM:
 
         mock_cls.assert_not_called()
         # Normalisation still succeeded
-        assert len(result.normalized.parameters) == 3
+        assert {"medium", "pressure_bar", "temperature_c"}.issubset(result.normalized.parameters)
+        assert result.normalized.parameters["ambiguous_pressure_bar"].confidence == "requires_confirmation"
 
 
 # ---------------------------------------------------------------------------

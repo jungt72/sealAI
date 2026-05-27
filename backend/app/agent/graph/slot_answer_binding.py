@@ -15,7 +15,17 @@ from app.agent.state.models import PendingQuestion, SlotAnswerBinding
 
 _SHORT_SLOT_MAX_CHARS = 36
 _SHORT_SLOT_DENY_RE = re.compile(
-    r"\b(?:ja|nein|ok|okay|klar|danke|hallo|hi|servus|druck|temperatur|drehzahl|welle|mm|bar|rpm|u/min|grad)\b",
+    r"\b(?:ja|nein|ok|okay|klar|danke|hallo|hi|servus|prima|super|klasse|top|perfekt|passt|gern|gerne|los\s+geht'?s|druck|temperatur|drehzahl|welle|mm|bar|rpm|u/min|grad)\b",
+    re.IGNORECASE,
+)
+_SOCIAL_ACK_SHORT_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:jo|ja|yes|yep|jep|okay|ok|klar|alles\s+klar|passt|passt\s+scho(?:n)?|klingt\s+gut|"
+    r"prima+|su+per|top|perfekt|klasse|sehr\s+gut|gut|gern(?:e)?|"
+    r"lass\s+uns\s+(?:loslegen|starten)|los\s+geht'?s|"
+    r"ich\s+bin\s+(?:auch\s+)?gespannt|bin\s+(?:auch\s+)?gespannt|"
+    r"freue\s+mich|machen\s+wir|leg\s+los)"
+    r")\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
 _STRONG_NEW_REQUEST_RE = re.compile(
@@ -78,6 +88,8 @@ def _looks_like_short_slot_answer(message: str) -> bool:
         return False
     words = [part for part in re.split(r"\s+", text) if part]
     if not words or len(words) > 3:
+        return False
+    if _SOCIAL_ACK_SHORT_RE.match(text):
         return False
     if _SHORT_SLOT_DENY_RE.fullmatch(text) or _SHORT_SLOT_DENY_RE.search(text):
         return False

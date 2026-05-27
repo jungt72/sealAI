@@ -30,7 +30,10 @@ from app.models.rag_document import RagDocument
 from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin
 
 from app.services.rag.route_resolver import resolve_route_key
-from app.services.rag.material_evidence_dry_run import build_material_evidence_dry_run_report
+from app.services.rag.material_evidence_dry_run import (
+    build_material_evidence_dry_run_report,
+    load_material_evidence_indexed_snippet_raw_items,
+)
 from app.services.rag.utils import (
     MAGIC_READ_BYTES,
     RAG_UPLOAD_MAX_BYTES,
@@ -574,6 +577,7 @@ async def material_evidence_dry_run(
     route: Optional[str] = Query(default=None, max_length=80),
     limit: int = Query(default=25, ge=1, le=100),
     include_invalid: bool = Query(default=True),
+    include_indexed_snippets: bool = Query(default=True),
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -590,12 +594,26 @@ async def material_evidence_dry_run(
         route=normalized_route,
         limit=capped_limit,
     )
+    indexed_snippet_items: list[Dict[str, Any]] = []
+    indexed_snippet_summary: Dict[str, Any] = {
+        "enabled": False,
+        "source": "qdrant_payload",
+        "status": "not_requested",
+    }
+    if include_indexed_snippets:
+        indexed_snippet_items, indexed_snippet_summary = load_material_evidence_indexed_snippet_raw_items(
+            docs,
+            tenant_id=RAG_SHARED_TENANT_ID,
+            max_documents=capped_limit,
+        )
     return build_material_evidence_dry_run_report(
         docs,
         include_invalid=include_invalid,
         source_system=normalized_source_system,
         route=normalized_route,
         limit=capped_limit,
+        indexed_snippet_items=indexed_snippet_items,
+        indexed_snippet_summary=indexed_snippet_summary,
     )
 
 

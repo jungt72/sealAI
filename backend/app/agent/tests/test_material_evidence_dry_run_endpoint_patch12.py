@@ -9,6 +9,7 @@ from app.api.v1.endpoints import rag as rag_endpoint
 from app.models.rag_document import RagDocument
 from app.services.auth.dependencies import RequestUser
 from app.services.rag.constants import RAG_SHARED_TENANT_ID
+from app.services.rag.material_evidence_dry_run import indexed_snippet_payload_to_material_evidence_raw_items
 
 
 class DummyResult:
@@ -132,12 +133,13 @@ async def test_dry_run_endpoint_requires_rag_admin() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await rag_endpoint.material_evidence_dry_run(
             source_system="paperless",
-            route=None,
-            limit=25,
-            include_invalid=True,
-            current_user=_user(),
-            session=DummySession([]),
-        )
+        route=None,
+        limit=25,
+        include_invalid=True,
+        include_indexed_snippets=False,
+        current_user=_user(),
+        session=DummySession([]),
+    )
 
     assert exc_info.value.status_code == 403
 
@@ -158,16 +160,210 @@ async def test_dry_run_endpoint_reads_paperless_docs_without_writes(
         route=None,
         limit=25,
         include_invalid=True,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )
 
     assert payload["read_only"] is True
     assert payload["valid_count"] == 1
+    assert payload["persistable_card_count"] == 1
+    assert payload["persistence_recommendation"] in {
+        "admin_review_before_persistence",
+        "persist_only_valid_cards_after_admin_review",
+    }
     assert session.execute_calls == 1
     assert session.add_calls == 0
     assert session.commit_calls == 0
     assert session.delete_calls == 0
+
+
+@pytest.mark.anyio
+async def test_dry_run_uses_indexed_snippet_fallback_without_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _load_snippets(docs: list[RagDocument], **kwargs: object) -> tuple[list[dict[str, object]], dict[str, object]]:
+        assert kwargs["tenant_id"] == RAG_SHARED_TENANT_ID
+        assert [doc.document_id for doc in docs] == ["rag-snippet"]
+        return (
+            [
+                {
+                    "document_id": "rag-snippet",
+                    "source_system": "paperless",
+                    "source_id": "77",
+                    "source_document_id": "77",
+                    "source_title": "Indexed FKM water evidence.pdf",
+                    "source_url": "paperless://documents/77",
+                    "source_hash": "sha256:rag-snippet",
+                    "route": "material_datasheet",
+                    "route_key": "material_datasheet",
+                    "tags": ["STS-MAT-FKM-A1"],
+                    "material": "FKM",
+                    "medium": "water",
+                    "temperature_min_c": 0,
+                    "temperature_max_c": 80,
+                    "text": "Indexed snippet evidence says FKM is a supported precheck for water from 0 to 80 C.",
+                    "metadata": {"document_id": "rag-snippet", "snippet_source": "qdrant_payload"},
+                }
+            ],
+            {
+                "enabled": True,
+                "source": "qdrant_payload",
+                "status": "loaded",
+                "attempted_document_count": 1,
+                "loaded_snippet_count": 1,
+                "loaded_candidate_count": 1,
+            },
+        )
+
+    monkeypatch.setattr(rag_endpoint, "load_material_evidence_indexed_snippet_raw_items", _load_snippets)
+    session = DummySession([_doc(document_id="rag-snippet", source_id="77", extracted_candidates=[])])
+
+    payload = await rag_endpoint.material_evidence_dry_run(
+        source_system="paperless",
+        route=None,
+        limit=25,
+        include_invalid=True,
+        include_indexed_snippets=True,
+        current_user=_admin(),
+        session=session,
+    )
+
+    assert payload["valid_count"] == 1
+    assert payload["total_considered"] == 1
+    assert payload["indexed_snippet_enrichment"]["status"] == "loaded"
+    assert payload["indexed_snippet_enrichment"]["used_candidate_count"] == 1
+    assert payload["results"][0]["card_candidate"]["material"] == "FKM"
+    assert payload["results"][0]["card_candidate"]["medium"] == "water"
+    assert session.add_calls == 0
+    assert session.commit_calls == 0
+    assert session.delete_calls == 0
+
+
+@pytest.mark.anyio
+async def test_dry_run_fuses_indexed_snippets_with_existing_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _load_snippets(docs: list[RagDocument], **_kwargs: object) -> tuple[list[dict[str, object]], dict[str, object]]:
+        assert [doc.document_id for doc in docs] == ["rag-fuse"]
+        return (
+            [
+                {
+                    "document_id": "rag-fuse",
+                    "source_system": "paperless",
+                    "source_id": "91",
+                    "source_document_id": "91",
+                    "source_title": "Indexed PTFE water evidence.pdf",
+                    "source_url": "paperless://documents/91",
+                    "source_hash": "sha256:rag-fuse",
+                    "route": "material_datasheet",
+                    "route_key": "material_datasheet",
+                    "material": "PTFE",
+                    "medium": "water",
+                    "temperature_min_c": 0,
+                    "temperature_max_c": 80,
+                    "text": "Indexed snippet evidence gives PTFE and water with a documented precheck range.",
+                    "metadata": {"document_id": "rag-fuse", "snippet_source": "qdrant_payload"},
+                }
+            ],
+            {
+                "enabled": True,
+                "source": "qdrant_payload",
+                "status": "loaded",
+                "attempted_document_count": 1,
+                "loaded_snippet_count": 1,
+                "loaded_candidate_count": 1,
+            },
+        )
+
+    monkeypatch.setattr(rag_endpoint, "load_material_evidence_indexed_snippet_raw_items", _load_snippets)
+    session = DummySession(
+        [
+            _doc(
+                document_id="rag-fuse",
+                source_id="91",
+                extracted_candidates=[{"material": "FKM", "text": "Missing exact medium."}],
+            )
+        ]
+    )
+
+    payload = await rag_endpoint.material_evidence_dry_run(
+        source_system="paperless",
+        route=None,
+        limit=25,
+        include_invalid=True,
+        include_indexed_snippets=True,
+        current_user=_admin(),
+        session=session,
+    )
+
+    assert payload["total_considered"] == 2
+    assert payload["valid_count"] == 1
+    assert payload["indexed_snippet_enrichment"]["used_candidate_count"] == 1
+    assert payload["indexed_snippet_enrichment"]["fallback_mode"] == "fused_with_extracted_candidates"
+    assert any(
+        result["card_candidate"].get("material") == "PTFE"
+        for result in payload["results"]
+        if result.get("card_candidate")
+    )
+
+
+def test_indexed_snippet_payload_extracts_structured_candidate_without_full_text() -> None:
+    long_tail = " Z" * 1200
+    snippet_text = (
+        '{"material":"FKM","medium":"water","temperature_min_c":0,'
+        '"temperature_max_c":80,"statement_short":"FKM water precheck evidence."}'
+        + long_tail
+    )
+
+    items = indexed_snippet_payload_to_material_evidence_raw_items(
+        _doc(document_id="rag-structured", source_id="88", extracted_candidates=[]),
+        {
+            "document_id": "rag-structured",
+            "text": snippet_text,
+            "metadata": {
+                "document_id": "rag-structured",
+                "source_url": "paperless://documents/88",
+                "title": "Structured FKM evidence",
+                "material_code": "FKM",
+            },
+        },
+    )
+
+    assert len(items) == 1
+    assert items[0]["document_id"] == "rag-structured"
+    assert items[0]["material"] == "FKM"
+    assert items[0]["medium"] == "water"
+    assert items[0]["temperature_min_c"] == 0
+    assert items[0]["temperature_max_c"] == 80
+    assert len(items[0]["text"]) <= 1203
+    assert long_tail not in str(items[0])
+
+
+def test_indexed_snippet_payload_rejects_non_material_identifiers() -> None:
+    items = indexed_snippet_payload_to_material_evidence_raw_items(
+        _doc(document_id="rag-noise", source_id="99", tags=["STS-MAT-EPDM-A1"], extracted_candidates=[]),
+        {
+            "document_id": "rag-noise",
+            "text": (
+                '{"material":"TITLE-21","medium":"generic","temperature_min_c":-20,'
+                '"temperature_max_c":120,"statement_short":"Regulatory reference, not a material evidence card."}'
+            ),
+            "metadata": {
+                "document_id": "rag-noise",
+                "source_url": "paperless://documents/99",
+                "title": "Regulatory noise",
+                "material_code": "TITLE-21",
+            },
+        },
+    )
+
+    assert len(items) == 1
+    assert "material" not in items[0]
+    assert "material_code" not in items[0]
+    assert "material_code" not in items[0]["metadata"]
+    assert "medium" not in items[0]
+    assert "TITLE-21" in items[0]["text"]
 
 
 @pytest.mark.anyio
@@ -179,6 +375,7 @@ async def test_dry_run_maps_valid_material_datasheet_doc() -> None:
         route="material_datasheet",
         limit=25,
         include_invalid=True,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )
@@ -199,6 +396,7 @@ async def test_dry_run_reports_invalid_missing_metadata() -> None:
         route=None,
         limit=25,
         include_invalid=True,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )
@@ -206,6 +404,9 @@ async def test_dry_run_reports_invalid_missing_metadata() -> None:
     assert payload["skipped_count"] == 1
     assert payload["grouped_missing_fields"]["source_title"] == 1
     assert payload["grouped_missing_fields"]["material_or_medium"] == 1
+    assert payload["data_quality_status"] == "metadata_gap_no_valid_cards"
+    assert payload["persistence_recommendation"] == "do_not_persist_improve_metadata_first"
+    assert "repair_source_metadata" in payload["recommended_actions"]
 
 
 @pytest.mark.anyio
@@ -228,6 +429,7 @@ async def test_dry_run_downgrades_tags_only() -> None:
         route="technical_knowledge",
         limit=25,
         include_invalid=True,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )
@@ -235,6 +437,8 @@ async def test_dry_run_downgrades_tags_only() -> None:
     assert payload["downgraded_count"] == 1
     assert payload["results"][0]["status"] == "downgraded"
     assert "tags_only_context" in payload["results"][0]["limitations"]
+    assert payload["data_quality_status"] == "metadata_gap_no_valid_cards"
+    assert "extract_text_snippets_or_structured_candidates_from_paperless" in payload["recommended_actions"]
 
 
 @pytest.mark.anyio
@@ -247,6 +451,7 @@ async def test_dry_run_does_not_return_full_raw_text() -> None:
         route=None,
         limit=25,
         include_invalid=True,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )
@@ -271,6 +476,7 @@ async def test_dry_run_limit_is_capped() -> None:
         route=None,
         limit=500,
         include_invalid=False,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )
@@ -294,6 +500,7 @@ async def test_dry_run_route_filter() -> None:
         route="technical_knowledge",
         limit=25,
         include_invalid=True,
+        include_indexed_snippets=False,
         current_user=_admin(),
         session=session,
     )

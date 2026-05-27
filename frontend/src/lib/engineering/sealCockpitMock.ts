@@ -8,6 +8,7 @@ export const sealCockpitOverview: SealCockpitOverview = {
     { id: "application", label: "Anwendung" },
     { id: "material", label: "Werkstoff" },
     { id: "calculation", label: "Berechnung" },
+    { id: "rfq", label: "Anfragebasis" },
     { id: "briefing", label: "Briefing" },
   ],
   statusStrip: [
@@ -41,7 +42,7 @@ export const sealCockpitOverview: SealCockpitOverview = {
       "PTFE-RWDR ist eine mögliche Richtung, weil rotierende Welle, moderater Druck und kompakter Einbauraum zusammen betrachtet werden.",
     rows: [
       {
-        label: "Warum passend",
+        label: "Abgleichsgrundlage",
         value: "chemisch robuste Richtung für eine dynamische Abdichtung",
       },
       {

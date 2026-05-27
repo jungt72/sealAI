@@ -267,6 +267,37 @@ def test_standalone_material_token_question_routes_to_knowledge(
     assert result.escalate_to_graph is False
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ich brauche informationen über PTFE",
+        "ich brauche informationen zu PTFE. was kannst du mir darüber erzählen.",
+        "bitte gebe mir informationen über PTFE",
+        "bitte jetzt zu NBR",
+        "und FFKM?",
+        "bitte vergleiche die beiden",
+        "welches ist besser für meine Anwendung?",
+    ],
+)
+def test_material_knowledge_followups_do_not_enter_governed_intake(
+    classifier: PreGateClassifier,
+    text: str,
+) -> None:
+    result = classifier.classify(text)
+
+    assert result.classification is PreGateClassification.KNOWLEDGE_QUERY
+    assert result.escalate_to_graph is False
+
+
+def test_concrete_application_data_still_enters_governed_intake(
+    classifier: PreGateClassifier,
+) -> None:
+    result = classifier.classify("Ich habe Hydrauliköl, 90 °C, rotierende Welle, 8 bar")
+
+    assert result.classification is PreGateClassification.DOMAIN_INQUIRY
+    assert result.escalate_to_graph is True
+
+
 def test_classifier_is_deterministic(classifier: PreGateClassifier) -> None:
     first = classifier.classify("Was ist der Unterschied zwischen FKM und PTFE?")
     second = classifier.classify("Was ist der Unterschied zwischen FKM und PTFE?")

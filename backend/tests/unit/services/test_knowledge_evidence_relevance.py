@@ -169,6 +169,91 @@ def test_generic_material_comparison_nbr_ptfe_is_structured_and_bounded() -> Non
     assert "molten alkali" not in text
 
 
+def test_nbr_material_definition_has_engineering_depth_and_hard_values() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "bitte gebe mir detaillierte informationen über NBR"
+    )
+    text = _combined_answer_and_evidence(response)
+
+    assert "nbr in der dichtungstechnik" in text
+    assert len(response.content) > 2500
+    assert "-30 bis +100" in text
+    assert "+120" in text
+    assert "18 bis 50" in text
+    assert "shore a" in text
+    assert "druckverformungsrest" in text
+    assert "volumenänderung" in text
+    assert "rwdr" in text
+    assert "ozon" in text
+    assert "keine freigabe" in text
+
+
+def test_material_comparison_nbr_ffkm_keeps_requested_pair_and_engineering_depth() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "bitte vergleiche NBR mit FFKM"
+    )
+    text = _combined_answer_and_evidence(response)
+
+    assert "werkstoffvergleich: nbr vs ffkm" in text
+    assert not re.search(r"werkstoffvergleich:\s*ffkm\s+vs\s+fkm", text)
+    assert "acn" in text
+    assert "18 bis 50" in text
+    assert "70 bis 90 shore a" in text
+    assert "+300/+320" in text
+    assert "premiumwerkstoff" in text
+    assert "kosten" in text
+    assert "keine konkrete materialfreigabe" in text
+
+
+def test_generic_material_definition_renderer_is_engineering_deep_for_peek() -> None:
+    response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "bitte gebe mir detaillierte Informationen über PEEK"
+    )
+    text = _combined_answer_and_evidence(response)
+
+    assert "peek in der dichtungstechnik" in text
+    assert len(response.content) > 1200
+    assert "technische richtwerte" in text
+    assert "werkstofffamilie" in text
+    assert "temperatur" in text
+    assert "medienbild" in text
+    assert "dynamik" in text
+    assert "tribologie" in text
+    assert "stärken" in text
+    assert "typische grenzen" in text
+    assert "herstellerdaten" in text
+    assert "keine freigabe" in text
+
+
+def test_pom_material_definition_and_comparison_are_supported_deep_knowledge() -> None:
+    definition = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "Erzähl mir etwas über POM."
+    )
+    definition_text = _combined_answer_and_evidence(definition)
+
+    assert "pom in der dichtungstechnik" in definition_text
+    assert "polyoxymethylen" in definition_text
+    assert "polyacetal" in definition_text
+    assert "-40 bis +100/+110" in definition_text
+    assert "+120/+140" in definition_text
+    assert "kein elastomer" in definition_text
+    assert "pv-belastung" in definition_text
+    assert "keine freigabe" in definition_text
+
+    comparison = KnowledgeService(factcard_store=_FactcardStore([])).answer(
+        "bitte vergleiche POM mit PEEK"
+    )
+    comparison_text = _combined_answer_and_evidence(comparison)
+
+    assert "werkstoffvergleich: pom vs peek" in comparison_text
+    assert "polyoxymethylen" in comparison_text
+    assert "hochleistungsthermoplast" in comparison_text
+    assert "richtwerte für die technische vorprüfung" in comparison_text
+    assert "temperatur" in comparison_text
+    assert "medienbild" in comparison_text
+    assert "keine konkrete materialfreigabe" in comparison_text
+
+
 def test_generic_material_comparison_fkm_epdm_is_not_factcard_only() -> None:
     response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
         "Vergleiche FKM und EPDM fuer Dichtungen."

@@ -57,7 +57,7 @@ _prompt_builder = PromptBuilder()
 _GREETING_RE = re.compile(r"^\s*(hallo|hi|hey|guten tag|guten morgen|moin)\b[\s!,.?]*$", re.IGNORECASE)
 _SMALLTALK_RE = re.compile(
     r"^\s*((hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend))[\s,!.?]+)?"
-    r"(wie\s+geht('?s|\s+es\s+dir)(?:\s+heute)?|hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend))"
+    r"(wie\s+geht('?s|\s+es\s+dir)(?:\s+heute)?|hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend)|danke|vielen\s+dank|dankesch[oö]n|merci|thanks|thank\s+you|prima|super|klasse|top|perfekt|sehr\s+gut|klingt\s+gut|passt|gern|gerne|los\s+geht('?s)?|lass\s+uns\s+loslegen|ich\s+bin\s+(auch\s+)?gespannt|tsch[üu]ss|ciao|bye)"
     r"[\s?!.]*$",
     re.IGNORECASE | re.UNICODE,
 )
@@ -171,10 +171,12 @@ def _build_messages(
     mode: ConversationLightMode | None = None,
 ) -> list[dict[str, str]]:
     """Build the OpenAI messages list from history + current message."""
+    is_smalltalk_conversation = mode == "CONVERSATION" and _is_smalltalk_turn(message)
+    effective_history = None if is_smalltalk_conversation else history
     case_summary_text = _case_summary_text(case_summary)
     turn_context = _build_conversation_turn_context(
         message,
-        history=history,
+        history=effective_history,
         case_summary=case_summary_text or None,
         mode=mode,
     )
@@ -183,7 +185,7 @@ def _build_messages(
         if mode == "CONVERSATION"
         else build_conversation_phase_prompt(
             turn_context=turn_context,
-            latest_user_text=_last_user_turn_text(message, history),
+            latest_user_text=_last_user_turn_text(message, effective_history),
             case_summary=case_summary_text or None,
         )
     )
@@ -196,7 +198,7 @@ def _build_messages(
     msgs: list[dict[str, str]] = []
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
-    if mode == "CONVERSATION" and _is_smalltalk_turn(message):
+    if is_smalltalk_conversation:
         msgs.append(
             {
                 "role": "system",
@@ -212,6 +214,7 @@ def _build_messages(
                         "- Keine technischen Rueckfragen.\n"
                         "- Keine Erwaehnung von Medium, Druck, Temperatur, Parametern oder Werkstoffwahl.\n"
                         "- Keine Fallanlage und keine Checkliste.\n"
+                        "- Wenn der Nutzer nur ein positives Startsignal schreibt, z. B. 'prima', 'super', 'passt' oder 'los gehts', spiegle das motivierend, etwa: 'Ich bin auch gespannt, lass uns loslegen.'\n"
                         "- Optional: Frage locker, wobei du heute helfen kannst."
                     ),
                 ),
@@ -234,8 +237,8 @@ def _build_messages(
         )
     if strategy_instruction:
         msgs.append({"role": "system", "content": strategy_instruction})
-    if mode != "EXPLORATION":
-        msgs.extend(_iter_normalized_history(history))
+    if mode != "EXPLORATION" and not is_smalltalk_conversation:
+        msgs.extend(_iter_normalized_history(effective_history))
     # Belt-and-suspenders: inject explicit "DO NOT ASK AGAIN" block when we have
     # confirmed params. This guards against the LLM ignoring history-based hints.
     # Skipped for CONVERSATION mode (smalltalk) — state facts must NOT surface
@@ -432,6 +435,42 @@ def _normalize_smalltalk_address(reply: str) -> str:
     return text
 
 
+def _normalize_informal_address(reply: str) -> str:
+    """Keep all visible conversation replies in the product's informal voice."""
+
+    text = _normalize_smalltalk_address(reply)
+    replacements = (
+        (r"\bKönnten\s+Sie\s+mir\b", "Kannst du mir"),
+        (r"\bKoennten\s+Sie\s+mir\b", "Kannst du mir"),
+        (r"\bKönnen\s+Sie\s+mir\b", "Kannst du mir"),
+        (r"\bKoennen\s+Sie\s+mir\b", "Kannst du mir"),
+        (r"\bKönnten\s+Sie\b", "Könntest du"),
+        (r"\bKoennten\s+Sie\b", "Könntest du"),
+        (r"\bKönnen\s+Sie\b", "Kannst du"),
+        (r"\bKoennen\s+Sie\b", "Kannst du"),
+        (r"\bWürden\s+Sie\b", "Würdest du"),
+        (r"\bWuerden\s+Sie\b", "Würdest du"),
+        (r"\bSie\s+haben\b", "du hast"),
+        (r"\bSie\s+sind\b", "du bist"),
+        (r"\bSie\s+wollen\b", "du willst"),
+        (r"\bSie\s+möchten\b", "du möchtest"),
+        (r"\bSie\s+moechten\b", "du möchtest"),
+        (r"\bSie\s+eine\b", "du eine"),
+        (r"\bSie\s+einen\b", "du einen"),
+        (r"\bSie\s+ein\b", "du ein"),
+        (r"\bSie\b", "du"),
+        (r"\bIhnen\b", "dir"),
+        (r"\bIhre\b", "deine"),
+        (r"\bIhrer\b", "deiner"),
+        (r"\bIhrem\b", "deinem"),
+        (r"\bIhren\b", "deinen"),
+        (r"\bIhr\b", "dein"),
+    )
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text)
+    return text
+
+
 def _known_fields_from_case_summary(case_summary: Any | None) -> set[str]:
     labels = {
         "medium": "medium",
@@ -501,11 +540,11 @@ def _build_conversation_strategy_contract(
     has_technical_markers = bool(_TECHNICAL_MARKER_RE.search(lowered))
 
     if is_correction:
-        user_signal_mirror = "Verstanden, ich gehe jetzt von Ihrer Korrektur aus"
+        user_signal_mirror = "Verstanden, ich gehe jetzt von deiner Korrektur aus"
     elif is_problem:
-        user_signal_mirror = "Verstanden, Sie beschreiben ein konkretes Leckage- oder Ausfallbild"
+        user_signal_mirror = "Verstanden, du beschreibst ein konkretes Leckage- oder Ausfallbild"
     elif is_goal:
-        user_signal_mirror = "Verstanden, Sie wollen die Anwendung schrittweise eingrenzen"
+        user_signal_mirror = "Gerne unterstütze ich dich dabei"
     elif is_uncertain:
         user_signal_mirror = "Verstanden, die Lage ist noch nicht ganz klar"
     elif has_technical_markers:
@@ -557,7 +596,7 @@ def _build_conversation_strategy_contract(
             conversation_phase="rapport",
             turn_goal="open_conversation",
             user_signal_mirror=user_signal_mirror,
-            primary_question="Beschreiben Sie mir bitte zunaechst kurz, worum es in Ihrer Anwendung oder Ihrem Anliegen geht?",
+            primary_question="Erzähl mir bitte zuerst kurz, worum es in deiner Anwendung oder deinem Anliegen geht?",
             primary_question_reason="Ein offenes Bild der Ausgangslage setzt den sinnvollsten naechsten Fokus.",
             response_mode="open_invitation",
         )
@@ -579,7 +618,7 @@ def _build_conversation_strategy_contract(
             primary_question = "Welche Anwendung oder Situation sollen wir uns dafuer als Erstes genauer ansehen?"
             primary_question_reason = "Der erste Anwendungsanker setzt den sinnvollsten weiteren Fokus."
         elif is_uncertain:
-            primary_question = "Welche Stelle der Situation ist fuer Sie im Moment noch am unklarsten?"
+            primary_question = "Welche Stelle der Situation ist fuer dich im Moment noch am unklarsten?"
             primary_question_reason = "Die groesste Unklarheit zeigt, wo wir zuerst Struktur schaffen sollten."
         else:
             primary_question = "Welche Situation sollen wir uns als Naechstes gemeinsam genauer ansehen?"
@@ -627,7 +666,7 @@ def _build_conversation_strategy_contract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
         user_signal_mirror=user_signal_mirror,
-        primary_question="Welcher Aspekt Ihrer Anwendung ist im Moment am kritischsten?",
+        primary_question="Welcher Aspekt deiner Anwendung ist im Moment am kritischsten?",
         primary_question_reason="So priorisieren wir den naechsten technischen Klaerungsschritt.",
         response_mode="single_question",
     )
@@ -732,27 +771,25 @@ async def iter_conversation_events(
         - Boundary block (FAST_PATH_DISCLAIMER) is always appended on success.
         - LLM errors yield an error event and stop.
     """
+    is_smalltalk_conversation = mode == "CONVERSATION" and _is_smalltalk_turn(message)
+    effective_history = None if is_smalltalk_conversation else history
     strategy = _build_conversation_strategy_contract(
         message,
-        history=history,
+        history=effective_history,
         case_summary=case_summary,
         mode=mode,
     )
     turn_context = _build_conversation_turn_context(
         message,
-        history=history,
+        history=effective_history,
         case_summary=case_summary,
         mode=mode,
     )
     if direct_reply is not None:
         final_reply = str(direct_reply or "").strip()
         if final_reply:
-            final_reply = compose_user_facing_mouth_reply(
-                final_reply,
-                turn_context,
-                response_class="conversational_answer",
-            )
             final_reply = str(render_response(final_reply, path="CONVERSATION").text or final_reply).strip()
+            final_reply = _normalize_informal_address(final_reply)
         yield _conversation_state_update_event(
             reply=final_reply,
             strategy=strategy,
@@ -764,7 +801,7 @@ async def iter_conversation_events(
         return
 
     client, model = get_async_llm("conversation")
-    messages = _build_messages(message, history, case_summary=case_summary, mode=mode)
+    messages = _build_messages(message, effective_history, case_summary=case_summary, mode=mode)
     suppress_preview_stream = _suppress_preview_stream_for_smalltalk(message, mode)
 
     accumulated: list[str] = []
@@ -803,6 +840,7 @@ async def iter_conversation_events(
     )
     if final_reply:
         final_reply = str(render_response(final_reply, path="CONVERSATION").text or final_reply).strip()
+        final_reply = _normalize_informal_address(final_reply)
 
     if rendered.policy_violation:
         # Policy guard triggered — emit only an audit replacement marker.
