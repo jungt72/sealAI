@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
+
 echo "== RWDR golden cases =="
-PYTHONPATH=backend .venv/bin/python -m pytest -q backend/app/api/tests/test_rwdr_golden_cases.py
+PYTHONPATH=backend "$PYTHON_BIN" -m pytest -q backend/app/api/tests/test_rwdr_golden_cases.py
 
 echo "== RWDR/RFQ backend focused suite =="
-PYTHONPATH=backend .venv/bin/python -m pytest -q \
+PYTHONPATH=backend "$PYTHON_BIN" -m pytest -q \
   backend/tests/unit/services/test_rwdr_mvp_brief.py \
   backend/tests/unit/services/test_rfq_preview_service.py \
   backend/app/api/tests/test_rfq_endpoint.py \
