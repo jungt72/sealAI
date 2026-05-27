@@ -124,6 +124,16 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env
         or .env.prod}@redis:6379/0
       NEXTAUTH_DEBUG: ${NEXTAUTH_DEBUG:-false}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?NEXTAUTH_URL required — set in .env or .env.prod}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET required — set in .env or
+        .env.prod}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET required — set in .env or .env.prod}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:?KEYCLOAK_ISSUER required — set in .env or
+        .env.prod}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:?KEYCLOAK_CLIENT_ID required — set
+        in .env or .env.prod}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET required
+        — set in .env or .env.prod}
     healthcheck:
       test:
       - CMD-SHELL
