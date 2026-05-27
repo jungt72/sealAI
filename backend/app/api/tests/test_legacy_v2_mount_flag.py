@@ -6,6 +6,14 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
+
+pytest.skip(
+    "Legacy LangGraph v2 chat router is intentionally removed; only health diagnostics remain mounted.",
+    allow_module_level=True,
+)
+
 
 sys.path.append(str(Path(__file__).resolve().parents[3]))
 

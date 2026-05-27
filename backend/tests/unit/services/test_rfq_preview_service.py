@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
+from app.api.v1.renderers.rfq_pdf import render_rfq_export_pdf
 from app.models.case_record import CaseRecord
 from app.models.case_state_snapshot import CaseStateSnapshot
 from app.models.inquiry_extract import InquiryExtractModel
@@ -973,6 +975,7 @@ async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_pay
             "risks",
             "manufacturer_review_notes",
             "sealing_intelligence",
+            "technical_rwdr_rfq_brief",
             "evidence_references",
             "source_validation_summary",
             "consent_acknowledgement_summary",
@@ -989,12 +992,35 @@ async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_pay
     assert "suitable" not in serialized
     assert "sent to manufacturer" not in serialized
     assert "automatic dispatch" not in serialized
+    pdf_bytes = render_rfq_export_pdf(export_payload)
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert b"Anfragebasis fuer Herstellerpruefung" in pdf_bytes
+    assert b"Technical RWDR RFQ Brief" in pdf_bytes
+    assert b"SealAI Anfragebasis" in pdf_bytes
+    assert b"/home/thorsten" not in pdf_bytes
+    assert b"private/customer.pdf" not in pdf_bytes
+    assert b"super-secret" not in pdf_bytes
+    assert b"token=abc123" not in pdf_bytes
+    deterministic_payload = {
+        **export_payload,
+        "created_at": datetime(2026, 5, 26, 12, 34, tzinfo=timezone.utc),
+    }
+    assert render_rfq_export_pdf(deterministic_payload) == render_rfq_export_pdf(
+        deterministic_payload
+    )
+    assert b"2026-05-26 12:34 UTC" in render_rfq_export_pdf(deterministic_payload)
     assert export_payload["content"]["sealing_intelligence"]["schema_version"] == (
         "sealingai_rfq_projection_v9_1"
     )
     assert export_payload["content"]["sealing_intelligence"][
         "no_final_technical_release"
     ] is True
+    assert export_payload["content"]["technical_rwdr_rfq_brief"][
+        "artifact_title"
+    ] == "Technical RWDR RFQ Brief"
+    assert export_payload["content"]["technical_rwdr_rfq_brief"][
+        "manufacturer_matching_enabled"
+    ] is False
     assert export_payload["content"]["evidence_references"] == (
         "upload:datasheet-1#p2",
         "chat:turn-3",

@@ -143,6 +143,10 @@ test("workspace path builders keep RFQ reads on BFF and legacy dispatch disabled
     workspaceBff.buildRfqPreviewConsentReadPath("case/42", "preview/1"),
     "/api/bff/rfq/case%2F42/preview/preview%2F1/consent",
   );
+  assert.equal(
+    workspaceBff.buildRfqPreviewExportReadPath("case/42", "preview/1"),
+    "/api/bff/rfq/case%2F42/preview/preview%2F1/export",
+  );
 
   const exportedKeys = Object.keys(workspaceBff).sort();
   assert.deepEqual(exportedKeys, [
@@ -151,6 +155,8 @@ test("workspace path builders keep RFQ reads on BFF and legacy dispatch disabled
     "buildRfqPreviewBackendPath",
     "buildRfqPreviewConsentBackendPath",
     "buildRfqPreviewConsentReadPath",
+    "buildRfqPreviewExportPdfBackendPath",
+    "buildRfqPreviewExportReadPath",
     "buildRfqPreviewReadPath",
     "buildWorkspaceBackendReadPath",
     "buildWorkspaceReadPath",

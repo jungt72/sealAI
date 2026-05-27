@@ -47,6 +47,86 @@ export function buildRfqPreviewConsentBackendPath(previewId: string): string {
   return `/api/v1/rfq/preview/${encodeURIComponent(previewId)}/consent`;
 }
 
+export function buildRfqPreviewExportReadPath(caseId: string, previewId: string): string {
+  return `/api/bff/rfq/${encodeURIComponent(caseId)}/preview/${encodeURIComponent(previewId)}/export`;
+}
+
+export function buildRfqPreviewExportPdfBackendPath(previewId: string): string {
+  return `/api/v1/rfq/preview/${encodeURIComponent(previewId)}/export.pdf`;
+}
+
+export function buildRwdrAnalyzeReadPath(): string {
+  return "/api/bff/rfq/rwdr/analyze";
+}
+
+export function buildRwdrAnalyzeBackendPath(): string {
+  return "/api/v1/rfq/rwdr/analyze";
+}
+
+export function buildRwdrBriefReadPath(): string {
+  return "/api/bff/rfq/rwdr/brief";
+}
+
+export function buildRwdrBriefBackendPath(): string {
+  return "/api/v1/rfq/rwdr/brief";
+}
+
+export function buildRwdrCaseReadPath(caseId: string): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}`;
+}
+
+export function buildRwdrCaseBackendPath(caseId: string): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}`;
+}
+
+export function buildRwdrConfirmationsReadPath(caseId: string): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}/confirmations`;
+}
+
+export function buildRwdrConfirmationsBackendPath(caseId: string): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}/confirmations`;
+}
+
+export function buildRwdrCaseBriefReadPath(caseId: string): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}/brief`;
+}
+
+export function buildRwdrCaseBriefBackendPath(caseId: string): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}/brief`;
+}
+
+export function buildRwdrCaseExportReadPath(caseId: string): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}/export`;
+}
+
+export function buildRwdrCaseExportBackendPath(caseId: string): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}/export.md`;
+}
+
+export function buildRwdrCasePdfReadPath(caseId: string): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}/export.pdf`;
+}
+
+export function buildRwdrCasePdfBackendPath(caseId: string): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}/export.pdf`;
+}
+
+export function buildRwdrCaseSnapshotsReadPath(caseId: string): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}/snapshots`;
+}
+
+export function buildRwdrCaseSnapshotsBackendPath(caseId: string): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}/snapshots`;
+}
+
+export function buildRwdrCaseDiffReadPath(caseId: string, fromRevision: number, toRevision: number): string {
+  return `/api/bff/rfq/rwdr/cases/${encodeURIComponent(caseId)}/diff/${encodeURIComponent(String(fromRevision))}/${encodeURIComponent(String(toRevision))}`;
+}
+
+export function buildRwdrCaseDiffBackendPath(caseId: string, fromRevision: number, toRevision: number): string {
+  return `/api/v1/rfq/rwdr/cases/${encodeURIComponent(caseId)}/diff/${encodeURIComponent(String(fromRevision))}/${encodeURIComponent(String(toRevision))}`;
+}
+
 export async function fetchWorkspace(caseId: string): Promise<WorkspaceView> {
   const response = await fetch(buildWorkspaceReadPath(caseId), {
     cache: "no-store",

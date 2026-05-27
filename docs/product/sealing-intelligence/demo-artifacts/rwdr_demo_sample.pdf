@@ -1,0 +1,545 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R] /Count 5 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 2641 >>
+stream
+BT
+/F1 10 Tf
+12 TL
+48 790 Td
+(sealing | Intelligence - Anfragebasis fuer Herstellerpruefung) Tj
+T*
+() Tj
+T*
+(Sehr geehrte Damen und Herren,) Tj
+T*
+(bitte pruefen Sie auf Basis der folgenden, vom Anwender bestaetigten Anfragebasis den) Tj
+T*
+(Technical RWDR RFQ Brief. Die Angaben stammen aus dem backend-eigenen Fallstand und sind) Tj
+T*
+(als strukturierte Anfragebasis fuer Ihre Herstellerpruefung zu verstehen.) Tj
+T*
+() Tj
+T*
+(Wichtiger Hinweis: Dieser Technical RWDR RFQ Brief strukturiert die Anfrage. Er enthaelt) Tj
+T*
+(keine finale technische Eignungsfreigabe, keine Materialfreigabe, keine Produktempfehlung) Tj
+T*
+(und keine Herstellerfreigabe. Die finale technische Bewertung erfolgt durch Hersteller,) Tj
+T*
+(Haendler oder eine verantwortliche technische Stelle.) Tj
+T*
+() Tj
+T*
+(Case-ID: 55e7cee4-8b76-45f6-bb6b-c3abfeaf1617) Tj
+T*
+(Preview-ID: 55e7cee4-8b76-45f6-bb6b-c3abfeaf1617) Tj
+T*
+(Fallstand: 13) Tj
+T*
+(Export erzeugt: 2026-05-27 10:39 UTC) Tj
+T*
+() Tj
+T*
+(Technische Angaben) Tj
+T*
+() Tj
+T*
+(- application: Getriebe | Status: confirmed | Herkunft: missing | Sicherheit: nicht) Tj
+T*
+(geliefert) Tj
+T*
+(- housing_bore_D_mm: 62.0 | Status: confirmed | Herkunft: missing | Sicherheit: nicht) Tj
+T*
+(geliefert) Tj
+T*
+(- inside_medium: Oel | Status: confirmed | Herkunft: missing | Sicherheit: nicht geliefert) Tj
+T*
+(- max_speed_rpm: 1500.0 | Status: confirmed | Herkunft: missing | Sicherheit: nicht) Tj
+T*
+(geliefert) Tj
+T*
+(- seal_width_b_mm: 8.0 | Status: confirmed | Herkunft: missing | Sicherheit: nicht geliefert) Tj
+T*
+(- sealing_function: oil_retention | Status: confirmed | Herkunft: missing | Sicherheit:) Tj
+T*
+(nicht geliefert) Tj
+T*
+(- shaft_diameter_d1_mm: 45.0 | Status: confirmed | Herkunft: missing | Sicherheit: nicht) Tj
+T*
+(geliefert) Tj
+T*
+() Tj
+T*
+(Technical RWDR RFQ Brief) Tj
+T*
+() Tj
+T*
+(Status: NEEDS_CLARIFICATION) Tj
+T*
+(Grenze: Herstellerpruefbasis; keine Produktauswahl, kein Hersteller-Ranking und keine) Tj
+T*
+(automatische Weitergabe.) Tj
+T*
+(Offene RWDR-MVP Punkte:) Tj
+T*
+(- Missing or unconfirmed: pressure_differential) Tj
+T*
+(- Missing or unconfirmed: temperature_min_c) Tj
+T*
+(- Missing or unconfirmed: temperature_max_c) Tj
+T*
+(- Missing or unconfirmed: shaft_condition_known) Tj
+T*
+(- Missing or unconfirmed: temperature) Tj
+T*
+(- Missing or unconfirmed: pressure) Tj
+T*
+(- Missing or unconfirmed: motion) Tj
+T*
+(- seal_family: explicit_user_confirmation_required) Tj
+T*
+(Bestaetigte Brief-Fakten) Tj
+T*
+() Tj
+T*
+(- application: Getriebe) Tj
+T*
+(- housing_bore_D_mm: 62.0 mm) Tj
+T*
+(- inside_medium: Oel) Tj
+T*
+(- max_speed_rpm: 1500.0 rpm) Tj
+T*
+(- seal_width_b_mm: 8.0 mm) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 3187 >>
+stream
+BT
+/F1 10 Tf
+12 TL
+48 790 Td
+(- sealing_function: oil_retention) Tj
+T*
+(- shaft_diameter_d1_mm: 45.0 mm) Tj
+T*
+(Deterministische Berechnungen) Tj
+T*
+() Tj
+T*
+(- circumferential_speed_mps: 3.53 m/s) Tj
+T*
+() Tj
+T*
+(RWDR Brief-Abschnitte) Tj
+T*
+() Tj
+T*
+(Status) Tj
+T*
+(- NEEDS_CLARIFICATION) Tj
+T*
+() Tj
+T*
+(Anfrageart) Tj
+T*
+(- leakage) Tj
+T*
+() Tj
+T*
+(Bestaetigte Anwendungskategorie) Tj
+T*
+(- Getriebe) Tj
+T*
+() Tj
+T*
+(Bestaetigte Angaben) Tj
+T*
+(- Field: application; Value: Getriebe; Origin: llm_extracted; Status: confirmed;) Tj
+T*
+(Provenance: missing; Source type: user_text; Validation status: confirmed; Confirmation) Tj
+T*
+(status: confirmed; Evidence refs: ; Source span: Getriebe; Liability bearing: True; Allowed) Tj
+T*
+(in brief: True) Tj
+T*
+(- Field: housing_bore_D_mm; Value: 62.0; Unit: mm; Origin: llm_extracted; Status:) Tj
+T*
+(confirmed; Provenance: missing; Source type: user_text; Validation status: confirmed;) Tj
+T*
+(Confirmation status: confirmed; Evidence refs: ; Source span: 45x62x8; Liability bearing:) Tj
+T*
+(True; Allowed in brief: True) Tj
+T*
+(- Field: inside_medium; Value: Oel; Origin: llm_extracted; Status: confirmed; Provenance:) Tj
+T*
+(missing; Source type: user_text; Validation status: confirmed; Confirmation status:) Tj
+T*
+(confirmed; Evidence refs: ; Source span: Oel; Liability bearing: True; Allowed in brief: True) Tj
+T*
+(- Field: max_speed_rpm; Value: 1500.0; Unit: rpm; Origin: llm_extracted; Status: confirmed;) Tj
+T*
+(Provenance: missing; Source type: user_text; Validation status: confirmed; Confirmation) Tj
+T*
+(status: confirmed; Evidence refs: ; Source span: 1500 U/min; Liability bearing: True;) Tj
+T*
+(Allowed in brief: True) Tj
+T*
+(- Field: seal_width_b_mm; Value: 8.0; Unit: mm; Origin: llm_extracted; Status: confirmed;) Tj
+T*
+(Provenance: missing; Source type: user_text; Validation status: confirmed; Confirmation) Tj
+T*
+(status: confirmed; Evidence refs: ; Source span: 45x62x8; Liability bearing: True; Allowed) Tj
+T*
+(in brief: True) Tj
+T*
+(- Field: sealing_function; Value: oil_retention; Origin: llm_extracted; Status: confirmed;) Tj
+T*
+(Provenance: missing; Source type: user_text; Validation status: confirmed; Confirmation) Tj
+T*
+(status: confirmed; Evidence refs: ; Source span: undicht; Liability bearing: True; Allowed) Tj
+T*
+(in brief: True) Tj
+T*
+(- Field: shaft_diameter_d1_mm; Value: 45.0; Unit: mm; Origin: llm_extracted; Status:) Tj
+T*
+(confirmed; Provenance: missing; Source type: user_text; Validation status: confirmed;) Tj
+T*
+(Confirmation status: confirmed; Evidence refs: ; Source span: 45x62x8; Liability bearing:) Tj
+T*
+(True; Allowed in brief: True) Tj
+T*
+() Tj
+T*
+(Nicht bestaetigte Angaben) Tj
+T*
+(- Field: outside_environment_or_contamination; Value: staubige Umgebung; Origin:) Tj
+T*
+(llm_extracted; Status: candidate; Provenance: missing; Source type: user_text; Validation) Tj
+T*
+(status: candidate; Confirmation status: unconfirmed; Evidence refs: ; Source span: staub;) Tj
+T*
+(Liability bearing: False; Allowed in brief: False; Blocked reason:) Tj
+T*
+(explicit_user_confirmation_required) Tj
+T*
+(- Field: seal_family; Value: radial_shaft_seal; Origin: llm_extracted; Status: candidate;) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 2527 >>
+stream
+BT
+/F1 10 Tf
+12 TL
+48 790 Td
+(Provenance: missing; Source type: user_text; Validation status: candidate; Confirmation) Tj
+T*
+(status: unconfirmed; Evidence refs: ; Source span: Wellendichtring; Liability bearing:) Tj
+T*
+(True; Allowed in brief: False; Blocked reason: explicit_user_confirmation_required) Tj
+T*
+() Tj
+T*
+(Kritisch fehlende Angaben) Tj
+T*
+(- pressure_differential) Tj
+T*
+(- temperature_min_c) Tj
+T*
+(- temperature_max_c) Tj
+T*
+(- shaft_condition_known) Tj
+T*
+() Tj
+T*
+(Hilfreich fehlende Angaben) Tj
+T*
+(- old_part_marking) Tj
+T*
+(- old_part_manufacturer) Tj
+T*
+(- old_part_photo_available) Tj
+T*
+(- old_part_cross_section_or_drawing_available) Tj
+T*
+(- existing_design_single_lip) Tj
+T*
+(- existing_design_dust_lip) Tj
+T*
+(- existing_design_metal_od) Tj
+T*
+(- existing_design_rubber_od) Tj
+T*
+(- existing_design_cassette) Tj
+T*
+(- existing_design_split) Tj
+T*
+(- outside_environment_or_contamination) Tj
+T*
+(- rotation_direction) Tj
+T*
+() Tj
+T*
+(Berechnete Werte) Tj
+T*
+(- Field: circumferential_speed_mps; Label: Umfangsgeschwindigkeit; Value: 3.53; Unit: m/s;) Tj
+T*
+(Calculation type: exact_kinematic; Formula: v = pi * d1_mm * rpm / 60000; Input fields:) Tj
+T*
+(shaft_diameter_d1_mm, max_speed_rpm; Not for final technical release: True) Tj
+T*
+(- Field: speed_class; Value: medium) Tj
+T*
+(- Field: pressure_class; Value: unknown) Tj
+T*
+(- Field: temperature_class; Value: unknown) Tj
+T*
+(- Field: advanced_calculations; Hidden: True; Available functions: n_max_from_v_allowed,) Tj
+T*
+(mean_lip_contact_pressure, friction_force, friction_torque, friction_power, heat_flux,) Tj
+T*
+(contact_temperature_rise, thermal_dimensional_change, metal_OD_press_fit_pressure,) Tj
+T*
+(PTFE_PV_check, Archard_wear_approximation, wear_limited_life,) Tj
+T*
+(leakage_upper_bound_reference; Classification: requires_manufacturer_data; Not for final) Tj
+T*
+(technical release: True) Tj
+T*
+() Tj
+T*
+(Engineering Review-Themen) Tj
+T*
+(- leakage_failure_intent) Tj
+T*
+(- technical_rfq_preparation_intent) Tj
+T*
+(- rwdr_generic_term_normalized) Tj
+T*
+(- oil_additive_material_review_if_oil_unknown) Tj
+T*
+(- pressure_question_required) Tj
+T*
+(- shaft_surface_review_required) Tj
+T*
+(- dust_lip_or_excluder_review_required) Tj
+T*
+(- failure_leakage_review_required) Tj
+T*
+(- learning_capture_structure_prepared) Tj
+T*
+(- critical_missing_pressure_differential) Tj
+T*
+(- critical_missing_temperature_min_c) Tj
+T*
+(- critical_missing_temperature_max_c) Tj
+T*
+() Tj
+T*
+(Empfohlene Mess- und Pruefangaben fuer Herstellerbewertung) Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 11 0 R >>
+endobj
+11 0 obj
+<< /Length 3187 >>
+stream
+BT
+/F1 10 Tf
+12 TL
+48 790 Td
+(- Field: shaft_surface_ra; Method: stylus profilometer; Classification: workshop_measurable) Tj
+T*
+(- Field: shaft_surface_rz; Method: stylus profilometer; Classification: workshop_measurable) Tj
+T*
+(- Field: shaft_hardness_hrc; Method: Rockwell C / Vickers for coating; Classification:) Tj
+T*
+(workshop_measurable) Tj
+T*
+() Tj
+T*
+(Herstellerfragen) Tj
+T*
+(- Ist die Anwendung drucklos oder liegt Differenzdruck an?) Tj
+T*
+(- Welche minimale Betriebstemperatur tritt an der Dichtstelle auf?) Tj
+T*
+(- Welche maximale Betriebstemperatur tritt an der Dichtstelle auf?) Tj
+T*
+(- Ist die Wellenlaufflaeche eingelaufen, beschaedigt oder korrodiert?) Tj
+T*
+(- Welches Oel oder Fett wird abgedichtet?) Tj
+T*
+(- Ist die Umgebung staubig, nass oder verschmutzt?) Tj
+T*
+(- Gibt es Staub, Schmutz oder abrasive Partikel auf der Aussenseite der Dichtung?) Tj
+T*
+(- Welche Leckageanforderung soll der Hersteller bewerten?) Tj
+T*
+(- Ist sichtbare Leckage zulaessig?) Tj
+T*
+() Tj
+T*
+(Dokumentations-/Regulatorikanforderungen) Tj
+T*
+(- pressure_question_required) Tj
+T*
+(- shaft_surface_review_required) Tj
+T*
+(- dust_lip_or_excluder_review_required) Tj
+T*
+(- failure_leakage_review_required) Tj
+T*
+() Tj
+T*
+(Leckage- und Standzeiterwartungen) Tj
+T*
+(- Welche Leckageanforderung soll der Hersteller bewerten?) Tj
+T*
+(- Ist sichtbare Leckage zulaessig?) Tj
+T*
+() Tj
+T*
+(Quellenuebersicht) Tj
+T*
+(- Confirmed field count: 7; Open field count: 2; Confirmed source spans: Field:) Tj
+T*
+(application; Source span: Getriebe; Origin: llm_extracted, Field: housing_bore_D_mm; Source) Tj
+T*
+(span: 45x62x8; Origin: llm_extracted, Field: inside_medium; Source span: Oel; Origin:) Tj
+T*
+(llm_extracted, Field: max_speed_rpm; Source span: 1500 U/min; Origin: llm_extracted, Field:) Tj
+T*
+(seal_width_b_mm; Source span: 45x62x8; Origin: llm_extracted, Field: sealing_function;) Tj
+T*
+(Source span: undicht; Origin: llm_extracted, Field: shaft_diameter_d1_mm; Source span:) Tj
+T*
+(45x62x8; Origin: llm_extracted; Quality metrics: Field extraction count: 10; Confirmed) Tj
+T*
+(field count: 8; Unconfirmed liability field count: 1; Missing critical field count: 4; Out) Tj
+T*
+(of scope flag count: 0; Brief completeness score: 0.64; Measurement recommendation count:) Tj
+T*
+(3; Advanced calculation hidden count: 1; Forbidden language violation count: 0) Tj
+T*
+() Tj
+T*
+(Export metadata) Tj
+T*
+(- Schema version: technical_rwdr_rfq_brief_v1.0.0; Dispatch enabled: False; Manufacturer) Tj
+T*
+(matching enabled: False; No final technical release: True) Tj
+T*
+() Tj
+T*
+(Disclaimer) Tj
+T*
+(- Dieser Technical RWDR RFQ Brief strukturiert die Anfrage. Er enthaelt keine finale) Tj
+T*
+(technische Eignungsfreigabe, keine Materialfreigabe, keine Produktempfehlung und keine) Tj
+T*
+(Herstellerfreigabe. Die finale technische Bewertung erfolgt durch Hersteller, Haendler oder) Tj
+T*
+(eine verantwortliche technische Stelle.) Tj
+T*
+() Tj
+T*
+(Vom Hersteller zu pruefen) Tj
+T*
+() Tj
+T*
+(- Ist die Anwendung drucklos oder liegt Differenzdruck an?) Tj
+T*
+(- Welche minimale Betriebstemperatur tritt an der Dichtstelle auf?) Tj
+T*
+(- Welche maximale Betriebstemperatur tritt an der Dichtstelle auf?) Tj
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 13 0 R >>
+endobj
+13 0 obj
+<< /Length 820 >>
+stream
+BT
+/F1 10 Tf
+12 TL
+48 790 Td
+(- Ist die Wellenlaufflaeche eingelaufen, beschaedigt oder korrodiert?) Tj
+T*
+(- Welches Oel oder Fett wird abgedichtet?) Tj
+T*
+(- Ist die Umgebung staubig, nass oder verschmutzt?) Tj
+T*
+(- Gibt es Staub, Schmutz oder abrasive Partikel auf der Aussenseite der Dichtung?) Tj
+T*
+(- Welche Leckageanforderung soll der Hersteller bewerten?) Tj
+T*
+(- Ist sichtbare Leckage zulaessig?) Tj
+T*
+() Tj
+T*
+(Rueckfragen / Herstellerantwort) Tj
+T*
+() Tj
+T*
+(Bitte geben Sie zu Ihrer Bewertung mindestens Werkstoff/Compound, Dichtungsbauart,) Tj
+T*
+(zulaessige Betriebsgrenzen, Medienbestaendigkeit, PV-/Geschwindigkeitsgrenzen,) Tj
+T*
+(Gegenlaufflaechenanforderungen, Nachweise, offene Annahmen und Liefer-/Herstellerdaten an.) Tj
+T*
+() Tj
+T*
+(Mit freundlichen Gruessen) Tj
+T*
+(SealAI Anfragebasis) Tj
+ET
+endstream
+endobj
+xref
+0 14
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000141 00000 n 
+0000000211 00000 n 
+0000000337 00000 n 
+0000003030 00000 n 
+0000003156 00000 n 
+0000006395 00000 n 
+0000006521 00000 n 
+0000009100 00000 n 
+0000009228 00000 n 
+0000012468 00000 n 
+0000012596 00000 n 
+trailer
+<< /Size 14 /Root 1 0 R >>
+startxref
+13468
+%%EOF

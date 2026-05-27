@@ -20,6 +20,7 @@ from app.services.inquiry_extract_service import (
 from app.services.decision_understanding_service import (
     build_decision_understanding_payload,
 )
+from app.services.rwdr_mvp_brief import build_technical_rwdr_rfq_brief
 
 RFQ_PREVIEW_ARTIFACT_TYPE = ArtifactType.rfq_preview.value
 RFQ_PREVIEW_SCHEMA_VERSION = "rfq_preview_v0.7.0"
@@ -73,13 +74,23 @@ _FIELD_ALIASES: dict[str, str] = {
     "medium": "medium_name",
     "medium_name": "medium_name",
     "motion_type": "motion_type",
+    "old_part_manufacturer": "old_part_manufacturer",
+    "old_part_marking": "old_part_marking",
+    "old_part_photo_available": "old_part_photo_available",
+    "outside_environment_or_contamination": "outside_environment_or_contamination",
     "pressure_nominal": "pressure_bar",
     "pressure_bar": "pressure_bar",
     "rpm": "speed_rpm",
+    "regulatory_or_hygienic_requirements": "regulatory_or_hygienic_requirements",
+    "seal_function": "seal_function",
     "shaft_diameter": "shaft_diameter_mm",
     "shaft_diameter_mm": "shaft_diameter_mm",
+    "shaft_condition": "shaft_condition",
+    "shaft_removal_possible": "shaft_removal_possible",
     "housing_bore": "housing_bore_diameter_mm",
     "housing_bore_mm": "housing_bore_diameter_mm",
+    "housing_bore_diameter_mm": "housing_bore_diameter_mm",
+    "seal_width_mm": "seal_width_mm",
     "speed_rpm": "speed_rpm",
     "surface_finish": "shaft_surface_finish",
     "temperature_c": "temperature_c",
@@ -797,6 +808,11 @@ def build_rfq_preview_payload(
         open_points_summary=open_points_summary,
         evidence_refs_summary=evidence_refs_summary,
     )
+    technical_rwdr_rfq_brief = build_technical_rwdr_rfq_brief(
+        case_row=case_row,
+        snapshot=snapshot,
+        technical_field_envelopes=technical_field_envelopes,
+    )
     manufacturer_extract = InquiryExtractService().build_inquiry_extract_payload(
         context,
         artifact_type=RFQ_PREVIEW_ARTIFACT_TYPE,
@@ -816,6 +832,7 @@ def build_rfq_preview_payload(
             "source_kind": "case_revision",
             "rfq_freeze": True,
             "preview_status": "current",
+            "technical_rwdr_rfq_brief_status": technical_rwdr_rfq_brief["status"],
             "no_final_technical_release": True,
             "dispatch_enabled": False,
             "automatic_dispatch_allowed": False,
@@ -835,6 +852,7 @@ def build_rfq_preview_payload(
             "challenge_context": challenge_context,
             "v91_rfq_projection": v91_rfq_projection,
             "v92_rfq_dossier": v92_rfq_dossier,
+            "technical_rwdr_rfq_brief": technical_rwdr_rfq_brief,
             "technical_field_groups": technical_field_groups,
             "technical_field_envelopes": technical_field_envelopes,
             "technical_field_statuses": technical_field_statuses,
@@ -858,6 +876,7 @@ def build_rfq_preview_payload(
         "challenge_context": challenge_context,
         "v91_rfq_projection": v91_rfq_projection,
         "v92_rfq_dossier": v92_rfq_dossier,
+        "technical_rwdr_rfq_brief": technical_rwdr_rfq_brief,
         "manufacturer_extract": manufacturer_extract,
         "source_validation_summary": source_validation_summary,
         "open_points_summary": open_points_summary,
@@ -937,6 +956,10 @@ def build_rfq_export_document(
             "sealing_intelligence": _allowlisted_v91_rfq_projection(
                 rfq_preview.get("v91_rfq_projection")
                 or payload.get("v91_rfq_projection")
+            ),
+            "technical_rwdr_rfq_brief": _allowlisted_technical_rwdr_rfq_brief(
+                rfq_preview.get("technical_rwdr_rfq_brief")
+                or payload.get("technical_rwdr_rfq_brief")
             ),
             "evidence_references": evidence_refs,
             "source_validation_summary": _allowlisted_source_validation_summary(
@@ -1565,6 +1588,94 @@ def _allowlisted_v91_rfq_projection(value: Any) -> dict[str, Any]:
             "evidence_ref_ids": _allowlisted_evidence_refs(
                 _as_sequence(projection.get("evidence_ref_ids"))
             ),
+        }
+    )
+
+
+def _allowlisted_technical_rwdr_rfq_brief(value: Any) -> dict[str, Any]:
+    brief = _object_mapping(value)
+    if not brief:
+        return {}
+    evaluation = _object_mapping(brief.get("evaluation"))
+    canonical_case = _object_mapping(brief.get("canonical_case"))
+    return _drop_empty(
+        {
+            "artifact_type": "technical_rwdr_rfq_brief",
+            "artifact_title": "Technical RWDR RFQ Brief",
+            "schema_version": _optional_text(brief.get("schema_version")),
+            "status": _optional_text(brief.get("status")),
+            "allowed_statuses": _allowlisted_text_sequence(
+                brief.get("allowed_statuses")
+            ),
+            "no_final_technical_release": True,
+            "dispatch_enabled": False,
+            "manufacturer_matching_enabled": False,
+            "evaluation": _drop_empty(
+                {
+                    "status": _optional_text(evaluation.get("status")),
+                    "complete_enough_for_manufacturer_evaluation": bool(
+                        evaluation.get(
+                            "complete_enough_for_manufacturer_evaluation", False
+                        )
+                    ),
+                    "open_points": _allowlisted_text_sequence(
+                        evaluation.get("open_points")
+                    ),
+                    "out_of_scope_reasons": _allowlisted_text_sequence(
+                        evaluation.get("out_of_scope_reasons")
+                    ),
+                }
+            ),
+            "canonical_case": _drop_empty(
+                {
+                    "case_id": _safe_text(canonical_case.get("case_id")),
+                    "case_revision": _optional_int(
+                        canonical_case.get("case_revision")
+                    ),
+                    "scope": _safe_text(canonical_case.get("scope")),
+                    "missing_required_semantics": _allowlisted_text_sequence(
+                        canonical_case.get("missing_required_semantics")
+                    ),
+                    "blocked_liability_fields": tuple(
+                        _allowlisted_rwdr_brief_field(item)
+                        for item in _as_sequence(
+                            canonical_case.get("blocked_liability_fields")
+                        )
+                    ),
+                }
+            ),
+            "confirmed_case_fields": tuple(
+                _allowlisted_rwdr_brief_field(item)
+                for item in _as_sequence(brief.get("confirmed_case_fields"))
+            ),
+            "calculation_fields": tuple(
+                _allowlisted_rwdr_brief_field(item)
+                for item in _as_sequence(brief.get("calculation_fields"))
+            ),
+            "open_fields": tuple(
+                _allowlisted_rwdr_brief_field(item)
+                for item in _as_sequence(brief.get("open_fields"))
+            ),
+        }
+    )
+
+
+def _allowlisted_rwdr_brief_field(value: Any) -> dict[str, Any]:
+    field = _object_mapping(value)
+    return _drop_empty(
+        {
+            "field": _safe_text(field.get("field")),
+            "value": _safe_json_value(field.get("value")),
+            "unit": _safe_text(field.get("unit")),
+            "status": _safe_text(field.get("status")),
+            "provenance": _safe_text(field.get("provenance")),
+            "source_type": _safe_text(field.get("source_type")),
+            "validation_status": _safe_text(field.get("validation_status")),
+            "evidence_refs": _allowlisted_evidence_refs(field.get("evidence_refs")),
+            "source_span": _safe_text(field.get("source_span")),
+            "liability_bearing": bool(field.get("liability_bearing")),
+            "allowed_in_brief": bool(field.get("allowed_in_brief")),
+            "blocked_reason": _safe_text(field.get("blocked_reason")),
         }
     )
 

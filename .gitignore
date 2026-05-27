@@ -72,6 +72,7 @@ coverage/
 
 # Misc
 .DS_Store
+._*
 *.pem
 sealai_inventory_*/
 code_dump.part.*

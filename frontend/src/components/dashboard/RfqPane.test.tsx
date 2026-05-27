@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -115,6 +115,8 @@ function cockpitData(): CockpitData {
 describe("RfqPane", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.localStorage.clear();
+    window.history.replaceState({}, "", "/");
   });
 
   it("renders the backend RFQ preview with frozen revision, open points and consent boundary", async () => {
@@ -197,6 +199,53 @@ describe("RfqPane", () => {
                   evidence_refs: ["doc-1#p2"],
                 },
               ],
+              technical_rwdr_rfq_brief: {
+                artifact_title: "Technical RWDR RFQ Brief",
+                artifact_type: "technical_rwdr_rfq_brief",
+                status: "NEEDS_CLARIFICATION",
+                no_final_technical_release: true,
+                dispatch_enabled: false,
+                manufacturer_matching_enabled: false,
+                evaluation: {
+                  complete_enough_for_manufacturer_evaluation: false,
+                  open_points: ["Missing or unconfirmed: shaft_diameter"],
+                  out_of_scope_reasons: [],
+                },
+                confirmed_case_fields: [
+                  {
+                    field: "medium_name",
+                    value: "Salzwasser",
+                    status: "documented",
+                    provenance: "documented",
+                    source_type: "uploaded_evidence",
+                    validation_status: "documented",
+                    allowed_in_brief: true,
+                  },
+                ],
+                calculation_fields: [
+                  {
+                    field: "calculated_speed_m_s",
+                    value: 3.19,
+                    unit: "m/s",
+                    status: "calculated",
+                    source_type: "deterministic_calculation",
+                    validation_status: "calculated",
+                    allowed_in_brief: true,
+                  },
+                ],
+                open_fields: [
+                  {
+                    field: "shaft_diameter_mm",
+                    value: 42,
+                    unit: "mm",
+                    status: "needs_confirmation",
+                    source_type: "user_stated",
+                    validation_status: "candidate",
+                    allowed_in_brief: false,
+                    blocked_reason: "explicit_user_confirmation_required",
+                  },
+                ],
+              },
             },
             decision_understanding: {
               key_risks: ["Medium noch unvollstaendig"],
@@ -213,6 +262,14 @@ describe("RfqPane", () => {
     expect(await screen.findByText("Stand 7")).toBeInTheDocument();
     expect(screen.getByText("jetzt 8")).toBeInTheDocument();
     expect(screen.getByText(/Diese Anfragevorschau ist veraltet/i)).toBeInTheDocument();
+    expect(screen.getByText("Technical RWDR RFQ Brief")).toBeInTheDocument();
+    expect(screen.getByText("Klärung erforderlich")).toBeInTheDocument();
+    expect(screen.getByText("kein Hersteller-Ranking")).toBeInTheDocument();
+    expect(screen.getByText("Hersteller-Routing")).toBeInTheDocument();
+    expect(screen.getByText("deaktiviert")).toBeInTheDocument();
+    expect(screen.getByText(/medium_name: Salzwasser/i)).toBeInTheDocument();
+    expect(screen.getByText(/calculated_speed_m_s: 3.19 m\/s/i)).toBeInTheDocument();
+    expect(screen.getByText(/explicit_user_confirmation_required/i)).toBeInTheDocument();
     expect(screen.getByText("Wellendurchmesser bestaetigen")).toBeInTheDocument();
     expect(screen.getByText("Temperaturspitzen offen")).toBeInTheDocument();
     expect(screen.getAllByText("Bitte Werkstofffenster pruefen")[0]).toBeInTheDocument();
@@ -302,6 +359,11 @@ describe("RfqPane", () => {
     await user.click(screen.getByRole("button", { name: /Nutzerbestätigung speichern/i }));
 
     expect(await screen.findByText("Anfragevorschau exportbereit")).toBeInTheDocument();
+    expect(await screen.findByText("Fertige Anfrage als PDF bereit")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Anfrage als PDF herunterladen/i })).toHaveAttribute(
+      "href",
+      "/api/bff/rfq/case-1/preview/preview-2/export",
+    );
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/bff/rfq/case-1/preview/preview-2/consent",
       expect.objectContaining({
@@ -469,5 +531,412 @@ describe("RfqPane", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("rfq_preview_create_failed:404")).not.toBeInTheDocument();
+  });
+
+  it("lets users confirm extracted RWDR liability fields with source spans", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-case-1",
+          raw_inquiry: "Wellendichtring 45x62x8 undicht, Getriebe, Öl, 1500 U/min.",
+          evidence_fields: [
+            {
+              field: "shaft_diameter_d1_mm",
+              value: 45,
+              unit: "mm",
+              origin: "llm_extracted",
+              source_type: "user_text",
+              source_span: "45x62x8",
+              confirmation_status: "unconfirmed",
+              liability_bearing: true,
+            },
+          ],
+          technical_rwdr_rfq_brief: {
+            artifact_title: "Technical RWDR RFQ Brief",
+            status: "NEEDS_CLARIFICATION",
+            manufacturer_matching_enabled: false,
+            no_final_technical_release: true,
+            confirmed_case_fields: [],
+            calculation_fields: [],
+            open_fields: [{ field: "shaft_diameter_d1_mm", value: 45, unit: "mm", blocked_reason: "llm_extracted_field_not_user_confirmed" }],
+            sections: [
+              { id: "missing_critical_fields", items: ["housing_bore_D_mm"] },
+              { id: "manufacturer_questions", items: ["Bitte geben Sie die Gehäusebohrung D in mm an."] },
+              { id: "recommended_measurement_and_verification_data", items: [{ field: "housing_bore_D_mm", method: "3-point bore gauge / Innenmessgerät" }] },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          snapshots: [
+            { revision_number: 1, event_type: "case_created_after_analyze", created_at: "2026-05-27T00:00:00Z" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-case-1",
+          raw_inquiry: "Wellendichtring 45x62x8 undicht, Getriebe, Öl, 1500 U/min.",
+          evidence_fields: [
+            {
+              field: "shaft_diameter_d1_mm",
+              value: 45,
+              unit: "mm",
+              origin: "llm_extracted",
+              source_type: "user_text",
+              source_span: "45x62x8",
+              confirmation_status: "confirmed",
+              liability_bearing: true,
+            },
+          ],
+          technical_rwdr_rfq_brief: {
+            artifact_title: "Technical RWDR RFQ Brief",
+            status: "NEEDS_CLARIFICATION",
+            manufacturer_matching_enabled: false,
+            no_final_technical_release: true,
+            confirmed_case_fields: [{ field: "shaft_diameter_d1_mm", value: 45, unit: "mm", source_span: "45x62x8" }],
+            calculation_fields: [],
+            open_fields: [],
+            sections: [{ id: "confirmed_data", items: [{ field: "shaft_diameter_d1_mm", value: 45 }] }],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          snapshots: [
+            { revision_number: 1, event_type: "case_created_after_analyze", created_at: "2026-05-27T00:00:00Z" },
+            { revision_number: 2, event_type: "confirmation_decision_applied", created_at: "2026-05-27T00:01:00Z" },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<RfqPane data={null} />);
+
+    await user.type(screen.getByLabelText(/RWDR-Anfrage einfügen/i), "Wellendichtring 45x62x8 undicht, Getriebe, Öl, 1500 U/min.");
+    await user.click(screen.getByRole("button", { name: /Angaben strukturieren/i }));
+
+    expect(await screen.findByText("Wellendurchmesser d1")).toBeInTheDocument();
+    expect(screen.getByText(/Gefundener Wert/i)).toBeInTheDocument();
+    expect(screen.getByText('"45x62x8"')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bestätigen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bearbeiten" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Nicht angegeben \/ unbekannt/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verwerfen" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Bestätigen" }));
+
+    const confirmationCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).includes("/confirmations"),
+    );
+    const confirmBody = JSON.parse(String(confirmationCall?.[1]?.body));
+    expect(confirmationCall?.[0]).toBe("/api/bff/rfq/rwdr/cases/rwdr-case-1/confirmations");
+    expect(confirmBody.decisions[0]).toMatchObject({
+      field: "shaft_diameter_d1_mm",
+      action: "confirm",
+      source_span: "45x62x8",
+    });
+  });
+
+  it("does not treat missing source span as trusted extracted evidence and supports edit unknown and reject", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-case-2",
+          raw_inquiry: "RWDR Öl",
+          evidence_fields: [
+            {
+              field: "temperature_max_c",
+              value: 80,
+              unit: "degC",
+              origin: "llm_extracted",
+              source_type: "user_text",
+              confirmation_status: "unconfirmed",
+              liability_bearing: true,
+            },
+          ],
+          technical_rwdr_rfq_brief: {
+            artifact_title: "Technical RWDR RFQ Brief",
+            status: "NEEDS_CLARIFICATION",
+            manufacturer_matching_enabled: false,
+            no_final_technical_release: true,
+            confirmed_case_fields: [],
+            calculation_fields: [],
+            open_fields: [{ field: "temperature_max_c", value: 80 }],
+            sections: [{ id: "missing_critical_fields", items: ["temperature_max_c"] }],
+          },
+        }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-case-2",
+          raw_inquiry: "RWDR Öl",
+          evidence_fields: [
+            {
+              field: "temperature_max_c",
+              value: 80,
+              unit: "degC",
+              origin: "llm_extracted",
+              source_type: "user_text",
+              confirmation_status: "unconfirmed",
+              liability_bearing: true,
+            },
+          ],
+          technical_rwdr_rfq_brief: {
+            artifact_title: "Technical RWDR RFQ Brief",
+            status: "NEEDS_CLARIFICATION",
+            manufacturer_matching_enabled: false,
+            no_final_technical_release: true,
+            confirmed_case_fields: [],
+            calculation_fields: [],
+            open_fields: [],
+            sections: [{ id: "missing_critical_fields", items: ["temperature_max_c"] }],
+          },
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<RfqPane data={null} />);
+
+    await user.type(screen.getByLabelText(/RWDR-Anfrage einfügen/i), "RWDR Öl");
+    await user.click(screen.getByRole("button", { name: /Angaben strukturieren/i }));
+
+    expect(await screen.findByText(/Keine exakte Quellenstelle verfügbar/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Bearbeiten" }));
+    await user.clear(screen.getByLabelText(/Maximale Temperatur bearbeiten/i));
+    await user.type(screen.getByLabelText(/Maximale Temperatur bearbeiten/i), "85");
+    await user.click(screen.getByRole("button", { name: /Bearbeitung übernehmen/i }));
+    const confirmationCalls = () =>
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes("/confirmations"));
+    expect(confirmationCalls()[0]?.[0]).toBe("/api/bff/rfq/rwdr/cases/rwdr-case-2/confirmations");
+    expect(JSON.parse(String(confirmationCalls()[0]?.[1]?.body)).decisions[0]).toMatchObject({
+      field: "temperature_max_c",
+      action: "edit",
+      value: "85",
+    });
+
+    await user.click(screen.getByRole("button", { name: /Nicht angegeben \/ unbekannt/i }));
+    expect(JSON.parse(String(confirmationCalls()[1]?.[1]?.body)).decisions[0]).toMatchObject({
+      field: "temperature_max_c",
+      action: "explicitly_unknown",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Verwerfen" }));
+    expect(JSON.parse(String(confirmationCalls()[2]?.[1]?.body)).decisions[0]).toMatchObject({
+      field: "temperature_max_c",
+      action: "reject",
+    });
+    expect(screen.queryByText(/Partner-Fit|Warum passend|passende Partnerprofile/i)).not.toBeInTheDocument();
+  });
+
+  it("generates and exposes the backend-persisted RWDR brief export by case id", async () => {
+    vi.stubGlobal("navigator", {
+      ...window.navigator,
+      clipboard: { writeText: vi.fn() },
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-case-3",
+          raw_inquiry: "RWDR Druck unbekannt",
+          evidence_fields: [
+            {
+              field: "pressure_differential",
+              value: null,
+              origin: "llm_extracted",
+              source_type: "user_text",
+              confirmation_status: "explicitly_unknown",
+              liability_bearing: true,
+            },
+          ],
+          technical_rwdr_rfq_brief: {
+            artifact_title: "Technical RWDR RFQ Brief",
+            status: "NEEDS_CLARIFICATION",
+            manufacturer_matching_enabled: false,
+            no_final_technical_release: true,
+            confirmed_case_fields: [],
+            calculation_fields: [],
+            open_fields: [],
+            sections: [
+              { id: "status", title: "Status", items: ["NEEDS_CLARIFICATION"] },
+              { id: "disclaimer", title: "Disclaimer", items: ["keine finale technische Eignungsfreigabe"] },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          artifact_title: "Technical RWDR RFQ Brief",
+          status: "NEEDS_CLARIFICATION",
+          manufacturer_matching_enabled: false,
+          no_final_technical_release: true,
+          confirmed_case_fields: [],
+          calculation_fields: [],
+          open_fields: [{ field: "pressure_differential", value: null }],
+          sections: [
+            { id: "status", title: "Status", items: ["NEEDS_CLARIFICATION"] },
+            { id: "missing_critical_fields", title: "Kritisch fehlende Angaben", items: ["pressure_differential"] },
+            { id: "disclaimer", title: "Disclaimer", items: ["keine finale technische Eignungsfreigabe"] },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-case-3",
+          export_format: "markdown",
+          content: "# Technical RWDR RFQ Brief\n\nPersistierte Exportfassung",
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<RfqPane data={null} />);
+
+    await user.type(screen.getByLabelText(/RWDR-Anfrage einfügen/i), "RWDR Druck unbekannt");
+    await user.click(screen.getByRole("button", { name: /Angaben strukturieren/i }));
+    expect(await screen.findByText(/RWDR Case: rwdr-cas/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Technical RWDR RFQ Brief erstellen" }));
+
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+      expect(urls).toContain("/api/bff/rfq/rwdr/cases/rwdr-case-3/brief");
+      expect(urls).toContain("/api/bff/rfq/rwdr/cases/rwdr-case-3/export");
+    });
+    expect(await screen.findByRole("button", { name: "Brief als Text kopieren" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Brief als PDF herunterladen" })).toHaveAttribute(
+      "href",
+      "/api/bff/rfq/rwdr/cases/rwdr-case-3/export.pdf",
+    );
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toContain("/api/bff/rfq/rwdr/cases/rwdr-case-3/export");
+  });
+
+  it("restores RWDR case state from URL case id without trusting local evidence fields", async () => {
+    window.history.replaceState({}, "", "/dashboard?rwdr_case_id=rwdr-restore-1");
+    window.localStorage.setItem("sealai_rwdr_case_id", "rwdr-other");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-restore-1",
+          raw_inquiry_text: "RWDR 45x62x8 Öl",
+          evidence_fields: [
+            {
+              field: "shaft_diameter_d1_mm",
+              value: 45,
+              unit: "mm",
+              origin: "llm_extracted",
+              source_span: "45x62x8",
+              confirmation_status: "confirmed",
+              liability_bearing: true,
+            },
+          ],
+          technical_rwdr_rfq_brief: {
+            artifact_title: "Technical RWDR RFQ Brief",
+            status: "NEEDS_CLARIFICATION",
+            manufacturer_matching_enabled: false,
+            no_final_technical_release: true,
+            confirmed_case_fields: [{ field: "shaft_diameter_d1_mm", value: 45, unit: "mm" }],
+            calculation_fields: [],
+            open_fields: [],
+            sections: [{ id: "confirmed_data", title: "Bestätigte Angaben", items: [{ field: "shaft_diameter_d1_mm", value: 45 }] }],
+          },
+          export_markdown: "# Technical RWDR RFQ Brief",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-restore-1",
+          snapshots: [
+            { revision_number: 1, event_type: "case_created_after_analyze" },
+            { revision_number: 2, event_type: "confirmation_decision_applied" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          case_id: "rwdr-restore-1",
+          from_revision: 1,
+          to_revision: 2,
+          from_event_type: "case_created_after_analyze",
+          to_event_type: "confirmation_decision_applied",
+          summary: {
+            changed_fields_count: 1,
+            added_missing_fields_count: 0,
+            removed_missing_fields_count: 1,
+            status_changed: false,
+            brief_changed: false,
+            export_changed: true,
+          },
+          status_diff: {},
+          evidence_field_diffs: [
+            {
+              field: "shaft_diameter_d1_mm",
+              change_type: "confirmation_status_changed",
+              from: { value: 45, confirmation_status: "unconfirmed" },
+              to: { value: 45, confirmation_status: "confirmed" },
+              source_span_changed: false,
+            },
+          ],
+          missing_critical_fields_diff: {
+            added: [],
+            removed: ["shaft_diameter_d1_mm"],
+            unchanged: ["temperature_max_c"],
+          },
+          computed_values_diff: {
+            added: [{ field: "circumferential_speed_mps", value: 3.53 }],
+            changed: [],
+            removed: [],
+          },
+          review_flags_diff: { added: ["pressure_design_review_required"], changed: [], removed: [] },
+          manufacturer_questions_diff: { added: ["Welche maximale Druckdifferenz liegt an?"], changed: [], removed: [] },
+          measurement_recommendations_diff: { added: [], changed: [], removed: [] },
+          export_diff: {
+            markdown_export_changed: false,
+            pdf_export_changed: true,
+            export_metadata_changed: true,
+          },
+          audit_metadata: { audit_metadata_excluded_from_deterministic_diff: true },
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    render(<RfqPane data={null} />);
+
+    expect(await screen.findByText(/RWDR Case: rwdr-re/i)).toBeInTheDocument();
+    expect(await screen.findByText(/aus Backend wiederhergestellt/i)).toBeInTheDocument();
+    expect(screen.getByText("Rev. 2: confirmation_decision_applied")).toBeInTheDocument();
+    expect(screen.getByText(/Origin: llm_extracted · Status: confirmed/i)).toBeInTheDocument();
+    expect(window.localStorage.getItem("sealai_rwdr_case_id")).toBe("rwdr-restore-1");
+    expect(window.localStorage.getItem("rwdr_evidence_fields")).toBeNull();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/bff/rfq/rwdr/cases/rwdr-restore-1");
+
+    await user.click(screen.getByRole("button", { name: "Revisionen vergleichen" }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((call) => String(call[0]))).toContain(
+        "/api/bff/rfq/rwdr/cases/rwdr-restore-1/diff/1/2",
+      );
+    });
+    expect(await screen.findByText(/Bestätigungsstatus geändert/i)).toBeInTheDocument();
+    expect(screen.getByText(/Entfallen: Wellendurchmesser d1/i)).toBeInTheDocument();
+    expect(screen.getByText(/circumferential_speed_mps/i)).toBeInTheDocument();
+    expect(screen.getByText(/PDF-Export geändert/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Partner-Fit|Warum passend|passende Partnerprofile/i)).not.toBeInTheDocument();
   });
 });

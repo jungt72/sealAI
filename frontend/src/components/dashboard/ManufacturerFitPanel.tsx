@@ -72,7 +72,7 @@ function Row({ row }: { row: WorkspaceManufacturerFitRow }) {
 
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Warum passend</div>
+          <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Abgleichsgrundlage</div>
           {row.fitReasons.length ? (
             <ul className="mt-2 space-y-1 text-sm leading-relaxed text-[#111827]">
               {row.fitReasons.map((reason) => (
@@ -112,10 +112,10 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
       <section className="rounded-[18px] border border-[#E5E7EB] bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
         <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
           <Building2 size={17} />
-          Partner-Fit
+          Partner-Abgleich
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-[#4B5563]">
-          SeaLAI zeigt hier später passende Partnerprofile, sobald dafür genügend geprüfte Informationen vorliegen.
+          SeaLAI zeigt hier später Partnerprofile, sobald dafür genügend geprüfte Informationen vorliegen.
         </p>
         <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-seal-blue/20 bg-seal-blue/10 px-3 py-2 text-sm leading-relaxed text-seal-blue">
           <Info className="mt-0.5 shrink-0" size={15} />
@@ -134,7 +134,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
         <div>
           <h2 className="flex items-center gap-2 text-base font-semibold text-[#111827]">
             <Building2 size={17} />
-            Partner-Fit
+            Partner-Abgleich
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-[#4B5563]">
             Nur zur Ansicht: Abgleich mit bekannten Partnerfähigkeiten.
@@ -155,7 +155,7 @@ export function ManufacturerFitPanel({ workspace }: { workspace: WorkspaceView |
         <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-[#FDE2B8] bg-[#FFF4E5] px-3 py-2 text-sm leading-relaxed text-[#9A3412]">
           <AlertTriangle className="mt-0.5 shrink-0" size={15} />
           <span>
-            Aktuell wurde kein passendes Partnerprofil gemeldet. Grund: {readable(matrix!.noSuitablePartnerReason) || "nicht angegeben"}.
+            Aktuell wurde kein Partnerprofil gemeldet. Grund: {readable(matrix!.noSuitablePartnerReason) || "nicht angegeben"}.
           </span>
         </div>
       ) : (

@@ -146,7 +146,7 @@ describe("ManufacturerFitPanel", () => {
   it("renders fit rows with disclosure, reasons and verification level", () => {
     render(<ManufacturerFitPanel workspace={workspaceFixture()} />);
 
-    expect(screen.getByRole("heading", { name: "Partner-Fit" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Partner-Abgleich" })).toBeInTheDocument();
     expect(screen.getByText("Partnernetzwerk-Disclosure. Der Hersteller muss prüfen.")).toBeInTheDocument();
     expect(screen.getByText("partner-a")).toBeInTheDocument();
     expect(screen.getByText("96")).toBeInTheDocument();
@@ -172,7 +172,7 @@ describe("ManufacturerFitPanel", () => {
       />,
     );
 
-    expect(screen.getByText(/Aktuell wurde kein passendes Partnerprofil gemeldet/)).toBeInTheDocument();
+    expect(screen.getByText(/Aktuell wurde kein Partnerprofil gemeldet/)).toBeInTheDocument();
     expect(screen.getByText(/no active paid partner/)).toBeInTheDocument();
     expect(screen.queryByText("partner-a")).not.toBeInTheDocument();
   });
