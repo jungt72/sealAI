@@ -152,7 +152,10 @@ const MessageBubble = React.memo(function MessageBubble({
   return (
     <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "relative justify-start")}>
       {!isUser && (
-        <div className="absolute -left-10 top-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue">
+        <div
+          data-testid="message-avatar-assistant"
+          className="absolute -left-10 top-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue"
+        >
           <Bot size={14} />
         </div>
       )}
@@ -173,7 +176,10 @@ const MessageBubble = React.memo(function MessageBubble({
         )}
       </div>
       {isUser && (
-        <div className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-seal-blue/15 bg-white/70 text-slate-500">
+        <div
+          data-testid="message-avatar-user"
+          className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-seal-blue/15 bg-white/70 text-slate-500"
+        >
           <UserRound size={14} />
         </div>
       )}
@@ -197,9 +203,6 @@ function EmptyChatStart({
       <div className="mb-8 w-full">
         <p className="text-[22px] font-medium leading-tight text-seal-blue">
           {userName ? `Hallo ${userName}` : "Hallo"}
-        </p>
-        <p className="mt-1 text-[22px] font-medium leading-tight text-seal-blue">
-          Schön, dass du wieder hier bist.
         </p>
         <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
           Womit fangen wir an?
@@ -591,7 +594,10 @@ export default function ChatPane({
               )}
 
               {isStreaming && !streamingText && (
-                <div className="flex justify-start gap-3 text-sm text-slate-500">
+                <div
+                  data-testid="thinking-indicator"
+                  className="flex justify-start gap-3 text-sm text-slate-500"
+                >
                   <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue">
                     <Bot size={14} />
                   </div>

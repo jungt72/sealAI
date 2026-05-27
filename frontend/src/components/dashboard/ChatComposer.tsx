@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Paperclip, SendHorizontal } from "lucide-react";
+import { AudioLines, ChevronDown, Mic, Paperclip, SendHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
@@ -91,6 +91,7 @@ export default function ChatComposer({
     <button
       type="button"
       title="Anhang hinzufügen"
+      aria-label="Anhang hinzufügen"
       onClick={() => fileInputRef.current?.click()}
       disabled={!canUpload}
       className={cn(
@@ -101,10 +102,32 @@ export default function ChatComposer({
       <Paperclip size={18} />
     </button>
   );
+  const modeButton = (
+    <button
+      type="button"
+      title="Antwortlänge"
+      aria-label="Antwortlänge"
+      className="hidden h-10 shrink-0 items-center gap-1 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue sm:inline-flex"
+    >
+      <span>Länger</span>
+      <ChevronDown size={15} />
+    </button>
+  );
+  const micButton = (
+    <button
+      type="button"
+      title="Spracheingabe"
+      aria-label="Spracheingabe"
+      className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue sm:inline-flex"
+    >
+      <Mic size={18} />
+    </button>
+  );
   const sendButton = (
     <button
       type="submit"
-      title="Senden"
+      title={canSend ? "Senden" : "Sprachmodus"}
+      aria-label={canSend ? "Senden" : "Sprachmodus"}
       disabled={!canSend}
       className={cn(
         "flex h-10 w-10 shrink-0 items-center justify-center transition-colors",
@@ -114,7 +137,7 @@ export default function ChatComposer({
           : "cursor-not-allowed bg-slate-100 text-slate-400",
       )}
     >
-      <SendHorizontal size={18} />
+      {canSend ? <SendHorizontal size={18} /> : <AudioLines size={18} />}
     </button>
   );
 
@@ -154,7 +177,22 @@ export default function ChatComposer({
           autoFocus={autoFocus}
         />
 
-        {isHero ? <div className="mt-3 flex items-center justify-between">{uploadButton}{sendButton}</div> : sendButton}
+        {isHero ? (
+          <div className="mt-3 flex items-center justify-between">
+            {uploadButton}
+            <div className="flex items-center gap-1">
+              {modeButton}
+              {micButton}
+              {sendButton}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            {modeButton}
+            {micButton}
+            {sendButton}
+          </div>
+        )}
       </div>
     </form>
   );
