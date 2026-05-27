@@ -2,7 +2,10 @@ import type { WorkspaceRfqReadinessProjection } from "./workspace.ts";
 
 export type AgentStreamRequest = {
   caseId?: string;
+  conversationId?: string;
   message: string;
+  turnId?: string;
+  turn_id?: string;
 };
 
 export type AgentAnswerTrace = {
