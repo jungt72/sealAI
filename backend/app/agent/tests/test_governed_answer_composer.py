@@ -26,6 +26,9 @@ from app.agent.communication.governed_answer_context import (
     GovernedAnswerUpdate,
     GovernedCalculationFact,
 )
+from app.agent.communication.technical_case_challenge import (
+    build_technical_case_challenge_plan,
+)
 from app.agent.graph import GraphState
 from app.agent.graph import output_contract_assembly as output_assembly
 from app.agent.graph.nodes.assert_node import assert_node
@@ -105,6 +108,21 @@ async def _assemble_output(state: GraphState) -> GraphState:
             "governed_answer_context": context.model_dump(mode="python"),
         }
     )
+
+
+def test_output_public_carries_runtime_answer_mode() -> None:
+    state = GraphState(
+        runtime_answer_mode="technical_case_challenge",
+        runtime_answer_mode_source="runtime_action.answer_mode",
+    )
+
+    output_public = output_assembly._build_output_public_base(
+        state,
+        "structured_clarification",
+    )
+
+    assert output_public["answer_mode"] == "technical_case_challenge"
+    assert output_public["answer_mode_source"] == "runtime_action.answer_mode"
 
 
 async def _run_turn(message: str, *, pending_question: PendingQuestion | None = None) -> GraphState:
@@ -195,6 +213,95 @@ def test_contextual_fallback_adds_risk_orientation_before_slot_question() -> Non
     assert "Die wichtigste Rückfrage ist" in answer
 
 
+def test_governed_prompt_preserves_explicit_case_challenge_mode() -> None:
+    prompt = Path("backend/app/agent/prompts/governed/answer_composer.j2").read_text(encoding="utf-8")
+
+    assert "challenge den Fall" in prompt
+    assert "keine stumpfe Parameterabfrage" in prompt
+    for heading in (
+        "Kurzurteil",
+        "Kritische Punkte",
+        "Abgeleitete Signale/Berechnungen",
+        "vorsichtige Prüfhypothesen",
+        "Gegenindikatoren/Risiken",
+        "fehlende Blocker",
+        "nächste beste Rückfrage",
+    ):
+        assert heading in prompt
+
+
+def test_salzwasser_rwdr_challenge_plan_uses_deterministic_structure() -> None:
+    message = (
+        "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall. "
+        "Zusammenfassung: Medium: Salzwasser; Temperatur: 50 °C; Druck: 2 bar; "
+        "Drehzahl: 3000 rpm; Wellendurchmesser: 40 mm; Anlage / Einbauort: Boot; "
+        "Dichtungstyp-Richtung: RWDR; Gegenlauffläche: 0,2. Bitte stelle keine stumpfe "
+        "Parameterabfrage. Challenge den Dichtungsfall mit kritischen Punkten, "
+        "Gegenindikatoren, Prüfhypothesen, fehlenden Blockern und nächster bester Rückfrage."
+    )
+
+    plan = build_technical_case_challenge_plan(latest_user_message=message)
+
+    assert plan is not None
+    assert plan.detected_domain == "rwdr"
+    assert plan.rwdr_signals is not None
+    assert plan.rwdr_signals.d1_mm == pytest.approx(40)
+    assert plan.rwdr_signals.speed_rpm == pytest.approx(3000)
+    assert plan.rwdr_signals.circumferential_speed_mps == pytest.approx(6.28)
+    combined = "\n".join(
+        plan.critical_points
+        + plan.computed_signals
+        + plan.cautious_hypotheses
+        + plan.counter_indicators
+        + plan.missing_blockers
+    )
+    assert "Salzwasser" in combined
+    assert "Korrosion" in combined
+    assert "Druck" in combined
+    assert "Gegenlauffläche" in combined
+    assert "6,28 m/s" in combined
+    assert plan.next_best_question is not None
+    assert "dauerhafte Druckdifferenz" in plan.next_best_question
+    assert "Ra in µm" in plan.next_best_question
+
+
+def test_sbb_rwdr_challenge_fallback_is_single_structured_answer() -> None:
+    message = (
+        "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall. "
+        "Challenge den Dichtungsfall: d1 = 5 mm, D = 22 mm, b = 7 mm; Medium: Druckluft; "
+        "Druck = 3 bar; Temperatur -10 bis +40 °C; Arbeitslage horizontal; "
+        "Außermittigkeit keine; Drehzahl keine; Menge 500; Materialwunsch NBR; RWDR."
+    )
+    plan = build_technical_case_challenge_plan(latest_user_message=message)
+    assert plan is not None
+    context = GovernedAnswerContext(
+        latest_user_message=message,
+        answer_mode="technical_case_challenge",
+        technical_case_challenge_plan=plan,
+        next_best_question=plan.next_best_question,
+    )
+
+    answer = render_governed_contextual_fallback(context, "Welcher Druck liegt direkt an der Dichtstelle an?")
+
+    assert "### Kurzurteil" in answer
+    assert "### Kritische Punkte" in answer
+    assert "### Abgeleitete Signale" in answer
+    assert "### Vorsichtige Prüfhypothesen" in answer
+    assert "### Gegenindikatoren / Risiken" in answer
+    assert "### Fehlende Blocker" in answer
+    assert "### Nächste beste Rückfrage" in answer
+    assert "### Grenze der Aussage" in answer
+    assert "d1=5 mm, D=22 mm, b=7 mm" in answer
+    assert "Druckluft" in answer
+    assert "3 bar" in answer
+    assert "NBR ist Nutzerangabe oder Wunschmaterial, keine Empfehlung" in answer
+    assert "rotierende Welle mit Radialwellendichtring" in answer
+    assert answer.count("### Kurzurteil") == 1
+    assert "Danke" not in answer
+    assert "geeignet" not in answer.casefold()
+    assert "freigegeben" not in answer.casefold()
+
+
 def test_contextual_fallback_states_deterministic_calculation_before_question() -> None:
     context = GovernedAnswerContext(
         latest_user_message=(
@@ -253,6 +360,30 @@ def test_contextual_fallback_humanizes_first_leakage_intake_question() -> None:
     assert "Dafür muss ich zuerst wissen" in answer
     assert "Was kommt an der Dichtstelle genau an" in answer
     assert answer.strip() != "Welches Medium soll abgedichtet werden?"
+
+
+def test_contextual_fallback_opens_generic_dichtungssituation_help_warmly() -> None:
+    context = GovernedAnswerContext(
+        latest_user_message="Das ist schön, kannst du mir bei meiner Dichtungssituation helfen?",
+        next_best_question="Welches Medium soll abgedichtet werden?",
+        missing_fields=["medium", "application", "pressure_bar", "temperature_c"],
+        response_class="structured_clarification",
+    )
+
+    answer = render_governed_contextual_fallback(
+        context,
+        "Die technische Richtung ist schon enger, jetzt brauche ich noch genau einen "
+        "belastbaren Hebel. Welches Medium soll abgedichtet werden?",
+    )
+
+    assert answer.startswith("Gerne unterstütze ich dich.")
+    assert "Dichtungssituation" in answer
+    assert "Anwendung" in answer
+    assert "Medium" in answer
+    assert "Rahmenbedingungen" in answer
+    assert "damit ich den Fall sauber einordnen kann?" in answer
+    assert "belastbaren Hebel" not in answer
+    assert "Welches Medium soll abgedichtet werden" not in answer
 
 
 def test_v91_guard_is_backward_compatible_when_context_field_is_missing() -> None:
@@ -458,6 +589,35 @@ async def test_feature_flag_disabled_humanizes_first_leakage_intake(monkeypatch:
     assert "Dafür muss ich zuerst wissen" in result.output_answer_markdown
     assert "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
     assert result.output_answer_markdown != result.output_reply
+
+
+@pytest.mark.asyncio
+async def test_feature_flag_disabled_opens_generic_dichtungssituation_help_warmly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
+
+    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+        pytest.fail("governed composer must not be called while disabled")
+
+    monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
+    state = await _run_turn(
+        "Das ist schön, kannst du mir bei meiner Dichtungssituation helfen?"
+    )
+
+    assert state.output_reply.startswith("Gerne unterstütze ich dich.")
+    assert "belastbaren Hebel" not in state.output_reply
+
+    result = await governed_answer_composer_node(state)
+
+    assert result.output_answer_markdown_source == "deterministic_reply"
+    assert result.output_answer_markdown.startswith("Gerne unterstütze ich dich.")
+    assert "Anwendung" in result.output_answer_markdown
+    assert "Medium" in result.output_answer_markdown
+    assert "Rahmenbedingungen" in result.output_answer_markdown
+    assert "belastbaren Hebel" not in result.output_answer_markdown
+    assert "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
+    assert result.output_answer_markdown == result.output_reply
 
 
 @pytest.mark.asyncio
@@ -821,7 +981,9 @@ async def test_structured_clarification_composer_disabled_uses_contextual_markdo
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
 
-    _payload, materialized = await _run_structured_output_contract()
+    _payload, materialized = await _run_structured_output_contract(
+        "Hallo, ich habe eine Leckage an einer Pumpe und möchte die Dichtung auslegen."
+    )
 
     assert materialized.output_reply
     assert materialized.output_answer_markdown != materialized.output_reply

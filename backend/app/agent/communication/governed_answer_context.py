@@ -5,6 +5,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.communication.context import human_label
+from app.agent.communication.technical_case_challenge import (
+    ANSWER_MODE_TECHNICAL_CASE_CHALLENGE,
+    TechnicalCaseChallengePlan,
+    build_technical_case_challenge_plan,
+)
 from app.agent.state.models import PendingQuestion, SlotAnswerBinding
 from app.agent.v91.contracts import FinalAnswerContext, QuestionPlan
 from app.agent.v91.final_answer_context import build_v91_final_answer_context
@@ -29,6 +34,11 @@ _FORBIDDEN_CLAIMS = [
     "compliance_approval",
     "invented_evidence",
 ]
+
+_SNAPSHOT_REDACT_KEYS = {
+    "forbidden_claims",
+    "forbidden_user_wording",
+}
 
 
 class GovernedAnswerUpdate(BaseModel):
@@ -90,6 +100,10 @@ class GovernedCalculationFact(BaseModel):
 
 class GovernedAnswerContext(BaseModel):
     latest_user_message: str | None = None
+    answer_mode: str | None = None
+    answer_mode_source: str | None = None
+    conversation_messages: list[dict[str, str]] = Field(default_factory=list)
+    state_snapshot: dict[str, Any] = Field(default_factory=dict)
     pending_question: PendingQuestion | None = None
     slot_answer_bindings: list[SlotAnswerBinding] = Field(default_factory=list)
     accepted_updates: list[GovernedAnswerUpdate] = Field(default_factory=list)
@@ -101,6 +115,7 @@ class GovernedAnswerContext(BaseModel):
     open_points: list[str] = Field(default_factory=list)
     challenge_findings: list[dict[str, Any]] = Field(default_factory=list)
     challenge_hypotheses: list[dict[str, Any]] = Field(default_factory=list)
+    technical_case_challenge_plan: TechnicalCaseChallengePlan | None = None
     next_best_question: str | None = None
     v91_question_plan: QuestionPlan | None = None
     v91_final_answer_context: FinalAnswerContext | None = None
@@ -128,6 +143,93 @@ def _latest_user_message(state: Any) -> str | None:
             if text:
                 return text
     return None
+
+
+def _conversation_messages(state: Any) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    for message in list(getattr(state, "conversation_messages", []) or []):
+        role = str(getattr(message, "role", "") or "").strip()
+        content = str(getattr(message, "content", "") or "").strip()
+        if role and content:
+            messages.append({"role": role, "content": content})
+    return messages
+
+
+def _answer_state_snapshot(state: Any) -> dict[str, Any]:
+    """Return the complete technical answer state, with transcript separated."""
+
+    exclude = {
+        "conversation_messages",
+        "governed_answer_context",
+        "output_public",
+        "output_reply",
+        "output_answer_markdown",
+    }
+    if hasattr(state, "model_dump"):
+        try:
+            return _redact_prompt_only_forbidden_wording(
+                state.model_dump(mode="json", exclude=exclude)
+            )
+        except Exception:  # noqa: BLE001
+            try:
+                return _redact_prompt_only_forbidden_wording(
+                    state.model_dump(mode="python", exclude=exclude)
+                )
+            except Exception:  # noqa: BLE001
+                pass
+    snapshot: dict[str, Any] = {}
+    for key in (
+        "observed",
+        "normalized",
+        "asserted",
+        "derived",
+        "evidence",
+        "governance",
+        "decision",
+        "medium_capture",
+        "medium_classification",
+        "application_hint",
+        "motion_hint",
+        "challenge",
+        "seal_system",
+        "engineering",
+        "calculation",
+        "standards",
+        "matching",
+        "rfq",
+        "action_readiness",
+        "document_evidence",
+        "failure_observation",
+        "dossier",
+    ):
+        value = getattr(state, key, None)
+        if value is None:
+            continue
+        if hasattr(value, "model_dump"):
+            snapshot[key] = value.model_dump(mode="json")
+        else:
+            snapshot[key] = value
+    return _redact_prompt_only_forbidden_wording(snapshot)
+
+
+def _redact_prompt_only_forbidden_wording(value: Any) -> Any:
+    """Remove internal forbidden-word examples from the LLM prompt context.
+
+    The runtime guards still enforce these phrases. They do not need to be
+    copied into the answer-composer prompt, where they increase leakage risk.
+    """
+
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if str(key) in _SNAPSHOT_REDACT_KEYS:
+                redacted[str(key)] = []
+                continue
+            redacted[str(key)] = _redact_prompt_only_forbidden_wording(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_prompt_only_forbidden_wording(item) for item in value]
+    return value
 
 
 def _field_unit(state: Any, field_key: str) -> str | None:
@@ -200,7 +302,7 @@ def _challenge_findings(state: Any) -> list[dict[str, Any]]:
                 "evidence_fields": list(payload.get("evidence_fields") or [])[:5],
                 "missing_fields": list(payload.get("missing_fields") or [])[:5],
                 "allowed_user_wording": str(payload.get("allowed_user_wording") or ""),
-                "forbidden_user_wording": list(payload.get("forbidden_user_wording") or [])[:5],
+                "forbidden_user_wording": [],
             }
         )
     return findings
@@ -381,6 +483,17 @@ def _allowed_claims(
     return _unique(claims)
 
 
+def _explicit_answer_mode(state: Any, output_public: dict[str, Any] | None) -> tuple[str | None, str | None]:
+    if isinstance(output_public, dict):
+        value = str(output_public.get("answer_mode") or "").strip()
+        if value:
+            return value, str(output_public.get("answer_mode_source") or "output_public.answer_mode")
+    value = str(getattr(state, "runtime_answer_mode", "") or "").strip()
+    if value:
+        return value, str(getattr(state, "runtime_answer_mode_source", "") or "state.runtime_answer_mode")
+    return None, None
+
+
 def build_governed_answer_context(
     state: Any,
     *,
@@ -406,6 +519,29 @@ def build_governed_answer_context(
     challenge_findings = _challenge_findings(state)
     challenge_hypotheses = _challenge_hypotheses(state)
     next_question = _next_best_question(strategy, ambiguous)
+    latest_message = _latest_user_message(state)
+    state_snapshot = _answer_state_snapshot(state)
+    explicit_answer_mode, answer_mode_source = _explicit_answer_mode(state, output_public)
+    technical_case_challenge_plan = None
+    if explicit_answer_mode == ANSWER_MODE_TECHNICAL_CASE_CHALLENGE:
+        technical_case_challenge_plan = build_technical_case_challenge_plan(
+            latest_user_message=latest_message,
+            state_snapshot=state_snapshot,
+            missing_fields=missing,
+            force=True,
+        )
+        answer_mode_source = answer_mode_source or "runtime_action.answer_mode"
+    elif explicit_answer_mode is None:
+        technical_case_challenge_plan = build_technical_case_challenge_plan(
+            latest_user_message=latest_message,
+            state_snapshot=state_snapshot,
+            missing_fields=missing,
+        )
+        if technical_case_challenge_plan is not None:
+            explicit_answer_mode = ANSWER_MODE_TECHNICAL_CASE_CHALLENGE
+            answer_mode_source = "fallback_latest_user_message"
+    if technical_case_challenge_plan is not None:
+        next_question = technical_case_challenge_plan.next_best_question or next_question
     question_plan = build_question_plan_from_strategy(
         strategy=strategy,
         state=state,
@@ -420,7 +556,11 @@ def build_governed_answer_context(
         ),
     )
     context = GovernedAnswerContext(
-        latest_user_message=_latest_user_message(state),
+        latest_user_message=latest_message,
+        answer_mode=explicit_answer_mode,
+        answer_mode_source=answer_mode_source,
+        conversation_messages=_conversation_messages(state),
+        state_snapshot=state_snapshot,
         pending_question=pending_question if pending_question is not None else getattr(state, "pending_question", None),
         slot_answer_bindings=bindings,
         accepted_updates=_accepted_updates(state, bindings),
@@ -432,6 +572,7 @@ def build_governed_answer_context(
         open_points=open_points,
         challenge_findings=challenge_findings,
         challenge_hypotheses=challenge_hypotheses,
+        technical_case_challenge_plan=technical_case_challenge_plan,
         next_best_question=next_question,
         v91_question_plan=question_plan,
         response_class=response_class or str(getattr(state, "output_response_class", "") or "") or None,

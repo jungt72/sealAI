@@ -21,7 +21,7 @@ export type ChatMessage = {
 
 function streamProgressText(data: unknown): string {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return "SealingAI prüft den Fall...";
+    return "Eine Sekunde bitte, ich prüfe den technischen Kontext.";
   }
   const eventType = String((data as Record<string, unknown>).event_type || "");
   if (eventType === "evidence_retrieved") {
@@ -45,7 +45,7 @@ function streamProgressText(data: unknown): string {
   if (eventType === "final_guard.done") {
     return "SealingAI gibt die geprüfte Antwort frei...";
   }
-  return "SealingAI prüft den Fall...";
+  return "Eine Sekunde bitte, ich prüfe den technischen Kontext.";
 }
 
 type UseAgentStreamOptions = {
@@ -162,10 +162,113 @@ function userVisibleStreamError(value: unknown, status?: number): string {
   if (lowered.includes("agent stream failed") || lowered.includes("agent_stream_failed")) {
     return "Die Antwort konnte gerade nicht geladen werden. Bitte versuche es erneut.";
   }
+  if (
+    lowered.includes("network") ||
+    lowered.includes("aborted") ||
+    lowered.includes("terminated") ||
+    lowered.includes("connection") ||
+    lowered.includes("failed to fetch")
+  ) {
+    return "Die Verbindung zur Antwort wurde unterbrochen. Bitte prüfe die Verbindung und versuche es erneut.";
+  }
   if (!parsed || parsed.startsWith("{") || parsed.startsWith("[")) {
     return "Die Antwort konnte gerade nicht geladen werden. Bitte versuche es erneut.";
   }
   return parsed;
+}
+
+function streamErrorStatus(payload: Record<string, unknown>): number | undefined {
+  const code = String(payload.error_code || payload.code || "").toLowerCase();
+  if (
+    code.includes("auth") ||
+    code.includes("token") ||
+    code.includes("unauthorized") ||
+    code.includes("expired")
+  ) {
+    return 401;
+  }
+  return undefined;
+}
+
+function streamEventDedupeKey(payload: Record<string, unknown>): string | null {
+  const explicitId = payload.event_id || payload.eventId;
+  if (typeof explicitId === "string" && explicitId.trim()) {
+    return `event:${explicitId.trim()}`;
+  }
+  const turnId = payload.turn_id || payload.turnId;
+  const sequence = payload.sequence;
+  const type = typeof payload.type === "string" ? payload.type : "message";
+  if (
+    typeof turnId === "string" &&
+    turnId.trim() &&
+    (typeof sequence === "number" || typeof sequence === "string")
+  ) {
+    return `turn:${turnId.trim()}:${type}:${String(sequence)}`;
+  }
+  return null;
+}
+
+const NO_CASE_CONVERSATION_STORAGE_KEY = "sealai:no-case-conversation-id";
+
+function createClientConversationId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `conversation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createClientTurnId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function payloadTurnId(payload: Record<string, unknown>): string | null {
+  const turnId = payload.turn_id || payload.turnId;
+  return typeof turnId === "string" && turnId.trim() ? turnId.trim() : null;
+}
+
+function readStoredNoCaseConversationId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const stored = window.sessionStorage.getItem(NO_CASE_CONVERSATION_STORAGE_KEY);
+    return stored && stored.trim() ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeNoCaseConversationId(conversationId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(NO_CASE_CONVERSATION_STORAGE_KEY, conversationId);
+  } catch {
+    // Session storage is a resilience layer; the in-memory ref remains authoritative.
+  }
+}
+
+function getInitialConversationId(initialCaseId?: string): string {
+  if (initialCaseId) {
+    return initialCaseId;
+  }
+  const stored = readStoredNoCaseConversationId();
+  if (stored) {
+    return stored;
+  }
+  const conversationId = createClientConversationId();
+  storeNoCaseConversationId(conversationId);
+  return conversationId;
+}
+
+function rotateNoCaseConversationId(): string {
+  const conversationId = createClientConversationId();
+  storeNoCaseConversationId(conversationId);
+  return conversationId;
 }
 
 export function useAgentStream(options: UseAgentStreamOptions = {}) {
@@ -185,11 +288,17 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
   const streamRequestIdRef = useRef(0);
   const finalizedRequestIdRef = useRef<number | null>(null);
   const latestCaseIdRef = useRef<string | null>(initialCaseId || null);
+  const conversationIdRef = useRef<string>(getInitialConversationId(initialCaseId));
   const noCaseTurnRef = useRef(false);
   const finalAssistantAnswerSourceRef = useRef<ChatMessage["answerSource"] | null>(null);
   const finalAssistantAnswerTraceRef = useRef<AgentAnswerTrace | null>(null);
   const trackedCaseIdsRef = useRef<Set<string>>(new Set());
   const trackedFirstInputCaseIdsRef = useRef<Set<string>>(new Set());
+  const finalStateReceivedRef = useRef(false);
+  const streamDoneReceivedRef = useRef(false);
+  const streamInterruptedRef = useRef(false);
+  const seenStreamEventKeysRef = useRef<Set<string>>(new Set());
+  const activeTurnIdRef = useRef<string | null>(null);
 
   const trackCaseBound = useCallback((caseId: string, source: string) => {
     if (trackedCaseIdsRef.current.has(caseId)) {
@@ -253,6 +362,9 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     if (!caseId || historyLoadedCaseIdRef.current === caseId) {
       return;
     }
+    latestCaseIdRef.current = caseId;
+    conversationIdRef.current = caseId;
+    setActiveCaseId(caseId);
     let isCurrent = true;
     const historyCaseId = caseId;
     historyLoadedCaseIdRef.current = historyCaseId;
@@ -320,23 +432,46 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
 
       setMessages((current) => [...current, { role: "user", content: trimmed, timestamp: new Date().toISOString() }]);
       setStreamingText("");
-      setStreamingStatusText("SealingAI prüft den Fall...");
+      setStreamingStatusText("Eine Sekunde bitte, ich prüfe den technischen Kontext.");
       setStreamingAnswerSource(null);
       finalAssistantTextRef.current = "";
       finalAssistantAnswerSourceRef.current = null;
       finalAssistantAnswerTraceRef.current = null;
+      finalStateReceivedRef.current = false;
+      streamDoneReceivedRef.current = false;
+      streamInterruptedRef.current = false;
+      seenStreamEventKeysRef.current.clear();
       setError(null);
       setIsStreaming(true);
 
       abortControllerRef.current = new AbortController();
       streamRequestIdRef.current += 1;
       const requestId = streamRequestIdRef.current;
+      const turnId = createClientTurnId();
+      activeTurnIdRef.current = turnId;
       finalizedRequestIdRef.current = null;
       noCaseTurnRef.current = false;
 
+      const markStreamInterrupted = (reason: unknown, status?: number) => {
+        if (streamRequestIdRef.current !== requestId) {
+          return;
+        }
+        streamInterruptedRef.current = true;
+        finalizedRequestIdRef.current = requestId;
+        finalAssistantTextRef.current = "";
+        finalAssistantAnswerSourceRef.current = null;
+        finalAssistantAnswerTraceRef.current = null;
+        setError(userVisibleStreamError(reason, status));
+        setStreamingStatusText("");
+        setStreamingAnswerSource(null);
+        setIsStreaming(false);
+      };
+
       const payload: AgentStreamRequest = {
         caseId: activeCaseId || undefined,
+        conversationId: activeCaseId ? undefined : conversationIdRef.current,
         message: trimmed,
+        turnId,
       };
 
       try {
@@ -372,6 +507,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
             }
 
             if (event.data === "[DONE]") {
+              streamDoneReceivedRef.current = true;
               setIsStreaming(false);
               setStreamingStatusText("");
               if (latestCaseIdRef.current && !noCaseTurnRef.current) {
@@ -387,9 +523,23 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               return;
             }
 
+            const eventTurnId = payloadTurnId(payload);
+            if (eventTurnId && activeTurnIdRef.current && eventTurnId !== activeTurnIdRef.current) {
+              return;
+            }
+
+            const dedupeKey = streamEventDedupeKey(payload);
+            if (dedupeKey) {
+              if (seenStreamEventKeysRef.current.has(dedupeKey)) {
+                return;
+              }
+              seenStreamEventKeysRef.current.add(dedupeKey);
+            }
+
             const type = String(payload.type || "message");
             if (type === "case_bound" && typeof payload.caseId === "string") {
               latestCaseIdRef.current = payload.caseId;
+              conversationIdRef.current = payload.caseId;
               setActiveCaseId(payload.caseId);
               trackCaseBound(payload.caseId, "case_bound_event");
               onCaseBound?.(payload.caseId);
@@ -432,6 +582,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
             }
 
             if (type === "state_update") {
+              finalStateReceivedRef.current = true;
               const stateUpdate = payload as unknown as AgentStateUpdateEvent;
               const answerMarkdown =
                 typeof stateUpdate.answer_markdown === "string" ? stateUpdate.answer_markdown.trim() : "";
@@ -460,6 +611,7 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
                 onCaseBound?.(streamCaseId);
               }
               latestCaseIdRef.current = streamCaseId;
+              conversationIdRef.current = streamCaseId;
               setActiveCaseId(streamCaseId);
               const nextWorkspace = buildStreamWorkspaceView(
                 stateUpdate as AgentStateUpdateEvent & { caseId: string },
@@ -468,14 +620,22 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
               return;
             }
 
-            if (type === "error") {
-              setError(userVisibleStreamError(payload.message || payload));
-              setStreamingStatusText("");
-              setIsStreaming(false);
+            if (type === "error" || type === "interrupted") {
+              markStreamInterrupted(payload.message || payload, streamErrorStatus(payload));
             }
           },
           onclose() {
             if (streamRequestIdRef.current === requestId) {
+              if (
+                !streamDoneReceivedRef.current &&
+                !finalStateReceivedRef.current &&
+                finalAssistantTextRef.current
+              ) {
+                markStreamInterrupted(
+                  "Die Verbindung zur Antwort wurde unterbrochen. Bitte versuche es erneut.",
+                );
+                return;
+              }
               setIsStreaming(false);
               setStreamingStatusText("");
               if (latestCaseIdRef.current && !noCaseTurnRef.current) {
@@ -485,14 +645,23 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
           },
           onerror(error) {
             if (streamRequestIdRef.current === requestId) {
-              setError(userVisibleStreamError(error));
-              setStreamingStatusText("");
-              setIsStreaming(false);
+              markStreamInterrupted(error);
             }
             throw error;
           },
         });
-        finalizeAssistantTurn(requestId);
+        if (streamRequestIdRef.current !== requestId || streamInterruptedRef.current) {
+          return;
+        }
+        if (finalStateReceivedRef.current) {
+          finalizeAssistantTurn(requestId);
+          return;
+        }
+        if (finalAssistantTextRef.current) {
+          markStreamInterrupted(
+            "Die Verbindung zur Antwort wurde vor der finalen Bestätigung unterbrochen. Bitte versuche es erneut.",
+          );
+        }
       } catch {
         setIsStreaming(false);
       }
@@ -507,6 +676,11 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
     finalAssistantAnswerTraceRef.current = null;
+    finalStateReceivedRef.current = false;
+    streamDoneReceivedRef.current = false;
+    streamInterruptedRef.current = true;
+    seenStreamEventKeysRef.current.clear();
+    activeTurnIdRef.current = null;
     noCaseTurnRef.current = false;
     setStreamingText("");
     setStreamingStatusText("");
@@ -527,8 +701,16 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
     finalAssistantAnswerTraceRef.current = null;
+    finalStateReceivedRef.current = false;
+    streamDoneReceivedRef.current = false;
+    streamInterruptedRef.current = false;
+    seenStreamEventKeysRef.current.clear();
+    activeTurnIdRef.current = null;
     setError(null);
     setActiveCaseId(null);
+    latestCaseIdRef.current = null;
+    conversationIdRef.current = rotateNoCaseConversationId();
+    noCaseTurnRef.current = false;
     setStreamWorkspace(null);
   }, [cancelStream]);
 
@@ -540,6 +722,11 @@ export function useAgentStream(options: UseAgentStreamOptions = {}) {
     finalAssistantTextRef.current = "";
     finalAssistantAnswerSourceRef.current = null;
     finalAssistantAnswerTraceRef.current = null;
+    finalStateReceivedRef.current = false;
+    streamDoneReceivedRef.current = false;
+    streamInterruptedRef.current = false;
+    seenStreamEventKeysRef.current.clear();
+    activeTurnIdRef.current = null;
     setStreamingText("");
     setStreamingStatusText("");
     setStreamingAnswerSource(null);

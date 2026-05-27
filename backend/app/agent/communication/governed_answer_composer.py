@@ -11,6 +11,10 @@ from typing import Any, AsyncGenerator, Literal
 from app.agent.communication.governed_answer_context import GovernedAnswerContext
 from app.agent.communication.context import human_label
 from app.agent.communication.templates import render_communication_template
+from app.agent.communication.technical_case_challenge import (
+    ANSWER_MODE_TECHNICAL_CASE_CHALLENGE,
+    render_technical_case_challenge_plan,
+)
 from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.agent.v92.contracts import PromptTrace
@@ -66,6 +70,7 @@ _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 _RECOVERABLE_REPAIR_REASONS = {
     "bare_medium_intake_question",
     "missing_material_orientation",
+    "robotic_intake_opening",
     "slot_question_before_orientation",
     "routine_confirmation_or_restatement",
     "restates_recently_supplied_value",
@@ -125,18 +130,27 @@ class GovernedAnswerComposer:
                 messages=messages,
             )
         except GovernedAnswerComposerError as exc:
+            fallback = _recoverable_contextual_output(request, exc)
+            if fallback is not None:
+                return fallback
             if not _is_recoverable_repair_reason(exc):
                 raise
             repair_messages = build_governed_answer_composer_messages(
                 request,
                 repair_reason=safe_governed_answer_composer_error_reason(exc),
             )
-            return await self._compose_once(
-                client=client,
-                model=model,
-                request=request,
-                messages=repair_messages,
-            )
+            try:
+                return await self._compose_once(
+                    client=client,
+                    model=model,
+                    request=request,
+                    messages=repair_messages,
+                )
+            except GovernedAnswerComposerError as repair_exc:
+                fallback = _recoverable_contextual_output(request, repair_exc)
+                if fallback is not None:
+                    return fallback
+                raise
 
     async def stream(
         self,
@@ -370,6 +384,13 @@ def build_governed_answer_composer_messages(
                 "Ask naturally what touches or leaks at the sealing point, including concentration, additives, "
                 "or cleaning media if relevant. "
             )
+        if repair_reason == "robotic_intake_opening":
+            repair_instruction += (
+                "The user is asking for help with a sealing situation, not supplying a concrete parameter yet. "
+                "Open warmly and empathetically. Ask one broad intake question that covers application, medium, "
+                "and relevant operating/installation conditions. Do not use phrases like 'technische Richtung', "
+                "'belastbarer Hebel', or a bare medium slot question. "
+            )
         if terms:
             repair_instruction += (
                 f"The user explicitly named these material families: {terms}. "
@@ -458,6 +479,26 @@ def _is_recoverable_repair_reason(exc: GovernedAnswerComposerError) -> bool:
     return reason in _RECOVERABLE_REPAIR_REASONS
 
 
+def _recoverable_contextual_output(
+    request: GovernedAnswerComposerInput,
+    exc: GovernedAnswerComposerError,
+) -> GovernedAnswerComposerOutput | None:
+    if not _is_recoverable_repair_reason(exc):
+        return None
+    answer = render_governed_contextual_fallback(
+        request.context,
+        request.deterministic_reply,
+    )
+    if not str(answer or "").strip():
+        return None
+    if str(answer).strip() == str(request.deterministic_reply or "").strip():
+        return None
+    return GovernedAnswerComposerOutput(
+        answer_markdown=str(answer).strip(),
+        confidence_note=None,
+    )
+
+
 def safe_governed_answer_composer_error_reason(exc: BaseException) -> str:
     if isinstance(exc, GovernedAnswerComposerError):
         raw = str(exc) or exc.__class__.__name__
@@ -513,6 +554,11 @@ def should_render_governed_contextual_fallback(
 
     if context is None:
         return False
+    if (
+        getattr(context, "answer_mode", None) == ANSWER_MODE_TECHNICAL_CASE_CHALLENGE
+        and getattr(context, "technical_case_challenge_plan", None) is not None
+    ):
+        return True
     if _technical_orientation_for_user_task(context.latest_user_message):
         return True
     if _needs_human_intake_fallback(context, deterministic_reply):
@@ -521,6 +567,12 @@ def should_render_governed_contextual_fallback(
 
 
 def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
+    if (
+        getattr(context, "answer_mode", None) == ANSWER_MODE_TECHNICAL_CASE_CHALLENGE
+        and context.technical_case_challenge_plan is not None
+    ):
+        return render_technical_case_challenge_plan(context.technical_case_challenge_plan)
+
     orientation = _technical_orientation_for_user_task(context.latest_user_message)
     calculation_orientation = _calculation_orientation(context)
     if calculation_orientation:
@@ -533,16 +585,17 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
         if value and question:
             clarification = (
                 f"{value} ist als {label} im Arbeitsstand. "
-                f"Für die technische Einordnung muss ich das genauer fassen: {question}"
+                "Für die technische Einordnung muss ich das genauer fassen, "
+                f"weil die genaue Einordnung die Dichtungsbewertung beeinflusst: {question}"
             )
             return _join_orientation_and_question(orientation, clarification)
         if question:
-            return _join_orientation_and_question(orientation, question)
+            return _join_orientation_and_question(orientation, _question_with_reason(question, context))
 
     if context.accepted_updates:
         question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
         if question:
-            return _join_orientation_and_question(orientation, question)
+            return _join_orientation_and_question(orientation, _question_with_reason(question, context))
         return _join_orientation_and_question(
             orientation,
             "Ich halte die Angabe als Arbeitsstand fest und prüfe den nächsten sinnvollen Schritt.",
@@ -550,14 +603,42 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
 
     question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
     if question:
+        open_help_prompt = (
+            _open_sealing_help_prompt(context.latest_user_message)
+            if not (context.accepted_updates or context.ambiguous_values or context.rejected_updates)
+            else ""
+        )
+        if open_help_prompt:
+            return open_help_prompt
         intake_orientation = _human_intake_orientation(context.latest_user_message)
         if intake_orientation and not orientation:
             return _join_intake_orientation_and_question(
                 intake_orientation,
                 _humanize_intake_question(question),
             )
-        return _join_orientation_and_question(orientation, question)
+        return _join_orientation_and_question(orientation, _question_with_reason(question, context))
     return ""
+
+
+def _question_with_reason(question: str, context: GovernedAnswerContext) -> str:
+    clean_question = _clean_question(question)
+    if not clean_question:
+        return ""
+    lowered = clean_question.casefold()
+    if any(marker in lowered for marker in ("weil", "wichtig", "damit", "relevant", "beeinflusst")):
+        return clean_question
+    reason = ""
+    question_plan = getattr(context, "v91_question_plan", None)
+    if question_plan is not None:
+        reason = str(getattr(question_plan, "reason", "") or "").strip()
+    final_context = getattr(context, "v91_final_answer_context", None)
+    if not reason and final_context is not None:
+        final_question_plan = getattr(final_context, "question_plan", None)
+        reason = str(getattr(final_question_plan, "primary_question_reason", "") or "").strip()
+    if not reason:
+        return clean_question
+    clean_reason = reason.rstrip(" .")
+    return f"{clean_question} Das ist wichtig, weil {clean_reason}."
 
 
 _CALC_OUTPUT_LABELS = {
@@ -685,6 +766,37 @@ def _human_intake_orientation(latest_user_message: str | None) -> str:
             ),
         )
     return ""
+
+
+_OPEN_SEALING_HELP_RE = re.compile(
+    r"\b(?:kannst|könntest|koenntest|hilf|hilfe|unterstütz\w*|unterstuetz\w*)\b"
+    r".{0,80}\b(?:dichtung|dichtungs\w*|dichtstelle|seal)\b"
+    r"|\b(?:dichtung|dichtungs\w*|dichtstelle|seal)\b"
+    r".{0,80}\b(?:helfen|hilfe|unterstütz\w*|unterstuetz\w*)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _is_open_sealing_help_request(latest_user_message: str | None) -> bool:
+    text = str(latest_user_message or "").strip()
+    if not text:
+        return False
+    return bool(_OPEN_SEALING_HELP_RE.search(text))
+
+
+def _open_sealing_help_prompt(latest_user_message: str | None) -> str:
+    if not _is_open_sealing_help_request(latest_user_message):
+        return ""
+    return render_communication_template(
+        "governed_human_intake_orientation",
+        {"mode": "open_help"},
+        fallback=(
+            "Gerne unterstütze ich dich. Erzähl mir bitte kurz von deiner "
+            "Dichtungssituation: Welche Anwendung liegt vor, welches Medium "
+            "berührt die Dichtung und welche Rahmenbedingungen sind wichtig, "
+            "damit ich den Fall sauber einordnen kann?"
+        ),
+    )
 
 
 def _humanize_intake_question(question: str) -> str:
@@ -938,6 +1050,21 @@ def _validate_contextual_answer_discipline(
         and "welches medium soll abgedichtet werden" in lowered_answer
     ):
         raise GovernedAnswerComposerError("bare_medium_intake_question")
+    if (
+        _is_open_sealing_help_request(latest)
+        and not context.accepted_updates
+        and not context.ambiguous_values
+    ):
+        robotic_fragments = (
+            "die technische richtung ist schon enger",
+            "technische richtung ist schon enger",
+            "belastbaren hebel",
+            "welches medium soll abgedichtet werden",
+        )
+        if any(fragment in lowered_answer for fragment in robotic_fragments):
+            raise GovernedAnswerComposerError("robotic_intake_opening")
+        if not all(fragment in lowered_answer for fragment in ("anwendung", "medium")):
+            raise GovernedAnswerComposerError("robotic_intake_opening")
 
     if _technical_orientation_for_user_task(latest):
         latest_lowered = latest.casefold()

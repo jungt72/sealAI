@@ -184,6 +184,51 @@ test("getAccessTokenResult returns rotated Auth.js session cookie updates", asyn
   }
 });
 
+test("getAccessTokenResult can force refresh for backend-expired token retries", async () => {
+  process.env.AUTH_SECRET = AUTH_SECRET;
+  process.env.KEYCLOAK_ISSUER = "https://keycloak.example/realms/sealAI";
+  process.env.KEYCLOAK_CLIENT_ID = "nextauth";
+  process.env.KEYCLOAK_CLIENT_SECRET = "client-secret";
+  const cookie = await buildSessionCookie({
+    secureCookie: true,
+    accessToken: "still-locally-valid-access-token",
+    refreshToken: "refresh-token",
+    expiresAt: Math.floor(Date.now() / 1000) + 300,
+  });
+  const request = new Request("https://sealingai.com/api/bff/agent/chat/stream", {
+    headers: {
+      cookie,
+      "x-forwarded-proto": "https",
+    },
+  });
+  const originalFetch = globalThis.fetch;
+  let refreshCalled = false;
+  globalThis.fetch = (async () => {
+    refreshCalled = true;
+    return new Response(
+      JSON.stringify({
+        access_token: "fresh-access-token",
+        refresh_token: "rotated-refresh-token",
+        expires_in: 300,
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const result = await getAccessTokenResult(request, { forceRefresh: true });
+
+    assert.equal(refreshCalled, true);
+    assert.equal(result.accessToken, "fresh-access-token");
+    assert.ok(result.cookieUpdates.length >= 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.KEYCLOAK_ISSUER;
+    delete process.env.KEYCLOAK_CLIENT_ID;
+    delete process.env.KEYCLOAK_CLIENT_SECRET;
+  }
+});
+
 test("getAccessToken rejects requests without a session cookie", async () => {
   process.env.AUTH_SECRET = AUTH_SECRET;
   const request = new Request("https://sealingai.com/api/bff/workspace/case-1");

@@ -136,16 +136,29 @@ class TestBuildMessages:
         roles = [m["role"] for m in msgs]
         assert roles.count("user") == 2
 
-    def test_accepts_langchain_message_history(self):
+    def test_conversation_followup_accepts_langchain_message_history(self):
         history = [
             HumanMessage(content="Was ist NBR?"),
             AIMessage(content="NBR ist ein synthetischer Kautschuk."),
         ]
 
-        msgs = _build_messages("Danke", history=history, mode="CONVERSATION")
+        msgs = _build_messages("Und FKM?", history=history, mode="CONVERSATION")
 
         assert {"role": "user", "content": "Was ist NBR?"} in msgs
         assert {"role": "assistant", "content": "NBR ist ein synthetischer Kautschuk."} in msgs
+        assert msgs[-1] == {"role": "user", "content": "Und FKM?"}
+
+    def test_smalltalk_conversation_omits_case_history_from_llm_messages(self):
+        history = [
+            HumanMessage(content="Medium ist HLP 46 bei 80 C und 10 bar."),
+            AIMessage(content="Ich brauche noch die Drehzahl."),
+        ]
+
+        msgs = _build_messages("Danke", history=history, mode="CONVERSATION")
+
+        serialized = str(msgs)
+        assert "HLP 46" not in serialized
+        assert "Drehzahl" not in serialized
         assert msgs[-1] == {"role": "user", "content": "Danke"}
 
 
@@ -158,7 +171,7 @@ class TestConversationStrategyContract:
         assert strategy.turn_goal == "open_conversation"
         assert strategy.response_mode == "open_invitation"
         assert strategy.primary_question is not None
-        assert "Anwendung oder Ihrem Anliegen" in strategy.primary_question
+        assert "Anwendung oder deinem Anliegen" in strategy.primary_question
 
     def test_open_goal_statement_gets_specific_mirror_before_question(self):
         strategy = _build_conversation_strategy_contract(
@@ -170,7 +183,7 @@ class TestConversationStrategyContract:
         assert strategy is not None
         assert strategy.conversation_phase == "rapport"
         assert strategy.primary_question == (
-            "Beschreiben Sie mir bitte zunaechst kurz, worum es in Ihrer Anwendung oder Ihrem Anliegen geht?"
+            "Erzähl mir bitte zuerst kurz, worum es in deiner Anwendung oder deinem Anliegen geht?"
         )
 
     def test_turn_two_without_case_context_builds_exploration_strategy(self):
@@ -281,7 +294,7 @@ class TestConversationStrategyContract:
         )
 
         assert strategy is not None
-        assert strategy.user_signal_mirror == "Verstanden, ich gehe jetzt von Ihrer Korrektur aus"
+        assert strategy.user_signal_mirror == "Verstanden, ich gehe jetzt von deiner Korrektur aus"
 
     def test_turn_context_includes_confirmed_facts_and_open_focus_from_case_context(self):
         turn_context = _build_conversation_turn_context(
@@ -481,7 +494,7 @@ class TestStreamConversation:
             )
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"].startswith("Verstanden, ich gehe jetzt von Ihrer Korrektur aus.")
+        assert state_update["reply"].startswith("Verstanden, ich gehe jetzt von deiner Korrektur aus.")
         assert "Dann schaue ich als Nächstes auf die Einbausituation." in state_update["reply"]
 
     @pytest.mark.asyncio
@@ -615,7 +628,7 @@ class TestStreamConversation:
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"].startswith(
-            "Verstanden, Sie beschreiben ein konkretes Leckage- oder Ausfallbild."
+            "Verstanden, du beschreibst ein konkretes Leckage- oder Ausfallbild."
         )
         assert "Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation." in state_update["reply"]
         assert "Wann zeigt sich die Leckage am deutlichsten?" in state_update["reply"]

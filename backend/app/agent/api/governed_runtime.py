@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import logging
+import time
 from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
@@ -23,10 +24,13 @@ from app.agent.v92.runtime_contract import build_turn_envelope
 from app.agent.v92.turn_boundary import resolve_turn_boundary
 from app.core.config import settings
 from app.observability.langsmith import (
+    emit_redacted_observation_span,
+    langsmith_enabled,
+    langsmith_redacted_observation_spans,
     langsmith_tracing_disabled,
     traceable,
 )
-from app.observability.sealai_quality import emit_quality_trace
+from app.observability.sealai_quality import emit_quality_trace, redact_trace_value
 from app.services.auth.dependencies import RequestUser
 
 _log = logging.getLogger(__name__)
@@ -61,6 +65,13 @@ def _state_value(state: Any, *names: str) -> Any:
         if hasattr(state, name):
             return getattr(state, name)
     return None
+
+
+def _runtime_action_answer_mode(runtime_action: Any | None) -> str | None:
+    if runtime_action is None:
+        return None
+    value = getattr(runtime_action, "answer_mode", None)
+    return str(getattr(value, "value", value) or "").strip() or None
 
 
 def _count_collection(value: Any) -> int:
@@ -105,6 +116,135 @@ def _stream_event_parts(event: Any) -> tuple[str | None, Any]:
     return None, event
 
 
+def _mapping_summary(value: Any) -> dict[str, Any]:
+    mapping = _state_mapping(value)
+    if not mapping:
+        return {"type": type(value).__name__, "key_count": 0, "keys": []}
+    keys = [str(key) for key in mapping.keys()]
+    summary: dict[str, Any] = {
+        "type": type(value).__name__,
+        "key_count": len(keys),
+        "keys": keys[:24],
+    }
+    status = mapping.get("status")
+    if status is not None:
+        summary["status"] = str(status)
+    for key in (
+        "output_response_class",
+        "output_answer_markdown_source",
+        "output_answer_markdown",
+        "output_reply",
+        "pending_question",
+        "next_question",
+        "clarification_question",
+        "governed_answer_composer_error",
+    ):
+        if key in mapping:
+            item = mapping.get(key)
+            if isinstance(item, str):
+                summary[key] = redact_trace_value(item, key=key)
+            else:
+                summary[f"{key}_present"] = item is not None
+    return summary
+
+
+def _interrupt_summary(value: Any) -> list[dict[str, Any]]:
+    items = value if isinstance(value, list | tuple) else [value]
+    summaries: list[dict[str, Any]] = []
+    for item in items[:8]:
+        payload = getattr(item, "value", item)
+        payload_mapping = payload if isinstance(payload, dict) else _state_mapping(payload)
+        kind = payload_mapping.get("kind") if isinstance(payload_mapping, dict) else None
+        message = payload_mapping.get("message") if isinstance(payload_mapping, dict) else None
+        summaries.append(
+            {
+                "kind": str(kind or "interrupt"),
+                "expected": True,
+                "message": redact_trace_value(message, key="message"),
+            }
+        )
+    if len(items) > 8:
+        summaries.append({"_truncated_items": len(items) - 8})
+    return summaries
+
+
+def _graph_event_observation(
+    *,
+    index: int,
+    mode: str | None,
+    data: Any,
+    elapsed_s: float,
+) -> dict[str, Any]:
+    mode_text = str(mode or "unknown")
+    observation: dict[str, Any] = {
+        "index": index,
+        "mode": mode_text,
+        "elapsed_s": round(elapsed_s, 4),
+        "status": "observed",
+    }
+    if mode_text == "updates" and isinstance(data, dict):
+        nodes = [str(key) for key in data.keys()]
+        observation["nodes"] = nodes
+        observation["node_count"] = len(nodes)
+        if "__interrupt__" in data:
+            observation["status"] = "expected_interrupt"
+            observation["interrupts"] = _interrupt_summary(data.get("__interrupt__"))
+        else:
+            observation["updates"] = {
+                str(node): _mapping_summary(payload)
+                for node, payload in list(data.items())[:12]
+            }
+    elif mode_text == "custom":
+        observation["custom_event"] = redact_trace_value(data)
+    elif mode_text == "values":
+        observation["value"] = _mapping_summary(data)
+    else:
+        observation["payload"] = redact_trace_value(data)
+    return observation
+
+
+async def _emit_graph_event_observations(
+    *,
+    observations: list[dict[str, Any]],
+    request: Any,
+    current_user: RequestUser,
+    session_id: str,
+    collect_progress: bool,
+) -> None:
+    if not observations:
+        return
+    for observation in observations[:80]:
+        status = str(observation.get("status") or "observed")
+        await emit_redacted_observation_span(
+            span_name="sealai.langgraph.event",
+            component="governed_graph",
+            status="success",
+            inputs={
+                "event_index": observation.get("index"),
+                "event_mode": observation.get("mode"),
+                "collect_progress": collect_progress,
+            },
+            outputs=observation,
+            metadata={
+                "session_id": getattr(request, "session_id", session_id),
+                "event_mode": observation.get("mode"),
+                "event_status": status,
+                "node_names": observation.get("nodes"),
+                "expected_interrupt": status == "expected_interrupt",
+                "tenant_id": getattr(current_user, "tenant_id", None),
+                "user_id": getattr(current_user, "user_id", None) or getattr(current_user, "sub", None),
+            },
+        )
+    if len(observations) > 80:
+        await emit_redacted_observation_span(
+            span_name="sealai.langgraph.event_truncation",
+            component="governed_graph",
+            status="success",
+            outputs={"emitted": 80, "total": len(observations)},
+            metadata={"session_id": getattr(request, "session_id", session_id)},
+        )
+
+
 def build_governed_graph_input(
     *,
     governed_state: GovernedSessionState,
@@ -115,6 +255,7 @@ def build_governed_graph_input(
     stream_visible_answer_composer: bool = False,
     append_user_message: bool = True,
     pre_gate_classification: str | None = None,
+    runtime_action_answer_mode: str | None = None,
 ) -> GraphState:
     """Build the governed graph input from the live governed session state."""
 
@@ -148,6 +289,12 @@ def build_governed_graph_input(
             "tenant_id": tenant_id,
             "session_id": session_id,
             "pending_message": message,
+            "runtime_answer_mode": str(runtime_action_answer_mode or "").strip(),
+            "runtime_answer_mode_source": (
+                "runtime_action.answer_mode"
+                if str(runtime_action_answer_mode or "").strip()
+                else ""
+            ),
             "v92_turn_boundary_decision": boundary.model_dump(mode="json"),
             "v92_turn_envelope": envelope.model_dump(mode="json"),
             "defer_visible_answer_composer": bool(defer_visible_answer_composer),
@@ -167,6 +314,7 @@ async def run_governed_graph_turn(
     collect_progress: bool = False,
     progress_callback: ProgressCallback | None = None,
     append_user_message: bool = True,
+    runtime_action: Any | None = None,
 ) -> GovernedGraphTurnResult:
     """Run one governed graph turn and commit it using the current live-state behavior."""
 
@@ -191,23 +339,44 @@ async def run_governed_graph_turn(
         stream_visible_answer_composer=False,
         append_user_message=append_user_message,
         pre_gate_classification=pre_gate_classification,
+        runtime_action_answer_mode=_runtime_action_answer_mode(runtime_action),
     )
     graph_config = _graph_thread_config(current_user=current_user, session_id=session_id)
     governed_graph = await get_governed_graph()
 
     progress_events: list[Any] = []
+    graph_event_observations: list[dict[str, Any]] = []
+    graph_started_at = time.perf_counter()
     suppress_langgraph_child_traces = not bool(
         getattr(settings, "langsmith_trace_langgraph_children", False)
     )
+    use_streaming_runtime = bool(
+        (
+            collect_progress
+            or (langsmith_enabled() and langsmith_redacted_observation_spans())
+        )
+        and hasattr(governed_graph, "astream")
+    )
     with langsmith_tracing_disabled(disabled=suppress_langgraph_child_traces):
-        if collect_progress and hasattr(governed_graph, "astream"):
+        if use_streaming_runtime:
             latest_values: GraphState | dict[str, Any] = graph_input
+            event_index = 0
             async for event in governed_graph.astream(
                 graph_input,
                 config=graph_config,
                 stream_mode=["values", "updates", "custom"],
             ):
+                event_index += 1
                 mode, data = _stream_event_parts(event)
+                if mode in {"updates", "custom"}:
+                    graph_event_observations.append(
+                        _graph_event_observation(
+                            index=event_index,
+                            mode=mode,
+                            data=data,
+                            elapsed_s=time.perf_counter() - graph_started_at,
+                        )
+                    )
                 if mode == "values":
                     latest_values = _materialize_governed_graph_result(data)
                 elif mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
@@ -225,6 +394,13 @@ async def run_governed_graph_turn(
             raw_result = await governed_graph.ainvoke(graph_input, config=graph_config)
             result_state = _materialize_governed_graph_result(raw_result)
 
+    await _emit_graph_event_observations(
+        observations=graph_event_observations,
+        request=request,
+        current_user=current_user,
+        session_id=session_id,
+        collect_progress=collect_progress,
+    )
     persisted_state = await _update_governed_state_post_graph(
         current_user=current_user,
         session_id=session_id,
@@ -240,6 +416,12 @@ async def run_governed_graph_turn(
         pre_gate_classification=pre_gate_classification,
         collect_progress=collect_progress,
         progress_events_count=len(progress_events),
+        graph_event_observations_count=len(graph_event_observations),
+        expected_interrupt_events_count=sum(
+            1
+            for observation in graph_event_observations
+            if observation.get("status") == "expected_interrupt"
+        ),
         pending_question_present=bool(
             _state_value(result_state, "pending_question", "next_question", "clarification_question")
         ),

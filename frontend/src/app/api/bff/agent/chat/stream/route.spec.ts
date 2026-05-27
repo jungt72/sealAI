@@ -45,6 +45,18 @@ function buildBackendSseStream(frames: string[]): ReadableStream<Uint8Array> {
   });
 }
 
+function buildInterruptedBackendSseStream(frames: string[], error: Error): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const frame of frames) {
+        controller.enqueue(encoder.encode(frame));
+      }
+      controller.error(error);
+    },
+  });
+}
+
 function parseSsePayloads(raw: string): Array<string | Record<string, unknown>> {
   return raw
     .split("\n\n")
@@ -195,6 +207,107 @@ describe("BFF agent chat stream route", () => {
     expect(payloads.at(-1)).toBe("[DONE]");
   });
 
+  it("uses a no-case conversation id as backend session context without binding a case", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"PTFE Antwort","response_class":"conversational_answer","run_meta":{"knowledge_service":{"no_case_created":true,"source_classification":"KNOWLEDGE_QUERY"}}}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId: "knowledge-dialogue-session-1",
+        message: "ich brauche informationen zu PTFE",
+      }),
+    });
+
+    const response = await POST(request);
+    const backendInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const backendBody = JSON.parse(String(backendInit.body));
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(backendBody.session_id).toBe("knowledge-dialogue-session-1");
+    expect(payloads.some((payload) => typeof payload !== "string" && payload.type === "case_bound")).toBe(false);
+    expect(stateUpdate).toMatchObject({
+      type: "state_update",
+      noCaseCreated: true,
+      reply: "PTFE Antwort",
+      responseClass: "conversational_answer",
+    });
+    expect(stateUpdate).not.toHaveProperty("caseId");
+  });
+
+  it("sends an explicit client turn id to the backend", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","turn_id":"client-turn-1","reply":"ok","response_class":"conversational_answer"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo", turnId: "client-turn-1" }),
+    });
+
+    const response = await POST(request);
+    const backendInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const backendBody = JSON.parse(String(backendInit.body));
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(backendBody.turn_id).toBe("client-turn-1");
+    expect(stateUpdate.turn_id).toBe("client-turn-1");
+  });
+
+  it("creates a turn id for legacy clients before calling the backend", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"ok","response_class":"conversational_answer"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo" }),
+    });
+
+    const response = await POST(request);
+    const backendInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const backendBody = JSON.parse(String(backendInit.body));
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(backendBody.turn_id).toEqual(expect.any(String));
+    expect(backendBody.turn_id).not.toContain("Hallo");
+    expect(stateUpdate.turn_id).toBe(backendBody.turn_id);
+  });
+
   it("does not bind a fresh conversational turn just because backend includes UI projections", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -248,13 +361,137 @@ describe("BFF agent chat stream route", () => {
     });
   });
 
-  it("does not expose raw backend auth details when the token expired", async () => {
+  it("binds conversational governed turns when workspace parameters override a soft no-case marker", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ detail: "token_expired" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify({
+            type: "state_update",
+            reply: "Ich habe die Angaben als Fallkandidaten erkannt.",
+            response_class: "conversational_answer",
+            run_meta: {
+              conversation: {
+                no_case_created: true,
+              },
+            },
+            structured_state: {
+              view: {
+                parameter: {
+                  parameters: [
+                    { field_name: "medium", value: "Dampf CIP", confidence: "inferred" },
+                    { field_name: "temperature_c", value: 120, unit: "°C", confidence: "inferred" },
+                  ],
+                  parameter_count: 2,
+                  needs_confirmation: true,
+                },
+              },
+            },
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
     );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Pharma-Pumpe mit Dampf CIP, 120 C und PTFE O-Ring",
+      }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const caseBound = findPayload(payloads, "case_bound");
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(caseBound.caseId).toEqual(expect.any(String));
+    expect(stateUpdate).toMatchObject({
+      type: "state_update",
+      noCaseCreated: false,
+      responseClass: "conversational_answer",
+    });
+    expect(stateUpdate.caseId).toEqual(caseBound.caseId);
+    expect(stateUpdate.structuredState).toMatchObject({
+      view: {
+        parameter: {
+          parameter_count: 2,
+        },
+      },
+    });
+  });
+
+  it("does not bind hard no-case knowledge turns even when material-like projections are present", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify({
+            type: "state_update",
+            reply: "PTFE ist ein Fluorpolymer.",
+            response_class: "conversational_answer",
+            run_meta: {
+              knowledge_service: {
+                no_case_created: true,
+                source_classification: "KNOWLEDGE_QUERY",
+              },
+            },
+            structured_state: {
+              view: {
+                parameter: {
+                  parameters: [
+                    { field_name: "material", value: "PTFE", confidence: "contextual" },
+                  ],
+                  parameter_count: 1,
+                },
+              },
+            },
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "ich brauche informationen zu PTFE" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(payloads.some((payload) => typeof payload !== "string" && payload.type === "case_bound")).toBe(false);
+    expect(stateUpdate).toMatchObject({
+      type: "state_update",
+      noCaseCreated: true,
+      responseClass: "conversational_answer",
+    });
+    expect(stateUpdate).not.toHaveProperty("caseId");
+  });
+
+  it("does not expose raw backend auth details when the token expired", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "token_expired" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "token_expired" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
 
     const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
       method: "POST",
@@ -269,6 +506,109 @@ describe("BFF agent chat stream route", () => {
     expect(body.error.message).toBe("Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.");
     expect(body.error.message).not.toContain("token_expired");
     expect(body.error.message).not.toContain("{");
+  });
+
+  it("emits a structured interrupted event when backend stream reading fails mid-stream", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildInterruptedBackendSseStream(
+          ['data: {"type":"progress","data":{"event_type":"final_guard.running"}}\n\n'],
+          new Error("network connection terminated"),
+        ),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Bitte prüfen", turnId: "client-turn-interrupted" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const interrupted = findPayload(payloads, "interrupted");
+
+    expect(interrupted).toMatchObject({
+      type: "interrupted",
+      code: "network_error",
+      error_code: "network_error",
+      turn_id: "client-turn-interrupted",
+      is_final: false,
+      message: "Die Verbindung zur Antwort wurde unterbrochen. Bitte versuche es erneut.",
+    });
+    expect(JSON.stringify(interrupted)).not.toContain("terminated");
+  });
+
+  it("refreshes and retries once when backend rejects an expired bearer token", async () => {
+    vi.mocked(getAccessTokenResult).mockClear();
+    vi.mocked(getAccessTokenResult)
+      .mockResolvedValueOnce({
+        accessToken: "stale-token",
+        cookieUpdates: [],
+      })
+      .mockResolvedValueOnce({
+        accessToken: "refreshed-token",
+        cookieUpdates: [
+          {
+            name: "__Secure-authjs.session-token",
+            value: "rotated-session",
+            options: {
+              httpOnly: true,
+              sameSite: "lax",
+              secure: true,
+              path: "/",
+              maxAge: 3600,
+            },
+          },
+        ],
+      });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "token_expired" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          buildBackendSseStream([
+            'data: {"type":"state_update","reply":"ok","response_class":"conversational_answer"}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+          {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        ),
+      );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Was ist NBR?" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const firstInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    const firstBody = JSON.parse(String(firstInit.body));
+    const secondBody = JSON.parse(String(secondInit.body));
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(firstInit.headers).toMatchObject({ Authorization: "Bearer stale-token" });
+    expect(secondInit.headers).toMatchObject({ Authorization: "Bearer refreshed-token" });
+    expect(firstBody.turn_id).toEqual(expect.any(String));
+    expect(secondBody.turn_id).toBe(firstBody.turn_id);
+    expect(vi.mocked(getAccessTokenResult).mock.calls[1]?.[1]).toEqual({ forceRefresh: true });
+    expect(response.headers.get("set-cookie")).toContain("__Secure-authjs.session-token=rotated-session");
+    expect(findPayload(payloads, "state_update")).toMatchObject({ reply: "ok" });
   });
 
   it("forwards answer_markdown from backend state_update events", async () => {
@@ -304,6 +644,41 @@ describe("BFF agent chat stream route", () => {
       answer_markdown: "real assistant answer",
     });
     expect(stateUpdate).not.toHaveProperty("caseId");
+  });
+
+  it("preserves backend stream metadata for frontend event dedupe", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","event_id":"event-1","turn_id":"turn-1","sequence":7,"event_type":"state_update","is_final":true,"reply":"ok","response_class":"conversational_answer"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Hallo" }),
+    });
+
+    const response = await POST(request);
+    const payloads = parseSsePayloads(await response.text());
+    const stateUpdate = findPayload(payloads, "state_update");
+
+    expect(stateUpdate).toMatchObject({
+      type: "state_update",
+      event_id: "event-1",
+      turn_id: "turn-1",
+      sequence: 7,
+      event_type: "state_update",
+      is_final: true,
+      reply: "ok",
+    });
   });
 
   it("forwards answer_trace under runMeta without rewriting it", async () => {

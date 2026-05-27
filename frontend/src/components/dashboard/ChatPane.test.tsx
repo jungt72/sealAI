@@ -155,6 +155,23 @@ describe("ChatPane", () => {
     window.localStorage.clear();
   });
 
+  it("places message identity icons above the related text", () => {
+    agentStreamMockState.messages = [
+      { role: "assistant", content: "Hallo Antwort", timestamp: "1" },
+      { role: "user", content: "Hallo Frage", timestamp: "2" },
+    ];
+
+    render(<ChatPane caseId="case-parameter" />);
+
+    const assistantAvatar = screen.getByTestId("message-avatar-assistant");
+    const userAvatar = screen.getByTestId("message-avatar-user");
+    const assistantText = screen.getByText("Hallo Antwort");
+    const userText = screen.getByText("Hallo Frage");
+
+    expect(assistantAvatar.compareDocumentPosition(assistantText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(userAvatar.compareDocumentPosition(userText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("places the composer in a Gemini-style first-run state with sealing prompts", async () => {
     const user = userEvent.setup();
     agentStreamMockState.activeCaseId = "";
@@ -162,7 +179,7 @@ describe("ChatPane", () => {
     render(<ChatPane />);
 
     expect(screen.getByText("Hallo Thorsten")).toBeInTheDocument();
-    expect(screen.getByText("Schön, dass du wieder hier bist.")).toBeInTheDocument();
+    expect(screen.queryByText("Schön, dass du wieder hier bist.")).not.toBeInTheDocument();
     expect(screen.getByText("Womit fangen wir an?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ChatComposer" })).toBeInTheDocument();
     expect(screen.queryByText(/Governed RFQ Qualification/i)).not.toBeInTheDocument();
@@ -283,6 +300,7 @@ describe("ChatPane", () => {
 
     render(<ChatPane caseId="case-parameter" />);
 
+    expect(screen.getByTestId("thinking-indicator")).toBeInTheDocument();
     expect(screen.getByText("SealingAI bewertet technische Risiken...")).toBeInTheDocument();
   });
 

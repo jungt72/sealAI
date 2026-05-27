@@ -26,6 +26,7 @@ class AnswerMode(str, Enum):
     NO_CASE_KNOWLEDGE = "no_case_knowledge"
     MATERIAL_COMPARISON = "material_comparison"
     RFQ_READINESS = "rfq_readiness"
+    TECHNICAL_CASE_CHALLENGE = "technical_case_challenge"
     GOVERNED_INTAKE = "governed_intake"
     PENDING_SLOT_ANSWER = "pending_slot_answer"
     ACTIVE_CASE_SIDE_QUESTION = "active_case_side_question"
@@ -326,17 +327,30 @@ def build_runtime_action_from_turn_decision(
             confidence=confidence,
         )
 
-    if mode is AnswerMode.GOVERNED_INTAKE:
+    if mode in {AnswerMode.GOVERNED_INTAKE, AnswerMode.TECHNICAL_CASE_CHALLENGE}:
         return RuntimeAction(
             action_type=RuntimeActionType.ENTER_GOVERNED_GRAPH,
             answer_mode=mode,
             mutation_policy=mutation_policy,
             graph_allowed=True,
-            graph_entry_reason="governed_intake_or_domain_continuation",
+            graph_entry_reason=(
+                "technical_case_challenge_requires_governed_graph"
+                if mode is AnswerMode.TECHNICAL_CASE_CHALLENGE
+                else "governed_intake_or_domain_continuation"
+            ),
             answer_builder=RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT,
             resume_strategy=resume_strategy,
-            next_runtime_action="enter_governed_langgraph",
-            reason=reason or "governed_intake_requires_langgraph",
+            next_runtime_action=(
+                "enter_governed_langgraph_for_technical_case_challenge"
+                if mode is AnswerMode.TECHNICAL_CASE_CHALLENGE
+                else "enter_governed_langgraph"
+            ),
+            reason=reason
+            or (
+                "technical_case_challenge_requires_langgraph"
+                if mode is AnswerMode.TECHNICAL_CASE_CHALLENGE
+                else "governed_intake_requires_langgraph"
+            ),
             decision_source=decision_source,
             confidence=confidence,
         )

@@ -39,6 +39,7 @@ from app.agent.api.loaders import (
     persist_visible_governed_turn,
 )
 from app.agent.api.governed_runtime import GovernedGraphTurnResult, run_governed_graph_turn
+from app.agent.api.sse_contract import SSEEventBuilder, stable_turn_id
 from app.agent.api.assembly import (
     _build_governed_reply_context,
     _assemble_governed_stream_payload,
@@ -149,12 +150,17 @@ def _graph_custom_event_to_sse_payload(progress: Any) -> dict[str, Any] | None:
     return None
 
 
-async def _yield_graph_progress_frame(progress: Any) -> AsyncGenerator[str, None]:
+async def _yield_graph_progress_frame(
+    progress: Any,
+    *,
+    event_builder: SSEEventBuilder | None = None,
+) -> AsyncGenerator[str, None]:
+    event_builder = event_builder or SSEEventBuilder(turn_id="turn:progress")
     payload = _graph_custom_event_to_sse_payload(progress)
     if payload is None:
-        yield f"data: {json.dumps({'type': 'progress', 'data': progress}, default=str)}\n\n"
+        yield event_builder.frame({"type": "progress", "data": progress}, event_type="metadata")
         return
-    yield f"data: {json.dumps(payload, default=str)}\n\n"
+    yield event_builder.frame(payload, event_type="metadata")
 
 
 
@@ -234,6 +240,44 @@ def _with_runtime_action_trace(
     meta["answer_trace"] = answer_trace
     return meta
 
+def _with_engine_sidecar_trace_meta(
+    run_meta: dict[str, Any] | None,
+    sidecar_trace: dict[str, Any] | None,
+) -> dict[str, Any]:
+    meta = dict(run_meta or {})
+    if not sidecar_trace:
+        return meta
+    existing_trace = meta.get("answer_trace")
+    answer_trace = dict(existing_trace) if isinstance(existing_trace, dict) else {}
+    answer_trace.update(sidecar_trace)
+    meta["answer_trace"] = answer_trace
+    return meta
+
+def _engine_sidecar_trace(
+    *,
+    executed: bool,
+    state_available: bool,
+    error: Exception | None = None,
+) -> dict[str, Any]:
+    trace: dict[str, Any] = {
+        "conversation_first_runtime": True,
+        "visible_runtime": "light_conversation",
+        "engine_sidecar": "governed_langgraph",
+        "governed_graph_sidecar_executed": executed,
+        "governed_graph_visible_reply_suppressed": True,
+        "engine_sidecar_state_available": state_available,
+    }
+    if error is not None:
+        from app.agent.runtime.answer_trace import safe_fallback_reason  # noqa: PLC0415
+
+        trace.update(
+            {
+                "engine_sidecar_error": safe_fallback_reason(error),
+                "engine_sidecar_fallback": "visible_conversation_without_fresh_engine_state",
+            }
+        )
+    return trace
+
 
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
@@ -280,8 +324,10 @@ async def _stream_fast_response(
     *,
     request: Any,
     fast_response: Any,
+    event_builder: SSEEventBuilder | None = None,
     runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
+    event_builder = event_builder or SSEEventBuilder.for_request(request)
     state_update_event = {
         "type": "state_update",
         "reply": fast_response.content,
@@ -314,7 +360,7 @@ async def _stream_fast_response(
         route_hint="fast",
         case_id=str(request.session_id or "default") if request.session_id else None,
     )
-    yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+    yield event_builder.frame(state_update_event, event_type="state_update", is_final=True)
     yield "data: [DONE]\n\n"
 
 
@@ -322,8 +368,10 @@ async def _stream_knowledge_response(
     *,
     request: Any,
     knowledge_response: Any,
+    event_builder: SSEEventBuilder | None = None,
     runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
+    event_builder = event_builder or SSEEventBuilder.for_request(request)
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
 
     answer_markdown = str(getattr(knowledge_response, "answer_markdown", "") or "").strip()
@@ -368,7 +416,7 @@ async def _stream_knowledge_response(
         route_hint="knowledge",
         case_id=str(request.session_id or "default") if request.session_id else None,
     )
-    yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+    yield event_builder.frame(state_update_event, event_type="state_update", is_final=True)
     yield "data: [DONE]\n\n"
 
 
@@ -407,7 +455,9 @@ async def _stream_exploration_reply(
     message: str,
     *,
     tenant_id: str,
+    event_builder: SSEEventBuilder | None = None,
 ) -> AsyncGenerator[str, None]:
+    event_builder = event_builder or SSEEventBuilder(turn_id=stable_turn_id(session_id="exploration", message=message))
     import openai as _openai  # noqa: PLC0415
     from app.agent.evidence.exploration_query import ExplorationQuery  # noqa: PLC0415
     from app.agent.prompts import prompts  # noqa: PLC0415
@@ -477,18 +527,24 @@ async def _stream_exploration_reply(
                     query.topic[:64],
                 )
                 if preview_emitted:
-                    yield f"data: {json.dumps({'type': 'text_reset'}, default=str)}\n\n"
+                    yield event_builder.frame({"type": "text_reset"}, event_type="delta")
                 full_reply = FAST_PATH_GUARD_FALLBACK
                 was_guarded = True
                 for segment in _visible_stream_segments(full_reply):
-                    yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment}, default=str)}\n\n"
+                    yield event_builder.frame(
+                        {"type": "text_chunk", "text": segment},
+                        event_type="delta",
+                    )
                     if len(full_reply) > _VISIBLE_STREAM_SEGMENT_CHARS:
                         await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
                 break
 
             full_reply = candidate_reply
             for segment in _visible_stream_segments(delta):
-                yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment}, default=str)}\n\n"
+                yield event_builder.frame(
+                    {"type": "text_chunk", "text": segment},
+                    event_type="delta",
+                )
                 preview_emitted = True
                 if len(delta) > _VISIBLE_STREAM_SEGMENT_CHARS:
                     await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
@@ -502,10 +558,13 @@ async def _stream_exploration_reply(
                     query.topic[:64],
                 )
                 if preview_emitted:
-                    yield f"data: {json.dumps({'type': 'text_reset'}, default=str)}\n\n"
+                    yield event_builder.frame({"type": "text_reset"}, event_type="delta")
                 full_reply = FAST_PATH_GUARD_FALLBACK
                 for segment in _visible_stream_segments(full_reply):
-                    yield f"data: {json.dumps({'type': 'text_chunk', 'text': segment}, default=str)}\n\n"
+                    yield event_builder.frame(
+                        {"type": "text_chunk", "text": segment},
+                        event_type="delta",
+                    )
                     if len(full_reply) > _VISIBLE_STREAM_SEGMENT_CHARS:
                         await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
 
@@ -523,11 +582,18 @@ async def _stream_exploration_reply(
                 ),
             ),
         }
-        yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
-        yield f"data: {json.dumps({'type': 'turn_complete'}, default=str)}\n\n"
+        yield event_builder.frame(state_update_event, event_type="state_update", is_final=True)
+        yield event_builder.frame({"type": "turn_complete"}, event_type="done")
     except Exception as exc:  # noqa: BLE001
         _log.error("exploration_stream_failed: %s: %s", type(exc).__name__, exc)
-        yield f"data: {json.dumps({'type': 'error', 'message': 'Vergleichsantwort momentan nicht verfuegbar - bitte erneut versuchen.'}, default=str)}\n\n"
+        yield event_builder.frame(
+            {
+                "type": "error",
+                "message": "Vergleichsantwort momentan nicht verfuegbar - bitte erneut versuchen.",
+            },
+            event_type="error",
+            error_code="exploration_stream_failed",
+        )
     yield "data: [DONE]\n\n"
 
 async def _stream_light_runtime(
@@ -538,16 +604,27 @@ async def _stream_light_runtime(
     mode: Literal["CONVERSATION", "EXPLORATION"],
     governed_state_override: GovernedSessionState | None = None,
     direct_reply: str | None = None,
+    event_builder: SSEEventBuilder | None = None,
     runtime_action: Any | None = None,
+    force_conversation_runtime: bool = False,
+    sidecar_trace: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
     from app.agent.runtime.conversation_runtime import stream_conversation  # noqa: PLC0415
 
+    event_builder = event_builder or SSEEventBuilder.for_request(request)
     governed, history, case_summary = await _build_light_runtime_context(
         request=request,
         current_user=current_user,
         governed_state_override=governed_state_override,
         create_if_missing=False,
     )
+    if direct_reply is None and mode == "CONVERSATION":
+        from app.agent.api.routes.chat import _open_case_ack_continue_reply  # noqa: PLC0415
+
+        direct_reply = _open_case_ack_continue_reply(
+            message=message,
+            governed_state=governed,
+        )
     final_reply = ""
     persisted_light_state: GovernedSessionState | None = None
 
@@ -620,7 +697,7 @@ async def _stream_light_runtime(
         governed = updated
         return updated
 
-    if mode == "EXPLORATION" and request.session_id:
+    if mode == "EXPLORATION" and request.session_id and not force_conversation_runtime:
         tenant_id, _, _ = _canonical_scope(current_user, case_id=request.session_id)
         frame_gen: AsyncGenerator[str, None] = _stream_exploration_reply(
             message,
@@ -655,7 +732,7 @@ async def _stream_light_runtime(
 
         event_type = payload.get("type")
         if event_type == "text_chunk":
-            yield frame
+            yield event_builder.frame(payload, event_type="delta")
             continue
 
         if event_type == "state_update":
@@ -683,6 +760,10 @@ async def _stream_light_runtime(
                 payload.get("run_meta"),
                 runtime_action,
             )
+            payload["run_meta"] = _with_engine_sidecar_trace_meta(
+                payload.get("run_meta"),
+                sidecar_trace,
+            )
             payload = apply_v92_contracts_to_payload(
                 payload,
                 session_id=str(request.session_id or "default"),
@@ -691,7 +772,7 @@ async def _stream_light_runtime(
                 route_hint=mode.lower(),
                 case_id=str(request.session_id or "default") if request.session_id else None,
             )
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield event_builder.frame(payload, event_type="state_update", is_final=True)
             continue
 
         if event_type == "done":
@@ -701,24 +782,91 @@ async def _stream_light_runtime(
                 },
                 runtime_action,
             )
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            payload["run_meta"] = _with_engine_sidecar_trace_meta(
+                payload.get("run_meta"),
+                sidecar_trace,
+            )
+            yield event_builder.frame(payload, event_type="done")
             continue
 
         if event_type == "turn_complete":
             if request.session_id:
                 await _persist_light_turn_once()
-            yield frame
+            yield event_builder.frame(payload, event_type="done")
             continue
         if event_type == "error":
-            yield frame
+            yield event_builder.frame(
+                payload,
+                event_type="error",
+                error_code="conversation_stream_error",
+            )
+
+async def _stream_conversation_first_with_engine_sidecar(
+    request: Any, # ChatRequest
+    *,
+    current_user: RequestUser,
+    event_builder: SSEEventBuilder | None = None,
+    pre_gate_classification: str | None = None,
+    runtime_action: Any | None = None,
+    governed_state: GovernedSessionState | None = None,
+) -> AsyncGenerator[str, None]:
+    event_builder = event_builder or SSEEventBuilder.for_request(request)
+    sidecar_state = governed_state
+    sidecar_error: Exception | None = None
+    sidecar_executed = False
+    try:
+        turn_result = await run_governed_graph_turn(
+            request=request,
+            current_user=current_user,
+            pre_gate_classification=pre_gate_classification,
+            collect_progress=False,
+            runtime_action=runtime_action,
+        )
+        sidecar_state = turn_result.persisted_state
+        sidecar_executed = True
+    except Exception as exc:  # noqa: BLE001
+        sidecar_error = exc
+        from app.agent.runtime.answer_trace import safe_fallback_reason  # noqa: PLC0415
+
+        _log.exception(
+            "[runtime_authority] conversation-first stream sidecar failed session=%s reason=%s",
+            request.session_id,
+            safe_fallback_reason(exc),
+        )
+
+    trace = _engine_sidecar_trace(
+        executed=sidecar_executed,
+        state_available=sidecar_state is not None,
+        error=sidecar_error,
+    )
+    from app.agent.api.routes.chat import _open_sealing_invite_reply  # noqa: PLC0415
+
+    async for frame in _stream_light_runtime(
+        message=request.message,
+        request=request,
+        current_user=current_user,
+        mode="EXPLORATION",
+        governed_state_override=sidecar_state,
+        direct_reply=_open_sealing_invite_reply(
+            pre_gate_classification=pre_gate_classification,
+            runtime_action=runtime_action,
+            sidecar_state=sidecar_state,
+        ),
+        runtime_action=runtime_action,
+        force_conversation_runtime=True,
+        sidecar_trace=trace,
+    ):
+        yield frame
 
 async def _stream_governed_graph(
     request: Any, # ChatRequest
     *,
     current_user: RequestUser,
+    event_builder: SSEEventBuilder | None = None,
     pre_gate_classification: str | None = None,
     runtime_action: Any | None = None,
 ) -> AsyncGenerator[str, None]:
+    event_builder = event_builder or SSEEventBuilder.for_request(request)
     progress_queue: asyncio.Queue[Any] = asyncio.Queue()
     live_progress_count = 0
 
@@ -732,6 +880,7 @@ async def _stream_governed_graph(
             pre_gate_classification=pre_gate_classification,
             collect_progress=True,
             progress_callback=_on_graph_progress,
+            runtime_action=runtime_action,
         )
     )
     try:
@@ -740,7 +889,7 @@ async def _stream_governed_graph(
                 while not progress_queue.empty():
                     progress = progress_queue.get_nowait()
                     live_progress_count += 1
-                    async for frame in _yield_graph_progress_frame(progress):
+                    async for frame in _yield_graph_progress_frame(progress, event_builder=event_builder):
                         yield frame
                 turn_result = await turn_task
                 break
@@ -749,11 +898,15 @@ async def _stream_governed_graph(
             except asyncio.TimeoutError:
                 continue
             live_progress_count += 1
-            async for frame in _yield_graph_progress_frame(progress):
+            async for frame in _yield_graph_progress_frame(progress, event_builder=event_builder):
                 yield frame
     except HTTPException as exc:
         if exc.status_code == 404:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'governed_state_not_found'})}\n\n"
+            yield event_builder.frame(
+                {"type": "error", "message": "governed_state_not_found"},
+                event_type="error",
+                error_code="governed_state_not_found",
+            )
             return
         raise
     finally:
@@ -762,7 +915,7 @@ async def _stream_governed_graph(
 
     if live_progress_count == 0:
         for progress in turn_result.progress_events:
-            async for frame in _yield_graph_progress_frame(progress):
+            async for frame in _yield_graph_progress_frame(progress, event_builder=event_builder):
                 yield frame
 
     context = _build_governed_reply_context(
@@ -837,7 +990,10 @@ async def _stream_governed_graph(
                 answer_markdown_error=reason,
                 run_meta=run_meta,
             )
-    yield f"data: {json.dumps({'type': 'progress', 'data': {'event_type': 'final_guard.running'}}, default=str)}\n\n"
+    yield event_builder.frame(
+        {"type": "progress", "data": {"event_type": "final_guard.running"}},
+        event_type="metadata",
+    )
     payload = _assemble_governed_stream_payload(
         context=context,
         session_id=str(request.session_id or "default"),
@@ -846,7 +1002,13 @@ async def _stream_governed_graph(
     )
     payload = await apply_async_adversarial_review_to_payload(payload)
     final_guard_result = payload.get("final_guard_result") if isinstance(payload, dict) else None
-    yield f"data: {json.dumps({'type': 'progress', 'data': {'event_type': 'final_guard.done', 'result': final_guard_result}}, default=str)}\n\n"
+    yield event_builder.frame(
+        {
+            "type": "progress",
+            "data": {"event_type": "final_guard.done", "result": final_guard_result},
+        },
+        event_type="metadata",
+    )
     assistant_message = str(
         payload.get("assistant_message")
         or payload.get("answer_markdown")
@@ -879,7 +1041,7 @@ async def _stream_governed_graph(
     run_meta["version_provenance"] = _build_structured_version_provenance(decision=None)
     payload["run_meta"] = _with_runtime_action_trace(run_meta, runtime_action)
 
-    yield f"data: {json.dumps(payload, default=str)}\n\n"
+    yield event_builder.frame(payload, event_type="state_update", is_final=True)
     yield "data: [DONE]\n\n"
 
 async def event_generator(
@@ -887,6 +1049,7 @@ async def event_generator(
     *,
     current_user: RequestUser,
 ) -> AsyncGenerator[str, None]:
+    event_builder = SSEEventBuilder.for_request(request)
     early_guard_reply = await collect_unsafe_user_instruction_reply_with_trace(
         latest_user_message=request.message,
         turn_context=None,
@@ -911,7 +1074,7 @@ async def event_generator(
             route_hint="unsafe_or_blocked",
             case_id=str(request.session_id or "default") if request.session_id else None,
         )
-        yield f"data: {json.dumps(state_update_event, default=str)}\n\n"
+        yield event_builder.frame(state_update_event, event_type="state_update", is_final=True)
         yield "data: [DONE]\n\n"
         return
 
@@ -939,7 +1102,7 @@ async def event_generator(
             route_hint="rfq_readiness",
             case_id=str(request.session_id or "default") if request.session_id else None,
         )
-        yield f"data: {json.dumps(payload, default=str)}\n\n"
+        yield event_builder.frame(payload, event_type="state_update", is_final=True)
         yield "data: [DONE]\n\n"
         return
 
@@ -1001,7 +1164,7 @@ async def event_generator(
                 assistant_message=str(payload.get("assistant_message") or ""),
                 pre_gate_classification=dispatch.pre_gate_classification,
             )
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield event_builder.frame(payload, event_type="state_update", is_final=True)
             yield "data: [DONE]\n\n"
             return
         if _is_v7_active_case_side_question(dispatch):
@@ -1016,6 +1179,7 @@ async def event_generator(
                 decision=dispatch.turn_decision,
                 conversation_route=dispatch.conversation_route,
                 runtime_action=runtime_action,
+                current_user=current_user,
             )
             await persist_visible_governed_turn(
                 current_user=current_user,
@@ -1030,7 +1194,7 @@ async def event_generator(
                 governed_state=dispatch.governed_state,
                 pre_gate_classification=dispatch.pre_gate_classification,
             )
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield event_builder.frame(payload, event_type="state_update", is_final=True)
             yield "data: [DONE]\n\n"
             return
         if not _runtime_action_allows_graph(dispatch):
@@ -1060,20 +1224,21 @@ async def event_generator(
                 governed_state=dispatch.governed_state,
                 pre_gate_classification=dispatch.pre_gate_classification,
             )
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            yield event_builder.frame(payload, event_type="state_update", is_final=True)
             yield "data: [DONE]\n\n"
             return
 
         _log.debug(
-            "[runtime_authority] stream session=%s authority=governed_graph reason=%s",
+            "[runtime_authority] stream session=%s authority=conversation_first_sidecar reason=%s",
             request.session_id,
             dispatch.gate_reason,
         )
-        async for frame in _stream_governed_graph(
+        async for frame in _stream_conversation_first_with_engine_sidecar(
             request,
             current_user=current_user,
             pre_gate_classification=dispatch.pre_gate_classification,
             runtime_action=runtime_action,
+            governed_state=dispatch.governed_state,
         ):
             yield frame
         return

@@ -28,6 +28,10 @@ export type BffAccessTokenResult = {
   cookieUpdates: BffCookieUpdate[];
 };
 
+export type BffAccessTokenOptions = {
+  forceRefresh?: boolean;
+};
+
 type CookieWritableResponse = {
   cookies: {
     set: (name: string, value: string, options: BffCookieOptions) => void;
@@ -279,14 +283,17 @@ export function applyBffCookieUpdates(
   }
 }
 
-export async function getAccessTokenResult(request: Request): Promise<BffAccessTokenResult> {
+export async function getAccessTokenResult(
+  request: Request,
+  options: BffAccessTokenOptions = {},
+): Promise<BffAccessTokenResult> {
   const secureCookie = shouldUseSecureCookies(request);
   const token = await readSessionJwt(request, secureCookie);
   if (!token) {
     throw new BffError("Unauthorized", 401);
   }
 
-  if (hasUsableAccessToken(token)) {
+  if (!options.forceRefresh && hasUsableAccessToken(token)) {
     return {
       accessToken: extractAccessToken(token) as string,
       cookieUpdates: [],

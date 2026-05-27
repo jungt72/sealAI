@@ -59,6 +59,7 @@ output_public shape (Invariant 8 — no internal artefacts):
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, Literal
 
 from langgraph.types import Command, interrupt
@@ -533,6 +534,19 @@ def _medium_detail_question(state: GraphState) -> dict[str, str | None] | None:
     }
 
 
+_OPEN_SEALING_HELP_RE = re.compile(
+    r"\b(?:kannst|könntest|koenntest|hilf|hilfe|unterstütz\w*|unterstuetz\w*)\b"
+    r".{0,80}\b(?:dichtung|dichtungs\w*|dichtstelle|seal)\b"
+    r"|\b(?:dichtung|dichtungs\w*|dichtstelle|seal)\b"
+    r".{0,80}\b(?:helfen|hilfe|unterstütz\w*|unterstuetz\w*)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _is_open_sealing_help_request(text: str) -> bool:
+    return bool(_OPEN_SEALING_HELP_RE.search(str(text or "")))
+
+
 def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | None]:
     """Return small deterministic communication hints for clarification turns."""
     conflicts = state.asserted.conflict_flags
@@ -579,6 +593,26 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
         return medium_detail_question
 
     if missing:
+        if _is_open_sealing_help_request(pending_message):
+            priority = select_clarification_priority(state, missing)
+            focus_key = (
+                priority.focus_key
+                if priority is not None
+                else _pick_priority_clarification_field(missing)
+            )
+            return {
+                "focus_key": focus_key,
+                "user_signal_mirror": correction_mirror or "Gerne unterstütze ich dich.",
+                "primary_question": (
+                    "Erzähl mir bitte kurz von deiner Dichtungssituation: Welche Anwendung "
+                    "liegt vor, welches Medium berührt die Dichtung und welche "
+                    "Rahmenbedingungen sind wichtig, damit ich den Fall sauber einordnen kann?"
+                ),
+                "primary_question_reason": (
+                    "Ein kurzer Überblick über Anwendung, Medium und Rahmenbedingungen setzt "
+                    "den passenden technischen Einstieg."
+                ),
+            }
         priority = select_clarification_priority(state, missing)
         if priority is not None:
             return {
@@ -798,6 +832,8 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
     """
     return {
         "response_class": response_class,
+        "answer_mode": str(getattr(state, "runtime_answer_mode", "") or "").strip() or None,
+        "answer_mode_source": str(getattr(state, "runtime_answer_mode_source", "") or "").strip() or None,
         "gov_class": state.governance.gov_class,
         **build_admissibility_payload(state.governance.rfq_admissible),
         "parameters": _parameters_public(state),

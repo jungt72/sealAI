@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from app.agent.communication.conversation_controller_v7 import (
     ConversationControllerInput,
@@ -17,9 +18,13 @@ from app.agent.communication.side_question_detection import (
 from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import AnswerMode, TurnDecision
 from app.domain.pre_gate_classification import PreGateClassification
+from app.llm.registry import get_registry_default_model_for_role
+from app.services.openai_payload import use_responses_api
 from app.services.knowledge_intent import has_technical_knowledge_subject
 
 log = logging.getLogger(__name__)
+
+_MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 
 _ENGINEERING_ASSESSMENT_MARKERS = (
     "bewerte",
@@ -60,6 +65,7 @@ class CommunicationRuntimeV8DecisionProposal:
         "meta",
         "knowledge",
         "active_case_side_question",
+        "pending_slot_answer",
         "governed_intake",
         "blocked",
         "unclear",
@@ -100,6 +106,9 @@ class CommunicationRuntimeV8(ConversationControllerV7):
 
         if payload.slot_answer_binding is not None:
             return self._pending_slot_answer(payload)
+
+        if self._is_technical_case_challenge(payload):
+            return self._technical_case_challenge(payload)
 
         if self._looks_like_process_question(payload.user_message):
             if payload.active_case_exists:
@@ -154,54 +163,48 @@ class CommunicationRuntimeV8(ConversationControllerV7):
     ) -> CommunicationRuntimeV8DecisionProposal | None:
         if not _communication_runtime_llm_enabled():
             return None
-        # Safety and pending slot binding are deterministic authority.
+        # Safety remains deterministic authority. Pending slot bindings are only
+        # candidates here; the semantic runtime may veto them before mutation.
         if payload.pre_gate_classification is PreGateClassification.BLOCKED:
-            return None
-        if payload.slot_answer_binding is not None:
             return None
 
         try:
             from app.llm.factory import get_async_llm  # noqa: PLC0415
 
             client, model = get_async_llm("communication_runtime")
-            response = await client.chat.completions.create(
+            messages = [
+                {
+                    "role": "system",
+                    "content": render_communication_template(
+                        "communication_runtime_v8_system",
+                        fallback=(
+                            "You are SeaLAI Communication Runtime V8. Classify the "
+                            "latest user turn by semantic intent, not by keywords. "
+                            "Return JSON with keys intent, confidence, reason. Do not "
+                            "answer the user. Valid intents: smalltalk, meta, "
+                            "knowledge, active_case_side_question, pending_slot_answer, "
+                            "governed_intake, blocked, unclear."
+                        ),
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        _semantic_runtime_payload(
+                            payload=payload,
+                            deterministic=deterministic,
+                        ),
+                        ensure_ascii=False,
+                    ),
+                },
+            ]
+            response = await _create_completion_with_registry_fallback(
+                client=client,
                 model=model,
+                role="communication_runtime",
+                messages=messages,
                 temperature=0.1,
-                max_tokens=180,
-                response_format={"type": "json_object"},
-                messages=[
-                    {
-                        "role": "system",
-                        "content": render_communication_template(
-                            "communication_runtime_v8_system",
-                            fallback=(
-                                "You are SeaLAI Communication Runtime V8. Classify the "
-                                "latest user turn only. Return JSON with keys intent, "
-                                "confidence, reason. Do not answer the user. Do not set "
-                                "engineering truth. Valid intents: smalltalk, meta, "
-                                "knowledge, active_case_side_question, governed_intake, "
-                                "blocked, unclear."
-                            ),
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            {
-                                "message": payload.user_message,
-                                "pre_gate": payload.pre_gate_classification.value,
-                                "active_case_exists": payload.active_case_exists,
-                                "pending_question_target": (
-                                    payload.pending_question.target_field
-                                    if payload.pending_question is not None
-                                    else None
-                                ),
-                                "deterministic_answer_mode": deterministic.answer_mode.value,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    },
-                ],
+                max_tokens=220,
             )
             raw = response.choices[0].message.content if response.choices else ""
             data = json.loads(str(raw or "{}"))
@@ -211,6 +214,7 @@ class CommunicationRuntimeV8(ConversationControllerV7):
                 "meta",
                 "knowledge",
                 "active_case_side_question",
+                "pending_slot_answer",
                 "governed_intake",
                 "blocked",
                 "unclear",
@@ -237,11 +241,22 @@ class CommunicationRuntimeV8(ConversationControllerV7):
         if proposal.confidence < 0.72:
             return deterministic
 
-        current_mode = deterministic.answer_mode
-        if current_mode in {
-            AnswerMode.SAFETY_BLOCKED,
-            AnswerMode.PENDING_SLOT_ANSWER,
-            AnswerMode.GOVERNED_INTAKE,
+        if proposal.intent == "blocked":
+            return self._blocked(payload)
+
+        if proposal.intent == "pending_slot_answer":
+            if payload.slot_answer_binding is not None:
+                return self._pending_slot_answer(payload)
+            return deterministic
+
+        current_mode_value = _answer_mode_value(deterministic)
+        if current_mode_value == AnswerMode.TECHNICAL_CASE_CHALLENGE.value:
+            return deterministic
+        if current_mode_value in {
+            AnswerMode.SAFETY_BLOCKED.value,
+            AnswerMode.PENDING_SLOT_ANSWER.value,
+            AnswerMode.TECHNICAL_CASE_CHALLENGE.value,
+            AnswerMode.GOVERNED_INTAKE.value,
         } and proposal.intent not in {"knowledge", "active_case_side_question", "smalltalk", "meta"}:
             return deterministic
 
@@ -260,4 +275,191 @@ class CommunicationRuntimeV8(ConversationControllerV7):
                     return deterministic
             return self._knowledge_or_side_question(payload)
 
+        if (
+            proposal.intent == "unclear"
+            and payload.active_case_exists
+            and payload.pending_question is not None
+        ):
+            return self._active_case_process_question(payload)
+
         return deterministic
+
+
+async def _create_completion_with_registry_fallback(
+    *,
+    client: Any,
+    model: str,
+    role: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> Any:
+    try:
+        if use_responses_api(model):
+            instructions, response_input = _responses_input_from_messages(messages)
+            response_or_awaitable = client.responses.create(
+                model=model,
+                instructions=instructions or None,
+                input=response_input,
+                max_output_tokens=max_tokens,
+            )
+            response = (
+                await response_or_awaitable
+                if inspect.isawaitable(response_or_awaitable)
+                else response_or_awaitable
+            )
+            return _completion_response_from_text(_extract_responses_text(response))
+        return await client.chat.completions.create(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            messages=messages,
+        )
+    except Exception as exc:  # noqa: BLE001
+        fallback_model = get_registry_default_model_for_role(role)
+        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+            log.warning(
+                "[communication_runtime_v8] configured model rejected; retrying registry default"
+            )
+            if use_responses_api(fallback_model):
+                instructions, response_input = _responses_input_from_messages(messages)
+                response_or_awaitable = client.responses.create(
+                    model=fallback_model,
+                    instructions=instructions or None,
+                    input=response_input,
+                    max_output_tokens=max_tokens,
+                )
+                response = (
+                    await response_or_awaitable
+                    if inspect.isawaitable(response_or_awaitable)
+                    else response_or_awaitable
+                )
+                return _completion_response_from_text(_extract_responses_text(response))
+            return await client.chat.completions.create(
+                model=fallback_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+                messages=messages,
+            )
+        raise
+
+
+def _semantic_runtime_payload(
+    *,
+    payload: ConversationControllerInput,
+    deterministic: TurnDecision,
+) -> dict[str, Any]:
+    pending_question = payload.pending_question
+    slot_binding = payload.slot_answer_binding
+    return {
+        "message": payload.user_message,
+        "pre_gate": payload.pre_gate_classification.value,
+        "active_case_exists": payload.active_case_exists,
+        "pending_question": (
+            {
+                "target_field": pending_question.target_field,
+                "expected_answer_type": pending_question.expected_answer_type,
+                "question_text": pending_question.question_text,
+                "ambiguity_policy": pending_question.ambiguity_policy,
+                "status": pending_question.status,
+            }
+            if pending_question is not None
+            else None
+        ),
+        "deterministic_answer_mode": _answer_mode_value(deterministic),
+        "deterministic_slot_binding": (
+            {
+                "target_field": slot_binding.target_field,
+                "raw_value": slot_binding.raw_value,
+                "normalized_value": slot_binding.normalized_value,
+                "confidence": slot_binding.confidence,
+                "ambiguity": slot_binding.ambiguity,
+                "needs_clarification": slot_binding.needs_clarification,
+            }
+            if slot_binding is not None
+            else None
+        ),
+        "decision_task": (
+            "Decide whether the latest message actually answers the pending "
+            "question, or whether it is social/acknowledgement, meta/process, "
+            "knowledge, side-question, new governed case data, blocked, or unclear."
+        ),
+    }
+
+
+def _answer_mode_value(decision: TurnDecision) -> str:
+    mode = getattr(decision, "answer_mode", "")
+    return str(getattr(mode, "value", mode) or "")
+
+
+def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str, list[dict[str, Any]]]:
+    instructions: list[str] = []
+    response_input: list[dict[str, Any]] = []
+    for message in messages:
+        role = str(message.get("role") or "user").strip()
+        content = str(message.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            instructions.append(content)
+            continue
+        response_input.append(
+            {
+                "role": "assistant" if role == "assistant" else "user",
+                "content": [{"type": "input_text", "text": content}],
+            }
+        )
+    return "\n\n".join(instructions), response_input
+
+
+def _extract_responses_text(response: Any) -> str:
+    output_text = getattr(response, "output_text", None)
+    if output_text:
+        return str(output_text)
+    output = getattr(response, "output", None)
+    if isinstance(output, list):
+        parts: list[str] = []
+        for item in output:
+            content = getattr(item, "content", None)
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                text = getattr(part, "text", None)
+                if text:
+                    parts.append(str(text))
+        if parts:
+            return "".join(parts)
+    if isinstance(response, dict):
+        output_text = response.get("output_text")
+        if output_text:
+            return str(output_text)
+        parts = []
+        for item in response.get("output", []) or []:
+            for part in item.get("content", []) or []:
+                text = part.get("text")
+                if text:
+                    parts.append(str(text))
+        if parts:
+            return "".join(parts)
+    return ""
+
+
+def _completion_response_from_text(text: str) -> Any:
+    class Message:
+        pass
+
+    class Choice:
+        pass
+
+    class Response:
+        pass
+
+    message = Message()
+    message.content = text
+    choice = Choice()
+    choice.message = message
+    response = Response()
+    response.choices = [choice]
+    return response

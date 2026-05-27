@@ -243,6 +243,7 @@ class GovernedSnapshotRevisionListItemResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: Optional[str] = Field(default="default")
+    turn_id: Optional[str] = Field(default=None)
 
     model_config = ConfigDict(extra="forbid")
 

@@ -207,6 +207,74 @@ def test_context_builder_exposes_deterministic_calculation_results() -> None:
     assert "keine Freigabe" in fact.limitation
 
 
+def test_context_builder_adds_technical_case_challenge_plan() -> None:
+    state = GraphState(
+        runtime_answer_mode="technical_case_challenge",
+        runtime_answer_mode_source="runtime_action.answer_mode",
+        pending_message=(
+            "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall. "
+            "Medium: Salzwasser; Temperatur: 50 °C; Druck: 2 bar; Drehzahl: 3000 rpm; "
+            "Wellendurchmesser: 40 mm; Anlage / Einbauort: Boot; Dichtungstyp-Richtung: RWDR; "
+            "Gegenlauffläche: 0,2. Bitte keine stumpfe Parameterabfrage. Challenge den Dichtungsfall."
+        ),
+        conversation_messages=[
+            ConversationMessage(
+                role="user",
+                content=(
+                    "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall. "
+                    "Medium: Salzwasser; Temperatur: 50 °C; Druck: 2 bar; Drehzahl: 3000 rpm; "
+                    "Wellendurchmesser: 40 mm; Anlage / Einbauort: Boot; Dichtungstyp-Richtung: RWDR; "
+                    "Gegenlauffläche: 0,2. Bitte keine stumpfe Parameterabfrage. Challenge den Dichtungsfall."
+                ),
+            )
+        ],
+    )
+
+    context = build_governed_answer_context(state)
+
+    assert context.answer_mode == "technical_case_challenge"
+    assert context.answer_mode_source == "runtime_action.answer_mode"
+    assert context.technical_case_challenge_plan is not None
+    signals = context.technical_case_challenge_plan.rwdr_signals
+    assert signals is not None
+    assert signals.circumferential_speed_mps == pytest.approx(6.28)
+    assert context.next_best_question is not None
+    assert "dauerhafte Druckdifferenz" in context.next_best_question
+
+
+def test_context_builder_marks_latest_message_challenge_as_fallback_inference() -> None:
+    state = GraphState(
+        pending_message=(
+            "Analysiere diese direkt eingegebenen Dichtungsparameter als vorbereiteten technischen Fall. "
+            "Medium: Salzwasser; Druck: 2 bar; Drehzahl: 3000 rpm; Wellendurchmesser: 40 mm; "
+            "Dichtungstyp-Richtung: RWDR. Challenge den Dichtungsfall."
+        ),
+    )
+
+    context = build_governed_answer_context(state)
+
+    assert context.answer_mode == "technical_case_challenge"
+    assert context.answer_mode_source == "fallback_latest_user_message"
+    assert context.technical_case_challenge_plan is not None
+
+
+def test_context_builder_does_not_infer_challenge_when_explicit_mode_is_knowledge() -> None:
+    state = GraphState(
+        runtime_answer_mode="no_case_knowledge",
+        runtime_answer_mode_source="runtime_action.answer_mode",
+        pending_message=(
+            "Analysiere PTFE und FKM als Vergleich. Bitte nenne kritische Punkte, "
+            "aber ohne konkrete Dichtungsparameter."
+        ),
+    )
+
+    context = build_governed_answer_context(state)
+
+    assert context.answer_mode == "no_case_knowledge"
+    assert context.answer_mode_source == "runtime_action.answer_mode"
+    assert context.technical_case_challenge_plan is None
+
+
 def test_context_builder_excludes_stale_calculation_results_from_answer_context() -> None:
     state = GraphState(
         calculation=CalculationState(

@@ -165,9 +165,9 @@ def _build_review_handover_response(
     )
     release_status = "inquiry_ready" if passed else "inadmissible"
     reply = (
-        "Die technische Überprüfung ist für den definierten Anfrageumfang freigegeben."
+        "Die technische Überprüfung ist für den definierten Anfrageumfang vorbereitet."
         if passed
-        else "Die technische Überprüfung ist noch nicht freigegeben; offene Punkte bleiben sichtbar."
+        else "Die technische Überprüfung ist noch nicht abgeschlossen; offene Punkte bleiben sichtbar."
     )
     return ReviewResponse(
         session_id=session_id,

@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from app.agent.communication.side_question_detection import (
     classify_message_as_knowledge_side_question,
 )
+from app.agent.communication.technical_case_challenge import (
+    is_technical_case_challenge_request,
+)
 from app.agent.communication.v7_contracts import (
     AnswerMode,
     CaseRelevance,
@@ -45,6 +48,8 @@ class ConversationControllerV7:
     def decide(self, payload: ConversationControllerInput) -> TurnDecision:
         if payload.slot_answer_binding is not None:
             return self._pending_slot_answer(payload)
+        if self._is_technical_case_challenge(payload):
+            return self._technical_case_challenge(payload)
         if self._looks_like_process_question(payload.user_message):
             if payload.active_case_exists:
                 return self._active_case_process_question(payload)
@@ -129,6 +134,16 @@ class ConversationControllerV7:
         if normalized.startswith("und ") and any(token in normalized for token in material_tokens):
             return True
         return False
+
+    def _is_technical_case_challenge(self, payload: ConversationControllerInput) -> bool:
+        if not is_technical_case_challenge_request(payload.user_message):
+            return False
+        return payload.pre_gate_classification not in {
+            PreGateClassification.GREETING,
+            PreGateClassification.META_QUESTION,
+            PreGateClassification.BLOCKED,
+            PreGateClassification.KNOWLEDGE_QUERY,
+        }
 
     def _router_signals(self, payload: ConversationControllerInput) -> RouterSignals:
         return RouterSignals(
@@ -331,4 +346,24 @@ class ConversationControllerV7:
             resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
             task_stack=self._task_stack(payload),
             confidence=payload.pre_gate_confidence,
+        )
+
+    def _technical_case_challenge(self, payload: ConversationControllerInput) -> TurnDecision:
+        return TurnDecision(
+            turn_kind=TurnKind.CASE_INTAKE,
+            primary_interpretation="technical_case_challenge",
+            router_signals=self._router_signals(payload),
+            answer_mode=AnswerMode.TECHNICAL_CASE_CHALLENGE,
+            mutation_policy=MutationPolicy.PROPOSED,
+            answer_obligations=[
+                "build_deterministic_case_challenge_plan",
+                "use_structured_challenge_sections",
+                "ask_one_next_best_question",
+                "do_not_claim_material_suitability",
+                "do_not_create_product_or_manufacturer_recommendation",
+            ],
+            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT if payload.active_case_exists else CaseRelevance.NEW_CASE_CANDIDATE,
+            resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
+            task_stack=self._task_stack(payload),
+            confidence=max(payload.pre_gate_confidence, 0.86),
         )

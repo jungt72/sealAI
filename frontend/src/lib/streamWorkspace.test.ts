@@ -190,6 +190,48 @@ test("buildStreamWorkspaceView normalizes state_update ui payloads", () => {
   assert.equal(view.rfqReadinessProjection?.projection_version, "rfq_readiness_projection_v1");
 });
 
+test("buildStreamWorkspaceView falls back to structured_state view when top-level ui is thin", () => {
+  const view = buildStreamWorkspaceView({
+    type: "state_update",
+    caseId: "case-from-structured",
+    ui: {
+      // The V9.2 output layer may append only contract metadata to top-level ui.
+      v92_contract: { route: "engineering_case_update" },
+    } as any,
+    structuredState: {
+      view: {
+        parameter: {
+          parameters: [
+            { field_name: "medium", value: "Dampf CIP", unit: null, confidence: "inferred" },
+            { field_name: "temperature_c", value: 120, unit: "°C", confidence: "inferred" },
+          ],
+          parameter_count: 2,
+          needs_confirmation: true,
+        },
+        assumption: {
+          items: [{ kind: "open_point", text: "Druckrolle klären" }],
+          open_points: ["Druckrolle klären"],
+          has_open_points: true,
+        },
+        medium_classification: {
+          canonical_label: "Dampf",
+          family: "dampffoermig",
+          confidence: "medium",
+          status: "recognized",
+          raw_mentions: ["Dampf CIP"],
+        },
+      },
+    },
+  });
+
+  assert.equal(view.ui.parameter.parameter_count, 2);
+  const parameters = view.ui.parameter.parameters ?? [];
+  assert.equal(parameters[0]?.field_name, "medium");
+  assert.equal(parameters[1]?.value, 120);
+  assert.deepEqual(view.ui.assumption.open_points, ["Druckrolle klären"]);
+  assert.equal(view.ui.medium_classification.canonical_label, "Dampf");
+});
+
 test("buildStreamWorkspaceView fills missing ui sections conservatively", () => {
   const view = buildStreamWorkspaceView({
     type: "state_update",

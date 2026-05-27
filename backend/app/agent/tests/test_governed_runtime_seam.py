@@ -76,6 +76,19 @@ def test_build_governed_graph_input_maps_live_session_state_once() -> None:
     assert graph_input.normalized == governed.normalized
 
 
+def test_build_governed_graph_input_carries_runtime_answer_mode() -> None:
+    graph_input = build_governed_graph_input(
+        governed_state=GovernedSessionState(),
+        message="Challenge den RWDR-Fall: Medium Salzwasser, d1 40 mm, 3000 rpm.",
+        current_user=_request_user(),
+        session_id="case-1",
+        runtime_action_answer_mode="technical_case_challenge",
+    )
+
+    assert graph_input.runtime_answer_mode == "technical_case_challenge"
+    assert graph_input.runtime_answer_mode_source == "runtime_action.answer_mode"
+
+
 def test_governed_graph_input_mapping_is_not_redeclared_in_json_or_sse_callers() -> None:
     assert "GraphState(" not in inspect.getsource(chat)
     assert "GraphState(" not in inspect.getsource(streaming)
@@ -161,6 +174,7 @@ async def test_json_governed_path_uses_governed_runtime_seam() -> None:
         request=request,
         current_user=_request_user(),
         pre_gate_classification="DOMAIN_INQUIRY",
+        runtime_action=None,
     )
     assert returned_result is result_state
     assert returned_persisted is persisted_state
@@ -202,17 +216,31 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
         pre_gate_classification="DOMAIN_INQUIRY",
         collect_progress=True,
         progress_callback=ANY,
+        runtime_action=None,
     )
     payloads = [
         json.loads(frame[6:].strip())
         for frame in frames
         if frame.startswith("data: ") and not frame.startswith("data: [DONE]")
     ]
-    assert payloads[0] == {
+    assert payloads[0] | {"event_id": "ignored"} == {
+        **payloads[0],
         "type": "progress",
         "data": {"event_type": "evidence_retrieved"},
+        "event_type": "metadata",
+        "is_final": False,
+        "error_code": None,
+        "event_id": "ignored",
     }
+    assert payloads[0]["turn_id"].startswith("turn:")
+    assert "case-sse" not in payloads[0]["turn_id"]
+    assert payloads[0]["sequence"] == 1
     state_update = next(payload for payload in payloads if payload["type"] == "state_update")
+    assert state_update["turn_id"] == payloads[0]["turn_id"]
+    assert state_update["event_id"] != payloads[0]["event_id"]
+    assert state_update["sequence"] > payloads[0]["sequence"]
+    assert state_update["event_type"] == "state_update"
+    assert state_update["is_final"] is True
     assert state_update["reply"] == "Bitte Medium angeben."
     assert state_update["answer_markdown"] == state_update["reply"]
     assert state_update["response_class"] == "structured_clarification"

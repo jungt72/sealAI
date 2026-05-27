@@ -87,19 +87,20 @@ async function enqueueFinalAnswerStream(
   controller: ReadableStreamDefaultController<Uint8Array>,
   text: string,
   source: "answer_markdown" | "reply",
+  metadata: Record<string, unknown> = {},
 ) {
   const segments = syntheticAnswerSegments(text);
   if (segments.length === 0) {
     return;
   }
-  controller.enqueue(encodeSseEvent({ type: "answer.stream.start", source }));
+  controller.enqueue(encodeSseEvent({ type: "answer.stream.start", source, ...metadata }));
   for (const segment of segments) {
-    controller.enqueue(encodeSseEvent({ type: "answer.token", text: segment }));
+    controller.enqueue(encodeSseEvent({ type: "answer.token", text: segment, ...metadata }));
     if (segments.length > 1) {
       await sleep(SYNTHETIC_ANSWER_SEGMENT_DELAY_MS);
     }
   }
-  controller.enqueue(encodeSseEvent({ type: "answer.done" }));
+  controller.enqueue(encodeSseEvent({ type: "answer.done", ...metadata }));
 }
 
 function mapConversationStrategy(value: unknown): AgentConversationStrategy | null {
@@ -158,23 +159,59 @@ function backendSaysNoCaseCreated(runMeta: Record<string, unknown> | null): bool
   );
 }
 
+function backendSaysHardNoCaseCreated(runMeta: Record<string, unknown> | null): boolean {
+  const fastResponder = asRecord(runMeta?.fast_responder);
+  const knowledgeService = asRecord(runMeta?.knowledge_service);
+
+  return Boolean(fastResponder?.no_case_created || knowledgeService?.no_case_created);
+}
+
 function hasRecordEntries(value: Record<string, unknown> | null): boolean {
   return Boolean(value && Object.keys(value).length > 0);
+}
+
+function parameterCountFromUi(value: Record<string, unknown> | null): number {
+  const parameter = asRecord(value?.parameter);
+  if (!parameter) {
+    return 0;
+  }
+  if (typeof parameter.parameter_count === "number" && Number.isFinite(parameter.parameter_count)) {
+    return parameter.parameter_count;
+  }
+  return Array.isArray(parameter.parameters) ? parameter.parameters.length : 0;
+}
+
+function hasWorkspaceParameterProjection({
+  ui,
+  structuredState,
+}: {
+  ui: Record<string, unknown> | null;
+  structuredState: Record<string, unknown> | null;
+}): boolean {
+  if (parameterCountFromUi(ui) > 0) {
+    return true;
+  }
+  const structuredView = asRecord(structuredState?.view);
+  return parameterCountFromUi(structuredView) > 0;
 }
 
 function shouldBindCaseFromStateUpdate({
   requestHadCaseId,
   backendNoCaseCreated,
+  backendHardNoCaseCreated,
   responseClass,
   structuredState,
+  ui,
   proposedCaseDelta,
   assertions,
   rfqReadinessProjection,
 }: {
   requestHadCaseId: boolean;
   backendNoCaseCreated: boolean;
+  backendHardNoCaseCreated: boolean;
   responseClass: string | null;
   structuredState: Record<string, unknown> | null;
+  ui: Record<string, unknown> | null;
   proposedCaseDelta: Record<string, unknown> | null;
   assertions: Record<string, unknown> | null;
   rfqReadinessProjection: Record<string, unknown> | null;
@@ -182,21 +219,25 @@ function shouldBindCaseFromStateUpdate({
   if (requestHadCaseId) {
     return true;
   }
-  if (backendNoCaseCreated) {
-    return false;
-  }
   const hasGovernedArtifacts = [
     proposedCaseDelta,
     assertions,
     rfqReadinessProjection,
   ].some(hasRecordEntries);
+  const hasCaseParameterProjection = hasWorkspaceParameterProjection({ ui, structuredState });
+  if (backendHardNoCaseCreated) {
+    return false;
+  }
+  if (backendNoCaseCreated && !hasGovernedArtifacts && !hasCaseParameterProjection) {
+    return false;
+  }
   if (responseClass === "conversational_answer") {
-    return hasGovernedArtifacts;
+    return hasGovernedArtifacts || hasCaseParameterProjection;
   }
   if (responseClass && responseClass !== "conversational_answer") {
     return true;
   }
-  return hasGovernedArtifacts || hasRecordEntries(structuredState);
+  return hasGovernedArtifacts || hasCaseParameterProjection || hasRecordEntries(structuredState);
 }
 
 function rawErrorText(value: unknown): string {
@@ -246,43 +287,144 @@ function userVisibleAgentStreamError(status: number, details: unknown): string {
   return parsed;
 }
 
+function agentStreamErrorCode(status: number, details: unknown): "auth_expired" | "network_error" | "agent_stream_failed" {
+  const parsed = parseNestedJsonError(rawErrorText(details)).toLowerCase();
+  if (
+    status === 401 ||
+    status === 403 ||
+    parsed.includes("token_expired") ||
+    parsed.includes("refresh token") ||
+    parsed.includes("unauthorized")
+  ) {
+    return "auth_expired";
+  }
+  if (
+    parsed.includes("network") ||
+    parsed.includes("aborted") ||
+    parsed.includes("terminated") ||
+    parsed.includes("connection")
+  ) {
+    return "network_error";
+  }
+  return "agent_stream_failed";
+}
+
+function streamEventMetadata(
+  payload: Record<string, unknown>,
+  fallbackTurnId?: string,
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = fallbackTurnId ? { turn_id: fallbackTurnId } : {};
+  for (const key of ["event_id", "eventId", "turn_id", "turnId", "sequence", "event_type", "is_final", "error_code"]) {
+    if (payload[key] !== undefined && payload[key] !== null) {
+      metadata[key] = payload[key];
+    }
+  }
+  return metadata;
+}
+
+function isBackendAuthExpiry(status: number, details: unknown): boolean {
+  const parsed = parseNestedJsonError(rawErrorText(details)).toLowerCase();
+  return (
+    status === 401 &&
+    (parsed.includes("token_expired") ||
+      parsed.includes("token expired") ||
+      parsed.includes("expired access token") ||
+      parsed.includes("unauthorized"))
+  );
+}
+
+function resolveTurnId(body: AgentStreamRequest & { turn_id?: unknown }): string {
+  const candidate =
+    typeof body.turnId === "string" && body.turnId.trim()
+      ? body.turnId.trim()
+      : typeof body.turn_id === "string" && body.turn_id.trim()
+        ? body.turn_id.trim()
+        : null;
+  return candidate || randomUUID();
+}
+
+function buildBackendStreamRequest(
+  body: AgentStreamRequest,
+  sessionId: string,
+  turnId: string,
+  token: string,
+): RequestInit {
+  return {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "X-Request-Id": randomUUID(),
+    },
+    body: JSON.stringify({
+      message: body.message,
+      session_id: sessionId,
+      turn_id: turnId,
+    }),
+    cache: "no-store",
+  };
+}
+
 export async function POST(request: Request) {
   try {
-    const authResult = await getAccessTokenResult(request);
-    const token = authResult.accessToken;
+    let authResult = await getAccessTokenResult(request);
     const body = (await request.json()) as AgentStreamRequest;
     const requestHadCaseId = Boolean(body.caseId);
-    const caseId = body.caseId || randomUUID();
+    const sessionId = body.caseId || body.conversationId || randomUUID();
+    const caseId = body.caseId || sessionId;
+    const turnId = resolveTurnId(body);
 
-    const backendResponse = await fetch(buildBackendUrl("/api/agent/chat/stream"), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        "X-Request-Id": randomUUID(),
-      },
-      body: JSON.stringify({
-        message: body.message,
-        session_id: caseId,
-      }),
-      cache: "no-store",
-    });
+    const backendUrl = buildBackendUrl("/api/agent/chat/stream");
+    let backendResponse = await fetch(
+      backendUrl,
+      buildBackendStreamRequest(body, sessionId, turnId, authResult.accessToken),
+    );
 
     if (!backendResponse.ok || !backendResponse.body) {
       const details = await backendResponse.text();
-      const message = userVisibleAgentStreamError(backendResponse.status || 500, details);
-      const response = NextResponse.json(
-        {
-          error: {
-            code: "agent_stream_failed",
-            message,
+      if (isBackendAuthExpiry(backendResponse.status || 500, details)) {
+        const refreshedAuthResult = await getAccessTokenResult(request, { forceRefresh: true });
+        const retryResponse = await fetch(
+          backendUrl,
+          buildBackendStreamRequest(body, sessionId, turnId, refreshedAuthResult.accessToken),
+        );
+        authResult = {
+          accessToken: refreshedAuthResult.accessToken,
+          cookieUpdates: [...authResult.cookieUpdates, ...refreshedAuthResult.cookieUpdates],
+        };
+        backendResponse = retryResponse;
+        if (backendResponse.ok && backendResponse.body) {
+          // Continue with the successful retried stream below.
+        } else {
+          const retryDetails = await backendResponse.text();
+          const message = userVisibleAgentStreamError(backendResponse.status || 500, retryDetails);
+          const response = NextResponse.json(
+            {
+              error: {
+                code: "agent_stream_failed",
+                message,
+              },
+            },
+            { status: backendResponse.status || 500 },
+          );
+          applyBffCookieUpdates(response, authResult.cookieUpdates);
+          return response;
+        }
+      } else {
+        const message = userVisibleAgentStreamError(backendResponse.status || 500, details);
+        const response = NextResponse.json(
+          {
+            error: {
+              code: "agent_stream_failed",
+              message,
+            },
           },
-        },
-        { status: backendResponse.status || 500 },
-      );
-      applyBffCookieUpdates(response, authResult.cookieUpdates);
-      return response;
+          { status: backendResponse.status || 500 },
+        );
+        applyBffCookieUpdates(response, authResult.cookieUpdates);
+        return response;
+      }
     }
 
     const reader = backendResponse.body.getReader();
@@ -297,7 +439,7 @@ export async function POST(request: Request) {
             return;
           }
           emittedCaseBinding = true;
-          controller.enqueue(encodeSseEvent({ type: "case_bound", caseId }));
+          controller.enqueue(encodeSseEvent({ type: "case_bound", caseId, turn_id: turnId }));
         };
 
         try {
@@ -350,6 +492,7 @@ export async function POST(request: Request) {
                 controller.enqueue(
                   encodeSseEvent({
                     type: "progress",
+                    ...streamEventMetadata(payload, turnId),
                     data: payload.data,
                   }),
                 );
@@ -365,6 +508,7 @@ export async function POST(request: Request) {
                   : null;
                 const runMeta = asRecord(payload.run_meta);
                 const noCaseCreated = backendSaysNoCaseCreated(runMeta);
+                const hardNoCaseCreated = backendSaysHardNoCaseCreated(runMeta);
                 const structuredState = asRecord(payload.structured_state);
                 const proposedCaseDelta = asRecord(payload.proposed_case_delta);
                 const ui = asRecord(payload.ui);
@@ -379,14 +523,19 @@ export async function POST(request: Request) {
                 const shouldBindCase = shouldBindCaseFromStateUpdate({
                   requestHadCaseId,
                   backendNoCaseCreated: noCaseCreated,
+                  backendHardNoCaseCreated: hardNoCaseCreated,
                   responseClass,
                   structuredState,
+                  ui,
                   proposedCaseDelta,
                   assertions,
                   rfqReadinessProjection,
                 });
-                const noCaseCreatedForClient =
-                  !shouldBindCase && !requestHadCaseId ? true : noCaseCreated;
+                const noCaseCreatedForClient = shouldBindCase
+                  ? false
+                  : !requestHadCaseId
+                    ? true
+                    : noCaseCreated;
                 if (shouldBindCase) {
                   pushCaseBinding();
                 }
@@ -396,12 +545,14 @@ export async function POST(request: Request) {
                     controller,
                     visibleText,
                     answerMarkdown && answerMarkdown.trim() ? "answer_markdown" : "reply",
+                    streamEventMetadata(payload, turnId),
                   );
                   finalAnswerStreamed = true;
                 }
                 controller.enqueue(
                   encodeSseEvent({
                     type: "state_update",
+                    ...streamEventMetadata(payload, turnId),
                     ...(shouldBindCase ? { caseId } : {}),
                     noCaseCreated: noCaseCreatedForClient,
                     reply,
@@ -436,6 +587,7 @@ export async function POST(request: Request) {
                 controller.enqueue(
                   encodeSseEvent({
                     type: "error",
+                    ...streamEventMetadata(payload, turnId),
                     code: "agent_stream_failed",
                     message,
                   }),
@@ -456,12 +608,19 @@ export async function POST(request: Request) {
             }
           }
         } catch (error) {
-          const message = userVisibleAgentStreamError(500, error);
+          const errorCode = agentStreamErrorCode(500, error);
+          const message =
+            errorCode === "network_error"
+              ? "Die Verbindung zur Antwort wurde unterbrochen. Bitte versuche es erneut."
+              : userVisibleAgentStreamError(500, error);
           controller.enqueue(
             encodeSseEvent({
-              type: "error",
-              code: "agent_stream_failed",
+              type: "interrupted",
+              code: errorCode,
+              error_code: errorCode,
+              turn_id: turnId,
               message,
+              is_final: false,
             }),
           );
         } finally {

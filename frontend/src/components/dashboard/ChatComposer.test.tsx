@@ -5,6 +5,16 @@ import { describe, expect, it, vi } from "vitest";
 import ChatComposer from "./ChatComposer";
 
 describe("ChatComposer", () => {
+  it("renders the ChatGPT-style composer controls", () => {
+    render(<ChatComposer onSend={vi.fn()} onUpload={vi.fn()} placeholder="SealingAI fragen" />);
+
+    expect(screen.getByPlaceholderText(/SealingAI fragen/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Anhang hinzufügen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Antwortlänge" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Spracheingabe" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sprachmodus" })).toBeDisabled();
+  });
+
   it("syncs external draft values without clearing local edits on null", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

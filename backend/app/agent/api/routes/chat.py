@@ -77,6 +77,33 @@ from app.observability.sealai_quality import emit_quality_trace
 _log = logging.getLogger(__name__)
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on", "enabled"}
+_OPEN_INVITE_FACT_FIELDS = {
+    "medium",
+    "pressure_bar",
+    "pressure_at_seal_bar",
+    "pressure_delta_bar",
+    "temperature_c",
+    "shaft_diameter_mm",
+    "speed_rpm",
+    "sealing_type",
+    "motion_type",
+    "installation",
+    "application",
+    "geometry_context",
+    "failure_mode",
+}
+_OPEN_CASE_ACK_RE = re.compile(
+    r"^\s*(?:prima+|super|klasse|top|perfekt|passt|sehr\s+gut|gut|"
+    r"gern(?:e)?|klar|ok(?:ay)?|los\s+geht'?s|"
+    r"lass\s+uns\s+(?:loslegen|starten)|ich\s+bin\s+(?:auch\s+)?gespannt)"
+    r"[\s.!?]*$",
+    re.IGNORECASE | re.UNICODE,
+)
+_ACTIVE_CASE_SIDE_GROUNDED_LIMIT = 6_000
+_ACTIVE_CASE_SIDE_MESSAGE_LIMIT = 900
+_ACTIVE_CASE_SIDE_CONTEXT_MESSAGES = 8
+_ACTIVE_CASE_SIDE_FACT_LIMIT = 24
+_ACTIVE_CASE_SIDE_OPEN_POINT_LIMIT = 16
 
 
 def _active_case_side_answer_composer_enabled() -> bool:
@@ -164,8 +191,9 @@ def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[st
     reply = render_communication_template(
         "runtime_action_blocked",
         fallback=(
-            "Ich kann diesen Schritt gerade nicht sicher in den geregelten Fallfluss geben. "
-            "Bitte formuliere die naechste technische Angabe oder Frage noch einmal."
+            "Ich moechte das sauber einordnen. Bitte formuliere die naechste "
+            "technische Angabe oder Frage noch einmal; wenn es nur um Wissen geht, "
+            "beantworte ich es allgemein ohne Fallanlage."
         ),
     )
     trace = build_answer_trace(
@@ -484,7 +512,7 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
                     f"{base}\n\n"
                     f"Ich habe {detected_value} als moegliche Angabe zum Medium erkannt. "
                     "Die technische Uebernahme laeuft nicht ueber diese Erklaerung, "
-                    "sondern ueber den geregelten Fallfluss."
+                    "sondern ueber den validierten Fallstatus."
                 ),
             )
         return render_communication_template(
@@ -518,39 +546,71 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
 
 def _active_case_context_payload(governed_state: GovernedSessionState | None) -> dict[str, Any]:
     if governed_state is None:
-        return {"known_facts": [], "open_points": [], "recent_messages": []}
+        return {
+            "known_facts": [],
+            "open_points": [],
+            "recent_messages": [],
+            "conversation_message_count": 0,
+            "context_policy": "bounded_active_case_side_context",
+        }
     assertions = getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
     known_facts: list[dict[str, str]] = []
-    for field_name, claim in list(assertions.items())[:8]:
+    for field_name, claim in list(assertions.items())[:_ACTIVE_CASE_SIDE_FACT_LIMIT]:
         value = getattr(claim, "asserted_value", None)
         if value is None or str(value).strip() == "":
             continue
-        known_facts.append({"field": str(field_name), "value": str(value)})
+        known_facts.append(
+            {
+                "field": str(field_name),
+                "value": _bounded_prompt_text(value, limit=240),
+            }
+        )
     open_points = [
         str(field)
-        for field in list(getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", []) or [])[:8]
+        for field in list(getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", []) or [])[
+            :_ACTIVE_CASE_SIDE_OPEN_POINT_LIMIT
+        ]
         if str(field).strip()
     ]
-    recent_messages = [
-        {
-            "role": str(getattr(message, "role", "") or ""),
-            "content": str(getattr(message, "content", "") or ""),
-        }
-        for message in list(getattr(governed_state, "conversation_messages", []) or [])[-8:]
-        if str(getattr(message, "content", "") or "").strip()
-    ]
+    all_messages = list(getattr(governed_state, "conversation_messages", []) or [])
+    conversation_messages = []
+    for message in all_messages[-_ACTIVE_CASE_SIDE_CONTEXT_MESSAGES:]:
+        content = _bounded_prompt_text(
+            getattr(message, "content", ""),
+            limit=_ACTIVE_CASE_SIDE_MESSAGE_LIMIT,
+        )
+        if not content.strip():
+            continue
+        conversation_messages.append(
+            {
+                "role": str(getattr(message, "role", "") or ""),
+                "content": content,
+            }
+        )
     pending = getattr(governed_state, "pending_question", None)
     return {
         "known_facts": known_facts,
         "open_points": open_points,
-        "recent_messages": recent_messages,
+        "recent_messages": conversation_messages,
+        "conversation_message_count": len(all_messages),
+        "context_policy": "bounded_active_case_side_context",
         "pending_question": {
             "target_field": str(getattr(pending, "target_field", "") or ""),
-            "question_text": str(getattr(pending, "question_text", "") or ""),
+            "question_text": _bounded_prompt_text(
+                getattr(pending, "question_text", ""),
+                limit=500,
+            ),
         }
         if pending is not None
         else None,
     }
+
+
+def _bounded_prompt_text(value: Any, *, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()} ... [gekürzt: {len(text) - limit} Zeichen]"
 
 
 async def _compose_active_case_side_answer_with_llm(
@@ -566,7 +626,10 @@ async def _compose_active_case_side_answer_with_llm(
     resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
     payload = {
         "latest_user_message": message,
-        "grounded_answer": grounded_answer,
+        "grounded_answer": _bounded_prompt_text(
+            grounded_answer,
+            limit=_ACTIVE_CASE_SIDE_GROUNDED_LIMIT,
+        ),
         "active_case_context": _active_case_context_payload(governed_state),
         "resume_trace": resume_trace,
         "instructions": [
@@ -736,12 +799,14 @@ async def _build_active_case_side_payload(
     decision: Any,
     conversation_route: Any | None,
     runtime_action: Any | None = None,
+    current_user: RequestUser | None = None,
 ) -> dict[str, Any]:
     knowledge_response = await build_case_side_knowledge_response(
         message=message,
         override_class="exploration_answer",
         conversation_route=conversation_route,
         governed_state=governed_state,
+        current_user=current_user,
     )
     resume_decision = reevaluate_active_case_resume(
         latest_user_message=message,
@@ -822,12 +887,19 @@ async def _build_active_case_side_payload(
 
     from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
 
+    knowledge_run_meta = _knowledge_response_run_meta(knowledge_response)
+    knowledge_trace = knowledge_run_meta.get("answer_trace")
+    if isinstance(knowledge_trace, dict):
+        for key, value in knowledge_trace.items():
+            if key.startswith("rag_") and answer_trace.get(key) is None:
+                answer_trace[key] = value
+
     payload = build_public_response_core(
         reply=answer_markdown,
         structured_state=None,
         policy_path="knowledge",
         run_meta=with_answer_trace(
-            _knowledge_response_run_meta(knowledge_response),
+            knowledge_run_meta,
             answer_trace,
         ),
     )
@@ -906,6 +978,11 @@ async def _run_light_chat_response(
         governed_state_override=governed_state_override,
         create_if_missing=False,
     )
+    if direct_reply is None and mode == "CONVERSATION":
+        direct_reply = _open_case_ack_continue_reply(
+            message=message,
+            governed_state=governed,
+        )
 
     result = await run_conversation(
         message,
@@ -915,6 +992,7 @@ async def _run_light_chat_response(
         direct_reply=direct_reply,
     )
     structured_state: dict[str, Any] | None = None
+    state_for_contract = governed
     if result.reply_text and governed is not None and _light_case_active(governed):
         updated = _with_light_route_progress(
             governed,
@@ -929,6 +1007,7 @@ async def _run_light_chat_response(
             pre_gate_classification=mode,
         )
         structured_state = _light_structured_state(updated)
+        state_for_contract = updated
 
     run_meta = with_answer_trace(
         {
@@ -950,7 +1029,7 @@ async def _run_light_chat_response(
         payload,
         session_id=str(request.session_id or "default"),
         user_message=message,
-        state=governed,
+        state=state_for_contract,
         route_hint=mode.lower(),
         case_id=str(request.session_id or "default"),
     )
@@ -964,13 +1043,145 @@ async def _run_governed_graph_once(
     *,
     current_user: RequestUser,
     pre_gate_classification: str | None = None,
+    runtime_action: Any | None = None,
 ) -> tuple[GraphState, GovernedSessionState]:
     turn_result = await run_governed_graph_turn(
         request=request,
         current_user=current_user,
         pre_gate_classification=pre_gate_classification,
+        runtime_action=runtime_action,
     )
     return turn_result.result_state, turn_result.persisted_state
+
+def _with_engine_sidecar_trace(
+    response: ChatResponse,
+    *,
+    executed: bool,
+    state_available: bool,
+    error: Exception | None = None,
+) -> ChatResponse:
+    meta = dict(response.run_meta or {})
+    answer_trace = dict(meta.get("answer_trace") or {})
+    answer_trace.update(
+        {
+            "conversation_first_runtime": True,
+            "visible_runtime": "light_conversation",
+            "engine_sidecar": "governed_langgraph",
+            "governed_graph_sidecar_executed": executed,
+            "governed_graph_visible_reply_suppressed": True,
+            "engine_sidecar_state_available": state_available,
+        }
+    )
+    if error is not None:
+        answer_trace.update(
+            {
+                "engine_sidecar_error": safe_fallback_reason(error),
+                "engine_sidecar_fallback": "visible_conversation_without_fresh_engine_state",
+            }
+        )
+    meta["answer_trace"] = answer_trace
+    return response.model_copy(update={"run_meta": meta})
+
+def _state_has_open_invite_facts(state: GovernedSessionState | None) -> bool:
+    if state is None:
+        return False
+    assertions = getattr(getattr(state, "asserted", None), "assertions", {}) or {}
+    if any(field in assertions for field in _OPEN_INVITE_FACT_FIELDS):
+        return True
+    observed = getattr(getattr(state, "observed", None), "raw_extractions", []) or []
+    for extraction in observed:
+        field_name = str(getattr(extraction, "field_name", "") or "")
+        raw_value = getattr(extraction, "raw_value", None)
+        if field_name in _OPEN_INVITE_FACT_FIELDS and raw_value not in (None, ""):
+            return True
+    return False
+
+def _open_sealing_invite_reply(
+    *,
+    pre_gate_classification: str | None,
+    runtime_action: Any | None,
+    sidecar_state: GovernedSessionState | None,
+) -> str | None:
+    answer_mode = _runtime_action_value(getattr(runtime_action, "answer_mode", None))
+    if pre_gate_classification != "DOMAIN_INQUIRY" or answer_mode != "governed_intake":
+        return None
+    if _state_has_open_invite_facts(sidecar_state):
+        return None
+    return render_communication_template(
+        "free_conversation_open_invite",
+        fallback=(
+            "Gerne unterstuetze ich dich. Erzaehl mir bitte von deiner Dichtungssituation: "
+            "Welche Anwendung liegt vor, welches Medium beruehrt die Dichtung und welche "
+            "Rahmenbedingungen sind wichtig?"
+        ),
+    )
+
+def _open_case_ack_continue_reply(
+    *,
+    message: str,
+    governed_state: GovernedSessionState | None,
+) -> str | None:
+    if governed_state is None or not _light_case_active(governed_state):
+        return None
+    if _state_has_open_invite_facts(governed_state):
+        return None
+    if not _OPEN_CASE_ACK_RE.match(str(message or "")):
+        return None
+    return render_communication_template(
+        "free_conversation_ack_continue",
+        fallback=(
+            "Ich bin auch gespannt, lass uns loslegen. Erzaehl mir zuerst kurz, "
+            "welche Anwendung wir betrachten, welches Medium die Dichtung beruehrt "
+            "und welche Rahmenbedingungen dir wichtig sind."
+        ),
+    )
+
+async def _run_conversation_first_with_engine_sidecar(
+    request: ChatRequest,
+    *,
+    current_user: RequestUser,
+    pre_gate_classification: str | None = None,
+    runtime_action: Any | None = None,
+    governed_state: GovernedSessionState | None = None,
+) -> ChatResponse:
+    sidecar_state = governed_state
+    sidecar_error: Exception | None = None
+    sidecar_executed = False
+    try:
+        _, sidecar_state = await _run_governed_graph_once(
+            request,
+            current_user=current_user,
+            pre_gate_classification=pre_gate_classification,
+            runtime_action=runtime_action,
+        )
+        sidecar_executed = True
+    except Exception as exc:  # noqa: BLE001
+        sidecar_error = exc
+        _log.exception(
+            "[runtime_authority] conversation-first sidecar failed session=%s reason=%s",
+            request.session_id,
+            safe_fallback_reason(exc),
+        )
+
+    response = await _run_light_chat_response(
+        message=request.message,
+        request=request,
+        current_user=current_user,
+        mode="EXPLORATION",
+        governed_state_override=sidecar_state,
+        direct_reply=_open_sealing_invite_reply(
+            pre_gate_classification=pre_gate_classification,
+            runtime_action=runtime_action,
+            sidecar_state=sidecar_state,
+        ),
+        runtime_action=runtime_action,
+    )
+    return _with_engine_sidecar_trace(
+        response,
+        executed=sidecar_executed,
+        state_available=sidecar_state is not None,
+        error=sidecar_error,
+    )
 
 async def _run_governed_chat_response(
     request: ChatRequest,
@@ -983,6 +1194,7 @@ async def _run_governed_chat_response(
         request,
         current_user=current_user,
         pre_gate_classification=pre_gate_classification,
+        runtime_action=runtime_action,
     )
     context = _build_governed_reply_context(
         result_state=result_state,
@@ -1214,6 +1426,7 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
                 decision=dispatch.turn_decision,
                 conversation_route=dispatch.conversation_route,
                 runtime_action=runtime_action,
+                current_user=current_user,
             )
             await persist_visible_governed_turn(
                 current_user=current_user,
@@ -1254,15 +1467,16 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             )
             return ChatResponse(session_id=request.session_id, **payload)
         _log.debug(
-            "[runtime_authority] json session=%s authority=governed_graph reason=%s",
+            "[runtime_authority] json session=%s authority=conversation_first_sidecar reason=%s",
             request.session_id,
             dispatch.gate_reason,
         )
-        return await _run_governed_chat_response(
+        return await _run_conversation_first_with_engine_sidecar(
             request,
             current_user=current_user,
             pre_gate_classification=dispatch.pre_gate_classification,
             runtime_action=runtime_action,
+            governed_state=dispatch.governed_state,
         )
 
     _log.warning(

@@ -95,6 +95,14 @@ class GraphState(GovernedSessionState):
             "candidate_shortlist, inquiry_ready."
         ),
     )
+    runtime_answer_mode: str = Field(
+        default="",
+        description="Answer mode selected by RuntimeAction for this invocation. Transient, not persisted.",
+    )
+    runtime_answer_mode_source: str = Field(
+        default="",
+        description="Source of runtime_answer_mode, usually runtime_action.answer_mode. Transient.",
+    )
     output_public: dict[str, Any] = Field(
         default_factory=dict,
         description=(

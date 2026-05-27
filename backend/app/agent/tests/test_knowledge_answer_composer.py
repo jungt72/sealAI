@@ -14,6 +14,7 @@ from app.agent.communication.answer_composer import (
     KnowledgeAnswerComposerOutput,
     KnowledgeAnswerComposerInput,
     build_knowledge_answer_composer_messages,
+    enforce_material_comparison_depth,
 )
 from app.agent.communication.knowledge_context_builder import KnowledgeContextBuilder
 from app.services.auth.dependencies import RequestUser
@@ -91,7 +92,7 @@ def test_knowledge_service_uses_deterministic_hot_water_risk_comparison() -> Non
     assert "vorlaeufige" not in response.content
 
 
-@pytest.mark.parametrize("material", ["FFKM", "NBR", "PTFE"])
+@pytest.mark.parametrize("material", ["FFKM", "NBR", "PTFE", "PEEK", "POM"])
 def test_knowledge_service_answers_single_material_from_profile(material: str) -> None:
     response = KnowledgeService(
         factcard_store=_FactcardStore([]),
@@ -119,9 +120,60 @@ def test_knowledge_service_builds_rich_ptfe_grounding_for_broad_questions() -> N
     assert "Kaltfluss" in response.content
     assert "Gegenlauffläche" in response.content
     assert "Füllstoff" in response.content
+    assert "2,14-2,20 g/cm3" in response.content
+    assert "327 °C" in response.content
+    assert "0,20-0,25 W/(m*K)" in response.content
+    assert "55-72 Shore D" in response.content
+    assert "48-80 kV/mm" in response.content
     assert "Herstellerdaten" in response.content
     assert "keine Freigabe" in response.content
     assert "Welches Medium soll abgedichtet werden" not in response.content
+
+
+def test_ptfe_fkm_comparison_prompt_uses_compact_sealing_axes() -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="PTFE vs FKM",
+        deterministic_answer="Deterministische Orientierung zu PTFE und FKM.",
+    )
+
+    messages = build_knowledge_answer_composer_messages(KnowledgeAnswerComposerInput(context=context))
+    system_prompt = messages[0]["content"]
+
+    assert "PTFE is a Fluorpolymer" in system_prompt
+    assert "FKM is an Elastomer" in system_prompt
+    for axis in (
+        "medium",
+        "temperature",
+        "motion",
+        "pressure",
+        "counterface",
+        "creep/cold flow",
+        "compression set",
+        "friction",
+        "installation",
+    ):
+        assert axis in system_prompt
+    assert "Do not broaden into a general material encyclopedia" in system_prompt
+
+
+def test_ptfe_fkm_comparison_rejects_encyclopedia_length() -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="PTFE vs FKM",
+        deterministic_answer="Deterministische Orientierung zu PTFE und FKM.",
+    )
+    long_answer = (
+        "PTFE und FKM werden technisch verglichen. Temperatur, Medium, Chemie, Öl, "
+        "Wasser, Dampf, Härte, Shore, Compound, Rezeptur, Dynamik, Reibung, "
+        "Verschleiß, RWDR, O-Ring, Dichtung, Grenze, kritisch, Risiko, Alterung, "
+        "Quellung, Hersteller, Datenblatt, Freigabe, Nachweis, Kompatibilität, "
+        "Kosten, Verfügbarkeit und Wirtschaftlichkeit werden betrachtet. "
+    ) * 12
+
+    with pytest.raises(KnowledgeAnswerComposerError, match="material_comparison_too_broad"):
+        enforce_material_comparison_depth(
+            KnowledgeAnswerComposerInput(context=context),
+            KnowledgeAnswerComposerOutput(answer_markdown=long_answer),
+        )
 
 
 @pytest.mark.asyncio
@@ -304,6 +356,39 @@ async def test_knowledge_answer_composer_receives_factcard_evidence(
 
 
 @pytest.mark.asyncio
+async def test_high_fidelity_material_definition_bypasses_composer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_KNOWLEDGE_ANSWER_COMPOSER", "true")
+    knowledge_response = KnowledgeService(
+        factcard_store=_FactcardStore([]),
+        llm_research_fallback_enabled=False,
+    ).answer("bitte gebe mir informationen zu PTFE")
+
+    async def fail_compose(*_args, **_kwargs):
+        raise AssertionError("high-fidelity deterministic material answers should not be rewritten")
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
+        fail_compose,
+    )
+
+    response = await _compose_knowledge_answer_if_enabled(
+        user_message="bitte gebe mir informationen zu PTFE",
+        knowledge_response=knowledge_response,
+        conversation_route=None,
+    )
+
+    assert response.answer_markdown is None
+    assert "2,14-2,20 g/cm3" in response.content
+    assert "48-80 kV/mm" in response.content
+    assert response.answer_trace is not None
+    assert response.answer_trace["answer_markdown_source"] == "knowledge_service"
+    assert response.answer_trace["composer_attempted"] is False
+    assert response.answer_trace["composer_succeeded"] is False
+
+
+@pytest.mark.asyncio
 async def test_knowledge_answer_composer_failure_falls_back_to_deterministic_answer(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -359,7 +444,25 @@ async def test_knowledge_answer_composer_retries_registry_default_when_configure
 
             class Message:
                 content = (
-                    '{"answer_markdown":"**Kurzvergleich:** NBR und PTFE unterscheiden sich deutlich.",'
+                    '{"answer_markdown":"## Werkstoffvergleich: NBR vs PTFE\\n\\n'
+                    'NBR ist ein elastischer Nitrilkautschuk, PTFE ist ein '
+                    'Fluorpolymer und kein Elastomer. Für die technische '
+                    'Vorprüfung sind Temperatur, Medium, Härte, Compound, '
+                    'Dynamik und Herstellerdaten entscheidend. NBR liegt '
+                    'orientierend oft bei -30 bis +100 °C, häufig 60 bis 90 '
+                    'Shore A und wird bei Mineralöl, Fett und HLP-Fluids '
+                    'geprüft. Kritisch sind Ozon, UV, Dampf, Heißwasser, '
+                    'Ketone, Ester, Aromaten, Quellung und Druckverformungsrest. '
+                    'PTFE hat ein viel breiteres Temperaturfenster und eine '
+                    'breite Chemieorientierung, dichtet aber nicht über '
+                    'elastische Rückstellung. Dort zählen Kaltfluss, Kriechen, '
+                    'Füllstoff, Gegenlauffläche, Rauheit, Wärmeabfuhr, '
+                    'Vorspannung und Dichtungsgeometrie. Bei dynamischen '
+                    'Dichtungen unterscheiden sich Reibung, Verschleiß und '
+                    'Wärmeeintrag deutlich. Kosten und Verfügbarkeit liegen '
+                    'bei NBR meist günstiger, PTFE ist konstruktionsintensiver. '
+                    'Das ist technische Orientierung, keine Herstellerfreigabe '
+                    'und keine Kompatibilitätszusage.",'
                     '"confidence_note":null}'
                 )
 
@@ -390,7 +493,7 @@ async def test_knowledge_answer_composer_retries_registry_default_when_configure
 
     result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
 
-    assert result.answer_markdown.startswith("**Kurzvergleich:**")
+    assert result.answer_markdown.startswith("## Werkstoffvergleich: NBR vs PTFE")
     assert completions.models == ["gpt-5.4-nano", "gpt-4o-mini"]
 
 
@@ -559,6 +662,51 @@ async def test_composer_rejects_material_subject_drift(
 
 
 @pytest.mark.asyncio
+async def test_composer_rejects_comparison_pair_drift_to_fkm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="bitte vergleiche NBR mit FFKM",
+        deterministic_answer=KnowledgeService(
+            factcard_store=_FactcardStore([]),
+            llm_research_fallback_enabled=False,
+        ).answer("bitte vergleiche NBR mit FFKM").content,
+    )
+
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            class Message:
+                content = (
+                    '{"answer_markdown":"## Werkstoffvergleich: FFKM vs FKM\\n\\n'
+                    'FFKM und FKM unterscheiden sich bei Chemie und Temperatur. '
+                    'Das ist technische Orientierung, keine Freigabe.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    with pytest.raises(KnowledgeAnswerComposerError, match="requested_subject"):
+        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+
+@pytest.mark.asyncio
 async def test_composer_rejects_unscoped_material_suitability_claim(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -599,6 +747,50 @@ async def test_composer_rejects_unscoped_material_suitability_claim(
     )
 
     with pytest.raises(KnowledgeAnswerComposerError, match="unsafe_material_suitability"):
+        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+
+
+@pytest.mark.asyncio
+async def test_composer_rejects_eignet_sich_material_suitability_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="bitte gebe mir detaillierte informationen zu PTFE",
+        deterministic_answer=KnowledgeService(
+            factcard_store=_FactcardStore([]),
+            llm_research_fallback_enabled=False,
+        ).answer("bitte gebe mir detaillierte informationen zu PTFE").content,
+    )
+
+    class FakeCompletions:
+        async def create(self, **_kwargs):
+            class Message:
+                content = (
+                    '{"answer_markdown":"PTFE eignet sich hervorragend für '
+                    'aggressive Medien. Das ist technische Orientierung.",'
+                    '"confidence_note":null}'
+                )
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    with pytest.raises(KnowledgeAnswerComposerError, match="unsafe_answer_markdown"):
         await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
 
 
@@ -677,9 +869,27 @@ async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
 
             if self.calls > 1:
                 Message.content = (
-                    '{"answer_markdown":"NBR wird bei Mineralölen und Schmierfetten häufig '
-                    'als naheliegende Prüfrichtung betrachtet. Das bleibt technische '
-                    'Orientierung, keine Freigabe.",'
+                    '{"answer_markdown":"## NBR in der Dichtungstechnik\\n\\n'
+                    'NBR wird bei Mineralölen, Schmierfetten und vielen '
+                    'klassischen HLP-/HLVP-Hydraulikfluiden häufig als '
+                    'naheliegende Prüfrichtung betrachtet. Technisch relevant '
+                    'sind aber Medium, Additive, Temperatur, Härte, Compound '
+                    'und Dichtungsgeometrie. Orientierend liegt Standard-NBR '
+                    'oft bei etwa -30 bis +100 °C; Sondermischungen können '
+                    'Tieftemperatur oder kurze Spitzen verbessern. Häufige '
+                    'Härtebereiche liegen etwa bei 60 bis 90 Shore A. Der '
+                    'ACN-Anteil prägt Ölbeständigkeit und Tieftemperaturverhalten. '
+                    'Bei O-Ringen zählen Verpressung, Nutfüllung, Quellung, '
+                    'Druckverformungsrest und Spaltextrusion. Bei RWDR zählen '
+                    'Schmierung, Reibung, Wellenrauheit, Härte, Rundlauf, '
+                    'Drehzahl und Dichtkantentemperatur. Kritisch zu prüfen '
+                    'sind Ozon, UV, Witterung, Dampf, Heißwasser, Ketone, '
+                    'Ester, Aromaten, starke Oxidationsmittel und aggressive '
+                    'Reiniger. Für eine belastbare Bewertung brauche ich das '
+                    'exakte Medium, Temperaturprofil, Druck, Bewegung, '
+                    'Einbauraum, Gegenlauffläche, Herstellerdaten und geforderte '
+                    'Nachweise. Das bleibt technische Orientierung, keine '
+                    'Freigabe und keine Kompatibilitätszusage.",'
                     '"confidence_note":null}'
                 )
 
@@ -714,6 +924,7 @@ async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
     assert completions.repair_payload_seen is True
     assert "gut geeignet" not in result.answer_markdown
     assert "naheliegende Prüfrichtung" in result.answer_markdown
+    assert "60 bis 90 Shore A" in result.answer_markdown
 
 
 @pytest.mark.asyncio
@@ -731,6 +942,7 @@ async def test_composer_repairs_shallow_ptfe_overview_with_second_llm_call(
     rich_answer = "\n\n".join(
         [
             "## PTFE in der Dichtungstechnik\nPTFE ist ein Fluorpolymer und kein elastischer Gummiwerkstoff. In der Dichtungstechnik wird es betrachtet, wenn Chemie, Temperatur oder Reibung die Auslegung prägen.",
+            "### Kennwerte\nUngefülltes PTFE hat typische Orientierungswerte: Dichte 2,14-2,20 g/cm3, Schmelzpunkt 327 °C, Dauereinsatz häufig bis +260 °C, Wärmeleitfähigkeit 0,20-0,25 W/(m*K), Wärmeausdehnung etwa 12-13 * 10^-5 1/K, Zugfestigkeit etwa 22-25 MPa, Bruchdehnung über 220 %, Modul etwa 550-620 MPa, Härte 55-72 Shore D, kinetischer Reibwert gegen Stahl etwa 0,06, Dielektrizitätszahl 2,1, Verlustfaktor 0,0002, Durchschlagsfestigkeit 48-80 kV/mm, Volumenwiderstand >10^17 bis >10^18 Ohm*cm und Wasseraufnahme ca. 0,01 %.",
             "### Praktische Stärken\n- Chemische Orientierung: Medien, Konzentration, Additive und Reinigungsmedien müssen konkret geprüft werden.\n- Temperatur: Sorte, Füllstoff, Last, Wärmeabfuhr und Herstellerdaten begrenzen das nutzbare Fenster.\n- Reibung und Gleiten: PTFE kann bei dynamischen Dichtungen helfen, wenn Gegenlauf, Schmierung und PV-Belastung passen.",
             "### Kritische Grenzen\n- Kaltfluss und Kriechen können Vorspannung und Dichtkraft reduzieren.\n- Die geringe Rückstellung verlangt ein sauberes Geometrie-, Feder- oder Energizer-Konzept.\n- Gegenlauffläche, Rauheit, Härte, Exzentrizität und Welle entscheiden bei PTFE-Lippen oft über Verschleiß.",
             "### Füllstoffe und Anwendungen\nGefüllte PTFE-Typen mit Glas, Carbon, Graphit, Bronze oder PEEK verändern Verschleiß, Wärmeleitung, Druckfestigkeit und Gegenflächenbelastung. Typische Rollen sind PTFE-RWDR, federunterstützte Dichtungen, Ventilsitze, Führungen und Chemie-/Pharma-/Food-Systeme, wenn Nachweise vorliegen.",
