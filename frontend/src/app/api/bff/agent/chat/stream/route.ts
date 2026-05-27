@@ -333,7 +333,7 @@ function isBackendAuthExpiry(status: number, details: unknown): boolean {
   );
 }
 
-function resolveTurnId(body: AgentStreamRequest & { turn_id?: unknown }): string {
+function resolveTurnId(body: AgentStreamRequest & { turn_id?: unknown; turnId?: unknown }): string {
   const candidate =
     typeof body.turnId === "string" && body.turnId.trim()
       ? body.turnId.trim()
