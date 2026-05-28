@@ -112,6 +112,10 @@ services:
       required: false
     volumes:
     - backend-data:/app/data
+    networks:
+      default:
+        aliases:
+        - sealai-backend
   frontend:
     profiles:
     - frontend-container
@@ -124,7 +128,7 @@ services:
     environment:
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET required — set in .env or .env.prod}
       AUTH_URL: ${AUTH_URL:-https://sealingai.com}
-      BACKEND_INTERNAL_URL: http://backend:8000
+      BACKEND_INTERNAL_URL: http://sealai-backend:8000
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-https://sealingai.com}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-nextauth}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET required — set in .env or .env.prod}
@@ -136,7 +140,7 @@ services:
       NEXTAUTH_DEBUG: ${NEXTAUTH_DEBUG:-false}
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-https://sealingai.com}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://sealingai.com}
-      SEALAI_BACKEND_ORIGIN: http://backend:8000
+      SEALAI_BACKEND_ORIGIN: http://sealai-backend:8000
       SEO_DB_PATH: /var/seo/data/seo.db
       SEO_REPORT_DIR: /var/seo/reports
       SEO_REPO_DIR: /app/sealai-repo
@@ -154,6 +158,10 @@ services:
     - /home/thorsten/var/seo/data:/var/seo/data:ro
     - /home/thorsten/var/seo/reports:/var/seo/reports:ro
     - ./seo:/app/sealai-repo/seo:ro
+    networks:
+      default:
+        aliases:
+        - sealai-frontend
   keycloak:
     container_name: keycloak
     depends_on:
@@ -182,6 +190,10 @@ services:
     env_file:
     - path: ./.env.prod
       required: false
+    networks:
+      default:
+        aliases:
+        - sealai-keycloak
   nginx:
     image: nginx:1.29.4
     container_name: nginx
