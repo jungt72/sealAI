@@ -275,6 +275,72 @@ describe("useAgentStream", () => {
     ]);
   });
 
+  it("does not dedupe synthetic answer events that share the backend final event id", async () => {
+    mockFetchEventSource.mockImplementation(async (_url: string, handlers: Record<string, Function | string>) => {
+      const requestBody = JSON.parse(String(handlers.body));
+      await (handlers.onopen as Function)?.(new Response(null, { status: 200 }));
+      (handlers.onmessage as Function)?.({
+        data: JSON.stringify({
+          type: "answer.stream.start",
+          event_id: "final-event-1",
+          turn_id: requestBody.turnId,
+          source: "answer_markdown",
+        }),
+      });
+      (handlers.onmessage as Function)?.({
+        data: JSON.stringify({
+          type: "answer.token",
+          event_id: "final-event-1",
+          turn_id: requestBody.turnId,
+          text: "Hallo! ",
+        }),
+      });
+      (handlers.onmessage as Function)?.({
+        data: JSON.stringify({
+          type: "answer.token",
+          event_id: "final-event-1",
+          turn_id: requestBody.turnId,
+          text: "Schön, von dir zu hören.",
+        }),
+      });
+      (handlers.onmessage as Function)?.({
+        data: JSON.stringify({
+          type: "answer.done",
+          event_id: "final-event-1",
+          turn_id: requestBody.turnId,
+        }),
+      });
+      (handlers.onmessage as Function)?.({
+        data: JSON.stringify({
+          type: "state_update",
+          event_id: "final-event-1",
+          turn_id: requestBody.turnId,
+          noCaseCreated: true,
+          reply: "Hallo! Schön, von dir zu hören.",
+          answer_markdown: "Hallo! Schön, von dir zu hören.",
+          responseClass: "conversational_answer",
+        }),
+      });
+      (handlers.onmessage as Function)?.({ data: "[DONE]" });
+      (handlers.onclose as Function)?.();
+    });
+
+    const { result } = renderHook(() => useAgentStream());
+
+    await act(async () => {
+      await result.current.sendMessage("Hallo");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "Hallo" }),
+      expect.objectContaining({ role: "assistant", content: "Hallo! Schön, von dir zu hören." }),
+    ]);
+  });
+
   it("renders no-case fast responses without binding a case or cockpit workspace", async () => {
     const onCaseBound = vi.fn();
     const onNoCaseTurn = vi.fn();

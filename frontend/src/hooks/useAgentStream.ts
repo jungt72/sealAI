@@ -192,12 +192,12 @@ function streamErrorStatus(payload: Record<string, unknown>): number | undefined
 
 function streamEventDedupeKey(payload: Record<string, unknown>): string | null {
   const explicitId = payload.event_id || payload.eventId;
+  const type = typeof payload.type === "string" ? payload.type : "message";
   if (typeof explicitId === "string" && explicitId.trim()) {
-    return `event:${explicitId.trim()}`;
+    return `event:${explicitId.trim()}:${type}`;
   }
   const turnId = payload.turn_id || payload.turnId;
   const sequence = payload.sequence;
-  const type = typeof payload.type === "string" ? payload.type : "message";
   if (
     typeof turnId === "string" &&
     turnId.trim() &&
