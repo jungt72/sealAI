@@ -5,18 +5,16 @@ import { useSession } from "next-auth/react";
 import type { Session } from "next-auth";
 import {
   ArrowDown,
+  ArrowLeftRight,
+  Bot,
+  FileSearch,
+  FlaskConical,
+  ListChecks,
   UserRound,
+  Wrench,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-import {
-  ApplicationIcon,
-  DemandAnalysisIcon,
-  MaterialIcon,
-  RfqPreviewIcon,
-  RiskIcon,
-  SealAiSymbol,
-  type SealAiIconComponent,
-} from "@/components/brand/SealAiBrand";
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
 import { useAgentStream } from "@/hooks/useAgentStream";
@@ -45,42 +43,41 @@ const CHAT_NAVIGATION_KEYS = new Set([
   "PageUp",
   " ",
 ]);
-const DEFAULT_THINKING_STATUS = "Eine Sekunde bitte, ich prüfe den technischen Kontext.";
 
 type StarterPrompt = {
   label: string;
   prompt: string;
-  icon: SealAiIconComponent;
+  icon: LucideIcon;
 };
 
 const STARTER_PROMPTS: StarterPrompt[] = [
   {
     label: "Lösung erarbeiten",
-    icon: ApplicationIcon,
+    icon: Wrench,
     prompt:
       "Ich möchte eine Dichtungslösung erarbeiten. Bitte führe mich Schritt für Schritt durch die wichtigsten Angaben und erkläre, warum sie relevant sind.",
   },
   {
     label: "Material vergleichen",
-    icon: DemandAnalysisIcon,
+    icon: ArrowLeftRight,
     prompt:
       "Bitte vergleiche zwei Dichtungswerkstoffe für einen konkreten Einsatzfall. Ich nenne dir gleich Materialien, Medium, Temperatur und Randbedingungen.",
   },
   {
     label: "Materialdetails",
-    icon: MaterialIcon,
+    icon: FlaskConical,
     prompt:
       "Bitte erkläre mir einen Dichtungswerkstoff mit typischen Medien, Temperaturrahmen, Stärken, Grenzen und wichtigen Prüfpunkten.",
   },
   {
     label: "Ursache finden",
-    icon: RiskIcon,
+    icon: FileSearch,
     prompt:
       "Ich möchte eine Dichtungsleckage oder einen Ausfall analysieren. Bitte hilf mir strukturiert bei der Ursachenforschung.",
   },
   {
     label: "Anfrage vorbereiten",
-    icon: RfqPreviewIcon,
+    icon: ListChecks,
     prompt:
       "Bitte hilf mir, eine belastbare Anfragebasis für einen Hersteller aufzubauen. Keine Freigabe, sondern offene Punkte und Prüffragen sichtbar machen.",
   },
@@ -151,19 +148,6 @@ const MessageBubble = React.memo(function MessageBubble({
   isStreaming?: boolean;
 }) {
   const isUser = role === "user";
-  const avatar = (
-    <div
-      data-testid={`message-avatar-${role}`}
-      className={cn(
-        "grid h-7 w-7 shrink-0 place-items-center rounded-full",
-        isUser
-          ? "border border-seal-blue/15 bg-white/70 text-slate-500"
-          : "bg-seal-blue/10 text-seal-blue",
-      )}
-    >
-      {isUser ? <UserRound size={14} /> : <SealAiSymbol size={15} strokeWidth={1.9} />}
-    </div>
-  );
 
   return (
     <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "relative justify-start")}>
@@ -176,9 +160,11 @@ const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
       <div
+        data-private
         className={cn(
-          "flex min-w-0 flex-col gap-2",
-          isUser ? "max-w-[min(720px,84%)] items-end" : "w-full max-w-none flex-1 items-start",
+          "min-w-0 px-1 py-1 text-[14px] leading-relaxed",
+          isUser ? "max-w-[min(720px,84%)] text-[#111827]" : "w-full max-w-none flex-1 text-slate-900",
+          isStreaming && "text-seal-blue",
         )}
       >
         {isUser ? (
@@ -200,25 +186,6 @@ const MessageBubble = React.memo(function MessageBubble({
     </div>
   );
 });
-function ThinkingIndicator({ statusText }: { statusText?: string }) {
-  const label = statusText?.trim() || DEFAULT_THINKING_STATUS;
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid="thinking-indicator"
-      className="flex items-center gap-3 px-1 py-1 text-[15px] leading-6 text-[#5F6368]"
-    >
-      <span className="sealai-thinking-icon" aria-hidden="true">
-        <span className="sealai-thinking-core">
-          <SealAiSymbol size={16} strokeWidth={1.9} />
-        </span>
-      </span>
-      <span>{label}</span>
-    </div>
-  );
-}
 
 function EmptyChatStart({
   userName,
@@ -234,7 +201,7 @@ function EmptyChatStart({
   return (
     <div className="mx-auto flex w-full max-w-[800px] flex-col items-center">
       <div className="mb-8 w-full">
-        <p className="pl-6 text-[22px] font-medium leading-tight text-seal-blue sm:pl-8">
+        <p className="text-[22px] font-medium leading-tight text-seal-blue">
           {userName ? `Hallo ${userName}` : "Hallo"}
         </p>
         <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
@@ -680,7 +647,7 @@ export default function ChatPane({
       )}
 
       {!isFreshStart && (
-        <div data-testid="chat-composer-dock" className="shrink-0 bg-transparent px-4 pb-2 pt-1 sm:px-5">
+        <div data-testid="chat-composer-dock" className="shrink-0 bg-transparent px-4 pb-4 pt-2 sm:px-5">
           <div className="mx-auto w-full" style={CHAT_SURFACE_STYLE}>
             <ChatComposer
               externalValue={null}
