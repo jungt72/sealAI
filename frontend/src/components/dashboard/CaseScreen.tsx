@@ -42,6 +42,7 @@ import { streamWorkspaceToWorkspaceView } from "@/lib/streamWorkspaceAdapter";
 import PocketCockpit from "@/components/dashboard/PocketCockpit";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { buildPocketCockpitView } from "@/lib/pocketCockpit";
+import type { ActionChip } from "@/lib/contracts/agent";
 import { cn } from "@/lib/utils";
 
 interface CaseScreenProps {

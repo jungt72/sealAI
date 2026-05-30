@@ -384,3 +384,39 @@ export type AgentStreamEvent =
   | AgentStateUpdateEvent
   | { type: "workspace_hint"; caseId: string }
   | { type: "error"; code: string; message: string };
+
+// --- V1.6 Mobile-First additions (Pocket Cockpit + Action Chips) ----------
+// Re-introduced additively after the origin merge; consumed by PocketCockpit
+// and the pocketCockpit view adapter. Mirrors the backend v92 contracts.
+export type ActionChip = {
+  label: string;
+  value?: string | null;
+  field?: string | null;
+  action?: string | null;
+};
+
+export type PocketCockpitRecognizedItem = {
+  label: string;
+  value?: string | null;
+  status?: string | null;
+};
+
+export type PocketCockpitCriticalItem = {
+  label: string;
+  severity?: string | null;
+};
+
+export type PocketCockpitNextStep = {
+  question?: string | null;
+  field?: string | null;
+  action_chips?: ActionChip[];
+};
+
+export type PocketCockpitPatch = {
+  recognized?: PocketCockpitRecognizedItem[];
+  critical?: PocketCockpitCriticalItem[];
+  next_step?: PocketCockpitNextStep | null;
+  rfq_status?: string | null;
+  details_available?: boolean;
+  collapsed_by_default?: boolean;
+};
