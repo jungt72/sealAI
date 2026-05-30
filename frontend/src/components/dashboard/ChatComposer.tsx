@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowUp, AudioLines, ChevronDown, Mic, Plus } from "lucide-react";
+import { AudioLines, ChevronDown, Mic, Paperclip, SendHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
@@ -122,6 +122,27 @@ export default function ChatComposer({
       <Mic size={19} strokeWidth={2} />
     </button>
   );
+  const modeButton = (
+    <button
+      type="button"
+      title="Antwortlänge"
+      aria-label="Antwortlänge"
+      className="hidden h-10 shrink-0 items-center gap-1 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue sm:inline-flex"
+    >
+      <span>Länger</span>
+      <ChevronDown size={15} />
+    </button>
+  );
+  const micButton = (
+    <button
+      type="button"
+      title="Spracheingabe"
+      aria-label="Spracheingabe"
+      className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-seal-blue sm:inline-flex"
+    >
+      <Mic size={18} />
+    </button>
+  );
   const sendButton = (
     <button
       type="submit"
@@ -134,7 +155,7 @@ export default function ChatComposer({
         canSend ? "hover:bg-[#1F2937]" : "cursor-not-allowed opacity-95",
       )}
     >
-      {canSend ? <ArrowUp size={19} strokeWidth={2.3} /> : <AudioLines size={19} strokeWidth={2.2} />}
+      {canSend ? <SendHorizontal size={18} /> : <AudioLines size={18} />}
     </button>
   );
 
@@ -175,17 +196,23 @@ export default function ChatComposer({
             autoFocus={autoFocus}
           />
 
-          <div className="flex shrink-0 items-center gap-1">
+        {isHero ? (
+          <div className="mt-3 flex items-center justify-between">
+            {uploadButton}
+            <div className="flex items-center gap-1">
+              {modeButton}
+              {micButton}
+              {sendButton}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
             {modeButton}
             {micButton}
             {sendButton}
           </div>
-        </div>
-      </form>
-      <p className="mx-auto mt-4 max-w-[920px] px-2 text-center text-[11.5px] leading-[17px] text-[#6B7280]">
-        <span className="block">Ergebnisse sind eine technische Vorqualifikation, keine Herstellerfreigabe und keine finale Auslegung.</span>
-        <span className="block">SealingAI ist KI-gestützt und kann Fehler machen.</span>
-      </p>
-    </div>
+        )}
+      </div>
+    </form>
   );
 }

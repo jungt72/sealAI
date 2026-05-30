@@ -441,10 +441,10 @@ describe("CaseScreen", () => {
 
     expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Direkteingabe")).toBeInTheDocument();
-    expect(screen.queryByText("Bekannte Parameter in den State schreiben")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Anwendung" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Berechnungen" })).toBeInTheDocument();
+    expect(screen.getByText("Bekannte Parameter in den State schreiben")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Angaben zum Fall" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Was noch wichtig ist" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
     expect(screen.getAllByText("Wasser-Glykol").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Temperatur · °C")).toHaveValue("85");
     expect(screen.getByLabelText("Druck · bar")).toHaveValue("1.8");

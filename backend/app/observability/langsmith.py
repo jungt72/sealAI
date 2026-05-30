@@ -98,12 +98,7 @@ def langsmith_trace_langgraph_children(default: bool = False) -> bool:
 
 
 def langsmith_redacted_observation_spans(default: bool = True) -> bool:
-    """Return whether SealAI should emit redacted quality spans.
-
-    These spans are intentionally separate from raw SDK/LangGraph tracing: they
-    make graph decisions, expected interrupts, and model calls searchable in
-    LangSmith without requiring raw customer prompts or full state snapshots.
-    """
+    """Return whether SealAI should emit redacted quality spans."""
 
     if "LANGSMITH_REDACTED_OBSERVATION_SPANS" in os.environ:
         return _truthy(os.getenv("LANGSMITH_REDACTED_OBSERVATION_SPANS"))
@@ -362,11 +357,7 @@ async def emit_redacted_observation_span(
     outputs: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Emit a best-effort, redacted LangSmith span for audit visibility.
-
-    This function never changes runtime behavior. If LangSmith is not
-    configured, or the SDK rejects a span, the application path continues.
-    """
+    """Emit a best-effort, redacted LangSmith span for audit visibility."""
 
     if not langsmith_enabled() or not langsmith_redacted_observation_spans():
         return

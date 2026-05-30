@@ -166,29 +166,35 @@ const MessageBubble = React.memo(function MessageBubble({
   );
 
   return (
-    <div className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex w-full gap-3", isUser ? "justify-end" : "relative justify-start")}>
+      {!isUser && (
+        <div
+          data-testid="message-avatar-assistant"
+          className="absolute -left-10 top-1 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue"
+        >
+          <Bot size={14} />
+        </div>
+      )}
       <div
         className={cn(
           "flex min-w-0 flex-col gap-2",
           isUser ? "max-w-[min(720px,84%)] items-end" : "w-full max-w-none flex-1 items-start",
         )}
       >
-        {avatar}
+        {isUser ? (
+          <p className="whitespace-pre-wrap">{content}</p>
+        ) : (
+          <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0 prose-strong:text-slate-950">
+            <MarkdownRenderer variant="chat">{content}</MarkdownRenderer>
+          </div>
+        )}
+      </div>
+      {isUser && (
         <div
-          data-private
-          className={cn(
-            "min-w-0 px-1 py-1 text-[16px] leading-[1.625] text-[#1F1F1F]",
-            isUser ? "text-right" : "w-full max-w-none flex-1",
-            isStreaming && "text-seal-blue",
-          )}
+          data-testid="message-avatar-user"
+          className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-seal-blue/15 bg-white/70 text-slate-500"
         >
-          {isUser ? (
-            <p className="whitespace-pre-wrap">{content}</p>
-          ) : (
-            <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0 prose-strong:text-[#1F1F1F]">
-              <MarkdownRenderer variant="chat">{content}</MarkdownRenderer>
-            </div>
-          )}
+          <UserRound size={14} />
         </div>
       </div>
     </div>
@@ -231,7 +237,7 @@ function EmptyChatStart({
         <p className="pl-6 text-[22px] font-medium leading-tight text-seal-blue sm:pl-8">
           {userName ? `Hallo ${userName}` : "Hallo"}
         </p>
-        <h1 className="mt-4 pl-6 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:pl-8 sm:text-[52px]">
+        <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
           Womit fangen wir an?
         </h1>
       </div>
@@ -621,7 +627,15 @@ export default function ChatPane({
               )}
 
               {isStreaming && !streamingText && (
-                <ThinkingIndicator statusText={streamingStatusText} />
+                <div
+                  data-testid="thinking-indicator"
+                  className="flex justify-start gap-3 text-sm text-slate-500"
+                >
+                  <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-seal-blue/10 text-seal-blue">
+                    <Bot size={14} />
+                  </div>
+                  {streamingStatusText || "SealingAI formuliert die Antwort..."}
+                </div>
               )}
 
               {error && (

@@ -5,6 +5,7 @@ export type AgentStreamRequest = {
   conversationId?: string;
   message: string;
   turnId?: string;
+  turn_id?: string;
 };
 
 export type AgentAnswerTrace = {

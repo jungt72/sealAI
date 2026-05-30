@@ -169,7 +169,7 @@ describe("ChatPane", () => {
     const userText = screen.getByText("Hallo Frage");
 
     expect(assistantAvatar.compareDocumentPosition(assistantText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(userAvatar.compareDocumentPosition(userText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(userText.compareDocumentPosition(userAvatar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("places the composer in a Gemini-style first-run state with sealing prompts", async () => {
