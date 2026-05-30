@@ -110,6 +110,10 @@ services:
       required: false
     volumes:
     - backend-data:/app/data
+    networks:
+      default:
+        aliases:
+        - sealai-backend
   frontend:
     profiles:
     - frontend-container
@@ -144,6 +148,10 @@ services:
       start_period: 30s
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: ${FRONTEND_PULL_POLICY:-always}
+    networks:
+      default:
+        aliases:
+        - sealai-frontend
   keycloak:
     container_name: keycloak
     depends_on:
@@ -172,6 +180,10 @@ services:
     env_file:
     - path: ./.env.prod
       required: false
+    networks:
+      default:
+        aliases:
+        - sealai-keycloak
   nginx:
     image: nginx:1.29.4
     container_name: nginx
