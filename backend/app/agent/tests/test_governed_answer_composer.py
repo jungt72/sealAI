@@ -18,6 +18,7 @@ from app.agent.communication.governed_answer_composer import (
     GovernedAnswerComposerError,
     GovernedAnswerComposerInput,
     GovernedAnswerComposerOutput,
+    build_governed_answer_composer_messages,
     parse_governed_answer_composer_output,
     render_governed_contextual_fallback,
 )
@@ -1118,3 +1119,65 @@ def test_existing_non_governed_routes_do_not_require_governed_composer() -> None
     assert classifier.classify(
         "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
     ).classification == PreGateClassification.DOMAIN_INQUIRY
+
+
+def test_governed_answer_composer_prompt_uses_compact_context() -> None:
+    huge = "Hydraulikoel HLP 46 " * 500
+    context = GovernedAnswerContext(
+        latest_user_message="Salzwasser",
+        conversation_messages=[
+            {"role": "user", "content": f"{index}: {huge}"}
+            for index in range(20)
+        ],
+        state_snapshot={"large_internal_state": huge},
+        pending_question=_pending_medium_question(),
+        missing_fields=[f"field_{index}" for index in range(40)],
+        open_points=[f"open_{index}" for index in range(40)],
+        next_best_question="Welche Temperatur liegt an?",
+    )
+
+    messages = build_governed_answer_composer_messages(
+        GovernedAnswerComposerInput(
+            context=context,
+            deterministic_reply="Salzwasser ist als Medium im Arbeitsstand.",
+        )
+    )
+    payload = json.loads(messages[1]["content"])
+    governed_context = payload["governed_answer_context"]
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert "state_snapshot" not in governed_context
+    assert "conversation_messages" not in governed_context
+    assert len(governed_context["recent_conversation_messages"]) == 8
+    assert len(governed_context["missing_fields"]) == 16
+    assert len(governed_context["open_points"]) == 16
+    assert "large_internal_state" not in serialized
+    assert len(serialized) < 20_000
+
+    # Drift guard: the compact allow-list must keep forwarding the
+    # wording-critical fields the composer needs. If a future edit drops one
+    # from the payload dict, this fails loudly instead of silently starving
+    # the LLM of grounding.
+    required_keys = {
+        "latest_user_message",
+        "answer_mode",
+        "recent_conversation_messages",
+        "pending_question",
+        "accepted_updates",
+        "ambiguous_values",
+        "confirmed_facts",
+        "calculation_results",
+        "missing_fields",
+        "open_points",
+        "next_best_question",
+        "v91_question_plan",
+        "response_class",
+        "allowed_claims",
+        "forbidden_claims",
+        "safety_boundaries",
+        "answer_goal",
+    }
+    missing_required = required_keys - set(governed_context)
+    assert not missing_required, f"compact context dropped wording-critical keys: {missing_required}"
+    assert governed_context["next_best_question"] == "Welche Temperatur liegt an?"
+    assert governed_context["pending_question"] is not None

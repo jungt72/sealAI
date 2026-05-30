@@ -250,6 +250,13 @@ class CommunicationRuntimeV8(ConversationControllerV7):
             return deterministic
 
         current_mode_value = _answer_mode_value(deterministic)
+        if (
+            payload.slot_answer_binding is not None
+            and current_mode_value == AnswerMode.PENDING_SLOT_ANSWER.value
+            and proposal.intent in {"knowledge", "active_case_side_question"}
+            and classify_message_as_knowledge_side_question(payload.user_message) is None
+        ):
+            return deterministic
         if current_mode_value == AnswerMode.TECHNICAL_CASE_CHALLENGE.value:
             return deterministic
         if current_mode_value in {

@@ -439,34 +439,77 @@ async def session_override_endpoint(
     if marker is not None and marker.postgres_snapshot_revision is not None:
         rev_before = marker.postgres_snapshot_revision
 
-    observed = governed.observed
-    applied_fields: list[str] = []
-    for override in request.overrides:
-        observed = observed.with_override(
-            UserOverride(
-                field_name=override.field_name,
-                override_value=override.value,
-                override_unit=override.unit,
-                turn_index=request.turn_index,
-            )
-        )
-        applied_fields.append(override.field_name)
+    applied_fields: list[str] = [override.field_name for override in request.overrides]
+    already_applied = False
+    applied_sheet_ids = list(governed.applied_sheet_event_ids or [])
 
-    normalized = reduce_observed_to_normalized(observed)
-    asserted = reduce_normalized_to_asserted(normalized)
+    if request.client_event_id is not None:
+        # Patch 9.5 — sheet event path: idempotency + stale through the canonical
+        # sheet handler (reuses the same State-Gate reducers, no parallel logic).
+        from app.agent.communication.sheet_events import (  # noqa: PLC0415
+            SheetEvent,
+            SheetFieldValue,
+            apply_sheet_event,
+        )
+
+        seen = set(applied_sheet_ids)
+        event = SheetEvent(
+            event_type="sheet_bulk_input" if len(request.overrides) > 1 else "sheet_field_edit",
+            fields=[
+                SheetFieldValue(field_name=o.field_name, value=o.value, unit=o.unit)
+                for o in request.overrides
+            ],
+            client_event_id=request.client_event_id,
+            case_revision_seen=request.case_revision_seen,
+            turn_index=request.turn_index,
+        )
+        result = apply_sheet_event(governed, event, seen_event_ids=seen)
+        if result.already_applied:
+            already_applied = True
+            observed, normalized, asserted = governed.observed, governed.normalized, governed.asserted
+            applied_fields = []
+        else:
+            observed = result.state.observed
+            normalized = result.state.normalized
+            asserted = result.state.asserted
+        applied_sheet_ids = sorted(seen)
+    else:
+        observed = governed.observed
+        for override in request.overrides:
+            observed = observed.with_override(
+                UserOverride(
+                    field_name=override.field_name,
+                    override_value=override.value,
+                    override_unit=override.unit,
+                    turn_index=request.turn_index,
+                )
+            )
+
+        normalized = reduce_observed_to_normalized(observed)
+        asserted = reduce_normalized_to_asserted(normalized)
+        if request.origin == "action_chip_answer":
+            # Patch 9.5 — action-chip selection carries action_chip_answer provenance.
+            from app.agent.graph.action_chip_binding import _stamp_provenance  # noqa: PLC0415
+
+            for field_name in applied_fields:
+                _stamp_provenance(normalized, field_name)
+                _stamp_provenance(asserted, field_name)
+
     governance = reduce_asserted_to_governance(asserted)
-    revision_after = rev_before + 1
-    governed = governed.model_copy(
-        update={
-            "observed": observed,
-            "normalized": normalized,
-            "asserted": asserted,
-            "governance": governance,
-            "persistence_marker": GovernedPersistenceMarker(
-                postgres_snapshot_revision=revision_after,
-            ),
-        }
-    )
+    revision_after = rev_before + (0 if already_applied else 1)
+    state_update: dict[str, Any] = {
+        "observed": observed,
+        "normalized": normalized,
+        "asserted": asserted,
+        "governance": governance,
+        "applied_sheet_event_ids": applied_sheet_ids,
+    }
+    # Marker revision must be >= 1; an idempotent no-op keeps the prior marker.
+    if revision_after >= 1:
+        state_update["persistence_marker"] = GovernedPersistenceMarker(
+            postgres_snapshot_revision=revision_after,
+        )
+    governed = governed.model_copy(update=state_update)
 
     from app.agent.api.loaders import _persist_live_governed_state # noqa: PLC0415
     await _persist_live_governed_state(

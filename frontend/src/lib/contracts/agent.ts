@@ -87,6 +87,106 @@ export type V92DashboardContract = Record<string, unknown> & {
   readiness_band?: string;
 };
 
+// --- V1.6 multi-output turn envelope (Blueprint §11, §28) ------------------
+// Mirrors backend `app.agent.v92.contracts.AssistantTurnEnvelope`. Patch 1 only
+// introduces the typed contract; rendering wiring lands in later patches.
+
+export type ChatReplyStyle =
+  | "senior_engineer_short"
+  | "mobile_triage"
+  | "visual_low_confidence_guidance"
+  | "knowledge_explainer"
+  | "case_aware_explainer"
+  | "measurement_guide"
+  | "rfq_confirmation"
+  | "rfq_one_pager_intro"
+  | "blocked_boundary"
+  | "smalltalk_fast"
+  | "ui_help"
+  | "sheet_comment"
+  | "conflict_resolution";
+
+export type DisclaimerMode =
+  | "suppress_normal_turn"
+  | "ui_static_only"
+  | "rfq_required"
+  | "explicit_boundary_required";
+
+export type ActionChip = {
+  label: string;
+  value?: string | null;
+  field?: string | null;
+  action?: string | null;
+};
+
+export type ChatReply = {
+  style: ChatReplyStyle;
+  markdown: string;
+  primary_question?: Record<string, unknown> | null;
+  disclaimer_mode?: DisclaimerMode;
+  template_id?: string | null;
+};
+
+export type KnownField = {
+  field: string;
+  label: string;
+  value: unknown;
+  unit?: string | null;
+  status: string;
+  origin: string;
+  approximate?: boolean;
+  requires_confirmation?: boolean;
+};
+
+export type ReviewFlag = {
+  key: string;
+  label: string;
+  severity: "low" | "medium" | "high" | "review";
+  reason: string;
+};
+
+export type ComputedValue = {
+  field: string;
+  label: string;
+  value: unknown;
+  unit?: string | null;
+  formula?: string | null;
+  origin?: "calculated";
+};
+
+export type CockpitPatch = {
+  known_fields?: KnownField[];
+  computed_values?: ComputedValue[];
+  review_flags?: ReviewFlag[];
+  open_points?: Array<Record<string, unknown>>;
+  active_question?: Record<string, unknown> | null;
+  rfq_status?: Record<string, unknown> | null;
+  knowledge_notes?: Array<Record<string, unknown>>;
+  conflicts?: Array<Record<string, unknown>>;
+  visual_candidates?: Array<Record<string, unknown>>;
+  sketch_candidates?: Array<Record<string, unknown>>;
+};
+
+export type PocketCockpitPatch = {
+  recognized?: Array<Record<string, unknown>>;
+  critical?: Array<Record<string, unknown>>;
+  next_step?: Record<string, unknown> | null;
+  rfq_status?: string | null;
+  details_available?: boolean;
+  collapsed_by_default?: boolean;
+};
+
+export type AssistantTurnEnvelope = {
+  chat_reply: ChatReply;
+  cockpit_patch?: CockpitPatch;
+  pocket_cockpit_patch?: PocketCockpitPatch | null;
+  case_understanding_patch?: Record<string, unknown> | null;
+  rfq_brief_patch?: Record<string, unknown> | null;
+  pending_question?: Record<string, unknown> | null;
+  action_chips?: ActionChip[];
+  trace?: Record<string, unknown>;
+};
+
 export const OUTWARD_RESPONSE_CLASSES = [
   "conversational_answer",
   "structured_clarification",

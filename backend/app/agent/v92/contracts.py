@@ -200,6 +200,147 @@ class FinalGuardResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+ChatReplyStyle = Literal[
+    "senior_engineer_short",
+    "mobile_triage",
+    "visual_low_confidence_guidance",
+    "knowledge_explainer",
+    "case_aware_explainer",
+    "measurement_guide",
+    "rfq_confirmation",
+    "rfq_one_pager_intro",
+    "blocked_boundary",
+    "smalltalk_fast",
+    "ui_help",
+    "sheet_comment",
+    "conflict_resolution",
+]
+DisclaimerMode = Literal[
+    "suppress_normal_turn",
+    "ui_static_only",
+    "rfq_required",
+    "explicit_boundary_required",
+]
+
+
+# --- V1.6 multi-output turn envelope (Blueprint §11, §28) -------------------
+#
+# Additive to the V9.2 routing/answer contracts above. ``AssistantTurnEnvelope``
+# is the single multi-output container the composer/dispatch layer will populate
+# in later patches: chat reply + cockpit/pocket-cockpit/case-understanding/RFQ
+# patches + action chips + pending question + trace. Patch 1 only introduces the
+# typed contract and its frontend mirror; runtime wiring lands in later patches.
+
+
+class ActionChip(BaseModel):
+    label: str
+    value: str | None = None
+    field: str | None = None
+    action: str | None = None
+
+
+class ChatReply(BaseModel):
+    style: ChatReplyStyle
+    markdown: str
+    primary_question: dict[str, Any] | None = None
+    disclaimer_mode: DisclaimerMode = "suppress_normal_turn"
+    template_id: str | None = None
+
+
+class KnownField(BaseModel):
+    field: str
+    label: str
+    value: Any
+    unit: str | None = None
+    status: str
+    origin: str
+    approximate: bool = False
+    requires_confirmation: bool = False
+
+
+class ReviewFlag(BaseModel):
+    key: str
+    label: str
+    severity: Literal["low", "medium", "high", "review"]
+    reason: str
+
+
+class ComputedValue(BaseModel):
+    field: str
+    label: str
+    value: Any
+    unit: str | None = None
+    formula: str | None = None
+    origin: Literal["calculated"] = "calculated"
+
+
+class CockpitPatch(BaseModel):
+    known_fields: list[KnownField] = Field(default_factory=list)
+    computed_values: list[ComputedValue] = Field(default_factory=list)
+    review_flags: list[ReviewFlag] = Field(default_factory=list)
+    open_points: list[dict[str, Any]] = Field(default_factory=list)
+    active_question: dict[str, Any] | None = None
+    rfq_status: dict[str, Any] | None = None
+    knowledge_notes: list[dict[str, Any]] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    visual_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    sketch_candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PocketCockpitPatch(BaseModel):
+    recognized: list[dict[str, Any]] = Field(default_factory=list)
+    critical: list[dict[str, Any]] = Field(default_factory=list)
+    next_step: dict[str, Any] | None = None
+    rfq_status: str | None = None
+    details_available: bool = True
+    collapsed_by_default: bool = True
+
+
+class AssistantTurnEnvelope(BaseModel):
+    chat_reply: ChatReply
+    cockpit_patch: CockpitPatch = Field(default_factory=CockpitPatch)
+    pocket_cockpit_patch: PocketCockpitPatch | None = None
+    case_understanding_patch: dict[str, Any] | None = None
+    rfq_brief_patch: dict[str, Any] | None = None
+    pending_question: dict[str, Any] | None = None
+    action_chips: list[ActionChip] = Field(default_factory=list)
+    trace: dict[str, Any] = Field(default_factory=dict)
+
+
+VisualCandidateOrigin = Literal["visual_candidate", "sketch_candidate"]
+CandidateConfidence = Literal["low", "medium", "high"]
+
+_DEFAULT_FORBIDDEN_VISUAL_INFERENCES = (
+    "material_from_photo",
+    "exact_dimension_without_scale",
+    "final_product_identification",
+)
+
+
+class VisualCandidate(BaseModel):
+    """Uncertain hint extracted from a photo/sketch (Blueprint §15.5).
+
+    Hard invariants enforced at the type level: a visual candidate is ALWAYS a
+    confirmation-required ``candidate`` — it can never be constructed as a
+    confirmed fact, so it can never be auto-asserted into case truth.
+    """
+
+    candidate_id: str
+    attachment_id: str | None = None
+    candidate_type: str  # seal_type | marking | damage | dimension | environment | installation_hint
+    value: str
+    confidence: CandidateConfidence = "low"
+    origin: VisualCandidateOrigin = "visual_candidate"
+    requires_confirmation: Literal[True] = True
+    status: Literal["candidate"] = "candidate"
+    reason: str = ""
+    forbidden_inferences: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_FORBIDDEN_VISUAL_INFERENCES)
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class V92DashboardContract(BaseModel):
     schema_version: str = "v92_dashboard_contract_1"
     case_id: str | None = None
@@ -224,5 +365,13 @@ class V92DashboardContract(BaseModel):
     review_status: dict[str, Any] = Field(default_factory=dict)
     rfq_dossier_preview: dict[str, Any] | None = None
     allowed_next_actions: list[str] = Field(default_factory=list)
+    # V1.6 CockpitPatch additions (Blueprint §11.2, §19). Additive; populated by
+    # the dashboard builder. Empty/None when the underlying state has no data
+    # (e.g. visual/sketch candidates stay empty until Patch 6 vision).
+    active_question: dict[str, Any] | None = None
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    knowledge_notes: list[dict[str, Any]] = Field(default_factory=list)
+    visual_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    sketch_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

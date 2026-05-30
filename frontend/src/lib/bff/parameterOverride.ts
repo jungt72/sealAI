@@ -8,6 +8,11 @@ export type AgentOverrideRequest = {
   overrides: AgentOverrideItemRequest[];
   turn_index?: number;
   run_analysis?: boolean;
+  // Patch 9.5 (additive): origin marks an action-chip selection (action_chip_answer
+  // provenance); client_event_id/case_revision_seen carry sheet idempotency/stale.
+  origin?: string;
+  client_event_id?: string;
+  case_revision_seen?: number | null;
 };
 
 export type AgentOverrideResponse = {

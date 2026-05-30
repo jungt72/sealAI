@@ -66,6 +66,7 @@ from app.agent.communication.active_case_side_claim_policy import (
 )
 from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import (
+    AnswerMode,
     RuntimeAction,
     RuntimeActionType,
     RuntimeAnswerBuilder,
@@ -133,6 +134,19 @@ def _v7_dispatch_runtime_action(dispatch: Any) -> RuntimeAction | None:
 
 def _runtime_action_value(value: Any) -> str:
     return str(getattr(value, "value", value) or "")
+
+def _runtime_action_is_fast_smalltalk_llm(runtime_action: Any | None) -> bool:
+    if runtime_action is None:
+        return False
+    return (
+        _runtime_action_value(getattr(runtime_action, "answer_builder", None))
+        == RuntimeAnswerBuilder.LIGHT_RUNTIME.value
+        and _runtime_action_value(getattr(runtime_action, "answer_mode", None))
+        == AnswerMode.SMALLTALK.value
+        and str(getattr(runtime_action, "decision_source", "") or "").startswith(
+            "pre_gate_llm_fast_responder"
+        )
+    )
 
 
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
@@ -703,15 +717,72 @@ def _strip_pending_question_leak(
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
+def _should_bypass_active_case_side_composer(
+    *,
+    message: str,
+    grounded_answer: str,
+    claim_policy_result: Any | None,
+) -> bool:
+    """Avoid a second wording LLM when the knowledge answer is already final-grade."""
+
+    answer = str(grounded_answer or "").strip()
+    if len(answer) < int(os.getenv("SEALAI_ACTIVE_CASE_SIDE_BYPASS_MIN_CHARS", "700")):
+        return False
+    policy = str(getattr(claim_policy_result, "claim_policy_result", "") or "")
+    if policy not in {"passed", "rewritten"}:
+        return False
+    if bool(getattr(claim_policy_result, "answer_safety_fallback_used", False)):
+        return False
+    if getattr(claim_policy_result, "forbidden_claims_detected", ()):
+        return False
+    normalized = f" {str(message or '').casefold()} "
+    comparison_markers = (
+        "vergleich",
+        "vergleiche",
+        "vergleicht",
+        "vergeliche",
+        "vegeliche",
+        "unterschied",
+        " vs ",
+        " versus ",
+        "gegenüber",
+        "gegenueber",
+    )
+    if any(marker in normalized for marker in comparison_markers):
+        return True
+    material_mentions = sum(
+        1
+        for token in ("ptfe", "peek", "pom", "nbr", "fkm", "ffkm", "epdm", "hnbr", "vmq")
+        if token in answer.casefold()
+    )
+    return material_mentions >= 2 and any(
+        marker in answer.casefold()
+        for marker in ("vergleich", "unterschied", "gegenueber", "gegenüber")
+    )
+
+
 async def _compose_active_case_side_answer(
     *,
     message: str,
     grounded_answer: str,
     governed_state: GovernedSessionState | None,
     resume_decision: Any,
+    claim_policy_result: Any | None = None,
 ) -> tuple[str, bool, bool, str | None]:
     if not _active_case_side_answer_composer_enabled():
         return _side_answer_with_resume(grounded_answer, resume_decision), False, False, "composer_disabled"
+
+    if _should_bypass_active_case_side_composer(
+        message=message,
+        grounded_answer=grounded_answer,
+        claim_policy_result=claim_policy_result,
+    ):
+        return (
+            _side_answer_with_resume(grounded_answer, resume_decision),
+            False,
+            False,
+            "composer_bypassed_guarded_grounded_answer",
+        )
 
     try:
         answer = await asyncio.wait_for(
@@ -846,6 +917,7 @@ async def _build_active_case_side_payload(
         grounded_answer=claim_policy_result.answer_markdown,
         governed_state=governed_state,
         resume_decision=resume_decision,
+        claim_policy_result=claim_policy_result,
     )
     if composer_succeeded:
         claim_policy_result = enforce_active_case_side_claim_policy(
@@ -972,12 +1044,15 @@ async def _run_light_chat_response(
 ) -> ChatResponse:
     from app.agent.runtime.conversation_runtime import run_conversation  # noqa: PLC0415
 
-    governed, history, case_summary = await _build_light_runtime_context(
-        request=request,
-        current_user=current_user,
-        governed_state_override=governed_state_override,
-        create_if_missing=False,
-    )
+    if _runtime_action_is_fast_smalltalk_llm(runtime_action):
+        governed, history, case_summary = None, [], None
+    else:
+        governed, history, case_summary = await _build_light_runtime_context(
+            request=request,
+            current_user=current_user,
+            governed_state_override=governed_state_override,
+            create_if_missing=False,
+        )
     if direct_reply is None and mode == "CONVERSATION":
         direct_reply = _open_case_ack_continue_reply(
             message=message,

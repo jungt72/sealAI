@@ -687,6 +687,43 @@ function TypeSpecificParameterGuidance({ workspace }: { workspace: WorkspaceView
   );
 }
 
+// Patch 8: additive sheet-event emission (Blueprint §9, §29.5). Carries the
+// idempotency key (client_event_id) and stale marker (case_revision_seen)
+// alongside the existing override submit, without changing onSubmit's contract.
+function newClientEventId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `sheet-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function workspaceCaseRevision(workspace: WorkspaceView | null): number | null {
+  // caseRevision is not yet a typed field on WorkspaceView; read it defensively
+  // so the stale marker is carried when the projection provides it.
+  const revision = (workspace as { caseRevision?: unknown } | null)?.caseRevision;
+  return typeof revision === "number" ? revision : null;
+}
+
+function emitSheetEvent(
+  overrides: AgentOverrideItemRequest[],
+  workspace: WorkspaceView | null,
+): void {
+  if (typeof window === "undefined" || overrides.length === 0) {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent("sealai:sheet-event", {
+      detail: {
+        event_type: overrides.length === 1 ? "sheet_field_edit" : "sheet_bulk_input",
+        fields: overrides.map((o) => ({ field_name: o.field_name, value: o.value, unit: o.unit ?? null })),
+        client_event_id: newClientEventId(),
+        case_revision_seen: workspaceCaseRevision(workspace),
+        source: "cockpit_sheet",
+      },
+    }),
+  );
+}
+
 export function ParameterWorkspaceTab({
   workspace,
   isSubmitting = false,
@@ -763,6 +800,7 @@ export function ParameterWorkspaceTab({
       return;
     }
 
+    emitSheetEvent(overrides, workspace);
     await onSubmit(overrides, formatSummary(overrides, editableFields));
   };
 

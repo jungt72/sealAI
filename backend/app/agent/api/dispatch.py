@@ -276,6 +276,21 @@ class KnowledgeDebugTrace:
 
 
 @dataclasses.dataclass(frozen=True)
+class _MobileTriageFastResponse:
+    """Patch 9.5 fast-response carrier for mobile leakage triage (§4.8).
+
+    Compatible with the existing fast-response surfacing (``.content`` +
+    getattr-based run_meta). Carries the full AssistantTurnEnvelope so the
+    pocket cockpit / action chips / trace travel in run_meta additively.
+    """
+
+    content: str
+    mobile_triage_envelope: dict[str, Any]
+    source_classification: Any = None
+    no_case_created: bool = True
+
+
+@dataclasses.dataclass(frozen=True)
 class RuntimeDispatchResolution:
     gate_route: Literal["CONVERSATION", "EXPLORATION", "GOVERNED"]
     gate_reason: str
@@ -478,9 +493,10 @@ def _light_runtime_action(
     *,
     reason: str,
     decision_source: str = "pre_gate_light_runtime",
+    answer_mode: AnswerMode = AnswerMode.CLARIFICATION,
 ) -> RuntimeAction:
     return build_answer_only_runtime_action(
-        answer_mode=AnswerMode.CLARIFICATION,
+        answer_mode=answer_mode,
         answer_builder=RuntimeAnswerBuilder.LIGHT_RUNTIME,
         reason=reason,
         decision_source=decision_source,
@@ -544,6 +560,30 @@ async def _resolve_runtime_dispatch_impl(
             runtime_mode="GOVERNED",
             gate_applied=False,
         )
+
+    # Patch 9.5 — mobile leakage triage (§4.8/§7.3). Photo + leakage intent
+    # returns an immediate, useful pocket output BEFORE any slow vision step
+    # (no-empty-spinner). Only fires with an attachment, so text-only leakage
+    # turns keep their existing governed path unchanged.
+    if getattr(request, "has_attachment", False):
+        from app.agent.communication.mobile_triage import (  # noqa: PLC0415
+            build_mobile_leakage_triage,
+            is_leakage_triage_intent,
+        )
+
+        if is_leakage_triage_intent(request.message, has_attachment=True):
+            envelope = build_mobile_leakage_triage(has_attachment=True)
+            return RuntimeDispatchResolution(
+                gate_route="CONVERSATION",
+                gate_reason="mobile_leakage_triage",
+                runtime_mode="CONVERSATION",
+                gate_applied=True,
+                fast_response=_MobileTriageFastResponse(
+                    content=envelope.chat_reply.markdown,
+                    mobile_triage_envelope=envelope.model_dump(mode="json"),
+                ),
+                runtime_action=_fast_response_runtime_action(None, reason="mobile_leakage_triage"),
+            )
 
     try:
         from app.domain.pre_gate_classification import PreGateClassification  # noqa: PLC0415
@@ -639,6 +679,25 @@ async def _resolve_runtime_dispatch_impl(
                         trace=rfq_answer.trace,
                     ),
                 )
+        if pre_gate.classification is PreGateClassification.GREETING:
+            # Smalltalk must stay free and natural, but it must not touch
+            # governed state, LangGraph, RAG, or active-case composers.
+            return RuntimeDispatchResolution(
+                gate_route="CONVERSATION",
+                gate_reason=f"pre_gate_llm_fast_responder:{pre_gate.reasoning}",
+                runtime_mode="CONVERSATION",
+                gate_applied=False,
+                pre_gate_classification=pre_gate.classification.value,
+                pre_gate_reason=pre_gate.reasoning,
+                conversation_route=conversation_route,
+                semantic_pre_gate_trace=semantic_pre_gate_trace,
+                runtime_action=_light_runtime_action(
+                    reason=f"pre_gate_llm_fast_responder:{pre_gate.reasoning}",
+                    decision_source="pre_gate_llm_fast_responder",
+                    answer_mode=AnswerMode.SMALLTALK,
+                ),
+            )
+
         if pre_gate.classification is PreGateClassification.META_QUESTION and request.session_id:
             governed_state = await _load_existing_governed_state_for_v7(
                 request=request,

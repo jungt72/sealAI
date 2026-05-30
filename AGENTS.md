@@ -329,3 +329,8 @@ calculated value, open point, review required, manufacturer review basis.
   committed unless explicitly requested.
 - RWDR MVP changes preserve the product promise: unclear RWDR inquiry in,
   confirmed manufacturer-evaluable `Technical RWDR RFQ Brief` out.
+
+## Active target blueprint (V1.6)
+
+The binding target architecture is `docs/sealing_intelligence_v1_6_mobile_first_complete_architecture_blueprint.md`.
+Implement it audit-first, patch by patch (see its section 30). Never big-bang.

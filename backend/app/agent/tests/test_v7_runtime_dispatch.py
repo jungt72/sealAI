@@ -11,6 +11,10 @@ from app.agent.api.models import ChatRequest, ChatResponse
 from app.agent.api.routes import chat as chat_routes
 from app.agent.api.routes.chat import chat_endpoint
 from app.agent.api.streaming import event_generator
+from app.agent.communication.communication_runtime_v8 import (
+    CommunicationRuntimeV8,
+    CommunicationRuntimeV8DecisionProposal,
+)
 from app.agent.communication.conversation_controller_v7 import (
     ConversationControllerInput,
     ConversationControllerV7,
@@ -27,6 +31,7 @@ from app.agent.state.models import (
     ConversationMessage,
     GovernedSessionState,
     PendingQuestion,
+    SlotAnswerBinding,
 )
 from app.domain.pre_gate_classification import PreGateClassification
 from app.domain.source_validation import SourceType, ValidationStatus
@@ -66,6 +71,38 @@ def _pending_medium_question() -> PendingQuestion:
         source="governed_next_question",
         status="open",
     )
+
+
+def test_v8_pending_slot_answer_outvotes_knowledge_llm_proposal() -> None:
+    runtime = CommunicationRuntimeV8()
+    payload = ConversationControllerInput(
+        user_message="Salzwasser",
+        pre_gate_classification=PreGateClassification.KNOWLEDGE_QUERY,
+        pre_gate_confidence=0.77,
+        active_case_exists=True,
+        pending_question=_pending_medium_question(),
+        slot_answer_binding=SlotAnswerBinding(
+            target_field="medium",
+            raw_value="Salzwasser",
+            normalized_value="Salzwasser",
+            confidence=0.85,
+        ),
+    )
+    deterministic = runtime.decide_deterministic(payload)
+
+    decision = runtime._apply_safe_llm_proposal(
+        payload,
+        deterministic,
+        CommunicationRuntimeV8DecisionProposal(
+            intent="knowledge",
+            confidence=0.91,
+            reason="material-looking word",
+        ),
+    )
+
+    assert decision.answer_mode == AnswerMode.PENDING_SLOT_ANSWER
+    assert decision.state_actions[0].field == "medium"
+    assert decision.state_actions[0].value == "Salzwasser"
 
 
 def _active_state() -> GovernedSessionState:
@@ -146,7 +183,7 @@ def test_pre_gate_treats_thanks_with_tail_as_social_conversation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_active_case_social_thanks_uses_light_conversation_not_governed_graph(
+async def test_active_case_social_thanks_uses_fast_response_not_governed_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = _active_state()
@@ -160,15 +197,16 @@ async def test_active_case_social_thanks_uses_light_conversation_not_governed_gr
 
     assert dispatch.runtime_mode == "CONVERSATION"
     assert dispatch.fast_response is None
-    assert dispatch.governed_state is state
+    assert dispatch.governed_state is None
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_ONLY
     assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+    assert dispatch.runtime_action.answer_mode == AnswerMode.SMALLTALK
     assert dispatch.runtime_action.graph_allowed is False
     assert dispatch.runtime_action.graph_invocation_skipped_reason == (
         "light_runtime_does_not_require_governed_graph"
     )
-    load_state.assert_awaited_once()
+    load_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1745,3 +1783,43 @@ async def test_stream_active_case_rfq_readiness_enters_governed_graph_with_trace
     assert trace["consent_required"] is True
     assert trace["governed_graph_bypassed"] is False
     assert trace["operational_contract_version"] == "runtime_action_v1"
+
+
+@pytest.mark.asyncio
+async def test_active_case_side_composer_bypasses_long_guarded_comparison(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "true")
+
+    async def fail_composer(**_kwargs):  # noqa: ANN003
+        raise AssertionError("side composer should be bypassed for guarded comparison")
+
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._compose_active_case_side_answer_with_llm",
+        fail_composer,
+    )
+    grounded = (
+        "## Vergleich PTFE und NBR\n\n"
+        "PTFE ist ein Fluorpolymer, NBR ist ein Elastomer. "
+        "Der Vergleich betrachtet Medium, Temperatur, Druck, Bewegung, "
+        "Gegenlaufflaeche, Kriechen, Rueckstellung und Herstellerdaten. "
+    ) * 9
+    claim_result = SimpleNamespace(
+        claim_policy_result="passed",
+        answer_safety_fallback_used=False,
+        forbidden_claims_detected=(),
+    )
+
+    answer, attempted, succeeded, fallback_reason = await chat_routes._compose_active_case_side_answer(
+        message="vegeliche bitte mit PTFE",
+        grounded_answer=grounded,
+        governed_state=None,
+        resume_decision=Mock(as_trace=lambda: {}),
+        claim_policy_result=claim_result,
+    )
+
+    assert "PTFE" in answer
+    assert "NBR" in answer
+    assert attempted is False
+    assert succeeded is False
+    assert fallback_reason == "composer_bypassed_guarded_grounded_answer"

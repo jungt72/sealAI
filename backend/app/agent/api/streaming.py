@@ -60,6 +60,7 @@ from app.agent.v92.runtime_contract import (
     apply_v92_contracts_to_payload,
 )
 from app.agent.communication.v7_contracts import (
+    AnswerMode,
     RuntimeAction,
     RuntimeActionType,
     RuntimeAnswerBuilder,
@@ -187,6 +188,19 @@ def _v7_dispatch_runtime_action(dispatch: Any) -> RuntimeAction | None:
 
 def _runtime_action_value(value: Any) -> str:
     return str(getattr(value, "value", value) or "")
+
+def _runtime_action_is_fast_smalltalk_llm(runtime_action: Any | None) -> bool:
+    if runtime_action is None:
+        return False
+    return (
+        _runtime_action_value(getattr(runtime_action, "answer_builder", None))
+        == RuntimeAnswerBuilder.LIGHT_RUNTIME.value
+        and _runtime_action_value(getattr(runtime_action, "answer_mode", None))
+        == AnswerMode.SMALLTALK.value
+        and str(getattr(runtime_action, "decision_source", "") or "").startswith(
+            "pre_gate_llm_fast_responder"
+        )
+    )
 
 
 def _is_v7_active_case_side_question(dispatch: Any) -> bool:
@@ -612,12 +626,15 @@ async def _stream_light_runtime(
     from app.agent.runtime.conversation_runtime import stream_conversation  # noqa: PLC0415
 
     event_builder = event_builder or SSEEventBuilder.for_request(request)
-    governed, history, case_summary = await _build_light_runtime_context(
-        request=request,
-        current_user=current_user,
-        governed_state_override=governed_state_override,
-        create_if_missing=False,
-    )
+    if _runtime_action_is_fast_smalltalk_llm(runtime_action):
+        governed, history, case_summary = None, [], None
+    else:
+        governed, history, case_summary = await _build_light_runtime_context(
+            request=request,
+            current_user=current_user,
+            governed_state_override=governed_state_override,
+            create_if_missing=False,
+        )
     if direct_reply is None and mode == "CONVERSATION":
         from app.agent.api.routes.chat import _open_case_ack_continue_reply  # noqa: PLC0415
 

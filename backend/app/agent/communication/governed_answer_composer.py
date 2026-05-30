@@ -347,7 +347,7 @@ def build_governed_answer_composer_messages(
     payload = {
         "prompt_version": GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION,
         "deterministic_reply": request.deterministic_reply,
-        "governed_answer_context": request.context.model_dump(mode="json"),
+        "governed_answer_context": _governed_answer_context_prompt_payload(request.context),
     }
     if repair_reason:
         must_mention_terms = _user_named_material_terms(request.context.latest_user_message)
@@ -399,6 +399,73 @@ def build_governed_answer_composer_messages(
         repair_instruction += "Return only the requested output format."
         messages.append({"role": "user", "content": repair_instruction})
     return messages
+
+
+def _governed_answer_context_prompt_payload(context: GovernedAnswerContext) -> dict[str, Any]:
+    """Return the compact user-facing composer context."""
+
+    def dump(value: Any) -> Any:
+        if value is None:
+            return None
+        if hasattr(value, "model_dump"):
+            value = value.model_dump(mode="json")
+        return _bounded_prompt_payload(value)
+
+    final_context = dump(context.v91_final_answer_context)
+    payload: dict[str, Any] = {
+        "latest_user_message": context.latest_user_message,
+        "answer_mode": context.answer_mode,
+        "answer_mode_source": context.answer_mode_source,
+        "recent_conversation_messages": list(context.conversation_messages or [])[-8:],
+        "pending_question": dump(context.pending_question),
+        "slot_answer_bindings": [dump(item) for item in context.slot_answer_bindings[:3]],
+        "accepted_updates": [dump(item) for item in context.accepted_updates[:6]],
+        "ambiguous_values": [dump(item) for item in context.ambiguous_values[:4]],
+        "rejected_updates": [dump(item) for item in context.rejected_updates[:4]],
+        "confirmed_facts": [dump(item) for item in context.confirmed_facts[:12]],
+        "calculation_results": [dump(item) for item in context.calculation_results[:6]],
+        "missing_fields": list(context.missing_fields or [])[:16],
+        "open_points": list(context.open_points or [])[:16],
+        "challenge_findings": list(context.challenge_findings or [])[:6],
+        "challenge_hypotheses": list(context.challenge_hypotheses or [])[:6],
+        "technical_case_challenge_plan": dump(context.technical_case_challenge_plan),
+        "next_best_question": context.next_best_question,
+        "v91_question_plan": dump(context.v91_question_plan),
+        "response_class": context.response_class,
+        "allowed_claims": list(context.allowed_claims or [])[:24],
+        "forbidden_claims": list(context.forbidden_claims or [])[:12],
+        "safety_boundaries": list(context.safety_boundaries or [])[:12],
+        "answer_goal": context.answer_goal,
+    }
+    if isinstance(final_context, dict):
+        payload["v91_final_answer_context"] = {
+            key: final_context.get(key)
+            for key in (
+                "answer_mode",
+                "freedom_level",
+                "required_question",
+                "allowed_claims",
+                "forbidden_claims",
+                "must_not_claim",
+            )
+            if key in final_context
+        }
+    return _bounded_prompt_payload(payload)
+
+
+def _bounded_prompt_payload(value: Any, *, string_limit: int = 900) -> Any:
+    if isinstance(value, str):
+        text = " ".join(value.split())
+        if len(text) <= string_limit:
+            return text
+        return f"{text[:string_limit].rstrip()} ... [gekuerzt: {len(text) - string_limit} Zeichen]"
+    if isinstance(value, dict):
+        return {str(key): _bounded_prompt_payload(item, string_limit=string_limit) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_bounded_prompt_payload(item, string_limit=string_limit) for item in value]
+    if isinstance(value, tuple):
+        return [_bounded_prompt_payload(item, string_limit=string_limit) for item in value]
+    return value
 
 
 def _prompt_trace_for_messages(

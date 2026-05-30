@@ -146,3 +146,5 @@ nginx/certs/
 konzept/
 
 erpnext-stack/
+.claude/settings.local.json
+_archive/

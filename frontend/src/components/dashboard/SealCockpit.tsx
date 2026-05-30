@@ -749,6 +749,170 @@ export function CalculationsEvidenceCard({
   );
 }
 
+// --- Patch 4: CockpitPatch projection cards (Blueprint §11.2, §19) ----------
+// Render backend-projected CockpitPatch parts that have no dedicated card yet:
+// Active Question, Conflicts, Knowledge Notes, Visual/Sketch Candidates. Each
+// renders nothing when its data is empty (no card, no crash). Known Fields /
+// Review Flags / Open Points / Computed Values / RFQ reuse existing cards.
+export type CockpitProjection = Record<string, unknown> | null | undefined;
+
+function projectionArray(projection: CockpitProjection, key: string): Record<string, unknown>[] {
+  const value = projection ? projection[key] : undefined;
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object",
+  );
+}
+
+function cleanText(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+export function ActiveQuestionCard({ projection }: { projection: CockpitProjection }) {
+  const active =
+    projection && typeof projection.active_question === "object" && projection.active_question
+      ? (projection.active_question as Record<string, unknown>)
+      : null;
+  const question = cleanText(active?.question);
+  if (!question) {
+    return null;
+  }
+  const field = cleanText(active?.field);
+  return (
+    <OverviewCard title="Aktive Frage" icon={UncertaintyIcon} className="h-full">
+      <p className="text-sm font-semibold leading-relaxed text-[#111827]">{question}</p>
+      {field ? (
+        <div className="mt-3 inline-flex rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1 text-[12px] font-semibold text-seal-blue">
+          {fieldLabel(field)}
+        </div>
+      ) : null}
+    </OverviewCard>
+  );
+}
+
+export function ConflictsCard({ projection }: { projection: CockpitProjection }) {
+  const conflicts = projectionArray(projection, "conflicts");
+  if (!conflicts.length) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Widersprüche" icon={RiskIcon} className="h-full">
+      <div className="space-y-2">
+        {conflicts.map((conflict, index) => {
+          const fieldName = cleanText(conflict.field_name);
+          const description = cleanText(conflict.description);
+          const blocking = cleanText(conflict.severity) === "blocking";
+          return (
+            <div
+              key={`${fieldName ?? "conflict"}-${index}`}
+              className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm font-semibold text-[#111827]">
+                  {fieldName ? fieldLabel(fieldName) : "Feld"}
+                </div>
+                <span
+                  className={cn(
+                    "h-fit rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em]",
+                    findingTone(blocking ? "blocking" : "watch"),
+                  )}
+                >
+                  {blocking ? "blockierend" : "prüfen"}
+                </span>
+              </div>
+              {description ? <p className="mt-1 text-sm text-[#4B5563]">{description}</p> : null}
+            </div>
+          );
+        })}
+      </div>
+    </OverviewCard>
+  );
+}
+
+export function KnowledgeNotesCard({ projection }: { projection: CockpitProjection }) {
+  const notes = projectionArray(projection, "knowledge_notes");
+  const visibleNotes = notes
+    .map((note) => ({
+      label: cleanText(note.label) ?? cleanText(note.note) ?? cleanText(note.text),
+      source: cleanText(note.source),
+    }))
+    .filter((note): note is { label: string; source: string | null } => Boolean(note.label));
+  if (!visibleNotes.length) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Wissensnotizen" icon={EvidenceRagIcon} className="h-full">
+      <div className="space-y-2">
+        {visibleNotes.map((note, index) => (
+          <div
+            key={`${note.label}-${index}`}
+            className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5"
+          >
+            <p className="text-sm leading-relaxed text-[#111827]">{note.label}</p>
+            <div className="mt-2 inline-flex rounded-full border border-[#D1D5DB] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#4B5563]">
+              RAG-gestützt{note.source ? ` · ${note.source}` : ""} · keine Freigabe
+            </div>
+          </div>
+        ))}
+      </div>
+    </OverviewCard>
+  );
+}
+
+export function VisualCandidatesCard({ projection }: { projection: CockpitProjection }) {
+  const candidates = [
+    ...projectionArray(projection, "visual_candidates"),
+    ...projectionArray(projection, "sketch_candidates"),
+  ];
+  if (!candidates.length) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Bild-/Skizzen-Kandidaten" icon={MaterialIcon} className="h-full">
+      <div className="space-y-2">
+        {candidates.map((candidate, index) => {
+          const value =
+            cleanText(candidate.value) ?? cleanText(candidate.candidate_type) ?? "Kandidat";
+          const confidence = cleanText(candidate.confidence);
+          return (
+            <div
+              key={`${value}-${index}`}
+              className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-semibold text-[#111827]">{value}</span>
+                <span className="h-fit rounded-full border border-[#FDE2B8] bg-[#FFF4E5] px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[#9A3412]">
+                  bestätigen
+                </span>
+              </div>
+              {confidence ? (
+                <p className="mt-1 text-[12px] text-[#4B5563]">Konfidenz: {confidence}</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </OverviewCard>
+  );
+}
+
+export function CockpitProjectionCards({ projection }: { projection: CockpitProjection }) {
+  return (
+    <>
+      <ActiveQuestionCard projection={projection} />
+      <ConflictsCard projection={projection} />
+      <KnowledgeNotesCard projection={projection} />
+      <VisualCandidatesCard projection={projection} />
+    </>
+  );
+}
+
 function MediumOverviewCard({ workspace }: { workspace: WorkspaceView | null }) {
   const mediumLabel = normalizeText(workspace?.mediumContext?.mediumLabel ?? workspace?.parameters?.medium);
   return (
@@ -1999,12 +2163,14 @@ export function SealCockpit({
   isParameterSubmitting = false,
   onParameterSubmit,
   preferredTab,
+  cockpitProjection,
 }: {
   data: SealCockpitOverview;
   workspace: WorkspaceView | null;
   isParameterSubmitting?: boolean;
   onParameterSubmit?: (overrides: AgentOverrideItemRequest[], summary: string) => Promise<void> | void;
   preferredTab?: CockpitTabId | null;
+  cockpitProjection?: Record<string, unknown> | null;
 }) {
   const [activeTab, setActiveTab] = useState<CockpitTabId>(preferredTab ?? "overview");
 
@@ -2029,6 +2195,7 @@ export function SealCockpit({
             <MediumOverviewCard workspace={workspace} />
             <ApplicationOverviewCard workspace={workspace} />
             <CalculationsEvidenceCard title="Berechnungen" metrics={data.calculations} />
+            <CockpitProjectionCards projection={cockpitProjection} />
           </div>
         ) : activeTab === "parameters" ? (
           <ParameterWorkspaceTab

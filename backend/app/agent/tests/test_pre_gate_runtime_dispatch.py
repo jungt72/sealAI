@@ -12,6 +12,7 @@ from app.agent.api.router import (
     _resolve_runtime_dispatch,
     _runtime_mode_for_pre_gate,
 )
+from app.agent.communication.v7_contracts import AnswerMode, RuntimeAnswerBuilder
 from app.agent.state.models import (
     ConversationMessage,
     GovernedSessionState,
@@ -132,12 +133,13 @@ async def test_runtime_dispatch_uses_pre_gate_before_three_mode_gate(
     assert dispatch.gate_applied is False
     assert dispatch.gate_reason.startswith(("pre_gate:", "pre_gate_llm_fast_responder:"))
     if classification in {
-        PreGateClassification.META_QUESTION,
         PreGateClassification.GREETING,
+        PreGateClassification.META_QUESTION,
     }:
         assert dispatch.fast_response is None
-        assert dispatch.knowledge_response is None
         assert dispatch.runtime_action is not None
+        assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+        assert dispatch.knowledge_response is None
     elif classification is PreGateClassification.BLOCKED:
         assert dispatch.fast_response is not None
         assert dispatch.fast_response.no_case_created is True
@@ -371,6 +373,9 @@ async def test_greeting_plus_smalltalk_routes_to_conversation_runtime() -> None:
     assert dispatch.runtime_mode == "CONVERSATION"
     assert dispatch.fast_response is None
     assert dispatch.gate_reason.startswith("pre_gate_llm_fast_responder:")
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+    assert dispatch.runtime_action.answer_mode == AnswerMode.SMALLTALK
     assert dispatch.knowledge_response is None
 
 
@@ -603,6 +608,9 @@ async def test_social_conversation_dispatch_with_typo_does_not_enter_governed() 
     assert dispatch.gate_reason == "pre_gate_llm_fast_responder:deterministic_social_conversation"
     assert dispatch.runtime_mode == "CONVERSATION"
     assert dispatch.fast_response is None
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+    assert dispatch.runtime_action.answer_mode == AnswerMode.SMALLTALK
     assert dispatch.governed_state is None
     assert dispatch.knowledge_response is None
 
@@ -623,6 +631,9 @@ async def test_social_conversation_colloquial_wellbeing_does_not_enter_governed(
     assert dispatch.gate_reason == "pre_gate_llm_fast_responder:deterministic_social_conversation"
     assert dispatch.runtime_mode == "CONVERSATION"
     assert dispatch.fast_response is None
+    assert dispatch.runtime_action is not None
+    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+    assert dispatch.runtime_action.answer_mode == AnswerMode.SMALLTALK
     assert dispatch.governed_state is None
     assert dispatch.knowledge_response is None
 

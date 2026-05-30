@@ -39,6 +39,10 @@ import {
 import { buildSealCockpitViewModel } from "@/lib/engineering/buildSealCockpitViewModel";
 import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { streamWorkspaceToWorkspaceView } from "@/lib/streamWorkspaceAdapter";
+import PocketCockpit from "@/components/dashboard/PocketCockpit";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { buildPocketCockpitView } from "@/lib/pocketCockpit";
+import type { ActionChip } from "@/lib/contracts/agent";
 import { cn } from "@/lib/utils";
 
 interface CaseScreenProps {
@@ -1621,8 +1625,57 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
     () => buildSealCockpitViewModel(displayWorkspace),
     [displayWorkspace],
   );
+  // --- Patch 3: mobile Pocket Cockpit (additive; desktop path unchanged) -----
+  const isMobile = useIsMobile();
+  const isStreamingForPocket = useChatStore((state) => state.isStreaming);
+  const pocketCockpit = useMemo(() => {
+    const readiness = cockpit?.view.readiness;
+    const recognizedFacts = (cockpitViewModel.parameters.rows ?? []).map((row) => ({
+      label: row.label,
+      value: row.value,
+    }));
+    const criticalItems = [
+      ...(readiness?.blockers ?? []).map((label) => ({ label, severity: "high" })),
+      ...(readiness?.missingMandatoryKeys ?? []).map((label) => ({ label, severity: "high" })),
+    ];
+    const nextQuestionText = readiness?.recommendedNextQuestion ?? null;
+    return buildPocketCockpitView({
+      recognizedFacts,
+      criticalItems,
+      nextQuestion: nextQuestionText ? { question: nextQuestionText } : null,
+      isRfqReady: Boolean(readiness?.isRfqReady),
+    });
+  }, [cockpit, cockpitViewModel]);
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const handlePocketActionChip = useCallback(
+    (chip: ActionChip) => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("sealai:pocket-action-chip", { detail: chip }));
+      }
+      // Upload chips are handled by the upload affordance, not as an answer.
+      if (chip.action === "upload_photo") {
+        return;
+      }
+      // Patch 9.5: a chip that maps to a field is a deliberate input → the
+      // override path applies it through the backend State Gate with
+      // action_chip_answer provenance (end-to-end). Other chips fall back to a
+      // governed chat turn (Patch 5).
+      const overrideCaseId = workspace?.caseId || activeCaseId || caseId || null;
+      if (chip.field && chip.value != null && overrideCaseId) {
+        void patchAgentOverrides(overrideCaseId, {
+          overrides: [{ field_name: chip.field, value: chip.value }],
+          origin: "action_chip_answer",
+        }).catch(() => {});
+        return;
+      }
+      const answer = String(chip.value ?? chip.label ?? "").trim();
+      if (answer) {
+        void sendMessage(answer);
+      }
+    },
+    [sendMessage, workspace, activeCaseId, caseId],
+  );
   const appendAssistantMessage = useChatStore((state) => state.appendAssistantMessage);
   const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
   const [isParameterSubmitting, setIsParameterSubmitting] = useState(false);
@@ -1825,6 +1878,16 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto bg-white lg:overflow-hidden">
+      {isMobile ? (
+        <div className="px-4 pt-4 sm:px-5 lg:hidden">
+          <PocketCockpit
+            patch={pocketCockpit.patch}
+            actionChips={pocketCockpit.chips}
+            isLoading={isStreamingForPocket}
+            onActionChip={handlePocketActionChip}
+          />
+        </div>
+      ) : null}
       <div className="relative min-h-0 flex-1 px-4 py-4 sm:px-5">
         {!isWorkspaceOpen ? (
           <button
@@ -1906,6 +1969,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
                     isParameterSubmitting={isParameterSubmitting}
                     onParameterSubmit={handleParameterSubmit}
                     preferredTab={canonicalCaseId ? null : "parameters"}
+                    cockpitProjection={streamWorkspace?.v92Dashboard ?? null}
                   />
                 </div>
               </aside>

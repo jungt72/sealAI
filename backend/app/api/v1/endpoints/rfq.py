@@ -134,12 +134,14 @@ async def generate_rwdr_brief(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=error_detail("missing_user_scope"),
         )
-    return _json_safe(
-        build_rwdr_brief_from_confirmed_fields(
-            raw_inquiry=body.raw_inquiry,
-            fields=body.fields,
-        )
+    from app.agent.communication.rfq_one_pager import attach_rfq_one_pager  # noqa: PLC0415
+
+    brief = build_rwdr_brief_from_confirmed_fields(
+        raw_inquiry=body.raw_inquiry,
+        fields=body.fields,
     )
+    # Patch 9.5 — additively attach V1.6 readiness band + manufacturer one-pager.
+    return _json_safe(attach_rfq_one_pager(brief))
 
 
 @router.get("/rwdr/cases/{case_id}")

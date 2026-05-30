@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { HeroMotionBackground } from "@/components/marketing/HeroMotionBackground";
 import { createMetadata } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = createMetadata({
@@ -80,12 +81,8 @@ const flows = [
 export default function LandingPage() {
   return (
     <div className="flex flex-col bg-[#f7f8fa] text-[#1b2430]">
-      <section className="relative isolate overflow-hidden border-b border-slate-200 bg-[#eef3f7]">
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.07)_1px,transparent_1px),linear-gradient(180deg,rgba(15,23,42,0.06)_1px,transparent_1px)] bg-[size:72px_72px]"
-        />
-        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-40 bg-white/55" />
+      <section className="relative isolate overflow-hidden border-b border-slate-200 bg-[#dbe7f1]">
+        <HeroMotionBackground />
 
         <div className="relative mx-auto grid min-h-[calc(100svh-4rem)] max-w-7xl content-center px-6 py-16 lg:px-8">
           <div className="max-w-4xl">

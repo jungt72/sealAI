@@ -59,6 +59,12 @@ class OverrideRequest(BaseModel):
         default=False,
         description="When true, recompute the governed graph after applying overrides.",
     )
+    # Patch 9.5 wiring (additive). origin marks an action-chip selection so the
+    # applied fields carry action_chip_answer provenance (Patch 5). Sheet events
+    # carry client_event_id (idempotency) + case_revision_seen (stale) (Patch 8).
+    origin: Optional[str] = Field(default=None)
+    client_event_id: Optional[str] = Field(default=None)
+    case_revision_seen: Optional[int] = Field(default=None)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -244,6 +250,9 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: Optional[str] = Field(default="default")
     turn_id: Optional[str] = Field(default=None)
+    # Patch 9.5 wiring (additive): a present photo/upload enables mobile leakage
+    # triage (Patch 6). Defaults false → existing turns are unaffected.
+    has_attachment: bool = Field(default=False)
 
     model_config = ConfigDict(extra="forbid")
 

@@ -176,6 +176,53 @@ def _review_status(state: GovernedSessionState | None) -> dict[str, Any]:
     }
 
 
+def _active_question(state: GovernedSessionState | None) -> dict[str, Any] | None:
+    """Project the existing governed ``PendingQuestion`` (not a new concept)."""
+    pending = getattr(state, "pending_question", None) if state is not None else None
+    if pending is None:
+        return None
+    if str(getattr(pending, "status", "open") or "open") != "open":
+        return None
+    field = str(getattr(pending, "target_field", "") or "").strip()
+    text = str(getattr(pending, "question_text", "") or "").strip()
+    if not field and not text:
+        return None
+    return {
+        "field": field or None,
+        "question": text or None,
+        "expected_answer_type": str(getattr(pending, "expected_answer_type", "") or "") or None,
+        "status": str(getattr(pending, "status", "open") or "open"),
+    }
+
+
+def _conflicts(state: GovernedSessionState | None) -> list[dict[str, Any]]:
+    """Project detected ``ConflictRef`` items from normalized state."""
+    if state is None:
+        return []
+    out: list[dict[str, Any]] = []
+    for conflict in list(getattr(getattr(state, "normalized", None), "conflicts", []) or []):
+        dumped = _dump(conflict)
+        if dumped:
+            out.append(dumped)
+    return out
+
+
+def _knowledge_notes(state: GovernedSessionState | None) -> list[dict[str, Any]]:
+    """RAG-supported knowledge notes (§14.5/§19.6).
+
+    No first-class knowledge-note state exists yet; the populating source lands
+    with the Knowledge contract (Patch 7). Read tolerantly so any already-present
+    notes surface, otherwise empty.
+    """
+    if state is None:
+        return []
+    context = getattr(state, "governed_answer_context", {}) or {}
+    notes = context.get("knowledge_notes") if isinstance(context, dict) else None
+    if not isinstance(notes, list):
+        return []
+    return [dict(note) for note in notes if isinstance(note, dict)]
+
+
 def build_v92_dashboard_contract(
     state: GovernedSessionState | None,
     *,
@@ -277,6 +324,12 @@ def build_v92_dashboard_contract(
         else None,
         allowed_next_actions=list(getattr(dossier, "allowed_next_actions", []) or [])
         or ["collect_missing_inputs"],
+        active_question=_active_question(state),
+        conflicts=_conflicts(state),
+        knowledge_notes=_knowledge_notes(state),
+        # Visual/sketch candidates remain empty until Patch 6 (vision).
+        visual_candidates=[],
+        sketch_candidates=[],
     )
 
 

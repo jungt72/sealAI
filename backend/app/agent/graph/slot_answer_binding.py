@@ -55,6 +55,14 @@ _PRESSURE_ABSOLUTE_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMBER_RE = re.compile(r"^\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:bar|°?\s*c|grad|mm|rpm|u[/.]?\s*min)?\s*$", re.IGNORECASE)
+# Tolerant short-answer markers (§7.5/§7.6): leading fillers and approximation
+# words around a single numeric value, e.g. "jo ca 3000", "etwa 80 grad".
+_APPROX_MARKER_RE = re.compile(
+    r"\b(?:ca|circa|zirka|etwa|ungef(?:ä|ae)hr|rund|knapp|so\s+um\s+die|um\s+die|"
+    r"in\s+etwa|vielleicht|gesch(?:ä|ae)tzt|sch(?:ä|ae)tze|grob|gut)\b\.?",
+    re.IGNORECASE,
+)
+_TOLERANT_DIGITS_RE = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
 _PRESSURE_VALUE_RE = re.compile(r"\b([+-]?\d+(?:[.,]\d+)?)\s*bar\b", re.IGNORECASE)
 
 _PRESSURE_CONTEXT_TARGET_FIELD: dict[str, str] = {
@@ -109,6 +117,32 @@ def _numeric_answer(message: str) -> float | None:
         return float(match.group(1).replace(",", "."))
     except ValueError:
         return None
+
+
+def _tolerant_numeric_answer(message: str) -> tuple[float | None, bool]:
+    """Parse a single numeric value out of a short, noisy answer.
+
+    Handles leading fillers and approximation words ("jo ca 3000", "etwa 80")
+    that the strict :data:`_NUMBER_RE` rejects. Returns (value, approximate).
+    Conservative: requires exactly one number and a short answer; refuses
+    strong new-request phrasing so it only fires as a pending-slot answer.
+    """
+    text = _clean_short_answer(message)
+    if not text or "?" in text or "\n" in text:
+        return None, False
+    if _STRONG_NEW_REQUEST_RE.search(text):
+        return None, False
+    words = [part for part in re.split(r"\s+", text) if part]
+    if len(words) > 5:
+        return None, False
+    numbers = _TOLERANT_DIGITS_RE.findall(text)
+    if len(numbers) != 1:
+        return None, False
+    approximate = bool(_APPROX_MARKER_RE.search(text))
+    try:
+        return float(numbers[0].replace(",", ".")), approximate
+    except ValueError:
+        return None, False
 
 
 def _pressure_value_answer(message: str) -> float | None:
@@ -282,7 +316,12 @@ def _resolve_numeric_slot_answer(
     text = str(message or "").strip()
     if not text or "?" in text:
         return None
+    # Strict path first: preserves exact existing behaviour for clean answers.
     value = _numeric_answer(text)
+    approximate = False
+    if value is None:
+        # Tolerant fallback for filler/approximation answers ("jo ca 3000").
+        value, approximate = _tolerant_numeric_answer(text)
     if value is None:
         return None
     return SlotAnswerBinding(
@@ -290,9 +329,10 @@ def _resolve_numeric_slot_answer(
         raw_value=text,
         normalized_value=value,
         source="pending_question",
-        confidence=0.92,
+        confidence=0.88 if approximate else 0.92,
         ambiguity=False,
         needs_clarification=False,
+        approximate=approximate,
         turn_index=turn_index,
     )
 

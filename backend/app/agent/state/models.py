@@ -133,6 +133,10 @@ Provenance = Literal[
     "confirmed",
     "web_hint",
     "pattern_derived",
+    "action_chip_answer",
+    "sheet_field_edit",
+    "sheet_bulk_input",
+    "structured_form_input",
     "missing",
 ]
 
@@ -1095,6 +1099,7 @@ class SlotAnswerBinding(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     ambiguity: bool = False
     needs_clarification: bool = False
+    approximate: bool = False
     turn_index: int = Field(default=0, ge=0)
 
 
@@ -1265,6 +1270,8 @@ class GovernedSessionState(BaseModel):
     conversation_messages: list[ConversationMessage] = Field(default_factory=list)
     pending_question: Optional[PendingQuestion] = None
     last_slot_answer_binding: Optional[SlotAnswerBinding] = None
+    # Patch 9.5: applied sheet-event client_event_ids for idempotency (§9/§13.4).
+    applied_sheet_event_ids: list[str] = Field(default_factory=list)
     governed_answer_context: dict[str, Any] = Field(default_factory=dict)
     v91_candidate_facts: list[CandidateFact] = Field(default_factory=list)
     v91_field_governance_decisions: list[FieldGovernanceDecision] = Field(default_factory=list)
