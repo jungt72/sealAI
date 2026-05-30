@@ -27,7 +27,9 @@ Golden Conversations A–O bereits vollständig und grün.
 |---|---|---|
 | `fe27433a` | WIP-Sicherung der gesamten in-flight V1.6-Arbeit | §30 |
 | `eb0c7a3f` | Chat-Style Template-Familie vervollständigt (8 Templates + Registry) | §10.5 |
-| `68628766` | Unified `TraceSummary`-Contract | §6.1 / §11.7 / §25.1 |
+| `c4afe7bb` | Unified `TraceSummary`-Test + (versehentlich ohne Klasse) | §6.1 / §11.7 / §25.1 |
+| `49fcb7e3` | Completion-Report (dieses Dokument) | — |
+| `ce586daf` | Fix: `TraceSummary`-Klasse ergänzt (in `c4afe7bb` war nur der Test gelandet, die Klasse fehlte → ImportError behoben) | §6.1 |
 
 ### 2.1 Template-Familie (§10.5) — 5/13 → 13/13
 
@@ -72,13 +74,29 @@ behalten, keine parallelen Wahrheiten bauen":
 ## 4. Verifikation
 
 ```
-Volle Agent-Testsuite:   1015 passed, 7 skipped, 0 failed (55.32s)
-V1.6-Kernsuite:          129 passed
+V1.6-Kernsuite:          133 passed, 0 failed
+  (v92/ + chat_style_registry + chat_style_registry_completion +
+   golden_conversations_v16 + knowledge_modes + mobile_leakage_triage +
+   rfq_one_pager + sheet_events + action_chip_state_gate + prompt_registry)
 Neue Tests:              +22 (Template-Familie) +4 (TraceSummary)
-Registry-Abdeckung:      13/13 ChatReplyStyle
+Registry-Abdeckung:      13/13 ChatReplyStyle (verifiziert)
 prompt_registry smoke:   60 passed (keine Regression durch neue Templates)
 Working Tree:            clean
 ```
+
+### 4.1 Vorbestehende, NICHT von dieser Arbeit verursachte Fehler
+
+Die volle Agent-Suite (`app/agent/tests/`) zeigt **2 Fehler**, beide in
+`test_governed_answer_composer.py`:
+- `test_governed_prompt_preserves_explicit_case_challenge_mode`
+- `test_governed_answer_composer_prompt_requires_next_best_question_and_no_routine_thanks`
+
+Beide schlagen mit `FileNotFoundError` (pathlib) fehl — ein Umgebungs-/Fixture-
+Problem, kein Logikfehler. **Verifiziert: beide Tests schlagen identisch am
+Baseline-Commit `fe27433a` fehl**, also bereits VOR jeder Änderung dieser
+Completion. Sie sind damit ausdrücklich vorbestehend und nicht durch die
+Template- oder TraceSummary-Arbeit verursacht. Empfehlung: separat untersuchen
+(fehlende Fixture-Datei).
 
 ## 5. Empfohlene nächste Schritte (optional, review-pflichtig)
 
