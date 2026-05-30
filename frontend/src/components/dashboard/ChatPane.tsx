@@ -196,7 +196,7 @@ const MessageBubble = React.memo(function MessageBubble({
         >
           <UserRound size={14} />
         </div>
-      </div>
+      )}
     </div>
   );
 });
