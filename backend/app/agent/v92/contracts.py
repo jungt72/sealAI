@@ -375,3 +375,49 @@ class V92DashboardContract(BaseModel):
     sketch_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
+
+
+class TraceSummary(BaseModel):
+    """Unified per-turn trace contract (Blueprint §6.1 / §11.7 / §25.1).
+
+    Formalizes the trace dict already emitted across the runtime (e.g. the
+    mobile leakage triage envelope) into one validated schema, so observability
+    has a single source of truth. ``extra="allow"`` keeps it forward-compatible
+    with additional emitter keys; every field is optional/defaulted so partial
+    traces validate. This changes no emitter and not the
+    ``AssistantTurnEnvelope.trace`` dict field — it is an additive, validatable
+    view over the same data.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # §6.1 core
+    turn_id: str | None = None
+    route: str | None = None
+    tier: int | None = None
+    latency_ms: int | None = None
+    first_progress_ms: int | None = None
+    llm_used: bool = False
+    rag_used: bool = False
+    graph_used: bool = False
+    agents_run: list[str] = Field(default_factory=list)
+    state_mutation: str | None = None
+    template_id: str | None = None
+    tenant_id_present: bool = False
+    mobile_surface: bool = False
+    empty_spinner_violated: bool = False
+    # §25.1 quality / alert signals
+    turn_count: int | None = None
+    state_mutation_type: str | None = None
+    forbidden_phrase_detected: bool = False
+    rfq_readiness: str | None = None
+    case_revision: int | None = None
+    action_chips_shown: int = 0
+    action_chip_selected: bool = False
+    visual_low_confidence_count: int = 0
+    rfq_one_pager_generated: bool = False
+
+    @classmethod
+    def from_trace(cls, trace: dict[str, Any] | None) -> "TraceSummary":
+        """Validate a raw trace dict (e.g. ``AssistantTurnEnvelope.trace``)."""
+        return cls(**(trace or {}))
