@@ -125,6 +125,7 @@ services:
     - '3000'
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
+      SEALAI_BACKEND_ORIGIN: http://backend:8000
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env
         or .env.prod}@redis:6379/0
       NEXTAUTH_DEBUG: ${NEXTAUTH_DEBUG:-false}
