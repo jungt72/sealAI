@@ -214,5 +214,6 @@ export default function ChatComposer({
         )}
       </div>
     </form>
+    </div>
   );
 }
