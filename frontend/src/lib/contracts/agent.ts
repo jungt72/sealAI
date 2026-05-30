@@ -409,6 +409,7 @@ export type PocketCockpitCriticalItem = {
 export type PocketCockpitNextStep = {
   question?: string | null;
   field?: string | null;
+  action?: string | null;
   action_chips?: ActionChip[];
 };
 
