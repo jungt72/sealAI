@@ -14,7 +14,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.api.dispatch import _resolve_v8_turn_decision
+from app.agent.api.dispatch import _MobileTriageFastResponse, _resolve_v8_turn_decision
+from app.agent.api.loaders import (
+    _load_live_governed_state,
+    persist_mobile_triage_pending_question,
+)
 from app.agent.api.models import ChatRequest, OverrideItem, OverrideRequest
 from app.agent.api.router import _resolve_runtime_dispatch, session_override_endpoint
 from app.agent.api.routes.chat import _rwdr_p0_leakage_guidance_reply
@@ -759,3 +763,112 @@ def test_existing_speed_slot_answer_still_binds_after_yes_no_unknown_adapter() -
         turn_index=1,
     )
     assert binding is not None and binding.normalized_value == 3000.0 and binding.approximate is True
+
+
+# === Patch 9 — Mobile triage pending question bridged across the live turn ==
+#
+# Closes the Patch 8 chain end-to-end: the no-case mobile triage fast turn now
+# persists its pending question (Redis-only, tenant/session-scoped, no DB case
+# snapshot — the triage turn stays no-case) so the NEXT live turn loads it and
+# the slot binder resolves "Ja"/"Nein"/"Weiß ich nicht". The bridge runs after
+# the instant reply is sent and is fail-safe. No parallel state system, no State
+# Gate bypass — it reuses the existing governed-state load/save helpers.
+
+
+def _mobile_triage_fast_response() -> _MobileTriageFastResponse:
+    envelope = build_mobile_leakage_triage(has_attachment=True)
+    return _MobileTriageFastResponse(
+        content=envelope.chat_reply.markdown,
+        mobile_triage_envelope=envelope.model_dump(mode="json"),
+    )
+
+
+def _answer_mode_value(decision) -> str | None:
+    mode = getattr(decision, "answer_mode", None)
+    return str(getattr(mode, "value", mode)) if mode is not None else None
+
+
+@pytest.mark.asyncio
+async def test_mobile_triage_pending_question_bridges_to_next_turn(
+    _override_env: _FakeRedisClient,
+) -> None:
+    # (1)/(2)/(3) End-to-end-ish: the triage turn persists the pending question;
+    # the next turn loads it and resolves Ja/Nein/Weiß ich nicht via the existing
+    # slot binder + runtime decision.
+    persisted = await persist_mobile_triage_pending_question(
+        current_user=_user(),
+        session_id="m-bridge",
+        fast_response=_mobile_triage_fast_response(),
+    )
+    assert persisted is True
+
+    state = await _load_live_governed_state(
+        current_user=_user(), session_id="m-bridge", create_if_missing=False
+    )
+    assert state is not None and state.pending_question is not None
+    assert state.pending_question.target_field == "shaft_rotates"
+    assert state.pending_question.expected_answer_type == "yes_no_unknown"
+
+    cases = {"Ja": "yes", "Nein": "no", "Weiß ich nicht": "unknown"}
+    for message, expected in cases.items():
+        binding = resolve_slot_answer_binding(
+            pending_question=state.pending_question, message=message, turn_index=1
+        )
+        assert binding is not None and binding.normalized_value == expected, message
+        decision = await _resolve_v8_turn_decision(
+            request=ChatRequest(message=message, session_id="m-bridge"),
+            pre_gate=PreGateClassifier().classify(message),
+            governed_state=state,
+        )
+        assert _answer_mode_value(decision) == "pending_slot_answer", message
+
+
+@pytest.mark.asyncio
+async def test_mobile_triage_bridge_is_tenant_and_session_scoped(
+    _override_env: _FakeRedisClient,
+) -> None:
+    # (6) The bridged context is keyed by tenant + session — no cross-session or
+    # cross-tenant leakage, so a bare "Ja" elsewhere has no pending context.
+    await persist_mobile_triage_pending_question(
+        current_user=_user(),
+        session_id="m-scope-a",
+        fast_response=_mobile_triage_fast_response(),
+    )
+
+    other_session = await _load_live_governed_state(
+        current_user=_user(), session_id="m-scope-b", create_if_missing=False
+    )
+    assert other_session is None  # different session → no pending context
+
+    other_tenant_user = RequestUser(
+        user_id="user-2", username="t2", sub="user-2", roles=[], scopes=[], tenant_id="tenant-2"
+    )
+    other_tenant = await _load_live_governed_state(
+        current_user=other_tenant_user, session_id="m-scope-a", create_if_missing=False
+    )
+    assert other_tenant is None  # different tenant → no pending context
+
+
+@pytest.mark.asyncio
+async def test_mobile_triage_bridge_is_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The bridge never raises and only fires for a mobile triage fast response.
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    assert (
+        await persist_mobile_triage_pending_question(
+            current_user=_user(),
+            session_id="m-nofx",
+            fast_response=_mobile_triage_fast_response(),
+        )
+        is False  # no Redis → no-op, never raises
+    )
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("REDIS_URL", "redis://fake")
+    assert (
+        await persist_mobile_triage_pending_question(
+            current_user=_user(),
+            session_id="m-nonmobile",
+            fast_response=SimpleNamespace(content="Hallo"),  # not a mobile triage response
+        )
+        is False  # non-mobile fast response → no-op
+    )

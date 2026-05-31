@@ -36,6 +36,7 @@ from app.agent.api.loaders import (
     _build_light_runtime_context,
     _load_live_knowledge_session_context,
     _persist_live_knowledge_session_context,
+    persist_mobile_triage_pending_question,
     persist_visible_governed_turn,
 )
 from app.agent.api.governed_runtime import GovernedGraphTurnResult, run_governed_graph_turn
@@ -1159,6 +1160,14 @@ async def event_generator(
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         ):
             yield frame
+        # Bridge the mobile triage pending question after the instant reply is
+        # fully streamed, so the next "Ja"/"Nein"/"Weiß ich nicht" turn binds via
+        # the existing slot machinery. No-op for non-mobile fast responses.
+        await persist_mobile_triage_pending_question(
+            current_user=current_user,
+            session_id=request.session_id,
+            fast_response=dispatch.fast_response,
+        )
         return
     if dispatch.knowledge_response is not None:
         async for frame in _stream_knowledge_response(

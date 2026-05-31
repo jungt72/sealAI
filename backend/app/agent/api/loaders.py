@@ -242,6 +242,69 @@ async def _persist_live_governed_state(
         )
 
 
+async def persist_mobile_triage_pending_question(
+    *,
+    current_user: RequestUser,
+    session_id: str | None,
+    fast_response: Any,
+) -> bool:
+    """Bridge the mobile triage pending question to the next live turn (Patch 9).
+
+    Stores the shaft-rotation pending question on the session's governed state in
+    Redis ONLY — no DB case snapshot, so the triage turn stays no-case. Scoped by
+    tenant/session via the governed-state key. Fail-safe: returns ``False`` and
+    never raises when there is no session, no mobile envelope, or Redis is
+    unavailable. The next DOMAIN_INQUIRY turn loads this state so the Patch 8 slot
+    binder resolves "Ja"/"Nein"/"Weiß ich nicht". The pending question is context,
+    not a confirmed fact — the State Gate still owns persistence and confirmation.
+
+    Called after the visible fast reply is already sent, so it never adds latency
+    to the instant mobile turn.
+    """
+
+    if not session_id or current_user is None:
+        return False
+    if not hasattr(fast_response, "mobile_triage_envelope"):
+        return False
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        return False
+    try:
+        from app.agent.communication.mobile_triage import (  # noqa: PLC0415
+            mobile_triage_pending_question,
+        )
+
+        tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
+        from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
+        async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+            state = await get_or_create_governed_state_async(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                redis_client=redis_client,
+            )
+            state = state.model_copy(
+                update={
+                    "pending_question": mobile_triage_pending_question(),
+                    "persistence_marker": None,
+                }
+            )
+            await save_governed_state_async(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                state=state,
+                redis_client=redis_client,
+            )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[mobile_triage] pending-question bridge persist failed (%s: %s)",
+            type(exc).__name__,
+            exc,
+        )
+        return False
+
+
 async def persist_visible_governed_turn(
     *,
     current_user: RequestUser,

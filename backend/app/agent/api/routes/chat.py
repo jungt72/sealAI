@@ -37,6 +37,7 @@ from app.agent.api.utils import (
 from app.agent.api.loaders import (
     _persist_live_governed_state,
     _build_light_runtime_context,
+    persist_mobile_triage_pending_question,
     persist_visible_governed_turn,
 )
 from app.agent.api.governed_runtime import run_governed_graph_turn
@@ -1485,11 +1486,20 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             state=dispatch.governed_state,
         )
     if dispatch.fast_response is not None:
-        return await _chat_response_from_fast_response(
+        response = await _chat_response_from_fast_response(
             request=request,
             fast_response=dispatch.fast_response,
             runtime_action=_v7_dispatch_runtime_action(dispatch),
         )
+        # Bridge the mobile triage pending question so the next "Ja"/"Nein"/
+        # "Weiß ich nicht" turn resolves through the existing slot binder. No-op
+        # for non-mobile fast responses; runs after the reply is built.
+        await persist_mobile_triage_pending_question(
+            current_user=current_user,
+            session_id=request.session_id,
+            fast_response=dispatch.fast_response,
+        )
+        return response
     if dispatch.knowledge_response is not None:
         return await _chat_response_from_knowledge_response(
             request=request,
