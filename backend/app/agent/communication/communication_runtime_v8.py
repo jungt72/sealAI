@@ -412,10 +412,20 @@ def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str,
         if role == "system":
             instructions.append(content)
             continue
+        is_assistant = role == "assistant"
+        # OpenAI Responses API content typing is role-specific: assistant turns
+        # must use "output_text", user turns "input_text". Sending "input_text"
+        # for an assistant history message raises a 400 (invalid_value) on every
+        # follow-up turn — only the first turn (no assistant history) survived.
         response_input.append(
             {
-                "role": "assistant" if role == "assistant" else "user",
-                "content": [{"type": "input_text", "text": content}],
+                "role": "assistant" if is_assistant else "user",
+                "content": [
+                    {
+                        "type": "output_text" if is_assistant else "input_text",
+                        "text": content,
+                    }
+                ],
             }
         )
     return "\n\n".join(instructions), response_input
