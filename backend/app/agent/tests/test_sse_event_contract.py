@@ -3,14 +3,23 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.api.sse_contract import SSEEventBuilder
+from app.agent.api.dispatch import _MobileTriageFastResponse, _resolve_runtime_dispatch
+from app.agent.api.models import ChatRequest
+from app.agent.api.sse_contract import SSEEventBuilder, infer_event_type
 from app.agent.api.streaming import _stream_fast_response
+from app.services.auth.dependencies import RequestUser
 
 
 def _payload(frame: str) -> dict:
     raw = frame.removeprefix("data: ").strip()
     assert raw != "[DONE]"
     return json.loads(raw)
+
+
+def _user() -> RequestUser:
+    return RequestUser(
+        user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1"
+    )
 
 
 def test_sse_event_builder_adds_stable_turn_metadata_and_monotonic_sequence() -> None:
@@ -123,3 +132,159 @@ async def test_fast_response_stream_emits_contract_metadata_once() -> None:
     assert event["is_final"] is True
     assert event["error_code"] is None
     assert event["data"]["reply"] == "Hallo, womit kann ich helfen?"
+
+
+# === Patch 4 — Current SSE stream contract baseline ========================
+#
+# Locks the current backend SSE event contract so a later V1.6 patch can add the
+# AssistantTurnEnvelope / pocket_cockpit_patch / action_chips ADDITIVELY without
+# breaking existing clients. These tests pin CURRENT behavior, not the V1.6
+# target. Seams used (all deterministic, offline):
+#   [SSE-SERIALIZER]  infer_event_type / SSEEventBuilder — the exact mapping and
+#                     framing streaming.py emits through (event_builder.frame).
+#   [SSE-FAST-HELPER] _stream_fast_response — the real streaming helper the live
+#                     event_generator dispatches fast / mobile-triage turns to.
+
+# The raw event names streaming.py actually frames, grouped by the canonical
+# core SSE type a backward-compatible client depends on.
+_CORE_DELTA_RAW = ("text_chunk", "answer.token", "delta")
+_CORE_STATE_UPDATE_RAW = ("state_update",)
+_CORE_DONE_RAW = ("turn_complete", "done", "stream_end")
+
+
+def test_stream_contract_emits_backward_compatible_core_events() -> None:
+    # [SSE-SERIALIZER] The three core event types every current client relies on
+    # — delta (text), state_update (workspace projection), done (completion) —
+    # are produced by the canonical mapping streaming.py uses.
+    for raw in _CORE_DELTA_RAW:
+        assert infer_event_type({"type": raw}) == "delta"
+    for raw in _CORE_STATE_UPDATE_RAW:
+        assert infer_event_type({"type": raw}) == "state_update"
+    for raw in _CORE_DONE_RAW:
+        assert infer_event_type({"type": raw}) == "done"
+
+    # A text_chunk frames as a delta carrying the streamed text (the exact call
+    # _stream_light_runtime / _stream_exploration_reply make).
+    builder = SSEEventBuilder(turn_id="turn-core")
+    delta = builder.event({"type": "text_chunk", "text": "Hallo"}, event_type="delta")
+    assert delta["event_type"] == "delta"
+    assert delta["data"]["text"] == "Hallo"
+
+
+@pytest.mark.asyncio
+async def test_stream_contract_fast_helper_emits_state_update_then_done() -> None:
+    # [SSE-FAST-HELPER] The live fast helper ends a turn with a single final
+    # state_update (the workspace projection) followed by the [DONE] terminator.
+    request = SimpleNamespace(session_id="s-core", message="Hallo")
+    fast_response = SimpleNamespace(content="Hallo!", source_classification="GREETING")
+    frames = [
+        frame
+        async for frame in _stream_fast_response(
+            request=request,
+            fast_response=fast_response,
+            event_builder=SSEEventBuilder(turn_id="turn-core-fast"),
+        )
+    ]
+    assert frames[-1] == "data: [DONE]\n\n"  # completion terminator preserved
+    events = [_payload(frame) for frame in frames if frame.startswith("data: {")]
+    assert len(events) == 1
+    final = events[0]
+    assert final["event_type"] == "state_update"
+    assert final["is_final"] is True
+    assert final["data"]["reply"] == "Hallo!"
+
+
+@pytest.mark.asyncio
+async def test_stream_contract_does_not_replace_state_update_with_v16_envelope() -> None:
+    # The terminal event is still the state_update workspace projection contract
+    # (v92 dashboard / turn_envelope), NOT a V1.6 AssistantTurnEnvelope event.
+    request = SimpleNamespace(session_id="s-env", message="Hallo")
+    fast_response = SimpleNamespace(content="Hallo!", source_classification="GREETING")
+    frames = [
+        frame
+        async for frame in _stream_fast_response(
+            request=request,
+            fast_response=fast_response,
+            event_builder=SSEEventBuilder(turn_id="turn-env"),
+        )
+    ]
+    final = [_payload(frame) for frame in frames if frame.startswith("data: {")][0]
+
+    # Still a state_update, and it carries the existing workspace projection.
+    assert final["event_type"] == "state_update"
+    assert "v92_dashboard" in final["data"]  # workspace projection contract
+    assert "turn_envelope" in final["data"]  # V9.2 envelope (not the V1.6 one)
+    # The V1.6 AssistantTurnEnvelope is NOT yet emitted and must not replace the
+    # state_update contract.
+    assert "assistant_turn_envelope" not in final
+    assert "assistant_turn_envelope" not in final["data"]
+
+
+@pytest.mark.asyncio
+async def test_mobile_triage_envelope_is_not_yet_serialized_over_sse_current_gap() -> None:
+    # [SSE-FAST-HELPER] CURRENT DOCUMENTED GAP (not a failure of this patch):
+    # dispatch builds the mobile triage envelope, but the SSE serializer drops
+    # pocket_cockpit_patch / action_chips before the client.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="sifft", session_id="m-gap", has_attachment=True),
+        current_user=_user(),
+    )
+    # (1) The envelope — with pocket cockpit patch + action chips — IS built in
+    # dispatch.
+    assert isinstance(dispatch.fast_response, _MobileTriageFastResponse)
+    envelope = dispatch.fast_response.mobile_triage_envelope
+    assert envelope["pocket_cockpit_patch"]
+    assert envelope["action_chips"]
+
+    # (2) But the live SSE fast helper serializes only the chat reply — the
+    # envelope is not sent over the wire today.
+    request = SimpleNamespace(session_id="m-gap", message="sifft")
+    frames = [
+        frame
+        async for frame in _stream_fast_response(
+            request=request,
+            fast_response=dispatch.fast_response,
+            event_builder=SSEEventBuilder(turn_id="turn-mobile"),
+        )
+    ]
+    wire = "".join(frames)
+    assert "pocket_cockpit_patch" not in wire
+    assert "action_chips" not in wire
+    assert "mobile_triage_envelope" not in wire
+
+    final = [_payload(frame) for frame in frames if frame.startswith("data: {")][0]
+    assert final["event_type"] == "state_update"
+    assert final["data"]["reply"] == dispatch.fast_response.content
+    # A later patch must surface these additively (see the additive-contract test
+    # below); this assertion only records that they are absent today.
+
+
+def test_future_v16_fields_must_be_additive_not_replacing_core_events() -> None:
+    # ADDITIVE CONTRACT: a future V1.6 patch may carry an AssistantTurnEnvelope
+    # (and pocket_cockpit_patch / action_chips) as OPTIONAL extra fields inside
+    # the existing state_update — it must not remove or replace the delta /
+    # state_update / done semantics existing clients depend on.
+    builder = SSEEventBuilder(turn_id="turn-additive")
+
+    # An envelope can ride inside a state_update without changing its type.
+    state = builder.event(
+        {
+            "type": "state_update",
+            "reply": "Final",
+            "assistant_turn_envelope": {"pocket_cockpit_patch": {"next_step": "x"}},
+            "action_chips": [{"label": "Ja"}],
+        },
+        event_type="state_update",
+        is_final=True,
+    )
+    assert state["event_type"] == "state_update"
+    assert state["is_final"] is True
+    assert state["data"]["reply"] == "Final"  # existing core field preserved
+    assert state["data"]["assistant_turn_envelope"]["pocket_cockpit_patch"]  # additive
+    assert state["data"]["action_chips"]  # additive
+
+    # The completion terminator is still its own event after the additive payload.
+    done = builder.event({"type": "done"}, event_type="done")
+    assert done["event_type"] == "done"
+    assert done["is_final"] is False
+    assert done["sequence"] == state["sequence"] + 1
