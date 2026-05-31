@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getAccessTokenResult } from "@/lib/bff/auth-token";
+import { actionChipChatMessage, resolvePocketCockpitView } from "@/lib/pocketCockpit";
+import { buildStreamWorkspaceView } from "@/lib/streamWorkspace";
 
 import { POST } from "./route";
 
@@ -1023,5 +1025,85 @@ describe("BFF agent chat stream route", () => {
     expect(stateUpdate).not.toHaveProperty("pocket_cockpit_patch");
     expect(stateUpdate).not.toHaveProperty("action_chips");
     expect(stateUpdate).not.toHaveProperty("assistant_turn_envelope");
+  });
+
+  // === Patch 10 — Mobile P0 triage chain regression contract (frontend) =====
+  //
+  // One test that walks the frontend half of the mobile P0 chain across the real
+  // seams from Patches 5/6/7, instead of repeating each unit detail:
+  //   backend SSE V1.6 state_update  →  BFF forwards the fields  →  streamWorkspace
+  //   preserves them  →  Pocket Cockpit prefers the backend patch  →  a chip click
+  //   maps to the chat message "Ja" (sent through the existing send path; no
+  //   client-side authoritative mutation). The backend half is covered by
+  //   test_mobile_p0_triage_chain_backend_contract.
+  it("mobile P0 chain: V1.6 fields survive into the pocket cockpit and a chip click sends 'Ja'", async () => {
+    const actionChips = [
+      { label: "Ja", value: "yes", field: "shaft_rotates" },
+      { label: "Nein", value: "no", field: "shaft_rotates" },
+      { label: "Weiß ich nicht", value: "unknown", field: "shaft_rotates" },
+    ];
+    const envelope = {
+      pocket_cockpit_patch: {
+        recognized: [{ label: "Fall", value: "Leckage / Dichtstelle unklar", status: "candidate" }],
+        critical: [{ label: "Dichtungstyp und Wellenbewegung klären", severity: "high" }],
+        next_step: { question: "Dreht sich die Welle im Betrieb?", field: "shaft_rotates" },
+        rfq_status: "DRAFT",
+      },
+      action_chips: actionChips,
+    };
+    const backendStateUpdate = {
+      type: "state_update",
+      reply: "Ich prüfe das als möglichen Leckagefall.",
+      response_class: "conversational_answer",
+      run_meta: { fast_responder: { no_case_created: true } },
+      assistant_turn_envelope: envelope,
+      pocket_cockpit_patch: envelope.pocket_cockpit_patch,
+      action_chips: envelope.action_chips,
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify(backendStateUpdate)}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+
+    const response = await POST(
+      new Request("https://sealai.test/api/bff/agent/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "sifft" }),
+      }),
+    );
+    const stateUpdate = findPayload(parseSsePayloads(await response.text()), "state_update");
+
+    // (1) The V1.6 fields survive BFF/stream parsing.
+    expect(stateUpdate.pocket_cockpit_patch).toBeTruthy();
+    expect(Array.isArray(stateUpdate.action_chips)).toBe(true);
+
+    // The stream hook maps a case-bound state_update through buildStreamWorkspaceView;
+    // the V1.6 fields are preserved on the workspace view.
+    const view = buildStreamWorkspaceView({
+      ...stateUpdate,
+      caseId: "case-chain",
+    } as unknown as Parameters<typeof buildStreamWorkspaceView>[0]);
+    expect(view.pocketCockpitPatch).toBeTruthy();
+    expect(view.actionChips).toHaveLength(3);
+
+    // (2) The Pocket Cockpit prefers the backend patch over the client fallback.
+    const resolved = resolvePocketCockpitView(
+      { patch: view.pocketCockpitPatch, chips: view.actionChips },
+      { recognizedFacts: [{ label: "Medium", value: "Öl" }], isRfqReady: true },
+    );
+    expect(resolved.source).toBe("backend");
+    expect(resolved.patch).toBe(view.pocketCockpitPatch);
+
+    // (3) Clicking the "Ja" chip maps to the chat message "Ja" — a normal user
+    // answer through the existing send path; no client-side authoritative mutation.
+    const jaChip = resolved.chips.find((chip) => chip.label === "Ja");
+    expect(jaChip).toBeDefined();
+    expect(actionChipChatMessage(jaChip!)).toBe("Ja");
   });
 });

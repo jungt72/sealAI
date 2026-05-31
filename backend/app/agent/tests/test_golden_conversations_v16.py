@@ -12,6 +12,9 @@ suites are untouched.
 
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 
 from app.agent.api.dispatch import _MobileTriageFastResponse, _resolve_v8_turn_decision
@@ -21,6 +24,8 @@ from app.agent.api.loaders import (
 )
 from app.agent.api.models import ChatRequest, OverrideItem, OverrideRequest
 from app.agent.api.router import _resolve_runtime_dispatch, session_override_endpoint
+from app.agent.api.sse_contract import SSEEventBuilder
+from app.agent.api.streaming import _stream_fast_response
 from app.agent.api.routes.chat import _rwdr_p0_leakage_guidance_reply
 from app.agent.runtime.conversation_runtime import run_conversation
 from app.agent.communication.knowledge_modes import apply_knowledge_turn, resolve_knowledge_mode
@@ -872,3 +877,86 @@ async def test_mobile_triage_bridge_is_fail_safe(monkeypatch: pytest.MonkeyPatch
         )
         is False  # non-mobile fast response → no-op
     )
+
+
+# === Patch 10 — Mobile P0 triage chain regression contract (backend) ========
+#
+# One end-to-end-ish backend test that walks the full mobile P0 chain across the
+# real seams built in Patches 5/8/9, instead of repeating every unit detail:
+#   dispatch mobile triage  →  SSE state_update carries the V1.6 envelope fields
+#   →  pending question persisted (tenant/session-scoped)  →  next "Ja" resolves
+#   as a pending_slot_answer  →  fresh/cross-session "Ja" creates no truth.
+# The frontend half of the chain is covered by the route.spec.ts chain test.
+
+
+def _sse_state_update_payload(frames: list[str]) -> dict:
+    for frame in frames:
+        if frame.startswith("data: {"):
+            return json.loads(frame.removeprefix("data: ").strip())
+    raise AssertionError("no state_update frame emitted")
+
+
+@pytest.mark.asyncio
+async def test_mobile_p0_triage_chain_backend_contract(_override_env: _FakeRedisClient) -> None:
+    # 1) photo + "sifft" → dispatch returns the mobile triage fast response.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="sifft", session_id="m-chain", has_attachment=True),
+        current_user=_user(),
+    )
+    assert isinstance(dispatch.fast_response, _MobileTriageFastResponse)
+
+    # 2) SSE state_update carries assistant_turn_envelope + pocket_cockpit_patch
+    #    + action_chips additively (Patch 5), and still terminates with [DONE].
+    frames = [
+        frame
+        async for frame in _stream_fast_response(
+            request=SimpleNamespace(session_id="m-chain", message="sifft"),
+            fast_response=dispatch.fast_response,
+            event_builder=SSEEventBuilder(turn_id="t-chain"),
+        )
+    ]
+    assert frames[-1] == "data: [DONE]\n\n"
+    data = _sse_state_update_payload(frames)["data"]
+    assert "assistant_turn_envelope" in data
+    assert data["pocket_cockpit_patch"]
+    assert {c["value"] for c in data["action_chips"] if c.get("field") == "shaft_rotates"} == {
+        "yes",
+        "no",
+        "unknown",
+    }
+
+    # 3) The triage turn persists its pending question, tenant/session-scoped
+    #    (Patch 9), with no cross-session leakage.
+    assert (
+        await persist_mobile_triage_pending_question(
+            current_user=_user(), session_id="m-chain", fast_response=dispatch.fast_response
+        )
+        is True
+    )
+    state = await _load_live_governed_state(
+        current_user=_user(), session_id="m-chain", create_if_missing=False
+    )
+    assert state is not None and state.pending_question is not None
+    assert state.pending_question.target_field == "shaft_rotates"
+
+    # 4) The next chat turn "Ja" resolves as a pending_slot_answer for
+    #    shaft_rotates=yes through the existing slot machinery (Patch 8).
+    decision = await _resolve_v8_turn_decision(
+        request=ChatRequest(message="Ja", session_id="m-chain"),
+        pre_gate=PreGateClassifier().classify("Ja"),
+        governed_state=state,
+    )
+    assert _answer_mode_value(decision) == "pending_slot_answer"
+    binding = resolve_slot_answer_binding(
+        pending_question=state.pending_question, message="Ja", turn_index=1
+    )
+    assert binding is not None and binding.normalized_value == "yes"
+
+    # 5) A fresh / cross-session "Ja" has no pending context and creates no truth.
+    assert (
+        await _load_live_governed_state(
+            current_user=_user(), session_id="m-chain-other", create_if_missing=False
+        )
+        is None
+    )
+    assert resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1) is None
