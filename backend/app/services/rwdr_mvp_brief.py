@@ -844,18 +844,28 @@ class DbRWDRCaseStateRepository:
             actor=user_id,
         )
         await self.session.commit()
-        return await self.get(case_id)
+        return await self.get(case_id, tenant_id=tenant_id, user_id=user_id)
 
-    async def get(self, case_id: str) -> dict[str, Any]:
-        return self._row_response(await self._require(case_id))
+    async def get(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        return self._row_response(
+            await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
+        )
 
     async def apply_confirmations(
         self,
         *,
         case_id: str,
         decisions: Sequence[Mapping[str, Any]],
+        tenant_id: str,
+        user_id: str,
     ) -> dict[str, Any]:
-        row = await self._require(case_id)
+        row = await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         state = _stored_rwdr_state_from_row(row)
         fields = [dict(item) for item in state.evidence_fields]
         for decision in decisions:
@@ -881,10 +891,16 @@ class DbRWDRCaseStateRepository:
                 actor="user",
             )
         await self.session.commit()
-        return await self.get(case_id)
+        return await self.get(case_id, tenant_id=tenant_id, user_id=user_id)
 
-    async def evaluate(self, case_id: str) -> dict[str, Any]:
-        row = await self._require(case_id)
+    async def evaluate(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        row = await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         state = self._helper._with_brief(_stored_rwdr_state_from_row(row))
         row.payload = _rwdr_payload_from_state(state)
         await self._write_snapshot(
@@ -895,8 +911,14 @@ class DbRWDRCaseStateRepository:
         await self.session.commit()
         return dict(_object_mapping(state.generated_brief).get("evaluation") or {})
 
-    async def generate_brief(self, case_id: str) -> dict[str, Any]:
-        row = await self._require(case_id)
+    async def generate_brief(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        row = await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         state = self._helper._with_brief(_stored_rwdr_state_from_row(row))
         row.payload = _rwdr_payload_from_state(state)
         await self._write_snapshot(
@@ -907,8 +929,14 @@ class DbRWDRCaseStateRepository:
         await self.session.commit()
         return dict(state.generated_brief or {})
 
-    async def export_markdown(self, case_id: str) -> dict[str, Any]:
-        row = await self._require(case_id)
+    async def export_markdown(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        row = await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         state = self._helper._with_brief(_stored_rwdr_state_from_row(row))
         row.payload = _rwdr_payload_from_state(state)
         snapshot = await self._write_snapshot(
@@ -934,10 +962,18 @@ class DbRWDRCaseStateRepository:
             "technical_rwdr_rfq_brief": brief,
         }
 
-    async def export_pdf_document(self, case_id: str) -> dict[str, Any]:
-        exported = await self.export_markdown(case_id)
+    async def export_pdf_document(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        exported = await self.export_markdown(
+            case_id, tenant_id=tenant_id, user_id=user_id
+        )
         brief = dict(exported.get("technical_rwdr_rfq_brief") or {})
-        row = await self._require(case_id)
+        row = await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         snapshot = await self._write_snapshot(
             state=self._helper._with_brief(_stored_rwdr_state_from_row(row)),
             event_type="pdf_export_generated",
@@ -979,11 +1015,21 @@ class DbRWDRCaseStateRepository:
             "created_at": _utc_now(),
         }
 
-    async def _require(self, case_id: str) -> CaseRecord:
+    async def _require(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> CaseRecord:
+        # Owner-scoped lookup mirrors RfqPreviewService._load_owned_case:
+        # a foreign tenant or user gets "not found" with no existence leak.
         result = await self.session.execute(
             select(CaseRecord).where(
                 CaseRecord.id == case_id,
                 CaseRecord.request_type == "rwdr_rfq",
+                CaseRecord.tenant_id == tenant_id,
+                CaseRecord.user_id == user_id,
             )
         )
         row = result.scalar_one_or_none()
@@ -994,13 +1040,26 @@ class DbRWDRCaseStateRepository:
     def _row_response(self, row: CaseRecord) -> dict[str, Any]:
         return self._helper._as_response(_stored_rwdr_state_from_row(row))
 
-    async def list_snapshots(self, case_id: str) -> list[dict[str, Any]]:
-        await self._require(case_id)
+    async def list_snapshots(
+        self,
+        case_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> list[dict[str, Any]]:
+        await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         snapshots = await self._snapshot_rows(case_id)
         return [_snapshot_summary(row) for row in snapshots]
 
-    async def get_snapshot(self, case_id: str, revision_number: int) -> dict[str, Any]:
-        await self._require(case_id)
+    async def get_snapshot(
+        self,
+        case_id: str,
+        revision_number: int,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         for row in await self._snapshot_rows(case_id):
             if int(row.revision) == int(revision_number):
                 return _snapshot_detail(row)
@@ -1011,8 +1070,11 @@ class DbRWDRCaseStateRepository:
         case_id: str,
         from_revision: int,
         to_revision: int,
+        *,
+        tenant_id: str,
+        user_id: str,
     ) -> dict[str, Any]:
-        await self._require(case_id)
+        await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
         from_row: CaseStateSnapshot | None = None
         to_row: CaseStateSnapshot | None = None
         for row in await self._snapshot_rows(case_id):
@@ -1959,8 +2021,12 @@ async def get_db_persisted_rwdr_case(
     *,
     session: AsyncSession,
     case_id: str,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
-    return await DbRWDRCaseStateRepository(session).get(case_id)
+    return await DbRWDRCaseStateRepository(session).get(
+        case_id, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def update_db_persisted_rwdr_confirmations(
@@ -1968,10 +2034,14 @@ async def update_db_persisted_rwdr_confirmations(
     session: AsyncSession,
     case_id: str,
     decisions: Sequence[Mapping[str, Any]],
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
     return await DbRWDRCaseStateRepository(session).apply_confirmations(
         case_id=case_id,
         decisions=decisions,
+        tenant_id=tenant_id,
+        user_id=user_id,
     )
 
 
@@ -1979,40 +2049,60 @@ async def evaluate_db_persisted_rwdr_case(
     *,
     session: AsyncSession,
     case_id: str,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
-    return await DbRWDRCaseStateRepository(session).evaluate(case_id)
+    return await DbRWDRCaseStateRepository(session).evaluate(
+        case_id, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def generate_db_persisted_rwdr_brief(
     *,
     session: AsyncSession,
     case_id: str,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
-    return await DbRWDRCaseStateRepository(session).generate_brief(case_id)
+    return await DbRWDRCaseStateRepository(session).generate_brief(
+        case_id, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def export_db_persisted_rwdr_case_markdown(
     *,
     session: AsyncSession,
     case_id: str,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
-    return await DbRWDRCaseStateRepository(session).export_markdown(case_id)
+    return await DbRWDRCaseStateRepository(session).export_markdown(
+        case_id, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def export_db_persisted_rwdr_case_pdf_document(
     *,
     session: AsyncSession,
     case_id: str,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
-    return await DbRWDRCaseStateRepository(session).export_pdf_document(case_id)
+    return await DbRWDRCaseStateRepository(session).export_pdf_document(
+        case_id, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def list_db_persisted_rwdr_case_snapshots(
     *,
     session: AsyncSession,
     case_id: str,
+    tenant_id: str,
+    user_id: str,
 ) -> list[dict[str, Any]]:
-    return await DbRWDRCaseStateRepository(session).list_snapshots(case_id)
+    return await DbRWDRCaseStateRepository(session).list_snapshots(
+        case_id, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def get_db_persisted_rwdr_case_snapshot(
@@ -2020,8 +2110,12 @@ async def get_db_persisted_rwdr_case_snapshot(
     session: AsyncSession,
     case_id: str,
     revision_number: int,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
-    return await DbRWDRCaseStateRepository(session).get_snapshot(case_id, revision_number)
+    return await DbRWDRCaseStateRepository(session).get_snapshot(
+        case_id, revision_number, tenant_id=tenant_id, user_id=user_id
+    )
 
 
 async def diff_db_persisted_rwdr_case_snapshots(
@@ -2030,11 +2124,15 @@ async def diff_db_persisted_rwdr_case_snapshots(
     case_id: str,
     from_revision: int,
     to_revision: int,
+    tenant_id: str,
+    user_id: str,
 ) -> dict[str, Any]:
     return await DbRWDRCaseStateRepository(session).diff_snapshots(
         case_id,
         from_revision,
         to_revision,
+        tenant_id=tenant_id,
+        user_id=user_id,
     )
 
 

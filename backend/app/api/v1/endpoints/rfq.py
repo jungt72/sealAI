@@ -153,7 +153,14 @@ async def get_rwdr_case(
     if not user.user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
     try:
-        return _json_safe(await get_db_persisted_rwdr_case(session=session, case_id=case_id))
+        return _json_safe(
+            await get_db_persisted_rwdr_case(
+                session=session,
+                case_id=case_id,
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
+            )
+        )
     except RWDRCaseStateNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
 
@@ -170,7 +177,12 @@ async def list_rwdr_case_snapshots(
         return _json_safe(
             {
                 "case_id": case_id,
-                "snapshots": await list_db_persisted_rwdr_case_snapshots(session=session, case_id=case_id),
+                "snapshots": await list_db_persisted_rwdr_case_snapshots(
+                    session=session,
+                    case_id=case_id,
+                    tenant_id=_request_tenant_id(user),
+                    user_id=user.user_id,
+                ),
             }
         )
     except RWDRCaseStateNotFound as exc:
@@ -192,6 +204,8 @@ async def get_rwdr_case_snapshot(
                 session=session,
                 case_id=case_id,
                 revision_number=revision_number,
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
             )
         )
     except RWDRCaseStateNotFound as exc:
@@ -215,6 +229,8 @@ async def diff_rwdr_case_snapshots(
                 case_id=case_id,
                 from_revision=from_revision,
                 to_revision=to_revision,
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
             )
         )
     except RWDRCaseStateNotFound as exc:
@@ -236,6 +252,8 @@ async def update_rwdr_confirmations(
                 session=session,
                 case_id=case_id,
                 decisions=[item.model_dump() for item in body.decisions],
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
             )
         )
     except RWDRCaseStateNotFound as exc:
@@ -253,7 +271,14 @@ async def evaluate_rwdr_case(
     if not user.user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
     try:
-        return _json_safe(await evaluate_db_persisted_rwdr_case(session=session, case_id=case_id))
+        return _json_safe(
+            await evaluate_db_persisted_rwdr_case(
+                session=session,
+                case_id=case_id,
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
+            )
+        )
     except RWDRCaseStateNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
 
@@ -267,7 +292,14 @@ async def generate_persisted_rwdr_case_brief(
     if not user.user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
     try:
-        return _json_safe(await generate_db_persisted_rwdr_brief(session=session, case_id=case_id))
+        return _json_safe(
+            await generate_db_persisted_rwdr_brief(
+                session=session,
+                case_id=case_id,
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
+            )
+        )
     except RWDRCaseStateNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
 
@@ -281,7 +313,14 @@ async def export_rwdr_case_markdown(
     if not user.user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
     try:
-        return _json_safe(await export_db_persisted_rwdr_case_markdown(session=session, case_id=case_id))
+        return _json_safe(
+            await export_db_persisted_rwdr_case_markdown(
+                session=session,
+                case_id=case_id,
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
+            )
+        )
     except RWDRCaseStateNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
 
@@ -295,7 +334,12 @@ async def export_rwdr_case_pdf(
     if not user.user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
     try:
-        document = await export_db_persisted_rwdr_case_pdf_document(session=session, case_id=case_id)
+        document = await export_db_persisted_rwdr_case_pdf_document(
+            session=session,
+            case_id=case_id,
+            tenant_id=_request_tenant_id(user),
+            user_id=user.user_id,
+        )
     except RWDRCaseStateNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
     pdf_bytes = render_rfq_export_pdf(document)

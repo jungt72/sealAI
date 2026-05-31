@@ -705,3 +705,65 @@ def _user() -> RequestUser:
         roles=[],
         tenant_id="tenant-1",
     )
+
+
+# --- Patch 1: /rwdr/cases/* derive + forward authenticated owner scope -------
+#
+# The endpoints must derive tenant_id (via _request_tenant_id) and user_id from
+# the authenticated request user and forward them into the persisted-case
+# repository, and must map the repository's ownership miss
+# (RWDRCaseStateNotFound) to a 404 with no existence leak. The SQL ownership
+# guard itself is exercised against a real DB in
+# tests/unit/services/test_rwdr_mvp_brief_tenant_scope.py.
+
+from app.services.rwdr_mvp_brief import RWDRCaseStateNotFound as _RWDRCaseStateNotFound
+
+
+@pytest.mark.asyncio
+async def test_get_rwdr_case_forwards_authenticated_owner_scope(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def _fake_get(*, session, case_id, tenant_id, user_id):
+        captured.update(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
+        return {"case_id": case_id}
+
+    monkeypatch.setattr(rfq_endpoint, "get_db_persisted_rwdr_case", _fake_get)
+
+    result = await get_rwdr_case(case_id="case-1", user=_user(), session=object())
+
+    assert result["case_id"] == "case-1"
+    assert captured == {"case_id": "case-1", "tenant_id": "tenant-1", "user_id": "user-1"}
+
+
+@pytest.mark.asyncio
+async def test_get_rwdr_case_maps_ownership_miss_to_404(monkeypatch) -> None:
+    async def _fake_get(**_kwargs):
+        raise _RWDRCaseStateNotFound("case-1")
+
+    monkeypatch.setattr(rfq_endpoint, "get_db_persisted_rwdr_case", _fake_get)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_rwdr_case(case_id="case-1", user=_user(), session=object())
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail["error"] == "rwdr_case_not_found"
+
+
+@pytest.mark.asyncio
+async def test_update_confirmations_forwards_authenticated_owner_scope(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def _fake_update(*, session, case_id, decisions, tenant_id, user_id):
+        captured.update(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
+        return {"case_id": case_id, "evidence_fields": []}
+
+    monkeypatch.setattr(rfq_endpoint, "update_db_persisted_rwdr_confirmations", _fake_update)
+
+    await update_rwdr_confirmations(
+        case_id="case-1",
+        body=RwdrConfirmationsRequest(decisions=[]),
+        user=_user(),
+        session=object(),
+    )
+
+    assert captured == {"case_id": "case-1", "tenant_id": "tenant-1", "user_id": "user-1"}
