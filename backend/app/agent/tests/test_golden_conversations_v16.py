@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.agent.api.dispatch import _resolve_v8_turn_decision
 from app.agent.api.models import ChatRequest, OverrideItem, OverrideRequest
 from app.agent.api.router import _resolve_runtime_dispatch, session_override_endpoint
 from app.agent.communication.knowledge_modes import apply_knowledge_turn, resolve_knowledge_mode
@@ -32,6 +33,7 @@ from app.agent.templates.no_go_guard import FORBIDDEN_NORMAL_TURN_PHRASES, detec
 from app.agent.templates.registry import render_chat_reply
 from app.agent.v92.dashboard_contract import extract_case_revision
 from app.services.auth.dependencies import RequestUser
+from app.services.pre_gate_classifier import PreGateClassifier
 
 
 def _user() -> RequestUser:
@@ -330,3 +332,209 @@ async def test_golden_out_of_scope_high_risk_blocked() -> None:
     )
     assert result["status"] == "OUT_OF_SCOPE"
     assert result["no_final_technical_release"] is True
+
+
+# === Patch 2 — P0 RWDR killer-flow live-path baseline ======================
+#
+# Killer input (Blueprint P0 §26): the single message that must "just work".
+# These tests pin what the CURRENT live backend paths actually do with it, so
+# later patches can change behavior deliberately instead of breaking a contract
+# by accident. They assert CURRENT behavior, not the V1.6 target. Each test
+# names the live path it exercises:
+#   [LIVE-DISPATCH]  _resolve_runtime_dispatch — the real pre-gate router that
+#                    every chat turn enters first.
+#   [LIVE-RFQ-API]   generate_rwdr_brief — the real POST /api/v1/rfq/rwdr/brief
+#                    handler (same path Golden A uses).
+#   [LIVE-DECISION]  _resolve_v8_turn_decision — the turn/slot decision seam the
+#                    dispatch path calls for DOMAIN_INQUIRY turns. Used here
+#                    because a full pending-slot dispatch round-trip needs a
+#                    Redis-persisted pending question; the decision seam is the
+#                    offline-deterministic live equivalent.
+# No isolated builder is asserted here unless a live path has no equivalent.
+
+_P0_KILLER_INPUT = "RWDR 45x62x8, Getriebe, Öl, 1500 rpm, staubig, undicht."
+
+
+def _dispatch_emitted_text(dispatch) -> str:
+    """Concatenate every outward-facing text a dispatch resolution can carry."""
+
+    parts = [
+        dispatch.direct_reply,
+        dispatch.rfq_response,
+        getattr(dispatch.fast_response, "content", None),
+        getattr(dispatch.knowledge_response, "content", None),
+        getattr(dispatch.knowledge_response, "answer_markdown", None),
+    ]
+    return " ".join(str(part) for part in parts if part)
+
+
+@pytest.mark.asyncio
+async def test_p0_killer_flow_routed_to_governed_case_not_smalltalk() -> None:
+    # [LIVE-DISPATCH] The killer message is a concrete RWDR application, so the
+    # router must treat it as case-building (GOVERNED), never as smalltalk.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message=_P0_KILLER_INPUT, session_id=None),
+        current_user=_user(),
+    )
+    # (1) technical RWDR / case-building intent, not smalltalk/knowledge/RFQ.
+    assert dispatch.pre_gate_classification == "DOMAIN_INQUIRY"
+    assert dispatch.gate_route == "GOVERNED"
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert dispatch.pre_gate_classification != "GREETING"
+    action_mode = getattr(dispatch.runtime_action, "answer_mode", None)
+    assert getattr(action_mode, "value", action_mode) == "governed_intake"
+    assert getattr(dispatch.runtime_action, "graph_allowed", None) is True
+    # (2) The router itself emits no outward text, so it cannot leak a final
+    # suitability / guarantee / release claim — the governed graph + final guard
+    # own all wording downstream. Lock that the router stays silent here.
+    assert _dispatch_emitted_text(dispatch) == ""
+    assert detect_no_go_phrases("", include_final_release=True) == []
+    # No case is created or mutated by the router for this turn (session_id=None
+    # → no governed state is loaded or persisted at the dispatch layer).
+    assert dispatch.governed_state is None
+    # CURRENT GAP (documented, intentionally not asserted as a feature): the
+    # router does not itself extract 45x62x8, compute circumferential speed, or
+    # surface the shaft/counterface review flag. Those are produced downstream
+    # (governed graph) and in the RFQ brief path — see the next two tests.
+
+
+@pytest.mark.asyncio
+async def test_p0_killer_flow_brief_preserves_core_facts_and_boundary() -> None:
+    # [LIVE-RFQ-API] real POST /rwdr/brief handler with raw inquiry only.
+    from app.api.v1.endpoints.rfq import RwdrBriefRequest, generate_rwdr_brief
+
+    result = await generate_rwdr_brief(
+        body=RwdrBriefRequest(raw_inquiry=_P0_KILLER_INPUT, fields=[]),
+        user=_user(),
+    )
+    blob = str(result)
+    flags = result["engineering_review_flags"]
+
+    # (1) Recognized as an RWDR case needing clarification (not smalltalk, not
+    # out-of-scope, not COMPLETE on raw unconfirmed text).
+    assert result["status"] == "NEEDS_CLARIFICATION"
+
+    # (2) No final suitability / guarantee / compliance / release claim.
+    assert result["no_final_technical_release"] is True
+    assert "keine finale" in result["disclaimer"].lower()
+    assert "final engineering release" in result["claim_boundary"]["forbidden"]
+    assert "compliance claim" in result["claim_boundary"]["forbidden"]
+
+    # (3) Core extracted facts the live path supports are preserved/surfaced:
+    #   - RWDR / radial-shaft-seal candidate recognized
+    assert "radial_shaft_seal" in blob
+    assert "rwdr_generic_term_normalized" in flags
+    #   - 45x62x8 dimensions surfaced
+    assert "45" in blob and "62" in blob
+    #   - leakage ("undicht") signal recognized
+    assert "leakage" in blob
+    assert "leakage_failure_intent" in flags
+    #   - dusty environment supported as a review topic
+    assert "dust" in blob
+    assert "dust_lip_or_excluder_review_required" in flags
+    # NOTE on current behavior: at this unconfirmed stage the brief normalizes
+    # rather than echoes — "Getriebe", verbatim "1500 rpm", and the literal word
+    # "undicht" are not echoed in the brief payload; only review-relevant signals
+    # surface. Documented, not asserted as a target.
+
+    # (5) Expert shaft / counterface review topic IS exposed by the RFQ brief
+    # path (it is the chat/dispatch layer that does not surface it — see test 1).
+    assert "shaft_surface_review_required" in flags
+
+    # (4) CURRENT GAP — circumferential speed is NOT computed from raw text.
+    # The extracted rpm/d1 are unconfirmed candidates, so the
+    # EvidenceConfirmationIntelligence gate keeps them out of the calculation:
+    # v = pi * d1 * rpm / 60000 is skipped and rpm stays a critical open point.
+    computed = result["evaluation"]["computed_values"]
+    speed_class = next((c["value"] for c in computed if c.get("field") == "speed_class"), None)
+    assert speed_class == "unknown"
+    assert not any(c.get("field") == "circumferential_speed_mps" for c in computed)
+    assert "critical_missing_max_speed_rpm" in flags
+    # V1.6 may surface a screening speed from unconfirmed candidates; that is the
+    # behavior a later patch can add. The next test proves the calc seam itself
+    # is live and correct once the facts are confirmed.
+
+
+@pytest.mark.asyncio
+async def test_p0_circumferential_speed_computed_once_facts_confirmed() -> None:
+    # [LIVE-RFQ-API] same handler, but d1 and rpm arrive as confirmed fields —
+    # the realistic state after the user confirms the extracted values. The only
+    # required MVP calculation (circumference speed) must then be exact.
+    from app.api.v1.endpoints.rfq import RwdrBriefRequest, generate_rwdr_brief
+
+    def _confirmed(field: str, value: float, unit: str) -> dict:
+        return {
+            "field": field,
+            "value": value,
+            "unit": unit,
+            "confirmation_status": "confirmed",
+            "status": "confirmed",
+            "validation_status": "confirmed",
+            "source_type": "user_text",
+        }
+
+    result = await generate_rwdr_brief(
+        body=RwdrBriefRequest(
+            raw_inquiry=_P0_KILLER_INPUT,
+            fields=[
+                _confirmed("shaft_diameter_d1_mm", 45, "mm"),
+                _confirmed("max_speed_rpm", 1500, "rpm"),
+            ],
+        ),
+        user=_user(),
+    )
+    computed = result["evaluation"]["computed_values"]
+    circ = next((c for c in computed if c.get("field") == "circumferential_speed_mps"), None)
+    assert circ is not None
+    # v = pi * 45 * 1500 / 60000 = 3.53 m/s
+    assert circ["value"] == 3.53
+    assert circ["formula"] == "v = pi * d1_mm * rpm / 60000"
+    assert circ["not_for_final_technical_release"] is True
+
+
+@pytest.mark.asyncio
+async def test_p0_guarantee_question_routes_governed_without_guarantee_claim() -> None:
+    # [LIVE-DISPATCH] "Which seal fits guaranteed?" — a guarantee-seeking turn.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="Welche Dichtung passt garantiert?", session_id=None),
+        current_user=_user(),
+    )
+    # No guarantee / final-release claim is produced: the router emits no outward
+    # text and defers to governed handling. It must NOT be answered as smalltalk
+    # or a knowledge response (which could leak an unguarded answer).
+    assert _dispatch_emitted_text(dispatch) == ""
+    assert detect_no_go_phrases(_dispatch_emitted_text(dispatch), include_final_release=True) == []
+    assert dispatch.fast_response is None
+    assert dispatch.knowledge_response is None
+    # CURRENT behavior: the ambiguous guarantee question is fail-safe routed to
+    # the governed graph (the manufacturer-review / boundary wording is produced
+    # downstream — see test_golden_final_approval_is_bounded). The router does
+    # not itself emit the manufacturer-review redirect text.
+    assert dispatch.runtime_mode == "GOVERNED"
+    assert "ambiguous_fail_safe_domain_inquiry" in dispatch.gate_reason
+    # No state mutation at the dispatch layer (session_id=None).
+    assert dispatch.governed_state is None
+
+
+@pytest.mark.asyncio
+async def test_p0_pending_speed_slot_answer_recognized_live() -> None:
+    # [LIVE-DECISION] After the assistant asked for rpm/speed, "jo ca 3000" is a
+    # tolerant approximate slot answer. The decision seam the dispatch path uses
+    # must treat it as a pending-slot answer — not a new case, not smalltalk.
+    state = GovernedSessionState()
+    state.pending_question = PendingQuestion(
+        target_field="speed_rpm", expected_answer_type="rotational_speed_value", status="open"
+    )
+    pre_gate = PreGateClassifier().classify("jo ca 3000")
+    turn_decision = await _resolve_v8_turn_decision(
+        request=ChatRequest(message="jo ca 3000", session_id=None),
+        pre_gate=pre_gate,
+        governed_state=state,
+    )
+    answer_mode = getattr(turn_decision, "answer_mode", None)
+    assert getattr(answer_mode, "value", answer_mode) == "pending_slot_answer"
+    # The normalized approximate value (3000.0, approximate=True) is locked by the
+    # deterministic binder in test_golden_pending_slot_tolerant_parse; this test
+    # only proves the live decision seam routes the answer to the slot, not a new
+    # case. CURRENT GAP: the full dispatch round-trip needs a Redis-persisted
+    # pending question, so the offline live assertion stops at the decision seam.
