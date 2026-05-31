@@ -46,7 +46,10 @@ from app.agent.templates.registry import render_chat_reply
 from app.agent.v92.dashboard_contract import extract_case_revision
 from app.services.auth.dependencies import RequestUser
 from app.services.pre_gate_classifier import PreGateClassifier
-from app.services.rwdr_mvp_brief import build_rwdr_p0_leakage_guidance
+from app.services.rwdr_mvp_brief import (
+    build_rwdr_p0_leakage_guidance,
+    build_rwdr_p0_pocket_cockpit_patch,
+)
 
 
 def _user() -> RequestUser:
@@ -960,3 +963,48 @@ async def test_mobile_p0_triage_chain_backend_contract(_override_env: _FakeRedis
         is None
     )
     assert resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1) is None
+
+
+# === Patch 11 — Backend-owned Pocket Cockpit for the governed RWDR P0 text ===
+#
+# The governed RWDR P0 text case now emits a deterministic backend-owned
+# pocket_cockpit_patch (a projection of candidate facts + the shaft/counterface
+# review, never confirmed truth). This test pins the projection content; the SSE
+# serialization is pinned in test_sse_event_contract.py.
+
+
+def test_rwdr_p0_pocket_cockpit_patch_projection() -> None:
+    result = build_rwdr_p0_pocket_cockpit_patch(_P0_KILLER_INPUT)
+    assert result is not None
+    patch, chips = result
+    data = patch.model_dump(mode="json")
+
+    # (2) recognized: RWDR leakage case + candidate facts (never confirmed).
+    recognized = {item["label"]: item for item in data["recognized"]}
+    assert "RWDR-Leckage" in recognized["Fall"]["value"]
+    assert recognized["Maße"]["value"] == "45x62x8"
+    assert recognized["Anwendung"]["value"] == "Getriebe"
+    assert recognized["Medium"]["value"] == "Öl"
+    assert all(item["status"] == "candidate" for item in data["recognized"])
+
+    # (2) critical: shaft running surface review + dust/excluder review.
+    critical_labels = {item["label"] for item in data["critical"]}
+    assert any("Wellenlauffläche" in label for label in critical_labels)
+    assert any("Staub" in label for label in critical_labels)
+
+    # (2) next_step: the Rille / Korrosion / eingelaufene Spur question.
+    assert "Rille" in data["next_step"]["question"]
+    assert "Korrosion" in data["next_step"]["question"]
+    assert "eingelaufene Spur" in data["next_step"]["question"]
+
+    # Neutral draft status, display-only chips (no backend click provenance here).
+    assert data["rfq_status"] == "DRAFT"
+    assert [c.label for c in chips][:3] == ["glatt", "Rille sichtbar", "Korrosion"]
+
+    # (6) No final suitability / guarantee / compliance / release wording.
+    blob = json.dumps(data, ensure_ascii=False) + " ".join(c.label for c in chips)
+    assert detect_no_go_phrases(blob, include_final_release=True) == []
+
+    # (5) Non-RWDR text yields no projection.
+    assert build_rwdr_p0_pocket_cockpit_patch("Was ist FFKM?") is None
+    assert build_rwdr_p0_pocket_cockpit_patch("RWDR 45x62x8, Getriebe") is None  # no leakage intent

@@ -335,6 +335,37 @@ def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
         "data_version": DETERMINISTIC_DATA_VERSION,
     }
 
+def _rwdr_p0_pocket_cockpit_fields(message: str) -> dict[str, Any]:
+    """Additive backend-owned Pocket Cockpit fields for the governed RWDR P0 text
+    case (``pocket_cockpit_patch`` + display-only ``action_chips``).
+
+    Returns an empty dict for non-RWDR turns, so other governed/light/exploration
+    turns are untouched. The patch is a deterministic projection (candidate facts,
+    not confirmed truth) built by the RWDR service — no RFQ orchestration runs.
+    """
+
+    try:
+        from app.services.rwdr_mvp_brief import (  # noqa: PLC0415
+            build_rwdr_p0_pocket_cockpit_patch,
+        )
+
+        result = build_rwdr_p0_pocket_cockpit_patch(str(message or ""))
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "[rwdr_pocket_cockpit] projection failed (%s: %s)",
+            type(exc).__name__,
+            exc,
+        )
+        return {}
+    if result is None:
+        return {}
+    patch, chips = result
+    return {
+        "pocket_cockpit_patch": patch.model_dump(mode="json"),
+        "action_chips": [chip.model_dump(mode="json") for chip in chips],
+    }
+
+
 def _mobile_triage_v16_fields(fast_response: Any) -> dict[str, Any]:
     """Optional, additive V1.6 envelope fields for a mobile-triage fast turn.
 
@@ -819,6 +850,10 @@ async def _stream_light_runtime(
                 route_hint=mode.lower(),
                 case_id=str(request.session_id or "default") if request.session_id else None,
             )
+            # Additive backend-owned Pocket Cockpit for the governed RWDR P0 text
+            # case. No-op for non-RWDR turns; never replaces the workspace
+            # projection (v92_dashboard / turn_envelope / reply stay intact).
+            payload.update(_rwdr_p0_pocket_cockpit_fields(message))
             yield event_builder.frame(payload, event_type="state_update", is_final=True)
             continue
 

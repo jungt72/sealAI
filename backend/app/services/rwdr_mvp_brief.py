@@ -2036,6 +2036,74 @@ def build_rwdr_p0_leakage_guidance(text: str) -> "RWDRP0LeakageGuidance | None":
     )
 
 
+def _rwdr_pocket_value(value: Any) -> str:
+    """Render an extracted numeric/text value for a pocket cockpit line."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def build_rwdr_p0_pocket_cockpit_patch(text: str):
+    """Deterministic backend-owned Pocket Cockpit projection for the P0 RWDR
+    leakage/replacement text case. Returns ``(PocketCockpitPatch, list[ActionChip])``
+    or ``None`` for non-RWDR turns.
+
+    Reuses :func:`build_rwdr_p0_leakage_guidance` (the shaft/counterface review
+    hint + next question + canonical review flags) and the deterministic
+    :func:`_extract_rwdr_candidate_fields` extraction. Every recognized line is a
+    **candidate**, never confirmed — this is a projection, not case truth, and no
+    RFQ orchestration runs. Action chips are display-only answer affordances; this
+    patch adds no backend click provenance for them.
+    """
+
+    guidance = build_rwdr_p0_leakage_guidance(text)
+    if guidance is None:
+        return None
+    from app.agent.v92.contracts import ActionChip, PocketCockpitPatch  # noqa: PLC0415
+
+    candidates = {item["field"]: item for item in _extract_rwdr_candidate_fields(text)}
+
+    recognized: list[dict[str, Any]] = [
+        {"label": "Fall", "value": "RWDR-Leckage / Ersatzfall", "status": "candidate"}
+    ]
+    dims = [candidates.get(name) for name in ("shaft_diameter_d1_mm", "housing_bore_D_mm", "seal_width_b_mm")]
+    if all(dims):
+        recognized.append(
+            {
+                "label": "Maße",
+                "value": "x".join(_rwdr_pocket_value(item["value"]) for item in dims),
+                "status": "candidate",
+            }
+        )
+    application = candidates.get("application")
+    if application:
+        recognized.append({"label": "Anwendung", "value": str(application["value"]), "status": "candidate"})
+    medium = candidates.get("inside_medium")
+    if medium:
+        recognized.append({"label": "Medium", "value": str(medium["value"]), "status": "candidate"})
+
+    critical: list[dict[str, Any]] = [{"label": "Wellenlauffläche prüfen", "severity": "high"}]
+    if "dust_lip_or_excluder_review_required" in guidance.review_flags:
+        critical.append({"label": "Staubumgebung / Schutzlippe prüfen", "severity": "high"})
+
+    patch = PocketCockpitPatch(
+        recognized=recognized[:4],
+        critical=critical,
+        next_step={"question": guidance.next_question, "field": "shaft_condition_known"},
+        rfq_status="DRAFT",
+        details_available=True,
+        collapsed_by_default=True,
+    )
+    chips = [
+        ActionChip(label="glatt", value="glatt", field="shaft_condition_known"),
+        ActionChip(label="Rille sichtbar", value="rille", field="shaft_condition_known"),
+        ActionChip(label="Korrosion", value="korrosion", field="shaft_condition_known"),
+        ActionChip(label="weiß ich nicht", value="unknown", field="shaft_condition_known"),
+        ActionChip(label="Foto senden", action="upload_photo"),
+    ]
+    return patch, chips
+
+
 def analyze_rwdr_inquiry_text(raw_inquiry: str) -> dict[str, Any]:
     """Create deterministic RWDR extraction candidates for frontend confirmation."""
 

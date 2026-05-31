@@ -6,7 +6,8 @@ import pytest
 from app.agent.api.dispatch import _MobileTriageFastResponse, _resolve_runtime_dispatch
 from app.agent.api.models import ChatRequest
 from app.agent.api.sse_contract import SSEEventBuilder, infer_event_type
-from app.agent.api.streaming import _stream_fast_response
+from app.agent.api.streaming import _stream_fast_response, _stream_light_runtime
+from app.agent.state.models import GovernedSessionState
 from app.services.auth.dependencies import RequestUser
 
 
@@ -322,3 +323,64 @@ def test_future_v16_fields_must_be_additive_not_replacing_core_events() -> None:
     assert done["event_type"] == "done"
     assert done["is_final"] is False
     assert done["sequence"] == state["sequence"] + 1
+
+
+# === Patch 11 — Backend-owned Pocket Cockpit for the governed RWDR P0 text ===
+#
+# The governed RWDR P0 text turn now emits an additive pocket_cockpit_patch (and
+# display-only action_chips) inside the existing state_update, alongside the
+# workspace projection. Non-RWDR governed/light turns are unaffected.
+
+_P0_KILLER_INPUT = "RWDR 45x62x8, Getriebe, Öl, 1500 rpm, staubig, undicht."
+
+
+async def _light_state_update(message: str) -> dict:
+    """Final state_update event from the light/exploration runtime (offline:
+    direct_reply short-circuits the LLM; session_id=None skips Redis)."""
+    frames = [
+        frame
+        async for frame in _stream_light_runtime(
+            message=message,
+            request=SimpleNamespace(session_id=None, message=message),
+            current_user=_user(),
+            mode="EXPLORATION",
+            governed_state_override=GovernedSessionState(),
+            direct_reply="Hinweis zum Fall.",
+            event_builder=SSEEventBuilder(turn_id="turn-light"),
+            force_conversation_runtime=True,
+        )
+    ]
+    for frame in frames:
+        if not frame.startswith("data: {"):
+            continue
+        event = json.loads(frame.removeprefix("data: ").strip())
+        if event.get("event_type") == "state_update":
+            return event
+    raise AssertionError("no state_update frame emitted")
+
+
+@pytest.mark.asyncio
+async def test_governed_rwdr_p0_text_state_update_includes_pocket_cockpit_patch() -> None:
+    event = await _light_state_update(_P0_KILLER_INPUT)
+    data = event["data"]
+
+    # The backend-owned Pocket Cockpit is attached additively.
+    patch = data["pocket_cockpit_patch"]
+    assert any("RWDR-Leckage" in str(item.get("value")) for item in patch["recognized"])
+    assert any("Wellenlauffläche" in str(item.get("label")) for item in patch["critical"])
+    assert "Rille" in patch["next_step"]["question"]
+    assert isinstance(data["action_chips"], list) and isinstance(data["action_chips"][0], dict)
+
+    # The existing state_update workspace projection is untouched.
+    assert event["event_type"] == "state_update"
+    assert data["reply"]
+    assert "v92_dashboard" in data  # workspace projection preserved
+    assert "turn_envelope" in data  # V9.2 envelope still present alongside V1.6
+
+
+@pytest.mark.asyncio
+async def test_non_rwdr_governed_turn_has_no_pocket_cockpit_patch() -> None:
+    # A non-RWDR turn must not receive a bogus RWDR pocket cockpit.
+    event = await _light_state_update("Was ist FFKM?")
+    assert "pocket_cockpit_patch" not in event["data"]
+    assert "action_chips" not in event["data"]
