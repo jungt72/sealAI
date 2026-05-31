@@ -74,6 +74,7 @@ from app.agent.communication.v7_contracts import (
 )
 from app.observability.langsmith import traceable
 from app.observability.sealai_quality import emit_quality_trace
+from app.services.rwdr_mvp_brief import build_rwdr_p0_leakage_guidance
 
 _log = logging.getLogger(__name__)
 
@@ -1191,6 +1192,31 @@ def _open_sealing_invite_reply(
         ),
     )
 
+def _rwdr_p0_leakage_guidance_reply(
+    *,
+    pre_gate_classification: str | None,
+    runtime_action: Any | None,
+    message: str,
+) -> str | None:
+    """Deterministic senior-engineer review hint for the P0 RWDR leakage turn.
+
+    Fires only on the governed-intake domain path, so smalltalk, meta/UI help,
+    knowledge, and active-case side/process turns are untouched. When the user
+    message signals an RWDR seal with a leakage/replacement intent, the visible
+    reply becomes one shaft/counterface (Wellenlauffläche) review hint plus
+    exactly one next question from the RWDR domain logic, instead of the generic
+    intake invite. The hint/question text is owned by the deterministic RWDR
+    service — the chat LLM does not produce it.
+    """
+
+    answer_mode = _runtime_action_value(getattr(runtime_action, "answer_mode", None))
+    if pre_gate_classification != "DOMAIN_INQUIRY" or answer_mode != "governed_intake":
+        return None
+    guidance = build_rwdr_p0_leakage_guidance(message)
+    if guidance is None:
+        return None
+    return guidance.reply_markdown()
+
 def _open_case_ack_continue_reply(
     *,
     message: str,
@@ -1238,17 +1264,24 @@ async def _run_conversation_first_with_engine_sidecar(
             safe_fallback_reason(exc),
         )
 
+    # P0 RWDR leakage/replacement: surface one deterministic shaft/counterface
+    # review hint + one next question instead of a generic intake invite.
+    direct_reply = _rwdr_p0_leakage_guidance_reply(
+        pre_gate_classification=pre_gate_classification,
+        runtime_action=runtime_action,
+        message=request.message,
+    ) or _open_sealing_invite_reply(
+        pre_gate_classification=pre_gate_classification,
+        runtime_action=runtime_action,
+        sidecar_state=sidecar_state,
+    )
     response = await _run_light_chat_response(
         message=request.message,
         request=request,
         current_user=current_user,
         mode="EXPLORATION",
         governed_state_override=sidecar_state,
-        direct_reply=_open_sealing_invite_reply(
-            pre_gate_classification=pre_gate_classification,
-            runtime_action=runtime_action,
-            sidecar_state=sidecar_state,
-        ),
+        direct_reply=direct_reply,
         runtime_action=runtime_action,
     )
     return _with_engine_sidecar_trace(

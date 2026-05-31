@@ -17,6 +17,8 @@ import pytest
 from app.agent.api.dispatch import _resolve_v8_turn_decision
 from app.agent.api.models import ChatRequest, OverrideItem, OverrideRequest
 from app.agent.api.router import _resolve_runtime_dispatch, session_override_endpoint
+from app.agent.api.routes.chat import _rwdr_p0_leakage_guidance_reply
+from app.agent.runtime.conversation_runtime import run_conversation
 from app.agent.communication.knowledge_modes import apply_knowledge_turn, resolve_knowledge_mode
 from app.agent.communication.mobile_triage import (
     build_mobile_leakage_triage,
@@ -34,6 +36,7 @@ from app.agent.templates.registry import render_chat_reply
 from app.agent.v92.dashboard_contract import extract_case_revision
 from app.services.auth.dependencies import RequestUser
 from app.services.pre_gate_classifier import PreGateClassifier
+from app.services.rwdr_mvp_brief import build_rwdr_p0_leakage_guidance
 
 
 def _user() -> RequestUser:
@@ -538,3 +541,114 @@ async def test_p0_pending_speed_slot_answer_recognized_live() -> None:
     # only proves the live decision seam routes the answer to the slot, not a new
     # case. CURRENT GAP: the full dispatch round-trip needs a Redis-persisted
     # pending question, so the offline live assertion stops at the decision seam.
+
+
+# === Patch 3 — P0 RWDR leakage guidance in the live chat path ==============
+#
+# The killer input now surfaces one deterministic senior-engineer review hint
+# (shaft / counterface / Wellenlauffläche) plus exactly one next question in the
+# live chat reply, instead of a generic intake invite. The live JSON chat path
+# for a governed-intake domain turn is:
+#   chat_endpoint -> _run_conversation_first_with_engine_sidecar
+#                 -> direct_reply = _rwdr_p0_leakage_guidance_reply(...) or invite
+#                 -> _run_light_chat_response(mode="EXPLORATION", direct_reply=...)
+#                 -> run_conversation(..., direct_reply=...)   # verbatim, no LLM
+# These tests assert on that real downstream surface (the chat seam + the
+# conversation renderer), not on the router, which still emits no text.
+
+
+@pytest.mark.asyncio
+async def test_p0_killer_flow_live_reply_surfaces_shaft_counterface_guidance() -> None:
+    # [LIVE-CHAT] real dispatch -> chat guidance seam -> conversation renderer.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message=_P0_KILLER_INPUT, session_id=None),
+        current_user=_user(),
+    )
+    direct_reply = _rwdr_p0_leakage_guidance_reply(
+        pre_gate_classification=dispatch.pre_gate_classification,
+        runtime_action=dispatch.runtime_action,
+        message=_P0_KILLER_INPUT,
+    )
+    # The governed-intake domain turn selects the deterministic guidance, not the
+    # generic open invite.
+    assert direct_reply is not None
+
+    # Render through the exact visible-reply path the live light/exploration
+    # runtime uses (direct_reply short-circuits the LLM -> deterministic).
+    result = await run_conversation(
+        _P0_KILLER_INPUT,
+        history=[],
+        case_summary=None,
+        mode="EXPLORATION",
+        direct_reply=direct_reply,
+    )
+    reply = result.reply_text
+
+    # (2) The shaft / running-surface review hint is present.
+    assert "Wellenlauffläche" in reply
+    assert "Rille" in reply and "Korrosion" in reply
+    assert "eingelaufene Spur" in reply
+    # (3) Exactly one primary question is asked.
+    assert reply.count("?") == 1
+    assert "Dichtlippenstelle" in reply  # the shaft/counterface question
+    # The full case is not repeated (no dimension/rpm dump in the hint reply).
+    assert "45x62x8" not in reply and "1500" not in reply
+    # (4) No final suitability / guarantee / compliance / release wording.
+    assert detect_no_go_phrases(reply, include_final_release=True) == []
+    for forbidden in ("garantiert", "freigegeben", "geeignet", "zugelassen"):
+        assert forbidden not in reply.casefold()
+
+
+@pytest.mark.asyncio
+async def test_p0_leakage_guidance_does_not_affect_smalltalk_or_ui_help() -> None:
+    # [LIVE-CHAT] (5) Smalltalk and generic UI help must be untouched: the seam
+    # only fires on a governed-intake domain turn carrying an RWDR leakage signal.
+    greeting = await _resolve_runtime_dispatch(
+        ChatRequest(message="Hallo", session_id=None),
+        current_user=_user(),
+    )
+    assert greeting.pre_gate_classification == "GREETING"
+    assert (
+        _rwdr_p0_leakage_guidance_reply(
+            pre_gate_classification=greeting.pre_gate_classification,
+            runtime_action=greeting.runtime_action,
+            message="Hallo",
+        )
+        is None
+    )
+    # Even on a domain turn, a non-RWDR / UI-help message does not trigger it.
+    domain_action = (
+        await _resolve_runtime_dispatch(
+            ChatRequest(message=_P0_KILLER_INPUT, session_id=None),
+            current_user=_user(),
+        )
+    ).runtime_action
+    assert (
+        _rwdr_p0_leakage_guidance_reply(
+            pre_gate_classification="DOMAIN_INQUIRY",
+            runtime_action=domain_action,
+            message="Wie kann ich die Tabelle im Dashboard exportieren?",
+        )
+        is None
+    )
+
+
+def test_rwdr_p0_leakage_guidance_builder_is_deterministic() -> None:
+    # [LIVE-RWDR-SERVICE] the deterministic guidance source the chat seam reuses.
+    guidance = build_rwdr_p0_leakage_guidance(_P0_KILLER_INPUT)
+    assert guidance is not None
+    # One hint + exactly one question.
+    assert "Wellenlauffläche" in guidance.review_hint
+    assert guidance.reply_markdown().count("?") == 1
+    # Canonical review flags (no parallel vocabulary); dusty env only adds a flag.
+    assert "shaft_surface_review_required" in guidance.review_flags
+    assert "leakage_failure_intent" in guidance.review_flags
+    assert "dust_lip_or_excluder_review_required" in guidance.review_flags
+
+    # Boundaries: needs an RWDR seal signal AND a leakage/replacement intent.
+    assert build_rwdr_p0_leakage_guidance("Was ist FFKM?") is None
+    assert build_rwdr_p0_leakage_guidance("RWDR 45x62x8, Getriebe, Öl") is None
+    assert build_rwdr_p0_leakage_guidance("RWDR Austausch gesucht") is not None
+    # Dust without a second question: a dusty leakage turn still asks exactly one.
+    dusty = build_rwdr_p0_leakage_guidance("Wellendichtring undicht, sehr staubig")
+    assert dusty is not None and dusty.reply_markdown().count("?") == 1

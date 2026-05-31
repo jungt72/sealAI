@@ -1954,6 +1954,88 @@ def build_technical_rwdr_rfq_brief(
     ).as_dict()
 
 
+# --- RWDR P0 leakage/replacement chat guidance (deterministic) -------------
+#
+# One senior-engineer review hint plus exactly one next question for the live
+# chat path, so a P0 RWDR leakage/replacement turn stops behaving like generic
+# case intake. Deterministic and rule-based: the chat LLM must not own this
+# engineering truth. Reuses the same RWDR / leakage / dust token semantics the
+# brief orchestrator modules use, and the canonical review flag names
+# (``shaft_surface_review_required`` / ``leakage_failure_intent`` /
+# ``dust_lip_or_excluder_review_required``) — no parallel flag vocabulary.
+
+RWDR_P0_LEAKAGE_REVIEW_HINT = (
+    "Bei einem undichten RWDR ist die Wellenlauffläche kritisch: Rille, "
+    "Korrosion oder eine eingelaufene Spur können dazu führen, dass auch ein "
+    "neuer Ring wieder undicht wird."
+)
+RWDR_P0_SHAFT_COUNTERFACE_QUESTION = (
+    "Siehst du an der Dichtlippenstelle eine Rille, Korrosion oder eine blank "
+    "eingelaufene Spur?"
+)
+
+_RWDR_P0_SEAL_TOKENS = (
+    "rwdr",
+    "wellendichtring",
+    "radialwellendichtring",
+    "radial shaft seal",
+)
+_RWDR_P0_LEAKAGE_TOKENS = ("undicht", "leckage", "leck", "leak", "sifft")
+_RWDR_P0_REPLACEMENT_TOKENS = (
+    "austausch",
+    "ersatz",
+    "tausch",
+    "ersetzen",
+    "neuer ring",
+    "neuer wellendichtring",
+    "replacement",
+    "replace",
+)
+_RWDR_P0_DUST_TOKENS = ("staub", "dust", "schmutz", "dirt", "sand")
+
+
+@dataclass(frozen=True)
+class RWDRP0LeakageGuidance:
+    """Deterministic one-hint / one-question guidance for an RWDR leakage turn."""
+
+    review_hint: str
+    next_question: str
+    review_flags: tuple[str, ...]
+
+    def reply_markdown(self) -> str:
+        return f"{self.review_hint}\n\n{self.next_question}"
+
+
+def build_rwdr_p0_leakage_guidance(text: str) -> "RWDRP0LeakageGuidance | None":
+    """Return one shaft/counterface review hint + one next question, or ``None``.
+
+    Fires only when the message clearly signals an RWDR seal together with a
+    leakage or replacement intent. The hint surfaces the shaft running surface
+    (Wellenlauffläche) check that dominates RWDR leakage failures; the single
+    question mirrors ``ShaftCounterfaceIntelligence``. A dusty environment only
+    adds a review flag — it never adds a second question.
+    """
+
+    lowered = str(text or "").casefold()
+    if not any(token in lowered for token in _RWDR_P0_SEAL_TOKENS):
+        return None
+    leakage = any(token in lowered for token in _RWDR_P0_LEAKAGE_TOKENS)
+    replacement = any(token in lowered for token in _RWDR_P0_REPLACEMENT_TOKENS)
+    if not (leakage or replacement):
+        return None
+    flags: list[str] = []
+    if leakage:
+        flags.append("leakage_failure_intent")
+    flags.append("shaft_surface_review_required")
+    if any(token in lowered for token in _RWDR_P0_DUST_TOKENS):
+        flags.append("dust_lip_or_excluder_review_required")
+    return RWDRP0LeakageGuidance(
+        review_hint=RWDR_P0_LEAKAGE_REVIEW_HINT,
+        next_question=RWDR_P0_SHAFT_COUNTERFACE_QUESTION,
+        review_flags=tuple(flags),
+    )
+
+
 def analyze_rwdr_inquiry_text(raw_inquiry: str) -> dict[str, Any]:
     """Create deterministic RWDR extraction candidates for frontend confirmation."""
 
