@@ -510,10 +510,15 @@ describe("CaseScreen", () => {
 
     expect(screen.getByRole("tab", { name: "Übersicht" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Direkteingabe")).toBeInTheDocument();
-    expect(screen.getByText("Bekannte Parameter in den State schreiben")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Angaben zum Fall" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Was noch wichtig ist" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Rechencheck" })).toBeInTheDocument();
+    // The cockpit overview was redesigned (see SealCockpit.test.tsx): the
+    // "Bekannte Parameter…" subtitle and the "Angaben zum Fall" /
+    // "Was noch wichtig ist" / "Rechencheck" cards were replaced by the
+    // Direkteingabe write action plus the Medium / Anwendung / Berechnungen
+    // overview cards. Assert those equivalent live elements.
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Anwendung" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Berechnungen" })).toBeInTheDocument();
     expect(screen.getAllByText("Wasser-Glykol").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Temperatur · °C")).toHaveValue("85");
     expect(screen.getByLabelText("Druck · bar")).toHaveValue("1.8");
