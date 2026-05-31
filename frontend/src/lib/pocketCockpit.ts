@@ -84,3 +84,35 @@ export function buildPocketCockpitView(
 
   return { patch, chips };
 }
+
+export type ResolvedPocketCockpit = {
+  patch: PocketCockpitPatch;
+  chips: ActionChip[];
+  /** Where the rendered Pocket Cockpit came from. */
+  source: "backend" | "client_derived";
+};
+
+/**
+ * Prefer the backend-provided V1.6 Pocket Cockpit (Patch 6) when present,
+ * otherwise fall back to the existing client-derived view.
+ *
+ * When the backend supplies `pocket_cockpit_patch` (mobile triage), it is
+ * rendered verbatim — the client invents no engineering truth on top of it.
+ * Legacy / non-mobile turns (no backend patch) keep the existing
+ * `buildPocketCockpitView` behaviour unchanged.
+ */
+export function resolvePocketCockpitView(
+  backend: { patch?: PocketCockpitPatch | null; chips?: ActionChip[] | null } | null,
+  fallbackInput: PocketCockpitInput,
+): ResolvedPocketCockpit {
+  const backendPatch = backend?.patch ?? null;
+  if (backendPatch) {
+    return {
+      patch: backendPatch,
+      chips: Array.isArray(backend?.chips) ? backend.chips : [],
+      source: "backend",
+    };
+  }
+  const { patch, chips } = buildPocketCockpitView(fallbackInput);
+  return { patch, chips, source: "client_derived" };
+}

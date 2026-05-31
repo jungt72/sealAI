@@ -948,4 +948,80 @@ describe("BFF agent chat stream route", () => {
       },
     });
   });
+
+  it("forwards V1.6 mobile triage pocket_cockpit_patch and action_chips additively", async () => {
+    const envelope = {
+      pocket_cockpit_patch: {
+        recognized: [{ label: "Fall", value: "Leckage / Dichtstelle unklar", status: "candidate" }],
+        critical: [{ label: "Dichtungstyp und Wellenbewegung klären", severity: "high" }],
+        next_step: { question: "Dreht sich die Welle?", field: "shaft_rotates" },
+        rfq_status: "DRAFT",
+      },
+      action_chips: [
+        { label: "Ja", value: "yes", field: "shaft_rotates" },
+        { label: "Nein", value: "no", field: "shaft_rotates" },
+        { label: "Weiß ich nicht", value: "unknown", field: "shaft_rotates" },
+      ],
+    };
+    const backendStateUpdate = {
+      type: "state_update",
+      reply: "Ich prüfe das als möglichen Leckagefall.",
+      response_class: "conversational_answer",
+      run_meta: { fast_responder: { no_case_created: true } },
+      assistant_turn_envelope: envelope,
+      pocket_cockpit_patch: envelope.pocket_cockpit_patch,
+      action_chips: envelope.action_chips,
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          `data: ${JSON.stringify(backendStateUpdate)}\n\n`,
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "sifft" }),
+    });
+
+    const response = await POST(request);
+    const stateUpdate = findPayload(parseSsePayloads(await response.text()), "state_update");
+
+    // Forwarded as real objects/arrays (not stringified), additively alongside
+    // the existing state_update fields.
+    expect(stateUpdate.pocket_cockpit_patch).toMatchObject({ rfq_status: "DRAFT" });
+    expect(Array.isArray(stateUpdate.action_chips)).toBe(true);
+    expect((stateUpdate.action_chips as unknown[]).length).toBe(3);
+    expect(stateUpdate.assistant_turn_envelope).toMatchObject({ pocket_cockpit_patch: {} });
+    expect(stateUpdate).toMatchObject({ type: "state_update", reply: "Ich prüfe das als möglichen Leckagefall." });
+  });
+
+  it("omits V1.6 pocket fields for non-mobile state_updates", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        buildBackendSseStream([
+          'data: {"type":"state_update","reply":"Antwort","response_class":"governed_state_update"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+
+    const request = new Request("https://sealai.test/api/bff/agent/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "4 bar", caseId: "case-1" }),
+    });
+
+    const response = await POST(request);
+    const stateUpdate = findPayload(parseSsePayloads(await response.text()), "state_update");
+
+    expect(stateUpdate).not.toHaveProperty("pocket_cockpit_patch");
+    expect(stateUpdate).not.toHaveProperty("action_chips");
+    expect(stateUpdate).not.toHaveProperty("assistant_turn_envelope");
+  });
 });

@@ -41,7 +41,7 @@ import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { streamWorkspaceToWorkspaceView } from "@/lib/streamWorkspaceAdapter";
 import PocketCockpit from "@/components/dashboard/PocketCockpit";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { buildPocketCockpitView } from "@/lib/pocketCockpit";
+import { resolvePocketCockpitView } from "@/lib/pocketCockpit";
 import type { ActionChip } from "@/lib/contracts/agent";
 import { cn } from "@/lib/utils";
 
@@ -1639,13 +1639,21 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
       ...(readiness?.missingMandatoryKeys ?? []).map((label) => ({ label, severity: "high" })),
     ];
     const nextQuestionText = readiness?.recommendedNextQuestion ?? null;
-    return buildPocketCockpitView({
-      recognizedFacts,
-      criticalItems,
-      nextQuestion: nextQuestionText ? { question: nextQuestionText } : null,
-      isRfqReady: Boolean(readiness?.isRfqReady),
-    });
-  }, [cockpit, cockpitViewModel]);
+    // Patch 6: prefer the backend-provided V1.6 Pocket Cockpit (mobile triage)
+    // when streamed; otherwise keep the existing client-derived fallback.
+    return resolvePocketCockpitView(
+      {
+        patch: streamWorkspace?.pocketCockpitPatch ?? null,
+        chips: streamWorkspace?.actionChips ?? null,
+      },
+      {
+        recognizedFacts,
+        criticalItems,
+        nextQuestion: nextQuestionText ? { question: nextQuestionText } : null,
+        isRfqReady: Boolean(readiness?.isRfqReady),
+      },
+    );
+  }, [cockpit, cockpitViewModel, streamWorkspace]);
   const activeCaseId = useChatStore((state) => state.activeCaseId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const handlePocketActionChip = useCallback(

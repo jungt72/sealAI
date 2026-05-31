@@ -45,6 +45,26 @@ describe("PocketCockpit", () => {
     expect(onActionChip).toHaveBeenCalledWith(CHIPS[0]);
   });
 
+  it("renders backend-provided V1.6 action chips as non-mutating suggestions", () => {
+    // Mirrors what CaseScreen passes after resolvePocketCockpitView prefers the
+    // backend pocket_cockpit_patch / action_chips (Patch 6). Rendering alone must
+    // not trigger any chip selection — click handling is intentionally out of
+    // scope for this patch.
+    const onActionChip = vi.fn();
+    const backendChips: ActionChip[] = [
+      { label: "Ja", value: "yes", field: "shaft_rotates" },
+      { label: "Nein", value: "no", field: "shaft_rotates" },
+      { label: "Weiß ich nicht", value: "unknown", field: "shaft_rotates" },
+    ];
+    render(<PocketCockpit patch={PATCH} actionChips={backendChips} onActionChip={onActionChip} />);
+
+    const chips = screen.getAllByTestId("pocket-action-chip");
+    expect(chips).toHaveLength(3);
+    expect(screen.getByTestId("pocket-action-chips")).toHaveTextContent("Weiß ich nicht");
+    // No mutation happens just by rendering the suggestions.
+    expect(onActionChip).not.toHaveBeenCalled();
+  });
+
   it("shows an immediate progress state instead of an empty spinner while loading", () => {
     render(<PocketCockpit patch={null} isLoading />);
     const progress = screen.getByTestId("pocket-progress");

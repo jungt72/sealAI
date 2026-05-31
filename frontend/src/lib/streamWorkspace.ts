@@ -1,8 +1,10 @@
 import type {
+  ActionChip,
   AgentStateUpdateEvent,
   AgentTurnContext,
   AgentWorkspaceUi,
   AssertionEntry,
+  PocketCockpitPatch,
   ProposedCaseDelta,
 } from "@/lib/contracts/agent";
 import type { WorkspaceRfqReadinessProjection } from "./contracts/workspace.ts";
@@ -18,6 +20,11 @@ export type StreamWorkspaceView = {
   v92Dashboard: Record<string, unknown> | null;
   proposedCaseDelta: ProposedCaseDelta | null;
   rfqReadinessProjection: WorkspaceRfqReadinessProjection | null;
+  // V1.6 mobile-first additive fields (Patch 6). Backend-provided Pocket Cockpit
+  // for mobile-triage turns; null on legacy/non-mobile turns (client-derived
+  // fallback then applies).
+  pocketCockpitPatch: PocketCockpitPatch | null;
+  actionChips: ActionChip[] | null;
   ui: Required<Pick<AgentWorkspaceUi, "parameter" | "assumption" | "recommendation" | "compute" | "matching" | "rfq" | "medium_classification" | "medium_context" | "v92">> &
     AgentWorkspaceUi;
 };
@@ -133,6 +140,11 @@ export function buildStreamWorkspaceView(
         ? event.proposedCaseDelta
         : null,
     rfqReadinessProjection: mapRfqReadinessProjection(event.rfq_readiness_projection),
+    pocketCockpitPatch:
+      event.pocket_cockpit_patch && typeof event.pocket_cockpit_patch === "object"
+        ? event.pocket_cockpit_patch
+        : null,
+    actionChips: Array.isArray(event.action_chips) ? event.action_chips : null,
     ui: {
       ...ui,
       parameter: {

@@ -520,6 +520,14 @@ export async function POST(request: Request) {
                 const nonTechnicalAnswerContext = asRecord(payload.nontechnical_answer_context);
                 const finalGuardResult = asRecord(payload.final_guard_result);
                 const v92Dashboard = asRecord(payload.v92_dashboard);
+                // V1.6 mobile-first additive fields (Patch 6). Forwarded only
+                // when the backend supplied them, so non-mobile turns stay
+                // unchanged and the workspace projection contract is preserved.
+                const pocketCockpitPatch = asRecord(payload.pocket_cockpit_patch);
+                const actionChips = Array.isArray(payload.action_chips)
+                  ? payload.action_chips
+                  : null;
+                const assistantTurnEnvelope = asRecord(payload.assistant_turn_envelope);
                 const shouldBindCase = shouldBindCaseFromStateUpdate({
                   requestHadCaseId,
                   backendNoCaseCreated: noCaseCreated,
@@ -572,6 +580,11 @@ export async function POST(request: Request) {
                     ui,
                     assertions,
                     runMeta,
+                    ...(pocketCockpitPatch ? { pocket_cockpit_patch: pocketCockpitPatch } : {}),
+                    ...(actionChips ? { action_chips: actionChips } : {}),
+                    ...(assistantTurnEnvelope
+                      ? { assistant_turn_envelope: assistantTurnEnvelope }
+                      : {}),
                   }),
                 );
                 continue;

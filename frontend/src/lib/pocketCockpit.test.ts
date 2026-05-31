@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPocketCockpitView, MAX_CRITICAL, MAX_RECOGNIZED } from "@/lib/pocketCockpit";
+import type { ActionChip, PocketCockpitPatch } from "@/lib/contracts/agent";
+import {
+  buildPocketCockpitView,
+  MAX_CRITICAL,
+  MAX_RECOGNIZED,
+  resolvePocketCockpitView,
+} from "@/lib/pocketCockpit";
 
 describe("buildPocketCockpitView", () => {
   it("compresses recognized facts to the mobile cap and drops placeholders", () => {
@@ -57,5 +63,49 @@ describe("buildPocketCockpitView", () => {
   it("maps RFQ-ready to manufacturer review status", () => {
     const { patch } = buildPocketCockpitView({ isRfqReady: true });
     expect(patch.rfq_status).toBe("MANUFACTURER_REVIEW_READY");
+  });
+});
+
+describe("resolvePocketCockpitView", () => {
+  const BACKEND_PATCH: PocketCockpitPatch = {
+    recognized: [{ label: "Fall", value: "Leckage / Dichtstelle unklar", status: "candidate" }],
+    critical: [{ label: "Dichtungstyp und Wellenbewegung klären", severity: "high" }],
+    next_step: { question: "Dreht sich die Welle?", field: "shaft_rotates" },
+    rfq_status: "DRAFT",
+  };
+  const BACKEND_CHIPS: ActionChip[] = [
+    { label: "Ja", value: "yes", field: "shaft_rotates" },
+    { label: "Nein", value: "no", field: "shaft_rotates" },
+  ];
+
+  it("prefers the backend pocket_cockpit_patch / action_chips when present", () => {
+    const resolved = resolvePocketCockpitView(
+      { patch: BACKEND_PATCH, chips: BACKEND_CHIPS },
+      // A divergent client-derived fallback that must be ignored.
+      { recognizedFacts: [{ label: "Medium", value: "Öl" }], isRfqReady: true },
+    );
+
+    expect(resolved.source).toBe("backend");
+    expect(resolved.patch).toBe(BACKEND_PATCH); // rendered verbatim, not re-derived
+    expect(resolved.patch.rfq_status).toBe("DRAFT");
+    expect(resolved.chips).toEqual(BACKEND_CHIPS);
+  });
+
+  it("falls back to buildPocketCockpitView when no backend patch is present", () => {
+    const fallbackInput = {
+      recognizedFacts: [{ label: "Medium", value: "Öl" }],
+      nextQuestion: { question: "Welcher Druck liegt an?" },
+      isRfqReady: false,
+    };
+    const expected = buildPocketCockpitView(fallbackInput);
+
+    const resolvedNull = resolvePocketCockpitView(null, fallbackInput);
+    expect(resolvedNull.source).toBe("client_derived");
+    expect(resolvedNull.patch).toEqual(expected.patch);
+    expect(resolvedNull.chips).toEqual(expected.chips);
+
+    // An object without a patch also falls back (chips alone are not enough).
+    const resolvedNoPatch = resolvePocketCockpitView({ patch: null, chips: BACKEND_CHIPS }, fallbackInput);
+    expect(resolvedNoPatch.source).toBe("client_derived");
   });
 });

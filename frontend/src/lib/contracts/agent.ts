@@ -372,6 +372,13 @@ export type AgentStateUpdateEvent = {
   rfq_readiness_projection?: WorkspaceRfqReadinessProjection | null;
   ui?: AgentWorkspaceUi;
   runMeta?: AgentRunMeta | null;
+  // V1.6 mobile-first additive fields (consumed in Patch 6). Present only for
+  // mobile-triage turns and forwarded verbatim from the backend
+  // AssistantTurnEnvelope; the workspace projection fields above stay the
+  // primary contract. Optional → legacy/non-mobile state_updates are unaffected.
+  pocket_cockpit_patch?: PocketCockpitPatch | null;
+  action_chips?: ActionChip[] | null;
+  assistant_turn_envelope?: Record<string, unknown> | null;
 };
 
 export type AgentStreamEvent =

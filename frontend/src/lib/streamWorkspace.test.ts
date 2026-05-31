@@ -232,6 +232,46 @@ test("buildStreamWorkspaceView falls back to structured_state view when top-leve
   assert.equal(view.ui.medium_classification.canonical_label, "Dampf");
 });
 
+test("buildStreamWorkspaceView preserves V1.6 pocket_cockpit_patch and action_chips", () => {
+  const view = buildStreamWorkspaceView({
+    type: "state_update",
+    caseId: "case-mobile",
+    reply: "Ich prüfe das als möglichen Leckagefall.",
+    pocket_cockpit_patch: {
+      recognized: [{ label: "Fall", value: "Leckage / Dichtstelle unklar", status: "candidate" }],
+      critical: [{ label: "Dichtungstyp und Wellenbewegung klären", severity: "high" }],
+      next_step: { question: "Dreht sich die Welle?", field: "shaft_rotates" },
+      rfq_status: "DRAFT",
+    },
+    action_chips: [
+      { label: "Ja", value: "yes", field: "shaft_rotates" },
+      { label: "Nein", value: "no", field: "shaft_rotates" },
+      { label: "Weiß ich nicht", value: "unknown", field: "shaft_rotates" },
+    ],
+  });
+
+  // The backend Pocket Cockpit is preserved verbatim (objects/arrays, not strings).
+  assert.equal(view.pocketCockpitPatch?.rfq_status, "DRAFT");
+  assert.equal(view.pocketCockpitPatch?.next_step?.field, "shaft_rotates");
+  assert.ok(Array.isArray(view.actionChips));
+  assert.equal(view.actionChips?.length, 3);
+  assert.equal(view.actionChips?.[0]?.label, "Ja");
+  // The workspace projection is still produced alongside.
+  assert.equal(view.caseId, "case-mobile");
+  assert.equal(view.reply, "Ich prüfe das als möglichen Leckagefall.");
+});
+
+test("buildStreamWorkspaceView leaves V1.6 fields null for legacy state_updates", () => {
+  const view = buildStreamWorkspaceView({
+    type: "state_update",
+    caseId: "case-legacy",
+    ui: {},
+  });
+
+  assert.equal(view.pocketCockpitPatch, null);
+  assert.equal(view.actionChips, null);
+});
+
 test("buildStreamWorkspaceView fills missing ui sections conservatively", () => {
   const view = buildStreamWorkspaceView({
     type: "state_update",
