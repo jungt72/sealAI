@@ -43,6 +43,12 @@ _TRIAGE_IMMEDIATE_CONTEXT = (
 _TRIAGE_PRIMARY_QUESTION = "Dreht sich die Welle im Betrieb?"
 _TRIAGE_ACTION_LABELS = ("Ja", "Nein", "Weiß ich nicht", "Foto vom Einbauort")
 
+# Backend pending-slot context for the triage primary question. Shared with the
+# action chips (field) so a later "Ja"/"Nein"/"Weiß ich nicht" answer resolves
+# through the existing pending-slot machinery without reading assistant copy.
+_TRIAGE_PENDING_FIELD = "shaft_rotates"
+_TRIAGE_PENDING_ANSWER_TYPE = "yes_no_unknown"
+
 _LOW_CONFIDENCE_UNCERTAINTY = (
     "Die Beschriftung kann ich auf dem Foto nicht sicher lesen."
 )
@@ -56,6 +62,25 @@ _LOW_CONFIDENCE_ACTION_LABELS = (
     "Neues Foto machen",
     "Ich weiß die Maße nicht",
 )
+
+
+def mobile_triage_pending_question() -> "PendingQuestion":
+    """Canonical pending-question context for the mobile triage primary question.
+
+    Exposes ``Dreht sich die Welle im Betrieb?`` as a structured pending slot so
+    the existing :func:`resolve_slot_answer_binding` machinery can interpret a
+    later "Ja"/"Nein"/"Weiß ich nicht" answer as ``shaft_rotates`` yes/no/unknown
+    — backend state, not rendered chat text, and never an asserted fact.
+    """
+    from app.agent.state.models import PendingQuestion  # noqa: PLC0415
+
+    return PendingQuestion(
+        target_field=_TRIAGE_PENDING_FIELD,
+        expected_answer_type=_TRIAGE_PENDING_ANSWER_TYPE,
+        question_text=_TRIAGE_PRIMARY_QUESTION,
+        source="system",
+        status="open",
+    )
 
 
 def is_leakage_triage_intent(message: str | None, *, has_attachment: bool = False) -> bool:

@@ -23,6 +23,7 @@ from app.agent.communication.knowledge_modes import apply_knowledge_turn, resolv
 from app.agent.communication.mobile_triage import (
     build_mobile_leakage_triage,
     build_visual_low_confidence_guidance,
+    mobile_triage_pending_question,
 )
 from app.agent.communication.rfq_one_pager import (
     RFQ_READINESS_DRAFT,
@@ -652,3 +653,109 @@ def test_rwdr_p0_leakage_guidance_builder_is_deterministic() -> None:
     # Dust without a second question: a dusty leakage turn still asks exactly one.
     dusty = build_rwdr_p0_leakage_guidance("Wellendichtring undicht, sehr staubig")
     assert dusty is not None and dusty.reply_markdown().count("?") == 1
+
+
+# === Patch 8 — Mobile triage action-chip answers resolve through chat ======
+#
+# After Patch 7 the frontend sends chip clicks as plain chat text ("Ja" / "Nein"
+# / "Weiß ich nicht"). The backend must interpret those as answers to the active
+# mobile triage question ("Dreht sich die Welle im Betrieb?") via the EXISTING
+# pending-slot machinery — never as smalltalk, a new case, or invented truth.
+# Seams (deterministic, offline):
+#   [RWDR-SERVICE]  mobile_triage_pending_question — the pending-slot context.
+#   [SLOT-BINDER]   resolve_slot_answer_binding — binds yes/no/unknown.
+#   [LIVE-DECISION] _resolve_v8_turn_decision — the decision the dispatch uses
+#                   for these DOMAIN_INQUIRY turns.
+#
+# NOTE on the live wire: "Ja"/"Nein"/"Weiß ich nicht" already classify as
+# DOMAIN_INQUIRY (not smalltalk), so they reach _resolve_v8_turn_decision today.
+# Persisting the pending question into the no-case mobile fast turn is the only
+# remaining wire (kept out of this patch to avoid I/O on the instant fast path).
+
+
+def _mobile_triage_state() -> GovernedSessionState:
+    state = GovernedSessionState()
+    state.pending_question = mobile_triage_pending_question()
+    return state
+
+
+def test_mobile_triage_exposes_pending_question_context() -> None:
+    # (1) The triage turn exposes an active/pending question for shaft rotation.
+    pending = mobile_triage_pending_question()
+    assert pending.target_field == "shaft_rotates"
+    assert pending.expected_answer_type == "yes_no_unknown"
+    assert pending.status == "open"
+    assert pending.question_text == "Dreht sich die Welle im Betrieb?"
+
+    envelope = build_mobile_leakage_triage(has_attachment=True).model_dump(mode="json")
+    assert envelope["pending_question"]["field"] == "shaft_rotates"
+    answer_chips = [c for c in envelope["action_chips"] if c.get("field") == "shaft_rotates"]
+    assert {c["value"] for c in answer_chips} == {"yes", "no", "unknown"}
+
+
+def test_mobile_triage_yes_no_unknown_bind_to_shaft_rotates() -> None:
+    # (2)/(3)/(4) The existing slot binder resolves the chip-text answers.
+    pending = mobile_triage_pending_question()
+    cases = {"Ja": "yes", "Nein": "no", "Weiß ich nicht": "unknown"}
+    for message, expected in cases.items():
+        binding = resolve_slot_answer_binding(
+            pending_question=pending, message=message, turn_index=1
+        )
+        assert binding is not None, message
+        assert binding.target_field == "shaft_rotates"
+        assert binding.normalized_value == expected
+        assert binding.source == "pending_question"  # State Gate still owns persistence
+
+
+@pytest.mark.asyncio
+async def test_mobile_triage_answer_routed_as_pending_slot_answer_not_smalltalk() -> None:
+    # [LIVE-DECISION] (2)/(3)/(4) With the triage context, the runtime decision
+    # the dispatch uses routes each answer as a pending-slot answer — not
+    # smalltalk and not a new case.
+    for message in ("Ja", "Nein", "Weiß ich nicht"):
+        pre_gate = PreGateClassifier().classify(message)
+        # The text is treated as a domain turn, never a greeting/smalltalk.
+        assert pre_gate.classification.value == "DOMAIN_INQUIRY", message
+        decision = await _resolve_v8_turn_decision(
+            request=ChatRequest(message=message, session_id=None),
+            pre_gate=pre_gate,
+            governed_state=_mobile_triage_state(),
+        )
+        answer_mode = getattr(decision, "answer_mode", None)
+        assert getattr(answer_mode, "value", answer_mode) == "pending_slot_answer", message
+
+
+@pytest.mark.asyncio
+async def test_bare_yes_without_triage_context_creates_no_truth() -> None:
+    # (5) Without a pending triage question, bare "Ja" must not bind a slot or
+    # invent a fact — it stays generic governed intake.
+    assert resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1) is None
+    decision = await _resolve_v8_turn_decision(
+        request=ChatRequest(message="Ja", session_id=None),
+        pre_gate=PreGateClassifier().classify("Ja"),
+        governed_state=GovernedSessionState(),
+    )
+    answer_mode = getattr(decision, "answer_mode", None)
+    assert getattr(answer_mode, "value", answer_mode) != "pending_slot_answer"
+    assert getattr(decision, "slot_answer_binding", None) is None
+
+
+def test_mobile_triage_output_makes_no_release_claim() -> None:
+    # (6) The immediate triage output carries no final suitability / guarantee /
+    # compliance / release wording.
+    envelope = build_mobile_leakage_triage(has_attachment=True)
+    reply = envelope.chat_reply.markdown
+    assert detect_no_go_phrases(reply, include_final_release=True) == []
+
+
+def test_existing_speed_slot_answer_still_binds_after_yes_no_unknown_adapter() -> None:
+    # (7) The "jo ca 3000" tolerant numeric binding is unaffected by the new
+    # yes/no/unknown adapter.
+    binding = resolve_slot_answer_binding(
+        pending_question=PendingQuestion(
+            target_field="speed_rpm", expected_answer_type="rotational_speed_value", status="open"
+        ),
+        message="jo ca 3000",
+        turn_index=1,
+    )
+    assert binding is not None and binding.normalized_value == 3000.0 and binding.approximate is True

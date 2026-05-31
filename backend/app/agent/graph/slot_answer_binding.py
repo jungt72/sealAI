@@ -337,6 +337,68 @@ def _resolve_numeric_slot_answer(
     )
 
 
+# Yes / no / explicitly-unknown short answers for a boolean-style pending slot
+# (e.g. the mobile triage "Dreht sich die Welle im Betrieb?" → shaft_rotates).
+# Order of checks matters: "weiß ich nicht" contains "nicht", so unknown wins
+# over no, and no wins over yes ("dreht sich nicht" is a no, not a yes).
+_YNU_UNKNOWN_RE = re.compile(
+    r"\b(?:wei(?:ß|ss)\s+ich\s+nicht|kein(?:e)?\s+ahnung|unbekannt|unklar|unsicher|"
+    r"unknown|nicht\s+sicher|k\.?\s?a\.?)\b",
+    re.IGNORECASE,
+)
+_YNU_NO_RE = re.compile(
+    r"^(?:nein|n(?:ö|oe)|ne|no(?:pe)?|steht(?:\s+still)?|statisch|static|"
+    r"dreht\s+(?:sich\s+)?nicht|keine\s+drehung)\b",
+    re.IGNORECASE,
+)
+_YNU_YES_RE = re.compile(
+    r"^(?:ja|jo|jep|jup|yes|yep|klar|sicher|genau|stimmt|"
+    r"dreht(?:\s+sich)?|rotiert|l(?:ä|ae)uft)\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_yes_no_unknown_answer(
+    *,
+    pending_question: PendingQuestion,
+    message: str,
+    turn_index: int,
+) -> SlotAnswerBinding | None:
+    """Bind a "Ja" / "Nein" / "Weiß ich nicht" answer to a yes/no/unknown slot.
+
+    Generic by expected answer type, so it serves the mobile triage shaft-rotation
+    question and any other boolean slot. It returns a confirmation-required
+    binding (the State Gate still owns persistence); it never asserts a fact here.
+    """
+
+    if str(pending_question.expected_answer_type or "") != "yes_no_unknown":
+        return None
+    target_field = str(pending_question.target_field or "").strip()
+    if not target_field:
+        return None
+    text = _clean_short_answer(message)
+    if not text or "?" in text or "\n" in text:
+        return None
+    if _YNU_UNKNOWN_RE.search(text):
+        normalized = "unknown"
+    elif _YNU_NO_RE.match(text):
+        normalized = "no"
+    elif _YNU_YES_RE.match(text):
+        normalized = "yes"
+    else:
+        return None
+    return SlotAnswerBinding(
+        target_field=target_field,
+        raw_value=text,
+        normalized_value=normalized,
+        source="pending_question",
+        confidence=0.9,
+        ambiguity=False,
+        needs_clarification=False,
+        turn_index=turn_index,
+    )
+
+
 def _resolve_sealing_type_answer(
     *,
     pending_question: PendingQuestion,
@@ -399,6 +461,13 @@ def resolve_slot_answer_binding(
             message=message,
             turn_index=turn_index,
         )
+    yes_no_unknown = _resolve_yes_no_unknown_answer(
+        pending_question=pending_question,
+        message=message,
+        turn_index=turn_index,
+    )
+    if yes_no_unknown is not None:
+        return yes_no_unknown
     sealing_type = _resolve_sealing_type_answer(
         pending_question=pending_question,
         message=message,
