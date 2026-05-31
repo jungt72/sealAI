@@ -1,10 +1,44 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkspaceView } from "@/lib/contracts/workspace";
+import { buildStreamWorkspaceView, type StreamWorkspaceView } from "@/lib/streamWorkspace";
 
 import CaseScreen from "./CaseScreen";
+
+function enableMobileViewport(): void {
+  // jsdom has no matchMedia; useIsMobile returns true for the pocket breakpoint.
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes("max-width: 1023px"),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => true,
+  })) as unknown as typeof window.matchMedia;
+}
+
+function mobileTriageStreamWorkspace(): StreamWorkspaceView {
+  return buildStreamWorkspaceView({
+    type: "state_update",
+    caseId: "case-42",
+    pocket_cockpit_patch: {
+      recognized: [{ label: "Fall", value: "Leckage / Dichtstelle unklar", status: "candidate" }],
+      critical: [{ label: "Dichtungstyp und Wellenbewegung klären", severity: "high" }],
+      next_step: { question: "Dreht sich die Welle?", field: "shaft_rotates" },
+      rfq_status: "DRAFT",
+    },
+    action_chips: [
+      { label: "Ja", value: "yes", field: "shaft_rotates" },
+      { label: "Nein", value: "no", field: "shaft_rotates" },
+      { label: "Weiß ich nicht", value: "unknown", field: "shaft_rotates" },
+    ],
+    ui: {},
+  });
+}
 
 const workspaceHookState = vi.hoisted((): { workspace: WorkspaceView | null } => ({
   workspace: null,
@@ -15,7 +49,7 @@ const fetchWorkspaceMock = vi.hoisted(() => vi.fn());
 const workspaceStoreMock = vi.hoisted(() => ({
   userParameterOverrides: {} as Record<string, string>,
   activeResponseClass: null as string | null,
-  streamWorkspace: null,
+  streamWorkspace: null as StreamWorkspaceView | null,
   streamAssertions: null,
   setWorkspace: vi.fn(),
   setWorkspaceLoading: vi.fn(),
@@ -372,6 +406,41 @@ describe("CaseScreen", () => {
         open_validation_points: [],
       },
     });
+  });
+
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it("submits a clicked backend action chip through the existing chat path", async () => {
+    const user = userEvent.setup();
+    enableMobileViewport();
+    workspaceStoreMock.streamWorkspace = mobileTriageStreamWorkspace();
+
+    render(<CaseScreen caseId="case-42" />);
+
+    const chips = await screen.findByTestId("pocket-action-chips");
+    await user.click(within(chips).getByRole("button", { name: "Ja" }));
+
+    // The chip label flows through the existing chat/stream send path — the
+    // frontend does not write case state directly (no override call).
+    expect(chatStoreMock.sendMessage).toHaveBeenCalledTimes(1);
+    expect(chatStoreMock.sendMessage).toHaveBeenCalledWith("Ja");
+    expect(patchAgentOverridesMock).not.toHaveBeenCalled();
+  });
+
+  it("disables backend action chips while a turn is streaming", async () => {
+    enableMobileViewport();
+    chatStoreMock.isStreaming = true;
+    workspaceStoreMock.streamWorkspace = mobileTriageStreamWorkspace();
+
+    render(<CaseScreen caseId="case-42" />);
+
+    const chips = await screen.findByTestId("pocket-action-chips");
+    within(chips)
+      .getAllByTestId("pocket-action-chip")
+      .forEach((chip) => expect(chip).toBeDisabled());
+    expect(chatStoreMock.sendMessage).not.toHaveBeenCalled();
   });
 
   it("renders an existing case with the cockpit overview as the first surface", () => {

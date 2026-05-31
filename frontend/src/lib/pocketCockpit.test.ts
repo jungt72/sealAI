@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ActionChip, PocketCockpitPatch } from "@/lib/contracts/agent";
 import {
+  actionChipChatMessage,
   buildPocketCockpitView,
   MAX_CRITICAL,
   MAX_RECOGNIZED,
@@ -107,5 +108,22 @@ describe("resolvePocketCockpitView", () => {
     // An object without a patch also falls back (chips alone are not enough).
     const resolvedNoPatch = resolvePocketCockpitView({ patch: null, chips: BACKEND_CHIPS }, fallbackInput);
     expect(resolvedNoPatch.source).toBe("client_derived");
+  });
+});
+
+describe("actionChipChatMessage", () => {
+  it("submits the chip label through the chat path (user answer, not truth)", () => {
+    expect(actionChipChatMessage({ label: "Ja", value: "yes", field: "shaft_rotates" })).toBe("Ja");
+    expect(actionChipChatMessage({ label: "Weiß ich nicht", value: "unknown" })).toBe("Weiß ich nicht");
+  });
+
+  it("falls back to the value when no label is present", () => {
+    expect(actionChipChatMessage({ label: "", value: "no", field: "shaft_rotates" })).toBe("no");
+  });
+
+  it("does not submit upload affordances or empty chips", () => {
+    expect(actionChipChatMessage({ label: "Foto senden", action: "upload_photo" })).toBeNull();
+    expect(actionChipChatMessage({ label: "   " })).toBeNull();
+    expect(actionChipChatMessage({ label: "", value: null })).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ export default defineConfig({
       "src/**/*.test.tsx",
       "src/**/*.spec.ts",
       "src/lib/mapping/workspace.test.ts",
+      "src/lib/pocketCockpit.test.ts",
     ],
     environment: "jsdom",
     globals: true,

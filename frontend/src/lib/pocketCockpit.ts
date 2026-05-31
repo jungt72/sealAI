@@ -116,3 +116,23 @@ export function resolvePocketCockpitView(
   const { patch, chips } = buildPocketCockpitView(fallbackInput);
   return { patch, chips, source: "client_derived" };
 }
+
+/**
+ * Map an action-chip click to the chat message that should be submitted, or
+ * `null` when the chip is not a chat answer.
+ *
+ * Patch 7: a chip click is a *user answer*, not authoritative truth. The chip's
+ * human-readable label (e.g. "Ja" / "Nein" / "Weiß ich nicht") is sent through
+ * the existing chat/stream path so the backend State Gate interprets, confirms
+ * and persists it. Upload affordances and empty chips do not submit a message;
+ * backend action_chip provenance is intentionally left as future work.
+ */
+export function actionChipChatMessage(chip: ActionChip): string | null {
+  if (chip.action === "upload_photo") {
+    return null;
+  }
+  // Prefer the human-readable label; fall back to the value when the label is
+  // empty (|| rather than ?? so an empty-string label is not sent).
+  const message = String(chip.label || chip.value || "").trim();
+  return message ? message : null;
+}

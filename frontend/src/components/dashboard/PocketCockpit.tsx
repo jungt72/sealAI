@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 export type PocketCockpitProps = {
   patch: PocketCockpitPatch | null;
   actionChips?: ActionChip[];
+  /** Disable chip buttons (e.g. while a turn is streaming) to avoid duplicate sends. */
+  actionChipsDisabled?: boolean;
   isLoading?: boolean;
   progressText?: string;
   onActionChip?: (chip: ActionChip) => void;
@@ -43,6 +45,7 @@ const SEVERITY_TONE: Record<string, string> = {
 export function PocketCockpit({
   patch,
   actionChips = [],
+  actionChipsDisabled = false,
   isLoading = false,
   progressText,
   onActionChip,
@@ -159,8 +162,18 @@ export function PocketCockpit({
               key={`${chip.label}-${index}`}
               type="button"
               data-testid="pocket-action-chip"
-              onClick={() => onActionChip?.(chip)}
-              className="inline-flex items-center gap-1 rounded-full border border-[#C7D2E2] bg-[#F6F9FD] px-3 py-1.5 text-xs font-medium text-seal-blue transition-colors hover:bg-[#E8F0FA]"
+              disabled={actionChipsDisabled}
+              aria-disabled={actionChipsDisabled || undefined}
+              onClick={() => {
+                if (actionChipsDisabled) return;
+                onActionChip?.(chip);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border border-[#C7D2E2] bg-[#F6F9FD] px-3 py-1.5 text-xs font-medium text-seal-blue transition-colors",
+                actionChipsDisabled
+                  ? "cursor-not-allowed opacity-50"
+                  : "hover:bg-[#E8F0FA]",
+              )}
             >
               {chip.action === "upload_photo" ? (
                 <Camera size={13} aria-hidden="true" />

@@ -65,6 +65,27 @@ describe("PocketCockpit", () => {
     expect(onActionChip).not.toHaveBeenCalled();
   });
 
+  it("disables action chips while a turn is streaming and blocks selection", async () => {
+    const user = userEvent.setup();
+    const onActionChip = vi.fn();
+    render(
+      <PocketCockpit
+        patch={PATCH}
+        actionChips={CHIPS}
+        actionChipsDisabled
+        onActionChip={onActionChip}
+      />,
+    );
+
+    const chips = screen.getAllByTestId("pocket-action-chip");
+    expect(chips).toHaveLength(2);
+    chips.forEach((chip) => expect(chip).toBeDisabled());
+
+    // Clicking a disabled chip must not trigger a (duplicate) submission.
+    await user.click(chips[0]);
+    expect(onActionChip).not.toHaveBeenCalled();
+  });
+
   it("shows an immediate progress state instead of an empty spinner while loading", () => {
     render(<PocketCockpit patch={null} isLoading />);
     const progress = screen.getByTestId("pocket-progress");

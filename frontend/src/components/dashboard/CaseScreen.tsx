@@ -41,7 +41,7 @@ import { useWorkspaceStore } from "@/lib/store/workspaceStore";
 import { streamWorkspaceToWorkspaceView } from "@/lib/streamWorkspaceAdapter";
 import PocketCockpit from "@/components/dashboard/PocketCockpit";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { resolvePocketCockpitView } from "@/lib/pocketCockpit";
+import { actionChipChatMessage, resolvePocketCockpitView } from "@/lib/pocketCockpit";
 import type { ActionChip } from "@/lib/contracts/agent";
 import { cn } from "@/lib/utils";
 
@@ -1661,28 +1661,19 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("sealai:pocket-action-chip", { detail: chip }));
       }
-      // Upload chips are handled by the upload affordance, not as an answer.
-      if (chip.action === "upload_photo") {
+      // Patch 7: a chip click is a user answer, not authoritative truth. Send the
+      // chip label through the existing chat/stream path so the backend State
+      // Gate interprets and persists it — the frontend never mutates case state
+      // directly. Guard against duplicate sends while a turn is streaming.
+      if (isStreamingForPocket) {
         return;
       }
-      // Patch 9.5: a chip that maps to a field is a deliberate input → the
-      // override path applies it through the backend State Gate with
-      // action_chip_answer provenance (end-to-end). Other chips fall back to a
-      // governed chat turn (Patch 5).
-      const overrideCaseId = workspace?.caseId || activeCaseId || caseId || null;
-      if (chip.field && chip.value != null && overrideCaseId) {
-        void patchAgentOverrides(overrideCaseId, {
-          overrides: [{ field_name: chip.field, value: chip.value }],
-          origin: "action_chip_answer",
-        }).catch(() => {});
-        return;
-      }
-      const answer = String(chip.value ?? chip.label ?? "").trim();
-      if (answer) {
-        void sendMessage(answer);
+      const message = actionChipChatMessage(chip);
+      if (message) {
+        void sendMessage(message);
       }
     },
-    [sendMessage, workspace, activeCaseId, caseId],
+    [sendMessage, isStreamingForPocket],
   );
   const appendAssistantMessage = useChatStore((state) => state.appendAssistantMessage);
   const canonicalCaseId = workspace?.caseId || activeCaseId || caseId || null;
@@ -1891,6 +1882,7 @@ export default function CaseScreen({ caseId, initialGoal, initialRequestType }: 
           <PocketCockpit
             patch={pocketCockpit.patch}
             actionChips={pocketCockpit.chips}
+            actionChipsDisabled={isStreamingForPocket}
             isLoading={isStreamingForPocket}
             onActionChip={handlePocketActionChip}
           />
