@@ -214,31 +214,32 @@ async def test_stream_contract_does_not_replace_state_update_with_v16_envelope()
     assert final["event_type"] == "state_update"
     assert "v92_dashboard" in final["data"]  # workspace projection contract
     assert "turn_envelope" in final["data"]  # V9.2 envelope (not the V1.6 one)
-    # The V1.6 AssistantTurnEnvelope is NOT yet emitted and must not replace the
-    # state_update contract.
+    # A non-envelope (greeting) turn must NOT gain any V1.6 envelope fields — the
+    # additive wiring only fires for mobile-triage turns; the state_update here
+    # stays the plain workspace projection.
     assert "assistant_turn_envelope" not in final
     assert "assistant_turn_envelope" not in final["data"]
+    assert "pocket_cockpit_patch" not in final["data"]
+    assert "action_chips" not in final["data"]
 
 
 @pytest.mark.asyncio
-async def test_mobile_triage_envelope_is_not_yet_serialized_over_sse_current_gap() -> None:
-    # [SSE-FAST-HELPER] CURRENT DOCUMENTED GAP (not a failure of this patch):
-    # dispatch builds the mobile triage envelope, but the SSE serializer drops
-    # pocket_cockpit_patch / action_chips before the client.
+async def test_mobile_triage_envelope_is_serialized_over_sse_additively() -> None:
+    # [SSE-FAST-HELPER] Patch 5: the mobile triage AssistantTurnEnvelope built in
+    # dispatch now reaches the SSE client additively in the final state_update —
+    # without replacing the existing workspace projection contract.
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="sifft", session_id="m-gap", has_attachment=True),
+        ChatRequest(message="sifft", session_id="m-wire", has_attachment=True),
         current_user=_user(),
     )
-    # (1) The envelope — with pocket cockpit patch + action chips — IS built in
+    # (1) The envelope — with pocket cockpit patch + action chips — is built in
     # dispatch.
     assert isinstance(dispatch.fast_response, _MobileTriageFastResponse)
     envelope = dispatch.fast_response.mobile_triage_envelope
     assert envelope["pocket_cockpit_patch"]
     assert envelope["action_chips"]
 
-    # (2) But the live SSE fast helper serializes only the chat reply — the
-    # envelope is not sent over the wire today.
-    request = SimpleNamespace(session_id="m-gap", message="sifft")
+    request = SimpleNamespace(session_id="m-wire", message="sifft")
     frames = [
         frame
         async for frame in _stream_fast_response(
@@ -247,16 +248,49 @@ async def test_mobile_triage_envelope_is_not_yet_serialized_over_sse_current_gap
             event_builder=SSEEventBuilder(turn_id="turn-mobile"),
         )
     ]
-    wire = "".join(frames)
-    assert "pocket_cockpit_patch" not in wire
-    assert "action_chips" not in wire
-    assert "mobile_triage_envelope" not in wire
-
+    # done / [DONE] still terminates the stream.
+    assert frames[-1] == "data: [DONE]\n\n"
     final = [_payload(frame) for frame in frames if frame.startswith("data: {")][0]
+    data = final["data"]
+
+    # (2) The state_update now carries the V1.6 fields additively.
+    assert data["assistant_turn_envelope"] == envelope
+    assert data["pocket_cockpit_patch"] == envelope["pocket_cockpit_patch"]
+    assert data["action_chips"] == envelope["action_chips"]
+
+    # (3) The existing state_update workspace projection is untouched.
     assert final["event_type"] == "state_update"
-    assert final["data"]["reply"] == dispatch.fast_response.content
-    # A later patch must surface these additively (see the additive-contract test
-    # below); this assertion only records that they are absent today.
+    assert final["is_final"] is True
+    assert data["reply"] == dispatch.fast_response.content
+    assert "v92_dashboard" in data  # workspace projection preserved
+    assert "turn_envelope" in data  # V9.2 envelope still present alongside V1.6
+
+
+@pytest.mark.asyncio
+async def test_mobile_triage_v16_fields_are_json_native_not_stringified() -> None:
+    # The V1.6 fields are real arrays/objects, and the whole frame round-trips
+    # through JSON — not stringified JSON blobs.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(message="sifft", session_id="m-json", has_attachment=True),
+        current_user=_user(),
+    )
+    request = SimpleNamespace(session_id="m-json", message="sifft")
+    frames = [
+        frame
+        async for frame in _stream_fast_response(
+            request=request,
+            fast_response=dispatch.fast_response,
+            event_builder=SSEEventBuilder(turn_id="turn-json"),
+        )
+    ]
+    final = [_payload(frame) for frame in frames if frame.startswith("data: {")][0]
+    data = final["data"]
+    assert isinstance(data["action_chips"], list)
+    assert isinstance(data["pocket_cockpit_patch"], dict)
+    assert isinstance(data["assistant_turn_envelope"], dict)
+    assert data["action_chips"] and isinstance(data["action_chips"][0], dict)
+    # Round-trips through JSON unchanged (the frame is already valid JSON).
+    assert json.loads(json.dumps(final)) == final
 
 
 def test_future_v16_fields_must_be_additive_not_replacing_core_events() -> None:

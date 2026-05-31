@@ -334,6 +334,31 @@ def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
         "data_version": DETERMINISTIC_DATA_VERSION,
     }
 
+def _mobile_triage_v16_fields(fast_response: Any) -> dict[str, Any]:
+    """Optional, additive V1.6 envelope fields for a mobile-triage fast turn.
+
+    The mobile triage envelope is an ``AssistantTurnEnvelope`` already built in
+    dispatch and stored JSON-safe via ``model_dump(mode="json")`` on the
+    ``_MobileTriageFastResponse`` carrier. Surface its public subset additively
+    so the SSE client can read the pocket cockpit patch and action chips without
+    changing the existing ``state_update`` workspace projection contract. Returns
+    an empty dict for non-mobile / non-envelope turns, so regular fast responses
+    never gain bogus V1.6 fields.
+    """
+
+    envelope = getattr(fast_response, "mobile_triage_envelope", None)
+    if not isinstance(envelope, dict) or not envelope:
+        return {}
+    fields: dict[str, Any] = {"assistant_turn_envelope": envelope}
+    pocket = envelope.get("pocket_cockpit_patch")
+    if pocket is not None:
+        fields["pocket_cockpit_patch"] = pocket
+    chips = envelope.get("action_chips")
+    if chips is not None:
+        fields["action_chips"] = chips
+    return fields
+
+
 async def _stream_fast_response(
     *,
     request: Any,
@@ -374,6 +399,10 @@ async def _stream_fast_response(
         route_hint="fast",
         case_id=str(request.session_id or "default") if request.session_id else None,
     )
+    # Additive V1.6 wiring: mobile-triage turns carry an AssistantTurnEnvelope.
+    # Merge its public subset into the final state_update without replacing the
+    # workspace projection (v92_dashboard / turn_envelope / reply stay intact).
+    state_update_event.update(_mobile_triage_v16_fields(fast_response))
     yield event_builder.frame(state_update_event, event_type="state_update", is_final=True)
     yield "data: [DONE]\n\n"
 
