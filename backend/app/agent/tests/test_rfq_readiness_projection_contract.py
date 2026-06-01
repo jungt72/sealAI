@@ -10,6 +10,7 @@ from app.agent.communication.rfq_intent import (
 from app.agent.state.models import (
     AssertedClaim,
     AssertedState,
+    GovernanceState,
     GovernedSessionState,
     PendingQuestion,
 )
@@ -187,3 +188,104 @@ def test_rfq_readiness_projection_professional_checks_can_clear_required_blocker
     assert projection["professional_check_groups"]
     assert projection["professional_check_blockers"] == []
     assert projection["evidence_status"] in {"evidence_found", "evidence_found_with_risks"}
+
+
+def _readiness_intent() -> RfqReadinessIntent:
+    return RfqReadinessIntent(
+        detected=True,
+        rfq_action_type="show_readiness",
+        reason="rfq_readiness",
+    )
+
+
+def test_rfq_readiness_projection_class_b_value_conflict_is_open_point_not_blocked() -> None:
+    # §12.6: a degraded (non-safety) value conflict lands in Class B. The reducer
+    # already decided it is not hard-blocking, so the readiness projection must
+    # speak "RFQ with open points": basis available, conflict an open point —
+    # never a hard blocking reason. Resolves the AC14 binary contradiction.
+    projection = build_rfq_readiness_projection(
+        governed_state=GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="oil",
+                        confidence="confirmed",
+                    ),
+                },
+                conflict_flags=["clearance_fit"],
+            ),
+            governance=GovernanceState(
+                gov_class="B",
+                rfq_admissible=False,
+                open_validation_points=["Unresolved conflict: 'clearance_fit'"],
+            ),
+        ),
+        intent=_readiness_intent(),
+    ).public_dict()
+
+    assert projection["readiness_band"] == "rfq_with_open_points"
+    assert projection["rfq_basis_ready"] is True
+    assert projection["manufacturer_review_ready"] is False
+    # The value conflict is an open point, not a hard blocker.
+    assert projection["blocking_reasons"] == []
+    assert any(
+        "clearance_fit" in point or "conflict" in point.lower()
+        for point in projection["open_points"]
+    )
+
+
+def test_rfq_readiness_projection_class_c_safety_conflict_still_blocked() -> None:
+    # Counter-direction: a safety/compliance conflict stays Class C. The
+    # readiness projection must keep speaking "blocked" — the safety path is not
+    # softened by the AC14 reconciliation.
+    projection = build_rfq_readiness_projection(
+        governed_state=GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="oil",
+                        confidence="confirmed",
+                    ),
+                },
+                conflict_flags=["compliance"],
+            ),
+            governance=GovernanceState(
+                gov_class="C",
+                rfq_admissible=False,
+                compliance_blockers=["food_pharma"],
+                open_validation_points=["Unresolved conflict: 'compliance'"],
+            ),
+        ),
+        intent=_readiness_intent(),
+    ).public_dict()
+
+    assert projection["readiness_band"] == "blocked"
+    assert projection["rfq_basis_ready"] is False
+    assert projection["manufacturer_review_ready"] is False
+    # Safety/compliance conflict is preserved as a hard blocking reason.
+    assert projection["blocking_reasons"]
+
+
+def test_rfq_readiness_projection_class_a_clean_is_rfq_ready() -> None:
+    projection = build_rfq_readiness_projection(
+        governed_state=GovernedSessionState(
+            asserted=AssertedState(
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="oil",
+                        confidence="confirmed",
+                    ),
+                },
+            ),
+            governance=GovernanceState(gov_class="A", rfq_admissible=True),
+        ),
+        intent=_readiness_intent(),
+    ).public_dict()
+
+    assert projection["readiness_band"] == "rfq_ready"
+    assert projection["rfq_basis_ready"] is True
+    assert projection["manufacturer_review_ready"] is True
+    assert projection["blocking_reasons"] == []

@@ -64,6 +64,18 @@ def _emit_progress_event(payload: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_usable(assertions: dict, field: str) -> bool:
+    """True only when the field is asserted at a calc-usable confidence.
+
+    Conflicting / unconfirmed fields (``requires_confirmation``) are excluded so
+    they never drive deterministic calculations (§12.6).
+    """
+    claim = assertions.get(field)
+    if claim is None:
+        return False
+    return getattr(claim, "confidence", None) in ("confirmed", "estimated")
+
+
 def _float_or_none(assertions: dict, field: str) -> float | None:
     """Extract a float asserted value or return None."""
     claim = assertions.get(field)
@@ -206,7 +218,12 @@ async def compute_node(state: GraphState) -> GraphState:
     results: list[dict[str, Any]] = []
 
     # ── RWDR calc: requires shaft_diameter_mm AND speed_rpm ───────────────
-    if "shaft_diameter_mm" in assertions and "speed_rpm" in assertions:
+    # Only usable (confirmed/estimated) values drive the deterministic cascade;
+    # a conflicting field carries confidence "requires_confirmation" and must
+    # not feed calculations (§12.6 — conflicts stay open points).
+    if _is_usable(assertions, "shaft_diameter_mm") and _is_usable(
+        assertions, "speed_rpm"
+    ):
         try:
             case = _build_canonical_case(assertions)
             calculated_state, records = CascadingCalculationEngine().execute_cascade(
@@ -241,8 +258,8 @@ async def compute_node(state: GraphState) -> GraphState:
     else:
         log.debug(
             "[compute_node] RWDR skipped — shaft_diameter_mm=%s speed_rpm=%s",
-            "shaft_diameter_mm" in assertions,
-            "speed_rpm" in assertions,
+            _is_usable(assertions, "shaft_diameter_mm"),
+            _is_usable(assertions, "speed_rpm"),
         )
 
     if not results:

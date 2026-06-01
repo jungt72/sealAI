@@ -112,6 +112,26 @@ class TestMissingRequiredFields:
         result = await compute_node(state)
         assert result.compute_results == []
 
+    @pytest.mark.asyncio
+    async def test_conflict_field_skips_calc(self):
+        """§12.6: a field at FieldStatus 'conflict' (requires_confirmation) must
+        not drive the RWDR cascade — calc is skipped, no result, no crash."""
+        state = GraphState(
+            asserted=AssertedState(
+                assertions={
+                    "shaft_diameter_mm": AssertedClaim(
+                        field_name="shaft_diameter_mm",
+                        asserted_value=50.0,
+                        confidence="requires_confirmation",
+                        status="conflict",
+                    ),
+                    "speed_rpm": _claim("speed_rpm", 1500.0),
+                }
+            )
+        )
+        result = await compute_node(state)
+        assert result.compute_results == []
+
 
 # ---------------------------------------------------------------------------
 # 4–5. Both required fields → RWDR calc runs

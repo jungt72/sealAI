@@ -138,7 +138,23 @@ class TestGovClassC:
         assert result.governance.gov_class == "C"
 
     @pytest.mark.asyncio
-    async def test_blocking_conflict_flag_class_c(self):
+    async def test_safety_conflict_flag_class_c(self):
+        # A conflict on a safety-/compliance-critical field still hard-blocks.
+        state = _state(
+            medium=("Dampf", "confirmed"),
+            pressure_bar=(12.0, "confirmed"),
+            temperature_c=(180.0, "confirmed"),
+            conflict_flags=["compliance"],
+        )
+        result = await governance_node(state)
+        assert result.governance.gov_class == "C"
+
+
+class TestGovValueConflictDegrades:
+    @pytest.mark.asyncio
+    async def test_value_conflict_flag_degrades_to_class_b(self):
+        # §12.6: a plain field value conflict degrades to a field-level open
+        # point (Class B), it does not block the whole case on Class C.
         state = _state(
             medium=("Dampf", "confirmed"),
             pressure_bar=(12.0, "confirmed"),
@@ -146,7 +162,10 @@ class TestGovClassC:
             conflict_flags=["medium"],
         )
         result = await governance_node(state)
-        assert result.governance.gov_class == "C"
+        assert result.governance.gov_class == "B"
+        assert any(
+            "medium" in p for p in result.governance.open_validation_points
+        )
 
 
 # ---------------------------------------------------------------------------

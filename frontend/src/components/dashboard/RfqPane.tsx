@@ -1591,9 +1591,20 @@ function RfqReadinessPanel({
     return null;
   }
 
-  const status = readiness.rfq_basis_ready || readiness.manufacturer_review_ready
-    ? "Anfrageentwurf prüfbar"
-    : "Anfragebasis offen";
+  // §12.6: the backend readiness_band reconciles the three states the §20 band
+  // speaks. Fall back to the legacy binary derivation when an older stream omits
+  // the band, so historic projections keep rendering.
+  const band = readiness.readiness_band ?? null;
+  const status =
+    band === "rfq_ready"
+      ? "Anfrageentwurf prüfbar"
+      : band === "rfq_with_open_points"
+        ? "RFQ mit offenen Punkten"
+        : band === "blocked"
+          ? "Blockiert"
+          : readiness.rfq_basis_ready || readiness.manufacturer_review_ready
+            ? "Anfrageentwurf prüfbar"
+            : "Anfragebasis offen";
   const previewStatus =
     readiness.preview_action_available && readiness.preview_possible
       ? "Vorschau verfügbar"
