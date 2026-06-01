@@ -423,6 +423,49 @@ describe("RfqPane", () => {
     expect(screen.queryByText(/Hersteller kontaktieren/i)).not.toBeInTheDocument();
   });
 
+  it("renders the RFQ-with-open-points readiness state (Class B), not blocked", async () => {
+    // §12.6 / AC14: a degraded value conflict (Class B) must read as "RFQ mit
+    // offenen Punkten" — the binary "blockiert"/"offen" contradiction is gone.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { code: "rfq_preview_not_found" } }),
+      }),
+    );
+    const workspace = workspaceWithReadiness(
+      readinessProjection({ readiness_band: "rfq_with_open_points", rfq_basis_ready: true }),
+    );
+
+    render(<RfqPane data={cockpitData()} caseId="case-1" workspace={workspace} />);
+
+    expect(await screen.findByText("RFQ mit offenen Punkten")).toBeInTheDocument();
+    // Basis available → Anfrageentwurf tile is "prüfbar vorbereitet", not blocked.
+    expect(screen.getByText("prüfbar vorbereitet")).toBeInTheDocument();
+    expect(screen.queryByText("Anfragebasis offen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Blockiert")).not.toBeInTheDocument();
+  });
+
+  it("renders the blocked readiness state (Class C safety/compliance)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: { code: "rfq_preview_not_found" } }),
+      }),
+    );
+    const workspace = workspaceWithReadiness(
+      readinessProjection({ readiness_band: "blocked" }),
+    );
+
+    render(<RfqPane data={cockpitData()} caseId="case-1" workspace={workspace} />);
+
+    expect(await screen.findByText("Blockiert")).toBeInTheDocument();
+    expect(screen.queryByText("RFQ mit offenen Punkten")).not.toBeInTheDocument();
+  });
+
   it("sends only expected_case_revision when the preview action is triggered from readiness", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

@@ -55,6 +55,7 @@ export function mapRfqReadinessProjection(value: unknown): WorkspaceRfqReadiness
   return {
     manufacturer_review_ready: Boolean(raw.manufacturer_review_ready),
     rfq_basis_ready: Boolean(raw.rfq_basis_ready),
+    readiness_band: asStringOrNull(raw.readiness_band),
     known_missing_fields: asStrings(raw.known_missing_fields),
     open_points: asStrings(raw.open_points),
     blocking_reasons: asStrings(raw.blocking_reasons),

@@ -429,6 +429,7 @@ export type WorkspaceRfqPendingQuestion = {
 export type WorkspaceRfqReadinessProjection = {
   manufacturer_review_ready: boolean;
   rfq_basis_ready: boolean;
+  readiness_band?: string | null;
   known_missing_fields: string[];
   open_points: string[];
   blocking_reasons: string[];

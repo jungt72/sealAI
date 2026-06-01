@@ -1145,6 +1145,8 @@ class TestNoDirectWriteToGovernance:
         "test_api_router.py",
         # H1.2 — confirmation test builds GovernanceState fixtures
         "test_inquiry_confirmation.py",
+        # AC14 — readiness projection test builds gov_class fixtures (A/B/C)
+        "test_rfq_readiness_projection_contract.py",
     }
 
     def _collect_violations(self) -> list[Path]:

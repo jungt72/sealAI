@@ -32,5 +32,6 @@
   "preview_service_boundary": "RfqPreviewService.create_preview_for_case",
   "projection_source": "governed_session_state",
   "projection_version": "rfq_readiness_projection_v1",
+  "readiness_band": "in_progress",
   "rfq_basis_ready": false
 }

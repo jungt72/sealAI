@@ -47,6 +47,7 @@ class RfqReadinessAnswer:
 class RfqReadinessProjection(BaseModel):
     manufacturer_review_ready: bool = False
     rfq_basis_ready: bool = False
+    readiness_band: str = "in_progress"
     known_missing_fields: list[str] = Field(default_factory=list)
     open_points: list[str] = Field(default_factory=list)
     blocking_reasons: list[str] = Field(default_factory=list)
@@ -81,6 +82,7 @@ class RfqReadinessProjection(BaseModel):
             "rfq_readiness_projection_built": True,
             "manufacturer_review_ready": self.manufacturer_review_ready,
             "rfq_basis_ready": self.rfq_basis_ready,
+            "readiness_band": self.readiness_band,
             "known_missing_fields_count": len(self.known_missing_fields),
             "open_points_count": len(self.open_points),
             "blocking_reasons_count": len(self.blocking_reasons),
@@ -315,17 +317,41 @@ def build_rfq_readiness_projection(
     for blocker in professional_check_blockers:
         if blocker not in open_points:
             open_points.append(blocker)
-    blocking_reasons = list(_blocking_reasons(governed_state, missing_fields, open_points))
+    governance = getattr(governed_state, "governance", None)
+    # §12.6: consume the reducer's collapsed conflict-severity verdict (gov_class)
+    # as the single source — never re-derive the safety/value split here.
+    gov_class = str(getattr(governance, "gov_class", "") or "")
+    blocking_reasons = list(
+        _blocking_reasons(governed_state, missing_fields, open_points, gov_class=gov_class)
+    )
     for blocker in professional_check_blockers:
         if blocker not in blocking_reasons:
             blocking_reasons.append(blocker)
     pending = _pending_question(governed_state)
     known_summary = _known_case_summary(governed_state)
     rfq_ready = _bool_attr(getattr(governed_state, "rfq", None), "rfq_ready")
-    rfq_admissible = _bool_attr(getattr(governed_state, "governance", None), "rfq_admissible")
+    rfq_admissible = _bool_attr(governance, "rfq_admissible")
     export_profile = getattr(governed_state, "export_profile", None)
     export_rfq_ready = _bool_attr(export_profile, "rfq_ready")
-    manufacturer_review_ready = bool((rfq_ready or rfq_admissible or export_rfq_ready) and not blocking_reasons)
+    # Clean ready = Class A / explicitly rfq-ready, with no remaining hard blocker.
+    clean_ready = bool(
+        (rfq_ready or rfq_admissible or gov_class == "A" or export_rfq_ready)
+        and not blocking_reasons
+    )
+    # Class B = RFQ admissible with acknowledged open points (degraded value
+    # conflict). Manufacturer-review-ready stays strict (clean only); the RFQ
+    # basis itself is available for both A and B, so the preview button and the
+    # tile agree instead of contradicting.
+    manufacturer_review_ready = clean_ready
+    rfq_basis_ready = bool(clean_ready or gov_class in ("A", "B"))
+    if clean_ready:
+        readiness_band = "rfq_ready"
+    elif gov_class in ("A", "B"):
+        readiness_band = "rfq_with_open_points"
+    elif gov_class == "C":
+        readiness_band = "blocked"
+    else:
+        readiness_band = "in_progress"
     preview_possible = bool(active_case_exists)
     preview_blocking_reason = (
         "preview_creation_requires_durable_case_endpoint_and_consent_flow"
@@ -337,7 +363,8 @@ def build_rfq_readiness_projection(
 
     return RfqReadinessProjection(
         manufacturer_review_ready=manufacturer_review_ready,
-        rfq_basis_ready=bool((rfq_ready or rfq_admissible or export_rfq_ready) and not blocking_reasons),
+        rfq_basis_ready=rfq_basis_ready,
+        readiness_band=readiness_band,
         known_missing_fields=missing_fields,
         open_points=open_points,
         blocking_reasons=blocking_reasons,
@@ -551,8 +578,19 @@ def _blocking_reasons(
     state: Any | None,
     missing_fields: list[str],
     open_points: list[str],
+    *,
+    gov_class: str = "",
 ) -> tuple[str, ...]:
     if state is None:
+        return ()
+    # §12.6 reconciliation: the governance reducer already collapsed the
+    # safety/value-conflict split into gov_class. Class A (admissible) and
+    # Class B (admissible with open points) are, by that verdict, NOT hard-
+    # blocked — their gaps and degraded value conflicts are open points, not
+    # blocking reasons. Only Class C (safety/compliance) keeps hard blockers.
+    # Consume gov_class as the single source instead of re-deriving the conflict
+    # severity here.
+    if gov_class in ("A", "B"):
         return ()
     reasons: list[str] = []
     reasons.extend(missing_fields)
