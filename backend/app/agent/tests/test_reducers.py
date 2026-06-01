@@ -491,8 +491,11 @@ class TestReducerNormalizedToAsserted:
 
         result = reduce_normalized_to_asserted(norm, evidence=evidence)
 
-        assert "pressure_bar" not in result.assertions
+        # §12.6: the field is no longer dropped — it is kept as a conflict open
+        # point at requires_confirmation, never as a confirmed value.
         assert "pressure_bar" in result.conflict_flags
+        assert result.assertions["pressure_bar"].status == "conflict"
+        assert result.assertions["pressure_bar"].confidence == "requires_confirmation"
 
     def test_evidence_does_not_upgrade_requires_confirmation(self):
         norm = self._normalized_with(medium=("?", "requires_confirmation"))
@@ -559,6 +562,53 @@ class TestReducerNormalizedToAsserted:
         )
         result = reduce_normalized_to_asserted(norm)
         assert "medium" in result.conflict_flags
+
+    def test_blocking_conflict_marks_field_status_conflict(self):
+        """§12.6: a fresh blocking conflict marks the field FieldStatus 'conflict'."""
+        from app.agent.state.models import ConflictRef
+
+        norm = NormalizedState(
+            parameters={
+                "medium": NormalizedParameter(
+                    field_name="medium",
+                    value="Wasser",
+                    confidence="confirmed",
+                    source="llm",
+                )
+            },
+            conflicts=[
+                ConflictRef(
+                    field_name="medium", description="Conflict!", severity="blocking"
+                )
+            ],
+        )
+        result = reduce_normalized_to_asserted(norm)
+        assert "medium" in result.conflict_flags
+        assert result.assertions["medium"].status == "conflict"
+        assert result.assertions["medium"].confidence == "requires_confirmation"
+
+    def test_blocking_conflict_does_not_overwrite_confirmed_value(self):
+        """A user-confirmed value is not downgraded by a blocking conflict ref."""
+        from app.agent.state.models import ConflictRef
+
+        norm = NormalizedState(
+            parameters={
+                "medium": NormalizedParameter(
+                    field_name="medium",
+                    value="Wasser",
+                    confidence="confirmed",
+                    source="user_override",
+                )
+            },
+            conflicts=[
+                ConflictRef(
+                    field_name="medium", description="Conflict!", severity="blocking"
+                )
+            ],
+        )
+        result = reduce_normalized_to_asserted(norm)
+        assert result.assertions["medium"].status == "confirmed"
+        assert result.assertions["medium"].confidence == "confirmed"
 
     def test_warning_conflict_does_not_go_to_conflict_flags(self):
         from app.agent.state.models import ConflictRef
@@ -796,12 +846,70 @@ class TestReducerAssertedToGovernanceClassC:
         assert result.gov_class == "C"
         assert result.rfq_admissible is False
 
-    def test_class_c_conflict_flags(self):
+    def test_value_conflict_does_not_force_class_c(self):
+        """§12.6: a field value conflict degrades to a field-level open point.
+
+        The case stays RFQ-capable (Class B) instead of being blocked on Class C.
+        """
         asserted = AssertedState(
             assertions={
                 "medium": AssertedClaim(
                     field_name="medium", asserted_value="Wasser", confidence="confirmed"
-                )
+                ),
+                "pressure_bar": AssertedClaim(
+                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                ),
+                "temperature_c": AssertedClaim(
+                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                ),
+            },
+            blocking_unknowns=[],
+            conflict_flags=["medium"],
+        )
+        result = reduce_asserted_to_governance(asserted)
+        assert result.gov_class == "B"
+        assert any("medium" in p for p in result.open_validation_points)
+
+    def test_safety_conflict_still_blocks_class_c(self):
+        """A conflict on a safety-/compliance-critical field still hard-blocks."""
+        asserted = AssertedState(
+            assertions={
+                "medium": AssertedClaim(
+                    field_name="medium", asserted_value="Wasser", confidence="confirmed"
+                ),
+                "pressure_bar": AssertedClaim(
+                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                ),
+                "temperature_c": AssertedClaim(
+                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                ),
+            },
+            blocking_unknowns=[],
+            conflict_flags=["compliance"],
+        )
+        result = reduce_asserted_to_governance(asserted)
+        assert result.gov_class == "C"
+        assert result.rfq_admissible is False
+
+    def test_conflict_in_regulated_context_still_blocks_class_c(self):
+        """Conservative: in a regulated context any conflict stays hard-blocking."""
+        asserted = AssertedState(
+            assertions={
+                "medium": AssertedClaim(
+                    field_name="medium", asserted_value="Wasser", confidence="confirmed"
+                ),
+                "pressure_bar": AssertedClaim(
+                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                ),
+                "temperature_c": AssertedClaim(
+                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                ),
+                # food_pharma without a compliance value → active compliance_blocker
+                "industry": AssertedClaim(
+                    field_name="industry",
+                    asserted_value="food_pharma",
+                    confidence="confirmed",
+                ),
             },
             blocking_unknowns=[],
             conflict_flags=["medium"],

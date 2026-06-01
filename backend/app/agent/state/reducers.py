@@ -226,6 +226,12 @@ _REGULATORY_COMPLIANCE_VALUES: frozenset[str] = frozenset(
     }
 )
 
+# §12.6: a value conflict degrades to a field-level open point (Class B) instead
+# of blocking the whole case. A conflict is only kept hard-blocking (Class C)
+# when it touches a safety-/compliance-critical field. Conservative by design —
+# in a regulated context (active compliance_blockers) any conflict stays blocking.
+_SAFETY_CONFLICT_FIELDS: frozenset[str] = frozenset({"compliance"})
+
 # Fields at INFERRED or REQUIRES_CONFIRMATION confidence → blocking_unknowns
 _BLOCKING_CONFIDENCE_LEVELS: frozenset[ConfidenceLevel] = frozenset(
     {
@@ -457,6 +463,8 @@ def _asserted_case_field(
     confidence: ConfidenceLevel,
     evidence_refs: list[str],
     provenance: str,
+    status: FieldStatus = "confirmed",
+    confirmation_required: bool = False,
 ) -> CaseField:
     return CaseField(
         field_name=field_name,
@@ -468,11 +476,47 @@ def _asserted_case_field(
             unit=unit,
             raw_unit=unit,
         ),
-        status="confirmed",
+        status=status,
         provenance=provenance,
         evidence_refs=evidence_refs,
         confidence=confidence,
-        confirmation_required=False,
+        confirmation_required=confirmation_required,
+    )
+
+
+def _conflict_assertion(
+    *,
+    field_name: str,
+    value: Any,
+    unit: str | None,
+    provenance: str = "user_stated",
+) -> AssertedClaim:
+    """Build a field-level conflict claim (§12.6).
+
+    Marks the field FieldStatus ``"conflict"`` at ``requires_confirmation`` so it
+    surfaces as an open point and is rejected by EvidenceConfirmationIntelligence
+    (``_BLOCKING_FIELD_STATUSES``). It never counts as a confirmed core field and
+    must not drive deterministic calculations.
+    """
+    case_field = _asserted_case_field(
+        field_name=field_name,
+        value=value,
+        unit=unit,
+        confidence="requires_confirmation",
+        evidence_refs=[],
+        provenance=provenance,
+        status="conflict",
+        confirmation_required=True,
+    )
+    return AssertedClaim(
+        field_name=field_name,
+        asserted_value=value,
+        evidence_refs=[],
+        confidence="requires_confirmation",
+        status="conflict",
+        provenance=case_field.provenance,
+        engineering_value=case_field.engineering_value,
+        case_field=case_field,
     )
 
 
@@ -991,6 +1035,13 @@ def reduce_normalized_to_asserted(
         if _canonical_value(ev.value) != _canonical_value(param.value):
             if field_name not in conflict_flags:
                 conflict_flags.append(field_name)
+            # §12.6: keep the field as a conflict open point, never as a
+            # confirmed value. requires_confirmation excludes it from core_asserted.
+            assertions[field_name] = _conflict_assertion(
+                field_name=field_name,
+                value=param.value,
+                unit=param.unit,
+            )
             log.debug(
                 "[reducer] evidence_value_conflict field=%s candidate=%r evidence=%r claim=%s",
                 field_name,
@@ -1021,11 +1072,19 @@ def reduce_normalized_to_asserted(
 
     # ── Conflict flags from blocking conflicts ───────────────────────────
     for conflict in normalized.conflicts:
-        if (
-            conflict.severity == "blocking"
-            and conflict.field_name not in conflict_flags
-        ):
+        if conflict.severity != "blocking":
+            continue
+        if conflict.field_name not in conflict_flags:
             conflict_flags.append(conflict.field_name)
+        # §12.6: mark the field as a conflict open point unless it is already an
+        # asserted (e.g. user-confirmed) value — never overwrite a confirmed value.
+        if conflict.field_name not in assertions:
+            param = normalized.parameters.get(conflict.field_name)
+            assertions[conflict.field_name] = _conflict_assertion(
+                field_name=conflict.field_name,
+                value=getattr(param, "value", None),
+                unit=getattr(param, "unit", None),
+            )
 
     # ── Core fields missing entirely → blocking unknowns ─────────────────
     for core_field in _CORE_REQUIRED_FIELDS:
@@ -1090,8 +1149,22 @@ def reduce_asserted_to_governance(
         )
     )
     has_blocking_unknowns = bool(effective_blocking_unknowns)
-    has_conflict_flags = bool(asserted.conflict_flags)
     cycle_exceeded = analysis_cycle >= max_cycles
+
+    # ── Conflict split (§12.6): field value conflict vs safety/compliance ──
+    # A conflict on a safety-/compliance-critical field — or any conflict while
+    # the case sits in a regulated context (active compliance_blockers) — stays
+    # hard-blocking. All other field value conflicts degrade to a field-level
+    # open point and must not block the whole case.
+    in_regulated_context = bool(readiness.compliance_blockers)
+    safety_conflicts = [
+        f
+        for f in asserted.conflict_flags
+        if f in _SAFETY_CONFLICT_FIELDS or in_regulated_context
+    ]
+    value_conflicts = [f for f in asserted.conflict_flags if f not in safety_conflicts]
+    has_safety_conflicts = bool(safety_conflicts)
+    has_value_conflicts = bool(value_conflicts)
 
     # ── Determine governance class ────────────────────────────────────────
     gov_class: GovClass
@@ -1102,14 +1175,19 @@ def reduce_asserted_to_governance(
     elif cycle_exceeded and has_blocking_unknowns:
         # Cycle limit exceeded with unresolved unknowns → force Class C
         gov_class = "C"
-    elif has_conflict_flags:
-        # Unresolvable conflicts → Class C
+    elif has_safety_conflicts:
+        # Safety-/compliance-relevant conflict → still hard-block (Class C)
         gov_class = "C"
-    elif not has_blocking_unknowns and core_asserted >= _CORE_REQUIRED_FIELDS:
-        # All core fields asserted, no blockers → Class A
+    elif (
+        not has_blocking_unknowns
+        and core_asserted >= _CORE_REQUIRED_FIELDS
+        and not has_value_conflicts
+    ):
+        # All core fields asserted, no blockers, no conflict → Class A
         gov_class = "A"
     else:
-        # Partial assertions, some unknowns, within cycle limit → Class B
+        # Partial assertions / open points / value conflict → Class B
+        # (RFQ admissible with open points, not a clean ready state)
         gov_class = "B"
 
     rfq_admissible = gov_class == "A"
@@ -1128,7 +1206,7 @@ def reduce_asserted_to_governance(
 
     # ── Open validation points ────────────────────────────────────────────
     open_validation_points: list[str] = list(effective_blocking_unknowns)
-    if has_conflict_flags:
+    if asserted.conflict_flags:
         open_validation_points += [
             f"Unresolved conflict: '{f}'" for f in asserted.conflict_flags
         ]
