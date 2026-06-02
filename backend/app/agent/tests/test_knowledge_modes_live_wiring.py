@@ -1,23 +1,33 @@
 """AC8 + AC9 — §8 knowledge_modes live wiring at the dispatch boundary.
 
 These tests assert that the previously dead §8 machinery
-(``resolve_knowledge_mode`` + ``mode_mutates``) is now wired into the live
-runtime dispatch:
+(``resolve_knowledge_mode``) is now wired into the live runtime dispatch:
 
 - AC8: a knowledge turn resolves to its §8 mode and that mode is propagated to
-  the answer composition context (so the composer can shape the answer).
+  the answer composition context (so the composer can shape the answer); and the
+  §8-mode-shaped path never lets final release/suitability/recommendation
+  language through (boundary preserved).
 - AC9: a pure (fact-free) knowledge turn stays read-only (CONVERSATION, no case),
-  and a knowledge-shaped turn that *does* carry new technical facts is promoted
-  to the governed State Gate instead of being answered (and the facts lost).
+  and a knowledge-shaped turn that *does* carry new technical facts stays
+  read-only via the existing bridge seam — the governed CaseState is never
+  mutated and the facts are kept in the transient bridge context.
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 from unittest.mock import AsyncMock
 
 from app.agent.api.models import ChatRequest
 from app.agent.api.router import _resolve_runtime_dispatch
+from app.agent.communication.answer_composer import (
+    KnowledgeAnswerComposer,
+    KnowledgeAnswerComposerError,
+    KnowledgeAnswerComposerInput,
+)
+from app.agent.communication.knowledge_context_builder import KnowledgeContextBuilder
 from app.agent.communication.knowledge_modes import resolve_knowledge_mode
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.auth.dependencies import RequestUser
@@ -207,3 +217,84 @@ async def test_case_building_input_still_routes_governed(monkeypatch) -> None:
     assert dispatch.runtime_mode == "GOVERNED"
     assert dispatch.gate_route == "GOVERNED"
     assert dispatch.knowledge_response is None
+
+
+# --- AC8 boundary: §8-mode-shaped answer never crosses into release language --
+
+
+class _UnsafeLLMClient:
+    """Async LLM stub that always returns final release/suitability language.
+
+    Returning unsafe content on *every* call (initial + repair) means the
+    composer can only honor the boundary by rejecting — if the §8-mode-shaped
+    path let such language through, ``compose`` would return normally and the
+    ``pytest.raises`` below would fail.
+    """
+
+    def __init__(self, unsafe_markdown: str) -> None:
+        payload = json.dumps(
+            {"answer_markdown": unsafe_markdown, "confidence_note": None}
+        )
+
+        class _Message:
+            content = payload
+
+        class _Choice:
+            message = _Message()
+
+        class _Response:
+            choices = [_Choice()]
+
+        class _Completions:
+            async def create(self, **_kwargs):
+                return _Response()
+
+        class _Chat:
+            completions = _Completions()
+
+        self.chat = _Chat()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "knowledge_mode",
+    [
+        "knowledge_general",
+        "knowledge_case_aware",
+        "comparison_general",
+        "norm_documentation_knowledge",
+    ],
+)
+@pytest.mark.parametrize(
+    "unsafe_markdown",
+    [
+        # Hard final-suitability wording (fast-path guard).
+        "PTFE eignet sich hervorragend für aggressive Medien. Technische Orientierung.",
+        # Unscoped material-suitability label.
+        "### NBR\n\n- **Gute Eignung für**: Mineralöle. Technische Orientierung.",
+    ],
+)
+async def test_section8_mode_path_rejects_release_language(
+    monkeypatch,
+    knowledge_mode: str,
+    unsafe_markdown: str,
+) -> None:
+    context = KnowledgeContextBuilder().build(
+        user_message="Was ist PTFE?",
+        deterministic_answer="PTFE ist ein Fluorpolymer für anspruchsvolle Dichtstellen.",
+        knowledge_mode=knowledge_mode,
+    )
+    # The §8 mode is actually carried on the path under test.
+    assert context.knowledge_mode == knowledge_mode
+
+    monkeypatch.setattr(
+        "app.agent.communication.answer_composer.get_async_llm",
+        lambda _role: (_UnsafeLLMClient(unsafe_markdown), "gpt-4o-mini"),
+    )
+
+    # Boundary holds on the §8-mode-shaped path: release/suitability language is
+    # never rendered through — the composer rejects it.
+    with pytest.raises(KnowledgeAnswerComposerError):
+        await KnowledgeAnswerComposer().compose(
+            KnowledgeAnswerComposerInput(context=context)
+        )
