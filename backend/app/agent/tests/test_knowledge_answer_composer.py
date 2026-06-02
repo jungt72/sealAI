@@ -216,11 +216,11 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
 
     async def compose(_self, request: KnowledgeAnswerComposerInput):
         assert request.no_case is True
-        assert "Vergleich FKM" in request.user_message
+        assert "Shore A" in request.user_message
         assert request.deterministic_answer
         assert request.context.evidence_items
         return KnowledgeAnswerComposerOutput(
-            answer_markdown="**Kurzvergleich:** FKM und EPDM sind unterschiedliche Elastomerfamilien.",
+            answer_markdown="**Shore A:** Ein Haertemass fuer Elastomere im Dichtungskontext.",
             confidence_note="mocked",
         )
 
@@ -229,15 +229,18 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
         compose,
     )
 
+    # Single-subject knowledge turn: the LLM composer still runs here. Material
+    # comparisons now use the deterministic renderer (see
+    # test_doctrine_comparative_ranking_guard for the passthrough contract).
     response = await chat_endpoint(
-        ChatRequest(message="Vergleich FKM und EPDM fuer Dichtungen.", session_id="composer-on"),
+        ChatRequest(message="Was bedeutet Shore A bei Dichtungswerkstoffen?", session_id="composer-on"),
         current_user=_user(),
     )
 
     assert response.policy_path == "knowledge"
     assert response.reply == response.answer_markdown
     assert response.reply
-    assert "FKM und EPDM" in str(response.answer_markdown)
+    assert "Shore A" in str(response.answer_markdown)
     assert response.proposed_case_delta is None
     trace = _answer_trace(response)
     assert trace["reply_source"] == "knowledge_service"
@@ -406,7 +409,10 @@ async def test_knowledge_answer_composer_failure_falls_back_to_deterministic_ans
 
     with caplog.at_level(logging.WARNING):
         response = await chat_endpoint(
-            ChatRequest(message="Vergleich PTFE und FKM", session_id="composer-fallback"),
+            ChatRequest(
+                message="Was bedeutet Shore A bei Dichtungswerkstoffen?",
+                session_id="composer-fallback",
+            ),
             current_user=_user(),
         )
 

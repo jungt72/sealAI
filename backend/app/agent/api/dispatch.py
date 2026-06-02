@@ -260,6 +260,7 @@ class KnowledgeDebugTrace:
         "reply_passthrough",
         "composer",
         "composer_fallback",
+        "composer_safe_fallback",
     ]
     composer_enabled: bool
     composer_attempted: bool
@@ -1339,6 +1340,27 @@ async def _compose_knowledge_answer_if_enabled(
                 )
             return response
 
+        if _should_passthrough_deterministic_material_comparison(knowledge_response):
+            # Material-vs-material stays on the neutral deterministic renderer.
+            # Skipping the LLM rewrite removes the comparative-ranking surface
+            # at the root (the deterministic comparison carries no preference).
+            response = _with_knowledge_answer_trace(
+                knowledge_response,
+                answer_markdown_source="knowledge_service",
+                composer_attempted=False,
+                composer_succeeded=False,
+            )
+            if debug_enabled:
+                response = _with_knowledge_debug_trace(
+                    response,
+                    context=context,
+                    composer_enabled=True,
+                    composer_attempted=False,
+                    composer_succeeded=False,
+                    answer_markdown_source="reply_passthrough",
+                )
+            return response
+
         from app.agent.communication.answer_composer import (  # noqa: PLC0415
             KnowledgeAnswerComposer,
             KnowledgeAnswerComposerInput,
@@ -1376,17 +1398,42 @@ async def _compose_knowledge_answer_if_enabled(
             "[runtime_dispatch] knowledge answer composer failed (%s); using deterministic answer",
             type(exc).__name__,
         )
+        from app.agent.communication.answer_composer import (  # noqa: PLC0415
+            KnowledgeAnswerComposerError,
+        )
+
+        fallback_response = knowledge_response
+        answer_markdown_source = "composer_fallback"
+        if isinstance(exc, KnowledgeAnswerComposerError) and str(exc).startswith(
+            (
+                "unsafe_answer_markdown",
+                "unsafe_material_suitability",
+                "unsafe_material_ranking",
+            )
+        ):
+            # Doctrine-safety raise must fail CLOSED: never serve the base text,
+            # substitute the deterministic neutral guard fallback.
+            from app.agent.runtime.output_guard import (  # noqa: PLC0415
+                FAST_PATH_GUARD_FALLBACK,
+            )
+
+            fallback_response = dataclasses.replace(
+                knowledge_response,
+                answer_markdown=FAST_PATH_GUARD_FALLBACK,
+            )
+            answer_markdown_source = "composer_safe_fallback"
+
         if not debug_enabled:
             return _with_knowledge_answer_trace(
-                knowledge_response,
-                answer_markdown_source="composer_fallback",
+                fallback_response,
+                answer_markdown_source=answer_markdown_source,
                 composer_attempted=composer_enabled,
                 composer_succeeded=False,
                 fallback_reason=_safe_composer_fallback_reason(exc),
             )
         response = _with_knowledge_answer_trace(
-            knowledge_response,
-            answer_markdown_source="composer_fallback",
+            fallback_response,
+            answer_markdown_source=answer_markdown_source,
             composer_attempted=composer_enabled,
             composer_succeeded=False,
             fallback_reason=_safe_composer_fallback_reason(exc),
@@ -1397,7 +1444,7 @@ async def _compose_knowledge_answer_if_enabled(
             composer_enabled=composer_enabled,
             composer_attempted=composer_enabled,
             composer_succeeded=False,
-            answer_markdown_source="composer_fallback",
+            answer_markdown_source=answer_markdown_source,
             composer_fallback_reason=_safe_composer_fallback_reason(exc),
         )
 
@@ -1416,6 +1463,23 @@ def _should_passthrough_high_fidelity_knowledge_answer(knowledge_response: Any) 
     for item in evidence_items:
         note = str(getattr(item, "note", "") or "")
         if note.startswith("system_derived_material_definition:"):
+            return True
+    return False
+
+
+def _should_passthrough_deterministic_material_comparison(knowledge_response: Any) -> bool:
+    """Keep material-vs-material answers on the neutral deterministic renderer.
+
+    The deterministic KnowledgeService comparison (build_material_comparison_answer
+    -> _render_comparison) is symmetric and carries no application ranking.
+    Skipping the LLM rewrite removes the comparative-ranking surface at the root.
+    """
+
+    answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
+    evidence_items = tuple(getattr(answer_view, "knowledge_evidence", ()) or ())
+    for item in evidence_items:
+        note = str(getattr(item, "note", "") or "")
+        if note.startswith("system_derived_material_comparison:"):
             return True
     return False
 
@@ -1452,6 +1516,7 @@ def _with_knowledge_debug_trace(
         "reply_passthrough",
         "composer",
         "composer_fallback",
+        "composer_safe_fallback",
     ],
     composer_fallback_reason: str | None = None,
 ) -> Any:
@@ -1478,6 +1543,7 @@ def _build_knowledge_debug_trace(
         "reply_passthrough",
         "composer",
         "composer_fallback",
+        "composer_safe_fallback",
     ],
     composer_fallback_reason: str | None = None,
 ) -> KnowledgeDebugTrace:
