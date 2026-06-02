@@ -253,6 +253,10 @@ class ChatRequest(BaseModel):
     # Patch 9.5 wiring (additive): a present photo/upload enables mobile leakage
     # triage (Patch 6). Defaults false → existing turns are unaffected.
     has_attachment: bool = Field(default=False)
+    # AC7: a present photo whose vision/OCR quality is too low to read markings or
+    # dimensions routes to measurement/photo guidance instead of leakage triage.
+    # Set by the upload/vision quality step; default false keeps existing turns.
+    attachment_low_confidence: bool = Field(default=False)
 
     model_config = ConfigDict(extra="forbid")
 
