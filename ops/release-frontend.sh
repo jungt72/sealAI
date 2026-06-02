@@ -1,14 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /home/thorsten/sealai/frontend
+cd /home/thorsten/sealai
 
-REPO_ROOT="/home/thorsten/sealai"
-NODE_BIN="${NODE_BIN:-/usr/bin/node}"
-NPM_BIN="${NPM_BIN:-/usr/bin/npm}"
-export PATH="$(dirname "${NODE_BIN}"):${PATH}"
+COMPOSE_ARGS=(
+  --env-file .env.prod
+  -f docker-compose.yml
+  -f docker-compose.deploy.yml
+)
 
-echo ">> Preparing production build environment"
+compose_prod() {
+  env \
+    -u BACKEND_IMAGE \
+    -u FRONTEND_IMAGE \
+    -u LANGSMITH_TRACING \
+    -u LANGSMITH_API_KEY \
+    -u LANGSMITH_PROJECT \
+    -u LANGSMITH_ENDPOINT \
+    -u SEALAI_TRACE_HASH_SALT \
+    -u LANGSMITH_TRACE_SALT \
+    -u LANGSMITH_CAPTURE_LLM_CONTENT \
+    -u LANGSMITH_TRACE_LANGGRAPH_CHILDREN \
+    -u LANGCHAIN_TRACING_V2 \
+    -u LANGCHAIN_API_KEY \
+    -u LANGCHAIN_PROJECT \
+    -u LANGCHAIN_ENDPOINT \
+    docker compose "${COMPOSE_ARGS[@]}" "$@"
+}
+
+set_env_key() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" .env.prod; then
+    sed -i "s|^${key}=.*|${key}=${value}|" .env.prod
+  else
+    printf '\n%s=%s\n' "${key}" "${value}" >> .env.prod
+  fi
+}
+
+echo ">> Preparing frontend build env file (frontend/.env.production.local)"
 awk -F= '
   BEGIN {
     wanted["NEXT_PUBLIC_SITE_URL"] = 1
@@ -32,68 +62,97 @@ awk -F= '
     sub(/[[:space:]]+$/, "", key)
     if (wanted[key]) print
   }
-' "${REPO_ROOT}/.env.prod" > .env.production.local
+' .env.prod > frontend/.env.production.local
 
-if grep -q 'sealai\.net' .env.production.local; then
-  echo "!! Refusing to build frontend with legacy sealai.net values in .env.production.local"
+if grep -q 'sealai\.net' frontend/.env.production.local; then
+  echo "!! Refusing to build frontend with legacy sealai.net values in frontend/.env.production.local" >&2
   exit 1
 fi
 
-echo ">> Using Node runtime"
-"${NODE_BIN}" -v
-"${NPM_BIN}" -v
+SHA="$(git rev-parse HEAD)"
+SHORT_SHA="$(git rev-parse --short=8 HEAD)"
+TS="$(date +%Y%m%d-%H%M%S)"
+FRONTEND_IMAGE_TAG="ghcr.io/jungt72/sealai-frontend:${SHORT_SHA}-${TS}"
 
-echo ">> Installing dependencies"
-"${NPM_BIN}" ci --prefer-offline
+echo ">> Building ${FRONTEND_IMAGE_TAG}"
+docker build \
+  --file frontend/Dockerfile \
+  --tag "${FRONTEND_IMAGE_TAG}" \
+  frontend/
 
-echo ">> Building Next.js standalone"
-"${NPM_BIN}" run build
+echo ">> Pushing ${FRONTEND_IMAGE_TAG}"
+ROLLBACK_FILE=".env.prod.rollback-${TS}"
+cp .env.prod "${ROLLBACK_FILE}"
+echo ">> Rollback snapshot: ${ROLLBACK_FILE}"
 
-echo ">> Switching PM2 process (zero-downtime swap)"
-if pm2 describe sealai-frontend >/dev/null 2>&1; then
-  ROLLBACK_POSSIBLE=true
+if PUSH_OUTPUT="$(docker push "${FRONTEND_IMAGE_TAG}" 2>&1)"; then
+  echo "${PUSH_OUTPUT}"
+  FRONTEND_DIGEST="$(echo "${PUSH_OUTPUT}" | grep -oP 'digest: \K\S+' | tail -1)"
+  test -n "${FRONTEND_DIGEST}"
+
+  FRONTEND_IMAGE_REF="${FRONTEND_IMAGE_TAG}@${FRONTEND_DIGEST}"
+  FRONTEND_PULL_POLICY="always"
+  echo ">> New pinned image: ${FRONTEND_IMAGE_REF}"
 else
-  ROLLBACK_POSSIBLE=false
+  echo "${PUSH_OUTPUT}" >&2
+  if [[ "${ALLOW_LOCAL_FRONTEND_IMAGE_FALLBACK:-0}" != "1" ]]; then
+    echo "!! GHCR push failed. Fix package write permissions or rerun with ALLOW_LOCAL_FRONTEND_IMAGE_FALLBACK=1 for this VPS-only deploy." >&2
+    exit 1
+  fi
+
+  FRONTEND_IMAGE_REF="${FRONTEND_IMAGE_TAG}"
+  FRONTEND_PULL_POLICY="never"
+  echo "!! GHCR push failed; using VPS-local frontend image fallback: ${FRONTEND_IMAGE_REF}" >&2
 fi
 
-pm2 delete sealai-frontend 2>/dev/null || true
-NEXT_DEPLOYMENT_ID="${NEXT_DEPLOYMENT_ID:-$(date +%Y%m%d%H%M%S)}" \
-  pm2 start ecosystem.config.js --only sealai-frontend --update-env
-pm2 save
+set_env_key FRONTEND_IMAGE "${FRONTEND_IMAGE_REF}"
+set_env_key FRONTEND_PULL_POLICY "${FRONTEND_PULL_POLICY}"
 
-echo ">> Flushing old logs"
-pm2 flush sealai-frontend
+echo ">> Validating pinned production refs"
+if [[ "${FRONTEND_PULL_POLICY}" == "always" ]]; then
+  ./ops/check-env-drift.sh prod
+else
+  echo "!! Skipping pinned-image drift gate for explicit local frontend fallback"
+fi
+
+echo ">> Recreating frontend only"
+compose_prod --profile frontend-container up -d --no-deps --force-recreate frontend
+
+echo ">> Verifying frontend image ref"
+grep '^FRONTEND_IMAGE=' .env.prod
+grep '^FRONTEND_PULL_POLICY=' .env.prod
+compose_prod --profile frontend-container ps frontend
 
 echo ">> Waiting for frontend health"
-FRONTEND_HEALTH_HOST="${FRONTEND_BIND_HOST:-$(awk -F= '
-  $1 == "FRONTEND_BIND_HOST" {
-    value = $2
-    sub(/^[[:space:]]+/, "", value)
-    sub(/[[:space:]]+$/, "", value)
-    print value
-  }
-' "${REPO_ROOT}/.env.prod" | tail -n 1)}"
-FRONTEND_HEALTH_HOST="${FRONTEND_HEALTH_HOST:-172.17.0.1}"
-for i in {1..20}; do
-  if curl -fsS "http://${FRONTEND_HEALTH_HOST}:3000" >/dev/null 2>&1; then
+for i in {1..30}; do
+  if compose_prod --profile frontend-container exec -T frontend wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
     echo ">> Frontend healthy"
     break
   fi
-  if [[ $i -eq 20 ]]; then
-    echo "!! Frontend nicht erreichbar nach 20 Versuchen"
-    pm2 logs sealai-frontend --lines 50 --nostream
+  if [[ $i -eq 30 ]]; then
+    echo "!! Health check failed after 30 attempts — rolling back"
+    cp "${ROLLBACK_FILE}" .env.prod
+    compose_prod --profile frontend-container up -d --no-deps --force-recreate frontend
+    echo "!! Rollback complete — recent frontend logs:"
+    compose_prod --profile frontend-container logs frontend --tail 50
     exit 1
   fi
-  echo ">> Frontend not ready yet (${i}/20)"
+  echo ">> Frontend not ready yet (${i}/30)"
   sleep 2
 done
 
-echo ">> PM2 status"
-pm2 list
+compose_prod --profile frontend-container exec -T frontend wget -qO- http://127.0.0.1:3000/api/health
+
+echo ">> Reloading nginx to refresh frontend upstream"
+if docker ps --format '{{.Names}}' | grep -qx nginx; then
+  docker exec nginx nginx -s reload
+else
+  echo ">> nginx container not running; skipping reload"
+fi
 
 if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
   echo ">> Running live pilot readiness smoke"
-  BASE_URL="${BASE_URL:-https://sealingai.com}" "${REPO_ROOT}/ops/smoke-live-pilot-readiness.sh"
+  BASE_URL="${BASE_URL:-https://sealingai.com}" ./ops/smoke-live-pilot-readiness.sh
 else
   echo ">> Live pilot readiness smoke skipped by SKIP_LIVE_SMOKE=1"
 fi
