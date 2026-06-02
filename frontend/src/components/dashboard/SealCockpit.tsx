@@ -1037,7 +1037,7 @@ function reviewStatusLabel(status: string): string {
     case "blocked":
       return "blockiert";
     case "approved_scope":
-      return "Scope freigegeben";
+      return "Scope bestätigt";
     default:
       return humanizeDisplayText(status);
   }
