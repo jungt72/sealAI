@@ -568,21 +568,29 @@ async def _resolve_runtime_dispatch_impl(
     if getattr(request, "has_attachment", False):
         from app.agent.communication.mobile_triage import (  # noqa: PLC0415
             build_mobile_leakage_triage,
+            build_visual_low_confidence_guidance,
             is_leakage_triage_intent,
         )
 
         if is_leakage_triage_intent(request.message, has_attachment=True):
-            envelope = build_mobile_leakage_triage(has_attachment=True)
+            # AC7: an unreadable/low-confidence photo gets measurement/photo
+            # guidance instead of a triage question — never an identification.
+            if getattr(request, "attachment_low_confidence", False):
+                envelope = build_visual_low_confidence_guidance()
+                reason = "visual_low_confidence_guidance"
+            else:
+                envelope = build_mobile_leakage_triage(has_attachment=True)
+                reason = "mobile_leakage_triage"
             return RuntimeDispatchResolution(
                 gate_route="CONVERSATION",
-                gate_reason="mobile_leakage_triage",
+                gate_reason=reason,
                 runtime_mode="CONVERSATION",
                 gate_applied=True,
                 fast_response=_MobileTriageFastResponse(
                     content=envelope.chat_reply.markdown,
                     mobile_triage_envelope=envelope.model_dump(mode="json"),
                 ),
-                runtime_action=_fast_response_runtime_action(None, reason="mobile_leakage_triage"),
+                runtime_action=_fast_response_runtime_action(None, reason=reason),
             )
 
     try:

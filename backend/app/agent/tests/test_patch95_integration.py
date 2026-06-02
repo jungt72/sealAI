@@ -115,6 +115,56 @@ async def test_wire2_text_only_sifft_does_not_trigger_triage() -> None:
     assert dispatch.gate_reason != "mobile_leakage_triage"
 
 
+# --- AC7: low-confidence photo → measurement guidance, not identification ----
+
+# Forbidden final identification wording (Blueprint Golden H / VISUAL_FORBIDDEN).
+_AC7_FORBIDDEN_IDENTIFICATION = ("Das ist sicher ein", "Material ist", "Artikelnummer ist")
+
+
+@pytest.mark.asyncio
+async def test_wire2_low_confidence_photo_routes_to_measurement_guidance() -> None:
+    # An unreadable photo must give measurement/photo guidance, never a guess.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="sifft",
+            session_id="case-bad-photo",
+            has_attachment=True,
+            attachment_low_confidence=True,
+        ),
+        current_user=_user(),
+    )
+    assert dispatch.gate_reason == "visual_low_confidence_guidance"
+    assert dispatch.fast_response is not None
+    content = dispatch.fast_response.content
+    # Concrete next step (measure d1/D/b or re-photograph), not a frustration reply.
+    assert "miss" in content.lower() or "messe" in content.lower()
+    # Never a final product/material/part-number identification.
+    for forbidden in _AC7_FORBIDDEN_IDENTIFICATION:
+        assert forbidden not in content
+    trace = dispatch.fast_response.mobile_triage_envelope["trace"]
+    assert trace["route"] == "visual_low_confidence_guidance"
+    assert trace["llm_used"] is False
+    assert trace["rag_used"] is False
+    assert trace["graph_used"] is False
+
+
+@pytest.mark.asyncio
+async def test_wire2_good_photo_keeps_triage_unchanged() -> None:
+    # A readable photo (flag false / absent) keeps the existing triage path.
+    dispatch = await _resolve_runtime_dispatch(
+        ChatRequest(
+            message="sifft",
+            session_id="case-good-photo",
+            has_attachment=True,
+            attachment_low_confidence=False,
+        ),
+        current_user=_user(),
+    )
+    assert dispatch.gate_reason == "mobile_leakage_triage"
+    assert dispatch.fast_response is not None
+    assert "Leckagefall" in dispatch.fast_response.content
+
+
 # --- Wire 3: sheet-event → override → apply_sheet_event (idempotency/stale) --
 
 
