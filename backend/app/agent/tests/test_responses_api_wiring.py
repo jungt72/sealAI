@@ -103,3 +103,68 @@ def test_knowledge_turn_does_not_mutate_state() -> None:
     state = GovernedSessionState()
     result = apply_knowledge_turn(state, "bitte gebe mir infos zu ptfe", has_active_case=False)
     assert result is state
+
+
+# ---------------------------------------------------------------------------
+# Defect 1 also lived in the conversational opener path
+# (app.agent.runtime.conversation_runtime), which produced the live
+# "Momentan nicht verfügbar" OpenAI 400 on the case-intake follow-up turn,
+# and in the shared app.services.openai_payload builder. The same role-typing
+# contract must hold for both: assistant -> output_text, user -> input_text.
+# ---------------------------------------------------------------------------
+
+
+def test_conversation_runtime_assistant_history_uses_output_text() -> None:
+    from app.agent.runtime.conversation_runtime import (
+        _responses_input_from_messages as conv_responses_input,
+    )
+
+    msgs = [
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+    ]
+    _, inp = conv_responses_input(msgs)
+    assert _types_by_role(inp) == [
+        ("user", "input_text"),
+        ("assistant", "output_text"),
+        ("user", "input_text"),
+    ]
+
+
+def test_conversation_runtime_single_user_turn_uses_input_text() -> None:
+    from app.agent.runtime.conversation_runtime import (
+        _responses_input_from_messages as conv_responses_input,
+    )
+
+    _, inp = conv_responses_input([{"role": "user", "content": "hallo"}])
+    assert _types_by_role(inp) == [("user", "input_text")]
+
+
+def test_conversation_runtime_system_goes_to_instructions() -> None:
+    from app.agent.runtime.conversation_runtime import (
+        _responses_input_from_messages as conv_responses_input,
+    )
+
+    instructions, inp = conv_responses_input(
+        [{"role": "system", "content": "be terse"}, {"role": "user", "content": "hi"}]
+    )
+    assert "be terse" in instructions
+    assert _types_by_role(inp) == [("user", "input_text")]
+
+
+def test_openai_payload_assistant_history_uses_output_text() -> None:
+    from app.services.openai_payload import messages_to_responses_input
+
+    inp = messages_to_responses_input(
+        [
+            {"role": "user", "content": "U1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "U2"},
+        ]
+    )
+    assert _types_by_role(inp) == [
+        ("user", "input_text"),
+        ("assistant", "output_text"),
+        ("user", "input_text"),
+    ]

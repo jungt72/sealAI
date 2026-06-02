@@ -682,10 +682,19 @@ def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str,
         if role == "system":
             instructions.append(content)
             continue
+        is_assistant = role == "assistant"
         response_input.append(
             {
-                "role": "assistant" if role == "assistant" else "user",
-                "content": [{"type": "input_text", "text": content}],
+                "role": "assistant" if is_assistant else "user",
+                # Responses API: assistant-history content must be "output_text",
+                # user content "input_text". Tagging an assistant turn "input_text"
+                # raises OpenAI 400 invalid_value on every follow-up turn.
+                "content": [
+                    {
+                        "type": "output_text" if is_assistant else "input_text",
+                        "text": content,
+                    }
+                ],
             }
         )
     return "\n\n".join(instructions), response_input
