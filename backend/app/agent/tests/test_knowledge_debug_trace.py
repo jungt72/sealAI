@@ -109,7 +109,7 @@ async def test_knowledge_debug_trace_enabled_with_composer_disabled(
     assert debug["composer_succeeded"] is False
     assert debug["answer_markdown_source"] == "reply_passthrough"
     assert debug["reply_source"] == "knowledge_service"
-    assert debug["knowledge_mode"] == "KNOWLEDGE_QUERY"
+    assert debug["knowledge_mode"] == "knowledge_general"
     assert debug["route"]
     assert isinstance(debug["evidence_count"], int)
     assert isinstance(debug["history_count"], int)
