@@ -48,7 +48,7 @@ declare module "next-auth/jwt" {
 
 // ---------------------------------------------------------------------------
 // Token refresh — called when the access token has expired
-// Uses the public issuer so the host-based PM2 frontend stays aligned with the browser flow
+// Uses the public issuer so the frontend's token refresh stays aligned with the browser auth flow
 // ---------------------------------------------------------------------------
 async function refreshAccessToken(token: JWT): Promise<JWT> {
   try {

@@ -17,7 +17,7 @@ export default function DashboardError({ error, reset }: Props) {
   useEffect(() => {
     console.error("[DashboardError]", error);
 
-    // Stale client JS after PM2 restart — Server Action IDs no longer match.
+    // Stale client JS after a frontend redeploy — Server Action IDs no longer match.
     // Hard reload fetches the new JS bundle and resolves the mismatch.
     // 2.5s delay so the error.message is visible for diagnosis before reload.
     const isStaleAction =
