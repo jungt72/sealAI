@@ -1,0 +1,128 @@
+"""#2 denylist backstop: comparative material ranking is caught, profiles are not.
+
+Hard acceptance (output_guard replaces the WHOLE text on a hit, so a false
+positive would nuke the neutral deterministic comparison):
+  - POSITIVE: the incident ranking sentences are flagged as comparative_ranking.
+  - NEGATIVE (decisive): no material_comparison.py profile text and no full
+    deterministic _render_comparison output may match the new patterns.
+
+The denylist is a leaky backstop only; prompt shaping (#1) and the deterministic
+passthrough (#4) remain primary.
+"""
+from __future__ import annotations
+
+import re
+
+import pytest
+
+from app.agent.runtime.output_guard import _COMPILED, check_fast_path_output
+from app.services.knowledge.material_comparison import (
+    _MATERIAL_PROFILES,
+    build_material_comparison_answer,
+    humanize_german_technical_text,
+)
+
+# The exact compiled patterns of the new category (whitebox: prove THIS category
+# does not fire, isolated from any pre-existing category).
+_RANKING_PATTERNS: list[re.Pattern[str]] = [
+    pattern for category, pattern in _COMPILED if category == "comparative_ranking"
+]
+
+
+def _ranking_hits(text: str) -> list[str]:
+    return [p.pattern for p in _RANKING_PATTERNS if p.search(text)]
+
+
+def test_new_category_is_registered() -> None:
+    assert _RANKING_PATTERNS, "comparative_ranking patterns must be compiled into _COMPILED"
+
+
+# --- POSITIVE: the real incident sentences are caught ----------------------
+
+INCIDENT_SENTENCES = (
+    "FKM besser für dynamische Anwendungen geeignet",
+    "FKM ist besser geeignet für dynamische Anwendungen",
+    "PTFE für statische bevorzugt",
+    "kann höhere Drücke besser handhaben",
+    "EPDM ist hier die bessere Wahl",
+    "FKM ist für Öl vorzuziehen",
+)
+
+
+@pytest.mark.parametrize("sentence", INCIDENT_SENTENCES)
+def test_incident_ranking_sentences_are_flagged(sentence: str) -> None:
+    safe, category = check_fast_path_output(sentence)
+    assert safe is False
+    assert category == "comparative_ranking"
+    assert _ranking_hits(sentence)
+
+
+# --- NEGATIVE (decisive): property comparatives & data must NOT trigger ------
+
+PROPERTY_COMPARATIVE_NEGATIVES = (
+    # material_comparison.py:221 — property comparison "bessere X als Y"
+    "bessere Wärme-, Ozon- und Alterungsbeständigkeit als NBR",
+    "bessere Waerme-, Ozon- und Alterungsbestaendigkeit als NBR",
+    # material_comparison.py:919 — bare "tribologisch besser:" property note
+    "FFKM ist nicht automatisch tribologisch besser: Reibung, Abrieb, Wärme und "
+    "dynamischer Betrieb müssen separat geprüft werden.",
+    # verb forms must never match ("ver-besser-t" has no leading word boundary)
+    "hoeherer ACN-Anteil verbessert meist Oel-/Kraftstofforientierung, reduziert "
+    "aber Tieftemperaturflexibilitaet",
+    "mehr ACN verbessert meist Öl-/Kraftstofforientierung, verschlechtert aber "
+    "Tieftemperaturflexibilität.",
+    "Verschleiß- und Formstabilität verbessern",
+    # sts/materials.json:300 — note uses the reverse "bevorzugt für" direction
+    "Sehr gute chemische Beständigkeit; FDA-konform; bevorzugt für Chemikalienhandling",
+    # a user question (never guarded output anyway) must not match the patterns
+    "welches ist besser für meine Anwendung?",
+)
+
+
+@pytest.mark.parametrize("text", PROPERTY_COMPARATIVE_NEGATIVES)
+def test_property_comparatives_do_not_trigger_ranking(text: str) -> None:
+    # The new category specifically must not fire on legitimate property text.
+    assert _ranking_hits(text) == []
+    _safe, category = check_fast_path_output(text)
+    assert category != "comparative_ranking"
+
+
+def test_no_profile_field_triggers_comparative_ranking() -> None:
+    """Sweep every string field of every material profile — none may match."""
+
+    string_fields = (
+        "typical_temperature",
+        "key_strengths",
+        "key_limits",
+        "media_orientation",
+        "dynamics_orientation",
+        "typical_uses",
+        "critical_checks",
+    )
+    offenders: list[tuple[str, str, str, list[str]]] = []
+    for material_id, profile in _MATERIAL_PROFILES.items():
+        for field_name in string_fields:
+            value = getattr(profile, field_name)
+            items = (value,) if isinstance(value, str) else value
+            for item in items:
+                rendered = humanize_german_technical_text(item)
+                hits = _ranking_hits(rendered)
+                if hits:
+                    offenders.append((material_id, field_name, rendered, hits))
+    assert offenders == [], f"profile texts must never match: {offenders}"
+
+
+@pytest.mark.parametrize(
+    "pair",
+    [("FKM", "EPDM"), ("PTFE", "FKM"), ("HNBR", "NBR"), ("FFKM", "FKM"), ("NBR", "PTFE")],
+)
+def test_full_deterministic_render_never_triggers_comparative_ranking(
+    pair: tuple[str, str],
+) -> None:
+    """Whole-text-nuke surface: the rendered comparison must never match."""
+
+    answer = build_material_comparison_answer(f"Vergleiche {pair[0]} und {pair[1]}")
+    assert answer is not None
+    assert _ranking_hits(answer.answer) == [], (
+        f"deterministic render {pair} must not match comparative_ranking"
+    )

@@ -66,6 +66,24 @@ _SUITABILITY_PATTERNS: Sequence[str] = (
     r"\b(freigegeben|zugelassen)\s+für\b",
 )
 
+# Comparative application ranking / material preference. The doctrine forbids
+# stating one material is better / more suitable / preferable for an application.
+# Patterns are intentionally narrow: only application-preference constructions,
+# NEVER bare property comparison ("bessere X als Y"). \bbesser\s+ excludes both
+# "bessere" and "verbessert". Proven against material_comparison.py profiles and
+# the full deterministic comparison renderer (zero false positives) — see
+# tests/test_comparative_ranking_guard. Prompt (#1) + deterministic passthrough
+# (#4) stay primary; this denylist is a leaky backstop.
+_COMPARATIVE_RANKING_PATTERNS: Sequence[str] = (
+    r"\bbesser\s+geeignet\s+(?:für|fuer|bei|zu|als)\b",
+    r"\bbesser\s+f(?:ü|ue)r\b[^.\n]{0,60}\bgeeignet\b",
+    r"\bgeeigneter\s+(?:für|fuer|bei|als)\b",
+    r"\bf(?:ü|ue)r\s+(?:\w+\s+){1,5}bevorzugt\b",
+    r"\bvorzuziehen\b",
+    r"\bdie\s+bessere\s+wahl\b",
+    r"\bbesser\s+(?:zu\s+)?handhaben\b",
+)
+
 # Explicit compliance / final-release overclaims. These phrases are forbidden
 # without evidence and must not be emitted by free LLM text.
 _COMPLIANCE_OVERCLAIM_PATTERNS: Sequence[str] = (
@@ -104,6 +122,7 @@ for _cat, _pats in (
     ("manufacturer", _MANUFACTURER_PATTERNS),
     ("recommendation", _RECOMMENDATION_PATTERNS),
     ("suitability", _SUITABILITY_PATTERNS),
+    ("comparative_ranking", _COMPARATIVE_RANKING_PATTERNS),
     ("compliance_overclaim", _COMPLIANCE_OVERCLAIM_PATTERNS),
     ("form_dump", _FORM_DUMP_PATTERNS),
 ):
