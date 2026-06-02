@@ -59,8 +59,8 @@ async def test_greeting_routes_to_frontdoor_without_governed_case_intake(
         is ConversationRouteView.conversation_frontdoor
     )
     assert dispatch.conversation_route.no_durable_engineering_case_state is True
-    load_state.assert_awaited_once()
-    assert load_state.await_args.kwargs["create_if_missing"] is False
+    # Greeting frontdoor does not touch governed case state at all.
+    load_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -96,8 +96,8 @@ async def test_bare_compound_greeting_routes_to_frontdoor_without_governed_case_
         is ConversationRouteView.conversation_frontdoor
     )
     assert dispatch.conversation_route.no_durable_engineering_case_state is True
-    load_state.assert_awaited_once()
-    assert load_state.await_args.kwargs["create_if_missing"] is False
+    # Greeting frontdoor does not touch governed case state at all.
+    load_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio

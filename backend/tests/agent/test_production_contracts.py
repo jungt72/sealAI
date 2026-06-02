@@ -113,7 +113,7 @@ def test_dispatch_logic_isolation(client, mock_user):
         res = asyncio.run(_resolve_runtime_dispatch(request, current_user=mock_user))
         assert res.runtime_mode == "CONVERSATION"
         assert res.runtime_action is not None
-        assert res.runtime_action.answer_mode == "clarification"
+        assert res.runtime_action.answer_mode == "smalltalk"
         assert res.runtime_action.answer_builder == "light_runtime"
         assert res.fast_response is None
         

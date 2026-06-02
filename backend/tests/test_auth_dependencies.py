@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -33,7 +34,11 @@ def test_get_current_request_user_rejects_invalid_token(monkeypatch: pytest.Monk
 
 def test_bypass_auth_is_disabled_outside_dev_or_test(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BYPASS_AUTH", "1")
-    monkeypatch.setattr(dependencies.settings, "is_dev_or_test", False, raising=False)
+    # Outside dev/test, the bypass branch must stay disabled. Replace the settings
+    # reference the dependency resolves (`getattr(settings, "is_dev_or_test", …)`)
+    # with one whose is_dev_or_test is False. Done at the dependency-module level so
+    # it is robust regardless of how the suite otherwise stubs the settings object.
+    monkeypatch.setattr(dependencies, "settings", SimpleNamespace(is_dev_or_test=False))
 
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(

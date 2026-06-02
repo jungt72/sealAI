@@ -48,6 +48,12 @@ from app.agent.state.models import (
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.pre_gate_classifier import PreGateClassifier
 
+# Resolve the prompt relative to this test file (parents[1] == app/agent), so the
+# read works regardless of the pytest invocation cwd (repo-root vs backend/).
+_GOVERNED_ANSWER_COMPOSER_PROMPT = (
+    Path(__file__).resolve().parents[1] / "prompts" / "governed" / "answer_composer.j2"
+)
+
 
 @pytest.fixture(autouse=True)
 def _disable_llm_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,7 +221,7 @@ def test_contextual_fallback_adds_risk_orientation_before_slot_question() -> Non
 
 
 def test_governed_prompt_preserves_explicit_case_challenge_mode() -> None:
-    prompt = Path("backend/app/agent/prompts/governed/answer_composer.j2").read_text(encoding="utf-8")
+    prompt = _GOVERNED_ANSWER_COMPOSER_PROMPT.read_text(encoding="utf-8")
 
     assert "challenge den Fall" in prompt
     assert "keine stumpfe Parameterabfrage" in prompt
@@ -520,9 +526,7 @@ def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_install
 
 
 def test_governed_answer_composer_prompt_requires_next_best_question_and_no_routine_thanks() -> None:
-    system_prompt = Path(
-        "backend/app/agent/prompts/governed/answer_composer.j2"
-    ).read_text(encoding="utf-8")
+    system_prompt = _GOVERNED_ANSWER_COMPOSER_PROMPT.read_text(encoding="utf-8")
 
     assert "next_best_question" in system_prompt
     assert "Do not ask the user to confirm a value they just supplied" in system_prompt
