@@ -862,6 +862,19 @@ async def _resolve_runtime_dispatch_impl(
                 pre_gate=pre_gate,
                 governed_state=governed_state,
             )
+            # §8 knowledge-mode sub-classifier over the already-knowledge-routed
+            # turn. AC9 hard invariant: this knowledge path never mutates the
+            # governed CaseState — concrete facts are kept in the transient
+            # knowledge-bridge context and bridged later on case intent. The §8
+            # mode here only shapes the answer (AC8); it must never write a case.
+            from app.agent.communication.knowledge_modes import (  # noqa: PLC0415
+                resolve_knowledge_mode,
+            )
+
+            knowledge_mode = resolve_knowledge_mode(
+                request.message,
+                has_active_case=governed_state is not None,
+            )
             if (
                 _v7_answer_mode(turn_decision)
                 in {
@@ -989,6 +1002,7 @@ async def _resolve_runtime_dispatch_impl(
                 knowledge_response=knowledge_response,
                 conversation_route=conversation_route,
                 recent_history=recent_knowledge_history,
+                knowledge_mode=knowledge_mode,
             )
             return RuntimeDispatchResolution(
                 gate_route="CONVERSATION",
@@ -1228,6 +1242,7 @@ async def _compose_knowledge_answer_if_enabled(
     conversation_route: ConversationRoutingDecision | None,
     recent_history: tuple[Any, ...] = (),
     full_history_context: bool = False,
+    knowledge_mode: str | None = None,
 ) -> Any:
     composer_enabled = _knowledge_answer_composer_enabled()
     debug_enabled = _knowledge_debug_trace_enabled()
@@ -1252,7 +1267,9 @@ async def _compose_knowledge_answer_if_enabled(
         )
 
         answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
-        knowledge_mode = (
+        # Prefer the resolved §8 knowledge mode; fall back to the coarse pre-gate
+        # source classification when the caller did not resolve a mode.
+        resolved_knowledge_mode = knowledge_mode or (
             str(
                 getattr(
                     getattr(knowledge_response, "source_classification", None),
@@ -1279,7 +1296,7 @@ async def _compose_knowledge_answer_if_enabled(
                 if conversation_route is not None
                 else None
             ),
-            knowledge_mode=knowledge_mode,
+            knowledge_mode=resolved_knowledge_mode,
             intent=(
                 getattr(getattr(conversation_route, "intent", None), "value", None)
                 if conversation_route is not None
