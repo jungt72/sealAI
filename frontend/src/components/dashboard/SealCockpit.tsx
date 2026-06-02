@@ -749,11 +749,17 @@ export function CalculationsEvidenceCard({
   );
 }
 
-// --- Patch 4: CockpitPatch projection cards (Blueprint §11.2, §19) ----------
-// Render backend-projected CockpitPatch parts that have no dedicated card yet:
-// Active Question, Conflicts, Knowledge Notes, Visual/Sketch Candidates. Each
-// renders nothing when its data is empty (no card, no crash). Known Fields /
-// Review Flags / Open Points / Computed Values / RFQ reuse existing cards.
+// --- Patch 4 + AC3: CockpitPatch projection cards (Blueprint §11.2, §19) -----
+// Pure frontend projection of the backend V92DashboardContract (built in
+// backend/app/agent/v92/dashboard_contract.py). AC3 surfaces the full detected
+// case situation, not just 4 of the streamed fields: Active Question, current
+// facts, missing/blocking fields, readiness+review+recommendation status,
+// conflicts, risk matrix, evidence+standards summaries, knowledge notes,
+// visual/sketch candidates. Each card renders nothing when its field is
+// empty/absent (no card, no crash). Calculations stay on the existing
+// CalculationsEvidenceCard (workspace view-model path). Material/compound/
+// product candidates stay on the Material tab (RWDR: no material preselection
+// surfaced on the overview).
 export type CockpitProjection = Record<string, unknown> | null | undefined;
 
 function projectionArray(projection: CockpitProjection, key: string): Record<string, unknown>[] {
@@ -902,11 +908,335 @@ export function VisualCandidatesCard({ projection }: { projection: CockpitProjec
   );
 }
 
+function factSourceLabel(source: string): string {
+  switch (source) {
+    case "asserted_state":
+      return "bestätigt";
+    case "normalized_state":
+      return "normalisiert";
+    default:
+      return humanizeDisplayText(source);
+  }
+}
+
+export function CaseFactsCard({ projection }: { projection: CockpitProjection }) {
+  const facts = projectionArray(projection, "current_facts")
+    .map((fact) => ({
+      field: cleanText(fact.field_name),
+      value: cleanText(Array.isArray(fact.value) ? fact.value.join(", ") : fact.value),
+      unit: cleanText(fact.unit),
+      source: cleanText(fact.source),
+    }))
+    .filter(
+      (fact): fact is { field: string | null; value: string; unit: string | null; source: string | null } =>
+        Boolean(fact.value),
+    );
+  if (!facts.length) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Erkannte Angaben" icon={ParameterIcon} className="h-full">
+      <div className="space-y-2">
+        {facts.map((fact, index) => (
+          <div
+            key={`${fact.field ?? "fact"}-${index}`}
+            className="flex items-start justify-between gap-3 border-b border-[#F0F2F5] pb-2 last:border-b-0"
+          >
+            <div className="min-w-0">
+              <span className="text-sm text-[#6B7280]">{fact.field ? fieldLabel(fact.field) : "Angabe"}</span>
+              {fact.source ? (
+                <span className="ml-2 rounded-full border border-[#E5E7EB] bg-[#FAFAFB] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6B7280]">
+                  {factSourceLabel(fact.source)}
+                </span>
+              ) : null}
+            </div>
+            <span className="max-w-[58%] text-right text-sm font-semibold text-[#111827]">
+              {fact.value}
+              {fact.unit ? ` ${fact.unit}` : ""}
+            </span>
+          </div>
+        ))}
+      </div>
+    </OverviewCard>
+  );
+}
+
+export function MissingFieldsCard({ projection }: { projection: CockpitProjection }) {
+  const blockingKeys = new Set(
+    projectionArray(projection, "blocking_missing_fields")
+      .map((item) => cleanText(item.key) ?? cleanText(item.label))
+      .filter((key): key is string => Boolean(key)),
+  );
+  const seen = new Set<string>();
+  const fields = [
+    ...projectionArray(projection, "blocking_missing_fields"),
+    ...projectionArray(projection, "missing_fields"),
+  ]
+    .map((item) => {
+      const key = cleanText(item.key) ?? cleanText(item.label);
+      return { key, label: cleanText(item.label) ?? key };
+    })
+    .filter((item): item is { key: string; label: string } => {
+      if (!item.key || !item.label || seen.has(item.key)) {
+        return false;
+      }
+      seen.add(item.key);
+      return true;
+    });
+  if (!fields.length) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Offene Angaben" icon={UncertaintyIcon} className="h-full">
+      <div className="space-y-2">
+        {fields.map((field) => {
+          const blocking = blockingKeys.has(field.key);
+          return (
+            <div
+              key={field.key}
+              className="flex items-center justify-between gap-3 rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2"
+            >
+              <span className="text-sm font-semibold text-[#111827]">{fieldLabel(field.label)}</span>
+              <span
+                className={cn(
+                  "h-fit rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em]",
+                  findingTone(blocking ? "blocking" : "watch"),
+                )}
+              >
+                {blocking ? "blockierend" : "offen"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </OverviewCard>
+  );
+}
+
+function readinessBandLabel(band: string): string {
+  switch (band) {
+    case "rfq_ready_for_expert_review":
+      return "Anfragebasis für Prüfung";
+    case "screening_possible":
+      return "Screening möglich";
+    case "not_ready":
+      return "Noch nicht bereit";
+    default:
+      return humanizeDisplayText(band);
+  }
+}
+
+function reviewStatusLabel(status: string): string {
+  switch (status) {
+    case "not_started":
+      return "nicht gestartet";
+    case "pending":
+      return "ausstehend";
+    case "changes_required":
+      return "Änderungen nötig";
+    case "blocked":
+      return "blockiert";
+    case "approved_scope":
+      return "Scope freigegeben";
+    default:
+      return humanizeDisplayText(status);
+  }
+}
+
+export function CaseStatusCard({ projection }: { projection: CockpitProjection }) {
+  const band = cleanText(projection?.readiness_band);
+  const review =
+    projection && typeof projection.review_status === "object" && projection.review_status
+      ? (projection.review_status as Record<string, unknown>)
+      : null;
+  const recommendation =
+    projection && typeof projection.recommendation_card === "object" && projection.recommendation_card
+      ? (projection.recommendation_card as Record<string, unknown>)
+      : null;
+
+  const reviewStatus = cleanText(review?.status);
+  const blockingCount = review && Array.isArray(review.blocking_findings) ? review.blocking_findings.filter(Boolean).length : 0;
+  const correctionCount =
+    review && Array.isArray(review.required_corrections) ? review.required_corrections.filter(Boolean).length : 0;
+  const humanReviewRequired = review?.human_review_required === true;
+  const nextAction = cleanText(recommendation?.next_action);
+
+  const meaningfulBand = band && band !== "not_ready" ? band : null;
+  const meaningfulReview = reviewStatus && reviewStatus !== "not_started" ? reviewStatus : null;
+  const hasReviewContent = Boolean(meaningfulReview || blockingCount || correctionCount || humanReviewRequired);
+  if (!meaningfulBand && !hasReviewContent && !recommendation) {
+    return null;
+  }
+  const noFinalRelease = Boolean(recommendation) && recommendation?.no_final_technical_release !== false;
+
+  return (
+    <OverviewCard title="Status & Einordnung" icon={CaseStateIcon} className="h-full">
+      <div className="space-y-3">
+        {meaningfulBand ? (
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Readiness</div>
+            <div className="mt-1 inline-flex rounded-full border border-[#D1D5DB] bg-seal-blue/10 px-3 py-1 text-[12px] font-semibold text-seal-blue">
+              {readinessBandLabel(meaningfulBand)}
+            </div>
+          </div>
+        ) : null}
+        {hasReviewContent ? (
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Prüfstatus</div>
+            <div className="mt-1 text-sm font-semibold text-[#111827]">
+              {reviewStatusLabel(meaningfulReview ?? "pending")}
+              {humanReviewRequired ? " · Prüfung erforderlich" : ""}
+            </div>
+            {blockingCount || correctionCount ? (
+              <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">
+                {[
+                  blockingCount ? `${blockingCount} Blocker` : null,
+                  correctionCount ? `${correctionCount} Korrekturen` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {nextAction ? (
+          <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2 text-sm leading-relaxed text-[#374151]">
+            <span className="font-semibold text-[#111827]">Nächster Schritt:</span> {humanizeDisplayText(nextAction)}
+          </div>
+        ) : null}
+        {noFinalRelease ? (
+          <div className="inline-flex rounded-full border border-[#FDE2B8] bg-[#FFF4E5] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#9A3412]">
+            Keine finale Freigabe
+          </div>
+        ) : null}
+      </div>
+    </OverviewCard>
+  );
+}
+
+export function RiskMatrixCard({ projection }: { projection: CockpitProjection }) {
+  const findings = projectionArray(projection, "risk_matrix")
+    .map((finding) => ({
+      title:
+        cleanText(finding.title) ??
+        cleanText(finding.label) ??
+        cleanText(finding.name) ??
+        cleanText(finding.field_name),
+      summary: cleanText(finding.summary) ?? cleanText(finding.description) ?? cleanText(finding.detail),
+      severity: cleanText(finding.severity),
+      kind: cleanText(finding.kind) ?? cleanText(finding.category),
+    }))
+    .filter(
+      (
+        finding,
+      ): finding is { title: string | null; summary: string | null; severity: string | null; kind: string | null } =>
+        Boolean(finding.title || finding.summary),
+    );
+  if (!findings.length) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Risiken & Befunde" icon={RiskIcon} className="h-full">
+      <div className="space-y-2">
+        {findings.slice(0, 6).map((finding, index) => {
+          const severity = finding.severity ?? "watch";
+          return (
+            <div
+              key={`${finding.title ?? "risk"}-${index}`}
+              className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {finding.kind ? (
+                    <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
+                      {findingKindLabel(finding.kind)}
+                    </div>
+                  ) : null}
+                  <div className="text-sm font-semibold leading-snug text-[#111827]">{finding.title ?? "Befund"}</div>
+                </div>
+                <span
+                  className={cn(
+                    "h-fit shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em]",
+                    findingTone(severity),
+                  )}
+                >
+                  {findingLabel(severity)}
+                </span>
+              </div>
+              {finding.summary ? <p className="mt-1 text-[12px] leading-relaxed text-[#4B5563]">{finding.summary}</p> : null}
+            </div>
+          );
+        })}
+      </div>
+    </OverviewCard>
+  );
+}
+
+export function EvidenceStandardsCard({ projection }: { projection: CockpitProjection }) {
+  const evidence =
+    projection && typeof projection.evidence_summary === "object" && projection.evidence_summary
+      ? (projection.evidence_summary as Record<string, unknown>)
+      : null;
+  const standards =
+    projection && typeof projection.standards_summary === "object" && projection.standards_summary
+      ? (projection.standards_summary as Record<string, unknown>)
+      : null;
+
+  const evidenceStatus = cleanText(evidence?.status);
+  const nodeCount = evidence && typeof evidence.node_count === "number" ? evidence.node_count : 0;
+  const evidenceGaps = compactItems(evidence && Array.isArray(evidence.unresolved_gaps) ? evidence.unresolved_gaps : [], 4);
+  const evidenceClaim = cleanText(evidence?.claim_boundary);
+
+  const standardsStatus = cleanText(standards?.status);
+  const applicableCount = standards && typeof standards.applicable_count === "number" ? standards.applicable_count : 0;
+  const standardsGaps = compactItems(standards && Array.isArray(standards.blocking_gaps) ? standards.blocking_gaps : [], 4);
+  const standardsClaim = cleanText(standards?.claim_boundary);
+
+  const hasEvidence = Boolean((evidenceStatus && evidenceStatus !== "pending") || nodeCount > 0 || evidenceGaps.length || evidenceClaim);
+  const hasStandards = Boolean(
+    (standardsStatus && standardsStatus !== "pending") || applicableCount > 0 || standardsGaps.length || standardsClaim,
+  );
+  if (!hasEvidence && !hasStandards) {
+    return null;
+  }
+  return (
+    <OverviewCard title="Evidenz & Normen" icon={EvidenceRagIcon} className="h-full">
+      <div className="space-y-3">
+        {hasEvidence ? (
+          <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5">
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Evidenz</div>
+            <div className="mt-1 text-sm font-semibold text-[#111827]">
+              {humanizeDisplayText(evidenceStatus ?? "pending")} · {nodeCount} Belege
+            </div>
+            {evidenceGaps.length ? <p className="mt-1 text-[12px] text-[#4B5563]">Offen: {evidenceGaps.join(" · ")}</p> : null}
+            {evidenceClaim ? <p className="mt-1 text-[12px] text-[#4B5563]">Grenze: {humanizeDisplayText(evidenceClaim)}</p> : null}
+          </div>
+        ) : null}
+        {hasStandards ? (
+          <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FAFAFB] px-3 py-2.5">
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">Normen</div>
+            <div className="mt-1 text-sm font-semibold text-[#111827]">
+              {humanizeDisplayText(standardsStatus ?? "pending")} · {applicableCount} anwendbar
+            </div>
+            {standardsGaps.length ? <p className="mt-1 text-[12px] text-[#4B5563]">Lücken: {standardsGaps.join(" · ")}</p> : null}
+            {standardsClaim ? <p className="mt-1 text-[12px] text-[#4B5563]">Grenze: {humanizeDisplayText(standardsClaim)}</p> : null}
+          </div>
+        ) : null}
+      </div>
+    </OverviewCard>
+  );
+}
+
 export function CockpitProjectionCards({ projection }: { projection: CockpitProjection }) {
   return (
     <>
       <ActiveQuestionCard projection={projection} />
+      <CaseFactsCard projection={projection} />
+      <MissingFieldsCard projection={projection} />
+      <CaseStatusCard projection={projection} />
       <ConflictsCard projection={projection} />
+      <RiskMatrixCard projection={projection} />
+      <EvidenceStandardsCard projection={projection} />
       <KnowledgeNotesCard projection={projection} />
       <VisualCandidatesCard projection={projection} />
     </>
