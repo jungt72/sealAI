@@ -101,8 +101,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       authorization: {
         params: {
-          // offline_access is required to receive a refresh_token from Keycloak
-          scope: "openid email profile offline_access",
+          // A refresh_token is issued even without offline_access — it is then an
+          // online token bound to the SSO session. offline_access removed because the
+          // per-request offline refresh failed ("Session doesn't have required client").
+          scope: "openid email profile",
         },
         url: KEYCLOAK_AUTHORIZATION_URL,
       },
