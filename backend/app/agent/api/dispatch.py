@@ -74,6 +74,90 @@ def _knowledge_debug_trace_enabled() -> bool:
     }
 
 
+def _routing_debug_enabled() -> bool:
+    return os.environ.get("SEALAI_ROUTING_DEBUG", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _emit_routing_debug_decision(
+    *,
+    request: Any,
+    current_user: Any,
+    pre_gate: Any,
+    semantic_pre_gate_trace: dict[str, Any] | None,
+    conversation_route: Any,
+) -> None:
+    """Gated, PII-free per-turn routing + identity diagnostic line.
+
+    Owner sub is hashed via ``stable_trace_hash``; session/case ids stay raw
+    (opaque uuids needed for thread-lifecycle diagnosis). No message bodies.
+    Never raises and never alters control flow — additive observability only.
+    """
+
+    if not _routing_debug_enabled():
+        return
+    try:
+        from app.agent.api.deps import _canonical_scope  # noqa: PLC0415
+
+        session_id = str(getattr(request, "session_id", None) or "default")
+        tenant_id, owner_id, _scope = _canonical_scope(current_user, case_id=session_id)
+        owner_hash = stable_trace_hash(owner_id)
+        sem = semantic_pre_gate_trace or {}
+        route_value = getattr(conversation_route, "route", None)
+        try:
+            runtime_mode = _runtime_mode_for_pre_gate(
+                getattr(getattr(pre_gate, "classification", None), "value", None)
+            )
+        except Exception:  # noqa: BLE001
+            runtime_mode = None
+        _log.info(
+            "[routing_debug] phase=decision session_id=%s case_id=%s "
+            "runtime_mode=%s pre_gate_class=%s pre_gate_conf=%s pre_gate_reason=%s "
+            "semantic_applied=%s semantic_class=%s semantic_conf=%s semantic_intent=%s "
+            "conversation_route=%s checkpointer_key=%s knowledge_session_key=%s owner_hash=%s",
+            session_id,
+            session_id,
+            runtime_mode,
+            getattr(getattr(pre_gate, "classification", None), "value", None),
+            getattr(pre_gate, "confidence", None),
+            getattr(pre_gate, "reasoning", None),
+            sem.get("semantic_pre_gate_applied"),
+            sem.get("semantic_pre_gate_classification"),
+            sem.get("semantic_pre_gate_confidence"),
+            sem.get("semantic_pre_gate_intent"),
+            getattr(route_value, "value", route_value),
+            f"sealai:{tenant_id}:{owner_hash}:{session_id}",
+            f"knowledge_session:{tenant_id}:{owner_hash}:{session_id}",
+            owner_hash,
+        )
+    except Exception:  # noqa: BLE001 — diagnostic logging must never affect the turn
+        pass
+
+
+def _emit_routing_debug_knowledge_mode(
+    *,
+    request: Any,
+    knowledge_mode: str | None,
+) -> None:
+    """Gated §8 knowledge-mode line (knowledge turns only), correlated by session_id."""
+
+    if not _routing_debug_enabled():
+        return
+    try:
+        session_id = str(getattr(request, "session_id", None) or "default")
+        _log.info(
+            "[routing_debug] phase=knowledge_mode session_id=%s knowledge_mode=%s",
+            session_id,
+            knowledge_mode,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _knowledge_rag_retriever(
     *,
     query: str,
@@ -640,6 +724,13 @@ async def _resolve_runtime_dispatch_impl(
             request.message,
             pre_gate_classification=pre_gate.classification,
         )
+        _emit_routing_debug_decision(
+            request=request,
+            current_user=current_user,
+            pre_gate=pre_gate,
+            semantic_pre_gate_trace=semantic_pre_gate_trace,
+            conversation_route=conversation_route,
+        )
         if pre_gate.classification is not PreGateClassification.BLOCKED:
             rfq_intent = classify_rfq_readiness_intent(request.message)
             if rfq_intent.detected:
@@ -875,6 +966,10 @@ async def _resolve_runtime_dispatch_impl(
             knowledge_mode = resolve_knowledge_mode(
                 request.message,
                 has_active_case=governed_state is not None,
+            )
+            _emit_routing_debug_knowledge_mode(
+                request=request,
+                knowledge_mode=knowledge_mode,
             )
             if (
                 _v7_answer_mode(turn_decision)
