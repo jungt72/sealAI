@@ -35,7 +35,7 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 ## Monitoring Runbook (Phase 6)
 - Start dev stack: `./ops/up-dev.sh`
 - Start prod stack: `./ops/up-prod.sh`
-- Production Docker services are `backend` and `keycloak`; the public frontend remains host-managed with PM2.
+- Production Docker services are `backend`, `keycloak`, and the `frontend` container (Compose `frontend-container` profile); deploy the frontend with `./ops/release-frontend.sh`.
 - Production uses a local `.env.prod` created from `.env.prod.example`; images must be pinned as immutable refs, not `:latest`.
 - API: `http://localhost:8000`
 - Health: `http://localhost:8000/health`

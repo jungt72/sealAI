@@ -1,12 +1,12 @@
 # SealAI Stack Runbook
 
 ## Boot persistence
-- `sealai-stack.service` is a oneshot unit that waits for `network-online.target`, `docker.service` and `ufw.service`, then delegates to `./ops/up-prod.sh`. That keeps the systemd path aligned with the same secret and image-pin validation used for manual deploys. The dockerized production services remain backend and Keycloak; the public frontend stays host-managed via PM2.
+- `sealai-stack.service` is a oneshot unit that waits for `network-online.target`, `docker.service` and `ufw.service`, then delegates to `./ops/up-prod.sh`. That keeps the systemd path aligned with the same secret and image-pin validation used for manual deploys. The dockerized production services are backend, Keycloak, and the `frontend` container (Compose `frontend-container` profile); the SealAI frontend is released independently via `./ops/release-frontend.sh`.
 - Install it with `sudo ./ops/install_sealai_stack_service.sh`; the script copies the service file into `/etc/systemd/system`, runs `systemctl daemon-reload`, and enables the unit `--now`.
 - If you ever need to stop automatic restarts (for example during maintenance), run `sudo systemctl disable --now sealai-stack.service` and then manually bring the stack up with the compose commands below.
 
 ## Stack restart and recovery
-- The canonical restart command is `./ops/up-prod.sh`. It validates the local `.env.prod`, enforces pinned image refs, pulls the pinned images, and then starts `backend` and `keycloak`. This keeps manual deploys aligned with the systemd unit and the host-managed frontend setup.
+- The canonical restart command is `./ops/up-prod.sh`. It validates the local `.env.prod`, enforces pinned image refs, pulls the pinned images, and then starts `backend` and `keycloak`. This keeps manual deploys aligned with the systemd unit. The frontend container is released separately via `./ops/release-frontend.sh` (Docker build → push → pin `FRONTEND_IMAGE@digest` → recreate under the `frontend-container` profile).
 - `./ops/up-prod.sh` also repairs the named `backend-data` volume permissions before starting the backend so `/app/data/models` remains writable for the non-root backend process across recoveries and fresh volume creation.
 - After any manual restart you can refresh the service definition with `sudo systemctl restart sealai-stack.service` to let systemd track the new state.
 
@@ -35,5 +35,6 @@
 - Before changing image refs for a release, copy `.env.prod` to a dated local backup such as `.env.prod.rollback-$(date +%Y%m%d-%H%M%S)`.
 - Release by updating `BACKEND_IMAGE` and `KEYCLOAK_IMAGE` in `.env.prod`, then run `./ops/up-prod.sh`.
 - Roll back by restoring the previous backup copy of `.env.prod` or by restoring the previous pinned image refs in `.env.prod`, then rerunning `./ops/up-prod.sh`.
+- Release the frontend separately with `./ops/release-frontend.sh`, which builds and pushes the image, pins `FRONTEND_IMAGE@digest` in `.env.prod`, recreates the `frontend` service under the `frontend-container` profile, and rolls back automatically on a failed health check.
 
 Keep UFW in default deny (incoming/outgoing/routed) and leave the final DROP in DOCKER-USER; the stack still relies on the return rules and `sealai-stack.service` to keep the two public ports accessible without exposing anything else.
