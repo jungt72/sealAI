@@ -17,6 +17,10 @@ from app.agent.communication.technical_case_challenge import (
 )
 from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
+from app.agent.templates.no_go_guard import (
+    FORBIDDEN_NORMAL_TURN_PHRASES,
+    detect_no_go_phrases,
+)
 from app.agent.v92.contracts import PromptTrace
 from app.agent.v92.prompt_audit import build_prompt_trace
 from app.agent.v91.final_answer_guard import validate_v91_final_answer
@@ -81,6 +85,7 @@ _RECOVERABLE_REPAIR_REASONS = {
     "communication_guard:answer_first_missing",
     "communication_guard:external_utility_answer",
     "communication_guard:tab_spam",
+    "structural_no_go_phrase",
 }
 
 
@@ -390,6 +395,13 @@ def build_governed_answer_composer_messages(
                 "Open warmly and empathetically. Ask one broad intake question that covers application, medium, "
                 "and relevant operating/installation conditions. Do not use phrases like 'technische Richtung', "
                 "'belastbarer Hebel', or a bare medium slot question. "
+            )
+        if repair_reason == "structural_no_go_phrase":
+            repair_instruction += (
+                "Avoid AI-protocol phrasing. Do not restate the case as a protocol, "
+                "do not open with meta-summaries like 'Ich verstehe den Fall aktuell als' "
+                "or 'Technisch relevant sind hier vor allem', and do not label a line 'Grenze:'. "
+                "Write naturally and stay on the governed content. "
             )
         if terms:
             repair_instruction += (
@@ -1091,10 +1103,31 @@ def _validate_answer_markdown(answer_markdown: str) -> None:
         raise GovernedAnswerComposerError(f"unsafe_answer_markdown:{category}")
 
 
+def _validate_structural_no_go(answer_markdown: str) -> None:
+    """Reject structural "AI protocol" phrasing in a governed answer.
+
+    Structural/stylistic phrases are not a safety violation, so this raises a
+    *recoverable* reason (``structural_no_go_phrase`` is in
+    ``_RECOVERABLE_REPAIR_REASONS``) — the composer gets one repair re-prompt and
+    otherwise falls back to the deterministic reply; it never hard-aborts a live
+    turn. ``include_final_release=False``: affirmative release wording is already
+    owned by the safety guard (``_FORBIDDEN_APPROVAL_PATTERNS`` /
+    ``check_fast_path_output``); this check is purely structural.
+    """
+
+    if detect_no_go_phrases(
+        answer_markdown,
+        FORBIDDEN_NORMAL_TURN_PHRASES,
+        include_final_release=False,
+    ):
+        raise GovernedAnswerComposerError("structural_no_go_phrase")
+
+
 def _validate_complete_answer(answer_markdown: str, context: GovernedAnswerContext) -> None:
     _validate_answer_markdown(answer_markdown)
     _validate_v91_final_answer(answer_markdown, context)
     _validate_contextual_answer_discipline(answer_markdown, context)
+    _validate_structural_no_go(answer_markdown)
 
 
 def _validate_contextual_answer_discipline(

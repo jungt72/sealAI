@@ -1181,3 +1181,178 @@ def test_governed_answer_composer_prompt_uses_compact_context() -> None:
     assert not missing_required, f"compact context dropped wording-critical keys: {missing_required}"
     assert governed_context["next_best_question"] == "Welche Temperatur liegt an?"
     assert governed_context["pending_question"] is not None
+
+
+# ---------------------------------------------------------------------------
+# AC1: structural No-Go phrase guard (recoverable, never crashes the turn)
+# ---------------------------------------------------------------------------
+
+
+def test_complete_answer_rejects_structural_no_go_phrase() -> None:
+    """A structural AI-protocol phrase trips the guard with a *recoverable* reason."""
+    answer = "Ich verstehe den Fall aktuell als Wellendichtring an einer Pumpe."
+    with pytest.raises(GovernedAnswerComposerError) as exc:
+        composer_module._validate_complete_answer(answer, GovernedAnswerContext())
+    assert str(exc.value) == "structural_no_go_phrase"
+    # Recoverable -> composer gets a repair re-prompt instead of a hard abort.
+    assert "structural_no_go_phrase" in composer_module._RECOVERABLE_REPAIR_REASONS
+
+
+def test_complete_answer_passes_clean_governed_text() -> None:
+    """A clean, natural governed answer is unaffected by the structural guard."""
+    clean = "Okay, damit kann ich weiterarbeiten. Welche Temperatur sieht die Dichtstelle?"
+    # Must not raise.
+    composer_module._validate_complete_answer(clean, GovernedAnswerContext())
+
+
+def test_structural_guard_ignores_affirmative_release_wording() -> None:
+    """Structural check is purely structural; release wording stays the safety guard's job."""
+    # No structural protocol phrase present -> structural guard is silent even
+    # though release-style wording exists (that path is owned by the safety guard).
+    composer_module._validate_structural_no_go("Garantiert dicht bei diesen Bedingungen.")
+
+
+@pytest.mark.asyncio
+async def test_stream_repairs_structural_no_go_phrase_with_live_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A structural phrase in the stream triggers reset + repair, never a turn crash."""
+    context = GovernedAnswerContext(
+        latest_user_message="Der Druck beträgt 5 bar.",
+        next_best_question="Welche Temperatur sieht die Dichtstelle?",
+        response_class="structured_clarification",
+    )
+    first_answer = (
+        "Technisch relevant sind hier vor allem Druck und Temperatur.\n\n"
+        "Welche Temperatur sieht die Dichtstelle?"
+    )
+    repaired_answer = (
+        "Wichtig sind hier Druck und Temperatur.\n\n"
+        "Welche Temperatur sieht die Dichtstelle?"
+    )
+
+    class FakeDelta:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class FakeChoice:
+        def __init__(self, content: str) -> None:
+            self.delta = FakeDelta(content)
+
+    class FakeChunk:
+        def __init__(self, content: str) -> None:
+            self.choices = [FakeChoice(content)]
+
+    class FakeStream:
+        def __init__(self, parts: list[str]) -> None:
+            self.parts = parts
+
+        def __aiter__(self):
+            self._index = 0
+            return self
+
+        async def __anext__(self):
+            if self._index >= len(self.parts):
+                raise StopAsyncIteration
+            value = self.parts[self._index]
+            self._index += 1
+            return FakeChunk(value)
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def create(self, **kwargs):
+            self.calls.append(kwargs)
+            assert kwargs["stream"] is True
+            return FakeStream([first_answer] if len(self.calls) == 1 else [repaired_answer])
+
+    completions = FakeCompletions()
+
+    class FakeChat:
+        pass
+
+    FakeChat.completions = completions
+
+    class FakeClient:
+        pass
+
+    FakeClient.chat = FakeChat()
+    monkeypatch.setattr(
+        composer_module,
+        "get_async_llm",
+        lambda _role: (FakeClient(), "gpt-4o-mini"),
+    )
+
+    events = [
+        event
+        async for event in GovernedAnswerComposer().stream(
+            GovernedAnswerComposerInput(
+                context=context,
+                deterministic_reply="Welches Medium soll abgedichtet werden?",
+            )
+        )
+    ]
+
+    assert [event.event_type for event in events] == ["chunk", "reset", "chunk", "final"]
+    assert events[0].text == first_answer
+    assert events[2].text == repaired_answer
+    assert events[-1].output is not None
+    assert events[-1].output.answer_markdown == repaired_answer
+    assert len(completions.calls) == 2
+    repair_payload = json.loads(completions.calls[1]["messages"][1]["content"])
+    assert repair_payload["repair"]["reason"] == "structural_no_go_phrase"
+
+
+def test_safety_guard_still_hard_rejects_release_wording() -> None:
+    """Proof the untouched safety guard stays a *non-recoverable* hard rejection."""
+    with pytest.raises(GovernedAnswerComposerError) as exc:
+        composer_module._validate_answer_markdown("Die Lösung ist freigegeben.")
+    assert str(exc.value) == "forbidden_engineering_claim"
+    # Safety reasons are NOT recoverable: no repair re-prompt, immediate fallback.
+    assert "forbidden_engineering_claim" not in composer_module._RECOVERABLE_REPAIR_REASONS
+
+
+@pytest.mark.asyncio
+async def test_exhausted_structural_repair_emits_graceful_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even when the repair attempt is exhausted (phrase persists), the turn never
+    crashes: the node emits the deterministic contextual fallback gracefully.
+
+    This locks the AC1 guarantee for the worst case — compose() re-raises
+    ``structural_no_go_phrase`` after its single repair attempt
+    (governed_answer_composer.py:158), and the node's ``except`` path
+    (governed_answer_composer_node.py:168-183) substitutes the safe fallback.
+    """
+    monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
+
+    async def exhausted_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
+        # Simulates first attempt + repair both still tripping the structural guard.
+        raise GovernedAnswerComposerError("structural_no_go_phrase")
+
+    monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", exhausted_compose)
+    state = await _run_turn("chlor", pending_question=_pending_medium_question())
+
+    # No exception escapes -> turn does not crash.
+    result = await governed_answer_composer_node(state)
+
+    assert result.output_answer_markdown_source == "composer_fallback"
+    assert result.governed_answer_composer_error == "structural_no_go_phrase"
+    assert str(result.output_answer_markdown or "").strip()  # a real answer is emitted
+    # The emitted deterministic fallback is itself clean of structural phrases.
+    from app.agent.templates.no_go_guard import (
+        FORBIDDEN_NORMAL_TURN_PHRASES,
+        detect_no_go_phrases,
+    )
+
+    assert (
+        detect_no_go_phrases(
+            result.output_answer_markdown,
+            FORBIDDEN_NORMAL_TURN_PHRASES,
+            include_final_release=False,
+        )
+        == []
+    )
