@@ -517,6 +517,11 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
         detected_value = str(getattr(resume_decision, "detected_slot_value", "") or "").strip()
         detected_field = str(getattr(resume_decision, "detected_slot_field", "") or "").strip()
         if detected_value and detected_field == "medium":
+            # Dedup seam (T5.1): if the base answer already names the detected
+            # value, one acknowledgment is enough — do not append a second seam
+            # restating the same fact (mirrors the resume-path guard below at :550).
+            if detected_value.casefold() in base.casefold():
+                return base
             return render_communication_template(
                 "side_answer_resume",
                 {
