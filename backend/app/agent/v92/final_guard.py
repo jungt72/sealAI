@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.agent.domain.risk_claims import unsupported_measured_claim_failures
+from app.agent.runtime.output_guard import comparative_ranking_patterns
 from app.agent.v92.contracts import (
     AdversarialReviewVerdict,
     FinalAnswerContext,
@@ -78,12 +79,53 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# Knowledge-turn backstop subset: only suitability / comparative-ranking /
+# compliance. Excludes ``absolute_material_medium_compatibility`` — its
+# "<material> … geeignet für" branch false-positives on cautious limit phrasing
+# (e.g. "FKM … nicht automatisch geeignet für Heißwasser") present in the
+# deterministic comparison render. Comparative-ranking patterns are imported from
+# output_guard so the fast-path and final guards share one source of truth (T2.5).
+_KNOWLEDGE_ROUTES: frozenset[str] = frozenset(
+    {"knowledge_general", "knowledge_case_side_question"}
+)
+_KNOWLEDGE_SUBSET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    *(
+        (name, pattern)
+        for name, pattern in _FORBIDDEN_PATTERNS
+        if name in {"suitability_without_scope", "compliance_or_certification"}
+    ),
+    *(("comparative_ranking", pattern) for pattern in comparative_ranking_patterns()),
+)
+
+
 def _empty_guard(allowed_claim_level: str) -> FinalGuardResult:
     return FinalGuardResult(
         decision="pass",
         severity="none",
         allowed_claim_level=allowed_claim_level,
         final_stream_allowed=True,
+    )
+
+
+def _scan_knowledge_subset(text: str, allowed_claim_level: str) -> FinalGuardResult:
+    """Knowledge-turn final backstop over the suitability / comparative-ranking /
+    compliance subset. Reads only ``text`` — never FinalAnswerContext-only fields —
+    so it is safe on a NonTechnicalAnswerContext.
+    """
+    detected: list[str] = []
+    for name, pattern in _KNOWLEDGE_SUBSET_PATTERNS:
+        if pattern.search(text) and name not in detected:
+            detected.append(name)
+    if not detected:
+        return _empty_guard(allowed_claim_level)
+    return FinalGuardResult(
+        decision="block",
+        severity="blocking",
+        blocked_reasons=["forbidden_user_visible_claims"],
+        required_revisions=[f"remove_or_downgrade:{name}" for name in detected],
+        allowed_claim_level=allowed_claim_level,
+        detected_forbidden_claims=detected,
+        final_stream_allowed=False,
     )
 
 
@@ -105,6 +147,8 @@ def validate_final_output(
         )
 
     if isinstance(context, NonTechnicalAnswerContext):
+        if str(getattr(context, "route", "") or "") in _KNOWLEDGE_ROUTES:
+            return _scan_knowledge_subset(text, allowed_claim_level)
         return _empty_guard(allowed_claim_level)
 
     blocked_reasons: list[str] = []
