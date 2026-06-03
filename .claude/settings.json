@@ -4,6 +4,7 @@
     "defaultMode": "plan",
     "disableBypassPermissionsMode": "disable",
     "allow": [
+      "Write(docs/audits/**)",
       "Bash(pwd:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
