@@ -84,6 +84,31 @@ def test_leak_class_sentences_are_flagged(sentence: str) -> None:
     assert _ranking_hits(sentence)
 
 
+# --- POSITIVE: A.3 closes the two ORIGINAL reported leak forms ---------------
+# Group A.1 only covered the geeignet-family. The originally reported leaks use
+# optimal/überlegen/übertrifft and still passed both layers until A.3. Predicative
+# optimum/superiority on a MATERIAL subject (or application anchor), plus
+# material⇄material "übertrifft". All must flag as comparative_ranking.
+
+A3_LEAK_SENTENCES = (
+    # 1+2. optimum, predicative — material subject (+ conditional "könnte … sein")
+    "EPDM könnte optimal sein",
+    "EPDM könnte für diese Anwendung optimal sein",
+    # 3. superiority, predicative "überlegen" — material subject
+    "PTFE ist NBR überlegen",
+    # 4. superiority "übertrifft" — material⇄material
+    "PTFE übertrifft NBR",
+)
+
+
+@pytest.mark.parametrize("sentence", A3_LEAK_SENTENCES)
+def test_a3_original_leak_forms_are_flagged(sentence: str) -> None:
+    safe, category = check_fast_path_output(sentence)
+    assert safe is False
+    assert category == "comparative_ranking"
+    assert _ranking_hits(sentence)
+
+
 # --- NEGATIVE (decisive): property comparatives & data must NOT trigger ------
 
 PROPERTY_COMPARATIVE_NEGATIVES = (
@@ -108,6 +133,21 @@ PROPERTY_COMPARATIVE_NEGATIVES = (
     "nicht automatisch geeignet für Heißwasser, Dampf, Amine",
     # property comparative "weniger robust" must not be read as "weniger geeignet"
     "mechanisch weniger robust, geringere Abrieb- und Weiterreißfestigkeit",
+    # --- A.3 boundary: attributive (inflected) optimum/superiority is a PROPERTY
+    #     statement, not a material selection; must never read as a ranking.
+    "PTFE hat überlegene chemische Beständigkeit als NBR",
+    "FKM hat optimale Temperaturbeständigkeit",
+    "bietet überlegene Chemikalienbeständigkeit",
+    "Die optimale Temperaturbeständigkeit liegt höher",
+    # A.3 boundary: predicative optimum/superiority on a PROPERTY subject
+    #     ("… von <Material> ist optimal/überlegen") — the material is a genitive
+    #     modifier, not the subject, so it must NOT block.
+    "Die Druckverformung von FKM ist optimal",
+    "Die chemische Beständigkeit von PTFE ist der von NBR überlegen",
+    # A.3 boundary: property-comparative "übertrifft" (eigenschaft-vs-eigenschaft)
+    "die Wärmebeständigkeit von FKM übertrifft die von NBR",
+    # A.3 boundary: hedged limit — "nicht optimal" is an allowed limitation
+    "EPDM ist hier nicht optimal",
 )
 
 
