@@ -12,6 +12,8 @@ const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
 
 vi.mock("@/lib/bff/auth-token", () => ({
   getAccessToken: vi.fn(async () => "test-token"),
+  getAccessTokenResult: vi.fn(async () => ({ accessToken: "test-token", cookieUpdates: [] })),
+  applyBffCookieUpdates: vi.fn(),
 }));
 
 vi.mock("@/lib/bff/backend", () => ({
