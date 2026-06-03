@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
-import type { JWT } from "next-auth/jwt";
 import KeycloakProvider from "next-auth/providers/keycloak";
+
+import { singleFlightRefresh } from "@/lib/bff/auth-token";
 
 const KEYCLOAK_ISSUER =
   process.env.KEYCLOAK_ISSUER ?? "https://sealingai.com/realms/sealAI";
@@ -43,43 +44,6 @@ declare module "next-auth/jwt" {
     /** Unix timestamp (seconds) when the access token expires */
     expiresAt?: number;
     error?: "RefreshTokenError";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Token refresh — called when the access token has expired
-// Uses the public issuer so the frontend's token refresh stays aligned with the browser auth flow
-// ---------------------------------------------------------------------------
-async function refreshAccessToken(token: JWT): Promise<JWT> {
-  try {
-    const response = await fetch(KEYCLOAK_TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: KEYCLOAK_CLIENT_ID!,
-        client_secret: KEYCLOAK_CLIENT_SECRET!,
-        refresh_token: token.refreshToken!,
-      }),
-    });
-
-    const refreshed = await response.json();
-    if (!response.ok) throw refreshed;
-
-    return {
-      ...token,
-      accessToken: refreshed.access_token,
-      // Keycloak rotates the id_token only when a new id_token is issued
-      idToken: refreshed.id_token ?? token.idToken,
-      // Keycloak may issue a new refresh token (rotation); fall back to the old one if not
-      refreshToken: refreshed.refresh_token ?? token.refreshToken,
-      expiresAt: Math.floor(Date.now() / 1000) + (refreshed.expires_in as number),
-      error: undefined,
-    };
-  } catch {
-    // Refresh failed (revoked token, Keycloak down, etc.)
-    // Returning error here causes the session callback to surface it to the UI
-    return { ...token, error: "RefreshTokenError" };
   }
 }
 
@@ -141,8 +105,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token;
       }
 
-      // Access token expired — attempt silent refresh
-      return refreshAccessToken(token);
+      // Access token expired — attempt a silent, single-flight refresh shared
+      // with the BFF path so concurrent refreshes never reuse the same rotating
+      // token. On failure, surface the error so the session callback prompts re-login.
+      try {
+        return await singleFlightRefresh(token);
+      } catch {
+        return { ...token, error: "RefreshTokenError" };
+      }
     },
 
     // ------------------------------------------------------------------

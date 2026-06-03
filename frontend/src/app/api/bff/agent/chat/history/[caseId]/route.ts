@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { BffError, fetchBackend } from "@/lib/bff/http";
+import { BffError, applyBffCookieUpdates, fetchBackendWithAuth } from "@/lib/bff/http";
 
 export async function GET(
   request: Request,
@@ -8,7 +8,7 @@ export async function GET(
 ) {
   try {
     const { caseId } = await context.params;
-    const response = await fetchBackend(
+    const { response, cookieUpdates } = await fetchBackendWithAuth(
       `/api/agent/chat/history/${encodeURIComponent(caseId)}`,
       request,
     );
@@ -19,13 +19,17 @@ export async function GET(
         body?.detail?.message ||
         body?.detail?.code ||
         `history_fetch_failed:${response.status}`;
-      return NextResponse.json(
+      const errorResponse = NextResponse.json(
         { error: { code: "history_fetch_failed", message } },
         { status: response.status || 500 },
       );
+      applyBffCookieUpdates(errorResponse, cookieUpdates);
+      return errorResponse;
     }
 
-    return NextResponse.json(body);
+    const okResponse = NextResponse.json(body);
+    applyBffCookieUpdates(okResponse, cookieUpdates);
+    return okResponse;
   } catch (error) {
     if (error instanceof BffError) {
       return NextResponse.json(

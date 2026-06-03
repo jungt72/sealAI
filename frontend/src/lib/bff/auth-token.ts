@@ -226,6 +226,49 @@ async function refreshBffAccessToken(token: JWT): Promise<JWT> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Single-flight refresh — collapse concurrent refreshes of the SAME refresh
+// token into one Keycloak call. Without this, N concurrent BFF requests each
+// POST grant_type=refresh_token with the same rotating token; Keycloak rotates
+// on the first and rejects the rest as reuse ("Maximum allowed refresh token
+// reuse exceeded"), revoking the token family -> 401 / "Sitzung abgelaufen".
+// Shared by the BFF token path and the NextAuth jwt callback (see auth.ts).
+// ---------------------------------------------------------------------------
+const inflightRefreshes = new Map<string, Promise<JWT>>();
+
+// Non-cryptographic FNV-1a hash. Used only as an in-memory map key so the raw
+// refresh token never appears as a key. Synchronous and runtime-agnostic
+// (no node:crypto / no async Web Crypto), so it is safe in both the Node BFF
+// runtime and any edge context that may load auth.ts. Collision resistance is
+// not a security boundary here.
+function refreshTokenKey(refreshToken: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < refreshToken.length; i += 1) {
+    hash ^= refreshToken.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+export function singleFlightRefresh(token: JWT): Promise<JWT> {
+  const refreshToken =
+    typeof token.refreshToken === "string" && token.refreshToken ? token.refreshToken : "";
+  const key = refreshTokenKey(refreshToken);
+
+  const existing = inflightRefreshes.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  // Delete in `finally` so the slot is freed on BOTH resolution and rejection —
+  // a failed refresh must not pin the key and block the next attempt.
+  const refreshPromise = refreshBffAccessToken(token).finally(() => {
+    inflightRefreshes.delete(key);
+  });
+  inflightRefreshes.set(key, refreshPromise);
+  return refreshPromise;
+}
+
 async function refreshedJwtCookieUpdates(request: Request, token: JWT): Promise<BffCookieUpdate[]> {
   const secureCookie = shouldUseSecureCookies(request);
   const cookieName = sessionCookieName(secureCookie);
@@ -300,7 +343,7 @@ export async function getAccessTokenResult(
     };
   }
 
-  const refreshedToken = await refreshBffAccessToken(token);
+  const refreshedToken = await singleFlightRefresh(token);
   const accessToken = extractAccessToken(refreshedToken);
 
   if (!accessToken) {

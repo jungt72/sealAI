@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { BffError, fetchBackend } from "@/lib/bff/http";
+import { BffError, applyBffCookieUpdates, fetchBackendWithAuth } from "@/lib/bff/http";
 import { buildWorkspaceBackendReadPath } from "@/lib/bff/workspace";
 import { mapWorkspaceView } from "@/lib/mapping/workspace";
 
@@ -10,7 +10,10 @@ export async function GET(
 ) {
   try {
     const { caseId } = await context.params;
-    const response = await fetchBackend(buildWorkspaceBackendReadPath(caseId), request);
+    const { response, cookieUpdates } = await fetchBackendWithAuth(
+      buildWorkspaceBackendReadPath(caseId),
+      request,
+    );
     const body = await response.json().catch(() => null);
 
     if (!response.ok || !body) {
@@ -18,13 +21,17 @@ export async function GET(
         body?.detail?.message ||
         body?.detail?.code ||
         `workspace_fetch_failed:${response.status}`;
-      return NextResponse.json(
+      const errorResponse = NextResponse.json(
         { error: { code: "workspace_fetch_failed", message } },
         { status: response.status || 500 },
       );
+      applyBffCookieUpdates(errorResponse, cookieUpdates);
+      return errorResponse;
     }
 
-    return NextResponse.json(mapWorkspaceView(caseId, body));
+    const okResponse = NextResponse.json(mapWorkspaceView(caseId, body));
+    applyBffCookieUpdates(okResponse, cookieUpdates);
+    return okResponse;
   } catch (error) {
     if (error instanceof BffError) {
       return NextResponse.json(
