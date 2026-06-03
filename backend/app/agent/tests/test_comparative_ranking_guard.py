@@ -57,6 +57,33 @@ def test_incident_ranking_sentences_are_flagged(sentence: str) -> None:
     assert _ranking_hits(sentence)
 
 
+# --- POSITIVE: the four live-documented leak classes are caught --------------
+# Each form previously slipped past the denylist and is intentionally chosen so it
+# is NOT already covered by a pre-existing pattern (no bare "ist geeignet", no
+# "besser geeignet als"). All must now flag as comparative_ranking.
+
+LEAK_CLASS_SENTENCES = (
+    # 1. Konditional — "wäre/würde … geeignet/eignen"
+    "FKM wäre für Heißwasser geeignet",
+    "EPDM würde sich hier besser eignen",
+    # 2. Negation-impliziert-Präferenz — "weniger geeignet" / "nicht ungeeignet"
+    "NBR ist hier weniger geeignet",
+    "FKM ist nicht ungeeignet für diese Anwendung",
+    # 3. Superlativ — "am besten/meisten geeignet"
+    "EPDM ist am besten geeignet für Heißwasser",
+    # 4. statt-Präferenz — "X statt Y gewählt"
+    "Ich hätte FKM statt NBR gewählt",
+)
+
+
+@pytest.mark.parametrize("sentence", LEAK_CLASS_SENTENCES)
+def test_leak_class_sentences_are_flagged(sentence: str) -> None:
+    safe, category = check_fast_path_output(sentence)
+    assert safe is False
+    assert category == "comparative_ranking"
+    assert _ranking_hits(sentence)
+
+
 # --- NEGATIVE (decisive): property comparatives & data must NOT trigger ------
 
 PROPERTY_COMPARATIVE_NEGATIVES = (
@@ -76,6 +103,11 @@ PROPERTY_COMPARATIVE_NEGATIVES = (
     "Sehr gute chemische Beständigkeit; FDA-konform; bevorzugt für Chemikalienhandling",
     # a user question (never guarded output anyway) must not match the patterns
     "welches ist besser für meine Anwendung?",
+    # cautious LIMIT phrasing — "nicht (automatisch) geeignet" is an allowed limit,
+    # not a preference; the negation leak class must never swallow it.
+    "nicht automatisch geeignet für Heißwasser, Dampf, Amine",
+    # property comparative "weniger robust" must not be read as "weniger geeignet"
+    "mechanisch weniger robust, geringere Abrieb- und Weiterreißfestigkeit",
 )
 
 

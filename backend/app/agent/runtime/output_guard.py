@@ -82,6 +82,20 @@ _COMPARATIVE_RANKING_PATTERNS: Sequence[str] = (
     r"\bvorzuziehen\b",
     r"\bdie\s+bessere\s+wahl\b",
     r"\bbesser\s+(?:zu\s+)?handhaben\b",
+    # Four live-documented leak classes. Proven zero false positives against the
+    # material_comparison.py corpus and the negative fixtures in
+    # tests/test_comparative_ranking_guard (property comparatives, cautious limits).
+    # 1. Konditional — "wäre/würde … (besser) geeignet/eignen".
+    r"\bw(?:ä|ae)re\s+(?:\w+\s+){0,5}geeignet\b",
+    r"\bw(?:ü|ue)rde\s+(?:sich\s+)?(?:\w+\s+){0,5}(?:eignen|geeignet)\b",
+    # 2. Negation-impliziert-Präferenz — comparative-anchored only. Bare
+    #    "nicht (automatisch) geeignet" is an allowed limit and is NOT matched.
+    r"\bweniger\s+geeignet\b",
+    r"\bnicht\s+ungeeignet\b",
+    # 3. Superlativ — "am besten/meisten geeignet".
+    r"\bam\s+(?:besten|meisten)\s+geeignet\b",
+    # 4. statt-Präferenz — "X statt Y gewählt/genommen/bevorzugt/…".
+    r"\bstatt\s+(?:\w+\s+){0,3}(?:gew(?:ä|ae)hlt|genommen|bevorzugt|empfohlen|einsetzen|verwenden)\b",
 )
 
 # Explicit compliance / final-release overclaims. These phrases are forbidden
@@ -128,6 +142,16 @@ for _cat, _pats in (
 ):
     for _p in _pats:
         _COMPILED.append((_cat, re.compile(_p, re.IGNORECASE | re.UNICODE)))
+
+
+def comparative_ranking_patterns() -> tuple[re.Pattern[str], ...]:
+    """Compiled comparative-ranking denylist patterns (single source of truth).
+
+    Exposed so the V9.2 final guard reuses the exact same patterns as this
+    fast-path streaming guard instead of duplicating them (prevents drift).
+    """
+    return tuple(pattern for category, pattern in _COMPILED if category == "comparative_ranking")
+
 
 # ---------------------------------------------------------------------------
 # Safe fallback (deterministic, never LLM-generated)
