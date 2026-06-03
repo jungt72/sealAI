@@ -18,10 +18,14 @@ Project-wide authority, in order:
 `AGENTS.md` is the source of truth for product scope. Do not duplicate the full
 product concept here.
 
-> **Precedence:** `AGENTS.md` describes the current architecture as
-> **V10 Conversational Sealing Intelligence**, product focus **RWDR MVP**.
-> If any wording below (e.g. legacy "Phase-1" framing) conflicts with
-> `AGENTS.md`, `AGENTS.md` wins.
+> **Precedence:** The binding target architecture is **V1.7 — Universal Sealing
+> Case Platform** (`docs/sealing_intelligence_v1_7_universal_sealing_case_platform_blueprint.md`),
+> layered over the **V1.6** operative contracts
+> (`docs/sealing_intelligence_v1_6_mobile_first_complete_architecture_blueprint.md`).
+> V1.7 wins on architecture, V1.6 wins on contracts. The runtime is still the
+> governed V10 conversational runtime; product focus stays **RWDR MVP** (the
+> first Domain Pack). If any wording below (e.g. legacy "Phase-1" framing)
+> conflicts with `AGENTS.md`, `AGENTS.md` wins.
 
 ---
 
@@ -134,6 +138,28 @@ cd /home/thorsten/sealai/frontend && npm run build       # next build (type-chec
 ```
 
 ---
+
+## V1.7 architecture discipline (Universal Core vs Domain Pack)
+
+When implementing V1.7, keep these rules (full detail in the V1.7 blueprint
+§3, §3.5, §8, §10):
+
+- **Core vs Pack:** the Universal Sealing Core is dichtungstyp-agnostic
+  (case lifecycle, field/state model, State Gate, evidence intake, RAG plumbing,
+  routing/mode detection, cockpit projection, RFQ dispatch, tenant/governance).
+  RWDR-specific logic (completeness rules, surface-speed calc, shaft/housing
+  agents, RFQ template) belongs in a Domain Pack, never in the plumbing.
+- **First audit, then name:** much of the runtime is already type-agnostic
+  (`KnownField.field` is a string; modes are interaction types, not seal types).
+  Identify what is already Core and what is RWDR-specific before moving code.
+- **Rule of Three:** do not build a speculative universal abstraction on the
+  single RWDR datapoint. Extract shared abstractions only when Domain Pack #2
+  (O-Ring) is built. Clean RWDR code is not debt; a speculative layer is.
+- **Tenant isolation is P0:** any cross-tenant/IDOR exposure on
+  case/file/evidence/RFQ operations is a blocker, not a backlog item.
+- **No parallel flows:** one governed runtime, one router, one RWDR/RFQ flow
+  (see AGENTS.md Clean-Code Rules). A Domain Pack is added, the Core is not
+  rebuilt.
 
 ## Final rule
 

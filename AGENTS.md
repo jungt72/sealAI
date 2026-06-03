@@ -330,7 +330,29 @@ calculated value, open point, review required, manufacturer review basis.
 - RWDR MVP changes preserve the product promise: unclear RWDR inquiry in,
   confirmed manufacturer-evaluable `Technical RWDR RFQ Brief` out.
 
-## Active target blueprint (V1.6)
+## Active target blueprint (V1.7 architecture over V1.6 contracts)
 
-The binding target architecture is `docs/sealing_intelligence_v1_6_mobile_first_complete_architecture_blueprint.md`.
-Implement it audit-first, patch by patch (see its section 30). Never big-bang.
+The binding **target architecture** is
+`docs/sealing_intelligence_v1_7_universal_sealing_case_platform_blueprint.md`
+(V1.7 — Universal Sealing Case Platform).
+
+V1.7 does **not** replace V1.6. It is the architecture layer on top of it:
+
+- `docs/sealing_intelligence_v1_6_mobile_first_complete_architecture_blueprint.md`
+  (V1.6) stays in force as the **operative contract layer**: mode contracts
+  (§7), knowledge/sheet/RFQ contracts (§8–9, §20), schemas (§11, §12, §28) and
+  golden conversations (§26). Its implementations (templates, `knowledge_modes`,
+  `rfq_one_pager`, pocket cockpit, golden v16 tests, dashboard contract) remain
+  canonical and must not be removed.
+- V1.7 adds the **architecture layer**: explicit Universal Sealing Core vs
+  Domain Pack split (RWDR is the first pack), knowledge as a first-class layer
+  (cross-cutting vs domain-specific), tenant/governance raised to foundation
+  (P0), and the resequenced roadmap (its §9).
+
+Conflict rule: **V1.7 wins on architecture, V1.6 wins on contracts.**
+
+Implement audit-first, patch by patch (V1.7 §10 + §10.1, which extend V1.6 §30).
+Never big-bang. Keep Core and Domain Pack as separate units; never put
+RWDR-specific logic in the plumbing. Do **not** build a speculative universal
+abstraction beyond RWDR — extract shared abstractions only when Domain Pack #2
+(O-Ring) lands (Rule of Three, V1.7 §3.5).
