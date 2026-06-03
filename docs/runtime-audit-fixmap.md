@@ -1,0 +1,136 @@
+# Runtime-Audit Fix-Map
+
+Status ledger for the V10 governed-runtime audit fixes (doctrine + composition +
+routing + final-guard enforcement). Versioned in-repo so the fix-map, deploy
+ledger, and verification findings survive sessions/compaction.
+
+Scope: `demo/rwdr-limited-external` (guided limited external demo). All product
+boundaries from `AGENTS.md` apply — no suitability/selection/ranking/final-release
+language; guards are never weakened to make a test pass.
+
+---
+
+## Fix-map taxonomy (roots)
+
+| Group | Theme | ACs | Root (file:line) | State |
+|-------|-------|-----|------------------|-------|
+| **A / A.3** | Doctrine — comparative-ranking leaks | — | `agent/runtime/output_guard.py` `_COMPARATIVE_RANKING_PATTERNS` (both guard layers inherit via `comparative_ranking_patterns()`); L2 backstop `agent/v92/final_guard.py` | **Shipped** |
+| **C** | Composition — dedup side-answer seam (T5.1) | 1, 2, 11 | `agent/api/routes/chat.py:516-532` (`_side_answer_with_resume`) + `agent/communication/active_case_side_claim_policy.py:~422` (`_ensure_required_context`) | **Shipped** |
+| **D** | Routing — `case_facts_present` collapse (T3.1) | 9, 13 | `services/semantic_intent_router.py:~180` (`_decision_from_payload`) | **Shipped** |
+| **B** | State — re-ask loop (T4.2) + persist-gap (T4.1) | 3, 9, 13, 14, 18 | `agent/communication/active_case_resume.py:94-101` + parsers `:151-184` + `agent/graph/slot_answer_binding.py:158-207`; T4.1 nuance `agent/runtime/runtime_contract.py:~182` | **Closed by D** (see below) |
+| **F1** | Final-guard — exploration stream bypass | — | `agent/api/streaming.py:646-660` (`_stream_exploration_reply` builds the final `state_update_event` without `apply_v92_contracts_to_payload` → `validate_final_output` never runs on the primary streamed knowledge path) | **Open** |
+| **F2** | Final-guard — non-technical block inert | — | `agent/runtime/runtime_contract.py:492-499` (non-technical branch holds the guard result but substitutes no fallback on block, unlike the technical branch `:471-477`); consumers `streaming.py:1086`, `models.py:393` emit `final_guard_result` as telemetry only → a non-technical block is end-to-end inert | **Open** |
+
+---
+
+## Deploy ledger
+
+All deploys: red-before-green → CI (`agent-bff-guardrails`) green → merge →
+pre-deploy gate `pytest backend -q -rf` exit 0 → `ops/release-backend.sh`
+(backend only) → live acceptance in the deployed container. No rollbacks.
+
+Rollback anchor is always re-verified from the running daemon (`docker inspect backend`),
+never from memory.
+
+| Group | PR | Merge | Live image digest (healthy) | Live acceptance |
+|-------|----|-------|------------------------------|-----------------|
+| Doctrine A + A.3 | #30 | `39615b39` | `ghcr.io/jungt72/sealai-backend:39615b39-20260603-133014@sha256:703728995bd8c3488e8d6c8761fcb5bfe729adeec21b04a1b76f24de0392d01e` | original repro blocked at both layers; neutral render clean |
+| C dedup (T5.1) | #31 | `7429131a` | `ghcr.io/jungt72/sealai-backend:7429131a-20260603-140325@sha256:a452646c2d05ba2ab2a043e450d6658168650e55e57d68f13fd153cb111719b5` | S8 one-acknowledgment; value-absent seam preserved |
+| D routing (T3.1) | #32 | `bac97dff` | `ghcr.io/jungt72/sealai-backend:bac97dff-20260603-142535@sha256:70ae180638f872891432b51395413046e133c8030d3b691a5d54fdb35a943c5d` | S5 both intents → case path; AC9 no over-route |
+
+Pre-A.3 rollback anchor (daemon-verified at the time):
+`ghcr.io/jungt72/sealai-backend:aa7a450c-20260603-055758@sha256:b86b08ac41a84d418224d56e84e48262bdd2e0ca65cb3d44315054c17cbcae29`
+
+---
+
+## Group B — CLOSED BY D (verification, not implementation)
+
+Group B was planned as a CaseState-mutation fix ("route narrative facts into the
+state-gate candidates" + break the re-ask loop). A read-only probe of the **pure
+deterministic** routing (no LLM, no mutation) shows the audited bug **does not
+reproduce** after D — red-before-green fails at **red**.
+
+Evidence (reproducible):
+
+- `_hard_case_facts_present("wir verwenden FKM bei 100°C") = True` — "100°C" is a concrete case marker.
+- `PreGateClassifier().classify("wir verwenden FKM bei 100°C") -> DOMAIN_INQUIRY`
+  (reason `deterministic_domain_inquiry`) — **independent of the LLM**.
+- `ConversationControllerV7.decide(...)` on that message with an open `medium` slot:
+  - post-D `pre_gate=DOMAIN_INQUIRY` → `governed_intake` (mutation=`proposed`) → governed graph → extract + persist candidates.
+  - pre-D `pre_gate=KNOWLEDGE_QUERY` → `active_case_side_question` (mutation=`forbidden`) → resume seam → re-ask, fact loss.
+- `side_question_detection.classify_message_as_knowledge_side_question(...)` returns `None`
+  for the S6 message (`side_question_detection.py:80`: `contains_concrete_case_marker` short-circuits the side classifier).
+- `run_governed_graph_turn` returns `persisted_state` → the governed-intake path persists the
+  **full** state (observed extractions / candidate facts / asserted claims), not just
+  `conversation_messages` (the latter is what `loaders.persist_visible_governed_turn` writes on the no-mutation routes).
+
+Conclusion: the B roots (`active_case_resume.py:94-101` re-ask;
+`persist_visible_governed_turn` messages-only) are reached **only** on the
+no-mutation `active_case_side/process_question` paths. A concrete-fact-bearing turn
+no longer lands there — **D (T3.1) is exactly the flip** from
+`active_case_side_question` to `governed_intake`. The audited T4.2 (loop) and T4.1
+(persist) were downstream symptoms of D's routing collapse, now deployed live.
+
+Implementing the proposed resume-seam "route-to-state-gate" mutation would (1)
+duplicate the existing `governed_intake` → graph candidate-extraction path and (2)
+violate doctrine — the resume seam is "intentionally communication-only … never
+writes engineering state", and `AGENTS.md` forbids a second mutation runtime beside
+the governed runtime. Decision: **accept closed-by-D; do not add a resume-seam
+mutation; do not weaken a seam to satisfy a non-reproducing test.**
+
+Note the genuinely D-dependent variant is material-only without a numeric marker
+(e.g. "wir verwenden FKM" → `deterministic_standalone_technical_knowledge` →
+KNOWLEDGE), which staying on the knowledge path is **doctrinally correct** under AC9
+(a bare material mention without application facts must not enter the case flow).
+
+---
+
+## Backlog — log only (not actioned)
+
+**Slot over-capture (explicit-medium parser).** `"das medium ist Öl bei 100°C"` →
+`resolve_slot_answer_binding` returns `medium="Öl bei 100"`: the explicit-medium
+regex char-class (`agent/graph/slot_answer_binding.py:206-207` and the mirror in
+`agent/communication/active_case_resume.py:164-168`) swallows the trailing
+temperature fragment and stops at `°`. Lands as a *candidate* with
+`needs_clarification` (mutation `proposed`), not an asserted fact — low severity,
+pre-existing. Would need its own red-before-green + zero-regression pass before any
+change.
+
+---
+
+## Remaining — F1 / F2 (final-guard enforcement)
+
+Both change **live enforcement / streaming behavior**. Gating under the standing
+governance: autonomous → demo (PR → CI → merge), then **HALT before prod** with a
+risk summary (live-enforcement change).
+
+- **F1** — `streaming.py:646-660`: the primary streamed knowledge path
+  (`_stream_exploration_reply`) assembles the final `state_update_event` without
+  `apply_v92_contracts_to_payload`, so `validate_final_output` (the L2 knowledge
+  backstop) never runs on it.
+- **F2** — `runtime_contract.py:492-499`: the non-technical branch computes the guard
+  result but substitutes no fallback on a block (the technical branch `:471-477`
+  does). Consumers (`streaming.py:1086`, `models.py:393`) treat `final_guard_result`
+  as telemetry only, so a non-technical block is end-to-end inert.
+
+---
+
+## Standing governance digest
+
+- **Order:** doctrine (A + A.3) → C → B → D → F1/F2. C/B/D autonomous incl. deploy;
+  F1/F2 autonomous to demo, HALT before prod.
+- **Per-fix:** tight plan (root file:line, ACs, blast radius); define the concrete
+  user repro and **verify against it** (lesson: audit sibling ≠ reported bug);
+  red-before-green; zero-FP proof if a guard/lexicon is touched; atomic conventional
+  commits; honest messages.
+- **HALT to human** at: a change to live enforcement/streaming/mutation/runtime_contract
+  before prod-deploy; a doctrine/security design decision; a test that would only pass
+  by weakening a guard (never weaken — HALT); a real FP/regression/ambiguity that can't
+  be cleanly resolved; live behavior contradicting tests; a finding outside the fix-map
+  (log + surface, do not silently action).
+- **Ops:** rollback anchor verified from the running daemon (`docker inspect backend`),
+  never from memory. Commit → PR on `demo/rwdr-limited-external` (never `main`) →
+  CI (`agent-bff-guardrails`) green → `gh pr merge --merge --delete-branch` → checkout
+  demo + pull. Prod only via `ops/release-backend.sh` (backend only). Pre-deploy gate
+  `cd backend && python -m pytest -q -rf` (exit code authoritative). Live acceptance +
+  recorded live digest.
