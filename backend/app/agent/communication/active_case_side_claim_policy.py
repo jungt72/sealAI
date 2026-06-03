@@ -417,6 +417,10 @@ def _ensure_required_context(
     elif _is_material_question(message) and "keine technische freigabe" not in answer_lower:
         additions.append("Das ist keine technische Freigabe und keine abschliessende Werkstoffauswahl.")
 
+    # Overlap-check (T5.1): drop any addition whose text is already present in the
+    # answer, so the joined seam never duplicates an acknowledgment the answer
+    # already made (some per-addition keyword guards miss verbatim duplicates).
+    additions = [add for add in additions if _normalize(add) not in answer_lower]
     if not additions:
         return answer
     return f"{answer}\n\n" + "\n\n".join(additions)
