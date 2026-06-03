@@ -71,3 +71,45 @@ def test_non_knowledge_nontechnical_routes_stay_empty(route: str) -> None:
     )
     assert result.decision == "pass"
     assert result.final_stream_allowed is True
+
+
+# --- A.3: the ORIGINAL reported leak forms must BLOCK on a knowledge turn ------
+# Closes the Layer-2 asymmetry: the optimum/superiority forms (incl. the
+# application-anchored "optimal für …" that L1 caught via the suitability category
+# but the knowledge backstop previously let pass).
+
+A3_LEAKS_BLOCK_L2 = (
+    "EPDM könnte optimal sein",
+    "EPDM könnte für diese Anwendung optimal sein",
+    "PTFE ist NBR überlegen",
+    "PTFE übertrifft NBR",
+    "EPDM ist optimal für diese Anwendung",  # was PASS at L2 pre-A.3 (asymmetry)
+)
+
+
+@pytest.mark.parametrize("text", A3_LEAKS_BLOCK_L2)
+def test_a3_knowledge_turn_blocks_original_leak_forms(text: str) -> None:
+    result = validate_final_output(text, context=_knowledge_context())
+    assert result.decision == "block"
+    assert result.final_stream_allowed is False
+    assert "comparative_ranking" in result.detected_forbidden_claims
+
+
+# --- A.3 negative boundary: attributive forms & property-subject predicatives --
+# must PASS on a knowledge turn (property statement, never a material selection).
+
+A3_NEGATIVES_PASS_L2 = (
+    "PTFE hat überlegene chemische Beständigkeit als NBR",
+    "FKM hat optimale Temperaturbeständigkeit",
+    "Die Druckverformung von FKM ist optimal",
+    "Die chemische Beständigkeit von PTFE ist der von NBR überlegen",
+    "die Wärmebeständigkeit von FKM übertrifft die von NBR",
+)
+
+
+@pytest.mark.parametrize("text", A3_NEGATIVES_PASS_L2)
+def test_a3_knowledge_turn_passes_property_and_attributive_forms(text: str) -> None:
+    result = validate_final_output(text, context=_knowledge_context())
+    assert result.decision == "pass"
+    assert result.final_stream_allowed is True
+    assert result.detected_forbidden_claims == []

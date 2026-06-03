@@ -96,6 +96,35 @@ _COMPARATIVE_RANKING_PATTERNS: Sequence[str] = (
     r"\bam\s+(?:besten|meisten)\s+geeignet\b",
     # 4. statt-Präferenz — "X statt Y gewählt/genommen/bevorzugt/…".
     r"\bstatt\s+(?:\w+\s+){0,3}(?:gew(?:ä|ae)hlt|genommen|bevorzugt|empfohlen|einsetzen|verwenden)\b",
+    # ---- A.3: the two ORIGINAL reported leak forms (optimal / überlegen /
+    # übertrifft). Group A.1 covered only the geeignet-family. Anchored to a
+    # MATERIAL SELECTION claim — predicative (uninflected) optimum/superiority on a
+    # material subject, or an application anchor — so attributive PROPERTY statements
+    # ("optimale/überlegene <Eigenschaft>") and property-subject predicatives
+    # ("… von <Material> ist optimal") stay allowed. Hedged limits ("nicht optimal")
+    # stay allowed. Proven zero false positives against the material_comparison.py
+    # corpus and the negative fixtures in tests/test_comparative_ranking_guard.
+    # A.3a optimum — material subject (not a "von <Mat>" genitive), predicative.
+    r"(?<!von )\b(?:fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon|es|das)\s+"
+    r"(?:ist|sind|w(?:ä|ae)re|w(?:ü|ue)rde|k(?:ö|oe)nnte|sei)\s+(?:\w+\s+){0,5}"
+    r"(?<!nicht )(?<!kein )(?<!keine )(?<!weniger )(?:optimal|ideal|perfekt|bestens)\b",
+    # A.3a optimum — application anchor ("… optimal für (die|diese|…) Anwendung").
+    r"(?<!nicht )(?<!kein )(?<!keine )(?<!weniger )\b(?:optimal|ideal|perfekt|bestens)\s+"
+    r"f(?:ü|ue)r\s+(?:die\s+|diese\s+|ihre\s+|den\s+|diesen\s+)?"
+    r"\b(?:anwendung|anforderung|fall|einsatz|applikation)\b",
+    # A.3b superiority — material subject (not genitive), predicative "überlegen".
+    r"(?<!von )\b(?:fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon|es|das)\s+"
+    r"(?:ist|sind|w(?:ä|ae)re|w(?:ü|ue)rde|k(?:ö|oe)nnte|sei)\s+(?:\w+\s+){0,5}"
+    r"(?<!nicht )(?<!kein )(?<!weniger )(?:ü|ue)berlegen\b",
+    # A.3b superiority — application anchor ("… überlegen für … Anwendung").
+    r"(?<!nicht )(?<!kein )(?<!weniger )\b(?:ü|ue)berlegen\s+"
+    r"f(?:ü|ue)r\s+(?:die\s+|diese\s+|ihre\s+|den\s+|diesen\s+)?"
+    r"\b(?:anwendung|anforderung|fall|einsatz|applikation)\b",
+    # A.3b superiority — "übertrifft" material⇄material (object must be a material,
+    # article-only gap). Property comparatives "… von FKM übertrifft die von NBR"
+    # are NOT matched (object is "die von NBR", not a bare material token).
+    r"\b(?:fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\s+(?:ü|ue)bertrifft\s+"
+    r"(?:das\s+|den\s+|die\s+)?(?:fkm|ffkm|epdm|nbr|hnbr|ptfe|vmq|silikon)\b",
 )
 
 # Explicit compliance / final-release overclaims. These phrases are forbidden
