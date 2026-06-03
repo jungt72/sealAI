@@ -1016,6 +1016,43 @@ class TestExplorationReplyPromptRegistry:
         assert any(payload.get("type") == "turn_complete" for payload in payloads)
 
     @pytest.mark.asyncio
+    async def test_exploration_reply_enforces_l2_only_suitability_leak(self):
+        """F1: an L2-only suitability leak ("sind geeignet") that L1 passes must be
+        enforced on the exploration stream by routing the final payload through the
+        contract guard (validate_final_output via apply_v92_contracts_to_payload).
+        """
+        from app.agent.api.streaming import _stream_exploration_reply
+        from app.agent.runtime.output_guard import check_fast_path_output
+
+        # Precondition: L1 does NOT catch this phrasing, so today it reaches the user.
+        safe, _category = check_fast_path_output("Die Werkstoffe sind geeignet.")
+        assert safe is True
+
+        fake_client = MagicMock()
+        fake_client.chat.completions.create = AsyncMock(
+            return_value=_FakeExplorationStream(["Die Werkstoffe ", "sind geeignet."])
+        )
+        fake_openai = MagicMock()
+        fake_openai.AsyncOpenAI.return_value = fake_client
+
+        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
+             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+            frames = await _collect_frames(
+                _stream_exploration_reply(
+                    "Welche Werkstoffe passen fuer Salzwasser?",
+                    tenant_id="tenant-1",
+                )
+            )
+
+        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
+        state_update = next(p for p in payloads if p.get("type") == "state_update")
+        # ENFORCED: the final emitted answer is the safe fallback, not the leak.
+        assert "geeignet" not in state_update["answer_markdown"].lower()
+        # The contract guard ran on the exploration path (was bypassed before).
+        assert "final_guard_result" in state_update
+        assert state_update["run_meta"]["v92"]["guarded_fallback_used"] is True
+
+    @pytest.mark.asyncio
     async def test_exploration_reply_returns_error_frame_on_model_failure(self):
         from app.agent.api.streaming import _stream_exploration_reply
 

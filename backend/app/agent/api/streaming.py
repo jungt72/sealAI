@@ -657,6 +657,32 @@ async def _stream_exploration_reply(
                 ),
             ),
         }
+        # F1: run the assembled knowledge reply through the contract guard so the
+        # L2 knowledge backstop (validate_final_output) also covers this streamed
+        # path — it catches suitability forms L1 misses (e.g. the plural "sind
+        # geeignet"). On a late L2 block the guard substitutes the safe fallback;
+        # reuse the existing text_reset+fallback streaming so the visible text is
+        # corrected (identical mechanism to the L1 post-assembly guard above).
+        state_update_event = apply_v92_contracts_to_payload(
+            state_update_event,
+            session_id="exploration",
+            user_message=message,
+            state=None,
+            route_hint="knowledge",
+        )
+        guarded_reply = str(state_update_event.get("answer_markdown") or "")
+        if guarded_reply and guarded_reply != full_reply:
+            _log.warning("exploration_output_guarded_l2 topic=%s", query.topic[:64])
+            if preview_emitted:
+                yield event_builder.frame({"type": "text_reset"}, event_type="delta")
+            for segment in _visible_stream_segments(guarded_reply):
+                yield event_builder.frame(
+                    {"type": "text_chunk", "text": segment},
+                    event_type="delta",
+                )
+                if len(guarded_reply) > _VISIBLE_STREAM_SEGMENT_CHARS:
+                    await asyncio.sleep(_VISIBLE_STREAM_SEGMENT_DELAY_SECONDS)
+            full_reply = guarded_reply
         yield event_builder.frame(state_update_event, event_type="state_update", is_final=True)
         yield event_builder.frame({"type": "turn_complete"}, event_type="done")
     except Exception as exc:  # noqa: BLE001

@@ -276,3 +276,68 @@ async def test_governed_runtime_never_enables_visible_composer_streaming() -> No
 
     assert fake_graph.graph_input is not None
     assert fake_graph.graph_input.stream_visible_answer_composer is False
+
+
+def test_apply_v92_contracts_enforces_nontechnical_knowledge_block() -> None:
+    """F2: a non-technical knowledge turn whose answer carries an L2-only
+    suitability leak ("sind geeignet", which L1 does not catch) must have the
+    block ENFORCED — the safe fallback is substituted, not merely detected.
+    """
+    from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
+
+    payload = {
+        "reply": "Die Werkstoffe sind geeignet.",
+        "answer_markdown": "Die Werkstoffe sind geeignet.",
+        "response_class": "conversational_answer",
+        "run_meta": {"answer_trace": {"answer_mode": "knowledge"}},
+        "ui": {},
+    }
+
+    result = apply_v92_contracts_to_payload(
+        payload,
+        session_id="case-1",
+        user_message="Welche Werkstoffe passen hier?",
+        state=None,
+        route_hint="knowledge",
+        case_id="case-1",
+    )
+
+    # Non-technical knowledge route.
+    assert result["turn_envelope"]["is_technical"] is False
+    assert result["nontechnical_answer_context"]["route"] == "knowledge_general"
+    # ENFORCED: the unsafe suitability claim is substituted, not just flagged.
+    assert "geeignet" not in result["answer_markdown"].casefold()
+    assert result["answer_markdown"] == FAST_PATH_GUARD_FALLBACK
+    assert result["reply"] == FAST_PATH_GUARD_FALLBACK
+    assert result["run_meta"]["v92"]["guarded_fallback_used"] is True
+    assert result["run_meta"]["v92"]["initial_final_guard_decision"] == "block"
+    # Re-validated guard on the safe fallback passes.
+    assert result["final_guard_result"]["final_stream_allowed"] is True
+
+
+def test_apply_v92_contracts_keeps_clean_nontechnical_knowledge_answer() -> None:
+    """F2 no-over-block: a legitimate knowledge answer (property statement, no
+    suitability/compliance/ranking claim) streams through unchanged.
+    """
+    clean = "FKM hat eine sehr gute Temperaturbestaendigkeit und gute Medienvertraeglichkeit."
+    payload = {
+        "reply": clean,
+        "answer_markdown": clean,
+        "response_class": "conversational_answer",
+        "run_meta": {"answer_trace": {"answer_mode": "knowledge"}},
+        "ui": {},
+    }
+
+    result = apply_v92_contracts_to_payload(
+        payload,
+        session_id="case-1",
+        user_message="Was zeichnet FKM aus?",
+        state=None,
+        route_hint="knowledge",
+        case_id="case-1",
+    )
+
+    assert result["turn_envelope"]["is_technical"] is False
+    assert result["answer_markdown"] == clean
+    assert result["run_meta"]["v92"]["guarded_fallback_used"] is False
+    assert result["final_guard_result"]["final_stream_allowed"] is True

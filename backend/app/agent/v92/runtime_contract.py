@@ -8,6 +8,7 @@ from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
+from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
 from app.agent.state.models import GovernedSessionState
 from app.agent.v92.adversarial_review import review_answer_draft, review_answer_draft_with_llm_fallback
 from app.agent.v92.contracts import (
@@ -495,6 +496,15 @@ def apply_v92_contracts_to_payload(
             dashboard_projection=dashboard_payload,
         )
         final_guard = validate_final_output(visible_answer, context=nontechnical_context)
+        initial_guard = final_guard
+        # F2: a non-technical block must ENFORCE, not just record telemetry —
+        # substitute the same safe fallback the technical branch (:471) and L1 use,
+        # then re-validate. Without this, a detected knowledge-turn leak (e.g. an
+        # L2-only "sind geeignet") still left in visible_answer below.
+        if final_guard.decision in {"block", "human_review"} or not final_guard.final_stream_allowed:
+            guarded_fallback_used = True
+            visible_answer = FAST_PATH_GUARD_FALLBACK
+            final_guard = validate_final_output(visible_answer, context=nontechnical_context)
         nontechnical_context.guard_trace = final_guard.model_dump(mode="json")
         updated["nontechnical_answer_context"] = nontechnical_context.model_dump(mode="json")
 
