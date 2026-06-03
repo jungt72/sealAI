@@ -28,6 +28,18 @@ def _ltm_collection() -> str:
     return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
 
 
+def _ltm_tenant_id(user: RequestUser) -> str:
+    """Authoritative tenant scope for LTM (V1.7 §8 / audit C6).
+
+    Mirrors the canonical case scope (services/auth/dependencies + agent deps):
+    user_id stays the primary isolation key, tenant_id is additive. The live
+    Keycloak does not yet issue a tenant_id claim, so this resolves to "default"
+    today and tightens to the real tenant automatically once the P0-2 Keycloak
+    mapper lands. Never trust a client-supplied tenant_id.
+    """
+    return str(getattr(user, "tenant_id", None) or "default")
+
+
 # ----------------------------------------------------------------------
 # Create Memory Item
 # ----------------------------------------------------------------------
@@ -57,6 +69,7 @@ async def create_memory_item(
     point_id = uuid.uuid4().hex
     q_payload: Dict[str, Any] = {
         "user": user.user_id,  # WICHTIG: Schlüssel = 'user' (wird für Filter verwendet!)
+        "tenant_id": _ltm_tenant_id(user),  # authoritative; client value is ignored below
         "chat_id": chat_id,
         "kind": kind,
         "text": text,
@@ -108,7 +121,9 @@ async def export_memory(
         return JSONResponse({"items": [], "count": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        items: List[Dict[str, Any]] = ltm_export_all(user=user.user_id, chat_id=chat_id, limit=limit)
+        items: List[Dict[str, Any]] = ltm_export_all(
+            user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id, limit=limit
+        )
         logger.info(f"[LTM] export_memory user={user.user_id} chat_id={chat_id} count={len(items)}")
         return JSONResponse(
             {"items": items, "count": len(items), "ltm_enabled": True, "success": True},
@@ -131,7 +146,7 @@ async def delete_memory(
         return JSONResponse({"deleted": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        deleted = ltm_delete_all(user=user.user_id, chat_id=chat_id)
+        deleted = ltm_delete_all(user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id)
         logger.info(f"[LTM] delete_memory user={user.user_id} chat_id={chat_id} deleted={deleted}")
         return JSONResponse(
             {"deleted": deleted, "ltm_enabled": True, "success": True},

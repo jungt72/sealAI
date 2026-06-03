@@ -4,6 +4,7 @@ Kurz-/Mittelzeit (Redis/Summary) laufen separat über LangGraph-Checkpointer.
 
 Payload-Felder pro Eintrag:
 - user: str                  (Pflicht für Filterung pro Benutzer)
+- tenant_id: str             (Pflicht für Mandanten-Scoping; V1.7 §8 / C6)
 - chat_id: str               (optional; für Export/Löschen pro Chat)
 - kind: str                  (z. B. "preference", "fact", "note", …)
 - text: str                  (Inhalt)
@@ -13,7 +14,7 @@ Weitere Felder erlaubt – werden unverändert mit exportiert.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.models import FilterSelector
@@ -60,9 +61,12 @@ def ensure_ltm_collection(client: QdrantClient) -> None:
 # Export / Delete
 # ---------------------------------------------------------------------------
 
-def _build_user_filter(user: str, chat_id: Optional[str] = None) -> models.Filter:
+def _build_user_filter(user: str, tenant_id: str, chat_id: Optional[str] = None) -> models.Filter:
+    # Tenant scoping is mandatory (V1.7 §8 / audit C6): pin BOTH user and tenant
+    # so a user that spans tenants can never read/delete another tenant's points.
     must: List[models.FieldCondition] = [
-        models.FieldCondition(key="user", match=models.MatchValue(value=user))
+        models.FieldCondition(key="user", match=models.MatchValue(value=user)),
+        models.FieldCondition(key="tenant_id", match=models.MatchValue(value=tenant_id)),
     ]
     if chat_id:
         must.append(models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id)))
@@ -71,12 +75,14 @@ def _build_user_filter(user: str, chat_id: Optional[str] = None) -> models.Filte
 
 def ltm_export_all(
     user: str,
+    *,
+    tenant_id: str,
     chat_id: Optional[str] = None,
     limit: int = 10000,
 ) -> List[Dict[str, Any]]:
     """
-    Exportiert bis zu `limit` LTM-Items für den User (optional gefiltert nach chat_id).
-    Liefert Liste aus {id, payload}.
+    Exportiert bis zu `limit` LTM-Items für den User innerhalb seines Tenants
+    (optional gefiltert nach chat_id). Liefert Liste aus {id, payload}.
     """
     if not settings.ltm_enable:
         return []
@@ -84,7 +90,7 @@ def ltm_export_all(
     client = _get_qdrant_client()
     ensure_ltm_collection(client)
 
-    flt = _build_user_filter(user, chat_id)
+    flt = _build_user_filter(user, tenant_id, chat_id)
     out: List[Dict[str, Any]] = []
 
     next_page = None
@@ -117,11 +123,13 @@ def ltm_export_all(
 
 def ltm_delete_all(
     user: str,
+    *,
+    tenant_id: str,
     chat_id: Optional[str] = None,
 ) -> int:
     """
-    Löscht alle LTM-Items für User (optional gefiltert nach chat_id).
-    Gibt die Anzahl der gelöschten Punkte (approx.) zurück.
+    Löscht alle LTM-Items für User innerhalb seines Tenants (optional gefiltert
+    nach chat_id). Gibt die Anzahl der gelöschten Punkte (approx.) zurück.
     """
     if not settings.ltm_enable:
         return 0
@@ -129,7 +137,7 @@ def ltm_delete_all(
     client = _get_qdrant_client()
     ensure_ltm_collection(client)
 
-    flt = _build_user_filter(user, chat_id)
+    flt = _build_user_filter(user, tenant_id, chat_id)
     coll = _ltm_collection_name()
 
     # Vorab zählen (für Response)
