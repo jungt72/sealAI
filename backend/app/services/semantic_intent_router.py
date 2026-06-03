@@ -177,9 +177,12 @@ def _decision_from_payload(
     reason = str(payload.get("reason") or "").strip()[:500]
 
     classification = _classification_for_intent(intent, deterministic)
-    case_facts = hard_case_facts or (
-        llm_case_facts and intent == "governed_case_intake"
-    )
+    # D (T3.1): case_facts_present is the fact-presence signal and must be honored
+    # independent of the LLM intent label. Previously it was ANDed with
+    # intent == "governed_case_intake", so a true case_facts_present was discarded
+    # whenever the LLM picked a non-intake label -> the facts fell to the knowledge
+    # route. AC9 is preserved: with no facts present this stays False (knowledge).
+    case_facts = hard_case_facts or llm_case_facts
     applied = False
 
     if confidence >= _OVERRIDE_THRESHOLD:

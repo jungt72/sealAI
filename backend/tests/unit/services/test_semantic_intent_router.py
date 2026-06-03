@@ -8,6 +8,7 @@ import pytest
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.pre_gate_classifier import ClassificationResult
 from app.services.semantic_intent_router import (
+    _decision_from_payload,
     refine_pre_gate_classification,
     semantic_pre_gate_candidate,
 )
@@ -178,3 +179,33 @@ async def test_semantic_router_keeps_low_confidence_deterministic_route(
     assert decision.classification_result(deterministic).classification is (
         PreGateClassification.DOMAIN_INQUIRY
     )
+
+
+# --- D (T3.1): case_facts_present must not collapse on a non-intake intent ----
+# Root: _decision_from_payload :180 had
+#   case_facts = hard_case_facts or (llm_case_facts and intent == "governed_case_intake")
+# so a true case_facts_present signal was discarded whenever the LLM picked a
+# non-intake intent label -> facts fell to the knowledge route. case_facts_present
+# is the fact-presence signal and must be honored independent of the intent label.
+
+
+@pytest.mark.parametrize("intent", ["knowledge_explain", "knowledge_compare"])
+def test_case_facts_present_routes_to_case_regardless_of_intent_label(intent: str) -> None:
+    decision = _decision_from_payload(
+        {"intent": intent, "confidence": 0.95, "case_facts_present": True},
+        deterministic=_deterministic(PreGateClassification.KNOWLEDGE_QUERY),
+        model="test-model",
+        hard_case_facts=False,
+    )
+    assert decision.classification is PreGateClassification.DOMAIN_INQUIRY
+
+
+def test_no_case_facts_knowledge_intent_stays_knowledge() -> None:
+    # AC9 guard: no facts present -> knowledge stays knowledge (no over-routing to case).
+    decision = _decision_from_payload(
+        {"intent": "knowledge_explain", "confidence": 0.95, "case_facts_present": False},
+        deterministic=_deterministic(PreGateClassification.KNOWLEDGE_QUERY),
+        model="test-model",
+        hard_case_facts=False,
+    )
+    assert decision.classification is PreGateClassification.KNOWLEDGE_QUERY
