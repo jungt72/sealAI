@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "//": "PROPOSED — review, then `mv .claude/settings.json.proposed .claude/settings.json` and restart the session to activate the hooks. Merges the existing project permissions with the governance hooks + permission gates.",
   "permissions": {
     "defaultMode": "plan",
     "disableBypassPermissionsMode": "disable",
@@ -22,6 +23,17 @@
       "Bash(git branch:*)",
       "Bash(git show:*)",
       "Bash(git ls-files:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git switch:*)",
+      "Bash(git switch -c:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git push:*)",
+      "Bash(git pull --ff-only:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr merge:*)",
       "Bash(python:*)",
       "Bash(python3:*)",
       "Bash(.venv/bin/python:*)",
@@ -29,18 +41,16 @@
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
       "Bash(node:*)",
+      "Bash(touch .claude/.gate-logs/:*)",
+      "Bash(docker inspect backend:*)",
       "Bash(docker compose ps:*)",
       "Bash(docker compose logs:*)"
     ],
     "ask": [
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
       "Bash(git checkout:*)",
-      "Bash(git switch:*)",
       "Bash(git merge:*)",
       "Bash(git rebase:*)",
       "Bash(git reset:*)",
-      "Bash(git push:*)",
       "Bash(git stash:*)",
       "Bash(mkdir:*)",
       "Bash(cp:*)",
@@ -50,7 +60,9 @@
       "Bash(sed -i:*)",
       "Bash(docker exec:*)",
       "Bash(docker compose:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(ops/release-backend.sh:*)",
+      "Bash(bash ops/release-backend.sh:*)"
     ],
     "deny": [
       "WebFetch",
@@ -60,6 +72,8 @@
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
       "Read(./**/*id_rsa*)",
+      "Write(./.env)",
+      "Write(./.env.*)",
       "Bash(sudo:*)",
       "Bash(rm -rf:*)",
       "Bash(shutdown:*)",
@@ -67,8 +81,31 @@
       "Bash(kill -9:*)",
       "Bash(git clean:*)",
       "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push -u origin main:*)",
+      "Bash(git push --set-upstream origin main:*)",
+      "Bash(git push origin HEAD:main:*)",
+      "Bash(git push origin +main:*)",
       "Bash(docker compose down:*)",
       "Bash(docker compose rm:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/doctrine-gate.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/deploy-gate.sh\""
+          }
+        ]
+      }
     ]
   }
 }
