@@ -1,19 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
-import type { Session } from "next-auth";
-import {
-  ArrowDown,
-  ArrowLeftRight,
-  Bot,
-  FileSearch,
-  FlaskConical,
-  ListChecks,
-  UserRound,
-  Wrench,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowDown, Bot, UserRound } from "lucide-react";
 
 import ChatComposer from "@/components/dashboard/ChatComposer";
 import MarkdownRenderer from "@/components/markdown/MarkdownRenderer";
@@ -44,87 +32,12 @@ const CHAT_NAVIGATION_KEYS = new Set([
   " ",
 ]);
 
-type StarterPrompt = {
-  label: string;
-  prompt: string;
-  icon: LucideIcon;
-};
-
-const STARTER_PROMPTS: StarterPrompt[] = [
-  {
-    label: "Lösung erarbeiten",
-    icon: Wrench,
-    prompt:
-      "Ich möchte eine Dichtungslösung erarbeiten. Bitte führe mich Schritt für Schritt durch die wichtigsten Angaben und erkläre, warum sie relevant sind.",
-  },
-  {
-    label: "Material vergleichen",
-    icon: ArrowLeftRight,
-    prompt:
-      "Bitte vergleiche zwei Dichtungswerkstoffe für einen konkreten Einsatzfall. Ich nenne dir gleich Materialien, Medium, Temperatur und Randbedingungen.",
-  },
-  {
-    label: "Materialdetails",
-    icon: FlaskConical,
-    prompt:
-      "Bitte erkläre mir einen Dichtungswerkstoff mit typischen Medien, Temperaturrahmen, Stärken, Grenzen und wichtigen Prüfpunkten.",
-  },
-  {
-    label: "Ursache finden",
-    icon: FileSearch,
-    prompt:
-      "Ich möchte eine Dichtungsleckage oder einen Ausfall analysieren. Bitte hilf mir strukturiert bei der Ursachenforschung.",
-  },
-  {
-    label: "Anfrage vorbereiten",
-    icon: ListChecks,
-    prompt:
-      "Bitte hilf mir, eine belastbare Anfragebasis für einen Hersteller aufzubauen. Keine Freigabe, sondern offene Punkte und Prüffragen sichtbar machen.",
-  },
-];
-
 interface ChatPaneProps {
   caseId?: string;
   initialGoal?: string;
   onCaseBound?: (caseId: string) => void;
   onNoCaseTurn?: () => void;
   onTurnComplete?: (caseId: string) => void;
-}
-
-function decodeJwtPayload(token?: string | null): Record<string, unknown> | null {
-  if (!token || typeof window === "undefined") {
-    return null;
-  }
-  const payload = token.split(".")[1];
-  if (!payload) {
-    return null;
-  }
-  try {
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    return JSON.parse(window.atob(padded)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function stringClaim(payload: Record<string, unknown> | null, key: string): string | null {
-  const value = payload?.[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function firstNameFromSession(session: Session | null | undefined): string | null {
-  const tokenPayload = decodeJwtPayload(session?.idToken);
-  const source =
-    stringClaim(tokenPayload, "given_name") ||
-    stringClaim(tokenPayload, "name") ||
-    session?.user?.name?.trim() ||
-    stringClaim(tokenPayload, "preferred_username") ||
-    session?.user?.email?.trim() ||
-    "";
-
-  const first = source.split(/[\s@._-]+/).find(Boolean);
-  return first || null;
 }
 
 function prefersReducedMotion(): boolean {
@@ -188,49 +101,33 @@ const MessageBubble = React.memo(function MessageBubble({
 });
 
 function EmptyChatStart({
-  userName,
   initialGoal,
   isStreaming,
   onSend,
 }: {
-  userName: string | null;
   initialGoal?: string;
   isStreaming: boolean;
   onSend: (message: string) => void;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-[800px] flex-col items-center">
-      <div className="mb-8 w-full">
-        <p className="text-[22px] font-medium leading-tight text-seal-blue">
-          {userName ? `Hallo ${userName}` : "Hallo"}
-        </p>
-        <h1 className="mt-4 text-[42px] font-normal leading-[1.08] tracking-[0] text-seal-blue sm:text-[52px]">
-          Womit fangen wir an?
-        </h1>
-      </div>
-
-      <ChatComposer
-        externalValue={initialGoal}
-        onSend={onSend}
-        isLoading={isStreaming}
-        autoFocus
-        placeholder="SealingAI fragen"
-        variant="hero"
+    <div className="relative mx-auto flex min-h-[calc(100vh-120px)] w-full max-w-[1040px] flex-col items-center justify-center px-4 pb-24 pt-10">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[540px] w-[min(920px,82vw)] -translate-x-1/2 -translate-y-[44%] rounded-full bg-[#BFE4FF]/55 blur-[72px]"
       />
+      <div className="relative z-10 flex w-full max-w-[760px] flex-col items-center">
+        <h1 className="mb-10 text-center text-[32px] font-normal leading-tight tracking-[0] text-[#1F2933] sm:text-[38px]">
+          Womit sollen wir anfangen?
+        </h1>
 
-      <div className="mt-6 flex w-full flex-wrap justify-center gap-3">
-        {STARTER_PROMPTS.map((starter) => (
-          <button
-            key={starter.label}
-            type="button"
-            disabled={isStreaming}
-            onClick={() => onSend(starter.prompt)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-full border border-seal-blue/15 bg-white px-5 py-3 text-[15px] font-medium text-[#4B5563] shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-seal-blue/20 hover:text-seal-blue disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <starter.icon size={17} />
-            <span>{starter.label}</span>
-          </button>
-        ))}
+        <ChatComposer
+          externalValue={initialGoal}
+          onSend={onSend}
+          isLoading={isStreaming}
+          autoFocus
+          placeholder="Was möchtest du wissen"
+          variant="hero"
+        />
       </div>
     </div>
   );
@@ -243,7 +140,6 @@ export default function ChatPane({
   onNoCaseTurn,
   onTurnComplete,
 }: ChatPaneProps) {
-  const { data: session } = useSession();
   const {
     activeCaseId,
     messages,
@@ -277,7 +173,6 @@ export default function ChatPane({
   const hasConversation = messages.length > 0 || Boolean(streamingText);
   const currentCaseId = activeCaseId || caseId;
   const isFreshStart = !hasConversation && !currentCaseId;
-  const userFirstName = firstNameFromSession(session);
   const latestUserIndex = messages.reduce((latest, message, index) => (
     message.role === "user" ? index : latest
   ), -1);
@@ -559,7 +454,6 @@ export default function ChatPane({
         >
           {isFreshStart ? (
             <EmptyChatStart
-              userName={userFirstName}
               initialGoal={initialGoal}
               onSend={(message) => void handleSend(message)}
               isStreaming={isStreaming}
@@ -647,8 +541,12 @@ export default function ChatPane({
       )}
 
       {!isFreshStart && (
-        <div data-testid="chat-composer-dock" className="shrink-0 bg-transparent px-4 pb-4 pt-2 sm:px-5">
-          <div className="mx-auto w-full" style={CHAT_SURFACE_STYLE}>
+        <div data-testid="chat-composer-dock" className="relative shrink-0 bg-transparent px-4 pb-4 pt-8 sm:px-5">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 mx-auto h-40 max-w-[980px] rounded-full bg-[#BFE4FF]/55 blur-[60px]"
+          />
+          <div className="relative z-10 mx-auto w-full" style={CHAT_SURFACE_STYLE}>
             <ChatComposer
               externalValue={null}
               onSend={(message) => void handleSend(message)}

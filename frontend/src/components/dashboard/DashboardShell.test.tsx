@@ -36,18 +36,18 @@ describe("DashboardShell", () => {
     );
   });
 
-  it("renders the sealingAI header and active workspace", () => {
+  it("renders the compact sidebar and active workspace without a top header", () => {
     render(
       <DashboardShell>
         <main>Arbeitsbereich</main>
       </DashboardShell>,
     );
 
-    expect(screen.getByTestId("sealai-header-wordmark")).toHaveAccessibleName("SEALING Intelligence");
     expect(screen.getByTestId("sealai-sidebar-corner-logo")).toBeInTheDocument();
     expect(screen.getByTestId("sealai-circular-s-logo")).toBeInTheDocument();
-    expect(screen.getByText("SEALING")).toBeInTheDocument();
-    expect(screen.getByText("INTELLIGENCE")).toBeInTheDocument();
+    expect(screen.queryByTestId("sealai-header-wordmark")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("sealai-sidebar-wordmark")).not.toBeInTheDocument();
+    expect(screen.queryByText("Angemeldet")).not.toBeInTheDocument();
     expect(screen.queryByText(/Arbeitsraum:/)).not.toBeInTheDocument();
     expect(screen.queryByText("Governed")).not.toBeInTheDocument();
     expect(screen.queryByText(/Suche-ID:/)).not.toBeInTheDocument();
@@ -76,6 +76,10 @@ describe("DashboardShell", () => {
 
     await user.click(screen.getByRole("button", { name: "Seitenleiste ausklappen" }));
 
+    expect(screen.getByTestId("sealai-sidebar-wordmark")).toHaveAccessibleName("SEALING Intelligence");
+    expect(screen.queryByTestId("sealai-header-wordmark")).not.toBeInTheDocument();
+    expect(screen.getByText("Nutzer")).toBeInTheDocument();
+    expect(screen.getByText("Angemeldet")).toBeInTheDocument();
     expect(screen.getByText("Chats")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toBeInTheDocument());
     expect(screen.getByRole("link", { name: /RWDR Wasser-Glykol/ })).toHaveAttribute(
