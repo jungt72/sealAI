@@ -6,6 +6,41 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T19:05Z — demo→main convergence + v1.7.0 release tag (NO prod deploy)
+
+Converged `demo/rwdr-limited-external` → `main` via PR #11 as a **merge-commit** (`bffa2188`;
+no squash — the full ~677-commit governance trail is preserved). Production **untouched**
+(digest-pinned; the main push's Deploy/Build-Push workflows **skipped**; no `release-*.sh` run).
+No force-push, no history rewrite, no branch deletion — demo stays the active integration branch.
+
+**STEP 0 (read-only):** main was **not** an ancestor of demo — main carried **6 unique
+CI/CD-stabilization commits** (2026-04-23/24: `e406c705 430ecbf0 56bd8c89 9acf753e 5331a9d9
+d846582f`); demo was **+677** ahead. Merge dry-run: the **only** conflicts were 4 CI/ops files —
+**zero product-code conflicts**. Merge-base `042810ef`.
+
+**Resolution (owner decision: demo-CI canonical):** merged `origin/main` into demo (`349e10ce`)
+resolving the 4 conflicts (+ `ci.yml` / `check_no_langgraph_v1.sh`) to **demo's versions** — the
+merged tree is **byte-identical to demo HEAD** (zero tree change; main's April CI content
+superseded but preserved as a merge parent). Then PR #11 (demo→main) merged conflict-free.
+
+**CI on main:** `agent-bff-guardrails` **green** (×2). The repo-wide `ruff format --check`
+(`Lint (ruff)`, **716 files** — all of `backend/` + `seo/archive/langgraph_backup/...`) is **red**
+but **pre-existing / repo-wide / not a V1.7 regression** and never gated demo PRs; accepted as an
+out-of-scope follow-up (owner decision). pytest/docker jobs skipped by `ci.yml` conditions.
+
+**Tag + release:** annotated **`v1.7.0`** on `bffa2188` + GitHub release. Verdikt: **V1.7 erreicht
+— ja-mit-Amendments** (`docs/audits/2026-06-04_v17_gap_audit_rerun.md`).
+
+**Branch protection on `main` (gh api, set):** PRs required (`required_approving_review_count: 0`);
+**`agent-bff-guardrails`** as the **required** status check (the ruff debt deliberately NOT
+required); force-pushes + deletions blocked; `enforce_admins: false`.
+
+**Verification:** `git merge-base --is-ancestor 349e10ce origin/main` = true (main ⊇ demo); the
+key V1.7 files (enforcer tests, `oring_calc.py`, GOVERNANCE_LOG, both audits, CORE_PACK_BOUNDARY)
+exist on main.
+
+---
+
 ## 2026-06-04T18:37Z — Frontend Brand/UI-Refresh prod deploy
 
 Frontend-only release of the Codex-authored brand/chat-UI refresh (owner-approved; PR #72 on

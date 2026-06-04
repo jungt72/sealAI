@@ -3,6 +3,14 @@
 Production is gated. These rules are enforced by hooks (`ops/hooks/*.sh`) and
 permissions (`.claude/settings.json`); they are also the contract for humans.
 
+## Branch model (2026-06-04)
+
+`main` is the **converged truth** as of 2026-06-04 (demo→main via PR #11, tag `v1.7.0`).
+The **working model is unchanged**: integration continues on `demo/rwdr-limited-external`
+(PRs target demo; the demo→main convergence is a deliberate, owner-gated step, not the routine).
+A broader **branch-strategy decision is parked** (along with the CI-trigger/`ruff format`
+questions) — do not change branch-guard, hooks, or CI triggers as part of routine work.
+
 ## Pre-deploy gate (authoritative)
 - Run the **full backend suite** before any deploy:
   `cd /home/thorsten/sealai && .venv/bin/python -m pytest backend -q -rf`.
