@@ -262,8 +262,17 @@ _BLOCKING_VALIDATION_STATUSES = frozenset(
     }
 )
 _BLOCKING_SOURCE_TYPES = frozenset(
-    {"inferred", "llm_research_fallback", "unknown"}
+    # C10: manufacturer_response is also listed here so the named denylist reflects
+    # the contract, but the actual guarantee is the early short-circuit against
+    # _NEVER_BRIEF_SOURCE_TYPES — these members are consulted only AFTER the origin
+    # branches, which a self_declared/user_entered response would otherwise launder.
+    {"inferred", "llm_research_fallback", "unknown", "manufacturer_response"}
 )
+# C10: source types that may never become a confirmed brief fact, checked BEFORE
+# origin normalization so a post-RFQ manufacturer response cannot launder past the
+# late denylist via origin=user_entered. The echo path surfaces it as an
+# rag_supported knowledge note instead. Never authoritative / never a release basis.
+_NEVER_BRIEF_SOURCE_TYPES = frozenset({"manufacturer_response"})
 _BLOCKING_FIELD_STATUSES = frozenset(
     {
         "candidate",
@@ -890,6 +899,48 @@ class DbRWDRCaseStateRepository:
                 event_type=event_type,
                 actor="user",
             )
+        await self.session.commit()
+        return await self.get(case_id, tenant_id=tenant_id, user_id=user_id)
+
+    async def apply_manufacturer_feedback(
+        self,
+        *,
+        case_id: str,
+        feedback: Sequence[Mapping[str, Any]],
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        """Record post-RFQ manufacturer responses as OPEN-POINT candidates.
+
+        C10: each item is appended as a manufacturer_response / candidate envelope, so
+        the evidence gate keeps it out of confirmed brief facts. A blocked field can
+        never overwrite a confirmed one (_canonical_field_map), so existing brief facts
+        stay intact. Persistence-light — reuses the case payload + snapshot mechanism.
+        """
+        row = await self._require(case_id, tenant_id=tenant_id, user_id=user_id)
+        state = _stored_rwdr_state_from_row(row)
+        fields = [dict(item) for item in state.evidence_fields]
+        for item in feedback:
+            fields.append(_manufacturer_feedback_envelope(item))
+        updated = StoredRWDRCaseState(
+            case_id=state.case_id,
+            schema_version=state.schema_version,
+            raw_inquiry_text=state.raw_inquiry_text,
+            extraction_version=state.extraction_version,
+            rule_version=state.rule_version,
+            created_at=state.created_at,
+            updated_at=_utc_now(),
+            evidence_fields=tuple(fields),
+        )
+        updated = self._helper._with_brief(updated)
+        row.payload = _rwdr_payload_from_state(updated)
+        row.schema_version = updated.schema_version
+        row.ruleset_version = updated.rule_version
+        await self._write_snapshot(
+            state=updated,
+            event_type="manufacturer_response_recorded",
+            actor=user_id,
+        )
         await self.session.commit()
         return await self.get(case_id, tenant_id=tenant_id, user_id=user_id)
 
@@ -2203,6 +2254,22 @@ async def update_db_persisted_rwdr_confirmations(
     )
 
 
+async def record_db_persisted_rwdr_manufacturer_feedback(
+    *,
+    session: AsyncSession,
+    case_id: str,
+    feedback: Sequence[Mapping[str, Any]],
+    tenant_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    return await DbRWDRCaseStateRepository(session).apply_manufacturer_feedback(
+        case_id=case_id,
+        feedback=feedback,
+        tenant_id=tenant_id,
+        user_id=user_id,
+    )
+
+
 async def evaluate_db_persisted_rwdr_case(
     *,
     session: AsyncSession,
@@ -2366,6 +2433,93 @@ def _candidate_field(field: str, value: Any, unit: str | None, source_span: str 
             "confirmation_required": True,
         }
     )
+
+
+_MANUFACTURER_ECHO_SAFE_FALLBACK = (
+    "Herstellerrückmeldung liegt vor – Prüfung durch verantwortliche Stelle erforderlich."
+)
+_MANUFACTURER_FIELD_PREFIX = "manufacturer_response__"
+
+
+def _manufacturer_feedback_envelope(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Field envelope for a post-RFQ manufacturer response.
+
+    Always tagged source_type=manufacturer_response / validation_status=candidate so
+    the evidence gate keeps it an OPEN POINT — never a confirmed brief fact (the
+    structural backstop is _blocked_reason via _NEVER_BRIEF_SOURCE_TYPES). The raw
+    manufacturer note is preserved for the rag_supported echo projection.
+    """
+    field_name = str(item.get("field") or item.get("field_name") or "").strip()
+    # Namespace the stored key so a manufacturer response can never shadow a real
+    # case field in a naive {field: item} map. The target field is preserved for the
+    # echo label. Non-liability by construction; the brief gate blocks it anyway.
+    namespaced = f"{_MANUFACTURER_FIELD_PREFIX}{field_name}" if field_name else "manufacturer_response"
+    return _drop_none(
+        {
+            "field": namespaced,
+            "target_field": field_name or None,
+            "value": item.get("value"),
+            "unit": _optional_text(item.get("unit")),
+            "origin": "manufacturer_response",
+            "source_type": "manufacturer_response",
+            "status": "candidate",
+            "validation_status": "candidate",
+            "confirmation_status": "unconfirmed",
+            "source_span": _optional_text(item.get("source_span")),
+            "manufacturer_note": _optional_text(
+                item.get("note") or item.get("manufacturer_note")
+            ),
+            "liability_bearing": False,
+            "confirmation_required": True,
+        }
+    )
+
+
+def manufacturer_response_echo_notes(
+    evidence_fields: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """Project recorded manufacturer responses into rag_supported knowledge notes.
+
+    C10 echo path: a manufacturer response, reproduced in chat, surfaces ONLY as an
+    rag_supported-class note — never a confirmed fact, never release/approval
+    wording. Each label passes through the fast-path output guard; if it would leak
+    forbidden wording (recommendation / suitability / manufacturer-approval) the
+    label is replaced by a neutral review-required fallback.
+    """
+    from app.agent.runtime.output_guard import check_fast_path_output
+
+    notes: list[dict[str, str]] = []
+    for raw in evidence_fields:
+        source_type = _token(raw.get("source_type") or raw.get("provenance"))
+        if source_type != "manufacturer_response":
+            continue
+        label = _manufacturer_echo_label(raw)
+        safe, _category = check_fast_path_output(label)
+        if not safe:
+            label = _MANUFACTURER_ECHO_SAFE_FALLBACK
+        notes.append({"label": label, "status": "rag_supported"})
+    return notes
+
+
+def _manufacturer_echo_label(raw: Mapping[str, Any]) -> str:
+    field_name = str(
+        raw.get("target_field") or raw.get("field") or raw.get("field_name") or ""
+    ).strip()
+    if field_name.startswith(_MANUFACTURER_FIELD_PREFIX):
+        field_name = field_name[len(_MANUFACTURER_FIELD_PREFIX) :]
+    note_text = _optional_text(raw.get("manufacturer_note") or raw.get("note"))
+    base = "Herstellerrückmeldung"
+    if field_name:
+        base = f"{base} zu {field_name}"
+    parts: list[str] = []
+    value = raw.get("value")
+    if value not in (None, ""):
+        parts.append(str(value).strip())
+    if note_text:
+        parts.append(note_text)
+    if parts:
+        return f"{base}: {' – '.join(parts)}"
+    return base
 
 
 def _brief_markdown(
@@ -3166,6 +3320,12 @@ def _blocked_reason(
         "explicitly_unknown",
     }:
         return "explicit_user_confirmation_required"
+    # C10: structural backstop — a post-RFQ manufacturer response is never a
+    # confirmed brief fact, regardless of how origin/validation_status normalize.
+    # Checked before the origin branches so a self_declared / user_entered response
+    # cannot launder past the late source-type denylist.
+    if source_type in _NEVER_BRIEF_SOURCE_TYPES:
+        return f"source_type_{source_type}_not_allowed_for_brief"
     if not liability_bearing:
         if status in _BLOCKING_FIELD_STATUSES:
             return f"field_status_{status}"

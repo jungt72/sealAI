@@ -9,8 +9,11 @@ from app.api.v1.endpoints.rfq import (
     RwdrBriefRequest,
     RwdrConfirmationDecision,
     RwdrConfirmationsRequest,
+    RwdrManufacturerFeedbackItem,
+    RwdrManufacturerFeedbackRequest,
     RfqPreviewCreateRequest,
     analyze_rwdr_inquiry,
+    record_rwdr_manufacturer_feedback,
     create_rfq_preview,
     diff_rwdr_case_snapshots,
     evaluate_rwdr_case,
@@ -178,6 +181,74 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
         session=session,
     )
     assert export_diff["export_diff"]["pdf_export_changed"] is True
+
+
+@pytest.mark.asyncio
+async def test_rwdr_manufacturer_feedback_records_open_point_not_confirmed_fact() -> None:
+    """C10: manufacturer feedback persists as candidate, never a confirmed fact, and
+    cannot overwrite an already-confirmed field."""
+    session = _RwdrFakeSession()
+    created = await analyze_rwdr_inquiry(
+        body=RwdrAnalyzeRequest(raw_inquiry="Wellendichtring 45x62x8, Öl, 1500 U/min."),
+        user=_user(),
+        session=session,
+    )
+    case_id = created["case_id"]
+    await update_rwdr_confirmations(
+        case_id=case_id,
+        body=RwdrConfirmationsRequest(
+            decisions=[
+                RwdrConfirmationDecision(
+                    field="shaft_diameter_d1_mm", action="confirm", source_span="45x62x8"
+                ),
+            ],
+        ),
+        user=_user(),
+        session=session,
+    )
+
+    updated = await record_rwdr_manufacturer_feedback(
+        case_id=case_id,
+        body=RwdrManufacturerFeedbackRequest(
+            responses=[
+                RwdrManufacturerFeedbackItem(
+                    field="material", value="FKM", note="grenzwertig bei 120 °C"
+                ),
+                RwdrManufacturerFeedbackItem(
+                    field="shaft_diameter_d1_mm",
+                    value="46",
+                    note="Hersteller schlägt 46 vor",
+                ),
+            ],
+        ),
+        user=_user(),
+        session=session,
+    )
+
+    mfr = [
+        f
+        for f in updated["evidence_fields"]
+        if f.get("source_type") == "manufacturer_response"
+    ]
+    assert len(mfr) == 2
+    assert all(f["validation_status"] == "candidate" for f in mfr)
+    assert all(f["confirmation_status"] != "confirmed" for f in mfr)
+
+    # The confirmed field is untouched — the manufacturer response is stored under a
+    # namespaced key, so it cannot shadow or overwrite the confirmed value.
+    confirmed = [
+        f
+        for f in updated["evidence_fields"]
+        if f["field"] == "shaft_diameter_d1_mm"
+        and f.get("source_type") != "manufacturer_response"
+    ]
+    assert len(confirmed) == 1
+    assert confirmed[0]["confirmation_status"] == "confirmed"
+
+    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    assert "manufacturer_response_recorded" in [
+        s["event_type"] for s in listed["snapshots"]
+    ]
 
 
 @pytest.mark.asyncio
