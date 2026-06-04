@@ -49,34 +49,10 @@ from app.domain.seal_type import (
     normalize_seal_type,
     seal_family_for_type,
 )
+# P1-1: required-field sets are domain-owned (relocated verbatim out of the core).
+from app.domain.seal_required_fields import required_fields_for as _required_fields_for
 from app.mcp.calculations.oring_groove import lookup_nut
 
-
-_RWDR_REQUIRED_FIELDS = (
-    "sealing_type",
-    "medium",
-    "temperature_c",
-    "pressure_at_seal_bar",
-    "shaft_diameter_mm",
-    "speed_rpm",
-)
-_ORING_REQUIRED_FIELDS = (
-    "sealing_type",
-    "medium",
-    "temperature_c",
-    "pressure_at_seal_bar",
-    "oring_cross_section_mm",
-    "groove_depth_mm",
-    "groove_width_mm",
-)
-_HYDRAULIC_REQUIRED_FIELDS = (
-    "sealing_type",
-    "medium",
-    "temperature_c",
-    "pressure_at_seal_bar",
-    "rod_diameter_mm",
-    "stroke_speed_mm_s",
-)
 
 _MATERIAL_FAMILY_FIELDS = (
     "material",
@@ -320,21 +296,6 @@ def _is_missing(value: Any) -> bool:
 def _stable_hash(payload: Mapping[str, Any]) -> str:
     raw = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-
-
-def _required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
-    if seal_type in {
-        SealType.radial_shaft_seal.value,
-        SealType.rotary_lip_seal.value,
-        SealType.cassette_seal.value,
-        SealType.v_ring.value,
-    } or seal_family == SealFamily.rotary_shaft.value:
-        return _RWDR_REQUIRED_FIELDS
-    if seal_type in {SealType.o_ring.value, SealType.x_ring.value, SealType.backup_ring.value}:
-        return _ORING_REQUIRED_FIELDS
-    if seal_family in {SealFamily.hydraulic.value, SealFamily.pneumatic.value}:
-        return _HYDRAULIC_REQUIRED_FIELDS
-    return ("sealing_type", "medium", "temperature_c", "pressure_at_seal_bar")
 
 
 def build_seal_system_state(state: Any) -> SealSystemState:
