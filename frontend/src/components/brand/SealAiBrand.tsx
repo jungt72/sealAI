@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import React from "react";
 
 import { cn } from "@/lib/utils";
@@ -132,84 +133,45 @@ export function SealAiCornerMark({
 }) {
   return (
     <span
-      className={cn("inline-grid shrink-0 place-items-center text-seal-blue", className)}
+      className={cn("inline-grid shrink-0 place-items-center", className)}
       style={{ width: size, height: size }}
       aria-hidden={decorative ? "true" : undefined}
     >
-      <svg
-        role={decorative ? undefined : "img"}
-        aria-label={decorative ? undefined : "sealingAI Logo"}
-        data-testid="sealai-circular-s-logo"
-        viewBox="0 0 64 64"
+      <Image
+        src="/images/logo/sealing-icon-dark.png"
+        alt={decorative ? "" : "sealingAI Logo"}
         width={size}
         height={size}
-        className="h-full w-full overflow-visible drop-shadow-[0_2px_5px_rgba(0,42,91,0.14)]"
-        fill="none"
-      >
-        <defs>
-          <linearGradient id="sealai-circular-s-blue" x1="16" x2="49" y1="10" y2="56" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#004986" />
-            <stop offset="0.5" stopColor="#002F68" />
-            <stop offset="1" stopColor="#002653" />
-          </linearGradient>
-        </defs>
-        <path
-          d="M30 7.4a24.6 24.6 0 0 0 0 49.2"
-          stroke="url(#sealai-circular-s-blue)"
-          strokeWidth="5.6"
-          strokeLinecap="butt"
-        />
-        <path
-          d="M34 7.4a24.6 24.6 0 0 1 0 49.2"
-          stroke="url(#sealai-circular-s-blue)"
-          strokeWidth="5.6"
-          strokeLinecap="butt"
-        />
-        <path
-          d="M46 26.4H35.6c-5.4 0-9.5 3.85-9.5 9.25"
-          stroke="url(#sealai-circular-s-blue)"
-          strokeWidth="7.1"
-          strokeLinecap="butt"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M18.1 40.2h10.35c5.5 0 9.45-3.9 9.45-9.35"
-          stroke="url(#sealai-circular-s-blue)"
-          strokeWidth="7.1"
-          strokeLinecap="butt"
-          strokeLinejoin="round"
-        />
-      </svg>
+        data-testid="sealai-circular-s-logo"
+        className="h-full w-full object-contain drop-shadow-[0_2px_5px_rgba(0,42,91,0.14)]"
+        priority
+      />
     </span>
   );
 }
 
 export function SealAiWordmark({
-  compact = false,
   className,
+  testId,
 }: {
-  compact?: boolean;
   className?: string;
+  testId?: string;
 }) {
   return (
-    <div
-      aria-label={compact ? "sealingAI" : "sealingAI Intelligence"}
-      data-testid="sealai-brand-wordmark"
-      className={cn("flex min-w-0 items-center gap-2.5", className)}
+    <span
+      aria-label="SEALING Intelligence"
+      data-testid={testId || "sealai-brand-wordmark"}
+      className={cn("inline-flex min-w-0 shrink-0 items-center", className)}
     >
-      <SealAiLogoMark size={compact ? 32 : 38} decorative />
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-1 text-[22px] font-semibold leading-none tracking-[0] text-seal-blue">
-          <span>sealing</span>
-          <span className="text-[#1A73E8]">AI</span>
-        </div>
-        {!compact ? (
-          <div className="mt-1 text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-[#5F6368]">
-            Intelligence
-          </div>
-        ) : null}
-      </div>
-    </div>
+      <Image
+        src="/images/logo/sealing-wordmark-intelligence.png"
+        alt=""
+        width={900}
+        height={63}
+        className="h-auto w-full object-contain"
+        priority
+      />
+    </span>
   );
 }
 

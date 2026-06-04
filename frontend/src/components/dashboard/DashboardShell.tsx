@@ -5,9 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
-  Bell,
   ChevronRight,
-  Plus,
   Search,
   X,
 } from "lucide-react";
@@ -21,6 +19,7 @@ import {
   ParameterIcon,
   RfqPreviewIcon,
   SealAiCornerMark,
+  SealAiWordmark,
   UncertaintyIcon,
   type SealAiIconComponent,
 } from "@/components/brand/SealAiBrand";
@@ -148,24 +147,6 @@ function normalizeCaseHistory(payload: unknown): CaseHistoryItem[] {
     .slice(0, 30);
 }
 
-function SealAiHeaderWordmark({ testId }: { testId: string }) {
-  return (
-    <div
-      aria-label="SEALING Intelligence"
-      data-testid={testId}
-      className="flex items-center gap-3"
-    >
-      <div className="text-[20px] font-semibold uppercase tracking-[0.045em] text-seal-blue">
-        SEALING
-      </div>
-      <div className="h-6 w-px bg-seal-blue/35" />
-      <div className="text-[14px] font-medium uppercase tracking-[0.02em] text-[#1F1F1F]">
-        INTELLIGENCE
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardShell({
   children,
 }: {
@@ -260,7 +241,7 @@ export default function DashboardShell({
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 right-0 w-px bg-slate-950/[0.035]"
         />
-        <div className={cn("flex h-[72px] items-center", isHistoryOpen ? "justify-start gap-3 px-5" : "justify-center")}>
+        <div className={cn("flex h-[72px] items-center", isHistoryOpen ? "justify-start gap-3 px-4" : "justify-center")}>
           <button
             type="button"
             aria-label={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
@@ -268,11 +249,13 @@ export default function DashboardShell({
             title={isHistoryOpen ? "Seitenleiste einklappen" : "Seitenleiste ausklappen"}
             onClick={() => setIsHistoryOpen((current) => !current)}
             data-testid="sealai-sidebar-corner-logo"
-            className="grid h-11 w-11 place-items-center rounded-full text-[#0B0F19] transition-colors hover:bg-white/70 hover:text-seal-blue"
+            className="grid h-10 w-10 place-items-center rounded-full text-[#0B0F19] transition-colors hover:bg-white/70 hover:text-seal-blue"
           >
-            <SealAiCornerMark size={34} decorative />
+            <SealAiCornerMark size={24} decorative />
           </button>
-          {isHistoryOpen ? <SealAiHeaderWordmark testId="sealai-sidebar-wordmark" /> : null}
+          {isHistoryOpen ? (
+            <SealAiWordmark testId="sealai-sidebar-wordmark" className="w-[180px]" />
+          ) : null}
         </div>
 
         {isHistoryOpen ? (
@@ -440,6 +423,15 @@ export default function DashboardShell({
             </div>
 
             <div className="mt-auto px-3 pb-5 pt-3">
+              <div className="mb-4 flex items-center gap-3 rounded-[18px] border border-border bg-white px-3 py-2.5">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground">
+                  {userIdentity.initials}
+                </div>
+                <div className="min-w-0 text-left">
+                  <div className="truncate text-sm font-medium text-foreground">{userIdentity.displayName}</div>
+                  <div className="text-[12px] text-muted-foreground">Angemeldet</div>
+                </div>
+              </div>
               <div className="space-y-1">
                 <Link
                   href="/dashboard/seo"
@@ -510,38 +502,6 @@ export default function DashboardShell({
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-[72px] shrink-0 items-center justify-between bg-white px-5 sm:px-7">
-          {!isHistoryOpen ? (
-            <div className="min-w-0">
-              <SealAiHeaderWordmark testId="sealai-header-wordmark" />
-            </div>
-          ) : null}
-          <div className={cn("flex shrink-0 items-center gap-2 sm:gap-3", isHistoryOpen ? "ml-auto" : "ml-4")}>
-            <button
-              type="button"
-              title="Benachrichtigungen"
-              className="hidden h-10 w-10 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
-            >
-              <Bell size={18} />
-            </button>
-            <div className="flex items-center gap-3 rounded-full border border-border bg-white px-2.5 py-1.5">
-              <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-muted text-sm font-semibold text-muted-foreground">
-                {userIdentity.initials}
-              </div>
-              <div className="hidden text-left md:block">
-                <div className="text-sm font-medium text-foreground">{userIdentity.displayName}</div>
-                <div className="text-[12px] text-muted-foreground">Angemeldet</div>
-              </div>
-            </div>
-            <Link
-              href="/dashboard/new"
-              title="Neue Analyse"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-seal-blue text-white transition-colors hover:opacity-90 lg:hidden"
-            >
-              <Plus size={18} />
-            </Link>
-          </div>
-        </header>
         <div className="min-h-0 flex-1 overflow-hidden bg-white">{children}</div>
       </main>
     </div>

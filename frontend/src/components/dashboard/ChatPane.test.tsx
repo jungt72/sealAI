@@ -172,24 +172,21 @@ describe("ChatPane", () => {
     expect(userText.compareDocumentPosition(userAvatar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("places the composer in a Gemini-style first-run state with sealing prompts", async () => {
+  it("places the composer in a centered first-run state without prompt chips", async () => {
     const user = userEvent.setup();
     agentStreamMockState.activeCaseId = "";
 
     render(<ChatPane />);
 
-    expect(screen.getByText("Hallo Thorsten")).toBeInTheDocument();
+    expect(screen.queryByText("Hallo Thorsten")).not.toBeInTheDocument();
     expect(screen.queryByText("Schön, dass du wieder hier bist.")).not.toBeInTheDocument();
-    expect(screen.getByText("Womit fangen wir an?")).toBeInTheDocument();
+    expect(screen.getByText("Womit sollen wir anfangen?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ChatComposer" })).toBeInTheDocument();
     expect(screen.queryByText(/Governed RFQ Qualification/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/belastbare Anfragebasis/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Lösung erarbeiten" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Material vergleichen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Materialdetails" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Material vergleichen" }));
-    expect(agentStreamMockState.sendMessage).toHaveBeenCalledWith(expect.stringContaining("vergleiche zwei Dichtungswerkstoffe"));
+    expect(screen.queryByRole("button", { name: "Lösung erarbeiten" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Material vergleichen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Materialdetails" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "ChatComposer" }));
 
