@@ -38,6 +38,15 @@ class DomainPack(Protocol):
         """The seal-system required-field set for this domain."""
         ...
 
+    def state_gate_required_fields(self) -> tuple[str, ...]:
+        """Per-type EXTRA inputs the governed state gate demands beyond the base
+        preselection set (medium / pressure / temperature / sealing_type).
+
+        Distinct from ``required_fields`` (the SealSystemState set) — this is the
+        state-gate type-sensitive delta consumed by the reducer readiness
+        assessment (P1-4 PR1)."""
+        ...
+
     def calculations(self) -> tuple[str, ...]:
         """Calculation ids owned by this domain (e.g. ``rwdr_*``)."""
         ...

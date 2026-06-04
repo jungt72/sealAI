@@ -50,6 +50,23 @@ DEFAULT_REQUIRED_FIELDS: tuple[str, ...] = (
     "pressure_at_seal_bar",
 )
 
+# --- State-gate type-sensitive required fields (P1-4 PR1) -------------------- #
+# The per-seal-type EXTRA inputs the governed STATE GATE demands beyond the base
+# preselection set (medium / pressure / temperature / sealing_type). This is a
+# THIRD, distinct concern from RWDR_REQUIRED_FIELDS above (the SealSystemState
+# 6-tuple) and from the brief's `_MINIMAL_RWDR_FIELDS` (31). Relocated verbatim
+# out of the v92 core reducer (`reducers.py::_SEALING_TYPE_REQUIRED_FIELDS`) so
+# the core no longer hardcodes a per-type field dict (CORE_PACK_BOUNDARY.md:13).
+# RWDR's set is owned by the pack (`RwdrPack.state_gate_required_fields`); the
+# others are SHALLOW STUBS — behaviour preserved, not real packs.
+RWDR_STATE_GATE_REQUIRED_FIELDS: tuple[str, ...] = ("shaft_diameter_mm", "speed_rpm")
+STATE_GATE_SHALLOW_STUBS: dict[str, tuple[str, ...]] = {
+    "mechanical_seal": ("duty_profile", "installation"),
+    "o_ring": ("geometry_context",),
+    "gasket": ("geometry_context",),
+    "packing": ("installation",),
+}
+
 # The selector that maps seal type/family → required fields lives in the pack seam
 # (`app/domain/seal_packs.py::required_fields_for`); this module holds only the
 # data tuples so the pack can own the RWDR set without a circular import.
