@@ -847,6 +847,11 @@ def hybrid_retrieve(*, query: str, tenant: Optional[str], k: int = FINAL_K,
     Vector-first retrieval from Qdrant (+ optional BM25 fusion in future).
     Returns list of {text, source, vector_score, fused_score?, metadata}.
     """
+    # P1-2 TEIL B: single fail-closed guard at the retrieval funnel. A turn
+    # declared Tier-0 (GREETING/META/BLOCKED) must never reach retrieval.
+    from app.agent.runtime.turn_tier import enforce_retrieval_allowed  # noqa: PLC0415
+
+    enforce_retrieval_allowed(retrieval_kind="rag_hybrid")
     q = (query or "").strip()
     if not q:
         return []

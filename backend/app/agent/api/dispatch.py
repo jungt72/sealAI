@@ -720,6 +720,15 @@ async def _resolve_runtime_dispatch_impl(
             )
             semantic_pre_gate_trace = semantic_decision.as_trace()
             pre_gate = semantic_decision.classification_result(pre_gate)
+        # P1-2 TEIL B: declare this turn's tier (Tier-0 = GREETING/META/BLOCKED,
+        # no retrieval) so the funnel guard can fail-close. Set once, before any
+        # downstream retrieval can run.
+        from app.agent.runtime.turn_tier import (  # noqa: PLC0415
+            declared_tier_for_classification,
+            set_declared_tier,
+        )
+
+        set_declared_tier(declared_tier_for_classification(pre_gate.classification))
         conversation_route = classify_conversation_route(
             request.message,
             pre_gate_classification=pre_gate.classification,
