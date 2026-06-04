@@ -6,6 +6,40 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T05:48Z — Gate hardening F1/F2/F3 + four-quadrant re-verification
+
+Both PreToolUse hooks now match on the executed command only
+(`jq -er '.tool_input.command // empty'`), never the whole payload; the deploy
+gate fires only on an actual **invocation** of the release script. **Fail-closed**:
+jq missing / malformed payload / undeterminable command → BLOCK (validated). The
+payload shape was verified live before the change (`.tool_input.command`), and the
+new logic was validated out-of-band (16/16 synthetic cases) before an atomic swap,
+so a parse bug could not lock the session out. **Session:**
+`1b1be06d-dfd9-4cc6-895d-2ec7353181c6`. Branch `proof/gate-harden-reverify` removed;
+worktree clean.
+
+| Quadrant | Expectation | Result | Evidence |
+|---|---|---|---|
+| **FP1** | `git diff` with "git commit" in the **description**, suite RED | **now PASS (not blocked)** | command ran rc=0; no doctrine-gate log entry (gate short-circuited on command-only match) — contrast prior `05:14:24Z BLOCK` |
+| **FP2** | real `git commit` whose **message** names `ops/release-backend.sh` | **now PASS (allowed)** | commit `68a3fcd1` succeeded rc=0 (deploy gate saw a mention, not an invocation) |
+| **TP1** | real `git commit` with synthetic RED suite | **still BLOCK** | `05:46:32Z BLOCK — guard suite FAILED`; `DOCTRINE GATE (fail-closed): … FAILED` |
+| **TP2** | real `bash ops/release-backend.sh` with no sentinel | **still BLOCK, no build** | `DEPLOY GATE (fail-closed): missing sentinel — full backend pytest exit 0` |
+
+Out-of-band fail-closed proofs (all BLOCK): malformed payload, absent command
+field, jq unavailable (stripped PATH) — for both hooks. Standard proofs re-run:
+branch-guard (`git push origin HEAD:main` → permission denied), reviewer
+(`doctrine-reviewer` toolset = Read, Bash only), ops.md ↔ `deploy-gate.sh`
+freshness consistent (`<1h` / `MAX_AGE=3600`). No quadrant failed; no gate was
+weakened (changes tighten matching and keep fail-closed).
+
+Docs in the same change: `.claude/rules/ops.md` gains a command-parsing +
+deliberate-residual-gaps note (`sh -c`/alias/variable constructs not caught — a
+discipline anchor, not a sandbox) and the hot-reload activation reality;
+`.claude/agents/doctrine-reviewer.md` gains the F3 read-only (Bash-by-convention)
+line.
+
+---
+
 ## 2026-06-04T05:26Z — Re-verification against the durable (merged) gates
 
 **Governance aktiv ab 2026-06-04T05:07Z**, durable auf `demo` (activation commit
