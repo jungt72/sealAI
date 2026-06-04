@@ -12,6 +12,7 @@ from typing import Any
 
 from app.agent.domain.medium_registry import is_medium_placeholder_value
 from app.agent.domain.risk_readiness import evaluate_risks
+from app.domain.seal_packs import pack_for_engineering_path
 from app.agent.services.material_intelligence import (
     build_material_intelligence_projection,
 )
@@ -571,7 +572,7 @@ def _findings_from_scenario_matrix(
         ),
     )
     rotary_context = (
-        engineering_path == "rwdr"
+        pack_for_engineering_path(engineering_path) is not None
         or _contains_any(seal_text, ("rwdr", "radial", "welle", "rotier"))
         or _contains_any(motion_text, ("rotier", "rotary"))
     )
@@ -716,7 +717,11 @@ def _findings_from_scenario_matrix(
             )
         )
 
-    if engineering_path == "rwdr" and pressure_bar is not None and pressure_bar > 0.5:
+    if (
+        pack_for_engineering_path(engineering_path) is not None
+        and pressure_bar is not None
+        and pressure_bar > 0.5
+    ):
         findings.append(
             ChallengeFinding(
                 finding_id=_finding_id("scenario", "rwdr_pressure"),
@@ -752,7 +757,10 @@ def _findings_from_scenario_matrix(
                 ],
             )
         )
-    elif engineering_path == "rwdr" and system_pressure_bar is not None:
+    elif (
+        pack_for_engineering_path(engineering_path) is not None
+        and system_pressure_bar is not None
+    ):
         findings.append(
             ChallengeFinding(
                 finding_id=_finding_id("scenario", "rwdr_system_pressure"),
@@ -784,7 +792,10 @@ def _findings_from_scenario_matrix(
                 forbidden_user_wording=["Der Dichtungsdruck ist kritisch."],
             )
         )
-    elif engineering_path == "rwdr" and ambiguous_pressure_bar is not None:
+    elif (
+        pack_for_engineering_path(engineering_path) is not None
+        and ambiguous_pressure_bar is not None
+    ):
         findings.append(
             ChallengeFinding(
                 finding_id=_finding_id("scenario", "rwdr_ambiguous_pressure"),
