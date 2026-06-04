@@ -6,6 +6,34 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T20:05Z — Legacy cleanup: remove red double-CI + delete dead dirs (NO prod deploy)
+
+Two owner-decided cleanups; no prod deploy; branch protection unchanged; demo→main convergence
+held (each via PR → demo → small demo→main carry-over).
+
+**TEIL 1 — removed the legacy `.github/workflows/ci.yml`** (PR #79 → demo, #80 → main). It was a
+Sprint-9-origin, **main/master-only** workflow whose `Lint (ruff)` job ran whole-repo
+`ruff format --check .` + `ruff check .` and was permanently red on the legacy debt → error mails
+on every main push (alarm-deafness); its pytest/docker jobs only ever skipped (`needs: [lint]`).
+Canonical CI is now `agent-bff-guardrails` (the required check) + the `backend-ruff-format`
+re-debt guard; backend pytest is the local pre-deploy gate, docker build runs in the release
+scripts. Lint was never a required check, so branch protection is unchanged. **No more red `CI` runs.**
+
+**TEIL 2 — deleted dead legacy dirs** (PR #81 → demo, carry-over → main; pure deletions, 225 files):
+`archive/` (21M, archived legacy frontend `legacy_phase2`) and `langgraph_backup/` (756K, backup
+of the removed langgraph). **`seo/` KEPT** (recent `sealai_seo` tool with a systemd service — not
+dead legacy). Safety-checked read-only first: **nothing imports either dir**; both recoverable from
+git history; the `NON_CANONICAL_TREES` SSoT guardrail test stays green (doc-string check) and the
+`check-secret-hygiene` allowlist entry is left vestigial-but-harmless (pure-deletion PR).
+
+**Backlog closed:** the parked "legacy ruff cleanup" follow-up (noted in the 19:05 convergence
+entry) is **resolved** — `archive/` + `langgraph_backup/` are gone; the only remaining whole-repo
+`ruff format` non-conformance is `seo/`, which is kept as an active standalone tool and is outside
+the `backend-ruff-format` guard's scope. Backend is ruff-format-clean and guarded; no further
+legacy ruff work pending.
+
+---
+
 ## 2026-06-04T19:05Z — demo→main convergence + v1.7.0 release tag (NO prod deploy)
 
 Converged `demo/rwdr-limited-external` → `main` via PR #11 as a **merge-commit** (`bffa2188`;
