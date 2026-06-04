@@ -2043,7 +2043,7 @@ def _rwdr_pocket_value(value: Any) -> str:
     return str(value)
 
 
-def build_rwdr_p0_pocket_cockpit_patch(text: str):
+def build_rwdr_p0_pocket_cockpit_patch(text: str, *, rfq_status: str | None = None):
     """Deterministic backend-owned Pocket Cockpit projection for the P0 RWDR
     leakage/replacement text case. Returns ``(PocketCockpitPatch, list[ActionChip])``
     or ``None`` for non-RWDR turns.
@@ -2086,11 +2086,19 @@ def build_rwdr_p0_pocket_cockpit_patch(text: str):
     if "dust_lip_or_excluder_review_required" in guidance.review_flags:
         critical.append({"label": "Staubumgebung / Schutzlippe prüfen", "severity": "high"})
 
+    # Single-source rfq_status: the authoritative case readiness when the caller
+    # supplies it (call site has the governed state), else derive from this
+    # turn's candidates via the one RFQ readiness SoT — never a hardcoded literal.
+    resolved_rfq_status = rfq_status
+    if resolved_rfq_status is None:
+        from app.agent.communication.rfq_one_pager import evaluate_rfq_readiness  # noqa: PLC0415
+        resolved_rfq_status = evaluate_rfq_readiness(list(candidates.keys())).status
+
     patch = PocketCockpitPatch(
         recognized=recognized[:4],
         critical=critical,
         next_step={"question": guidance.next_question, "field": "shaft_condition_known"},
-        rfq_status="DRAFT",
+        rfq_status=resolved_rfq_status,
         details_available=True,
         collapsed_by_default=True,
     )
