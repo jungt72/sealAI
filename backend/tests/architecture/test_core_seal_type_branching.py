@@ -86,7 +86,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ): "P1-3/A-499: ms_pump is not a DomainPack; documented core check.",
     (
         "backend/app/agent/domain/risk_readiness.py",
-        'elif speed is None and str(engineering_path or "") in {"rwdr", "ms_pump", "unclear_rotary"}:',
+        'elif speed is None and str(engineering_path or "") in { "rwdr", "ms_pump", "unclear_rotary", }:',
     ): "P1-3/A-499: heterogeneous rotary set {rwdr, ms_pump, unclear_rotary} — "
     "only rwdr is a pack; routing would silently drop the other two. Owner "
     "decision 2026-06-04 (CORE_PACK_BOUNDARY.md §'Residual rwdr risk branches').",
@@ -129,7 +129,14 @@ def _flagged_lines(path: Path) -> list[tuple[int, str]]:
     hits: list[tuple[int, str]] = []
 
     def record(node: ast.AST) -> None:
-        hits.append((node.lineno, lines[node.lineno - 1].strip()))
+        # Record the full statement span (start..end_lineno) collapsed to a single
+        # normalized line, so the allowlist stays stable across ruff line-wrapping
+        # (a long branch wrapped across lines must still match its allowlist key).
+        end = getattr(node, "end_lineno", node.lineno) or node.lineno
+        code = " ".join(
+            lines[i].strip() for i in range(node.lineno - 1, end) if lines[i].strip()
+        )
+        hits.append((node.lineno, code))
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):
