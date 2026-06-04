@@ -6,6 +6,41 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T12:41Z — P1-2 Trace/Tier (S1/S2) + prod-deploy chain since P0-2
+
+Prod-deploy continuity since the P0-2 entry (each via `ops/release-backend.sh`,
+full-suite `EXIT=0` + fresh `pytest-green`/`anchor-verified` sentinels + live
+pilot smoke; HALT-before-prod honoured with explicit operator go each time):
+- **P0-3** (pocket `rfq_status` single-source + envelope-stub removal) →
+  `…@sha256:6916d557…` + frontend `…@sha256:f27f9b5e…`.
+- **P1-1** (Core/Pack boundary — DomainPack protocol, RWDR-only; behaviour-neutral)
+  → `…@sha256:d5ff7e08…`.
+- **P1-2** (this entry) → `ghcr.io/jungt72/sealai-backend:d582544d-20260604-124056@sha256:808e5cae…`.
+
+**P1-2 — Gap-audit S1 + S2, two PRs, different blast radius:**
+- **TEIL A (#53, obs):** one central streaming timing source fills
+  `first_progress_ms`/`latency_ms` for all TurnRoutes (`turn_timing.py` contextvar
+  timer; `SSEEventBuilder.event()` stamps the final `state_update`). Mobile trace
+  byte-identical. Autonomous → demo.
+- **TEIL B (#54, enforcement):** fail-closed Tier-0 retrieval guard — `turn_tier.py`
+  (`TierViolation`, declared-tier contextvar, kill-switch `SEALAI_TIER0_RETRIEVAL_GUARD`
+  default ON / incident-only / logged) + **one** `enforce_retrieval_allowed()` at the
+  `hybrid_retrieve` funnel; tier declared in `dispatch.py` from the pre-gate
+  classification. Tier-0 = {GREETING, META_QUESTION, BLOCKED} (operator decision,
+  strict-safe). Red-before-green + **false-trip proof** (scenario matrix S1-S10 +
+  golden + dispatch + full suite + live smoke → 0 TierViolation on legitimate
+  paths). **doctrine-reviewer APPROVE.**
+- Live acceptance (deployed container): guard default-ON, Tier-0 → `TierViolation`,
+  Tier-1 → allowed; timer fills the timing fields.
+- Reviewer note recorded: the broad `except` at the 3 call sites catches
+  `TierViolation` → a wrongly-Tier-0 retrieval manifests as a logged failure + no
+  cards (fail-safe, not a 500). Kill-switch doc: `.claude/rules/ops.md`.
+
+Gap-audit S1+S2 → ERFÜLLT; risk #5 closed. Residual rwdr branches
+(`risk_readiness.py:498/:527/:555`) deliberately untouched (own later pass).
+
+---
+
 ## 2026-06-04T09:00Z — P0-2 tenant-fallback removal: code + migration + prod deploy
 
 Closes audit **C6** (`docs/audits/2026-06-03_v17_gap_audit.md`) together with P0-1.
