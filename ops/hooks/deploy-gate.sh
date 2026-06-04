@@ -2,11 +2,21 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Deploy gate — Claude Code PreToolUse hook (matcher: Bash). FAIL-CLOSED.
 #
-# Blocks `ops/release-backend.sh` unless BOTH sentinels exist and are fresh
-# (< MAX_AGE seconds):
+# Blocks an actual INVOCATION of `ops/release-backend.sh` unless BOTH sentinels
+# exist and are fresh (< MAX_AGE seconds):
 #   (i)  full backend pytest exit 0       → .claude/.gate-logs/sentinels/pytest-green
 #   (ii) rollback anchor verified via      → .claude/.gate-logs/sentinels/anchor-verified
 #        docker inspect (running daemon)
+#
+# Matching is on the executed command (`.tool_input.command`), and only when the
+# release script is actually invoked at a command position — so a commit message
+# or any prose that merely mentions the path no longer triggers the gate (F2).
+#
+# FAIL-CLOSED command parsing: jq unavailable / payload not valid JSON /
+# command not determinable → BLOCK. Parse ambiguity is NEVER waved through.
+# Residual gaps (`sh -c`, aliases, variable expansion, or the literal path
+# chained mid-line inside a quoted message) are a discipline anchor, not
+# sandboxing — see .claude/rules/ops.md.
 #
 # The sentinels are written by the operator/agent immediately after performing
 # each gate step, e.g.:
@@ -30,11 +40,16 @@ deny() {  # $1 = reason (single line)
 
 payload="$(cat || true)"
 
-# Only gate the production release script.
-case "${payload}" in
-  *"ops/release-backend.sh"*) : ;;
-  *) exit 0 ;;
-esac
+# Extract ONLY the executed command — fail closed on any parse ambiguity.
+command -v jq >/dev/null 2>&1 || deny "jq unavailable — cannot parse tool_input.command"
+cmd="$(printf '%s' "${payload}" | jq -er '.tool_input.command // empty' 2>/dev/null)" \
+  || deny "tool_input.command not determinable (payload malformed or command absent)"
+
+# Only gate an actual INVOCATION of the release script (command position):
+# start-of-line or a shell separator, optional bash/sh/./ prefix — so a mere
+# mention in a commit message or prose does not trigger.
+RELEASE_RE='(^|[;&|])[[:space:]]*((bash|sh)[[:space:]]+)?(\./)?ops/release-backend\.sh([[:space:]]|;|&|\||$)'
+printf '%s' "${cmd}" | grep -Eq "${RELEASE_RE}" || exit 0
 
 check_sentinel() {  # $1 = file, $2 = human label
   local f="$1" label="$2" now age mtime
