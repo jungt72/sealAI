@@ -25,6 +25,28 @@ product concept here.
 
 ---
 
+## Operating rules (`.claude/rules/`)
+
+Detailed, enforced operating rules live in `.claude/rules/` — read them for any
+non-trivial change:
+
+- `.claude/rules/doctrine.md` — how the output doctrine (AGENTS.md § Safety
+  Boundaries) is enforced; the hard lines (never weaken a guard; the four repros
+  always block; AC8/AC9).
+- `.claude/rules/workflow.md` — per-fix protocol (verify the repro, red-before-
+  green), PRs only on `demo/rwdr-limited-external`, blast-radius HALT gating, no
+  doctrine/guard/streaming/mutation merge without a `doctrine-reviewer` approval.
+- `.claude/rules/ops.md` — pre-deploy gate (pytest exit code authoritative),
+  rollback anchor from the running daemon, prod only via `ops/release-backend.sh`.
+- `.claude/rules/testing.md` — the fast doctrine guard suite + full gate; never
+  silence or weaken a test.
+
+These rules are also enforced by hooks (`ops/hooks/doctrine-gate.sh`,
+`ops/hooks/deploy-gate.sh`) and project permissions (`.claude/settings.json`).
+A read-only reviewer lives at `.claude/agents/doctrine-reviewer.md`.
+
+---
+
 ## Startup rule
 
 At the start of any non-trivial task:
