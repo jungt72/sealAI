@@ -6,6 +6,36 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T06:00Z — First production deploy through the active deploy gate (P0-1)
+
+P0-1 (LTM tenant scoping) shipped to prod as the **first real release gated by the
+active deploy-gate**. The gate passed on two FRESH sentinels, each produced by a
+real gate step (never fabricated):
+- `pytest-green` — full backend suite `.venv/bin/python -m pytest backend -q -rf`
+  exit 0 (chained `&& touch`); 0 failures.
+- `anchor-verified` — `docker inspect backend` digest matched the expected rollback
+  anchor `…@sha256:d102da88…`, status running/healthy.
+
+Release via `ops/release-backend.sh` (RELEASE-EXIT=0):
+- **Rollback anchor (pre-deploy):**
+  `ghcr.io/jungt72/sealai-backend:8431dda2-20260603-190217@sha256:d102da8820b9f4c66057d85573a11d55a1e99d2c3359176db4233708fca9f78e`
+- **New live image (post-deploy, from daemon):**
+  `ghcr.io/jungt72/sealai-backend:89d73ff3-20260604-055825@sha256:c0406be90c136bf73c6e4c746b9fedbe220e380cf922ee34331a79cd7d132127`
+  (built from demo `89d73ff3`, which includes P0-1 `d072a892`), status running/healthy,
+  started 2026-06-04T05:58:54Z.
+
+Acceptance: `/health` healthy (redis/qdrant/agent_runtime); live pilot smoke 14/14
+PASS; `GET /api/v1/memory/export` → 401 (auth boundary intact, no 500). `LTM_ENABLE`
+unset live → endpoints early-return, so P0-1 is enforcement-neutral (zero behavior
+change for current single-tenant logins), exactly as the pre-deploy HALT analysis
+predicted.
+
+The deploy-gate behaved correctly: it required both fresh sentinels and did not
+wrongly block. No gate weakened or bypassed; no P0-2 code (awaits the manual
+Keycloak `tenant_id` mapper — see `docs/ops/KEYCLOAK_TENANT_ID_MAPPER.md`).
+
+---
+
 ## 2026-06-04T05:48Z — Gate hardening F1/F2/F3 + four-quadrant re-verification
 
 Both PreToolUse hooks now match on the executed command only
