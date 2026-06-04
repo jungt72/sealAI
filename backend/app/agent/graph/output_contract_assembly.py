@@ -84,6 +84,7 @@ from app.agent.runtime.reply_composition import (
 )
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.state.models import ConversationStrategyContract, PendingQuestion
+from app.agent.state.reducers import produce_decision
 from app.agent.v91.conversation_state import (
     build_conversation_task_state,
     build_dialogue_debt,
@@ -1822,10 +1823,9 @@ async def output_contract_node(state: GraphState) -> GraphState:
             # Store blocking_reasons in DecisionState so frontend can surface them
             state = state.model_copy(
                 update={
-                    "decision": state.decision.model_copy(
-                        update={
-                            "blocking_reasons": list(admissibility.blocking_reasons)
-                        }
+                    "decision": produce_decision(
+                        state.decision,
+                        blocking_reasons=list(admissibility.blocking_reasons),
                     )
                 }
             )

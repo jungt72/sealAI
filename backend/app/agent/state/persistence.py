@@ -28,6 +28,7 @@ from typing import Any, Optional
 
 from app.agent.prompts import REASONING_PROMPT_VERSION
 from app.agent.state.models import GovernedPersistenceMarker, GovernedSessionState
+from app.agent.state.reducers import produce_decision
 from app.services.chat.conversations import derive_conversation_title, upsert_conversation
 
 log = logging.getLogger(__name__)
@@ -178,8 +179,8 @@ def _with_decision_basis_hash(state: GovernedSessionState) -> GovernedSessionSta
     decision_basis_hash = compute_decision_basis_hash(state)
     return state.model_copy(
         update={
-            "decision": state.decision.model_copy(
-                update={"decision_basis_hash": decision_basis_hash}
+            "decision": produce_decision(
+                state.decision, decision_basis_hash=decision_basis_hash
             )
         }
     )

@@ -6,6 +6,7 @@ from typing import Any, List, Optional, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from app.agent.state.models import CaseEvent, ConversationMessage, GovernedSessionState, ObservedExtraction
+from app.agent.state.reducers import produce_governance
 from app.agent.graph import GraphState
 from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
 from app.agent.state.projections import project_for_ui
@@ -177,15 +178,14 @@ def _sync_governed_state_from_review_outcome(
         or (case_state.get("matching_state") or {}).get("selected_manufacturer_ref")
     )
 
-    updated_governance = governed_state.governance.model_copy(
-        update={
-            "requirement_class": requirement_class_payload or governed_state.governance.requirement_class,
-            "rfq_admissible": str(
-                governance_state.get("rfq_admissibility")
-                or rfq_state.get("rfq_admissibility")
-                or "inadmissible"
-            ) == "ready",
-        }
+    updated_governance = produce_governance(
+        governed_state.governance,
+        requirement_class=requirement_class_payload or governed_state.governance.requirement_class,
+        rfq_admissible=str(
+            governance_state.get("rfq_admissibility")
+            or rfq_state.get("rfq_admissibility")
+            or "inadmissible"
+        ) == "ready",
     )
 
     updated_rfq = governed_state.rfq.model_copy(

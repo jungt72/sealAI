@@ -55,6 +55,7 @@ from app.agent.state.models import (
     AssumptionRef,
     ConflictRef,
     ConfidenceLevel,
+    DecisionState,
     EngineeringValue,
     FieldStatus,
     GovernanceState,
@@ -1348,3 +1349,26 @@ def invalidate_downstream(
             "action_readiness": action_readiness,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# S3 — single-writer governed-layer content syncs (P1-4 PR5b)
+#
+# Per the architecture rule at the top of this module, GovernanceState /
+# DecisionState instances may only be PRODUCED by reducers. These two helpers are
+# the sanctioned out-of-chain producers: deterministic content syncs (no LLM, no
+# I/O) that call sites use instead of a raw
+# `state.governance.model_copy(...)` / `state.decision.model_copy(...)`, so the
+# single-writer invariant holds literally (incl. model_copy), not just for direct
+# constructors. Enforced by tests/architecture/test_single_writer_invariant.py.
+# ---------------------------------------------------------------------------
+
+
+def produce_governance(governance: GovernanceState, **updates: Any) -> GovernanceState:
+    """Deterministic content-sync producing a new GovernanceState (single-writer)."""
+    return governance.model_copy(update=updates)
+
+
+def produce_decision(decision: DecisionState, **updates: Any) -> DecisionState:
+    """Deterministic content-sync producing a new DecisionState (single-writer)."""
+    return decision.model_copy(update=updates)
