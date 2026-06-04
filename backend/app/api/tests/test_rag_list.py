@@ -106,7 +106,7 @@ async def test_rag_list_filters_by_tenant() -> None:
         content_type="text/plain",
         size_bytes=12,
     )
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
     session = DummySession([doc_a, doc_b], tenant_id=user.user_id)
 
     payload = await rag_endpoint.list_rag_documents(

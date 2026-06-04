@@ -4,7 +4,7 @@ from typing import Dict, Literal, Optional, Any
 
 from fastapi import Depends
 from app.agent.state.agent_state import AgentState
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user, require_tenant_id
 
 _log = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def _case_cache_key(tenant_id: str, owner_id: str, case_id: str) -> str:
 
 def _canonical_scope(current_user: RequestUser, *, case_id: str) -> tuple[str, str, str]:
     owner_id = canonical_user_id(current_user)
-    tenant_id = current_user.tenant_id or "default"
+    tenant_id = require_tenant_id(current_user)
     return tenant_id, owner_id, _case_cache_key(tenant_id, owner_id, case_id)
 
 def _canonical_case_token(state: AgentState) -> dict[str, Any]:

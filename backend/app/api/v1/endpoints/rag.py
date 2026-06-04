@@ -27,7 +27,7 @@ from app.services.rag.constants import (
 from app.core.config import settings
 from app.database import get_db
 from app.models.rag_document import RagDocument
-from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin
+from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin, require_tenant_id
 
 from app.services.rag.route_resolver import resolve_route_key
 from app.services.rag.material_evidence_dry_run import (
@@ -54,7 +54,8 @@ logger = structlog.get_logger("api.rag")
 
 
 def _request_tenant_id(current_user: RequestUser) -> str:
-    return str(current_user.tenant_id or current_user.user_id)
+    # P0-2: strict tenant scope for private RAG — missing claim is 401.
+    return require_tenant_id(current_user)
 
 
 def _material_evidence_dry_run_limit(limit: int) -> int:

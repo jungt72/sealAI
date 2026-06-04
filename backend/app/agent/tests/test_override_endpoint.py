@@ -99,7 +99,7 @@ async def test_session_override_endpoint_persists_structured_override(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_session_override_endpoint_uses_canonical_user_scope_without_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_session_override_endpoint_rejects_request_without_tenant_claim(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_redis = _FakeRedisClient()
     monkeypatch.setenv("REDIS_URL", "redis://fake")
     import redis.asyncio as redis_asyncio
@@ -121,22 +121,15 @@ async def test_session_override_endpoint_uses_canonical_user_scope_without_tenan
         tenant_id=None,
     )
 
-    await session_override_endpoint(
-        session_id="case-tenantless",
-        request=OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
-        current_user=user,
-    )
-
-    assert await load_governed_state_async(
-        tenant_id="default",
-        session_id="case-tenantless",
-        redis_client=fake_redis,
-    ) is not None
-    assert await load_governed_state_async(
-        tenant_id="subject-id",
-        session_id="case-tenantless",
-        redis_client=fake_redis,
-    ) is None
+    # P0-2: a request without a tenant claim is rejected (401), never collapsed
+    # to the legacy "default" tenant.
+    with pytest.raises(HTTPException) as exc_info:
+        await session_override_endpoint(
+            session_id="case-tenantless",
+            request=OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
+            current_user=user,
+        )
+    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio
