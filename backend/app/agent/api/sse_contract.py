@@ -95,6 +95,23 @@ class SSEEventBuilder:
     ) -> dict[str, Any]:
         normalized = dict(payload)
         normalized_type = event_type or infer_event_type(normalized)
+        # P1-2 TEIL A: one central per-turn timing — mark time-to-first-chunk on the
+        # first emitted frame, and stamp first_progress_ms/latency_ms on the final
+        # state_update so EVERY TurnRoute fills the same fields from the same source.
+        # No-op when the streaming timer was never started (nested mobile trace is
+        # left byte-identical).
+        from app.agent.runtime.turn_timing import mark_first_progress, turn_timing  # noqa: PLC0415
+
+        mark_first_progress()
+        if is_final and normalized_type == "state_update":
+            first_progress_ms, latency_ms = turn_timing()
+            if first_progress_ms is not None or latency_ms is not None:
+                trace = dict(normalized.get("trace") or {}) if isinstance(normalized.get("trace"), dict) else {}
+                if trace.get("first_progress_ms") is None and first_progress_ms is not None:
+                    trace["first_progress_ms"] = first_progress_ms
+                if trace.get("latency_ms") is None and latency_ms is not None:
+                    trace["latency_ms"] = latency_ms
+                normalized["trace"] = trace
         if is_final:
             if self.final_emitted:
                 raise ValueError("sse_final_event_already_emitted")
