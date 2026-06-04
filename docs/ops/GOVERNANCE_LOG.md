@@ -6,6 +6,54 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T14:43Z — P2-1 Knowledge-Marker (C5) + Herstellerfeedback (C10) — Sammel-Release
+
+Closes the last two open gap-audit items (`docs/audits/2026-06-03_v17_gap_audit.md`):
+**C5 TEILWEISE → ERFÜLLT** and **C10 FEHLT → ERFÜLLT**. Two demo PRs + one fix,
+then one combined prod release; HALT-before-prod honoured with the four-deliverable
+risk summary and explicit operator go.
+
+**Demo merges (each: full suite EXIT=0 + fast-doctrine green + CI `agent-bff-guardrails` pass):**
+- **TEIL B (#59, C10) — doctrine/mutation path:** `manufacturer_response` intake
+  (`POST /rfq/rwdr/cases/{id}/manufacturer-feedback`, tenant-scoped, open-point
+  candidate under a namespaced key) + guarded `rag_supported` echo + brief-gate
+  backstop (`_NEVER_BRIEF_SOURCE_TYPES` short-circuit in `_blocked_reason` **before**
+  the origin branches — `_BLOCKING_SOURCE_TYPES` alone leaked via `user_entered`
+  origin laundering). **doctrine-reviewer APPROVE**: full 5×5 laundering matrix → 0
+  leaks; red-before-green load-bearing; four L1 comparative-ranking repros still
+  block (`output_guard.py`/`final_guard.py` untouched); AC8 no over-block; AC9 echo
+  is a pure read; zero-FP (no existing fact carries the source_type).
+- **TEIL A (#60, C5) — additive, non-doctrine:** `ChunkMetadata.pack_affinity`
+  (None=cross-cutting, "rwdr"=pack) + `classify_pack_affinity()` (single SoT
+  ingest+backfill); ingest sets it; **retrieval-inert** (not in
+  `_SUPPORTED_METADATA_FILTER_KEYS`; payloads read as raw dicts). Backfill script
+  (dry-run-default, idempotent, conserved accounting).
+- **#61 fix:** backfill default collection → `sealai_knowledge_v3` (live corpus).
+
+**Prod deploy (`ops/release-backend.sh`, RELEASE-EXIT=0):**
+- Pre-deploy gate: full backend suite `EXIT=0` → fresh `pytest-green`; rollback
+  anchor `…@sha256:afb82cfb…` (running/healthy from `docker inspect backend`, never
+  memory) → fresh `anchor-verified`.
+- New pinned image
+  `ghcr.io/jungt72/sealai-backend:3627b2f7-20260604-144259@sha256:05953eda7885130b8a5cd97021a46742ff497aefe6b4a51480e5349a0d470362`
+  (built from demo `3627b2f7`). Backend healthy (redis/qdrant/agent_runtime,
+  qdrant collections=2); nginx reloaded; **live pilot smoke 14/14 PASS**. Rollback
+  target `…@sha256:afb82cfb…` via `.env.prod.rollback-20260604-144259`.
+
+**Post-deploy backfill + characterization (operator sequence):**
+- Backfill `sealai_knowledge_v3` (script `docker cp`-ed in — the image does not ship
+  `scripts/`): dry-run = `--apply` accounting **total 83 = 0 already + 7 rwdr + 76
+  cross-cutting** (conserved); applied 83 writes, `post_check_missing_marker=0`;
+  2nd dry-run `writes=0` (idempotent).
+- **Retrieval characterization: identical hit-sets before/after across 5 queries
+  (0 result-diff)** — the marker is inert, exactly as designed. Temp script +
+  baseline removed from the prod container afterward.
+
+Gap-audit **C5 + C10 → ERFÜLLT**; the P2-1 (last) patch-order item is closed. No
+guard/lexicon/doctrine test weakened; no gate bypassed.
+
+---
+
 ## 2026-06-04T13:04Z — P1-3 residual rwdr risk branches (closes C1 residual)
 
 Behaviour-neutral follow-up to P1-1 PR3's surfaced residual (`risk_readiness.py`).
