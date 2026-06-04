@@ -496,6 +496,12 @@ def evaluate_risks(
                 ),
             )
         )
+    # P1-3: deliberately a CORE check, NOT pack-routed. This set groups
+    # speed-relevant rotary engineering paths {rwdr, ms_pump, unclear_rotary} —
+    # only `rwdr` is a DomainPack; `ms_pump`/`unclear_rotary` are not. Forcing it
+    # behind `pack_for_engineering_path` would silently drop the latter two
+    # (behaviour change). Honest core check > contorted pack abstraction
+    # (Rule of Three §3.5; owner decision 2026-06-04).
     elif speed is None and str(engineering_path or "") in {"rwdr", "ms_pump", "unclear_rotary"}:
         missing_speed = list(dict.fromkeys(pv_missing or ["speed_rpm"]))
         results.append(
@@ -524,7 +530,7 @@ def evaluate_risks(
     eccentricity_field = _first_present_field(profile, "eccentricity_mm")
     measured_runout_field = runout_field or eccentricity_field
     measured_runout = _float(profile.get(measured_runout_field)) if measured_runout_field else None
-    if str(engineering_path or "") == "rwdr" and measured_runout is not None:
+    if pack_for_engineering_path(engineering_path) is not None and measured_runout is not None:
         score = 3 if measured_runout >= 0.2 else 0
         results.append(
             RiskEvaluationResult(
@@ -552,7 +558,7 @@ def evaluate_risks(
 
     surface_missing = not _has(profile, "surface_finish")
     runout_missing = not _has(profile, "runout")
-    if str(engineering_path or "") == "rwdr" and (surface_missing or runout_missing):
+    if pack_for_engineering_path(engineering_path) is not None and (surface_missing or runout_missing):
         missing = []
         if surface_missing:
             missing.append("counterface_surface_condition")
