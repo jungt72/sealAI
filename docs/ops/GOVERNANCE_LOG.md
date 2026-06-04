@@ -6,6 +6,45 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T09:00Z — P0-2 tenant-fallback removal: code + migration + prod deploy
+
+Closes audit **C6** (`docs/audits/2026-06-03_v17_gap_audit.md`) together with P0-1.
+Three gated steps, each evidence-backed; HARD HALTs honoured (operator-approved
+migration scope and deploy).
+
+- **(A) Code — demo PR #46.** New strict resolver
+  `app.services.auth.dependencies.require_tenant_id` → missing/empty tenant claim is
+  a hard 401, never `"default"`/`user_id`. Converted request-scoped sites
+  `deps.py:23`, `rfq.py:42`, `memory.py:40` (LTM), `rag.py:57` (private RAG),
+  `chat_history.py` ×4. Shared-tenant (`RAG_SHARED_TENANT_ID`, Paperless) paths
+  untouched — invariant test. Red-before-green
+  `backend/tests/unit/services/test_p0_2_strict_tenant_resolver.py` (8 red → green);
+  affected + fast-doctrine suites green. No deploy on (A).
+- **(B) Migration — prod DB.** `ops/migrations/p0_2_unify_tenant_to_sealai.sql`
+  (idempotent, dry-run-default). pg_dump backup first
+  (`~/sealai-db-backups/20260604T084655Z/sealai_p0_2_pre_migration.dump`, 40 MB).
+  Dry-run + idempotency proof → HARD HALT → operator approved **real-data scope**.
+  Applied: **374** cases (353 `default` + 21 real realm-user) + 1337/1337
+  `mutation_events`/`outbox` `default` rows → `sealai`. Untouched: 21 test-label
+  cases, `rag_documents` (7, shared-tenant), `audit_log` (9, append-only). Per-table
+  totals conserved; 2nd pass = `UPDATE 0`.
+- **(C) Deploy — prod backend.** Pre-deploy gate: full backend suite exit 0 →
+  fresh `pytest-green`; rollback anchor `…@sha256:c0406be9…` running/healthy →
+  fresh `anchor-verified`. `ops/release-backend.sh` RELEASE-EXIT=0. New pinned image
+  `ghcr.io/jungt72/sealai-backend:f3a8aa20-20260604-090045@sha256:6916d557…`;
+  backend healthy (redis/qdrant/agent_runtime); nginx reloaded; live pilot smoke
+  passed. **Live acceptance:** in-container `present-claim → "sealai"`,
+  `no-claim → 401 missing_tenant_claim`. Rollback target `…@sha256:c0406be9…` via
+  `.env.prod.rollback-20260604-090045`.
+
+**Onboarding consequence (logged, accepted):** the realm has
+`registrationAllowed=true`, so a new/attribute-less user now gets 401 on
+case/RFQ/RAG/memory/chat-history until an admin sets their `tenant_id`. The 6
+existing realm users carry `tenant_id=sealai`. Runbook
+`docs/ops/KEYCLOAK_TENANT_ID_MAPPER.md` updated with the admin onboarding step.
+
+---
+
 ## 2026-06-04T06:00Z — First production deploy through the active deploy gate (P0-1)
 
 P0-1 (LTM tenant scoping) shipped to prod as the **first real release gated by the
