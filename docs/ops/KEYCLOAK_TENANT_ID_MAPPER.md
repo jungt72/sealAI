@@ -128,13 +128,31 @@ introspection.token.claim=true  multivalued=false  aggregate.attrs=false
 This is exactly the claim `_resolve_tenant_id`
 (`backend/app/services/auth/dependencies.py:76-81`) reads.
 
-### P0-2 is now unblocked — but is a separate change, NOT in this PR
-The live-claim precondition from "Verify before changing any code" is met. The
-P0-2 code change remains its own task: remove the fallbacks at `deps.py:23` /
-`rfq.py:42`, set `AUTH_TENANT_ID_CLAIM=tenant_id` explicitly in the active Compose
-service env (V10 runtime rule), and land it **together with** the existing-row
-data migration (353 `default` + 42 `user_id`) so legacy cases are not orphaned,
-with cross-tenant read/delete tests green.
+### P0-2 — APPLIED LIVE (2026-06-04)
+The fallback removal shipped to prod. Single strict resolver
+`app.services.auth.dependencies.require_tenant_id` — a missing/empty tenant claim
+is a hard **401**, never `"default"` / `user_id`. Converted request-scoped sites:
+`deps.py:23` (case scope), `rfq.py:42`, `memory.py:40` (LTM), `rag.py:57`
+(private RAG), `chat_history.py` ×4. Shared-knowledge paths
+(`RAG_SHARED_TENANT_ID`) left intact (invariant test). Red-before-green in
+`backend/tests/unit/services/test_p0_2_strict_tenant_resolver.py` (8 failed
+pre-fix → green); full backend suite green as the deploy gate.
+
+Data migration `ops/migrations/p0_2_unify_tenant_to_sealai.sql` (dry-run-default,
+idempotent): **374** legacy cases (353 `default` + 21 real realm-user) plus their
+`mutation_events`/`outbox` `default` rows → `sealai`. Deliberately untouched:
+21 test-label cases, `rag_documents` (shared-tenant) and `audit_log` (append-only).
+pg_dump backup taken first (`~/sealai-db-backups/20260604T084655Z/`). Deployed
+`ghcr.io/jungt72/sealai-backend:f3a8aa20-20260604-090045@sha256:6916d557…`;
+live `present-claim → "sealai"`, `no-claim → 401 missing_tenant_claim` verified
+in-container.
+
+> **⚠️ Onboarding consequence (`registrationAllowed=true`).** A user **without** a
+> `tenant_id` attribute now gets **401** on case/RFQ/RAG/memory/chat-history. The
+> 6 existing realm users carry `tenant_id=sealai`. **Every new user — including
+> self-registrations — must be given the `tenant_id` User-Profile attribute
+> (admin-only) at onboarding** before they can use governed case features; until
+> then they are locked out of those routes by design.
 
 ### Follow-ups (operator — do NOT auto-run; order is binding)
 - **(a) Build-config reset + controlled restart — ✅ DONE (2026-06-04).** The
