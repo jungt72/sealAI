@@ -17,8 +17,17 @@ from app.agent.state.models import (
     PendingQuestion,
 )
 from app.api.v1.projections.case_workspace import (
+    _build_deep_dive_tabs,
+    _build_technical_derivations,
+    _field_requirement_tier,
     project_case_workspace,
     project_case_workspace_from_governed_state,
+)
+from app.api.v1.schemas.case_workspace import (
+    CommunicationContext,
+    EngineeringCockpitView,
+    MediumContextSummary,
+    PartnerMatchingSummary,
 )
 
 
@@ -1318,3 +1327,86 @@ def test_workspace_projection_exposes_read_only_design_intake() -> None:
     assert "high_pressure_large_gap" in {
         trigger.trigger_id for trigger in design_intake.escalation_triggers
     }
+
+
+# ---------------------------------------------------------------------------
+# P1-4 PR3 — characterization freeze: case-workspace seal-type/path branches
+#
+# Locks the three case_workspace `== "rwdr"` branches BEFORE routing through the
+# pack seam: :976 _field_requirement_tier (rwdr precheck tier), :1343
+# _build_deep_dive_tabs (PTFE-RWDR seal-type default), :1835
+# _build_technical_derivations (rwdr derivation dedup). All 1:1 — the outputs
+# must stay byte-identical pre/post.
+# ---------------------------------------------------------------------------
+
+
+def _deep_dive_text(tabs) -> str:
+    return " ".join(tab.model_dump_json() for tab in tabs)
+
+
+class TestCaseWorkspacePackRoutingFreeze:
+    def test_field_requirement_tier_rwdr_precheck(self) -> None:
+        assert (
+            _field_requirement_tier(
+                field_id="pressure_at_seal_bar",
+                engineering_path="rwdr",
+                check_tiers={},
+            )
+            == "required_for_rwdr_precheck"
+        )
+
+    def test_field_requirement_tier_static_basic(self) -> None:
+        # pressure_at_seal_bar is mandatory for the static path too, but only the
+        # rwdr path elevates it to the precheck tier.
+        assert (
+            _field_requirement_tier(
+                field_id="pressure_at_seal_bar",
+                engineering_path="static",
+                check_tiers={},
+            )
+            == "required_for_basic_orientation"
+        )
+
+    def test_deep_dive_seal_type_default_rwdr(self) -> None:
+        tabs = _build_deep_dive_tabs(
+            profile={},  # no sealing_type → the path-based default applies
+            cockpit_view=EngineeringCockpitView(engineering_path="rwdr"),
+            medium_context=MediumContextSummary(),
+            partner_matching=PartnerMatchingSummary(),
+            communication_context=CommunicationContext(),
+            technical_derivations=[],
+        )
+        assert "PTFE-RWDR" in _deep_dive_text(tabs)
+
+    def test_deep_dive_seal_type_default_non_rwdr(self) -> None:
+        tabs = _build_deep_dive_tabs(
+            profile={},
+            cockpit_view=EngineeringCockpitView(engineering_path="static"),
+            medium_context=MediumContextSummary(),
+            partner_matching=PartnerMatchingSummary(),
+            communication_context=CommunicationContext(),
+            technical_derivations=[],
+        )
+        assert "PTFE-RWDR" not in _deep_dive_text(tabs)
+
+    def test_technical_derivation_dedup_when_rwdr_present(self) -> None:
+        # A pre-existing rwdr derivation suppresses the live one (calc_type == "rwdr").
+        result = _build_technical_derivations(
+            working_profile_pillar={
+                "engineering_profile": {"shaft_diameter_mm": 50, "speed_rpm": 1500}
+            },
+            system={"technical_derivations": [{"calc_type": "rwdr", "status": "ok"}]},
+        )
+        assert len(result) == 1
+        assert result[0].v_surface_m_s is None  # pre-existing item kept, live not inserted
+
+    def test_technical_derivation_insert_when_no_rwdr(self) -> None:
+        result = _build_technical_derivations(
+            working_profile_pillar={
+                "engineering_profile": {"shaft_diameter_mm": 50, "speed_rpm": 1500}
+            },
+            system={"technical_derivations": []},
+        )
+        assert len(result) == 1
+        assert result[0].calc_type == "rwdr"
+        assert result[0].v_surface_m_s is not None  # live derivation inserted
