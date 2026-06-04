@@ -147,4 +147,5 @@ konzept/
 
 erpnext-stack/
 .claude/settings.local.json
+.claude/.gate-logs/
 _archive/
