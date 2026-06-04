@@ -34,3 +34,21 @@ permissions (`.claude/settings.json`); they are also the contract for humans.
   `docker compose down/rm` against prod (denied).
 - `.claude/.gate-logs/` holds runtime gate logs and sentinels — gitignored, not
   committed.
+
+## Gate mechanics — command-parsing & deliberate residual gaps
+- The PreToolUse gates (`ops/hooks/doctrine-gate.sh`, `ops/hooks/deploy-gate.sh`)
+  match on the executed command only (`jq -r '.tool_input.command'`), never the
+  whole payload — a Bash `description` or a commit message that merely mentions
+  `git commit` / `git push` / `ops/release-backend.sh` no longer triggers a gate
+  (audit F1/F2). The deploy gate fires only on an actual **invocation** of the
+  release script (command position), not a prose mention.
+- Parsing is **fail-closed**: jq missing, malformed payload, or an undeterminable
+  command field → BLOCK. Parse ambiguity is never waved through.
+- **Deliberate residual gaps** (a *discipline anchor, not a sandbox*): command-text
+  matching does not see through `sh -c "…"`, shell aliases/functions, variable
+  expansion, or the literal path chained mid-line inside a quoted string. Accepted —
+  the gates enforce the habit, not an airtight boundary.
+- **Activation reality:** the hooks load from project settings and **hot-reload
+  in-session** — no session restart needed (verified 2026-06-04; see
+  `docs/ops/GOVERNANCE_LOG.md`). Renaming a `.proposed` settings file onto
+  `.claude/settings.json` makes the gates live for the next tool call.

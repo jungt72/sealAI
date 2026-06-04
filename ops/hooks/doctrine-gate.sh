@@ -3,18 +3,24 @@
 # Doctrine gate — Claude Code PreToolUse hook (matcher: Bash). FAIL-CLOSED.
 #
 # Blocks `git commit` / `git push` unless the fast doctrine guard suite passes.
-# Reads the PreToolUse JSON payload on stdin; only gates Bash commands that
-# contain `git commit` or `git push`. Everything else is neutral (exit 0 →
-# normal permission flow continues).
+# Reads the PreToolUse JSON payload on stdin and gates ONLY on the executed
+# command (`.tool_input.command`) — NOT the whole payload. The Bash `description`
+# field and any other payload text can no longer trigger the gate (audit F1).
+# Everything else is neutral (exit 0 → normal permission flow continues).
 #
 # Block mechanism: exit code 2 (Claude Code feeds stderr back to the model and
 # blocks the tool call). Chosen over the JSON deny form because a non-zero exit
 # is unambiguous and any internal error path also denies — i.e. FAIL-CLOSED.
 #
+# FAIL-CLOSED command parsing: if jq is unavailable, the payload is not valid
+# JSON, or `.tool_input.command` cannot be determined, the gate BLOCKS. Parse
+# ambiguity is NEVER waved through. Residual gaps (`sh -c`, aliases, variable
+# constructs) are a discipline anchor, not sandboxing — see .claude/rules/ops.md.
+#
 # Emergency override: SEALAI_DOCTRINE_GATE_BYPASS=1 — allowed but LOGGED, never
 # silent. Use only when the gate itself is broken, not to ship a doctrine leak.
 #
-# Schema verified against Claude Code 2.1.161.
+# Schema verified against Claude Code 2.1.161 (tool_input.command).
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -32,8 +38,13 @@ log() { printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "${LOG}" 2>/d
 
 payload="$(cat || true)"
 
-# Only gate git history mutations. matcher already restricts this to Bash.
-case "${payload}" in
+# Extract ONLY the executed command — fail closed on any parse ambiguity.
+command -v jq >/dev/null 2>&1 || deny "jq unavailable — cannot parse tool_input.command"
+cmd="$(printf '%s' "${payload}" | jq -er '.tool_input.command // empty' 2>/dev/null)" \
+  || deny "tool_input.command not determinable (payload malformed or command absent)"
+
+# Only gate git history mutations, matched on the command (not the payload text).
+case "${cmd}" in
   *"git commit"*|*"git push"*) : ;;
   *) exit 0 ;;
 esac
