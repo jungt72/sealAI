@@ -1,0 +1,5 @@
+# Revisions ignored by `git blame` (GitHub applies this file automatically).
+# Enable locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: ruff format backend/ (formatting only) — P1-7 ruff-format addendum, 2026-06-04
+0c93158e1fc6fc2b78ff667fa1cbcf77fcce01a8
