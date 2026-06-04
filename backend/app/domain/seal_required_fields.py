@@ -16,8 +16,6 @@ NOTE — owner boundaries:
 """
 from __future__ import annotations
 
-from app.domain.seal_type import SealFamily, SealType
-
 RWDR_REQUIRED_FIELDS: tuple[str, ...] = (
     "sealing_type",
     "medium",
@@ -52,17 +50,6 @@ DEFAULT_REQUIRED_FIELDS: tuple[str, ...] = (
     "pressure_at_seal_bar",
 )
 
-
-def required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
-    if seal_type in {
-        SealType.radial_shaft_seal.value,
-        SealType.rotary_lip_seal.value,
-        SealType.cassette_seal.value,
-        SealType.v_ring.value,
-    } or seal_family == SealFamily.rotary_shaft.value:
-        return RWDR_REQUIRED_FIELDS
-    if seal_type in {SealType.o_ring.value, SealType.x_ring.value, SealType.backup_ring.value}:
-        return ORING_REQUIRED_FIELDS
-    if seal_family in {SealFamily.hydraulic.value, SealFamily.pneumatic.value}:
-        return HYDRAULIC_REQUIRED_FIELDS
-    return DEFAULT_REQUIRED_FIELDS
+# The selector that maps seal type/family → required fields lives in the pack seam
+# (`app/domain/seal_packs.py::required_fields_for`); this module holds only the
+# data tuples so the pack can own the RWDR set without a circular import.

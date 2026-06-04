@@ -1,0 +1,90 @@
+"""Seal DomainPack registry + thin selector seam (Blueprint §3.3, §10.1).
+
+RWDR is the ONLY pack. The "registry" is a one-entry tuple — no machinery, no
+multi-pack speculation (Rule of Three §3.5). The selector maps a normalized seal
+type / family to a pack; non-pack seal types (O-Ring / Hydraulic) fall through to
+explicitly-marked SHALLOW STUBS.
+
+⛔ STOP SIGN: a new seal type is added as a `DomainPack` (one entry in `_PACKS`),
+never as another `if seal_type == …` branch in the core or another shallow stub.
+"""
+from __future__ import annotations
+
+from app.domain.domain_pack import DomainPack
+from app.domain.seal_required_fields import (
+    DEFAULT_REQUIRED_FIELDS,
+    HYDRAULIC_REQUIRED_FIELDS,
+    ORING_REQUIRED_FIELDS,
+    RWDR_REQUIRED_FIELDS,
+)
+from app.domain.seal_type import SealFamily, SealType
+
+# RWDR calc ids (owned by the RWDR pack). SoT for the id strings stays the
+# derived-dependency contract / calculation engine; the pack only declares
+# ownership so consumers ask the pack instead of string-matching.
+_RWDR_CALC_IDS: tuple[str, ...] = (
+    "rwdr_pv_precheck",
+    "rwdr_dn_value",
+    "rwdr_circumferential_speed",
+)
+
+
+class RwdrPack:
+    """The RWDR seal domain — the only DomainPack implementation today."""
+
+    pack_id: str = "rwdr"
+    # SoT: app/agent/communication/rfq_one_pager.py::RFQ_ONE_PAGER_TEMPLATE_ID
+    rfq_template_id: str = "rfq.rfq_one_pager.v1"
+
+    def classification_signals(self) -> tuple[frozenset[str], frozenset[str]]:
+        return (
+            frozenset(
+                {
+                    SealType.radial_shaft_seal.value,
+                    SealType.rotary_lip_seal.value,
+                    SealType.cassette_seal.value,
+                    SealType.v_ring.value,
+                }
+            ),
+            frozenset({SealFamily.rotary_shaft.value}),
+        )
+
+    def required_fields(self) -> tuple[str, ...]:
+        return RWDR_REQUIRED_FIELDS
+
+    def calculations(self) -> tuple[str, ...]:
+        return _RWDR_CALC_IDS
+
+    def owns_calc_id(self, calc_id: str) -> bool:
+        # Matches the legacy core string check (`== "rwdr"` / `startswith("rwdr.")`).
+        cid = str(calc_id or "")
+        return cid == self.pack_id or cid.startswith(self.pack_id + ".")
+
+
+# One entry — Rule of Three (§3.5): no registry class until pack #2 exists.
+_PACKS: tuple[DomainPack, ...] = (RwdrPack(),)
+
+
+def pack_for(seal_type: str, seal_family: str) -> DomainPack | None:
+    """Select the DomainPack for a normalized seal type / family, or ``None``."""
+    for pack in _PACKS:
+        seal_types, families = pack.classification_signals()
+        if seal_type in seal_types or seal_family in families:
+            return pack
+    return None
+
+
+def required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
+    """Seal-system required fields: pack first, else SHALLOW STUB, else default.
+
+    Behaviour-identical to the former core `_required_fields_for`.
+    """
+    pack = pack_for(seal_type, seal_family)
+    if pack is not None:
+        return pack.required_fields()
+    # SHALLOW STUBS (no DomainPack) — behaviour preserved, not real packs.
+    if seal_type in {SealType.o_ring.value, SealType.x_ring.value, SealType.backup_ring.value}:
+        return ORING_REQUIRED_FIELDS
+    if seal_family in {SealFamily.hydraulic.value, SealFamily.pneumatic.value}:
+        return HYDRAULIC_REQUIRED_FIELDS
+    return DEFAULT_REQUIRED_FIELDS
