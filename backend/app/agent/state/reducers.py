@@ -46,6 +46,7 @@ from app.services.conflict_detection_service import (
     ConflictDetectionService,
 )
 from app.domain.critical_field_contract import PRESSURE_FIELDS
+from app.domain.seal_packs import state_gate_type_sensitive_fields_for
 
 from app.agent.state.models import (
     AssertedClaim,
@@ -197,13 +198,10 @@ _ASSUMABLE_FIELDS: tuple[str, ...] = (
 
 _OPTIONAL_CONTEXT_FIELDS: tuple[str, ...] = ("industry",)
 
-_SEALING_TYPE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
-    "mechanical_seal": ("duty_profile", "installation"),
-    "rwdr": ("shaft_diameter_mm", "speed_rpm"),
-    "o_ring": ("geometry_context",),
-    "gasket": ("geometry_context",),
-    "packing": ("installation",),
-}
+# Per-seal-type type-sensitive required fields are owned by the domain layer
+# (`app/domain/seal_packs.py::state_gate_type_sensitive_fields_for` — RWDR via
+# the pack, others as shallow stubs). The core no longer hardcodes a per-type
+# field dict (P1-4 PR1; CORE_PACK_BOUNDARY.md:13).
 
 _ROTARY_CONTEXT_FIELDS: frozenset[str] = frozenset(
     {
@@ -297,10 +295,9 @@ def _technical_readiness_assessment(
     type_sensitive: list[str] = []
 
     sealing_type = str(_asserted_value(assertions, "sealing_type") or "").strip()
-    if sealing_type in _SEALING_TYPE_REQUIRED_FIELDS:
-        type_sensitive.extend(
-            _missing(assertions, _SEALING_TYPE_REQUIRED_FIELDS[sealing_type])
-        )
+    type_sensitive_fields = state_gate_type_sensitive_fields_for(sealing_type)
+    if type_sensitive_fields is not None:
+        type_sensitive.extend(_missing(assertions, type_sensitive_fields))
     elif (
         any(_has_asserted(assertions, field) for field in _ROTARY_CONTEXT_FIELDS)
         and "sealing_type" not in blockers

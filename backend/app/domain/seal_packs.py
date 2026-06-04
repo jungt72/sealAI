@@ -16,6 +16,8 @@ from app.domain.seal_required_fields import (
     HYDRAULIC_REQUIRED_FIELDS,
     ORING_REQUIRED_FIELDS,
     RWDR_REQUIRED_FIELDS,
+    RWDR_STATE_GATE_REQUIRED_FIELDS,
+    STATE_GATE_SHALLOW_STUBS,
 )
 from app.domain.seal_type import SealFamily, SealType
 
@@ -51,6 +53,9 @@ class RwdrPack:
 
     def required_fields(self) -> tuple[str, ...]:
         return RWDR_REQUIRED_FIELDS
+
+    def state_gate_required_fields(self) -> tuple[str, ...]:
+        return RWDR_STATE_GATE_REQUIRED_FIELDS
 
     def calculations(self) -> tuple[str, ...]:
         return _RWDR_CALC_IDS
@@ -116,3 +121,20 @@ def pack_for_engineering_path(engineering_path: str | None) -> DomainPack | None
     `engineering_path == "rwdr"`), or ``None``."""
     path = str(engineering_path or "")
     return next((pack for pack in _PACKS if pack.pack_id == path), None)
+
+
+def state_gate_type_sensitive_fields_for(sealing_type: str) -> tuple[str, ...] | None:
+    """State-gate type-sensitive required fields for a sealing_type token, or
+    ``None`` when the type is unknown (P1-4 PR1).
+
+    Behaviour-identical to the former core reducer dict
+    (`reducers.py::_SEALING_TYPE_REQUIRED_FIELDS`): RWDR is owned by the pack
+    (keyed by ``pack_id``, NOT by the SealType-enum classification signals — the
+    reducer passes a raw ``"rwdr"`` token); the non-pack types are explicit
+    SHALLOW STUBS. ``None`` (not ``()``) marks an unknown type so the reducer's
+    rotary-context fallback path is preserved exactly.
+    """
+    for pack in _PACKS:
+        if pack.pack_id == sealing_type:
+            return pack.state_gate_required_fields()
+    return STATE_GATE_SHALLOW_STUBS.get(sealing_type)
