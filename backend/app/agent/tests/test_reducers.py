@@ -32,7 +32,9 @@ from app.agent.state.models import (
 )
 from app.agent.state.reducers import (
     SimpleClaim,
+    TechnicalReadinessAssessment,
     _CORE_REQUIRED_FIELDS,
+    _technical_readiness_assessment,
     reduce_asserted_to_governance,
     reduce_normalized_to_asserted,
     reduce_observed_to_normalized,
@@ -1245,3 +1247,120 @@ class TestFullPipeline:
         governance = reduce_asserted_to_governance(asserted)
 
         assert governance.gov_class == "D"
+
+
+# ---------------------------------------------------------------------------
+# P1-4 PR1 — characterization freeze: type-sensitive required fields
+#
+# Locks the exact _technical_readiness_assessment output across every
+# sealing_type token BEFORE the in-core _SEALING_TYPE_REQUIRED_FIELDS dict is
+# routed through the pack seam
+# (app.domain.seal_packs.state_gate_type_sensitive_fields_for). The refactor is
+# a pure data-relocation; these results must stay byte-identical — including the
+# unknown-type and absent-type rotary-context paths (the None-vs-empty boundary).
+# ---------------------------------------------------------------------------
+
+
+_FROZEN_ASSUMABLE_MISSING = [
+    "pressure_direction",
+    "contamination",
+    "counterface_surface",
+    "tolerances",
+    "medium_qualifiers",
+]
+
+# Base fields present so the preselection base-blockers stay empty and the only
+# moving part is the per-seal-type type-sensitive set.
+_TS_BASE = dict(medium="Wasser", pressure_at_seal_bar=5.0, temperature_c=40.0)
+
+
+def _readiness_assert_state(**fields: object) -> AssertedState:
+    """AssertedState with each kwarg as a confirmed AssertedClaim."""
+    return AssertedState(
+        assertions={
+            name: AssertedClaim(
+                field_name=name, asserted_value=value, confidence="confirmed"
+            )
+            for name, value in fields.items()
+        },
+        blocking_unknowns=[],
+        conflict_flags=[],
+    )
+
+
+class TestTypeSensitiveRequiredFieldsFreeze:
+    @pytest.mark.parametrize(
+        "label, fields, expected_preselection, expected_type_sensitive",
+        [
+            (
+                "rwdr_missing",
+                dict(_TS_BASE, sealing_type="rwdr"),
+                ["shaft_diameter_mm", "speed_rpm"],
+                ["shaft_diameter_mm", "speed_rpm"],
+            ),
+            (
+                "rwdr_present",
+                dict(
+                    _TS_BASE,
+                    sealing_type="rwdr",
+                    shaft_diameter_mm=50.0,
+                    speed_rpm=1500.0,
+                ),
+                [],
+                [],
+            ),
+            (
+                "mechanical_seal_missing",
+                dict(_TS_BASE, sealing_type="mechanical_seal"),
+                ["duty_profile", "installation"],
+                ["duty_profile", "installation"],
+            ),
+            (
+                "o_ring_missing",
+                dict(_TS_BASE, sealing_type="o_ring"),
+                ["geometry_context"],
+                ["geometry_context"],
+            ),
+            (
+                "gasket_missing",
+                dict(_TS_BASE, sealing_type="gasket"),
+                ["geometry_context"],
+                ["geometry_context"],
+            ),
+            (
+                "packing_missing",
+                dict(_TS_BASE, sealing_type="packing"),
+                ["installation"],
+                ["installation"],
+            ),
+            (
+                "unknown_type_no_rotary",
+                dict(_TS_BASE, sealing_type="labyrinth"),
+                [],
+                [],
+            ),
+            (
+                "unknown_type_with_rotary",
+                dict(_TS_BASE, sealing_type="labyrinth", shaft_diameter_mm=50.0),
+                ["sealing_type"],
+                [],
+            ),
+            (
+                "absent_type_with_rotary",
+                dict(_TS_BASE, shaft_diameter_mm=50.0),
+                ["sealing_type"],
+                [],
+            ),
+        ],
+    )
+    def test_type_sensitive_freeze(
+        self, label, fields, expected_preselection, expected_type_sensitive
+    ):
+        result = _technical_readiness_assessment(_readiness_assert_state(**fields))
+        assert result == TechnicalReadinessAssessment(
+            preselection_blockers=expected_preselection,
+            missing_but_assumable=_FROZEN_ASSUMABLE_MISSING,
+            optional_context=["industry"],
+            compliance_blockers=[],
+            type_sensitive_required=expected_type_sensitive,
+        ), label
