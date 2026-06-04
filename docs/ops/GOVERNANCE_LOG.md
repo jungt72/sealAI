@@ -6,6 +6,47 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T17:57Z — P1-4 C1/C9/S3 closure + architecture enforcers (demo-merged; HALT-before-prod)
+
+Closes the V1.7 re-run audit's open verdicts (`docs/audits/2026-06-04_v17_gap_audit_rerun.md`):
+**C1 TEILWEISE/HIGH → ERFÜLLT**, **C9 LOW-Vorbehalt → closed**, **S3 TEILWEISE → ERFÜLLT**.
+Eight small PRs to `demo/rwdr-limited-external`, P1-1 discipline (characterization-freeze
+committed before each refactor, zero behaviour change):
+
+- **C1** — routed the three audited core surfaces (`reducers.py` PR1, `challenge_engine.py` PR2,
+  `case_workspace.py` PR3) **plus** the decision-A extras the inventory surfaced
+  (`checks_registry.py` / `output_contract_assembly.py` / `calculation_projection.py`, PR3.5)
+  through the pack seam. The calc_type sites use the new exact `pack_for_calc_type` (a dotted
+  `rwdr.<id>` divergence vs `pack_for_calc_id` was red-proven and avoided).
+- **C9** — relocated `_oring_calculations` out of the v92 core orchestrator into
+  `app/agent/domain/oring_calc.py` (PR4; no `OringPack`).
+- **S3** — routed all governed-layer `model_copy` content-syncs (`api/utils.py`,
+  `output_contract_assembly.py`, `persistence.py`, `sheet_events.py`) through
+  `reducers.produce_governance/produce_decision/produce_normalized` (PR5b).
+- **Enforcers (the actual goal)** — `test_core_seal_type_branching.py` (no seal-type branching in
+  the core outside a documented allowlist = the heterogeneous `risk_readiness` checks + the
+  `normalize_seal_type` classifier) and `test_single_writer_invariant.py` (governed-layer state
+  produced only by the reducer chain). Both carry synthetic-violation proofs; CI-effective (PR5a/PR5b).
+
+**Reviews:** `doctrine-reviewer` APPROVE on PR1 (mutation core) and on PR5b (after one
+REQUEST-CHANGES round that caught a bare-variable `normalized.model_copy` single-writer gap at
+`sheet_events.py:190`, now closed). Boundary doc corrected (the earlier P1-3 "resolved" over-claim);
+prior-audit S1/S2 matrix rows reconciled TEILWEISE → ERFÜLLT (stale; detail P1-2 already ERFÜLLT).
+
+**Adjacent owner decisions:**
+- **C10** (manufacturer-feedback echo) — **deferred** (not wired). `manufacturer_response_echo_notes`
+  is implemented + tested but caller-less; wiring deferred to the Knowledge contract seam
+  (`dashboard_contract._knowledge_notes`). AC10 ("als Wissensquelle vorgesehen") stays ERFÜLLT.
+- **V1.7 §6.4 off-branch caveat** — `origin/feat/v1.7-blueprint` §6.4 still lists
+  `CaseUnderstandingPatch + RFQBriefPatch`; off-branch + non-binding (AGENTS.md: V1.6/RWDR-MVP is
+  binding). Noted, unrekonziliert by design.
+
+**Pending:** 🛑 HALT-before-prod — the bundled prod release (full backend pytest exit=0 + fresh
+daemon rollback anchor + enforcer proof) and the scoped C1/C9/S3/C10 re-verification → Re-Run
+verdict update to "ja-mit-Amendments" are recorded in a follow-up entry at deploy.
+
+---
+
 ## 2026-06-04T14:43Z — P2-1 Knowledge-Marker (C5) + Herstellerfeedback (C10) — Sammel-Release
 
 Closes the last two open gap-audit items (`docs/audits/2026-06-03_v17_gap_audit.md`):
