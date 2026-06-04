@@ -24,6 +24,7 @@ from app.agent.state.models import (
     UserOverride,
 )
 from app.agent.state.reducers import (
+    produce_normalized,
     reduce_normalized_to_asserted,
     reduce_observed_to_normalized,
 )
@@ -187,8 +188,8 @@ def apply_sheet_event(
             )
             for name in changed_fields
         ]
-        normalized = normalized.model_copy(
-            update={"conflicts": list(normalized.conflicts) + stale_conflicts}
+        normalized = produce_normalized(
+            normalized, conflicts=list(normalized.conflicts) + stale_conflicts
         )
 
     new_state = state.model_copy(
