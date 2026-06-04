@@ -88,3 +88,31 @@ def required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
     if seal_family in {SealFamily.hydraulic.value, SealFamily.pneumatic.value}:
         return HYDRAULIC_REQUIRED_FIELDS
     return DEFAULT_REQUIRED_FIELDS
+
+
+# --- calc/risk routing seam (P1-1 PR3) -------------------------------------- #
+# Consumers ask the pack about a calc id / engineering path instead of matching
+# rwdr strings in the core. Each helper mirrors exactly one legacy check.
+
+def pack_for_calc_id(calc_id: str) -> DomainPack | None:
+    """Pack that owns ``calc_id`` by id pattern (legacy: `== "rwdr"` /
+    `startswith("rwdr.")`), or ``None``."""
+    for pack in _PACKS:
+        if pack.owns_calc_id(calc_id):
+            return pack
+    return None
+
+
+def is_pack_calculation(calc_id: str) -> bool:
+    """True when ``calc_id`` is one of a pack's declared calculations (legacy:
+    membership of the explicit ``{rwdr_pv_precheck, rwdr_dn_value,
+    rwdr_circumferential_speed}`` set)."""
+    cid = str(calc_id or "")
+    return any(cid in pack.calculations() for pack in _PACKS)
+
+
+def pack_for_engineering_path(engineering_path: str | None) -> DomainPack | None:
+    """Pack whose ``pack_id`` equals the engineering path (legacy:
+    `engineering_path == "rwdr"`), or ``None``."""
+    path = str(engineering_path or "")
+    return next((pack for pack in _PACKS if pack.pack_id == path), None)

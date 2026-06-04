@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from app.domain.seal_packs import pack_for_calc_id
+
 
 _RWDR_OUTPUT_KEYS: tuple[str, ...] = (
     "v_surface_m_s",
@@ -82,7 +84,8 @@ def _ledger_item(result: Any) -> dict[str, Any]:
 def _is_rwdr_ledger_item(item: Mapping[str, Any]) -> bool:
     calc_id = str(item.get("calculation_id") or item.get("calc_type") or "")
     calculator = str(item.get("calculator") or "")
-    if calc_id.startswith("rwdr.") or calc_id == "rwdr":
+    # P1-1 PR3: rwdr ownership by pack id-pattern, not a core string branch.
+    if pack_for_calc_id(calc_id) is not None:
         return True
     if calculator in {"surface_speed_from_rpm_and_diameter", "CascadingCalculationEngine"}:
         return True

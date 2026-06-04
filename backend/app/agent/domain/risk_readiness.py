@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 from app.agent.domain.medium_registry import is_medium_placeholder_value
 from app.agent.domain.risk_claims import severity_from_score, unique_text
+from app.domain.seal_packs import is_pack_calculation, pack_for_engineering_path
 
 RULESET_VERSION = "v0.4-mvp-2026-04-25"
 
@@ -434,7 +435,7 @@ def evaluate_risks(
             score = 3
         elif pressure >= 10:
             score = 2
-        elif pressure > 1 and str(engineering_path or "") == "rwdr":
+        elif pressure > 1 and pack_for_engineering_path(engineering_path) is not None:
             score = 2
         else:
             score = 0
@@ -461,7 +462,7 @@ def evaluate_risks(
     pv_missing: list[str] = []
     for check in checks:
         calc_id = str(getattr(check, "calc_id", "") or "")
-        if calc_id not in {"rwdr_pv_precheck", "rwdr_dn_value", "rwdr_circumferential_speed"}:
+        if not is_pack_calculation(calc_id):
             continue
         missing_inputs = list(getattr(check, "missing_inputs", []) or [])
         if missing_inputs:
