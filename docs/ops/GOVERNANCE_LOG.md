@@ -6,6 +6,24 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T13:04Z — P1-3 residual rwdr risk branches (closes C1 residual)
+
+Behaviour-neutral follow-up to P1-1 PR3's surfaced residual (`risk_readiness.py`).
+Same P1-1 discipline: STEP-0 map → characterization freeze committed before the
+refactor → small commits.
+- `:527` runout_risk + `:555` surface_risk (clean `== "rwdr"`) → `pack_for_engineering_path`.
+- `:499` speed_pv_risk (`{rwdr, ms_pump, unclear_rotary}` — heterogeneous, no 1:1 pack
+  equivalence) → **HALT → owner chose: keep as a documented CORE check** (honest core
+  check > contorted abstraction). PR #56.
+- Proof: characterization freeze green before+after (incl. the `:499` neutrality pin
+  that ms_pump/unclear_rotary still emit the risk); full backend suite EXIT=0;
+  **doctrine-reviewer APPROVE** (`pack_for_engineering_path(x) ⇔ x=="rwdr"`, 1:1).
+- Deploy `…@sha256:afb82cfb…` (operator-approved HALT); live spot-check confirms
+  rwdr runout/surface via pack, `:499` set intact for all three paths, tier-0 guard
+  still enforced. Gap-audit **C1 → ERFÜLLT** (residual closed).
+
+---
+
 ## 2026-06-04T12:41Z — P1-2 Trace/Tier (S1/S2) + prod-deploy chain since P0-2
 
 Prod-deploy continuity since the P0-2 entry (each via `ops/release-backend.sh`,
