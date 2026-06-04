@@ -1364,6 +1364,11 @@ def invalidate_downstream(
 # ---------------------------------------------------------------------------
 
 
+def produce_normalized(normalized: NormalizedState, **updates: Any) -> NormalizedState:
+    """Deterministic content-sync producing a new NormalizedState (single-writer)."""
+    return normalized.model_copy(update=updates)
+
+
 def produce_governance(governance: GovernanceState, **updates: Any) -> GovernanceState:
     """Deterministic content-sync producing a new GovernanceState (single-writer)."""
     return governance.model_copy(update=updates)

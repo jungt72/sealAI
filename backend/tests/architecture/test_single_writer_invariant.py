@@ -67,14 +67,16 @@ def _violations(path: Path) -> list[tuple[int, str]]:
         # 1) direct governed-type constructor call (a Name in GOVERNED_TYPES).
         if isinstance(func, ast.Name) and func.id in GOVERNED_TYPES:
             hits.append((node.lineno, lines[node.lineno - 1].strip()))
-        # 2) governed-layer model_copy: <expr>.{governance|decision|...}.model_copy(...)
-        elif (
-            isinstance(func, ast.Attribute)
-            and func.attr == "model_copy"
-            and isinstance(func.value, ast.Attribute)
-            and func.value.attr in GOVERNED_ATTRS
-        ):
-            hits.append((node.lineno, lines[node.lineno - 1].strip()))
+        # 2) governed-layer model_copy. The receiver is the governed layer, reached
+        #    either as an attribute (`state.governance.model_copy(...)`) or as a
+        #    bare local bound from one (`normalized = ...; normalized.model_copy(...)`).
+        elif isinstance(func, ast.Attribute) and func.attr == "model_copy":
+            receiver = func.value
+            receiver_is_governed = (
+                isinstance(receiver, ast.Attribute) and receiver.attr in GOVERNED_ATTRS
+            ) or (isinstance(receiver, ast.Name) and receiver.id in GOVERNED_ATTRS)
+            if receiver_is_governed:
+                hits.append((node.lineno, lines[node.lineno - 1].strip()))
 
     return hits
 
