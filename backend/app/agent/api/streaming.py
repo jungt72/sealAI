@@ -1181,6 +1181,11 @@ async def event_generator(
     *,
     current_user: RequestUser,
 ) -> AsyncGenerator[str, None]:
+    # P1-2 TEIL A: start the single per-turn timer at the streaming entry; the SSE
+    # builder fills first_progress_ms/latency_ms from it on the final state_update.
+    from app.agent.runtime.turn_timing import start_turn_timer  # noqa: PLC0415
+
+    start_turn_timer()
     event_builder = SSEEventBuilder.for_request(request)
     early_guard_reply = await collect_unsafe_user_instruction_reply_with_trace(
         latest_user_message=request.message,
