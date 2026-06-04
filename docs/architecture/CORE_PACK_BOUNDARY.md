@@ -50,9 +50,13 @@ O-Ring / Hydraulic are **shallow stubs** (data tuples behind the seam, no pack).
 ⛔ **Stop sign:** a new seal type is added as a pack (one `_PACKS` entry), never
 as another core branch or another hardcoded tuple.
 
-## Known residual (P1-1 follow-up, surfaced not actioned)
+## Residual rwdr risk branches — resolved (P1-3, 2026-06-04)
 
-`app/agent/domain/risk_readiness.py:498` (`engineering_path in
-{"rwdr","ms_pump","unclear_rotary"}` — a heterogeneous set, not a 1:1 pack
-equivalence), `:527`, `:555` (`== "rwdr"`) still string-branch on rwdr. Candidates
-for a later pack-membership pass; out of P1-1's named scope.
+`risk_readiness.py:527` (runout_risk) and `:555` (surface_risk) were clean
+`== "rwdr"` checks → now routed via `pack_for_engineering_path` (behaviour-neutral,
+1:1). `risk_readiness.py:499` (`engineering_path in {rwdr, ms_pump, unclear_rotary}`)
+is a **heterogeneous set with no 1:1 pack equivalence** — only `rwdr` is a pack, so
+routing it would silently drop `ms_pump`/`unclear_rotary`. It is **deliberately kept
+as a documented CORE check** (owner decision): an honest core check beats a contorted
+pack abstraction (Rule of Three). This is the canonical example of where the
+boundary stays in the core by design.
