@@ -112,7 +112,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Backfill pack_affinity (cross-cutting vs RWDR-pack) in Qdrant."
     )
-    parser.add_argument("--collection", default=os.getenv("QDRANT_COLLECTION", "sealai_knowledge"))
+    # The live collection is driven by QDRANT_COLLECTION (sealai_knowledge_v3 in
+    # prod); the literal fallback matches that so a host-run without env hits the
+    # real corpus, not an empty/legacy name.
+    parser.add_argument("--collection", default=os.getenv("QDRANT_COLLECTION", "sealai_knowledge_v3"))
     parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"))
     parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY") or None)
     parser.add_argument("--apply", action="store_true", help="Persist updates to Qdrant.")
