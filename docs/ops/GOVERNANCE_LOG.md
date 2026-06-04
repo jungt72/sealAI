@@ -6,6 +6,30 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T05:26Z — Re-verification against the durable (merged) gates
+
+**Governance aktiv ab 2026-06-04T05:07Z**, durable auf `demo` (activation commit
+`645e9f62`, merged via PR #38). **Session:** `1b1be06d-dfd9-4cc6-895d-2ec7353181c6`.
+Fresh, independent re-run of the six live gate proofs against the
+already-committed/merged hooks (not the in-session hot-reload). Throwaway branch
+`proof/governance-reverify`; all synthetic artifacts removed, worktree clean.
+
+| # | Gate | Result | Evidence |
+|---|------|--------|----------|
+| 1 | Hooks registered (committed) & live | **PASS** | `git show HEAD:.claude/settings.json` carries the hooks block (`:94-105`); activation commit `645e9f62`; live PASS log entries through 05:25Z |
+| 2 | Doctrine-gate RED → commit BLOCKED | **BLOCK ✓** | `05:25:29Z BLOCK — guard suite FAILED`; `DOCTRINE GATE (fail-closed): … FAILED`; `test_synthetic_doctrine_gate_reverify_DELETE_ME` failed; HEAD `e1abae9e` unchanged |
+| 3 | Doctrine-gate GREEN → commit ALLOWED | **PASS** | `05:25:52Z PASS`; throwaway commit `d5f19b03` (`rc=0`) after probe removal |
+| 4 | Branch-guard → push to `main` denied | **BLOCK ✓** | `git push origin HEAD:main --dry-run` → `Permission … denied` (pre-execution; no real push) |
+| 5 | Deploy-gate → release w/o sentinel denied | **BLOCK ✓** | `bash ops/release-backend.sh --help` → `DEPLOY GATE (fail-closed): missing sentinel`; no build started |
+| 6 | Reviewer cannot Write/Edit | **PASS** | `doctrine-reviewer` subagent toolset = Read, Bash only |
+| 7 | ops.md sentinel docs consistent | **PASS** | `ops.md:12,18,26` ↔ `deploy-gate.sh:24` (`MAX_AGE=3600`) |
+
+Outcome: identical to the first run — gates enforce idempotently from the durable
+state. No proof failed. F1/F2 (payload over-match, see prior entry) remain open
+and unchanged; no gate was weakened.
+
+---
+
 ## 2026-06-04 — Governance activated and mechanically verified
 
 **Governance aktiv ab 2026-06-04T05:07Z** (Hooks hot-reloaded in-session),
