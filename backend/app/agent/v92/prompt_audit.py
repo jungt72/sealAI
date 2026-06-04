@@ -25,7 +25,9 @@ def messages_prompt_hash(messages: Iterable[Mapping[str, Any]]) -> str:
         }
         for message in messages
     ]
-    return rendered_prompt_hash(json.dumps(sanitized, sort_keys=True, ensure_ascii=True))
+    return rendered_prompt_hash(
+        json.dumps(sanitized, sort_keys=True, ensure_ascii=True)
+    )
 
 
 def build_prompt_trace(

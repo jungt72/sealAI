@@ -15,4 +15,6 @@ class ChatTranscript(Base):
     # Column name stays "metadata" to avoid migrations even though attribute name must change.
     metadata_json = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

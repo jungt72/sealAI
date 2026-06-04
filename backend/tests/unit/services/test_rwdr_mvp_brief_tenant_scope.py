@@ -77,7 +77,9 @@ async def async_session():
     with _sqlite_compatible_server_defaults():
         async with engine.begin() as conn:
             await conn.run_sync(
-                lambda sync_conn: Base.metadata.create_all(sync_conn, tables=list(_TABLES))
+                lambda sync_conn: Base.metadata.create_all(
+                    sync_conn, tables=list(_TABLES)
+                )
             )
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as session:
@@ -155,15 +157,30 @@ def _guarded_repository_calls(
             session=session,
             case_id=case_id,
             decisions=[
-                {"field": "shaft_diameter_d1_mm", "action": "edit", "value": "45", "unit": "mm"}
+                {
+                    "field": "shaft_diameter_d1_mm",
+                    "action": "edit",
+                    "value": "45",
+                    "unit": "mm",
+                }
             ],
             **scope,
         ),
-        "evaluate": evaluate_db_persisted_rwdr_case(session=session, case_id=case_id, **scope),
-        "brief": generate_db_persisted_rwdr_brief(session=session, case_id=case_id, **scope),
-        "export_md": export_db_persisted_rwdr_case_markdown(session=session, case_id=case_id, **scope),
-        "export_pdf": export_db_persisted_rwdr_case_pdf_document(session=session, case_id=case_id, **scope),
-        "list_snapshots": list_db_persisted_rwdr_case_snapshots(session=session, case_id=case_id, **scope),
+        "evaluate": evaluate_db_persisted_rwdr_case(
+            session=session, case_id=case_id, **scope
+        ),
+        "brief": generate_db_persisted_rwdr_brief(
+            session=session, case_id=case_id, **scope
+        ),
+        "export_md": export_db_persisted_rwdr_case_markdown(
+            session=session, case_id=case_id, **scope
+        ),
+        "export_pdf": export_db_persisted_rwdr_case_pdf_document(
+            session=session, case_id=case_id, **scope
+        ),
+        "list_snapshots": list_db_persisted_rwdr_case_snapshots(
+            session=session, case_id=case_id, **scope
+        ),
         "get_snapshot": get_db_persisted_rwdr_case_snapshot(
             session=session, case_id=case_id, revision_number=1, **scope
         ),
@@ -195,12 +212,17 @@ async def test_owner_can_use_all_guarded_paths(async_session: AsyncSession) -> N
 
 
 @pytest.mark.asyncio
-async def test_get_persisted_case_foreign_tenant_not_found(async_session: AsyncSession) -> None:
+async def test_get_persisted_case_foreign_tenant_not_found(
+    async_session: AsyncSession,
+) -> None:
     case_id = await _seed_owned_case(async_session)
 
     with pytest.raises(RWDRCaseStateNotFound):
         await get_db_persisted_rwdr_case(
-            session=async_session, case_id=case_id, tenant_id="tenant-2", user_id="user-2"
+            session=async_session,
+            case_id=case_id,
+            tenant_id="tenant-2",
+            user_id="user-2",
         )
 
 
@@ -213,12 +235,17 @@ async def test_get_persisted_case_cross_user_same_tenant_not_found(
 
     with pytest.raises(RWDRCaseStateNotFound):
         await get_db_persisted_rwdr_case(
-            session=async_session, case_id=case_id, tenant_id="tenant-1", user_id="user-2"
+            session=async_session,
+            case_id=case_id,
+            tenant_id="tenant-1",
+            user_id="user-2",
         )
 
 
 @pytest.mark.asyncio
-async def test_all_guarded_paths_reject_foreign_tenant(async_session: AsyncSession) -> None:
+async def test_all_guarded_paths_reject_foreign_tenant(
+    async_session: AsyncSession,
+) -> None:
     case_id = await _seed_owned_case(async_session)
 
     leaked: list[str] = []

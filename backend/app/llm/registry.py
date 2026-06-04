@@ -1,8 +1,8 @@
 """
 Central LLM Model Registry for SeaLAI.
 
-This module serves as the single source of truth for mapping functional roles 
-to specific LLM model identifiers. It allows for role-based model selection 
+This module serves as the single source of truth for mapping functional roles
+to specific LLM model identifiers. It allows for role-based model selection
 without hardcoding model names in the business logic.
 """
 
@@ -59,15 +59,15 @@ DEFAULT_MODEL: Final[str] = "gpt-4o-mini"
 def get_model_for_role(role: str) -> str:
     """
     Returns the assigned model identifier for a given functional role.
-    
+
     Priority:
     1. Environment variable override (if defined and non-empty)
     2. Static registry default
     3. Global default model
-    
+
     Args:
         role: The functional role (e.g., 'extraction', 'routing').
-        
+
     Returns:
         The model string assigned to that role.
     """

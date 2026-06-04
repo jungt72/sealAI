@@ -32,13 +32,15 @@ def _build_rwdr_threshold_payload(
         temperature_min_c=working.get("temperature_min_c"),
         surface_hardness_hrc=working.get("surface_hardness_hrc") or working.get("hrc"),
         runout_mm=working.get("runout_mm") or working.get("runout"),
-        clearance_gap_mm=working.get("clearance_gap_mm") or working.get("clearance_gap"),
+        clearance_gap_mm=working.get("clearance_gap_mm")
+        or working.get("clearance_gap"),
         elastomer_material=(
             machine.get("material")
             or working.get("material")
             or working.get("elastomer_material")
         ),
-        medium=(asserted.get("medium_profile") or {}).get("name") or working.get("medium"),
+        medium=(asserted.get("medium_profile") or {}).get("name")
+        or working.get("medium"),
         lubrication_mode=working.get("lubrication_mode") or working.get("lubrication"),
     )
 
@@ -86,7 +88,9 @@ def project_threshold_status(
 
     warning_thresholds = list(dict.fromkeys(warning_thresholds))
     blocking_thresholds = list(dict.fromkeys(blocking_thresholds))
-    triggered_thresholds = warning_thresholds + [t for t in blocking_thresholds if t not in warning_thresholds]
+    triggered_thresholds = warning_thresholds + [
+        t for t in blocking_thresholds if t not in warning_thresholds
+    ]
 
     if blocking_thresholds:
         threshold_status = "blocking_thresholds"
@@ -109,12 +113,22 @@ def _threshold_scope_level(
     threshold_projection: Optional[Dict[str, Any]],
     domain_scope_projection: Optional[Dict[str, Any]],
 ) -> str:
-    threshold_status = str((threshold_projection or {}).get("threshold_status") or "threshold_free")
-    domain_status = str((domain_scope_projection or {}).get("status") or "in_domain_scope")
+    threshold_status = str(
+        (threshold_projection or {}).get("threshold_status") or "threshold_free"
+    )
+    domain_status = str(
+        (domain_scope_projection or {}).get("status") or "in_domain_scope"
+    )
 
-    if domain_status in {"out_of_domain_scope", "escalation_required"} or threshold_status == "threshold_blocking":
+    if (
+        domain_status in {"out_of_domain_scope", "escalation_required"}
+        or threshold_status == "threshold_blocking"
+    ):
         return "blocked"
-    if domain_status == "in_domain_with_warning" or threshold_status == "threshold_warning":
+    if (
+        domain_status == "in_domain_with_warning"
+        or threshold_status == "threshold_warning"
+    ):
         return "warning"
     return "neutral"
 

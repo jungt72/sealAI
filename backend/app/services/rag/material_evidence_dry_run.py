@@ -17,7 +17,14 @@ from app.agent.domain.material_evidence_adapter import (
 from app.models.rag_document import RagDocument
 
 
-_TEXT_KEYS = ("text", "content", "chunk_text", "excerpt", "excerpt_short", "statement_short")
+_TEXT_KEYS = (
+    "text",
+    "content",
+    "chunk_text",
+    "excerpt",
+    "excerpt_short",
+    "statement_short",
+)
 _MAX_ADAPTER_TEXT_CHARS = 1200
 _MAX_RESPONSE_TEXT_CHARS = 320
 _MAX_INDEXED_SNIPPET_TEXT_CHARS = 1600
@@ -73,7 +80,9 @@ _GENERIC_MEDIUM_RE = re.compile(
 )
 
 
-def rag_document_to_material_evidence_raw_items(doc: RagDocument) -> list[dict[str, Any]]:
+def rag_document_to_material_evidence_raw_items(
+    doc: RagDocument,
+) -> list[dict[str, Any]]:
     """Build conservative adapter inputs from a RAG document row.
 
     The function only uses already persisted metadata/extracted candidates. It
@@ -89,7 +98,9 @@ def rag_document_to_material_evidence_raw_items(doc: RagDocument) -> list[dict[s
     raw_items: list[dict[str, Any]] = []
     for index, candidate in enumerate(candidates):
         candidate_payload = _safe_candidate_payload(candidate)
-        metadata = _merge_mappings(base.get("metadata"), candidate_payload.get("metadata"))
+        metadata = _merge_mappings(
+            base.get("metadata"), candidate_payload.get("metadata")
+        )
         metadata["candidate_index"] = index
 
         raw = {**base, **candidate_payload}
@@ -122,7 +133,9 @@ def build_material_evidence_dry_run_report(
     """Return a redacted read-only report from RAG documents through the adapter."""
 
     raw_items: list[dict[str, Any]] = []
-    snippet_items_by_document = _group_indexed_snippet_items(indexed_snippet_items or [])
+    snippet_items_by_document = _group_indexed_snippet_items(
+        indexed_snippet_items or []
+    )
     used_indexed_snippet_candidates = 0
     for doc in docs:
         candidates = _candidate_mappings(doc.extracted_candidates)
@@ -197,7 +210,11 @@ def load_material_evidence_indexed_snippet_raw_items(
     status so the dry-run endpoint remains safe and inspectable.
     """
 
-    selected_docs = [doc for doc in docs[: max(max_documents, 0)] if _text(getattr(doc, "document_id", None))]
+    selected_docs = [
+        doc
+        for doc in docs[: max(max_documents, 0)]
+        if _text(getattr(doc, "document_id", None))
+    ]
     summary: dict[str, Any] = {
         "enabled": True,
         "source": "qdrant_payload",
@@ -234,7 +251,11 @@ def load_material_evidence_indexed_snippet_raw_items(
             )
             loaded_snippets += len(payloads)
             for index, payload in enumerate(payloads):
-                items.extend(indexed_snippet_payload_to_material_evidence_raw_items(doc, payload, snippet_index=index))
+                items.extend(
+                    indexed_snippet_payload_to_material_evidence_raw_items(
+                        doc, payload, snippet_index=index
+                    )
+                )
         summary["loaded_snippet_count"] = loaded_snippets
         summary["loaded_candidate_count"] = len(items)
         summary["status"] = "loaded" if items else "no_indexed_snippets"
@@ -255,23 +276,33 @@ def indexed_snippet_payload_to_material_evidence_raw_items(
 
     payload = _payload_mapping(payload_source)
     base = _base_raw_item(doc)
-    metadata = _sanitize_indexed_snippet_metadata(_merge_mappings(base.get("metadata"), payload.get("metadata")))
+    metadata = _sanitize_indexed_snippet_metadata(
+        _merge_mappings(base.get("metadata"), payload.get("metadata"))
+    )
     metadata["snippet_index"] = snippet_index
     metadata["snippet_source"] = "qdrant_payload"
     metadata["indexed_snippet_text_available"] = bool(_payload_text(payload))
     text = _truncate(_payload_text(payload), limit=_MAX_INDEXED_SNIPPET_TEXT_CHARS)
-    raw = _indexed_snippet_base_raw_item(base=base, payload=payload, metadata=metadata, text=text)
+    raw = _indexed_snippet_base_raw_item(
+        base=base, payload=payload, metadata=metadata, text=text
+    )
     structured_candidates = _structured_candidates_from_text(text)
     if not structured_candidates:
         return [_truncate_text_fields(raw, limit=_MAX_ADAPTER_TEXT_CHARS)]
 
     items: list[dict[str, Any]] = []
-    for candidate_index, structured in enumerate(structured_candidates[:_MAX_STRUCTURED_CANDIDATES_PER_SNIPPET]):
+    for candidate_index, structured in enumerate(
+        structured_candidates[:_MAX_STRUCTURED_CANDIDATES_PER_SNIPPET]
+    ):
         candidate_metadata = _merge_mappings(metadata, structured.get("metadata"))
         candidate_metadata["structured_candidate_index"] = candidate_index
         candidate_metadata["structured_candidate_source"] = "indexed_snippet_text"
         candidate_payload = _safe_candidate_payload(structured)
-        candidate_text = _text(candidate_payload.get("text")) or _text(candidate_payload.get("statement_short")) or text
+        candidate_text = (
+            _text(candidate_payload.get("text"))
+            or _text(candidate_payload.get("statement_short"))
+            or text
+        )
         candidate_raw = {
             **raw,
             **candidate_payload,
@@ -279,7 +310,9 @@ def indexed_snippet_payload_to_material_evidence_raw_items(
             "text": _truncate(candidate_text, limit=_MAX_INDEXED_SNIPPET_TEXT_CHARS),
             "excerpt": _truncate(candidate_text, limit=_MAX_INDEXED_SNIPPET_TEXT_CHARS),
         }
-        items.append(_truncate_text_fields(candidate_raw, limit=_MAX_ADAPTER_TEXT_CHARS))
+        items.append(
+            _truncate_text_fields(candidate_raw, limit=_MAX_ADAPTER_TEXT_CHARS)
+        )
     return items
 
 
@@ -297,16 +330,22 @@ def _data_quality_assessment(
     actions: list[str] = []
     if grouped_missing_fields.get("medium", 0):
         actions.append("add_or_extract_exact_medium_metadata")
-    if grouped_missing_fields.get("material", 0) or grouped_missing_fields.get("material_or_medium", 0):
+    if grouped_missing_fields.get("material", 0) or grouped_missing_fields.get(
+        "material_or_medium", 0
+    ):
         actions.append("add_or_extract_material_metadata")
-    if grouped_missing_fields.get("source_title", 0) or grouped_missing_fields.get("source_metadata", 0):
+    if grouped_missing_fields.get("source_title", 0) or grouped_missing_fields.get(
+        "source_metadata", 0
+    ):
         actions.append("repair_source_metadata")
     if grouped_limitations.get("tags_only_context", 0):
         actions.append("extract_text_snippets_or_structured_candidates_from_paperless")
     if grouped_limitations.get("exact_medium_specification_missing", 0):
         actions.append("replace_generic_medium_tags_with_exact_medium_family_and_grade")
     if valid_count == 0 and indexed_snippet_count:
-        actions.append("curate_indexed_snippets_into_explicit_material_medium_candidates")
+        actions.append(
+            "curate_indexed_snippets_into_explicit_material_medium_candidates"
+        )
     if not actions:
         actions.append("review_valid_cards_before_persistence")
 
@@ -381,7 +420,9 @@ def _candidate_mappings(value: Any) -> list[Mapping[str, Any]]:
     return []
 
 
-def _group_indexed_snippet_items(items: Sequence[Mapping[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def _group_indexed_snippet_items(
+    items: Sequence[Mapping[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in items:
         if not isinstance(item, Mapping):
@@ -390,7 +431,9 @@ def _group_indexed_snippet_items(items: Sequence[Mapping[str, Any]]) -> dict[str
         if not document_id:
             document_id = _text(_mapping(item.get("metadata")).get("document_id"))
         if document_id:
-            grouped[document_id].append(_truncate_text_fields(item, limit=_MAX_ADAPTER_TEXT_CHARS))
+            grouped[document_id].append(
+                _truncate_text_fields(item, limit=_MAX_ADAPTER_TEXT_CHARS)
+            )
     return dict(grouped)
 
 
@@ -426,15 +469,21 @@ def _scroll_indexed_snippet_payloads(
         collection_name=collection_name,
         scroll_filter=qmodels.Filter(
             must=[
-                qmodels.FieldCondition(key="tenant_id", match=qmodels.MatchValue(value=tenant_id)),
-                qmodels.FieldCondition(key="document_id", match=qmodels.MatchValue(value=document_id)),
+                qmodels.FieldCondition(
+                    key="tenant_id", match=qmodels.MatchValue(value=tenant_id)
+                ),
+                qmodels.FieldCondition(
+                    key="document_id", match=qmodels.MatchValue(value=document_id)
+                ),
             ]
         ),
         limit=max(1, min(limit, _MAX_INDEXED_SNIPPETS_PER_DOCUMENT)),
         with_payload=True,
         with_vectors=False,
     )
-    points = result[0] if isinstance(result, tuple) else getattr(result, "points", result)
+    points = (
+        result[0] if isinstance(result, tuple) else getattr(result, "points", result)
+    )
     payloads: list[Mapping[str, Any]] = []
     for point in points or []:
         payload = getattr(point, "payload", None)
@@ -463,7 +512,10 @@ def _indexed_snippet_base_raw_item(
         or _text(base.get("source_title"))
     )
     additional_metadata = _sanitize_indexed_snippet_metadata(
-        _merge_mappings(payload.get("additional_metadata"), _mapping(payload.get("metadata")).get("additional_metadata"))
+        _merge_mappings(
+            payload.get("additional_metadata"),
+            _mapping(payload.get("metadata")).get("additional_metadata"),
+        )
     )
     raw = {
         **base,
@@ -474,7 +526,8 @@ def _indexed_snippet_base_raw_item(
         "excerpt": text,
         "chunk_text": text,
         "material_code": _trusted_material_or_empty(
-            _text(payload.get("material_code")) or _text(_mapping(payload.get("metadata")).get("material_code"))
+            _text(payload.get("material_code"))
+            or _text(_mapping(payload.get("metadata")).get("material_code"))
         ),
         "additional_metadata": additional_metadata,
     }
@@ -552,11 +605,25 @@ def _material_candidate_from_mapping(value: Mapping[str, Any]) -> dict[str, Any]
     limitations = nested.get("limitations")
     if isinstance(limitations, list):
         candidate["limitations"] = [_text(item) for item in limitations if _text(item)]
-    candidate_text = _text(candidate.get("statement_short")) or _text(candidate.get("excerpt_short"))
+    candidate_text = _text(candidate.get("statement_short")) or _text(
+        candidate.get("excerpt_short")
+    )
     if candidate_text:
         candidate["text"] = candidate_text
     candidate = _sanitize_structured_candidate(candidate)
-    if not any(candidate.get(key) for key in ("material", "compound", "material_code", "material_family", "medium", "medium_name", "fluid", "medium_family")):
+    if not any(
+        candidate.get(key)
+        for key in (
+            "material",
+            "compound",
+            "material_code",
+            "material_family",
+            "medium",
+            "medium_name",
+            "fluid",
+            "medium_family",
+        )
+    ):
         return {}
     return candidate
 
@@ -564,18 +631,48 @@ def _material_candidate_from_mapping(value: Mapping[str, Any]) -> dict[str, Any]
 def _regex_structured_candidate(text: str) -> dict[str, Any]:
     candidate: dict[str, Any] = {}
     for key in _STRUCTURED_TEXT_FIELDS:
-        found = re.search(rf"['\"]{re.escape(key)}['\"]\s*:\s*['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+        found = re.search(
+            rf"['\"]{re.escape(key)}['\"]\s*:\s*['\"]([^'\"]+)['\"]",
+            text,
+            re.IGNORECASE,
+        )
         if found:
             candidate[key] = found.group(1).strip()
     for key in _STRUCTURED_NUMBER_FIELDS:
-        found = re.search(rf"['\"]{re.escape(key)}['\"]\s*:\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE)
+        found = re.search(
+            rf"['\"]{re.escape(key)}['\"]\s*:\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE
+        )
         if found:
             candidate[key] = _number(found.group(1))
-    if not any(candidate.get(key) for key in ("material", "compound", "material_code", "material_family", "medium", "medium_name", "fluid", "medium_family")):
+    if not any(
+        candidate.get(key)
+        for key in (
+            "material",
+            "compound",
+            "material_code",
+            "material_family",
+            "medium",
+            "medium_name",
+            "fluid",
+            "medium_family",
+        )
+    ):
         return {}
     candidate.setdefault("text", _truncate(text, limit=_MAX_INDEXED_SNIPPET_TEXT_CHARS))
     sanitized = _sanitize_structured_candidate(candidate)
-    if not any(sanitized.get(key) for key in ("material", "compound", "material_code", "material_family", "medium", "medium_name", "fluid", "medium_family")):
+    if not any(
+        sanitized.get(key)
+        for key in (
+            "material",
+            "compound",
+            "material_code",
+            "material_family",
+            "medium",
+            "medium_name",
+            "fluid",
+            "medium_family",
+        )
+    ):
         return {}
     return sanitized
 
@@ -594,12 +691,16 @@ def _sanitize_structured_candidate(candidate: Mapping[str, Any]) -> dict[str, An
         medium_key = value.casefold().strip()
         if medium_key in _UNSPECIFIC_MEDIUM_KEYS:
             sanitized.pop(key, None)
-            _append_candidate_limitation(sanitized, "exact_medium_specification_missing")
+            _append_candidate_limitation(
+                sanitized, "exact_medium_specification_missing"
+            )
             continue
         if _GENERIC_MEDIUM_RE.search(value):
             sanitized.pop(key, None)
             sanitized.setdefault("medium_family", value)
-            _append_candidate_limitation(sanitized, "exact_medium_specification_missing")
+            _append_candidate_limitation(
+                sanitized, "exact_medium_specification_missing"
+            )
     return sanitized
 
 
@@ -618,7 +719,9 @@ def _sanitize_indexed_snippet_metadata(metadata: Mapping[str, Any]) -> dict[str,
             sanitized.pop(key, None)
     additional = sanitized.get("additional_metadata")
     if isinstance(additional, Mapping):
-        sanitized["additional_metadata"] = _sanitize_indexed_snippet_metadata(additional)
+        sanitized["additional_metadata"] = _sanitize_indexed_snippet_metadata(
+            additional
+        )
     return sanitized
 
 
@@ -666,7 +769,10 @@ def _safe_candidate_payload(candidate: Mapping[str, Any]) -> dict[str, Any]:
             payload[key] = _truncate(value, limit=_MAX_ADAPTER_TEXT_CHARS)
         elif key == "metadata":
             payload[key] = _safe_mapping(value)
-        elif isinstance(value, (str, int, float, bool, list, tuple, set, dict)) or value is None:
+        elif (
+            isinstance(value, (str, int, float, bool, list, tuple, set, dict))
+            or value is None
+        ):
             payload[key] = value
     return payload
 
@@ -690,7 +796,9 @@ def _result_payload(result: AdapterResult) -> dict[str, Any]:
             "limitations": list(validation.limitations) if validation else [],
             "blocked_claims": blocked_claims,
             "support_allowed": validation.support_allowed if validation else False,
-            "compliance_claim_allowed": validation.compliance_claim_allowed if validation else False,
+            "compliance_claim_allowed": validation.compliance_claim_allowed
+            if validation
+            else False,
         },
         "missing_fields": list(result.missing_fields),
         "limitations": list(result.limitations),
@@ -739,7 +847,11 @@ def _safe_card_candidate(candidate: Mapping[str, Any]) -> dict[str, Any] | None:
         "route",
         "tags",
     )
-    safe = {key: candidate.get(key) for key in allowed_keys if candidate.get(key) not in (None, "", [])}
+    safe = {
+        key: candidate.get(key)
+        for key in allowed_keys
+        if candidate.get(key) not in (None, "", [])
+    }
     return _truncate_text_fields(safe, limit=_MAX_RESPONSE_TEXT_CHARS)
 
 
@@ -768,7 +880,9 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
             safe[str(key)] = _safe_mapping(item)
         elif isinstance(item, list):
             safe[str(key)] = [
-                _safe_mapping(entry) if isinstance(entry, Mapping) else _truncate(entry, limit=_MAX_RESPONSE_TEXT_CHARS)
+                _safe_mapping(entry)
+                if isinstance(entry, Mapping)
+                else _truncate(entry, limit=_MAX_RESPONSE_TEXT_CHARS)
                 for entry in item[:20]
             ]
         elif isinstance(item, (str, int, float, bool)) or item is None:

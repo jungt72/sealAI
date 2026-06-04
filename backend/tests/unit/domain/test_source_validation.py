@@ -69,8 +69,7 @@ def test_source_and_validation_status_serialize_as_strings() -> None:
 def test_unknown_strings_normalize_to_unknown() -> None:
     assert normalize_source_type("surprising_vendor_note") is SourceType.unknown
     assert (
-        normalize_validation_status("surprising_validation")
-        is ValidationStatus.unknown
+        normalize_validation_status("surprising_validation") is ValidationStatus.unknown
     )
 
 
@@ -201,7 +200,4 @@ def test_low_level_mapping_helpers_are_deterministic() -> None:
         source_type_from_field_status("candidate", provenance="user")
         is SourceType.user_stated
     )
-    assert (
-        validation_status_from_field_status("rejected")
-        is ValidationStatus.rejected
-    )
+    assert validation_status_from_field_status("rejected") is ValidationStatus.rejected

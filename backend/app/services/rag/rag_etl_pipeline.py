@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel
 from jinja2 import Environment, StrictUndefined
 
+
 # ============================================================================
 # 1. ENUMS & KONSTANTEN (Die physikalischen Leitplanken)
 # ============================================================================
@@ -15,19 +16,22 @@ class PipelineStatus(str, Enum):
     PUBLISHED = "PUBLISHED"
     DEPRECATED = "DEPRECATED"
 
+
 class Operator(str, Enum):
     EQ = "eq"
     GTE = "gte"
     LTE = "lte"
 
+
 PHYSICAL_LIMITS = {
     "pressure_max_bar": (0.0, 1000.0),
     "speed_max_m_s": (0.0, 200.0),
     "temperature_max_c": (-273.15, 1000.0),
-    "temperature_min_c": (-273.15, 1000.0)
+    "temperature_min_c": (-273.15, 1000.0),
 }
 
 UNQUANTIFIED_TIME_TERMS = ["kurzzeitig", "briefly", "temporär", "short-term"]
+
 
 # ============================================================================
 # 2. NORMALIZER V2 (Sicher gegen Tausendertrennzeichen und Ranges)
@@ -35,11 +39,13 @@ UNQUANTIFIED_TIME_TERMS = ["kurzzeitig", "briefly", "temporär", "short-term"]
 class NormalizerError(ValueError):
     pass
 
+
 class RangeDetectedError(NormalizerError):
     def __init__(self, raw: str, min_val: float, max_val: float):
         self.min_val = min_val
         self.max_val = max_val
         super().__init__(f"Range erkannt in '{raw}': [{min_val}, {max_val}].")
+
 
 class Normalizer:
     _RANGE_PATTERN = re.compile(r"([-+]?\d+[\.,]?\d*)\s*[-–—bis]\s*([-+]?\d+[\.,]?\d*)")
@@ -61,16 +67,19 @@ class Normalizer:
             lo = float(cls._normalize_decimal(range_match.group(1)))
             hi = float(cls._normalize_decimal(range_match.group(2)))
             raise RangeDetectedError(raw, lo, hi)
-            
+
         single_match = cls._SINGLE_PATTERN.search(raw)
         if not single_match:
             raise NormalizerError(f"Kein numerischer Wert in '{raw}' gefunden.")
-            
+
         normalized_str = cls._normalize_decimal(single_match.group(0))
         try:
             return float(normalized_str)
         except ValueError:
-            raise NormalizerError(f"Float-Konvertierung fehlgeschlagen: '{normalized_str}' aus '{raw}'")
+            raise NormalizerError(
+                f"Float-Konvertierung fehlgeschlagen: '{normalized_str}' aus '{raw}'"
+            )
+
 
 # ============================================================================
 # 3. LLM EXTRACTION SCHEMA (Input aus dem Vision-LLM)
@@ -81,21 +90,25 @@ class LLMCondition(BaseModel):
     inferred_operator: Operator
     evidence_ref: str
 
+
 class LLMLimit(BaseModel):
     limit_type: str
     raw_value: str
     condition_context: Optional[str] = None
     evidence_ref: str
 
+
 class LLMOperatingPoint(BaseModel):
     conditions: List[LLMCondition]
     limits: List[LLMLimit]
+
 
 class LLMDocumentExtraction(BaseModel):
     manufacturer: str
     product_name: str
     operating_points: List[LLMOperatingPoint]
     safety_exclusions: List[str]
+
 
 # ============================================================================
 # 4. GATEKEEPER & PIPELINE (Deterministische Prüfung)
@@ -104,21 +117,24 @@ REQUIRED_LIMIT_FIELDS = {
     "operating_limit": []  # Alle Felder optional: kein INCOMPLETE_POINT wenn LLM Key-Namen variiert
 }
 
+
 @dataclass
 class LimitProcessingResult:
     limits: Dict[str, Any] = field(default_factory=dict)
     skipped_limits: List[Dict[str, str]] = field(default_factory=list)
     quarantine_reasons: List[str] = field(default_factory=list)
-    
+
     def has_required_fields(self, point_type: str = "operating_limit") -> bool:
         required = REQUIRED_LIMIT_FIELDS.get(point_type, [])
         return all(f in self.limits for f in required)
+
 
 class GatekeeperResult(BaseModel):
     status: PipelineStatus
     logical_document_key: str
     extracted_points: List[Dict[str, Any]]
     quarantine_report: List[str]
+
 
 def process_document_pipeline(
     llm_output: LLMDocumentExtraction,
@@ -141,50 +157,84 @@ def process_document_pipeline(
             "point_type": "operating_limit",
             "conditions": {},
             "limits": {},
-            "skipped_limits": []
+            "skipped_limits": [],
         }
-        
+
         # Bedingungen verarbeiten
         for cond in op.conditions:
             try:
                 val = Normalizer.extract_float(cond.raw_value)
                 point_payload["conditions"][cond.parameter] = {
-                    "raw_value": cond.raw_value, "normalized": val,
-                    "operator": cond.inferred_operator.value, "evidence_ref": cond.evidence_ref
+                    "raw_value": cond.raw_value,
+                    "normalized": val,
+                    "operator": cond.inferred_operator.value,
+                    "evidence_ref": cond.evidence_ref,
                 }
             except NormalizerError:
                 point_payload["conditions"][cond.parameter] = {
-                    "raw_value": cond.raw_value, "operator": cond.inferred_operator.value,
-                    "evidence_ref": cond.evidence_ref
+                    "raw_value": cond.raw_value,
+                    "operator": cond.inferred_operator.value,
+                    "evidence_ref": cond.evidence_ref,
                 }
 
         # Limits verarbeiten
         limit_result = LimitProcessingResult()
         for limit in op.limits:
-            if limit.condition_context and any(term in limit.condition_context.lower() for term in UNQUANTIFIED_TIME_TERMS):
+            if limit.condition_context and any(
+                term in limit.condition_context.lower()
+                for term in UNQUANTIFIED_TIME_TERMS
+            ):
                 msg = f"UNQUANTIFIED_CONDITION: '{limit.limit_type}' = '{limit.raw_value}' an unklare Bedingung geknüpft. [Ref: {limit.evidence_ref}]"
                 limit_result.quarantine_reasons.append(msg)
-                limit_result.skipped_limits.append({"limit_type": limit.limit_type, "raw_value": limit.raw_value, "reason": msg})
+                limit_result.skipped_limits.append(
+                    {
+                        "limit_type": limit.limit_type,
+                        "raw_value": limit.raw_value,
+                        "reason": msg,
+                    }
+                )
                 continue
 
             try:
                 num_val = Normalizer.extract_float(limit.raw_value)
-                limit_entry = {"raw_value": limit.raw_value, "normalized": num_val, "evidence_ref": limit.evidence_ref, "is_range": False}
+                limit_entry = {
+                    "raw_value": limit.raw_value,
+                    "normalized": num_val,
+                    "evidence_ref": limit.evidence_ref,
+                    "is_range": False,
+                }
             except RangeDetectedError as e:
-                limit_entry = {"raw_value": limit.raw_value, "normalized": e.min_val, "range_min": e.min_val, "range_max": e.max_val, "evidence_ref": limit.evidence_ref, "is_range": True}
+                limit_entry = {
+                    "raw_value": limit.raw_value,
+                    "normalized": e.min_val,
+                    "range_min": e.min_val,
+                    "range_max": e.max_val,
+                    "evidence_ref": limit.evidence_ref,
+                    "is_range": True,
+                }
                 if "pressure" in limit.limit_type:
-                    limit_result.quarantine_reasons.append(f"RANGE_DETECTED: {limit.limit_type} Bereich [{e.min_val}, {e.max_val}]. Minimum verwendet. HITL-Review empfohlen.")
+                    limit_result.quarantine_reasons.append(
+                        f"RANGE_DETECTED: {limit.limit_type} Bereich [{e.min_val}, {e.max_val}]. Minimum verwendet. HITL-Review empfohlen."
+                    )
                 num_val = e.min_val
             except NormalizerError as e:
                 limit_result.quarantine_reasons.append(f"PARSE_ERROR: {e}")
-                limit_result.skipped_limits.append({"limit_type": limit.limit_type, "raw_value": limit.raw_value, "reason": str(e)})
+                limit_result.skipped_limits.append(
+                    {
+                        "limit_type": limit.limit_type,
+                        "raw_value": limit.raw_value,
+                        "reason": str(e),
+                    }
+                )
                 continue
 
             bounds = PHYSICAL_LIMITS.get(limit.limit_type, (-9999, 9999))
             if not (bounds[0] <= num_val <= bounds[1]):
-                limit_result.quarantine_reasons.append(f"PHYSICS_VIOLATION: {limit.limit_type} = {num_val} außerhalb {bounds}.")
+                limit_result.quarantine_reasons.append(
+                    f"PHYSICS_VIOLATION: {limit.limit_type} = {num_val} außerhalb {bounds}."
+                )
                 continue
-                
+
             limit_result.limits[limit.limit_type] = limit_entry
 
         point_payload["limits"] = limit_result.limits
@@ -192,7 +242,9 @@ def process_document_pipeline(
         quarantine_reasons.extend(limit_result.quarantine_reasons)
 
         if not limit_result.has_required_fields():
-            quarantine_reasons.append(f"INCOMPLETE_POINT [op_idx={op_idx}]: Pflichtfelder fehlen. Point wird verworfen.")
+            quarantine_reasons.append(
+                f"INCOMPLETE_POINT [op_idx={op_idx}]: Pflichtfelder fehlen. Point wird verworfen."
+            )
             continue
 
         # Vector Text generieren — material_family + polymer_name aus additional_metadata (Fix 1)
@@ -215,20 +267,28 @@ def process_document_pipeline(
             "{% endfor %}"
         )
         env = Environment(undefined=StrictUndefined)
-        point_payload["vector_text"] = env.from_string(template_str).render(
-            doc_name=f"{llm_output.manufacturer} {llm_output.product_name}",
-            p=point_payload,
-            material_family=_material_family,
-            polymer_name=_polymer_name,
-        ).strip()
-        
+        point_payload["vector_text"] = (
+            env.from_string(template_str)
+            .render(
+                doc_name=f"{llm_output.manufacturer} {llm_output.product_name}",
+                p=point_payload,
+                material_family=_material_family,
+                polymer_name=_polymer_name,
+            )
+            .strip()
+        )
+
         valid_qdrant_points.append(point_payload)
 
     if llm_output.operating_points and not valid_qdrant_points:
-        quarantine_reasons.append("CRITICAL_EMPTY_RESULT: Alle Operating Points wurden herausgefiltert.")
+        quarantine_reasons.append(
+            "CRITICAL_EMPTY_RESULT: Alle Operating Points wurden herausgefiltert."
+        )
 
     # Status hängt NUR von quarantine_reasons ab; safety_warnings sind informativ (Fix 3).
-    final_status = PipelineStatus.QUARANTINED if quarantine_reasons else PipelineStatus.VALIDATED
+    final_status = (
+        PipelineStatus.QUARANTINED if quarantine_reasons else PipelineStatus.VALIDATED
+    )
 
     return GatekeeperResult(
         status=final_status,

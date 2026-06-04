@@ -28,6 +28,7 @@ Feature flag:
     SEALAI_ENABLE_LLM_EXTRACTION=true (default: true)
     Set to "false" to run deterministic-only mode (useful in tests / offline).
 """
+
 from __future__ import annotations
 
 import json
@@ -64,39 +65,41 @@ _ENABLE_LLM_EXTRACTION: bool = (
 # Field whitelist
 # ---------------------------------------------------------------------------
 
-_ALLOWED_FIELD_NAMES: frozenset[str] = frozenset({
-    "medium",
-    "pressure_bar",
-    "pressure_system_bar",
-    "pressure_at_seal_bar",
-    "pressure_delta_bar",
-    "ambiguous_pressure_bar",
-    "temperature_c",
-    "material",
-    "shaft_diameter_mm",
-    "speed_rpm",
-    "motion_type",
-    "sealing_type",
-    "pressure_direction",
-    "duty_profile",
-    "installation",
-    "geometry_context",
-    "contamination",
-    "contamination_condition",
-    "counterface_surface",
-    "counterface_surface_condition",
-    "shaft_roughness_ra_um",
-    "shaft_hardness_hrc",
-    "runout_mm",
-    "eccentricity_mm",
-    "axial_movement_mm",
-    "lubrication_condition",
-    "installation_space_summary",
-    "tolerances",
-    "industry",
-    "compliance",
-    "medium_qualifiers",
-})
+_ALLOWED_FIELD_NAMES: frozenset[str] = frozenset(
+    {
+        "medium",
+        "pressure_bar",
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+        "temperature_c",
+        "material",
+        "shaft_diameter_mm",
+        "speed_rpm",
+        "motion_type",
+        "sealing_type",
+        "pressure_direction",
+        "duty_profile",
+        "installation",
+        "geometry_context",
+        "contamination",
+        "contamination_condition",
+        "counterface_surface",
+        "counterface_surface_condition",
+        "shaft_roughness_ra_um",
+        "shaft_hardness_hrc",
+        "runout_mm",
+        "eccentricity_mm",
+        "axial_movement_mm",
+        "lubrication_condition",
+        "installation_space_summary",
+        "tolerances",
+        "industry",
+        "compliance",
+        "medium_qualifiers",
+    }
+)
 
 # Confidence assigned to regex-sourced extractions (high, but user-unconfirmed)
 _REGEX_CONFIDENCE: float = 0.92
@@ -119,32 +122,38 @@ _CORRECTION_RE = re.compile(
 # Fields that are ALWAYS promoted to UserOverride when their value changes —
 # no correction keywords needed.  A new message mentioning a different medium
 # or sealing type always wins, even against a previously confirmed value.
-_UNCONDITIONAL_OVERRIDE_FIELDS: frozenset[str] = frozenset({
-    "medium",
-    "sealing_type",
-})
+_UNCONDITIONAL_OVERRIDE_FIELDS: frozenset[str] = frozenset(
+    {
+        "medium",
+        "sealing_type",
+    }
+)
 
 # Fields promoted to UserOverride ONLY when the message contains explicit
 # correction language ("statt", "korrigier", …).  Prevents accidental numeric
 # overrides from incidental re-mentions.
-_CORRECTION_OVERRIDE_FIELDS: frozenset[str] = frozenset({
-    "shaft_diameter_mm",
-    "pressure_bar",
-    "pressure_system_bar",
-    "pressure_at_seal_bar",
-    "pressure_delta_bar",
-    "ambiguous_pressure_bar",
-    "temperature_c",
-    "speed_rpm",
-    "shaft_roughness_ra_um",
-    "shaft_hardness_hrc",
-    "runout_mm",
-    "eccentricity_mm",
-    "axial_movement_mm",
-})
+_CORRECTION_OVERRIDE_FIELDS: frozenset[str] = frozenset(
+    {
+        "shaft_diameter_mm",
+        "pressure_bar",
+        "pressure_system_bar",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+        "ambiguous_pressure_bar",
+        "temperature_c",
+        "speed_rpm",
+        "shaft_roughness_ra_um",
+        "shaft_hardness_hrc",
+        "runout_mm",
+        "eccentricity_mm",
+        "axial_movement_mm",
+    }
+)
 
 # Union used by tests and callers that need the full set.
-_PRIMARY_OVERRIDE_FIELDS: frozenset[str] = _UNCONDITIONAL_OVERRIDE_FIELDS | _CORRECTION_OVERRIDE_FIELDS
+_PRIMARY_OVERRIDE_FIELDS: frozenset[str] = (
+    _UNCONDITIONAL_OVERRIDE_FIELDS | _CORRECTION_OVERRIDE_FIELDS
+)
 
 
 def _format_pressure_context_value(value: Any, context: str) -> str | None:
@@ -158,8 +167,12 @@ def _format_pressure_context_value(value: Any, context: str) -> str | None:
     return f"{display} bar {context}"
 
 
-def _slot_binding_to_extraction(state: GraphState, binding, turn_index: int) -> ObservedExtraction | None:
-    if binding.target_field == "pressure_bar" and isinstance(binding.normalized_value, dict):
+def _slot_binding_to_extraction(
+    state: GraphState, binding, turn_index: int
+) -> ObservedExtraction | None:
+    if binding.target_field == "pressure_bar" and isinstance(
+        binding.normalized_value, dict
+    ):
         context = str(binding.normalized_value.get("pressure_context") or "").strip()
         raw_value = _format_pressure_context_value(
             _current_state_value(state, "pressure_bar"),
@@ -177,7 +190,9 @@ def _slot_binding_to_extraction(state: GraphState, binding, turn_index: int) -> 
         )
     return ObservedExtraction(
         field_name=binding.target_field,
-        raw_value=binding.normalized_value if binding.normalized_value is not None else binding.raw_value,
+        raw_value=binding.normalized_value
+        if binding.normalized_value is not None
+        else binding.raw_value,
         raw_unit=None,
         source="user",
         confidence=binding.confidence,
@@ -202,7 +217,9 @@ def _promote_slot_binding_override(
         "ambiguous_pressure_bar",
     }:
         return observed
-    if slot_binding.target_field == "pressure_bar" and not isinstance(slot_binding.normalized_value, dict):
+    if slot_binding.target_field == "pressure_bar" and not isinstance(
+        slot_binding.normalized_value, dict
+    ):
         return observed
     return observed.with_override(
         UserOverride(
@@ -248,13 +265,17 @@ def _promote_primary_correction_overrides(
 
     for extraction in new_extractions:
         is_unconditional = extraction.field_name in _UNCONDITIONAL_OVERRIDE_FIELDS
-        is_conditional = extraction.field_name in _CORRECTION_OVERRIDE_FIELDS and has_correction
+        is_conditional = (
+            extraction.field_name in _CORRECTION_OVERRIDE_FIELDS and has_correction
+        )
 
         if not (is_unconditional or is_conditional):
             continue
 
         current_value = _current_state_value(state, extraction.field_name)
-        if current_value is not None and _canonical_compare_value(current_value) == _canonical_compare_value(extraction.raw_value):
+        if current_value is not None and _canonical_compare_value(
+            current_value
+        ) == _canonical_compare_value(extraction.raw_value):
             continue
 
         observed = observed.with_override(
@@ -267,9 +288,11 @@ def _promote_primary_correction_overrides(
         )
     return observed
 
+
 # ---------------------------------------------------------------------------
 # Regex → ObservedExtraction bridge
 # ---------------------------------------------------------------------------
+
 
 def _regex_params_to_extractions(
     params: dict[str, Any],
@@ -292,19 +315,26 @@ def _regex_params_to_extractions(
     def _add(field: str, value: Any, conf: float, unit: str | None = None) -> None:
         if value is None:
             return
-        results.append(ObservedExtraction(
-            field_name=field,
-            raw_value=value,
-            raw_unit=unit,
-            source="llm",        # regex is also a form of automated extraction
-            confidence=conf,
-            turn_index=turn_index,
-        ))
+        results.append(
+            ObservedExtraction(
+                field_name=field,
+                raw_value=value,
+                raw_unit=unit,
+                source="llm",  # regex is also a form of automated extraction
+                confidence=conf,
+                turn_index=turn_index,
+            )
+        )
 
     if "temperature_c" in params:
         _add("temperature_c", params["temperature_c"], _REGEX_CONFIDENCE, "°C")
     if "pressure_bar" in params:
-        _add("pressure_bar", params["pressure_bar"], _REGEX_CONFIDENCE, params.get("pressure_unit") or "bar")
+        _add(
+            "pressure_bar",
+            params["pressure_bar"],
+            _REGEX_CONFIDENCE,
+            params.get("pressure_unit") or "bar",
+        )
     for pressure_role_field in (
         "pressure_system_bar",
         "pressure_at_seal_bar",
@@ -383,21 +413,35 @@ def _state_has_rotary_shaft_context(state: GraphState) -> bool:
     motion_hint = getattr(state, "motion_hint", None)
     application_hint = getattr(state, "application_hint", None)
 
-    motion_label = getattr(motion_hint, "label", None) if motion_hint is not None else None
-    application_label = getattr(application_hint, "label", None) if application_hint is not None else None
+    motion_label = (
+        getattr(motion_hint, "label", None) if motion_hint is not None else None
+    )
+    application_label = (
+        getattr(application_hint, "label", None)
+        if application_hint is not None
+        else None
+    )
 
     if motion_label == "rotary":
         return True
     if application_label in {"shaft_sealing", "marine_propulsion"}:
         return True
-    if "shaft_diameter_mm" in state.asserted.assertions or "speed_rpm" in state.asserted.assertions:
+    if (
+        "shaft_diameter_mm" in state.asserted.assertions
+        or "speed_rpm" in state.asserted.assertions
+    ):
         return True
-    if "shaft_diameter_mm" in state.normalized.parameters or "speed_rpm" in state.normalized.parameters:
+    if (
+        "shaft_diameter_mm" in state.normalized.parameters
+        or "speed_rpm" in state.normalized.parameters
+    ):
         return True
     return False
 
 
-def _apply_contextual_regex_fallbacks(state: GraphState, params: dict[str, Any]) -> dict[str, Any]:
+def _apply_contextual_regex_fallbacks(
+    state: GraphState, params: dict[str, Any]
+) -> dict[str, Any]:
     enriched = dict(params)
     if "diameter_mm" not in enriched and _state_has_rotary_shaft_context(state):
         contextual_diameter = extract_shaft_diameter_mm(
@@ -430,7 +474,7 @@ async def _llm_extract_params(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": message},
+                {"role": "user", "content": message},
             ],
             response_format={"type": "json_object"},
             temperature=0.0,
@@ -451,7 +495,9 @@ async def _llm_extract_params(
                 parsed = list(parsed.values()) if parsed else []
 
         if not isinstance(parsed, list):
-            log.warning("[intake_observe_node] LLM returned unexpected shape: %s", type(parsed))
+            log.warning(
+                "[intake_observe_node] LLM returned unexpected shape: %s", type(parsed)
+            )
             return []
 
         extractions: list[ObservedExtraction] = []
@@ -460,7 +506,10 @@ async def _llm_extract_params(
                 continue
             field_name = str(item.get("field_name", "")).strip()
             if field_name not in _ALLOWED_FIELD_NAMES:
-                log.debug("[intake_observe_node] LLM proposed unknown field '%s' — skipped", field_name)
+                log.debug(
+                    "[intake_observe_node] LLM proposed unknown field '%s' — skipped",
+                    field_name,
+                )
                 continue
             raw_value = item.get("raw_value")
             if raw_value is None:
@@ -472,14 +521,16 @@ async def _llm_extract_params(
                 confidence = _LLM_CONFIDENCE
             confidence = max(0.0, min(1.0, confidence))
 
-            extractions.append(ObservedExtraction(
-                field_name=field_name,
-                raw_value=raw_value,
-                raw_unit=item.get("raw_unit"),
-                source="llm",
-                confidence=confidence,
-                turn_index=turn_index,
-            ))
+            extractions.append(
+                ObservedExtraction(
+                    field_name=field_name,
+                    raw_value=raw_value,
+                    raw_unit=item.get("raw_unit"),
+                    source="llm",
+                    confidence=confidence,
+                    turn_index=turn_index,
+                )
+            )
 
         log.debug(
             "[intake_observe_node] LLM extracted %d params: %s",
@@ -489,13 +540,18 @@ async def _llm_extract_params(
         return extractions
 
     except Exception as exc:
-        log.warning("[intake_observe_node] LLM extraction failed (%s: %s) — using regex only", type(exc).__name__, exc)
+        log.warning(
+            "[intake_observe_node] LLM extraction failed (%s: %s) — using regex only",
+            type(exc).__name__,
+            exc,
+        )
         return []
 
 
 # ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
+
 
 async def intake_observe_node(state: GraphState) -> GraphState:
     """Zone 1 — Parameter extraction into ObservedState.
@@ -547,7 +603,9 @@ async def intake_observe_node(state: GraphState) -> GraphState:
                 for extraction in regex_extractions
                 if extraction.field_name != slot_binding.target_field
             ]
-            slot_extraction = _slot_binding_to_extraction(state, slot_binding, turn_index)
+            slot_extraction = _slot_binding_to_extraction(
+                state, slot_binding, turn_index
+            )
             slot_extractions = [slot_extraction] if slot_extraction is not None else []
         deterministic_extractions = regex_extractions + slot_extractions
         v91_turn_candidate_facts.extend(
@@ -589,12 +647,18 @@ async def intake_observe_node(state: GraphState) -> GraphState:
             [e.field_name for e in deterministic_extractions],
         )
     except Exception as exc:
-        log.warning("[intake_observe_node] regex extraction failed (%s: %s) — continuing", type(exc).__name__, exc)
+        log.warning(
+            "[intake_observe_node] regex extraction failed (%s: %s) — continuing",
+            type(exc).__name__,
+            exc,
+        )
 
     # ── Pass 2: LLM semantic extraction (feature-flag guarded) ───────────
     if _ENABLE_LLM_EXTRACTION:
         llm_extractions = await _llm_extract_params(state.pending_message, turn_index)
-        already_covered: frozenset[str] = frozenset(e.field_name for e in deterministic_extractions)
+        already_covered: frozenset[str] = frozenset(
+            e.field_name for e in deterministic_extractions
+        )
         appended_llm_extractions: list[ObservedExtraction] = []
         for extraction in llm_extractions:
             if extraction.field_name not in already_covered:
@@ -623,7 +687,9 @@ async def intake_observe_node(state: GraphState) -> GraphState:
 
     update: dict[str, object] = {"last_slot_answer_binding": slot_binding}
     if slot_binding is not None and state.pending_question is not None:
-        update["pending_question"] = state.pending_question.model_copy(update={"status": "answered"})
+        update["pending_question"] = state.pending_question.model_copy(
+            update={"status": "answered"}
+        )
     if v91_turn_candidate_facts:
         update["v91_candidate_facts"] = append_candidate_facts(
             state.v91_candidate_facts,
@@ -632,7 +698,10 @@ async def intake_observe_node(state: GraphState) -> GraphState:
 
     if observed is state.observed:
         # Nothing was extracted
-        log.debug("[intake_observe_node] no extractions for message (len=%d)", len(state.pending_message))
+        log.debug(
+            "[intake_observe_node] no extractions for message (len=%d)",
+            len(state.pending_message),
+        )
         return state.model_copy(update=update)
 
     update["observed"] = observed

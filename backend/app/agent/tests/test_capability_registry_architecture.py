@@ -129,7 +129,9 @@ def test_capability_registry_rejects_duplicate_capability_ids() -> None:
     original_registry = build_default_capability_registry()
     original_module = original_registry.get(CapabilityId.MEDIUM_INTELLIGENCE)
 
-    with pytest.raises(ValueError, match="duplicate capability_id registered: medium_intelligence"):
+    with pytest.raises(
+        ValueError, match="duplicate capability_id registered: medium_intelligence"
+    ):
         CapabilityRegistry(
             modules=(
                 original_module,
@@ -139,9 +141,9 @@ def test_capability_registry_rejects_duplicate_capability_ids() -> None:
 
     after_failed_registration = build_default_capability_registry()
     assert _capability_ids(after_failed_registration) == EXPECTED_DEFAULT_CAPABILITY_IDS
-    assert type(after_failed_registration.get(CapabilityId.MEDIUM_INTELLIGENCE)) is type(
-        original_module
-    )
+    assert type(
+        after_failed_registration.get(CapabilityId.MEDIUM_INTELLIGENCE)
+    ) is type(original_module)
 
 
 def test_capability_registry_uses_no_dynamic_discovery_or_env_registration() -> None:
@@ -167,7 +169,9 @@ def test_capability_registry_uses_no_dynamic_discovery_or_env_registration() -> 
                     violations.append(
                         f"{path.relative_to(CAPABILITY_REGISTRY_ROOT.parent)} calls dynamic discovery function {call_name}"
                     )
-                if call_name in ENVIRONMENT_REGISTRATION_CALL_NAMES and _is_os_env_call(node.func):
+                if call_name in ENVIRONMENT_REGISTRATION_CALL_NAMES and _is_os_env_call(
+                    node.func
+                ):
                     violations.append(
                         f"{path.relative_to(CAPABILITY_REGISTRY_ROOT.parent)} uses environment-driven registration call {call_name}"
                     )
@@ -245,8 +249,13 @@ def _collect_forbidden_import_violations(
     imported_name: str,
 ) -> None:
     module = module.lstrip(".")
-    if any(module == prefix or module.startswith(f"{prefix}.") for prefix in FORBIDDEN_IMPORT_PREFIXES):
-        violations.append(f"{path.relative_to(CAPABILITY_REGISTRY_ROOT.parent)} imports {module}")
+    if any(
+        module == prefix or module.startswith(f"{prefix}.")
+        for prefix in FORBIDDEN_IMPORT_PREFIXES
+    ):
+        violations.append(
+            f"{path.relative_to(CAPABILITY_REGISTRY_ROOT.parent)} imports {module}"
+        )
     if imported_name in FORBIDDEN_IMPORTED_NAMES:
         violations.append(
             f"{path.relative_to(CAPABILITY_REGISTRY_ROOT.parent)} imports forbidden symbol {imported_name}"
@@ -263,7 +272,9 @@ def _capability_ids(registry: object) -> tuple[str, ...]:
 
 
 def _module_matches(module: str, prefixes: tuple[str, ...]) -> bool:
-    return any(module == prefix or module.startswith(f"{prefix}.") for prefix in prefixes)
+    return any(
+        module == prefix or module.startswith(f"{prefix}.") for prefix in prefixes
+    )
 
 
 def _call_name(func: ast.expr) -> str:
@@ -295,8 +306,7 @@ def _flatten_text(value: Any) -> str:
         return value
     if isinstance(value, Mapping):
         return " ".join(
-            f"{_flatten_text(key)} {_flatten_text(item)}"
-            for key, item in value.items()
+            f"{_flatten_text(key)} {_flatten_text(item)}" for key, item in value.items()
         )
     if isinstance(value, (list, tuple, set)):
         return " ".join(_flatten_text(item) for item in value)

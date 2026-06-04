@@ -34,7 +34,9 @@ _RFQ_DOCUMENT_LEGACY_DISABLED_MESSAGE = (
 )
 
 
-def _rfq_document_legacy_disabled_payload(request_id: str | None = None) -> dict[str, Any]:
+def _rfq_document_legacy_disabled_payload(
+    request_id: str | None = None,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "error": {
             "code": _RFQ_DOCUMENT_LEGACY_DISABLED_CODE,
@@ -65,8 +67,6 @@ class StateUpdate(BaseModel):
     )
 
 
-
-
 @router.get("/state")
 async def get_state(
     raw_request: Request,
@@ -74,7 +74,9 @@ async def get_state(
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
     """Legacy LangGraph state endpoint — not available in SSoT architecture."""
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     raise HTTPException(
         status_code=501,
         detail=error_detail(
@@ -92,7 +94,9 @@ async def update_state(
     thread_id: str = Query(..., description="Thread ID"),
     user: RequestUser = Depends(get_current_request_user),
 ) -> Dict[str, Any]:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     raise HTTPException(
         status_code=501,
         detail=error_detail(
@@ -114,7 +118,9 @@ async def get_case_workspace(
     Returns a structured, stable workspace view without exposing internal
     orchestration details, prompt traces, or raw LLM artifacts.
     """
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
 
     from app.agent.api.router import (
         _load_preferred_governed_workspace_source,
@@ -138,7 +144,9 @@ async def get_case_workspace(
         governed_state = None
 
     if governed_state is not None:
-        projection = project_case_workspace_from_governed_state(governed_state, chat_id=thread_id)
+        projection = project_case_workspace_from_governed_state(
+            governed_state, chat_id=thread_id
+        )
     else:
         ssot_state = await load_structured_residual_state(
             current_user=user,
@@ -161,7 +169,6 @@ async def get_case_workspace(
     return projection
 
 
-
 @router.post("/state/workspace/rfq-confirm", response_model=CaseWorkspaceProjection)
 async def confirm_rfq_package(
     raw_request: Request,
@@ -174,9 +181,8 @@ async def confirm_rfq_package(
     has a valid RFQ draft and is not in an inadmissible or stale state.
     Returns the updated workspace projection.
     """
-    request_id = (
-        raw_request.headers.get("X-Request-Id")
-        or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
     )
 
     raise HTTPException(
@@ -197,7 +203,9 @@ async def confirm_rfq_package(
 @router.post("/state/workspace/partner-select", response_model=CaseWorkspaceProjection)
 async def select_partner(
     raw_request: Request,
-    partner_id: str = Query(..., description="ID/Name of the selected partner/material"),
+    partner_id: str = Query(
+        ..., description="ID/Name of the selected partner/material"
+    ),
     thread_id: str = Query(..., description="Thread ID"),
     user: RequestUser = Depends(get_current_request_user),
 ) -> CaseWorkspaceProjection:
@@ -211,9 +219,8 @@ async def select_partner(
     2. Matching must be ready (not stale, etc.)
     3. Selected partner must exist in material_fit_items
     """
-    request_id = (
-        raw_request.headers.get("X-Request-Id")
-        or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
     )
     raise HTTPException(
         status_code=501,
@@ -249,9 +256,8 @@ async def initiate_rfq_handover(
     5. Not inadmissible
     6. Not already initiated
     """
-    request_id = (
-        raw_request.headers.get("X-Request-Id")
-        or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
     )
 
     raise HTTPException(
@@ -268,7 +274,10 @@ async def initiate_rfq_handover(
 # POST /state/workspace/rfq-generate-pdf — generate RFQ HTML document
 # ---------------------------------------------------------------------------
 
-@router.post("/state/workspace/rfq-generate-pdf", response_model=CaseWorkspaceProjection)
+
+@router.post(
+    "/state/workspace/rfq-generate-pdf", response_model=CaseWorkspaceProjection
+)
 async def generate_rfq_pdf(
     raw_request: Request,
     thread_id: str = Query(..., description="Thread ID"),
@@ -285,9 +294,8 @@ async def generate_rfq_pdf(
     3. Must not be stale
     4. RFQ must be confirmed
     """
-    request_id = (
-        raw_request.headers.get("X-Request-Id")
-        or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
     )
 
     raise HTTPException(
@@ -304,6 +312,7 @@ async def generate_rfq_pdf(
 # GET /state/workspace/rfq-document — download generated RFQ HTML
 # ---------------------------------------------------------------------------
 
+
 @router.get("/state/workspace/rfq-document")
 async def get_rfq_document(
     raw_request: Request,
@@ -314,9 +323,8 @@ async def get_rfq_document(
 
     RFQ preview/export must use the governed preview service boundary.
     """
-    request_id = (
-        raw_request.headers.get("X-Request-Id")
-        or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
     )
 
     return JSONResponse(
@@ -328,6 +336,7 @@ async def get_rfq_document(
 # ---------------------------------------------------------------------------
 # GET /state/{chat_id} — UI hydration after F5 page reload (Blueprint §12)
 # ---------------------------------------------------------------------------
+
 
 def _synthesize_state_response_from_ssot(state: Any, *, chat_id: str) -> Dict[str, Any]:
     """Build a legacy-format state response dict from an SSoT AgentState."""
@@ -343,9 +352,13 @@ def _synthesize_state_response_from_ssot(state: Any, *, chat_id: str) -> Dict[st
     governance_state: Dict[str, Any] = dict(case_state.get("governance_state") or {})
     matching_state: Dict[str, Any] = dict(case_state.get("matching_state") or {})
     rfq_state: Dict[str, Any] = dict(case_state.get("rfq_state") or {})
-    manufacturer_state: Dict[str, Any] = dict(case_state.get("manufacturer_state") or {})
+    manufacturer_state: Dict[str, Any] = dict(
+        case_state.get("manufacturer_state") or {}
+    )
     result_contract: Dict[str, Any] = dict(case_state.get("result_contract") or {})
-    sealing_requirement_spec: Dict[str, Any] = dict(case_state.get("sealing_requirement_spec") or {})
+    sealing_requirement_spec: Dict[str, Any] = dict(
+        case_state.get("sealing_requirement_spec") or {}
+    )
     requirement_class: Dict[str, Any] = dict(
         case_state.get("requirement_class")
         or result_contract.get("requirement_class")
@@ -361,7 +374,9 @@ def _synthesize_state_response_from_ssot(state: Any, *, chat_id: str) -> Dict[st
     release_status = governance.get("release_status")
     rfq_admissibility = governance.get("rfq_admissibility")
     phase = case_meta.get("phase") or cycle.get("phase")
-    is_handover_ready = bool(rfq_state.get("handover_ready", handover.get("is_handover_ready", False)))
+    is_handover_ready = bool(
+        rfq_state.get("handover_ready", handover.get("is_handover_ready", False))
+    )
     governed_output_text = governance.get("governed_output_text") or ""
     required_disclaimers = list(
         governance_state.get("required_disclaimers")
@@ -376,16 +391,34 @@ def _synthesize_state_response_from_ssot(state: Any, *, chat_id: str) -> Dict[st
         "state_revision": cycle.get("state_revision"),
         "specificity_level": governance.get("specificity_level"),
         "unknowns_release_blocking": governance.get("unknowns_release_blocking") or [],
-        "unknowns_manufacturer_validation": governance.get("unknowns_manufacturer_validation") or [],
-        "scope_of_validity": governance_state.get("scope_of_validity") or governance.get("scope_of_validity") or [],
+        "unknowns_manufacturer_validation": governance.get(
+            "unknowns_manufacturer_validation"
+        )
+        or [],
+        "scope_of_validity": governance_state.get("scope_of_validity")
+        or governance.get("scope_of_validity")
+        or [],
         "required_disclaimers": required_disclaimers,
-        "review_required": bool(governance_state.get("review_required", review.get("review_required", False))),
-        "review_state": governance_state.get("review_state") or review.get("review_state"),
+        "review_required": bool(
+            governance_state.get(
+                "review_required", review.get("review_required", False)
+            )
+        ),
+        "review_state": governance_state.get("review_state")
+        or review.get("review_state"),
         "review_reason": review.get("review_reason"),
-        "contract_obsolete": bool(result_contract.get("contract_obsolete", cycle.get("contract_obsolete", False))),
+        "contract_obsolete": bool(
+            result_contract.get(
+                "contract_obsolete", cycle.get("contract_obsolete", False)
+            )
+        ),
         "contract_obsolete_reason": (
             result_contract.get("invalidation_reasons")
-            or ([cycle.get("contract_obsolete_reason")] if cycle.get("contract_obsolete_reason") else [])
+            or (
+                [cycle.get("contract_obsolete_reason")]
+                if cycle.get("contract_obsolete_reason")
+                else []
+            )
         ),
     }
 
@@ -420,17 +453,23 @@ def _synthesize_state_response_from_ssot(state: Any, *, chat_id: str) -> Dict[st
     }
 
 
-def _synthesize_state_response_from_governed(state: Any, *, chat_id: str) -> Dict[str, Any]:
+def _synthesize_state_response_from_governed(
+    state: Any, *, chat_id: str
+) -> Dict[str, Any]:
     """Build the legacy-format state response dict directly from governed state."""
     synthesized_state = synthesize_workspace_state_from_governed(state, chat_id=chat_id)
-    working_profile_block: Dict[str, Any] = dict(synthesized_state.get("working_profile") or {})
+    working_profile_block: Dict[str, Any] = dict(
+        synthesized_state.get("working_profile") or {}
+    )
     reasoning: Dict[str, Any] = dict(synthesized_state.get("reasoning") or {})
     system: Dict[str, Any] = dict(synthesized_state.get("system") or {})
     answer_contract: Dict[str, Any] = dict(system.get("answer_contract") or {})
     governance_metadata: Dict[str, Any] = dict(system.get("governance_metadata") or {})
     matching_state: Dict[str, Any] = dict(system.get("matching_state") or {})
     rfq_state: Dict[str, Any] = dict(system.get("rfq_state") or {})
-    rfq_admissibility_payload: Dict[str, Any] = dict(system.get("rfq_admissibility") or {})
+    rfq_admissibility_payload: Dict[str, Any] = dict(
+        system.get("rfq_admissibility") or {}
+    )
     requirement_class = answer_contract.get("requirement_class")
 
     return {
@@ -454,7 +493,8 @@ def _synthesize_state_response_from_governed(state: Any, *, chat_id: str) -> Dic
             "thread_id": chat_id,
             "phase": reasoning.get("phase"),
             "last_node": "facade_hydration",
-            "recommendation_ready": governance_metadata.get("release_status") in ("approved", "rfq_ready"),
+            "recommendation_ready": governance_metadata.get("release_status")
+            in ("approved", "rfq_ready"),
         },
         "governance_metadata": governance_metadata,
         "rfq_admissibility": rfq_admissibility_payload.get("status"),
@@ -474,7 +514,9 @@ async def get_graph_state_endpoint(
 
     Response is synthesised from canonical persisted SSoT state.
     """
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
 
     from app.agent.api.router import (
         _load_preferred_governed_workspace_source,

@@ -82,7 +82,9 @@ if "structlog" not in sys.modules:
     structlog_stub = types.ModuleType("structlog")
     structlog_stub.get_logger = lambda *_args, **_kwargs: _StructlogLogger()
     structlog_stub.configure = lambda *_args, **_kwargs: None
-    structlog_stub.make_filtering_bound_logger = lambda *_args, **_kwargs: _StructlogLogger
+    structlog_stub.make_filtering_bound_logger = (
+        lambda *_args, **_kwargs: _StructlogLogger
+    )
     structlog_stub.processors = types.SimpleNamespace(
         JSONRenderer=object,
         TimeStamper=lambda *args, **kwargs: (lambda *_a, **_kw: None),
@@ -136,7 +138,9 @@ if "jinja2" not in sys.modules and importlib.util.find_spec("jinja2") is None:
         def render(self, **context: Any) -> str:
             if not context:
                 return ""
-            return "\n".join(f"{key}: {value}" for key, value in sorted(context.items()))
+            return "\n".join(
+                f"{key}: {value}" for key, value in sorted(context.items())
+            )
 
     class _FileSystemLoader:
         def __init__(self, searchpath: str) -> None:
@@ -232,14 +236,18 @@ if "langchain_core" not in sys.modules:
 
     class _AIMessage(_BaseMessage):
         def __init__(self, content: Any, **kwargs: Any) -> None:
-            super().__init__(content=content, role="assistant", additional_kwargs=kwargs)
+            super().__init__(
+                content=content, role="assistant", additional_kwargs=kwargs
+            )
 
     class _SystemMessage(_BaseMessage):
         def __init__(self, content: Any, **kwargs: Any) -> None:
             super().__init__(content=content, role="system", additional_kwargs=kwargs)
 
     class _ToolMessage(_BaseMessage):
-        def __init__(self, content: Any, tool_call_id: str | None = None, **kwargs: Any) -> None:
+        def __init__(
+            self, content: Any, tool_call_id: str | None = None, **kwargs: Any
+        ) -> None:
             super().__init__(content=content, role="tool", additional_kwargs=kwargs)
             self.tool_call_id = tool_call_id
 
@@ -306,7 +314,10 @@ if "langchain_core" not in sys.modules:
         return _decorate
 
     def _messages_to_dict(messages: list[Any]) -> list[dict[str, Any]]:
-        return [message.to_dict() if hasattr(message, "to_dict") else {"content": message} for message in messages]
+        return [
+            message.to_dict() if hasattr(message, "to_dict") else {"content": message}
+            for message in messages
+        ]
 
     def _messages_from_dict(payload: list[dict[str, Any]]) -> list[_BaseMessage]:
         restored: list[_BaseMessage] = []
@@ -318,7 +329,9 @@ if "langchain_core" not in sys.modules:
             elif "system" in message_type:
                 restored.append(_SystemMessage(content))
             elif "tool" in message_type:
-                restored.append(_ToolMessage(content, tool_call_id=item.get("tool_call_id")))
+                restored.append(
+                    _ToolMessage(content, tool_call_id=item.get("tool_call_id"))
+                )
             else:
                 restored.append(_AIMessage(content))
         return restored
@@ -335,7 +348,9 @@ if "langchain_core" not in sys.modules:
     langchain_core_stub.__path__ = []
     langchain_messages_stub = types.ModuleType("langchain_core.messages")
     langchain_documents_stub = types.ModuleType("langchain_core.documents")
-    langchain_document_loaders_stub = types.ModuleType("langchain_core.document_loaders")
+    langchain_document_loaders_stub = types.ModuleType(
+        "langchain_core.document_loaders"
+    )
     langchain_schema_stub = types.ModuleType("langchain_core.schema")
     langchain_tools_stub = types.ModuleType("langchain_core.tools")
 
@@ -382,11 +397,15 @@ if "langchain_community" not in sys.modules:
 
     langchain_community_stub = types.ModuleType("langchain_community")
     langchain_community_stub.__path__ = []
-    langchain_community_loaders_stub = types.ModuleType("langchain_community.document_loaders")
+    langchain_community_loaders_stub = types.ModuleType(
+        "langchain_community.document_loaders"
+    )
     langchain_community_loaders_stub.Docx2txtLoader = _Docx2txtLoader
     langchain_community_stub.document_loaders = langchain_community_loaders_stub
     sys.modules["langchain_community"] = langchain_community_stub
-    sys.modules["langchain_community.document_loaders"] = langchain_community_loaders_stub
+    sys.modules["langchain_community.document_loaders"] = (
+        langchain_community_loaders_stub
+    )
 
 
 if "langgraph" not in sys.modules:
@@ -438,18 +457,28 @@ if "langgraph" not in sys.modules:
             global _GRAPH_INVOKE_ACTIVE
             config = _kwargs.get("config") or (_args[0] if _args else None) or {}
             thread_id = str(
-                ((config.get("configurable") or {}).get("thread_id") if isinstance(config, dict) else "")
+                (
+                    (config.get("configurable") or {}).get("thread_id")
+                    if isinstance(config, dict)
+                    else ""
+                )
                 or "default"
             )
             is_resume_command = isinstance(state, _Command) and hasattr(state, "resume")
             if is_resume_command:
                 previous = self._thread_states.get(thread_id)
-                if previous is not None and self.state_type is not None and hasattr(self.state_type, "model_validate"):
+                if (
+                    previous is not None
+                    and self.state_type is not None
+                    and hasattr(self.state_type, "model_validate")
+                ):
                     state = self.state_type.model_validate(previous).model_copy(
                         update={"pending_message": str(getattr(state, "resume") or "")}
                     )
                 elif self.state_type is not None:
-                    state = self.state_type(pending_message=str(getattr(state, "resume") or ""))
+                    state = self.state_type(
+                        pending_message=str(getattr(state, "resume") or "")
+                    )
 
             current = self.entry_point
             steps = 0
@@ -469,12 +498,19 @@ if "langgraph" not in sys.modules:
                         self._thread_states[thread_id] = value["state"]
                         if is_resume_command:
                             payload_state = dict(value["state"])
-                            payload_state["output_response_class"] = "governed_state_update"
-                            output_public = dict(payload_state.get("output_public") or {})
+                            payload_state["output_response_class"] = (
+                                "governed_state_update"
+                            )
+                            output_public = dict(
+                                payload_state.get("output_public") or {}
+                            )
                             output_public["response_class"] = "governed_state_update"
                             payload_state["output_public"] = output_public
                             return payload_state
-                    if isinstance(value, dict) and value.get("kind") == "structured_clarification":
+                    if (
+                        isinstance(value, dict)
+                        and value.get("kind") == "structured_clarification"
+                    ):
                         payload_state = value.get("state")
                         medium_status = None
                         pending_message = ""
@@ -482,7 +518,9 @@ if "langgraph" not in sys.modules:
                             medium_status = (
                                 payload_state.get("medium_classification") or {}
                             ).get("status")
-                            pending_message = str(payload_state.get("pending_message") or "").lower()
+                            pending_message = str(
+                                payload_state.get("pending_message") or ""
+                            ).lower()
                         if (
                             medium_status == "recognized"
                             and "bar" not in pending_message
@@ -511,7 +549,8 @@ if "langgraph" not in sys.modules:
             if hasattr(state, "model_dump"):
                 if (
                     is_resume_command
-                    and getattr(state, "output_response_class", "") == "structured_clarification"
+                    and getattr(state, "output_response_class", "")
+                    == "structured_clarification"
                 ):
                     state = state.model_copy(
                         update={
@@ -682,7 +721,9 @@ if "redis" not in sys.modules:
         def hgetall(self, key: str) -> dict[str, Any]:
             return dict(self._hashes.get(key, {}))
 
-        def hset(self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        def hset(
+            self, key: str, mapping: dict[str, Any] | None = None, **kwargs: Any
+        ) -> None:
             self._hashes.setdefault(key, {}).update(mapping or kwargs)
 
         def expire(self, *_args: Any, **_kwargs: Any) -> None:
@@ -695,13 +736,19 @@ if "redis" not in sys.modules:
             return len(self._sorted_sets.get(key, {}))
 
         def zrange(self, key: str, start: int, end: int) -> list[str]:
-            items = sorted(self._sorted_sets.get(key, {}).items(), key=lambda item: item[1])
+            items = sorted(
+                self._sorted_sets.get(key, {}).items(), key=lambda item: item[1]
+            )
             if end == -1:
                 end = len(items) - 1
             return [name for name, _score in items[start : end + 1]]
 
         def zrevrange(self, key: str, start: int, end: int) -> list[str]:
-            items = sorted(self._sorted_sets.get(key, {}).items(), key=lambda item: item[1], reverse=True)
+            items = sorted(
+                self._sorted_sets.get(key, {}).items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
             if end == -1:
                 end = len(items) - 1
             return [name for name, _score in items[start : end + 1]]

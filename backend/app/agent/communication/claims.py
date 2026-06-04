@@ -20,7 +20,9 @@ class AllowedClaimBuilder:
                     id=f"field.confirmed.{field.key}",
                     type="confirmed_field",
                     statement=statement,
-                    source="user_confirmed" if field.source in {"user_stated", "confirmed"} else "backend_rule",
+                    source="user_confirmed"
+                    if field.source in {"user_stated", "confirmed"}
+                    else "backend_rule",
                     confidence="confirmed",
                     field_keys=[field.key],
                     state_snapshot_hash=snapshot_hash,
@@ -28,7 +30,9 @@ class AllowedClaimBuilder:
             )
 
         for field in state.proposed_fields:
-            statement = f"{field.label or field.key} wurde als Kandidat erkannt: {field.value}"
+            statement = (
+                f"{field.label or field.key} wurde als Kandidat erkannt: {field.value}"
+            )
             if field.unit:
                 statement = f"{statement} {field.unit}"
             claims.append(
@@ -72,14 +76,20 @@ class AllowedClaimBuilder:
             )
 
         for calc in state.calculations:
-            status = "liegt vor" if calc.status == "available" else "ist wegen fehlender Eingaben blockiert"
+            status = (
+                "liegt vor"
+                if calc.status == "available"
+                else "ist wegen fehlender Eingaben blockiert"
+            )
             claims.append(
                 AllowedClaim(
                     id=f"calculation.{calc.id}",
                     type="calculation",
                     statement=f"{calc.label} {status}.",
                     source="calculation",
-                    confidence="calculated" if calc.status == "available" else "uncertain",
+                    confidence="calculated"
+                    if calc.status == "available"
+                    else "uncertain",
                     severity="none" if calc.status == "available" else "medium",
                     field_keys=list(calc.inputs),
                     state_snapshot_hash=snapshot_hash,
@@ -101,14 +111,18 @@ class AllowedClaimBuilder:
 
         readiness_statement = f"Readiness-Status: {state.readiness.status}."
         if state.readiness.blocking_reasons:
-            readiness_statement += " Blockiert durch: " + ", ".join(state.readiness.blocking_reasons[:5])
+            readiness_statement += " Blockiert durch: " + ", ".join(
+                state.readiness.blocking_reasons[:5]
+            )
         claims.append(
             AllowedClaim(
                 id="readiness.current",
                 type="readiness",
                 statement=readiness_statement,
                 source="backend_rule",
-                confidence="confirmed" if state.readiness.status != "unknown" else "uncertain",
+                confidence="confirmed"
+                if state.readiness.status != "unknown"
+                else "uncertain",
                 severity="medium" if state.readiness.blocking_reasons else "none",
                 field_keys=list(state.readiness.blocking_reasons),
                 state_snapshot_hash=snapshot_hash,

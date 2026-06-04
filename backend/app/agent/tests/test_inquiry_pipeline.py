@@ -7,6 +7,7 @@ Covers:
   - write_state_snapshot()
   - send_inquiry_payload() + IdempotencyError
 """
+
 from __future__ import annotations
 
 import re
@@ -24,6 +25,7 @@ import pytest
 # Stub heavy DB/ORM dependencies so unit tests don't need asyncpg
 # ---------------------------------------------------------------------------
 
+
 def _ensure_stubs() -> None:
     """Pre-populate sys.modules with minimal SQLAlchemy stub models.
 
@@ -36,6 +38,7 @@ def _ensure_stubs() -> None:
         import app.models.case_state_snapshot  # noqa: F401
         import app.models.inquiry_delivery  # noqa: F401
         import app.models.inquiry_audit  # noqa: F401
+
         return
     except Exception:
         pass
@@ -59,6 +62,7 @@ def _ensure_stubs() -> None:
     _Base = sys.modules["app.database"].Base  # type: ignore[attr-defined]
 
     if "app.models.case_record" not in sys.modules:
+
         class _CaseRecord(_Base):  # type: ignore[misc, valid-type]
             __tablename__ = "cases_stub"
             id = _sa.Column(_sa.String(36), primary_key=True)
@@ -76,6 +80,7 @@ def _ensure_stubs() -> None:
         sys.modules["app.models.case_record"] = _stub
 
     if "app.models.case_state_snapshot" not in sys.modules:
+
         class _CaseStateSnapshot(_Base):  # type: ignore[misc, valid-type]
             __tablename__ = "case_state_snapshots_stub"
             id = _sa.Column(_sa.String(36), primary_key=True)
@@ -92,6 +97,7 @@ def _ensure_stubs() -> None:
         sys.modules["app.models.case_state_snapshot"] = _stub2
 
     if "app.models.inquiry_delivery" not in sys.modules:
+
         class _InquiryDelivery(_Base):  # type: ignore[misc, valid-type]
             __tablename__ = "inquiry_deliveries_stub"
             id = _sa.Column(_sa.String(36), primary_key=True)
@@ -108,6 +114,7 @@ def _ensure_stubs() -> None:
         sys.modules["app.models.inquiry_delivery"] = _stub3
 
     if "app.models.inquiry_audit" not in sys.modules:
+
         class _InquiryAudit(_Base):  # type: ignore[misc, valid-type]
             __tablename__ = "inquiry_audit_stub"
             id = _sa.Column(_sa.String(36), primary_key=True)
@@ -130,6 +137,7 @@ _ensure_stubs()
 # ---------------------------------------------------------------------------
 # DB session helpers
 # ---------------------------------------------------------------------------
+
 
 def _scalar_result(value: Any) -> MagicMock:
     r = MagicMock()
@@ -249,6 +257,7 @@ def _make_state_for_payload() -> dict:
 # H1.3 — get_or_create_case
 # ---------------------------------------------------------------------------
 
+
 class TestGetOrCreateCase:
     """Tests for get_or_create_case()."""
 
@@ -289,9 +298,9 @@ class TestGetOrCreateCase:
 
         result = await get_or_create_case("sess-x", "u1", "tenant-1", db)
 
-        assert re.match(r"^STS-INQ-\d{4}-\d{2}-\d{3}$", result.case_number), (
-            f"Bad case_number: {result.case_number}"
-        )
+        assert re.match(
+            r"^STS-INQ-\d{4}-\d{2}-\d{3}$", result.case_number
+        ), f"Bad case_number: {result.case_number}"
 
     @pytest.mark.asyncio
     async def test_case_has_correct_session_and_user(self):
@@ -325,6 +334,7 @@ class TestGetOrCreateCase:
 # ---------------------------------------------------------------------------
 # H1.3 — _generate_case_number
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateCaseNumber:
     """Tests for _generate_case_number()."""
@@ -364,9 +374,9 @@ class TestGenerateCaseNumber:
 
             result = await _generate_case_number(db)
 
-            assert re.match(r"^STS-INQ-\d{4}-\d{2}-\d{3}$", result), (
-                f"Bad format for n={n}: {result}"
-            )
+            assert re.match(
+                r"^STS-INQ-\d{4}-\d{2}-\d{3}$", result
+            ), f"Bad format for n={n}: {result}"
 
     @pytest.mark.asyncio
     async def test_year_and_month_match_today(self):
@@ -384,6 +394,7 @@ class TestGenerateCaseNumber:
 # ---------------------------------------------------------------------------
 # H1.3 — write_state_snapshot
 # ---------------------------------------------------------------------------
+
 
 class TestWriteStateSnapshot:
     """Tests for write_state_snapshot()."""
@@ -477,7 +488,9 @@ class TestWriteStateSnapshot:
         state = self._simple_state()
         expected_hash = compute_decision_basis_hash(state)
         case_row = _make_case(id="case-abc")
-        latest_snapshot = _make_snapshot(case_id="case-abc", revision=1, basis_hash=expected_hash)
+        latest_snapshot = _make_snapshot(
+            case_id="case-abc", revision=1, basis_hash=expected_hash
+        )
         db = _make_db_sequence(case_row, None, case_row, latest_snapshot)
 
         _added = []
@@ -494,6 +507,7 @@ class TestWriteStateSnapshot:
 # ---------------------------------------------------------------------------
 # H1.4 — send_inquiry_payload
 # ---------------------------------------------------------------------------
+
 
 class TestSendInquiryPayload:
     """Tests for send_inquiry_payload()."""
@@ -513,7 +527,7 @@ class TestSendInquiryPayload:
         await send_inquiry_payload(state, manufacturer, "case-1", db)
 
         assert db.add.call_count == 2
-        assert hasattr(_added[0], "idempotency_key")    # InquiryDelivery
+        assert hasattr(_added[0], "idempotency_key")  # InquiryDelivery
         assert hasattr(_added[1], "decision_basis_hash")  # InquiryAudit
         db.commit.assert_awaited_once()
 
@@ -525,7 +539,10 @@ class TestSendInquiryPayload:
         existing_delivery = _make_delivery(case_id="case-1")
         db = _make_db_sequence(existing_delivery)
 
-        from app.agent.manufacturers.payload_builder import IdempotencyError, send_inquiry_payload
+        from app.agent.manufacturers.payload_builder import (
+            IdempotencyError,
+            send_inquiry_payload,
+        )
 
         with pytest.raises(IdempotencyError):
             await send_inquiry_payload(state, manufacturer, "case-1", db)
@@ -540,7 +557,10 @@ class TestSendInquiryPayload:
         redis_client = AsyncMock()
         redis_client.get = AsyncMock(return_value=b"sent")
 
-        from app.agent.manufacturers.payload_builder import IdempotencyError, send_inquiry_payload
+        from app.agent.manufacturers.payload_builder import (
+            IdempotencyError,
+            send_inquiry_payload,
+        )
 
         with pytest.raises(IdempotencyError):
             await send_inquiry_payload(state, manufacturer, "case-1", db, redis_client)
@@ -634,7 +654,10 @@ class TestSendInquiryPayload:
         _added = []
         db.add = MagicMock(side_effect=_added.append)
 
-        from app.agent.manufacturers.payload_builder import INQUIRY_DISCLAIMER, send_inquiry_payload
+        from app.agent.manufacturers.payload_builder import (
+            INQUIRY_DISCLAIMER,
+            send_inquiry_payload,
+        )
 
         await send_inquiry_payload(state, manufacturer, "case-1", db)
 
@@ -645,6 +668,7 @@ class TestSendInquiryPayload:
 # ---------------------------------------------------------------------------
 # H1.4 — IdempotencyError
 # ---------------------------------------------------------------------------
+
 
 class TestIdempotencyError:
     """IdempotencyError is a distinct exception type."""
@@ -680,6 +704,7 @@ class TestIdempotencyError:
 # E2E smoke test
 # ---------------------------------------------------------------------------
 
+
 class TestInquiryPipelineSmoke:
     """Lightweight E2E smoke test: admissibility → payload → idempotency."""
 
@@ -697,7 +722,9 @@ class TestInquiryPipelineSmoke:
 
         manufacturer = _make_manufacturer()
         params = {
-            "sealing_type": NormalizedParameter(field_name="sealing_type", value="STS-TYPE-RDGS-A1"),
+            "sealing_type": NormalizedParameter(
+                field_name="sealing_type", value="STS-TYPE-RDGS-A1"
+            ),
             "shaft_diameter_mm": NormalizedParameter(
                 field_name="shaft_diameter_mm", value=45.0, unit="mm"
             ),
@@ -714,13 +741,20 @@ class TestInquiryPipelineSmoke:
         normalized = NormalizedState(parameters=params)
         derived = DerivedState()
         decision = DecisionState(
-            preselection={"material_combination": ["STS-MAT-FKM-A1"], "fit_score": 0.82},
+            preselection={
+                "material_combination": ["STS-MAT-FKM-A1"],
+                "fit_score": 0.82,
+            },
             decision_basis_hash="abcd1234efgh5678",
         )
-        state = GovernedSessionState(normalized=normalized, derived=derived, decision=decision)
+        state = GovernedSessionState(
+            normalized=normalized, derived=derived, decision=decision
+        )
 
         result = check_inquiry_admissibility(state)
-        assert result.admissible, f"Expected admissible=True, got: {result.blocking_reasons}"
+        assert (
+            result.admissible
+        ), f"Expected admissible=True, got: {result.blocking_reasons}"
 
         payload = build_inquiry_payload(state, manufacturer)
         assert payload["sealai_version"] == "sealai_inquiry_v1"
@@ -740,7 +774,9 @@ class TestInquiryPipelineSmoke:
 
     def test_build_inquiry_payload_from_flat(self):
         """build_inquiry_payload_from_flat() returns a well-formed payload."""
-        from app.agent.manufacturers.payload_builder import build_inquiry_payload_from_flat
+        from app.agent.manufacturers.payload_builder import (
+            build_inquiry_payload_from_flat,
+        )
 
         payload = build_inquiry_payload_from_flat(
             case_number="STS-INQ-2026-04-001",

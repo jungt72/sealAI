@@ -173,7 +173,9 @@ def build_inquiry_extract_payload(context: Mapping[str, Any]) -> dict[str, Any]:
     return InquiryExtractService().build_inquiry_extract_payload(context)
 
 
-def validate_manufacturer_view(payload: Mapping[str, Any]) -> ManufacturerViewValidation:
+def validate_manufacturer_view(
+    payload: Mapping[str, Any],
+) -> ManufacturerViewValidation:
     return InquiryExtractService().validate_manufacturer_view(payload)
 
 
@@ -196,7 +198,11 @@ class InquiryExtractService:
         case_revision = _required_int(context, "case_revision")
         if case_revision < 0:
             raise InquiryExtractValidationError("case_revision must be nonnegative")
-        if artifact_type not in {"manufacturer_inquiry", "technical_summary", "rfq_preview"}:
+        if artifact_type not in {
+            "manufacturer_inquiry",
+            "technical_summary",
+            "rfq_preview",
+        }:
             raise InquiryExtractValidationError("artifact_type is not supported")
         if source_kind not in {"case_revision", "manual", "migration"}:
             raise InquiryExtractValidationError("source_kind is not supported")
@@ -247,7 +253,9 @@ class InquiryExtractService:
                 }
             ),
             "technical_parameters": _allowlisted_mapping(
-                _mapping(context.get("technical_fields") or context.get("structured_fields")),
+                _mapping(
+                    context.get("technical_fields") or context.get("structured_fields")
+                ),
                 ALLOWED_TECHNICAL_FIELD_PATHS,
             ),
             "open_points": _string_tuple(
@@ -259,7 +267,9 @@ class InquiryExtractService:
             ],
             "advisory_summary": [
                 _allowlisted_mapping(_object_mapping(item), ALLOWED_ADVISORY_FIELDS)
-                for item in _sequence(context.get("advisory_results") or context.get("advisories"))
+                for item in _sequence(
+                    context.get("advisory_results") or context.get("advisories")
+                )
             ],
             "article_references": self._manufacturer_article_references(
                 context.get("article_references")
@@ -297,7 +307,9 @@ class InquiryExtractService:
 
         technical = _mapping(payload.get("technical_parameters"))
         for field_name in technical:
-            if field_name not in ALLOWED_TECHNICAL_FIELD_PATHS or _has_blocked_token(field_name):
+            if field_name not in ALLOWED_TECHNICAL_FIELD_PATHS or _has_blocked_token(
+                field_name
+            ):
                 violations.append(
                     {
                         "path": f"technical_parameters.{field_name}",
@@ -316,7 +328,9 @@ class InquiryExtractService:
                     }
                 )
 
-        return ManufacturerViewValidation(valid=not violations, violations=tuple(violations))
+        return ManufacturerViewValidation(
+            valid=not violations, violations=tuple(violations)
+        )
 
     @staticmethod
     def _manufacturer_article_references(value: Any) -> tuple[dict[str, Any], ...]:
@@ -393,7 +407,13 @@ def _allowlisted_mapping(
         if _has_blocked_token(key_text):
             continue
         sanitized = _json_safe(value[key])
-        if sanitized is not None and sanitized != "" and sanitized != () and sanitized != [] and sanitized != {}:
+        if (
+            sanitized is not None
+            and sanitized != ""
+            and sanitized != ()
+            and sanitized != []
+            and sanitized != {}
+        ):
             result[key_text] = sanitized
     return result
 

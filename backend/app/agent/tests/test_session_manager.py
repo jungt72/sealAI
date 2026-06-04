@@ -9,6 +9,7 @@ Covers Umbauplan F-A.2:
 
 All Redis calls are mocked with a simple dict-backed fake.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,6 +33,7 @@ from app.agent.runtime.session_manager import (
 # ---------------------------------------------------------------------------
 # Fake Redis (in-memory, sync)
 # ---------------------------------------------------------------------------
+
 
 class FakeRedis:
     """Minimal dict-backed Redis stub (get/set with ex TTL ignored)."""
@@ -64,6 +66,7 @@ class AsyncFakeRedis(FakeRedis):
 # SessionEnvelope unit tests (no Redis)
 # ---------------------------------------------------------------------------
 
+
 class TestSessionEnvelope:
     def _make(self, zone="conversation") -> SessionEnvelope:
         return SessionEnvelope(
@@ -79,7 +82,9 @@ class TestSessionEnvelope:
 
     def test_escalate_sets_governed(self):
         env = self._make()
-        escalated = env.escalate_to_governed(turn=3, gate_decision_reason="hard_override:numeric_unit")
+        escalated = env.escalate_to_governed(
+            turn=3, gate_decision_reason="hard_override:numeric_unit"
+        )
         assert escalated.session_zone == "governed"
         assert escalated.entered_governed_at_turn == 3
         assert escalated.last_gate_decision == "hard_override:numeric_unit"
@@ -102,6 +107,7 @@ class TestSessionEnvelope:
 
     def test_envelope_is_frozen(self):
         from pydantic import ValidationError as PydanticValidationError
+
         env = self._make()
         with pytest.raises((TypeError, AttributeError, PydanticValidationError)):
             env.session_zone = "governed"  # type: ignore[misc]
@@ -116,6 +122,7 @@ class TestSessionEnvelope:
     def test_satisfies_has_session_zone_protocol(self):
         """SessionEnvelope works with gate.decide_route() via HasSessionZone."""
         from app.agent.runtime.gate import HasSessionZone
+
         env = self._make()
         assert isinstance(env, HasSessionZone)
 
@@ -123,6 +130,7 @@ class TestSessionEnvelope:
 # ---------------------------------------------------------------------------
 # Redis persistence (save / load)
 # ---------------------------------------------------------------------------
+
 
 class TestSessionPersistence:
     def test_save_and_load_roundtrip(self):
@@ -181,6 +189,7 @@ class TestSessionPersistence:
 # Lifecycle: get_or_create_session
 # ---------------------------------------------------------------------------
 
+
 class TestGetOrCreateSession:
     def test_session_starts_conversation(self):
         """Fresh session has zone = conversation (Umbauplan F-A.2 test 1)."""
@@ -202,7 +211,10 @@ class TestGetOrCreateSession:
         redis = FakeRedis()
         # Old session was governed
         old = SessionEnvelope(session_id="s-old", tenant_id="t1", user_id="u1")
-        save_session(old.escalate_to_governed(turn=1, gate_decision_reason="x"), redis_client=redis)
+        save_session(
+            old.escalate_to_governed(turn=1, gate_decision_reason="x"),
+            redis_client=redis,
+        )
 
         # New session id → fresh envelope
         fresh = get_or_create_session("t1", "s-new", "u1", redis_client=redis)
@@ -218,6 +230,7 @@ class TestGetOrCreateSession:
 # ---------------------------------------------------------------------------
 # apply_gate_decision_and_persist
 # ---------------------------------------------------------------------------
+
 
 class TestApplyGateDecisionAndPersist:
     def _conv_env(self, session_id="s1") -> SessionEnvelope:
@@ -284,7 +297,9 @@ class TestApplyGateDecisionAndPersist:
             turn=1,
             redis_client=redis,
         )
-        assert updated.last_gate_decision == "deterministic_instant:greeting_or_smalltalk"
+        assert (
+            updated.last_gate_decision == "deterministic_instant:greeting_or_smalltalk"
+        )
 
     def test_updated_envelope_persisted(self):
         redis = FakeRedis()
@@ -348,7 +363,9 @@ class TestApplyGateDecisionAndPersist:
         """Light-mode gate in governed session must not overwrite escalation reason."""
         redis = FakeRedis()
         gov = SessionEnvelope(
-            session_id="s1", tenant_id="t1", user_id="u1",
+            session_id="s1",
+            tenant_id="t1",
+            user_id="u1",
             session_zone="governed",
             last_gate_decision="hard_override:numeric_unit",
         )
@@ -371,14 +388,20 @@ class TestApplyGateDecisionAndPersist:
         assert env.turn_count == 0
 
         e1 = apply_gate_decision_and_persist(
-            env, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
-            turn=1, redis_client=redis,
+            env,
+            gate_route="CONVERSATION",
+            gate_reason="deterministic_instant:greeting_or_smalltalk",
+            turn=1,
+            redis_client=redis,
         )
         assert e1.turn_count == 1
 
         e2 = apply_gate_decision_and_persist(
-            e1, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
-            turn=2, redis_client=redis,
+            e1,
+            gate_route="CONVERSATION",
+            gate_reason="deterministic_instant:greeting_or_smalltalk",
+            turn=2,
+            redis_client=redis,
         )
         assert e2.turn_count == 2
 
@@ -388,19 +411,28 @@ class TestApplyGateDecisionAndPersist:
         # Pre-warm: 2 conversation turns first
         env = self._conv_env()
         e1 = apply_gate_decision_and_persist(
-            env, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
-            turn=0, redis_client=redis,
+            env,
+            gate_route="CONVERSATION",
+            gate_reason="deterministic_instant:greeting_or_smalltalk",
+            turn=0,
+            redis_client=redis,
         )
         e2 = apply_gate_decision_and_persist(
-            e1, gate_route="CONVERSATION", gate_reason="deterministic_instant:greeting_or_smalltalk",
-            turn=0, redis_client=redis,
+            e1,
+            gate_route="CONVERSATION",
+            gate_reason="deterministic_instant:greeting_or_smalltalk",
+            turn=0,
+            redis_client=redis,
         )
         assert e2.turn_count == 2
 
         # Now escalate — entered_governed_at_turn must be 3 (internal), not 0 (caller)
         gov = apply_gate_decision_and_persist(
-            e2, gate_route="GOVERNED", gate_reason="hard_override:numeric_unit",
-            turn=0, redis_client=redis,
+            e2,
+            gate_route="GOVERNED",
+            gate_reason="hard_override:numeric_unit",
+            turn=0,
+            redis_client=redis,
         )
         assert gov.entered_governed_at_turn == 3
         assert gov.turn_count == 3
@@ -409,12 +441,18 @@ class TestApplyGateDecisionAndPersist:
         """turn_count must also increment for governed sessions on each call."""
         redis = FakeRedis()
         gov = SessionEnvelope(
-            session_id="s1", tenant_id="t1", user_id="u1",
-            session_zone="governed", turn_count=5,
+            session_id="s1",
+            tenant_id="t1",
+            user_id="u1",
+            session_zone="governed",
+            turn_count=5,
         )
         result = apply_gate_decision_and_persist(
-            gov, gate_route="GOVERNED", gate_reason="sticky_governed_session",
-            turn=0, redis_client=redis,
+            gov,
+            gate_route="GOVERNED",
+            gate_reason="sticky_governed_session",
+            turn=0,
+            redis_client=redis,
         )
         assert result.turn_count == 6
 
@@ -455,6 +493,7 @@ class TestApplyGateDecisionAndPersistAsync:
 # ---------------------------------------------------------------------------
 # Integration: gate + session_manager
 # ---------------------------------------------------------------------------
+
 
 class TestGateSessionIntegration:
     """End-to-end: gate decision → session zone update."""

@@ -14,6 +14,7 @@ Environment variables:
   DATABASE_URL           Postgres URL for fetching active document IDs
   QDRANT_COLLECTION      Collection name (default: sealai_knowledge)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -69,7 +70,9 @@ async def main() -> None:
         active_ids = await _fetch_active_document_ids(database_url)
         log.info("Active document IDs in Postgres: %d", len(active_ids))
     else:
-        log.warning("DATABASE_URL not set — skipping orphan removal, only enforcing size limit.")
+        log.warning(
+            "DATABASE_URL not set — skipping orphan removal, only enforcing size limit."
+        )
 
     for coll in collections:
         log.info("Processing collection: %s", coll)
@@ -89,7 +92,11 @@ async def main() -> None:
 
             orphaned = bm25_doc_ids - active_ids
             if orphaned:
-                log.info("Removing %d orphaned document(s) from BM25 '%s'", len(orphaned), coll)
+                log.info(
+                    "Removing %d orphaned document(s) from BM25 '%s'",
+                    len(orphaned),
+                    coll,
+                )
                 result = svc.cleanup(coll, orphaned)
                 log.info("Cleanup result: %s", result)
             else:

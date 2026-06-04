@@ -42,6 +42,7 @@ def test_api_router_imports():
 
 def test_health_route_exists():
     _ensure_env()
-    app_mod = importlib.import_module("app.main"); app = getattr(app_mod, "app")
+    app_mod = importlib.import_module("app.main")
+    app = getattr(app_mod, "app")
     paths = {r.path for r in app.router.routes}
     assert any(route in paths for route in ("/health", "/healthz", "/api/health"))

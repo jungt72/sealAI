@@ -33,7 +33,6 @@ class MaterialDefinitionAnswer:
     material_id: str
 
 
-
 _GERMAN_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("Kompatibilitaets", "Kompatibilitäts"),
     ("Rechtsstaende", "Rechtsstände"),
@@ -166,6 +165,7 @@ def humanize_german_technical_text(value: str) -> str:
     text = re.sub(r"(?<=\d) C\b", " °C", text)
     return text
 
+
 _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
     "NBR": MaterialComparisonProfile(
         canonical="NBR",
@@ -236,7 +236,12 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "PV, Schmierung und Oberflaeche bleiben massgebend",
         ),
         typical_uses=("Automotive, Hydraulik, dynamische Dichtungen, O-Ringe",),
-        critical_checks=("Temperaturprofil", "Medium/Additive", "Druckspalt", "dynamische Reibwaerme"),
+        critical_checks=(
+            "Temperaturprofil",
+            "Medium/Additive",
+            "Druckspalt",
+            "dynamische Reibwaerme",
+        ),
     ),
     "FKM": MaterialComparisonProfile(
         canonical="FKM",
@@ -262,8 +267,18 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "als Elastomer gut fuer O-Ringe und viele dynamische Dichtungen einsetzbar, wenn Reibung/Temperatur passen",
             "Waermeeintrag an der Dichtkante kann das nutzbare Fenster deutlich reduzieren",
         ),
-        typical_uses=("O-Ringe", "RWDR", "Chemie-/Oel-/Kraftstoffnahe Dichtungen", "statisch und dynamisch"),
-        critical_checks=("Mediengruppe", "Temperaturspitzen", "Tieftemperatur", "PFAS-/Compliance-Anforderung"),
+        typical_uses=(
+            "O-Ringe",
+            "RWDR",
+            "Chemie-/Oel-/Kraftstoffnahe Dichtungen",
+            "statisch und dynamisch",
+        ),
+        critical_checks=(
+            "Mediengruppe",
+            "Temperaturspitzen",
+            "Tieftemperatur",
+            "PFAS-/Compliance-Anforderung",
+        ),
     ),
     "FFKM": MaterialComparisonProfile(
         canonical="FFKM",
@@ -296,7 +311,13 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "dynamische Anwendungen muessen wegen Reibung, Verschleiss, Waermeeintrag und Kosten besonders geprueft werden",
             "bei O-Ringen sind Compression Set, Nutfuellung und Langzeitelastizitaet oft entscheidender als die reine Chemiebestaendigkeit",
         ),
-        typical_uses=("kritische O-Ringe", "Chemieanlagen", "Pharma", "Halbleiter", "Sonderdichtungen"),
+        typical_uses=(
+            "kritische O-Ringe",
+            "Chemieanlagen",
+            "Pharma",
+            "Halbleiter",
+            "Sonderdichtungen",
+        ),
         critical_checks=(
             "Herstellerdatenblatt mit genauem Compound",
             "Medium/Konzentration/Kontaktzeit und Reinigungszyklen",
@@ -328,8 +349,20 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
         dynamics_orientation=(
             "als Elastomer gut dichtend, aber bei dynamischem Lauf sind Reibung, Schmierung und Temperatur zu pruefen",
         ),
-        typical_uses=("O-Ringe", "Flachdichtungen", "Wasser-/Dampfanwendungen", "Aussenbereich", "Hygieneanwendungen mit Nachweis"),
-        critical_checks=("Oelkontakt", "Dampfprofil", "Zulassungen", "Reinigungschemie", "Temperaturspitzen"),
+        typical_uses=(
+            "O-Ringe",
+            "Flachdichtungen",
+            "Wasser-/Dampfanwendungen",
+            "Aussenbereich",
+            "Hygieneanwendungen mit Nachweis",
+        ),
+        critical_checks=(
+            "Oelkontakt",
+            "Dampfprofil",
+            "Zulassungen",
+            "Reinigungschemie",
+            "Temperaturspitzen",
+        ),
     ),
     "PTFE": MaterialComparisonProfile(
         canonical="PTFE",
@@ -355,8 +388,19 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "niedrige Reibung kann vorteilhaft sein",
             "Gegenlaufflaeche, Waermeabfuhr, Fuellstoff und Anpressung sind entscheidend",
         ),
-        typical_uses=("PTFE-RWDR", "Federenergized Seals", "Chemiedichtungen", "Gleit- und Fuehrungselemente"),
-        critical_checks=("Konstruktion/Vorspannung", "Kriechen/Kaltfluss", "Gegenlaufflaeche", "Fuellstoff", "PFAS-/Compliance-Anforderung"),
+        typical_uses=(
+            "PTFE-RWDR",
+            "Federenergized Seals",
+            "Chemiedichtungen",
+            "Gleit- und Fuehrungselemente",
+        ),
+        critical_checks=(
+            "Konstruktion/Vorspannung",
+            "Kriechen/Kaltfluss",
+            "Gegenlaufflaeche",
+            "Fuellstoff",
+            "PFAS-/Compliance-Anforderung",
+        ),
     ),
     "PU": MaterialComparisonProfile(
         canonical="PU",
@@ -374,9 +418,18 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "Temperaturfenster ist begrenzt",
             "Typauswahl ist entscheidend, Polyester/Polyether-Verhalten unterscheiden sich",
         ),
-        media_orientation=("Hydraulikoel oft relevant", "Wasser/Heisswasser und aggressive Chemie vorsichtig pruefen"),
-        dynamics_orientation=("stark bei Abrieb und Druck, aber Waerme und Schmierung pruefen",),
-        typical_uses=("Hydraulikdichtungen", "Abstreifer", "Stangen- und Kolbendichtungen"),
+        media_orientation=(
+            "Hydraulikoel oft relevant",
+            "Wasser/Heisswasser und aggressive Chemie vorsichtig pruefen",
+        ),
+        dynamics_orientation=(
+            "stark bei Abrieb und Druck, aber Waerme und Schmierung pruefen",
+        ),
+        typical_uses=(
+            "Hydraulikdichtungen",
+            "Abstreifer",
+            "Stangen- und Kolbendichtungen",
+        ),
         critical_checks=("Hydrolyse", "Temperatur", "Druckspalt", "Abrasion", "Oeltyp"),
     ),
     "VMQ": MaterialComparisonProfile(
@@ -395,14 +448,36 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "nicht automatisch passend fuer Oel, Kraftstoff oder dynamisch abrasive Dichtstellen",
             "Gasdurchlaessigkeit kann hoeher sein",
         ),
-        media_orientation=("Food/Pharma/Wassernahe Medien mit Zulassung pruefen", "Oel/Kraftstoff je nach Typ kritisch"),
-        dynamics_orientation=("eher vorsichtig bei abrasiver oder stark dynamischer Beanspruchung",),
-        typical_uses=("statische Dichtungen", "Food/Pharma", "Tieftemperatur", "Medizintechnik"),
-        critical_checks=("mechanische Belastung", "Zulassung", "Gasdurchlaessigkeit", "Reinigungsmedium"),
+        media_orientation=(
+            "Food/Pharma/Wassernahe Medien mit Zulassung pruefen",
+            "Oel/Kraftstoff je nach Typ kritisch",
+        ),
+        dynamics_orientation=(
+            "eher vorsichtig bei abrasiver oder stark dynamischer Beanspruchung",
+        ),
+        typical_uses=(
+            "statische Dichtungen",
+            "Food/Pharma",
+            "Tieftemperatur",
+            "Medizintechnik",
+        ),
+        critical_checks=(
+            "mechanische Belastung",
+            "Zulassung",
+            "Gasdurchlaessigkeit",
+            "Reinigungsmedium",
+        ),
     ),
     "POM": MaterialComparisonProfile(
         canonical="POM",
-        aliases=("pom", "polyoxymethylen", "polyacetal", "acetal", "delrin", "hostaform"),
+        aliases=(
+            "pom",
+            "polyoxymethylen",
+            "polyacetal",
+            "acetal",
+            "delrin",
+            "hostaform",
+        ),
         family="Polyoxymethylen / Polyacetal",
         material_type="Thermoplast, kein Elastomer",
         typical_temperature=(
@@ -458,10 +533,25 @@ _MATERIAL_PROFILES: dict[str, MaterialComparisonProfile] = {
             "Konstruktion, Toleranzen, Waermeausdehnung und Kosten sind zentral",
             "nicht als direkter Ersatz fuer einen O-Ring ohne Designaenderung verstehen",
         ),
-        media_orientation=("breite technische Chemieorientierung, konkrete Medien pruefen",),
-        dynamics_orientation=("als Fuehrungs-/Stuetzwerkstoff relevant, Reibpaarung und Verschleiss pruefen",),
-        typical_uses=("Stuetzringe", "Fuehrungselemente", "Sonderteile", "Hochtemperaturbauteile"),
-        critical_checks=("Bauteildesign", "Toleranz", "Reibpaarung", "Kosten", "Temperatur"),
+        media_orientation=(
+            "breite technische Chemieorientierung, konkrete Medien pruefen",
+        ),
+        dynamics_orientation=(
+            "als Fuehrungs-/Stuetzwerkstoff relevant, Reibpaarung und Verschleiss pruefen",
+        ),
+        typical_uses=(
+            "Stuetzringe",
+            "Fuehrungselemente",
+            "Sonderteile",
+            "Hochtemperaturbauteile",
+        ),
+        critical_checks=(
+            "Bauteildesign",
+            "Toleranz",
+            "Reibpaarung",
+            "Kosten",
+            "Temperatur",
+        ),
     ),
 }
 
@@ -472,7 +562,13 @@ _ALIAS_TO_CANONICAL: dict[str, str] = {
 }
 
 _MATERIAL_TOKEN_RE = re.compile(
-    r"\b(" + "|".join(sorted((re.escape(alias) for alias in _ALIAS_TO_CANONICAL), key=len, reverse=True)) + r")\b",
+    r"\b("
+    + "|".join(
+        sorted(
+            (re.escape(alias) for alias in _ALIAS_TO_CANONICAL), key=len, reverse=True
+        )
+    )
+    + r")\b",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -551,7 +647,9 @@ def is_material_comparison_question(user_input: str) -> bool:
     return bool(_PAIR_FOLLOWUP_RE.search(compact))
 
 
-def build_material_comparison_answer(user_input: str) -> MaterialComparisonAnswer | None:
+def build_material_comparison_answer(
+    user_input: str,
+) -> MaterialComparisonAnswer | None:
     text = str(user_input or "")
     materials = _extract_materials(text)
     if len(materials) < 2:
@@ -568,15 +666,22 @@ def build_material_comparison_answer(user_input: str) -> MaterialComparisonAnswe
     )
 
 
-def build_material_risk_comparison_answer(user_input: str) -> MaterialComparisonAnswer | None:
+def build_material_risk_comparison_answer(
+    user_input: str,
+) -> MaterialComparisonAnswer | None:
     text = str(user_input or "")
     lowered = text.casefold()
     materials = _extract_all_materials(text)
     if len(materials) < 2:
         return None
-    if not any(marker in lowered for marker in ("risiko", "risiken", "kritisch", "grenze", "grenzen")):
+    if not any(
+        marker in lowered
+        for marker in ("risiko", "risiken", "kritisch", "grenze", "grenzen")
+    ):
         return None
-    if not any(marker in lowered for marker in ("heißwasser", "heisswasser", "dampf", "wasser")):
+    if not any(
+        marker in lowered for marker in ("heißwasser", "heisswasser", "dampf", "wasser")
+    ):
         return None
     lines = [
         "## Werkstoffrisiken bei Heißwasser",
@@ -626,7 +731,6 @@ def build_material_risk_comparison_answer(user_input: str) -> MaterialComparison
     )
 
 
-
 def supported_material_ids() -> tuple[str, ...]:
     return tuple(_MATERIAL_PROFILES.keys())
 
@@ -637,7 +741,9 @@ def extract_material_ids(text: str) -> tuple[str, ...]:
     return tuple(_extract_all_materials(text))
 
 
-def build_material_definition_answer(user_input: str) -> MaterialDefinitionAnswer | None:
+def build_material_definition_answer(
+    user_input: str,
+) -> MaterialDefinitionAnswer | None:
     """Return a guarded one-material orientation answer for generic material questions."""
 
     text = str(user_input or "").strip()
@@ -660,6 +766,7 @@ def build_material_definition_answer(user_input: str) -> MaterialDefinitionAnswe
         title=f"{profile.canonical} - Werkstofforientierung",
         material_id=profile.canonical,
     )
+
 
 def _extract_materials(text: str) -> list[str]:
     return _extract_all_materials(text)[:2]
@@ -685,7 +792,9 @@ _GENERIC_MATERIAL_INFO_RE = re.compile(
 )
 
 
-def _looks_like_generic_material_information_request(text: str, material_id: str) -> bool:
+def _looks_like_generic_material_information_request(
+    text: str, material_id: str
+) -> bool:
     compact = re.sub(r"\s+", " ", text).strip()
     if compact.casefold() == material_id.casefold():
         return True
@@ -863,7 +972,7 @@ def _render_nbr_definition(profile: MaterialComparisonProfile) -> str:
             "oder Gehäusekonzept riskant.",
             "- Dynamischer Betrieb mit schlechter Schmierung: Reibwärme kann aus einer "
             "eigentlich unkritischen Medientemperatur eine kritische Dichtkante machen.",
-            "- Mediennamen wie \"Öl\" oder \"Hydraulikfluid\" reichen nicht. Additive, "
+            '- Mediennamen wie "Öl" oder "Hydraulikfluid" reichen nicht. Additive, '
             "Basisöl, Wasseranteil, Alterung, Reiniger und Kontaktzeit gehören in die Bewertung.",
             "",
             "### Was ich für eine belastbare Einordnung brauche",
@@ -1169,7 +1278,9 @@ def _engineering_comparison_rows(
     ]
 
 
-def _render_comparison(left: MaterialComparisonProfile, right: MaterialComparisonProfile) -> str:
+def _render_comparison(
+    left: MaterialComparisonProfile, right: MaterialComparisonProfile
+) -> str:
     answer = "\n".join(
         [
             f"## Werkstoffvergleich: {left.canonical} vs {right.canonical}",
@@ -1215,15 +1326,23 @@ def _render_comparison(left: MaterialComparisonProfile, right: MaterialCompariso
     return humanize_german_technical_text(answer)
 
 
-def _difference_lines(left: MaterialComparisonProfile, right: MaterialComparisonProfile) -> list[str]:
+def _difference_lines(
+    left: MaterialComparisonProfile, right: MaterialComparisonProfile
+) -> list[str]:
     lines = [
         f"- **{left.canonical}** ist {article(left.material_type)} {left.material_type.lower()} aus der Familie {left.family}. **{right.canonical}** ist {article(right.material_type)} {right.material_type.lower()} aus der Familie {right.family}.",
     ]
-    if left.material_type.lower().startswith("elastomer") and "kein elastomer" in right.material_type.lower():
+    if (
+        left.material_type.lower().startswith("elastomer")
+        and "kein elastomer" in right.material_type.lower()
+    ):
         lines.append(
             f"- **Dichtprinzip:** {left.canonical} dichtet als Elastomer vor allem ueber elastische Verformung und Rueckstellung. {right.canonical} braucht wegen geringer Elastizitaet haeufig mehr konstruktive Fuehrung, Vorspannung oder Federunterstuetzung."
         )
-    elif right.material_type.lower().startswith("elastomer") and "kein elastomer" in left.material_type.lower():
+    elif (
+        right.material_type.lower().startswith("elastomer")
+        and "kein elastomer" in left.material_type.lower()
+    ):
         lines.append(
             f"- **Dichtprinzip:** {right.canonical} dichtet als Elastomer vor allem ueber elastische Verformung und Rueckstellung. {left.canonical} braucht wegen geringer Elastizitaet haeufig mehr konstruktive Fuehrung, Vorspannung oder Federunterstuetzung."
         )

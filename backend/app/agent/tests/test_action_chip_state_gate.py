@@ -139,7 +139,10 @@ def test_fast_path_runs_without_invoking_rag(monkeypatch) -> None:
         pending_question=_speed_question(), message="jo ca 3000", turn_index=1
     )
     state = bind_action_chip_selection(
-        GovernedSessionState(), field="speed_rpm", value=binding.normalized_value, turn_index=1
+        GovernedSessionState(),
+        field="speed_rpm",
+        value=binding.normalized_value,
+        turn_index=1,
     )
     assert state.normalized.parameters["speed_rpm"].value == 3000.0
     assert calls == []
@@ -171,16 +174,24 @@ def test_action_chip_empty_field_is_noop() -> None:
 def test_field_conflict_degrades_without_blocking_other_fields() -> None:
     observed = ObservedState(
         raw_extractions=[
-            ObservedExtraction(field_name="temperature_c", raw_value=90, source="llm", turn_index=1),
-            ObservedExtraction(field_name="temperature_c", raw_value=190, source="llm", turn_index=1),
-            ObservedExtraction(field_name="speed_rpm", raw_value=1500, source="llm", turn_index=1),
+            ObservedExtraction(
+                field_name="temperature_c", raw_value=90, source="llm", turn_index=1
+            ),
+            ObservedExtraction(
+                field_name="temperature_c", raw_value=190, source="llm", turn_index=1
+            ),
+            ObservedExtraction(
+                field_name="speed_rpm", raw_value=1500, source="llm", turn_index=1
+            ),
         ]
     )
     normalized = reduce_observed_to_normalized(observed)
 
     # Conflict is recorded as a field-level warning, not a hard block.
     assert normalized.conflicts, "expected a conflict ref for temperature_c"
-    temp_conflict = next(c for c in normalized.conflicts if c.field_name == "temperature_c")
+    temp_conflict = next(
+        c for c in normalized.conflicts if c.field_name == "temperature_c"
+    )
     assert temp_conflict.severity == "warning"
 
     # The rest of the case stays usable: the clean field still normalizes.

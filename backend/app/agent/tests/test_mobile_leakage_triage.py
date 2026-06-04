@@ -29,7 +29,9 @@ _FORBIDDEN_IDENTIFICATION = ("Das ist sicher ein", "Material ist", "Artikelnumme
 # --- Intent detection (§7.3) ------------------------------------------------
 
 
-@pytest.mark.parametrize("message", ["sifft", "Die Dichtung sifft", "Öl läuft raus", "undicht"])
+@pytest.mark.parametrize(
+    "message", ["sifft", "Die Dichtung sifft", "Öl läuft raus", "undicht"]
+)
 def test_leakage_intent_detected(message: str) -> None:
     assert is_leakage_triage_intent(message) is True
 
@@ -98,7 +100,9 @@ def test_bad_photo_yields_measurement_guidance_not_identification() -> None:
 
 
 def test_visual_candidate_is_confirmation_required_by_type() -> None:
-    candidate = VisualCandidate(candidate_id="c1", candidate_type="seal_type", value="RWDR-artige Bauform")
+    candidate = VisualCandidate(
+        candidate_id="c1", candidate_type="seal_type", value="RWDR-artige Bauform"
+    )
     assert candidate.requires_confirmation is True
     assert candidate.status == "candidate"
     assert candidate.origin == "visual_candidate"
@@ -109,15 +113,25 @@ def test_visual_candidate_cannot_be_constructed_as_confirmed_fact() -> None:
     # The type forbids requires_confirmation=False and status other than candidate.
     with pytest.raises(ValidationError):
         VisualCandidate(
-            candidate_id="c1", candidate_type="seal_type", value="RWDR", requires_confirmation=False
+            candidate_id="c1",
+            candidate_type="seal_type",
+            value="RWDR",
+            requires_confirmation=False,
         )
     with pytest.raises(ValidationError):
-        VisualCandidate(candidate_id="c1", candidate_type="seal_type", value="RWDR", status="confirmed")
+        VisualCandidate(
+            candidate_id="c1",
+            candidate_type="seal_type",
+            value="RWDR",
+            status="confirmed",
+        )
 
 
 def test_candidates_enter_cockpit_patch_only_as_candidates() -> None:
     candidates = [
-        VisualCandidate(candidate_id="c1", candidate_type="seal_type", value="RWDR-artige Bauform"),
+        VisualCandidate(
+            candidate_id="c1", candidate_type="seal_type", value="RWDR-artige Bauform"
+        ),
     ]
     envelope = build_mobile_leakage_triage(has_attachment=True, candidates=candidates)
     visual = envelope.cockpit_patch.visual_candidates
@@ -134,7 +148,10 @@ def test_candidates_enter_cockpit_patch_only_as_candidates() -> None:
 def test_extract_without_vision_returns_no_candidates() -> None:
     assert extract_visual_candidates(attachment={"id": "a1"}, vision=None) == []
     assert extract_visual_candidates(attachment=None, vision=NullVisionPort()) == []
-    assert extract_visual_candidates(attachment={"id": "a1"}, vision=NullVisionPort()) == []
+    assert (
+        extract_visual_candidates(attachment={"id": "a1"}, vision=NullVisionPort())
+        == []
+    )
 
 
 def test_vision_failure_degrades_to_empty_not_raise() -> None:
@@ -155,9 +172,17 @@ def test_turn_without_vision_still_gives_useful_output() -> None:
 def test_turn_with_vision_candidates_routes_to_triage_with_candidates() -> None:
     class StubVision:
         def extract(self, attachment):  # noqa: ANN001, ARG002
-            return [VisualCandidate(candidate_id="c1", candidate_type="seal_type", value="RWDR-artige Bauform")]
+            return [
+                VisualCandidate(
+                    candidate_id="c1",
+                    candidate_type="seal_type",
+                    value="RWDR-artige Bauform",
+                )
+            ]
 
-    envelope = build_mobile_leakage_turn("sifft", attachment={"id": "a1"}, vision=StubVision())
+    envelope = build_mobile_leakage_turn(
+        "sifft", attachment={"id": "a1"}, vision=StubVision()
+    )
     assert envelope.chat_reply.style == "mobile_triage"
     assert len(envelope.cockpit_patch.visual_candidates) == 1
     assert envelope.cockpit_patch.visual_candidates[0]["requires_confirmation"] is True

@@ -149,13 +149,17 @@ class TestSingleExtraction:
 
     @pytest.mark.asyncio
     async def test_pending_message_classifies_salzsaeure_as_aggressive_medium(self):
-        state = GraphState(pending_message="Medium ist Salzsäure 10 Prozent bei 60 Grad")
+        state = GraphState(
+            pending_message="Medium ist Salzsäure 10 Prozent bei 60 Grad"
+        )
         result = await normalize_node(state)
         assert result.medium_capture.primary_raw_text.casefold() == "salzsäure"
         assert result.medium_classification.status == "recognized"
         assert result.medium_classification.canonical_label == "Salzsäure"
         assert result.medium_classification.family == "chemisch_aggressiv"
-        assert result.medium_classification.mapping_confidence == "requires_confirmation"
+        assert (
+            result.medium_classification.mapping_confidence == "requires_confirmation"
+        )
 
     @pytest.mark.asyncio
     async def test_pending_message_preserves_unclassified_medium_capture(self):
@@ -422,8 +426,13 @@ class TestNoLLM:
 
         mock_cls.assert_not_called()
         # Normalisation still succeeded
-        assert {"medium", "pressure_bar", "temperature_c"}.issubset(result.normalized.parameters)
-        assert result.normalized.parameters["ambiguous_pressure_bar"].confidence == "requires_confirmation"
+        assert {"medium", "pressure_bar", "temperature_c"}.issubset(
+            result.normalized.parameters
+        )
+        assert (
+            result.normalized.parameters["ambiguous_pressure_bar"].confidence
+            == "requires_confirmation"
+        )
 
 
 # ---------------------------------------------------------------------------

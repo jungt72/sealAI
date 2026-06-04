@@ -3,6 +3,7 @@
 Singleton pattern: use ``GateChecker.get_instance()`` for shared access.
 Falls back gracefully if KB files are absent.
 """
+
 from __future__ import annotations
 
 import logging
@@ -75,6 +76,7 @@ class GateChecker:
         else:
             try:
                 from app.services.knowledge.factcard_store import FactCardStore
+
                 self._gates = FactCardStore.get_instance().all_gates()
             except Exception as exc:
                 log.warning("gate_checker.load_failed", extra={"error": str(exc)})
@@ -126,7 +128,9 @@ class GateChecker:
                 triggered.append(result)
         return triggered
 
-    def check_trigger_patterns(self, query_text: str, user_context: Dict[str, Any]) -> List[GateResult]:
+    def check_trigger_patterns(
+        self, query_text: str, user_context: Dict[str, Any]
+    ) -> List[GateResult]:
         """Evaluate gate trigger_patterns directly from user query text."""
         query = (query_text or "").strip().lower()
         if not query:
@@ -134,7 +138,11 @@ class GateChecker:
 
         triggered: List[GateResult] = []
         for gate in self._gates:
-            patterns = [str(p or "").strip() for p in (gate.get("trigger_patterns") or []) if str(p or "").strip()]
+            patterns = [
+                str(p or "").strip()
+                for p in (gate.get("trigger_patterns") or [])
+                if str(p or "").strip()
+            ]
             matched = [p for p in patterns if p.lower() in query]
             if not matched:
                 continue
@@ -148,10 +156,16 @@ class GateChecker:
                 if not self._has_context_value(field_name, user_context):
                     missing.append(item)
 
-            missing_fields_text = ", ".join(str(i.get("field")) for i in missing if i.get("field"))
-            base_message = str(gate.get("if_missing_fields") or gate.get("name") or "Gate triggered").strip()
+            missing_fields_text = ", ".join(
+                str(i.get("field")) for i in missing if i.get("field")
+            )
+            base_message = str(
+                gate.get("if_missing_fields") or gate.get("name") or "Gate triggered"
+            ).strip()
             if missing_fields_text:
-                message = f"{base_message} Missing required fields: {missing_fields_text}."
+                message = (
+                    f"{base_message} Missing required fields: {missing_fields_text}."
+                )
             else:
                 message = base_message
 
@@ -170,7 +184,9 @@ class GateChecker:
             )
         return triggered
 
-    def check_gate(self, gate_id: str, user_context: Dict[str, Any]) -> Optional[GateResult]:
+    def check_gate(
+        self, gate_id: str, user_context: Dict[str, Any]
+    ) -> Optional[GateResult]:
         """Evaluate a specific gate by ID.  Returns None if gate not found."""
         for gate in self._gates:
             if gate.get("id") == gate_id:

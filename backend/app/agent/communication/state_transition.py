@@ -37,7 +37,9 @@ class StateTransitionGuard:
         language: str = "de",
     ) -> StateTransitionDecision:
         acts = {act.label for act in speech_acts}
-        allowed_updates = [] if mode is ConversationMode.GENERAL_KNOWLEDGE else list(proposed_updates)
+        allowed_updates = (
+            [] if mode is ConversationMode.GENERAL_KNOWLEDGE else list(proposed_updates)
+        )
         answers_active_question = self._answers_active_question(
             state=state,
             updates=allowed_updates,
@@ -46,7 +48,12 @@ class StateTransitionGuard:
         if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE:
             return self._block(
                 reasons=["unsafe_or_out_of_scope"],
-                commands=[self._command("RefuseUnsafeInstruction", "Unsafe instruction cannot advance state.")],
+                commands=[
+                    self._command(
+                        "RefuseUnsafeInstruction",
+                        "Unsafe instruction cannot advance state.",
+                    )
+                ],
                 speech_acts=speech_acts,
                 language=language,
                 answers_active_question=False,
@@ -57,7 +64,12 @@ class StateTransitionGuard:
         if "meta.cancel" in acts:
             return self._block(
                 reasons=["cancel_requested"],
-                commands=[self._command("StopCurrentStep", "User asked to stop or postpone the current step.")],
+                commands=[
+                    self._command(
+                        "StopCurrentStep",
+                        "User asked to stop or postpone the current step.",
+                    )
+                ],
                 speech_acts=speech_acts,
                 language=language,
                 answers_active_question=False,
@@ -67,18 +79,29 @@ class StateTransitionGuard:
         if "task.unknown" in acts:
             return self._block(
                 reasons=["unknown_is_not_progress"],
-                commands=[self._command("MarkUnknown", "Unknown answer must not be treated as resolved.")],
+                commands=[
+                    self._command(
+                        "MarkUnknown", "Unknown answer must not be treated as resolved."
+                    )
+                ],
                 speech_acts=speech_acts,
                 language=language,
                 answers_active_question=False,
                 fallback_level=1,
             )
 
-        if (has_act(speech_acts, "confirm.yes") or has_act(speech_acts, "confirm.no")) and not state.pending_confirmation:
+        if (
+            has_act(speech_acts, "confirm.yes") or has_act(speech_acts, "confirm.no")
+        ) and not state.pending_confirmation:
             if not allowed_updates:
                 return self._block(
                     reasons=["confirmation_without_pending_action"],
-                    commands=[self._command("AskClarification", "No pending confirmation exists for this yes/no answer.")],
+                    commands=[
+                        self._command(
+                            "AskClarification",
+                            "No pending confirmation exists for this yes/no answer.",
+                        )
+                    ],
                     speech_acts=speech_acts,
                     language=language,
                     answers_active_question=False,
@@ -89,7 +112,12 @@ class StateTransitionGuard:
             return StateTransitionDecision(
                 decision="block_progress",
                 reasons=["general_knowledge_no_state_patch"],
-                commands=[self._command("AnswerKnowledgeQuestion", "Knowledge answer must not change case state.")],
+                commands=[
+                    self._command(
+                        "AnswerKnowledgeQuestion",
+                        "Knowledge answer must not change case state.",
+                    )
+                ],
                 state_patch_size=0,
                 allowed_proposed_updates=[],
                 speech_acts=speech_acts,
@@ -110,14 +138,33 @@ class StateTransitionGuard:
                         "User wants to start or continue case clarification.",
                     )
                 )
-            if acts and any(label.startswith("social.") for label in acts) and acts.issubset(self._NO_PROGRESS_ACTS):
+            if (
+                acts
+                and any(label.startswith("social.") for label in acts)
+                and acts.issubset(self._NO_PROGRESS_ACTS)
+            ):
                 reasons.insert(0, "social_only_utterance")
-                commands.append(self._command("AcknowledgeWithoutProgress", "Turn contains no technical slot evidence."))
+                commands.append(
+                    self._command(
+                        "AcknowledgeWithoutProgress",
+                        "Turn contains no technical slot evidence.",
+                    )
+                )
             if state.active_question or state.allowed_next_actions:
-                commands.append(self._command("RepeatOrReframeQuestion", "Continue with the current best next question."))
+                commands.append(
+                    self._command(
+                        "RepeatOrReframeQuestion",
+                        "Continue with the current best next question.",
+                    )
+                )
             return self._block(
                 reasons=reasons,
-                commands=commands or [self._command("AskNextQuestion", "No governed state patch is available.")],
+                commands=commands
+                or [
+                    self._command(
+                        "AskNextQuestion", "No governed state patch is available."
+                    )
+                ],
                 speech_acts=speech_acts,
                 language=language,
                 answers_active_question=False,
@@ -145,8 +192,12 @@ class StateTransitionGuard:
         )
 
     @staticmethod
-    def _command(name: str, reason: str, field_key: str | None = None) -> ConversationCommand:
-        return ConversationCommand(type="conversation_command", name=name, field_key=field_key, reason=reason)
+    def _command(
+        name: str, reason: str, field_key: str | None = None
+    ) -> ConversationCommand:
+        return ConversationCommand(
+            type="conversation_command", name=name, field_key=field_key, reason=reason
+        )
 
     @staticmethod
     def _block(
@@ -181,10 +232,16 @@ class StateTransitionGuard:
         if not state.active_question and not state.active_question_field_keys:
             return None
         update_keys = {item.key for item in updates}
-        active_keys = {str(key).strip() for key in state.active_question_field_keys if str(key).strip()}
+        active_keys = {
+            str(key).strip()
+            for key in state.active_question_field_keys
+            if str(key).strip()
+        }
         if active_keys and update_keys:
             return bool(update_keys.intersection(active_keys))
         if not updates:
             return False
         question = str(state.active_question or "").casefold()
-        return any(str(item.key).replace("_", " ").casefold() in question for item in updates)
+        return any(
+            str(item.key).replace("_", " ").casefold() in question for item in updates
+        )

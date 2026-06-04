@@ -12,7 +12,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from app.agent.state.models import GovernedSessionState
-from app.agent.v92.dashboard_contract import build_v92_dashboard_contract, extract_case_revision
+from app.agent.v92.dashboard_contract import (
+    build_v92_dashboard_contract,
+    extract_case_revision,
+)
 from app.agent.v92.models import ReviewState
 
 
@@ -54,7 +57,9 @@ def build_review_workflow_contract(
         "claim_boundary": {
             "approved_claim_level": review.get("approved_claim_level"),
             "forbidden_claims": list(dossier.get("forbidden_claims") or []),
-            "no_final_technical_release": bool(dossier.get("no_final_technical_release", True)),
+            "no_final_technical_release": bool(
+                dossier.get("no_final_technical_release", True)
+            ),
         },
         "dashboard_contract": dashboard.model_dump(mode="json"),
     }
@@ -77,9 +82,12 @@ def apply_human_review_decision(
     notes: str | None = None,
 ) -> GovernedSessionState:
     now = datetime.now(UTC).isoformat()
-    scope_items = list(scope or state.review_state.scope or ["rfq_handover", "claim_boundary"])
+    scope_items = list(
+        scope or state.review_state.scope or ["rfq_handover", "claim_boundary"]
+    )
     decision = {
-        "decision_id": "review." + _stable_id(
+        "decision_id": "review."
+        + _stable_id(
             {
                 "session_id": session_id,
                 "reviewer_id": reviewer_id,
@@ -106,7 +114,9 @@ def apply_human_review_decision(
     summary = "Human review requested changes."
     if action == "approve_scope":
         status = "approved_scope" if not blocking_findings else "changes_required"
-        approved_claim_level = "L6_expert_approved" if status == "approved_scope" else None
+        approved_claim_level = (
+            "L6_expert_approved" if status == "approved_scope" else None
+        )
         if status == "approved_scope":
             required_review_types = []
         summary = (

@@ -178,9 +178,7 @@ class TestOutboxModelPersistence:
         session.add(row)
         session.flush()
 
-        retrieved = (
-            session.query(OutboxModel).filter_by(outbox_id=row.outbox_id).one()
-        )
+        retrieved = session.query(OutboxModel).filter_by(outbox_id=row.outbox_id).one()
         assert retrieved.task_type == "risk_score_recompute"
         assert retrieved.priority == 10
         assert retrieved.payload == {"key": "value"}

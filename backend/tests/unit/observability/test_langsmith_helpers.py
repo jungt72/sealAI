@@ -114,7 +114,9 @@ def test_tracing_disabled_context_preserves_body_attribute_errors(monkeypatch) -
     assert exits == [AttributeError]
 
 
-def test_tracing_disabled_context_cleanup_failure_does_not_break_user_path(monkeypatch) -> None:
+def test_tracing_disabled_context_cleanup_failure_does_not_break_user_path(
+    monkeypatch,
+) -> None:
     class BrokenExitTracingContext:
         def __enter__(self) -> None:
             return None
@@ -160,7 +162,9 @@ def test_configure_langsmith_sets_modern_and_legacy_env(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_redacted_observation_span_is_noop_when_langsmith_disabled(monkeypatch) -> None:
+async def test_redacted_observation_span_is_noop_when_langsmith_disabled(
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
     monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)

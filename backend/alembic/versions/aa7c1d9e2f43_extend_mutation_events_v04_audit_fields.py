@@ -126,7 +126,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("idx_mutation_events_model_id", table_name="mutation_events")
     op.drop_index("idx_mutation_events_ruleset_version", table_name="mutation_events")
-    op.drop_index("idx_mutation_events_source_document_id", table_name="mutation_events")
+    op.drop_index(
+        "idx_mutation_events_source_document_id", table_name="mutation_events"
+    )
     op.drop_index("idx_mutation_events_source_turn_id", table_name="mutation_events")
     op.drop_column("mutation_events", "model_id")
     op.drop_column("mutation_events", "ruleset_version")

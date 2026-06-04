@@ -43,10 +43,19 @@ class DeterministicDINNorm(Base):
 
     effective_date = Column(Date, nullable=False, index=True)
     valid_until = Column(Date, nullable=True, index=True)
-    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    is_active = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -57,7 +66,11 @@ class DeterministicDINNorm(Base):
             "effective_date",
             name="uq_deterministic_din_norms_version",
         ),
-        Index("ix_deterministic_din_norms_material_effective", "material", "effective_date"),
+        Index(
+            "ix_deterministic_din_norms_material_effective",
+            "material",
+            "effective_date",
+        ),
     )
 
 
@@ -70,7 +83,9 @@ class DeterministicMaterialLimit(Base):
     tenant_id = Column(String, nullable=True, index=True)
     material = Column(String, nullable=False, index=True)
     medium = Column(String, nullable=True, index=True)
-    limit_kind = Column(String, nullable=False, index=True)  # pressure, temperature, lifecycle, etc.
+    limit_kind = Column(
+        String, nullable=False, index=True
+    )  # pressure, temperature, lifecycle, etc.
 
     min_value = Column(Float, nullable=True)
     max_value = Column(Float, nullable=True)
@@ -83,10 +98,19 @@ class DeterministicMaterialLimit(Base):
 
     effective_date = Column(Date, nullable=False, index=True)
     valid_until = Column(Date, nullable=True, index=True)
-    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    is_active = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -97,7 +121,11 @@ class DeterministicMaterialLimit(Base):
             "effective_date",
             name="uq_deterministic_material_limits_version",
         ),
-        Index("ix_deterministic_material_limits_material_effective", "material", "effective_date"),
+        Index(
+            "ix_deterministic_material_limits_material_effective",
+            "material",
+            "effective_date",
+        ),
     )
 
 

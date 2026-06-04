@@ -6,11 +6,11 @@ import json
 import os
 
 WS_URL = os.environ.get(
-    "WS_URL",
-    "wss://sealai.net/api/v1/ai/ws?token=" + os.environ.get("TOKEN", "")
+    "WS_URL", "wss://sealai.net/api/v1/ai/ws?token=" + os.environ.get("TOKEN", "")
 )
 CHAT_ID = os.environ.get("CHAT_ID", "ws-debug")
 PROMPT = os.environ.get("PROMPT", "Welche Eigenschaften hat PTFE?")
+
 
 async def main():
     async with websockets.connect(WS_URL, subprotocols=["json"]) as ws:
@@ -26,12 +26,17 @@ async def main():
                 print("Empfangen:", response)
                 data = json.loads(response)
                 # Stream-Ende
-                if data.get("finished") or data.get("choices", [{}])[0].get("delta", {}).get("content", "") == "":
+                if (
+                    data.get("finished")
+                    or data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                    == ""
+                ):
                     break
         except asyncio.TimeoutError:
             print("Timeout – keine Antwort mehr erhalten.")
         except Exception as e:
             print("Fehler:", e)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

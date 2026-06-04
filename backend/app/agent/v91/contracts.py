@@ -118,7 +118,9 @@ class SemanticBoundaryDecision(BaseModel):
     active_case_exists: bool = False
     should_mutate_case: bool = False
     graph_candidate: bool = False
-    source: Literal["deterministic_adapter_v1", "llm_router_v1"] = "deterministic_adapter_v1"
+    source: Literal["deterministic_adapter_v1", "llm_router_v1"] = (
+        "deterministic_adapter_v1"
+    )
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     reason: str = ""
 
@@ -145,7 +147,10 @@ class LLMFreedomDecision(BaseModel):
     @model_validator(mode="after")
     def _blocked_requires_forbidden_action(self) -> "LLMFreedomDecision":
         level = getattr(self.level, "value", self.level)
-        if level == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value and not self.forbidden_actions:
+        if (
+            level == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value
+            and not self.forbidden_actions
+        ):
             raise ValueError("blocked freedom decisions require forbidden_actions")
         return self
 
@@ -280,7 +285,9 @@ class CommunicationPlan(BaseModel):
     response_moves: list[ResponseMove] = Field(
         default_factory=lambda: [ResponseMove.ACKNOWLEDGE, ResponseMove.ANSWER]
     )
-    response_depth: Literal["micro", "short", "standard", "deep", "dossier"] = "standard"
+    response_depth: Literal["micro", "short", "standard", "deep", "dossier"] = (
+        "standard"
+    )
     answer_depth: AnswerDepth = AnswerDepth.NORMAL
     answer_first: bool = False
     ask_user_question: bool = False
@@ -289,7 +296,9 @@ class CommunicationPlan(BaseModel):
     include_boundary_notice: bool = True
     include_tab_update_notice: bool = False
     tab_update_visibility: Literal["silent", "concise", "explicit"] = "silent"
-    source_disclosure_mode: Literal["none", "on_claims", "on_request", "always"] = "none"
+    source_disclosure_mode: Literal["none", "on_claims", "on_request", "always"] = (
+        "none"
+    )
     user_question_must_be_answered: bool = False
     max_findings_to_mention: int = Field(default=2, ge=0, le=8)
     primary_question: str | None = None
@@ -445,7 +454,8 @@ class V91TurnPolicyBundle(BaseModel):
 
     def as_trace(self) -> dict[str, Any]:
         red_flags = [
-            str(getattr(flag.type, "value", flag.type)) for flag in self.freedom_decision.red_flags
+            str(getattr(flag.type, "value", flag.type))
+            for flag in self.freedom_decision.red_flags
         ]
         return {
             "v91_policy_version": self.policy_version,

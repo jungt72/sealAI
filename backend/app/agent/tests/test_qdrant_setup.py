@@ -48,9 +48,9 @@ class TestConstants:
         from qdrant_client.models import PayloadSchemaType
 
         for name, schema in PAYLOAD_INDICES.items():
-            assert schema == PayloadSchemaType.KEYWORD, (
-                f"{name} sollte KEYWORD sein, ist {schema}"
-            )
+            assert (
+                schema == PayloadSchemaType.KEYWORD
+            ), f"{name} sollte KEYWORD sein, ist {schema}"
 
 
 # ── Unit-Tests mit Mock-Client ──────────────────────────────────────
@@ -205,9 +205,7 @@ class TestLiveQdrantSetup:
 
         existing_indices = set(info.payload_schema.keys())
         for field_name in PAYLOAD_INDICES:
-            assert field_name in existing_indices, (
-                f"Payload-Index '{field_name}' fehlt"
-            )
+            assert field_name in existing_indices, f"Payload-Index '{field_name}' fehlt"
 
     def test_all_indices_are_keyword_type(self, qdrant_url: str):
         setup(qdrant_url)
@@ -218,9 +216,9 @@ class TestLiveQdrantSetup:
 
         for field_name in PAYLOAD_INDICES:
             schema = info.payload_schema[field_name]
-            assert schema.data_type.value == "keyword", (
-                f"Index '{field_name}' ist {schema.data_type}, erwartet keyword"
-            )
+            assert (
+                schema.data_type.value == "keyword"
+            ), f"Index '{field_name}' ist {schema.data_type}, erwartet keyword"
 
     def test_old_collection_untouched(self, qdrant_url: str):
         """sealai_knowledge_v3 darf nicht geloescht worden sein."""
@@ -228,6 +226,6 @@ class TestLiveQdrantSetup:
 
         client = QdrantClient(url=qdrant_url, timeout=10)
         collections = [c.name for c in client.get_collections().collections]
-        assert "sealai_knowledge_v3" in collections, (
-            "Alte Collection sealai_knowledge_v3 wurde geloescht!"
-        )
+        assert (
+            "sealai_knowledge_v3" in collections
+        ), "Alte Collection sealai_knowledge_v3 wurde geloescht!"

@@ -8,8 +8,18 @@ from typing import Any, Dict, List, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user, require_tenant_id
-from app.services.chat.conversations import ConversationMeta, delete_conversation, list_conversations, upsert_conversation
+from app.services.auth.dependencies import (
+    RequestUser,
+    canonical_user_id,
+    get_current_request_user,
+    require_tenant_id,
+)
+from app.services.chat.conversations import (
+    ConversationMeta,
+    delete_conversation,
+    list_conversations,
+    upsert_conversation,
+)
 from app.services.history.persist import delete_structured_case, load_structured_case
 
 logger = logging.getLogger(__name__)
@@ -39,7 +49,12 @@ def _conversation_to_dict(entry: ConversationMeta) -> Dict[str, Any]:
 
 
 def _serialize_message(raw: Any, index: int) -> Dict[str, Any]:
-    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+    from langchain_core.messages import (
+        AIMessage,
+        BaseMessage,
+        HumanMessage,
+        SystemMessage,
+    )
 
     def _coerce_text(value: Any) -> str:
         if value is None:
@@ -110,13 +125,17 @@ def _find_conversation(
     *,
     tenant_id: str | None = None,
 ) -> ConversationMeta | None:
-    for entry in list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id):
+    for entry in list_conversations(
+        owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id
+    ):
         if entry.id == conversation_id:
             return entry
     return None
 
 
-def _resolved_conversation_owner(entry: ConversationMeta, fallback_owner_id: str) -> str:
+def _resolved_conversation_owner(
+    entry: ConversationMeta, fallback_owner_id: str
+) -> str:
     owner = str(entry.owner_id or "").strip()
     return owner or fallback_owner_id
 
@@ -129,7 +148,9 @@ async def get_conversations(
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     tenant_id = require_tenant_id(current_user)
-    entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id)
+    entries = list_conversations(
+        owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id
+    )
     return [_conversation_to_dict(entry) for entry in entries]
 
 
@@ -143,7 +164,9 @@ async def rename_conversation(
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     tenant_id = require_tenant_id(current_user)
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
+    entry = _find_conversation(
+        owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
     resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
@@ -166,13 +189,19 @@ async def delete_conversation_endpoint(
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     tenant_id = require_tenant_id(current_user)
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
+    entry = _find_conversation(
+        owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
     resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
-    delete_conversation(resolved_owner_id, conversation_id, tenant_id=tenant_id, reason="user_delete")
+    delete_conversation(
+        resolved_owner_id, conversation_id, tenant_id=tenant_id, reason="user_delete"
+    )
     try:
-        await delete_structured_case(tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id)
+        await delete_structured_case(
+            tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id
+        )
     except Exception as exc:
         logger.warning("Failed to delete structured case: %s", exc)
     return {"deleted": True}
@@ -187,15 +216,23 @@ async def get_conversation_history(
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     tenant_id = require_tenant_id(current_user)
-    entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
+    entry = _find_conversation(
+        owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id
+    )
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
     resolved_owner_id = _resolved_conversation_owner(entry, owner_id)
-    state = await load_structured_case(tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id)
+    state = await load_structured_case(
+        tenant_id=tenant_id, owner_id=resolved_owner_id, case_id=conversation_id
+    )
     if state is None:
-        raise HTTPException(status_code=404, detail="Structured case not found for conversation")
+        raise HTTPException(
+            status_code=404, detail="Structured case not found for conversation"
+        )
     raw_messages = (state or {}).get("messages") or []
-    messages = [_serialize_message(raw, idx) for idx, raw in enumerate(raw_messages or [])]
+    messages = [
+        _serialize_message(raw, idx) for idx, raw in enumerate(raw_messages or [])
+    ]
     return {
         "conversation_id": conversation_id,
         "title": entry.title,

@@ -1,4 +1,5 @@
 """Tests for H4: BM25CleanupService."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_jsonl(path: Path, entries: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as fh:
@@ -41,6 +43,7 @@ def _make_entry(doc_id: str, text: str = "sample text") -> dict:
 # BM25CleanupService.cleanup
 # ---------------------------------------------------------------------------
 
+
 class TestCleanup:
     def test_cleanup_removes_target_document(self, tmp_path: Path):
         from app.services.rag.bm25_cleanup import BM25CleanupService
@@ -56,7 +59,9 @@ class TestCleanup:
         assert result["remaining"] == 2
 
         remaining = _read_jsonl(coll_path)
-        remaining_ids = [(e.get("metadata") or {}).get("document_id") for e in remaining]
+        remaining_ids = [
+            (e.get("metadata") or {}).get("document_id") for e in remaining
+        ]
         assert "doc-1" in remaining_ids
         assert "doc-3" in remaining_ids
         assert "doc-2" not in remaining_ids
@@ -115,14 +120,20 @@ class TestCleanup:
 # BM25CleanupService.enforce_size_limit
 # ---------------------------------------------------------------------------
 
+
 class TestEnforceSizeLimit:
-    def _fill_collection(self, path: Path, n_entries: int, entry_size_bytes: int = 100) -> None:
+    def _fill_collection(
+        self, path: Path, n_entries: int, entry_size_bytes: int = 100
+    ) -> None:
         """Write n_entries × entry_size_bytes to path."""
         with path.open("w", encoding="utf-8") as fh:
             for i in range(n_entries):
                 text = "x" * max(entry_size_bytes - 50, 10)
-                entry = {"id": f"chunk#{i}", "text": text,
-                         "metadata": {"document_id": f"doc-{i}"}}
+                entry = {
+                    "id": f"chunk#{i}",
+                    "text": text,
+                    "metadata": {"document_id": f"doc-{i}"},
+                }
                 json.dump(entry, fh)
                 fh.write("\n")
 
@@ -151,7 +162,9 @@ class TestEnforceSizeLimit:
         result = svc.enforce_size_limit("col", max_size_mb=0)  # 0 MB → truncate all
         assert result["truncated"] is True
         assert result["removed"] > 0
-        assert result["size_mb_before"] == pytest.approx(original_size / (1024 * 1024), abs=0.01)
+        assert result["size_mb_before"] == pytest.approx(
+            original_size / (1024 * 1024), abs=0.01
+        )
 
     def test_nonexistent_collection_returns_not_truncated(self, tmp_path: Path):
         from app.services.rag.bm25_cleanup import BM25CleanupService
@@ -165,6 +178,7 @@ class TestEnforceSizeLimit:
 # ---------------------------------------------------------------------------
 # BM25CleanupService.list_collections
 # ---------------------------------------------------------------------------
+
 
 def test_list_collections(tmp_path: Path):
     from app.services.rag.bm25_cleanup import BM25CleanupService
@@ -181,6 +195,7 @@ def test_list_collections(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Atomic write: tmp file replace
 # ---------------------------------------------------------------------------
+
 
 def test_cleanup_uses_atomic_write(tmp_path: Path):
     """Cleanup must write to a .tmp file then rename — no partial writes visible."""
@@ -199,6 +214,7 @@ def test_cleanup_uses_atomic_write(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # run_cleanup async wrapper
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_run_cleanup_async(tmp_path: Path):

@@ -4,6 +4,7 @@ from sqlalchemy import Column, String, Float, DateTime
 from sqlalchemy.sql import func
 from app.database import Base
 
+
 class FormResult(Base):
     __tablename__ = "form_results"
 

@@ -9,6 +9,7 @@ All three are 1:1 with the pack seam; the outputs must stay byte-identical —
 including the `rwdr.<id>` dotted divergence, which requires the exact-match
 `pack_for_calc_type` (NOT the namespace-matching `pack_for_calc_id`).
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -22,7 +23,9 @@ class TestChecksRegistryRwdrGuardFreeze:
     _PROFILE = {"pressure_at_seal_bar": 5.0}
 
     def test_rwdr_path_builds_checks(self) -> None:
-        assert _build_rwdr_professional_check_results(self._PROFILE, "rwdr")  # non-empty
+        assert _build_rwdr_professional_check_results(
+            self._PROFILE, "rwdr"
+        )  # non-empty
 
     def test_non_rwdr_path_empty(self) -> None:
         assert _build_rwdr_professional_check_results(self._PROFILE, "static") == []
@@ -32,7 +35,9 @@ class TestChecksRegistryRwdrGuardFreeze:
 class TestComputePublicRwdrShapeFreeze:
     def test_rwdr_calc_rich_shape(self) -> None:
         state = SimpleNamespace(
-            compute_results=[{"calc_type": "rwdr", "status": "ok", "v_surface_m_s": 12.3}]
+            compute_results=[
+                {"calc_type": "rwdr", "status": "ok", "v_surface_m_s": 12.3}
+            ]
         )
         assert _compute_public(state) == [
             {
@@ -49,7 +54,9 @@ class TestComputePublicRwdrShapeFreeze:
         ]
 
     def test_non_rwdr_calc_trimmed_shape(self) -> None:
-        state = SimpleNamespace(compute_results=[{"calc_type": "oring", "status": "ok"}])
+        state = SimpleNamespace(
+            compute_results=[{"calc_type": "oring", "status": "ok"}]
+        )
         assert _compute_public(state) == [{"calc_type": "oring", "status": "ok"}]
 
     def test_dotted_rwdr_calc_type_is_trimmed_not_rich(self) -> None:

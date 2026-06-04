@@ -8,6 +8,7 @@ Rules:
 
 These strings are injected AFTER LLM output — they are never produced by the LLM itself.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -98,7 +99,9 @@ def build_boundary_block(
 
     if known_unknowns:
         unknowns_str = ", ".join(known_unknowns)
-        parts.append(f"Als Naechstes sollten wir diese Punkte sauber klaeren: {unknowns_str}.")
+        parts.append(
+            f"Als Naechstes sollten wir diese Punkte sauber klaeren: {unknowns_str}."
+        )
 
     if demo_data_present:
         parts.append(_DEMO_DATA_NOTE)

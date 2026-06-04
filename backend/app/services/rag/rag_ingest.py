@@ -45,10 +45,19 @@ try:
 except Exception:
     HuggingFaceEmbeddings = None
 
-from app.services.rag.rag_schema import ChunkMetadata, Domain, EngineeringProps, MaterialFamily, SourceType, TempRange, classify_pack_affinity
+from app.services.rag.rag_schema import (
+    ChunkMetadata,
+    Domain,
+    EngineeringProps,
+    MaterialFamily,
+    SourceType,
+    TempRange,
+    classify_pack_affinity,
+)
 from app.services.rag.document import Document
 from app.services.rag.rag_etl_pipeline import (
-    LLMDocumentExtraction, process_document_pipeline
+    LLMDocumentExtraction,
+    process_document_pipeline,
 )
 from app.services.rag.qdrant_state_machine import transition_to_published_bulletproof
 from app.services.rag.constants import RAG_SHARED_TENANT_ID
@@ -82,41 +91,60 @@ DENSE_MODEL = (
 SPARSE_MODEL = os.getenv("RAG_SPARSE_MODEL", "prithivida/Splade_PP_en_v1")
 
 # Chunking
-MAX_CHUNK_CHARS   = int(os.getenv("RAG_MAX_CHUNK_CHARS", "6000"))
+MAX_CHUNK_CHARS = int(os.getenv("RAG_MAX_CHUNK_CHARS", "6000"))
 RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
 RAG_MAX_PAGES = int(os.getenv("RAG_MAX_PAGES", "80"))
 RAG_MAX_CHUNKS = int(os.getenv("RAG_MAX_CHUNKS", "400"))
 
 # Sparse vectors only if the target collection supports it.
-ENABLE_SPARSE = os.getenv("RAG_SPARSE_ENABLED", "0").strip().lower() not in ("0", "false", "no")
-LEGACY_VECTORSTORE_ENABLED = os.getenv("RAG_INGEST_LEGACY_VECTORSTORE", "0").strip().lower() in (
+ENABLE_SPARSE = os.getenv("RAG_SPARSE_ENABLED", "0").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+)
+LEGACY_VECTORSTORE_ENABLED = os.getenv(
+    "RAG_INGEST_LEGACY_VECTORSTORE", "0"
+).strip().lower() in (
     "1",
     "true",
     "yes",
     "on",
 )
-DEFAULT_INGEST_TENANT = (os.getenv("RAG_INGEST_DEFAULT_TENANT") or RAG_SHARED_TENANT_ID).strip() or RAG_SHARED_TENANT_ID
-RAG_SHARED_TENANT_ENABLED = os.getenv("RAG_SHARED_TENANT_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+DEFAULT_INGEST_TENANT = (
+    os.getenv("RAG_INGEST_DEFAULT_TENANT") or RAG_SHARED_TENANT_ID
+).strip() or RAG_SHARED_TENANT_ID
+RAG_SHARED_TENANT_ENABLED = os.getenv(
+    "RAG_SHARED_TENANT_ENABLED", "0"
+).strip().lower() in ("1", "true", "yes", "on")
 RAG_SHARED_TENANT_ID_ENV = (os.getenv("RAG_SHARED_TENANT_ID") or "").strip()
-RAG_DOCUMENT_CONTENT_LLM_ENABLED = os.getenv("RAG_DOCUMENT_CONTENT_LLM_ENABLED", "0").strip().lower() in (
+RAG_DOCUMENT_CONTENT_LLM_ENABLED = os.getenv(
+    "RAG_DOCUMENT_CONTENT_LLM_ENABLED", "0"
+).strip().lower() in (
     "1",
     "true",
     "yes",
     "on",
 )
-RAG_DYNAMIC_METADATA_LLM_ENABLED = os.getenv("RAG_DYNAMIC_METADATA_LLM_ENABLED", "0").strip().lower() in (
+RAG_DYNAMIC_METADATA_LLM_ENABLED = os.getenv(
+    "RAG_DYNAMIC_METADATA_LLM_ENABLED", "0"
+).strip().lower() in (
     "1",
     "true",
     "yes",
     "on",
 )
-RAG_DYNAMIC_METADATA_LLM_MODEL = (os.getenv("RAG_DYNAMIC_METADATA_LLM_MODEL") or "gpt-4.1-mini").strip()
-RAG_DYNAMIC_METADATA_MAX_CHARS = int(os.getenv("RAG_DYNAMIC_METADATA_MAX_CHARS", "12000"))
+RAG_DYNAMIC_METADATA_LLM_MODEL = (
+    os.getenv("RAG_DYNAMIC_METADATA_LLM_MODEL") or "gpt-4.1-mini"
+).strip()
+RAG_DYNAMIC_METADATA_MAX_CHARS = int(
+    os.getenv("RAG_DYNAMIC_METADATA_MAX_CHARS", "12000")
+)
 
 
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
+
 
 def _ensure_tenant_allowed(tenant_id: str) -> None:
     if not tenant_id or not str(tenant_id).strip():
@@ -219,7 +247,9 @@ def _load_pdf_pages(file_path: str) -> List[tuple[int, str]]:
                 try:
                     page_text = page.extract_text() or ""
                 except Exception as exc:
-                    print(f"[WARN] Could not extract PDF page {idx + 1}: {safe_error_message(exc)}")
+                    print(
+                        f"[WARN] Could not extract PDF page {idx + 1}: {safe_error_message(exc)}"
+                    )
                     page_text = ""
                 if page_text.strip():
                     has_text = True
@@ -248,7 +278,9 @@ def _load_text(file_path: str) -> str:
             try:
                 loader = Docx2txtLoader(file_path)
                 docs = loader.load()
-                text = "\n\n".join([d.page_content for d in docs if getattr(d, "page_content", None)])
+                text = "\n\n".join(
+                    [d.page_content for d in docs if getattr(d, "page_content", None)]
+                )
                 if text.strip():
                     return text
             except Exception:
@@ -256,7 +288,9 @@ def _load_text(file_path: str) -> str:
             fallback = _extract_docx_text_via_zip(file_path)
             if fallback.strip():
                 return fallback
-            log.warning("docx_text_empty_after_extraction", extra={"file_path": file_path})
+            log.warning(
+                "docx_text_empty_after_extraction", extra={"file_path": file_path}
+            )
             return ""
         return _safe_read_text_file(file_path)
     except Exception as e:
@@ -289,7 +323,9 @@ def load_document(file_path: str) -> List[Any]:
     return docs
 
 
-def _chunk_pages(pages: List[tuple[Optional[int], str]], filename: str = "") -> List[tuple[str, Optional[int]]]:
+def _chunk_pages(
+    pages: List[tuple[Optional[int], str]], filename: str = ""
+) -> List[tuple[str, Optional[int]]]:
     chunks: List[tuple[str, Optional[int]]] = []
     for page_number, text in pages:
         if not text.strip():
@@ -306,33 +342,33 @@ def _chunk_pages(pages: List[tuple[Optional[int], str]], filename: str = "") -> 
 
 def _semantic_paragraph_chunks(text: str) -> List[str]:
     """
-    Splits text into chunks with overlap. 
+    Splits text into chunks with overlap.
     Prioritizes paragraph breaks but ensures sliding window overlap to keep context.
     """
     if not text.strip():
         return []
-        
+
     # Joint based sliding window for technical context retention
     chunks: List[str] = []
     start = 0
     text_len = len(text)
-    
+
     while start < text_len:
         end = start + MAX_CHUNK_CHARS
         chunk = text[start:end]
-        
+
         # Try to snap to the last paragraph break within the chunk to keep it clean
         if end < text_len:
             last_para = chunk.rfind("\n\n")
             if last_para > MAX_CHUNK_CHARS // 2:
                 chunk = text[start : start + last_para]
                 end = start + last_para
-        
+
         chunks.append(chunk.strip())
         start = end - RAG_CHUNK_OVERLAP
         if start >= text_len or end >= text_len:
             break
-            
+
     return [c for c in chunks if c]
 
 
@@ -349,7 +385,9 @@ _MATERIAL_FAMILY_PATTERN = re.compile(
     r"\b(NBR|HNBR|FKM|FFKM|EPDM|PTFE|VMQ|FVMQ|PU|PUR|TPU|PEEK)\b",
     re.IGNORECASE,
 )
-_SHORE_PATTERN = re.compile(r"\b(?:shore(?:\s*[ad])?|sh)\s*[:=]?\s*(\d{2,3})\b", re.IGNORECASE)
+_SHORE_PATTERN = re.compile(
+    r"\b(?:shore(?:\s*[ad])?|sh)\s*[:=]?\s*(\d{2,3})\b", re.IGNORECASE
+)
 _TEMP_RANGE_PATTERN = re.compile(
     r"\b(-?\d{1,3}(?:[.,]\d+)?)\s*(?:\.\.|to|bis|[-–—])\s*(-?\d{1,3}(?:[.,]\d+)?)\s*°?\s*c?\b",
     re.IGNORECASE,
@@ -392,6 +430,7 @@ _FRICTION_RANGE_PATTERN = re.compile(
     r"(?:reibungskoeffizient|friction coefficient)\s*(?:von|:|=)?\s*(-?\d+(?:[.,]\d+)?)\s*(?:to|bis|[-–—])\s*(-?\d+(?:[.,]\d+)?)",
     re.IGNORECASE,
 )
+
 
 def _parse_domain(domain_str: str | None) -> Domain:
     if not domain_str:
@@ -555,13 +594,25 @@ def _normalize_temp_range_payload(
             candidate = {"min_c": min_c, "max_c": max_c}
         except (TypeError, ValueError):
             candidate = None
-    if not candidate or candidate.get("min_c") is None or candidate.get("max_c") is None:
+    if (
+        not candidate
+        or candidate.get("min_c") is None
+        or candidate.get("max_c") is None
+    ):
         for text in texts:
             parsed = _parse_temp_range_text(text)
-            if parsed and parsed.get("min_c") is not None and parsed.get("max_c") is not None:
+            if (
+                parsed
+                and parsed.get("min_c") is not None
+                and parsed.get("max_c") is not None
+            ):
                 candidate = parsed
                 break
-    if not candidate or candidate.get("min_c") is None or candidate.get("max_c") is None:
+    if (
+        not candidate
+        or candidate.get("min_c") is None
+        or candidate.get("max_c") is None
+    ):
         candidate = dict(_DEFAULT_TEMP_RANGE)
     lo = float(candidate["min_c"])
     hi = float(candidate["max_c"])
@@ -635,7 +686,6 @@ def _extract_dynamic_metadata_regex(
     return dynamic
 
 
-
 def _extract_dynamic_metadata_llm(
     *,
     text: str,
@@ -655,11 +705,14 @@ def _extract_dynamic_metadata_llm(
 
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
-        log.debug("dynamic_metadata_llm_skipped_no_key", extra={"doc_filename": filename})
+        log.debug(
+            "dynamic_metadata_llm_skipped_no_key", extra={"doc_filename": filename}
+        )
         return result
 
     try:
         from openai import OpenAI  # type: ignore
+
         excerpt = (text or "").strip()[:RAG_DYNAMIC_METADATA_MAX_CHARS]
 
         client = wrap_openai_client(OpenAI(api_key=api_key))
@@ -705,27 +758,31 @@ def _extract_platinum_structured_llm(
         raise ValueError("OPENAI_API_KEY missing for Platinum Extraction.")
 
     from openai import OpenAI  # type: ignore
+
     excerpt = (text or "").strip()
     if len(excerpt) > RAG_DYNAMIC_METADATA_MAX_CHARS:
         excerpt = excerpt[:RAG_DYNAMIC_METADATA_MAX_CHARS]
-    
+
     client = wrap_openai_client(OpenAI(api_key=api_key))
-    
+
     system = render_template("rag_platinum_extractor.j2")
-    
+
     # Wir nutzen hier Pydantic-based response format für maximale Stabilität (Blueprint v4.1)
     try:
         response = client.beta.chat.completions.parse(
             model=RAG_DYNAMIC_METADATA_LLM_MODEL,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": f"Datei: {filename}\nText:\n{excerpt}"}
+                {"role": "user", "content": f"Datei: {filename}\nText:\n{excerpt}"},
             ],
-            response_format=LLMDocumentExtraction
+            response_format=LLMDocumentExtraction,
         )
         return response.choices[0].message.parsed
     except Exception as exc:
-        log.error("platinum_extraction_failed", extra={"doc_filename": filename, "error": safe_error_message(exc)})
+        log.error(
+            "platinum_extraction_failed",
+            extra={"doc_filename": filename, "error": safe_error_message(exc)},
+        )
         raise
 
 
@@ -767,7 +824,9 @@ def _normalize_source_modified_at(value: Any) -> Optional[str]:
     return text or None
 
 
-def _resolve_source_type(*, source_system: str | None, source: str | None) -> SourceType:
+def _resolve_source_type(
+    *, source_system: str | None, source: str | None
+) -> SourceType:
     normalized_source_system = str(source_system or "").strip().lower()
     if normalized_source_system == "paperless":
         return SourceType.CRAWL
@@ -791,6 +850,7 @@ class IngestStats:
 # Pipeline
 # -----------------------------------------------------------------------------
 
+
 class IngestPipeline:
     def __init__(self) -> None:
         self.client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
@@ -810,7 +870,9 @@ class IngestPipeline:
             info = self.client.get_collection(COLLECTION_NAME)
             config = getattr(info, "config", None)
             params = getattr(config, "params", None) if config is not None else None
-            sparse_vectors = getattr(params, "sparse_vectors", None) if params is not None else None
+            sparse_vectors = (
+                getattr(params, "sparse_vectors", None) if params is not None else None
+            )
             has_sparse = False
             if isinstance(sparse_vectors, dict):
                 has_sparse = "sparse" in sparse_vectors
@@ -823,7 +885,9 @@ class IngestPipeline:
                 )
                 self.sparse_enabled = False
         except Exception as exc:
-            print(f"[WARN] Could not inspect collection sparse config for {COLLECTION_NAME}: {exc}")
+            print(
+                f"[WARN] Could not inspect collection sparse config for {COLLECTION_NAME}: {exc}"
+            )
             # Keep env-configured behavior if inspection fails.
 
     def _load_embedders(self) -> None:
@@ -839,6 +903,7 @@ class IngestPipeline:
 
         if self.sparse_enabled and not self._sparse_embedder:
             from fastembed import SparseTextEmbedding  # type: ignore
+
             print(f"[INIT] Loading Sparse: {self.sparse_model}")
             self._sparse_embedder = SparseTextEmbedding(model_name=self.sparse_model)
 
@@ -860,7 +925,9 @@ class IngestPipeline:
     ) -> IngestStats:
         if args:
             if len(args) > 1:
-                raise TypeError("process_document() takes at most 1 positional argument")
+                raise TypeError(
+                    "process_document() takes at most 1 positional argument"
+                )
             if file_path is not None:
                 raise TypeError("process_document() got multiple values for file_path")
             file_path = args[0]
@@ -875,7 +942,9 @@ class IngestPipeline:
         doc_id = document_id or _hash_path(file_path)
         raw_tags = [str(tag).strip() for tag in (tags or []) if str(tag).strip()]
         normalized_route_key = (route_key or "").strip() or DEFAULT_ROUTE_KEY
-        normalized_source_modified_at = _normalize_source_modified_at(source_modified_at)
+        normalized_source_modified_at = _normalize_source_modified_at(
+            source_modified_at
+        )
         facets = _parse_facets_from_tags(tags)
         entity = facets.get("entity") or _guess_entity_from_filename(filename)
         aspects = facets.get("aspects") or []
@@ -888,7 +957,9 @@ class IngestPipeline:
         source_url = str(facets.get("source_url") or file_path)
         shore_hardness_tag = facets.get("shore_hardness")
         try:
-            shore_hardness_base = int(shore_hardness_tag) if shore_hardness_tag is not None else None
+            shore_hardness_base = (
+                int(shore_hardness_tag) if shore_hardness_tag is not None else None
+            )
         except (TypeError, ValueError):
             shore_hardness_base = None
         if shore_hardness_base is None:
@@ -899,8 +970,13 @@ class IngestPipeline:
 
         pages = _load_pages(file_path)
         if not pages or not any(text.strip() for _, text in pages):
-            log.warning("ingest_skipped_empty_document", extra={"file_path": file_path, "file_name": filename})
-            return IngestStats(chunks=0, elapsed_ms=int((time.perf_counter() - started) * 1000))
+            log.warning(
+                "ingest_skipped_empty_document",
+                extra={"file_path": file_path, "file_name": filename},
+            )
+            return IngestStats(
+                chunks=0, elapsed_ms=int((time.perf_counter() - started) * 1000)
+            )
 
         document_text = "\n\n".join(text for _, text in pages if text and text.strip())
         material_code = _normalize_material_code(
@@ -909,25 +985,39 @@ class IngestPipeline:
         if shore_hardness_base is None:
             shore_hardness_base = _extract_shore_hardness(filename, document_text)
         try:
-            shore_hardness_base = int(shore_hardness_base) if shore_hardness_base is not None else _DEFAULT_SHORE_HARDNESS
+            shore_hardness_base = (
+                int(shore_hardness_base)
+                if shore_hardness_base is not None
+                else _DEFAULT_SHORE_HARDNESS
+            )
         except (TypeError, ValueError):
             shore_hardness_base = _DEFAULT_SHORE_HARDNESS
-        temp_range_payload = _normalize_temp_range_payload(temp_range_payload, document_text)
+        temp_range_payload = _normalize_temp_range_payload(
+            temp_range_payload, document_text
+        )
         additional_metadata_doc = _extract_additional_metadata(
             text=document_text,
             filename=filename,
-            tag_metadata=facets.get("additional_metadata") if isinstance(facets.get("additional_metadata"), dict) else None,
+            tag_metadata=facets.get("additional_metadata")
+            if isinstance(facets.get("additional_metadata"), dict)
+            else None,
         )
 
         # Route-aware path selection:
         # - product/material datasheets keep the specialized PDF ETL
         # - generic PDF routes stay on the generic chunking path
-        is_platinum = _should_use_specialized_pdf_path(filename=filename, route_key=normalized_route_key)
+        is_platinum = _should_use_specialized_pdf_path(
+            filename=filename, route_key=normalized_route_key
+        )
         if is_platinum:
             log.info("platinum_etl_start", extra={"doc_filename": filename})
             # Hard-fail: Wenn LLM-Extraktion scheitert, schlägt der Ingest fehl.
-            llm_extraction = _extract_platinum_structured_llm(text=document_text, filename=filename)
-            etl_result = process_document_pipeline(llm_extraction, doc_id, additional_metadata_doc)
+            llm_extraction = _extract_platinum_structured_llm(
+                text=document_text, filename=filename
+            )
+            etl_result = process_document_pipeline(
+                llm_extraction, doc_id, additional_metadata_doc
+            )
 
             if not etl_result.extracted_points:
                 log.error(
@@ -946,7 +1036,10 @@ class IngestPipeline:
 
             log.info(
                 "platinum_etl_success",
-                extra={"status": etl_result.status.value, "points": len(etl_result.extracted_points)},
+                extra={
+                    "status": etl_result.status.value,
+                    "points": len(etl_result.extracted_points),
+                },
             )
             # Baue raw_chunks aus ETL-Points und erhalte Seitennummern, falls
             # der strukturierte ETL-Pfad sie mitliefert.
@@ -962,8 +1055,13 @@ class IngestPipeline:
             raw_chunks = _chunk_pages(pages, filename=filename)
 
         if not raw_chunks:
-            log.warning("ingest_skipped_no_chunks", extra={"file_path": file_path, "file_name": filename})
-            return IngestStats(chunks=0, elapsed_ms=int((time.perf_counter() - started) * 1000))
+            log.warning(
+                "ingest_skipped_no_chunks",
+                extra={"file_path": file_path, "file_name": filename},
+            )
+            return IngestStats(
+                chunks=0, elapsed_ms=int((time.perf_counter() - started) * 1000)
+            )
 
         dense_vecs = list(self._dense_embedder.embed([c[0] for c in raw_chunks]))  # type: ignore[union-attr]
 
@@ -992,29 +1090,42 @@ class IngestPipeline:
 
             if etl_payload:
                 # Platinum-spezifische Metadaten injizieren
-                chunk_additional_metadata.update({
-                    "etl_status": etl_result.status.value,
-                    "etl_quarantine_report": etl_result.quarantine_report,
-                    "operating_point_data": etl_payload.get("limits", {}),
-                    "operating_point_conditions": etl_payload.get("conditions", {}),
-                    "pipeline_version": "V5.2-Platinum"
-                })
+                chunk_additional_metadata.update(
+                    {
+                        "etl_status": etl_result.status.value,
+                        "etl_quarantine_report": etl_result.quarantine_report,
+                        "operating_point_data": etl_payload.get("limits", {}),
+                        "operating_point_conditions": etl_payload.get("conditions", {}),
+                        "pipeline_version": "V5.2-Platinum",
+                    }
+                )
                 # Wir nutzen die normalisierten Werte aus ETL falls vorhanden
-                chunk_shore = etl_payload.get("limits", {}).get("shore_hardness", {}).get("normalized", shore_hardness_base)
+                chunk_shore = (
+                    etl_payload.get("limits", {})
+                    .get("shore_hardness", {})
+                    .get("normalized", shore_hardness_base)
+                )
             else:
                 chunk_shore = _extract_shore_hardness(chunk_text) or shore_hardness_base
-                chunk_regex_metadata = _extract_dynamic_metadata_regex(text=chunk_text, filename=filename)
+                chunk_regex_metadata = _extract_dynamic_metadata_regex(
+                    text=chunk_text, filename=filename
+                )
                 for key, value in chunk_regex_metadata.items():
                     chunk_additional_metadata.setdefault(key, value)
 
-            chunk_temp_range = _normalize_temp_range_payload(temp_range_payload, chunk_text)
+            chunk_temp_range = _normalize_temp_range_payload(
+                temp_range_payload, chunk_text
+            )
 
             # Fix 2: eng.material_family aus additional_metadata befüllen
-            _eng_material_family = str(chunk_additional_metadata.get("material_family") or "").strip() or None
+            _eng_material_family = (
+                str(chunk_additional_metadata.get("material_family") or "").strip()
+                or None
+            )
             meta = ChunkMetadata(
                 tenant_id=tenant_id,
-                doc_id=doc_id,          # legacy
-                document_id=doc_id,     # canonical
+                doc_id=doc_id,  # legacy
+                document_id=doc_id,  # canonical
                 chunk_id=chunk_id,
                 chunk_hash=chunk_hash,
                 source_uri=file_path,
@@ -1150,7 +1261,9 @@ class IngestPipeline:
 
             bm25_repo.upsert_documents(COLLECTION_NAME, bm25_docs)
         except Exception as exc:
-            print(f"[WARN] BM25 upsert skipped for {filename}: {type(exc).__name__}: {exc}")
+            print(
+                f"[WARN] BM25 upsert skipped for {filename}: {type(exc).__name__}: {exc}"
+            )
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         file_size = None
@@ -1163,12 +1276,15 @@ class IngestPipeline:
             f"[INGEST] Upserted {len(points)} chunks -> {COLLECTION_NAME} "
             f"(tenant={tenant_id}, doc={doc_id}, vis={visibility}, vector_name={QDRANT_VECTOR_NAME!r}, sparse={self.sparse_enabled})"
         )
-        return IngestStats(chunks=len(points), elapsed_ms=elapsed_ms, file_size=file_size)
+        return IngestStats(
+            chunks=len(points), elapsed_ms=elapsed_ms, file_size=file_size
+        )
 
 
 # -----------------------------------------------------------------------------
 # Worker-compatible API (IMPORTANT)
 # -----------------------------------------------------------------------------
+
 
 def ingest_file(
     file_path: str,
@@ -1189,7 +1305,9 @@ def ingest_file(
     domain = _parse_domain(category)
     canonical_doc_id = document_id or sha256 or _hash_path(file_path)
     filename = os.path.basename(file_path)
-    route_key = str(kwargs.get("route_key") or DEFAULT_ROUTE_KEY).strip() or DEFAULT_ROUTE_KEY
+    route_key = (
+        str(kwargs.get("route_key") or DEFAULT_ROUTE_KEY).strip() or DEFAULT_ROUTE_KEY
+    )
     source_system = str(kwargs.get("source_system") or "").strip() or None
     source_document_id = str(kwargs.get("source_document_id") or "").strip() or None
     source_modified_at = kwargs.get("source_modified_at")
@@ -1201,7 +1319,9 @@ def ingest_file(
     source_url = str(facets.get("source_url") or source or file_path)
     shore_hardness_tag = facets.get("shore_hardness")
     try:
-        shore_hardness_base = int(shore_hardness_tag) if shore_hardness_tag is not None else None
+        shore_hardness_base = (
+            int(shore_hardness_tag) if shore_hardness_tag is not None else None
+        )
     except (TypeError, ValueError):
         shore_hardness_base = None
     if shore_hardness_base is None:
@@ -1209,14 +1329,25 @@ def ingest_file(
     if shore_hardness_base is None:
         shore_hardness_base = _DEFAULT_SHORE_HARDNESS
     temp_range_payload = facets.get("temp_range")
-    additional_metadata_seed = facets.get("additional_metadata") if isinstance(facets.get("additional_metadata"), dict) else {}
+    additional_metadata_seed = (
+        facets.get("additional_metadata")
+        if isinstance(facets.get("additional_metadata"), dict)
+        else {}
+    )
 
     # Legacy vectorstore path (optional): disabled by default to keep ingestion aligned
     # with retrieval embedding backend (fastembed).
-    if LEGACY_VECTORSTORE_ENABLED and QdrantVectorStore is not None and HuggingFaceEmbeddings is not None:
+    if (
+        LEGACY_VECTORSTORE_ENABLED
+        and QdrantVectorStore is not None
+        and HuggingFaceEmbeddings is not None
+    ):
         docs = load_document(file_path)
         if not docs:
-            log.warning("ingest_skipped_empty_document", extra={"file_path": file_path, "file_name": filename})
+            log.warning(
+                "ingest_skipped_empty_document",
+                extra={"file_path": file_path, "file_name": filename},
+            )
             return {
                 "ok": True,
                 "file_path": file_path,
@@ -1238,12 +1369,20 @@ def ingest_file(
                 "vector_name": QDRANT_VECTOR_NAME,
                 "sparse_enabled": ENABLE_SPARSE,
             }
-        document_text = "\n\n".join(str(getattr(doc, "page_content", "") or "") for doc in docs)
+        document_text = "\n\n".join(
+            str(getattr(doc, "page_content", "") or "") for doc in docs
+        )
         material_code = _normalize_material_code(
             _extract_material_code(material_code, filename, document_text)
         )
-        shore_hardness_base = _extract_shore_hardness(filename, document_text) or shore_hardness_base or _DEFAULT_SHORE_HARDNESS
-        temp_range_payload = _normalize_temp_range_payload(temp_range_payload, document_text)
+        shore_hardness_base = (
+            _extract_shore_hardness(filename, document_text)
+            or shore_hardness_base
+            or _DEFAULT_SHORE_HARDNESS
+        )
+        temp_range_payload = _normalize_temp_range_payload(
+            temp_range_payload, document_text
+        )
         additional_metadata = _extract_additional_metadata(
             text=document_text,
             filename=filename,
@@ -1271,14 +1410,21 @@ def ingest_file(
                     "source_type": source_type.value,
                     "category": category,
                     "route_key": route_key,
-                    "tags": [str(tag).strip() for tag in (tags or []) if str(tag).strip()],
+                    "tags": [
+                        str(tag).strip() for tag in (tags or []) if str(tag).strip()
+                    ],
                     "source_system": source_system,
                     "source_document_id": source_document_id,
-                    "source_modified_at": _normalize_source_modified_at(source_modified_at),
+                    "source_modified_at": _normalize_source_modified_at(
+                        source_modified_at
+                    ),
                     "material_code": material_code,
                     "source_url": source_url,
-                    "shore_hardness": _extract_shore_hardness(doc.page_content) or shore_hardness_base,
-                    "temp_range": _normalize_temp_range_payload(temp_range_payload, doc.page_content),
+                    "shore_hardness": _extract_shore_hardness(doc.page_content)
+                    or shore_hardness_base,
+                    "temp_range": _normalize_temp_range_payload(
+                        temp_range_payload, doc.page_content
+                    ),
                     "additional_metadata": additional_metadata,
                 }
             )
@@ -1357,6 +1503,7 @@ def ingest_file(
 # -----------------------------------------------------------------------------
 # CLI
 # -----------------------------------------------------------------------------
+
 
 def _iter_files(path: str) -> Iterable[str]:
     if os.path.isdir(path):

@@ -113,7 +113,7 @@ def _state(
             material=SealaiNormMaterial(
                 material_family=material_family,
                 sealing_material_family=sealing_material_family,
-            )
+            ),
         ),
         analysis_cycle=analysis_cycle,
     )
@@ -260,7 +260,9 @@ class _FakeSession:
         if query.order is not None:
             direction, field_name = query.order
             reverse = direction == "desc"
-            items = sorted(items, key=lambda item: getattr(item, field_name), reverse=reverse)
+            items = sorted(
+                items, key=lambda item: getattr(item, field_name), reverse=reverse
+            )
 
         if query.limit_value is not None:
             items = items[: query.limit_value]
@@ -360,7 +362,9 @@ class _FakeCaseService:
         forbidden = immutable_fields.intersection(case_updates or {})
         if forbidden:
             raise AssertionError(f"immutable case_updates passed: {sorted(forbidden)}")
-        case_row = next(case for case in self._session._store.cases if case.id == case_id)
+        case_row = next(
+            case for case in self._session._store.cases if case.id == case_id
+        )
         latest = next(
             (
                 snapshot
@@ -373,7 +377,11 @@ class _FakeCaseService:
             ),
             None,
         )
-        if latest is not None and latest.basis_hash == basis_hash and latest.state_json == state_json:
+        if (
+            latest is not None
+            and latest.basis_hash == basis_hash
+            and latest.state_json == state_json
+        ):
             return latest
         for field_name, value in (case_updates or {}).items():
             setattr(case_row, field_name, value)
@@ -416,7 +424,9 @@ class _FakeCaseService:
             if snapshot.case_id == case_row.id
         ]
         if revision is not None:
-            snapshots = [snapshot for snapshot in snapshots if snapshot.revision == revision]
+            snapshots = [
+                snapshot for snapshot in snapshots if snapshot.revision == revision
+            ]
         else:
             snapshots = sorted(snapshots, key=lambda item: item.revision, reverse=True)
         if not snapshots:
@@ -487,9 +497,13 @@ class _FakeCaseService:
 
 def _install_fake_snapshot_backend():
     store = _Store(cases=[], snapshots=[])
-    fake_db = types.SimpleNamespace(AsyncSessionLocal=lambda: _FakeSessionContext(store))
+    fake_db = types.SimpleNamespace(
+        AsyncSessionLocal=lambda: _FakeSessionContext(store)
+    )
     fake_case_models = types.SimpleNamespace(CaseRecord=_FakeCaseRecord)
-    fake_snapshot_models = types.SimpleNamespace(CaseStateSnapshot=_FakeCaseStateSnapshot)
+    fake_snapshot_models = types.SimpleNamespace(
+        CaseStateSnapshot=_FakeCaseStateSnapshot
+    )
     fake_case_service = types.SimpleNamespace(CaseService=_FakeCaseService)
     return store, {
         "app.database": fake_db,
@@ -521,7 +535,9 @@ def test_governed_state_can_carry_snapshot_persistence_marker() -> None:
 async def test_save_governed_state_snapshot_creates_case_and_snapshot() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         result = await save_governed_state_snapshot_async(
             _state(analysis_cycle=2),
             case_number="case-123",
@@ -555,7 +571,9 @@ async def test_save_governed_state_snapshot_creates_case_and_snapshot() -> None:
 async def test_save_governed_state_snapshot_is_idempotent_for_same_state() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         state = _state(analysis_cycle=1)
         first = await save_governed_state_snapshot_async(
             state,
@@ -579,10 +597,14 @@ async def test_save_governed_state_snapshot_is_idempotent_for_same_state() -> No
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_advances_revision_when_cycle_stalls() -> None:
+async def test_save_governed_state_snapshot_advances_revision_when_cycle_stalls() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-rev",
@@ -603,7 +625,9 @@ async def test_save_governed_state_snapshot_advances_revision_when_cycle_stalls(
 async def test_save_governed_state_snapshot_updates_case_readiness_fields() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-readiness",
@@ -626,7 +650,9 @@ async def test_save_governed_state_snapshot_updates_case_readiness_fields() -> N
 async def test_save_governed_state_snapshot_persists_false_readiness_fields() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, inquiry_admissible=True, rfq_ready=True),
             case_number="case-readiness-false",
@@ -634,7 +660,12 @@ async def test_save_governed_state_snapshot_persists_false_readiness_fields() ->
             tenant_id="tenant-1",
         )
         await save_governed_state_snapshot_async(
-            _state(analysis_cycle=2, medium="Dampf", inquiry_admissible=False, rfq_ready=False),
+            _state(
+                analysis_cycle=2,
+                medium="Dampf",
+                inquiry_admissible=False,
+                rfq_ready=False,
+            ),
             case_number="case-readiness-false",
             user_id="user-1",
             tenant_id="tenant-1",
@@ -646,10 +677,14 @@ async def test_save_governed_state_snapshot_persists_false_readiness_fields() ->
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_sets_explicit_pre_gate_on_new_case() -> None:
+async def test_save_governed_state_snapshot_sets_explicit_pre_gate_on_new_case() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-pre-gate-new",
@@ -662,10 +697,14 @@ async def test_save_governed_state_snapshot_sets_explicit_pre_gate_on_new_case()
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_updates_explicit_pre_gate_on_existing_case() -> None:
+async def test_save_governed_state_snapshot_updates_explicit_pre_gate_on_existing_case() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-pre-gate-existing",
@@ -684,10 +723,14 @@ async def test_save_governed_state_snapshot_updates_explicit_pre_gate_on_existin
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_invent_pre_gate_without_source() -> None:
+async def test_save_governed_state_snapshot_does_not_invent_pre_gate_without_source() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-no-pre-gate-source",
@@ -699,10 +742,14 @@ async def test_save_governed_state_snapshot_does_not_invent_pre_gate_without_sou
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_only_mirrors_explicit_pre_gate_field() -> None:
+async def test_save_governed_state_snapshot_only_mirrors_explicit_pre_gate_field() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, inquiry_admissible=True, rfq_ready=True),
             case_number="case-pre-gate-only",
@@ -726,10 +773,14 @@ async def test_save_governed_state_snapshot_only_mirrors_explicit_pre_gate_field
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_sets_authority_sealing_material_family_on_new_case() -> None:
+async def test_save_governed_state_snapshot_sets_authority_sealing_material_family_on_new_case() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, sealing_material_family="ptfe_glass_filled"),
             case_number="case-material-new",
@@ -741,10 +792,14 @@ async def test_save_governed_state_snapshot_sets_authority_sealing_material_fami
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_updates_authority_sealing_material_family_on_existing_case() -> None:
+async def test_save_governed_state_snapshot_updates_authority_sealing_material_family_on_existing_case() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-material-existing",
@@ -762,10 +817,14 @@ async def test_save_governed_state_snapshot_updates_authority_sealing_material_f
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_write_empty_sealing_material_family() -> None:
+async def test_save_governed_state_snapshot_does_not_write_empty_sealing_material_family() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, sealing_material_family=None),
             case_number="case-material-none",
@@ -777,10 +836,14 @@ async def test_save_governed_state_snapshot_does_not_write_empty_sealing_materia
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_fallback_to_generic_material_hint() -> None:
+async def test_save_governed_state_snapshot_does_not_fallback_to_generic_material_hint() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, material_family="PTFE"),
             case_number="case-material-generic",
@@ -792,10 +855,14 @@ async def test_save_governed_state_snapshot_does_not_fallback_to_generic_materia
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_keeps_readiness_mirror_with_sealing_material_family() -> None:
+async def test_save_governed_state_snapshot_keeps_readiness_mirror_with_sealing_material_family() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(
                 analysis_cycle=1,
@@ -815,10 +882,14 @@ async def test_save_governed_state_snapshot_keeps_readiness_mirror_with_sealing_
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_sets_authority_engineering_path_on_new_case() -> None:
+async def test_save_governed_state_snapshot_sets_authority_engineering_path_on_new_case() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, engineering_path="rwdr"),
             case_number="case-engineering-path-new",
@@ -830,10 +901,14 @@ async def test_save_governed_state_snapshot_sets_authority_engineering_path_on_n
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_updates_authority_engineering_path_on_existing_case() -> None:
+async def test_save_governed_state_snapshot_updates_authority_engineering_path_on_existing_case() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-engineering-path-existing",
@@ -851,10 +926,14 @@ async def test_save_governed_state_snapshot_updates_authority_engineering_path_o
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_write_empty_engineering_path() -> None:
+async def test_save_governed_state_snapshot_does_not_write_empty_engineering_path() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, engineering_path=""),
             case_number="case-engineering-path-empty",
@@ -866,10 +945,14 @@ async def test_save_governed_state_snapshot_does_not_write_empty_engineering_pat
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_write_non_authority_engineering_path() -> None:
+async def test_save_governed_state_snapshot_does_not_write_non_authority_engineering_path() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, engineering_path="rotary"),
             case_number="case-engineering-path-invalid",
@@ -881,10 +964,14 @@ async def test_save_governed_state_snapshot_does_not_write_non_authority_enginee
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_trim_engineering_path_into_authority_value() -> None:
+async def test_save_governed_state_snapshot_does_not_trim_engineering_path_into_authority_value() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, engineering_path=" rwdr "),
             case_number="case-engineering-path-whitespace",
@@ -896,10 +983,14 @@ async def test_save_governed_state_snapshot_does_not_trim_engineering_path_into_
 
 
 @pytest.mark.asyncio
-async def test_save_governed_state_snapshot_does_not_mirror_unrequested_case_fields() -> None:
+async def test_save_governed_state_snapshot_does_not_mirror_unrequested_case_fields() -> (
+    None
+):
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1, inquiry_admissible=True, rfq_ready=True),
             case_number="case-readiness-only",
@@ -925,7 +1016,9 @@ async def test_save_governed_state_snapshot_does_not_mirror_unrequested_case_fie
 async def test_get_case_and_latest_snapshot_reads_latest_revision() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-read",
@@ -964,7 +1057,9 @@ async def test_get_case_and_latest_snapshot_reads_latest_revision() -> None:
 async def test_get_governed_snapshot_by_revision_reads_targeted_revision() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-rev-read",
@@ -986,7 +1081,9 @@ async def test_get_governed_snapshot_by_revision_reads_targeted_revision() -> No
 
     assert snapshot is not None
     assert snapshot.revision == 1
-    assert snapshot.state_json["normalized"]["parameters"]["medium"]["value"] == "Wasser"
+    assert (
+        snapshot.state_json["normalized"]["parameters"]["medium"]["value"] == "Wasser"
+    )
 
 
 @pytest.mark.asyncio
@@ -1002,14 +1099,20 @@ async def test_workspace_revision_projection_loader_reads_snapshot_with_owner_gu
     class _RedisShouldNotBeUsed:
         @classmethod
         def from_url(cls, url: str, decode_responses: bool):
-            raise AssertionError("revisioned workspace snapshot reads must not touch Redis")
+            raise AssertionError(
+                "revisioned workspace snapshot reads must not touch Redis"
+            )
 
-    async def _fake_get_snapshot_by_revision(*, case_number, revision, tenant_id=None, user_id=None):
+    async def _fake_get_snapshot_by_revision(
+        *, case_number, revision, tenant_id=None, user_id=None
+    ):
         captured["case_number"] = case_number
         captured["revision"] = revision
         captured["tenant_id"] = tenant_id
         captured["user_id"] = user_id
-        return _SnapshotRead(state_json=_state(analysis_cycle=7).model_dump(mode="json"))
+        return _SnapshotRead(
+            state_json=_state(analysis_cycle=7).model_dump(mode="json")
+        )
 
     monkeypatch.setattr(
         loaders_module,
@@ -1017,7 +1120,10 @@ async def test_workspace_revision_projection_loader_reads_snapshot_with_owner_gu
         _fake_get_snapshot_by_revision,
     )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_RedisShouldNotBeUsed)}):
+    with patch.dict(
+        sys.modules,
+        {"redis.asyncio": types.SimpleNamespace(Redis=_RedisShouldNotBeUsed)},
+    ):
         state = await loaders_module._load_governed_state_snapshot_projection_source(
             current_user=RequestUser(
                 user_id="user-1",
@@ -1085,9 +1191,15 @@ async def test_guarded_workspace_projection_prefers_latest_snapshot_on_marker_ma
         )
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "get_latest_governed_case_snapshot_async", _fake_get_latest_snapshot)
+    monkeypatch.setattr(
+        loaders_module,
+        "get_latest_governed_case_snapshot_async",
+        _fake_get_latest_snapshot,
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         state = await loaders_module._load_guarded_workspace_projection_source(
             current_user=RequestUser(
                 user_id="user-1",
@@ -1131,9 +1243,15 @@ async def test_guarded_workspace_projection_marker_missing_keeps_redis_primary(
         raise AssertionError("missing marker must keep Redis primary")
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "get_latest_governed_case_snapshot_async", _unexpected_latest_snapshot)
+    monkeypatch.setattr(
+        loaders_module,
+        "get_latest_governed_case_snapshot_async",
+        _unexpected_latest_snapshot,
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         state = await loaders_module._load_guarded_workspace_projection_source(
             current_user=RequestUser(
                 user_id="user-1",
@@ -1185,13 +1303,21 @@ async def test_guarded_workspace_projection_marker_mismatch_keeps_redis_primary(
     async def _fake_get_latest_snapshot(*, case_number, tenant_id=None, user_id=None):
         return _SnapshotRead(
             revision=6,
-            state_json=_state(analysis_cycle=10, medium="Dampf").model_dump(mode="json"),
+            state_json=_state(analysis_cycle=10, medium="Dampf").model_dump(
+                mode="json"
+            ),
         )
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "get_latest_governed_case_snapshot_async", _fake_get_latest_snapshot)
+    monkeypatch.setattr(
+        loaders_module,
+        "get_latest_governed_case_snapshot_async",
+        _fake_get_latest_snapshot,
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         state = await loaders_module._load_guarded_workspace_projection_source(
             current_user=RequestUser(
                 user_id="user-1",
@@ -1238,9 +1364,15 @@ async def test_guarded_workspace_projection_without_redis_uses_latest_snapshot_f
         )
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "get_latest_governed_case_snapshot_async", _fake_get_latest_snapshot)
+    monkeypatch.setattr(
+        loaders_module,
+        "get_latest_governed_case_snapshot_async",
+        _fake_get_latest_snapshot,
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         state = await loaders_module._load_guarded_workspace_projection_source(
             current_user=RequestUser(
                 user_id="user-1",
@@ -1271,7 +1403,11 @@ async def test_workspace_projection_preserves_empty_state_creation_when_no_redis
         assert create_if_missing is True
         return created_state
 
-    monkeypatch.setattr(workspace_routes, "_load_guarded_workspace_projection_source", _fake_guarded_source)
+    monkeypatch.setattr(
+        workspace_routes,
+        "_load_guarded_workspace_projection_source",
+        _fake_guarded_source,
+    )
     monkeypatch.setattr(workspace_routes, "_load_live_governed_state", _fake_load_live)
 
     projection = await workspace_routes.get_workspace_projection(
@@ -1413,10 +1549,20 @@ async def test_workspace_projection_revision_path_does_not_use_guarded_loader(
         return revision_state
 
     async def _unexpected_guarded_source(*args, **kwargs):
-        raise AssertionError("revisioned reads must not use guarded non-revisioned loader")
+        raise AssertionError(
+            "revisioned reads must not use guarded non-revisioned loader"
+        )
 
-    monkeypatch.setattr(workspace_routes, "_load_governed_state_snapshot_projection_source", _fake_revision_source)
-    monkeypatch.setattr(workspace_routes, "_load_guarded_workspace_projection_source", _unexpected_guarded_source)
+    monkeypatch.setattr(
+        workspace_routes,
+        "_load_governed_state_snapshot_projection_source",
+        _fake_revision_source,
+    )
+    monkeypatch.setattr(
+        workspace_routes,
+        "_load_guarded_workspace_projection_source",
+        _unexpected_guarded_source,
+    )
 
     projection = await workspace_routes.get_workspace_projection(
         "case-revision",
@@ -1439,7 +1585,9 @@ async def test_workspace_projection_revision_path_does_not_use_guarded_loader(
 async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-a",
@@ -1450,8 +1598,12 @@ async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() 
             _state(analysis_cycle=3).model_copy(
                 update={
                     "conversation_messages": [
-                        ConversationMessage(role="user", content="RWDR fuer HLP46 pruefen"),
-                        ConversationMessage(role="assistant", content="Welche Druckdifferenz liegt an?"),
+                        ConversationMessage(
+                            role="user", content="RWDR fuer HLP46 pruefen"
+                        ),
+                        ConversationMessage(
+                            role="assistant", content="Welche Druckdifferenz liegt an?"
+                        ),
                     ]
                 }
             ),
@@ -1481,7 +1633,9 @@ async def test_list_cases_reads_owned_cases_newest_first_with_latest_revision() 
 async def test_list_case_snapshots_reads_revisions_newest_first() -> None:
     store, fake_modules = _install_fake_snapshot_backend()
 
-    with patch.dict(sys.modules, fake_modules), patch("sqlalchemy.select", _fake_select):
+    with patch.dict(sys.modules, fake_modules), patch(
+        "sqlalchemy.select", _fake_select
+    ):
         await save_governed_state_snapshot_async(
             _state(analysis_cycle=1),
             case_number="case-list",
@@ -1505,7 +1659,9 @@ async def test_list_case_snapshots_reads_revisions_newest_first() -> None:
 
 
 @pytest.mark.asyncio
-async def test_persist_live_governed_state_keeps_redis_and_triggers_postgres_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_persist_live_governed_state_keeps_redis_and_triggers_postgres_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
     redis_instances = []
 
@@ -1548,9 +1704,13 @@ async def test_persist_live_governed_state_keeps_redis_and_triggers_postgres_sna
         captured["status"] = status
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot)
+    monkeypatch.setattr(
+        loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         marked_input_state = _state(analysis_cycle=3).model_copy(
             update={
                 "persistence_marker": GovernedPersistenceMarker(
@@ -1588,7 +1748,9 @@ async def test_persist_live_governed_state_keeps_redis_and_triggers_postgres_sna
 
 
 @pytest.mark.asyncio
-async def test_persist_live_governed_state_stamps_redis_after_snapshot_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_persist_live_governed_state_stamps_redis_after_snapshot_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     redis_instances = []
 
     class _FakeAsyncRedis:
@@ -1619,9 +1781,13 @@ async def test_persist_live_governed_state_stamps_redis_after_snapshot_success(m
         )
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot)
+    monkeypatch.setattr(
+        loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         marked_input_state = _state(analysis_cycle=3).model_copy(
             update={
                 "persistence_marker": GovernedPersistenceMarker(
@@ -1657,7 +1823,9 @@ async def test_persist_live_governed_state_stamps_redis_after_snapshot_success(m
 
 
 @pytest.mark.asyncio
-async def test_persist_live_governed_state_does_not_stamp_redis_after_snapshot_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_persist_live_governed_state_does_not_stamp_redis_after_snapshot_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     redis_instances = []
 
     class _FakeAsyncRedis:
@@ -1683,9 +1851,13 @@ async def test_persist_live_governed_state_does_not_stamp_redis_after_snapshot_f
         raise RuntimeError("snapshot unavailable")
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot)
+    monkeypatch.setattr(
+        loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         marked_input_state = _state(analysis_cycle=3).model_copy(
             update={
                 "persistence_marker": GovernedPersistenceMarker(
@@ -1715,7 +1887,9 @@ async def test_persist_live_governed_state_does_not_stamp_redis_after_snapshot_f
 
 
 @pytest.mark.asyncio
-async def test_persist_live_governed_state_does_not_store_gate_mode_as_pre_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_persist_live_governed_state_does_not_store_gate_mode_as_pre_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
     redis_instances = []
 
@@ -1748,9 +1922,13 @@ async def test_persist_live_governed_state_does_not_store_gate_mode_as_pre_gate(
         captured["pre_gate_classification"] = pre_gate_classification
 
     monkeypatch.setenv("REDIS_URL", "redis://test/0")
-    monkeypatch.setattr(loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot)
+    monkeypatch.setattr(
+        loaders_module, "save_governed_state_snapshot_async", _fake_save_snapshot
+    )
 
-    with patch.dict(sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}):
+    with patch.dict(
+        sys.modules, {"redis.asyncio": types.SimpleNamespace(Redis=_FakeAsyncRedis)}
+    ):
         await router_module._persist_live_governed_state(
             current_user=RequestUser(
                 user_id="user-1",

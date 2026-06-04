@@ -21,7 +21,9 @@ def derive_medium_capture(
     capture, _ = classify_medium_text(message)
     observed_medium = None
     for extraction in reversed(list(observed.raw_extractions or [])):
-        if getattr(extraction, "field_name", None) == "medium" and getattr(extraction, "raw_value", None) not in (None, ""):
+        if getattr(extraction, "field_name", None) == "medium" and getattr(
+            extraction, "raw_value", None
+        ) not in (None, ""):
             observed_medium = str(extraction.raw_value).strip()
             break
     if not capture.primary_raw_text and observed_medium:
@@ -29,7 +31,9 @@ def derive_medium_capture(
             raw_mentions=(observed_medium,),
             primary_raw_text=observed_medium,
         )
-    existing = previous if isinstance(previous, MediumCaptureState) else MediumCaptureState()
+    existing = (
+        previous if isinstance(previous, MediumCaptureState) else MediumCaptureState()
+    )
 
     merged_mentions: list[str] = list(existing.raw_mentions)
     seen = {item.casefold() for item in merged_mentions}
@@ -70,7 +74,9 @@ def derive_medium_classification(
         seed_value = capture.primary_raw_text
 
     decision = classify_medium_value(seed_value)
-    if decision.status == "unavailable" and isinstance(previous, MediumClassificationState):
+    if decision.status == "unavailable" and isinstance(
+        previous, MediumClassificationState
+    ):
         return previous
 
     return MediumClassificationState(

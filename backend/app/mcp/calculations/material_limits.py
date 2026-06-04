@@ -10,6 +10,7 @@ Abdeckung: 8 Werkstoffe × 5 Dimensionen
   - Drucklimit statisch / dynamisch [bar]
   - AED-Zertifizierbarkeit (Außendichtheitsnachweis)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -20,16 +21,17 @@ from typing import Optional, Union
 # Datenmodelle
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class MaterialLimits:
     name: str
-    temp_min_c: int               # Dauergebrauch — Kältegrenze [°C]
-    temp_max_c: int               # Dauergebrauch — Wärmegrenze [°C]
-    temp_peak_c: int              # Kurzzeitige Spitzenlast [°C]
+    temp_min_c: int  # Dauergebrauch — Kältegrenze [°C]
+    temp_max_c: int  # Dauergebrauch — Wärmegrenze [°C]
+    temp_peak_c: int  # Kurzzeitige Spitzenlast [°C]
     pressure_static_max_bar: int  # Statische Abdichtung [bar]
-    pressure_dynamic_max_bar: int # Dynamische Abdichtung (Hub/Rotation) [bar]
-    aed_certifiable: bool         # AED-Zertifizierung möglich (Außendichtheitsnachweis)
-    shore_a_range: tuple          # Typischer Shore-A-Bereich (von, bis)
+    pressure_dynamic_max_bar: int  # Dynamische Abdichtung (Hub/Rotation) [bar]
+    aed_certifiable: bool  # AED-Zertifizierung möglich (Außendichtheitsnachweis)
+    shore_a_range: tuple  # Typischer Shore-A-Bereich (von, bis)
     note: str
     norm_ref: str
 
@@ -51,22 +53,22 @@ class LimitsCheckResult:
 # ──────────────────────────────────────────────────────────────────────────────
 
 MATERIAL_ALIASES: dict[str, str] = {
-    "nbr":        "NBR",
-    "perbunan":   "NBR",
-    "fkm":        "FKM",
-    "viton":      "FKM",
-    "epdm":       "EPDM",
-    "ptfe":       "PTFE",
-    "teflon":     "PTFE",
-    "hnbr":       "HNBR",
-    "ffkm":       "FFKM",
-    "kalrez":     "FFKM",
-    "cr":         "CR",
-    "neopren":    "CR",
+    "nbr": "NBR",
+    "perbunan": "NBR",
+    "fkm": "FKM",
+    "viton": "FKM",
+    "epdm": "EPDM",
+    "ptfe": "PTFE",
+    "teflon": "PTFE",
+    "hnbr": "HNBR",
+    "ffkm": "FFKM",
+    "kalrez": "FFKM",
+    "cr": "CR",
+    "neopren": "CR",
     "chloropren": "CR",
-    "vmq":        "VMQ",
-    "silikon":    "VMQ",
-    "silicone":   "VMQ",
+    "vmq": "VMQ",
+    "silikon": "VMQ",
+    "silicone": "VMQ",
 }
 
 
@@ -75,7 +77,6 @@ MATERIAL_ALIASES: dict[str, str] = {
 # ──────────────────────────────────────────────────────────────────────────────
 
 MATERIAL_LIMITS: dict[str, MaterialLimits] = {
-
     "NBR": MaterialLimits(
         name="NBR",
         temp_min_c=-40,
@@ -92,7 +93,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="DIN 3760 / ISO 6194-1",
     ),
-
     "FKM": MaterialLimits(
         name="FKM",
         temp_min_c=-20,
@@ -109,7 +109,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="DIN 3760 / ISO 6194-1 / SAE J200",
     ),
-
     "EPDM": MaterialLimits(
         name="EPDM",
         temp_min_c=-50,
@@ -126,7 +125,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="DIN 7716 / ISO 4633",
     ),
-
     "PTFE": MaterialLimits(
         name="PTFE",
         temp_min_c=-200,
@@ -144,7 +142,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="DIN 3760 / ASTM D1457",
     ),
-
     "HNBR": MaterialLimits(
         name="HNBR",
         temp_min_c=-40,
@@ -161,7 +158,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="ISO 23936-2 / DIN 3760",
     ),
-
     "FFKM": MaterialLimits(
         name="FFKM",
         temp_min_c=-15,
@@ -179,7 +175,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="ASTM D1418 / Chemours Kalrez Datasheet",
     ),
-
     "CR": MaterialLimits(
         name="CR",
         temp_min_c=-40,
@@ -197,7 +192,6 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
         ),
         norm_ref="DIN 7716",
     ),
-
     "VMQ": MaterialLimits(
         name="VMQ",
         temp_min_c=-60,
@@ -221,6 +215,7 @@ MATERIAL_LIMITS: dict[str, MaterialLimits] = {
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def get_limits(material: str) -> MaterialLimits:
     """
@@ -303,8 +298,7 @@ def check(
     pressure_ok: Optional[bool] = None
     if pressure_bar is not None:
         limit = (
-            lim.pressure_dynamic_max_bar if is_dynamic
-            else lim.pressure_static_max_bar
+            lim.pressure_dynamic_max_bar if is_dynamic else lim.pressure_static_max_bar
         )
         pressure_ok = pressure_bar <= limit
         if not pressure_ok:

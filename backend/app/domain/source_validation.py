@@ -316,10 +316,4 @@ def _normalize_token(value: Any) -> str:
     text = _string_or_none(value)
     if not text:
         return ""
-    return (
-        text.strip()
-        .casefold()
-        .replace("-", "_")
-        .replace(" ", "_")
-        .replace(".", "_")
-    )
+    return text.strip().casefold().replace("-", "_").replace(" ", "_").replace(".", "_")

@@ -148,8 +148,14 @@ def test_manufacturer_capability_constraints_and_indexes_exist(test_db_engine_at
             "manufacturer_capability_claims",
         )
     }
-    assert "ck_manufacturer_profiles_country_iso2" in checks_by_table["manufacturer_profiles"]
-    assert "ck_manufacturer_profiles_account_status" in checks_by_table["manufacturer_profiles"]
+    assert (
+        "ck_manufacturer_profiles_country_iso2"
+        in checks_by_table["manufacturer_profiles"]
+    )
+    assert (
+        "ck_manufacturer_profiles_account_status"
+        in checks_by_table["manufacturer_profiles"]
+    )
     assert (
         "ck_manufacturer_capability_claims_capability_type"
         in checks_by_table["manufacturer_capability_claims"]
@@ -170,7 +176,9 @@ def test_manufacturer_capability_constraints_and_indexes_exist(test_db_engine_at
             "manufacturer_capability_claims",
         )
     }
-    assert "ix_manufacturer_profiles_country" in indexes_by_table["manufacturer_profiles"]
+    assert (
+        "ix_manufacturer_profiles_country" in indexes_by_table["manufacturer_profiles"]
+    )
     assert (
         "ix_manufacturer_profiles_account_status"
         in indexes_by_table["manufacturer_profiles"]
@@ -197,7 +205,9 @@ def test_manufacturer_capability_constraints_and_indexes_exist(test_db_engine_at
     )
 
 
-def test_minimal_valid_profile_and_lot_size_claim_insert_succeeds(test_db_engine_at_head):
+def test_minimal_valid_profile_and_lot_size_claim_insert_succeeds(
+    test_db_engine_at_head,
+):
     """A manufacturer profile and small-quantity lot-size claim can be inserted."""
     with test_db_engine_at_head.begin() as conn:
         conn.execute(
@@ -239,17 +249,21 @@ def test_minimal_valid_profile_and_lot_size_claim_insert_succeeds(test_db_engine
             )
         )
 
-        claim = conn.execute(
-            text(
-                """
+        claim = (
+            conn.execute(
+                text(
+                    """
                 SELECT accepts_single_pieces, minimum_order_pieces,
                        rapid_manufacturing_available,
                        rapid_manufacturing_leadtime_hours
                 FROM manufacturer_capability_claims
                 WHERE claim_id = 'claim-small-qty-1'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         assert claim["accepts_single_pieces"] is True
         assert claim["minimum_order_pieces"] == 1
         assert claim["rapid_manufacturing_available"] is True

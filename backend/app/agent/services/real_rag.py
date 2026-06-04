@@ -16,6 +16,7 @@ TENANT CONTRACT (Blueprint Section 10):
 
 Returns FactCard-compatible dicts (same shape as graph.py cards_data).
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -21,7 +21,9 @@ from app.agent.runtime.final_answer_layer import (
     answer_mode_for_fast_classification,
     apply_final_answer_layer,
 )
-from app.agent.runtime.user_facing_reply import collect_unsafe_user_instruction_reply_with_trace
+from app.agent.runtime.user_facing_reply import (
+    collect_unsafe_user_instruction_reply_with_trace,
+)
 from app.agent.api.deps import (
     _is_light_runtime_mode,
     get_current_request_user,
@@ -110,7 +112,12 @@ _ACTIVE_CASE_SIDE_OPEN_POINT_LIMIT = 16
 
 
 def _active_case_side_answer_composer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "true").strip().lower() in _TRUE_VALUES
+    return (
+        os.getenv("SEALAI_ENABLE_ACTIVE_CASE_SIDE_ANSWER_COMPOSER", "true")
+        .strip()
+        .lower()
+        in _TRUE_VALUES
+    )
 
 
 def _v7_dispatch_answer_mode(dispatch: Any) -> str | None:
@@ -136,6 +143,7 @@ def _v7_dispatch_runtime_action(dispatch: Any) -> RuntimeAction | None:
 
 def _runtime_action_value(value: Any) -> str:
     return str(getattr(value, "value", value) or "")
+
 
 def _runtime_action_is_fast_smalltalk_llm(runtime_action: Any | None) -> bool:
     if runtime_action is None:
@@ -229,7 +237,9 @@ def _runtime_action_blocked_graph_payload(runtime_action: Any | None) -> dict[st
         payload,
         FinalAnswerEnvelope(
             route="runtime_action_guard",
-            answer_mode=str(trace.get("runtime_action_answer_mode") or "runtime_action_guard"),
+            answer_mode=str(
+                trace.get("runtime_action_answer_mode") or "runtime_action_guard"
+            ),
             deterministic_fallback_reply=reply,
             existing_answer_markdown=payload.get("answer_markdown"),
             existing_answer_markdown_source=trace.get("answer_markdown_source"),
@@ -272,7 +282,9 @@ def _build_rfq_readiness_payload(
                 "manufacturer_review_ready": bool(
                     projection_payload.get("manufacturer_review_ready", False)
                 ),
-                "rfq_basis_ready": bool(projection_payload.get("rfq_basis_ready", False)),
+                "rfq_basis_ready": bool(
+                    projection_payload.get("rfq_basis_ready", False)
+                ),
                 "known_missing_fields_count": len(
                     projection_payload.get("known_missing_fields") or []
                 ),
@@ -280,8 +292,12 @@ def _build_rfq_readiness_payload(
                 "blocking_reasons_count": len(
                     projection_payload.get("blocking_reasons") or []
                 ),
-                "preview_available": bool(projection_payload.get("preview_available", False)),
-                "preview_possible": bool(projection_payload.get("preview_possible", False)),
+                "preview_available": bool(
+                    projection_payload.get("preview_available", False)
+                ),
+                "preview_possible": bool(
+                    projection_payload.get("preview_possible", False)
+                ),
                 "preview_requires_explicit_endpoint": bool(
                     projection_payload.get("preview_requires_explicit_endpoint", True)
                 ),
@@ -298,8 +314,12 @@ def _build_rfq_readiness_payload(
                 "preview_export_requires_consent": bool(
                     projection_payload.get("preview_export_requires_consent", True)
                 ),
-                "preview_service_boundary": projection_payload.get("preview_service_boundary"),
-                "preview_blocking_reason": projection_payload.get("preview_blocking_reason"),
+                "preview_service_boundary": projection_payload.get(
+                    "preview_service_boundary"
+                ),
+                "preview_blocking_reason": projection_payload.get(
+                    "preview_blocking_reason"
+                ),
                 "projection_version": projection_payload.get("projection_version"),
             }
         )
@@ -335,7 +355,9 @@ def _build_rfq_readiness_payload(
             "consent_required": bool(projection_payload.get("consent_required", True)),
             "dispatch_allowed": False,
             "external_contact_allowed": False,
-            "preview_available": bool(projection_payload.get("preview_available", False)),
+            "preview_available": bool(
+                projection_payload.get("preview_available", False)
+            ),
             "preview_possible": bool(projection_payload.get("preview_possible", False)),
             "preview_action_available": bool(
                 projection_payload.get("preview_action_available", False)
@@ -360,7 +382,9 @@ def _build_rfq_readiness_payload(
             "no_external_dispatch": True,
             "preview_action_name": projection_payload.get("preview_action_name"),
             "preview_endpoint": projection_payload.get("preview_endpoint"),
-            "preview_service_boundary": projection_payload.get("preview_service_boundary"),
+            "preview_service_boundary": projection_payload.get(
+                "preview_service_boundary"
+            ),
         }
     payload["type"] = "state_update"
     return payload
@@ -385,7 +409,9 @@ async def _chat_response_from_rfq_readiness(
         user_message=request.message,
         state=state,
         route_hint="rfq_readiness" if state is not None else "knowledge_general",
-        case_id=str(request.session_id or "default") if request.session_id and state is not None else None,
+        case_id=str(request.session_id or "default")
+        if request.session_id and state is not None
+        else None,
     )
     return ChatResponse(
         session_id=str(request.session_id or "default"),
@@ -399,14 +425,18 @@ def _process_answer_trace(
     decision: Any,
     runtime_action: Any | None = None,
 ) -> dict[str, Any]:
-    mutation_policy = str(getattr(decision, "mutation_policy", "forbidden") or "forbidden")
+    mutation_policy = str(
+        getattr(decision, "mutation_policy", "forbidden") or "forbidden"
+    )
     resume_decision = getattr(result, "resume_decision", None)
     resume_trace = (
-        resume_decision.as_trace()
-        if hasattr(resume_decision, "as_trace")
-        else {}
+        resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
     )
-    resume_strategy = str(resume_trace.get("resume_strategy") or getattr(decision, "resume_strategy", "") or "")
+    resume_strategy = str(
+        resume_trace.get("resume_strategy")
+        or getattr(decision, "resume_strategy", "")
+        or ""
+    )
     trace = build_answer_trace(
         reply_source="governed_output_contract",
         answer_markdown_source=(
@@ -428,16 +458,27 @@ def _process_answer_trace(
             "resume_reason": resume_trace.get("resume_reason"),
             "resume_target_field": resume_trace.get("resume_target_field"),
             "next_runtime_action": resume_trace.get("next_runtime_action"),
-            "process_answer_builder_attempted": bool(getattr(result, "builder_attempted", False)),
-            "process_answer_builder_succeeded": bool(getattr(result, "builder_succeeded", False)),
+            "process_answer_builder_attempted": bool(
+                getattr(result, "builder_attempted", False)
+            ),
+            "process_answer_builder_succeeded": bool(
+                getattr(result, "builder_succeeded", False)
+            ),
             "pending_question_restored": bool(
-                resume_trace.get("pending_question_restored", getattr(result, "pending_question_restored", False))
+                resume_trace.get(
+                    "pending_question_restored",
+                    getattr(result, "pending_question_restored", False),
+                )
             ),
             "governed_graph_bypassed": True,
             "latest_user_question_answered": True,
-            "slot_answer_detected": bool(resume_trace.get("slot_answer_detected", False)),
+            "slot_answer_detected": bool(
+                resume_trace.get("slot_answer_detected", False)
+            ),
             "case_delta_allowed": bool(resume_trace.get("case_delta_allowed", False)),
-            "governed_graph_allowed": bool(resume_trace.get("governed_graph_allowed", False)),
+            "governed_graph_allowed": bool(
+                resume_trace.get("governed_graph_allowed", False)
+            ),
         }
     )
     if resume_trace.get("detected_slot_field"):
@@ -469,22 +510,36 @@ def _side_answer_trace(
             final_visible_source="answer_markdown",
         )
     )
-    resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    resume_trace = (
+        resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    )
     trace.update(
         {
             "answer_mode": "active_case_side_question",
-            "mutation_policy": str(getattr(decision, "mutation_policy", "forbidden") or "forbidden"),
-            "resume_strategy": str(resume_trace.get("resume_strategy") or getattr(decision, "resume_strategy", "") or ""),
+            "mutation_policy": str(
+                getattr(decision, "mutation_policy", "forbidden") or "forbidden"
+            ),
+            "resume_strategy": str(
+                resume_trace.get("resume_strategy")
+                or getattr(decision, "resume_strategy", "")
+                or ""
+            ),
             "resume_reevaluation_attempted": True,
             "resume_reason": resume_trace.get("resume_reason"),
             "resume_target_field": resume_trace.get("resume_target_field"),
             "next_runtime_action": resume_trace.get("next_runtime_action"),
-            "pending_question_restored": bool(resume_trace.get("pending_question_restored", False)),
+            "pending_question_restored": bool(
+                resume_trace.get("pending_question_restored", False)
+            ),
             "governed_graph_bypassed": True,
             "latest_user_question_answered": True,
-            "slot_answer_detected": bool(resume_trace.get("slot_answer_detected", False)),
+            "slot_answer_detected": bool(
+                resume_trace.get("slot_answer_detected", False)
+            ),
             "case_delta_allowed": bool(resume_trace.get("case_delta_allowed", False)),
-            "governed_graph_allowed": bool(resume_trace.get("governed_graph_allowed", False)),
+            "governed_graph_allowed": bool(
+                resume_trace.get("governed_graph_allowed", False)
+            ),
         }
     )
     if resume_trace.get("detected_slot_field"):
@@ -514,8 +569,12 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
         )
 
     if bool(getattr(resume_decision, "slot_answer_detected", False)):
-        detected_value = str(getattr(resume_decision, "detected_slot_value", "") or "").strip()
-        detected_field = str(getattr(resume_decision, "detected_slot_field", "") or "").strip()
+        detected_value = str(
+            getattr(resume_decision, "detected_slot_value", "") or ""
+        ).strip()
+        detected_field = str(
+            getattr(resume_decision, "detected_slot_field", "") or ""
+        ).strip()
         if detected_value and detected_field == "medium":
             # Dedup seam (T5.1): if the base answer already names the detected
             # value, one acknowledgment is enough — do not append a second seam
@@ -546,7 +605,9 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
             ),
         )
 
-    target_question = str(getattr(resume_decision, "resume_target_question", "") or "").strip()
+    target_question = str(
+        getattr(resume_decision, "resume_target_question", "") or ""
+    ).strip()
     next_action = str(getattr(resume_decision, "next_runtime_action", "") or "")
     if target_question and next_action in {
         "continue_pending_question",
@@ -565,7 +626,9 @@ def _side_answer_with_resume(answer_markdown: str, resume_decision: Any) -> str:
     return base
 
 
-def _active_case_context_payload(governed_state: GovernedSessionState | None) -> dict[str, Any]:
+def _active_case_context_payload(
+    governed_state: GovernedSessionState | None,
+) -> dict[str, Any]:
     if governed_state is None:
         return {
             "known_facts": [],
@@ -574,7 +637,9 @@ def _active_case_context_payload(governed_state: GovernedSessionState | None) ->
             "conversation_message_count": 0,
             "context_policy": "bounded_active_case_side_context",
         }
-    assertions = getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
+    assertions = (
+        getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
+    )
     known_facts: list[dict[str, str]] = []
     for field_name, claim in list(assertions.items())[:_ACTIVE_CASE_SIDE_FACT_LIMIT]:
         value = getattr(claim, "asserted_value", None)
@@ -588,9 +653,10 @@ def _active_case_context_payload(governed_state: GovernedSessionState | None) ->
         )
     open_points = [
         str(field)
-        for field in list(getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", []) or [])[
-            :_ACTIVE_CASE_SIDE_OPEN_POINT_LIMIT
-        ]
+        for field in list(
+            getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", [])
+            or []
+        )[:_ACTIVE_CASE_SIDE_OPEN_POINT_LIMIT]
         if str(field).strip()
     ]
     all_messages = list(getattr(governed_state, "conversation_messages", []) or [])
@@ -644,7 +710,9 @@ async def _compose_active_case_side_answer_with_llm(
     from app.llm.factory import get_async_llm  # noqa: PLC0415
 
     client, model = get_async_llm("governed_answer_composer")
-    resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    resume_trace = (
+        resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    )
     payload = {
         "latest_user_message": message,
         "grounded_answer": _bounded_prompt_text(
@@ -682,7 +750,10 @@ async def _compose_active_case_side_answer_with_llm(
                     ),
                 ),
             },
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
+            {
+                "role": "user",
+                "content": json.dumps(payload, ensure_ascii=False, default=str),
+            },
         ],
         temperature=0.25,
         max_tokens=800,
@@ -693,7 +764,9 @@ async def _compose_active_case_side_answer_with_llm(
     answer = str(data.get("answer_markdown") or "").strip()
     if not answer:
         raise ValueError("empty_active_case_side_answer")
-    resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    resume_trace = (
+        resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+    )
     target_question = str(resume_trace.get("resume_target_question") or "").strip()
     target_field = str(resume_trace.get("resume_target_field") or "").strip()
     answer = _strip_pending_question_leak(
@@ -719,7 +792,11 @@ def _strip_pending_question_leak(
         text = text.replace(target_question, "").strip()
     if target_field == "medium" and "welches medium" in text.casefold():
         parts = re.split(r"(?<=[.!?])\s+|\n+", text)
-        parts = [part.strip() for part in parts if part.strip() and "welches medium" not in part.casefold()]
+        parts = [
+            part.strip()
+            for part in parts
+            if part.strip() and "welches medium" not in part.casefold()
+        ]
         text = " ".join(parts).strip()
     return re.sub(r"\s{2,}", " ", text).strip()
 
@@ -759,7 +836,17 @@ def _should_bypass_active_case_side_composer(
         return True
     material_mentions = sum(
         1
-        for token in ("ptfe", "peek", "pom", "nbr", "fkm", "ffkm", "epdm", "hnbr", "vmq")
+        for token in (
+            "ptfe",
+            "peek",
+            "pom",
+            "nbr",
+            "fkm",
+            "ffkm",
+            "epdm",
+            "hnbr",
+            "vmq",
+        )
         if token in answer.casefold()
     )
     return material_mentions >= 2 and any(
@@ -777,7 +864,12 @@ async def _compose_active_case_side_answer(
     claim_policy_result: Any | None = None,
 ) -> tuple[str, bool, bool, str | None]:
     if not _active_case_side_answer_composer_enabled():
-        return _side_answer_with_resume(grounded_answer, resume_decision), False, False, "composer_disabled"
+        return (
+            _side_answer_with_resume(grounded_answer, resume_decision),
+            False,
+            False,
+            "composer_disabled",
+        )
 
     if _should_bypass_active_case_side_composer(
         message=message,
@@ -801,18 +893,28 @@ async def _compose_active_case_side_answer(
             ),
             timeout=float(os.getenv("SEALAI_ACTIVE_CASE_SIDE_ANSWER_TIMEOUT_S", "8.0")),
         )
-        resume_trace = resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+        resume_trace = (
+            resume_decision.as_trace() if hasattr(resume_decision, "as_trace") else {}
+        )
         answer = _strip_pending_question_leak(
             answer,
-            target_question=str(resume_trace.get("resume_target_question") or "").strip(),
+            target_question=str(
+                resume_trace.get("resume_target_question") or ""
+            ).strip(),
             target_field=str(resume_trace.get("resume_target_field") or "").strip(),
         )
         if not answer:
-            raise ValueError("empty_active_case_side_answer_after_pending_question_strip")
+            raise ValueError(
+                "empty_active_case_side_answer_after_pending_question_strip"
+            )
         return answer, True, True, None
     except Exception as exc:  # noqa: BLE001
-        fallback_reason = safe_fallback_reason(f"side_composer:{exc.__class__.__name__}")
-        _log.warning("[active_case_side_answer] composer fallback reason=%s", fallback_reason)
+        fallback_reason = safe_fallback_reason(
+            f"side_composer:{exc.__class__.__name__}"
+        )
+        _log.warning(
+            "[active_case_side_answer] composer fallback reason=%s", fallback_reason
+        )
         return grounded_answer, True, False, fallback_reason
 
 
@@ -992,7 +1094,9 @@ async def _build_active_case_side_payload(
             existing_answer_markdown=payload.get("answer_markdown"),
             existing_answer_markdown_source=answer_trace.get("answer_markdown_source"),
             existing_reply_source=answer_trace.get("reply_source"),
-            composer_tier="tier_b" if answer_trace.get("composer_attempted") else "tier_a",
+            composer_tier="tier_b"
+            if answer_trace.get("composer_attempted")
+            else "tier_a",
             fallback_reason=answer_trace.get("fallback_reason"),
         ),
     )
@@ -1037,7 +1141,9 @@ async def _persist_active_case_process_turn(
         pre_gate_classification=pre_gate_classification,
     )
 
+
 router = APIRouter()
+
 
 async def _run_light_chat_response(
     *,
@@ -1092,9 +1198,7 @@ async def _run_light_chat_response(
         state_for_contract = updated
 
     run_meta = with_answer_trace(
-        {
-            "version_provenance": _build_fast_path_version_provenance(decision=None)
-        },
+        {"version_provenance": _build_fast_path_version_provenance(decision=None)},
         build_answer_trace(
             reply_source="light_conversation",
             answer_markdown_source="light_conversation",
@@ -1120,6 +1224,7 @@ async def _run_light_chat_response(
         **payload,
     )
 
+
 async def _run_governed_graph_once(
     request: ChatRequest,
     *,
@@ -1134,6 +1239,7 @@ async def _run_governed_graph_once(
         runtime_action=runtime_action,
     )
     return turn_result.result_state, turn_result.persisted_state
+
 
 def _with_engine_sidecar_trace(
     response: ChatResponse,
@@ -1164,6 +1270,7 @@ def _with_engine_sidecar_trace(
     meta["answer_trace"] = answer_trace
     return response.model_copy(update={"run_meta": meta})
 
+
 def _state_has_open_invite_facts(state: GovernedSessionState | None) -> bool:
     if state is None:
         return False
@@ -1177,6 +1284,7 @@ def _state_has_open_invite_facts(state: GovernedSessionState | None) -> bool:
         if field_name in _OPEN_INVITE_FACT_FIELDS and raw_value not in (None, ""):
             return True
     return False
+
 
 def _open_sealing_invite_reply(
     *,
@@ -1197,6 +1305,7 @@ def _open_sealing_invite_reply(
             "Rahmenbedingungen sind wichtig?"
         ),
     )
+
 
 def _rwdr_p0_leakage_guidance_reply(
     *,
@@ -1223,6 +1332,7 @@ def _rwdr_p0_leakage_guidance_reply(
         return None
     return guidance.reply_markdown()
 
+
 def _open_case_ack_continue_reply(
     *,
     message: str,
@@ -1242,6 +1352,7 @@ def _open_case_ack_continue_reply(
             "und welche Rahmenbedingungen dir wichtig sind."
         ),
     )
+
 
 async def _run_conversation_first_with_engine_sidecar(
     request: ChatRequest,
@@ -1297,6 +1408,7 @@ async def _run_conversation_first_with_engine_sidecar(
         error=sidecar_error,
     )
 
+
 async def _run_governed_chat_response(
     request: ChatRequest,
     *,
@@ -1339,7 +1451,11 @@ async def _run_governed_chat_response(
         )
         case_event = build_assistant_delta_event(
             case_id=str(request.session_id or "default"),
-            turn_index=int(getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0),
+            turn_index=int(
+                getattr(result_state, "user_turn_index", 0)
+                or result_state.analysis_cycle
+                or 0
+            ),
             assistant_message=assistant_message,
             delta=context.proposed_case_delta,
             persistence_marker=persisted_state.persistence_marker,
@@ -1357,13 +1473,14 @@ async def _run_governed_chat_response(
         **payload,
     )
 
+
 async def _chat_response_from_fast_response(
     *,
     request: ChatRequest,
     fast_response: Any,
     runtime_action: Any | None = None,
 ) -> ChatResponse:
-    from app.agent.api.utils import _fast_response_run_meta # noqa: PLC0415
+    from app.agent.api.utils import _fast_response_run_meta  # noqa: PLC0415
 
     payload = build_public_response_core(
         reply=fast_response.content,
@@ -1405,7 +1522,8 @@ async def _chat_response_from_knowledge_response(
     knowledge_response: Any,
     runtime_action: Any | None = None,
 ) -> ChatResponse:
-    from app.agent.api.utils import _knowledge_response_run_meta # noqa: PLC0415
+    from app.agent.api.utils import _knowledge_response_run_meta  # noqa: PLC0415
+
     payload = build_public_response_core(
         reply=knowledge_response.content,
         structured_state=None,
@@ -1415,7 +1533,9 @@ async def _chat_response_from_knowledge_response(
             runtime_action,
         ),
     )
-    answer_markdown = str(getattr(knowledge_response, "answer_markdown", "") or "").strip()
+    answer_markdown = str(
+        getattr(knowledge_response, "answer_markdown", "") or ""
+    ).strip()
     if answer_markdown:
         payload["answer_markdown"] = answer_markdown
     answer_trace = getattr(knowledge_response, "answer_trace", None)
@@ -1425,7 +1545,9 @@ async def _chat_response_from_knowledge_response(
         else "knowledge_service"
     )
     composer_attempted = bool(
-        answer_trace.get("composer_attempted") if isinstance(answer_trace, dict) else False
+        answer_trace.get("composer_attempted")
+        if isinstance(answer_trace, dict)
+        else False
     )
     payload = apply_final_answer_layer(
         payload,
@@ -1474,7 +1596,9 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
             user_message=request.message,
             state=None,
             route_hint="unsafe_or_blocked",
-            case_id=str(request.session_id or "default") if request.session_id else None,
+            case_id=str(request.session_id or "default")
+            if request.session_id
+            else None,
         )
         return ChatResponse(
             session_id=request.session_id,
@@ -1573,7 +1697,9 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
                 user_message=request.message,
                 state=dispatch.governed_state,
                 route_hint="unsafe_or_blocked",
-                case_id=str(request.session_id or "default") if request.session_id else None,
+                case_id=str(request.session_id or "default")
+                if request.session_id
+                else None,
             )
             await persist_visible_governed_turn(
                 current_user=current_user,
@@ -1613,12 +1739,18 @@ async def chat_endpoint(request: ChatRequest, current_user: RequestUser):
         pre_gate_classification=dispatch.pre_gate_classification,
     )
 
+
 @router.post("/chat", response_model=ChatResponse)
-async def chat_route(request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)):
+async def chat_route(
+    request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)
+):
     return await chat_endpoint(request, current_user=current_user)
 
+
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)):
+async def chat_stream_endpoint(
+    request: ChatRequest, current_user: RequestUser = Depends(get_current_request_user)
+):
     return StreamingResponse(
         event_generator(request, current_user=current_user),
         media_type="text/event-stream",

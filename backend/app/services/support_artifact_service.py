@@ -158,9 +158,7 @@ def _build_customer_reply(
     ]
     if requested:
         body_lines.append(
-            "Fuer die weitere Pruefung benoetigen wir: "
-            + ", ".join(requested)
-            + "."
+            "Fuer die weitere Pruefung benoetigen wir: " + ", ".join(requested) + "."
         )
     else:
         body_lines.append(
@@ -246,7 +244,9 @@ def _case_summary(text: str) -> str:
     return normalized[:177].rstrip() + "..."
 
 
-def _open_points_from_payload(payload: str | Mapping[str, Any]) -> tuple[SupportOpenPoint, ...]:
+def _open_points_from_payload(
+    payload: str | Mapping[str, Any],
+) -> tuple[SupportOpenPoint, ...]:
     if isinstance(payload, str):
         return _default_open_points()
 
@@ -267,7 +267,9 @@ def _open_points_from_payload(payload: str | Mapping[str, Any]) -> tuple[Support
 
 def _coerce_open_point(item: Any) -> SupportOpenPoint | None:
     if isinstance(item, Mapping):
-        field = str(item.get("field") or item.get("name") or item.get("key") or "").strip()
+        field = str(
+            item.get("field") or item.get("name") or item.get("key") or ""
+        ).strip()
         if not field:
             return None
         return SupportOpenPoint(
@@ -316,7 +318,9 @@ def _evidence_refs_from_payload(
 
 def _coerce_evidence_ref(item: Any) -> SupportEvidenceRef | None:
     if isinstance(item, Mapping):
-        label = str(item.get("label") or item.get("file_name") or item.get("name") or "").strip()
+        label = str(
+            item.get("label") or item.get("file_name") or item.get("name") or ""
+        ).strip()
         if not label:
             return None
         return SupportEvidenceRef(

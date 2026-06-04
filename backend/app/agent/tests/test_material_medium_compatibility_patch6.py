@@ -148,7 +148,9 @@ def test_acid_or_base_without_concentration_is_caution_or_missing() -> None:
     assert check["value"] is None
 
 
-def test_material_medium_precheck_requires_temperature_when_temperature_dependent() -> None:
+def test_material_medium_precheck_requires_temperature_when_temperature_dependent() -> (
+    None
+):
     item = build_material_medium_compatibility_precheck(
         {"medium": "HLP", "material": "FKM"}
     )

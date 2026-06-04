@@ -84,8 +84,12 @@ def build_inquiry_payload(
     # ---- Auto-derive basis_hash if missing ----
     if not basis_hash:
         basis_hash = _derive_hash(
-            sealing_type, material_combination, shaft_diameter_mm,
-            temperature_max_c, pressure_max_bar, medium_canonical,
+            sealing_type,
+            material_combination,
+            shaft_diameter_mm,
+            temperature_max_c,
+            pressure_max_bar,
+            medium_canonical,
         )
 
     return {
@@ -151,7 +155,9 @@ async def send_inquiry_payload(
     from app.models.inquiry_audit import InquiryAudit  # noqa: PLC0415
     from app.models.inquiry_delivery import InquiryDelivery  # noqa: PLC0415
 
-    manufacturer_id = str(manufacturer.get("id") or manufacturer.get("slug") or "unknown")
+    manufacturer_id = str(
+        manufacturer.get("id") or manufacturer.get("slug") or "unknown"
+    )
     idempotency_key = f"inquiry:{case_id}:{manufacturer_id}"
 
     # ---- Idempotency check (Redis fast path) ----
@@ -167,9 +173,9 @@ async def send_inquiry_payload(
 
     # ---- Idempotency check (DB fallback) ----
     existing_row = await db.execute(
-        select(InquiryDelivery).where(
-            InquiryDelivery.idempotency_key == idempotency_key
-        ).limit(1)
+        select(InquiryDelivery)
+        .where(InquiryDelivery.idempotency_key == idempotency_key)
+        .limit(1)
     )
     if existing_row.scalar_one_or_none() is not None:
         raise IdempotencyError(f"Inquiry bereits gesendet: {idempotency_key}")

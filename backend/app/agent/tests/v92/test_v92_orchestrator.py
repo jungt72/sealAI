@@ -68,7 +68,9 @@ async def test_v92_engineering_node_builds_rwdr_ledger_from_compute_results() ->
 
 
 @pytest.mark.asyncio
-async def test_v92_engineering_node_uses_registry_surface_speed_when_compute_result_is_absent() -> None:
+async def test_v92_engineering_node_uses_registry_surface_speed_when_compute_result_is_absent() -> (
+    None
+):
     state = _state(
         sealing_type="rwdr",
         medium="HLP46",
@@ -81,15 +83,23 @@ async def test_v92_engineering_node_uses_registry_surface_speed_when_compute_res
     result = await v92_engineering_node(state)
 
     surface_speed = next(
-        item for item in result.calculation.results if item.calculation_id == "rwdr.surface_speed"
+        item
+        for item in result.calculation.results
+        if item.calculation_id == "rwdr.surface_speed"
     )
     assert surface_speed.calculator == "surface_speed_from_rpm_and_diameter"
     assert surface_speed.outputs["v_surface_m_s"] == pytest.approx(7.854, rel=1e-3)
     assert surface_speed.claim_level == "L3_deterministic_calculation"
     assert surface_speed.validity_status == "valid_for_screening"
     assert "rwdr.surface_speed" not in " ".join(result.calculation.blocked_calculations)
-    assert "material.temperature_missing:material" in result.calculation.blocked_calculations
-    assert "material.chemical_resistance_missing:material" in result.calculation.blocked_calculations
+    assert (
+        "material.temperature_missing:material"
+        in result.calculation.blocked_calculations
+    )
+    assert (
+        "material.chemical_resistance_missing:material"
+        in result.calculation.blocked_calculations
+    )
 
 
 @pytest.mark.asyncio
@@ -107,7 +117,10 @@ async def test_v92_engineering_node_runs_material_screening_calculators() -> Non
     result = await v92_engineering_node(state)
     calc_by_id = {item.calculation_id: item for item in result.calculation.results}
 
-    assert calc_by_id["material.temperature_window_screening"].outputs["material"] == "EPDM"
+    assert (
+        calc_by_id["material.temperature_window_screening"].outputs["material"]
+        == "EPDM"
+    )
     chemical = calc_by_id["material.chemical_resistance_screening"]
     assert chemical.outputs["rating"] == "C"
     assert chemical.validity_status == "requires_expert_review"
@@ -115,7 +128,9 @@ async def test_v92_engineering_node_runs_material_screening_calculators() -> Non
 
 
 @pytest.mark.asyncio
-async def test_v92_engineering_node_marks_registry_surface_speed_missing_inputs() -> None:
+async def test_v92_engineering_node_marks_registry_surface_speed_missing_inputs() -> (
+    None
+):
     state = _state(
         sealing_type="rwdr",
         medium="HLP46",
@@ -127,15 +142,22 @@ async def test_v92_engineering_node_marks_registry_surface_speed_missing_inputs(
     result = await v92_engineering_node(state)
 
     surface_speed = next(
-        item for item in result.calculation.results if item.calculation_id == "rwdr.surface_speed"
+        item
+        for item in result.calculation.results
+        if item.calculation_id == "rwdr.surface_speed"
     )
     assert surface_speed.status == "insufficient_data"
     assert surface_speed.missing_inputs == ["speed_rpm"]
-    assert "rwdr.surface_speed_missing:speed_rpm" in result.calculation.blocked_calculations
+    assert (
+        "rwdr.surface_speed_missing:speed_rpm"
+        in result.calculation.blocked_calculations
+    )
 
 
 @pytest.mark.asyncio
-async def test_v92_engineering_node_keeps_compound_and_product_layers_separate() -> None:
+async def test_v92_engineering_node_keeps_compound_and_product_layers_separate() -> (
+    None
+):
     state = _state(
         material="PTFE",
         product="ACME-123",
@@ -145,11 +167,16 @@ async def test_v92_engineering_node_keeps_compound_and_product_layers_separate()
 
     assert result.compound_state.material_family_candidates[0].family == "PTFE"
     assert result.compound_state.product_candidates[0].product_id == "ACME-123"
-    assert "product_candidate_without_compound_layer" in result.compound_state.separation_violations
+    assert (
+        "product_candidate_without_compound_layer"
+        in result.compound_state.separation_violations
+    )
 
 
 @pytest.mark.asyncio
-async def test_v92_engineering_node_runs_oring_screening_without_release_claims() -> None:
+async def test_v92_engineering_node_runs_oring_screening_without_release_claims() -> (
+    None
+):
     state = _state(
         sealing_type="O-Ring",
         medium="Wasser",
@@ -161,7 +188,11 @@ async def test_v92_engineering_node_runs_oring_screening_without_release_claims(
 
     result = await v92_engineering_node(state)
 
-    oring = next(item for item in result.calculation.results if item.calculation_id == "oring.groove_screening")
+    oring = next(
+        item
+        for item in result.calculation.results
+        if item.calculation_id == "oring.groove_screening"
+    )
     assert oring.status == "insufficient_data"
     assert oring.outputs["norm_ref"] == "DIN 3770 / ISO 3601-2"
     assert oring.claim_level == "L3_deterministic_calculation"
@@ -193,7 +224,11 @@ async def test_v92_oring_geometry_core_runs_only_with_complete_inputs() -> None:
         "oring.stretch_pct",
         "oring.extrusion_gap_screening",
     }.issubset(calc_ids)
-    stretch = next(item for item in result.calculation.results if item.calculation_id == "oring.stretch_pct")
+    stretch = next(
+        item
+        for item in result.calculation.results
+        if item.calculation_id == "oring.stretch_pct"
+    )
     assert stretch.units == {"stretch_pct": "%"}
     assert stretch.output_snapshot_hash
     assert stretch.validity_status == "valid_for_screening"
@@ -206,7 +241,9 @@ async def test_v92_oring_geometry_core_runs_only_with_complete_inputs() -> None:
         oring_cross_section_mm=3.53,
     )
     incomplete_result = await v92_engineering_node(incomplete)
-    incomplete_ids = {item.calculation_id for item in incomplete_result.calculation.results}
+    incomplete_ids = {
+        item.calculation_id for item in incomplete_result.calculation.results
+    }
     assert "oring.squeeze_pct" not in incomplete_ids
     assert "oring.gland_fill_pct" not in incomplete_ids
     assert "oring.stretch_pct" not in incomplete_ids
@@ -241,7 +278,9 @@ async def test_v92_dossier_node_builds_standards_review_and_dossier_sections() -
 
     result = await v92_dossier_node(state)
 
-    assert result.standards.applicable_entries[0].standard_id == "norm_din_3760_iso_6194"
+    assert (
+        result.standards.applicable_entries[0].standard_id == "norm_din_3760_iso_6194"
+    )
     assert result.standards.applicable_entries[0].conformity_claim_allowed is False
     assert "norm_din_3760_iso_6194:seal_width_mm" in result.standards.blocking_gaps
     assert result.dossier.no_final_technical_release is True
@@ -252,8 +291,11 @@ async def test_v92_dossier_node_builds_standards_review_and_dossier_sections() -
         "blockers",
     }
 
+
 @pytest.mark.asyncio
-async def test_v92_document_evidence_neutralizes_prompt_injection_and_tracks_sds_limits() -> None:
+async def test_v92_document_evidence_neutralizes_prompt_injection_and_tracks_sds_limits() -> (
+    None
+):
     state = _state(sealing_type="O-Ring", medium="FAME").model_copy(
         update={
             "rag_evidence": [
@@ -269,21 +311,30 @@ async def test_v92_document_evidence_neutralizes_prompt_injection_and_tracks_sds
 
     result = await v92_engineering_node(state)
 
-    assert result.document_evidence.documents_seen[0]["accepted_as_instruction"] is False
+    assert (
+        result.document_evidence.documents_seen[0]["accepted_as_instruction"] is False
+    )
     assert result.document_evidence.prompt_injection_findings
     assert result.document_evidence.sds_limitations
-    assert result.document_evidence.medium_exposures[0]["composition_status"] == "product_name_only"
+    assert (
+        result.document_evidence.medium_exposures[0]["composition_status"]
+        == "product_name_only"
+    )
 
 
 @pytest.mark.asyncio
-async def test_v92_failure_observations_require_diagnostics_without_root_cause_claim() -> None:
+async def test_v92_failure_observations_require_diagnostics_without_root_cause_claim() -> (
+    None
+):
     state = _state(
         failure_description="Leckage mit Abrieb und Quellung am Dichtring",
     )
 
     result = await v92_engineering_node(state)
 
-    assert {"leakage", "abrasion", "chemical_swelling"}.issubset(set(result.failure_observation.morphology_indicators))
+    assert {"leakage", "abrasion", "chemical_swelling"}.issubset(
+        set(result.failure_observation.morphology_indicators)
+    )
     assert "medium_analysis" in result.failure_observation.required_diagnostics
     assert "definitive_root_cause" in result.failure_observation.forbidden_claims
 
@@ -308,7 +359,11 @@ async def test_v92_review_and_dossier_expose_final_readiness_guards() -> None:
     assert "manufacturer_product_review" in result.review_state.required_review_types
     assert "compound_datasheet_review" in result.review_state.required_review_types
     assert result.review_state.review_guard_notes
-    assert result.dossier.readiness_band in {"engineering_checks_partial", "review_ready_with_open_items", "blocked_missing_core_data"}
+    assert result.dossier.readiness_band in {
+        "engineering_checks_partial",
+        "review_ready_with_open_items",
+        "blocked_missing_core_data",
+    }
     assert "request_manufacturer_review" in result.dossier.allowed_next_actions
     assert result.dossier.no_final_technical_release is True
 
@@ -338,12 +393,17 @@ async def test_v92_dashboard_contract_exposes_rfq_and_review_boundaries() -> Non
     )
 
     assert contract.review_status["human_review_required"] is True
-    assert "manufacturer_product_review" in contract.review_status["required_review_types"]
+    assert (
+        "manufacturer_product_review" in contract.review_status["required_review_types"]
+    )
     assert contract.rfq_dossier_preview is not None
     assert contract.rfq_dossier_preview["accepted_facts"]
     assert contract.rfq_dossier_preview["calculated_values"]
     assert contract.rfq_dossier_preview["no_final_technical_release"] is True
-    assert "request_manufacturer_review" in contract.rfq_dossier_preview["allowed_next_actions"]
+    assert (
+        "request_manufacturer_review"
+        in contract.rfq_dossier_preview["allowed_next_actions"]
+    )
 
 
 @pytest.mark.asyncio

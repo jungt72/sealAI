@@ -148,12 +148,16 @@ def test_defaults_applied(test_db_engine_at_head):
                 """
             )
         )
-        row = conn.execute(
-            text(
-                "SELECT status, priority, attempts, max_attempts "
-                "FROM outbox WHERE outbox_id = 'obx-defaults'"
+        row = (
+            conn.execute(
+                text(
+                    "SELECT status, priority, attempts, max_attempts "
+                    "FROM outbox WHERE outbox_id = 'obx-defaults'"
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         assert row["status"] == "pending"
         assert row["priority"] == 0
         assert row["attempts"] == 0

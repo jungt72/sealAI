@@ -22,7 +22,9 @@ def validate_evidence_gate(
     """Ensure visible evidence/document claims are backed by known refs."""
 
     text = str(answer_markdown or "")
-    known_refs = {str(ref) for ref in context.evidence_ref_ids if str(ref or "").strip()}
+    known_refs = {
+        str(ref) for ref in context.evidence_ref_ids if str(ref or "").strip()
+    }
     findings: list[str] = []
     for match in _EXPLICIT_EVIDENCE_REF_RE.findall(text):
         if match not in known_refs:

@@ -12,6 +12,7 @@ Coverage:
   ✓ interrupt() not available (RuntimeError) → fallback: node returns without crash
   ✓ admissibility check runs BEFORE interrupt() — interrupt never called when not admissible
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -42,18 +43,21 @@ from app.agent.state.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _norm_param(field: str, value, unit: str | None = None) -> NormalizedParameter:
-    return NormalizedParameter(field_name=field, value=value, unit=unit, confidence="confirmed")
+    return NormalizedParameter(
+        field_name=field, value=value, unit=unit, confidence="confirmed"
+    )
 
 
 def _full_normalized() -> NormalizedState:
     return NormalizedState(
         parameters={
-            "medium":            _norm_param("medium", "Salzwasser"),
+            "medium": _norm_param("medium", "Salzwasser"),
             "temperature_max_c": _norm_param("temperature_max_c", 80.0, "°C"),
-            "pressure_max_bar":  _norm_param("pressure_max_bar", 6.0, "bar"),
+            "pressure_max_bar": _norm_param("pressure_max_bar", 6.0, "bar"),
             "shaft_diameter_mm": _norm_param("shaft_diameter_mm", 50.0, "mm"),
-            "sealing_type":      _norm_param("sealing_type", "STS-TYPE-GS-S"),
+            "sealing_type": _norm_param("sealing_type", "STS-TYPE-GS-S"),
         },
         parameter_status={
             "medium": "observed",
@@ -82,9 +86,15 @@ def _inquiry_ready_state() -> GraphState:
         normalized=_full_normalized(),
         asserted=AssertedState(
             assertions={
-                "medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser"),
-                "pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=6.0),
-                "temperature_c": AssertedClaim(field_name="temperature_c", asserted_value=80.0),
+                "medium": AssertedClaim(
+                    field_name="medium", asserted_value="Salzwasser"
+                ),
+                "pressure_bar": AssertedClaim(
+                    field_name="pressure_bar", asserted_value=6.0
+                ),
+                "temperature_c": AssertedClaim(
+                    field_name="temperature_c", asserted_value=80.0
+                ),
             }
         ),
         governance=GovernanceState(gov_class="A", rfq_admissible=True),
@@ -119,6 +129,7 @@ def _not_admissible_state() -> GraphState:
 # 1. Not admissible → downgrade to structured_clarification
 # ---------------------------------------------------------------------------
 
+
 class TestNotAdmissibleDowngrade:
     @pytest.mark.asyncio
     async def test_not_admissible_becomes_structured_clarification(self) -> None:
@@ -134,22 +145,38 @@ class TestNotAdmissibleDowngrade:
     @pytest.mark.asyncio
     async def test_not_admissible_blocking_reasons_in_decision_state(self) -> None:
         state = _not_admissible_state()
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=RuntimeError):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=RuntimeError,
+        ):
             result = await output_contract_node(state)
         assert len(result.decision.blocking_reasons) > 0
 
     @pytest.mark.asyncio
     async def test_not_admissible_blocking_reasons_mention_missing_field(self) -> None:
         state = _not_admissible_state()
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=RuntimeError):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=RuntimeError,
+        ):
             result = await output_contract_node(state)
         reasons_str = " ".join(result.decision.blocking_reasons)
         # At least one mandatory field must appear
-        assert any(f in reasons_str for f in ("medium", "temperature_max_c", "pressure_max_bar",
-                                               "shaft_diameter_mm", "sealing_type"))
+        assert any(
+            f in reasons_str
+            for f in (
+                "medium",
+                "temperature_max_c",
+                "pressure_max_bar",
+                "shaft_diameter_mm",
+                "sealing_type",
+            )
+        )
 
     @pytest.mark.asyncio
-    async def test_inquiry_confirmation_interrupt_never_called_when_not_admissible(self) -> None:
+    async def test_inquiry_confirmation_interrupt_never_called_when_not_admissible(
+        self,
+    ) -> None:
         """The inquiry_confirmation interrupt must not be called when admissibility fails.
 
         A structured_clarification interrupt may still be called legitimately
@@ -159,18 +186,27 @@ class TestNotAdmissibleDowngrade:
         inquiry_interrupts = []
 
         def _track_interrupt(payload):
-            if isinstance(payload, dict) and payload.get("type") == "inquiry_confirmation":
+            if (
+                isinstance(payload, dict)
+                and payload.get("type") == "inquiry_confirmation"
+            ):
                 inquiry_interrupts.append(payload)
             raise RuntimeError("stop interrupt")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_track_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_track_interrupt,
+        ):
             await output_contract_node(state)
-        assert inquiry_interrupts == [], "inquiry_confirmation interrupt must not be called when not admissible"
+        assert (
+            inquiry_interrupts == []
+        ), "inquiry_confirmation interrupt must not be called when not admissible"
 
 
 # ---------------------------------------------------------------------------
 # 2. Admissible → interrupt() called with correct payload
 # ---------------------------------------------------------------------------
+
 
 class TestAdmissibleInterruptCalled:
     @pytest.mark.asyncio
@@ -182,11 +218,18 @@ class TestAdmissibleInterruptCalled:
             captured.append(payload)
             raise RuntimeError("stop after capture")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             await output_contract_node(state)
 
         assert len(captured) >= 1
-        inquiry_interrupts = [p for p in captured if isinstance(p, dict) and p.get("type") == "inquiry_confirmation"]
+        inquiry_interrupts = [
+            p
+            for p in captured
+            if isinstance(p, dict) and p.get("type") == "inquiry_confirmation"
+        ]
         assert len(inquiry_interrupts) == 1
 
     @pytest.mark.asyncio
@@ -198,10 +241,17 @@ class TestAdmissibleInterruptCalled:
             captured.append(payload)
             raise RuntimeError
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             await output_contract_node(state)
 
-        inquiry_payload = next(p for p in captured if isinstance(p, dict) and p.get("type") == "inquiry_confirmation")
+        inquiry_payload = next(
+            p
+            for p in captured
+            if isinstance(p, dict) and p.get("type") == "inquiry_confirmation"
+        )
         assert "case_summary" in inquiry_payload
         assert isinstance(inquiry_payload["case_summary"], dict)
 
@@ -214,15 +264,24 @@ class TestAdmissibleInterruptCalled:
             captured.append(payload)
             raise RuntimeError
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             await output_contract_node(state)
 
-        inquiry_payload = next(p for p in captured if isinstance(p, dict) and p.get("type") == "inquiry_confirmation")
+        inquiry_payload = next(
+            p
+            for p in captured
+            if isinstance(p, dict) and p.get("type") == "inquiry_confirmation"
+        )
         assert "basis_hash" in inquiry_payload
         assert isinstance(inquiry_payload["basis_hash"], str)
 
     @pytest.mark.asyncio
-    async def test_interrupt_payload_blocking_reasons_empty_when_admissible(self) -> None:
+    async def test_interrupt_payload_blocking_reasons_empty_when_admissible(
+        self,
+    ) -> None:
         state = _inquiry_ready_state()
         captured = []
 
@@ -230,16 +289,24 @@ class TestAdmissibleInterruptCalled:
             captured.append(payload)
             raise RuntimeError
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             await output_contract_node(state)
 
-        inquiry_payload = next(p for p in captured if isinstance(p, dict) and p.get("type") == "inquiry_confirmation")
+        inquiry_payload = next(
+            p
+            for p in captured
+            if isinstance(p, dict) and p.get("type") == "inquiry_confirmation"
+        )
         assert inquiry_payload["blocking_reasons"] == []
 
 
 # ---------------------------------------------------------------------------
 # 3. confirmed=True → inquiry_ready stays, inquiry_confirmed=True
 # ---------------------------------------------------------------------------
+
 
 class TestConfirmedTrue:
     @pytest.mark.asyncio
@@ -249,11 +316,18 @@ class TestConfirmedTrue:
 
         def _fake_interrupt(payload):
             call_count[0] += 1
-            if call_count[0] == 1 and isinstance(payload, dict) and payload.get("type") == "inquiry_confirmation":
+            if (
+                call_count[0] == 1
+                and isinstance(payload, dict)
+                and payload.get("type") == "inquiry_confirmation"
+            ):
                 return {"confirmed": True}
             raise RuntimeError("stop")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             result = await output_contract_node(state)
         assert result.output_response_class == "inquiry_ready"
 
@@ -264,26 +338,42 @@ class TestConfirmedTrue:
 
         def _fake_interrupt(payload):
             call_count[0] += 1
-            if call_count[0] == 1 and isinstance(payload, dict) and payload.get("type") == "inquiry_confirmation":
+            if (
+                call_count[0] == 1
+                and isinstance(payload, dict)
+                and payload.get("type") == "inquiry_confirmation"
+            ):
                 return {"confirmed": True}
             raise RuntimeError("stop")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             result = await output_contract_node(state)
         assert result.action_readiness.inquiry_confirmed is True
 
     @pytest.mark.asyncio
-    async def test_confirmed_true_output_public_response_class_inquiry_ready(self) -> None:
+    async def test_confirmed_true_output_public_response_class_inquiry_ready(
+        self,
+    ) -> None:
         state = _inquiry_ready_state()
         call_count = [0]
 
         def _fake_interrupt(payload):
             call_count[0] += 1
-            if call_count[0] == 1 and isinstance(payload, dict) and payload.get("type") == "inquiry_confirmation":
+            if (
+                call_count[0] == 1
+                and isinstance(payload, dict)
+                and payload.get("type") == "inquiry_confirmation"
+            ):
                 return {"confirmed": True}
             raise RuntimeError("stop")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             result = await output_contract_node(state)
         assert result.output_public.get("response_class") == "inquiry_ready"
 
@@ -291,6 +381,7 @@ class TestConfirmedTrue:
 # ---------------------------------------------------------------------------
 # 4. confirmed=False → downgrade to governed_state_update
 # ---------------------------------------------------------------------------
+
 
 class TestConfirmedFalse:
     @pytest.mark.asyncio
@@ -300,11 +391,18 @@ class TestConfirmedFalse:
 
         def _fake_interrupt(payload):
             call_count[0] += 1
-            if call_count[0] == 1 and isinstance(payload, dict) and payload.get("type") == "inquiry_confirmation":
+            if (
+                call_count[0] == 1
+                and isinstance(payload, dict)
+                and payload.get("type") == "inquiry_confirmation"
+            ):
                 return {"confirmed": False}
             raise RuntimeError("stop")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             result = await output_contract_node(state)
         assert result.output_response_class == "governed_state_update"
 
@@ -315,11 +413,18 @@ class TestConfirmedFalse:
 
         def _fake_interrupt(payload):
             call_count[0] += 1
-            if call_count[0] == 1 and isinstance(payload, dict) and payload.get("type") == "inquiry_confirmation":
+            if (
+                call_count[0] == 1
+                and isinstance(payload, dict)
+                and payload.get("type") == "inquiry_confirmation"
+            ):
                 return {"confirmed": False}
             raise RuntimeError("stop")
 
-        with patch("app.agent.graph.nodes.output_contract_node.interrupt", side_effect=_fake_interrupt):
+        with patch(
+            "app.agent.graph.nodes.output_contract_node.interrupt",
+            side_effect=_fake_interrupt,
+        ):
             result = await output_contract_node(state)
         assert result.action_readiness.inquiry_confirmed is False
 
@@ -327,6 +432,7 @@ class TestConfirmedFalse:
 # ---------------------------------------------------------------------------
 # 5. build_inquiry_summary() — required keys
 # ---------------------------------------------------------------------------
+
 
 class TestBuildInquirySummary:
     def test_returns_all_required_keys(self) -> None:
@@ -379,12 +485,16 @@ class TestBuildInquirySummary:
         assert isinstance(summary["pdf_ready"], bool)
 
     def test_top_manufacturer_from_matching(self) -> None:
-        state = _inquiry_ready_state().model_copy(update={
-            "matching": MatchingState(
-                status="matched_primary_candidate",
-                selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme GmbH"),
-            )
-        })
+        state = _inquiry_ready_state().model_copy(
+            update={
+                "matching": MatchingState(
+                    status="matched_primary_candidate",
+                    selected_manufacturer_ref=ManufacturerRef(
+                        manufacturer_name="Acme GmbH"
+                    ),
+                )
+            }
+        )
         summary = build_inquiry_summary(state)
         assert summary["top_manufacturer"] is not None
         assert summary["top_manufacturer"]["name"] == "Acme GmbH"
@@ -399,6 +509,7 @@ class TestBuildInquirySummary:
 # ---------------------------------------------------------------------------
 # 6. interrupt() not available → no crash
 # ---------------------------------------------------------------------------
+
 
 class TestInterruptNotAvailable:
     @pytest.mark.asyncio

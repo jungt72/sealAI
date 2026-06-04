@@ -42,7 +42,10 @@ os.environ.setdefault("redis_url", "redis://localhost:6379/0")
 os.environ.setdefault("nextauth_url", "http://localhost:3000")
 os.environ.setdefault("nextauth_secret", "dummy-secret")
 os.environ.setdefault("keycloak_issuer", "http://localhost:8080/realms/test")
-os.environ.setdefault("keycloak_jwks_url", "http://localhost:8080/realms/test/protocol/openid-connect/certs")
+os.environ.setdefault(
+    "keycloak_jwks_url",
+    "http://localhost:8080/realms/test/protocol/openid-connect/certs",
+)
 os.environ.setdefault("keycloak_client_id", "sealai-backend")
 os.environ.setdefault("keycloak_client_secret", "client-secret")
 os.environ.setdefault("keycloak_expected_azp", "sealai-frontend")

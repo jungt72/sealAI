@@ -18,6 +18,7 @@ Rules:
     HITL review state.
 - No external API calls are made here. This module is purely structural.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -28,6 +29,7 @@ from typing import Any, Dict, Optional
 # ---------------------------------------------------------------------------
 # Readiness check (deterministic)
 # ---------------------------------------------------------------------------
+
 
 def _is_handover_ready(
     governance_state: Dict[str, Any],
@@ -42,7 +44,9 @@ def _is_handover_ready(
     """
     release_status: str = governance_state.get("release_status", "inadmissible")
     review_required: bool = bool(review_state.get("review_required", False))
-    critical_review_passed: bool = bool(review_state.get("critical_review_passed", False))
+    critical_review_passed: bool = bool(
+        review_state.get("critical_review_passed", False)
+    )
     blocking_findings = list(review_state.get("blocking_findings") or [])
     return (
         release_status == "inquiry_ready"
@@ -62,7 +66,11 @@ def _critical_review_reason(review_state: Dict[str, Any]) -> str:
     if status == "not_run":
         return "Critical review is mandatory before RFQ handover."
     if blocking_findings:
-        return "Critical review blocked RFQ handover: " + ", ".join(blocking_findings) + "."
+        return (
+            "Critical review blocked RFQ handover: "
+            + ", ".join(blocking_findings)
+            + "."
+        )
     return "Critical review did not pass."
 
 
@@ -79,11 +87,16 @@ def _project_handover_status(
 
     projection = selection_state.get("review_escalation_projection") or {}
     if projection.get("handover_possible"):
-        return "handoverable", str(projection.get("reason") or "Human handover is possible.")
+        return "handoverable", str(
+            projection.get("reason") or "Human handover is possible."
+        )
     if projection.get("review_meaningful"):
-        return "reviewable", str(projection.get("reason") or "Human review is meaningful.")
+        return "reviewable", str(
+            projection.get("reason") or "Human review is meaningful."
+        )
     return "not_handoverable", str(
-        projection.get("reason") or "Case requires clarification or review before handover."
+        projection.get("reason")
+        or "Case requires clarification or review before handover."
     )
 
 
@@ -99,15 +112,23 @@ def _resolve_handover_shell_inputs(
 
     effective_governance_state = dict(governance_state)
     if canonical_governance_state.get("release_status") is not None:
-        effective_governance_state["release_status"] = canonical_governance_state.get("release_status")
+        effective_governance_state["release_status"] = canonical_governance_state.get(
+            "release_status"
+        )
     if canonical_governance_state.get("rfq_admissibility") is not None:
-        effective_governance_state["rfq_admissibility"] = canonical_governance_state.get("rfq_admissibility")
+        effective_governance_state["rfq_admissibility"] = (
+            canonical_governance_state.get("rfq_admissibility")
+        )
 
     effective_review_state = dict(review_state)
     if canonical_governance_state.get("review_required") is not None:
-        effective_review_state["review_required"] = bool(canonical_governance_state.get("review_required"))
+        effective_review_state["review_required"] = bool(
+            canonical_governance_state.get("review_required")
+        )
     if canonical_governance_state.get("review_state") is not None:
-        effective_review_state["review_state"] = canonical_governance_state.get("review_state")
+        effective_review_state["review_state"] = canonical_governance_state.get(
+            "review_state"
+        )
 
     return effective_governance_state, effective_review_state
 
@@ -141,7 +162,9 @@ def _find_manufacturer_ref(
         return None
     manufacturer_name = primary_match_candidate.get("manufacturer_name")
     candidate_id = primary_match_candidate.get("candidate_id")
-    requirement_class_id = str((requirement_class or {}).get("requirement_class_id") or "").strip()
+    requirement_class_id = str(
+        (requirement_class or {}).get("requirement_class_id") or ""
+    ).strip()
 
     preferred_refs: list[Dict[str, Any]] = []
     if isinstance(recipient_selection, dict):
@@ -161,9 +184,15 @@ def _find_manufacturer_ref(
         if not isinstance(capability, dict):
             continue
         capability_requirement_class_ids = {
-            str(item) for item in list(capability.get("requirement_class_ids") or []) if item
+            str(item)
+            for item in list(capability.get("requirement_class_ids") or [])
+            if item
         }
-        if requirement_class_id and capability_requirement_class_ids and requirement_class_id not in capability_requirement_class_ids:
+        if (
+            requirement_class_id
+            and capability_requirement_class_ids
+            and requirement_class_id not in capability_requirement_class_ids
+        ):
             continue
         capability_candidate_ids = list(capability.get("candidate_ids") or [])
         capability_ref: Dict[str, Any] = {
@@ -178,7 +207,11 @@ def _find_manufacturer_ref(
         }
         capability_refs.append(capability_ref)
 
-    for ref in preferred_refs + [dict(ref) for ref in manufacturer_refs if isinstance(ref, dict) and ref] + capability_refs:
+    for ref in (
+        preferred_refs
+        + [dict(ref) for ref in manufacturer_refs if isinstance(ref, dict) and ref]
+        + capability_refs
+    ):
         if manufacturer_name and ref.get("manufacturer_name") == manufacturer_name:
             return dict(ref)
         if candidate_id and candidate_id in list(ref.get("candidate_ids") or []):
@@ -186,11 +219,15 @@ def _find_manufacturer_ref(
     return None
 
 
-def _resolve_dispatch_runtime_source(state: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
+def _resolve_dispatch_runtime_source(
+    state: Dict[str, Any],
+) -> tuple[Dict[str, Any], str]:
     case_state: Dict[str, Any] = state.get("case_state") or {}
     sealing_state: Dict[str, Any] = state.get("sealing_state") or {}
 
-    dispatch_intent = case_state.get("dispatch_intent") or sealing_state.get("dispatch_intent") or {}
+    dispatch_intent = (
+        case_state.get("dispatch_intent") or sealing_state.get("dispatch_intent") or {}
+    )
     if isinstance(dispatch_intent, dict) and dispatch_intent:
         return dict(dispatch_intent), "dispatch_intent"
 
@@ -202,7 +239,9 @@ def _resolve_dispatch_runtime_source(state: Dict[str, Any]) -> tuple[Dict[str, A
     return {}, "missing_dispatch_basis"
 
 
-def _resolve_canonical_matching_outcome_core(case_state: Dict[str, Any]) -> Dict[str, Any]:
+def _resolve_canonical_matching_outcome_core(
+    case_state: Dict[str, Any],
+) -> Dict[str, Any]:
     matching_state = dict(case_state.get("matching_state") or {})
     matching_outcome = (
         matching_state.get("matching_outcome")
@@ -249,12 +288,21 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
         or result_contract.get("contract_obsolete")
     )
     review_required = bool(
-        matching_state.get("review_required", rfq_state.get("review_required", review_state.get("review_required", False)))
+        matching_state.get(
+            "review_required",
+            rfq_state.get(
+                "review_required", review_state.get("review_required", False)
+            ),
+        )
     )
     match_candidates = list(matching_state.get("match_candidates") or [])
     manufacturer_refs = list(manufacturer_state.get("manufacturer_refs") or [])
-    manufacturer_capabilities = list(manufacturer_state.get("manufacturer_capabilities") or [])
-    winner_candidate_id = matching_state.get("winner_candidate_id") or selection_state.get("winner_candidate_id")
+    manufacturer_capabilities = list(
+        manufacturer_state.get("manufacturer_capabilities") or []
+    )
+    winner_candidate_id = matching_state.get(
+        "winner_candidate_id"
+    ) or selection_state.get("winner_candidate_id")
     recommendation_identity = (
         matching_state.get("recommendation_identity")
         or manufacturer_state.get("recommendation_identity")
@@ -281,7 +329,9 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if contract_obsolete:
         status = "blocked_contract_obsolete"
-        reason = "Contract is obsolete and matching output must not be treated as current."
+        reason = (
+            "Contract is obsolete and matching output must not be treated as current."
+        )
     elif review_required:
         status = "blocked_review_required"
         reason = "Matching remains blocked until required review is resolved."
@@ -292,7 +342,9 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
         primary_match_candidate = _pick_primary_match_candidate(
             winner_candidate_id=winner_candidate_id,
             match_candidates=match_candidates,
-            recommendation_identity=dict(recommendation_identity) if isinstance(recommendation_identity, dict) else None,
+            recommendation_identity=dict(recommendation_identity)
+            if isinstance(recommendation_identity, dict)
+            else None,
         )
         if primary_match_candidate:
             status = "matched_primary_candidate"
@@ -302,10 +354,14 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
             reason = "No viable or projected match candidate is available."
 
     selected_manufacturer_ref = _find_manufacturer_ref(
-        recipient_selection=recipient_selection if isinstance(recipient_selection, dict) else None,
+        recipient_selection=recipient_selection
+        if isinstance(recipient_selection, dict)
+        else None,
         manufacturer_refs=manufacturer_refs,
         manufacturer_capabilities=manufacturer_capabilities,
-        requirement_class=dict(requirement_class) if isinstance(requirement_class, dict) else None,
+        requirement_class=dict(requirement_class)
+        if isinstance(requirement_class, dict)
+        else None,
         primary_match_candidate=primary_match_candidate,
     )
 
@@ -313,7 +369,9 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
         "status": status,
         "reason": reason,
         "matchability_status": matchability_status,
-        "requirement_class": dict(requirement_class) if isinstance(requirement_class, dict) and requirement_class else None,
+        "requirement_class": dict(requirement_class)
+        if isinstance(requirement_class, dict) and requirement_class
+        else None,
         "requirement_class_hint": requirement_class_hint,
         "primary_match_candidate": primary_match_candidate,
         "selected_manufacturer_ref": selected_manufacturer_ref,
@@ -322,7 +380,8 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
         "manufacturer_validation_required": bool(
             matching_state.get(
                 "manufacturer_validation_required",
-                governance_state.get("release_status") == "manufacturer_validation_required",
+                governance_state.get("release_status")
+                == "manufacturer_validation_required",
             )
         ),
     }
@@ -356,10 +415,16 @@ def build_matching_outcome(state: Dict[str, Any]) -> Dict[str, Any]:
 def build_dispatch_trigger(state: Dict[str, Any]) -> Dict[str, Any]:
     dispatch_source, source_name = _resolve_dispatch_runtime_source(state)
     recipient_refs = [
-        dict(ref) for ref in list(dispatch_source.get("recipient_refs") or []) if isinstance(ref, dict) and ref
+        dict(ref)
+        for ref in list(dispatch_source.get("recipient_refs") or [])
+        if isinstance(ref, dict) and ref
     ]
     dispatch_blockers = list(
-        dict.fromkeys(str(item) for item in list(dispatch_source.get("dispatch_blockers") or []) if item)
+        dict.fromkeys(
+            str(item)
+            for item in list(dispatch_source.get("dispatch_blockers") or [])
+            if item
+        )
     )
     selected_manufacturer_ref = (
         dict(dispatch_source.get("selected_manufacturer_ref") or {})
@@ -383,7 +448,9 @@ def build_dispatch_trigger(state: Dict[str, Any]) -> Dict[str, Any]:
     if not dispatch_source:
         trigger_allowed = False
         trigger_status = "trigger_blocked_missing_dispatch_basis"
-        trigger_reason = "No runtime dispatch basis is available for an internal trigger."
+        trigger_reason = (
+            "No runtime dispatch basis is available for an internal trigger."
+        )
     elif bool(dispatch_source.get("dispatch_ready")):
         trigger_allowed = True
         trigger_status = "trigger_ready"
@@ -421,15 +488,25 @@ def build_dispatch_dry_run(state: Dict[str, Any]) -> Dict[str, Any]:
     case_state: Dict[str, Any] = state.get("case_state") or {}
     sealing_state: Dict[str, Any] = state.get("sealing_state") or {}
 
-    dispatch_trigger = case_state.get("dispatch_trigger") or sealing_state.get("dispatch_trigger") or {}
+    dispatch_trigger = (
+        case_state.get("dispatch_trigger")
+        or sealing_state.get("dispatch_trigger")
+        or {}
+    )
     if not isinstance(dispatch_trigger, dict) or not dispatch_trigger:
         dispatch_trigger = build_dispatch_trigger(state)
 
     trigger_blockers = list(
-        dict.fromkeys(str(item) for item in list(dispatch_trigger.get("trigger_blockers") or []) if item)
+        dict.fromkeys(
+            str(item)
+            for item in list(dispatch_trigger.get("trigger_blockers") or [])
+            if item
+        )
     )
     recipient_refs = [
-        dict(ref) for ref in list(dispatch_trigger.get("recipient_refs") or []) if isinstance(ref, dict) and ref
+        dict(ref)
+        for ref in list(dispatch_trigger.get("recipient_refs") or [])
+        if isinstance(ref, dict) and ref
     ]
     selected_manufacturer_ref = (
         dict(dispatch_trigger.get("selected_manufacturer_ref") or {})
@@ -455,7 +532,9 @@ def build_dispatch_dry_run(state: Dict[str, Any]) -> Dict[str, Any]:
         dry_run_ready = True
         would_dispatch = True
         dry_run_status = "dry_run_ready"
-        dry_run_reason = "Dry-run indicates dispatch would proceed in the current runtime turn."
+        dry_run_reason = (
+            "Dry-run indicates dispatch would proceed in the current runtime turn."
+        )
     elif trigger_status == "trigger_blocked_no_recipients":
         dry_run_ready = False
         would_dispatch = False
@@ -470,7 +549,9 @@ def build_dispatch_dry_run(state: Dict[str, Any]) -> Dict[str, Any]:
         dry_run_ready = False
         would_dispatch = False
         dry_run_status = "dry_run_blocked"
-        dry_run_reason = "Dry-run indicates dispatch would not proceed in the current runtime turn."
+        dry_run_reason = (
+            "Dry-run indicates dispatch would not proceed in the current runtime turn."
+        )
 
     return {
         "object_type": "dispatch_dry_run",
@@ -493,19 +574,33 @@ def build_dispatch_event(state: Dict[str, Any]) -> Dict[str, Any]:
     case_state: Dict[str, Any] = state.get("case_state") or {}
     sealing_state: Dict[str, Any] = state.get("sealing_state") or {}
 
-    dispatch_trigger = case_state.get("dispatch_trigger") or sealing_state.get("dispatch_trigger") or {}
+    dispatch_trigger = (
+        case_state.get("dispatch_trigger")
+        or sealing_state.get("dispatch_trigger")
+        or {}
+    )
     if not isinstance(dispatch_trigger, dict) or not dispatch_trigger:
         dispatch_trigger = build_dispatch_trigger(state)
 
-    dispatch_dry_run = case_state.get("dispatch_dry_run") or sealing_state.get("dispatch_dry_run") or {}
+    dispatch_dry_run = (
+        case_state.get("dispatch_dry_run")
+        or sealing_state.get("dispatch_dry_run")
+        or {}
+    )
     if not isinstance(dispatch_dry_run, dict) or not dispatch_dry_run:
         dispatch_dry_run = build_dispatch_dry_run(state)
 
     trigger_blockers = list(
-        dict.fromkeys(str(item) for item in list(dispatch_trigger.get("trigger_blockers") or []) if item)
+        dict.fromkeys(
+            str(item)
+            for item in list(dispatch_trigger.get("trigger_blockers") or [])
+            if item
+        )
     )
     recipient_refs = [
-        dict(ref) for ref in list(dispatch_trigger.get("recipient_refs") or []) if isinstance(ref, dict) and ref
+        dict(ref)
+        for ref in list(dispatch_trigger.get("recipient_refs") or [])
+        if isinstance(ref, dict) and ref
     ]
     selected_manufacturer_ref = (
         dict(dispatch_trigger.get("selected_manufacturer_ref") or {})
@@ -530,7 +625,9 @@ def build_dispatch_event(state: Dict[str, Any]) -> Dict[str, Any]:
     if bool(dispatch_trigger.get("trigger_allowed")):
         event_kind = "dispatch_would_run"
         event_status = "event_dispatch_would_run"
-        event_reason = "Internal dispatch event indicates dispatch would run in the current turn."
+        event_reason = (
+            "Internal dispatch event indicates dispatch would run in the current turn."
+        )
         would_dispatch = True
     elif trigger_status == "trigger_blocked_no_recipients":
         event_kind = "dispatch_no_recipients"
@@ -555,22 +652,29 @@ def build_dispatch_event(state: Dict[str, Any]) -> Dict[str, Any]:
         if case_meta.get("state_revision") is not None
         else cycle.get("state_revision")
     )
-    analysis_cycle_id = (
-        case_meta.get("analysis_cycle_id")
-        or cycle.get("analysis_cycle_id")
+    analysis_cycle_id = case_meta.get("analysis_cycle_id") or cycle.get(
+        "analysis_cycle_id"
     )
     session_id = (
         case_meta.get("session_id")
         or state.get("session_id")
         or state.get("inquiry_id")
     )
-    requirement_class_id = str((requirement_class or {}).get("requirement_class_id") or "")
-    selected_manufacturer_name = str((selected_manufacturer_ref or {}).get("manufacturer_name") or "")
-    recommendation_candidate_id = str((recommendation_identity or {}).get("candidate_id") or "")
+    requirement_class_id = str(
+        (requirement_class or {}).get("requirement_class_id") or ""
+    )
+    selected_manufacturer_name = str(
+        (selected_manufacturer_ref or {}).get("manufacturer_name") or ""
+    )
+    recommendation_candidate_id = str(
+        (recommendation_identity or {}).get("candidate_id") or ""
+    )
     recipient_signature = [
         {
             "manufacturer_name": str(ref.get("manufacturer_name") or ""),
-            "candidate_ids": sorted(str(item) for item in list(ref.get("candidate_ids") or []) if item),
+            "candidate_ids": sorted(
+                str(item) for item in list(ref.get("candidate_ids") or []) if item
+            ),
         }
         for ref in recipient_refs
     ]
@@ -587,7 +691,9 @@ def build_dispatch_event(state: Dict[str, Any]) -> Dict[str, Any]:
         "recommendation_candidate_id": recommendation_candidate_id,
         "recipient_signature": recipient_signature,
     }
-    identity_payload = json.dumps(identity_basis, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    identity_payload = json.dumps(
+        identity_basis, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
     event_key = hashlib.sha256(identity_payload.encode("utf-8")).hexdigest()
 
     return {
@@ -615,15 +721,23 @@ def build_dispatch_bridge(state: Dict[str, Any]) -> Dict[str, Any]:
     case_state: Dict[str, Any] = state.get("case_state") or {}
     sealing_state: Dict[str, Any] = state.get("sealing_state") or {}
 
-    dispatch_event = case_state.get("dispatch_event") or sealing_state.get("dispatch_event") or {}
+    dispatch_event = (
+        case_state.get("dispatch_event") or sealing_state.get("dispatch_event") or {}
+    )
     if not isinstance(dispatch_event, dict) or not dispatch_event:
         dispatch_event = build_dispatch_event(state)
 
     bridge_blockers = list(
-        dict.fromkeys(str(item) for item in list(dispatch_event.get("event_blockers") or []) if item)
+        dict.fromkeys(
+            str(item)
+            for item in list(dispatch_event.get("event_blockers") or [])
+            if item
+        )
     )
     recipient_refs = [
-        dict(ref) for ref in list(dispatch_event.get("recipient_refs") or []) if isinstance(ref, dict) and ref
+        dict(ref)
+        for ref in list(dispatch_event.get("recipient_refs") or [])
+        if isinstance(ref, dict) and ref
     ]
     selected_manufacturer_ref = (
         dict(dispatch_event.get("selected_manufacturer_ref") or {})
@@ -648,7 +762,9 @@ def build_dispatch_bridge(state: Dict[str, Any]) -> Dict[str, Any]:
     if bool(dispatch_event.get("would_dispatch")):
         bridge_ready = True
         bridge_status = "bridge_ready"
-        bridge_reason = "Technical dispatch bridge is ready for later transport consumption."
+        bridge_reason = (
+            "Technical dispatch bridge is ready for later transport consumption."
+        )
     elif event_status == "event_dispatch_no_recipients":
         bridge_ready = False
         bridge_status = "bridge_blocked_no_recipients"
@@ -660,7 +776,9 @@ def build_dispatch_bridge(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         bridge_ready = False
         bridge_status = "bridge_blocked"
-        bridge_reason = "Technical dispatch bridge remains blocked in the current runtime turn."
+        bridge_reason = (
+            "Technical dispatch bridge remains blocked in the current runtime turn."
+        )
 
     return {
         "object_type": "dispatch_bridge",
@@ -671,7 +789,9 @@ def build_dispatch_bridge(state: Dict[str, Any]) -> Dict[str, Any]:
         "bridge_blockers": bridge_blockers,
         "event_id": dispatch_event.get("event_id"),
         "event_key": dispatch_event.get("event_key"),
-        "trigger_status": dispatch_event.get("event_identity", {}).get("trigger_status"),
+        "trigger_status": dispatch_event.get("event_identity", {}).get(
+            "trigger_status"
+        ),
         "dry_run_status": dispatch_event.get("dry_run_status"),
         "recipient_refs": recipient_refs,
         "selected_manufacturer_ref": selected_manufacturer_ref,
@@ -679,8 +799,12 @@ def build_dispatch_bridge(state: Dict[str, Any]) -> Dict[str, Any]:
         "recommendation_identity": recommendation_identity,
         "bridge_payload_summary": {
             "recipient_count": len(recipient_refs),
-            "requirement_class_id": str((requirement_class or {}).get("requirement_class_id") or ""),
-            "candidate_id": str((recommendation_identity or {}).get("candidate_id") or ""),
+            "requirement_class_id": str(
+                (requirement_class or {}).get("requirement_class_id") or ""
+            ),
+            "candidate_id": str(
+                (recommendation_identity or {}).get("candidate_id") or ""
+            ),
         },
         "source": "dispatch_event",
     }
@@ -690,15 +814,23 @@ def build_dispatch_handoff(state: Dict[str, Any]) -> Dict[str, Any]:
     case_state: Dict[str, Any] = state.get("case_state") or {}
     sealing_state: Dict[str, Any] = state.get("sealing_state") or {}
 
-    dispatch_bridge = case_state.get("dispatch_bridge") or sealing_state.get("dispatch_bridge") or {}
+    dispatch_bridge = (
+        case_state.get("dispatch_bridge") or sealing_state.get("dispatch_bridge") or {}
+    )
     if not isinstance(dispatch_bridge, dict) or not dispatch_bridge:
         dispatch_bridge = build_dispatch_bridge(state)
 
     handoff_blockers = list(
-        dict.fromkeys(str(item) for item in list(dispatch_bridge.get("bridge_blockers") or []) if item)
+        dict.fromkeys(
+            str(item)
+            for item in list(dispatch_bridge.get("bridge_blockers") or [])
+            if item
+        )
     )
     recipient_refs = [
-        dict(ref) for ref in list(dispatch_bridge.get("recipient_refs") or []) if isinstance(ref, dict) and ref
+        dict(ref)
+        for ref in list(dispatch_bridge.get("recipient_refs") or [])
+        if isinstance(ref, dict) and ref
     ]
     selected_manufacturer_ref = (
         dict(dispatch_bridge.get("selected_manufacturer_ref") or {})
@@ -761,8 +893,12 @@ def build_dispatch_handoff(state: Dict[str, Any]) -> Dict[str, Any]:
         "recommendation_identity": recommendation_identity,
         "payload_summary": {
             "recipient_count": len(recipient_refs),
-            "requirement_class_id": str((requirement_class or {}).get("requirement_class_id") or ""),
-            "candidate_id": str((recommendation_identity or {}).get("candidate_id") or ""),
+            "requirement_class_id": str(
+                (requirement_class or {}).get("requirement_class_id") or ""
+            ),
+            "candidate_id": str(
+                (recommendation_identity or {}).get("candidate_id") or ""
+            ),
             "manufacturer_names": manufacturer_names,
         },
         "source": "dispatch_bridge",
@@ -773,15 +909,25 @@ def build_dispatch_transport_envelope(state: Dict[str, Any]) -> Dict[str, Any]:
     case_state: Dict[str, Any] = state.get("case_state") or {}
     sealing_state: Dict[str, Any] = state.get("sealing_state") or {}
 
-    dispatch_handoff = case_state.get("dispatch_handoff") or sealing_state.get("dispatch_handoff") or {}
+    dispatch_handoff = (
+        case_state.get("dispatch_handoff")
+        or sealing_state.get("dispatch_handoff")
+        or {}
+    )
     if not isinstance(dispatch_handoff, dict) or not dispatch_handoff:
         dispatch_handoff = build_dispatch_handoff(state)
 
     envelope_blockers = list(
-        dict.fromkeys(str(item) for item in list(dispatch_handoff.get("handoff_blockers") or []) if item)
+        dict.fromkeys(
+            str(item)
+            for item in list(dispatch_handoff.get("handoff_blockers") or [])
+            if item
+        )
     )
     recipient_refs = [
-        dict(ref) for ref in list(dispatch_handoff.get("recipient_refs") or []) if isinstance(ref, dict) and ref
+        dict(ref)
+        for ref in list(dispatch_handoff.get("recipient_refs") or [])
+        if isinstance(ref, dict) and ref
     ]
     selected_manufacturer_ref = (
         dict(dispatch_handoff.get("selected_manufacturer_ref") or {})
@@ -818,7 +964,9 @@ def build_dispatch_transport_envelope(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         envelope_ready = False
         envelope_status = "envelope_blocked"
-        envelope_reason = "Internal transport envelope remains blocked in the current runtime turn."
+        envelope_reason = (
+            "Internal transport envelope remains blocked in the current runtime turn."
+        )
 
     manufacturer_names = sorted(
         {
@@ -845,8 +993,12 @@ def build_dispatch_transport_envelope(state: Dict[str, Any]) -> Dict[str, Any]:
         "payload_summary": {
             "recipient_count": len(recipient_refs),
             "manufacturer_names": manufacturer_names,
-            "requirement_class_id": str((requirement_class or {}).get("requirement_class_id") or ""),
-            "candidate_id": str((recommendation_identity or {}).get("candidate_id") or ""),
+            "requirement_class_id": str(
+                (requirement_class or {}).get("requirement_class_id") or ""
+            ),
+            "candidate_id": str(
+                (recommendation_identity or {}).get("candidate_id") or ""
+            ),
         },
         "source": "dispatch_handoff",
     }
@@ -856,22 +1008,26 @@ def build_dispatch_transport_envelope(state: Dict[str, Any]) -> Dict[str, Any]:
 # Confirmed-parameter extractor (internal)
 # ---------------------------------------------------------------------------
 
-_ALLOWED_PARAMETER_KEYS = frozenset({
-    "temperature_c",
-    "temperature_raw",
-    "pressure_bar",
-    "pressure_raw",
-    "medium",
-    "dynamic_type",
-})
+_ALLOWED_PARAMETER_KEYS = frozenset(
+    {
+        "temperature_c",
+        "temperature_raw",
+        "pressure_bar",
+        "pressure_raw",
+        "medium",
+        "dynamic_type",
+    }
+)
 
-_ALLOWED_DIMENSION_KEYS = frozenset({
-    "shaft_diameter_mm",
-    "bore_diameter_mm",
-    "groove_width_mm",
-    "groove_depth_mm",
-    "piston_rod_diameter_mm",
-})
+_ALLOWED_DIMENSION_KEYS = frozenset(
+    {
+        "shaft_diameter_mm",
+        "bore_diameter_mm",
+        "groove_width_mm",
+        "groove_depth_mm",
+        "piston_rod_diameter_mm",
+    }
+)
 
 
 def _extract_confirmed_parameters(asserted_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -909,7 +1065,9 @@ def _extract_qualified_material_ids(selection_state: Dict[str, Any]) -> list[str
     return list(selection_state.get("viable_candidate_ids") or [])
 
 
-def _extract_qualified_material_names(selection_state: Dict[str, Any]) -> list[Dict[str, Any]]:
+def _extract_qualified_material_names(
+    selection_state: Dict[str, Any],
+) -> list[Dict[str, Any]]:
     """Return a minimal name-card for each viable candidate (id + family + grade)."""
     candidates: list[Dict[str, Any]] = selection_state.get("candidates") or []
     viable_ids: set[str] = set(selection_state.get("viable_candidate_ids") or [])
@@ -931,6 +1089,7 @@ def _extract_qualified_material_names(selection_state: Dict[str, Any]) -> list[D
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def build_handover_payload(
     sealing_state: Dict[str, Any],
@@ -987,7 +1146,9 @@ def build_handover_payload(
     if not canonical_rfq_object and canonical_rfq_state.get("rfq_object"):
         canonical_rfq_object = dict(canonical_rfq_state.get("rfq_object") or {})
 
-    resolved_rfq_admissibility = rfq_admissibility or governance_state.get("rfq_admissibility", "ready")
+    resolved_rfq_admissibility = rfq_admissibility or governance_state.get(
+        "rfq_admissibility", "ready"
+    )
     target_system = "rfq_portal"
 
     if canonical_rfq_object:
@@ -1013,7 +1174,7 @@ def build_handover_payload(
         "is_handover_ready": True,
         "handover_status": handover_status,
         "handover_reason": handover_reason,
-        "target_system": target_system,   # default; overrideable by future routing logic
+        "target_system": target_system,  # default; overrideable by future routing logic
         "handover_payload": payload,
     }
     if canonical_rfq_state.get("rfq_confirmed") is not None:
@@ -1022,14 +1183,20 @@ def build_handover_payload(
         handover["rfq_confirmed"] = bool(raw_handover.get("rfq_confirmed"))
 
     if canonical_rfq_state.get("rfq_handover_initiated") is not None:
-        handover["handover_completed"] = bool(canonical_rfq_state.get("rfq_handover_initiated"))
+        handover["handover_completed"] = bool(
+            canonical_rfq_state.get("rfq_handover_initiated")
+        )
     elif raw_handover.get("handover_completed") is not None:
         handover["handover_completed"] = bool(raw_handover.get("handover_completed"))
 
     if canonical_rfq_state.get("rfq_html_report_present") is not None:
-        handover["rfq_html_report_present"] = bool(canonical_rfq_state.get("rfq_html_report_present"))
+        handover["rfq_html_report_present"] = bool(
+            canonical_rfq_state.get("rfq_html_report_present")
+        )
     elif raw_handover.get("rfq_html_report_present") is not None:
-        handover["rfq_html_report_present"] = bool(raw_handover.get("rfq_html_report_present"))
+        handover["rfq_html_report_present"] = bool(
+            raw_handover.get("rfq_html_report_present")
+        )
     elif raw_handover.get("rfq_html_report") is not None:
         handover["rfq_html_report_present"] = bool(raw_handover.get("rfq_html_report"))
 

@@ -1,6 +1,7 @@
 """
 Tests for graph/nodes/matching_node.py — Phase G Block 1
 """
+
 from __future__ import annotations
 
 import pytest
@@ -103,7 +104,9 @@ class _NonDemoProvider:
 
 class TestMatchingNode:
     @pytest.mark.asyncio
-    async def test_matching_node_uses_manufacturer_rfq_specialist_anchor(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_matching_node_uses_manufacturer_rfq_specialist_anchor(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             matching_node_module,
             "get_default_domain_data_provider",
@@ -132,11 +135,18 @@ class TestMatchingNode:
         assert result.matching.status == "matched_primary_candidate"
         assert result.matching.shortlist_ready is True
         assert result.matching.selected_manufacturer_ref is not None
-        assert result.matching.selected_manufacturer_ref.manufacturer_name == "PatchedCo"
-        assert any("Specialist-selected canonical candidate." in note for note in result.matching.matching_notes)
+        assert (
+            result.matching.selected_manufacturer_ref.manufacturer_name == "PatchedCo"
+        )
+        assert any(
+            "Specialist-selected canonical candidate." in note
+            for note in result.matching.matching_notes
+        )
 
     @pytest.mark.asyncio
-    async def test_matchable_case_selects_manufacturer(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_matchable_case_selects_manufacturer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             matching_node_module,
             "get_default_domain_data_provider",
@@ -150,10 +160,14 @@ class TestMatchingNode:
         assert result.matching.release_blockers == []
         assert result.matching.selected_manufacturer_ref is not None
         assert result.matching.selected_manufacturer_ref.manufacturer_name == "Acme"
-        assert any("capability score 100" in note for note in result.matching.matching_notes)
+        assert any(
+            "capability score 100" in note for note in result.matching.matching_notes
+        )
 
     @pytest.mark.asyncio
-    async def test_requirement_class_can_supply_matching_basis_without_material(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_requirement_class_can_supply_matching_basis_without_material(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             matching_node_module,
             "get_default_domain_data_provider",
@@ -178,16 +192,23 @@ class TestMatchingNode:
         assert result.matching.manufacturer_refs
 
     @pytest.mark.asyncio
-    async def test_material_family_without_requirement_class_is_not_enough_for_matching(self):
+    async def test_material_family_without_requirement_class_is_not_enough_for_matching(
+        self,
+    ):
         result = await matching_node(_state(requirement_class=None))
 
         assert result.matching.matchability_status == "insufficient_matching_basis"
         assert result.matching.status == "not_ready"
         assert result.matching.selected_manufacturer_ref is None
-        assert any("requirement class" in note.lower() for note in result.matching.matching_notes)
+        assert any(
+            "requirement class" in note.lower()
+            for note in result.matching.matching_notes
+        )
 
     @pytest.mark.asyncio
-    async def test_non_matchable_material_returns_negative_status_without_crash(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_non_matchable_material_returns_negative_status_without_crash(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             matching_node_module,
             "get_default_domain_data_provider",
@@ -202,7 +223,9 @@ class TestMatchingNode:
         assert any("Rejected" in note for note in result.matching.matching_notes)
 
     @pytest.mark.asyncio
-    async def test_best_fit_wins_over_weaker_candidate_by_score(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_best_fit_wins_over_weaker_candidate_by_score(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             matching_node_module,
             "get_default_domain_data_provider",
@@ -210,5 +233,11 @@ class TestMatchingNode:
         )
         result = await matching_node(_state())
 
-        assert [ref.manufacturer_name for ref in result.matching.manufacturer_refs] == ["Acme", "SealTech"]
-        assert any("Selected registry-ptfe-g25-acme" in note for note in result.matching.matching_notes)
+        assert [ref.manufacturer_name for ref in result.matching.manufacturer_refs] == [
+            "Acme",
+            "SealTech",
+        ]
+        assert any(
+            "Selected registry-ptfe-g25-acme" in note
+            for note in result.matching.matching_notes
+        )

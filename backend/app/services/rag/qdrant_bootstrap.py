@@ -15,7 +15,9 @@ def _collection_name() -> str:
 
 
 def _qdrant_client_kwargs() -> dict:
-    kwargs: dict = {"url": (os.getenv("QDRANT_URL") or "http://qdrant:6333").rstrip("/")}
+    kwargs: dict = {
+        "url": (os.getenv("QDRANT_URL") or "http://qdrant:6333").rstrip("/")
+    }
     api_key = (os.getenv("QDRANT_API_KEY") or "").strip()
     if api_key:
         kwargs["api_key"] = api_key
@@ -89,7 +91,9 @@ def _has_sparse_vector_config(info: object) -> bool:
     try:
         config = getattr(info, "config", None)
         params = getattr(config, "params", None) if config is not None else None
-        sparse_vectors = getattr(params, "sparse_vectors", None) if params is not None else None
+        sparse_vectors = (
+            getattr(params, "sparse_vectors", None) if params is not None else None
+        )
         if isinstance(sparse_vectors, dict):
             return _sparse_vector_name() in sparse_vectors
         if sparse_vectors is None:
@@ -113,7 +117,10 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
         log.warning("qdrant_bootstrap_skipped reason=empty_collection_name")
         return "skipped"
     if collection.endswith("-ltm"):
-        log.warning("qdrant_bootstrap_skipped reason=ltm_collection_guard collection=%s", collection)
+        log.warning(
+            "qdrant_bootstrap_skipped reason=ltm_collection_guard collection=%s",
+            collection,
+        )
         return "skipped"
 
     model_name, dim = expected or _expected_embedding()
@@ -151,7 +158,9 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
                     try:
                         client.update_collection(
                             collection_name=collection,
-                            sparse_vectors_config=_build_sparse_vectors_config(models=models),
+                            sparse_vectors_config=_build_sparse_vectors_config(
+                                models=models
+                            ),
                         )
                     except Exception as exc:
                         if _is_dev_env():
@@ -163,10 +172,18 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
                             )
                             client.recreate_collection(
                                 collection_name=collection,
-                                vectors_config=_build_vectors_config(models=models, dim=dim),
-                                sparse_vectors_config=_build_sparse_vectors_config(models=models),
-                                hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100),
-                                optimizers_config=models.OptimizersConfigDiff(indexing_threshold=10000),
+                                vectors_config=_build_vectors_config(
+                                    models=models, dim=dim
+                                ),
+                                sparse_vectors_config=_build_sparse_vectors_config(
+                                    models=models
+                                ),
+                                hnsw_config=models.HnswConfigDiff(
+                                    m=16, ef_construct=100
+                                ),
+                                optimizers_config=models.OptimizersConfigDiff(
+                                    indexing_threshold=10000
+                                ),
                             )
                             return "recreated"
                         msg = (
@@ -191,26 +208,46 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
                         )
                         client.recreate_collection(
                             collection_name=collection,
-                            vectors_config=_build_vectors_config(models=models, dim=dim),
-                            sparse_vectors_config=_build_sparse_vectors_config(models=models),
+                            vectors_config=_build_vectors_config(
+                                models=models, dim=dim
+                            ),
+                            sparse_vectors_config=_build_sparse_vectors_config(
+                                models=models
+                            ),
                             hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100),
-                            optimizers_config=models.OptimizersConfigDiff(indexing_threshold=10000),
+                            optimizers_config=models.OptimizersConfigDiff(
+                                indexing_threshold=10000
+                            ),
                         )
                         return "recreated"
                     msg = f"Qdrant collection '{collection}' sparse config still missing after upgrade."
                     raise RuntimeError(msg)
-                log.info("qdrant_collection_ok collection=%s model=%s dim=%s", collection, model_name, dim)
+                log.info(
+                    "qdrant_collection_ok collection=%s model=%s dim=%s",
+                    collection,
+                    model_name,
+                    dim,
+                )
                 return "ok"
             except UnexpectedResponse as exc:
                 last_exc = exc
                 if getattr(exc, "status_code", None) == 404:
-                    log.info("qdrant_collection_create collection=%s model=%s dim=%s", collection, model_name, dim)
+                    log.info(
+                        "qdrant_collection_create collection=%s model=%s dim=%s",
+                        collection,
+                        model_name,
+                        dim,
+                    )
                     client.create_collection(
                         collection_name=collection,
                         vectors_config=_build_vectors_config(models=models, dim=dim),
-                        sparse_vectors_config=_build_sparse_vectors_config(models=models),
+                        sparse_vectors_config=_build_sparse_vectors_config(
+                            models=models
+                        ),
                         hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100),
-                        optimizers_config=models.OptimizersConfigDiff(indexing_threshold=10000),
+                        optimizers_config=models.OptimizersConfigDiff(
+                            indexing_threshold=10000
+                        ),
                     )
                     return "created"
                 raise
@@ -228,7 +265,12 @@ def bootstrap_rag_collection(*, expected: Optional[Tuple[str, int]] = None) -> s
     except RuntimeError:
         raise
     except Exception as exc:
-        log.warning("qdrant_bootstrap_skipped reason=%s: %s collection=%s", type(exc).__name__, exc, collection)
+        log.warning(
+            "qdrant_bootstrap_skipped reason=%s: %s collection=%s",
+            type(exc).__name__,
+            exc,
+            collection,
+        )
         return "skipped"
 
 

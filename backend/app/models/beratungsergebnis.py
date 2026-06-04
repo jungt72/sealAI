@@ -4,6 +4,7 @@ from datetime import datetime
 # ✅ Gemeinsame Base aus app.database verwenden (keine eigene deklarieren)
 from app.database import Base
 
+
 class Beratungsergebnis(Base):
     __tablename__ = "beratungsergebnisse"
 

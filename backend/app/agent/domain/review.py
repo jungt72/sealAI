@@ -11,6 +11,7 @@ Trigger conditions (evaluated in priority order):
 
 The returned dict is safe to merge into SealingAIState["review"].
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -26,12 +27,8 @@ from app.agent.domain.critical_review import (
 )
 
 # Human-readable trigger reasons (deterministic constants, never LLM text)
-REASON_MANUFACTURER_VALIDATION = (
-    "Hersteller-Validierung erforderlich — release_status ist manufacturer_validation_required."
-)
-REASON_DEMO_DATA = (
-    "Datenbestand enthält nur Demo-/Referenzmaterial — keine produktiv freigegebenen Materialdaten vorhanden."
-)
+REASON_MANUFACTURER_VALIDATION = "Hersteller-Validierung erforderlich — release_status ist manufacturer_validation_required."
+REASON_DEMO_DATA = "Datenbestand enthält nur Demo-/Referenzmaterial — keine produktiv freigegebenen Materialdaten vorhanden."
 
 
 def _append_unique(items: list[str], value: str) -> None:
@@ -108,16 +105,24 @@ def evaluate_critical_review(
     result = run_critical_review_specialist(
         CriticalReviewSpecialistInput(
             governance_summary=CriticalReviewGovernanceSummary(
-                release_status=str(governance_state.get("release_status") or "inadmissible"),
-                rfq_admissibility=str(governance_state.get("rfq_admissibility") or "inadmissible"),
+                release_status=str(
+                    governance_state.get("release_status") or "inadmissible"
+                ),
+                rfq_admissibility=str(
+                    governance_state.get("rfq_admissibility") or "inadmissible"
+                ),
                 unknowns_release_blocking=tuple(
                     str(item)
-                    for item in list(governance_state.get("unknowns_release_blocking") or [])
+                    for item in list(
+                        governance_state.get("unknowns_release_blocking") or []
+                    )
                     if item is not None
                 ),
                 unknowns_manufacturer_validation=tuple(
                     str(item)
-                    for item in list(governance_state.get("unknowns_manufacturer_validation") or [])
+                    for item in list(
+                        governance_state.get("unknowns_manufacturer_validation") or []
+                    )
                     if item is not None
                 ),
                 scope_of_validity=tuple(
@@ -137,7 +142,10 @@ def evaluate_critical_review(
             ),
             matching_package=CriticalReviewMatchingPackage(
                 status=str(matching_outcome.get("status") or ""),
-                selected_manufacturer_ref=dict(matching_outcome.get("selected_manufacturer_ref") or {}) or None,
+                selected_manufacturer_ref=dict(
+                    matching_outcome.get("selected_manufacturer_ref") or {}
+                )
+                or None,
             ),
             rfq_basis=CriticalReviewRfqBasis(
                 rfq_object=rfq_object or None,

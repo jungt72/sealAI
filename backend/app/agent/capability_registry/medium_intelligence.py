@@ -21,7 +21,9 @@ from app.services.medium_intelligence_service import (
 
 @dataclass(frozen=True, slots=True)
 class MediumIntelligenceCapability:
-    service: MediumIntelligenceService = field(default_factory=MediumIntelligenceService)
+    service: MediumIntelligenceService = field(
+        default_factory=MediumIntelligenceService
+    )
 
     @property
     def descriptor(self) -> CapabilityDescriptor:

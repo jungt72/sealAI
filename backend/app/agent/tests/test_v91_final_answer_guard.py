@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app.agent.communication.governed_answer_context import build_governed_answer_context
+from app.agent.communication.governed_answer_context import (
+    build_governed_answer_context,
+)
 from app.agent.state.models import ConversationStrategyContract, GovernedSessionState
 from app.agent.v91.contracts import FinalAnswerContext
 from app.agent.v91.final_answer_guard import validate_v91_final_answer

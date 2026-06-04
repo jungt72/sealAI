@@ -7,6 +7,7 @@ Responsibility:
     Build a bounded dispatch summary from the RFQ handover state without
     executing any external send/connector side effects.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,9 +19,16 @@ from app.agent.manufacturers.commercial import (
     build_dispatch_transport_envelope,
     build_dispatch_trigger,
 )
-from app.agent.domain.manufacturer_rfq import project_dispatch_intent_from_rfq_send_payload
+from app.agent.domain.manufacturer_rfq import (
+    project_dispatch_intent_from_rfq_send_payload,
+)
 from app.agent.graph import GraphState
-from app.agent.state.models import DispatchState, ManufacturerRef, RecipientRef, RequirementClass
+from app.agent.state.models import (
+    DispatchState,
+    ManufacturerRef,
+    RecipientRef,
+    RequirementClass,
+)
 
 log = logging.getLogger(__name__)
 
@@ -36,14 +44,18 @@ def _recipient_refs_from_dispatch_intent(dispatch_intent: dict) -> list[Recipien
         recipients.append(
             RecipientRef(
                 manufacturer_name=manufacturer_name,
-                candidate_ids=[str(item) for item in list(ref.get("candidate_ids") or []) if item],
+                candidate_ids=[
+                    str(item) for item in list(ref.get("candidate_ids") or []) if item
+                ],
                 qualified_for_rfq=bool(ref.get("qualified_for_rfq", False)),
             )
         )
     return recipients
 
 
-def _selected_manufacturer_ref_from_dispatch_intent(dispatch_intent: dict) -> ManufacturerRef | None:
+def _selected_manufacturer_ref_from_dispatch_intent(
+    dispatch_intent: dict,
+) -> ManufacturerRef | None:
     payload = dispatch_intent.get("selected_manufacturer_ref")
     if not isinstance(payload, dict):
         return None
@@ -52,21 +64,27 @@ def _selected_manufacturer_ref_from_dispatch_intent(dispatch_intent: dict) -> Ma
         return None
     return ManufacturerRef(
         manufacturer_name=manufacturer_name,
-        candidate_ids=[str(item) for item in list(payload.get("candidate_ids") or []) if item],
-        material_families=[str(item) for item in list(payload.get("material_families") or []) if item],
-        grade_names=[str(item) for item in list(payload.get("grade_names") or []) if item],
+        candidate_ids=[
+            str(item) for item in list(payload.get("candidate_ids") or []) if item
+        ],
+        material_families=[
+            str(item) for item in list(payload.get("material_families") or []) if item
+        ],
+        grade_names=[
+            str(item) for item in list(payload.get("grade_names") or []) if item
+        ],
         qualified_for_rfq=bool(payload.get("qualified_for_rfq", False)),
     )
 
 
-def _requirement_class_from_dispatch_intent(dispatch_intent: dict) -> RequirementClass | None:
+def _requirement_class_from_dispatch_intent(
+    dispatch_intent: dict,
+) -> RequirementClass | None:
     payload = dispatch_intent.get("requirement_class")
     if not isinstance(payload, dict):
         return None
     class_id = str(
-        payload.get("requirement_class_id")
-        or payload.get("class_id")
-        or ""
+        payload.get("requirement_class_id") or payload.get("class_id") or ""
     ).strip()
     if not class_id:
         return None
@@ -89,12 +107,16 @@ async def dispatch_node(state: GraphState) -> GraphState:
                     requirement_class=state.rfq.requirement_class,
                     transport_channel="internal_transport_envelope",
                     handover_summary=state.rfq.handover_summary,
-                    dispatch_notes=["Dispatch preparation requires an RFQ-ready handover basis."],
+                    dispatch_notes=[
+                        "Dispatch preparation requires an RFQ-ready handover basis."
+                    ],
                 )
             }
         )
 
-    dispatch_intent = project_dispatch_intent_from_rfq_send_payload(state.rfq.rfq_send_payload)
+    dispatch_intent = project_dispatch_intent_from_rfq_send_payload(
+        state.rfq.rfq_send_payload
+    )
     if not isinstance(dispatch_intent, dict) or not dispatch_intent:
         return state.model_copy(
             update={
@@ -105,7 +127,9 @@ async def dispatch_node(state: GraphState) -> GraphState:
                     requirement_class=state.rfq.requirement_class,
                     transport_channel="internal_transport_envelope",
                     handover_summary=state.rfq.handover_summary,
-                    dispatch_notes=["Dispatch preparation requires the bounded rfq_send_payload contract."],
+                    dispatch_notes=[
+                        "Dispatch preparation requires the bounded rfq_send_payload contract."
+                    ],
                 )
             }
         )
@@ -121,7 +145,9 @@ async def dispatch_node(state: GraphState) -> GraphState:
         {"case_state": {"dispatch_trigger": trigger, "dispatch_dry_run": dry_run}}
     )
     handoff = build_dispatch_handoff({"case_state": {"dispatch_bridge": bridge}})
-    envelope = build_dispatch_transport_envelope({"case_state": {"dispatch_handoff": handoff}})
+    envelope = build_dispatch_transport_envelope(
+        {"case_state": {"dispatch_handoff": handoff}}
+    )
 
     notes = [
         note
@@ -160,7 +186,8 @@ async def dispatch_node(state: GraphState) -> GraphState:
                     or state.rfq.requirement_class
                 ),
                 transport_channel="internal_transport_envelope",
-                handover_summary=str(envelope.get("envelope_reason") or "") or state.rfq.handover_summary,
+                handover_summary=str(envelope.get("envelope_reason") or "")
+                or state.rfq.handover_summary,
                 dispatch_notes=notes,
             )
         }

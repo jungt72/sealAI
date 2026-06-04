@@ -81,6 +81,7 @@ class TestSingleton:
 
     def test_singleton_same_object(self):
         from app.agent.prompts import prompts as p2
+
         assert prompts is p2
 
     def test_prompts_dir_exists(self):
@@ -102,12 +103,16 @@ class TestAllTemplatesRenderable:
     def test_template_renders_without_error(self, template_path: str):
         result = prompts.render(template_path, _FULL_CTX)
         assert isinstance(result, str)
-        assert len(result.strip()) > 0, f"Template {template_path} rendert leeren String"
+        assert (
+            len(result.strip()) > 0
+        ), f"Template {template_path} rendert leeren String"
 
     def test_all_templates_in_list(self):
         templates = prompts.list_templates()
         for expected in ALL_TEMPLATES:
-            assert expected in templates, f"Template fehlt in list_templates(): {expected}"
+            assert (
+                expected in templates
+            ), f"Template fehlt in list_templates(): {expected}"
 
 
 # ── base.j2 Pflichtinhalt ────────────────────────────────────────────────────
@@ -116,7 +121,10 @@ class TestAllTemplatesRenderable:
 class TestBaseTemplate:
     def test_disclaimer_present(self):
         result = prompts.render("renderer/base.j2", _FULL_CTX)
-        assert "SeaLAI erstellt eine technische Vorauswahl auf Basis der angegebenen Parameter" in result
+        assert (
+            "SeaLAI erstellt eine technische Vorauswahl auf Basis der angegebenen Parameter"
+            in result
+        )
 
     def test_finale_freigabe_hersteller_present(self):
         result = prompts.render("renderer/base.j2", _FULL_CTX)
@@ -238,12 +246,14 @@ class TestGateMigration:
     def test_gate_py_has_no_hardcoded_string_prompt(self):
         """Stelle sicher dass _GATE_SYSTEM_PROMPT nicht mehr existiert."""
         import app.agent.runtime.gate as gate_module
-        assert not hasattr(gate_module, "_GATE_SYSTEM_PROMPT"), (
-            "_GATE_SYSTEM_PROMPT ist noch in gate.py — Migration unvollstaendig"
-        )
+
+        assert not hasattr(
+            gate_module, "_GATE_SYSTEM_PROMPT"
+        ), "_GATE_SYSTEM_PROMPT ist noch in gate.py — Migration unvollstaendig"
 
     def test_gate_py_has_get_gate_system_prompt_function(self):
         from app.agent.runtime.gate import _get_gate_system_prompt
+
         result = _get_gate_system_prompt(
             current_zone="conversation",
             short_state_summary=None,
@@ -256,6 +266,7 @@ class TestGateMigration:
 
     def test_get_gate_system_prompt_returns_same_content_as_template(self):
         from app.agent.runtime.gate import _get_gate_system_prompt
+
         vars = {
             "current_zone": "conversation",
             "short_state_summary": None,
@@ -286,9 +297,9 @@ class TestRendererTemplateMap:
     def test_all_mapped_templates_exist(self):
         for outward_class, template_path in _RENDERER_TEMPLATE_MAP.items():
             full_path = PROMPTS_DIR / template_path
-            assert full_path.exists(), (
-                f"{outward_class} → {template_path} existiert nicht"
-            )
+            assert (
+                full_path.exists()
+            ), f"{outward_class} → {template_path} existiert nicht"
 
     def test_no_forbidden_names_in_map(self):
         forbidden = {"governed_recommendation", "rfq_ready"}

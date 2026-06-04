@@ -25,9 +25,7 @@ def upgrade():
         "cases",
         sa.Column("session_id", sa.String(length=255), nullable=True),
     )
-    op.create_index(
-        "ix_cases_session_id", "cases", ["session_id"], unique=True
-    )
+    op.create_index("ix_cases_session_id", "cases", ["session_id"], unique=True)
 
     # --- inquiry_deliveries ---
     op.create_table(
@@ -120,9 +118,7 @@ def downgrade():
         "ix_inquiry_deliveries_manufacturer_id",
         table_name="inquiry_deliveries",
     )
-    op.drop_index(
-        "ix_inquiry_deliveries_case_id", table_name="inquiry_deliveries"
-    )
+    op.drop_index("ix_inquiry_deliveries_case_id", table_name="inquiry_deliveries")
     op.drop_table("inquiry_deliveries")
     op.drop_index("ix_cases_session_id", table_name="cases")
     op.drop_column("cases", "session_id")

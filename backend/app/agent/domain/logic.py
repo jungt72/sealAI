@@ -4,6 +4,7 @@ Engineering Logic — claim processing, conflict evaluation, governance derivati
 Core state-transition logic for the governed path:
   extract_parameters → evaluate_claim_conflicts → process_cycle_update
 """
+
 from typing import List, Dict, Any, Tuple, Optional
 import re
 from copy import deepcopy
@@ -17,7 +18,11 @@ from app.agent.state.case_state import (
 )
 from app.agent.domain.parameters import PhysicalParameter
 from app.agent.domain.limits import OperatingLimit
-from app.agent.domain.material import MaterialValidator, MaterialPhysicalProfile, normalize_fact_card_evidence
+from app.agent.domain.material import (
+    MaterialValidator,
+    MaterialPhysicalProfile,
+    normalize_fact_card_evidence,
+)
 from app.agent.domain.physics import calculate_physics
 
 from app.agent.domain.normalization import (
@@ -35,7 +40,12 @@ _NORMATIVE_RELEASE_STATUSES = {
     "inquiry_ready",
     "not_applicable",
 }
-_NORMATIVE_RFQ_ADMISSIBILITY = {"inadmissible", "provisional", "ready", "not_applicable"}
+_NORMATIVE_RFQ_ADMISSIBILITY = {
+    "inadmissible",
+    "provisional",
+    "ready",
+    "not_applicable",
+}
 _NORMATIVE_SPECIFICITY = {
     "family_only",
     "subfamily",
@@ -56,6 +66,7 @@ GATE_EVIDENCE_MISSING = "evidence_missing"
 GATE_EVIDENCE_INSUFFICIENT = "evidence_insufficient"
 GATE_OUT_OF_SCOPE = "out_of_scope"
 GATE_BLOCKED_BY_BOUNDARY = "blocked_by_boundary"
+
 
 def validate_material_risk(working_profile: Dict[str, Any]) -> str:
     """Validates material risk based on pressure and material type."""
@@ -83,8 +94,12 @@ _MANUFACTURER_CONFLICT_TYPES = {
     "resolution_requires_manufacturer_scope",
 }
 _MATERIAL_FAMILY_PATTERN = re.compile(r"\b(NBR|PTFE|FKM|FFKM|EPDM|SILIKON)\b", re.I)
-_SPECIFIC_GRADE_PATTERN = re.compile(r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I)
-_FILLER_HINT_PATTERN = re.compile(r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I)
+_SPECIFIC_GRADE_PATTERN = re.compile(
+    r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I
+)
+_FILLER_HINT_PATTERN = re.compile(
+    r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I
+)
 _MANUFACTURER_NAME_PATTERN = re.compile(
     r"\b(?:manufacturer|hersteller|brand)\s*[:\-]?\s*([a-z0-9][a-z0-9_-]*(?: [a-z0-9][a-z0-9_-]*){0,3})\b",
     re.I,
@@ -95,7 +110,9 @@ def _ensure_state_shape(state: SealingAIState) -> SealingAIState:
     """Blueprint Section 02/12: keep all five layers and mandatory governance fields present."""
 
     state.setdefault("observed", {"observed_inputs": [], "raw_parameters": {}})
-    state.setdefault("normalized", {"identity_records": {}, "normalized_parameters": {}})
+    state.setdefault(
+        "normalized", {"identity_records": {}, "normalized_parameters": {}}
+    )
     state.setdefault(
         "asserted",
         {
@@ -183,9 +200,15 @@ def _normalize_conflict_record(conflict: Dict[str, Any]) -> Dict[str, Any]:
     conflict_type = str(normalized.get("type") or "parameter_conflict").strip().lower()
     severity = str(normalized.get("severity") or "CRITICAL").strip().upper()
 
-    if conflict_type in _MANUFACTURER_CONFLICT_TYPES and severity not in _MANUFACTURER_CONFLICT_SEVERITIES:
+    if (
+        conflict_type in _MANUFACTURER_CONFLICT_TYPES
+        and severity not in _MANUFACTURER_CONFLICT_SEVERITIES
+    ):
         severity = "RESOLUTION_REQUIRES_MANUFACTURER_SCOPE"
-    elif conflict_type in _BLOCKING_CONFLICT_TYPES and severity not in _BLOCKING_CONFLICT_SEVERITIES:
+    elif (
+        conflict_type in _BLOCKING_CONFLICT_TYPES
+        and severity not in _BLOCKING_CONFLICT_SEVERITIES
+    ):
         severity = "CRITICAL"
 
     normalized["type"] = conflict_type
@@ -193,7 +216,9 @@ def _normalize_conflict_record(conflict: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def _record_observed_claims(state: SealingAIState, raw_claims: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _record_observed_claims(
+    state: SealingAIState, raw_claims: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
     observed_entries: List[Dict[str, Any]] = []
     observed_layer = state["observed"]
     raw_parameters = observed_layer.setdefault("raw_parameters", {})
@@ -301,7 +326,9 @@ def _write_probable_identity_record(
     }
 
 
-def _build_evidence_index(relevant_fact_cards: Optional[List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+def _build_evidence_index(
+    relevant_fact_cards: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Dict[str, Any]]:
     evidence_index: Dict[str, Dict[str, Any]] = {}
     for card in relevant_fact_cards or []:
         evidence_id = card.get("evidence_id") or card.get("id")
@@ -309,7 +336,8 @@ def _build_evidence_index(relevant_fact_cards: Optional[List[Dict[str, Any]]]) -
             continue
         evidence_index[str(evidence_id)] = {
             "card": card,
-            "normalized_evidence": card.get("normalized_evidence") or normalize_fact_card_evidence(card),
+            "normalized_evidence": card.get("normalized_evidence")
+            or normalize_fact_card_evidence(card),
         }
     return evidence_index
 
@@ -319,7 +347,9 @@ def _derive_claim_bound_specificity(
     source_fact_ids: List[str],
     evidence_index: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Dict[str, Any]]:
-    bound_fact_ids = [str(fact_id) for fact_id in source_fact_ids if str(fact_id) in evidence_index]
+    bound_fact_ids = [
+        str(fact_id) for fact_id in source_fact_ids if str(fact_id) in evidence_index
+    ]
     per_field_values: Dict[str, List[str]] = {
         "material_family": [],
         "filler_hint": [],
@@ -344,7 +374,9 @@ def _derive_claim_bound_specificity(
         temporal_reasons = []
         for fact_id in bound_fact_ids:
             normalized_evidence = evidence_index[fact_id]["normalized_evidence"]
-            quality_entry = normalized_evidence.get("identity_quality", {}).get(field_name, {})
+            quality_entry = normalized_evidence.get("identity_quality", {}).get(
+                field_name, {}
+            )
             quality_states.append(quality_entry.get("quality"))
             if quality_entry.get("reason"):
                 quality_reasons.append(str(quality_entry["reason"]))
@@ -366,11 +398,17 @@ def _derive_claim_bound_specificity(
                 "temporal_quality": "unknown",
             }
             continue
-        if unique_values and any(state != "qualified" for state in quality_states if state not in {None, "missing"}):
+        if unique_values and any(
+            state != "qualified"
+            for state in quality_states
+            if state not in {None, "missing"}
+        ):
             derived[field_name] = {
                 "status": "insufficient_quality",
                 "source_fact_ids": bound_fact_ids,
-                "mapping_reason": quality_reasons[0] if quality_reasons else f"fact_card_insufficient_quality:{field_name}",
+                "mapping_reason": quality_reasons[0]
+                if quality_reasons
+                else f"fact_card_insufficient_quality:{field_name}",
                 "deterministic_source": "fact_card_binding_unqualified",
                 "raw_value": " | ".join(unique_values),
                 "evidence_quality": "unqualified",
@@ -378,11 +416,15 @@ def _derive_claim_bound_specificity(
                 "temporal_quality": "unknown",
             }
             continue
-        if unique_values and any(state != "sufficient" for state in authority_states if state):
+        if unique_values and any(
+            state != "sufficient" for state in authority_states if state
+        ):
             derived[field_name] = {
                 "status": "insufficient_authority",
                 "source_fact_ids": bound_fact_ids,
-                "mapping_reason": authority_reasons[0] if authority_reasons else f"fact_card_insufficient_authority:{field_name}",
+                "mapping_reason": authority_reasons[0]
+                if authority_reasons
+                else f"fact_card_insufficient_authority:{field_name}",
                 "deterministic_source": "fact_card_binding_insufficient_authority",
                 "raw_value": " | ".join(unique_values),
                 "evidence_quality": "qualified",
@@ -390,11 +432,15 @@ def _derive_claim_bound_specificity(
                 "temporal_quality": "unknown",
             }
             continue
-        if unique_values and any(state != "sufficient" for state in temporal_states if state):
+        if unique_values and any(
+            state != "sufficient" for state in temporal_states if state
+        ):
             derived[field_name] = {
                 "status": "insufficient_temporal",
                 "source_fact_ids": bound_fact_ids,
-                "mapping_reason": temporal_reasons[0] if temporal_reasons else f"fact_card_temporal_insufficient:{field_name}",
+                "mapping_reason": temporal_reasons[0]
+                if temporal_reasons
+                else f"fact_card_temporal_insufficient:{field_name}",
                 "deterministic_source": "fact_card_binding_insufficient_temporal",
                 "raw_value": " | ".join(unique_values),
                 "evidence_quality": "qualified",
@@ -462,13 +508,18 @@ def _normalize_observed_entries(
 
         if "temperature_c" in extracted:
             normalized["temperature_c"] = extracted["temperature_c"]
-            temp_entity = normalize_parameter("temperature", extracted["temperature_raw"])
+            temp_entity = normalize_parameter(
+                "temperature", extracted["temperature_raw"]
+            )
             identity_records["temperature"] = {
                 "raw_value": extracted["temperature_raw"],
                 "normalized_value": extracted["temperature_c"],
                 "identity_class": confidence_to_identity_class(temp_entity.confidence),
-                "normalization_certainty": confidence_to_normalization_certainty(temp_entity.confidence),
-                "mapping_reason": temp_entity.warning_message or "normalized_temperature_c",
+                "normalization_certainty": confidence_to_normalization_certainty(
+                    temp_entity.confidence
+                ),
+                "mapping_reason": temp_entity.warning_message
+                or "normalized_temperature_c",
                 "source_fact_ids": [],
                 "deterministic_source": "central_normalization",
             }
@@ -480,8 +531,11 @@ def _normalize_observed_entries(
                 "raw_value": extracted["pressure_raw"],
                 "normalized_value": extracted["pressure_bar"],
                 "identity_class": confidence_to_identity_class(pres_entity.confidence),
-                "normalization_certainty": confidence_to_normalization_certainty(pres_entity.confidence),
-                "mapping_reason": pres_entity.warning_message or "normalized_pressure_bar",
+                "normalization_certainty": confidence_to_normalization_certainty(
+                    pres_entity.confidence
+                ),
+                "mapping_reason": pres_entity.warning_message
+                or "normalized_pressure_bar",
                 "source_fact_ids": [],
                 "deterministic_source": "central_normalization",
             }
@@ -489,8 +543,12 @@ def _normalize_observed_entries(
         if "medium_normalized" in extracted:
             medium_value = extracted["medium_normalized"]
             normalized["medium_normalized"] = medium_value
-            medium_status = str(extracted.get("medium_normalization_status") or "confirmed")
-            medium_reason = str(extracted.get("medium_mapping_reason") or "normalized_medium")
+            medium_status = str(
+                extracted.get("medium_normalization_status") or "confirmed"
+            )
+            medium_reason = str(
+                extracted.get("medium_mapping_reason") or "normalized_medium"
+            )
             medium_raw = str(extracted.get("medium_raw") or raw_text)
             if medium_status == "inferred":
                 _write_probable_identity_record(
@@ -515,7 +573,10 @@ def _normalize_observed_entries(
                 identity_records,
                 "medium",
                 str(extracted.get("medium_raw") or raw_text),
-                str(extracted.get("medium_mapping_reason") or "medium_confirmation_required"),
+                str(
+                    extracted.get("medium_mapping_reason")
+                    or "medium_confirmation_required"
+                ),
                 deterministic_source="central_normalization",
             )
             blocking_unknowns.append("medium_confirmation_required")
@@ -532,8 +593,12 @@ def _normalize_observed_entries(
         if "material_normalized" in extracted:
             material_value = extracted["material_normalized"]
             normalized["material_normalized"] = material_value
-            material_status = str(extracted.get("material_normalization_status") or "confirmed")
-            material_reason = str(extracted.get("material_mapping_reason") or "normalized_material")
+            material_status = str(
+                extracted.get("material_normalization_status") or "confirmed"
+            )
+            material_reason = str(
+                extracted.get("material_mapping_reason") or "normalized_material"
+            )
             material_raw = str(extracted.get("material_raw") or raw_text)
             if material_status == "inferred":
                 _write_probable_identity_record(
@@ -558,7 +623,10 @@ def _normalize_observed_entries(
                 identity_records,
                 "material_family",
                 str(extracted.get("material_raw") or raw_text),
-                str(extracted.get("material_mapping_reason") or "material_confirmation_required"),
+                str(
+                    extracted.get("material_mapping_reason")
+                    or "material_confirmation_required"
+                ),
                 deterministic_source="central_normalization",
             )
             blocking_unknowns.append("material_confirmation_required")
@@ -609,9 +677,13 @@ def _derive_asserted_from_normalized(
     asserted = state["asserted"]
 
     if "medium" not in blocked_fields and normalized.get("medium_normalized"):
-        asserted.setdefault("medium_profile", {})["name"] = normalized["medium_normalized"]
+        asserted.setdefault("medium_profile", {})["name"] = normalized[
+            "medium_normalized"
+        ]
     if "material" not in blocked_fields and normalized.get("material_normalized"):
-        asserted.setdefault("machine_profile", {})["material"] = normalized["material_normalized"]
+        asserted.setdefault("machine_profile", {})["material"] = normalized[
+            "material_normalized"
+        ]
 
     operating_conditions = asserted.setdefault("operating_conditions", {})
     if "temperature" not in blocked_fields and "temperature_c" in normalized:
@@ -620,7 +692,9 @@ def _derive_asserted_from_normalized(
         operating_conditions["pressure"] = normalized["pressure_bar"]
 
 
-def _has_confirmed_identity(identity_records: Dict[str, Dict[str, Any]], field_name: str) -> bool:
+def _has_confirmed_identity(
+    identity_records: Dict[str, Dict[str, Any]], field_name: str
+) -> bool:
     identity = identity_records.get(field_name) or {}
     return (
         identity.get("identity_class") == "identity_confirmed"
@@ -633,7 +707,9 @@ def _has_confirmed_identity(identity_records: Dict[str, Dict[str, Any]], field_n
     )
 
 
-def _derive_specificity_state(identity_records: Dict[str, Dict[str, Any]]) -> tuple[str, List[str], List[str]]:
+def _derive_specificity_state(
+    identity_records: Dict[str, Dict[str, Any]],
+) -> tuple[str, List[str], List[str]]:
     """
     Deterministic specificity ladder:
     family_only -> confirmed family only
@@ -644,7 +720,9 @@ def _derive_specificity_state(identity_records: Dict[str, Dict[str, Any]]) -> tu
     family_confirmed = _has_confirmed_identity(identity_records, "material_family")
     filler_confirmed = _has_confirmed_identity(identity_records, "filler_hint")
     grade_confirmed = _has_confirmed_identity(identity_records, "grade_name")
-    manufacturer_confirmed = _has_confirmed_identity(identity_records, "manufacturer_name")
+    manufacturer_confirmed = _has_confirmed_identity(
+        identity_records, "manufacturer_name"
+    )
 
     scope_markers: List[str] = []
     manufacturer_unknowns: List[str] = []
@@ -690,10 +768,15 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
     governance = state["governance"]
     asserted = state["asserted"]
     identity_records = state["normalized"].get("identity_records", {})
-    conflicts = [_normalize_conflict_record(conflict) for conflict in governance.get("conflicts", [])]
+    conflicts = [
+        _normalize_conflict_record(conflict)
+        for conflict in governance.get("conflicts", [])
+    ]
     gate_failures: List[str] = []
     blocking_unknowns: List[str] = list(governance.get("unknowns_release_blocking", []))
-    manufacturer_unknowns: List[str] = list(governance.get("unknowns_manufacturer_validation", []))
+    manufacturer_unknowns: List[str] = list(
+        governance.get("unknowns_manufacturer_validation", [])
+    )
 
     _oc = asserted.get("operating_conditions") or {}
     _has_medium = bool((asserted.get("medium_profile") or {}).get("name"))
@@ -707,33 +790,63 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
         "observed_normalized_asserted_reducer",
     ]
 
-    specificity_level, specificity_unknowns, specificity_scope_markers = _derive_specificity_state(identity_records)
+    specificity_level, specificity_unknowns, specificity_scope_markers = (
+        _derive_specificity_state(identity_records)
+    )
     governance["specificity_level"] = _normalize_specificity(specificity_level)
     manufacturer_unknowns.extend(specificity_unknowns)
     scope_markers.extend(specificity_scope_markers)
     specificity_level = governance["specificity_level"]
     for field_name, identity in identity_records.items():
         if identity.get("identity_class") == "identity_unresolved":
-            if field_name in {"material_family", "grade_name", "manufacturer_name", "filler_hint"}:
+            if field_name in {
+                "material_family",
+                "grade_name",
+                "manufacturer_name",
+                "filler_hint",
+            }:
                 if identity.get("deterministic_source") == "fact_card_binding_conflict":
-                    gate_failures.append(identity.get("mapping_reason") or f"{field_name}_identity_conflict")
-                    blocking_unknowns.append(identity.get("mapping_reason") or f"{field_name}_identity_conflict")
+                    gate_failures.append(
+                        identity.get("mapping_reason")
+                        or f"{field_name}_identity_conflict"
+                    )
+                    blocking_unknowns.append(
+                        identity.get("mapping_reason")
+                        or f"{field_name}_identity_conflict"
+                    )
                 else:
-                    manufacturer_unknowns.append(identity.get("mapping_reason") or f"{field_name}_identity_unresolved")
+                    manufacturer_unknowns.append(
+                        identity.get("mapping_reason")
+                        or f"{field_name}_identity_unresolved"
+                    )
             else:
                 blocking_unknowns.append(f"{field_name}_identity_unresolved")
 
     for conflict in conflicts:
         severity = str(conflict.get("severity") or "").upper()
         conflict_type = str(conflict.get("type") or "").lower()
-        if severity in _MANUFACTURER_CONFLICT_SEVERITIES or conflict_type in _MANUFACTURER_CONFLICT_TYPES:
-            manufacturer_unknowns.append(conflict.get("message") or conflict_type or "manufacturer_scope_required")
-        elif severity in _BLOCKING_CONFLICT_SEVERITIES or conflict_type in _BLOCKING_CONFLICT_TYPES:
-            gate_failures.append(conflict.get("message") or conflict.get("type") or "critical_conflict")
+        if (
+            severity in _MANUFACTURER_CONFLICT_SEVERITIES
+            or conflict_type in _MANUFACTURER_CONFLICT_TYPES
+        ):
+            manufacturer_unknowns.append(
+                conflict.get("message")
+                or conflict_type
+                or "manufacturer_scope_required"
+            )
+        elif (
+            severity in _BLOCKING_CONFLICT_SEVERITIES
+            or conflict_type in _BLOCKING_CONFLICT_TYPES
+        ):
+            gate_failures.append(
+                conflict.get("message") or conflict.get("type") or "critical_conflict"
+            )
             blocking_unknowns.append(conflict_type or "critical_conflict")
 
     governance["conflicts"] = conflicts
-    governance["gate_failures"] = list(dict.fromkeys(str(item) for item in gate_failures if item))
+    governance["gate_failures"] = list(
+        dict.fromkeys(str(item) for item in gate_failures if item)
+    )
     governance["unknowns_release_blocking"] = list(
         dict.fromkeys(str(item) for item in blocking_unknowns if item)
     )
@@ -746,9 +859,13 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
         scope_markers.append("manufacturer_validation_scope")
     scope_markers.append(f"specificity_level:{specificity_level}")
     governance["scope_of_validity"] = list(dict.fromkeys(scope_markers))
-    governance["assumptions_active"] = list(dict.fromkeys(governance.get("assumptions_active", [])))
+    governance["assumptions_active"] = list(
+        dict.fromkeys(governance.get("assumptions_active", []))
+    )
 
-    has_asserted_signal = bool(asserted.get("medium_profile")) or bool(asserted.get("operating_conditions"))
+    has_asserted_signal = bool(asserted.get("medium_profile")) or bool(
+        asserted.get("operating_conditions")
+    )
 
     if governance["unknowns_release_blocking"] or governance["gate_failures"]:
         governance["release_status"] = "inadmissible"
@@ -763,8 +880,12 @@ def _derive_governance_from_state(state: SealingAIState) -> None:
         governance["release_status"] = "inquiry_ready"
         governance["rfq_admissibility"] = "ready"
 
-    governance["release_status"] = _normalize_release_status(governance["release_status"])
-    governance["rfq_admissibility"] = _normalize_rfq_admissibility(governance["rfq_admissibility"])
+    governance["release_status"] = _normalize_release_status(
+        governance["release_status"]
+    )
+    governance["rfq_admissibility"] = _normalize_rfq_admissibility(
+        governance["rfq_admissibility"]
+    )
 
 
 def _advance_cycle_state(state: SealingAIState, expected_revision: int) -> None:
@@ -798,12 +919,18 @@ def apply_engineering_firewall_transition(
     raw_claims = raw_claims or []
     evidence_index = _build_evidence_index(relevant_fact_cards)
     observed_entries = _record_observed_claims(new_state, raw_claims)
-    blocking_unknowns = _normalize_observed_entries(new_state, observed_entries, evidence_index=evidence_index)
+    blocking_unknowns = _normalize_observed_entries(
+        new_state, observed_entries, evidence_index=evidence_index
+    )
 
-    normalized_parameters = new_state["normalized"].setdefault("normalized_parameters", {})
+    normalized_parameters = new_state["normalized"].setdefault(
+        "normalized_parameters", {}
+    )
     if validated_params:
         if "temperature" in validated_params:
-            normalized_parameters["temperature_c"] = float(validated_params["temperature"])
+            normalized_parameters["temperature_c"] = float(
+                validated_params["temperature"]
+            )
         if "pressure" in validated_params:
             normalized_parameters["pressure_bar"] = float(validated_params["pressure"])
 
@@ -811,7 +938,9 @@ def apply_engineering_firewall_transition(
     existing_conflicts = list(governance.get("conflicts", []))
     governance["conflicts"] = existing_conflicts + intelligence_conflicts
     governance["unknowns_release_blocking"] = list(
-        dict.fromkeys(list(governance.get("unknowns_release_blocking", [])) + blocking_unknowns)
+        dict.fromkeys(
+            list(governance.get("unknowns_release_blocking", [])) + blocking_unknowns
+        )
     )
 
     blocked_fields = {
@@ -825,7 +954,9 @@ def apply_engineering_firewall_transition(
     return new_state
 
 
-def search_alternative_materials(p_req: float, t_req: float, all_fact_cards: List[Dict[str, Any]]) -> List[str]:
+def search_alternative_materials(
+    p_req: float, t_req: float, all_fact_cards: List[Dict[str, Any]]
+) -> List[str]:
     """Sucht nach alternativen Materialien, die den Anforderungen p/t entsprechen."""
     alternatives = []
     for card in all_fact_cards:
@@ -836,7 +967,11 @@ def search_alternative_materials(p_req: float, t_req: float, all_fact_cards: Lis
     return alternatives
 
 
-def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_cards: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+def extract_parameters(
+    text: str,
+    current_profile: Dict[str, Any],
+    all_fact_cards: List[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Heuristische Extraktion technischer Parameter mittels zentraler Normalisierung.
 
     Dient dem working_profile (Live-UI) und bereitet Claims vor.
@@ -845,17 +980,17 @@ def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_card
     all_fact_cards = all_fact_cards or []
     extracted = norm_extract(text)
     if "speed_rpm" in extracted:
-        new_profile["speed"]     = extracted["speed_rpm"]
+        new_profile["speed"] = extracted["speed_rpm"]
         new_profile["speed_rpm"] = extracted["speed_rpm"]
-        new_profile["rpm"]       = extracted["speed_rpm"]
+        new_profile["rpm"] = extracted["speed_rpm"]
     if "diameter_mm" in extracted:
-        new_profile["diameter"]       = extracted["diameter_mm"]
+        new_profile["diameter"] = extracted["diameter_mm"]
         new_profile["shaft_diameter"] = extracted["diameter_mm"]
     if "pressure_bar" in extracted:
-        new_profile["pressure"]     = extracted["pressure_bar"]
+        new_profile["pressure"] = extracted["pressure_bar"]
         new_profile["pressure_bar"] = extracted["pressure_bar"]
     if "temperature_c" in extracted:
-        new_profile["temperature"]       = extracted["temperature_c"]
+        new_profile["temperature"] = extracted["temperature_c"]
         new_profile["temperature_max_c"] = extracted["temperature_c"]
     if "medium_normalized" in extracted:
         new_profile["medium"] = extracted["medium_normalized"]
@@ -870,7 +1005,9 @@ def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_card
         if all_fact_cards:
             p_req = new_profile.get("pressure", 0)
             t_req = new_profile.get("temperature", 0)
-            new_profile["alternatives"] = search_alternative_materials(p_req, t_req, all_fact_cards)
+            new_profile["alternatives"] = search_alternative_materials(
+                p_req, t_req, all_fact_cards
+            )
     else:
         new_profile.pop("risk_warning", None)
         new_profile.pop("alternatives", None)
@@ -878,17 +1015,17 @@ def extract_parameters(text: str, current_profile: Dict[str, Any], all_fact_card
     new_profile = calculate_physics(new_profile)
 
     new_profile["live_calc_tile"] = {
-        "v_surface_m_s":    new_profile.get("v_surface_m_s"),
+        "v_surface_m_s": new_profile.get("v_surface_m_s"),
         "pv_value_mpa_m_s": new_profile.get("pv_value_mpa_m_s"),
         "status": "ok" if new_profile.get("v_surface_m_s") else "insufficient_data",
         "parameters": {
-            "medium":            new_profile.get("medium"),
-            "pressure_bar":      new_profile.get("pressure_bar"),
+            "medium": new_profile.get("medium"),
+            "pressure_bar": new_profile.get("pressure_bar"),
             "temperature_max_c": new_profile.get("temperature_max_c"),
-            "speed_rpm":         new_profile.get("speed_rpm"),
-            "rpm":               new_profile.get("rpm"),
-            "shaft_diameter":    new_profile.get("shaft_diameter"),
-            "material":          new_profile.get("material"),
+            "speed_rpm": new_profile.get("speed_rpm"),
+            "rpm": new_profile.get("rpm"),
+            "shaft_diameter": new_profile.get("shaft_diameter"),
+            "material": new_profile.get("material"),
         },
     }
 
@@ -922,36 +1059,48 @@ def evaluate_claim_conflicts(
     for card in relevant_fact_cards:
         profile = MaterialPhysicalProfile.from_fact_card(card)
         if profile:
-            material_validators[profile.material_id.lower()] = MaterialValidator(profile)
+            material_validators[profile.material_id.lower()] = MaterialValidator(
+                profile
+            )
 
     for claim in claims:
         extracted = norm_extract(claim.statement)
 
         if "medium_normalized" in extracted:
             new_medium = extracted["medium_normalized"]
-            if current_medium and new_medium and current_medium.lower() != new_medium.lower():
-                conflicts.append({
-                    "type": "PARAMETER_CONFLICT",
-                    "severity": "CRITICAL",
-                    "field": "medium",
-                    "message": f"Konflikt: Assertiert ist '{current_medium}', Claim behauptet '{new_medium}'.",
-                    "claim_statement": claim.statement
-                })
+            if (
+                current_medium
+                and new_medium
+                and current_medium.lower() != new_medium.lower()
+            ):
+                conflicts.append(
+                    {
+                        "type": "PARAMETER_CONFLICT",
+                        "severity": "CRITICAL",
+                        "field": "medium",
+                        "message": f"Konflikt: Assertiert ist '{current_medium}', Claim behauptet '{new_medium}'.",
+                        "claim_statement": claim.statement,
+                    }
+                )
 
         if claim.claim_type == ClaimType.FACT_OBSERVED:
             if "temperature_c" in extracted:
                 temp_c = extracted["temperature_c"]
                 has_conflict = False
                 for mat_id, validator in material_validators.items():
-                    if (current_medium and mat_id in current_medium.lower()) or (mat_id in claim.statement.lower()):
+                    if (current_medium and mat_id in current_medium.lower()) or (
+                        mat_id in claim.statement.lower()
+                    ):
                         if temp_c > validator.profile.temp_max:
-                            conflicts.append({
-                                "type": "DOMAIN_LIMIT_VIOLATION",
-                                "severity": "CRITICAL",
-                                "field": "temperature",
-                                "message": f"{mat_id.upper()} Limit überschritten: {temp_c}°C > {validator.profile.temp_max}°C (Quelle: FactCard Factory).",
-                                "claim_statement": claim.statement
-                            })
+                            conflicts.append(
+                                {
+                                    "type": "DOMAIN_LIMIT_VIOLATION",
+                                    "severity": "CRITICAL",
+                                    "field": "temperature",
+                                    "message": f"{mat_id.upper()} Limit überschritten: {temp_c}°C > {validator.profile.temp_max}°C (Quelle: FactCard Factory).",
+                                    "claim_statement": claim.statement,
+                                }
+                            )
                             has_conflict = True
                 if not has_conflict:
                     validated_params["temperature"] = temp_c

@@ -21,14 +21,20 @@ def _redis_url() -> str:
 
 
 def _rate_limit_per_min() -> int:
-    raw = os.getenv("WS_RATE_LIMIT_PER_MIN") or os.getenv("CHAT_RATE_LIMIT_PER_MIN") or str(_DEFAULT_RATE_LIMIT_PER_MIN)
+    raw = (
+        os.getenv("WS_RATE_LIMIT_PER_MIN")
+        or os.getenv("CHAT_RATE_LIMIT_PER_MIN")
+        or str(_DEFAULT_RATE_LIMIT_PER_MIN)
+    )
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):
         return _DEFAULT_RATE_LIMIT_PER_MIN
 
+
 async def _get_client() -> Redis:
     return Redis.from_url(_redis_url(), encoding="utf-8", decode_responses=True)
+
 
 async def token_bucket_allow(key: str) -> bool:
     capacity = _rate_limit_per_min()

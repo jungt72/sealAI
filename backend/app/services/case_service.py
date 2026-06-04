@@ -316,7 +316,9 @@ class CaseService:
         tenant_id = self._require_tenant_id(tenant_id)
         if revision is not None and revision < 0:
             raise InvalidMutationError("revision must be non-negative")
-        case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        case_query = (
+            select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        )
         case_query = case_query.where(CaseRecord.tenant_id == tenant_id)
         case_query = case_query.where(CaseRecord.user_id == user_id)
         case_result = await self._session.execute(case_query)
@@ -324,9 +326,13 @@ class CaseService:
         if case_row is None:
             return None
 
-        snapshot_query = select(CaseStateSnapshot).where(CaseStateSnapshot.case_id == case_row.id)
+        snapshot_query = select(CaseStateSnapshot).where(
+            CaseStateSnapshot.case_id == case_row.id
+        )
         if revision is not None:
-            snapshot_query = snapshot_query.where(CaseStateSnapshot.revision == revision)
+            snapshot_query = snapshot_query.where(
+                CaseStateSnapshot.revision == revision
+            )
         else:
             snapshot_query = snapshot_query.order_by(CaseStateSnapshot.revision.desc())
         snapshot_query = snapshot_query.limit(1)
@@ -351,7 +357,9 @@ class CaseService:
         tenant_id = self._require_tenant_id(tenant_id)
         if limit < 1:
             raise InvalidMutationError("limit must be positive")
-        case_query = select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        case_query = (
+            select(CaseRecord).where(CaseRecord.case_number == case_number).limit(1)
+        )
         case_query = case_query.where(CaseRecord.tenant_id == tenant_id)
         case_query = case_query.where(CaseRecord.user_id == user_id)
         case_result = await self._session.execute(case_query)
@@ -367,7 +375,9 @@ class CaseService:
         )
         return list(snapshot_result.scalars().all())
 
-    async def get_latest_snapshot_revision_for_case_id(self, case_id: str) -> int | None:
+    async def get_latest_snapshot_revision_for_case_id(
+        self, case_id: str
+    ) -> int | None:
         """Return the latest snapshot revision for a case row, if one exists."""
 
         latest = await self._latest_snapshot(case_id)
@@ -375,7 +385,9 @@ class CaseService:
             return None
         return int(latest.revision)
 
-    async def get_latest_snapshot_for_case_id(self, case_id: str) -> CaseStateSnapshot | None:
+    async def get_latest_snapshot_for_case_id(
+        self, case_id: str
+    ) -> CaseStateSnapshot | None:
         """Return the latest snapshot row for a case row, if one exists."""
 
         return await self._latest_snapshot(case_id)
@@ -601,12 +613,17 @@ class CaseService:
         if not isinstance(field_name, str) or not field_name.strip():
             raise InvalidMutationError("delta field names must be non-empty strings")
         if not isinstance(field_payload, dict):
-            raise InvalidMutationError(f"{expected_status}_delta.{field_name} must be a dict")
+            raise InvalidMutationError(
+                f"{expected_status}_delta.{field_name} must be a dict"
+            )
         if field_payload.get("status") != expected_status:
             raise InvalidMutationError(
                 f"{expected_status}_delta.{field_name}.status must be {expected_status}"
             )
-        if require_provenance and not str(field_payload.get("provenance") or "").strip():
+        if (
+            require_provenance
+            and not str(field_payload.get("provenance") or "").strip()
+        ):
             raise InvalidMutationError(
                 f"{expected_status}_delta.{field_name}.provenance is required"
             )
@@ -634,9 +651,7 @@ class CaseService:
             )
         required_keys = {"raw_value", "canonical_value", "unit", "quantity_kind"}
         missing = sorted(
-            key
-            for key in required_keys
-            if engineering_value.get(key) in (None, "")
+            key for key in required_keys if engineering_value.get(key) in (None, "")
         )
         if missing:
             raise InvalidMutationError(
@@ -695,9 +710,7 @@ class CaseService:
             raw_fields = resolution.get("accepted_fields")
             if isinstance(raw_fields, list):
                 resolved_fields = {
-                    str(field).strip()
-                    for field in raw_fields
-                    if str(field).strip()
+                    str(field).strip() for field in raw_fields if str(field).strip()
                 }
 
         unresolved = sorted(blocking_fields.difference(resolved_fields))
@@ -722,9 +735,7 @@ class CaseService:
                     f"{field_name} cannot be changed through case_updates"
                 )
             if value is None:
-                raise InvalidMutationError(
-                    f"{payload_key}.{field_name} cannot be None"
-                )
+                raise InvalidMutationError(f"{payload_key}.{field_name} cannot be None")
 
     def _validate_snapshot_read_scope(self, *, case_number: str, user_id: str) -> None:
         if not case_number:
@@ -732,7 +743,9 @@ class CaseService:
         if not user_id:
             raise InvalidMutationError("user_id is required")
 
-    def _coerce_event_type(self, event_type: MutationEventType | str) -> MutationEventType:
+    def _coerce_event_type(
+        self, event_type: MutationEventType | str
+    ) -> MutationEventType:
         try:
             return (
                 event_type
@@ -744,7 +757,11 @@ class CaseService:
 
     def _coerce_actor_type(self, actor_type: ActorType | str) -> ActorType:
         try:
-            return actor_type if isinstance(actor_type, ActorType) else ActorType(actor_type)
+            return (
+                actor_type
+                if isinstance(actor_type, ActorType)
+                else ActorType(actor_type)
+            )
         except ValueError as exc:
             raise InvalidMutationError(f"unsupported actor_type: {actor_type}") from exc
 
@@ -772,12 +789,22 @@ class CaseService:
 
 
 def _extract_mutation_audit_fields(payload: dict[str, Any]) -> dict[str, Any]:
-    run_meta = payload.get("run_meta") if isinstance(payload.get("run_meta"), dict) else {}
-    snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+    run_meta = (
+        payload.get("run_meta") if isinstance(payload.get("run_meta"), dict) else {}
+    )
+    snapshot = (
+        payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+    )
     return {
-        "source_turn_id": _optional_string(payload.get("source_turn_id") or payload.get("turn_id")),
-        "source_document_id": _optional_string(payload.get("source_document_id") or payload.get("document_id")),
-        "proposed_delta": _dict_or_empty(payload.get("proposed_delta") or payload.get("proposed_case_delta")),
+        "source_turn_id": _optional_string(
+            payload.get("source_turn_id") or payload.get("turn_id")
+        ),
+        "source_document_id": _optional_string(
+            payload.get("source_document_id") or payload.get("document_id")
+        ),
+        "proposed_delta": _dict_or_empty(
+            payload.get("proposed_delta") or payload.get("proposed_case_delta")
+        ),
         "accepted_delta": _dict_or_empty(payload.get("accepted_delta")),
         "rejected_delta": _dict_or_empty(payload.get("rejected_delta")),
         "rejection_reasons": _dict_or_empty(payload.get("rejection_reasons")),

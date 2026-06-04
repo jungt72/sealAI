@@ -116,7 +116,11 @@ def setup(qdrant_url: str = "http://qdrant:6333") -> dict:
     # Verifizierung
     info = client.get_collection(COLLECTION_NAME)
     vectors_config = info.config.params.vectors
-    dense_cfg = vectors_config.get(DENSE_VECTOR_NAME) if isinstance(vectors_config, dict) else None
+    dense_cfg = (
+        vectors_config.get(DENSE_VECTOR_NAME)
+        if isinstance(vectors_config, dict)
+        else None
+    )
 
     result = {
         "collection": COLLECTION_NAME,

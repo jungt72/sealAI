@@ -19,7 +19,11 @@ from app.agent.state.persistence import (
     with_snapshot_persistence_marker,
 )
 from app.services.auth.dependencies import RequestUser
-from app.services.history.persist import load_structured_case, save_structured_case, ConcurrencyConflictError
+from app.services.history.persist import (
+    load_structured_case,
+    save_structured_case,
+    ConcurrencyConflictError,
+)
 from app.agent.api.deps import _canonical_scope, _cache_loaded_state
 from app.agent.api.utils import (
     _governed_messages_as_langchain,
@@ -104,12 +108,17 @@ def _deserialize_knowledge_session_context(raw: str) -> KnowledgeSessionContext 
     return KnowledgeSessionContext(
         session_id=str(data.get("session_id") or "default"),
         mentioned_parameters=mentioned_parameters,
-        explored_concepts=tuple(str(item) for item in list(data.get("explored_concepts") or []) if str(item).strip()),
+        explored_concepts=tuple(
+            str(item)
+            for item in list(data.get("explored_concepts") or [])
+            if str(item).strip()
+        ),
         detected_intent=str(data.get("detected_intent") or "").strip() or None,
         transition_offered=bool(data.get("transition_offered")),
         conversation_turns=conversation_turns,
         user_turn_index=int(data.get("user_turn_index") or 0),
     )
+
 
 async def _load_live_governed_state(
     *,
@@ -119,7 +128,8 @@ async def _load_live_governed_state(
 ) -> GovernedSessionState | None:
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
     redis_url = os.getenv("REDIS_URL", "")
-    from redis.asyncio import Redis as AsyncRedis # noqa: PLC0415
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
     async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
         if create_if_missing:
             return await get_or_create_governed_state_async(
@@ -196,6 +206,7 @@ async def _clear_live_knowledge_session_context(
             )
         )
 
+
 async def _persist_live_governed_state(
     *,
     current_user: RequestUser,
@@ -206,7 +217,8 @@ async def _persist_live_governed_state(
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
     redis_url = os.getenv("REDIS_URL", "")
     unmarked_state = state.model_copy(update={"persistence_marker": None})
-    from redis.asyncio import Redis as AsyncRedis # noqa: PLC0415
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
     async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
         await save_governed_state_async(
             tenant_id=tenant_id,
@@ -220,12 +232,18 @@ async def _persist_live_governed_state(
             case_number=session_id,
             user_id=owner_id,
             tenant_id=tenant_id,
-            pre_gate_classification=_snapshot_pre_gate_classification(pre_gate_classification),
+            pre_gate_classification=_snapshot_pre_gate_classification(
+                pre_gate_classification
+            ),
             status="active",
         )
         if snapshot_result is not None:
-            marked_state = with_snapshot_persistence_marker(unmarked_state, snapshot_result)
-            async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+            marked_state = with_snapshot_persistence_marker(
+                unmarked_state, snapshot_result
+            )
+            async with AsyncRedis.from_url(
+                redis_url, decode_responses=True
+            ) as redis_client:
                 await save_governed_state_async(
                     tenant_id=tenant_id,
                     session_id=session_id,
@@ -277,7 +295,9 @@ async def persist_mobile_triage_pending_question(
         tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
         from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
 
-        async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
+        async with AsyncRedis.from_url(
+            redis_url, decode_responses=True
+        ) as redis_client:
             state = await get_or_create_governed_state_async(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -403,7 +423,8 @@ def _merge_seed_into_governed_state(
 
     progress = governed_state.exploration_progress.model_copy(
         update={
-            "observed_topic": seed.observed_topic or governed_state.exploration_progress.observed_topic,
+            "observed_topic": seed.observed_topic
+            or governed_state.exploration_progress.observed_topic,
             "tentative_domain_signals": list(
                 dict.fromkeys(
                     list(governed_state.exploration_progress.tentative_domain_signals)
@@ -419,7 +440,9 @@ def _merge_seed_into_governed_state(
             "observed": observed,
             "conversation_messages": conversation_messages,
             "exploration_progress": progress,
-            "user_turn_index": max(governed_state.user_turn_index, seed.user_turn_index),
+            "user_turn_index": max(
+                governed_state.user_turn_index, seed.user_turn_index
+            ),
         }
     )
 
@@ -451,6 +474,7 @@ async def _bridge_knowledge_session_to_governed_state(
     )
     return seeded_state
 
+
 async def _persist_review_outcome_to_live_governed_state(
     *,
     current_user: RequestUser,
@@ -476,7 +500,8 @@ async def _persist_review_outcome_to_live_governed_state(
         sealing_state=sealing_state,
     )
     if assistant_reply:
-        from app.agent.api.utils import _with_governed_conversation_turn # noqa: PLC0415
+        from app.agent.api.utils import _with_governed_conversation_turn  # noqa: PLC0415
+
         updated = _with_governed_conversation_turn(
             updated,
             role="assistant",
@@ -488,6 +513,7 @@ async def _persist_review_outcome_to_live_governed_state(
         state=updated,
     )
 
+
 async def _update_governed_state_post_graph(
     *,
     current_user: RequestUser,
@@ -495,16 +521,21 @@ async def _update_governed_state_post_graph(
     result_state: GraphState,
     pre_gate_classification: str | None = None,
 ) -> GovernedSessionState:
-    from langchain_core.messages import HumanMessage # noqa: PLC0415
+    from langchain_core.messages import HumanMessage  # noqa: PLC0415
+
     governed = await _load_live_governed_state(
         current_user=current_user,
         session_id=session_id,
         create_if_missing=True,
     )
     if not governed:
-        raise HTTPException(status_code=404, detail="Governed state missing during commit")
+        raise HTTPException(
+            status_code=404, detail="Governed state missing during commit"
+        )
 
-    new_messages = list(result_state.conversation_messages or governed.conversation_messages)
+    new_messages = list(
+        result_state.conversation_messages or governed.conversation_messages
+    )
     conversation = getattr(result_state, "conversation", None)
     for msg in getattr(conversation, "messages", []) or []:
         role = "user" if isinstance(msg, HumanMessage) else "assistant"
@@ -572,6 +603,7 @@ async def _update_governed_state_post_graph(
     )
     return updated
 
+
 async def _load_governed_state_snapshot_projection_source(
     *,
     current_user: RequestUser,
@@ -591,13 +623,15 @@ async def _load_governed_state_snapshot_projection_source(
         return None
 
     redis_url = os.getenv("REDIS_URL", "")
-    from redis.asyncio import Redis as AsyncRedis # noqa: PLC0415
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
     async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
         return await load_governed_state_async(
             tenant_id=tenant_id,
             session_id=case_id,
             redis_client=redis_client,
         )
+
 
 async def _load_guarded_workspace_projection_source(
     *,
@@ -606,7 +640,8 @@ async def _load_guarded_workspace_projection_source(
 ) -> GovernedSessionState | None:
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
     redis_url = os.getenv("REDIS_URL", "")
-    from redis.asyncio import Redis as AsyncRedis # noqa: PLC0415
+    from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
+
     async with AsyncRedis.from_url(redis_url, decode_responses=True) as redis_client:
         redis_state = await load_governed_state_async(
             tenant_id=tenant_id,
@@ -646,6 +681,7 @@ async def _load_guarded_workspace_projection_source(
 
     return redis_state
 
+
 async def _load_preferred_governed_workspace_source(
     *,
     current_user: RequestUser,
@@ -663,6 +699,7 @@ async def _load_preferred_governed_workspace_source(
         )
     return governed
 
+
 async def load_structured_residual_state(
     *,
     current_user: RequestUser,
@@ -678,43 +715,59 @@ async def load_structured_residual_state(
         _cache_loaded_state(tenant_id, owner_id, session_id, state)
     return state
 
+
 async def require_structured_residual_state(
     *,
     current_user: RequestUser,
     session_id: str,
 ) -> AgentState:
-    state = await load_structured_residual_state(current_user=current_user, session_id=session_id)
+    state = await load_structured_residual_state(
+        current_user=current_user, session_id=session_id
+    )
     if not state:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return state
+
 
 async def load_structured_handover_state(
     *,
     current_user: RequestUser,
     session_id: str,
 ) -> AgentState | None:
-    return await load_structured_residual_state(current_user=current_user, session_id=session_id)
+    return await load_structured_residual_state(
+        current_user=current_user, session_id=session_id
+    )
+
 
 async def require_structured_handover_state(
     *,
     current_user: RequestUser,
     session_id: str,
 ) -> AgentState:
-    return await require_structured_residual_state(current_user=current_user, session_id=session_id)
+    return await require_structured_residual_state(
+        current_user=current_user, session_id=session_id
+    )
+
 
 async def load_structured_review_state(
     *,
     current_user: RequestUser,
     session_id: str,
 ) -> AgentState | None:
-    return await load_structured_residual_state(current_user=current_user, session_id=session_id)
+    return await load_structured_residual_state(
+        current_user=current_user, session_id=session_id
+    )
+
 
 async def require_structured_review_state(
     *,
     current_user: RequestUser,
     session_id: str,
 ) -> AgentState:
-    return await require_structured_residual_state(current_user=current_user, session_id=session_id)
+    return await require_structured_residual_state(
+        current_user=current_user, session_id=session_id
+    )
+
 
 async def persist_structured_residual_commit(
     *,
@@ -742,6 +795,7 @@ async def persist_structured_residual_commit(
             detail="State collision: someone else modified this case. Please refresh.",
         )
 
+
 async def persist_structured_review_commit(
     *,
     current_user: RequestUser,
@@ -754,9 +808,10 @@ async def persist_structured_review_commit(
         state=state,
     )
 
+
 async def _build_light_runtime_context(
     *,
-    request: Any, # ChatRequest
+    request: Any,  # ChatRequest
     current_user: RequestUser,
     governed_state_override: GovernedSessionState | None = None,
     create_if_missing: bool = False,
@@ -775,8 +830,10 @@ async def _build_light_runtime_context(
     case_summary = _build_light_case_summary(governed)
     return governed, history, case_summary
 
+
 def _build_light_runtime_context_from_request_only(
-    request: Any, # ChatRequest
+    request: Any,  # ChatRequest
 ) -> tuple[list[BaseMessage], dict[str, Any]]:
-    from langchain_core.messages import HumanMessage # noqa: PLC0415
+    from langchain_core.messages import HumanMessage  # noqa: PLC0415
+
     return [HumanMessage(content=request.message)], {}

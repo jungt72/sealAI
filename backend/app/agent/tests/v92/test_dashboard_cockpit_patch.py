@@ -89,7 +89,9 @@ def test_knowledge_notes_read_tolerantly_from_context() -> None:
         "knowledge_notes": [{"label": "FKM prüfen", "status": "rag_supported"}]
     }
     contract = _build(state)
-    assert contract.knowledge_notes == [{"label": "FKM prüfen", "status": "rag_supported"}]
+    assert contract.knowledge_notes == [
+        {"label": "FKM prüfen", "status": "rag_supported"}
+    ]
 
 
 def test_existing_fields_remain_intact() -> None:

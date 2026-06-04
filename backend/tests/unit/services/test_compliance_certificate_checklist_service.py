@@ -74,9 +74,11 @@ def test_compliance_checklist_has_no_approval_claim_without_evidence() -> None:
 
 
 def test_compliance_checklist_serializes_projection() -> None:
-    payload = ComplianceCertificateChecklistService().build(
-        "Brauche USP Class VI fuer EPDM."
-    ).as_dict()
+    payload = (
+        ComplianceCertificateChecklistService()
+        .build("Brauche USP Class VI fuer EPDM.")
+        .as_dict()
+    )
 
     assert payload["schema_version"] == "compliance_checklist_v0.8.3"
     assert payload["artifact_type"] == "compliance_checklist"

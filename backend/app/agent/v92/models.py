@@ -41,7 +41,9 @@ ReadinessBand = Literal[
     "blocked_safety_or_compliance",
     "not_ready",
 ]
-ReviewDecision = Literal["not_started", "pending", "approved_scope", "changes_required", "blocked"]
+ReviewDecision = Literal[
+    "not_started", "pending", "approved_scope", "changes_required", "blocked"
+]
 V92Status = Literal["pending", "partial", "ready", "blocked"]
 
 
@@ -124,7 +126,9 @@ class CalculationResult(BaseModel):
     calculation_id: str
     version: str
     calculator: str
-    status: Literal["ok", "warning", "insufficient_data", "stale", "blocked"] = "insufficient_data"
+    status: Literal["ok", "warning", "insufficient_data", "stale", "blocked"] = (
+        "insufficient_data"
+    )
     claim_level: ClaimLevel = "L2_screening"
     input_snapshot_hash: str = ""
     outputs: dict[str, Any] = Field(default_factory=dict)
@@ -183,7 +187,9 @@ class StandardsRegistryEntry(BaseModel):
     relevant_fields: list[str] = Field(default_factory=list)
     license_boundary: str = "metadata_only_no_norm_text"
     licensed_content_available: bool = False
-    license_constraints: list[str] = Field(default_factory=lambda: ["metadata_only_no_norm_text"])
+    license_constraints: list[str] = Field(
+        default_factory=lambda: ["metadata_only_no_norm_text"]
+    )
     internal_rule_refs: list[str] = Field(default_factory=list)
     review_owner: Optional[str] = None
     next_review_due: Optional[str] = None
@@ -233,7 +239,9 @@ class EvidenceGraphNode(BaseModel):
     manufacturer: Optional[str] = None
     compound_id: Optional[str] = None
     source_scope: Optional[str] = None
-    permitted_claim_levels: list[ClaimLevel] = Field(default_factory=lambda: ["L2_screening"])
+    permitted_claim_levels: list[ClaimLevel] = Field(
+        default_factory=lambda: ["L2_screening"]
+    )
     confidence: Optional[float] = None
     supports: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
@@ -242,7 +250,9 @@ class EvidenceGraphNode(BaseModel):
 class EvidenceGraphEdge(BaseModel):
     from_node_id: str
     to_target_id: str
-    relationship: Literal["supports", "limits", "contradicts", "requires_review"] = "supports"
+    relationship: Literal["supports", "limits", "contradicts", "requires_review"] = (
+        "supports"
+    )
 
 
 class EvidenceGraphState(BaseModel):
@@ -282,7 +292,9 @@ class ProductCandidate(BaseModel):
 class CompoundState(BaseModel):
     schema_version: str = "compound_state_v9_2"
     status: V92Status = "pending"
-    material_family_candidates: list[MaterialFamilyCandidate] = Field(default_factory=list)
+    material_family_candidates: list[MaterialFamilyCandidate] = Field(
+        default_factory=list
+    )
     compound_candidates: list[CompoundCandidate] = Field(default_factory=list)
     product_candidates: list[ProductCandidate] = Field(default_factory=list)
     separation_violations: list[str] = Field(default_factory=list)
@@ -301,12 +313,20 @@ class DocumentEvidenceState(BaseModel):
     medium_exposures: list[dict[str, Any]] = Field(default_factory=list)
     candidate_facts: list[dict[str, Any]] = Field(default_factory=list)
     supported_document_types: list[str] = Field(
-        default_factory=lambda: ["drawing", "datasheet", "sds", "certificate", "standard_metadata"]
+        default_factory=lambda: [
+            "drawing",
+            "datasheet",
+            "sds",
+            "certificate",
+            "standard_metadata",
+        ]
     )
     prompt_injection_findings: list[str] = Field(default_factory=list)
     sds_limitations: list[str] = Field(default_factory=list)
     extraction_gaps: list[str] = Field(default_factory=list)
-    boundary_notice: str = "Document data remains evidence until accepted into governed fields."
+    boundary_notice: str = (
+        "Document data remains evidence until accepted into governed fields."
+    )
 
 
 class FailureObservationState(BaseModel):

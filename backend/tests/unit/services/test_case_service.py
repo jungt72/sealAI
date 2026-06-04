@@ -1164,9 +1164,7 @@ async def test_apply_mutation_detects_conflict_in_nested_normalized_parameters(
             revision=0,
             state_json={
                 "normalized": {
-                    "parameters": {
-                        "medium": {"value": "Oel", "source": "confirmed"}
-                    }
+                    "parameters": {"medium": {"value": "Oel", "source": "confirmed"}}
                 }
             },
         )
@@ -1443,7 +1441,9 @@ async def test_wrong_revision_raises_optimistic_lock_error(
 
 
 @pytest.mark.asyncio
-async def test_missing_case_raises_invalid_mutation_error(session: _FakeAsyncSession) -> None:
+async def test_missing_case_raises_invalid_mutation_error(
+    session: _FakeAsyncSession,
+) -> None:
     with pytest.raises(InvalidMutationError):
         await CaseService(session).apply_mutation(
             case_id=str(uuid.uuid4()),
@@ -1473,7 +1473,9 @@ async def test_invalid_payload_raises_invalid_mutation_error(
 
 
 @pytest.mark.asyncio
-async def test_case_revision_increases_exactly_by_one(session: _FakeAsyncSession) -> None:
+async def test_case_revision_increases_exactly_by_one(
+    session: _FakeAsyncSession,
+) -> None:
     case_id = await _insert_case(session, case_revision=4)
 
     await CaseService(session).apply_mutation(
@@ -1767,7 +1769,9 @@ async def test_get_latest_snapshot_revision_for_case_id_returns_newest_revision(
         ]
     )
 
-    revision = await CaseService(session).get_latest_snapshot_revision_for_case_id(case_id)
+    revision = await CaseService(session).get_latest_snapshot_revision_for_case_id(
+        case_id
+    )
 
     assert revision == 4
 

@@ -3,12 +3,16 @@ Reply Builder — deterministic reply constants and structured reply assembly.
 
 Builds the final user-visible reply text from selection state projections.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
 from app.agent.runtime.boundaries import build_boundary_block
-from app.agent.runtime.clarification import _build_missing_data_reply, _build_missing_inputs_text
+from app.agent.runtime.clarification import (
+    _build_missing_data_reply,
+    _build_missing_inputs_text,
+)
 from app.agent.state.projections_extended import (
     INVARIANT_BLOCKED_REPLY,
     OUT_OF_DOMAIN_REPLY,
@@ -78,7 +82,9 @@ _STRUCTURED_API_EXPOSURE_KEYS: tuple[str, ...] = (
 )
 
 
-def _resolve_runtime_dispatch_source(canonical_case_state: Dict[str, Any]) -> Dict[str, Any]:
+def _resolve_runtime_dispatch_source(
+    canonical_case_state: Dict[str, Any],
+) -> Dict[str, Any]:
     canonical_state = dict(canonical_case_state or {})
     dispatch_intent = dict(canonical_state.get("dispatch_intent") or {})
     if dispatch_intent:
@@ -146,17 +152,24 @@ def _build_recommendation_artifact(
     }
 
 
-def _artifact_is_aligned(selection_state: Dict[str, Any], artifact: Dict[str, Any]) -> bool:
+def _artifact_is_aligned(
+    selection_state: Dict[str, Any], artifact: Dict[str, Any]
+) -> bool:
     if not artifact:
         return False
     return (
         artifact.get("selection_status") == selection_state.get("selection_status")
-        and artifact.get("winner_candidate_id") == selection_state.get("winner_candidate_id")
-        and artifact.get("viable_candidate_ids") == selection_state.get("viable_candidate_ids")
-        and artifact.get("blocked_candidates") == selection_state.get("blocked_candidates")
+        and artifact.get("winner_candidate_id")
+        == selection_state.get("winner_candidate_id")
+        and artifact.get("viable_candidate_ids")
+        == selection_state.get("viable_candidate_ids")
+        and artifact.get("blocked_candidates")
+        == selection_state.get("blocked_candidates")
         and artifact.get("release_status") == selection_state.get("release_status")
-        and artifact.get("rfq_admissibility") == selection_state.get("rfq_admissibility")
-        and artifact.get("specificity_level") == selection_state.get("specificity_level")
+        and artifact.get("rfq_admissibility")
+        == selection_state.get("rfq_admissibility")
+        and artifact.get("specificity_level")
+        == selection_state.get("specificity_level")
         and artifact.get("output_blocked") == selection_state.get("output_blocked")
         and artifact.get("binding_level") in {None, "non_binding"}
     )
@@ -197,7 +210,9 @@ def _normalize_structured_api_exposure_value(key: str, value: Any) -> Any:
     return str(value or "")
 
 
-def _assert_structured_api_exposure_contract(exposure: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _assert_structured_api_exposure_contract(
+    exposure: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
     if exposure is None:
         return None
 
@@ -221,7 +236,9 @@ def _assert_structured_api_exposure_contract(exposure: Optional[Dict[str, Any]])
     return normalized
 
 
-def _minimal_structured_snapshot_contract(selection_state: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _minimal_structured_snapshot_contract(
+    selection_state: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
     state = selection_state or {}
     snapshot = state.get("structured_snapshot_contract")
     if not isinstance(snapshot, dict):
@@ -245,7 +262,9 @@ def _minimal_structured_snapshot_from_case_state(
     review_required = bool(governance_state.get("review_required", False))
 
     if review_required:
-        blockers = list(rfq_state.get("blocking_reasons") or rfq_state.get("blockers") or [])
+        blockers = list(
+            rfq_state.get("blocking_reasons") or rfq_state.get("blockers") or []
+        )
         if "review_pending" not in blockers:
             blockers = ["review_pending", *blockers]
         return {
@@ -264,10 +283,13 @@ def _minimal_structured_snapshot_from_case_state(
             "primary_reason": "governed_releasable_result",
             "next_step": "confirmed_result_review",
             "primary_allowed_action": (
-                "prepare_handover" if bool(qualified_action_gate.get("allowed", False))
+                "prepare_handover"
+                if bool(qualified_action_gate.get("allowed", False))
                 else "consume_governed_result"
             ),
-            "active_blockers": list(rfq_state.get("blocking_reasons") or rfq_state.get("blockers") or []),
+            "active_blockers": list(
+                rfq_state.get("blocking_reasons") or rfq_state.get("blockers") or []
+            ),
         }
 
     return None
@@ -278,14 +300,20 @@ def build_structured_api_exposure(
     *,
     case_state: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    snapshot = _minimal_structured_snapshot_from_case_state(case_state) or _minimal_structured_snapshot_contract(selection_state)
+    snapshot = _minimal_structured_snapshot_from_case_state(
+        case_state
+    ) or _minimal_structured_snapshot_contract(selection_state)
     if not snapshot:
         return None
 
-    return _assert_structured_api_exposure_contract({
-        key: list(snapshot.get(key) or []) if key == "active_blockers" else snapshot.get(key)
-        for key in _STRUCTURED_API_EXPOSURE_KEYS
-    })
+    return _assert_structured_api_exposure_contract(
+        {
+            key: list(snapshot.get(key) or [])
+            if key == "active_blockers"
+            else snapshot.get(key)
+            for key in _STRUCTURED_API_EXPOSURE_KEYS
+        }
+    )
 
 
 def _can_surface_governed_rationale_reply(
@@ -337,9 +365,12 @@ def _build_recommendation_rationale_summary(
     working_profile: Optional[Dict[str, Any]] = None,
 ) -> str:
     from app.agent.state.projections_extended import INTEGRITY_UNUSABLE_REPLY
+
     evidence_note = _build_evidence_binding_note(evidence_provenance_projection)
     conflict_note = _build_conflict_correction_note(conflict_status_projection)
-    integrity_note = _build_integrity_note(parameter_integrity_projection, unit_normalization_projection)
+    integrity_note = _build_integrity_note(
+        parameter_integrity_projection, unit_normalization_projection
+    )
     domain_scope_note = _build_domain_scope_note(domain_scope_projection)
     if candidate_projection:
         candidate_label = (
@@ -348,9 +379,11 @@ def _build_recommendation_rationale_summary(
             or candidate_projection.get("material_family")
             or "unbekannter_kandidat"
         )
-        prefix_parts = [note for note in (conflict_note, integrity_note, domain_scope_note) if note]
+        prefix_parts = [
+            note for note in (conflict_note, integrity_note, domain_scope_note) if note
+        ]
         prefix = " ".join(prefix_parts)
-        return ((f"{prefix} " if prefix else "")) + (
+        return (f"{prefix} " if prefix else "") + (
             f"{NEUTRAL_SCOPE_REPLY} "
             f"Technischer Orientierungsrahmen: {candidate_label}. "
             f"{evidence_note} "
@@ -360,7 +393,10 @@ def _build_recommendation_rationale_summary(
     projection_status = (review_escalation_projection or {}).get("status")
     if release_status == "precheck_only":
         return f"{PRECHECK_ONLY_REPLY} {evidence_note}"
-    if release_status == "manufacturer_validation_required" or rfq_admissibility == "provisional":
+    if (
+        release_status == "manufacturer_validation_required"
+        or rfq_admissibility == "provisional"
+    ):
         return f"{MANUFACTURER_VALIDATION_REPLY} {evidence_note}"
     if projection_status == "review_pending":
         return f"{REVIEW_PENDING_REPLY} {evidence_note}"
@@ -398,7 +434,10 @@ def _build_recommendation_rationale_summary(
         return f"{NO_CANDIDATES_REPLY} {evidence_note}"
     if selection_status == "blocked_no_viable_candidates":
         return f"{NO_VIABLE_CANDIDATES_REPLY} {evidence_note}"
-    if selection_status == "blocked_missing_required_inputs" or readiness_status == "insufficient_inputs":
+    if (
+        selection_status == "blocked_missing_required_inputs"
+        or readiness_status == "insufficient_inputs"
+    ):
         base = f"{_build_missing_data_reply(asserted_state, working_profile, clarification_projection)}\n\n{evidence_note}"
         if integrity_note:
             return f"{integrity_note} {base}"
@@ -439,11 +478,17 @@ def build_final_reply(
     review_projection = selection_state.get("review_escalation_projection") or {}
     clarification_projection = selection_state.get("clarification_projection") or {}
     correction_projection = selection_state.get("correction_projection") or {}
-    parameter_integrity_projection = selection_state.get("parameter_integrity_projection") or {}
-    unit_normalization_projection = selection_state.get("unit_normalization_projection") or {}
+    parameter_integrity_projection = (
+        selection_state.get("parameter_integrity_projection") or {}
+    )
+    unit_normalization_projection = (
+        selection_state.get("unit_normalization_projection") or {}
+    )
     domain_scope_projection = selection_state.get("domain_scope_projection") or {}
     output_contract = selection_state.get("output_contract_projection") or {}
-    state_trace_audit = selection_state.get("state_trace_audit_projection") or build_state_trace_audit_projection(
+    state_trace_audit = selection_state.get(
+        "state_trace_audit_projection"
+    ) or build_state_trace_audit_projection(
         selection_status=str(selection_state.get("selection_status") or ""),
         recommendation_artifact=artifact,
         review_escalation_projection=review_projection,
@@ -452,9 +497,13 @@ def build_final_reply(
         parameter_integrity_projection=parameter_integrity_projection,
         domain_scope_projection=domain_scope_projection,
         output_contract_projection=output_contract,
-        projection_invariant_projection=selection_state.get("projection_invariant_projection"),
+        projection_invariant_projection=selection_state.get(
+            "projection_invariant_projection"
+        ),
     )
-    case_summary = selection_state.get("case_summary_projection") or build_case_summary_projection(
+    case_summary = selection_state.get(
+        "case_summary_projection"
+    ) or build_case_summary_projection(
         asserted_state=asserted_state,
         output_contract_projection=output_contract,
         clarification_projection=clarification_projection,
@@ -464,13 +513,19 @@ def build_final_reply(
     canonical_case_state = dict(case_state or {})
     canonical_dispatch_source = _resolve_runtime_dispatch_source(canonical_case_state)
     canonical_result_contract = dict(canonical_case_state.get("result_contract") or {})
-    canonical_requirement_class = dict(canonical_case_state.get("requirement_class") or {})
+    canonical_requirement_class = dict(
+        canonical_case_state.get("requirement_class") or {}
+    )
     canonical_rfq_state = dict(canonical_case_state.get("rfq_state") or {})
-    invariant_projection = selection_state.get("projection_invariant_projection") or project_projection_invariants(
+    invariant_projection = selection_state.get(
+        "projection_invariant_projection"
+    ) or project_projection_invariants(
         recommendation_artifact=artifact,
         review_escalation_projection=review_projection,
         clarification_projection=clarification_projection,
-        evidence_provenance_projection=selection_state.get("evidence_provenance_projection"),
+        evidence_provenance_projection=selection_state.get(
+            "evidence_provenance_projection"
+        ),
         conflict_status_projection=selection_state.get("conflict_status_projection"),
         parameter_integrity_projection=parameter_integrity_projection,
         domain_scope_projection=domain_scope_projection,
@@ -478,7 +533,9 @@ def build_final_reply(
     )
     if not _artifact_is_aligned(selection_state, artifact):
         core_reply = SAFEGUARDED_WITHHELD_REPLY
-    elif get_primary_trace_reason(state_trace_audit) == "invariant_blocked" or not invariant_projection.get("invariant_ok", True):
+    elif get_primary_trace_reason(
+        state_trace_audit
+    ) == "invariant_blocked" or not invariant_projection.get("invariant_ok", True):
         core_reply = INVARIANT_BLOCKED_REPLY
     elif _can_surface_governed_rationale_reply(
         artifact=artifact,
@@ -489,10 +546,9 @@ def build_final_reply(
     ):
         core_reply = str(artifact["rationale_summary"]).strip()
     else:
-        release_status = (
-            canonical_result_contract.get("release_status")
-            or selection_state.get("release_status")
-        )
+        release_status = canonical_result_contract.get(
+            "release_status"
+        ) or selection_state.get("release_status")
         rfq_admissibility = (
             canonical_rfq_state.get("rfq_admissibility")
             or canonical_result_contract.get("rfq_admissibility")
@@ -505,49 +561,97 @@ def build_final_reply(
             or selection_state.get("specificity_level", "family_only")
         )
         output_status = str(output_contract.get("output_status") or "")
-        canonical_dispatch_ready = bool(canonical_dispatch_source.get("dispatch_ready", False))
+        canonical_dispatch_ready = bool(
+            canonical_dispatch_source.get("dispatch_ready", False)
+        )
 
         if release_status == "precheck_only":
             core_reply = PRECHECK_ONLY_REPLY
-        elif release_status == "manufacturer_validation_required" or rfq_admissibility == "provisional":
+        elif (
+            release_status == "manufacturer_validation_required"
+            or rfq_admissibility == "provisional"
+        ):
             core_reply = MANUFACTURER_VALIDATION_REPLY
-        elif actionability and get_primary_allowed_action(actionability) == "no_action_until_clarified":
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "no_action_until_clarified"
+        ):
             core_reply = INVARIANT_BLOCKED_REPLY
-        elif actionability and get_primary_allowed_action(actionability) == "provide_missing_input":
-            core_reply = _build_missing_data_reply(asserted_state, working_profile, clarification_projection)
-        elif actionability and get_primary_allowed_action(actionability) == "obtain_qualified_evidence":
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "provide_missing_input"
+        ):
+            core_reply = _build_missing_data_reply(
+                asserted_state, working_profile, clarification_projection
+            )
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "obtain_qualified_evidence"
+        ):
             core_reply = EVIDENCE_MISSING_REPLY
-        elif actionability and get_primary_allowed_action(actionability) == "await_review":
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "await_review"
+        ):
             core_reply = REVIEW_PENDING_REPLY
-        elif actionability and get_primary_allowed_action(actionability) == "prepare_handover":
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "prepare_handover"
+        ):
             if "candidate_ambiguity" in list(case_summary.get("active_blockers") or []):
                 core_reply = AMBIGUOUS_CANDIDATE_REPLY
             else:
                 core_reply = REVIEW_PENDING_REPLY
-        elif actionability and get_primary_allowed_action(actionability) == "consume_governed_result" and _can_surface_governed_rationale_reply(
-            artifact=artifact,
-            output_contract=output_contract,
-            case_summary=case_summary,
-            selection_state=selection_state,
-            review_state=review_state,
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "consume_governed_result"
+            and _can_surface_governed_rationale_reply(
+                artifact=artifact,
+                output_contract=output_contract,
+                case_summary=case_summary,
+                selection_state=selection_state,
+                review_state=review_state,
+            )
         ):
             core_reply = str(artifact["rationale_summary"]).strip()
-        elif actionability and get_primary_allowed_action(actionability) == "escalate_engineering":
-            if correction_projection.get("conflict_still_open") or (selection_state.get("conflict_status_projection") or {}).get("conflict_still_open"):
-                core_reply = _build_conflict_correction_note(
-                    selection_state.get("conflict_status_projection")
-                ) or ESCALATION_NEEDED_REPLY
-            elif parameter_integrity_projection.get("integrity_status") == "unusable_until_clarified":
-                core_reply = _build_integrity_note(
-                    parameter_integrity_projection,
-                    unit_normalization_projection,
-                ) or ESCALATION_NEEDED_REPLY
-            elif domain_scope_projection.get("status") in {"out_of_domain_scope", "escalation_required"}:
-                core_reply = _build_domain_scope_note(domain_scope_projection) or ESCALATION_NEEDED_REPLY
+        elif (
+            actionability
+            and get_primary_allowed_action(actionability) == "escalate_engineering"
+        ):
+            if correction_projection.get("conflict_still_open") or (
+                selection_state.get("conflict_status_projection") or {}
+            ).get("conflict_still_open"):
+                core_reply = (
+                    _build_conflict_correction_note(
+                        selection_state.get("conflict_status_projection")
+                    )
+                    or ESCALATION_NEEDED_REPLY
+                )
+            elif (
+                parameter_integrity_projection.get("integrity_status")
+                == "unusable_until_clarified"
+            ):
+                core_reply = (
+                    _build_integrity_note(
+                        parameter_integrity_projection,
+                        unit_normalization_projection,
+                    )
+                    or ESCALATION_NEEDED_REPLY
+                )
+            elif domain_scope_projection.get("status") in {
+                "out_of_domain_scope",
+                "escalation_required",
+            }:
+                core_reply = (
+                    _build_domain_scope_note(domain_scope_projection)
+                    or ESCALATION_NEEDED_REPLY
+                )
             else:
                 core_reply = ESCALATION_NEEDED_REPLY
         elif get_case_status(case_summary) == "clarification_needed":
-            core_reply = _build_missing_data_reply(asserted_state, working_profile, clarification_projection)
+            core_reply = _build_missing_data_reply(
+                asserted_state, working_profile, clarification_projection
+            )
         elif get_case_status(case_summary) == "withheld_no_evidence":
             core_reply = EVIDENCE_MISSING_REPLY
         elif get_case_status(case_summary) == "withheld_review":
@@ -556,52 +660,106 @@ def build_final_reply(
             else:
                 core_reply = REVIEW_PENDING_REPLY
         elif get_case_status(case_summary) == "withheld_domain_block":
-            core_reply = _build_domain_scope_note(domain_scope_projection) or OUT_OF_DOMAIN_REPLY
+            core_reply = (
+                _build_domain_scope_note(domain_scope_projection) or OUT_OF_DOMAIN_REPLY
+            )
         elif get_primary_trace_reason(state_trace_audit) == "withheld_no_evidence":
             core_reply = EVIDENCE_MISSING_REPLY
-        elif get_primary_trace_reason(state_trace_audit) in {"review_pending", "review_candidate_ambiguity", "review_governance_withheld", "review_required"}:
-            if get_primary_trace_reason(state_trace_audit) == "review_candidate_ambiguity":
+        elif get_primary_trace_reason(state_trace_audit) in {
+            "review_pending",
+            "review_candidate_ambiguity",
+            "review_governance_withheld",
+            "review_required",
+        }:
+            if (
+                get_primary_trace_reason(state_trace_audit)
+                == "review_candidate_ambiguity"
+            ):
                 core_reply = AMBIGUOUS_CANDIDATE_REPLY
             else:
                 core_reply = REVIEW_PENDING_REPLY
-        elif get_primary_trace_reason(state_trace_audit) == "clarification_missing_inputs":
-            core_reply = _build_missing_data_reply(asserted_state, working_profile, clarification_projection)
+        elif (
+            get_primary_trace_reason(state_trace_audit)
+            == "clarification_missing_inputs"
+        ):
+            core_reply = _build_missing_data_reply(
+                asserted_state, working_profile, clarification_projection
+            )
         elif get_primary_trace_reason(state_trace_audit) == "domain_scope_blocked":
-            core_reply = _build_domain_scope_note(domain_scope_projection) or OUT_OF_DOMAIN_REPLY
+            core_reply = (
+                _build_domain_scope_note(domain_scope_projection) or OUT_OF_DOMAIN_REPLY
+            )
         elif get_primary_trace_reason(state_trace_audit) == "escalation_conflict_open":
-            core_reply = _build_conflict_correction_note(
-                selection_state.get("conflict_status_projection")
-            ) or ESCALATION_NEEDED_REPLY
-        elif get_primary_trace_reason(state_trace_audit) == "escalation_integrity_blocked":
-            core_reply = _build_integrity_note(
-                parameter_integrity_projection,
-                unit_normalization_projection,
-            ) or ESCALATION_NEEDED_REPLY
-        elif get_primary_trace_reason(state_trace_audit) == "escalation_domain_threshold":
-            core_reply = _build_domain_scope_note(domain_scope_projection) or ESCALATION_NEEDED_REPLY
+            core_reply = (
+                _build_conflict_correction_note(
+                    selection_state.get("conflict_status_projection")
+                )
+                or ESCALATION_NEEDED_REPLY
+            )
+        elif (
+            get_primary_trace_reason(state_trace_audit)
+            == "escalation_integrity_blocked"
+        ):
+            core_reply = (
+                _build_integrity_note(
+                    parameter_integrity_projection,
+                    unit_normalization_projection,
+                )
+                or ESCALATION_NEEDED_REPLY
+            )
+        elif (
+            get_primary_trace_reason(state_trace_audit) == "escalation_domain_threshold"
+        ):
+            core_reply = (
+                _build_domain_scope_note(domain_scope_projection)
+                or ESCALATION_NEEDED_REPLY
+            )
         elif output_status == "clarification_needed":
-            core_reply = _build_missing_data_reply(asserted_state, working_profile, clarification_projection)
+            core_reply = _build_missing_data_reply(
+                asserted_state, working_profile, clarification_projection
+            )
         elif output_status == "withheld_no_evidence":
             core_reply = EVIDENCE_MISSING_REPLY
         elif output_status == "withheld_review":
-            if review_projection.get("status") == "ambiguous_but_reviewable" or selection_state.get("selection_status") == "multiple_viable_candidates":
+            if (
+                review_projection.get("status") == "ambiguous_but_reviewable"
+                or selection_state.get("selection_status")
+                == "multiple_viable_candidates"
+            ):
                 core_reply = AMBIGUOUS_CANDIDATE_REPLY
             else:
                 core_reply = REVIEW_PENDING_REPLY
         elif output_status == "withheld_domain_block":
-            core_reply = _build_domain_scope_note(domain_scope_projection) or OUT_OF_DOMAIN_REPLY
+            core_reply = (
+                _build_domain_scope_note(domain_scope_projection) or OUT_OF_DOMAIN_REPLY
+            )
         elif output_status == "withheld_escalation":
             if correction_projection.get("conflict_still_open"):
-                core_reply = _build_conflict_correction_note(
-                    selection_state.get("conflict_status_projection")
-                ) or ESCALATION_NEEDED_REPLY
-            elif parameter_integrity_projection.get("integrity_status") == "unusable_until_clarified":
-                core_reply = _build_integrity_note(
-                    parameter_integrity_projection,
-                    unit_normalization_projection,
-                ) or ESCALATION_NEEDED_REPLY
-            elif domain_scope_projection.get("status") in {"out_of_domain_scope", "escalation_required"}:
-                core_reply = _build_domain_scope_note(domain_scope_projection) or ESCALATION_NEEDED_REPLY
+                core_reply = (
+                    _build_conflict_correction_note(
+                        selection_state.get("conflict_status_projection")
+                    )
+                    or ESCALATION_NEEDED_REPLY
+                )
+            elif (
+                parameter_integrity_projection.get("integrity_status")
+                == "unusable_until_clarified"
+            ):
+                core_reply = (
+                    _build_integrity_note(
+                        parameter_integrity_projection,
+                        unit_normalization_projection,
+                    )
+                    or ESCALATION_NEEDED_REPLY
+                )
+            elif domain_scope_projection.get("status") in {
+                "out_of_domain_scope",
+                "escalation_required",
+            }:
+                core_reply = (
+                    _build_domain_scope_note(domain_scope_projection)
+                    or ESCALATION_NEEDED_REPLY
+                )
             else:
                 core_reply = ESCALATION_NEEDED_REPLY
         elif demo_data_present:
@@ -610,19 +768,13 @@ def build_final_reply(
             core_reply = EVIDENCE_MISSING_REPLY
         elif (review_state or {}).get("review_required"):
             core_reply = REVIEW_PENDING_REPLY
-        elif (
-            not output_blocked
-            and (
-                (
-                    release_status == "inquiry_ready"
-                    and rfq_admissibility == "ready"
-                    and specificity_level == "compound_required"
-                )
-                or (
-                    canonical_dispatch_ready
-                    and specificity_level == "compound_required"
-                )
+        elif not output_blocked and (
+            (
+                release_status == "inquiry_ready"
+                and rfq_admissibility == "ready"
+                and specificity_level == "compound_required"
             )
+            or (canonical_dispatch_ready and specificity_level == "compound_required")
         ):
             core_reply = NEUTRAL_SCOPE_REPLY
         elif selection_state.get("selection_status") == "blocked_no_candidates":
@@ -631,24 +783,45 @@ def build_final_reply(
             core_reply = NO_VIABLE_CANDIDATES_REPLY
         elif review_projection.get("status") == "escalation_needed":
             if correction_projection.get("conflict_still_open"):
-                core_reply = _build_conflict_correction_note(
-                    selection_state.get("conflict_status_projection")
-                ) or ESCALATION_NEEDED_REPLY
-            elif parameter_integrity_projection.get("integrity_status") == "unusable_until_clarified":
-                core_reply = _build_integrity_note(
-                    parameter_integrity_projection,
-                    unit_normalization_projection,
-                ) or ESCALATION_NEEDED_REPLY
-            elif domain_scope_projection.get("status") in {"out_of_domain_scope", "escalation_required"}:
-                core_reply = _build_domain_scope_note(domain_scope_projection) or ESCALATION_NEEDED_REPLY
+                core_reply = (
+                    _build_conflict_correction_note(
+                        selection_state.get("conflict_status_projection")
+                    )
+                    or ESCALATION_NEEDED_REPLY
+                )
+            elif (
+                parameter_integrity_projection.get("integrity_status")
+                == "unusable_until_clarified"
+            ):
+                core_reply = (
+                    _build_integrity_note(
+                        parameter_integrity_projection,
+                        unit_normalization_projection,
+                    )
+                    or ESCALATION_NEEDED_REPLY
+                )
+            elif domain_scope_projection.get("status") in {
+                "out_of_domain_scope",
+                "escalation_required",
+            }:
+                core_reply = (
+                    _build_domain_scope_note(domain_scope_projection)
+                    or ESCALATION_NEEDED_REPLY
+                )
             else:
                 core_reply = ESCALATION_NEEDED_REPLY
         elif selection_state.get("selection_status") == "multiple_viable_candidates":
             core_reply = AMBIGUOUS_CANDIDATE_REPLY
-        elif selection_state.get("selection_status") == "blocked_missing_required_inputs":
-            core_reply = _build_missing_data_reply(asserted_state, working_profile, clarification_projection)
+        elif (
+            selection_state.get("selection_status") == "blocked_missing_required_inputs"
+        ):
+            core_reply = _build_missing_data_reply(
+                asserted_state, working_profile, clarification_projection
+            )
         else:
-            core_reply = _build_missing_data_reply(asserted_state, working_profile, clarification_projection)
+            core_reply = _build_missing_data_reply(
+                asserted_state, working_profile, clarification_projection
+            )
 
     boundary = build_boundary_block(
         "structured",

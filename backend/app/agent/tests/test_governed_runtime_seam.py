@@ -16,7 +16,11 @@ from app.agent.api.governed_runtime import (
 from app.agent.api.loaders import _update_governed_state_post_graph
 from app.agent.api.routes import chat
 from app.agent.graph import GraphState
-from app.agent.state.models import ChallengeState, ConversationMessage, GovernedSessionState
+from app.agent.state.models import (
+    ChallengeState,
+    ConversationMessage,
+    GovernedSessionState,
+)
 from app.agent.v92.models import (
     CalculationState,
     DossierState,
@@ -89,7 +93,9 @@ def test_build_governed_graph_input_carries_runtime_answer_mode() -> None:
     assert graph_input.runtime_answer_mode_source == "runtime_action.answer_mode"
 
 
-def test_governed_graph_input_mapping_is_not_redeclared_in_json_or_sse_callers() -> None:
+def test_governed_graph_input_mapping_is_not_redeclared_in_json_or_sse_callers() -> (
+    None
+):
     assert "GraphState(" not in inspect.getsource(chat)
     assert "GraphState(" not in inspect.getsource(streaming)
 
@@ -162,7 +168,9 @@ async def test_json_governed_path_uses_governed_runtime_seam() -> None:
         )
     )
 
-    request = SimpleNamespace(session_id="case-json", message="Ich brauche eine Dichtung")
+    request = SimpleNamespace(
+        session_id="case-json", message="Ich brauche eine Dichtung"
+    )
     with patch("app.agent.api.routes.chat.run_governed_graph_turn", seam):
         returned_result, returned_persisted = await chat._run_governed_graph_once(
             request,
@@ -181,7 +189,9 @@ async def test_json_governed_path_uses_governed_runtime_seam() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract() -> None:
+async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract() -> (
+    None
+):
     result_state = GraphState(
         output_reply="Bitte Medium angeben.",
         output_response_class="structured_clarification",
@@ -195,7 +205,9 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
         )
     )
 
-    request = SimpleNamespace(session_id="case-sse", message="Ich brauche eine Dichtung")
+    request = SimpleNamespace(
+        session_id="case-sse", message="Ich brauche eine Dichtung"
+    )
     persist = AsyncMock()
     with (
         patch("app.agent.api.streaming.run_governed_graph_turn", seam),
@@ -235,7 +247,9 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
     assert payloads[0]["turn_id"].startswith("turn:")
     assert "case-sse" not in payloads[0]["turn_id"]
     assert payloads[0]["sequence"] == 1
-    state_update = next(payload for payload in payloads if payload["type"] == "state_update")
+    state_update = next(
+        payload for payload in payloads if payload["type"] == "state_update"
+    )
     assert state_update["turn_id"] == payloads[0]["turn_id"]
     assert state_update["event_id"] != payloads[0]["event_id"]
     assert state_update["sequence"] > payloads[0]["sequence"]
@@ -256,7 +270,9 @@ async def test_sse_governed_path_uses_governed_runtime_seam_and_keeps_contract()
 
 
 @pytest.mark.asyncio
-async def test_sse_governed_path_masks_langgraph_native_answer_tokens_until_guarded_final() -> None:
+async def test_sse_governed_path_masks_langgraph_native_answer_tokens_until_guarded_final() -> (
+    None
+):
     result_state = GraphState(
         output_reply="Fallback",
         output_answer_markdown="Native Antwort.",
@@ -283,7 +299,9 @@ async def test_sse_governed_path_masks_langgraph_native_answer_tokens_until_guar
         )
     )
 
-    request = SimpleNamespace(session_id="case-native-stream", message="Ich brauche eine Dichtung")
+    request = SimpleNamespace(
+        session_id="case-native-stream", message="Ich brauche eine Dichtung"
+    )
     with (
         patch("app.agent.api.streaming.run_governed_graph_turn", seam),
         patch("app.agent.api.streaming._persist_live_governed_state", AsyncMock()),
@@ -309,9 +327,12 @@ async def test_sse_governed_path_masks_langgraph_native_answer_tokens_until_guar
         for payload in payloads
         if payload["type"] == "progress" and isinstance(payload.get("data"), dict)
     ].count("draft.created_internal") == 2
-    assert next(payload for payload in payloads if payload["type"] == "state_update")[
-        "answer_markdown"
-    ] == "Native Antwort."
+    assert (
+        next(payload for payload in payloads if payload["type"] == "state_update")[
+            "answer_markdown"
+        ]
+        == "Native Antwort."
+    )
     legacy_stream.assert_not_called()
 
 
@@ -346,11 +367,16 @@ async def test_sse_governed_path_composes_internally_before_state_update() -> No
             answer_markdown="Gern. Welches Medium liegt an?",
         )
 
-    request = SimpleNamespace(session_id="case-sse", message="Ich brauche eine Dichtung")
+    request = SimpleNamespace(
+        session_id="case-sse", message="Ich brauche eine Dichtung"
+    )
     with (
         patch("app.agent.api.streaming.run_governed_graph_turn", seam),
         patch("app.agent.api.streaming._persist_live_governed_state", AsyncMock()),
-        patch("app.agent.api.streaming.is_governed_answer_composer_enabled", return_value=True),
+        patch(
+            "app.agent.api.streaming.is_governed_answer_composer_enabled",
+            return_value=True,
+        ),
         patch("app.agent.api.streaming.GovernedAnswerComposer.compose", fake_compose),
         patch("app.agent.api.streaming.GovernedAnswerComposer.stream") as legacy_stream,
     ):
@@ -370,11 +396,19 @@ async def test_sse_governed_path_composes_internally_before_state_update() -> No
     ]
     assert [payload for payload in payloads if payload["type"] == "text_chunk"] == []
     assert not any(payload["type"] == "text_reset" for payload in payloads)
-    state_update = next(payload for payload in payloads if payload["type"] == "state_update")
+    state_update = next(
+        payload for payload in payloads if payload["type"] == "state_update"
+    )
     assert state_update["answer_markdown"] == "Gern. Welches Medium liegt an?"
-    assert state_update["run_meta"]["answer_trace"]["answer_markdown_source"] == "governed_composer"
+    assert (
+        state_update["run_meta"]["answer_trace"]["answer_markdown_source"]
+        == "governed_composer"
+    )
     assert state_update["final_guard_result"]["decision"] == "pass"
-    assert state_update["turn_envelope"]["streaming_policy"] == "status_only_until_guarded_final"
+    assert (
+        state_update["turn_envelope"]["streaming_policy"]
+        == "status_only_until_guarded_final"
+    )
     legacy_stream.assert_not_called()
 
 
@@ -386,7 +420,9 @@ async def test_post_graph_commit_persists_v92_and_medium_intelligence_slices() -
         seal_system=SealSystemState(status="partial", seal_type="radial_shaft_seal"),
         engineering=EngineeringState(status="partial", route="rwdr"),
         calculation=CalculationState(status="blocked", blocked_calculations=["rwdr"]),
-        dossier=DossierState(status="blocked", blockers=["manufacturer_review_required"]),
+        dossier=DossierState(
+            status="blocked", blockers=["manufacturer_review_required"]
+        ),
         medium_intelligence={
             "capability_id": "medium_intelligence",
             "validation_status": "registry_grounded",

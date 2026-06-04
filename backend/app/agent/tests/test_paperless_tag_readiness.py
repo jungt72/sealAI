@@ -42,21 +42,25 @@ def test_evaluate_paperless_tag_readiness_reports_missing_pilot_fields() -> None
 
 
 def test_evaluate_paperless_tag_readiness_requires_explicit_rag_flag() -> None:
-    without_flag = evaluate_paperless_tag_readiness([
-        "doc_type:datasheet",
-        "sts_mat:STS-MAT-SIC-A1",
-        "sts_type:STS-TYPE-GS-CART",
-        "lang:de",
-        "source:hersteller-name",
-    ])
-    with_flag = evaluate_paperless_tag_readiness([
-        "sealai:rag",
-        "doc_type:datasheet",
-        "sts_mat:STS-MAT-SIC-A1",
-        "sts_type:STS-TYPE-GS-CART",
-        "lang:de",
-        "source:hersteller-name",
-    ])
+    without_flag = evaluate_paperless_tag_readiness(
+        [
+            "doc_type:datasheet",
+            "sts_mat:STS-MAT-SIC-A1",
+            "sts_type:STS-TYPE-GS-CART",
+            "lang:de",
+            "source:hersteller-name",
+        ]
+    )
+    with_flag = evaluate_paperless_tag_readiness(
+        [
+            "sealai:rag",
+            "doc_type:datasheet",
+            "sts_mat:STS-MAT-SIC-A1",
+            "sts_type:STS-TYPE-GS-CART",
+            "lang:de",
+            "source:hersteller-name",
+        ]
+    )
 
     assert without_flag["ingest_ready"] is False
     assert without_flag["pilot_ready"] is False

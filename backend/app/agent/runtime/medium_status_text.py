@@ -10,8 +10,13 @@ def _text(value: str | None) -> str:
 
 def _state_has_medium_value(state: GovernedSessionState) -> bool:
     asserted = state.asserted.assertions.get("medium")
-    if asserted is not None and getattr(asserted, "asserted_value", None) not in (None, ""):
-        if is_medium_placeholder_value(str(getattr(asserted, "asserted_value", "") or "")):
+    if asserted is not None and getattr(asserted, "asserted_value", None) not in (
+        None,
+        "",
+    ):
+        if is_medium_placeholder_value(
+            str(getattr(asserted, "asserted_value", "") or "")
+        ):
             return False
         return True
     normalized = state.normalized.parameters.get("medium")
@@ -63,7 +68,9 @@ def medium_status_open_point(state: GovernedSessionState) -> str:
     return "Medium angeben"
 
 
-def medium_status_primary_question(state: GovernedSessionState) -> tuple[str, str] | None:
+def medium_status_primary_question(
+    state: GovernedSessionState,
+) -> tuple[str, str] | None:
     classification = state.medium_classification
     if isinstance(classification, dict):
         classification = type("ClassificationProxy", (), classification)()
@@ -114,7 +121,9 @@ def medium_status_primary_question(state: GovernedSessionState) -> tuple[str, st
 
     if status == "mentioned_unclassified":
         return (
-            f"Wie ist {raw} fachlich genau einzuordnen?" if raw else "Wie ist das genannte Medium fachlich genau einzuordnen?",
+            f"Wie ist {raw} fachlich genau einzuordnen?"
+            if raw
+            else "Wie ist das genannte Medium fachlich genau einzuordnen?",
             "Ich habe eine Medium-Nennung erfasst, kann sie aber noch nicht belastbar technisch einordnen.",
         )
 

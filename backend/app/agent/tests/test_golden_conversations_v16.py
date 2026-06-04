@@ -28,7 +28,10 @@ from app.agent.api.sse_contract import SSEEventBuilder
 from app.agent.api.streaming import _stream_fast_response
 from app.agent.api.routes.chat import _rwdr_p0_leakage_guidance_reply
 from app.agent.runtime.conversation_runtime import run_conversation
-from app.agent.communication.knowledge_modes import apply_knowledge_turn, resolve_knowledge_mode
+from app.agent.communication.knowledge_modes import (
+    apply_knowledge_turn,
+    resolve_knowledge_mode,
+)
 from app.agent.communication.mobile_triage import (
     build_mobile_leakage_triage,
     build_visual_low_confidence_guidance,
@@ -41,7 +44,10 @@ from app.agent.communication.rfq_one_pager import (
 )
 from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding
 from app.agent.state.models import GovernedSessionState, PendingQuestion
-from app.agent.templates.no_go_guard import FORBIDDEN_NORMAL_TURN_PHRASES, detect_no_go_phrases
+from app.agent.templates.no_go_guard import (
+    FORBIDDEN_NORMAL_TURN_PHRASES,
+    detect_no_go_phrases,
+)
 from app.agent.templates.registry import render_chat_reply
 from app.agent.v92.dashboard_contract import extract_case_revision
 from app.services.auth.dependencies import RequestUser
@@ -54,7 +60,12 @@ from app.services.rwdr_mvp_brief import (
 
 def _user() -> RequestUser:
     return RequestUser(
-        user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1"
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
     )
 
 
@@ -109,7 +120,8 @@ async def test_golden_rwdr_case_recognized_no_final_release() -> None:
 
     result = await generate_rwdr_brief(
         body=RwdrBriefRequest(
-            raw_inquiry="RWDR 45x62x8, Getriebe, Öl, 1500 rpm, staubig, undicht", fields=[]
+            raw_inquiry="RWDR 45x62x8, Getriebe, Öl, 1500 rpm, staubig, undicht",
+            fields=[],
         ),
         user=_user(),
     )
@@ -131,7 +143,9 @@ def test_golden_rwdr_chat_reply_is_not_an_ai_protocol() -> None:
         },
     )
     assert detect_no_go_phrases(reply.markdown, FORBIDDEN_NORMAL_TURN_PHRASES) == []
-    assert reply.disclaimer_mode == "suppress_normal_turn"  # no liability block in a normal turn
+    assert (
+        reply.disclaimer_mode == "suppress_normal_turn"
+    )  # no liability block in a normal turn
 
 
 # === Golden G — Mobile Foto + "sifft" ======================================
@@ -148,13 +162,20 @@ async def test_golden_mobile_foto_sifft_immediate_pocket_output() -> None:
     envelope = dispatch.fast_response.mobile_triage_envelope
     assert envelope["pocket_cockpit_patch"]["next_step"]  # pocket-first output
     assert envelope["action_chips"]  # action chips offered
-    assert envelope["trace"]["rag_used"] is False and envelope["trace"]["graph_used"] is False
+    assert (
+        envelope["trace"]["rag_used"] is False
+        and envelope["trace"]["graph_used"] is False
+    )
 
 
 def test_golden_mobile_triage_builder_offers_chips() -> None:
     # [ISOLATED] confirms the chip labels of the immediate triage envelope.
     envelope = build_mobile_leakage_triage(has_attachment=True)
-    assert [c.label for c in envelope.action_chips][:3] == ["Ja", "Nein", "Weiß ich nicht"]
+    assert [c.label for c in envelope.action_chips][:3] == [
+        "Ja",
+        "Nein",
+        "Weiß ich nicht",
+    ]
 
 
 # === Golden H — Low-confidence photo → measurement guidance =================
@@ -177,12 +198,18 @@ def test_golden_pending_slot_tolerant_parse() -> None:
     # [ISOLATED] deterministic Tier-0 binder (no RAG/graph by construction).
     binding = resolve_slot_answer_binding(
         pending_question=PendingQuestion(
-            target_field="speed_rpm", expected_answer_type="rotational_speed_value", status="open"
+            target_field="speed_rpm",
+            expected_answer_type="rotational_speed_value",
+            status="open",
         ),
         message="jo ca 3000",
         turn_index=1,
     )
-    assert binding is not None and binding.normalized_value == 3000.0 and binding.approximate is True
+    assert (
+        binding is not None
+        and binding.normalized_value == 3000.0
+        and binding.approximate is True
+    )
 
 
 # === Golden C — why-question (no mutation) ==================================
@@ -191,10 +218,16 @@ def test_golden_pending_slot_tolerant_parse() -> None:
 def test_golden_why_question_no_mutation() -> None:
     # [ISOLATED] knowledge mode contract; case_revision must be unchanged.
     state = GovernedSessionState()
-    mode = resolve_knowledge_mode("Warum fragst du nach der Welle?", has_active_case=True)
-    result = apply_knowledge_turn(state, "Warum fragst du nach der Welle?", has_active_case=True)
+    mode = resolve_knowledge_mode(
+        "Warum fragst du nach der Welle?", has_active_case=True
+    )
+    result = apply_knowledge_turn(
+        state, "Warum fragst du nach der Welle?", has_active_case=True
+    )
     assert mode == "why_question_active_case"
-    assert result is state and extract_case_revision(result) == extract_case_revision(state)
+    assert result is state and extract_case_revision(result) == extract_case_revision(
+        state
+    )
 
 
 # === Golden D/E/F — knowledge modes =========================================
@@ -203,7 +236,10 @@ def test_golden_why_question_no_mutation() -> None:
 def test_golden_knowledge_general_no_mutation() -> None:
     # [ISOLATED]
     state = GovernedSessionState()
-    assert resolve_knowledge_mode("Was ist FFKM?", has_active_case=False) == "knowledge_general"
+    assert (
+        resolve_knowledge_mode("Was ist FFKM?", has_active_case=False)
+        == "knowledge_general"
+    )
     assert apply_knowledge_turn(state, "Was ist FFKM?", has_active_case=False) is state
 
 
@@ -214,13 +250,20 @@ def test_golden_knowledge_case_aware_no_mutation() -> None:
         resolve_knowledge_mode("Was bedeutet FKM in meinem Fall?", has_active_case=True)
         == "knowledge_case_aware"
     )
-    assert apply_knowledge_turn(state, "Was bedeutet FKM in meinem Fall?", has_active_case=True) is state
+    assert (
+        apply_knowledge_turn(
+            state, "Was bedeutet FKM in meinem Fall?", has_active_case=True
+        )
+        is state
+    )
 
 
 def test_golden_knowledge_case_mutating_applies_only_supplied_facts() -> None:
     # [ISOLATED] only the new facts flow through the State Gate.
     state = GovernedSessionState()
-    result = apply_knowledge_turn(state, "Wir verwenden FKM, Öltemperatur 100 °C", has_active_case=True)
+    result = apply_knowledge_turn(
+        state, "Wir verwenden FKM, Öltemperatur 100 °C", has_active_case=True
+    )
     assert result is not state
     assert result.normalized.parameters["temperature_c"].value == 100
 
@@ -322,8 +365,15 @@ def test_golden_rfq_with_open_points_when_core_present() -> None:
     # [ISOLATED] request_goal is supplied by the RFQ intent, not raw-text
     # extraction; the readiness contract is asserted directly.
     readiness = evaluate_rfq_readiness(
-        ["sealing_function", "shaft_diameter_d1_mm", "housing_bore_D_mm", "seal_width_b_mm",
-         "application", "inside_medium", "request_goal"],
+        [
+            "sealing_function",
+            "shaft_diameter_d1_mm",
+            "housing_bore_D_mm",
+            "seal_width_b_mm",
+            "application",
+            "inside_medium",
+            "request_goal",
+        ],
         missing_fields=["shaft_condition_known", "temperature_max_c"],
     )
     assert readiness.status == RFQ_READINESS_WITH_OPEN_POINTS
@@ -462,7 +512,9 @@ async def test_p0_killer_flow_brief_preserves_core_facts_and_boundary() -> None:
     # EvidenceConfirmationIntelligence gate keeps them out of the calculation:
     # v = pi * d1 * rpm / 60000 is skipped and rpm stays a critical open point.
     computed = result["evaluation"]["computed_values"]
-    speed_class = next((c["value"] for c in computed if c.get("field") == "speed_class"), None)
+    speed_class = next(
+        (c["value"] for c in computed if c.get("field") == "speed_class"), None
+    )
     assert speed_class == "unknown"
     assert not any(c.get("field") == "circumferential_speed_mps" for c in computed)
     assert "critical_missing_max_speed_rpm" in flags
@@ -500,7 +552,9 @@ async def test_p0_circumferential_speed_computed_once_facts_confirmed() -> None:
         user=_user(),
     )
     computed = result["evaluation"]["computed_values"]
-    circ = next((c for c in computed if c.get("field") == "circumferential_speed_mps"), None)
+    circ = next(
+        (c for c in computed if c.get("field") == "circumferential_speed_mps"), None
+    )
     assert circ is not None
     # v = pi * 45 * 1500 / 60000 = 3.53 m/s
     assert circ["value"] == 3.53
@@ -519,7 +573,12 @@ async def test_p0_guarantee_question_routes_governed_without_guarantee_claim() -
     # text and defers to governed handling. It must NOT be answered as smalltalk
     # or a knowledge response (which could leak an unguarded answer).
     assert _dispatch_emitted_text(dispatch) == ""
-    assert detect_no_go_phrases(_dispatch_emitted_text(dispatch), include_final_release=True) == []
+    assert (
+        detect_no_go_phrases(
+            _dispatch_emitted_text(dispatch), include_final_release=True
+        )
+        == []
+    )
     assert dispatch.fast_response is None
     assert dispatch.knowledge_response is None
     # CURRENT behavior: the ambiguous guarantee question is fail-safe routed to
@@ -539,7 +598,9 @@ async def test_p0_pending_speed_slot_answer_recognized_live() -> None:
     # must treat it as a pending-slot answer — not a new case, not smalltalk.
     state = GovernedSessionState()
     state.pending_question = PendingQuestion(
-        target_field="speed_rpm", expected_answer_type="rotational_speed_value", status="open"
+        target_field="speed_rpm",
+        expected_answer_type="rotational_speed_value",
+        status="open",
     )
     pre_gate = PreGateClassifier().classify("jo ca 3000")
     turn_decision = await _resolve_v8_turn_decision(
@@ -701,7 +762,9 @@ def test_mobile_triage_exposes_pending_question_context() -> None:
 
     envelope = build_mobile_leakage_triage(has_attachment=True).model_dump(mode="json")
     assert envelope["pending_question"]["field"] == "shaft_rotates"
-    answer_chips = [c for c in envelope["action_chips"] if c.get("field") == "shaft_rotates"]
+    answer_chips = [
+        c for c in envelope["action_chips"] if c.get("field") == "shaft_rotates"
+    ]
     assert {c["value"] for c in answer_chips} == {"yes", "no", "unknown"}
 
 
@@ -720,7 +783,9 @@ def test_mobile_triage_yes_no_unknown_bind_to_shaft_rotates() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mobile_triage_answer_routed_as_pending_slot_answer_not_smalltalk() -> None:
+async def test_mobile_triage_answer_routed_as_pending_slot_answer_not_smalltalk() -> (
+    None
+):
     # [LIVE-DECISION] (2)/(3)/(4) With the triage context, the runtime decision
     # the dispatch uses routes each answer as a pending-slot answer — not
     # smalltalk and not a new case.
@@ -734,14 +799,19 @@ async def test_mobile_triage_answer_routed_as_pending_slot_answer_not_smalltalk(
             governed_state=_mobile_triage_state(),
         )
         answer_mode = getattr(decision, "answer_mode", None)
-        assert getattr(answer_mode, "value", answer_mode) == "pending_slot_answer", message
+        assert (
+            getattr(answer_mode, "value", answer_mode) == "pending_slot_answer"
+        ), message
 
 
 @pytest.mark.asyncio
 async def test_bare_yes_without_triage_context_creates_no_truth() -> None:
     # (5) Without a pending triage question, bare "Ja" must not bind a slot or
     # invent a fact — it stays generic governed intake.
-    assert resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1) is None
+    assert (
+        resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1)
+        is None
+    )
     decision = await _resolve_v8_turn_decision(
         request=ChatRequest(message="Ja", session_id=None),
         pre_gate=PreGateClassifier().classify("Ja"),
@@ -765,12 +835,18 @@ def test_existing_speed_slot_answer_still_binds_after_yes_no_unknown_adapter() -
     # yes/no/unknown adapter.
     binding = resolve_slot_answer_binding(
         pending_question=PendingQuestion(
-            target_field="speed_rpm", expected_answer_type="rotational_speed_value", status="open"
+            target_field="speed_rpm",
+            expected_answer_type="rotational_speed_value",
+            status="open",
         ),
         message="jo ca 3000",
         turn_index=1,
     )
-    assert binding is not None and binding.normalized_value == 3000.0 and binding.approximate is True
+    assert (
+        binding is not None
+        and binding.normalized_value == 3000.0
+        and binding.approximate is True
+    )
 
 
 # === Patch 9 — Mobile triage pending question bridged across the live turn ==
@@ -849,7 +925,12 @@ async def test_mobile_triage_bridge_is_tenant_and_session_scoped(
     assert other_session is None  # different session → no pending context
 
     other_tenant_user = RequestUser(
-        user_id="user-2", username="t2", sub="user-2", roles=[], scopes=[], tenant_id="tenant-2"
+        user_id="user-2",
+        username="t2",
+        sub="user-2",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-2",
     )
     other_tenant = await _load_live_governed_state(
         current_user=other_tenant_user, session_id="m-scope-a", create_if_missing=False
@@ -858,7 +939,9 @@ async def test_mobile_triage_bridge_is_tenant_and_session_scoped(
 
 
 @pytest.mark.asyncio
-async def test_mobile_triage_bridge_is_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mobile_triage_bridge_is_fail_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The bridge never raises and only fires for a mobile triage fast response.
     monkeypatch.delenv("REDIS_URL", raising=False)
     assert (
@@ -876,7 +959,9 @@ async def test_mobile_triage_bridge_is_fail_safe(monkeypatch: pytest.MonkeyPatch
         await persist_mobile_triage_pending_question(
             current_user=_user(),
             session_id="m-nonmobile",
-            fast_response=SimpleNamespace(content="Hallo"),  # not a mobile triage response
+            fast_response=SimpleNamespace(
+                content="Hallo"
+            ),  # not a mobile triage response
         )
         is False  # non-mobile fast response → no-op
     )
@@ -900,7 +985,9 @@ def _sse_state_update_payload(frames: list[str]) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_mobile_p0_triage_chain_backend_contract(_override_env: _FakeRedisClient) -> None:
+async def test_mobile_p0_triage_chain_backend_contract(
+    _override_env: _FakeRedisClient,
+) -> None:
     # 1) photo + "sifft" → dispatch returns the mobile triage fast response.
     dispatch = await _resolve_runtime_dispatch(
         ChatRequest(message="sifft", session_id="m-chain", has_attachment=True),
@@ -922,7 +1009,9 @@ async def test_mobile_p0_triage_chain_backend_contract(_override_env: _FakeRedis
     data = _sse_state_update_payload(frames)["data"]
     assert "assistant_turn_envelope" in data
     assert data["pocket_cockpit_patch"]
-    assert {c["value"] for c in data["action_chips"] if c.get("field") == "shaft_rotates"} == {
+    assert {
+        c["value"] for c in data["action_chips"] if c.get("field") == "shaft_rotates"
+    } == {
         "yes",
         "no",
         "unknown",
@@ -932,7 +1021,9 @@ async def test_mobile_p0_triage_chain_backend_contract(_override_env: _FakeRedis
     #    (Patch 9), with no cross-session leakage.
     assert (
         await persist_mobile_triage_pending_question(
-            current_user=_user(), session_id="m-chain", fast_response=dispatch.fast_response
+            current_user=_user(),
+            session_id="m-chain",
+            fast_response=dispatch.fast_response,
         )
         is True
     )
@@ -962,7 +1053,10 @@ async def test_mobile_p0_triage_chain_backend_contract(_override_env: _FakeRedis
         )
         is None
     )
-    assert resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1) is None
+    assert (
+        resolve_slot_answer_binding(pending_question=None, message="Ja", turn_index=1)
+        is None
+    )
 
 
 # === Patch 11 — Backend-owned Pocket Cockpit for the governed RWDR P0 text ===
@@ -1007,4 +1101,6 @@ def test_rwdr_p0_pocket_cockpit_patch_projection() -> None:
 
     # (5) Non-RWDR text yields no projection.
     assert build_rwdr_p0_pocket_cockpit_patch("Was ist FFKM?") is None
-    assert build_rwdr_p0_pocket_cockpit_patch("RWDR 45x62x8, Getriebe") is None  # no leakage intent
+    assert (
+        build_rwdr_p0_pocket_cockpit_patch("RWDR 45x62x8, Getriebe") is None
+    )  # no leakage intent

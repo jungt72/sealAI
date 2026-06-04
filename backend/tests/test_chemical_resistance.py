@@ -7,8 +7,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -31,6 +35,7 @@ from app.mcp.calculations.chemical_resistance import (
 # ──────────────────────────────────────────────────────────────────────────────
 # Kernbewertungen: A/B/C korrekt
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_nbr_hydraulic_oil_a():
     """NBR in Hydrauliköl HLP → A (Standardanwendung)"""
@@ -82,6 +87,7 @@ def test_hnbr_h2_ok():
 # Alias-Auflösung (DE/EN, Trivialname)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_alias_de_natronlauge_viton():
     """Alias 'natronlauge' + 'viton' → FKM × NaOH = C"""
     r = lookup("natronlauge", "viton")
@@ -99,6 +105,7 @@ def test_alias_en_hydrogen_kalrez():
 # ──────────────────────────────────────────────────────────────────────────────
 # get_compatible_materials
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_compatible_materials_steam():
     """
@@ -122,13 +129,16 @@ def test_compatible_materials_steam():
     # Reihenfolge: alle A vor allen B
     rating_list = [r.rating for r in results]
     last_a = max((i for i, v in enumerate(rating_list) if v == "A"), default=-1)
-    first_b = min((i for i, v in enumerate(rating_list) if v == "B"), default=len(rating_list))
+    first_b = min(
+        (i for i, v in enumerate(rating_list) if v == "B"), default=len(rating_list)
+    )
     assert last_a < first_b, "A-Einträge müssen vor B-Einträgen kommen"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fehlerbehandlung
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_unknown_medium_raises():
     """Unbekanntes Medium → KeyError"""

@@ -10,7 +10,11 @@ from app.mcp.knowledge_tool import (
     get_permitted_tool_specs,
 )
 from app.schemas.mcp import JsonRpcRequest, JsonRpcResponse
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.services.auth.dependencies import (
+    RequestUser,
+    canonical_user_id,
+    get_current_request_user,
+)
 
 router = APIRouter()
 
@@ -56,7 +60,9 @@ async def handle_mcp_request(
         arguments = {}
 
     if not tool_name:
-        return _jsonrpc_error(request_id=request.id, code=-32602, message="Missing tool name")
+        return _jsonrpc_error(
+            request_id=request.id, code=-32602, message="Missing tool name"
+        )
     if tool_name not in visible_tool_names:
         return _jsonrpc_error(
             request_id=request.id,

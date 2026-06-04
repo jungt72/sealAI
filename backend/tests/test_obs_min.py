@@ -10,7 +10,9 @@ class _ListHandler(logging.Handler):
         super().__init__()
         self.records = []
 
-    def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - simple collector
+    def emit(
+        self, record: logging.LogRecord
+    ) -> None:  # pragma: no cover - simple collector
         self.records.append(record)
 
 

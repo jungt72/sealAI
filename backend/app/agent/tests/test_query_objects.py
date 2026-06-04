@@ -6,7 +6,9 @@ from app.agent.evidence import EvidenceQuery, ExplorationQuery
 
 
 def test_evidence_query_is_instantiable_with_defaults() -> None:
-    query = EvidenceQuery(topic="PTFE fuer Dampf", detected_sts_codes=["STS-MAT-PTFE-A1"])
+    query = EvidenceQuery(
+        topic="PTFE fuer Dampf", detected_sts_codes=["STS-MAT-PTFE-A1"]
+    )
 
     assert query.topic == "PTFE fuer Dampf"
     assert query.detected_sts_codes == ["STS-MAT-PTFE-A1"]

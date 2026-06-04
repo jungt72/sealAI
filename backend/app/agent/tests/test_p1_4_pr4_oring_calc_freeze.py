@@ -7,6 +7,7 @@ Locks the end-to-end ``build_calculation_state`` O-Ring output (the five
 (orchestrator injects its calc primitives into the moved function) stays
 byte-identical.
 """
+
 from __future__ import annotations
 
 import math
@@ -75,10 +76,10 @@ def test_oring_calculations_freeze() -> None:
     assert oring["oring.squeeze_pct"].outputs["squeeze_pct"] == 20.0
     assert oring["oring.squeeze_pct"].status == "ok"
 
-    expected_gland_fill = round(
-        (math.pi / 4.0 * 5.0**2) / (4.0 * 6.5) * 100.0, 2
+    expected_gland_fill = round((math.pi / 4.0 * 5.0**2) / (4.0 * 6.5) * 100.0, 2)
+    assert (
+        oring["oring.gland_fill_pct"].outputs["gland_fill_pct"] == expected_gland_fill
     )
-    assert oring["oring.gland_fill_pct"].outputs["gland_fill_pct"] == expected_gland_fill
     assert oring["oring.gland_fill_pct"].status == "ok"
 
     assert oring["oring.stretch_pct"].outputs["stretch_pct"] == 4.0

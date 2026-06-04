@@ -24,4 +24,3 @@ class RenderedPrompt:
     version: str
     rendered_text: str
     hash_sha256: str
-

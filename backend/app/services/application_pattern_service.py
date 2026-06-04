@@ -71,10 +71,16 @@ class ApplicationPatternLibrary:
         text = _normalize(user_input)
         candidates: list[PatternCandidate] = []
         for pattern in self._patterns:
-            matched = tuple(term for term in pattern.triggering_contexts if _normalize(term) in text)
+            matched = tuple(
+                term for term in pattern.triggering_contexts if _normalize(term) in text
+            )
             if not matched:
                 continue
-            candidates.append(PatternCandidate(pattern, min(0.95, 0.45 + 0.15 * len(matched)), matched))
+            candidates.append(
+                PatternCandidate(
+                    pattern, min(0.95, 0.45 + 0.15 * len(matched)), matched
+                )
+            )
         candidates.sort(key=lambda candidate: candidate.confidence, reverse=True)
         return candidates[:limit]
 
@@ -92,19 +98,171 @@ def _normalize(value: str) -> str:
 
 
 MVP_SEED_PATTERNS: tuple[ApplicationPattern, ...] = (
-    ApplicationPattern("pat-chemical-process-pump-aggressive-medium", "chemical_process_pump_aggressive_medium", {"de": "Chemie-Prozesspumpe"}, ("chemie", "prozesspumpe", "saeure", "base", "loesungsmittel"), "rwdr", ("ptfe_virgin", "ptfe_carbon_filled", "ptfe_graphite_filled"), {"dry_run_risk": _field(True, 0.55)}, ("medium", "temperature.max_c", "shaft.diameter_mm", "shaft_speed.rpm_nom"), ("atex", "reach"), ("ptfe_carbon_filled", "ptfe_graphite_filled", "ptfe_virgin"), ("chemical_attack", "dry_run_wear")),
-    ApplicationPattern("pat-hydraulic-gearbox-standard", "hydraulic_gearbox_standard", {"de": "Hydraulik-Getriebe"}, ("hydraulik", "getriebe", "hlp46", "hlp68"), "rwdr", ("ptfe_glass_filled", "ptfe_bronze_filled"), required_clarification_fields=("pressure.max_bar", "temperature.max_c", "shaft_speed.rpm_nom")),
-    ApplicationPattern("pat-food-processing-chocolate-melter", "food_processing_chocolate_melter", {"de": "Schokoladenverarbeitung"}, ("schokolade", "kakao", "lebensmittel", "cip", "sip"), "rwdr", ("ptfe_virgin", "ptfe_glass_filled"), required_clarification_fields=("food_contact_required", "cleaning.medium", "temperature.max_c"), relevant_norm_modules=("eu_food_contact", "fda_food_contact"), typical_failure_modes=("dust_induced_wear", "creep_induced_contact_loss")),
-    ApplicationPattern("pat-food-processing-dairy", "food_processing_dairy", {"de": "Milchverarbeitung"}, ("milch", "molkerei", "pasteur", "joghurt", "kaese"), "rwdr", ("ptfe_virgin", "elastomer_epdm", "elastomer_fkm"), required_clarification_fields=("food_contact_required", "cleaning.medium"), relevant_norm_modules=("eu_food_contact", "fda_food_contact")),
-    ApplicationPattern("pat-pharmaceutical-mixing", "pharmaceutical_mixing", {"de": "Pharma-Mischanwendung"}, ("pharma", "usp", "gmp", "steril"), "rwdr", ("ptfe_virgin", "elastomer_ffkm"), required_clarification_fields=("pharma_grade_required", "sterilization.method"), relevant_norm_modules=("usp_class_vi",)),
-    ApplicationPattern("pat-water-treatment-pump", "water_treatment_pump", {"de": "Wasseraufbereitung"}, ("wasser", "trinkwasser", "abwasser", "prozesswasser"), "rwdr", ("ptfe_glass_filled", "ptfe_virgin"), required_clarification_fields=("water_approval_required", "pressure.max_bar"), relevant_norm_modules=("ktw", "nsf")),
-    ApplicationPattern("pat-automotive-gearbox-axle", "automotive_gearbox_axle", {"de": "Automotive Getriebe/Achse"}, ("automotive", "achse", "fahrzeug", "iatf"), "rwdr", ("ptfe_glass_filled", "elastomer_fkm", "elastomer_hnbr"), required_clarification_fields=("quantity_requested", "temperature.max_c")),
-    ApplicationPattern("pat-agitator-sealing", "agitator_sealing", {"de": "Ruehrwerk-Wellenabdichtung", "en": "Agitator shaft sealing"}, ("ruehrwerk", "rührwerk", "agitator", "rührer", "ruehrer"), "rwdr", ("ptfe_glass_filled", "ptfe_carbon_filled", "elastomer_fkm"), {"motion_type": _field("rotary", 0.72), "seal_location": _field("shaft_sealing", 0.66)}, ("medium", "temperature.max_c", "shaft_speed.rpm_nom", "seal_location"), typical_failure_modes=("leakage", "shaft_runout", "lip_wear_localized")),
-    ApplicationPattern("pat-rotating-drum-mixer", "rotating_drum_mixer", {"de": "Rotierender Mischer"}, ("trommel", "mischer", "trockner", "partikel", "staub"), "rwdr", ("ptfe_glass_filled", "ptfe_bronze_filled"), required_clarification_fields=("abrasive_particles", "shaft_speed.rpm_nom"), typical_failure_modes=("dust_induced_wear", "lip_wear_localized")),
-    ApplicationPattern("pat-compressor-sealing", "compressor_sealing", {"de": "Kompressor-Wellendichtung"}, ("kompressor", "kaeltemittel", "gas", "druckluft"), "rwdr", ("ptfe_carbon_filled", "ptfe_peek_filled"), required_clarification_fields=("pressure.max_bar", "gas_tightness_required")),
-    ApplicationPattern("pat-cryogenic-or-low-temperature", "cryogenic_or_low_temperature", {"de": "Tieftemperatur"}, ("kryogen", "tieftemperatur", "-40", "-50"), "rwdr", ("ptfe_virgin", "elastomer_silicone"), required_clarification_fields=("temperature.min_c", "medium")),
-    ApplicationPattern("pat-high-speed-spindle", "high_speed_spindle", {"de": "Hochdrehzahl-Spindel"}, ("spindel", "hochdrehzahl", "zentrifuge", "15 m/s"), "rwdr", ("ptfe_carbon_filled", "ptfe_peek_filled", "ptfe_graphite_filled"), required_clarification_fields=("shaft_speed.rpm_nom", "shaft.surface_ra_um")),
-    ApplicationPattern("pat-pump-dry-run-risk", "pump_dry_run_risk", {"de": "Pumpe mit Trockenlauf"}, ("trockenlauf", "dosierpumpe", "niveauschutz", "leer lauf"), "rwdr", ("ptfe_graphite_filled", "ptfe_mos2_filled"), {"dry_run_risk": _field(True, 0.8)}, ("dry_run_duration", "medium"), typical_failure_modes=("dry_run_wear",)),
-    ApplicationPattern("pat-rebuild-replacement-individual", "rebuild_replacement_individual", {"de": "Einzelersatz"}, ("ersatzteil", "einzelstueck", "1 stueck", "altteil", "artikelnummer"), "rwdr", ("unknown",), {"quantity_requested": _field(1, 0.75)}, ("photo_or_article_number", "dimensions"), quantity_profile=QuantityProfile(1, 10, True)),
-    ApplicationPattern("pat-generic-industrial-unclear", "generic_industrial_unclear", {"de": "Unklare Industrieanwendung"}, ("dichtung", "wellendichtung", "rwdr", "simmerring"), "rwdr", ("unknown",), required_clarification_fields=("shaft.diameter_mm", "medium", "temperature.max_c", "shaft_speed.rpm_nom")),
+    ApplicationPattern(
+        "pat-chemical-process-pump-aggressive-medium",
+        "chemical_process_pump_aggressive_medium",
+        {"de": "Chemie-Prozesspumpe"},
+        ("chemie", "prozesspumpe", "saeure", "base", "loesungsmittel"),
+        "rwdr",
+        ("ptfe_virgin", "ptfe_carbon_filled", "ptfe_graphite_filled"),
+        {"dry_run_risk": _field(True, 0.55)},
+        ("medium", "temperature.max_c", "shaft.diameter_mm", "shaft_speed.rpm_nom"),
+        ("atex", "reach"),
+        ("ptfe_carbon_filled", "ptfe_graphite_filled", "ptfe_virgin"),
+        ("chemical_attack", "dry_run_wear"),
+    ),
+    ApplicationPattern(
+        "pat-hydraulic-gearbox-standard",
+        "hydraulic_gearbox_standard",
+        {"de": "Hydraulik-Getriebe"},
+        ("hydraulik", "getriebe", "hlp46", "hlp68"),
+        "rwdr",
+        ("ptfe_glass_filled", "ptfe_bronze_filled"),
+        required_clarification_fields=(
+            "pressure.max_bar",
+            "temperature.max_c",
+            "shaft_speed.rpm_nom",
+        ),
+    ),
+    ApplicationPattern(
+        "pat-food-processing-chocolate-melter",
+        "food_processing_chocolate_melter",
+        {"de": "Schokoladenverarbeitung"},
+        ("schokolade", "kakao", "lebensmittel", "cip", "sip"),
+        "rwdr",
+        ("ptfe_virgin", "ptfe_glass_filled"),
+        required_clarification_fields=(
+            "food_contact_required",
+            "cleaning.medium",
+            "temperature.max_c",
+        ),
+        relevant_norm_modules=("eu_food_contact", "fda_food_contact"),
+        typical_failure_modes=("dust_induced_wear", "creep_induced_contact_loss"),
+    ),
+    ApplicationPattern(
+        "pat-food-processing-dairy",
+        "food_processing_dairy",
+        {"de": "Milchverarbeitung"},
+        ("milch", "molkerei", "pasteur", "joghurt", "kaese"),
+        "rwdr",
+        ("ptfe_virgin", "elastomer_epdm", "elastomer_fkm"),
+        required_clarification_fields=("food_contact_required", "cleaning.medium"),
+        relevant_norm_modules=("eu_food_contact", "fda_food_contact"),
+    ),
+    ApplicationPattern(
+        "pat-pharmaceutical-mixing",
+        "pharmaceutical_mixing",
+        {"de": "Pharma-Mischanwendung"},
+        ("pharma", "usp", "gmp", "steril"),
+        "rwdr",
+        ("ptfe_virgin", "elastomer_ffkm"),
+        required_clarification_fields=("pharma_grade_required", "sterilization.method"),
+        relevant_norm_modules=("usp_class_vi",),
+    ),
+    ApplicationPattern(
+        "pat-water-treatment-pump",
+        "water_treatment_pump",
+        {"de": "Wasseraufbereitung"},
+        ("wasser", "trinkwasser", "abwasser", "prozesswasser"),
+        "rwdr",
+        ("ptfe_glass_filled", "ptfe_virgin"),
+        required_clarification_fields=("water_approval_required", "pressure.max_bar"),
+        relevant_norm_modules=("ktw", "nsf"),
+    ),
+    ApplicationPattern(
+        "pat-automotive-gearbox-axle",
+        "automotive_gearbox_axle",
+        {"de": "Automotive Getriebe/Achse"},
+        ("automotive", "achse", "fahrzeug", "iatf"),
+        "rwdr",
+        ("ptfe_glass_filled", "elastomer_fkm", "elastomer_hnbr"),
+        required_clarification_fields=("quantity_requested", "temperature.max_c"),
+    ),
+    ApplicationPattern(
+        "pat-agitator-sealing",
+        "agitator_sealing",
+        {"de": "Ruehrwerk-Wellenabdichtung", "en": "Agitator shaft sealing"},
+        ("ruehrwerk", "rührwerk", "agitator", "rührer", "ruehrer"),
+        "rwdr",
+        ("ptfe_glass_filled", "ptfe_carbon_filled", "elastomer_fkm"),
+        {
+            "motion_type": _field("rotary", 0.72),
+            "seal_location": _field("shaft_sealing", 0.66),
+        },
+        ("medium", "temperature.max_c", "shaft_speed.rpm_nom", "seal_location"),
+        typical_failure_modes=("leakage", "shaft_runout", "lip_wear_localized"),
+    ),
+    ApplicationPattern(
+        "pat-rotating-drum-mixer",
+        "rotating_drum_mixer",
+        {"de": "Rotierender Mischer"},
+        ("trommel", "mischer", "trockner", "partikel", "staub"),
+        "rwdr",
+        ("ptfe_glass_filled", "ptfe_bronze_filled"),
+        required_clarification_fields=("abrasive_particles", "shaft_speed.rpm_nom"),
+        typical_failure_modes=("dust_induced_wear", "lip_wear_localized"),
+    ),
+    ApplicationPattern(
+        "pat-compressor-sealing",
+        "compressor_sealing",
+        {"de": "Kompressor-Wellendichtung"},
+        ("kompressor", "kaeltemittel", "gas", "druckluft"),
+        "rwdr",
+        ("ptfe_carbon_filled", "ptfe_peek_filled"),
+        required_clarification_fields=("pressure.max_bar", "gas_tightness_required"),
+    ),
+    ApplicationPattern(
+        "pat-cryogenic-or-low-temperature",
+        "cryogenic_or_low_temperature",
+        {"de": "Tieftemperatur"},
+        ("kryogen", "tieftemperatur", "-40", "-50"),
+        "rwdr",
+        ("ptfe_virgin", "elastomer_silicone"),
+        required_clarification_fields=("temperature.min_c", "medium"),
+    ),
+    ApplicationPattern(
+        "pat-high-speed-spindle",
+        "high_speed_spindle",
+        {"de": "Hochdrehzahl-Spindel"},
+        ("spindel", "hochdrehzahl", "zentrifuge", "15 m/s"),
+        "rwdr",
+        ("ptfe_carbon_filled", "ptfe_peek_filled", "ptfe_graphite_filled"),
+        required_clarification_fields=("shaft_speed.rpm_nom", "shaft.surface_ra_um"),
+    ),
+    ApplicationPattern(
+        "pat-pump-dry-run-risk",
+        "pump_dry_run_risk",
+        {"de": "Pumpe mit Trockenlauf"},
+        ("trockenlauf", "dosierpumpe", "niveauschutz", "leer lauf"),
+        "rwdr",
+        ("ptfe_graphite_filled", "ptfe_mos2_filled"),
+        {"dry_run_risk": _field(True, 0.8)},
+        ("dry_run_duration", "medium"),
+        typical_failure_modes=("dry_run_wear",),
+    ),
+    ApplicationPattern(
+        "pat-rebuild-replacement-individual",
+        "rebuild_replacement_individual",
+        {"de": "Einzelersatz"},
+        ("ersatzteil", "einzelstueck", "1 stueck", "altteil", "artikelnummer"),
+        "rwdr",
+        ("unknown",),
+        {"quantity_requested": _field(1, 0.75)},
+        ("photo_or_article_number", "dimensions"),
+        quantity_profile=QuantityProfile(1, 10, True),
+    ),
+    ApplicationPattern(
+        "pat-generic-industrial-unclear",
+        "generic_industrial_unclear",
+        {"de": "Unklare Industrieanwendung"},
+        ("dichtung", "wellendichtung", "rwdr", "simmerring"),
+        "rwdr",
+        ("unknown",),
+        required_clarification_fields=(
+            "shaft.diameter_mm",
+            "medium",
+            "temperature.max_c",
+            "shaft_speed.rpm_nom",
+        ),
+    ),
 )

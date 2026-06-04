@@ -1,4 +1,4 @@
-PARAMS = {{ PARAMS_JSON }}
+PARAMS = {{PARAMS_JSON}}
 
 import os
 import traceback
@@ -25,7 +25,9 @@ def build_seal_shape(params: dict):
     lip_thickness = float(params.get("lip_thickness", 2.5))
     body_width = float(params.get("body_width", 8.0))
 
-    outer_radius = outer_dia / 2.0 / 10.0  # convert mm to cm to keep FreeCAD numerically stable
+    outer_radius = (
+        outer_dia / 2.0 / 10.0
+    )  # convert mm to cm to keep FreeCAD numerically stable
     inner_radius = inner_dia / 2.0 / 10.0
 
     doc = App.ActiveDocument or App.newDocument("SealRender")

@@ -12,7 +12,9 @@ ReleaseStatus = Literal[
     "not_applicable",
 ]
 RFQAdmissibility = Literal["inadmissible", "provisional", "ready", "not_applicable"]
-SpecificityLevel = Literal["family_only", "subfamily", "compound_required", "product_family_required"]
+SpecificityLevel = Literal[
+    "family_only", "subfamily", "compound_required", "product_family_required"
+]
 IdentityClass = Literal[
     "identity_confirmed",
     "identity_probable",
@@ -46,38 +48,46 @@ class IdentityRecord(TypedDict, total=False):
     authority_quality: str
     temporal_quality: str
 
+
 class ObservedLayer(TypedDict):
     """
     Observed Layer (Rohwerte, Units, Originalformulierungen).
     Blueprint Section 02: technisch wirksame Daten starten hier und bleiben roh.
     """
+
     observed_inputs: List[ObservedInputRecord]
     raw_parameters: Dict[str, Any]
+
 
 class NormalizedLayer(TypedDict):
     """
     Normalized Layer (Identity Gating).
     Blueprint Section 02 + Section 03: nur deterministisch validierte Normalisierung.
     """
+
     identity_records: Dict[str, IdentityRecord]
     normalized_parameters: Dict[str, Any]
+
 
 class AssertedLayer(TypedDict):
     """
     Asserted Layer (Typed Profiles).
     Blueprint Section 02: bindender technischer State nur aus Normalized-Reducer.
     """
+
     medium_profile: Dict[str, Any]
     machine_profile: Dict[str, Any]
     installation_profile: Dict[str, Any]
     operating_conditions: Dict[str, Any]  # temperature, pressure
     sealing_requirement_spec: Dict[str, Any]
 
+
 class GovernanceLayer(TypedDict):
     """
     Governance Layer (Compliance & Readiness).
     Blueprint Sections 02, 06, 08: normative Governance-Enumerationen und Gates.
     """
+
     release_status: ReleaseStatus
     rfq_admissibility: RFQAdmissibility
     specificity_level: SpecificityLevel
@@ -99,29 +109,33 @@ class ReviewLayer(TypedDict, total=False):
     Deterministic trigger writes this; frontend/operator resolves it.
     Never populated by the LLM.
     """
-    review_required: bool           # True when a human review is mandatory
-    review_state: ReviewState       # lifecycle: none → pending → approved | rejected
-    review_reason: str              # why the review was triggered (deterministic rule name)
-    reviewed_by: Optional[str]      # set by operator after review
+
+    review_required: bool  # True when a human review is mandatory
+    review_state: ReviewState  # lifecycle: none → pending → approved | rejected
+    review_reason: str  # why the review was triggered (deterministic rule name)
+    reviewed_by: Optional[str]  # set by operator after review
     review_decision: Optional[str]  # operator decision text
-    review_note: Optional[str]      # optional annotation by reviewer
+    review_note: Optional[str]  # optional annotation by reviewer
     critical_review_status: CriticalReviewStatus
     critical_review_passed: bool
     blocking_findings: List[str]
     soft_findings: List[str]
     required_corrections: List[str]
 
+
 class CycleLayer(TypedDict):
     """
     Cycle Control (Determinismus & Revision).
     Blueprint Section 02 + Section 12: revisionsgebunden und obsoleszenzfähig.
     """
+
     analysis_cycle_id: str
     snapshot_parent_revision: int
     superseded_by_cycle: Optional[str]
     contract_obsolete: bool
     contract_obsolete_reason: Optional[str]
     state_revision: int
+
 
 class SelectionCandidate(TypedDict):
     candidate_id: str
@@ -133,6 +147,7 @@ class SelectionCandidate(TypedDict):
     viability_status: str
     block_reason: Optional[str]
     evidence_refs: List[str]
+
 
 class RecommendationArtifact(TypedDict):
     """
@@ -164,6 +179,7 @@ class RecommendationArtifact(TypedDict):
     rationale_summary: str
     trace_provenance_refs: List[str]
 
+
 class EvidenceProvenanceProjection(TypedDict):
     """
     Deterministic projection of the current evidence/provenance footing.
@@ -172,6 +188,7 @@ class EvidenceProvenanceProjection(TypedDict):
     status: str
     provenance_refs: List[str]
     evidence_basis: List[str]
+
 
 class ConflictStatusProjection(TypedDict):
     """
@@ -185,6 +202,7 @@ class ConflictStatusProjection(TypedDict):
     correction_applied: bool
     conflict_still_open: bool
 
+
 class UnitNormalizationProjection(TypedDict):
     """
     Deterministic projection of normalization/unit plausibility status.
@@ -194,6 +212,7 @@ class UnitNormalizationProjection(TypedDict):
     affected_keys: List[str]
     warning_keys: List[str]
     blocking_keys: List[str]
+
 
 class ParameterIntegrityProjection(TypedDict):
     """
@@ -206,6 +225,7 @@ class ParameterIntegrityProjection(TypedDict):
     blocking_keys: List[str]
     usable_for_structured_step: bool
 
+
 class ThresholdProjection(TypedDict):
     """
     Compact projection of triggered deterministic threshold checks.
@@ -216,6 +236,7 @@ class ThresholdProjection(TypedDict):
     blocking_thresholds: List[str]
     threshold_status: str
     usable_for_governed_step: bool
+
 
 class DomainScopeProjection(TypedDict):
     """
@@ -229,6 +250,7 @@ class DomainScopeProjection(TypedDict):
     threshold_status: str
     usable_for_governed_step: bool
 
+
 class CorrectionProjection(TypedDict):
     """
     Compact projection for user-visible correction/conflict state.
@@ -239,6 +261,7 @@ class CorrectionProjection(TypedDict):
     current_value_summary: str
     correction_applied: bool
     conflict_still_open: bool
+
 
 class ReviewEscalationProjection(TypedDict):
     """
@@ -259,6 +282,7 @@ class ReviewEscalationProjection(TypedDict):
     handover_possible: bool
     human_validation_ready: bool
 
+
 class ClarificationProjection(TypedDict):
     """
     Deterministic clarification projection for incomplete structured cases.
@@ -275,12 +299,14 @@ class ClarificationProjection(TypedDict):
     clarification_still_meaningful: bool
     reason_if_not: str
 
+
 class UserFacingOutputProjection(TypedDict):
     """
     Deterministic user-facing result type for the current structured state.
     """
 
     status: str
+
 
 class OutputContractProjection(TypedDict):
     """
@@ -293,6 +319,7 @@ class OutputContractProjection(TypedDict):
     visible_warning_flags: List[str]
     suppress_recommendation_details: bool
 
+
 class ProjectionInvariantProjection(TypedDict):
     """
     Explicit projection-invariant status across the structured user-facing slices.
@@ -300,6 +327,7 @@ class ProjectionInvariantProjection(TypedDict):
 
     invariant_ok: bool
     invariant_violations: List[str]
+
 
 class StateTraceAuditProjection(TypedDict):
     """
@@ -310,6 +338,7 @@ class StateTraceAuditProjection(TypedDict):
     contributing_reasons: List[str]
     blocking_reasons: List[str]
     trace_flags: List[str]
+
 
 class CaseSummaryProjection(TypedDict):
     """
@@ -322,6 +351,7 @@ class CaseSummaryProjection(TypedDict):
     active_blockers: List[str]
     next_step: str
 
+
 class ActionabilityProjection(TypedDict):
     """
     Compact deterministic projection of the currently allowed structured action space.
@@ -332,6 +362,7 @@ class ActionabilityProjection(TypedDict):
     blocked_actions: List[str]
     next_expected_user_action: str
 
+
 class StateDeltaProjection(TypedDict):
     """
     Compact deterministic comparison of two structured states.
@@ -341,6 +372,7 @@ class StateDeltaProjection(TypedDict):
     changed_statuses: Dict[str, Dict[str, Any]]
     primary_delta_reason: str
     delta_direction: str
+
 
 class StructuredSnapshotContract(TypedDict):
     """
@@ -354,6 +386,7 @@ class StructuredSnapshotContract(TypedDict):
     primary_allowed_action: str
     active_blockers: List[str]
 
+
 class StructuredSnapshotComparisonContract(TypedDict):
     """
     Stable compact comparison contract between two structured snapshots.
@@ -365,6 +398,7 @@ class StructuredSnapshotComparisonContract(TypedDict):
     changed_blockers: Dict[str, List[str]]
     primary_delta_reason: str
     delta_direction: str
+
 
 class SelectionLayer(TypedDict):
     """
@@ -389,7 +423,9 @@ class SelectionLayer(TypedDict):
     clarification_projection: NotRequired[Optional[ClarificationProjection]]
     user_facing_output_projection: NotRequired[Optional[UserFacingOutputProjection]]
     output_contract_projection: NotRequired[Optional[OutputContractProjection]]
-    projection_invariant_projection: NotRequired[Optional[ProjectionInvariantProjection]]
+    projection_invariant_projection: NotRequired[
+        Optional[ProjectionInvariantProjection]
+    ]
     state_trace_audit_projection: NotRequired[Optional[StateTraceAuditProjection]]
     case_summary_projection: NotRequired[Optional[CaseSummaryProjection]]
     actionability_projection: NotRequired[Optional[ActionabilityProjection]]
@@ -400,6 +436,7 @@ class SelectionLayer(TypedDict):
     specificity_level: SpecificityLevel
     output_blocked: bool
 
+
 class HandoverLayer(TypedDict, total=False):
     """
     Commercial / Handover Layer — Phase A6.
@@ -407,11 +444,14 @@ class HandoverLayer(TypedDict, total=False):
     Contains only clean, ERP-ready order-profile data — no internal governance
     state, no reasoning artefacts, no demo-data flags.
     """
-    is_handover_ready: bool            # True only when inquiry_ready + no pending HITL review
-    handover_status: str               # releasable | handoverable | reviewable | not_handoverable
-    handover_reason: str               # deterministic explanation for the status
-    target_system: Optional[str]       # e.g. "rfq_portal" | "shop" | None
-    handover_payload: Optional[Dict[str, Any]]  # sanitised order-profile for the target system
+
+    is_handover_ready: bool  # True only when inquiry_ready + no pending HITL review
+    handover_status: str  # releasable | handoverable | reviewable | not_handoverable
+    handover_reason: str  # deterministic explanation for the status
+    target_system: Optional[str]  # e.g. "rfq_portal" | "shop" | None
+    handover_payload: Optional[
+        Dict[str, Any]
+    ]  # sanitised order-profile for the target system
 
 
 class OutcomeLayer(TypedDict, total=False):
@@ -422,11 +462,12 @@ class OutcomeLayer(TypedDict, total=False):
     All fields are optional — the layer starts empty and is filled post-deployment.
     Schema is defined here so downstream consumers have a stable contract.
     """
-    implemented: bool       # Recommendation was implemented as-is
-    failed: bool            # Implementation failed in the field
-    replaced: bool          # Material was replaced after initial deployment
-    review_override: bool   # A human reviewer overrode the governed recommendation
-    outcome_note: str       # Free-text field for the operator/engineer feedback note
+
+    implemented: bool  # Recommendation was implemented as-is
+    failed: bool  # Implementation failed in the field
+    replaced: bool  # Material was replaced after initial deployment
+    review_override: bool  # A human reviewer overrode the governed recommendation
+    outcome_note: str  # Free-text field for the operator/engineer feedback note
 
 
 class SealingAIState(TypedDict):
@@ -438,6 +479,7 @@ class SealingAIState(TypedDict):
     `handover`  trägt den Commercial-Payload (Phase A6) — kein ERP-Call, nur Grenzstruktur.
     `outcome`   trägt das Echtzeit-Feedback nach Deployment (Phase A7) — nur extern befüllt.
     """
+
     observed: ObservedLayer
     normalized: NormalizedLayer
     asserted: AssertedLayer
@@ -445,9 +487,10 @@ class SealingAIState(TypedDict):
     cycle: CycleLayer
     selection: SelectionLayer
     result_contract: NotRequired[Dict[str, Any]]
-    review: NotRequired[ReviewLayer]      # HITL review state (Phase A3)
+    review: NotRequired[ReviewLayer]  # HITL review state (Phase A3)
     handover: NotRequired[HandoverLayer]  # Commercial handover payload (Phase A6)
-    outcome: NotRequired[OutcomeLayer]    # Post-deployment outcome feedback (Phase A7)
+    outcome: NotRequired[OutcomeLayer]  # Post-deployment outcome feedback (Phase A7)
+
 
 class AgentState(TypedDict):
     """
@@ -458,21 +501,30 @@ class AgentState(TypedDict):
     persisted governed truth. `sealing_state` and `working_profile` remain as
     orchestration/compat surfaces until the legacy graph-state is collapsed.
     """
+
     messages: Annotated[List[AnyMessage], add_messages]
     sealing_state: SealingAIState
-    relevant_fact_cards: List[Dict[str, Any]]  # Speichert FactCards für Tool-Nodes (Phase H6)
+    relevant_fact_cards: List[
+        Dict[str, Any]
+    ]  # Speichert FactCards für Tool-Nodes (Phase H6)
     working_profile: Dict[str, Any]  # Transitional projection / compat slice
     tenant_id: Optional[str]
     owner_id: NotRequired[Optional[str]]
     loaded_state_revision: NotRequired[int]
     case_state: NotRequired[CaseState]  # Canonical productive authority
-    result_form: NotRequired[Optional[str]]   # Legacy output-class payload alias
+    result_form: NotRequired[Optional[str]]  # Legacy output-class payload alias
     pre_gate_classification: NotRequired[Optional[str]]  # PreGateClassification value
-    policy_path: NotRequired[Optional[str]]   # Legacy graph edge alias derived from pre-gate
-    run_meta: NotRequired[Optional[Dict[str, Any]]]  # model_id, prompt_version, policy_version (Phase 0A.5)
+    policy_path: NotRequired[
+        Optional[str]
+    ]  # Legacy graph edge alias derived from pre-gate
+    run_meta: NotRequired[
+        Optional[Dict[str, Any]]
+    ]  # model_id, prompt_version, policy_version (Phase 0A.5)
     # V3 spec fields (Phase 0A QW-2/3/4)
-    turn_count: int                           # current turn in this session (hard limit guard)
-    max_turns: int                            # hard ceiling — default 12 (CLAUDE.md)
-    user_persona: NotRequired[str]            # "erfahrener" | "einsteiger" | "entscheider" | "unknown"
-    knowledge_coverage: NotRequired[str]      # "full" | "partial" | "limited"
-    inquiry_id: NotRequired[str]              # session_id mirrored for state traceability
+    turn_count: int  # current turn in this session (hard limit guard)
+    max_turns: int  # hard ceiling — default 12 (CLAUDE.md)
+    user_persona: NotRequired[
+        str
+    ]  # "erfahrener" | "einsteiger" | "entscheider" | "unknown"
+    knowledge_coverage: NotRequired[str]  # "full" | "partial" | "limited"
+    inquiry_id: NotRequired[str]  # session_id mirrored for state traceability

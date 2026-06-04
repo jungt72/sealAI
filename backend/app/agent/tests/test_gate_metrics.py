@@ -19,8 +19,13 @@ CONV = SimpleNamespace(session_zone="conversation")
 GOV = SimpleNamespace(session_zone="governed")
 
 
-def test_decide_route_observes_conversation_metric_on_deterministic_light_path() -> None:
-    with patch("app.agent.runtime.gate._observe_gate_decision", side_effect=lambda decision, _started_at: decision) as observe:
+def test_decide_route_observes_conversation_metric_on_deterministic_light_path() -> (
+    None
+):
+    with patch(
+        "app.agent.runtime.gate._observe_gate_decision",
+        side_effect=lambda decision, _started_at: decision,
+    ) as observe:
         decision = decide_route("Hallo", CONV)
 
     assert decision.route == "CONVERSATION"
@@ -31,7 +36,10 @@ def test_decide_route_observes_conversation_metric_on_deterministic_light_path()
 
 @pytest.mark.anyio
 async def test_decide_route_async_observes_governed_metric_on_hard_override() -> None:
-    with patch("app.agent.runtime.gate._observe_gate_decision", side_effect=lambda decision, _started_at: decision) as observe:
+    with patch(
+        "app.agent.runtime.gate._observe_gate_decision",
+        side_effect=lambda decision, _started_at: decision,
+    ) as observe:
         decision = await decide_route_async("PTFE-Dichtung fuer 180°C Dampf", CONV)
 
     assert decision.route == "GOVERNED"
@@ -42,8 +50,10 @@ async def test_decide_route_async_observes_governed_metric_on_hard_override() ->
 
 def test_decide_route_observes_exploration_metric_on_llm_path() -> None:
     llm_result = LLMGateResult(route="EXPLORATION", confidence=0.91)
-    with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result), \
-         patch("app.agent.runtime.gate._observe_gate_decision", side_effect=lambda decision, _started_at: decision) as observe:
+    with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result), patch(
+        "app.agent.runtime.gate._observe_gate_decision",
+        side_effect=lambda decision, _started_at: decision,
+    ) as observe:
         decision = decide_route("Ich suche etwas fuer meine Pumpe.", GOV)
 
     assert decision.route == "EXPLORATION"
@@ -63,7 +73,9 @@ def test_observe_gate_decision_tracks_reason_and_direct_reply_metrics() -> None:
     with (
         patch("app.observability.metrics.track_gate_route_decision") as track_route,
         patch("app.observability.metrics.track_gate_decision_reason") as track_reason,
-        patch("app.observability.metrics.track_gate_direct_reply") as track_direct_reply,
+        patch(
+            "app.observability.metrics.track_gate_direct_reply"
+        ) as track_direct_reply,
     ):
         _observe_gate_decision(decision, time.monotonic())
 

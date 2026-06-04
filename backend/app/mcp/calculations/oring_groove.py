@@ -2,6 +2,7 @@
 O-Ring-Nutmaße nach DIN 3770 / ISO 3601-2
 Deterministisch — kein LLM.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +13,7 @@ Einbausituation = Literal["statisch", "dynamisch"]
 
 @dataclass
 class NutmaßeResult:
-    schnurdurchmesser_mm: float     # nächster Normwert
+    schnurdurchmesser_mm: float  # nächster Normwert
     einbausituation: str
     nuttiefe_mm: float
     nutbreite_mm: float
@@ -33,32 +34,32 @@ class NutmaßeResult:
 
 _STATISCH: dict[float, tuple[float, float, float]] = {
     #   d2      tiefe   breite  press%
-    1.78: (1.38,  2.4,  22.5),  # (1.78-1.38)/1.78
-    2.62: (2.00,  3.6,  23.7),  # (2.62-2.00)/2.62
-    3.53: (2.70,  4.8,  23.5),  # (3.53-2.70)/3.53
-    5.33: (4.10,  7.1,  23.1),  # (5.33-4.10)/5.33
-    6.99: (5.40,  9.5,  22.7),  # (6.99-5.40)/6.99
+    1.78: (1.38, 2.4, 22.5),  # (1.78-1.38)/1.78
+    2.62: (2.00, 3.6, 23.7),  # (2.62-2.00)/2.62
+    3.53: (2.70, 4.8, 23.5),  # (3.53-2.70)/3.53
+    5.33: (4.10, 7.1, 23.1),  # (5.33-4.10)/5.33
+    6.99: (5.40, 9.5, 22.7),  # (6.99-5.40)/6.99
 }
 
 _DYNAMISCH: dict[float, tuple[float, float, float]] = {
     #   d2      tiefe   breite  press%
-    1.78: (1.45,  2.4,  18.5),  # (1.78-1.45)/1.78
-    2.62: (2.16,  3.6,  17.6),  # (2.62-2.16)/2.62
-    3.53: (2.90,  4.8,  17.8),  # (3.53-2.90)/3.53
-    5.33: (4.40,  7.1,  17.4),  # (5.33-4.40)/5.33
-    6.99: (5.85,  9.5,  16.3),  # (6.99-5.85)/6.99
+    1.78: (1.45, 2.4, 18.5),  # (1.78-1.45)/1.78
+    2.62: (2.16, 3.6, 17.6),  # (2.62-2.16)/2.62
+    3.53: (2.90, 4.8, 17.8),  # (3.53-2.90)/3.53
+    5.33: (4.40, 7.1, 17.4),  # (5.33-4.40)/5.33
+    6.99: (5.85, 9.5, 16.3),  # (6.99-5.85)/6.99
 }
 
 # Shore-Empfehlung nach Betriebsdruck (Schwellwerte in bar)
 _SHORE_STUFEN: list[tuple[float, str]] = [
-    ( 25.0, "70 Shore A"),
+    (25.0, "70 Shore A"),
     (100.0, "70–80 Shore A"),
     (250.0, "80 Shore A"),
     (float("inf"), "90 Shore A"),
 ]
 
-_BACKUP_GRENZE_STATISCH  = 150.0   # bar
-_BACKUP_GRENZE_DYNAMISCH = 100.0   # bar
+_BACKUP_GRENZE_STATISCH = 150.0  # bar
+_BACKUP_GRENZE_DYNAMISCH = 100.0  # bar
 
 
 def lookup_nut(
@@ -81,7 +82,8 @@ def lookup_nut(
 
     # Stützring
     grenze = (
-        _BACKUP_GRENZE_STATISCH if einbausituation == "statisch"
+        _BACKUP_GRENZE_STATISCH
+        if einbausituation == "statisch"
         else _BACKUP_GRENZE_DYNAMISCH
     )
     backup = druck_bar > grenze

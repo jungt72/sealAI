@@ -87,7 +87,9 @@ class SealDesignIntakeBundle:
             "known_fields": [field.as_dict() for field in self.known_fields],
             "missing_fields": [field.as_dict() for field in self.missing_fields],
             "screening_checks": [check.as_dict() for check in self.screening_checks],
-            "escalation_triggers": [trigger.as_dict() for trigger in self.escalation_triggers],
+            "escalation_triggers": [
+                trigger.as_dict() for trigger in self.escalation_triggers
+            ],
             "next_required_fields": self.next_required_fields,
             "boundary_notice": self.boundary_notice,
             "event_names": self.event_names,
@@ -139,44 +141,215 @@ class SealDesignIntakeService:
         )
 
 
-def build_seal_design_intake(payload: str | Mapping[str, Any]) -> SealDesignIntakeBundle:
+def build_seal_design_intake(
+    payload: str | Mapping[str, Any],
+) -> SealDesignIntakeBundle:
     return SealDesignIntakeService().build(payload)
 
 
 _REQUIRED_FIELDS: tuple[tuple[str, str, str, str], ...] = (
-    ("sealing_function", "Dichtfunktion", "critical", "Ohne Funktion ist das Leckageziel nicht pruefbar."),
-    ("leakage_target", "Leckageziel", "critical", "Ohne Leckageziel bleibt jede Loesung nur grob orientierend."),
-    ("safety_context", "Sicherheits- und Zulassungskontext", "critical", "Regulierte oder sicherheitskritische Anwendungen muessen frueh markiert werden."),
-    ("medium", "Medium", "critical", "Medium und Zusatzstoffe bestimmen Werkstoff- und Nachweisbedarf."),
-    ("motion_type", "Bewegungsart", "critical", "Statisch, hubend, oszillierend oder rotierend trennt die Dichtungsfamilien."),
-    ("pressure_profile", "Druckprofil", "critical", "Druck min/nom/max, Spitzen und Richtung bestimmen Extrusions- und Bauartgrenzen."),
-    ("temperature_profile", "Temperaturprofil", "critical", "Min/nom/max und Peaks bestimmen Werkstofffenster und Alterung."),
-    ("geometry_space", "Einbauraum und Grundgeometrie", "critical", "Ohne reale Geometrie sind Nut, Profil und Herstelleranfrage zu ungenau."),
-    ("tolerance_gap", "Toleranzen, Spalt und Laufabweichung", "critical", "Spalt, Runout und Exzentrizitaet entscheiden ueber Extrusion und Dichtkontakt."),
-    ("surface_roughness", "Oberflaechenwerte", "critical", "Ra/Rz/Rt, Haerte und Lead beeinflussen Leckage, Reibung und Verschleiss."),
-    ("verification_criteria", "Pruef- und Abnahmekriterium", "critical", "Eine Neuauslegung braucht einen messbaren Nachweisweg."),
-    ("lifetime_target", "Lebensdauerziel", "important", "Betriebsstunden oder Zyklen bestimmen den Auslegungs- und Testumfang."),
-    ("lubrication", "Schmierung und Trockenlauf", "important", "Schmierung beeinflusst Reibung, Waerme und Verschleiss."),
-    ("contamination", "Partikel, Schmutz und Abrasion", "important", "Abrasive oder Kristalle verschieben Werkstoff- und Profilrisiken."),
-    ("mounting_path", "Montagepfad", "important", "Kanten, Fasen, Werkzeuge und Montagehilfe koennen Dichtungen schon beim Einbau schaedigen."),
+    (
+        "sealing_function",
+        "Dichtfunktion",
+        "critical",
+        "Ohne Funktion ist das Leckageziel nicht pruefbar.",
+    ),
+    (
+        "leakage_target",
+        "Leckageziel",
+        "critical",
+        "Ohne Leckageziel bleibt jede Loesung nur grob orientierend.",
+    ),
+    (
+        "safety_context",
+        "Sicherheits- und Zulassungskontext",
+        "critical",
+        "Regulierte oder sicherheitskritische Anwendungen muessen frueh markiert werden.",
+    ),
+    (
+        "medium",
+        "Medium",
+        "critical",
+        "Medium und Zusatzstoffe bestimmen Werkstoff- und Nachweisbedarf.",
+    ),
+    (
+        "motion_type",
+        "Bewegungsart",
+        "critical",
+        "Statisch, hubend, oszillierend oder rotierend trennt die Dichtungsfamilien.",
+    ),
+    (
+        "pressure_profile",
+        "Druckprofil",
+        "critical",
+        "Druck min/nom/max, Spitzen und Richtung bestimmen Extrusions- und Bauartgrenzen.",
+    ),
+    (
+        "temperature_profile",
+        "Temperaturprofil",
+        "critical",
+        "Min/nom/max und Peaks bestimmen Werkstofffenster und Alterung.",
+    ),
+    (
+        "geometry_space",
+        "Einbauraum und Grundgeometrie",
+        "critical",
+        "Ohne reale Geometrie sind Nut, Profil und Herstelleranfrage zu ungenau.",
+    ),
+    (
+        "tolerance_gap",
+        "Toleranzen, Spalt und Laufabweichung",
+        "critical",
+        "Spalt, Runout und Exzentrizitaet entscheiden ueber Extrusion und Dichtkontakt.",
+    ),
+    (
+        "surface_roughness",
+        "Oberflaechenwerte",
+        "critical",
+        "Ra/Rz/Rt, Haerte und Lead beeinflussen Leckage, Reibung und Verschleiss.",
+    ),
+    (
+        "verification_criteria",
+        "Pruef- und Abnahmekriterium",
+        "critical",
+        "Eine Neuauslegung braucht einen messbaren Nachweisweg.",
+    ),
+    (
+        "lifetime_target",
+        "Lebensdauerziel",
+        "important",
+        "Betriebsstunden oder Zyklen bestimmen den Auslegungs- und Testumfang.",
+    ),
+    (
+        "lubrication",
+        "Schmierung und Trockenlauf",
+        "important",
+        "Schmierung beeinflusst Reibung, Waerme und Verschleiss.",
+    ),
+    (
+        "contamination",
+        "Partikel, Schmutz und Abrasion",
+        "important",
+        "Abrasive oder Kristalle verschieben Werkstoff- und Profilrisiken.",
+    ),
+    (
+        "mounting_path",
+        "Montagepfad",
+        "important",
+        "Kanten, Fasen, Werkzeuge und Montagehilfe koennen Dichtungen schon beim Einbau schaedigen.",
+    ),
 )
 
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
-    "sealing_function": ("sealing_function", "seal_function", "primary_function", "function", "dichtfunktion"),
-    "leakage_target": ("leakage_target", "leak_target", "leakage_requirement", "leakage_rate", "leakage_class", "atex_or_leakage_requirement"),
-    "safety_context": ("safety_context", "safety_relevance", "criticality", "compliance", "atex_relevance", "certification_requirement"),
+    "sealing_function": (
+        "sealing_function",
+        "seal_function",
+        "primary_function",
+        "function",
+        "dichtfunktion",
+    ),
+    "leakage_target": (
+        "leakage_target",
+        "leak_target",
+        "leakage_requirement",
+        "leakage_rate",
+        "leakage_class",
+        "atex_or_leakage_requirement",
+    ),
+    "safety_context": (
+        "safety_context",
+        "safety_relevance",
+        "criticality",
+        "compliance",
+        "atex_relevance",
+        "certification_requirement",
+    ),
     "medium": ("medium", "medium_name", "primary_medium", "hydraulic_fluid", "media"),
     "motion_type": ("motion_type", "movement", "static_or_dynamic", "speed_or_stroke"),
-    "pressure_profile": ("pressure_profile", "pressure", "pressure_bar", "pressure_mpa", "pressure_max_bar", "pressure_nominal", "pressure_peak", "pressure_peaks"),
-    "temperature_profile": ("temperature_profile", "temperature", "temperature_c", "temperature_min", "temperature_max", "temperature_max_c", "temperature_min_c"),
-    "geometry_space": ("geometry_space", "geometry", "geometry_context", "available_space", "groove_dimensions", "shaft_diameter", "shaft_diameter_mm", "housing_bore", "housing_bore_mm"),
-    "tolerance_gap": ("tolerance_gap", "radial_gap_mm", "clearance_gap_mm", "gap", "shaft_runout", "runout_um", "eccentricity", "misalignment"),
-    "surface_roughness": ("surface_roughness", "surface_finish", "surface_roughness_ra_um", "surface_roughness_rz_um", "counterface_surface", "shaft_surface"),
-    "verification_criteria": ("verification_criteria", "acceptance_criteria", "lab_tests", "field_tests", "test_plan", "proof_required"),
-    "lifetime_target": ("lifetime_target", "target_lifetime", "target_lifetime_hours", "target_lifetime_cycles", "service_life"),
-    "lubrication": ("lubrication", "lubrication_condition", "dry_run", "wetting_condition"),
-    "contamination": ("contamination", "particles", "particles_present", "abrasive_content", "solids_or_gas_content"),
-    "mounting_path": ("mounting_path", "installation_context", "installation_method", "assembly", "lead_in_angle_deg", "mounting_tool"),
+    "pressure_profile": (
+        "pressure_profile",
+        "pressure",
+        "pressure_bar",
+        "pressure_mpa",
+        "pressure_max_bar",
+        "pressure_nominal",
+        "pressure_peak",
+        "pressure_peaks",
+    ),
+    "temperature_profile": (
+        "temperature_profile",
+        "temperature",
+        "temperature_c",
+        "temperature_min",
+        "temperature_max",
+        "temperature_max_c",
+        "temperature_min_c",
+    ),
+    "geometry_space": (
+        "geometry_space",
+        "geometry",
+        "geometry_context",
+        "available_space",
+        "groove_dimensions",
+        "shaft_diameter",
+        "shaft_diameter_mm",
+        "housing_bore",
+        "housing_bore_mm",
+    ),
+    "tolerance_gap": (
+        "tolerance_gap",
+        "radial_gap_mm",
+        "clearance_gap_mm",
+        "gap",
+        "shaft_runout",
+        "runout_um",
+        "eccentricity",
+        "misalignment",
+    ),
+    "surface_roughness": (
+        "surface_roughness",
+        "surface_finish",
+        "surface_roughness_ra_um",
+        "surface_roughness_rz_um",
+        "counterface_surface",
+        "shaft_surface",
+    ),
+    "verification_criteria": (
+        "verification_criteria",
+        "acceptance_criteria",
+        "lab_tests",
+        "field_tests",
+        "test_plan",
+        "proof_required",
+    ),
+    "lifetime_target": (
+        "lifetime_target",
+        "target_lifetime",
+        "target_lifetime_hours",
+        "target_lifetime_cycles",
+        "service_life",
+    ),
+    "lubrication": (
+        "lubrication",
+        "lubrication_condition",
+        "dry_run",
+        "wetting_condition",
+    ),
+    "contamination": (
+        "contamination",
+        "particles",
+        "particles_present",
+        "abrasive_content",
+        "solids_or_gas_content",
+    ),
+    "mounting_path": (
+        "mounting_path",
+        "installation_context",
+        "installation_method",
+        "assembly",
+        "lead_in_angle_deg",
+        "mounting_tool",
+    ),
 }
 
 _NUMERIC_ALIASES: dict[str, tuple[str, ...]] = {
@@ -188,7 +361,11 @@ _NUMERIC_ALIASES: dict[str, tuple[str, ...]] = {
     "cross_section_mm": ("cross_section_mm", "cross_section", "cord_diameter"),
     "groove_depth_mm": ("groove_depth_mm", "groove_depth"),
     "groove_width_mm": ("groove_width_mm", "groove_width"),
-    "seal_inner_diameter_mm": ("seal_inner_diameter_mm", "inner_diameter", "inner_diameter_mm"),
+    "seal_inner_diameter_mm": (
+        "seal_inner_diameter_mm",
+        "inner_diameter",
+        "inner_diameter_mm",
+    ),
     "shaft_diameter_mm": ("shaft_diameter_mm", "shaft_diameter"),
 }
 
@@ -324,7 +501,12 @@ def _escalation_triggers(
                 reason="Bei hohem Druck muss Spalt/Toleranz fuer Extrusion und Stuetzringbedarf geklaert werden.",
             )
         )
-    if pressure_bar is not None and radial_gap is not None and pressure_bar >= 100 and radial_gap >= 0.3:
+    if (
+        pressure_bar is not None
+        and radial_gap is not None
+        and pressure_bar >= 100
+        and radial_gap >= 0.3
+    ):
         triggers.append(
             DesignEscalationTrigger(
                 trigger_id="high_pressure_large_gap",
@@ -333,7 +515,9 @@ def _escalation_triggers(
                 reason="Profil, Haerte, Stuetzring und ggf. FEA/Worst-Case-Toleranzstack sind zu pruefen.",
             )
         )
-    if _looks_like_gas(medium) and (decompression_rate is not None or (pressure_bar or 0) >= 30):
+    if _looks_like_gas(medium) and (
+        decompression_rate is not None or (pressure_bar or 0) >= 30
+    ):
         triggers.append(
             DesignEscalationTrigger(
                 trigger_id="gas_decompression_review",
@@ -342,8 +526,15 @@ def _escalation_triggers(
                 reason="Gas, Druck und Entlastungsrate koennen ED-/RGD-Werkstoffe und kontrollierte Entspannung erfordern.",
             )
         )
-    groove_fill = next((check.value for check in checks if check.check_id == "oring.groove_fill_pct"), None)
-    if groove_fill is not None and groove_fill > 85.0 and (temperature_max or 0.0) >= 100.0:
+    groove_fill = next(
+        (check.value for check in checks if check.check_id == "oring.groove_fill_pct"),
+        None,
+    )
+    if (
+        groove_fill is not None
+        and groove_fill > 85.0
+        and (temperature_max or 0.0) >= 100.0
+    ):
         triggers.append(
             DesignEscalationTrigger(
                 trigger_id="hot_high_groove_fill",
@@ -352,7 +543,10 @@ def _escalation_triggers(
                 reason="Thermische Ausdehnung, Quellung und Toleranzstack koennen die Nut ueberfuellen.",
             )
         )
-    if leakage_target and any(token in seal_text for token in ("flansch", "flange", "flat gasket", "flachdichtung")):
+    if leakage_target and any(
+        token in seal_text
+        for token in ("flansch", "flange", "flat gasket", "flachdichtung")
+    ):
         triggers.append(
             DesignEscalationTrigger(
                 trigger_id="flange_norm_calculation_required",
@@ -375,7 +569,9 @@ def _flatten_payload(payload: str | Mapping[str, Any]) -> dict[str, Any]:
                 if item not in (None, "", [], {}):
                     result[str(key)] = item
                 visit(item)
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        elif isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
             for item in value:
                 visit(item)
 
@@ -397,14 +593,63 @@ def _payload_to_text(payload: str | Mapping[str, Any]) -> str:
 def _extract_text_hints(text: str) -> dict[str, Any]:
     normalized = str(text or "")
     result: dict[str, Any] = {}
-    if re.search(r"\b(sichtleckage|leckrate|leckageziel|leckklasse|tropfgrenze|sccm|ml/min)\b", normalized, re.IGNORECASE):
-        result["leakage_target"] = _clip_sentence(normalized, ("leckage", "leckrate", "leckageziel", "leckklasse", "sccm", "ml/min"))
-    if re.search(r"\b(statisch|rotierend|hubend|oszillierend|schwenkend)\b", normalized, re.IGNORECASE):
-        result["motion_type"] = _clip_sentence(normalized, ("statisch", "rotierend", "hubend", "oszillierend", "schwenkend"))
-    if re.search(r"\b(medium|hlp|wasser|oel|öl|ethanol|salzwasser|luft|gas|wasserstoff)\b", normalized, re.IGNORECASE):
-        result["medium"] = _clip_sentence(normalized, ("medium", "hlp", "wasser", "oel", "öl", "ethanol", "salzwasser", "luft", "gas", "wasserstoff"))
-    if re.search(r"\b(fda|atex|trinkwasser|pharma|gmp|food|lebensmittel|sauerstoff|wasserstoff)\b", normalized, re.IGNORECASE):
-        result["safety_context"] = _clip_sentence(normalized, ("fda", "atex", "trinkwasser", "pharma", "gmp", "food", "lebensmittel", "sauerstoff", "wasserstoff"))
+    if re.search(
+        r"\b(sichtleckage|leckrate|leckageziel|leckklasse|tropfgrenze|sccm|ml/min)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        result["leakage_target"] = _clip_sentence(
+            normalized,
+            ("leckage", "leckrate", "leckageziel", "leckklasse", "sccm", "ml/min"),
+        )
+    if re.search(
+        r"\b(statisch|rotierend|hubend|oszillierend|schwenkend)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        result["motion_type"] = _clip_sentence(
+            normalized,
+            ("statisch", "rotierend", "hubend", "oszillierend", "schwenkend"),
+        )
+    if re.search(
+        r"\b(medium|hlp|wasser|oel|öl|ethanol|salzwasser|luft|gas|wasserstoff)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        result["medium"] = _clip_sentence(
+            normalized,
+            (
+                "medium",
+                "hlp",
+                "wasser",
+                "oel",
+                "öl",
+                "ethanol",
+                "salzwasser",
+                "luft",
+                "gas",
+                "wasserstoff",
+            ),
+        )
+    if re.search(
+        r"\b(fda|atex|trinkwasser|pharma|gmp|food|lebensmittel|sauerstoff|wasserstoff)\b",
+        normalized,
+        re.IGNORECASE,
+    ):
+        result["safety_context"] = _clip_sentence(
+            normalized,
+            (
+                "fda",
+                "atex",
+                "trinkwasser",
+                "pharma",
+                "gmp",
+                "food",
+                "lebensmittel",
+                "sauerstoff",
+                "wasserstoff",
+            ),
+        )
     return result
 
 
@@ -417,7 +662,11 @@ def _lookup(values: Mapping[str, Any], canonical_key: str) -> Any:
 
 
 def _num(values: Mapping[str, Any], canonical_key: str) -> float | None:
-    aliases = (canonical_key, *_NUMERIC_ALIASES.get(canonical_key, ()), *_FIELD_ALIASES.get(canonical_key, ()))
+    aliases = (
+        canonical_key,
+        *_NUMERIC_ALIASES.get(canonical_key, ()),
+        *_FIELD_ALIASES.get(canonical_key, ()),
+    )
     for alias in aliases:
         value = values.get(alias)
         parsed = _to_float(value)
@@ -459,7 +708,18 @@ def _band(value: float, *, low: float, high: float) -> str:
 
 
 def _looks_like_gas(text: str) -> bool:
-    return any(token in text for token in ("gas", "luft", "wasserstoff", "n2", "stickstoff", "sauerstoff", "co2"))
+    return any(
+        token in text
+        for token in (
+            "gas",
+            "luft",
+            "wasserstoff",
+            "n2",
+            "stickstoff",
+            "sauerstoff",
+            "co2",
+        )
+    )
 
 
 def _clip_sentence(text: str, markers: Sequence[str]) -> str:
@@ -468,5 +728,5 @@ def _clip_sentence(text: str, markers: Sequence[str]) -> str:
     for marker in markers:
         index = lowered.find(marker.casefold())
         if index >= 0:
-            return compact[max(0, index - 24): index + 96].strip(" .,:;")
+            return compact[max(0, index - 24) : index + 96].strip(" .,:;")
     return compact[:120].strip(" .,:;")

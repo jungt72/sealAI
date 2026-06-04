@@ -14,6 +14,7 @@ NOTE — owner boundaries:
 * O-Ring / Hydraulic are SHALLOW STUBS (no DomainPack). New seal-type branches must
   land as a DomainPack, never as another hardcoded tuple here (see P1-1 PR2 seam).
 """
+
 from __future__ import annotations
 
 RWDR_REQUIRED_FIELDS: tuple[str, ...] = (

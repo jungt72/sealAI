@@ -89,7 +89,9 @@ def test_unsafe_approval_wording_downgraded_or_rejected() -> None:
 
 def test_generic_medium_results_in_family_or_ambiguous() -> None:
     result = validate_material_evidence_candidate(
-        _paperless_item(medium="oil", text="Evidence-backed precheck context for FKM and oil.")
+        _paperless_item(
+            medium="oil", text="Evidence-backed precheck context for FKM and oil."
+        )
     )
 
     assert result.status == "downgraded"
@@ -117,7 +119,9 @@ def test_acid_base_without_concentration_limitation() -> None:
 
 
 def test_paperless_provenance_preserved() -> None:
-    result = validate_material_evidence_candidate(_paperless_item(source_id="paperless-123"))
+    result = validate_material_evidence_candidate(
+        _paperless_item(source_id="paperless-123")
+    )
 
     assert result.source_reference == "paperless:paperless-123"
     assert result.card_candidate is not None
@@ -130,7 +134,9 @@ def test_dry_run_report_counts_valid_invalid_downgraded() -> None:
         [
             _paperless_item(source_id="valid"),
             _paperless_item(source_id="downgraded", medium="oil"),
-            _paperless_item(source_id="", source_title="", source_url="", source_hash=""),
+            _paperless_item(
+                source_id="", source_title="", source_url="", source_hash=""
+            ),
         ]
     )
 

@@ -19,4 +19,3 @@ def validate_user_input(text: str) -> Optional[str]:
     if _pii_check(text):
         return "possible_pii_detected"
     return None
-

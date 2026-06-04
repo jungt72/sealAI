@@ -11,6 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover - rare local development path
     try:
         from langchain_core.schema import Document  # type: ignore[import]
     except ModuleNotFoundError:
+
         @dataclass
         class Document:
             """Lightweight fallback that mimics LangChain's shape."""
@@ -30,5 +31,6 @@ except ModuleNotFoundError:  # pragma: no cover - rare local development path
                     "metadata": self.metadata,
                     "id": self.id,
                 }
+
 
 __all__ = ["Document"]

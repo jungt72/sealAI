@@ -29,6 +29,7 @@ if "POSTGRES_SYNC_URL" not in os.environ:
 
 try:
     from app.langgraph.compile import create_main_graph
+
     create_main_graph()
     print("Graph compiled successfully")
 except Exception as e:

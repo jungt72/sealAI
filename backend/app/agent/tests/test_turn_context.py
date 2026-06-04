@@ -3,7 +3,9 @@ from __future__ import annotations
 import pytest
 
 from app.agent.graph import GraphState
-from app.agent.graph.nodes.output_contract_node import build_governed_conversation_strategy_contract
+from app.agent.graph.nodes.output_contract_node import (
+    build_governed_conversation_strategy_contract,
+)
 from app.agent.runtime.reply_composition import (
     build_governed_render_prompt,
     build_turn_context_instruction,
@@ -28,8 +30,12 @@ from app.agent.state.models import (
 )
 
 
-def _claim(field_name: str, asserted_value, confidence: str = "confirmed") -> AssertedClaim:
-    return AssertedClaim(field_name=field_name, asserted_value=asserted_value, confidence=confidence)
+def _claim(
+    field_name: str, asserted_value, confidence: str = "confirmed"
+) -> AssertedClaim:
+    return AssertedClaim(
+        field_name=field_name, asserted_value=asserted_value, confidence=confidence
+    )
 
 
 def test_build_turn_context_contract_copies_strategy_and_summaries() -> None:
@@ -52,7 +58,9 @@ def test_build_turn_context_contract_copies_strategy_and_summaries() -> None:
     assert context.turn_goal == "clarify_primary_open_point"
     assert context.user_signal_mirror == ""
     assert context.primary_question == "Welches Medium soll abgedichtet werden?"
-    assert context.primary_question_reason == "Das Medium entscheidet ueber Werkstoffwahl."
+    assert (
+        context.primary_question_reason == "Das Medium entscheidet ueber Werkstoffwahl."
+    )
     assert context.confirmed_facts_summary == ["Medium: Wasser"]
     assert context.open_points_summary == ["Betriebsdruck"]
 
@@ -76,7 +84,12 @@ def test_build_governed_turn_context_stays_small_and_compatible() -> None:
                 "pressure_bar": _claim("pressure_bar", 180),
                 "temperature_c": _claim("temperature_c", 90),
             },
-            blocking_unknowns=["shaft_diameter", "dynamic_type", "pressure_bar", "temperature_c"],
+            blocking_unknowns=[
+                "shaft_diameter",
+                "dynamic_type",
+                "pressure_bar",
+                "temperature_c",
+            ],
             conflict_flags=["medium"],
         )
     )
@@ -88,10 +101,15 @@ def test_build_governed_turn_context_stays_small_and_compatible() -> None:
     assert len(context.confirmed_facts_summary) <= 3
     assert len(context.open_points_summary) <= 3
     assert "Medium: Hydraulikoel" in context.confirmed_facts_summary
-    assert any("Bewegungsart" in item or "shaft_diameter" in item for item in context.open_points_summary)
+    assert any(
+        "Bewegungsart" in item or "shaft_diameter" in item
+        for item in context.open_points_summary
+    )
 
 
-def test_build_governed_turn_context_uses_governance_open_points_for_technical_preselection() -> None:
+def test_build_governed_turn_context_uses_governance_open_points_for_technical_preselection() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="recommendation",
         turn_goal="explain_governed_result",
@@ -105,7 +123,12 @@ def test_build_governed_turn_context_uses_governance_open_points_for_technical_p
                 "temperature_c": _claim("temperature_c", 90),
             },
         ),
-        governance=GovernanceState(open_validation_points=["Werkstoffgrenze pruefen", "Temperaturfenster pruefen"]),
+        governance=GovernanceState(
+            open_validation_points=[
+                "Werkstoffgrenze pruefen",
+                "Temperaturfenster pruefen",
+            ]
+        ),
     )
 
     context = build_governed_turn_context(
@@ -114,10 +137,15 @@ def test_build_governed_turn_context_uses_governance_open_points_for_technical_p
         response_class="technical_preselection",
     )
 
-    assert context.open_points_summary == ["Werkstoffgrenze pruefen", "Temperaturfenster pruefen"]
+    assert context.open_points_summary == [
+        "Werkstoffgrenze pruefen",
+        "Temperaturfenster pruefen",
+    ]
 
 
-def test_build_governed_turn_context_renders_family_only_medium_open_point_status_aware() -> None:
+def test_build_governed_turn_context_renders_family_only_medium_open_point_status_aware() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
@@ -145,7 +173,9 @@ def test_build_governed_turn_context_renders_family_only_medium_open_point_statu
     assert all(item != "Medium" for item in context.open_points_summary)
 
 
-def test_build_governed_turn_context_renders_unclassified_medium_open_point_status_aware() -> None:
+def test_build_governed_turn_context_renders_unclassified_medium_open_point_status_aware() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
@@ -173,7 +203,9 @@ def test_build_governed_turn_context_renders_unclassified_medium_open_point_stat
     assert all(item != "Medium" for item in context.open_points_summary)
 
 
-def test_build_governed_turn_context_does_not_surface_generic_medium_open_point_for_recognized_medium() -> None:
+def test_build_governed_turn_context_does_not_surface_generic_medium_open_point_for_recognized_medium() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
@@ -209,7 +241,9 @@ def test_build_governed_turn_context_does_not_surface_generic_medium_open_point_
     assert "Betriebstemperatur" in context.open_points_summary
 
 
-def test_build_governed_turn_context_prioritizes_application_anchor_before_pressure() -> None:
+def test_build_governed_turn_context_prioritizes_application_anchor_before_pressure() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
@@ -248,7 +282,9 @@ def test_build_governed_turn_context_prioritizes_application_anchor_before_press
     assert "Betriebsdruck" in context.open_points_summary
 
 
-def test_build_governed_turn_context_prioritizes_rotary_core_parameter_before_pressure() -> None:
+def test_build_governed_turn_context_prioritizes_rotary_core_parameter_before_pressure() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
@@ -287,7 +323,9 @@ def test_build_governed_turn_context_prioritizes_rotary_core_parameter_before_pr
     assert "Betriebsdruck" in context.open_points_summary
 
 
-def test_build_governed_turn_context_includes_known_rotary_facts_for_rendering() -> None:
+def test_build_governed_turn_context_includes_known_rotary_facts_for_rendering() -> (
+    None
+):
     strategy = ConversationStrategyContract(
         conversation_phase="narrowing",
         turn_goal="clarify_primary_open_point",
@@ -336,7 +374,9 @@ def test_build_governed_turn_context_includes_known_rotary_facts_for_rendering()
 
     assert any("Medium: Salzwasser" == item for item in context.confirmed_facts_summary)
     # Bug C fix: integer-like floats are normalized (40.0 → 40, 2000.0 → 2000).
-    assert any("Wellendurchmesser: 40" == item for item in context.confirmed_facts_summary)
+    assert any(
+        "Wellendurchmesser: 40" == item for item in context.confirmed_facts_summary
+    )
     assert any("Drehzahl: 2000" == item for item in context.confirmed_facts_summary)
 
 
@@ -410,7 +450,10 @@ def test_build_governed_turn_context_uses_contract_points_for_inquiry_ready() ->
         response_class="inquiry_ready",
     )
 
-    assert context.open_points_summary == ["Zeichnung pruefen", "Empfaengerliste bestaetigen"]
+    assert context.open_points_summary == [
+        "Zeichnung pruefen",
+        "Empfaengerliste bestaetigen",
+    ]
 
 
 def test_build_governed_turn_context_accepts_old_outward_aliases() -> None:
@@ -431,7 +474,10 @@ def test_build_governed_turn_context_accepts_old_outward_aliases() -> None:
         response_class="rfq_ready",
     )
 
-    assert context.open_points_summary == ["Zeichnung pruefen", "Empfaengerliste bestaetigen"]
+    assert context.open_points_summary == [
+        "Zeichnung pruefen",
+        "Empfaengerliste bestaetigen",
+    ]
 
 
 def test_reply_composition_uses_turn_context_fields() -> None:
@@ -526,7 +572,9 @@ def test_correction_mouth_reframes_linear_context_and_sets_new_focus() -> None:
         ),
     )
 
-    strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+    strategy = build_governed_conversation_strategy_contract(
+        state, "structured_clarification"
+    )
     context = build_governed_turn_context(state=state, strategy=strategy)
     reply = compose_clarification_reply(context, fallback_text="Fallback")
 
@@ -562,7 +610,9 @@ def test_medium_focus_is_invalidated_once_medium_is_already_set() -> None:
         ),
     )
 
-    strategy = build_governed_conversation_strategy_contract(state, "structured_clarification")
+    strategy = build_governed_conversation_strategy_contract(
+        state, "structured_clarification"
+    )
     context = build_governed_turn_context(state=state, strategy=strategy)
 
     assert strategy.primary_question == "Wie hoch ist der Betriebsdruck ungefähr?"
@@ -587,14 +637,24 @@ def test_turn_context_instruction_uses_shared_fields() -> None:
 
     assert instruction is not None
     assert "KOMMUNIKATIONSKONTEXT" in instruction
-    assert "Relevanter offener Fokus: Erzaehlen Sie mir kurz, worum es in Ihrer Anwendung geht?" in instruction
+    assert (
+        "Relevanter offener Fokus: Erzaehlen Sie mir kurz, worum es in Ihrer Anwendung geht?"
+        in instruction
+    )
     assert "Bestaetigte Fakten: Medium: Wasser" in instruction
     assert "Offene Punkte: Betriebsdruck" in instruction
 
 
 def test_user_signal_mirror_is_optional_legacy_field() -> None:
-    assert ConversationStrategyContract(user_signal_mirror="  ").user_signal_mirror == ""
-    assert ConversationStrategyContract(user_signal_mirror="Verstanden.").user_signal_mirror == "Verstanden."
+    assert (
+        ConversationStrategyContract(user_signal_mirror="  ").user_signal_mirror == ""
+    )
+    assert (
+        ConversationStrategyContract(
+            user_signal_mirror="Verstanden."
+        ).user_signal_mirror
+        == "Verstanden."
+    )
 
 
 def test_primary_question_must_be_exactly_one_sentence() -> None:

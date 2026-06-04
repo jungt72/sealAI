@@ -87,7 +87,10 @@ def test_rwdr_required_fields_include_surface_runout_lubrication() -> None:
     assert "counterface_surface_condition" in fields
     assert "runout_mm" in fields
     assert "lubrication_condition" in fields
-    assert fields["counterface_surface_condition"].requirement_tier == "recommended_for_professional_review"
+    assert (
+        fields["counterface_surface_condition"].requirement_tier
+        == "recommended_for_professional_review"
+    )
     assert fields["counterface_surface_condition"].blocks_next_step is False
     assert "rwdr_surface_condition_check" in check_ids
     assert "rwdr_runout_eccentricity_check" in check_ids

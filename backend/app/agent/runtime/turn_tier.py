@@ -11,6 +11,7 @@ retrieval funnel (`rag_orchestrator.hybrid_retrieve`) enforces it fail-closed.
 Default = enforced. Kill-switch ``SEALAI_TIER0_RETRIEVAL_GUARD=0`` is incident-only
 and always logged (see ops.md) — never a steady state.
 """
+
 from __future__ import annotations
 
 import logging

@@ -34,7 +34,9 @@ class ComplianceEvidenceSummary:
         )
 
 
-def normalize_certification_records(context: Mapping[str, Any]) -> tuple[CertificationEvidence, ...]:
+def normalize_certification_records(
+    context: Mapping[str, Any],
+) -> tuple[CertificationEvidence, ...]:
     raw_records = context.get("certification_records")
     if raw_records is None:
         raw_records = context.get("compliance_evidence")
@@ -74,7 +76,9 @@ def normalize_certification_records(context: Mapping[str, Any]) -> tuple[Certifi
         normalized.append(
             CertificationEvidence(
                 standard=standard,
-                source_reference=_optional_str(record.get("source_reference") or record.get("source_ref")),
+                source_reference=_optional_str(
+                    record.get("source_reference") or record.get("source_ref")
+                ),
                 issuer=_optional_str(record.get("issuer")),
                 valid=_optional_bool(record.get("valid")),
                 declaration_present=bool(
@@ -86,7 +90,9 @@ def normalize_certification_records(context: Mapping[str, Any]) -> tuple[Certifi
                     record.get("migration_test_available")
                     or record.get("migration_test_present")
                 ),
-                negative=bool(record.get("negative") or record.get("explicitly_not_certified")),
+                negative=bool(
+                    record.get("negative") or record.get("explicitly_not_certified")
+                ),
             )
         )
 
@@ -114,10 +120,14 @@ def summarize_certification_evidence(
     migration_test_available = bool(context.get("migration_test_available")) or any(
         record.migration_test_available for record in matching
     )
-    negative = bool(context.get("food_contact_certification_negative")) or bool(
-        context.get("explicitly_not_food_contact_certified")
-    ) or any(record.negative or record.valid is False for record in matching)
-    positive = any(record.valid is not False and not record.negative for record in matching)
+    negative = (
+        bool(context.get("food_contact_certification_negative"))
+        or bool(context.get("explicitly_not_food_contact_certified"))
+        or any(record.negative or record.valid is False for record in matching)
+    )
+    positive = any(
+        record.valid is not False and not record.negative for record in matching
+    )
 
     return ComplianceEvidenceSummary(
         matching_records=matching,

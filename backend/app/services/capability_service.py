@@ -216,7 +216,9 @@ class CapabilityService:
             "standard_leadtime_weeks": claim.standard_leadtime_weeks,
         }
         if claim.capability_payload is not None:
-            values["capability_payload"] = json.dumps(dict(claim.capability_payload), sort_keys=True)
+            values["capability_payload"] = json.dumps(
+                dict(claim.capability_payload), sort_keys=True
+            )
         if claim.status is not None:
             values["status"] = claim.status
 
@@ -311,7 +313,9 @@ class CapabilityService:
             return self.get_claim(db, claim_id)
 
         values["claim_id"] = claim_id
-        assignments = [f"{column} = :{column}" for column in values if column != "claim_id"]
+        assignments = [
+            f"{column} = :{column}" for column in values if column != "claim_id"
+        ]
         assignments.append("updated_at = CURRENT_TIMESTAMP")
         result = self._execute(
             db,
@@ -435,17 +439,21 @@ class CapabilityService:
         capability claim payload. Unpaid active profiles remain excluded.
         """
 
-        profile_rows = self._execute(
-            db,
-            sa.text(
-                """
+        profile_rows = (
+            self._execute(
+                db,
+                sa.text(
+                    """
                 SELECT *
                 FROM manufacturer_profiles
                 ORDER BY manufacturer_id ASC
                 """
-            ),
-            {},
-        ).mappings().all()
+                ),
+                {},
+            )
+            .mappings()
+            .all()
+        )
         claims = self.list_claims(db, status=claim_status)
         grouped: dict[str, list[ManufacturerCapabilityClaim]] = {}
         for claim in claims:
@@ -461,7 +469,9 @@ class CapabilityService:
             if not _is_active_paid_partner(row, manufacturer_claims):
                 continue
 
-            capability_profile = build_capability_profile(manufacturer_id, manufacturer_claims)
+            capability_profile = build_capability_profile(
+                manufacturer_id, manufacturer_claims
+            )
             projections.append(
                 PartnerCapabilityProjection(
                     manufacturer_id=manufacturer_id,
@@ -543,7 +553,9 @@ class CapabilityService:
         capability_type_for_lot: str | None,
     ) -> None:
         if capability_type is not None and capability_type not in CAPABILITY_TYPES:
-            raise CapabilityValidationError(f"unknown capability_type: {capability_type}")
+            raise CapabilityValidationError(
+                f"unknown capability_type: {capability_type}"
+            )
         if source_type is not None and source_type not in SOURCE_TYPES:
             raise CapabilityValidationError(f"unknown source_type: {source_type}")
         if source_reference is not None and not str(source_reference).strip():
@@ -552,8 +564,14 @@ class CapabilityService:
             raise CapabilityValidationError("confidence must be between 1 and 5")
         if status is not None and status not in CLAIM_STATUSES:
             raise CapabilityValidationError(f"unknown status: {status}")
-        if validity_from is not None and validity_to is not None and validity_to < validity_from:
-            raise CapabilityValidationError("validity_to must be greater than or equal to validity_from")
+        if (
+            validity_from is not None
+            and validity_to is not None
+            and validity_to < validity_from
+        ):
+            raise CapabilityValidationError(
+                "validity_to must be greater than or equal to validity_from"
+            )
 
         for field_name, value in (
             ("minimum_order_pieces", minimum_order_pieces),
@@ -570,21 +588,33 @@ class CapabilityService:
             and typical_minimum_pieces is not None
             and typical_minimum_pieces < minimum_order_pieces
         ):
-            raise CapabilityValidationError("typical_minimum_pieces must be >= minimum_order_pieces")
+            raise CapabilityValidationError(
+                "typical_minimum_pieces must be >= minimum_order_pieces"
+            )
         if (
             typical_minimum_pieces is not None
             and maximum_order_pieces is not None
             and maximum_order_pieces < typical_minimum_pieces
         ):
-            raise CapabilityValidationError("maximum_order_pieces must be >= typical_minimum_pieces")
+            raise CapabilityValidationError(
+                "maximum_order_pieces must be >= typical_minimum_pieces"
+            )
         if (
             preferred_batch_min_pieces is not None
             and preferred_batch_max_pieces is not None
             and preferred_batch_max_pieces < preferred_batch_min_pieces
         ):
-            raise CapabilityValidationError("preferred_batch_max_pieces must be >= preferred_batch_min_pieces")
-        if accepts_single_pieces is True and minimum_order_pieces is not None and minimum_order_pieces > 1:
-            raise CapabilityValidationError("accepts_single_pieces requires minimum_order_pieces <= 1")
+            raise CapabilityValidationError(
+                "preferred_batch_max_pieces must be >= preferred_batch_min_pieces"
+            )
+        if (
+            accepts_single_pieces is True
+            and minimum_order_pieces is not None
+            and minimum_order_pieces > 1
+        ):
+            raise CapabilityValidationError(
+                "accepts_single_pieces requires minimum_order_pieces <= 1"
+            )
         if capability_type_for_lot == "lot_size_capability":
             required = {
                 "minimum_order_pieces": minimum_order_pieces,
@@ -640,7 +670,9 @@ class CapabilityService:
             preferred_batch_min_pieces=row["preferred_batch_min_pieces"],
             preferred_batch_max_pieces=row["preferred_batch_max_pieces"],
             accepts_single_pieces=(
-                None if row["accepts_single_pieces"] is None else bool(row["accepts_single_pieces"])
+                None
+                if row["accepts_single_pieces"] is None
+                else bool(row["accepts_single_pieces"])
             ),
             atex_capable=(
                 None if row["atex_capable"] is None else bool(row["atex_capable"])
@@ -650,8 +682,12 @@ class CapabilityService:
                 if row["rapid_manufacturing_available"] is None
                 else bool(row["rapid_manufacturing_available"])
             ),
-            rapid_manufacturing_surcharge_percent=row["rapid_manufacturing_surcharge_percent"],
-            rapid_manufacturing_leadtime_hours=row["rapid_manufacturing_leadtime_hours"],
+            rapid_manufacturing_surcharge_percent=row[
+                "rapid_manufacturing_surcharge_percent"
+            ],
+            rapid_manufacturing_leadtime_hours=row[
+                "rapid_manufacturing_leadtime_hours"
+            ],
             standard_leadtime_weeks=row["standard_leadtime_weeks"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -691,7 +727,11 @@ def build_capability_profile(
     source_claim_ids: list[str] = []
 
     for claim in active_claims:
-        payload = claim.capability_payload if isinstance(claim.capability_payload, Mapping) else {}
+        payload = (
+            claim.capability_payload
+            if isinstance(claim.capability_payload, Mapping)
+            else {}
+        )
         source_claim_ids.append(claim.claim_id)
         evidence_scores.append(int(claim.confidence))
         if claim.engineering_path:
@@ -705,7 +745,9 @@ def build_capability_profile(
         if claim.rapid_manufacturing_available is not None:
             prototype_capable = bool(claim.rapid_manufacturing_available)
         if claim.standard_leadtime_weeks is not None:
-            standard_leadtime_weeks = _min_int(standard_leadtime_weeks, claim.standard_leadtime_weeks)
+            standard_leadtime_weeks = _min_int(
+                standard_leadtime_weeks, claim.standard_leadtime_weeks
+            )
 
         asset_types.update(_strings(payload.get("supported_asset_types")))
         seal_types.update(_strings(payload.get("supported_seal_types")))
@@ -721,8 +763,12 @@ def build_capability_profile(
         food_capable = _coalesce_bool(food_capable, payload.get("food_capable"))
         pharma_capable = _coalesce_bool(pharma_capable, payload.get("pharma_capable"))
         atex_capable = _coalesce_bool(atex_capable, payload.get("atex_capable"))
-        small_quantity_capable = _coalesce_bool(small_quantity_capable, payload.get("small_quantity_capable"))
-        prototype_capable = _coalesce_bool(prototype_capable, payload.get("prototype_capable"))
+        small_quantity_capable = _coalesce_bool(
+            small_quantity_capable, payload.get("small_quantity_capable")
+        )
+        prototype_capable = _coalesce_bool(
+            prototype_capable, payload.get("prototype_capable")
+        )
         response_model = _first_text(response_model, payload.get("response_model"))
 
     gaps = _profile_gaps(
@@ -780,7 +826,11 @@ def _merge_range(
     prefix: str,
     unit: str,
 ) -> NumericRange:
-    nested = payload.get(f"{prefix}_range") if isinstance(payload.get(f"{prefix}_range"), Mapping) else {}
+    nested = (
+        payload.get(f"{prefix}_range")
+        if isinstance(payload.get(f"{prefix}_range"), Mapping)
+        else {}
+    )
     minimum = _number(_first_present(payload, f"{prefix}_min_{unit}", nested, "min"))
     maximum = _number(_first_present(payload, f"{prefix}_max_{unit}", nested, "max"))
     return NumericRange(
@@ -892,7 +942,11 @@ def _number(value: Any) -> float | None:
 
 
 def _is_active_manufacturer_profile(account_status: str) -> bool:
-    return str(account_status or "").strip().lower() in {"active", "active_paid", "paid_active"}
+    return str(account_status or "").strip().lower() in {
+        "active",
+        "active_paid",
+        "paid_active",
+    }
 
 
 def _is_active_paid_partner(
@@ -904,7 +958,11 @@ def _is_active_paid_partner(
         if value is not None:
             return _truthy(value)
 
-    account_status = str(_optional_mapping_value(profile_row, "account_status") or "").strip().lower()
+    account_status = (
+        str(_optional_mapping_value(profile_row, "account_status") or "")
+        .strip()
+        .lower()
+    )
     if account_status in {"active_paid", "paid_active"}:
         return True
 
@@ -912,23 +970,29 @@ def _is_active_paid_partner(
 
 
 def _claim_payload_indicates_paid_partner(claim: ManufacturerCapabilityClaim) -> bool:
-    payload = claim.capability_payload if isinstance(claim.capability_payload, Mapping) else {}
+    payload = (
+        claim.capability_payload
+        if isinstance(claim.capability_payload, Mapping)
+        else {}
+    )
     if _truthy(payload.get("active_paid")) or _truthy(payload.get("is_paid_partner")):
         return True
 
-    network_status = str(
-        payload.get("partner_network_status")
-        or payload.get("partner_status")
-        or ""
-    ).strip().lower()
+    network_status = (
+        str(
+            payload.get("partner_network_status") or payload.get("partner_status") or ""
+        )
+        .strip()
+        .lower()
+    )
     if network_status in {"active_paid", "paid_active", "paid"}:
         return True
 
-    tier = str(
-        payload.get("partner_tier")
-        or payload.get("subscription_tier")
-        or ""
-    ).strip().lower()
+    tier = (
+        str(payload.get("partner_tier") or payload.get("subscription_tier") or "")
+        .strip()
+        .lower()
+    )
     return tier in {"paid", "pilot_paid", "founding_partner", "standard", "premium"}
 
 
@@ -949,4 +1013,11 @@ def _truthy(value: Any) -> bool:
         return False
     if isinstance(value, (int, float)):
         return value != 0
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "paid", "active_paid"}
+    return str(value).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "paid",
+        "active_paid",
+    }

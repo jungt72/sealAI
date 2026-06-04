@@ -74,7 +74,9 @@ class NormModule(ABC):
         raise NotImplementedError
 
 
-def missing_fields(context: NormCheckContext, required_fields: list[str]) -> tuple[str, ...]:
+def missing_fields(
+    context: NormCheckContext, required_fields: list[str]
+) -> tuple[str, ...]:
     missing: list[str] = []
     for field_name in required_fields:
         value = context.get(field_name)

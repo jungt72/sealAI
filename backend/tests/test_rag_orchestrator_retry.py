@@ -64,13 +64,18 @@ def test_qdrant_retry_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
         unexpected_response(503),  # first attempt fails with retriable HTTP error
         _FakeQueryResponse(points=[_FakePoint(payload={"text": "A"}, score=0.9)]),
     ]
+
     def _query_points(**_kwargs):
         outcome = outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
-    monkeypatch.setattr(ro, "_make_qdrant_client", lambda: types.SimpleNamespace(query_points=_query_points))
+    monkeypatch.setattr(
+        ro,
+        "_make_qdrant_client",
+        lambda: types.SimpleNamespace(query_points=_query_points),
+    )
     monkeypatch.setattr(ro, "_build_qdrant_filter", lambda _filters=None: None)
     monkeypatch.setattr(ro, "_embed_sparse_query", lambda _q: None)
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
@@ -96,8 +101,18 @@ def test_qdrant_retry_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.rag import rag_orchestrator as ro
 
     unexpected_response = _install_fake_qdrant_modules(monkeypatch)
-    outcomes = [unexpected_response(503), unexpected_response(503), unexpected_response(503)]
-    monkeypatch.setattr(ro, "_make_qdrant_client", lambda: types.SimpleNamespace(query_points=lambda **_kwargs: (_ for _ in ()).throw(outcomes.pop(0))))
+    outcomes = [
+        unexpected_response(503),
+        unexpected_response(503),
+        unexpected_response(503),
+    ]
+    monkeypatch.setattr(
+        ro,
+        "_make_qdrant_client",
+        lambda: types.SimpleNamespace(
+            query_points=lambda **_kwargs: (_ for _ in ()).throw(outcomes.pop(0))
+        ),
+    )
     monkeypatch.setattr(ro, "_build_qdrant_filter", lambda _filters=None: None)
     monkeypatch.setattr(ro, "_embed_sparse_query", lambda _q: None)
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])

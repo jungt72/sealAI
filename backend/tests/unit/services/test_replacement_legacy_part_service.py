@@ -9,12 +9,12 @@ from app.services.replacement_legacy_part_service import (
 
 
 def test_dimension_only_old_part_becomes_uncertain_legacy_intake() -> None:
-    bundle = ReplacementLegacyPartService().build(
-        "Auf dem Teil steht nur 75x95x10."
-    )
+    bundle = ReplacementLegacyPartService().build("Auf dem Teil steht nur 75x95x10.")
 
     assert bundle.primary_case_type == CaseType.unknown_legacy_part.value
-    assert bundle.legacy_part_intake.artifact_type == ArtifactType.legacy_part_intake.value
+    assert (
+        bundle.legacy_part_intake.artifact_type == ArtifactType.legacy_part_intake.value
+    )
     assert bundle.legacy_part_intake.part_candidate.dimensions == {
         "shaft_diameter_mm": 75.0,
         "housing_bore_mm": 95.0,
@@ -56,9 +56,7 @@ def test_required_photos_measures_and_context_are_listed() -> None:
 
 
 def test_replacement_artifacts_do_not_claim_interchangeability() -> None:
-    bundle = ReplacementLegacyPartService().build(
-        "Auf dem Teil steht nur 75x95x10."
-    )
+    bundle = ReplacementLegacyPartService().build("Auf dem Teil steht nur 75x95x10.")
     rendered = str(bundle.as_dict()).casefold()
 
     forbidden = (
@@ -75,9 +73,7 @@ def test_replacement_artifacts_do_not_claim_interchangeability() -> None:
 
 
 def test_replacement_bundle_serializes_projection() -> None:
-    payload = ReplacementLegacyPartService().build(
-        "Ersatzteil 75x95x10."
-    ).as_dict()
+    payload = ReplacementLegacyPartService().build("Ersatzteil 75x95x10.").as_dict()
 
     assert payload["schema_version"] == "replacement_legacy_part_v0.8.3"
     assert payload["artifact_types"] == (

@@ -30,6 +30,7 @@ Usage:
         cleaned = render_chunk(chunk)
         yield cleaned
 """
+
 from __future__ import annotations
 
 import json
@@ -83,11 +84,23 @@ _INTEGERISH_FLOAT_RE = re.compile(
 )
 
 # Raw JSON object blobs (heuristic: starts with { and has internal-looking keys)
-_INTERNAL_KEY_SET = frozenset({
-    "sealing_state", "asserted", "observed", "normalized",
-    "governance", "working_profile", "checkpoint", "thread_id",
-    "run_id", "governed_output_text", "governed_output_status",
-})
+_INTERNAL_KEY_SET = frozenset(
+    {
+        "sealing_state",
+        "asserted",
+        "observed",
+        "normalized",
+        "governance",
+        "working_profile",
+        "checkpoint",
+        "thread_id",
+        "run_id",
+        "governed_output_text",
+        "governed_output_status",
+    }
+)
+
+
 def _extract_json_blobs(text: str) -> list[tuple[int, int, str]]:
     """Scan text for JSON object blobs, handling nested braces.
 
@@ -153,7 +166,7 @@ def _scrub_internal_json(text: str) -> str:
             adj_start = start + offset
             adj_end = end + offset
             result = result[:adj_start] + result[adj_end:]
-            offset -= (end - start)
+            offset -= end - start
     return result
 
 
@@ -297,6 +310,7 @@ def _polish_visible_text(text: str, *, full_response: bool) -> str:
 # Public result type
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class RenderedResponse:
     """Result of rendering a raw LLM / pipeline text for the client."""
@@ -317,6 +331,7 @@ class RenderedResponse:
 # ---------------------------------------------------------------------------
 # Core rendering logic
 # ---------------------------------------------------------------------------
+
 
 def _render_text_for_path(
     raw: str,
@@ -347,6 +362,7 @@ def _render_text_for_path(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def render_response(
     raw: str,

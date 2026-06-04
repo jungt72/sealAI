@@ -51,6 +51,7 @@ Performance:
   - Uses openai.AsyncOpenAI for non-blocking routing LLM calls
   - evaluate_policy() (sync) is kept for tests and CLI usage
 """
+
 from __future__ import annotations
 
 import json
@@ -59,7 +60,10 @@ import os
 import re
 from typing import Any, Optional
 
-from app.agent.runtime.policy import INTERACTION_POLICY_VERSION, InteractionPolicyDecision
+from app.agent.runtime.policy import (
+    INTERACTION_POLICY_VERSION,
+    InteractionPolicyDecision,
+)
 from app.agent.runtime.selection import STRUCTURED_REQUIRED_CORE_PARAMS
 from app.domain.pre_gate_classification import PreGateClassification
 from app.observability.langsmith import wrap_openai_client
@@ -79,7 +83,7 @@ _SYSTEM_PROMPT = (
     "Du bist der Türsteher (Router) für einen Dichtungs-Engineering-Agenten. "
     "Analysiere die Nachricht des Users. "
     "Antworte AUSSCHLIESSLICH mit JSON im Format: "
-    '{\"route\": \"Structured\"} oder {\"route\": \"Fast\"}. '
+    '{"route": "Structured"} oder {"route": "Fast"}. '
     "- 'Structured': Der User nennt technische Parameter (z.B. '50 mm', '2 bar', "
     "'für Teig'), fordert eine Auslegung an oder reicht technische Daten nach. "
     "- 'Fast': Reiner Smalltalk ('Hallo', 'Danke', 'Wie gehts?'), allgemeine "
@@ -93,19 +97,19 @@ _SYSTEM_PROMPT = (
 
 # Inputs that must be BLOCKED — user explicitly requests what SealAI cannot provide
 _INPUT_BLOCK_PATTERNS: tuple[str, ...] = (
-    r"\bwelch\w*\s+hersteller\b",                              # "welchen/welchem/welche Hersteller"
-    r"\bhersteller[- ]?empfehlung\b",                          # "Herstellerempfehlung"
-    r"\b(empfiehl|empfehle)\s+mir\b",                          # "empfiehl mir"
-    r"\bwas\s+empfiehlst\s+du\b",                              # "was empfiehlst du"
-    r"\bwelche[rs]?\s+(werkstoff|material|dichtring)\s+soll\b", # "welches Material soll ich"
-    r"\bwelche\s+dichtung\s+soll\b",                           # "welche Dichtung soll ich"
+    r"\bwelch\w*\s+hersteller\b",  # "welchen/welchem/welche Hersteller"
+    r"\bhersteller[- ]?empfehlung\b",  # "Herstellerempfehlung"
+    r"\b(empfiehl|empfehle)\s+mir\b",  # "empfiehl mir"
+    r"\bwas\s+empfiehlst\s+du\b",  # "was empfiehlst du"
+    r"\bwelche[rs]?\s+(werkstoff|material|dichtring)\s+soll\b",  # "welches Material soll ich"
+    r"\bwelche\s+dichtung\s+soll\b",  # "welche Dichtung soll ich"
 )
 
 # Inputs where a Fast-LLM decision must be upgraded to Structured
 # (technical specificity detected — fast path is not appropriate)
 _FAST_PATH_FORCE_STRUCTURED_PATTERNS: tuple[str, ...] = (
     r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|psi|°?\s*[cCfF]|rpm|u\.?/?min)\b",  # numeric+unit
-    r"\b(geeignet|eignet\s+sich|taugt\s+für)\b",               # suitability framing
+    r"\b(geeignet|eignet\s+sich|taugt\s+für)\b",  # suitability framing
     r"\b(PTFE|NBR|FKM|EPDM|HNBR|FFKM|SILIKON|VMQ)\b.*\b(für|bei|in)\b",  # material + context
 )
 
@@ -184,11 +188,12 @@ def _fast_path_upgrade_to_structured(user_input: str) -> bool:
 # Helper: current state signals
 # ---------------------------------------------------------------------------
 
+
 def _has_active_case(current_state: dict[str, Any] | None) -> bool:
     """True when the current state already has meaningful technical data."""
     if not current_state:
         return False
-    asserted = ((current_state.get("sealing_state") or {}).get("asserted") or {})
+    asserted = (current_state.get("sealing_state") or {}).get("asserted") or {}
     medium = (asserted.get("medium_profile") or {}).get("name")
     material = (asserted.get("machine_profile") or {}).get("material")
     oc = asserted.get("operating_conditions") or {}
@@ -203,7 +208,7 @@ def _missing_critical_params(current_state: dict[str, Any] | None) -> tuple[str,
     """
     if not current_state:
         return STRUCTURED_REQUIRED_CORE_PARAMS  # all missing
-    asserted = ((current_state.get("sealing_state") or {}).get("asserted") or {})
+    asserted = (current_state.get("sealing_state") or {}).get("asserted") or {}
     missing: list[str] = []
     if not (asserted.get("medium_profile") or {}).get("name"):
         missing.append("medium")
@@ -218,6 +223,7 @@ def _missing_critical_params(current_state: dict[str, Any] | None) -> tuple[str,
 # ---------------------------------------------------------------------------
 # Core factory helpers  (return types MUST remain exactly as defined)
 # ---------------------------------------------------------------------------
+
 
 def _direct_answer(*, coverage: str = "in_scope") -> InteractionPolicyDecision:
     return InteractionPolicyDecision(
@@ -315,6 +321,7 @@ def _blocked_path(*, reason: str) -> InteractionPolicyDecision:
 # Semantic routing via Nano-LLM
 # ---------------------------------------------------------------------------
 
+
 def _call_routing_llm(user_input: str) -> str:
     """
     Call the routing LLM synchronously and return "Fast" or "Structured".
@@ -324,7 +331,9 @@ def _call_routing_llm(user_input: str) -> str:
     """
     import openai  # lazy import — keeps startup lean when routing is unused
 
-    client = wrap_openai_client(openai.OpenAI())  # picks up OPENAI_API_KEY from environment
+    client = wrap_openai_client(
+        openai.OpenAI()
+    )  # picks up OPENAI_API_KEY from environment
     response = client.chat.completions.create(
         model=_ROUTING_MODEL,
         messages=[
@@ -371,6 +380,7 @@ async def _call_routing_llm_async(user_input: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def _evaluate_deterministic_tiers(
     user_input: str,
     current_state: dict[str, Any] | None = None,
@@ -382,7 +392,9 @@ def _evaluate_deterministic_tiers(
     """
     classification = _PRE_GATE_CLASSIFIER.classify(user_input).classification
 
-    if classification is PreGateClassification.META_QUESTION or _is_meta_query(user_input):
+    if classification is PreGateClassification.META_QUESTION or _is_meta_query(
+        user_input
+    ):
         log.debug("Policy decision: META (state-status query)")
         return _meta_path()
 

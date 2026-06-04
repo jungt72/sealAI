@@ -112,7 +112,9 @@ class KnowledgeContextBuilder:
         history_char_limit: int | None = _MAX_HISTORY_CHARS,
         evidence_limit: int = _DEFAULT_EVIDENCE_LIMIT,
     ) -> None:
-        self.history_limit = None if history_limit is None else max(0, int(history_limit))
+        self.history_limit = (
+            None if history_limit is None else max(0, int(history_limit))
+        )
         self.history_char_limit = (
             None if history_char_limit is None else max(0, int(history_char_limit))
         )
@@ -237,7 +239,9 @@ class KnowledgeContextBuilder:
                 if len(items) >= self.evidence_limit:
                     return tuple(items)
 
-        deterministic_item = _deterministic_evidence_item(answer_view, deterministic_answer)
+        deterministic_item = _deterministic_evidence_item(
+            answer_view, deterministic_answer
+        )
         _append_evidence_item(
             items,
             deterministic_item,
@@ -282,7 +286,9 @@ def _requested_material_subjects(
         from_answer = _comparison_subjects_from_answer(deterministic_answer)
         if from_answer:
             return from_answer
-    if len(latest) != 1 or not _CONTEXTUAL_COMPARISON_RE.search(str(user_message or "")):
+    if len(latest) != 1 or not _CONTEXTUAL_COMPARISON_RE.search(
+        str(user_message or "")
+    ):
         return tuple(latest)
 
     anchor = _last_history_material_subject(
@@ -313,7 +319,10 @@ def _comparison_subjects_from_answer(deterministic_answer: str) -> tuple[str, ..
     if not answer:
         return ()
     first_screen = "\n".join(answer.splitlines()[:12])
-    if "vergleich" not in first_screen.casefold() and " vs " not in first_screen.casefold():
+    if (
+        "vergleich" not in first_screen.casefold()
+        and " vs " not in first_screen.casefold()
+    ):
         return ()
     subjects: list[str] = []
     for material in extract_material_ids(first_screen):

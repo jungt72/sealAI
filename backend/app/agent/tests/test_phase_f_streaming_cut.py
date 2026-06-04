@@ -6,6 +6,7 @@ event_generator() behaves correctly under all flag combinations.
 
 All external I/O (Redis, LLM) is mocked — no network required.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,6 +31,7 @@ from app.agent.state.models import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_current_user(
     sub: str = "user-1",
@@ -63,6 +65,7 @@ async def _collect_frames(gen: AsyncGenerator[str, None]) -> list[str]:
 # Fake Redis context manager
 # ---------------------------------------------------------------------------
 
+
 class _FakeRedis:
     """Minimal fake async Redis client for session persistence tests."""
 
@@ -86,6 +89,7 @@ class _FakeRedis:
 # 1. Flag off → productive SSE fails closed to governed, no legacy policy fallback
 # ---------------------------------------------------------------------------
 
+
 class TestFlagOffUsesGovernedAuthority:
     @pytest.mark.asyncio
     async def test_gate_flag_off_uses_governed_path(self):
@@ -101,13 +105,19 @@ class TestFlagOffUsesGovernedAuthority:
             sidecar_called.append(True)
             yield "data: [DONE]\n\n"
 
-        with patch.object(dispatch_module, "_ENABLE_BINARY_GATE", False), \
-             patch.object(dispatch_module, "_ENABLE_CONVERSATION_RUNTIME", False), \
-             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream), \
-             patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None):
-
+        with patch.object(dispatch_module, "_ENABLE_BINARY_GATE", False), patch.object(
+            dispatch_module, "_ENABLE_CONVERSATION_RUNTIME", False
+        ), patch(
+            "app.agent.api.streaming._stream_conversation_first_with_engine_sidecar",
+            side_effect=_fake_sidecar_stream,
+        ), patch(
+            "app.agent.api.streaming.classify_message_as_knowledge_override",
+            return_value=None,
+        ):
             frames = await _collect_frames(
-                router_module.event_generator(_make_request(), current_user=_make_current_user())
+                router_module.event_generator(
+                    _make_request(), current_user=_make_current_user()
+                )
             )
 
         mock_decide_route.assert_not_called()
@@ -125,6 +135,7 @@ async def _empty_gen():
 # ---------------------------------------------------------------------------
 # 2. Gate flag on, conv flag off → productive path still governed
 # ---------------------------------------------------------------------------
+
 
 class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
     @pytest.mark.asyncio
@@ -145,12 +156,20 @@ class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
             gate_applied=False,
         )
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream), \
-             patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch(
+            "app.agent.api.streaming._stream_conversation_first_with_engine_sidecar",
+            side_effect=_fake_sidecar_stream,
+        ), patch(
+            "app.agent.api.streaming.classify_message_as_knowledge_override",
+            return_value=None,
+        ):
             frames = await _collect_frames(
-                router_module.event_generator(_make_request(), current_user=_make_current_user())
+                router_module.event_generator(
+                    _make_request(), current_user=_make_current_user()
+                )
             )
 
         assert sidecar_called == [True]
@@ -161,6 +180,7 @@ class TestGateFlagOnConvFlagOffUsesGovernedAuthority:
 # 3. Both flags on + CONVERSATION → conversation_runtime is used
 # ---------------------------------------------------------------------------
 
+
 class TestBothFlagsOnConversationUsesNewRuntime:
     @pytest.mark.asyncio
     async def test_gate_flag_on_conv_flag_on_light_mode_uses_new_runtime(self):
@@ -170,10 +190,12 @@ class TestBothFlagsOnConversationUsesNewRuntime:
         stream_conv_called = []
         governed_graph_called = []
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
+        async def _fake_stream_conv(
+            message, *, history=None, case_summary=None, mode=None, **_kwargs
+        ):
             stream_conv_called.append({"message": message, "mode": mode})
-            yield "data: {\"type\": \"text_chunk\", \"text\": \"Hallo\"}\n\n"
-            yield "data: {\"type\": \"state_update\", \"reply\": \"Hallo\", \"response_class\": \"conversational_answer\"}\n\n"
+            yield 'data: {"type": "text_chunk", "text": "Hallo"}\n\n'
+            yield 'data: {"type": "state_update", "reply": "Hallo", "response_class": "conversational_answer"}\n\n'
             yield "data: [DONE]\n\n"
 
         async def _fake_governed_graph(state, *, graph, on_complete=None):
@@ -189,10 +211,16 @@ class TestBothFlagsOnConversationUsesNewRuntime:
             governed_state=GovernedSessionState(),
         )
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_graph):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch(
+            "app.agent.runtime.conversation_runtime.stream_conversation",
+            side_effect=_fake_stream_conv,
+        ), patch(
+            "app.agent.api.streaming._stream_governed_graph",
+            side_effect=_fake_governed_graph,
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="Was ist ein O-Ring?"),
@@ -202,14 +230,21 @@ class TestBothFlagsOnConversationUsesNewRuntime:
 
         assert stream_conv_called, "stream_conversation must be called for light route"
         assert stream_conv_called[0]["mode"] == "CONVERSATION"
-        assert not governed_graph_called, "_stream_governed_graph must NOT be called for light route"
-        assert any("text_chunk" in f for f in frames), "SSE preview text chunks should be forwarded"
-        assert any("state_update" in f for f in frames), "canonical state_update frame must be forwarded"
+        assert (
+            not governed_graph_called
+        ), "_stream_governed_graph must NOT be called for light route"
+        assert any(
+            "text_chunk" in f for f in frames
+        ), "SSE preview text chunks should be forwarded"
+        assert any(
+            "state_update" in f for f in frames
+        ), "canonical state_update frame must be forwarded"
 
 
 # ---------------------------------------------------------------------------
 # 4. GOVERNED uses the new governed graph path
 # ---------------------------------------------------------------------------
+
 
 class TestGovernedUsesConversationFirstSidecar:
     @pytest.mark.asyncio
@@ -225,7 +260,9 @@ class TestGovernedUsesConversationFirstSidecar:
             light_runtime_called.append(True)
             yield "data: [DONE]\n\n"
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None):
+        async def _fake_stream_conv(
+            message, *, history=None, case_summary=None, mode=None
+        ):
             stream_conv_called.append(True)
             yield "data: [DONE]\n\n"
 
@@ -241,21 +278,33 @@ class TestGovernedUsesConversationFirstSidecar:
             gate_applied=False,
         )
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming._stream_light_runtime", side_effect=_fake_light_runtime), \
-             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch(
+            "app.agent.api.streaming.classify_message_as_knowledge_override",
+            return_value=None,
+        ), patch(
+            "app.agent.runtime.conversation_runtime.stream_conversation",
+            side_effect=_fake_stream_conv,
+        ), patch(
+            "app.agent.api.streaming._stream_light_runtime",
+            side_effect=_fake_light_runtime,
+        ), patch(
+            "app.agent.api.streaming._stream_conversation_first_with_engine_sidecar",
+            side_effect=_fake_sidecar_stream,
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="PTFE-Dichtung 180°C 50 bar"),
                     current_user=_make_current_user(),
                 )
-        )
+            )
 
         assert sidecar_called, "_stream_conversation_first_with_engine_sidecar must be called for GOVERNED route"
-        assert not light_runtime_called, "_stream_light_runtime must NOT be the governed primary path"
+        assert (
+            not light_runtime_called
+        ), "_stream_light_runtime must NOT be the governed primary path"
         payloads = []
         for frame in frames:
             if not frame.startswith("data: "):
@@ -279,6 +328,7 @@ class TestGovernedUsesConversationFirstSidecar:
 # 5. Legacy facade endpoint delegates to the canonical router authority
 # ---------------------------------------------------------------------------
 
+
 class TestLegacyFacadeUsesCanonicalAuthority:
     @pytest.mark.asyncio
     async def test_legacy_facade_uses_governed_authority_when_flags_are_off(self):
@@ -301,12 +351,18 @@ class TestLegacyFacadeUsesCanonicalAuthority:
             stream_conv_called.append(True)
             yield "data: [DONE]\n\n"
 
-        with patch.object(dispatch_module, "_ENABLE_BINARY_GATE", False), \
-             patch.object(dispatch_module, "_ENABLE_CONVERSATION_RUNTIME", False), \
-             patch("app.agent.api.streaming._stream_conversation_first_with_engine_sidecar", side_effect=_fake_sidecar_stream), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming.classify_message_as_knowledge_override", return_value=None):
-
+        with patch.object(dispatch_module, "_ENABLE_BINARY_GATE", False), patch.object(
+            dispatch_module, "_ENABLE_CONVERSATION_RUNTIME", False
+        ), patch(
+            "app.agent.api.streaming._stream_conversation_first_with_engine_sidecar",
+            side_effect=_fake_sidecar_stream,
+        ), patch(
+            "app.agent.runtime.conversation_runtime.stream_conversation",
+            side_effect=_fake_stream_conv,
+        ), patch(
+            "app.agent.api.streaming.classify_message_as_knowledge_override",
+            return_value=None,
+        ):
             # Simulate what the legacy facade does: call event_generator directly
             frames = await _collect_frames(
                 router_module.event_generator(
@@ -316,7 +372,9 @@ class TestLegacyFacadeUsesCanonicalAuthority:
             )
 
         assert sidecar_called == [True]
-        assert not stream_conv_called, "legacy facade must not trigger stream_conversation"
+        assert (
+            not stream_conv_called
+        ), "legacy facade must not trigger stream_conversation"
 
 
 class TestLegacyPolicyFallbackUsesConversationRuntime:
@@ -336,8 +394,13 @@ class TestLegacyPolicyFallbackUsesConversationRuntime:
             governed_graph_called.append(True)
             yield "data: [DONE]\n\n"
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=unknown_mode_resolution)), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_graph):
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=unknown_mode_resolution),
+        ), patch(
+            "app.agent.api.streaming._stream_governed_graph",
+            side_effect=_fake_governed_graph,
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="Hallo"),
@@ -352,6 +415,7 @@ class TestLegacyPolicyFallbackUsesConversationRuntime:
 # ---------------------------------------------------------------------------
 # 6. (F-A.5) Gate routes CONVERSATION requests to stream_conversation uniformly
 # ---------------------------------------------------------------------------
+
 
 class TestGateRoutesConversationToStreamConversation:
     @pytest.mark.asyncio
@@ -376,7 +440,9 @@ class TestGateRoutesConversationToStreamConversation:
             governed_graph_called.append(True)
             yield "data: [DONE]\n\n"
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
+        async def _fake_stream_conv(
+            message, *, history=None, case_summary=None, mode=None, **_kwargs
+        ):
             stream_conv_called.append(mode)
             yield "data: [DONE]\n\n"
 
@@ -388,11 +454,19 @@ class TestGateRoutesConversationToStreamConversation:
             governed_state=GovernedSessionState(),
         )
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.api.streaming._stream_exploration_reply", side_effect=_fake_exploration_reply), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv), \
-             patch("app.agent.api.streaming._stream_governed_graph", side_effect=_fake_governed_graph):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch(
+            "app.agent.api.streaming._stream_exploration_reply",
+            side_effect=_fake_exploration_reply,
+        ), patch(
+            "app.agent.runtime.conversation_runtime.stream_conversation",
+            side_effect=_fake_stream_conv,
+        ), patch(
+            "app.agent.api.streaming._stream_governed_graph",
+            side_effect=_fake_governed_graph,
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="Was ist ein O-Ring?"),
@@ -400,18 +474,21 @@ class TestGateRoutesConversationToStreamConversation:
                 )
             )
 
-        assert exploration_called, "EXPLORATION route must reach _stream_exploration_reply"
-        assert not stream_conv_called, (
-            "EXPLORATION must NOT go through stream_conversation (Bug 1 fix)"
-        )
-        assert not governed_graph_called, (
-            "EXPLORATION route must NOT fall through to _stream_governed_graph"
-        )
+        assert (
+            exploration_called
+        ), "EXPLORATION route must reach _stream_exploration_reply"
+        assert (
+            not stream_conv_called
+        ), "EXPLORATION must NOT go through stream_conversation (Bug 1 fix)"
+        assert (
+            not governed_graph_called
+        ), "EXPLORATION route must NOT fall through to _stream_governed_graph"
 
 
 # ---------------------------------------------------------------------------
 # 7. Policy-violation safe-fallback emits text_chunk visible to frontend
 # ---------------------------------------------------------------------------
+
 
 class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
     @pytest.mark.asyncio
@@ -434,20 +511,25 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
         """
         import app.agent.api.router as router_module
 
-        FALLBACK_TEXT = "Diese Anfrage kann ich im Gesprächsmodus nicht vollständig beantworten."
+        FALLBACK_TEXT = (
+            "Diese Anfrage kann ich im Gesprächsmodus nicht vollständig beantworten."
+        )
 
         # Simulate stream_conversation emitting:
         #   - a policy-violating preview token (text_chunk)
         #   - a text_replacement (for backend audit)
         #   - a final state_update with canonical fallback text
         #   - boundary_block + stream_end + [DONE]
-        async def _fake_stream_with_policy_violation(message, *, history=None, case_summary=None, mode=None, **_kwargs):
+        async def _fake_stream_with_policy_violation(
+            message, *, history=None, case_summary=None, mode=None, **_kwargs
+        ):
             import json
+
             yield f"data: {json.dumps({'type': 'text_chunk', 'text': 'VERBOTEN '})}\n\n"
             yield f"data: {json.dumps({'type': 'text_replacement', 'text': FALLBACK_TEXT})}\n\n"
             yield f"data: {json.dumps({'type': 'state_update', 'reply': FALLBACK_TEXT, 'response_class': 'conversational_answer'})}\n\n"
             yield f"data: {json.dumps({'type': 'boundary_block', 'text': 'Disclaimer'})}\n\n"
-            yield "data: {\"type\": \"stream_end\"}\n\n"
+            yield 'data: {"type": "stream_end"}\n\n'
             yield "data: [DONE]\n\n"
 
         dispatch_resolution = RuntimeDispatchResolution(
@@ -458,9 +540,13 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
             governed_state=GovernedSessionState(),
         )
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_with_policy_violation):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch(
+            "app.agent.runtime.conversation_runtime.stream_conversation",
+            side_effect=_fake_stream_with_policy_violation,
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="VERBOTENE ANFRAGE"),
@@ -469,12 +555,13 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
             )
 
         import json
+
         has_text_replacement = False
         final_reply = None
         for frame in frames:
             if not frame.startswith("data:"):
                 continue
-            raw = frame[len("data:"):].strip()
+            raw = frame[len("data:") :].strip()
             try:
                 payload = json.loads(raw)
             except (json.JSONDecodeError, ValueError):
@@ -484,9 +571,9 @@ class TestPolicyViolationSafeFallbackVisibleAsStateUpdate:
             if payload.get("type") == "state_update":
                 final_reply = payload.get("reply")
 
-        assert not has_text_replacement, (
-            "text_replacement must stay out of the canonical visible stream"
-        )
+        assert (
+            not has_text_replacement
+        ), "text_replacement must stay out of the canonical visible stream"
         assert final_reply == FALLBACK_TEXT
 
 
@@ -501,22 +588,38 @@ class TestPhase1LiveCanon:
 
         governed_state = GovernedSessionState(
             conversation_messages=[
-                ConversationMessage(role="user", content="Wir haben Leckage.", created_at="2026-04-02T00:00:00+00:00"),
-                ConversationMessage(role="assistant", content="Wo tritt sie auf?", created_at="2026-04-02T00:00:01+00:00"),
-                ConversationMessage(role="user", content="Am Wellenaustritt.", created_at="2026-04-02T00:00:02+00:00"),
+                ConversationMessage(
+                    role="user",
+                    content="Wir haben Leckage.",
+                    created_at="2026-04-02T00:00:00+00:00",
+                ),
+                ConversationMessage(
+                    role="assistant",
+                    content="Wo tritt sie auf?",
+                    created_at="2026-04-02T00:00:01+00:00",
+                ),
+                ConversationMessage(
+                    role="user",
+                    content="Am Wellenaustritt.",
+                    created_at="2026-04-02T00:00:02+00:00",
+                ),
             ]
         )
-        fake_redis._store["governed_state:tenant-1:sess-1"] = governed_state.model_dump_json()
+        fake_redis._store["governed_state:tenant-1:sess-1"] = (
+            governed_state.model_dump_json()
+        )
 
         captured = {}
 
-        async def _fake_stream_conv(message, *, history=None, case_summary=None, mode=None, **_kwargs):
+        async def _fake_stream_conv(
+            message, *, history=None, case_summary=None, mode=None, **_kwargs
+        ):
             captured["message"] = message
             captured["history"] = history
             captured["case_summary"] = case_summary
             captured["mode"] = mode
-            yield "data: {\"type\": \"state_update\", \"reply\": \"Dann schaue ich auf Einbausituation und Druck.\", \"response_class\": \"conversational_answer\"}\n\n"
-            yield "data: {\"type\": \"turn_complete\"}\n\n"
+            yield 'data: {"type": "state_update", "reply": "Dann schaue ich auf Einbausituation und Druck.", "response_class": "conversational_answer"}\n\n'
+            yield 'data: {"type": "turn_complete"}\n\n'
             yield "data: [DONE]\n\n"
 
         dispatch_resolution = RuntimeDispatchResolution(
@@ -526,15 +629,23 @@ class TestPhase1LiveCanon:
             gate_applied=False,
         )
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch.dict("os.environ", {"REDIS_URL": "redis://fake"}, clear=False), \
-             patch("redis.asyncio.Redis.from_url", return_value=fake_redis), \
-             patch("app.agent.api.loaders.save_governed_state_snapshot_async", AsyncMock(return_value=None)), \
-             patch("app.agent.runtime.conversation_runtime.stream_conversation", side_effect=_fake_stream_conv):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch.dict("os.environ", {"REDIS_URL": "redis://fake"}, clear=False), patch(
+            "redis.asyncio.Redis.from_url", return_value=fake_redis
+        ), patch(
+            "app.agent.api.loaders.save_governed_state_snapshot_async",
+            AsyncMock(return_value=None),
+        ), patch(
+            "app.agent.runtime.conversation_runtime.stream_conversation",
+            side_effect=_fake_stream_conv,
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
-                    _make_request(message="Ich korrigiere: Der Druck liegt bei 18 bar."),
+                    _make_request(
+                        message="Ich korrigiere: Der Druck liegt bei 18 bar."
+                    ),
                     current_user=_make_current_user(),
                 )
             )
@@ -550,7 +661,10 @@ class TestPhase1LiveCanon:
         persisted = GovernedSessionState.model_validate_json(
             fake_redis._store["governed_state:tenant-1:sess-1"]
         )
-        assert persisted.conversation_messages[-1].content == "Dann schaue ich auf Einbausituation und Druck."
+        assert (
+            persisted.conversation_messages[-1].content
+            == "Dann schaue ich auf Einbausituation und Druck."
+        )
         assert any("state_update" in frame for frame in frames)
 
     @pytest.mark.asyncio
@@ -567,8 +681,12 @@ class TestPhase1LiveCanon:
         fake_redis = _FakeRedis()
         governed_state = GovernedSessionState(
             conversation_messages=[
-                ConversationMessage(role="user", content="RWDR fuer HLP46 bei 80 Grad."),
-                ConversationMessage(role="assistant", content="EPDM ist ein Warnpunkt."),
+                ConversationMessage(
+                    role="user", content="RWDR fuer HLP46 bei 80 Grad."
+                ),
+                ConversationMessage(
+                    role="assistant", content="EPDM ist ein Warnpunkt."
+                ),
             ]
         )
         runtime_action = RuntimeAction(
@@ -596,12 +714,18 @@ class TestPhase1LiveCanon:
             "assistant_message": "PEEK ist steif und temperaturfest, aber kein Elastomer.",
         }
 
-        with patch("app.agent.api.routes.chat._resolve_runtime_dispatch", AsyncMock(return_value=dispatch_resolution)), \
-             patch("app.agent.api.routes.chat._build_active_case_side_payload", AsyncMock(return_value=payload)), \
-             patch.dict("os.environ", {"REDIS_URL": "redis://fake"}, clear=False), \
-             patch("redis.asyncio.Redis.from_url", return_value=fake_redis), \
-             patch("app.agent.api.loaders.save_governed_state_snapshot_async", AsyncMock(return_value=None)):
-
+        with patch(
+            "app.agent.api.routes.chat._resolve_runtime_dispatch",
+            AsyncMock(return_value=dispatch_resolution),
+        ), patch(
+            "app.agent.api.routes.chat._build_active_case_side_payload",
+            AsyncMock(return_value=payload),
+        ), patch.dict("os.environ", {"REDIS_URL": "redis://fake"}, clear=False), patch(
+            "redis.asyncio.Redis.from_url", return_value=fake_redis
+        ), patch(
+            "app.agent.api.loaders.save_governed_state_snapshot_async",
+            AsyncMock(return_value=None),
+        ):
             frames = await _collect_frames(
                 router_module.event_generator(
                     _make_request(message="Und wie ist PEEK einzuordnen?"),
@@ -612,7 +736,9 @@ class TestPhase1LiveCanon:
         persisted = GovernedSessionState.model_validate_json(
             fake_redis._store["governed_state:tenant-1:sess-1"]
         )
-        assert [message.content for message in persisted.conversation_messages[-2:]] == [
+        assert [
+            message.content for message in persisted.conversation_messages[-2:]
+        ] == [
             "Und wie ist PEEK einzuordnen?",
             "PEEK ist steif und temperaturfest, aber kein Elastomer.",
         ]
@@ -625,7 +751,11 @@ class TestPhase1LiveCanon:
         live_state = GovernedSessionState(
             analysis_cycle=2,
             conversation_messages=[
-                ConversationMessage(role="user", content="Medium ist Wasser", created_at="2026-04-02T00:00:00+00:00"),
+                ConversationMessage(
+                    role="user",
+                    content="Medium ist Wasser",
+                    created_at="2026-04-02T00:00:00+00:00",
+                ),
             ],
         )
         live_state.asserted.assertions["medium"] = AssertedClaim(
@@ -635,7 +765,10 @@ class TestPhase1LiveCanon:
         )
         live_state.governance.gov_class = "B"
 
-        with patch("app.agent.api.routes.workspace._load_guarded_workspace_projection_source", AsyncMock(return_value=live_state)):
+        with patch(
+            "app.agent.api.routes.workspace._load_guarded_workspace_projection_source",
+            AsyncMock(return_value=live_state),
+        ):
             projection = await workspace_routes.get_workspace_projection(
                 "sess-1",
                 revision=None,
@@ -647,13 +780,19 @@ class TestPhase1LiveCanon:
         assert projection.governance_status.release_status == "precheck_only"
 
     @pytest.mark.asyncio
-    async def test_workspace_projection_prefers_live_governed_state_over_postgres_snapshot(self):
+    async def test_workspace_projection_prefers_live_governed_state_over_postgres_snapshot(
+        self,
+    ):
         import app.agent.api.routes.workspace as workspace_routes
 
         live_state = GovernedSessionState(
             analysis_cycle=5,
             conversation_messages=[
-                ConversationMessage(role="user", content="Live Zustand", created_at="2026-04-02T00:00:00+00:00"),
+                ConversationMessage(
+                    role="user",
+                    content="Live Zustand",
+                    created_at="2026-04-02T00:00:00+00:00",
+                ),
             ],
         )
         live_state.asserted.assertions["medium"] = AssertedClaim(
@@ -665,7 +804,11 @@ class TestPhase1LiveCanon:
         snapshot_state = GovernedSessionState(
             analysis_cycle=3,
             conversation_messages=[
-                ConversationMessage(role="user", content="Persistierter Zustand", created_at="2026-04-01T00:00:00+00:00"),
+                ConversationMessage(
+                    role="user",
+                    content="Persistierter Zustand",
+                    created_at="2026-04-01T00:00:00+00:00",
+                ),
             ],
         )
         snapshot_state.asserted.assertions["medium"] = AssertedClaim(
@@ -674,8 +817,13 @@ class TestPhase1LiveCanon:
             confidence="confirmed",
         )
 
-        with patch("app.agent.api.routes.workspace._load_guarded_workspace_projection_source", AsyncMock(return_value=live_state)), \
-             patch("app.agent.api.routes.workspace._load_governed_state_snapshot_projection_source", AsyncMock(return_value=snapshot_state)):
+        with patch(
+            "app.agent.api.routes.workspace._load_guarded_workspace_projection_source",
+            AsyncMock(return_value=live_state),
+        ), patch(
+            "app.agent.api.routes.workspace._load_governed_state_snapshot_projection_source",
+            AsyncMock(return_value=snapshot_state),
+        ):
             projection = await workspace_routes.get_workspace_projection(
                 "sess-1",
                 revision=None,
@@ -684,7 +832,9 @@ class TestPhase1LiveCanon:
 
         assert projection.case_summary.thread_id == "sess-1"
         assert projection.cycle_info.state_revision == 5
-        assert "Medium: Wasser" in projection.communication_context.confirmed_facts_summary
+        assert (
+            "Medium: Wasser" in projection.communication_context.confirmed_facts_summary
+        )
 
     @pytest.mark.asyncio
     async def test_live_chat_history_prefers_governed_transcript(self):
@@ -692,14 +842,31 @@ class TestPhase1LiveCanon:
 
         live_state = GovernedSessionState(
             conversation_messages=[
-                ConversationMessage(role="user", content="Wir haben Leckage", created_at="2026-04-02T00:00:00+00:00"),
-                ConversationMessage(role="assistant", content="Wo genau?", created_at="2026-04-02T00:00:01+00:00"),
+                ConversationMessage(
+                    role="user",
+                    content="Wir haben Leckage",
+                    created_at="2026-04-02T00:00:00+00:00",
+                ),
+                ConversationMessage(
+                    role="assistant",
+                    content="Wo genau?",
+                    created_at="2026-04-02T00:00:01+00:00",
+                ),
             ]
         )
 
-        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=live_state)), \
-             patch("app.agent.api.routes.history.get_latest_governed_case_snapshot_async", AsyncMock(side_effect=AssertionError("snapshot should not be used"))), \
-             patch("app.agent.api.routes.history.load_structured_case", AsyncMock(side_effect=AssertionError("legacy canonical state should not be used"))):
+        with patch(
+            "app.agent.api.loaders._load_live_governed_state",
+            AsyncMock(return_value=live_state),
+        ), patch(
+            "app.agent.api.routes.history.get_latest_governed_case_snapshot_async",
+            AsyncMock(side_effect=AssertionError("snapshot should not be used")),
+        ), patch(
+            "app.agent.api.routes.history.load_structured_case",
+            AsyncMock(
+                side_effect=AssertionError("legacy canonical state should not be used")
+            ),
+        ):
             payload = await history_routes.get_live_chat_history(
                 "sess-1",
                 current_user=_make_current_user(),
@@ -709,19 +876,34 @@ class TestPhase1LiveCanon:
         assert payload[1].content == "Wo genau?"
 
     @pytest.mark.asyncio
-    async def test_live_chat_history_falls_back_to_postgres_governed_snapshot_before_structured_case(self):
+    async def test_live_chat_history_falls_back_to_postgres_governed_snapshot_before_structured_case(
+        self,
+    ):
         import app.agent.api.routes.history as history_routes
 
         snapshot_state = GovernedSessionState(
             conversation_messages=[
-                ConversationMessage(role="assistant", content="Persistierte Governed-Antwort", created_at="2026-04-02T00:00:01+00:00"),
+                ConversationMessage(
+                    role="assistant",
+                    content="Persistierte Governed-Antwort",
+                    created_at="2026-04-02T00:00:01+00:00",
+                ),
             ]
         )
 
-        snapshot = types.SimpleNamespace(state_json=snapshot_state.model_dump(mode="json"))
-        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=None)), \
-             patch("app.agent.api.routes.history.get_latest_governed_case_snapshot_async", AsyncMock(return_value=snapshot)), \
-             patch("app.agent.api.routes.history.load_structured_case", AsyncMock(side_effect=AssertionError("canonical state should not be used"))):
+        snapshot = types.SimpleNamespace(
+            state_json=snapshot_state.model_dump(mode="json")
+        )
+        with patch(
+            "app.agent.api.loaders._load_live_governed_state",
+            AsyncMock(return_value=None),
+        ), patch(
+            "app.agent.api.routes.history.get_latest_governed_case_snapshot_async",
+            AsyncMock(return_value=snapshot),
+        ), patch(
+            "app.agent.api.routes.history.load_structured_case",
+            AsyncMock(side_effect=AssertionError("canonical state should not be used")),
+        ):
             payload = await history_routes.get_live_chat_history(
                 "sess-pg",
                 current_user=_make_current_user(),
@@ -731,7 +913,9 @@ class TestPhase1LiveCanon:
         assert payload[0].content == "Persistierte Governed-Antwort"
 
     @pytest.mark.asyncio
-    async def test_live_chat_history_uses_structured_case_only_when_no_governed_source_exists(self):
+    async def test_live_chat_history_uses_structured_case_only_when_no_governed_source_exists(
+        self,
+    ):
         import app.agent.api.routes.history as history_routes
 
         canonical_state = {
@@ -740,9 +924,16 @@ class TestPhase1LiveCanon:
             ],
         }
 
-        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=None)), \
-             patch("app.agent.api.routes.history.get_latest_governed_case_snapshot_async", AsyncMock(return_value=None)), \
-             patch("app.agent.api.routes.history.load_structured_case", AsyncMock(return_value=canonical_state)):
+        with patch(
+            "app.agent.api.loaders._load_live_governed_state",
+            AsyncMock(return_value=None),
+        ), patch(
+            "app.agent.api.routes.history.get_latest_governed_case_snapshot_async",
+            AsyncMock(return_value=None),
+        ), patch(
+            "app.agent.api.routes.history.load_structured_case",
+            AsyncMock(return_value=canonical_state),
+        ):
             payload = await history_routes.get_live_chat_history(
                 "sess-legacy",
                 current_user=_make_current_user(),
@@ -775,8 +966,10 @@ class TestPhase1LiveCanon:
             },
         }
 
-        with patch("app.agent.api.loaders.load_structured_case", AsyncMock(return_value=canonical_state)), \
-             patch("app.agent.api.loaders._cache_loaded_state", MagicMock()):
+        with patch(
+            "app.agent.api.loaders.load_structured_case",
+            AsyncMock(return_value=canonical_state),
+        ), patch("app.agent.api.loaders._cache_loaded_state", MagicMock()):
             loaded = await loaders.load_structured_residual_state(
                 current_user=_make_current_user(),
                 session_id="sess-1",
@@ -807,7 +1000,10 @@ class TestPhase1LiveCanon:
         )
         governed_state.governance.gov_class = "B"
 
-        with patch("app.agent.api.routes.workspace._load_guarded_workspace_projection_source", AsyncMock(return_value=governed_state)):
+        with patch(
+            "app.agent.api.routes.workspace._load_guarded_workspace_projection_source",
+            AsyncMock(return_value=governed_state),
+        ):
             projection = await workspace_routes.get_workspace_projection(
                 "sess-pg",
                 revision=None,
@@ -816,7 +1012,9 @@ class TestPhase1LiveCanon:
 
         assert projection.case_summary.thread_id == "sess-pg"
         assert projection.cycle_info.state_revision == 4
-        assert "Medium: Wasser" in projection.communication_context.confirmed_facts_summary
+        assert (
+            "Medium: Wasser" in projection.communication_context.confirmed_facts_summary
+        )
 
     @pytest.mark.asyncio
     async def test_review_outcome_syncs_into_live_governed_state(self):
@@ -828,8 +1026,13 @@ class TestPhase1LiveCanon:
         async def _fake_persist(*, current_user, session_id, state):
             persisted["state"] = state
 
-        with patch("app.agent.api.loaders._load_live_governed_state", AsyncMock(return_value=governed_state)), \
-             patch("app.agent.api.loaders._persist_live_governed_state", AsyncMock(side_effect=_fake_persist)):
+        with patch(
+            "app.agent.api.loaders._load_live_governed_state",
+            AsyncMock(return_value=governed_state),
+        ), patch(
+            "app.agent.api.loaders._persist_live_governed_state",
+            AsyncMock(side_effect=_fake_persist),
+        ):
             await loaders._persist_review_outcome_to_live_governed_state(
                 current_user=_make_current_user(),
                 session_id="sess-1",
@@ -847,9 +1050,12 @@ class TestPhase1LiveCanon:
                 },
                 sealing_state={
                     "review": {"review_state": "approved"},
-                    "handover": {"is_handover_ready": True, "handover_status": "releasable"},
+                    "handover": {
+                        "is_handover_ready": True,
+                        "handover_status": "releasable",
+                    },
                 },
-        )
+            )
 
         assert persisted["state"].rfq.rfq_admissible is True
         assert persisted["state"].rfq.status == "releasable"
@@ -879,19 +1085,31 @@ class TestPhase1LiveCanon:
                     "selected_manufacturer_ref": {"manufacturer_name": "Acme"},
                 },
                 "recipient_selection": {
-                    "candidate_recipient_refs": [{"manufacturer_name": "Acme", "qualified_for_rfq": True}],
+                    "candidate_recipient_refs": [
+                        {"manufacturer_name": "Acme", "qualified_for_rfq": True}
+                    ],
                 },
                 "rfq_state": {
                     "rfq_object": {
                         "qualified_material_ids": ["ptfe::g25::acme"],
-                        "qualified_materials": [{"candidate_id": "ptfe::g25::acme", "manufacturer_name": "Acme"}],
-                        "confirmed_parameters": {"medium": "Dampf", "pressure_bar": 16.0},
+                        "qualified_materials": [
+                            {
+                                "candidate_id": "ptfe::g25::acme",
+                                "manufacturer_name": "Acme",
+                            }
+                        ],
+                        "confirmed_parameters": {
+                            "medium": "Dampf",
+                            "pressure_bar": 16.0,
+                        },
                         "dimensions": {},
                     },
                     "rfq_dispatch": {
                         "dispatch_ready": True,
                         "dispatch_status": "ready",
-                        "recipient_refs": [{"manufacturer_name": "Acme", "qualified_for_rfq": True}],
+                        "recipient_refs": [
+                            {"manufacturer_name": "Acme", "qualified_for_rfq": True}
+                        ],
                         "selected_manufacturer_ref": {"manufacturer_name": "Acme"},
                         "requirement_class": {"requirement_class_id": "PTFE10"},
                     },
@@ -970,8 +1188,10 @@ class TestExplorationReplyPromptRegistry:
         fake_openai = MagicMock()
         fake_openai.AsyncOpenAI.return_value = fake_client
 
-        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
-             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+        with patch(
+            "app.agent.api.streaming._retrieve_for_exploration_query",
+            AsyncMock(return_value=[]),
+        ), patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
             frames = await _collect_frames(
                 _stream_exploration_reply(
                     "Vergleiche PTFE und FKM fuer Salzwasser.",
@@ -980,13 +1200,20 @@ class TestExplorationReplyPromptRegistry:
             )
 
         assert frames[-1] == "data: [DONE]\n\n"
-        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
-        text_chunks = [payload["text"] for payload in payloads if payload.get("type") == "text_chunk"]
+        payloads = [
+            json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")
+        ]
+        text_chunks = [
+            payload["text"]
+            for payload in payloads
+            if payload.get("type") == "text_chunk"
+        ]
         assert text_chunks[:2] == ["PTFE ", "und FKM."]
-        state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
+        state_update = next(
+            payload for payload in payloads if payload.get("type") == "state_update"
+        )
         assert "PTFE" in state_update["reply"]
         assert fake_client.chat.completions.create.call_args.kwargs["model"]
-
 
     @pytest.mark.asyncio
     async def test_exploration_reply_buffers_and_guards_unsafe_model_text(self):
@@ -995,13 +1222,17 @@ class TestExplorationReplyPromptRegistry:
 
         fake_client = MagicMock()
         fake_client.chat.completions.create = AsyncMock(
-            return_value=_FakeExplorationStream(["PTFE ist geeignet und ideal fuer diesen Fall."])
+            return_value=_FakeExplorationStream(
+                ["PTFE ist geeignet und ideal fuer diesen Fall."]
+            )
         )
         fake_openai = MagicMock()
         fake_openai.AsyncOpenAI.return_value = fake_client
 
-        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
-             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+        with patch(
+            "app.agent.api.streaming._retrieve_for_exploration_query",
+            AsyncMock(return_value=[]),
+        ), patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
             frames = await _collect_frames(
                 _stream_exploration_reply(
                     "Vergleiche PTFE und FKM fuer Salzwasser.",
@@ -1009,8 +1240,14 @@ class TestExplorationReplyPromptRegistry:
                 )
             )
 
-        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
-        text_chunks = [payload["text"] for payload in payloads if payload.get("type") == "text_chunk"]
+        payloads = [
+            json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")
+        ]
+        text_chunks = [
+            payload["text"]
+            for payload in payloads
+            if payload.get("type") == "text_chunk"
+        ]
         assert "".join(text_chunks) == FAST_PATH_GUARD_FALLBACK
         assert all("geeignet" not in chunk.lower() for chunk in text_chunks)
         assert any(payload.get("type") == "turn_complete" for payload in payloads)
@@ -1035,8 +1272,10 @@ class TestExplorationReplyPromptRegistry:
         fake_openai = MagicMock()
         fake_openai.AsyncOpenAI.return_value = fake_client
 
-        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
-             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+        with patch(
+            "app.agent.api.streaming._retrieve_for_exploration_query",
+            AsyncMock(return_value=[]),
+        ), patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
             frames = await _collect_frames(
                 _stream_exploration_reply(
                     "Welche Werkstoffe passen fuer Salzwasser?",
@@ -1044,7 +1283,9 @@ class TestExplorationReplyPromptRegistry:
                 )
             )
 
-        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
+        payloads = [
+            json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")
+        ]
         state_update = next(p for p in payloads if p.get("type") == "state_update")
         # ENFORCED: the final emitted answer is the safe fallback, not the leak.
         assert "geeignet" not in state_update["answer_markdown"].lower()
@@ -1057,12 +1298,16 @@ class TestExplorationReplyPromptRegistry:
         from app.agent.api.streaming import _stream_exploration_reply
 
         fake_client = MagicMock()
-        fake_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("model unavailable"))
+        fake_client.chat.completions.create = AsyncMock(
+            side_effect=RuntimeError("model unavailable")
+        )
         fake_openai = MagicMock()
         fake_openai.AsyncOpenAI.return_value = fake_client
 
-        with patch("app.agent.api.streaming._retrieve_for_exploration_query", AsyncMock(return_value=[])), \
-             patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
+        with patch(
+            "app.agent.api.streaming._retrieve_for_exploration_query",
+            AsyncMock(return_value=[]),
+        ), patch("openai.AsyncOpenAI", fake_openai.AsyncOpenAI):
             frames = await _collect_frames(
                 _stream_exploration_reply(
                     "Vergleiche PTFE und FKM.",
@@ -1071,5 +1316,7 @@ class TestExplorationReplyPromptRegistry:
             )
 
         assert frames[-1] == "data: [DONE]\n\n"
-        payloads = [json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")]
+        payloads = [
+            json.loads(frame[6:]) for frame in frames if frame.startswith("data: {")
+        ]
         assert any(payload.get("type") == "error" for payload in payloads)

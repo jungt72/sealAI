@@ -1,4 +1,5 @@
 """Tests for H2: Redis-based rate limiting on the RAG upload endpoint."""
+
 from __future__ import annotations
 
 import time
@@ -11,13 +12,14 @@ import pytest
 # _check_upload_rate_limit unit tests (no real Redis needed)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_rate_limit_allows_under_limit():
     """First N requests within the window must pass without raising."""
     from app.api.v1.endpoints.rag import _check_upload_rate_limit
 
     mock_redis_instance = AsyncMock()
-    mock_redis_instance.incr = AsyncMock(return_value=5)   # 5th request, limit=20
+    mock_redis_instance.incr = AsyncMock(return_value=5)  # 5th request, limit=20
     mock_redis_instance.expire = AsyncMock(return_value=True)
     mock_redis_instance.__aenter__ = AsyncMock(return_value=mock_redis_instance)
     mock_redis_instance.__aexit__ = AsyncMock(return_value=False)
@@ -76,7 +78,9 @@ async def test_rate_limit_fail_open_on_redis_error():
     from app.api.v1.endpoints.rag import _check_upload_rate_limit
 
     mock_redis_class = MagicMock()
-    mock_redis_class.from_url = MagicMock(side_effect=ConnectionRefusedError("redis down"))
+    mock_redis_class.from_url = MagicMock(
+        side_effect=ConnectionRefusedError("redis down")
+    )
 
     with (
         patch("app.api.v1.endpoints.rag.settings") as mock_settings,
@@ -169,6 +173,7 @@ async def test_rate_limit_different_tenants_independent():
 # ---------------------------------------------------------------------------
 # Config: rate_limit_upload / rate_limit_window_s exposed in settings
 # ---------------------------------------------------------------------------
+
 
 def test_config_has_rate_limit_upload_field():
     import importlib

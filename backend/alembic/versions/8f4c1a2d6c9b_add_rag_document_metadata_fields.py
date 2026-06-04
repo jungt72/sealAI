@@ -17,7 +17,9 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column("rag_documents", sa.Column("filename", sa.String(), nullable=True))
-    op.add_column("rag_documents", sa.Column("content_type", sa.String(), nullable=True))
+    op.add_column(
+        "rag_documents", sa.Column("content_type", sa.String(), nullable=True)
+    )
     op.add_column("rag_documents", sa.Column("size_bytes", sa.Integer(), nullable=True))
 
 

@@ -25,7 +25,9 @@ def test_tenant_columns_are_not_nullable_at_head(test_db_engine_at_head):
     inspector = inspect(test_db_engine_at_head)
 
     for table_name in ("cases", "mutation_events", "outbox"):
-        columns = {column["name"]: column for column in inspector.get_columns(table_name)}
+        columns = {
+            column["name"]: column for column in inspector.get_columns(table_name)
+        }
         assert columns["tenant_id"]["nullable"] is False
 
 
@@ -144,9 +146,10 @@ def test_valid_tenant_based_writes_still_succeed(test_db_engine_at_head):
             )
         )
 
-        counts = conn.execute(
-            text(
-                """
+        counts = (
+            conn.execute(
+                text(
+                    """
                 SELECT
                     (SELECT COUNT(*) FROM cases WHERE id = 'case-valid-tenant-1.7')
                     AS cases_count,
@@ -155,8 +158,11 @@ def test_valid_tenant_based_writes_still_succeed(test_db_engine_at_head):
                     (SELECT COUNT(*) FROM outbox
                      WHERE outbox_id = 'obx-valid-tenant-1.7') AS outbox_count
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     assert counts == {
         "cases_count": 1,

@@ -15,7 +15,9 @@ from app.agent.graph.nodes.output_contract_node import output_contract_node
 
 async def _run_governed_turn(message: str) -> GraphState:
     state = GraphState(pending_message=message)
-    with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+    with patch(
+        "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+    ):
         state = await intake_observe_node(state)
     state = await normalize_node(state)
     state = await assert_node(state)
@@ -39,7 +41,9 @@ async def test_gleitring_salzwasser_turn_does_not_jump_to_preselection() -> None
 
 
 @pytest.mark.asyncio
-async def test_chemical_pump_captures_duty_profile_but_blocks_on_missing_sealing_type() -> None:
+async def test_chemical_pump_captures_duty_profile_but_blocks_on_missing_sealing_type() -> (
+    None
+):
     state = await _run_governed_turn(
         "Dichtung fuer chemische Pumpe, 10 bar, 90°C, Medium Salzsaeure, Betrieb 24/7."
     )
@@ -53,7 +57,9 @@ async def test_chemical_pump_captures_duty_profile_but_blocks_on_missing_sealing
 
 
 @pytest.mark.asyncio
-async def test_rwdr_turn_tracks_contamination_and_duty_without_preselection_overclaim() -> None:
+async def test_rwdr_turn_tracks_contamination_and_duty_without_preselection_overclaim() -> (
+    None
+):
     state = await _run_governed_turn(
         "RWDR fuer 40 mm Welle, Oel, 3 bar, gelegentlicher Betrieb, etwas Schmutz."
     )
@@ -68,8 +74,12 @@ async def test_rwdr_turn_tracks_contamination_and_duty_without_preselection_over
 
 
 @pytest.mark.asyncio
-async def test_food_industry_turn_tracks_industry_and_avoids_false_preselection() -> None:
-    state = await _run_governed_turn("Welche Dichtung eignet sich fuer Lebensmittelbereich bei 120°C?")
+async def test_food_industry_turn_tracks_industry_and_avoids_false_preselection() -> (
+    None
+):
+    state = await _run_governed_turn(
+        "Welche Dichtung eignet sich fuer Lebensmittelbereich bei 120°C?"
+    )
 
     assert state.normalized.parameters["industry"].value == "food_pharma"
     assert "industry" not in state.asserted.assertions

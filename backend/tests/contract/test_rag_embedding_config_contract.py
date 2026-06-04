@@ -11,8 +11,12 @@ def _set_minimal_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("postgres_host", "localhost")
     monkeypatch.setenv("postgres_port", "5432")
     monkeypatch.setenv("postgres_db", "test")
-    monkeypatch.setenv("database_url", "postgresql+psycopg://test:test@localhost:5432/test")
-    monkeypatch.setenv("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/test")
+    monkeypatch.setenv(
+        "database_url", "postgresql+psycopg://test:test@localhost:5432/test"
+    )
+    monkeypatch.setenv(
+        "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/test"
+    )
     monkeypatch.setenv("openai_api_key", "dummy")
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
     monkeypatch.setenv("qdrant_url", "http://localhost:6333")
@@ -21,13 +25,18 @@ def _set_minimal_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("nextauth_url", "http://localhost:3000")
     monkeypatch.setenv("nextauth_secret", "dummy")
     monkeypatch.setenv("keycloak_issuer", "http://localhost:8080/realms/test")
-    monkeypatch.setenv("keycloak_jwks_url", "http://localhost:8080/realms/test/protocol/openid-connect/certs")
+    monkeypatch.setenv(
+        "keycloak_jwks_url",
+        "http://localhost:8080/realms/test/protocol/openid-connect/certs",
+    )
     monkeypatch.setenv("keycloak_client_id", "dummy")
     monkeypatch.setenv("keycloak_client_secret", "dummy")
     monkeypatch.setenv("keycloak_expected_azp", "dummy")
 
 
-def test_resolve_embedding_model_uses_canonical_dense_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_embedding_model_uses_canonical_dense_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _set_minimal_settings_env(monkeypatch)
     model_name = "jinaai/jina-embeddings-v2-base-de"
     monkeypatch.setenv("RAG_DENSE_MODEL", model_name)
@@ -42,7 +51,9 @@ def test_resolve_embedding_model_uses_canonical_dense_env(monkeypatch: pytest.Mo
     assert dim == 768
 
 
-def test_resolve_embedding_config_probes_and_caches_dimension(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_embedding_config_probes_and_caches_dimension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _set_minimal_settings_env(monkeypatch)
     monkeypatch.setenv("RAG_DENSE_MODEL", "BAAI/bge-base-en-v1.5")
 

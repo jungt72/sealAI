@@ -64,7 +64,9 @@ def _qualified_state() -> GraphState:
         asserted=asserted,
         governance=governance.model_copy(
             update={
-                "validity_limits": ["Herstellervalidierung für finale Werkstofffreigabe erforderlich."],
+                "validity_limits": [
+                    "Herstellervalidierung für finale Werkstofffreigabe erforderlich."
+                ],
                 "open_validation_points": [],
             }
         ),
@@ -79,9 +81,13 @@ def _qualified_state() -> GraphState:
             rfq_ready=True,
             rfq_admissible=True,
             selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-            recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+            recipient_refs=[
+                RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+            ],
             qualified_material_ids=["registry-ptfe-g25-acme"],
-            qualified_materials=[{"material_family": "PTFE", "grade_name": "PTFE virgin"}],
+            qualified_materials=[
+                {"material_family": "PTFE", "grade_name": "PTFE virgin"}
+            ],
             confirmed_parameters={"medium": "Wasser"},
             dimensions={"dn_mm": 50.0},
             requirement_class=requirement_class,
@@ -90,14 +96,18 @@ def _qualified_state() -> GraphState:
             dispatch_ready=True,
             dispatch_status="envelope_ready",
             selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-            recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+            recipient_refs=[
+                RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+            ],
             requirement_class=requirement_class,
             transport_channel="internal_transport_envelope",
         ),
     )
 
 
-def _with_asserted_value(state: GraphState, field_name: str, value: object) -> GraphState:
+def _with_asserted_value(
+    state: GraphState, field_name: str, value: object
+) -> GraphState:
     return state.model_copy(
         update={
             "asserted": state.asserted.model_copy(
@@ -125,14 +135,19 @@ class TestNormNode:
         assert result.sealai_norm.identity.norm_version == "sealai_norm_v1"
         assert result.sealai_norm.identity.requirement_class_id == "PTFE10"
         assert result.sealai_norm.identity.engineering_path is None
-        assert result.sealai_norm.identity.sealai_request_id == "sealai-phaseh-norm-node-001"
+        assert (
+            result.sealai_norm.identity.sealai_request_id
+            == "sealai-phaseh-norm-node-001"
+        )
         assert result.sealai_norm.material.material_family == "PTFE"
         assert result.sealai_norm.material.sealing_material_family is None
         assert result.sealai_norm.manufacturer_validation_required is False
 
     @pytest.mark.asyncio
     async def test_authority_engineering_path_is_populated_when_explicit(self):
-        result = await norm_node(_with_asserted_value(_qualified_state(), "engineering_path", "rwdr"))
+        result = await norm_node(
+            _with_asserted_value(_qualified_state(), "engineering_path", "rwdr")
+        )
 
         assert result.sealai_norm.identity.engineering_path == "rwdr"
 
@@ -148,7 +163,9 @@ class TestNormNode:
 
     @pytest.mark.asyncio
     async def test_unknown_engineering_path_does_not_populate_identity(self):
-        result = await norm_node(_with_asserted_value(_qualified_state(), "engineering_path", "rotary"))
+        result = await norm_node(
+            _with_asserted_value(_qualified_state(), "engineering_path", "rotary")
+        )
 
         assert result.sealai_norm.identity.engineering_path is None
 
@@ -161,7 +178,9 @@ class TestNormNode:
         state = state.model_copy(
             update={
                 "asserted": state.asserted.model_copy(
-                    update={"assertions": {**state.asserted.assertions, "material": claim}}
+                    update={
+                        "assertions": {**state.asserted.assertions, "material": claim}
+                    }
                 ),
                 "rfq": state.rfq.model_copy(update={"qualified_materials": []}),
             }
@@ -170,19 +189,25 @@ class TestNormNode:
         result = await norm_node(state)
 
         assert result.sealai_norm.material.material_family == "ptfe_glass_filled"
-        assert result.sealai_norm.material.sealing_material_family == "ptfe_glass_filled"
+        assert (
+            result.sealai_norm.material.sealing_material_family == "ptfe_glass_filled"
+        )
 
     @pytest.mark.asyncio
     async def test_incomplete_case_produces_valid_partial_norm(self):
-        observed = ObservedState().with_extraction(
-            ObservedExtraction(
-                field_name="medium",
-                raw_value="Wasser",
-                confidence=1.0,
-                turn_index=0,
+        observed = (
+            ObservedState()
+            .with_extraction(
+                ObservedExtraction(
+                    field_name="medium",
+                    raw_value="Wasser",
+                    confidence=1.0,
+                    turn_index=0,
+                )
             )
-        ).with_override(
-            UserOverride(field_name="medium", override_value="Wasser", turn_index=0)
+            .with_override(
+                UserOverride(field_name="medium", override_value="Wasser", turn_index=0)
+            )
         )
         normalized = reduce_observed_to_normalized(observed)
         asserted = reduce_normalized_to_asserted(normalized)
@@ -191,7 +216,9 @@ class TestNormNode:
             observed=observed,
             normalized=normalized,
             asserted=asserted,
-            governance=reduce_asserted_to_governance(asserted).model_copy(update={"gov_class": "B"}),
+            governance=reduce_asserted_to_governance(asserted).model_copy(
+                update={"gov_class": "B"}
+            ),
         )
 
         result = await norm_node(state)
@@ -225,7 +252,9 @@ class TestNormNode:
                     )
                 ]
 
-        monkeypatch.setattr("app.agent.graph.nodes.norm_node.build_default_registry", lambda: Registry())
+        monkeypatch.setattr(
+            "app.agent.graph.nodes.norm_node.build_default_registry", lambda: Registry()
+        )
 
         state = _with_asserted_value(_qualified_state(), "engineering_path", "rwdr")
         result = await norm_node(state)
@@ -237,14 +266,21 @@ class TestNormNode:
 
     @pytest.mark.asyncio
     async def test_din_module_missing_fields_surface_as_validation_points(self):
-        result = await norm_node(_with_asserted_value(_qualified_state(), "engineering_path", "rwdr"))
+        result = await norm_node(
+            _with_asserted_value(_qualified_state(), "engineering_path", "rwdr")
+        )
 
         din_check = next(
-            check for check in result.sealai_norm.norm_checks if check["module_id"] == "norm_din_3760_iso_6194"
+            check
+            for check in result.sealai_norm.norm_checks
+            if check["module_id"] == "norm_din_3760_iso_6194"
         )
         assert din_check["status"] == "insufficient_data"
         assert "shaft_diameter_mm" in din_check["missing_required_fields"]
-        assert "norm_din_3760_iso_6194:shaft_diameter_mm" in result.sealai_norm.open_validation_points
+        assert (
+            "norm_din_3760_iso_6194:shaft_diameter_mm"
+            in result.sealai_norm.open_validation_points
+        )
         assert result.sealai_norm.manufacturer_validation_required is True
 
     @pytest.mark.asyncio
@@ -262,8 +298,16 @@ class TestNormNode:
         result = await norm_node(state)
 
         din_check = next(
-            check for check in result.sealai_norm.norm_checks if check["module_id"] == "norm_din_3760_iso_6194"
+            check
+            for check in result.sealai_norm.norm_checks
+            if check["module_id"] == "norm_din_3760_iso_6194"
         )
         assert din_check["status"] == "review_required"
-        assert din_check["escalation"] == EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW.value
-        assert "norm_din_3760_iso_6194:manufacturer_review_required" in result.sealai_norm.open_validation_points
+        assert (
+            din_check["escalation"]
+            == EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW.value
+        )
+        assert (
+            "norm_din_3760_iso_6194:manufacturer_review_required"
+            in result.sealai_norm.open_validation_points
+        )

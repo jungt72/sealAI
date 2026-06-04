@@ -6,14 +6,18 @@ from app.agent.communication.knowledge_context_builder import KnowledgeContextBu
 from app.services.knowledge_case_bridge_service import KnowledgeConversationTurn
 
 
-def test_context_builder_basic_adds_deterministic_evidence_without_structured_sources() -> None:
+def test_context_builder_basic_adds_deterministic_evidence_without_structured_sources() -> (
+    None
+):
     context = KnowledgeContextBuilder().build(
         user_message="Was ist FKM?",
         deterministic_answer="FKM ist eine Fluorelastomer-Werkstofffamilie.",
     )
 
     assert context.user_message == "Was ist FKM?"
-    assert context.deterministic_answer == "FKM ist eine Fluorelastomer-Werkstofffamilie."
+    assert (
+        context.deterministic_answer == "FKM ist eine Fluorelastomer-Werkstofffamilie."
+    )
     assert context.no_case is True
     assert context.evidence_items
     assert context.evidence_items[0].source_type == "deterministic"
@@ -22,7 +26,9 @@ def test_context_builder_basic_adds_deterministic_evidence_without_structured_so
 def test_context_builder_bounds_history_and_keeps_only_visible_turns() -> None:
     raw_history = [
         KnowledgeConversationTurn(role="user", content="Was ist PTFE?"),
-        KnowledgeConversationTurn(role="assistant", content="PTFE ist ein Fluorpolymer."),
+        KnowledgeConversationTurn(
+            role="assistant", content="PTFE ist ein Fluorpolymer."
+        ),
         {"role": "system", "content": "internal instruction"},
         {"role": "tool", "content": "internal tool output"},
         {"role": "user", "content": "Und FKM?"},
@@ -103,9 +109,13 @@ def test_context_builder_resolves_anaphoric_comparison_subjects_from_answer() ->
         deterministic_answer="## Werkstoffvergleich: PTFE vs PEEK\n\nPTFE und PEEK sind Konstruktionswerkstoffe.",
         recent_history=(
             KnowledgeConversationTurn(role="user", content="Infos zu PTFE"),
-            KnowledgeConversationTurn(role="assistant", content="PTFE ist ein Fluorpolymer."),
+            KnowledgeConversationTurn(
+                role="assistant", content="PTFE ist ein Fluorpolymer."
+            ),
             KnowledgeConversationTurn(role="user", content="und auch über PEEK"),
-            KnowledgeConversationTurn(role="assistant", content="PEEK ist ein Hochleistungsthermoplast."),
+            KnowledgeConversationTurn(
+                role="assistant", content="PEEK ist ein Hochleistungsthermoplast."
+            ),
         ),
     )
 
@@ -118,7 +128,9 @@ def test_context_builder_can_keep_complete_case_side_history() -> None:
         for index in range(8)
     ]
 
-    context = KnowledgeContextBuilder(history_limit=None, history_char_limit=None).build(
+    context = KnowledgeContextBuilder(
+        history_limit=None, history_char_limit=None
+    ).build(
         user_message="Was bedeutet das fuer FKM?",
         deterministic_answer="Deterministische Antwort.",
         recent_history=raw_history,
@@ -211,9 +223,10 @@ def test_context_builder_prefers_explicit_evidence_priority_and_dedupes() -> Non
     ]
     assert context.evidence_items[0].title == "FKM Grundlagen"
     assert context.evidence_items[1].source_name == "Curated source"
-    assert sum(
-        1 for item in context.evidence_items if item.content == deterministic_text
-    ) == 1
+    assert (
+        sum(1 for item in context.evidence_items if item.content == deterministic_text)
+        == 1
+    )
 
 
 def test_context_builder_marks_regulatory_currentness_limitation_for_pfas() -> None:

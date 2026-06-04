@@ -200,7 +200,9 @@ def build_challenge_context(
     )
     manufacturer_review_needs = tuple(
         str(item).strip()
-        for item in _as_sequence(decision_understanding.get("manufacturer_review_needs"))
+        for item in _as_sequence(
+            decision_understanding.get("manufacturer_review_needs")
+        )
         if str(item).strip()
     )
     blockers = tuple(str(item).strip() for item in open_points if str(item).strip())
@@ -380,9 +382,7 @@ def build_v91_rfq_projection(
         },
         "question_plan": question_plan,
         "technical_field_statuses": field_statuses,
-        "challenge_findings": tuple(
-            _as_sequence(challenge_context.get("findings"))
-        ),
+        "challenge_findings": tuple(_as_sequence(challenge_context.get("findings"))),
         "material_candidates_for_review": tuple(material_candidates),
         "open_blockers": open_points,
         "manufacturer_review_points": tuple(
@@ -425,7 +425,9 @@ def build_v92_rfq_dossier(
                 "evidence_refs": tuple(_as_sequence(field.get("evidence_refs"))),
             }
         )
-        if str(field.get("provenance") or "") == "calculated" or name.startswith("calculated_"):
+        if str(field.get("provenance") or "") == "calculated" or name.startswith(
+            "calculated_"
+        ):
             calculations.append({**item, "claim_level": "L2_screening"})
         else:
             facts.append(item)
@@ -493,7 +495,9 @@ def build_v92_rfq_dossier(
         ),
         "decision_summary": _drop_empty(
             {
-                "risk_count": len(_as_sequence(decision_understanding.get("key_risks"))),
+                "risk_count": len(
+                    _as_sequence(decision_understanding.get("key_risks"))
+                ),
                 "plausible_direction_count": len(
                     _as_sequence(decision_understanding.get("plausible_directions"))
                 ),
@@ -523,17 +527,24 @@ class RfqPreviewService:
         created_by: str,
         expected_case_revision: int | None = None,
     ) -> RfqPreviewView:
-        case_row = await self._load_owned_case(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
+        case_row = await self._load_owned_case(
+            case_id=case_id, tenant_id=tenant_id, user_id=user_id
+        )
         snapshot = await self._latest_snapshot(case_id=case_id)
         if case_row is None or snapshot is None:
             raise RfqPreviewNotFound("case not found")
 
         revision = int(case_row.case_revision or snapshot.revision or 0)
-        if expected_case_revision is not None and int(expected_case_revision) != revision:
+        if (
+            expected_case_revision is not None
+            and int(expected_case_revision) != revision
+        ):
             raise RfqPreviewStaleError(
                 "case revision changed; refresh the case before creating an RFQ preview"
             )
-        existing = await self._load_preview(case_id=case_id, tenant_id=tenant_id, case_revision=revision)
+        existing = await self._load_preview(
+            case_id=case_id, tenant_id=tenant_id, case_revision=revision
+        )
         if existing is not None:
             return _view(existing, current_case_revision=revision)
 
@@ -566,7 +577,9 @@ class RfqPreviewService:
         tenant_id: str,
         user_id: str,
     ) -> RfqPreviewView:
-        case_row = await self._load_owned_case(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
+        case_row = await self._load_owned_case(
+            case_id=case_id, tenant_id=tenant_id, user_id=user_id
+        )
         if case_row is None:
             raise RfqPreviewNotFound("case not found")
         result = await self._session.execute(
@@ -741,9 +754,7 @@ def build_rfq_preview_payload(
         _technical_field_status_from_envelope(field)
         for field in technical_field_envelopes
     )
-    technical_field_groups = group_technical_field_envelopes(
-        technical_field_envelopes
-    )
+    technical_field_groups = group_technical_field_envelopes(technical_field_envelopes)
     confirmation_required_fields = tuple(
         field["field"]
         for field in technical_field_envelopes
@@ -1042,7 +1053,9 @@ def collect_open_points(state: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(candidates[:24])
 
 
-def collect_technical_field_statuses(state: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+def collect_technical_field_statuses(
+    state: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
     return tuple(
         _technical_field_status_from_envelope(field)
         for field in _collect_state_field_envelopes(state)
@@ -1166,7 +1179,9 @@ def group_technical_field_envelopes(
     )
 
 
-def _collect_state_field_envelopes(state: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+def _collect_state_field_envelopes(
+    state: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
     statuses: list[dict[str, Any]] = []
     seen: set[str] = set()
     for mapping in _walk_mappings(state):
@@ -1328,12 +1343,8 @@ def normalize_consent_scope(
     user_acknowledged_no_final_release = bool(
         scope.get("user_acknowledged_no_final_release")
     )
-    user_acknowledged_open_points = bool(
-        scope.get("user_acknowledged_open_points")
-    )
-    user_acknowledged_export_intent = bool(
-        scope.get("user_acknowledged_export_intent")
-    )
+    user_acknowledged_open_points = bool(scope.get("user_acknowledged_open_points"))
+    user_acknowledged_export_intent = bool(scope.get("user_acknowledged_export_intent"))
     if not user_acknowledged_no_final_release:
         raise RfqPreviewError(
             "user_acknowledged_no_final_release is required for RFQ preview consent"
@@ -1384,17 +1395,23 @@ def _require_dispatch_disabled(
     meta = _object_mapping(payload.get("meta"))
     rfq_preview = _object_mapping(payload.get("rfq_preview"))
     if bool(row.dispatch_enabled):
-        raise RfqExportBlockedError("RFQ dispatch must remain disabled for manual export")
+        raise RfqExportBlockedError(
+            "RFQ dispatch must remain disabled for manual export"
+        )
     if any(
         bool(mapping.get("dispatch_enabled"))
         for mapping in (consent_boundary, meta, rfq_preview)
     ):
-        raise RfqExportBlockedError("RFQ dispatch must remain disabled for manual export")
+        raise RfqExportBlockedError(
+            "RFQ dispatch must remain disabled for manual export"
+        )
     if any(
         bool(mapping.get("automatic_dispatch_allowed"))
         for mapping in (consent_boundary, meta, rfq_preview)
     ):
-        raise RfqExportBlockedError("automatic dispatch is not allowed for manual export")
+        raise RfqExportBlockedError(
+            "automatic dispatch is not allowed for manual export"
+        )
 
 
 def _allowlisted_export_sections(
@@ -1509,15 +1526,12 @@ def _risks_for_export(
     payload: Mapping[str, Any],
 ) -> tuple[Any, ...]:
     decision = _object_mapping(payload.get("decision_understanding"))
-    return (
-        tuple(
-            content
-            for section in sections
-            if "Risiken" in str(section.get("title") or "")
-            for content in _flatten_text_items(section.get("content"))
-        )
-        + _as_sequence(decision.get("key_risks"))
-    )
+    return tuple(
+        content
+        for section in sections
+        if "Risiken" in str(section.get("title") or "")
+        for content in _flatten_text_items(section.get("content"))
+    ) + _as_sequence(decision.get("key_risks"))
 
 
 def _manufacturer_review_notes_for_export(
@@ -1525,15 +1539,12 @@ def _manufacturer_review_notes_for_export(
     payload: Mapping[str, Any],
 ) -> tuple[Any, ...]:
     decision = _object_mapping(payload.get("decision_understanding"))
-    return (
-        tuple(
-            content
-            for section in sections
-            if "Fragen an den Hersteller" in str(section.get("title") or "")
-            for content in _flatten_text_items(section.get("content"))
-        )
-        + _as_sequence(decision.get("manufacturer_review_needs"))
-    )
+    return tuple(
+        content
+        for section in sections
+        if "Fragen an den Hersteller" in str(section.get("title") or "")
+        for content in _flatten_text_items(section.get("content"))
+    ) + _as_sequence(decision.get("manufacturer_review_needs"))
 
 
 def _allowlisted_v91_rfq_projection(value: Any) -> dict[str, Any]:
@@ -1629,9 +1640,7 @@ def _allowlisted_technical_rwdr_rfq_brief(value: Any) -> dict[str, Any]:
             "canonical_case": _drop_empty(
                 {
                     "case_id": _safe_text(canonical_case.get("case_id")),
-                    "case_revision": _optional_int(
-                        canonical_case.get("case_revision")
-                    ),
+                    "case_revision": _optional_int(canonical_case.get("case_revision")),
                     "scope": _safe_text(canonical_case.get("scope")),
                     "missing_required_semantics": _allowlisted_text_sequence(
                         canonical_case.get("missing_required_semantics")
@@ -2207,11 +2216,7 @@ def _harden_rfq_payload_contract(
 
 
 def _text_tuple(value: Any) -> tuple[str, ...]:
-    return tuple(
-        str(item).strip()
-        for item in _as_sequence(value)
-        if str(item).strip()
-    )
+    return tuple(str(item).strip() for item in _as_sequence(value) if str(item).strip())
 
 
 def _optional_int(value: Any) -> int | None:
@@ -2266,5 +2271,9 @@ def _drop_empty(mapping: Mapping[str, Any]) -> dict[str, Any]:
     return {
         str(key): value
         for key, value in mapping.items()
-        if value is not None and value != "" and value != () and value != [] and value != {}
+        if value is not None
+        and value != ""
+        and value != ()
+        and value != []
+        and value != {}
     }

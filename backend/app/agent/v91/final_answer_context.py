@@ -143,7 +143,8 @@ def _build_communication_plan(
     if is_boundary:
         response_moves.append(ResponseMove.BOUNDARY)
         if any(
-            getattr(flag.type, "value", flag.type) == RedFlagType.COMPLIANCE_OR_CERTIFICATION.value
+            getattr(flag.type, "value", flag.type)
+            == RedFlagType.COMPLIANCE_OR_CERTIFICATION.value
             for flag in freedom.red_flags
         ):
             response_moves.append(ResponseMove.ESCALATE)
@@ -195,7 +196,9 @@ def _build_communication_plan(
             "unplanned_question_chain",
         ],
         forbidden_claims=freedom.forbidden_actions,
-        allowed_claim_level="planned_next_question" if asks_question else "confirmed_case_fact_summary",
+        allowed_claim_level="planned_next_question"
+        if asks_question
+        else "confirmed_case_fact_summary",
     )
 
 
@@ -297,7 +300,9 @@ def _collect_evidence_ref_ids(state: Any, governed_context: Any) -> list[str]:
     for item in list(getattr(state, "rag_evidence", []) or []):
         if not isinstance(item, dict):
             continue
-        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        metadata = (
+            item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        )
         for key in ("evidence_ref_id", "chunk_id", "document_id", "source_id", "id"):
             value = item.get(key) or metadata.get(key)
             if value:
@@ -314,7 +319,9 @@ def _collect_risk_claims(state: Any) -> list[dict[str, Any]]:
     claims: list[dict[str, Any]] = []
     for owner in ("engineering", "challenge"):
         source = getattr(state, owner, None)
-        for item in list(getattr(source, "risk_findings", []) or []) + list(getattr(source, "findings", []) or []):
+        for item in list(getattr(source, "risk_findings", []) or []) + list(
+            getattr(source, "findings", []) or []
+        ):
             if hasattr(item, "model_dump"):
                 payload = item.model_dump(mode="json")
             elif isinstance(item, dict):

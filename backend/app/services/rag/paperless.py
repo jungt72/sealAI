@@ -13,7 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.redaction import safe_error_message
 
-from app.agent.rag.paperless_tags import augment_paperless_tags_for_rag, evaluate_paperless_tag_readiness
+from app.agent.rag.paperless_tags import (
+    augment_paperless_tags_for_rag,
+    evaluate_paperless_tag_readiness,
+)
 from app.core.config import settings
 from app.models.rag_document import RagDocument
 from app.observability.metrics import track_rag_sync
@@ -62,20 +65,29 @@ def _same_source_modified_at(left: datetime | None, right: datetime | None) -> b
     return left.astimezone(timezone.utc) == right.astimezone(timezone.utc)
 
 
-def _document_input_payload(*, doc: RagDocument, readiness: dict[str, Any] | None = None) -> dict[str, Any]:
+def _document_input_payload(
+    *, doc: RagDocument, readiness: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {
         "document_id": doc.document_id,
         "case_id": None,
-        "file_type": Path(str(doc.filename or doc.path or "")).suffix.lower().lstrip(".") or None,
+        "file_type": Path(str(doc.filename or doc.path or ""))
+        .suffix.lower()
+        .lstrip(".")
+        or None,
         "file_name": doc.filename,
-        "uploaded_at": doc.created_at.isoformat() if getattr(doc, "created_at", None) else None,
+        "uploaded_at": doc.created_at.isoformat()
+        if getattr(doc, "created_at", None)
+        else None,
         "extraction_status": doc.extraction_status,
         "extracted_candidates": doc.extracted_candidates or [],
         "evidence_refs": doc.evidence_refs or [],
         "provenance": doc.provenance or "documented",
         "source_system": doc.source_system,
         "source_document_id": doc.source_document_id,
-        "source_modified_at": doc.source_modified_at.isoformat() if doc.source_modified_at else None,
+        "source_modified_at": doc.source_modified_at.isoformat()
+        if doc.source_modified_at
+        else None,
         "paperless_tag_readiness": readiness or {},
     }
 
@@ -84,7 +96,11 @@ def _delete_qdrant_document(*, tenant_id: str, document_id: str) -> bool:
     try:
         from qdrant_client import QdrantClient, models as qmodels  # type: ignore
     except Exception as exc:  # pragma: no cover - optional dependency boundary
-        logger.warning("paperless_qdrant_delete_unavailable", document_id=document_id, reason=str(exc))
+        logger.warning(
+            "paperless_qdrant_delete_unavailable",
+            document_id=document_id,
+            reason=str(exc),
+        )
         return False
 
     try:
@@ -97,8 +113,13 @@ def _delete_qdrant_document(*, tenant_id: str, document_id: str) -> bool:
             points_selector=qmodels.FilterSelector(
                 filter=qmodels.Filter(
                     must=[
-                        qmodels.FieldCondition(key="tenant_id", match=qmodels.MatchValue(value=tenant_id)),
-                        qmodels.FieldCondition(key="document_id", match=qmodels.MatchValue(value=document_id)),
+                        qmodels.FieldCondition(
+                            key="tenant_id", match=qmodels.MatchValue(value=tenant_id)
+                        ),
+                        qmodels.FieldCondition(
+                            key="document_id",
+                            match=qmodels.MatchValue(value=document_id),
+                        ),
                     ]
                 )
             ),
@@ -106,7 +127,9 @@ def _delete_qdrant_document(*, tenant_id: str, document_id: str) -> bool:
         )
         return True
     except Exception as exc:  # pragma: no cover - network/storage boundary
-        logger.warning("paperless_qdrant_delete_failed", document_id=document_id, reason=str(exc))
+        logger.warning(
+            "paperless_qdrant_delete_failed", document_id=document_id, reason=str(exc)
+        )
         return False
 
 
@@ -134,7 +157,9 @@ async def _disable_existing_paperless_doc(
     return True
 
 
-async def _pick_next_pending_paperless_document(session: AsyncSession) -> RagDocument | None:
+async def _pick_next_pending_paperless_document(
+    session: AsyncSession,
+) -> RagDocument | None:
     result = await session.execute(
         select(RagDocument)
         .where(
@@ -162,7 +187,9 @@ async def process_pending_paperless_documents(
     """
     from app.services.jobs.worker import process_once
 
-    max_documents = max(0, int(limit if limit is not None else settings.paperless_sync_process_limit))
+    max_documents = max(
+        0, int(limit if limit is not None else settings.paperless_sync_process_limit)
+    )
     processed = 0
     errors = 0
     document_ids: list[str] = []
@@ -176,7 +203,9 @@ async def process_pending_paperless_documents(
                 session,
                 picker=_pick_next_pending_paperless_document,
             )
-        except Exception as exc:  # pragma: no cover - defensive boundary around worker side effects
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive boundary around worker side effects
             logger.warning(
                 "paperless_process_pending_failed",
                 document_id=before.document_id,
@@ -238,12 +267,16 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             tag_id_to_name: dict[int, str] = {}
-            tag_response = await client.get(f"{url}/api/tags/?page_size=500", headers=headers)
+            tag_response = await client.get(
+                f"{url}/api/tags/?page_size=500", headers=headers
+            )
             if tag_response.status_code == 200:
                 for tag in tag_response.json().get("results", []):
                     tag_id_to_name[tag["id"]] = tag["name"]
 
-            response = await client.get(f"{url}/api/documents/?page_size=100", headers=headers)
+            response = await client.get(
+                f"{url}/api/documents/?page_size=100", headers=headers
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -258,8 +291,14 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                 p_filename = pdoc.get("original_file_name") or f"{p_title}.pdf"
                 raw_tag_field = pdoc.get("tag_names") or pdoc.get("tags") or []
                 resolved_tags = [
-                    tag_id_to_name[t] if isinstance(t, int) and t in tag_id_to_name else t
-                    for t in (raw_tag_field if isinstance(raw_tag_field, list) else [raw_tag_field])
+                    tag_id_to_name[t]
+                    if isinstance(t, int) and t in tag_id_to_name
+                    else t
+                    for t in (
+                        raw_tag_field
+                        if isinstance(raw_tag_field, list)
+                        else [raw_tag_field]
+                    )
                 ]
                 p_tags = augment_paperless_tags_for_rag(
                     coerce_tag_strings(resolved_tags),
@@ -322,14 +361,21 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
 
                 if (
                     existing_source_doc
-                    and existing_source_doc.status not in {"failed", "error", * _REMOVED_STATUSES}
+                    and existing_source_doc.status
+                    not in {"failed", "error", *_REMOVED_STATUSES}
                     and existing_source_doc.enabled is not False
-                    and _same_source_modified_at(existing_source_doc.source_modified_at, p_source_modified_at)
+                    and _same_source_modified_at(
+                        existing_source_doc.source_modified_at, p_source_modified_at
+                    )
                 ):
                     existing_source_doc.tags = p_tags or existing_source_doc.tags
                     existing_source_doc.route_key = route_key
-                    existing_source_doc.extraction_status = existing_source_doc.extraction_status or "not_extracted"
-                    existing_source_doc.provenance = existing_source_doc.provenance or "documented"
+                    existing_source_doc.extraction_status = (
+                        existing_source_doc.extraction_status or "not_extracted"
+                    )
+                    existing_source_doc.provenance = (
+                        existing_source_doc.provenance or "documented"
+                    )
                     session.add(existing_source_doc)
                     await session.commit()
                     skipped += 1
@@ -338,7 +384,9 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                 download_url = f"{url}/api/documents/{p_id}/download/"
                 dl_res = await client.get(download_url, headers=headers)
                 if dl_res.status_code != 200:
-                    logger.error("paperless_download_failed", id=p_id, status=dl_res.status_code)
+                    logger.error(
+                        "paperless_download_failed", id=p_id, status=dl_res.status_code
+                    )
                     errors += 1
                     continue
 
@@ -385,29 +433,37 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
 
                 existing = existing_source_doc
                 if existing is None:
-                    existing = await find_existing_document(session, RAG_SHARED_TENANT_ID, sha256)
+                    existing = await find_existing_document(
+                        session, RAG_SHARED_TENANT_ID, sha256
+                    )
 
                 if (
                     existing
-                    and existing.status not in {"failed", "error", * _REMOVED_STATUSES}
+                    and existing.status not in {"failed", "error", *_REMOVED_STATUSES}
                     and existing.enabled is not False
                     and existing.sha256 == sha256
                 ):
-                    if (
-                        existing.source_system in (None, _PAPERLESS_SOURCE_SYSTEM)
-                        and existing.source_document_id in (None, p_source_document_id)
-                    ):
+                    if existing.source_system in (
+                        None,
+                        _PAPERLESS_SOURCE_SYSTEM,
+                    ) and existing.source_document_id in (None, p_source_document_id):
                         existing.enabled = True
                         existing.source_system = _PAPERLESS_SOURCE_SYSTEM
-                        existing.source_document_id = p_source_document_id or existing.source_document_id
+                        existing.source_document_id = (
+                            p_source_document_id or existing.source_document_id
+                        )
                         existing.source_modified_at = p_source_modified_at
                         existing.filename = safe_name
                         existing.content_type = content_type
                         existing.size_bytes = len(content)
                         existing.route_key = route_key
                         existing.tags = p_tags or existing.tags
-                        existing.extraction_status = existing.extraction_status or "not_extracted"
-                        existing.extracted_candidates = existing.extracted_candidates or []
+                        existing.extraction_status = (
+                            existing.extraction_status or "not_extracted"
+                        )
+                        existing.extracted_candidates = (
+                            existing.extracted_candidates or []
+                        )
                         existing.evidence_refs = existing.evidence_refs or []
                         existing.provenance = "documented"
                         session.add(existing)
@@ -416,7 +472,9 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                     continue
 
                 doc_id = existing.document_id if existing else uuid.uuid4().hex
-                target_dir = resolve_upload_dir(tenant_id=RAG_SHARED_TENANT_ID, document_id=doc_id)
+                target_dir = resolve_upload_dir(
+                    tenant_id=RAG_SHARED_TENANT_ID, document_id=doc_id
+                )
                 target_dir.mkdir(parents=True, exist_ok=True)
                 target_path = target_dir / f"original{ext}"
 
@@ -448,10 +506,16 @@ async def sync_paperless_to_rag(session: AsyncSession) -> Dict[str, Any]:
                 doc.source_modified_at = p_source_modified_at
                 doc.extraction_status = "candidate_extraction_pending"
                 doc.extracted_candidates = []
-                doc.evidence_refs = [f"paperless:{p_source_document_id}"] if p_source_document_id else []
+                doc.evidence_refs = (
+                    [f"paperless:{p_source_document_id}"]
+                    if p_source_document_id
+                    else []
+                )
                 doc.provenance = "documented"
                 doc.ingest_stats = dict(doc.ingest_stats or {}) | {
-                    "document_input": _document_input_payload(doc=doc, readiness=readiness),
+                    "document_input": _document_input_payload(
+                        doc=doc, readiness=readiness
+                    ),
                     "paperless_tag_readiness": readiness,
                 }
                 session.add(doc)

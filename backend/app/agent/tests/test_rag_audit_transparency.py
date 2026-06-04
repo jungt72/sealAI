@@ -111,7 +111,9 @@ class DummyDeterministicKnowledgeResponse(DummyKnowledgeResponse):
     knowledge_answer_view = DummyDeterministicAnswerView()
 
 
-def test_knowledge_response_run_meta_marks_deterministic_orientation_separately() -> None:
+def test_knowledge_response_run_meta_marks_deterministic_orientation_separately() -> (
+    None
+):
     meta = _knowledge_response_run_meta(DummyDeterministicKnowledgeResponse())
 
     audit = meta["rag_audit"]
@@ -123,4 +125,6 @@ def test_knowledge_response_run_meta_marks_deterministic_orientation_separately(
 
     trace = meta["answer_trace"]
     assert trace["rag_miss"] is True
-    assert trace["rag_grounding_strategy"] == "deterministic_orientation_without_rag_hit"
+    assert (
+        trace["rag_grounding_strategy"] == "deterministic_orientation_without_rag_hit"
+    )

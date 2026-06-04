@@ -11,8 +11,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
@@ -85,7 +89,9 @@ def test_ingest_file_enriches_metadata(monkeypatch, tmp_path: Path) -> None:
 
     class DummyQdrant:
         @staticmethod
-        def from_documents(docs, embeddings, url=None, api_key=None, collection_name=None):
+        def from_documents(
+            docs, embeddings, url=None, api_key=None, collection_name=None
+        ):
             captured["docs"] = docs
             captured["collection_name"] = collection_name
             return None
@@ -143,7 +149,9 @@ def test_ingest_file_enriches_metadata(monkeypatch, tmp_path: Path) -> None:
     assert meta.get("source_modified_at") == "2026-03-12T10:00:00+00:00"
 
 
-def test_ingest_file_skips_empty_document_in_legacy_mode(monkeypatch, tmp_path: Path) -> None:
+def test_ingest_file_skips_empty_document_in_legacy_mode(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("RAG_INGEST_LEGACY_VECTORSTORE", "1")
     from app.services.rag import rag_ingest
 
@@ -201,7 +209,9 @@ def test_dynamic_metadata_llm_is_disabled_by_default_policy(monkeypatch) -> None
     assert "atex" not in {str(key).lower() for key in result}
 
 
-def test_dynamic_metadata_llm_requires_document_content_policy_even_if_flag_enabled(monkeypatch) -> None:
+def test_dynamic_metadata_llm_requires_document_content_policy_even_if_flag_enabled(
+    monkeypatch,
+) -> None:
     from app.services.rag import rag_ingest
 
     monkeypatch.setattr(rag_ingest, "RAG_DOCUMENT_CONTENT_LLM_ENABLED", False)

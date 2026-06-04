@@ -18,7 +18,11 @@ from app.services.fast_responder_service import (
     [
         (PreGateClassification.GREETING, "Hallo", "Hallo"),
         (PreGateClassification.META_QUESTION, "Was kann SeaLAI?", "SeaLAI"),
-        (PreGateClassification.BLOCKED, "Welchen Hersteller empfiehlst du?", "Dabei kann ich nicht helfen"),
+        (
+            PreGateClassification.BLOCKED,
+            "Welchen Hersteller empfiehlst du?",
+            "Dabei kann ich nicht helfen",
+        ),
     ],
 )
 def test_fast_responder_handles_only_non_case_pre_gate_classes(
@@ -43,7 +47,6 @@ def test_greeting_fallback_answers_wellbeing_without_case_creation() -> None:
     assert response.no_case_created is True
     assert "Mir geht es gut" in response.content
     assert "Dichtungsfall" not in response.content
-
 
 
 def test_greeting_fallback_answers_colloquial_wellbeing_without_case_creation() -> None:
@@ -75,7 +78,9 @@ def test_fast_responder_rejects_full_graph_classifications(
 
 def test_fast_responder_uses_bounded_prompt_llm_when_injected() -> None:
     class LLM:
-        def complete(self, *, system_prompt, user_input, classification, timeout_seconds):
+        def complete(
+            self, *, system_prompt, user_input, classification, timeout_seconds
+        ):
             assert "Do not create or imply a case" in system_prompt
             assert user_input == "What can SeaLAI do?"
             assert classification is PreGateClassification.META_QUESTION

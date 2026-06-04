@@ -289,7 +289,9 @@ def track_gate_direct_reply(route: str) -> None:
 
 
 def _default_qdrant_collection() -> str:
-    return (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip() or "sealai_knowledge"
+    return (
+        os.getenv("QDRANT_COLLECTION") or "sealai_knowledge"
+    ).strip() or "sealai_knowledge"
 
 
 def _default_qdrant_url() -> str:
@@ -311,11 +313,17 @@ def refresh_qdrant_collection_metrics(
     collection: str | None = None,
     force: bool = False,
 ) -> None:
-    coll = (collection or _default_qdrant_collection()).strip() or _default_qdrant_collection()
+    coll = (
+        collection or _default_qdrant_collection()
+    ).strip() or _default_qdrant_collection()
     now = time.time()
     global _QDRANT_COLLECTION_METRICS_LAST_REFRESH
     with _QDRANT_COLLECTION_METRICS_LOCK:
-        if not force and (now - _QDRANT_COLLECTION_METRICS_LAST_REFRESH) < _QDRANT_COLLECTION_METRICS_MIN_INTERVAL_SECONDS:
+        if (
+            not force
+            and (now - _QDRANT_COLLECTION_METRICS_LAST_REFRESH)
+            < _QDRANT_COLLECTION_METRICS_MIN_INTERVAL_SECONDS
+        ):
             return
         _QDRANT_COLLECTION_METRICS_LAST_REFRESH = now
     try:
@@ -334,7 +342,9 @@ def refresh_qdrant_collection_metrics(
         if points is not None:
             QDRANT_COLLECTION_POINTS.labels(collection=coll).set(points)
         if indexed_vectors is not None:
-            QDRANT_COLLECTION_INDEXED_VECTORS.labels(collection=coll).set(indexed_vectors)
+            QDRANT_COLLECTION_INDEXED_VECTORS.labels(collection=coll).set(
+                indexed_vectors
+            )
     except Exception:
         QDRANT_COLLECTION_STATUS.labels(collection=coll).set(0)
 
@@ -358,7 +368,9 @@ def track_llm_call(
         LLM_TOKENS_TOTAL.labels(model=m, type="output").inc(output_tokens)
 
 
-def track_rag_retrieval(method: str, tier: int, latency_seconds: float, cache_hit: bool) -> None:
+def track_rag_retrieval(
+    method: str, tier: int, latency_seconds: float, cache_hit: bool
+) -> None:
     """Track RAG retrieval metrics."""
     meth = (method or "unknown").strip() or "unknown"
     RAG_RETRIEVALS_TOTAL.labels(method=meth, tier=str(tier)).inc()
@@ -376,13 +388,17 @@ def track_rag_ingest(source: str, status: str, latency_seconds: float) -> None:
     st = (status or "unknown").strip() or "unknown"
     RAG_INGEST_DOCUMENTS_TOTAL.labels(source=src, status=st).inc()
     if latency_seconds >= 0:
-        RAG_INGEST_DURATION_SECONDS.labels(source=src, status=st).observe(latency_seconds)
+        RAG_INGEST_DURATION_SECONDS.labels(source=src, status=st).observe(
+            latency_seconds
+        )
     if st == "indexed":
         RAG_LAST_SUCCESSFUL_INGEST_TIMESTAMP_SECONDS.labels(source=src).set(time.time())
     refresh_qdrant_collection_metrics(force=(st == "indexed"))
 
 
-def track_rag_sync(source: str, status: str, summary: dict[str, object] | None = None) -> None:
+def track_rag_sync(
+    source: str, status: str, summary: dict[str, object] | None = None
+) -> None:
     src = (source or "unknown").strip() or "unknown"
     st = (status or "unknown").strip() or "unknown"
     RAG_SYNC_RUNS_TOTAL.labels(source=src, status=st).inc()
@@ -399,7 +415,9 @@ def track_rag_sync(source: str, status: str, summary: dict[str, object] | None =
         if value is None:
             continue
         try:
-            RAG_SYNC_LAST_DOCUMENTS.labels(source=src, result=result_key).set(float(value))
+            RAG_SYNC_LAST_DOCUMENTS.labels(source=src, result=result_key).set(
+                float(value)
+            )
         except Exception:
             continue
     refresh_qdrant_collection_metrics(force=(st == "success"))

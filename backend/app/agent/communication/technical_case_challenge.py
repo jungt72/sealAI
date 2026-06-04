@@ -94,14 +94,20 @@ def is_technical_case_challenge_request(message: str | None) -> bool:
         return False
     has_challenge_marker = any(marker in text for marker in _CHALLENGE_MARKERS)
     has_case_marker = any(marker in text for marker in _CASE_MARKERS)
-    has_numeric_case_data = bool(re.search(r"\b\d+(?:[,.]\d+)?\s*(?:bar|rpm|°c|grad|mm)\b", text))
+    has_numeric_case_data = bool(
+        re.search(r"\b\d+(?:[,.]\d+)?\s*(?:bar|rpm|°c|grad|mm)\b", text)
+    )
     if has_challenge_marker and (has_case_marker or has_numeric_case_data):
         return True
     if has_challenge_marker:
         return False
     if _KNOWLEDGE_ONLY_RE.match(str(message or "")) and not has_numeric_case_data:
         return False
-    return has_case_marker and has_numeric_case_data and any(marker in text for marker in ("analys", "bewert", "prüf", "pruef"))
+    return (
+        has_case_marker
+        and has_numeric_case_data
+        and any(marker in text for marker in ("analys", "bewert", "prüf", "pruef"))
+    )
 
 
 def build_technical_case_challenge_plan(
@@ -117,7 +123,14 @@ def build_technical_case_challenge_plan(
     text = str(latest_user_message or "")
     snapshot_facts = _facts_from_snapshot(state_snapshot or {})
     extracted = _facts_from_text(text)
-    facts = {**extracted, **{key: value for key, value in snapshot_facts.items() if value not in (None, "", [], {})}}
+    facts = {
+        **extracted,
+        **{
+            key: value
+            for key, value in snapshot_facts.items()
+            if value not in (None, "", [], {})
+        },
+    }
     domain = "rwdr" if _looks_like_rwdr(text, facts) else "technical_sealing_case"
     if domain != "rwdr":
         return TechnicalCaseChallengePlan(
@@ -142,7 +155,11 @@ def build_technical_case_challenge_plan(
     return TechnicalCaseChallengePlan(
         case_type="rwdr_technical_case",
         detected_domain="rwdr",
-        confirmed_or_extracted_facts={key: value for key, value in facts.items() if value not in (None, "", [], {})},
+        confirmed_or_extracted_facts={
+            key: value
+            for key, value in facts.items()
+            if value not in (None, "", [], {})
+        },
         computed_signals=_rwdr_computed_signals(signals),
         critical_points=critical_points,
         cautious_hypotheses=hypotheses,
@@ -163,7 +180,10 @@ def render_technical_case_challenge_plan(plan: TechnicalCaseChallengePlan) -> st
         *_bullet_lines(plan.critical_points),
         "",
         "### Abgeleitete Signale",
-        *_bullet_lines(plan.computed_signals or ["Keine belastbare Berechnung aus den vorliegenden Angaben ableitbar."]),
+        *_bullet_lines(
+            plan.computed_signals
+            or ["Keine belastbare Berechnung aus den vorliegenden Angaben ableitbar."]
+        ),
         "",
         "### Vorsichtige Prüfhypothesen",
         *_bullet_lines(plan.cautious_hypotheses),
@@ -175,7 +195,8 @@ def render_technical_case_challenge_plan(plan: TechnicalCaseChallengePlan) -> st
         *_bullet_lines(plan.missing_blockers),
         "",
         "### Nächste beste Rückfrage",
-        plan.next_best_question or "Welche einzelne Angabe blockiert die Bewertung aus deiner Sicht am stärksten?",
+        plan.next_best_question
+        or "Welche einzelne Angabe blockiert die Bewertung aus deiner Sicht am stärksten?",
         "",
         "### Grenze der Aussage",
         plan.disclaimer,
@@ -189,8 +210,12 @@ def _clean_text(message: str | None) -> str:
 
 def _looks_like_rwdr(text: str, facts: dict[str, Any]) -> bool:
     lowered = text.casefold()
-    return any(marker in lowered for marker in ("rwdr", "wellendichtring", "radialwellendichtring")) or any(
-        facts.get(key) is not None for key in ("d1_mm", "D_mm", "b_mm", "speed_rpm", "counterface_surface")
+    return any(
+        marker in lowered
+        for marker in ("rwdr", "wellendichtring", "radialwellendichtring")
+    ) or any(
+        facts.get(key) is not None
+        for key in ("d1_mm", "D_mm", "b_mm", "speed_rpm", "counterface_surface")
     )
 
 
@@ -247,8 +272,12 @@ def _map_field_name(field: str) -> str | None:
 
 def _facts_from_text(text: str) -> dict[str, Any]:
     facts: dict[str, Any] = {}
-    facts["d1_mm"] = _number_after(text, (r"\bd1\s*=\s*", r"wellendurchmesser\s*[:=]?\s*"))
-    facts["D_mm"] = _number_after(text, (r"\bD\s*=\s*", r"\bau[ßs]endurchmesser\s*[:=]?\s*"))
+    facts["d1_mm"] = _number_after(
+        text, (r"\bd1\s*=\s*", r"wellendurchmesser\s*[:=]?\s*")
+    )
+    facts["D_mm"] = _number_after(
+        text, (r"\bD\s*=\s*", r"\bau[ßs]endurchmesser\s*[:=]?\s*")
+    )
     facts["b_mm"] = _number_after(text, (r"\bb\s*=\s*", r"\bbreite\s*[:=]?\s*"))
     facts["pressure_bar"] = _number_before_unit(text, "bar")
     facts["speed_rpm"] = _number_before_unit(text, "rpm")
@@ -256,15 +285,25 @@ def _facts_from_text(text: str) -> dict[str, Any]:
     facts["temperature_min_c"] = temp_min
     facts["temperature_max_c"] = temp_max
     facts["medium"] = _extract_labeled_text(text, ("medium",))
-    facts["application"] = _extract_labeled_text(text, ("anlage / einbauort", "einbauort", "anwendung", "arbeitslage"))
-    facts["counterface_surface"] = _extract_labeled_text(text, ("gegenlauffläche", "gegenlaufflaeche"))
-    facts["eccentricity"] = _extract_labeled_text(text, ("außermittigkeit", "aussermittigkeit", "rundlauf"))
+    facts["application"] = _extract_labeled_text(
+        text, ("anlage / einbauort", "einbauort", "anwendung", "arbeitslage")
+    )
+    facts["counterface_surface"] = _extract_labeled_text(
+        text, ("gegenlauffläche", "gegenlaufflaeche")
+    )
+    facts["eccentricity"] = _extract_labeled_text(
+        text, ("außermittigkeit", "aussermittigkeit", "rundlauf")
+    )
     if re.search(r"\bkeine\s+drehzahl\b", text, re.IGNORECASE | re.UNICODE):
         facts["speed_rpm"] = None
         facts["speed_explicitly_absent"] = True
     if re.search(r"\bkeine\s+au[ßs]ermittigkeit\b", text, re.IGNORECASE | re.UNICODE):
         facts["eccentricity"] = "keine"
-    material_mentions = [term for term in ("NBR", "FKM", "PTFE", "EPDM", "HNBR", "FFKM") if re.search(rf"\b{term}\b", text, re.IGNORECASE)]
+    material_mentions = [
+        term
+        for term in ("NBR", "FKM", "PTFE", "EPDM", "HNBR", "FFKM")
+        if re.search(rf"\b{term}\b", text, re.IGNORECASE)
+    ]
     if material_mentions:
         facts["material_mentions"] = material_mentions
     return {key: value for key, value in facts.items() if value not in ("", [], {})}
@@ -272,14 +311,20 @@ def _facts_from_text(text: str) -> dict[str, Any]:
 
 def _number_after(text: str, prefixes: tuple[str, ...]) -> float | None:
     for prefix in prefixes:
-        match = re.search(prefix + r"(-?\d+(?:[,.]\d+)?)\s*(?:mm)?\b", text, re.IGNORECASE | re.UNICODE)
+        match = re.search(
+            prefix + r"(-?\d+(?:[,.]\d+)?)\s*(?:mm)?\b",
+            text,
+            re.IGNORECASE | re.UNICODE,
+        )
         if match:
             return _to_float(match.group(1))
     return None
 
 
 def _number_before_unit(text: str, unit: str) -> float | None:
-    match = re.search(rf"(-?\d+(?:[,.]\d+)?)\s*{re.escape(unit)}\b", text, re.IGNORECASE | re.UNICODE)
+    match = re.search(
+        rf"(-?\d+(?:[,.]\d+)?)\s*{re.escape(unit)}\b", text, re.IGNORECASE | re.UNICODE
+    )
     return _to_float(match.group(1)) if match else None
 
 
@@ -291,7 +336,11 @@ def _temperature_range(text: str) -> tuple[float | None, float | None]:
     )
     if range_match:
         return _to_float(range_match.group(1)), _to_float(range_match.group(2))
-    single = re.search(r"temperatur\s*[:=]?\s*(-?\d+(?:[,.]\d+)?)\s*(?:°\s*c|°c|grad|c)\b", text, re.IGNORECASE | re.UNICODE)
+    single = re.search(
+        r"temperatur\s*[:=]?\s*(-?\d+(?:[,.]\d+)?)\s*(?:°\s*c|°c|grad|c)\b",
+        text,
+        re.IGNORECASE | re.UNICODE,
+    )
     if single:
         value = _to_float(single.group(1))
         return None, value
@@ -319,10 +368,16 @@ def _to_float(raw: str | None) -> float | None:
         return None
 
 
-def _rwdr_signals_from_facts(facts: dict[str, Any], missing_fields: list[str]) -> RWDRChallengeSignals:
+def _rwdr_signals_from_facts(
+    facts: dict[str, Any], missing_fields: list[str]
+) -> RWDRChallengeSignals:
     d1 = _maybe_float(facts.get("d1_mm"))
     rpm = _maybe_float(facts.get("speed_rpm"))
-    v = round(math.pi * d1 * rpm / 60000, 2) if d1 is not None and rpm is not None else None
+    v = (
+        round(math.pi * d1 * rpm / 60000, 2)
+        if d1 is not None and rpm is not None
+        else None
+    )
     signals = RWDRChallengeSignals(
         d1_mm=d1,
         D_mm=_maybe_float(facts.get("D_mm")),
@@ -336,10 +391,16 @@ def _rwdr_signals_from_facts(facts: dict[str, Any], missing_fields: list[str]) -
         application=_maybe_str(facts.get("application")),
         counterface_surface=_maybe_str(facts.get("counterface_surface")),
         eccentricity=_maybe_str(facts.get("eccentricity")),
-        material_mentions=[str(item).upper() for item in list(facts.get("material_mentions") or [])],
-        missing_critical_fields=_unique([_human_missing_field(item) for item in missing_fields]),
+        material_mentions=[
+            str(item).upper() for item in list(facts.get("material_mentions") or [])
+        ],
+        missing_critical_fields=_unique(
+            [_human_missing_field(item) for item in missing_fields]
+        ),
     )
-    signals.review_flags = _rwdr_review_flags(signals, bool(facts.get("speed_explicitly_absent")))
+    signals.review_flags = _rwdr_review_flags(
+        signals, bool(facts.get("speed_explicitly_absent"))
+    )
     return signals
 
 
@@ -354,28 +415,48 @@ def _maybe_str(value: Any) -> str | None:
     return text or None
 
 
-def _rwdr_review_flags(signals: RWDRChallengeSignals, speed_explicitly_absent: bool) -> list[str]:
+def _rwdr_review_flags(
+    signals: RWDRChallengeSignals, speed_explicitly_absent: bool
+) -> list[str]:
     flags: list[str] = []
     medium = str(signals.medium or "").casefold()
     application = str(signals.application or "").casefold()
     if signals.d1_mm is not None and signals.d1_mm <= 10:
-        flags.append("Sehr kleiner Wellendurchmesser: Fertigung, Montage, Rundlauf und Dichtlippentragbild sind kritisch zu prüfen.")
+        flags.append(
+            "Sehr kleiner Wellendurchmesser: Fertigung, Montage, Rundlauf und Dichtlippentragbild sind kritisch zu prüfen."
+        )
     if "druckluft" in medium:
-        flags.append("Druckluft als Medium: Schmierung, Leckagepfad und Druck direkt an der Dichtlippe sind kritisch.")
+        flags.append(
+            "Druckluft als Medium: Schmierung, Leckagepfad und Druck direkt an der Dichtlippe sind kritisch."
+        )
     if "salzwasser" in medium or ("salz" in medium and "wasser" in medium):
-        flags.append("Salzwasser: Korrosion, Feder-/Metallwerkstoff, Werkstoffverträglichkeit und Schmierung sind Review-Themen.")
+        flags.append(
+            "Salzwasser: Korrosion, Feder-/Metallwerkstoff, Werkstoffverträglichkeit und Schmierung sind Review-Themen."
+        )
     if signals.pressure_bar is not None and signals.pressure_bar >= 1:
-        flags.append("Druckbelastung am RWDR muss gegen Bauform, Stützung und Druckdifferenz geprüft werden.")
+        flags.append(
+            "Druckbelastung am RWDR muss gegen Bauform, Stützung und Druckdifferenz geprüft werden."
+        )
     if speed_explicitly_absent or signals.speed_rpm is None:
-        flags.append("Keine Drehzahl: klären, ob wirklich eine rotierende RWDR-Anwendung vorliegt.")
+        flags.append(
+            "Keine Drehzahl: klären, ob wirklich eine rotierende RWDR-Anwendung vorliegt."
+        )
     if signals.circumferential_speed_mps is not None:
-        flags.append("Umfangsgeschwindigkeit beeinflusst Wärme, Rundlauf, Oberfläche und Schmierfilm.")
+        flags.append(
+            "Umfangsgeschwindigkeit beeinflusst Wärme, Rundlauf, Oberfläche und Schmierfilm."
+        )
     if "boot" in application:
-        flags.append("Einbauort Boot: Wasser, Schmutz, Korrosion und Wechselbetrieb sind plausible Belastungen.")
+        flags.append(
+            "Einbauort Boot: Wasser, Schmutz, Korrosion und Wechselbetrieb sind plausible Belastungen."
+        )
     if signals.counterface_surface:
-        flags.append("Gegenlaufflächenangabe muss mit Parameter und Einheit geklärt werden.")
+        flags.append(
+            "Gegenlaufflächenangabe muss mit Parameter und Einheit geklärt werden."
+        )
     if signals.material_mentions:
-        flags.append(f"{', '.join(signals.material_mentions)} ist Nutzerangabe oder Wunschmaterial, keine Empfehlung.")
+        flags.append(
+            f"{', '.join(signals.material_mentions)} ist Nutzerangabe oder Wunschmaterial, keine Empfehlung."
+        )
     return _unique(flags)
 
 
@@ -389,28 +470,49 @@ def _rwdr_hypotheses(signals: RWDRChallengeSignals) -> list[str]:
     hypotheses: list[str] = []
     medium = str(signals.medium or "").casefold()
     if "druckluft" in medium:
-        hypotheses.append("Es könnte eher ein pneumatischer oder statischer Dichtfall als eine klassische rotierende RWDR-Aufgabe sein.")
+        hypotheses.append(
+            "Es könnte eher ein pneumatischer oder statischer Dichtfall als eine klassische rotierende RWDR-Aufgabe sein."
+        )
     if "salzwasser" in medium or ("salz" in medium and "wasser" in medium):
-        hypotheses.append("Korrosion und mangelhafte Schmierung können den RWDR-Lastfall dominieren.")
+        hypotheses.append(
+            "Korrosion und mangelhafte Schmierung können den RWDR-Lastfall dominieren."
+        )
     if signals.pressure_bar is not None and signals.pressure_bar >= 1:
-        hypotheses.append("Der Druck kann eine druckbezogene RWDR-Bauformprüfung oder ein anderes Dichtkonzept erforderlich machen.")
-    if signals.circumferential_speed_mps is not None and signals.circumferential_speed_mps >= 5:
-        hypotheses.append("Die Geschwindigkeit ist relevant für Reibwärme, Oberfläche, Rundlauf und Schmierfilm.")
+        hypotheses.append(
+            "Der Druck kann eine druckbezogene RWDR-Bauformprüfung oder ein anderes Dichtkonzept erforderlich machen."
+        )
+    if (
+        signals.circumferential_speed_mps is not None
+        and signals.circumferential_speed_mps >= 5
+    ):
+        hypotheses.append(
+            "Die Geschwindigkeit ist relevant für Reibwärme, Oberfläche, Rundlauf und Schmierfilm."
+        )
     if signals.material_mentions:
-        hypotheses.append(f"{', '.join(signals.material_mentions)} bleibt ein Review-Thema aus der Nutzervorgabe, keine Materialentscheidung.")
+        hypotheses.append(
+            f"{', '.join(signals.material_mentions)} bleibt ein Review-Thema aus der Nutzervorgabe, keine Materialentscheidung."
+        )
     return _unique(hypotheses)
 
 
 def _rwdr_counter_indicators(signals: RWDRChallengeSignals) -> list[str]:
     risks: list[str] = []
     if signals.speed_rpm is None:
-        risks.append("Ohne Drehzahl oder Bewegungsart ist RWDR als Dichtprinzip nicht belastbar eingeordnet.")
+        risks.append(
+            "Ohne Drehzahl oder Bewegungsart ist RWDR als Dichtprinzip nicht belastbar eingeordnet."
+        )
     if signals.pressure_bar is not None and signals.pressure_bar >= 1:
-        risks.append("Druckangabe ist nur verwertbar, wenn sie als Druckdifferenz direkt über der Dichtung verstanden wird.")
+        risks.append(
+            "Druckangabe ist nur verwertbar, wenn sie als Druckdifferenz direkt über der Dichtung verstanden wird."
+        )
     if signals.counterface_surface:
-        risks.append("Gegenlauffläche 0,2 ist ohne Parameter und Einheit kein belastbarer Oberflächenwert.")
+        risks.append(
+            "Gegenlauffläche 0,2 ist ohne Parameter und Einheit kein belastbarer Oberflächenwert."
+        )
     if signals.d1_mm is not None and signals.d1_mm <= 10:
-        risks.append("Bei sehr kleiner Welle können Montage- und Toleranzeffekte den Fall stärker prägen als die Werkstofffrage.")
+        risks.append(
+            "Bei sehr kleiner Welle können Montage- und Toleranzeffekte den Fall stärker prägen als die Werkstofffrage."
+        )
     return _unique(risks)
 
 
@@ -429,12 +531,16 @@ def _rwdr_missing_blockers(signals: RWDRChallengeSignals) -> list[str]:
 
 def _rwdr_next_best_question(signals: RWDRChallengeSignals) -> str:
     medium = str(signals.medium or "").casefold()
-    if "druckluft" in medium and (signals.speed_rpm is None or (signals.d1_mm is not None and signals.d1_mm <= 10)):
+    if "druckluft" in medium and (
+        signals.speed_rpm is None or (signals.d1_mm is not None and signals.d1_mm <= 10)
+    ):
         return (
             "Ist das tatsächlich eine rotierende Welle mit Radialwellendichtring oder eher eine pneumatische/"
             "statische Abdichtung beziehungsweise Führungs-/Kolbendichtung?"
         )
-    if ("salzwasser" in medium or ("salz" in medium and "wasser" in medium)) and signals.pressure_bar is not None:
+    if (
+        "salzwasser" in medium or ("salz" in medium and "wasser" in medium)
+    ) and signals.pressure_bar is not None:
         pressure = _format_number(signals.pressure_bar)
         surface = signals.counterface_surface or "0,2"
         return (
@@ -446,21 +552,32 @@ def _rwdr_next_best_question(signals: RWDRChallengeSignals) -> str:
 
 def _rwdr_computed_signals(signals: RWDRChallengeSignals) -> list[str]:
     values: list[str] = []
-    if signals.d1_mm is not None and signals.D_mm is not None and signals.b_mm is not None:
-        values.append(f"RWDR-Geometrie erkannt: d1={_format_number(signals.d1_mm)} mm, D={_format_number(signals.D_mm)} mm, b={_format_number(signals.b_mm)} mm.")
+    if (
+        signals.d1_mm is not None
+        and signals.D_mm is not None
+        and signals.b_mm is not None
+    ):
+        values.append(
+            f"RWDR-Geometrie erkannt: d1={_format_number(signals.d1_mm)} mm, D={_format_number(signals.D_mm)} mm, b={_format_number(signals.b_mm)} mm."
+        )
     if signals.pressure_bar is not None:
-        values.append(f"Druck-Review: {_format_number(signals.pressure_bar)} bar direkt an der Dichtung nur verwertbar, wenn Referenz und Druckdifferenz klar sind.")
+        values.append(
+            f"Druck-Review: {_format_number(signals.pressure_bar)} bar direkt an der Dichtung nur verwertbar, wenn Referenz und Druckdifferenz klar sind."
+        )
     if signals.circumferential_speed_mps is not None:
         values.append(
             "Umfangsgeschwindigkeit: "
             f"v = pi x d1 x rpm / 60000 = ca. {_format_number(signals.circumferential_speed_mps)} m/s."
         )
     elif signals.d1_mm is not None and signals.speed_rpm is None:
-        values.append("Umfangsgeschwindigkeit ist nicht berechenbar, weil keine Drehzahl vorliegt.")
+        values.append(
+            "Umfangsgeschwindigkeit ist nicht berechenbar, weil keine Drehzahl vorliegt."
+        )
     if signals.temperature_min_c is not None or signals.temperature_max_c is not None:
         temp = (
             f"{_format_number(signals.temperature_min_c)} bis {_format_number(signals.temperature_max_c)} °C"
-            if signals.temperature_min_c is not None and signals.temperature_max_c is not None
+            if signals.temperature_min_c is not None
+            and signals.temperature_max_c is not None
             else f"bis {_format_number(signals.temperature_max_c)} °C"
         )
         values.append(f"Temperaturfenster als Arbeitsstand: {temp}.")
@@ -478,7 +595,11 @@ def _short_judgement(plan: TechnicalCaseChallengePlan) -> str:
 
 def _bullet_lines(items: list[str]) -> list[str]:
     clean = _unique(items)
-    return [f"- {item}" for item in clean] if clean else ["- Kein belastbarer Punkt aus den vorliegenden Angaben ableitbar."]
+    return (
+        [f"- {item}" for item in clean]
+        if clean
+        else ["- Kein belastbarer Punkt aus den vorliegenden Angaben ableitbar."]
+    )
 
 
 def _human_missing_field(field: str) -> str:
@@ -504,7 +625,9 @@ def _forbidden_claims() -> list[str]:
 
 
 def _unique(items: list[str]) -> list[str]:
-    return list(dict.fromkeys(str(item).strip() for item in items if str(item or "").strip()))
+    return list(
+        dict.fromkeys(str(item).strip() for item in items if str(item or "").strip())
+    )
 
 
 def _format_number(value: float | None) -> str:

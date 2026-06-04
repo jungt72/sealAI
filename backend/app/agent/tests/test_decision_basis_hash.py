@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from app.agent.state.models import DerivedState, EvidenceState, GovernedSessionState, NormalizedParameter, NormalizedState
+from app.agent.state.models import (
+    DerivedState,
+    EvidenceState,
+    GovernedSessionState,
+    NormalizedParameter,
+    NormalizedState,
+)
 from app.agent.state.persistence import compute_decision_basis_hash
 
 
@@ -65,7 +71,9 @@ def test_change_in_normalized_changes_hash() -> None:
 
 def test_change_in_derived_changes_hash() -> None:
     state = _state()
-    updated = state.model_copy(update={"derived": state.derived.model_copy(update={"pv_value": 0.41})})
+    updated = state.model_copy(
+        update={"derived": state.derived.model_copy(update={"pv_value": 0.41})}
+    )
 
     assert compute_decision_basis_hash(updated) != compute_decision_basis_hash(state)
 
@@ -73,7 +81,11 @@ def test_change_in_derived_changes_hash() -> None:
 def test_change_in_evidence_versions_changes_hash() -> None:
     state = _state()
     updated = state.model_copy(
-        update={"evidence": state.evidence.model_copy(update={"source_versions": {"doc-1": "xyz999"}})}
+        update={
+            "evidence": state.evidence.model_copy(
+                update={"source_versions": {"doc-1": "xyz999"}}
+            )
+        }
     )
 
     assert compute_decision_basis_hash(updated) != compute_decision_basis_hash(state)
@@ -84,7 +96,12 @@ def test_irrelevant_artifacts_outside_hash_basis_do_not_change_hash() -> None:
     updated = state.model_copy(
         update={
             "analysis_cycle": 99,
-            "action_readiness": state.action_readiness.model_copy(update={"pdf_ready": True, "pdf_url": "https://example.invalid/demo.pdf"}),
+            "action_readiness": state.action_readiness.model_copy(
+                update={
+                    "pdf_ready": True,
+                    "pdf_url": "https://example.invalid/demo.pdf",
+                }
+            ),
             "conversation_messages": [],
         }
     )

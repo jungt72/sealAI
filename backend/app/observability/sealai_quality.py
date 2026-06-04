@@ -101,7 +101,15 @@ def _redacted_identifier(value: Any) -> str | None:
 
 def _model_public_shape(value: Any) -> dict[str, Any]:
     shape: dict[str, Any] = {"type": type(value).__name__}
-    for attr in ("tenant_id", "user_id", "session_id", "thread_id", "case_id", "preview_id", "sub"):
+    for attr in (
+        "tenant_id",
+        "user_id",
+        "session_id",
+        "thread_id",
+        "case_id",
+        "preview_id",
+        "sub",
+    ):
         if hasattr(value, attr):
             hashed = stable_trace_hash(getattr(value, attr))
             if hashed:
@@ -118,17 +126,23 @@ def redact_trace_value(value: Any, *, key: str | None = None, depth: int = 0) ->
         return value
     if key and _SENSITIVE_KEY_RE.search(key):
         return SENSITIVE_REPLACEMENT
-    if (key and _HASH_KEY_RE.search(key) and _is_trace_hash(value)) or _is_trace_hash(value):
+    if (key and _HASH_KEY_RE.search(key) and _is_trace_hash(value)) or _is_trace_hash(
+        value
+    ):
         return value
     if key and _IDENTITY_KEY_RE.search(key):
         return _redacted_identifier(value)
     if key and _CONTENT_KEY_RE.search(key):
         if isinstance(value, Mapping):
             return {
-                str(raw_key): redact_trace_value(item, key=str(raw_key), depth=depth + 1)
+                str(raw_key): redact_trace_value(
+                    item, key=str(raw_key), depth=depth + 1
+                )
                 for raw_key, item in list(value.items())[:MAX_TRACE_ITEMS]
             }
-        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        if isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
             items = list(value)
             safe_items = [
                 redact_trace_value(
@@ -155,7 +169,10 @@ def redact_trace_value(value: Any, *, key: str | None = None, depth: int = 0) ->
             dumped = value.model_dump()
         except Exception:  # noqa: BLE001
             return _model_public_shape(value)
-        return {"type": type(value).__name__, "fields": redact_trace_value(dumped, depth=depth + 1)}
+        return {
+            "type": type(value).__name__,
+            "fields": redact_trace_value(dumped, depth=depth + 1),
+        }
     if isinstance(value, Mapping):
         safe: dict[str, Any] = {}
         for index, (raw_key, item) in enumerate(value.items()):
@@ -167,7 +184,10 @@ def redact_trace_value(value: Any, *, key: str | None = None, depth: int = 0) ->
         return safe
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         items = list(value)
-        safe_items = [redact_trace_value(item, depth=depth + 1) for item in items[:MAX_TRACE_ITEMS]]
+        safe_items = [
+            redact_trace_value(item, depth=depth + 1)
+            for item in items[:MAX_TRACE_ITEMS]
+        ]
         if len(items) > MAX_TRACE_ITEMS:
             safe_items.append({"_truncated_items": len(items) - MAX_TRACE_ITEMS})
         return safe_items
@@ -214,15 +234,25 @@ def identity_trace_metadata(
 ) -> dict[str, Any]:
     """Build hashed tenant/user/session/case metadata for grouping traces."""
 
-    resolved_user_id = user_id or getattr(current_user, "user_id", None) or getattr(current_user, "sub", None)
+    resolved_user_id = (
+        user_id
+        or getattr(current_user, "user_id", None)
+        or getattr(current_user, "sub", None)
+    )
     tenant_claim = tenant_id or getattr(current_user, "tenant_id", None)
     resolved_tenant_id = tenant_claim or resolved_user_id
-    resolved_session_id = session_id or getattr(request, "session_id", None) or getattr(request, "thread_id", None)
+    resolved_session_id = (
+        session_id
+        or getattr(request, "session_id", None)
+        or getattr(request, "thread_id", None)
+    )
     resolved_case_id = case_id or getattr(request, "case_id", None)
 
     metadata: dict[str, Any] = {
         "tenant_metadata_present": bool(resolved_tenant_id),
-        "tenant_metadata_source": "tenant_claim" if tenant_claim else ("user_scope_fallback" if resolved_user_id else "missing"),
+        "tenant_metadata_source": "tenant_claim"
+        if tenant_claim
+        else ("user_scope_fallback" if resolved_user_id else "missing"),
         "user_metadata_present": bool(resolved_user_id),
         "session_metadata_present": bool(resolved_session_id),
         "case_metadata_present": bool(resolved_case_id),
@@ -277,7 +307,9 @@ def build_quality_metadata(
     return metadata
 
 
-def emit_current_trace_metadata(metadata: Mapping[str, Any], *, tags: Sequence[str] = ()) -> None:
+def emit_current_trace_metadata(
+    metadata: Mapping[str, Any], *, tags: Sequence[str] = ()
+) -> None:
     """Attach metadata/tags to the active LangSmith run if one exists."""
 
     try:

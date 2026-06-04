@@ -19,11 +19,16 @@ def test_adr_011_exposes_all_required_eval_categories() -> None:
 def test_eval_flags_unsafe_final_approval_language() -> None:
     result_by_category = {
         result.category: result
-        for result in evaluate_text_contract("Diese Dichtung ist garantiert passend und final freigegeben.")
+        for result in evaluate_text_contract(
+            "Diese Dichtung ist garantiert passend und final freigegeben."
+        )
     }
 
     assert result_by_category[EvalCategory.SAFETY_LANGUAGE].passed is False
-    assert "unsafe_final_approval_language" in result_by_category[EvalCategory.SAFETY_LANGUAGE].findings
+    assert (
+        "unsafe_final_approval_language"
+        in result_by_category[EvalCategory.SAFETY_LANGUAGE].findings
+    )
 
 
 def test_eval_flags_compliance_overclaim_language() -> None:

@@ -133,7 +133,13 @@ class StateAction(BaseModel):
     mutation_policy: MutationPolicy
     field: str | None = None
     value: Any = None
-    source: Literal["user_message", "pending_question", "router_signal", "backend_validator", "system"] = "user_message"
+    source: Literal[
+        "user_message",
+        "pending_question",
+        "router_signal",
+        "backend_validator",
+        "system",
+    ] = "user_message"
     requires_confirmation: bool = False
     needs_clarification: bool = False
     reason: str = ""
@@ -142,14 +148,21 @@ class StateAction(BaseModel):
 
     @model_validator(mode="after")
     def _state_mutation_requires_policy(self) -> "StateAction":
-        if self.type in {StateActionType.CONFIRM_FACT, StateActionType.CORRECT_FACT} and self.mutation_policy == MutationPolicy.FORBIDDEN:
-            raise ValueError("mutating state actions cannot use mutation_policy=forbidden")
+        if (
+            self.type in {StateActionType.CONFIRM_FACT, StateActionType.CORRECT_FACT}
+            and self.mutation_policy == MutationPolicy.FORBIDDEN
+        ):
+            raise ValueError(
+                "mutating state actions cannot use mutation_policy=forbidden"
+            )
         return self
 
 
 class TaskFrame(BaseModel):
     task_id: str
-    type: Literal["governed_seal_design", "active_case_side_question", "no_case_knowledge", "meta"]
+    type: Literal[
+        "governed_seal_design", "active_case_side_question", "no_case_knowledge", "meta"
+    ]
     phase: str = "unknown"
     topic: str | None = None
     pending_question: ResumeTarget | None = None
@@ -190,8 +203,13 @@ class TurnDecision(BaseModel):
 
     @model_validator(mode="after")
     def _side_questions_do_not_mutate_by_default(self) -> "TurnDecision":
-        if self.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION and self.mutation_policy == MutationPolicy.ALLOWED_BY_VALIDATOR:
-            raise ValueError("active-case side questions may not default to allowed_by_validator")
+        if (
+            self.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
+            and self.mutation_policy == MutationPolicy.ALLOWED_BY_VALIDATOR
+        ):
+            raise ValueError(
+                "active-case side questions may not default to allowed_by_validator"
+            )
         return self
 
 
@@ -217,9 +235,17 @@ class RuntimeAction(BaseModel):
 
     @model_validator(mode="after")
     def _only_enter_graph_action_may_allow_graph(self) -> "RuntimeAction":
-        if self.graph_allowed and self.action_type != RuntimeActionType.ENTER_GOVERNED_GRAPH:
-            raise ValueError("graph_allowed=true requires action_type=enter_governed_graph")
-        if self.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH and not self.graph_allowed:
+        if (
+            self.graph_allowed
+            and self.action_type != RuntimeActionType.ENTER_GOVERNED_GRAPH
+        ):
+            raise ValueError(
+                "graph_allowed=true requires action_type=enter_governed_graph"
+            )
+        if (
+            self.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
+            and not self.graph_allowed
+        ):
             raise ValueError("enter_governed_graph requires graph_allowed=true")
         return self
 
@@ -522,7 +548,9 @@ class EvidenceItem(BaseModel):
 class SpeakableFact(BaseModel):
     fact_id: str
     field: str | None = None
-    status: Literal["confirmed", "candidate", "ambiguous", "missing", "stale", "calculated", "open"] = "candidate"
+    status: Literal[
+        "confirmed", "candidate", "ambiguous", "missing", "stale", "calculated", "open"
+    ] = "candidate"
     claim_level_max: ClaimLevel = ClaimLevel.L2_APPLICATION_ORIENTATION
     structured_value: dict[str, Any] = Field(default_factory=dict)
     safe_phrases: list[str] = Field(default_factory=list)
@@ -554,7 +582,9 @@ class AnswerPlan(BaseModel):
     primary_task: TaskFrame | None = None
     side_task: TaskFrame | None = None
     resume_target: ResumeTarget | None = None
-    allowed_claim_levels: list[ClaimLevel] = Field(default_factory=lambda: [ClaimLevel.L1_GENERAL])
+    allowed_claim_levels: list[ClaimLevel] = Field(
+        default_factory=lambda: [ClaimLevel.L1_GENERAL]
+    )
     forbidden_claims: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid", use_enum_values=True)

@@ -6,6 +6,7 @@ UI tile projections derived from GovernedSessionState.
 Tiles are outward-facing representations, not state shortcuts. This module is
 pure: no state mutation, no I/O, no LLM calls.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -264,7 +265,9 @@ def _build_assumption_tile(state: GovernedSessionState) -> AssumptionTileProject
         AssumptionEntry(kind="assumption", text=assumption.description)
         for assumption in state.normalized.assumptions
     ]
-    open_points = prioritized_open_point_labels(state, state.governance.open_validation_points)
+    open_points = prioritized_open_point_labels(
+        state, state.governance.open_validation_points
+    )
     items.extend(
         AssumptionEntry(kind="open_point", text=open_point)
         for open_point in open_points
@@ -276,7 +279,9 @@ def _build_assumption_tile(state: GovernedSessionState) -> AssumptionTileProject
     )
 
 
-def _build_recommendation_tile(state: GovernedSessionState) -> RecommendationTileProjection:
+def _build_recommendation_tile(
+    state: GovernedSessionState,
+) -> RecommendationTileProjection:
     governance = state.governance
     requirement_class = None
     requirement_summary = None
@@ -290,7 +295,9 @@ def _build_recommendation_tile(state: GovernedSessionState) -> RecommendationTil
         requirement_class=requirement_class,
         requirement_summary=requirement_summary,
         validity_notes=list(governance.validity_limits),
-        open_points=prioritized_open_point_labels(state, governance.open_validation_points),
+        open_points=prioritized_open_point_labels(
+            state, governance.open_validation_points
+        ),
     )
 
 
@@ -341,7 +348,9 @@ def _build_matching_tile(state: GovernedSessionState) -> MatchingTileProjection:
         return MatchingTileProjection(status="pending")
     return MatchingTileProjection(
         status=state.matching.status,
-        selected_manufacturer=selected.manufacturer_name if selected is not None else None,
+        selected_manufacturer=selected.manufacturer_name
+        if selected is not None
+        else None,
         manufacturer_count=len(state.matching.manufacturer_refs),
         manufacturers=manufacturers,
         notes=list(state.matching.matching_notes),
@@ -366,10 +375,14 @@ def _build_rfq_tile(state: GovernedSessionState) -> RfqTileProjection:
         status=state.rfq.status,
         rfq_ready=state.rfq.rfq_ready,
         rfq_admissible=state.rfq.rfq_admissible or state.governance.rfq_admissible,
-        selected_manufacturer=selected.manufacturer_name if selected is not None else None,
+        selected_manufacturer=selected.manufacturer_name
+        if selected is not None
+        else None,
         recipient_count=len(state.rfq.recipient_refs),
         qualified_material_count=len(state.rfq.qualified_material_ids),
-        requirement_class=requirement_class.class_id if requirement_class is not None else None,
+        requirement_class=requirement_class.class_id
+        if requirement_class is not None
+        else None,
         dispatch_ready=state.dispatch.dispatch_ready,
         dispatch_status=state.dispatch.dispatch_status,
         notes=_sanitize_public_notes(list(state.rfq.notes)),
@@ -387,7 +400,9 @@ def _build_norm_tile(state: GovernedSessionState) -> NormTileProjection:
         and not norm.open_validation_points
         and not norm.validity_limits
     ):
-        return NormTileProjection(status="pending", norm_version=norm.identity.norm_version)
+        return NormTileProjection(
+            status="pending", norm_version=norm.identity.norm_version
+        )
     return NormTileProjection(
         status=norm.status,
         norm_version=norm.identity.norm_version,
@@ -402,7 +417,9 @@ def _build_norm_tile(state: GovernedSessionState) -> NormTileProjection:
     )
 
 
-def _build_export_profile_tile(state: GovernedSessionState) -> ExportProfileTileProjection:
+def _build_export_profile_tile(
+    state: GovernedSessionState,
+) -> ExportProfileTileProjection:
     export_profile = state.export_profile
     if (
         export_profile.status == "pending"
@@ -435,7 +452,9 @@ def _build_export_profile_tile(state: GovernedSessionState) -> ExportProfileTile
     )
 
 
-def _build_manufacturer_mapping_tile(state: GovernedSessionState) -> ManufacturerMappingTileProjection:
+def _build_manufacturer_mapping_tile(
+    state: GovernedSessionState,
+) -> ManufacturerMappingTileProjection:
     mapping = state.manufacturer_mapping
     if (
         mapping.status == "pending"
@@ -462,7 +481,9 @@ def _build_manufacturer_mapping_tile(state: GovernedSessionState) -> Manufacture
     )
 
 
-def _build_dispatch_contract_tile(state: GovernedSessionState) -> DispatchContractTileProjection:
+def _build_dispatch_contract_tile(
+    state: GovernedSessionState,
+) -> DispatchContractTileProjection:
     contract = state.dispatch_contract
     if (
         contract.status == "pending"
@@ -498,9 +519,18 @@ def _build_dispatch_contract_tile(state: GovernedSessionState) -> DispatchContra
     )
 
 
-def _build_medium_context_tile(state: GovernedSessionState) -> MediumContextTileProjection:
-    medium_context = state.medium_context if isinstance(state.medium_context, MediumContext) else MediumContext()
-    if medium_context.status != "available" or not str(medium_context.medium_label or "").strip():
+def _build_medium_context_tile(
+    state: GovernedSessionState,
+) -> MediumContextTileProjection:
+    medium_context = (
+        state.medium_context
+        if isinstance(state.medium_context, MediumContext)
+        else MediumContext()
+    )
+    if (
+        medium_context.status != "available"
+        or not str(medium_context.medium_label or "").strip()
+    ):
         return MediumContextTileProjection()
     return MediumContextTileProjection(
         medium_label=medium_context.medium_label,
@@ -517,16 +547,24 @@ def _build_medium_context_tile(state: GovernedSessionState) -> MediumContextTile
     )
 
 
-def _build_medium_classification_tile(state: GovernedSessionState) -> MediumClassificationTileProjection:
+def _build_medium_classification_tile(
+    state: GovernedSessionState,
+) -> MediumClassificationTileProjection:
     classification = state.medium_classification
     if isinstance(classification, dict):
-        classification = MediumClassificationTileProjection.model_validate(classification)
+        classification = MediumClassificationTileProjection.model_validate(
+            classification
+        )
     capture = state.medium_capture
     if isinstance(capture, dict):
-        capture = type("CaptureProxy", (), {
-            "primary_raw_text": capture.get("primary_raw_text"),
-            "raw_mentions": capture.get("raw_mentions") or [],
-        })()
+        capture = type(
+            "CaptureProxy",
+            (),
+            {
+                "primary_raw_text": capture.get("primary_raw_text"),
+                "raw_mentions": capture.get("raw_mentions") or [],
+            },
+        )()
     return MediumClassificationTileProjection(
         canonical_label=classification.canonical_label,
         family=classification.family,

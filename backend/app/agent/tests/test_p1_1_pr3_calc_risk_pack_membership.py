@@ -10,6 +10,7 @@ membership swap cannot change outcomes.
   calc ids) are covered by the seam-helper equivalence below + the existing
   `test_pressure_truth_patch2` / `test_risk_claim_evidence_gate_patch4`.
 """
+
 from __future__ import annotations
 
 import pytest

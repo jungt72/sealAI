@@ -14,13 +14,17 @@ Architecture invariants:
       and a requirement class has bounded the admissible solution space.
     - Output is persisted in MatchingState only.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.agent.state.case_state import _build_manufacturer_capabilities, _build_manufacturer_refs
+from app.agent.state.case_state import (
+    _build_manufacturer_capabilities,
+    _build_manufacturer_refs,
+)
 from app.agent.domain.governed_data import get_default_domain_data_provider
 from app.agent.domain.manufacturer_rfq import (
     ManufacturerCapabilityPackage,
@@ -102,8 +106,12 @@ def _matching_release_blockers(state: GraphState) -> list[str]:
         blockers.append("governance_not_class_a")
     blockers.extend(_preselection_blocker_fields(state))
     blockers.extend(_blocking_evidence_gaps_for_release(state))
-    blockers.extend(str(item) for item in list(state.asserted.blocking_unknowns or []) if item)
-    blockers.extend(f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item)
+    blockers.extend(
+        str(item) for item in list(state.asserted.blocking_unknowns or []) if item
+    )
+    blockers.extend(
+        f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item
+    )
     return list(dict.fromkeys(blockers))
 
 
@@ -153,11 +161,15 @@ def _fit_record(state: GraphState, record: Any) -> _CapabilityFit:
         for item in list(coverage.get("requirement_class_ids") or [])
         if item
     }
-    requirement_class_id = str(requirement_class.class_id or "").strip() if requirement_class else ""
+    requirement_class_id = (
+        str(requirement_class.class_id or "").strip() if requirement_class else ""
+    )
     if requirement_class_id and requirement_class_ids:
         if requirement_class_id in requirement_class_ids:
             score += 30
-            positive_reasons.append(f"requirement class '{requirement_class_id}' is supported.")
+            positive_reasons.append(
+                f"requirement class '{requirement_class_id}' is supported."
+            )
         else:
             blocking_reasons.append(
                 f"requirement class '{requirement_class_id}' is not covered by this record."
@@ -191,7 +203,9 @@ def _fit_record(state: GraphState, record: Any) -> _CapabilityFit:
     if medium and allowed_media:
         medium_key = _MEDIUM_ALIASES.get(medium.strip().lower(), medium.strip().lower())
         if medium_key not in allowed_media:
-            blocking_reasons.append(f"medium '{medium_key}' is not in the supported media set.")
+            blocking_reasons.append(
+                f"medium '{medium_key}' is not in the supported media set."
+            )
         else:
             score += 20
             positive_reasons.append(f"medium '{medium_key}' is supported.")
@@ -216,13 +230,19 @@ def _fit_record(state: GraphState, record: Any) -> _CapabilityFit:
         for item in list(coverage.get("supported_seal_types") or [])
         if item
     }
-    seal_type = str(requirement_class.seal_type or "").strip().lower() if requirement_class else ""
+    seal_type = (
+        str(requirement_class.seal_type or "").strip().lower()
+        if requirement_class
+        else ""
+    )
     if seal_type and supported_seal_types:
         if seal_type in supported_seal_types:
             score += 5
             positive_reasons.append(f"seal type '{seal_type}' is supported.")
         else:
-            blocking_reasons.append(f"seal type '{seal_type}' is not supported by this record.")
+            blocking_reasons.append(
+                f"seal type '{seal_type}' is not supported by this record."
+            )
 
     return _CapabilityFit(
         is_fit=not blocking_reasons,
@@ -232,7 +252,9 @@ def _fit_record(state: GraphState, record: Any) -> _CapabilityFit:
     )
 
 
-def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], list[str], bool]:
+def _build_match_candidates(
+    state: GraphState,
+) -> tuple[list[dict[str, Any]], list[str], bool]:
     provider = get_default_domain_data_provider()
     records = provider.list_material_records()
     notes: list[str] = []
@@ -264,7 +286,9 @@ def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], li
                 "viability_status": "viable",
                 "fit_score": fit.score,
                 "fit_reasons": list(fit.positive_reasons),
-                "capability_hints": list((record.coverage_metadata or {}).get("capability_hints") or []),
+                "capability_hints": list(
+                    (record.coverage_metadata or {}).get("capability_hints") or []
+                ),
                 "evidence_refs": [f"domain_record:{record.record_id}"],
             }
         )
@@ -278,7 +302,9 @@ def _build_match_candidates(state: GraphState) -> tuple[list[dict[str, Any]], li
     )
 
     if not candidates:
-        notes.append("No manufacturer record matches the current governed material and operating window.")
+        notes.append(
+            "No manufacturer record matches the current governed material and operating window."
+        )
     else:
         top_candidate = candidates[0]
         notes.append(
@@ -300,7 +326,9 @@ async def matching_node(state: GraphState) -> GraphState:
                 "matching": MatchingState(
                     matchability_status="blocked_governance",
                     status="not_ready",
-                    matching_notes=["Matching is only available after technical narrowing reaches Class B or A."],
+                    matching_notes=[
+                        "Matching is only available after technical narrowing reaches Class B or A."
+                    ],
                 )
             }
         )
@@ -325,7 +353,9 @@ async def matching_node(state: GraphState) -> GraphState:
                 "matching": MatchingState(
                     matchability_status="insufficient_matching_basis",
                     status="not_ready",
-                    matching_notes=["Matching requires a governed material family or a requirement-class-backed material hint."],
+                    matching_notes=[
+                        "Matching requires a governed material family or a requirement-class-backed material hint."
+                    ],
                 )
             }
         )
@@ -366,7 +396,9 @@ async def matching_node(state: GraphState) -> GraphState:
                 "matching": MatchingState.model_validate(
                     {
                         "matchability_status": "not_released",
-                        "status": "candidate_not_released" if match_candidates else "blocked_release_basis",
+                        "status": "candidate_not_released"
+                        if match_candidates
+                        else "blocked_release_basis",
                         "shortlist_ready": False,
                         "inquiry_ready": False,
                         "release_blockers": release_blockers,
@@ -376,12 +408,20 @@ async def matching_node(state: GraphState) -> GraphState:
                         "manufacturer_capabilities": [
                             {
                                 "manufacturer_name": item.get("manufacturer_name"),
-                                "requirement_class_ids": list(item.get("requirement_class_ids") or []),
-                                "material_families": list(item.get("material_families") or []),
+                                "requirement_class_ids": list(
+                                    item.get("requirement_class_ids") or []
+                                ),
+                                "material_families": list(
+                                    item.get("material_families") or []
+                                ),
                                 "grade_names": list(item.get("grade_names") or []),
                                 "candidate_ids": list(item.get("candidate_ids") or []),
-                                "capability_hints": list(item.get("capability_hints") or []),
-                                "source_refs": list(item.get("capability_sources") or []),
+                                "capability_hints": list(
+                                    item.get("capability_hints") or []
+                                ),
+                                "source_refs": list(
+                                    item.get("capability_sources") or []
+                                ),
                                 "qualified_for_rfq": False,
                             }
                             for item in manufacturer_capabilities
@@ -396,15 +436,23 @@ async def matching_node(state: GraphState) -> GraphState:
         ManufacturerRfqSpecialistInput(
             admissible_request_package=ManufacturerRfqAdmissibleRequestPackage(
                 matchability_status=matchability_status,
-                rfq_admissibility="ready" if state.governance.rfq_admissible else "inadmissible",
+                rfq_admissibility="ready"
+                if state.governance.rfq_admissible
+                else "inadmissible",
                 requirement_class=requirement_class_payload,
             ),
             manufacturer_capabilities=ManufacturerCapabilityPackage(
                 match_candidates=tuple(dict(item) for item in match_candidates),
                 manufacturer_refs=tuple(dict(item) for item in manufacturer_refs),
-                manufacturer_capabilities=tuple(dict(item) for item in manufacturer_capabilities),
-                winner_candidate_id=match_candidates[0]["candidate_id"] if match_candidates else None,
-                recommendation_identity=dict(match_candidates[0]) if match_candidates else None,
+                manufacturer_capabilities=tuple(
+                    dict(item) for item in manufacturer_capabilities
+                ),
+                winner_candidate_id=match_candidates[0]["candidate_id"]
+                if match_candidates
+                else None,
+                recommendation_identity=dict(match_candidates[0])
+                if match_candidates
+                else None,
             ),
             scope_package=ManufacturerRfqScopePackage(
                 scope_of_validity=tuple(
@@ -439,9 +487,11 @@ async def matching_node(state: GraphState) -> GraphState:
         update={
             "matching": MatchingState.model_validate(
                 {
-                    "matchability_status": outcome.get("matchability_status") or matchability_status,
+                    "matchability_status": outcome.get("matchability_status")
+                    or matchability_status,
                     "status": outcome.get("status") or "not_ready",
-                    "shortlist_ready": outcome.get("status") == "matched_primary_candidate",
+                    "shortlist_ready": outcome.get("status")
+                    == "matched_primary_candidate",
                     "inquiry_ready": (
                         outcome.get("status") == "matched_primary_candidate"
                         and state.governance.rfq_admissible
@@ -449,16 +499,24 @@ async def matching_node(state: GraphState) -> GraphState:
                     ),
                     "release_blockers": [],
                     "data_source": data_source,
-                    "selected_manufacturer_ref": outcome.get("selected_manufacturer_ref"),
+                    "selected_manufacturer_ref": outcome.get(
+                        "selected_manufacturer_ref"
+                    ),
                     "manufacturer_refs": manufacturer_refs,
                     "manufacturer_capabilities": [
                         {
                             "manufacturer_name": item.get("manufacturer_name"),
-                            "requirement_class_ids": list(item.get("requirement_class_ids") or []),
-                            "material_families": list(item.get("material_families") or []),
+                            "requirement_class_ids": list(
+                                item.get("requirement_class_ids") or []
+                            ),
+                            "material_families": list(
+                                item.get("material_families") or []
+                            ),
                             "grade_names": list(item.get("grade_names") or []),
                             "candidate_ids": list(item.get("candidate_ids") or []),
-                            "capability_hints": list(item.get("capability_hints") or []),
+                            "capability_hints": list(
+                                item.get("capability_hints") or []
+                            ),
                             "source_refs": list(item.get("capability_sources") or []),
                             "qualified_for_rfq": bool(item.get("rfq_qualified", False)),
                         }

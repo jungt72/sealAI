@@ -9,7 +9,9 @@ Covers:
 3. working_profile keys appearing in the meta response only via asserted_state,
    not directly from wp (already covered in E2E, but unit-level regression here).
 """
+
 from __future__ import annotations
+
 
 class TestSyncWpToStateProtection:
     """Wave-1 protection: wp values must never be written into asserted_state."""
@@ -29,13 +31,15 @@ class TestSyncWpToStateProtection:
         result = sync_working_profile_to_state(state)
 
         # asserted must remain empty — wp values do not flow into asserted
-        asserted = (result.get("sealing_state") or state["sealing_state"]).get("asserted", {})
-        assert not (asserted.get("medium_profile") or {}).get("name"), (
-            "sync_working_profile_to_state must NOT copy wp.medium into asserted.medium_profile"
+        asserted = (result.get("sealing_state") or state["sealing_state"]).get(
+            "asserted", {}
         )
-        assert not (asserted.get("operating_conditions") or {}).get("pressure"), (
-            "sync_working_profile_to_state must NOT copy wp.pressure_bar into asserted"
-        )
+        assert not (asserted.get("medium_profile") or {}).get(
+            "name"
+        ), "sync_working_profile_to_state must NOT copy wp.medium into asserted.medium_profile"
+        assert not (asserted.get("operating_conditions") or {}).get(
+            "pressure"
+        ), "sync_working_profile_to_state must NOT copy wp.pressure_bar into asserted"
 
     def test_sync_preserves_existing_asserted_state(self):
         """If asserted already has data, sync must not overwrite it."""
@@ -53,12 +57,15 @@ class TestSyncWpToStateProtection:
         result = sync_working_profile_to_state(state)
         ss = result.get("sealing_state") or state["sealing_state"]
         # The existing confirmed medium must remain unchanged
-        assert (ss.get("asserted") or {}).get("medium_profile", {}).get("name") == "Hydrauliköl"
+        assert (ss.get("asserted") or {}).get("medium_profile", {}).get(
+            "name"
+        ) == "Hydrauliköl"
 
 
 # ---------------------------------------------------------------------------
 # 3. Unit: _build_missing_inputs_text pending never bleeds into missing section
 # ---------------------------------------------------------------------------
+
 
 class TestMissingInputsPendingBoundary:
     """Regression: wp-pending values must stay in pending section, not missing section."""
@@ -73,9 +80,9 @@ class TestMissingInputsPendingBoundary:
         assert "6.0" in text, "Pending pressure must appear somewhere in the text"
         if "Für eine Auslegungsempfehlung benötige ich noch" in text:
             missing_section = text.split("Ausstehende Bestätigung")[0]
-            assert "6.0" not in missing_section, (
-                "Pending pressure value must not appear in the 'missing' section"
-            )
+            assert (
+                "6.0" not in missing_section
+            ), "Pending pressure value must not appear in the 'missing' section"
 
     def test_wp_medium_not_mixed_into_missing_when_it_is_pending(self):
         from app.agent.runtime.selection import _build_missing_inputs_text
@@ -87,6 +94,6 @@ class TestMissingInputsPendingBoundary:
         # Once pending, it must not re-appear as a required-input
         if "Für eine Auslegungsempfehlung benötige ich noch" in text:
             missing_section = text.split("Ausstehende Bestätigung")[0]
-            assert "Testöl-99" not in missing_section, (
-                "Pending medium must not appear in the missing-inputs section"
-            )
+            assert (
+                "Testöl-99" not in missing_section
+            ), "Pending medium must not appear in the missing-inputs section"

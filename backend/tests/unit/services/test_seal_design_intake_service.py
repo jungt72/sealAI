@@ -12,7 +12,9 @@ def _trigger_ids(bundle) -> set[str]:
 
 
 def _check(bundle, check_id: str):
-    return next(check for check in bundle.screening_checks if check.check_id == check_id)
+    return next(
+        check for check in bundle.screening_checks if check.check_id == check_id
+    )
 
 
 def test_empty_new_design_payload_marks_minimum_dataset_missing() -> None:
@@ -99,7 +101,9 @@ def test_high_pressure_gap_and_gas_decompression_trigger_escalation() -> None:
         }
     )
 
-    assert {"high_pressure_large_gap", "gas_decompression_review"} <= _trigger_ids(bundle)
+    assert {"high_pressure_large_gap", "gas_decompression_review"} <= _trigger_ids(
+        bundle
+    )
     assert "DesignEscalationTriggerIdentified" in bundle.event_names
 
 

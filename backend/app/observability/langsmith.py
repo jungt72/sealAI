@@ -41,16 +41,16 @@ def _truthy(value: str | bool | None) -> bool:
 def langsmith_api_key() -> str | None:
     """Return the configured LangSmith key without exposing it."""
 
-    return (os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY") or "").strip() or None
+    return (
+        os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY") or ""
+    ).strip() or None
 
 
 def langsmith_project(default: str = "sealai-production") -> str:
     """Return the active LangSmith project name."""
 
     return (
-        os.getenv("LANGSMITH_PROJECT")
-        or os.getenv("LANGCHAIN_PROJECT")
-        or default
+        os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT") or default
     ).strip()
 
 
@@ -125,7 +125,10 @@ def langsmith_tracing_disabled(*, disabled: bool = True) -> Iterator[None]:
         context = tracing_context(enabled=False)
         context.__enter__()
     except Exception as exc:  # noqa: BLE001
-        log.warning("LangSmith tracing_context unavailable; continuing without suppression: %s", exc)
+        log.warning(
+            "LangSmith tracing_context unavailable; continuing without suppression: %s",
+            exc,
+        )
         yield
         return
     try:
@@ -166,11 +169,18 @@ def configure_langsmith_environment(
         return False
     clean_key = (api_key or langsmith_api_key() or "").strip()
     if not clean_key:
-        log.info("LangSmith tracing requested but no API key provided; tracing remains disabled.")
+        log.info(
+            "LangSmith tracing requested but no API key provided; tracing remains disabled."
+        )
         return False
 
     clean_project = (project or langsmith_project()).strip() or "sealai-production"
-    clean_endpoint = (endpoint or os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT") or "").strip()
+    clean_endpoint = (
+        endpoint
+        or os.getenv("LANGSMITH_ENDPOINT")
+        or os.getenv("LANGCHAIN_ENDPOINT")
+        or ""
+    ).strip()
 
     os.environ.setdefault("LANGSMITH_TRACING", "true")
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
@@ -201,7 +211,10 @@ def wrap_openai_client(client: Any) -> Any:
     except Exception as exc:  # noqa: BLE001
         global _WRAP_UNAVAILABLE_LOGGED
         if not _WRAP_UNAVAILABLE_LOGGED:
-            log.warning("LangSmith OpenAI wrapping unavailable; continuing without SDK spans: %s", exc)
+            log.warning(
+                "LangSmith OpenAI wrapping unavailable; continuing without SDK spans: %s",
+                exc,
+            )
             _WRAP_UNAVAILABLE_LOGGED = True
         return client
 
@@ -225,7 +238,9 @@ def traceable(
     function on any LangSmith-side failure.
     """
 
-    def _extract_call_metadata(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
+    def _extract_call_metadata(
+        args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
         request = kwargs.get("request")
         current_user = kwargs.get("current_user")
         for value in args:
@@ -291,19 +306,28 @@ def traceable(
                     traced_func = _traceable(**options)(func)
                 return traced_func
             except Exception as exc:  # noqa: BLE001
-                log.warning("LangSmith traceable wrapper unavailable; continuing without span: %s", exc)
+                log.warning(
+                    "LangSmith traceable wrapper unavailable; continuing without span: %s",
+                    exc,
+                )
                 return None
 
         if inspect.iscoroutinefunction(func):
+
             @wraps(func)
             async def _async_wrapped(*args: P.args, **kwargs: P.kwargs) -> Any:
                 traced = _build_traced()
                 if traced is None:
                     return await func(*args, **kwargs)
                 try:
-                    return await traced(*args, **_kwargs_with_call_metadata(args, dict(kwargs)))  # type: ignore[misc]
+                    return await traced(
+                        *args, **_kwargs_with_call_metadata(args, dict(kwargs))
+                    )  # type: ignore[misc]
                 except Exception as exc:  # noqa: BLE001
-                    log.warning("LangSmith traced async call failed; continuing without span: %s", exc)
+                    log.warning(
+                        "LangSmith traced async call failed; continuing without span: %s",
+                        exc,
+                    )
                     return await func(*args, **kwargs)
 
             return _async_wrapped  # type: ignore[return-value]
@@ -316,10 +340,13 @@ def traceable(
             try:
                 return traced(*args, **_kwargs_with_call_metadata(args, dict(kwargs)))
             except Exception as exc:  # noqa: BLE001
-                log.warning("LangSmith traced call failed; continuing without span: %s", exc)
+                log.warning(
+                    "LangSmith traced call failed; continuing without span: %s", exc
+                )
                 return func(*args, **kwargs)
 
         return _wrapped
+
     return _decorator
 
 

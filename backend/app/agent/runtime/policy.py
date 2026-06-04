@@ -5,6 +5,7 @@ Phase 0A.2
 Typed enums and the InteractionPolicyDecision contract.
 These are the authoritative types used by the router and persisted in case metadata.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -47,10 +48,12 @@ class InteractionPolicyDecision:
     stream_mode: str  # "reply_only" | "structured_progress_stream"
 
     # Kept for backwards-compatibility with router payload and persistence layer
-    interaction_class: str   # e.g. "DIRECT_ANSWER", "DETERMINISTIC_RESULT", "META_STATUS", "BLOCKED"
-    runtime_path: str        # e.g. "FAST_DIRECT", "STRUCTURED_QUALIFICATION"
-    binding_level: str       # "KNOWLEDGE" | "ORIENTATION"
-    has_case_state: bool     # whether structured case persistence is activated
+    interaction_class: (
+        str  # e.g. "DIRECT_ANSWER", "DETERMINISTIC_RESULT", "META_STATUS", "BLOCKED"
+    )
+    runtime_path: str  # e.g. "FAST_DIRECT", "STRUCTURED_QUALIFICATION"
+    binding_level: str  # "KNOWLEDGE" | "ORIENTATION"
+    has_case_state: bool  # whether structured case persistence is activated
 
     # Coverage and boundary signals (forwarded to visible narrative)
     coverage_status: str | None = None

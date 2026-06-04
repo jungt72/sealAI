@@ -57,10 +57,12 @@ if "pypdf" not in sys.modules:
 def anyio_backend() -> str:
     return "asyncio"
 
+
 # Pre-import to ensure WorkingProfile is available in module namespace
 # (sealai_state.py uses try/except import; running conftest first ensures
 # env vars are set before that import chain fires).
 from app.services.rag.state import WorkingProfile as _WP  # noqa: F401, E402
+
 try:
     from app._legacy_v2.state.sealai_state import SealAIState as _SS  # noqa: F401, E402
 except ModuleNotFoundError:

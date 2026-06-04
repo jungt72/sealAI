@@ -64,7 +64,9 @@ class MaterialQualificationCoreOutput:
     demo_data_in_scope: bool = False
 
 
-def load_promoted_candidate_registry_records() -> tuple[PromotedCandidateRegistryRecordDTO, ...]:
+def load_promoted_candidate_registry_records() -> (
+    tuple[PromotedCandidateRegistryRecordDTO, ...]
+):
     return (
         PromotedCandidateRegistryRecordDTO(
             registry_record_id="registry-ptfe-g25-acme",
@@ -84,7 +86,11 @@ def _candidate_key(candidate: dict[str, Any]) -> tuple[str, str | None, str | No
     return (
         str(candidate.get("material_family") or "").upper(),
         (str(candidate.get("grade_name")) if candidate.get("grade_name") else None),
-        (str(candidate.get("manufacturer_name")) if candidate.get("manufacturer_name") else None),
+        (
+            str(candidate.get("manufacturer_name"))
+            if candidate.get("manufacturer_name")
+            else None
+        ),
     )
 
 
@@ -96,7 +102,11 @@ def resolve_candidate_registry_records_for_material_case(
     for candidate in candidates:
         ckey = _candidate_key(candidate)
         for record in records:
-            rkey = (record.material_family.upper(), record.grade_name, record.manufacturer_name)
+            rkey = (
+                record.material_family.upper(),
+                record.grade_name,
+                record.manufacturer_name,
+            )
             if ckey == rkey:
                 resolved[str(candidate.get("candidate_id"))] = record
     return resolved
@@ -107,8 +117,11 @@ def resolve_promoted_candidate_records_for_material_case(
 ) -> dict[str, PromotedCandidateRegistryRecordDTO]:
     return {
         candidate_id: record
-        for candidate_id, record in resolve_candidate_registry_records_for_material_case(candidates).items()
-        if record.registry_authority == "governed" and record.promotion_state == "promoted"
+        for candidate_id, record in resolve_candidate_registry_records_for_material_case(
+            candidates
+        ).items()
+        if record.registry_authority == "governed"
+        and record.promotion_state == "promoted"
     }
 
 
@@ -167,20 +180,40 @@ def evaluate_material_qualification_core(
             {
                 "candidate_id": "::".join(
                     part.lower()
-                    for part in [family, metadata.get("grade_name"), metadata.get("manufacturer_name")]
+                    for part in [
+                        family,
+                        metadata.get("grade_name"),
+                        metadata.get("manufacturer_name"),
+                    ]
                     if part
                 ),
                 "material_family": family,
                 "grade_name": metadata.get("grade_name"),
                 "manufacturer_name": metadata.get("manufacturer_name"),
-                "candidate_kind": "manufacturer_grade" if metadata.get("grade_name") and metadata.get("manufacturer_name") else "family",
-                "evidence_refs": [card.get("evidence_id") or card.get("id")] if card.get("evidence_id") or card.get("id") else [],
+                "candidate_kind": "manufacturer_grade"
+                if metadata.get("grade_name") and metadata.get("manufacturer_name")
+                else "family",
+                "evidence_refs": [card.get("evidence_id") or card.get("id")]
+                if card.get("evidence_id") or card.get("id")
+                else [],
             }
         )
-    assessments = classify_material_candidate_sources(candidates=candidates, relevant_fact_cards=relevant_fact_cards)
-    promoted_candidate_ids = [item.candidate_id for item in assessments if item.source_origin == PROMOTED_SOURCE_ORIGIN]
-    exploratory_candidate_ids = [item.candidate_id for item in assessments if item.source_origin != PROMOTED_SOURCE_ORIGIN]
-    qualified_candidate_ids = [item.candidate_id for item in assessments if item.qualified_eligible]
+    assessments = classify_material_candidate_sources(
+        candidates=candidates, relevant_fact_cards=relevant_fact_cards
+    )
+    promoted_candidate_ids = [
+        item.candidate_id
+        for item in assessments
+        if item.source_origin == PROMOTED_SOURCE_ORIGIN
+    ]
+    exploratory_candidate_ids = [
+        item.candidate_id
+        for item in assessments
+        if item.source_origin != PROMOTED_SOURCE_ORIGIN
+    ]
+    qualified_candidate_ids = [
+        item.candidate_id for item in assessments if item.qualified_eligible
+    ]
     has_promoted_candidate_source = bool(promoted_candidate_ids)
     # Phase 0B.1: detect demo data — registry-level flag OR any individual demo record in scope
     demo_data_in_scope = REGISTRY_IS_DEMO_ONLY or any(
@@ -192,7 +225,9 @@ def evaluate_material_qualification_core(
         promoted_candidate_ids=promoted_candidate_ids,
         qualified_candidate_ids=qualified_candidate_ids,
         exploratory_candidate_ids=exploratory_candidate_ids,
-        qualification_status="qualified_candidate_source_available" if has_promoted_candidate_source else "exploratory_candidate_source_only",
+        qualification_status="qualified_candidate_source_available"
+        if has_promoted_candidate_source
+        else "exploratory_candidate_source_only",
         output_blocked=not has_promoted_candidate_source,
         demo_data_in_scope=demo_data_in_scope,
     )
@@ -213,13 +248,16 @@ def build_material_provider_contract_snapshot(
             }
             for candidate_id, record in all_records.items()
         ],
-        "matched_promoted_registry_record_ids": [record.registry_record_id for record in promoted_records.values()],
+        "matched_promoted_registry_record_ids": [
+            record.registry_record_id for record in promoted_records.values()
+        ],
     }
 
 
 # ---------------------------------------------------------------------------
 # Phase A4: Governed Domain Data Layer bridge
 # ---------------------------------------------------------------------------
+
 
 def load_governed_material_records(
     provider: DomainDataProvider | None = None,

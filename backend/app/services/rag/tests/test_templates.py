@@ -67,7 +67,9 @@ def _full_engineering_context(*, is_critical: bool = False) -> dict:
     }
 
 
-def _full_rfq_context(*, partner: dict | None = PARTNER, is_critical: bool = False) -> dict:
+def _full_rfq_context(
+    *, partner: dict | None = PARTNER, is_critical: bool = False
+) -> dict:
     return {
         "profile": PROFILE,
         "material": MATERIAL,
@@ -88,14 +90,18 @@ def _full_rfq_context(*, partner: dict | None = PARTNER, is_critical: bool = Fal
 class TestStrictUndefined:
     """StrictUndefined must raise on every required top-level variable."""
 
-    @pytest.mark.parametrize("missing_key", ["profile", "material", "calculation", "critique_log"])
+    @pytest.mark.parametrize(
+        "missing_key", ["profile", "material", "calculation", "critique_log"]
+    )
     def test_engineering_report_missing_key(self, missing_key: str):
         ctx = _full_engineering_context()
         del ctx[missing_key]
         with pytest.raises(UndefinedError):
             render_rag_template("engineering_report.j2", ctx)
 
-    @pytest.mark.parametrize("missing_key", ["profile", "material", "calculation", "critique_log"])
+    @pytest.mark.parametrize(
+        "missing_key", ["profile", "material", "calculation", "critique_log"]
+    )
     def test_rfq_template_missing_key(self, missing_key: str):
         ctx = _full_rfq_context()
         del ctx[missing_key]
@@ -120,19 +126,27 @@ class TestGoldenFiles:
     """Rendered output must match golden files exactly."""
 
     def test_engineering_report(self):
-        rendered = render_rag_template("engineering_report.j2", _full_engineering_context())
+        rendered = render_rag_template(
+            "engineering_report.j2", _full_engineering_context()
+        )
         assert rendered == _read_golden("golden_engineering_report.txt")
 
     def test_rfq_with_partner(self):
-        rendered = render_rag_template("rfq_template.j2", _full_rfq_context(partner=PARTNER))
+        rendered = render_rag_template(
+            "rfq_template.j2", _full_rfq_context(partner=PARTNER)
+        )
         assert rendered == _read_golden("golden_rfq_partner.txt")
 
     def test_rfq_neutral(self):
-        rendered = render_rag_template("rfq_template.j2", _full_rfq_context(partner=None))
+        rendered = render_rag_template(
+            "rfq_template.j2", _full_rfq_context(partner=None)
+        )
         assert rendered == _read_golden("golden_rfq_neutral.txt")
 
     def test_watermark(self):
-        rendered = render_rag_template("watermark_critical.j2", {"session_id": SESSION_ID})
+        rendered = render_rag_template(
+            "watermark_critical.j2", {"session_id": SESSION_ID}
+        )
         assert rendered == _read_golden("golden_watermark.txt")
 
 
@@ -145,21 +159,29 @@ class TestContentAssertions:
     """Verify key content appears or is absent based on flags."""
 
     def test_critical_application_includes_watermark(self):
-        rendered = render_rag_template("engineering_report.j2", _full_engineering_context(is_critical=True))
+        rendered = render_rag_template(
+            "engineering_report.j2", _full_engineering_context(is_critical=True)
+        )
         assert "KRITISCHER ANWENDUNGSHINWEIS" in rendered
         assert SESSION_ID in rendered
 
     def test_non_critical_application_excludes_watermark(self):
-        rendered = render_rag_template("engineering_report.j2", _full_engineering_context(is_critical=False))
+        rendered = render_rag_template(
+            "engineering_report.j2", _full_engineering_context(is_critical=False)
+        )
         assert "KRITISCHER ANWENDUNGSHINWEIS" not in rendered
 
     def test_critique_log_entries_appear(self):
-        rendered = render_rag_template("engineering_report.j2", _full_engineering_context())
+        rendered = render_rag_template(
+            "engineering_report.j2", _full_engineering_context()
+        )
         for entry in CRITIQUE_LOG:
             assert entry in rendered
 
     def test_profile_fields_appear(self):
-        rendered = render_rag_template("engineering_report.j2", _full_engineering_context())
+        rendered = render_rag_template(
+            "engineering_report.j2", _full_engineering_context()
+        )
         assert "Heißdampf" in rendered
         assert "40.0" in rendered or "40" in rendered
         assert "400.0" in rendered or "400" in rendered
@@ -168,12 +190,16 @@ class TestContentAssertions:
         assert "M20" in rendered
 
     def test_rfq_partner_info_present(self):
-        rendered = render_rag_template("rfq_template.j2", _full_rfq_context(partner=PARTNER))
+        rendered = render_rag_template(
+            "rfq_template.j2", _full_rfq_context(partner=PARTNER)
+        )
         assert "Freudenberg Sealing Technologies" in rendered
         assert "anfrage@fst.com" in rendered
 
     def test_rfq_no_partner_section_when_none(self):
-        rendered = render_rag_template("rfq_template.j2", _full_rfq_context(partner=None))
+        rendered = render_rag_template(
+            "rfq_template.j2", _full_rfq_context(partner=None)
+        )
         assert "Freudenberg" not in rendered
         assert "anfrage@fst.com" not in rendered
 
@@ -187,7 +213,9 @@ class TestRenderer:
     """render_rag_template and render_and_hash_rag basic contracts."""
 
     def test_returns_string(self):
-        result = render_rag_template("watermark_critical.j2", {"session_id": SESSION_ID})
+        result = render_rag_template(
+            "watermark_critical.j2", {"session_id": SESSION_ID}
+        )
         assert isinstance(result, str)
         assert len(result) > 0
 

@@ -45,7 +45,9 @@ class OpenAIHumanCommunicationLLMService:
         model_name: str | None = None,
         client_factory: Callable[[], Any] | None = None,
     ) -> None:
-        self.model_name = model_name or os.environ.get("SEALAI_CONVERSATION_MODEL", "gpt-4o-mini")
+        self.model_name = model_name or os.environ.get(
+            "SEALAI_CONVERSATION_MODEL", "gpt-4o-mini"
+        )
         self._client_factory = client_factory or openai.AsyncOpenAI
 
     @traceable(name="sealai.human_communication_response", run_type="llm")
@@ -61,14 +63,22 @@ class OpenAIHumanCommunicationLLMService:
         response = await client.chat.completions.create(
             model=self.model_name,
             messages=[
-                {"role": "system", "content": build_human_communication_system_prompt()},
+                {
+                    "role": "system",
+                    "content": build_human_communication_system_prompt(),
+                },
                 {
                     "role": "user",
                     "content": json.dumps(
                         {
                             "mode": mode.value,
-                            "case_state": state.model_dump(mode="json", exclude={"user_id", "tenant_id"}),
-                            "allowed_claims": [claim.model_dump(mode="json") for claim in allowed_claims],
+                            "case_state": state.model_dump(
+                                mode="json", exclude={"user_id", "tenant_id"}
+                            ),
+                            "allowed_claims": [
+                                claim.model_dump(mode="json")
+                                for claim in allowed_claims
+                            ],
                             "proposed_field_updates": proposed_field_updates,
                         },
                         ensure_ascii=True,
@@ -120,10 +130,19 @@ def _response_schema() -> dict[str, Any]:
                         "key": {"type": "string"},
                         "value": {},
                         "unit": {"type": ["string", "null"]},
-                        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                        },
                         "requires_user_confirmation": {"type": "boolean"},
                     },
-                    "required": ["key", "value", "unit", "confidence", "requires_user_confirmation"],
+                    "required": [
+                        "key",
+                        "value",
+                        "unit",
+                        "confidence",
+                        "requires_user_confirmation",
+                    ],
                 },
             },
             "recommendation_level": {

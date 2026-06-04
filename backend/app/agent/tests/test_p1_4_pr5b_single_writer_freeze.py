@@ -11,6 +11,7 @@ This freeze locks the observable behaviour of the two that have no other direct
 coverage, so routing them through reducers stays byte-identical. (The output
 contract downgrade is covered by test_output_contract_node.py.)
 """
+
 from __future__ import annotations
 
 from app.agent.api.utils import _sync_governed_state_from_review_outcome
@@ -68,7 +69,10 @@ def test_with_decision_basis_hash_sets_hash_only() -> None:
 def test_sync_governed_state_review_outcome_admissible() -> None:
     result = _sync_governed_state_from_review_outcome(
         GovernedSessionState(),
-        case_state={"governance_state": {"rfq_admissibility": "ready"}, "rfq_state": {}},
+        case_state={
+            "governance_state": {"rfq_admissibility": "ready"},
+            "rfq_state": {},
+        },
         sealing_state={},
     )
     assert result.governance.rfq_admissible is True

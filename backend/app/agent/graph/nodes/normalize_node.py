@@ -21,12 +21,16 @@ Reducer semantics (see state/reducers.py for full spec):
     4. Confidence 'requires_confirmation' → AssumptionRef (not in parameters).
     5. Confidence confirmed/estimated/inferred → NormalizedParameter.
 """
+
 from __future__ import annotations
 
 import logging
 
 from app.agent.graph import GraphState
-from app.agent.state.context_hint_derivation import derive_application_hint, derive_motion_hint
+from app.agent.state.context_hint_derivation import (
+    derive_application_hint,
+    derive_motion_hint,
+)
 from app.agent.state.medium_derivation import (
     derive_medium_capture,
     derive_medium_classification,

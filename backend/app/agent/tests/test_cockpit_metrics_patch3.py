@@ -55,7 +55,10 @@ def test_backend_check_metrics_are_registry_derived() -> None:
     assert metrics.check_total == len(projection.cockpit_view.checks) == 13
     assert metrics.check_passed_count == statuses.count("passed")
     assert metrics.check_blocked_count == statuses.count("blocked")
-    assert metrics.check_available_count == metrics.check_passed_count + metrics.check_failed_count
+    assert (
+        metrics.check_available_count
+        == metrics.check_passed_count + metrics.check_failed_count
+    )
 
 
 def test_system_pressure_does_not_make_pressure_check_available() -> None:
@@ -97,7 +100,10 @@ def test_ambiguous_pressure_does_not_count_as_known_seal_pressure() -> None:
 
     assert fields["pressure_at_seal_bar"].status == "ambiguous"
     assert fields["pressure_at_seal_bar"].blocks_next_step is True
-    assert "pressure_at_seal_bar" in projection.cockpit_view.completeness_metrics.required_missing
+    assert (
+        "pressure_at_seal_bar"
+        in projection.cockpit_view.completeness_metrics.required_missing
+    )
 
 
 def test_placeholder_medium_reduces_completeness() -> None:
@@ -134,4 +140,7 @@ def test_rwdr_sealing_type_counts_as_known() -> None:
     )
 
     assert _field_status(projection, "sealing_type") == "known"
-    assert "sealing_type" not in projection.cockpit_view.completeness_metrics.required_missing
+    assert (
+        "sealing_type"
+        not in projection.cockpit_view.completeness_metrics.required_missing
+    )

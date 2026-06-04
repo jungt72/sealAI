@@ -13,9 +13,11 @@ pytest.skip(
     allow_module_level=True,
 )
 
+
 @pytest.fixture
 def renderer():
     return PromptRenderer()
+
 
 def test_render_global_system_v2(renderer):
     context = {}
@@ -24,12 +26,16 @@ def test_render_global_system_v2(renderer):
     assert "2024-" in result  # Datum
     assert "{{" not in result  # Keine Platzhalter
 
+
 def test_render_material_agent_v2(renderer):
     context = {}
-    result = renderer.render_with_validation("material_agent_v2.jinja2", "Erkläre PTFE", context)
+    result = renderer.render_with_validation(
+        "material_agent_v2.jinja2", "Erkläre PTFE", context
+    )
     assert "PTFE" in result or "Anfrage" in result
     assert "detailed_explanation" in result  # Normalisiert
     assert "Halluzinationen" in result  # Anti-Halluzination
+
 
 def test_render_explain_v2(renderer):
     context = {"main": {"typ": "Dichtung", "werkstoff": "PTFE"}}
@@ -37,10 +43,12 @@ def test_render_explain_v2(renderer):
     assert "Dichtung" in result
     assert "PTFE" in result
 
+
 def test_normalization(renderer):
     normalized = renderer.normalize_context("Gib mir details zu PTFE", {})
-    assert normalized['request_type'] == 'detailed_explanation'
-    assert normalized['query'] == "Gib mir details zu PTFE"
+    assert normalized["request_type"] == "detailed_explanation"
+    assert normalized["query"] == "Gib mir details zu PTFE"
+
 
 def test_validation_error(renderer):
     # Simuliere unvollständige Ersetzung
@@ -48,5 +56,6 @@ def test_validation_error(renderer):
         # Manuell einen Template-String mit Platzhalter erstellen
         template = renderer.env.from_string("Test {{ undefined }}")
         template.render()
+
 
 # Lauf mit: pytest test_prompts.py

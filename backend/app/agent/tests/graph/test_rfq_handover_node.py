@@ -1,6 +1,7 @@
 """
 Tests for graph/nodes/rfq_handover_node.py — Phase G Block 2
 """
+
 from __future__ import annotations
 
 import pytest
@@ -10,7 +11,12 @@ from app.agent.domain.critical_review import CriticalReviewSpecialistResult
 from app.agent.domain.manufacturer_rfq import ManufacturerRfqSpecialistResult
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.rfq_handover_node import rfq_handover_node
-from app.agent.state.models import AssertedClaim, AssertedState, ManufacturerRef, MatchingState
+from app.agent.state.models import (
+    AssertedClaim,
+    AssertedState,
+    ManufacturerRef,
+    MatchingState,
+)
 from app.agent.state.reducers import reduce_asserted_to_governance
 
 
@@ -131,7 +137,9 @@ class TestRfqHandoverNode:
         assert result.rfq.qualified_material_ids == []
 
     @pytest.mark.asyncio
-    async def test_critical_review_failure_blocks_rfq_handover(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_critical_review_failure_blocks_rfq_handover(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             rfq_handover_module,
             "run_critical_review_specialist",
@@ -140,7 +148,9 @@ class TestRfqHandoverNode:
                 critical_review_passed=False,
                 blocking_findings=("selected_manufacturer_missing",),
                 soft_findings=(),
-                required_corrections=("Select a deterministic manufacturer candidate before RFQ handover.",),
+                required_corrections=(
+                    "Select a deterministic manufacturer candidate before RFQ handover.",
+                ),
             ),
         )
         result = await rfq_handover_node(
@@ -149,8 +159,8 @@ class TestRfqHandoverNode:
                     "matching": MatchingState(
                         status="matched_primary_candidate",
                         matchability_status="ready_for_matching",
-                    shortlist_ready=True,
-                    inquiry_ready=True,
+                        shortlist_ready=True,
+                        inquiry_ready=True,
                         selected_manufacturer_ref=ManufacturerRef(
                             manufacturer_name="Acme",
                             candidate_ids=["registry-ptfe-g25-acme"],
@@ -173,7 +183,9 @@ class TestRfqHandoverNode:
         assert result.rfq.blocking_findings == ["selected_manufacturer_missing"]
 
     @pytest.mark.asyncio
-    async def test_soft_findings_do_not_block_when_critical_review_passes(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_soft_findings_do_not_block_when_critical_review_passes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             rfq_handover_module,
             "run_critical_review_specialist",
@@ -191,8 +203,8 @@ class TestRfqHandoverNode:
                     "matching": MatchingState(
                         status="matched_primary_candidate",
                         matchability_status="ready_for_matching",
-                    shortlist_ready=True,
-                    inquiry_ready=True,
+                        shortlist_ready=True,
+                        inquiry_ready=True,
                         selected_manufacturer_ref=ManufacturerRef(
                             manufacturer_name="Acme",
                             candidate_ids=["registry-ptfe-g25-acme"],
@@ -212,10 +224,14 @@ class TestRfqHandoverNode:
 
         assert result.rfq.rfq_ready is True
         assert result.rfq.critical_review_passed is True
-        assert result.rfq.soft_findings == ["scope:Manufacturer validation remains required."]
+        assert result.rfq.soft_findings == [
+            "scope:Manufacturer validation remains required."
+        ]
 
     @pytest.mark.asyncio
-    async def test_rfq_handover_node_uses_manufacturer_rfq_specialist_anchor(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_rfq_handover_node_uses_manufacturer_rfq_specialist_anchor(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setattr(
             rfq_handover_module,
             "run_critical_review_specialist",
@@ -237,14 +253,24 @@ class TestRfqHandoverNode:
                         "object_type": "rfq_payload_basis",
                         "object_version": "rfq_payload_basis_v1",
                         "qualified_material_ids": ["patched::candidate"],
-                        "qualified_materials": [{"candidate_id": "patched::candidate", "manufacturer_name": "Acme"}],
+                        "qualified_materials": [
+                            {
+                                "candidate_id": "patched::candidate",
+                                "manufacturer_name": "Acme",
+                            }
+                        ],
                         "confirmed_parameters": {"medium": "PatchedMedium"},
                         "dimensions": {"shaft_diameter_mm": 33.0},
                         "target_system": "rfq_portal",
                     },
                     "handover_payload": {
                         "qualified_material_ids": ["patched::candidate"],
-                        "qualified_materials": [{"candidate_id": "patched::candidate", "manufacturer_name": "Acme"}],
+                        "qualified_materials": [
+                            {
+                                "candidate_id": "patched::candidate",
+                                "manufacturer_name": "Acme",
+                            }
+                        ],
                         "confirmed_parameters": {"medium": "PatchedMedium"},
                         "dimensions": {"shaft_diameter_mm": 33.0},
                         "rfq_admissibility": "ready",
@@ -264,8 +290,8 @@ class TestRfqHandoverNode:
                     "matching": MatchingState(
                         status="matched_primary_candidate",
                         matchability_status="ready_for_matching",
-                    shortlist_ready=True,
-                    inquiry_ready=True,
+                        shortlist_ready=True,
+                        inquiry_ready=True,
                         selected_manufacturer_ref=ManufacturerRef(
                             manufacturer_name="Acme",
                             candidate_ids=["registry-ptfe-g25-acme"],

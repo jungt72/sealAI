@@ -51,10 +51,14 @@ class ManufacturerFitMatrixService:
         case: Mapping[str, Any],
         partner_projections: Sequence[PartnerCapabilityProjection],
     ) -> ManufacturerFitMatrix:
-        eligible = [projection for projection in partner_projections if projection.active_paid]
+        eligible = [
+            projection for projection in partner_projections if projection.active_paid
+        ]
         profiles = [projection.capability_profile for projection in eligible]
         matches = self._matcher.match_manufacturer_profiles(case, profiles)
-        projection_by_id = {projection.manufacturer_id: projection for projection in eligible}
+        projection_by_id = {
+            projection.manufacturer_id: projection for projection in eligible
+        }
         match_by_id = {match.manufacturer_id: match for match in matches}
 
         rows: list[ManufacturerFitRow] = []
@@ -91,7 +95,9 @@ def _fit_row(
         manufacturer_id=projection.manufacturer_id,
         fit_score=match.total_score,
         verification_level=projection.verification_level,
-        fit_reasons=_fit_reasons(case, projection.capability_profile, projection.verification_level),
+        fit_reasons=_fit_reasons(
+            case, projection.capability_profile, projection.verification_level
+        ),
         gaps=tuple(gaps),
         missing_requirements=match.capability_coverage.unmet,
         source_claim_ids=projection.source_claim_ids,
@@ -111,7 +117,9 @@ def _fit_reasons(
         reasons.append(f"seal_type:{engineering_path}")
     if material and material in profile.supported_material_families:
         reasons.append(f"material_family:{material}")
-    if quantity is not None and (quantity > 10 or profile.small_quantity_capable is True):
+    if quantity is not None and (
+        quantity > 10 or profile.small_quantity_capable is True
+    ):
         reasons.append("quantity_window:covered")
     if case.get("atex_required") and profile.atex_capable is True:
         reasons.append("atex_capability:covered")
@@ -131,7 +139,11 @@ def _profile_gaps(
         gaps.append("engineering_path")
     if material and material not in profile.supported_material_families:
         gaps.append("material_expertise")
-    if quantity is not None and quantity <= 10 and profile.small_quantity_capable is not True:
+    if (
+        quantity is not None
+        and quantity <= 10
+        and profile.small_quantity_capable is not True
+    ):
         gaps.append("lot_size_capability")
     if case.get("atex_required") and profile.atex_capable is not True:
         gaps.append("certification")

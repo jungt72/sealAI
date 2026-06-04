@@ -91,15 +91,19 @@ def test_inquiry_extract_accepts_dispatch_target(test_db_engine_at_head):
             )
         )
 
-        extract = conn.execute(
-            text(
-                """
+        extract = (
+            conn.execute(
+                text(
+                    """
                 SELECT dispatched_to_manufacturer_id
                 FROM inquiry_extracts
                 WHERE extract_id = 'extract-dispatch-scope'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     assert extract["dispatched_to_manufacturer_id"] == "mfr-dispatch-target"
 
@@ -131,14 +135,18 @@ def test_inquiry_extract_dispatch_target_can_remain_null(test_db_engine_at_head)
             )
         )
 
-        extract = conn.execute(
-            text(
-                """
+        extract = (
+            conn.execute(
+                text(
+                    """
                 SELECT dispatched_to_manufacturer_id
                 FROM inquiry_extracts
                 WHERE extract_id = 'extract-dispatch-null'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     assert extract["dispatched_to_manufacturer_id"] is None

@@ -16,22 +16,26 @@ from .registry import get_model_for_role
 def get_sync_llm(role: str) -> Tuple[OpenAI, str]:
     """
     Creates a synchronous OpenAI client and resolves the model for a given role.
-    
+
     Returns:
         A tuple of (client, model_name).
     """
     model = get_model_for_role(role)
-    client = wrap_openai_client(OpenAI())  # Automatically picks up OPENAI_API_KEY from env
+    client = wrap_openai_client(
+        OpenAI()
+    )  # Automatically picks up OPENAI_API_KEY from env
     return client, model
 
 
 def get_async_llm(role: str) -> Tuple[AsyncOpenAI, str]:
     """
     Creates an asynchronous OpenAI client and resolves the model for a given role.
-    
+
     Returns:
         A tuple of (async_client, model_name).
     """
     model = get_model_for_role(role)
-    client = wrap_openai_client(AsyncOpenAI())  # Automatically picks up OPENAI_API_KEY from env
+    client = wrap_openai_client(
+        AsyncOpenAI()
+    )  # Automatically picks up OPENAI_API_KEY from env
     return client, model

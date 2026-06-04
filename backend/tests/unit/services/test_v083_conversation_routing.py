@@ -160,23 +160,32 @@ async def test_nbr_about_question_uses_deterministic_knowledge_without_rfq_intak
         ]
 
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
-    monkeypatch.setattr("app.agent.api.dispatch._knowledge_rag_retriever", rag_retriever)
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._knowledge_rag_retriever", rag_retriever
+    )
 
     dispatch = await _resolve_runtime_dispatch(
         ChatRequest(message="Was kannst du mir zu NBR sagen?", session_id=None),
         current_user=_user(),
     )
 
-    assert dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    assert (
+        dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    )
     assert dispatch.knowledge_response is not None
     assert dispatch.knowledge_response.no_case_created is True
     assert dispatch.governed_state is None
     assert "NBR steht für Acrylnitril" in dispatch.knowledge_response.content
     assert "Typische Orientierung" in dispatch.knowledge_response.content
-    assert "Aus dem kuratierten/RAG-Wissenskontext" not in dispatch.knowledge_response.content
+    assert (
+        "Aus dem kuratierten/RAG-Wissenskontext"
+        not in dispatch.knowledge_response.content
+    )
     assert dispatch.knowledge_response.answer_result is not None
     assert dispatch.knowledge_response.answer_result.rag_answer_found is False
-    assert dispatch.knowledge_response.answer_result.source_type.value == "system_derived"
+    assert (
+        dispatch.knowledge_response.answer_result.source_type.value == "system_derived"
+    )
     assert {
         evidence.source_type
         for evidence in dispatch.knowledge_response.answer_result.knowledge_evidence

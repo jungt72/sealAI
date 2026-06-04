@@ -38,7 +38,9 @@ def _searchable_text(card: Dict[str, Any]) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest PTFE factcards as atomic vectors.")
+    parser = argparse.ArgumentParser(
+        description="Ingest PTFE factcards as atomic vectors."
+    )
     parser.add_argument(
         "--kb-path",
         default=str(
@@ -48,8 +50,13 @@ def main() -> None:
             / "SEALAI_KB_PTFE_factcards_gates_v1_3.json"
         ),
     )
-    parser.add_argument("--collection", default=os.getenv("QDRANT_TECHNICAL_COLLECTION", "technical_docs"))
-    parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"))
+    parser.add_argument(
+        "--collection",
+        default=os.getenv("QDRANT_TECHNICAL_COLLECTION", "technical_docs"),
+    )
+    parser.add_argument(
+        "--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333")
+    )
     parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY"))
     args = parser.parse_args()
 
@@ -71,7 +78,9 @@ def main() -> None:
     except Exception:
         client.recreate_collection(
             collection_name=args.collection,
-            vectors_config=models.VectorParams(size=vector_dim, distance=models.Distance.COSINE),
+            vectors_config=models.VectorParams(
+                size=vector_dim, distance=models.Distance.COSINE
+            ),
         )
 
     points: List[models.PointStruct] = []

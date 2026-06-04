@@ -35,7 +35,9 @@ def _knowledge_answer(message: str, history: list[dict[str, str]]) -> str:
     return response.content
 
 
-def test_material_knowledge_sequence_stays_in_knowledge_and_resolves_comparison() -> None:
+def test_material_knowledge_sequence_stays_in_knowledge_and_resolves_comparison() -> (
+    None
+):
     classifier = PreGateClassifier()
     greeting = classifier.classify("Hallo, was geht ab")
     assert greeting.classification is PreGateClassification.GREETING
@@ -49,7 +51,9 @@ def test_material_knowledge_sequence_stays_in_knowledge_and_resolves_comparison(
     assert "PTFE" in ptfe
     assert "Dichtungstechnik" in ptfe
 
-    reformulated_ptfe = _knowledge_answer("bitte gebe mir informationen über PTFE", history)
+    reformulated_ptfe = _knowledge_answer(
+        "bitte gebe mir informationen über PTFE", history
+    )
     assert "PTFE" in reformulated_ptfe
     assert "Dichtungstechnik" in reformulated_ptfe
 

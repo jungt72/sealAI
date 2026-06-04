@@ -1,6 +1,7 @@
 """
 Tests for graph/nodes/dispatch_node.py — Phase G Block 3
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,7 +28,9 @@ def _rfq_ready_state() -> GraphState:
                 manufacturer_name="Acme",
                 candidate_ids=["registry-ptfe-g25-acme"],
             ),
-            recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+            recipient_refs=[
+                RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+            ],
             qualified_material_ids=["registry-ptfe-g25-acme"],
             requirement_class=RequirementClass(
                 class_id="PTFE10",
@@ -39,10 +42,17 @@ def _rfq_ready_state() -> GraphState:
                 "send_ready": True,
                 "send_status": "send_ready",
                 "blocking_reasons": [],
-                "recipient_refs": [{"manufacturer_name": "Acme", "qualified_for_rfq": True}],
+                "recipient_refs": [
+                    {"manufacturer_name": "Acme", "qualified_for_rfq": True}
+                ],
                 "selected_manufacturer_ref": {"manufacturer_name": "Acme"},
-                "requirement_class": {"requirement_class_id": "PTFE10", "description": "High-temperature PTFE class"},
-                "handover_payload": {"qualified_material_ids": ["registry-ptfe-g25-acme"]},
+                "requirement_class": {
+                    "requirement_class_id": "PTFE10",
+                    "description": "High-temperature PTFE class",
+                },
+                "handover_payload": {
+                    "qualified_material_ids": ["registry-ptfe-g25-acme"]
+                },
             },
             handover_summary="Governed output is releasable and handover-ready.",
         ),
@@ -62,7 +72,9 @@ def _rfq_ready_state() -> GraphState:
 
 class TestDispatchNode:
     @pytest.mark.asyncio
-    async def test_dispatch_node_consumes_rfq_send_payload_contract(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_dispatch_node_consumes_rfq_send_payload_contract(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         captured: dict = {}
 
         def _capture_send_payload(send_payload):
@@ -73,13 +85,19 @@ class TestDispatchNode:
                 "dispatch_blockers": [],
                 "recipient_refs": [{"manufacturer_name": "Acme"}],
                 "selected_manufacturer_ref": {"manufacturer_name": "Acme"},
-                "recipient_selection": {"selected_recipient_refs": [{"manufacturer_name": "Acme"}]},
+                "recipient_selection": {
+                    "selected_recipient_refs": [{"manufacturer_name": "Acme"}]
+                },
                 "requirement_class": {"requirement_class_id": "PTFE10"},
                 "recommendation_identity": {"candidate_id": "registry-ptfe-g25-acme"},
                 "rfq_object_basis": {"payload_present": True},
             }
 
-        monkeypatch.setattr(dispatch_module, "project_dispatch_intent_from_rfq_send_payload", _capture_send_payload)
+        monkeypatch.setattr(
+            dispatch_module,
+            "project_dispatch_intent_from_rfq_send_payload",
+            _capture_send_payload,
+        )
 
         result = await dispatch_node(_rfq_ready_state())
 
@@ -128,10 +146,14 @@ class TestDispatchNode:
         assert "event_id" not in str(result.dispatch.model_dump())
 
     @pytest.mark.asyncio
-    async def test_missing_send_payload_contract_is_an_explicit_compatibility_block(self):
+    async def test_missing_send_payload_contract_is_an_explicit_compatibility_block(
+        self,
+    ):
         state = _rfq_ready_state().model_copy(
             update={
-                "rfq": _rfq_ready_state().rfq.model_copy(update={"rfq_send_payload": {}}),
+                "rfq": _rfq_ready_state().rfq.model_copy(
+                    update={"rfq_send_payload": {}}
+                ),
             }
         )
 

@@ -51,5 +51,7 @@ def _looks_like_test_stub_render(rendered: Any, context: dict[str, Any]) -> bool
     text = str(rendered or "").strip()
     if not text or not context:
         return False
-    stub_text = "\n".join(f"{key}: {value}" for key, value in sorted(context.items())).strip()
+    stub_text = "\n".join(
+        f"{key}: {value}" for key, value in sorted(context.items())
+    ).strip()
     return text == stub_text

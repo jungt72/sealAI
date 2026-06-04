@@ -72,7 +72,9 @@ class SemanticIntentRouterDecision:
     model: str | None = None
     source: str = "semantic_intent_router"
 
-    def classification_result(self, deterministic: ClassificationResult) -> ClassificationResult:
+    def classification_result(
+        self, deterministic: ClassificationResult
+    ) -> ClassificationResult:
         if not self.applied:
             return deterministic
         return ClassificationResult(
@@ -158,7 +160,9 @@ async def refine_pre_gate_classification(
         return decision
     except Exception as exc:  # noqa: BLE001
         log.info("[semantic_intent_router] unavailable (%s)", type(exc).__name__)
-        return _unchanged(deterministic, reason=f"semantic_router_unavailable:{type(exc).__name__}")
+        return _unchanged(
+            deterministic, reason=f"semantic_router_unavailable:{type(exc).__name__}"
+        )
 
 
 def _decision_from_payload(

@@ -3,6 +3,7 @@
 Recreated after app/common/jinja.py was lost during the _legacy_v2 cleanup.
 Provides a simple render_template() function used by rag_ingest.py.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,7 +21,9 @@ PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 @lru_cache(maxsize=1)
 def _env() -> jinja2.Environment:
-    undefined_cls = getattr(jinja2, "DebugUndefined", getattr(jinja2, "Undefined", object))
+    undefined_cls = getattr(
+        jinja2, "DebugUndefined", getattr(jinja2, "Undefined", object)
+    )
     return jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)),
         autoescape=False,
@@ -32,7 +35,9 @@ def _env() -> jinja2.Environment:
     )
 
 
-def render_template(template_name: str, context: Optional[Dict[str, Any]] = None) -> str:
+def render_template(
+    template_name: str, context: Optional[Dict[str, Any]] = None
+) -> str:
     """Render a Jinja2 prompt template and return the rendered string.
 
     Missing template variables are rendered as "{{ var_name }}" (DebugUndefined)

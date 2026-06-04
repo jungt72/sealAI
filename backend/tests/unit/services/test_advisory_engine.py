@@ -23,7 +23,9 @@ def engine() -> AdvisoryEngine:
 
 
 def _by_reason(advisories, reason_code: str):
-    return next(advisory for advisory in advisories if advisory.reason_code == reason_code)
+    return next(
+        advisory for advisory in advisories if advisory.reason_code == reason_code
+    )
 
 
 def test_exactly_eight_initial_categories_are_defined() -> None:
@@ -61,7 +63,9 @@ def test_uncritical_context_returns_no_advisories(engine: AdvisoryEngine) -> Non
     assert advisories == []
 
 
-def test_each_initial_category_is_emitted_by_rule_matrix(engine: AdvisoryEngine) -> None:
+def test_each_initial_category_is_emitted_by_rule_matrix(
+    engine: AdvisoryEngine,
+) -> None:
     contexts = [
         {"material_review_needed": True},
         {"manufacturer_review_required": True},
@@ -74,8 +78,7 @@ def test_each_initial_category_is_emitted_by_rule_matrix(engine: AdvisoryEngine)
     ]
 
     categories = {
-        engine.evaluate_advisories(context)[0].category
-        for context in contexts
+        engine.evaluate_advisories(context)[0].category for context in contexts
     }
 
     assert categories == set(INITIAL_ADVISORY_CATEGORIES)
@@ -86,8 +89,14 @@ def test_each_initial_category_is_emitted_by_rule_matrix(engine: AdvisoryEngine)
     [
         ({"material_suboptimal": True}, ("material_suboptimal",)),
         ({"material_review_needed": True}, ("material_review_needed",)),
-        ({"material_suitability_hints": ["medium_uncertain"]}, ("material_suitability_hints",)),
-        ({"material_suitability_status": "review_required"}, ("material_suitability_status",)),
+        (
+            {"material_suitability_hints": ["medium_uncertain"]},
+            ("material_suitability_hints",),
+        ),
+        (
+            {"material_suitability_status": "review_required"},
+            ("material_suitability_status",),
+        ),
     ],
 )
 def test_material_suboptimal_triggers_from_structured_signals(
@@ -142,7 +151,9 @@ def test_missing_critical_input_is_blocking(
     assert advisory.triggering_parameters == expected_triggers
 
 
-def test_missing_fields_alias_triggers_missing_critical_input(engine: AdvisoryEngine) -> None:
+def test_missing_fields_alias_triggers_missing_critical_input(
+    engine: AdvisoryEngine,
+) -> None:
     advisory = _by_reason(
         engine.evaluate_advisories({"missing_fields": ["shaft_surface_finish"]}),
         "missing_critical_input",
@@ -186,18 +197,21 @@ def test_norm_review_required_from_norm_results(
 
 
 def test_norm_pass_does_not_trigger_advisory(engine: AdvisoryEngine) -> None:
-    assert engine.evaluate_advisories(
-        {
-            "norm_results": [
-                NormCheckResult(
-                    module_id="norm_din_3760_iso_6194",
-                    version="1.0.0",
-                    status=NormCheckStatus.PASS,
-                    applies=True,
-                )
-            ]
-        }
-    ) == []
+    assert (
+        engine.evaluate_advisories(
+            {
+                "norm_results": [
+                    NormCheckResult(
+                        module_id="norm_din_3760_iso_6194",
+                        version="1.0.0",
+                        status=NormCheckStatus.PASS,
+                        applies=True,
+                    )
+                ]
+            }
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -218,10 +232,15 @@ def test_food_contact_review_required(engine: AdvisoryEngine, context) -> None:
     assert "food_contact" in advisory.evidence_tags
 
 
-def test_food_contact_complete_evidence_does_not_trigger(engine: AdvisoryEngine) -> None:
-    assert engine.evaluate_advisories(
-        {"food_contact_required": True, "food_contact_evidence_complete": True}
-    ) == []
+def test_food_contact_complete_evidence_does_not_trigger(
+    engine: AdvisoryEngine,
+) -> None:
+    assert (
+        engine.evaluate_advisories(
+            {"food_contact_required": True, "food_contact_evidence_complete": True}
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -231,7 +250,9 @@ def test_food_contact_complete_evidence_does_not_trigger(engine: AdvisoryEngine)
         ({"atex_required": True}, True),
     ],
 )
-def test_atex_capability_gap(engine: AdvisoryEngine, context, expected_blocking: bool) -> None:
+def test_atex_capability_gap(
+    engine: AdvisoryEngine, context, expected_blocking: bool
+) -> None:
     advisory = _by_reason(engine.evaluate_advisories(context), "atex_capability_gap")
     assert advisory.category is AdvisoryCategory.NORM_COMPLIANCE_ALERT
     assert advisory.severity is AdvisorySeverity.WARNING
@@ -240,9 +261,12 @@ def test_atex_capability_gap(engine: AdvisoryEngine, context, expected_blocking:
 
 
 def test_atex_capability_present_does_not_trigger(engine: AdvisoryEngine) -> None:
-    assert engine.evaluate_advisories(
-        {"atex_required": True, "has_atex_capable_claim": True}
-    ) == []
+    assert (
+        engine.evaluate_advisories(
+            {"atex_required": True, "has_atex_capable_claim": True}
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -277,9 +301,12 @@ def test_quantity_capability_gap(
 
 
 def test_quantity_available_does_not_trigger_gap(engine: AdvisoryEngine) -> None:
-    assert engine.evaluate_advisories(
-        {"quantity_requested": 4, "quantity_capability_available": True}
-    ) == []
+    assert (
+        engine.evaluate_advisories(
+            {"quantity_requested": 4, "quantity_capability_available": True}
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -290,7 +317,9 @@ def test_quantity_available_does_not_trigger_gap(engine: AdvisoryEngine) -> None
         {"shaft_diameter_mm": "62", "housing_bore_diameter_mm": "40"},
     ],
 )
-def test_geometry_consistency_issue_is_blocking(engine: AdvisoryEngine, context) -> None:
+def test_geometry_consistency_issue_is_blocking(
+    engine: AdvisoryEngine, context
+) -> None:
     advisory = _by_reason(
         engine.evaluate_advisories(context),
         "geometry_consistency_issue",
@@ -301,9 +330,12 @@ def test_geometry_consistency_issue_is_blocking(engine: AdvisoryEngine, context)
 
 
 def test_valid_geometry_does_not_trigger_geometry_issue(engine: AdvisoryEngine) -> None:
-    assert engine.evaluate_advisories(
-        {"shaft_diameter_mm": 40, "housing_bore_diameter_mm": 62}
-    ) == []
+    assert (
+        engine.evaluate_advisories(
+            {"shaft_diameter_mm": 40, "housing_bore_diameter_mm": 62}
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(

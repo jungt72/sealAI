@@ -141,9 +141,7 @@ def build_action_chips(
         chips = [
             ActionChip(
                 label=str(opt.get("label") if isinstance(opt, Mapping) else opt),
-                value=str(
-                    opt.get("value") if isinstance(opt, Mapping) else opt
-                ),
+                value=str(opt.get("value") if isinstance(opt, Mapping) else opt),
                 field=field,
             )
             for opt in options

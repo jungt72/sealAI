@@ -5,6 +5,7 @@ Verifies:
 1. GET /health returns 200 with {"status": "ok", "service": "SSoT Agent Authority"}
 2. Response is deterministic (no LLM / DB calls required)
 """
+
 from __future__ import annotations
 
 import pytest

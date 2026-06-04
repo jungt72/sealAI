@@ -128,15 +128,33 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "static_or_dynamic": ("static_or_dynamic", "motion_type"),
     "squeeze_or_stretch": ("squeeze_or_stretch", "squeeze", "stretch"),
     "backup_ring_required": ("backup_ring_required", "backup_ring"),
-    "shaft_or_stem_diameter": ("shaft_or_stem_diameter", "shaft_diameter", "stem_diameter"),
-    "stuffing_box_dimensions": ("stuffing_box_dimensions", "stuffing_box", "packing_space"),
+    "shaft_or_stem_diameter": (
+        "shaft_or_stem_diameter",
+        "shaft_diameter",
+        "stem_diameter",
+    ),
+    "stuffing_box_dimensions": (
+        "stuffing_box_dimensions",
+        "stuffing_box",
+        "packing_space",
+    ),
     "lubrication_or_flush": ("lubrication_or_flush", "flush", "lubrication"),
     "damage_pattern": ("damage_pattern", "symptom_class", "leakage_pattern"),
     "photo_or_evidence": ("photo_or_evidence", "photos", "evidence_refs"),
-    "safety_context": ("safety_context", "safety_relevance", "atex_relevance", "environmental_risk"),
+    "safety_context": (
+        "safety_context",
+        "safety_relevance",
+        "atex_relevance",
+        "environmental_risk",
+    ),
     "leak_location": ("leak_location", "leakage_location", "leak_path"),
     "failure_timing": ("failure_timing", "operating_duration", "time_to_failure"),
-    "pressure_profile": ("pressure_profile", "pressure_peaks", "pulsation", "relief_rate"),
+    "pressure_profile": (
+        "pressure_profile",
+        "pressure_peaks",
+        "pulsation",
+        "relief_rate",
+    ),
     "temperature_at_seal": ("temperature_at_seal", "seal_temperature", "temperature"),
     "motion_profile": ("motion_profile", "speed_rpm", "stroke", "start_stop_frequency"),
     "geometry_surface_context": (
@@ -147,8 +165,18 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "shaft_hardness",
         "counterface_surface",
     ),
-    "installation_context": ("installation_context", "assembly", "mounting", "installation_method"),
-    "material_or_compound": ("material_or_compound", "material", "compound", "hardness"),
+    "installation_context": (
+        "installation_context",
+        "assembly",
+        "mounting",
+        "installation_method",
+    ),
+    "material_or_compound": (
+        "material_or_compound",
+        "material",
+        "compound",
+        "hardness",
+    ),
     "marking": ("marking", "part_number", "old_part_number"),
     "dimensions": ("dimensions", "geometry", "shaft_diameter", "inner_diameter"),
     "oil_analysis_values": (
@@ -168,7 +196,12 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "application_context",
         "application_domain",
     ),
-    "sealing_function": ("sealing_function", "seal_function", "primary_function", "function"),
+    "sealing_function": (
+        "sealing_function",
+        "seal_function",
+        "primary_function",
+        "function",
+    ),
     "leakage_target": (
         "leakage_target",
         "leak_target",
@@ -876,18 +909,32 @@ def _needs_analysis(
         CaseType.emergency_mro: "triage_urgent_mro_need",
     }.get(case_type, "clarify_sealing_case_need")
     secondary = {
-        CaseType.manufacturer_matching: ["technical_fit_readiness", "open_requirements"],
-        CaseType.compatibility_inquiry: ["values_units_evidence", "manufacturer_review_need"],
+        CaseType.manufacturer_matching: [
+            "technical_fit_readiness",
+            "open_requirements",
+        ],
+        CaseType.compatibility_inquiry: [
+            "values_units_evidence",
+            "manufacturer_review_need",
+        ],
         CaseType.complaint_case: ["damage_evidence", "operating_context"],
         CaseType.failure_analysis: ["damage_evidence", "operating_context"],
-        CaseType.replacement_reorder: ["marking_dimensions_photo", "application_context"],
-        CaseType.unknown_legacy_part: ["marking_dimensions_photo", "identity_uncertainty"],
+        CaseType.replacement_reorder: [
+            "marking_dimensions_photo",
+            "application_context",
+        ],
+        CaseType.unknown_legacy_part: [
+            "marking_dimensions_photo",
+            "identity_uncertainty",
+        ],
         CaseType.new_rfq: ["rfq_readiness", "open_points"],
     }.get(case_type, [])
     urgency = "emergency" if case_type is CaseType.emergency_mro else "normal"
     profile = _mapping(state.get("profile"))
     user_side = _first_present(profile, "user_side", "persona", "user_persona")
-    context_side = _first_present(profile, "context_side", "buyer_or_manufacturer_context")
+    context_side = _first_present(
+        profile, "context_side", "buyer_or_manufacturer_context"
+    )
     confidence = 0.25 if case_type in {CaseType.unknown, CaseType.no_case} else 0.55
     if completeness_score >= 0.6:
         confidence += 0.2
@@ -1070,7 +1117,9 @@ def _missing_fields(
             _mapping(state.get("governance_status")).get("unknowns_release_blocking")
         )
     )
-    candidates.extend(_string_list(_mapping(state.get("rfq_status")).get("open_points")))
+    candidates.extend(
+        _string_list(_mapping(state.get("rfq_status")).get("open_points"))
+    )
     candidates.extend(
         _string_list(
             _mapping(state.get("seal_application_profile")).get(
@@ -1103,7 +1152,9 @@ def _uncertain_fields(state: Mapping[str, Any], seal_type: SealType) -> list[str
     confidence = _safe_float(seal_profile.get("seal_type_confidence"))
     if confidence is not None and confidence < 0.55 and "seal_type" not in uncertain:
         uncertain.append("seal_type")
-    for item in _string_list(_mapping(state.get("governance_status")).get("assumptions_active")):
+    for item in _string_list(
+        _mapping(state.get("governance_status")).get("assumptions_active")
+    ):
         focus = _canonical_focus(item)
         if focus not in uncertain:
             uncertain.append(focus)
@@ -1153,9 +1204,18 @@ def _completeness_score(
     critical = set(missing_fields) | {
         item for item in known_fields if item in _all_critical_focus_keys()
     }
-    known_critical = len([item for item in critical if _field_known(item, known_fields)])
-    missing_critical = len([item for item in critical if not _field_known(item, known_fields)])
-    denominator = known_critical + missing_critical + len(uncertain_fields) * 0.5 + len(conflicting_fields)
+    known_critical = len(
+        [item for item in critical if _field_known(item, known_fields)]
+    )
+    missing_critical = len(
+        [item for item in critical if not _field_known(item, known_fields)]
+    )
+    denominator = (
+        known_critical
+        + missing_critical
+        + len(uncertain_fields) * 0.5
+        + len(conflicting_fields)
+    )
     score = 0.0 if denominator <= 0 else known_critical / denominator
     return CompletenessScoreProjection(
         score=round(max(0.0, min(1.0, score)), 2),
@@ -1208,7 +1268,20 @@ def _looks_like_oil_report(state: Mapping[str, Any]) -> bool:
         for value in _mapping(state.get(container_key)).values()
         if value not in (None, "", [], {})
     ).casefold()
-    return any(token in text for token in ("oel", "öl", "oil", "natrium", "sodium", "kalium", "potassium", "water", "wasser"))
+    return any(
+        token in text
+        for token in (
+            "oel",
+            "öl",
+            "oil",
+            "natrium",
+            "sodium",
+            "kalium",
+            "potassium",
+            "water",
+            "wasser",
+        )
+    )
 
 
 def _field_known(focus: str, known_fields: set[str]) -> bool:

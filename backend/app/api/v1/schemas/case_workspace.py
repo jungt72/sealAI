@@ -13,6 +13,7 @@ Deliberately NOT exposed:
 - draft_text, preview_text, final_prompt (LLM intermediates)
 - confirm_checkpoint / confirm_edits (HITL internals)
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -992,7 +993,9 @@ class CaseWorkspaceProjection(BaseModel):
     challenge_intelligence: ChallengeIntelligenceProjection = Field(
         default_factory=ChallengeIntelligenceProjection
     )
-    v91_workspace: V91WorkspaceProjection = Field(default_factory=V91WorkspaceProjection)
+    v91_workspace: V91WorkspaceProjection = Field(
+        default_factory=V91WorkspaceProjection
+    )
     v92_dashboard: Optional[Dict[str, Any]] = None
     technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)

@@ -9,6 +9,7 @@ Covers Umbauplan F-A.3:
   test_sse_chunks_filtered
   test_non_streaming_filtered
 """
+
 from __future__ import annotations
 
 import pytest
@@ -24,6 +25,7 @@ from app.agent.runtime.response_renderer import (
 # ---------------------------------------------------------------------------
 # _structural_scrub unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestStructuralScrub:
     # ── UUID removal ────────────────────────────────────────────────────────
@@ -111,10 +113,13 @@ class TestStructuralScrub:
 
     def test_strips_internal_json_blob(self):
         import json
-        blob = json.dumps({
-            "sealing_state": {"asserted": {}},
-            "working_profile": {"medium": "Dampf"},
-        })
+
+        blob = json.dumps(
+            {
+                "sealing_state": {"asserted": {}},
+                "working_profile": {"medium": "Dampf"},
+            }
+        )
         text = f"Analyse: {blob} — Ergebnis: OK"
         result = _structural_scrub(text)
         assert "sealing_state" not in result
@@ -179,6 +184,7 @@ class TestStructuralScrub:
 # ---------------------------------------------------------------------------
 # render_response — non-streaming (Umbauplan test_non_streaming_filtered)
 # ---------------------------------------------------------------------------
+
 
 class TestRenderResponse:
     def test_outward_contract_strips_uuids(self):
@@ -259,6 +265,7 @@ class TestRenderResponse:
     def test_conversation_path_applies_content_policy(self):
         """Fast-path LLM output is checked by output_guard."""
         from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
+
         raw = "Ich empfehle FKM für diese Anwendung."
         result = render_response(raw, path="CONVERSATION")
         assert result.policy_violation is not None
@@ -272,7 +279,9 @@ class TestRenderResponse:
             "Die Anfragebasis ist RFQ-ready.",
         ],
     )
-    def test_conversational_answer_blocks_requirement_class_matching_and_rfq_readiness_language(self, raw):
+    def test_conversational_answer_blocks_requirement_class_matching_and_rfq_readiness_language(
+        self, raw
+    ):
         from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
 
         result = render_response(raw, path="CONVERSATION")
@@ -310,6 +319,7 @@ class TestRenderResponse:
 # ---------------------------------------------------------------------------
 # render_chunk — SSE streaming (Umbauplan test_sse_chunks_filtered)
 # ---------------------------------------------------------------------------
+
 
 class TestRenderChunk:
     def test_sse_chunks_filtered_uuid(self):
@@ -375,6 +385,7 @@ class TestRenderChunk:
 # Integration: render_response produces RenderedResponse correctly
 # ---------------------------------------------------------------------------
 
+
 class TestRenderedResponseContract:
     def test_was_scrubbed_false_for_clean_text(self):
         result = render_response("Was ist PTFE?", path="CONVERSATION")
@@ -396,5 +407,7 @@ class TestRenderedResponseContract:
         raw = "Ich empfehle NBR für diese Dichtung."
         result = render_response(raw, path="CONVERSATION")
         assert result.policy_violation in (
-            "recommendation", "manufacturer", "suitability"
+            "recommendation",
+            "manufacturer",
+            "suitability",
         )

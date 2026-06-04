@@ -83,7 +83,9 @@ def mobile_triage_pending_question() -> "PendingQuestion":
     )
 
 
-def is_leakage_triage_intent(message: str | None, *, has_attachment: bool = False) -> bool:
+def is_leakage_triage_intent(
+    message: str | None, *, has_attachment: bool = False
+) -> bool:
     """Return whether a turn should enter mobile leakage triage (§7.3)."""
     text = str(message or "")
     if _LEAKAGE_INTENT_RE.search(text):
@@ -129,10 +131,16 @@ def extract_visual_candidates(
     except Exception:  # noqa: BLE001 - vision is best-effort; degrade to guidance
         return []
     # Defensive: keep only well-formed confirmation-required candidates.
-    return [c for c in candidates if isinstance(c, VisualCandidate) and c.requires_confirmation]
+    return [
+        c
+        for c in candidates
+        if isinstance(c, VisualCandidate) and c.requires_confirmation
+    ]
 
 
-def to_cockpit_visual_candidates(candidates: Sequence[VisualCandidate]) -> list[dict[str, Any]]:
+def to_cockpit_visual_candidates(
+    candidates: Sequence[VisualCandidate],
+) -> list[dict[str, Any]]:
     """Project candidates for ``CockpitPatch.visual_candidates`` (Patch-4 render)."""
     return [candidate.model_dump(mode="json") for candidate in candidates]
 
@@ -186,8 +194,16 @@ def build_mobile_leakage_triage(
         action_chips=list(_TRIAGE_ACTION_LABELS),
     )
     pocket = PocketCockpitPatch(
-        recognized=[{"label": "Fall", "value": "Leckage / Dichtstelle unklar", "status": "candidate"}],
-        critical=[{"label": "Dichtungstyp und Wellenbewegung klären", "severity": "high"}],
+        recognized=[
+            {
+                "label": "Fall",
+                "value": "Leckage / Dichtstelle unklar",
+                "status": "candidate",
+            }
+        ],
+        critical=[
+            {"label": "Dichtungstyp und Wellenbewegung klären", "severity": "high"}
+        ],
         next_step={"question": _TRIAGE_PRIMARY_QUESTION, "field": "shaft_rotates"},
         rfq_status="DRAFT",
     )
@@ -197,8 +213,13 @@ def build_mobile_leakage_triage(
         cockpit_patch=cockpit,
         pocket_cockpit_patch=pocket,
         action_chips=_triage_action_chips(),
-        pending_question={"field": "shaft_rotates", "question": _TRIAGE_PRIMARY_QUESTION},
-        trace=_triage_trace(has_attachment=has_attachment, candidate_count=len(candidates)),
+        pending_question={
+            "field": "shaft_rotates",
+            "question": _TRIAGE_PRIMARY_QUESTION,
+        },
+        trace=_triage_trace(
+            has_attachment=has_attachment, candidate_count=len(candidates)
+        ),
     )
 
 
@@ -217,9 +238,22 @@ def build_visual_low_confidence_guidance(
         action_chips=list(_LOW_CONFIDENCE_ACTION_LABELS),
     )
     pocket = PocketCockpitPatch(
-        recognized=[{"label": "Foto", "value": "Beschriftung nicht lesbar", "status": "candidate"}],
-        critical=[{"label": "Maße messen oder Beschriftung neu fotografieren", "severity": "high"}],
-        next_step={"question": "Kannst du d1, D und b messen oder die Stirnseite neu fotografieren?"},
+        recognized=[
+            {
+                "label": "Foto",
+                "value": "Beschriftung nicht lesbar",
+                "status": "candidate",
+            }
+        ],
+        critical=[
+            {
+                "label": "Maße messen oder Beschriftung neu fotografieren",
+                "severity": "high",
+            }
+        ],
+        next_step={
+            "question": "Kannst du d1, D und b messen oder die Stirnseite neu fotografieren?"
+        },
         rfq_status="DRAFT",
     )
     cockpit = CockpitPatch(visual_candidates=to_cockpit_visual_candidates(candidates))

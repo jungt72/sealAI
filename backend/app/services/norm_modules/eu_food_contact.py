@@ -33,7 +33,8 @@ class EuFoodContactModule(NormModule):
     def applies_to(self, context: NormCheckContext) -> bool:
         return context_text_indicates_food_contact(context) and (
             region_matches(context, {"eu", "europe", "european_union"})
-            or str(context.get("food_contact_region") or "").strip().lower() in {"", "unknown"}
+            or str(context.get("food_contact_region") or "").strip().lower()
+            in {"", "unknown"}
         )
 
     def required_fields(self) -> list[str]:

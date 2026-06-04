@@ -10,7 +10,9 @@ from app.agent.capability_registry.contracts import (
     CapabilityModule,
     CapabilityResult,
 )
-from app.agent.capability_registry.medium_intelligence import MediumIntelligenceCapability
+from app.agent.capability_registry.medium_intelligence import (
+    MediumIntelligenceCapability,
+)
 
 
 class CapabilityNotFoundError(KeyError):

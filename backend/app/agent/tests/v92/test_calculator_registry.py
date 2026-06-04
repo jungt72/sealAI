@@ -51,7 +51,9 @@ def test_calculator_registry_maps_changed_fields_to_stale_dependencies() -> None
     ]
 
 
-def test_temperature_window_screening_uses_existing_material_limits_without_release_claim() -> None:
+def test_temperature_window_screening_uses_existing_material_limits_without_release_claim() -> (
+    None
+):
     registry = get_calculator_registry()
 
     result = registry.calculate(
@@ -67,7 +69,9 @@ def test_temperature_window_screening_uses_existing_material_limits_without_rele
     assert "compound" in result.limitations[0].casefold()
 
 
-def test_material_counterindication_flags_epdm_in_hydraulic_oil_as_review_required() -> None:
+def test_material_counterindication_flags_epdm_in_hydraulic_oil_as_review_required() -> (
+    None
+):
     registry = get_calculator_registry()
 
     result = registry.calculate(

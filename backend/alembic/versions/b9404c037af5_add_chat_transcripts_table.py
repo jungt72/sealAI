@@ -38,11 +38,12 @@ def upgrade():
         ),
     )
     op.create_index("ix_chat_transcripts_user_id", "chat_transcripts", ["user_id"])
-    op.create_index("ix_chat_transcripts_created_at", "chat_transcripts", ["created_at"])
+    op.create_index(
+        "ix_chat_transcripts_created_at", "chat_transcripts", ["created_at"]
+    )
 
 
 def downgrade():
     op.drop_index("ix_chat_transcripts_created_at", table_name="chat_transcripts")
     op.drop_index("ix_chat_transcripts_user_id", table_name="chat_transcripts")
     op.drop_table("chat_transcripts")
-

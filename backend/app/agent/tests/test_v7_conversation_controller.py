@@ -4,13 +4,22 @@ from app.agent.communication.conversation_controller_v7 import (
     ConversationControllerInput,
     ConversationControllerV7,
 )
-from app.agent.communication.v7_contracts import AnswerMode, MutationPolicy, ResumeStrategy
+from app.agent.communication.v7_contracts import (
+    AnswerMode,
+    MutationPolicy,
+    ResumeStrategy,
+)
 from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding
 from app.agent.state.models import PendingQuestion
 from app.services.pre_gate_classifier import PreGateClassifier
 
 
-def _decide(message: str, *, active_case: bool = False, pending_question: PendingQuestion | None = None):
+def _decide(
+    message: str,
+    *,
+    active_case: bool = False,
+    pending_question: PendingQuestion | None = None,
+):
     pre_gate = PreGateClassifier().classify(message)
     binding = resolve_slot_answer_binding(
         pending_question=pending_question,
@@ -60,9 +69,13 @@ def test_active_case_material_comparison_becomes_side_question_not_intake() -> N
     assert decision.resume_target_candidate.target_field == "medium"
 
 
-def test_active_case_medium_definition_becomes_side_question_with_resume_reevaluation() -> None:
+def test_active_case_medium_definition_becomes_side_question_with_resume_reevaluation() -> (
+    None
+):
     pending = _medium_pending_question()
-    decision = _decide("Was bedeutet Medium?", active_case=True, pending_question=pending)
+    decision = _decide(
+        "Was bedeutet Medium?", active_case=True, pending_question=pending
+    )
 
     assert decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
@@ -71,7 +84,9 @@ def test_active_case_medium_definition_becomes_side_question_with_resume_reevalu
     assert decision.resume_target_candidate.target_field == "medium"
 
 
-def test_mixed_medium_value_and_definition_routes_as_side_question_for_resume_reevaluation() -> None:
+def test_mixed_medium_value_and_definition_routes_as_side_question_for_resume_reevaluation() -> (
+    None
+):
     pending = _medium_pending_question()
     decision = _decide(
         "Das Medium ist Wasser. Was bedeutet Medium?",
@@ -96,7 +111,11 @@ def test_pending_medium_short_answer_becomes_pending_slot_turn_decision() -> Non
 
 
 def test_smalltalk_is_answer_only_even_with_active_case_context() -> None:
-    decision = _decide("moin, wie laeufts bei dir?", active_case=True, pending_question=_medium_pending_question())
+    decision = _decide(
+        "moin, wie laeufts bei dir?",
+        active_case=True,
+        pending_question=_medium_pending_question(),
+    )
 
     assert decision.answer_mode == AnswerMode.SMALLTALK
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
@@ -105,7 +124,9 @@ def test_smalltalk_is_answer_only_even_with_active_case_context() -> None:
 
 def test_process_question_preserves_pending_resume_target() -> None:
     pending = _medium_pending_question()
-    decision = _decide("Warum fragst du das?", active_case=True, pending_question=pending)
+    decision = _decide(
+        "Warum fragst du das?", active_case=True, pending_question=pending
+    )
 
     assert decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
     assert decision.mutation_policy == MutationPolicy.FORBIDDEN
@@ -114,7 +135,9 @@ def test_process_question_preserves_pending_resume_target() -> None:
     assert decision.resume_target_candidate.target_field == "medium"
 
 
-def test_active_case_help_question_classifies_as_process_question_with_pending_medium() -> None:
+def test_active_case_help_question_classifies_as_process_question_with_pending_medium() -> (
+    None
+):
     pending = _medium_pending_question()
     decision = _decide(
         "Wie kannst du mir bei meiner Dichtungssituation helfen?",
@@ -143,7 +166,9 @@ def test_pending_medium_answer_wasser_still_binds_as_slot_answer() -> None:
 
 def test_pending_medium_explicit_answer_still_binds_as_slot_answer() -> None:
     pending = _medium_pending_question()
-    decision = _decide("Das Medium ist Wasser.", active_case=True, pending_question=pending)
+    decision = _decide(
+        "Das Medium ist Wasser.", active_case=True, pending_question=pending
+    )
 
     assert decision.answer_mode == AnswerMode.PENDING_SLOT_ANSWER
     assert decision.answer_mode != AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
@@ -151,7 +176,9 @@ def test_pending_medium_explicit_answer_still_binds_as_slot_answer() -> None:
     assert decision.state_actions[0].value == "Wasser"
 
 
-def test_mixed_medium_value_and_why_question_routes_as_side_question_for_resume_reevaluation() -> None:
+def test_mixed_medium_value_and_why_question_routes_as_side_question_for_resume_reevaluation() -> (
+    None
+):
     pending = _medium_pending_question()
     decision = _decide(
         "Das Medium ist Wasser. Warum ist das wichtig?",
@@ -165,7 +192,9 @@ def test_mixed_medium_value_and_why_question_routes_as_side_question_for_resume_
 
 
 def test_concrete_application_remains_governed_intake() -> None:
-    decision = _decide("Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Oel bei 90 Grad.")
+    decision = _decide(
+        "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Oel bei 90 Grad."
+    )
 
     assert decision.answer_mode == AnswerMode.GOVERNED_INTAKE
     assert decision.mutation_policy == MutationPolicy.PROPOSED

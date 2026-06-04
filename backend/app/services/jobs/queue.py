@@ -18,4 +18,3 @@ async def enqueue_job(channel: str, payload: Dict[str, Any]) -> None:
     client = _queue_client()
     data = json.dumps(payload, ensure_ascii=False)
     await client.rpush(channel, data)
-

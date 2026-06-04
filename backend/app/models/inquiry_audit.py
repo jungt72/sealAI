@@ -3,6 +3,7 @@
 Append-only audit log: every inquiry creation is recorded here.
 No UPDATE rights — rows are immutable after INSERT.
 """
+
 from __future__ import annotations
 
 import uuid

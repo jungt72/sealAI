@@ -228,7 +228,10 @@ async def test_active_case_context_recall_routes_to_process_answer(
     assert dispatch.turn_decision.answer_mode == AnswerMode.ACTIVE_CASE_PROCESS_QUESTION
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
-    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_PROCESS
+    assert (
+        dispatch.runtime_action.answer_builder
+        == RuntimeAnswerBuilder.ACTIVE_CASE_PROCESS
+    )
     assert dispatch.runtime_action.graph_allowed is False
     load_state.assert_awaited_once()
 
@@ -318,7 +321,9 @@ async def test_active_case_material_limit_question_routes_as_side_question_not_i
     assert dispatch.turn_decision.mutation_policy == MutationPolicy.FORBIDDEN
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
-    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
+    assert (
+        dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
+    )
     assert dispatch.runtime_action.graph_allowed is False
     load_state.assert_awaited_once_with(
         current_user=_user(),
@@ -353,9 +358,15 @@ async def test_active_case_material_assessment_with_operating_data_enters_govern
     assert dispatch.turn_decision.answer_mode == AnswerMode.GOVERNED_INTAKE
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
-    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    assert (
+        dispatch.runtime_action.answer_builder
+        == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    )
     assert dispatch.runtime_action.graph_allowed is True
-    assert dispatch.runtime_action.reason == "knowledge_pre_gate_promoted_to_governed_graph"
+    assert (
+        dispatch.runtime_action.reason
+        == "knowledge_pre_gate_promoted_to_governed_graph"
+    )
     load_state.assert_awaited_once_with(
         current_user=_user(),
         session_id="active-case",
@@ -478,7 +489,9 @@ async def test_active_case_knowledge_question_forced_domain_is_v8_side_question(
         AsyncMock(return_value=state),
     )
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="Was ist ein Radialwellendichtring?", session_id="active-case"),
+        ChatRequest(
+            message="Was ist ein Radialwellendichtring?", session_id="active-case"
+        ),
         current_user=_user(),
     )
 
@@ -488,12 +501,17 @@ async def test_active_case_knowledge_question_forced_domain_is_v8_side_question(
     assert dispatch.turn_decision.answer_mode == AnswerMode.ACTIVE_CASE_SIDE_QUESTION
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ANSWER_THEN_RESUME
-    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
+    assert (
+        dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.ACTIVE_CASE_SIDE
+    )
     assert dispatch.runtime_action.graph_allowed is False
     assert dispatch.runtime_action.graph_invocation_skipped_reason == (
         "active_case_side_question_answered_by_communication_runtime"
     )
-    assert dispatch.runtime_action.as_trace()["decision_source"] == "communication_runtime_v8"
+    assert (
+        dispatch.runtime_action.as_trace()["decision_source"]
+        == "communication_runtime_v8"
+    )
 
 
 @pytest.mark.asyncio
@@ -591,7 +609,10 @@ async def test_domain_inquiry_builds_runtime_action_for_governed_graph(
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
     assert dispatch.runtime_action.graph_allowed is True
-    assert dispatch.runtime_action.graph_entry_reason == "governed_intake_or_domain_continuation"
+    assert (
+        dispatch.runtime_action.graph_entry_reason
+        == "governed_intake_or_domain_continuation"
+    )
     load_state.assert_awaited_once_with(
         current_user=_user(),
         session_id="active-case",
@@ -611,10 +632,16 @@ def _assert_active_rfq_graph_dispatch(
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
     assert dispatch.runtime_action.answer_mode == AnswerMode.RFQ_READINESS
-    assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    assert (
+        dispatch.runtime_action.answer_builder
+        == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
+    )
     assert dispatch.runtime_action.mutation_policy == MutationPolicy.FORBIDDEN
     assert dispatch.runtime_action.graph_allowed is True
-    assert dispatch.runtime_action.graph_entry_reason == "rfq_readiness_requires_governed_graph"
+    assert (
+        dispatch.runtime_action.graph_entry_reason
+        == "rfq_readiness_requires_governed_graph"
+    )
     assert dispatch.runtime_action.decision_source == "rfq_readiness_intent"
 
     trace = dispatch.runtime_action.as_trace()
@@ -643,7 +670,9 @@ async def test_active_case_rfq_readiness_question_enters_governed_graph(
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="Ist meine Anfrage vollstaendig?", session_id="active-case"),
+        ChatRequest(
+            message="Ist meine Anfrage vollstaendig?", session_id="active-case"
+        ),
         current_user=_user(),
     )
 
@@ -660,7 +689,9 @@ async def test_active_case_rfq_missing_for_manufacturer_preserves_next_question(
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="Was fehlt noch fuer den Hersteller?", session_id="active-case"),
+        ChatRequest(
+            message="Was fehlt noch fuer den Hersteller?", session_id="active-case"
+        ),
         current_user=_user(),
     )
 
@@ -694,11 +725,16 @@ async def test_active_case_manufacturer_send_requires_consent_and_no_dispatch(
     monkeypatch.setattr("app.agent.api.dispatch._load_live_governed_state", load_state)
 
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="Kann ich das an einen Hersteller schicken?", session_id="active-case"),
+        ChatRequest(
+            message="Kann ich das an einen Hersteller schicken?",
+            session_id="active-case",
+        ),
         current_user=_user(),
     )
 
-    _assert_active_rfq_graph_dispatch(dispatch, rfq_action_type="external_contact_request")
+    _assert_active_rfq_graph_dispatch(
+        dispatch, rfq_action_type="external_contact_request"
+    )
     load_state.assert_awaited_once()
 
 
@@ -1092,16 +1128,16 @@ async def test_active_case_side_llm_prompt_bounds_grounded_answer(
                     SimpleNamespace(
                         message=SimpleNamespace(
                             content=json.dumps(
-                                {"answer_markdown": "Kurze, fachlich begrenzte Antwort."}
+                                {
+                                    "answer_markdown": "Kurze, fachlich begrenzte Antwort."
+                                }
                             )
                         )
                     )
                 ]
             )
 
-    fake_client = SimpleNamespace(
-        chat=SimpleNamespace(completions=FakeCompletions())
-    )
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setattr(
         "app.llm.factory.get_async_llm",
         lambda _role: (fake_client, "gpt-test"),
@@ -1187,7 +1223,9 @@ async def test_active_case_side_llm_composer_output_is_claim_guarded(
     )
 
     answer = response.answer_markdown or ""
-    assert "ist fuer anwendungen bei hohen temperaturen geeignet" not in answer.casefold()
+    assert (
+        "ist fuer anwendungen bei hohen temperaturen geeignet" not in answer.casefold()
+    )
     assert "welches medium soll abgedichtet werden" not in answer.casefold()
     assert "screening" in answer.casefold()
     assert "nicht als konkrete eignung" in answer.casefold()
@@ -1310,7 +1348,10 @@ async def test_chat_endpoint_enters_governed_graph_for_enter_graph_runtime_actio
         assert runtime_action is not None
         assert runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
         assert runtime_action.graph_allowed is True
-        assert runtime_action.graph_entry_reason == "governed_intake_or_domain_continuation"
+        assert (
+            runtime_action.graph_entry_reason
+            == "governed_intake_or_domain_continuation"
+        )
         return ChatResponse(
             session_id=request.session_id,
             reply="Graph path",
@@ -1334,7 +1375,10 @@ async def test_chat_endpoint_enters_governed_graph_for_enter_graph_runtime_actio
     )
 
     assert response.answer_markdown == "Graph path"
-    assert response.run_meta["answer_trace"]["runtime_action_type"] == "enter_governed_graph"
+    assert (
+        response.run_meta["answer_trace"]["runtime_action_type"]
+        == "enter_governed_graph"
+    )
     run_sidecar.assert_awaited_once()
 
 
@@ -1377,7 +1421,10 @@ async def test_why_medium_question_explains_reason_then_restores_pending_medium(
     trace = response.run_meta["answer_trace"]
     assert trace["mutation_policy"] == "forbidden"
     assert trace["resume_strategy"] == "answer_then_continue_pending_question"
-    assert trace["resume_reason"] == "pending_question_still_open_and_no_slot_answer_detected"
+    assert (
+        trace["resume_reason"]
+        == "pending_question_still_open_and_no_slot_answer_detected"
+    )
 
 
 @pytest.mark.asyncio
@@ -1448,7 +1495,10 @@ async def test_pending_medium_answer_wasser_still_routes_as_slot_answer(
     assert dispatch.runtime_action is not None
     assert dispatch.runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
     assert dispatch.runtime_action.graph_allowed is True
-    assert dispatch.runtime_action.graph_entry_reason == "pending_slot_answer_requires_governed_validation"
+    assert (
+        dispatch.runtime_action.graph_entry_reason
+        == "pending_slot_answer_requires_governed_validation"
+    )
     assert dispatch.runtime_action.slot_candidate_detected is True
 
 
@@ -1653,17 +1703,31 @@ async def test_stream_active_case_process_question_final_state_update_uses_answe
         )
     )
 
-    state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
+    state_update = next(
+        payload for payload in payloads if payload.get("type") == "state_update"
+    )
     answer = state_update.get("answer_markdown") or ""
     assert answer
     assert "Analyse" in answer
     assert answer != "Welches Medium soll abgedichtet werden?"
     assert "Welches Medium soll abgedichtet werden?" in answer
-    assert state_update["run_meta"]["answer_trace"]["answer_mode"] == "active_case_process_question"
-    assert state_update["run_meta"]["answer_trace"]["resume_reevaluation_attempted"] is True
-    assert state_update["run_meta"]["answer_trace"]["resume_strategy"] == "answer_then_continue_pending_question"
+    assert (
+        state_update["run_meta"]["answer_trace"]["answer_mode"]
+        == "active_case_process_question"
+    )
+    assert (
+        state_update["run_meta"]["answer_trace"]["resume_reevaluation_attempted"]
+        is True
+    )
+    assert (
+        state_update["run_meta"]["answer_trace"]["resume_strategy"]
+        == "answer_then_continue_pending_question"
+    )
     assert state_update["run_meta"]["answer_trace"]["resume_target_field"] == "medium"
-    assert state_update["run_meta"]["answer_trace"]["runtime_action_type"] == "answer_then_resume"
+    assert (
+        state_update["run_meta"]["answer_trace"]["runtime_action_type"]
+        == "answer_then_resume"
+    )
     assert state_update["run_meta"]["answer_trace"]["graph_allowed"] is False
 
 
@@ -1713,7 +1777,9 @@ async def test_stream_active_case_side_question_final_state_update_uses_resume_t
         )
     )
 
-    state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
+    state_update = next(
+        payload for payload in payloads if payload.get("type") == "state_update"
+    )
     answer = state_update.get("answer_markdown") or ""
     assert "Stoff" in answer
     assert "Welches Medium soll abgedichtet werden?" in answer
@@ -1748,14 +1814,20 @@ async def test_stream_active_case_rfq_readiness_enters_governed_graph_with_trace
         assert runtime_action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
         assert runtime_action.answer_mode == AnswerMode.RFQ_READINESS
         assert runtime_action.graph_allowed is True
-        assert runtime_action.graph_entry_reason == "rfq_readiness_requires_governed_graph"
-        yield "data: " + json.dumps(
-            {
-                "type": "state_update",
-                "answer_markdown": "Graph RFQ readiness path",
-                "run_meta": {"answer_trace": runtime_action.as_trace()},
-            }
-        ) + "\n\n"
+        assert (
+            runtime_action.graph_entry_reason == "rfq_readiness_requires_governed_graph"
+        )
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "state_update",
+                    "answer_markdown": "Graph RFQ readiness path",
+                    "run_meta": {"answer_trace": runtime_action.as_trace()},
+                }
+            )
+            + "\n\n"
+        )
         yield "data: [DONE]\n\n"
 
     monkeypatch.setattr(
@@ -1765,12 +1837,16 @@ async def test_stream_active_case_rfq_readiness_enters_governed_graph_with_trace
 
     payloads = await _collect_sse_payloads(
         event_generator(
-            ChatRequest(message="Was fehlt noch fuer den Hersteller?", session_id="active-case"),
+            ChatRequest(
+                message="Was fehlt noch fuer den Hersteller?", session_id="active-case"
+            ),
             current_user=_user(),
         )
     )
 
-    state_update = next(payload for payload in payloads if payload.get("type") == "state_update")
+    state_update = next(
+        payload for payload in payloads if payload.get("type") == "state_update"
+    )
     trace = state_update["run_meta"]["answer_trace"]
     assert trace["answer_mode"] == "rfq_readiness"
     assert trace["runtime_action_type"] == "enter_governed_graph"
@@ -1810,7 +1886,12 @@ async def test_active_case_side_composer_bypasses_long_guarded_comparison(
         forbidden_claims_detected=(),
     )
 
-    answer, attempted, succeeded, fallback_reason = await chat_routes._compose_active_case_side_answer(
+    (
+        answer,
+        attempted,
+        succeeded,
+        fallback_reason,
+    ) = await chat_routes._compose_active_case_side_answer(
         message="vegeliche bitte mit PTFE",
         grounded_answer=grounded,
         governed_state=None,

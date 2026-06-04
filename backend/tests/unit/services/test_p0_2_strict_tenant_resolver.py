@@ -10,6 +10,7 @@ The shared-knowledge path (RAG_SHARED_TENANT_ID, e.g. the Paperless webhook /
 no-case knowledge) intentionally falls back to the shared tenant and must NOT
 be affected — proven by the invariant test at the bottom.
 """
+
 from __future__ import annotations
 
 import pytest

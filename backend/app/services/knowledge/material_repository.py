@@ -28,7 +28,9 @@ class YamlMaterialRepository(AbstractMaterialRepository):
         to prevent schema drift.
         """
         if not self.yaml_path.exists():
-            raise FileNotFoundError(f"Material profiles YAML baseline not found at {self.yaml_path}")
+            raise FileNotFoundError(
+                f"Material profiles YAML baseline not found at {self.yaml_path}"
+            )
 
         with open(self.yaml_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {"profiles": []}

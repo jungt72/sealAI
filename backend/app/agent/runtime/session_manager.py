@@ -14,6 +14,7 @@ Harte Regel (Umbauplan F-A.2):
   It can only be reset by creating a new session.
   No call-site may downgrade a governed session to conversation.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,6 +33,7 @@ _KEY_PREFIX = "session_envelope"
 # ---------------------------------------------------------------------------
 # Domain model
 # ---------------------------------------------------------------------------
+
 
 class SessionEnvelope(BaseModel):
     """Authoritative session object for Phase F gate and runtime routing.
@@ -82,6 +84,7 @@ class SessionEnvelope(BaseModel):
 # Redis key helpers
 # ---------------------------------------------------------------------------
 
+
 def _redis_key(tenant_id: str, session_id: str) -> str:
     return f"{_KEY_PREFIX}:{tenant_id}:{session_id}"
 
@@ -89,6 +92,7 @@ def _redis_key(tenant_id: str, session_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Persistence — synchronous (for tests and CLI)
 # ---------------------------------------------------------------------------
+
 
 def save_session(envelope: SessionEnvelope, *, redis_client: object) -> None:
     """Persist envelope to Redis with TTL.
@@ -131,6 +135,7 @@ def load_session(
 # Persistence — async
 # ---------------------------------------------------------------------------
 
+
 async def save_session_async(
     envelope: SessionEnvelope,
     *,
@@ -164,6 +169,7 @@ async def load_session_async(
 # ---------------------------------------------------------------------------
 # Session lifecycle helpers
 # ---------------------------------------------------------------------------
+
 
 def get_or_create_session(
     tenant_id: str,
@@ -261,10 +267,8 @@ async def apply_gate_decision_and_persist_async(
         return updated
 
     # Light-mode gate in conversation session — record reason + increment turn
-    updated = (
-        envelope
-        .with_gate_decision(gate_reason)
-        .model_copy(update={"turn_count": current_turn})
+    updated = envelope.with_gate_decision(gate_reason).model_copy(
+        update={"turn_count": current_turn}
     )
     await save_session_async(updated, redis_client=redis_client)
     return updated
@@ -304,10 +308,8 @@ def apply_gate_decision_and_persist(
         return updated
 
     # Light-mode gate in conversation session
-    updated = (
-        envelope
-        .with_gate_decision(gate_reason)
-        .model_copy(update={"turn_count": current_turn})
+    updated = envelope.with_gate_decision(gate_reason).model_copy(
+        update={"turn_count": current_turn}
     )
     save_session(updated, redis_client=redis_client)
     return updated

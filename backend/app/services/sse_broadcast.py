@@ -138,7 +138,9 @@ class RedisReplayBackend(ReplayBackend):
     def _buf_key(self, user_id: str, chat_id: str) -> str:
         return f"sse:buf:{user_id}:{chat_id}"
 
-    async def _fallback_warn(self, msg: str, *, user_id: str, chat_id: str, exc: Exception | None) -> None:
+    async def _fallback_warn(
+        self, msg: str, *, user_id: str, chat_id: str, exc: Exception | None
+    ) -> None:
         if not self._failed:
             logger.warning(
                 msg,
@@ -161,7 +163,9 @@ class RedisReplayBackend(ReplayBackend):
                 await client.expire(seq_key, self._ttl_sec)
             return int(value)
         except Exception as exc:
-            await self._fallback_warn("sse_replay_redis_seq_failed", user_id=user_id, chat_id=chat_id, exc=exc)
+            await self._fallback_warn(
+                "sse_replay_redis_seq_failed", user_id=user_id, chat_id=chat_id, exc=exc
+            )
             return await self._fallback.next_seq(user_id=user_id, chat_id=chat_id)
 
     async def record_event(
@@ -200,7 +204,12 @@ class RedisReplayBackend(ReplayBackend):
             await pipe.execute()
             return seq_value
         except Exception as exc:
-            await self._fallback_warn("sse_replay_redis_record_failed", user_id=user_id, chat_id=chat_id, exc=exc)
+            await self._fallback_warn(
+                "sse_replay_redis_record_failed",
+                user_id=user_id,
+                chat_id=chat_id,
+                exc=exc,
+            )
             return await self._fallback.record_event(
                 user_id=user_id,
                 chat_id=chat_id,
@@ -214,7 +223,9 @@ class RedisReplayBackend(ReplayBackend):
     ) -> tuple[list[BroadcastRecord], bool]:
         client = await self._get_client()
         if client is None:
-            return await self._fallback.replay_after(user_id=user_id, chat_id=chat_id, last_seq=last_seq)
+            return await self._fallback.replay_after(
+                user_id=user_id, chat_id=chat_id, last_seq=last_seq
+            )
         try:
             buf_key = self._buf_key(user_id, chat_id)
             raw_items = await client.lrange(buf_key, 0, max(self._max_buffer - 1, 0))
@@ -238,8 +249,15 @@ class RedisReplayBackend(ReplayBackend):
             filtered.sort(key=lambda item: int(item.get("seq", 0)))
             return filtered, False
         except Exception as exc:
-            await self._fallback_warn("sse_replay_redis_read_failed", user_id=user_id, chat_id=chat_id, exc=exc)
-            return await self._fallback.replay_after(user_id=user_id, chat_id=chat_id, last_seq=last_seq)
+            await self._fallback_warn(
+                "sse_replay_redis_read_failed",
+                user_id=user_id,
+                chat_id=chat_id,
+                exc=exc,
+            )
+            return await self._fallback.replay_after(
+                user_id=user_id, chat_id=chat_id, last_seq=last_seq
+            )
 
 
 def _resolve_redis_url() -> str:
@@ -309,8 +327,12 @@ class SseBroadcastManager:
                 return int(suffix)
         return None
 
-    async def subscribe(self, *, user_id: str, chat_id: str) -> asyncio.Queue[BroadcastEvent]:
-        queue: asyncio.Queue[BroadcastEvent] = asyncio.Queue(maxsize=self._queue_maxsize)
+    async def subscribe(
+        self, *, user_id: str, chat_id: str
+    ) -> asyncio.Queue[BroadcastEvent]:
+        queue: asyncio.Queue[BroadcastEvent] = asyncio.Queue(
+            maxsize=self._queue_maxsize
+        )
         key = (user_id, chat_id)
         async with self._lock:
             self._subscribers.setdefault(key, set()).add(queue)

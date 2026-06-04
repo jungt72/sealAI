@@ -29,6 +29,7 @@ Coverage:
     19. analysis_cycle unchanged on state
     20. No LLM call (openai never invoked)
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -44,6 +45,7 @@ from app.agent.state.models import AssertedClaim, AssertedState
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _claim(field: str, value, confidence: str = "confirmed") -> AssertedClaim:
     return AssertedClaim(field_name=field, asserted_value=value, confidence=confidence)
 
@@ -58,8 +60,7 @@ def _state(
 ) -> GraphState:
     """Build GraphState with AssertedState from field→(value, confidence) pairs."""
     assertions = {
-        field: _claim(field, val, conf)
-        for field, (val, conf) in fields.items()
+        field: _claim(field, val, conf) for field, (val, conf) in fields.items()
     }
     asserted = AssertedState(
         assertions=assertions,
@@ -86,6 +87,7 @@ def _full_class_a() -> GraphState:
 # ---------------------------------------------------------------------------
 # 1–2. Class A and B via field presence
 # ---------------------------------------------------------------------------
+
 
 class TestGovClassAB:
     @pytest.mark.asyncio
@@ -123,6 +125,7 @@ class TestGovClassAB:
 # 3–5. Class C: cycle exceeded or blocking conflict
 # ---------------------------------------------------------------------------
 
+
 class TestGovClassC:
     @pytest.mark.asyncio
     async def test_blocking_unknowns_after_max_cycles_class_c(self):
@@ -131,7 +134,7 @@ class TestGovClassC:
             pressure_bar=(12.0, "confirmed"),
             temperature_c=(180.0, "confirmed"),
             blocking_unknowns=["material"],
-            analysis_cycle=3,   # == max_cycles → exceeded
+            analysis_cycle=3,  # == max_cycles → exceeded
             max_cycles=3,
         )
         result = await governance_node(state)
@@ -163,14 +166,13 @@ class TestGovValueConflictDegrades:
         )
         result = await governance_node(state)
         assert result.governance.gov_class == "B"
-        assert any(
-            "medium" in p for p in result.governance.open_validation_points
-        )
+        assert any("medium" in p for p in result.governance.open_validation_points)
 
 
 # ---------------------------------------------------------------------------
 # 6. Class D: no core fields asserted
 # ---------------------------------------------------------------------------
+
 
 class TestGovClassD:
     @pytest.mark.asyncio
@@ -189,6 +191,7 @@ class TestGovClassD:
 # ---------------------------------------------------------------------------
 # 7–10. rfq_admissible
 # ---------------------------------------------------------------------------
+
 
 class TestRfqAdmissible:
     @pytest.mark.asyncio
@@ -231,6 +234,7 @@ class TestRfqAdmissible:
 # 11–13. validity_limits and open_validation_points
 # ---------------------------------------------------------------------------
 
+
 class TestValidityAndValidationPoints:
     @pytest.mark.asyncio
     async def test_estimated_field_in_validity_limits(self):
@@ -250,7 +254,9 @@ class TestValidityAndValidationPoints:
             temperature_c=(180.0, "inferred"),
         )
         result = await governance_node(state)
-        assert any("temperature_c" in note for note in result.governance.validity_limits)
+        assert any(
+            "temperature_c" in note for note in result.governance.validity_limits
+        )
 
     @pytest.mark.asyncio
     async def test_confirmed_fields_no_validity_limits(self):
@@ -272,6 +278,7 @@ class TestValidityAndValidationPoints:
 # ---------------------------------------------------------------------------
 # 14–15. Cycle forwarding
 # ---------------------------------------------------------------------------
+
 
 class TestCycleForwarding:
     @pytest.mark.asyncio
@@ -306,6 +313,7 @@ class TestCycleForwarding:
 # ---------------------------------------------------------------------------
 # 16–19. Immutability
 # ---------------------------------------------------------------------------
+
 
 class TestImmutability:
     @pytest.mark.asyncio
@@ -381,8 +389,12 @@ class TestCaseLifecyclePhase:
             update={
                 "analysis_cycle": 3,
                 "rfq": _full_class_a().rfq.model_copy(update={"rfq_ready": True}),
-                "matching": _full_class_a().matching.model_copy(update={"status": "matched_primary_candidate"}),
-                "exploration_progress": _full_class_a().exploration_progress.model_copy(update={"last_route": "GOVERNED"}),
+                "matching": _full_class_a().matching.model_copy(
+                    update={"status": "matched_primary_candidate"}
+                ),
+                "exploration_progress": _full_class_a().exploration_progress.model_copy(
+                    update={"last_route": "GOVERNED"}
+                ),
             }
         )
 
@@ -394,6 +406,7 @@ class TestCaseLifecyclePhase:
 # ---------------------------------------------------------------------------
 # 20. No LLM call
 # ---------------------------------------------------------------------------
+
 
 class TestNoLLM:
     @pytest.mark.asyncio

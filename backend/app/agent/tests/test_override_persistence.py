@@ -7,6 +7,7 @@ Verifies:
   - get_or_create returns fresh state on miss, existing state on hit
   - Invariant: overrides write to ObservedState, not directly to Normalized/Governance
 """
+
 from __future__ import annotations
 
 import json
@@ -51,6 +52,7 @@ from app.agent.state.reducers import (
 # Fake Redis (in-memory dict)
 # ---------------------------------------------------------------------------
 
+
 class FakeRedis:
     """Minimal in-memory Redis stub for sync tests."""
 
@@ -81,8 +83,8 @@ class FakeRedisAsync:
 # F-B.3 — API model tests
 # ---------------------------------------------------------------------------
 
-class TestOverrideItemModel:
 
+class TestOverrideItemModel:
     def test_basic_valid(self):
         item = OverrideItem(field_name="medium", value="Dampf")
         assert item.field_name == "medium"
@@ -103,7 +105,6 @@ class TestOverrideItemModel:
 
 
 class TestOverrideRequestModel:
-
     def test_valid_single_override(self):
         req = OverrideRequest(
             overrides=[OverrideItem(field_name="medium", value="Öl")],
@@ -129,7 +130,6 @@ class TestOverrideRequestModel:
 
 
 class TestOverrideResponseModel:
-
     def test_round_trip(self):
         gov = OverrideGovernanceResult(
             gov_class="B",
@@ -157,8 +157,8 @@ class TestOverrideResponseModel:
 # F-B.4 — Persistence sync tests
 # ---------------------------------------------------------------------------
 
-class TestGovernedStatePersistenceSync:
 
+class TestGovernedStatePersistenceSync:
     def test_key_format(self):
         key = _governed_state_key("tenant-A", "session-1")
         assert key == "governed_state:tenant-A:session-1"
@@ -168,13 +168,17 @@ class TestGovernedStatePersistenceSync:
         state = GovernedSessionState()
         save_governed_state(state, tenant_id="t1", session_id="s1", redis_client=redis)
 
-        loaded = load_governed_state(tenant_id="t1", session_id="s1", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="s1", redis_client=redis
+        )
         assert loaded is not None
         assert isinstance(loaded, GovernedSessionState)
 
     def test_load_missing_key_returns_none(self):
         redis = FakeRedis()
-        loaded = load_governed_state(tenant_id="t1", session_id="missing", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="missing", redis_client=redis
+        )
         assert loaded is None
 
     def test_state_with_overrides_survives_round_trip(self):
@@ -185,7 +189,9 @@ class TestGovernedStatePersistenceSync:
         state = GovernedSessionState(observed=observed)
         save_governed_state(state, tenant_id="t1", session_id="s1", redis_client=redis)
 
-        loaded = load_governed_state(tenant_id="t1", session_id="s1", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="s1", redis_client=redis
+        )
         assert loaded is not None
         assert len(loaded.observed.user_overrides) == 1
         assert loaded.observed.user_overrides[0].field_name == "medium"
@@ -202,9 +208,13 @@ class TestGovernedStatePersistenceSync:
                 ),
             )
         )
-        save_governed_state(state, tenant_id="t1", session_id="norm-sync", redis_client=redis)
+        save_governed_state(
+            state, tenant_id="t1", session_id="norm-sync", redis_client=redis
+        )
 
-        loaded = load_governed_state(tenant_id="t1", session_id="norm-sync", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="norm-sync", redis_client=redis
+        )
         assert loaded is not None
         assert loaded.sealai_norm.identity.norm_version == "sealai_norm_v1"
         assert loaded.sealai_norm.identity.requirement_class_id == "PTFE10"
@@ -219,11 +229,17 @@ class TestGovernedStatePersistenceSync:
                 requirement_class_id="PTFE10",
             )
         )
-        save_governed_state(state, tenant_id="t1", session_id="export-sync", redis_client=redis)
+        save_governed_state(
+            state, tenant_id="t1", session_id="export-sync", redis_client=redis
+        )
 
-        loaded = load_governed_state(tenant_id="t1", session_id="export-sync", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="export-sync", redis_client=redis
+        )
         assert loaded is not None
-        assert loaded.export_profile.export_profile_version == "sealai_export_profile_v1"
+        assert (
+            loaded.export_profile.export_profile_version == "sealai_export_profile_v1"
+        )
         assert loaded.export_profile.requirement_class_id == "PTFE10"
 
     def test_manufacturer_mapping_survives_round_trip(self):
@@ -236,9 +252,13 @@ class TestGovernedStatePersistenceSync:
                 mapped_material_family="PTFE",
             )
         )
-        save_governed_state(state, tenant_id="t1", session_id="mapping-sync", redis_client=redis)
+        save_governed_state(
+            state, tenant_id="t1", session_id="mapping-sync", redis_client=redis
+        )
 
-        loaded = load_governed_state(tenant_id="t1", session_id="mapping-sync", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="mapping-sync", redis_client=redis
+        )
         assert loaded is not None
         assert loaded.manufacturer_mapping.mapping_version == "manufacturer_mapping_v1"
         assert loaded.manufacturer_mapping.selected_manufacturer == "Acme"
@@ -253,9 +273,13 @@ class TestGovernedStatePersistenceSync:
                 selected_manufacturer="Acme",
             )
         )
-        save_governed_state(state, tenant_id="t1", session_id="contract-sync", redis_client=redis)
+        save_governed_state(
+            state, tenant_id="t1", session_id="contract-sync", redis_client=redis
+        )
 
-        loaded = load_governed_state(tenant_id="t1", session_id="contract-sync", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="contract-sync", redis_client=redis
+        )
         assert loaded is not None
         assert loaded.dispatch_contract.contract_version == "dispatch_contract_v1"
         assert loaded.dispatch_contract.sealai_request_id == "sealai-sync-contract"
@@ -265,7 +289,9 @@ class TestGovernedStatePersistenceSync:
         key = _governed_state_key("t1", "s1")
         redis.set(key, "not-json-at-all{{{")
 
-        loaded = load_governed_state(tenant_id="t1", session_id="s1", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="s1", redis_client=redis
+        )
         assert loaded is None
 
     def test_overwrite_existing_state(self):
@@ -275,7 +301,9 @@ class TestGovernedStatePersistenceSync:
         save_governed_state(state1, tenant_id="t1", session_id="s1", redis_client=redis)
         save_governed_state(state2, tenant_id="t1", session_id="s1", redis_client=redis)
 
-        loaded = load_governed_state(tenant_id="t1", session_id="s1", redis_client=redis)
+        loaded = load_governed_state(
+            tenant_id="t1", session_id="s1", redis_client=redis
+        )
         assert loaded is not None
         assert loaded.analysis_cycle == 2
 
@@ -283,11 +311,19 @@ class TestGovernedStatePersistenceSync:
         redis = FakeRedis()
         s1 = GovernedSessionState(analysis_cycle=1)
         s2 = GovernedSessionState(analysis_cycle=5)
-        save_governed_state(s1, tenant_id="t1", session_id="sessionA", redis_client=redis)
-        save_governed_state(s2, tenant_id="t1", session_id="sessionB", redis_client=redis)
+        save_governed_state(
+            s1, tenant_id="t1", session_id="sessionA", redis_client=redis
+        )
+        save_governed_state(
+            s2, tenant_id="t1", session_id="sessionB", redis_client=redis
+        )
 
-        loaded_a = load_governed_state(tenant_id="t1", session_id="sessionA", redis_client=redis)
-        loaded_b = load_governed_state(tenant_id="t1", session_id="sessionB", redis_client=redis)
+        loaded_a = load_governed_state(
+            tenant_id="t1", session_id="sessionA", redis_client=redis
+        )
+        loaded_b = load_governed_state(
+            tenant_id="t1", session_id="sessionB", redis_client=redis
+        )
         assert loaded_a.analysis_cycle == 1
         assert loaded_b.analysis_cycle == 5
 
@@ -295,11 +331,19 @@ class TestGovernedStatePersistenceSync:
         redis = FakeRedis()
         s_t1 = GovernedSessionState(analysis_cycle=1)
         s_t2 = GovernedSessionState(analysis_cycle=9)
-        save_governed_state(s_t1, tenant_id="tenant1", session_id="s1", redis_client=redis)
-        save_governed_state(s_t2, tenant_id="tenant2", session_id="s1", redis_client=redis)
+        save_governed_state(
+            s_t1, tenant_id="tenant1", session_id="s1", redis_client=redis
+        )
+        save_governed_state(
+            s_t2, tenant_id="tenant2", session_id="s1", redis_client=redis
+        )
 
-        loaded_t1 = load_governed_state(tenant_id="tenant1", session_id="s1", redis_client=redis)
-        loaded_t2 = load_governed_state(tenant_id="tenant2", session_id="s1", redis_client=redis)
+        loaded_t1 = load_governed_state(
+            tenant_id="tenant1", session_id="s1", redis_client=redis
+        )
+        loaded_t2 = load_governed_state(
+            tenant_id="tenant2", session_id="s1", redis_client=redis
+        )
         assert loaded_t1.analysis_cycle == 1
         assert loaded_t2.analysis_cycle == 9
 
@@ -308,15 +352,19 @@ class TestGovernedStatePersistenceSync:
 # F-B.4 — Persistence async tests
 # ---------------------------------------------------------------------------
 
-class TestGovernedStatePersistenceAsync:
 
+class TestGovernedStatePersistenceAsync:
     @pytest.mark.asyncio
     async def test_async_save_and_load_round_trip(self):
         redis = FakeRedisAsync()
         state = GovernedSessionState()
-        await save_governed_state_async(state, tenant_id="t1", session_id="s1", redis_client=redis)
+        await save_governed_state_async(
+            state, tenant_id="t1", session_id="s1", redis_client=redis
+        )
 
-        loaded = await load_governed_state_async(tenant_id="t1", session_id="s1", redis_client=redis)
+        loaded = await load_governed_state_async(
+            tenant_id="t1", session_id="s1", redis_client=redis
+        )
         assert loaded is not None
         assert isinstance(loaded, GovernedSessionState)
 
@@ -372,7 +420,9 @@ class TestGovernedStatePersistenceAsync:
         )
         assert loaded is not None
         assert loaded.export_profile.sealai_request_id == "sealai-async-export"
-        assert loaded.export_profile.export_profile_version == "sealai_export_profile_v1"
+        assert (
+            loaded.export_profile.export_profile_version == "sealai_export_profile_v1"
+        )
 
     @pytest.mark.asyncio
     async def test_async_manufacturer_mapping_survives_round_trip(self):
@@ -457,6 +507,7 @@ class TestGovernedStatePersistenceAsync:
 # Override invariant: writes go to ObservedState, not Normalized/Governance
 # ---------------------------------------------------------------------------
 
+
 class TestOverrideInvariant:
     """Verify that override values enter via ObservedState and flow through reducers."""
 
@@ -469,12 +520,14 @@ class TestOverrideInvariant:
         normalized = reduce_observed_to_normalized(observed)
         asserted = reduce_normalized_to_asserted(normalized)
         governance = reduce_asserted_to_governance(asserted)
-        return state.model_copy(update={
-            "observed": observed,
-            "normalized": normalized,
-            "asserted": asserted,
-            "governance": governance,
-        })
+        return state.model_copy(
+            update={
+                "observed": observed,
+                "normalized": normalized,
+                "asserted": asserted,
+                "governance": governance,
+            }
+        )
 
     def test_override_enters_observed_state(self):
         ov = UserOverride(field_name="medium", override_value="Öl", turn_index=1)

@@ -25,14 +25,49 @@ class CommunicationGuard:
     """Validates LLM communication contracts before they reach the user."""
 
     _forbidden_patterns: tuple[tuple[str, re.Pattern[str]], ...] = (
-        ("final_approval", re.compile(r"\b(freigegeben|approved|final\s+geeignet|final\s+freigegeben|technisch\s+validiert)\b", re.IGNORECASE)),
-        ("guarantee", re.compile(r"\b(garantiert|guaranteed|sicher\s+passend|garantiert\s+dicht|keine\s+weiteren\s+pruefungen|keine\s+weiteren\s+prüfungen)\b", re.IGNORECASE)),
-        ("manufacturer_acceptance", re.compile(r"\b(hersteller\s+wird\s+.*akzeptieren|laut\s+hersteller|best(?:er|e)\s+hersteller)\b", re.IGNORECASE)),
-        ("unsupported_standard", re.compile(r"\b(norm\s+[A-Z0-9/-]+\s+sagt|nach\s+(?:FDA|ATEX|EHEDG|TA[-\s]?Luft).*(?:konform|zugelassen|zertifiziert))\b", re.IGNORECASE)),
-        ("final_recommendation", re.compile(r"\b(ich\s+empfehle\s+final|finale\s+empfehlung|nehmen\s+sie\s+final)\b", re.IGNORECASE)),
+        (
+            "final_approval",
+            re.compile(
+                r"\b(freigegeben|approved|final\s+geeignet|final\s+freigegeben|technisch\s+validiert)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "guarantee",
+            re.compile(
+                r"\b(garantiert|guaranteed|sicher\s+passend|garantiert\s+dicht|keine\s+weiteren\s+pruefungen|keine\s+weiteren\s+prüfungen)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "manufacturer_acceptance",
+            re.compile(
+                r"\b(hersteller\s+wird\s+.*akzeptieren|laut\s+hersteller|best(?:er|e)\s+hersteller)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "unsupported_standard",
+            re.compile(
+                r"\b(norm\s+[A-Z0-9/-]+\s+sagt|nach\s+(?:FDA|ATEX|EHEDG|TA[-\s]?Luft).*(?:konform|zugelassen|zertifiziert))\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "final_recommendation",
+            re.compile(
+                r"\b(ich\s+empfehle\s+final|finale\s+empfehlung|nehmen\s+sie\s+final)\b",
+                re.IGNORECASE,
+            ),
+        ),
     )
-    _risk_terms = re.compile(r"\b(\w*risiko|korrosion|trockenlauf|abrasion|atex|dampf)\b", re.IGNORECASE)
-    _readiness_terms = re.compile(r"\b(readiness|rfq[-\s]?ready|anfragebasis\s+bereit|herstellerreif|rfq\s+bereit)\b", re.IGNORECASE)
+    _risk_terms = re.compile(
+        r"\b(\w*risiko|korrosion|trockenlauf|abrasion|atex|dampf)\b", re.IGNORECASE
+    )
+    _readiness_terms = re.compile(
+        r"\b(readiness|rfq[-\s]?ready|anfragebasis\s+bereit|herstellerreif|rfq\s+bereit)\b",
+        re.IGNORECASE,
+    )
     _false_progress_terms = re.compile(
         r"\b(?:"
         r"arbeitsstand\s*:|"
@@ -92,7 +127,11 @@ class CommunicationGuard:
             for evidence_id in claim.evidence_ref_ids
         }
 
-        unknown_ids = [claim_id for claim_id in contract.used_claim_ids if claim_id not in allowed_ids]
+        unknown_ids = [
+            claim_id
+            for claim_id in contract.used_claim_ids
+            if claim_id not in allowed_ids
+        ]
         if unknown_ids:
             errors.append("fabricated_claim_id:" + ",".join(unknown_ids))
 
@@ -113,7 +152,11 @@ class CommunicationGuard:
         if inactive_claims:
             errors.append("inactive_claim_used:" + ",".join(inactive_claims))
 
-        used_claims = [claim for claim in allowed_claims if claim.id in set(contract.used_claim_ids)]
+        used_claims = [
+            claim
+            for claim in allowed_claims
+            if claim.id in set(contract.used_claim_ids)
+        ]
         used_types = {claim.type for claim in used_claims}
 
         if contract.contains_final_approval:
@@ -135,11 +178,21 @@ class CommunicationGuard:
 
         if contract.mode != ConversationMode.GENERAL_KNOWLEDGE:
             if state_transition is not None:
-                if state_transition.decision == "block_progress" and contract.proposed_field_updates:
+                if (
+                    state_transition.decision == "block_progress"
+                    and contract.proposed_field_updates
+                ):
                     errors.append("state_patch_blocked_but_contract_proposes_updates")
-                if state_transition.state_patch_size == 0 and self._false_progress_terms.search(text):
+                if (
+                    state_transition.state_patch_size == 0
+                    and self._false_progress_terms.search(text)
+                ):
                     errors.append("false_progress_language_without_state_patch")
-            if allowed_claims and not contract.used_claim_ids and self._contains_case_bound_statement(text, state):
+            if (
+                allowed_claims
+                and not contract.used_claim_ids
+                and self._contains_case_bound_statement(text, state)
+            ):
                 errors.append("case_bound_statement_without_allowed_claim")
             if self._risk_terms.search(text) and "risk" not in used_types:
                 errors.append("risk_statement_without_risk_claim")
@@ -157,7 +210,9 @@ class CommunicationGuard:
                 errors.append(f"fabricated_evidence_ref:{evidence_id}")
 
         if errors:
-            return GuardResult(ok=False, errors=errors, fallback_message=self.fallback(state))
+            return GuardResult(
+                ok=False, errors=errors, fallback_message=self.fallback(state)
+            )
         return GuardResult(ok=True)
 
     def fallback(self, state: CaseConversationState) -> str:
@@ -179,9 +234,18 @@ class CommunicationGuard:
     @staticmethod
     def _contains_case_bound_statement(text: str, state: CaseConversationState) -> bool:
         lowered = str(text or "").lower()
-        field_values = [str(field.value).lower() for field in state.confirmed_fields if field.value not in (None, "")]
-        field_labels = [str(field.label or field.key).lower() for field in state.confirmed_fields + state.proposed_fields]
-        return any(value and value in lowered for value in field_values) or any(label and label in lowered for label in field_labels)
+        field_values = [
+            str(field.value).lower()
+            for field in state.confirmed_fields
+            if field.value not in (None, "")
+        ]
+        field_labels = [
+            str(field.label or field.key).lower()
+            for field in state.confirmed_fields + state.proposed_fields
+        ]
+        return any(value and value in lowered for value in field_values) or any(
+            label and label in lowered for label in field_labels
+        )
 
     def _validate_proposed_updates(
         self,
@@ -206,12 +270,18 @@ class CommunicationGuard:
             if normalized_unit not in allowed_units:
                 errors.append(f"unsupported_proposed_unit:{item.key}:{item.unit}")
             if item.requires_user_confirmation is not True:
-                errors.append(f"unconfirmed_proposal_without_user_confirmation:{item.key}")
-            if allowed_proposed_updates is not None and (
-                item.key,
-                self._normalized_value(item.value),
-                item.unit,
-            ) not in allowed_pairs:
+                errors.append(
+                    f"unconfirmed_proposal_without_user_confirmation:{item.key}"
+                )
+            if (
+                allowed_proposed_updates is not None
+                and (
+                    item.key,
+                    self._normalized_value(item.value),
+                    item.unit,
+                )
+                not in allowed_pairs
+            ):
                 errors.append(f"llm_introduced_unextracted_proposal:{item.key}")
         return errors
 

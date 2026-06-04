@@ -4,6 +4,7 @@ RED-before-green: under a declared Tier-0 turn, ``hybrid_retrieve`` must raise
 ``TierViolation`` BEFORE any retrieval I/O. Today (no guard) it returns results —
 that is the hole (S2).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -21,9 +22,15 @@ from app.agent.runtime.turn_tier import (
 def _mocked_rag(monkeypatch):
     # Make retrieval otherwise succeed (no real I/O) so the ONLY thing that can
     # stop it is the tier guard.
-    monkeypatch.setattr("app.services.rag.rag_orchestrator._embed", lambda x: [[0.1] * 128])
-    monkeypatch.setattr("app.services.rag.rag_orchestrator._embed_sparse_query", lambda x: None)
-    monkeypatch.setattr("app.services.rag.rag_orchestrator._build_qdrant_filter", lambda f: None)
+    monkeypatch.setattr(
+        "app.services.rag.rag_orchestrator._embed", lambda x: [[0.1] * 128]
+    )
+    monkeypatch.setattr(
+        "app.services.rag.rag_orchestrator._embed_sparse_query", lambda x: None
+    )
+    monkeypatch.setattr(
+        "app.services.rag.rag_orchestrator._build_qdrant_filter", lambda f: None
+    )
     monkeypatch.setattr(
         "app.services.rag.rag_orchestrator._qdrant_search_with_retry",
         lambda *a, **k: ([], {}),

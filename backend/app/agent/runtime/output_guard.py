@@ -19,6 +19,7 @@ questions. What is blocked is recommendation or fitness-for-use intent.
 On violation: FAST_PATH_GUARD_FALLBACK is returned instead of LLM text.
 The boundary disclaimer is still appended by the caller (graph.py).
 """
+
 from __future__ import annotations
 
 import logging
@@ -179,14 +180,18 @@ def comparative_ranking_patterns() -> tuple[re.Pattern[str], ...]:
     Exposed so the V9.2 final guard reuses the exact same patterns as this
     fast-path streaming guard instead of duplicating them (prevents drift).
     """
-    return tuple(pattern for category, pattern in _COMPILED if category == "comparative_ranking")
+    return tuple(
+        pattern for category, pattern in _COMPILED if category == "comparative_ranking"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Safe fallback (deterministic, never LLM-generated)
 # ---------------------------------------------------------------------------
 
-FAST_PATH_GUARD_FALLBACK = get_surface_claims_spec("conversational_answer")["fallback_text"]
+FAST_PATH_GUARD_FALLBACK = get_surface_claims_spec("conversational_answer")[
+    "fallback_text"
+]
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -215,7 +220,9 @@ def check_fast_path_output(text: str) -> tuple[bool, str | None]:
             )
             return False, category
     lowered = str(text or "").lower()
-    for fragment in get_surface_claims_spec("conversational_answer")["forbidden_fragments"]:
+    for fragment in get_surface_claims_spec("conversational_answer")[
+        "forbidden_fragments"
+    ]:
         if fragment.lower() in lowered:
             logger.warning(
                 "[output_guard] fast-path surface-claim violation (fragment=%r) "

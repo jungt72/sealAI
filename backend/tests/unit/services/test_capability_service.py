@@ -90,9 +90,33 @@ def _create_schema(conn) -> None:
 
 def _seed_profiles(conn) -> None:
     rows = [
-        ("mfr-a", "Alpha Seals GmbH", "Alpha Seals", "alpha-seals", "DE", "small", "active"),
-        ("mfr-b", "Beta Seals GmbH", "Beta Seals", "beta-seals", "DE", "medium", "active"),
-        ("mfr-c", "Gamma Seals GmbH", "Gamma Seals", "gamma-seals", "DE", "small", "active"),
+        (
+            "mfr-a",
+            "Alpha Seals GmbH",
+            "Alpha Seals",
+            "alpha-seals",
+            "DE",
+            "small",
+            "active",
+        ),
+        (
+            "mfr-b",
+            "Beta Seals GmbH",
+            "Beta Seals",
+            "beta-seals",
+            "DE",
+            "medium",
+            "active",
+        ),
+        (
+            "mfr-c",
+            "Gamma Seals GmbH",
+            "Gamma Seals",
+            "gamma-seals",
+            "DE",
+            "small",
+            "active",
+        ),
     ]
     for row in rows:
         conn.execute(
@@ -137,7 +161,9 @@ def _base_claim(**overrides) -> CapabilityClaimCreate:
     return CapabilityClaimCreate(**values)
 
 
-def _lot_claim(claim_id: str, manufacturer_id: str, **overrides) -> CapabilityClaimCreate:
+def _lot_claim(
+    claim_id: str, manufacturer_id: str, **overrides
+) -> CapabilityClaimCreate:
     values = {
         "claim_id": claim_id,
         "manufacturer_id": manufacturer_id,
@@ -162,14 +188,77 @@ def _lot_claim(claim_id: str, manufacturer_id: str, **overrides) -> CapabilityCl
 
 
 def _seed_claims(service: CapabilityService, db) -> None:
-    service.create_claim(db, _base_claim(claim_id="claim-material-a", manufacturer_id="mfr-a"))
-    service.create_claim(db, _base_claim(claim_id="claim-material-b", manufacturer_id="mfr-b", sealing_material_family="elastomer_fkm"))
-    service.create_claim(db, _base_claim(claim_id="claim-geometry-a", manufacturer_id="mfr-a", capability_type="geometry_range", source_reference="test:geometry"))
-    service.create_claim(db, _lot_claim("claim-single-a", "mfr-a", minimum_order_pieces=1, typical_minimum_pieces=4, maximum_order_pieces=100, accepts_single_pieces=True))
-    service.create_claim(db, _lot_claim("claim-single-b", "mfr-b", minimum_order_pieces=1, typical_minimum_pieces=8, maximum_order_pieces=20, accepts_single_pieces=True))
-    service.create_claim(db, _lot_claim("claim-min-25", "mfr-c", minimum_order_pieces=25, typical_minimum_pieces=50, maximum_order_pieces=500, accepts_single_pieces=False))
-    service.create_claim(db, _lot_claim("claim-max-5", "mfr-a", minimum_order_pieces=1, typical_minimum_pieces=2, maximum_order_pieces=5, accepts_single_pieces=True, source_reference="test:max5"))
-    service.create_claim(db, _lot_claim("claim-draft-single", "mfr-c", status="draft", source_reference="test:draft"))
+    service.create_claim(
+        db, _base_claim(claim_id="claim-material-a", manufacturer_id="mfr-a")
+    )
+    service.create_claim(
+        db,
+        _base_claim(
+            claim_id="claim-material-b",
+            manufacturer_id="mfr-b",
+            sealing_material_family="elastomer_fkm",
+        ),
+    )
+    service.create_claim(
+        db,
+        _base_claim(
+            claim_id="claim-geometry-a",
+            manufacturer_id="mfr-a",
+            capability_type="geometry_range",
+            source_reference="test:geometry",
+        ),
+    )
+    service.create_claim(
+        db,
+        _lot_claim(
+            "claim-single-a",
+            "mfr-a",
+            minimum_order_pieces=1,
+            typical_minimum_pieces=4,
+            maximum_order_pieces=100,
+            accepts_single_pieces=True,
+        ),
+    )
+    service.create_claim(
+        db,
+        _lot_claim(
+            "claim-single-b",
+            "mfr-b",
+            minimum_order_pieces=1,
+            typical_minimum_pieces=8,
+            maximum_order_pieces=20,
+            accepts_single_pieces=True,
+        ),
+    )
+    service.create_claim(
+        db,
+        _lot_claim(
+            "claim-min-25",
+            "mfr-c",
+            minimum_order_pieces=25,
+            typical_minimum_pieces=50,
+            maximum_order_pieces=500,
+            accepts_single_pieces=False,
+        ),
+    )
+    service.create_claim(
+        db,
+        _lot_claim(
+            "claim-max-5",
+            "mfr-a",
+            minimum_order_pieces=1,
+            typical_minimum_pieces=2,
+            maximum_order_pieces=5,
+            accepts_single_pieces=True,
+            source_reference="test:max5",
+        ),
+    )
+    service.create_claim(
+        db,
+        _lot_claim(
+            "claim-draft-single", "mfr-c", status="draft", source_reference="test:draft"
+        ),
+    )
 
 
 def test_create_claim_success(service: CapabilityService, db) -> None:
@@ -252,11 +341,26 @@ def test_list_claims_by_manufacturer(service: CapabilityService, db) -> None:
 @pytest.mark.parametrize(
     ("filters", "expected_ids"),
     [
-        ({"engineering_path": "rwdr"}, {"claim-material-a", "claim-material-b", "claim-geometry-a", "claim-single-a", "claim-single-b", "claim-min-25", "claim-max-5", "claim-draft-single"}),
+        (
+            {"engineering_path": "rwdr"},
+            {
+                "claim-material-a",
+                "claim-material-b",
+                "claim-geometry-a",
+                "claim-single-a",
+                "claim-single-b",
+                "claim-min-25",
+                "claim-max-5",
+                "claim-draft-single",
+            },
+        ),
         ({"sealing_material_family": "elastomer_fkm"}, {"claim-material-b"}),
         ({"capability_type": "geometry_range"}, {"claim-geometry-a"}),
         ({"status": "draft"}, {"claim-draft-single"}),
-        ({"manufacturer_id": "mfr-a", "capability_type": "lot_size_capability"}, {"claim-single-a", "claim-max-5"}),
+        (
+            {"manufacturer_id": "mfr-a", "capability_type": "lot_size_capability"},
+            {"claim-single-a", "claim-max-5"},
+        ),
         ({"engineering_path": "static"}, set()),
     ],
 )
@@ -460,10 +564,18 @@ def test_update_claim_can_set_atex_capability_false(
         ({"manufacturer_id": "mfr-a", "atex_capable": True}, {"claim-atex-mfr-a"}),
         (
             {"capability_type": "certification", "atex_capable": True},
-            {"claim-atex-mfr-a", "claim-atex-mfr-b", "claim-atex-static", "claim-atex-fkm"},
+            {
+                "claim-atex-mfr-a",
+                "claim-atex-mfr-b",
+                "claim-atex-static",
+                "claim-atex-fkm",
+            },
         ),
         ({"engineering_path": "static", "atex_capable": True}, {"claim-atex-static"}),
-        ({"sealing_material_family": "elastomer_fkm", "atex_capable": True}, {"claim-atex-fkm"}),
+        (
+            {"sealing_material_family": "elastomer_fkm", "atex_capable": True},
+            {"claim-atex-fkm"},
+        ),
     ],
 )
 def test_list_claims_atex_filter_composes_with_core_filters(
@@ -545,9 +657,18 @@ def test_update_claim_success(service: CapabilityService, db) -> None:
         (CapabilityClaimUpdate(confidence=8), "confidence must be between"),
         (CapabilityClaimUpdate(status="approved"), "unknown status"),
         (CapabilityClaimUpdate(source_type="crawler"), "unknown source_type"),
-        (CapabilityClaimUpdate(capability_type="ranking_claim"), "unknown capability_type"),
-        (CapabilityClaimUpdate(minimum_order_pieces=0), "minimum_order_pieces must be positive"),
-        (CapabilityClaimUpdate(minimum_order_pieces=5, accepts_single_pieces=True), "accepts_single_pieces requires"),
+        (
+            CapabilityClaimUpdate(capability_type="ranking_claim"),
+            "unknown capability_type",
+        ),
+        (
+            CapabilityClaimUpdate(minimum_order_pieces=0),
+            "minimum_order_pieces must be positive",
+        ),
+        (
+            CapabilityClaimUpdate(minimum_order_pieces=5, accepts_single_pieces=True),
+            "accepts_single_pieces requires",
+        ),
     ],
 )
 def test_update_claim_invalid_input(
@@ -563,12 +684,16 @@ def test_update_claim_invalid_input(
 
 
 def test_update_claim_missing_returns_none(service: CapabilityService, db) -> None:
-    updated = service.update_claim(db, "missing-claim", CapabilityClaimUpdate(status="active"))
+    updated = service.update_claim(
+        db, "missing-claim", CapabilityClaimUpdate(status="active")
+    )
 
     assert updated is None
 
 
-def test_update_claim_empty_patch_returns_current_claim(service: CapabilityService, db) -> None:
+def test_update_claim_empty_patch_returns_current_claim(
+    service: CapabilityService, db
+) -> None:
     service.create_claim(db, _base_claim(claim_id="claim-empty-update"))
 
     updated = service.update_claim(db, "claim-empty-update", CapabilityClaimUpdate())
@@ -636,7 +761,9 @@ def test_quantity_filter_rejects_nonpositive_quantity(
     db,
     bad_quantity: int,
 ) -> None:
-    with pytest.raises(CapabilityValidationError, match="quantity_requested must be positive"):
+    with pytest.raises(
+        CapabilityValidationError, match="quantity_requested must be positive"
+    ):
         service.filter_claims_for_quantity(db, quantity_requested=bad_quantity)
 
 
@@ -895,7 +1022,9 @@ def test_service_has_no_langgraph_agent_or_fastapi_imports() -> None:
     assert "fastapi" not in source.lower()
 
 
-def test_build_capability_profile_projects_adr_010_fields(service: CapabilityService, db) -> None:
+def test_build_capability_profile_projects_adr_010_fields(
+    service: CapabilityService, db
+) -> None:
     service.create_claim(
         db,
         _base_claim(
@@ -953,7 +1082,9 @@ def test_build_capability_profile_projects_adr_010_fields(service: CapabilitySer
     assert profile.open_profile_gaps == ()
 
 
-def test_build_capability_profile_surfaces_open_profile_gaps(service: CapabilityService, db) -> None:
+def test_build_capability_profile_surfaces_open_profile_gaps(
+    service: CapabilityService, db
+) -> None:
     service.create_claim(db, _base_claim(claim_id="claim-gap", manufacturer_id="mfr-b"))
 
     profile = service.build_profile(db, "mfr-b")
@@ -964,8 +1095,12 @@ def test_build_capability_profile_surfaces_open_profile_gaps(service: Capability
     assert profile.evidence_level == "documented"
 
 
-def test_build_capability_profile_ignores_inactive_claims(service: CapabilityService, db) -> None:
-    active = service.create_claim(db, _base_claim(claim_id="claim-active", manufacturer_id="mfr-a"))
+def test_build_capability_profile_ignores_inactive_claims(
+    service: CapabilityService, db
+) -> None:
+    active = service.create_claim(
+        db, _base_claim(claim_id="claim-active", manufacturer_id="mfr-a")
+    )
     withdrawn = service.create_claim(
         db,
         _base_claim(

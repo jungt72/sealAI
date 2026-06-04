@@ -10,6 +10,7 @@ Coverage:
   ✓ basis_hash is non-empty string
   ✓ multiple violations → all reasons reported
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,6 +31,7 @@ from app.agent.state.models import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _full_normalized_state() -> NormalizedState:
     """NormalizedState with all 5 mandatory fields present and confirmed."""
@@ -76,6 +78,7 @@ def _full_state() -> GovernedSessionState:
 # 1. Full state → admissible=True
 # ---------------------------------------------------------------------------
 
+
 class TestFullStateAdmissible:
     def test_full_state_is_admissible(self) -> None:
         state = _full_state()
@@ -103,6 +106,7 @@ class TestFullStateAdmissible:
 # 2. Missing mandatory fields → admissible=False
 # ---------------------------------------------------------------------------
 
+
 class TestMissingMandatoryField:
     @pytest.mark.parametrize("missing_field", MANDATORY_FIELDS)
     def test_missing_field_blocks(self, missing_field: str) -> None:
@@ -110,10 +114,17 @@ class TestMissingMandatoryField:
         params = dict(normalized.parameters)
         params.pop(missing_field, None)
         # Also remove any alias keys
-        for alias in ("temperature_c", "pressure_bar", "shaft_diameter",
-                       "medium_canonical", "medium_classification"):
+        for alias in (
+            "temperature_c",
+            "pressure_bar",
+            "shaft_diameter",
+            "medium_canonical",
+            "medium_classification",
+        ):
             params.pop(alias, None)
-        status = {k: v for k, v in normalized.parameter_status.items() if k != missing_field}
+        status = {
+            k: v for k, v in normalized.parameter_status.items() if k != missing_field
+        }
         ns = NormalizedState(parameters=params, parameter_status=status)
         state = GovernedSessionState(normalized=ns)
 
@@ -127,7 +138,11 @@ class TestMissingMandatoryField:
         params.pop(missing_field, None)
         ns = NormalizedState(
             parameters=params,
-            parameter_status={k: v for k, v in normalized.parameter_status.items() if k != missing_field},
+            parameter_status={
+                k: v
+                for k, v in normalized.parameter_status.items()
+                if k != missing_field
+            },
         )
         state = GovernedSessionState(normalized=ns)
 
@@ -154,6 +169,7 @@ class TestMissingMandatoryField:
 # ---------------------------------------------------------------------------
 # 3. "assumed" status for critical field → admissible=False
 # ---------------------------------------------------------------------------
+
 
 class TestAssumedStatusBlocking:
     def test_assumed_pressure_blocks(self) -> None:
@@ -231,6 +247,7 @@ class TestAssumedStatusBlocking:
 # 4. critical_review blocking_findings → admissible=False
 # ---------------------------------------------------------------------------
 
+
 class TestCriticalReviewBlocking:
     def test_blocking_finding_blocks(self) -> None:
         rfq = RfqState(blocking_findings=["release_status_not_inquiry_ready"])
@@ -255,9 +272,7 @@ class TestCriticalReviewBlocking:
         assert "release_status_not_inquiry_ready" in reasons_str
 
     def test_multiple_findings_all_reported(self) -> None:
-        rfq = RfqState(
-            blocking_findings=["finding_a", "finding_b", "finding_c"]
-        )
+        rfq = RfqState(blocking_findings=["finding_a", "finding_b", "finding_c"])
         state = GovernedSessionState(
             normalized=_full_normalized_state(),
             rfq=rfq,
@@ -283,6 +298,7 @@ class TestCriticalReviewBlocking:
 # ---------------------------------------------------------------------------
 # 5. Invariants
 # ---------------------------------------------------------------------------
+
 
 class TestInvariants:
     def test_admissible_false_never_empty_reasons(self) -> None:
@@ -335,6 +351,8 @@ class TestInvariants:
 
     def test_result_is_frozen(self) -> None:
         """AdmissibilityResult is a frozen dataclass — immutable after creation."""
-        result = AdmissibilityResult(admissible=True, blocking_reasons=(), basis_hash="abc123")
+        result = AdmissibilityResult(
+            admissible=True, blocking_reasons=(), basis_hash="abc123"
+        )
         with pytest.raises((AttributeError, TypeError)):
             result.admissible = False  # type: ignore[misc]

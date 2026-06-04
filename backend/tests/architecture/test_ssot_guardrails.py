@@ -163,7 +163,10 @@ def test_no_module_level_legacy_test_quarantines_remain() -> None:
                 continue
             text = path.read_text(encoding="utf-8")
             lowered = text.casefold()
-            if "allow_module_level=true" not in lowered and "pytestmark = pytest.mark.skip" not in lowered:
+            if (
+                "allow_module_level=true" not in lowered
+                and "pytestmark = pytest.mark.skip" not in lowered
+            ):
                 continue
             if any(term in lowered for term in legacy_terms):
                 offenders.append(str(path.relative_to(REPO_ROOT)))

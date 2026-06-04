@@ -10,6 +10,7 @@ Tests verify:
 6. Outcome fields carry correct Python types
 7. The agent graph never writes to outcome during a run (structural invariant)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -20,6 +21,7 @@ from app.agent.state.agent_state import OutcomeLayer, SealingAIState
 # ---------------------------------------------------------------------------
 # 1–6. OutcomeLayer structural typing
 # ---------------------------------------------------------------------------
+
 
 class TestOutcomeLayerFields:
     def test_all_five_fields_accepted(self):
@@ -34,7 +36,9 @@ class TestOutcomeLayerFields:
         assert outcome["failed"] is False
         assert outcome["replaced"] is False
         assert outcome["review_override"] is False
-        assert outcome["outcome_note"] == "Material performed within spec after 6 months."
+        assert (
+            outcome["outcome_note"] == "Material performed within spec after 6 months."
+        )
 
     def test_implemented_true(self):
         o: OutcomeLayer = {"implemented": True}
@@ -53,7 +57,9 @@ class TestOutcomeLayerFields:
         assert o["review_override"] is True
 
     def test_outcome_note_string(self):
-        o: OutcomeLayer = {"outcome_note": "Seal failed at 180°C due to pressure spike."}
+        o: OutcomeLayer = {
+            "outcome_note": "Seal failed at 180°C due to pressure spike."
+        }
         assert isinstance(o["outcome_note"], str)
 
     def test_empty_outcome_layer_is_valid(self):
@@ -85,6 +91,7 @@ class TestOutcomeLayerFields:
 # ---------------------------------------------------------------------------
 # 3–5. Integration into SealingAIState
 # ---------------------------------------------------------------------------
+
 
 class TestOutcomeInSealingAIState:
     def test_sealing_state_without_outcome_is_valid(self):
@@ -121,6 +128,7 @@ class TestOutcomeInSealingAIState:
 # 7. Structural invariant: graph nodes must not write to outcome
 # ---------------------------------------------------------------------------
 
+
 class TestOutcomeNotWrittenByGraph:
     @pytest.mark.asyncio
     async def test_matching_node_does_not_write_outcome(self):
@@ -129,9 +137,9 @@ class TestOutcomeNotWrittenByGraph:
         from app.agent.graph.nodes.matching_node import matching_node
 
         result = await matching_node(GraphState())
-        assert "outcome" not in result.model_dump(), (
-            "matching_node must not write 'outcome' — it is reserved for external feedback"
-        )
+        assert (
+            "outcome" not in result.model_dump()
+        ), "matching_node must not write 'outcome' — it is reserved for external feedback"
 
     @pytest.mark.asyncio
     async def test_output_contract_node_does_not_write_outcome(self):
@@ -140,6 +148,6 @@ class TestOutcomeNotWrittenByGraph:
         from app.agent.graph.nodes.output_contract_node import output_contract_node
 
         result = await output_contract_node(GraphState())
-        assert "outcome" not in result.model_dump(), (
-            "output_contract_node must not write 'outcome' — it is reserved for external feedback"
-        )
+        assert (
+            "outcome" not in result.model_dump()
+        ), "output_contract_node must not write 'outcome' — it is reserved for external feedback"

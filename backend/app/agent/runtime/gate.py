@@ -22,6 +22,7 @@ Architecture rule:
   - The session envelope is passed in by the caller; gate is stateless.
   - Uncertainty must bias to GOVERNED.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,7 +43,10 @@ log = logging.getLogger(__name__)
 # Metrics (optional — gate works without Prometheus)
 # ---------------------------------------------------------------------------
 
-def _observe_gate_decision(decision: "GateDecision", started_at: float) -> "GateDecision":
+
+def _observe_gate_decision(
+    decision: "GateDecision", started_at: float
+) -> "GateDecision":
     """Record gate decision metrics and return the decision unchanged.
 
     Instruments Prometheus counters when available; silently skips otherwise.
@@ -50,21 +54,34 @@ def _observe_gate_decision(decision: "GateDecision", started_at: float) -> "Gate
     """
     latency = time.monotonic() - started_at
     try:
-        from app.observability.metrics import track_gate_decision_reason, track_gate_direct_reply, track_gate_route_decision  # noqa: PLC0415
+        from app.observability.metrics import (
+            track_gate_decision_reason,
+            track_gate_direct_reply,
+            track_gate_route_decision,
+        )  # noqa: PLC0415
+
         track_gate_route_decision(decision.route, latency)
         track_gate_decision_reason(_metric_reason_category(decision.reason))
         if decision.allow_direct_reply:
             track_gate_direct_reply(decision.route)
     except Exception:  # metrics unavailable (tests, offline) — fail-open
         pass
-    log.debug("[gate] route=%s reason=%s latency_ms=%.1f", decision.route, decision.reason, latency * 1000)
+    log.debug(
+        "[gate] route=%s reason=%s latency_ms=%.1f",
+        decision.route,
+        decision.reason,
+        latency * 1000,
+    )
     return decision
+
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-_ENABLE_GATE_DIRECT_REPLY = os.environ.get("SEALAI_ENABLE_GATE_DIRECT_REPLY", "false").lower() == "true"
+_ENABLE_GATE_DIRECT_REPLY = (
+    os.environ.get("SEALAI_ENABLE_GATE_DIRECT_REPLY", "false").lower() == "true"
+)
 _CONFIDENCE_THRESHOLD = 0.75
 # Stricter threshold for non-governed override while the session is already
 # sticky-governed. We only allow the light modes when the signal is clearly
@@ -133,7 +150,10 @@ def _get_gate_system_prompt(
     last_route: str | None,
 ) -> str:
     """Gate-System-Prompt aus Jinja2-Template laden (via PromptRegistry)."""
-    from app.agent.prompts import prompts  # lazy import — vermeidet zirkulaere Abhaengigkeiten
+    from app.agent.prompts import (
+        prompts,
+    )  # lazy import — vermeidet zirkulaere Abhaengigkeiten
+
     return prompts.render(
         "gate/gate_classify.j2",
         {
@@ -167,6 +187,7 @@ class GateLLMContract(BaseModel):
             return None
         text = str(value or "").strip()
         return text or None
+
 
 # ---------------------------------------------------------------------------
 # Hard-override patterns (→ GOVERNED immediately, no LLM needed)
@@ -314,15 +335,18 @@ def check_hard_overrides(message: str) -> HardOverrideMatch | None:
 # Session protocol (F-A.2 will provide the concrete SessionEnvelope)
 # ---------------------------------------------------------------------------
 
+
 @runtime_checkable
 class HasSessionZone(Protocol):
     """Minimal protocol expected from a session object by the gate."""
+
     session_zone: str  # "conversation" | "governed"
 
 
 # ---------------------------------------------------------------------------
 # LLM classification result
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class LLMGateResult:
@@ -338,6 +362,7 @@ class LLMGateResult:
 # ---------------------------------------------------------------------------
 # Gate decision
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class GateDecision:
@@ -375,6 +400,7 @@ def _metric_reason_category(reason: str) -> str:
 # LLM call (sync + async)
 # ---------------------------------------------------------------------------
 
+
 def _call_gate_llm(message: str) -> LLMGateResult:
     """Synchronous mini-LLM call for binary gate classification.
 
@@ -405,12 +431,16 @@ def _call_gate_llm(message: str) -> LLMGateResult:
         return LLMGateResult(
             route=payload.route,
             confidence=float(payload.confidence),
-            allow_direct_reply=bool(payload.allow_direct_reply and payload.direct_reply),
+            allow_direct_reply=bool(
+                payload.allow_direct_reply and payload.direct_reply
+            ),
             direct_reply=payload.direct_reply,
             reason_code=payload.reason_code,
         )
     except (ValidationError, json.JSONDecodeError, ValueError, TypeError) as exc:
-        log.warning("[gate] LLM parse error (%s: %s) raw=%r", type(exc).__name__, exc, raw)
+        log.warning(
+            "[gate] LLM parse error (%s: %s) raw=%r", type(exc).__name__, exc, raw
+        )
         return LLMGateResult(route="GOVERNED", confidence=0.0, parse_error=True)
 
 
@@ -448,12 +478,16 @@ async def _call_gate_llm_async(
         return LLMGateResult(
             route=payload.route,
             confidence=float(payload.confidence),
-            allow_direct_reply=bool(payload.allow_direct_reply and payload.direct_reply),
+            allow_direct_reply=bool(
+                payload.allow_direct_reply and payload.direct_reply
+            ),
             direct_reply=payload.direct_reply,
             reason_code=payload.reason_code,
         )
     except (ValidationError, json.JSONDecodeError, ValueError, TypeError) as exc:
-        log.warning("[gate] LLM parse error (%s: %s) raw=%r", type(exc).__name__, exc, raw)
+        log.warning(
+            "[gate] LLM parse error (%s: %s) raw=%r", type(exc).__name__, exc, raw
+        )
         return LLMGateResult(route="GOVERNED", confidence=0.0, parse_error=True)
 
 
@@ -463,19 +497,33 @@ def classify_light_route(message: str) -> GateDecision | None:
     if not text:
         return None
     if _GREETING_PATTERN.match(text) or _SMALLTALK_PATTERN.search(text):
-        return GateDecision(route="CONVERSATION", reason="deterministic_instant:greeting_or_smalltalk")
+        return GateDecision(
+            route="CONVERSATION", reason="deterministic_instant:greeting_or_smalltalk"
+        )
     if _EXPLORATION_KNOWLEDGE_PATTERN.search(text):
-        return GateDecision(route="EXPLORATION", reason="deterministic_light:technical_explainer")
+        return GateDecision(
+            route="EXPLORATION", reason="deterministic_light:technical_explainer"
+        )
     if _META_PROCESS_PATTERN.search(text) or _ORIENTATION_PATTERN.search(text):
-        return GateDecision(route="CONVERSATION", reason="deterministic_instant:meta_or_orientation")
-    if _OPEN_GOAL_PATTERN.search(text) or _PROBLEM_PATTERN.search(text) or _UNCERTAINTY_PATTERN.search(text):
-        return GateDecision(route="EXPLORATION", reason="deterministic_light:goal_problem_or_uncertainty")
+        return GateDecision(
+            route="CONVERSATION", reason="deterministic_instant:meta_or_orientation"
+        )
+    if (
+        _OPEN_GOAL_PATTERN.search(text)
+        or _PROBLEM_PATTERN.search(text)
+        or _UNCERTAINTY_PATTERN.search(text)
+    ):
+        return GateDecision(
+            route="EXPLORATION",
+            reason="deterministic_light:goal_problem_or_uncertainty",
+        )
     return None
 
 
 # ---------------------------------------------------------------------------
 # Core routing logic (shared between sync and async)
 # ---------------------------------------------------------------------------
+
 
 def _direct_reply_eligible(
     *,
@@ -514,7 +562,9 @@ def _apply_llm_result(
     Handles timeout and low-confidence fallback logic.
     """
     if result.parse_error:
-        return GateDecision(route="GOVERNED", reason="json_parse_fallback", confidence=0.0)
+        return GateDecision(
+            route="GOVERNED", reason="json_parse_fallback", confidence=0.0
+        )
 
     if result.timeout:
         deterministic = check_hard_overrides(message)
@@ -524,7 +574,9 @@ def _apply_llm_result(
                 reason=f"timeout_with_deterministic_signal:{deterministic.trigger}",
                 confidence=0.0,
             )
-        return GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed", confidence=0.0)
+        return GateDecision(
+            route="GOVERNED", reason="timeout_fallback_to_governed", confidence=0.0
+        )
 
     if result.confidence < _CONFIDENCE_THRESHOLD:
         return GateDecision(
@@ -534,7 +586,13 @@ def _apply_llm_result(
             reason_code=result.reason_code,
         )
 
-    direct_reply = result.direct_reply if _direct_reply_eligible(message=message, session_zone=session_zone, result=result) else None
+    direct_reply = (
+        result.direct_reply
+        if _direct_reply_eligible(
+            message=message, session_zone=session_zone, result=result
+        )
+        else None
+    )
     reason = "llm_frontdoor_classification"
     if result.reason_code:
         reason = f"{reason}:{result.reason_code}"
@@ -561,7 +619,11 @@ def _maybe_enrich_conversation_with_direct_reply(
     except Exception:
         return fallback
     enriched = _apply_llm_result(result, message, session_zone=session_zone)
-    if enriched.route == "CONVERSATION" and enriched.allow_direct_reply and enriched.direct_reply:
+    if (
+        enriched.route == "CONVERSATION"
+        and enriched.allow_direct_reply
+        and enriched.direct_reply
+    ):
         return enriched
     return fallback
 
@@ -590,7 +652,11 @@ async def _maybe_enrich_conversation_with_direct_reply_async(
     except Exception:
         return fallback
     enriched = _apply_llm_result(result, message, session_zone=session_zone)
-    if enriched.route == "CONVERSATION" and enriched.allow_direct_reply and enriched.direct_reply:
+    if (
+        enriched.route == "CONVERSATION"
+        and enriched.allow_direct_reply
+        and enriched.direct_reply
+    ):
         return enriched
     return fallback
 
@@ -598,6 +664,7 @@ async def _maybe_enrich_conversation_with_direct_reply_async(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def decide_route(message: str, session: HasSessionZone) -> GateDecision:
     """Synchronous 3-mode frontdoor decision.
@@ -623,14 +690,19 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
     if session.session_zone == "governed":
         hard = check_hard_overrides(message)
         if hard:
-            return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
+            return _observe_gate_decision(
+                GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"),
+                started_at,
+            )
         instant = classify_light_route(message)
         if instant is not None and instant.route == "CONVERSATION":
             return _observe_gate_decision(
                 _maybe_enrich_conversation_with_direct_reply(
                     message=message,
                     session_zone="governed",
-                    fallback=GateDecision(route="CONVERSATION", reason="governed_instant_override"),
+                    fallback=GateDecision(
+                        route="CONVERSATION", reason="governed_instant_override"
+                    ),
                 ),
                 started_at,
             )
@@ -642,8 +714,16 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
                 type(exc).__name__,
                 exc,
             )
-            return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
-        if not result.parse_error and not result.timeout and result.route != "GOVERNED" and result.confidence >= _GOVERNED_LIGHT_THRESHOLD:
+            return _observe_gate_decision(
+                GateDecision(route="GOVERNED", reason="sticky_governed_session"),
+                started_at,
+            )
+        if (
+            not result.parse_error
+            and not result.timeout
+            and result.route != "GOVERNED"
+            and result.confidence >= _GOVERNED_LIGHT_THRESHOLD
+        ):
             decision = _apply_llm_result(result, message, session_zone="governed")
             return _observe_gate_decision(
                 GateDecision(
@@ -656,12 +736,17 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
                 ),
                 started_at,
             )
-        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
+        return _observe_gate_decision(
+            GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at
+        )
 
     # 2. Deterministic hard overrides (fresh session)
     hard = check_hard_overrides(message)
     if hard:
-        return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
+        return _observe_gate_decision(
+            GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"),
+            started_at,
+        )
 
     # 3. Deterministic light routing
     light = classify_light_route(message)
@@ -686,12 +771,20 @@ def decide_route(message: str, session: HasSessionZone) -> GateDecision:
         deterministic = check_hard_overrides(message)
         if deterministic:
             return _observe_gate_decision(
-                GateDecision(route="GOVERNED", reason=f"timeout_with_deterministic_signal:{deterministic.trigger}"),
+                GateDecision(
+                    route="GOVERNED",
+                    reason=f"timeout_with_deterministic_signal:{deterministic.trigger}",
+                ),
                 started_at,
             )
-        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed"), started_at)
+        return _observe_gate_decision(
+            GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed"),
+            started_at,
+        )
 
-    return _observe_gate_decision(_apply_llm_result(result, message, session_zone="conversation"), started_at)
+    return _observe_gate_decision(
+        _apply_llm_result(result, message, session_zone="conversation"), started_at
+    )
 
 
 async def decide_route_async(
@@ -714,14 +807,19 @@ async def decide_route_async(
     if session.session_zone == "governed":
         hard = check_hard_overrides(message)
         if hard:
-            return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
+            return _observe_gate_decision(
+                GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"),
+                started_at,
+            )
         instant = classify_light_route(message)
         if instant is not None and instant.route == "CONVERSATION":
             return _observe_gate_decision(
                 await _maybe_enrich_conversation_with_direct_reply_async(
                     message=message,
                     session_zone="governed",
-                    fallback=GateDecision(route="CONVERSATION", reason="governed_instant_override"),
+                    fallback=GateDecision(
+                        route="CONVERSATION", reason="governed_instant_override"
+                    ),
                     short_state_summary=short_state_summary,
                     missing_critical_fields=missing_critical_fields,
                     case_active=case_active,
@@ -744,8 +842,16 @@ async def decide_route_async(
                 type(exc).__name__,
                 exc,
             )
-            return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
-        if not result.parse_error and not result.timeout and result.route != "GOVERNED" and result.confidence >= _GOVERNED_LIGHT_THRESHOLD:
+            return _observe_gate_decision(
+                GateDecision(route="GOVERNED", reason="sticky_governed_session"),
+                started_at,
+            )
+        if (
+            not result.parse_error
+            and not result.timeout
+            and result.route != "GOVERNED"
+            and result.confidence >= _GOVERNED_LIGHT_THRESHOLD
+        ):
             decision = _apply_llm_result(result, message, session_zone="governed")
             return _observe_gate_decision(
                 GateDecision(
@@ -758,12 +864,17 @@ async def decide_route_async(
                 ),
                 started_at,
             )
-        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at)
+        return _observe_gate_decision(
+            GateDecision(route="GOVERNED", reason="sticky_governed_session"), started_at
+        )
 
     # 2. Deterministic hard overrides (fresh session)
     hard = check_hard_overrides(message)
     if hard:
-        return _observe_gate_decision(GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"), started_at)
+        return _observe_gate_decision(
+            GateDecision(route="GOVERNED", reason=f"hard_override:{hard.trigger}"),
+            started_at,
+        )
 
     # 3. Deterministic light routing
     light = classify_light_route(message)
@@ -799,10 +910,16 @@ async def decide_route_async(
         deterministic = check_hard_overrides(message)
         if deterministic:
             return _observe_gate_decision(
-                GateDecision(route="GOVERNED", reason=f"timeout_with_deterministic_signal:{deterministic.trigger}"),
+                GateDecision(
+                    route="GOVERNED",
+                    reason=f"timeout_with_deterministic_signal:{deterministic.trigger}",
+                ),
                 started_at,
             )
-        return _observe_gate_decision(GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed"), started_at)
+        return _observe_gate_decision(
+            GateDecision(route="GOVERNED", reason="timeout_fallback_to_governed"),
+            started_at,
+        )
 
     return _observe_gate_decision(
         _apply_llm_result(result, message, session_zone="conversation"),

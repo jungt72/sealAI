@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app.agent.communication.governed_answer_context import build_governed_answer_context
+from app.agent.communication.governed_answer_context import (
+    build_governed_answer_context,
+)
 from app.agent.state.models import ConversationStrategyContract, GovernedSessionState
 from app.agent.v91.contracts import ResponseMove
 from app.agent.v91.golden_evaluation import (
@@ -42,7 +44,9 @@ def test_visible_golden_answer_checks_answer_first_one_question_and_reason() -> 
     assert result.metrics["no_overclaim"] is True
 
 
-def test_visible_golden_answer_rejects_final_claim_multi_question_and_tab_spam() -> None:
+def test_visible_golden_answer_rejects_final_claim_multi_question_and_tab_spam() -> (
+    None
+):
     context = _question_context()
     result = evaluate_visible_golden_answer(
         (
@@ -60,7 +64,9 @@ def test_visible_golden_answer_rejects_final_claim_multi_question_and_tab_spam()
 
 
 def test_visible_golden_answer_requires_known_evidence_when_expected() -> None:
-    context = _question_context().model_copy(update={"evidence_ref_ids": ["evidence_doc_1"]})
+    context = _question_context().model_copy(
+        update={"evidence_ref_ids": ["evidence_doc_1"]}
+    )
     result = evaluate_visible_golden_answer(
         (
             "Die dokumentierte Quelle evidence_doc_1 stützt nur eine Vorprüfung, keine Freigabe. "
@@ -108,7 +114,9 @@ def test_visible_golden_redirect_does_not_answer_external_utility() -> None:
             "question_justification_required": False,
         }
     )
-    context = context.model_copy(update={"communication_plan": redirected, "question_plan": None})
+    context = context.model_copy(
+        update={"communication_plan": redirected, "question_plan": None}
+    )
     result = evaluate_visible_golden_answer(
         "Dazu gebe ich keine externe Wetterauskunft. Ich bleibe beim Dichtungsfall und den offenen technischen Angaben.",
         context,

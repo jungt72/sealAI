@@ -55,9 +55,18 @@ def test_social_conversation_frontdoor_routes_to_greeting_without_graph(
 @pytest.mark.parametrize(
     "text, expected",
     [
-        ("Guten Morgen, ich brauche eine Dichtung für eine Pumpe.", PreGateClassification.DOMAIN_INQUIRY),
-        ("Wie geht es dir? Ich brauche eine Dichtung für eine Pumpe.", PreGateClassification.DOMAIN_INQUIRY),
-        ("Hallo, ich habe 80 mm Welle und 1500 rpm.", PreGateClassification.DOMAIN_INQUIRY),
+        (
+            "Guten Morgen, ich brauche eine Dichtung für eine Pumpe.",
+            PreGateClassification.DOMAIN_INQUIRY,
+        ),
+        (
+            "Wie geht es dir? Ich brauche eine Dichtung für eine Pumpe.",
+            PreGateClassification.DOMAIN_INQUIRY,
+        ),
+        (
+            "Hallo, ich habe 80 mm Welle und 1500 rpm.",
+            PreGateClassification.DOMAIN_INQUIRY,
+        ),
     ],
 )
 def test_social_words_do_not_hide_technical_or_task_intent(

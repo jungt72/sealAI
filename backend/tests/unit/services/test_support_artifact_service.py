@@ -92,12 +92,16 @@ def test_support_artifacts_contain_no_liability_or_final_claim() -> None:
 
 
 def test_support_artifact_bundle_serializes_safely() -> None:
-    payload = SupportArtifactService().build(
-        {
-            "case_summary": "Technische Rueckfrage zu Pumpendichtung.",
-            "missing_required_fields": ["Pumpentyp"],
-        }
-    ).as_dict()
+    payload = (
+        SupportArtifactService()
+        .build(
+            {
+                "case_summary": "Technische Rueckfrage zu Pumpendichtung.",
+                "missing_required_fields": ["Pumpentyp"],
+            }
+        )
+        .as_dict()
+    )
 
     assert payload["schema_version"] == "support_artifacts_v0.8.3"
     assert payload["artifact_types"] == (

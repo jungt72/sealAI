@@ -17,7 +17,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.api.v1.api import api_router
-from app.api.v1.endpoints.rag import ensure_upload_directory, internal_router as rag_internal_router
+from app.api.v1.endpoints.rag import (
+    ensure_upload_directory,
+    internal_router as rag_internal_router,
+)
 from app.core.config import settings
 from app.observability.health import run_all_health_checks
 from app.services.rag.qdrant_bootstrap import bootstrap_rag_collection
@@ -36,12 +39,14 @@ CHECKPOINTER_NAMESPACE = "sealai_agent"
 # Prometheus middleware
 # ---------------------------------------------------------------------------
 
+
 class _PrometheusMiddleware(BaseHTTPMiddleware):
     """Record HTTP request counts and latencies for Prometheus."""
 
     def _normalize_path(self, path: str) -> str:
         """Replace variable path segments to avoid high cardinality."""
         import re
+
         path = re.sub(
             r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=/|$)",
             "/{id}",
@@ -72,7 +77,9 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
             status = str(status_code)
 
             HTTP_REQUESTS_TOTAL.labels(method=method, path=path, status=status).inc()
-            HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(duration)
+            HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(
+                duration
+            )
             slog.info(
                 "http.request_completed",
                 method=method,
@@ -86,6 +93,7 @@ class _PrometheusMiddleware(BaseHTTPMiddleware):
 # Dev: clear LangGraph checkpoints
 # ---------------------------------------------------------------------------
 
+
 async def _clear_langgraph_checkpoints_for_dev_run() -> None:
     if not settings.dev_clear_langgraph_checkpoints_on_startup:
         return
@@ -95,14 +103,19 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
             settings.normalized_app_env,
         )
         return
-    redis_url = settings.langgraph_v2_redis_url or settings.REDIS_URL or settings.redis_url
+    redis_url = (
+        settings.langgraph_v2_redis_url or settings.REDIS_URL or settings.redis_url
+    )
     if not redis_url:
         log.warning("LangGraph checkpoint clear skipped: no redis url configured.")
         return
     try:
         from redis.asyncio import Redis
     except Exception as exc:
-        log.warning("LangGraph checkpoint clear skipped: redis async client unavailable (%s)", exc)
+        log.warning(
+            "LangGraph checkpoint clear skipped: redis async client unavailable (%s)",
+            exc,
+        )
         return
 
     patterns = [
@@ -136,6 +149,7 @@ async def _clear_langgraph_checkpoints_for_dev_run() -> None:
 # Lifespan
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Starting %s v%s", settings.app_name, settings.app_version)
@@ -150,7 +164,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.audit_log_bootstrap_on_startup:
         await _bootstrap_audit_log()
     else:
-        log.info("Audit log table bootstrap skipped: audit_log_bootstrap_on_startup=false")
+        log.info(
+            "Audit log table bootstrap skipped: audit_log_bootstrap_on_startup=false"
+        )
 
     try:
         from app.agent.graph.topology import get_governed_graph
@@ -214,6 +230,7 @@ async def _bootstrap_audit_log() -> None:
 # App factory
 # ---------------------------------------------------------------------------
 
+
 def create_app() -> FastAPI:
     from app.observability import metrics as _metrics  # noqa: F401
     from app.observability.langsmith import configure_langsmith_environment
@@ -256,7 +273,11 @@ def create_app() -> FastAPI:
     if enable_cors:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=[frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
+            allow_origins=[
+                frontend_origin,
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -278,7 +299,9 @@ def create_app() -> FastAPI:
                 inprogress_name="sealai_http_requests_inprogress",
                 inprogress_labels=True,
             )
-            instrumentator.instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+            instrumentator.instrument(app).expose(
+                app, endpoint="/metrics", include_in_schema=False
+            )
         except Exception as exc:
             log.warning("Prometheus instrumentator setup failed (non-fatal): %s", exc)
 
@@ -311,15 +334,18 @@ def create_app() -> FastAPI:
     # Legacy v1-API mounten
     app.include_router(api_router, prefix="/api/v1")
     app.include_router(rag_internal_router)
-    
+
     # 🚀 Neuen Agent Router mounten
     app.include_router(agent_router, prefix="/api/agent", tags=["Agent"])
-    
+
     # 🖥️ UI PoC Static Files mounten
     static_dir = os.path.join(os.path.dirname(__file__), "agent", "api", "static")
     if os.path.exists(static_dir):
-        app.mount("/poc", StaticFiles(directory=static_dir, html=True), name="static_poc")
+        app.mount(
+            "/poc", StaticFiles(directory=static_dir, html=True), name="static_poc"
+        )
 
     return app
+
 
 app = create_app()
