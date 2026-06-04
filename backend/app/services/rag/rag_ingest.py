@@ -45,7 +45,7 @@ try:
 except Exception:
     HuggingFaceEmbeddings = None
 
-from app.services.rag.rag_schema import ChunkMetadata, Domain, EngineeringProps, MaterialFamily, SourceType, TempRange
+from app.services.rag.rag_schema import ChunkMetadata, Domain, EngineeringProps, MaterialFamily, SourceType, TempRange, classify_pack_affinity
 from app.services.rag.document import Document
 from app.services.rag.rag_etl_pipeline import (
     LLMDocumentExtraction, process_document_pipeline
@@ -1020,6 +1020,14 @@ class IngestPipeline:
                 source_uri=file_path,
                 source_type=source_type,
                 domain=domain,
+                pack_affinity=classify_pack_affinity(
+                    domain=getattr(domain, "value", domain),
+                    entity=entity,
+                    route_key=normalized_route_key,
+                    category=category,
+                    tags=raw_tags,
+                    text=chunk_text,
+                ),
                 chunk_index=idx,
                 entity=entity,
                 aspect=aspects,

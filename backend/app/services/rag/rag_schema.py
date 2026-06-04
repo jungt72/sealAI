@@ -50,6 +50,11 @@ class ChunkMetadata(BaseModel):
     source_uri: str
     source_type: SourceType = SourceType.MANUAL
     domain: Domain = Domain.MATERIAL
+    # C5: cross-cutting-vs-pack knowledge marker. None = cross-cutting
+    # (material/chemistry/standard), "rwdr" = radial-shaft-seal pack-specific. Set
+    # deliberately at ingest; the tolerant default keeps pre-marker Qdrant payloads
+    # deserializable under strict mode. Retrieval-inert until a filter consumes it.
+    pack_affinity: Optional[str] = None
     chunk_index: int
     entity: Optional[str] = None
     aspect: list[str] = Field(default_factory=list)
@@ -82,3 +87,46 @@ class ChunkMetadata(BaseModel):
     def generate_chunk_id(tenant_id: str, document_id: str, chunk_index: int) -> str:
         raw = f"{tenant_id}:{document_id}:{chunk_index}"
         return str(uuid.uuid5(uuid.NAMESPACE_URL, raw))
+
+
+# C5: radial-shaft-seal signal tokens. Conservative — a chunk is pack-specific
+# ("rwdr") only on an explicit RWDR/Simmerring signal; absent one it stays
+# cross-cutting (None). Single source of truth shared by ingest and the backfill.
+_RWDR_PACK_TOKENS: tuple[str, ...] = (
+    "rwdr",
+    "radialwellendichtring",
+    "radial-wellendichtring",
+    "wellendichtring",
+    "radial shaft seal",
+    "radial-shaft-seal",
+    "rotary shaft seal",
+    "rotary-shaft-seal",
+    "simmerring",
+)
+
+
+def classify_pack_affinity(
+    *,
+    domain: Optional[str] = None,
+    entity: Optional[str] = None,
+    route_key: Optional[str] = None,
+    category: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    text: Optional[str] = None,
+) -> Optional[str]:
+    """Deterministic cross-cutting-vs-pack classifier for a knowledge chunk.
+
+    Returns "rwdr" only on an explicit radial-shaft-seal signal in the chunk's
+    entity/route_key/category/tags/text; otherwise None (cross-cutting). Conservative
+    by design so material/chemistry/standard knowledge is never mislabelled as
+    pack-specific. Used at ingest and by the backfill so both agree.
+    """
+    parts: list[str] = [
+        str(value)
+        for value in (entity, route_key, category, text, *(tags or []))
+        if value
+    ]
+    haystack = " ".join(parts).casefold()
+    if any(token in haystack for token in _RWDR_PACK_TOKENS):
+        return "rwdr"
+    return None
