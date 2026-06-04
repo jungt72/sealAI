@@ -45,11 +45,17 @@ os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
 os.environ.setdefault("redis_url", "redis://localhost:6379/0")
+os.environ.setdefault("nextauth_url", "http://localhost:3000")
+os.environ.setdefault("nextauth_secret", "test-secret")
+os.environ.setdefault("keycloak_issuer", "http://localhost/realms/test")
 os.environ.setdefault("keycloak_jwks_url", "http://localhost/.well-known/jwks.json")
+os.environ.setdefault("keycloak_client_id", "test-client")
+os.environ.setdefault("keycloak_client_secret", "test-secret")
 os.environ.setdefault("keycloak_expected_azp", "test-client")
 
 from app.api.v1.endpoints import rag as rag_endpoint  # noqa: E402
 from app.services.auth.dependencies import RequestUser  # noqa: E402
+from app.services.rag import utils as rag_utils  # noqa: E402
 
 
 class DummySession:
@@ -83,6 +89,13 @@ class DummyUploadFile:
         return None
 
 
+def _configure_upload_root(tmp_path: Path) -> None:
+    rag_utils.UPLOAD_ROOT = str(tmp_path)
+    rag_utils._UPLOAD_DIR_READY = False
+    rag_endpoint.RAG_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+    os.environ["REDIS_URL"] = ""
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
@@ -90,9 +103,9 @@ def anyio_backend() -> str:
 
 @pytest.mark.anyio
 async def test_rag_upload_too_large(tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
+    _configure_upload_root(tmp_path)
     rag_endpoint.RAG_UPLOAD_MAX_BYTES = 4
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
     file_obj = DummyUploadFile("doc.txt", b"hello", "text/plain")
     try:
         await rag_endpoint.upload_rag_document(
@@ -109,8 +122,8 @@ async def test_rag_upload_too_large(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_rag_upload_invalid_ext(tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    _configure_upload_root(tmp_path)
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
     file_obj = DummyUploadFile("doc.exe", b"hello", "application/pdf")
     try:
         await rag_endpoint.upload_rag_document(
@@ -127,8 +140,8 @@ async def test_rag_upload_invalid_ext(tmp_path: Path) -> None:
 
 @pytest.mark.anyio
 async def test_rag_upload_invalid_content_type(tmp_path: Path) -> None:
-    rag_endpoint.UPLOAD_ROOT = str(tmp_path)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[])
+    _configure_upload_root(tmp_path)
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
     file_obj = DummyUploadFile("doc.txt", b"hello", "application/octet-stream")
     try:
         await rag_endpoint.upload_rag_document(
@@ -141,3 +154,43 @@ async def test_rag_upload_invalid_content_type(tmp_path: Path) -> None:
         assert exc.status_code == 415
     else:
         raise AssertionError("Expected unsupported_content_type")
+
+
+@pytest.mark.anyio
+async def test_rag_upload_rejects_spoofed_pdf_magic_bytes(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    rag_endpoint.RAG_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    file_obj = DummyUploadFile("doc.pdf", b"not actually a pdf", "application/pdf")
+    try:
+        await rag_endpoint.upload_rag_document(
+            file=file_obj,
+            visibility="private",
+            current_user=user,
+            session=DummySession(),
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 415
+        assert exc.detail["error"] == "upload_signature_mismatch"
+    else:
+        raise AssertionError("Expected upload_signature_mismatch")
+
+
+@pytest.mark.anyio
+async def test_rag_upload_rejects_binary_text_spoof(tmp_path: Path) -> None:
+    _configure_upload_root(tmp_path)
+    rag_endpoint.RAG_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    file_obj = DummyUploadFile("doc.txt", b"hello\x00world", "text/plain")
+    try:
+        await rag_endpoint.upload_rag_document(
+            file=file_obj,
+            visibility="private",
+            current_user=user,
+            session=DummySession(),
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 415
+        assert exc.detail["error"] == "upload_signature_mismatch"
+    else:
+        raise AssertionError("Expected upload_signature_mismatch")

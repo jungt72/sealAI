@@ -1,0 +1,6 @@
+RWDR demo sample generated from golden case
+case_id=55e7cee4-8b76-45f6-bb6b-c3abfeaf1617
+status=NEEDS_CLARIFICATION
+revision_count=13
+pdf_bytes=13815
+pdf_header=b'%PDF-'

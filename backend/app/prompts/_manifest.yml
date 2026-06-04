@@ -7,9 +7,6 @@ check_safety:
 challenger_gate:
   file: "challenger_gate.j2"
   version: "1.0.0"
-fast_brain_system:
-  file: "fast_brain_system.j2"
-  version: "1.0.0"
 material_scientist_agent:
   file: "material_scientist_agent.j2"
   version: "1.0.0"
@@ -39,4 +36,10 @@ rag_metadata_extractor:
   version: "1.0.0"
 rag_platinum_extractor:
   file: "rag_platinum_extractor.j2"
+  version: "1.0.0"
+phase_rapport:
+  file: "phase_rapport.j2"
+  version: "1.0.0"
+phase_exploration:
+  file: "phase_exploration.j2"
   version: "1.0.0"

@@ -1,0 +1,473 @@
+[
+  {
+    "id": "conv_hello",
+    "category": "A_conversation_clear",
+    "input_text": "hallo",
+    "session_zone": "conversation",
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Trivial greeting must stay cheap and safe."
+  },
+  {
+    "id": "conv_thanks",
+    "category": "A_conversation_clear",
+    "input_text": "danke",
+    "session_zone": "conversation",
+    "enable_direct_reply": true,
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.96,
+      "allow_direct_reply": true,
+      "direct_reply": "Gern.",
+      "reason_code": "safe_smalltalk"
+    },
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": true,
+    "expected_fail_closed_to_governed": false,
+    "why": "Safe direct reply should be possible only on harmless thanks."
+  },
+  {
+    "id": "conv_okay",
+    "category": "A_conversation_clear",
+    "input_text": "okay",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.91,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "short_ack"
+    },
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Short acknowledgement should not escalate."
+  },
+  {
+    "id": "conv_how_sealai_works",
+    "category": "A_conversation_clear",
+    "input_text": "wie funktioniert sealai?",
+    "session_zone": "conversation",
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Harmless process question stays conversational."
+  },
+  {
+    "id": "conv_can_you_help",
+    "category": "A_conversation_clear",
+    "input_text": "kannst du mir helfen?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.88,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "meta_help_request"
+    },
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Soft meta help request should not become technical too early."
+  },
+  {
+    "id": "conv_what_can_you_do",
+    "category": "A_conversation_clear",
+    "input_text": "was kannst du?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.87,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "capability_meta"
+    },
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Capability question stays conversational."
+  },
+  {
+    "id": "boundary_help_with_pump",
+    "category": "B_conversation_exploration_boundary",
+    "input_text": "ich brauche hilfe bei einer pumpe",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Open application help is exploratory, not pure smalltalk."
+  },
+  {
+    "id": "boundary_search_saltwater",
+    "category": "B_conversation_exploration_boundary",
+    "input_text": "wir suchen etwas für salzwasser",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Open medium-led need without dimensions should stay exploratory."
+  },
+  {
+    "id": "boundary_sealing_problem",
+    "category": "B_conversation_exploration_boundary",
+    "input_text": "ich habe ein dichtungsproblem",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "EXPLORATION",
+      "confidence": 0.84,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "problem_statement"
+    },
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Problem statement should start narrowing, not answer directly."
+  },
+  {
+    "id": "boundary_gross_einordnen",
+    "category": "B_conversation_exploration_boundary",
+    "input_text": "kannst du mal grob einordnen was sinnvoll wäre?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "GOVERNED",
+      "confidence": 0.62,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "ambiguous_advice"
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": true,
+    "why": "Advice framing is ambiguous and should fail closed."
+  },
+  {
+    "id": "boundary_better_fkm_epdm",
+    "category": "B_conversation_exploration_boundary",
+    "input_text": "was wäre grundsätzlich besser, fkm oder epdm?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "GOVERNED",
+      "confidence": 0.58,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "ambiguous_material_choice"
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": true,
+    "why": "Comparative recommendation language should not slip into fast-path."
+  },
+  {
+    "id": "explore_material_saltwater",
+    "category": "C_exploration_clear",
+    "input_text": "welches material ist für salzwasser sinnvoll?",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Open material suitability question without hard technical sizing should stay exploratory."
+  },
+  {
+    "id": "explore_diff_epdm_fkm",
+    "category": "C_exploration_clear",
+    "input_text": "was ist der unterschied zwischen epdm und fkm?",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Material comparison explainer belongs in exploration, not smalltalk conversation."
+  },
+  {
+    "id": "explore_what_is_oring",
+    "category": "C_exploration_clear",
+    "input_text": "was ist ein o-ring?",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Domain explainer questions should consistently enter exploration."
+  },
+  {
+    "id": "explore_api_682",
+    "category": "C_exploration_clear",
+    "input_text": "was bedeutet api 682?",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Standards explainer questions should consistently enter exploration."
+  },
+  {
+    "id": "explore_pump_types",
+    "category": "C_exploration_clear",
+    "input_text": "welche dichtungstypen gibt es für pumpen?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "EXPLORATION",
+      "confidence": 0.90,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "knowledge_solution_space"
+    },
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Open solution-space request should remain exploration."
+  },
+  {
+    "id": "gov_gleitring_saltwater",
+    "category": "D_governed_clear",
+    "input_text": "gleitring für 80 grad salzwasser, 10 bar, 50 mm, 6000 u/min",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Multiple technical dimensions with units force governed."
+  },
+  {
+    "id": "gov_rwdr_mineraloil",
+    "category": "D_governed_clear",
+    "input_text": "rwdr 50x70x10 für mineralöl und 120 grad",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Explicit RWDR sizing belongs in governed."
+  },
+  {
+    "id": "gov_fkm_steam_150",
+    "category": "D_governed_clear",
+    "input_text": "fkm bei 150 grad dampf noch ok?",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Material suitability plus temperature is technical authority."
+  },
+  {
+    "id": "gov_install_space",
+    "category": "D_governed_clear",
+    "input_text": "nur 8 mm einbauraum, welle 40 mm, medium öl",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Geometric constraints and dimensions must not stay exploratory."
+  },
+  {
+    "id": "gov_failure_runtime",
+    "category": "D_governed_clear",
+    "input_text": "dichtung hält nur 3 monate bei 90 grad und 3000 u/min",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Failure analysis with units is governed."
+  },
+  {
+    "id": "sticky_gov_then_sinnvoll",
+    "category": "E_sticky_follow_up",
+    "input_text": "was wäre denn dann sinnvoll?",
+    "session_zone": "governed",
+    "llm_result": {
+      "route": "GOVERNED",
+      "confidence": 0.63,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "sticky_advice_after_technical_case"
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": true,
+    "why": "Advice follow-up after a technical case must stay sticky governed."
+  },
+  {
+    "id": "sticky_gov_then_ok_thanks",
+    "category": "E_sticky_follow_up",
+    "input_text": "okay danke",
+    "session_zone": "governed",
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Harmless acknowledgement may temporarily use light reply without downgrading the session zone."
+  },
+  {
+    "id": "sticky_gov_medium_change",
+    "category": "E_sticky_follow_up",
+    "input_text": "und wenn es statt salzwasser dampf wäre?",
+    "session_zone": "governed",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Technical counterfactual after governed case must remain governed."
+  },
+  {
+    "id": "sticky_exploration_add_dimension",
+    "category": "E_sticky_follow_up",
+    "input_text": "die welle hat 50 mm",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Numeric parameter introduction should escalate from exploration/conversation into governed."
+  },
+  {
+    "id": "sticky_conversation_to_technical",
+    "category": "E_sticky_follow_up",
+    "input_text": "80 grad, 10 bar, salzwasser",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Conversation opener followed by hard signals must switch to governed."
+  },
+  {
+    "id": "fastpath_greeting_with_problem",
+    "category": "F_fast_path_boundary",
+    "input_text": "hallo, ich habe ein problem mit einer pumpe",
+    "session_zone": "conversation",
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Friendly opener must not hide exploratory problem framing."
+  },
+  {
+    "id": "fastpath_thanks_then_saltwater",
+    "category": "F_fast_path_boundary",
+    "input_text": "danke, und jetzt zu salzwasser bei 80 grad",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Friendly lead-in must not hide a technical payload with numeric temperature."
+  },
+  {
+    "id": "fastpath_help_with_shaft",
+    "category": "F_fast_path_boundary",
+    "input_text": "kannst du mir kurz helfen: welle 50 mm",
+    "session_zone": "conversation",
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Semi-friendly technical ask must reject fast-path."
+  },
+  {
+    "id": "fastpath_capability_question",
+    "category": "F_fast_path_boundary",
+    "input_text": "was kannst du bei dichtungen?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "EXPLORATION",
+      "confidence": 0.87,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "capability_domain_entry"
+    },
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Domain-scoped capability ask should stay out of direct smalltalk."
+  },
+  {
+    "id": "fastpath_good_morning_chemres",
+    "category": "F_fast_path_boundary",
+    "input_text": "guten morgen, wir brauchen etwas chemikalienbeständiges",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "EXPLORATION",
+      "confidence": 0.86,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "requirement_intent"
+    },
+    "expected_route": "EXPLORATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Greeting plus requirement intent should stay exploratory."
+  },
+  {
+    "id": "fallback_ambiguous_short",
+    "category": "G_fail_closed",
+    "input_text": "was wäre sinnvoll?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "EXPLORATION",
+      "confidence": 0.52,
+      "allow_direct_reply": false,
+      "direct_reply": null,
+      "reason_code": "underspecified_advice"
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": true,
+    "why": "Underspecified advice requests should fail closed."
+  },
+  {
+    "id": "fallback_schema_failure",
+    "category": "G_fail_closed",
+    "input_text": "mehrdeutig?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "GOVERNED",
+      "confidence": 0.0,
+      "parse_error": true
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": true,
+    "why": "Schema/parse failures must fail closed."
+  },
+  {
+    "id": "fallback_timeout",
+    "category": "G_fail_closed",
+    "input_text": "mehr Kontext?",
+    "session_zone": "conversation",
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.0,
+      "timeout": true
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": true,
+    "why": "Timeout without deterministic override must fail closed."
+  },
+  {
+    "id": "direct_reply_disabled_safe_case",
+    "category": "H_direct_reply_rollout",
+    "input_text": "danke",
+    "session_zone": "conversation",
+    "enable_direct_reply": false,
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.96,
+      "allow_direct_reply": true,
+      "direct_reply": "Gern.",
+      "reason_code": "safe_smalltalk"
+    },
+    "expected_route": "CONVERSATION",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Stage-1 rollout must keep direct replies off even for safe cases."
+  },
+  {
+    "id": "direct_reply_rejected_friendly_technical",
+    "category": "H_direct_reply_rollout",
+    "input_text": "danke, und jetzt zu salzwasser bei 80 grad",
+    "session_zone": "conversation",
+    "enable_direct_reply": true,
+    "llm_result": {
+      "route": "CONVERSATION",
+      "confidence": 0.98,
+      "allow_direct_reply": true,
+      "direct_reply": "Klar.",
+      "reason_code": "unsafe_technical_mixed"
+    },
+    "expected_route": "GOVERNED",
+    "expected_allow_direct_reply": false,
+    "expected_fail_closed_to_governed": false,
+    "why": "Friendly but technical mixed turns should route governed before any direct reply could apply."
+  }
+]

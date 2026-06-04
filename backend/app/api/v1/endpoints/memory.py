@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from qdrant_client import QdrantClient, models as qmodels
 
 from app.core.config import settings
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user, require_tenant_id
 from app.services.memory.memory_core import (
     ltm_export_all,
     ltm_delete_all,
@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 def _ltm_collection() -> str:
     """Resolve the Qdrant collection name for LTM (Long-Term-Memory)."""
     return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
+
+
+def _ltm_tenant_id(user: RequestUser) -> str:
+    """Authoritative tenant scope for LTM (V1.7 §8 / audit C6).
+
+    P0-2: the Keycloak ``tenant_id`` mapper is live, so this is the strict
+    request tenant — a missing claim is a 401, never the legacy "default"
+    collapse. Never trust a client-supplied tenant_id.
+    """
+    return require_tenant_id(user)
 
 
 # ----------------------------------------------------------------------
@@ -57,6 +67,7 @@ async def create_memory_item(
     point_id = uuid.uuid4().hex
     q_payload: Dict[str, Any] = {
         "user": user.user_id,  # WICHTIG: Schlüssel = 'user' (wird für Filter verwendet!)
+        "tenant_id": _ltm_tenant_id(user),  # authoritative; client value is ignored below
         "chat_id": chat_id,
         "kind": kind,
         "text": text,
@@ -108,7 +119,9 @@ async def export_memory(
         return JSONResponse({"items": [], "count": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        items: List[Dict[str, Any]] = ltm_export_all(user=user.user_id, chat_id=chat_id, limit=limit)
+        items: List[Dict[str, Any]] = ltm_export_all(
+            user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id, limit=limit
+        )
         logger.info(f"[LTM] export_memory user={user.user_id} chat_id={chat_id} count={len(items)}")
         return JSONResponse(
             {"items": items, "count": len(items), "ltm_enabled": True, "success": True},
@@ -131,7 +144,7 @@ async def delete_memory(
         return JSONResponse({"deleted": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        deleted = ltm_delete_all(user=user.user_id, chat_id=chat_id)
+        deleted = ltm_delete_all(user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id)
         logger.info(f"[LTM] delete_memory user={user.user_id} chat_id={chat_id} deleted={deleted}")
         return JSONResponse(
             {"deleted": deleted, "ltm_enabled": True, "success": True},

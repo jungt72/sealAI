@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
+from app.core.config import settings
 
 # REST-/Service-Endpunkte
 from app.api.v1.endpoints import (
     auth,
     langgraph_health,
-    langgraph_v2,
     memory,
     ping,
     users,
@@ -17,7 +17,6 @@ from app.api.v1.endpoints import (
     state,
 )
 from app.api.v1.endpoints import rfq as rfq_endpoint
-from app.agent.api.router import router as agent_router
 
 api_router = APIRouter()
 
@@ -27,10 +26,10 @@ api_router.include_router(ping.router)
 # Chat History / Conversations (Keycloak-scoped)
 api_router.include_router(chat_history.router)  # <-- /api/v1/chat/...
 
-# LangGraph HTTP/SSE-API (v2)
+# [DEPRECATED — Phase F-A.5 / residual compat only] Legacy LangGraph HTTP/SSE-API (v2)
+# Health stays mounted for diagnostics.
 api_router.include_router(langgraph_health.router, prefix="/langgraph", tags=["health"])
-api_router.include_router(langgraph_v2.router, prefix="/langgraph", tags=["langgraph"])
-api_router.include_router(state.router, prefix="/langgraph", tags=["langgraph"])
+api_router.include_router(state.router, tags=["state"])
 
 # Model Context Protocol (MCP)
 api_router.include_router(mcp.router, prefix="/mcp", tags=["MCP"])
@@ -44,5 +43,5 @@ api_router.include_router(rag.router)
 # RFQ
 api_router.include_router(rfq_endpoint.router, prefix="/rfq", tags=["rfq"])
 
-# SSoT Agent (app/agent — Phase 0A)
-api_router.include_router(agent_router, prefix="/agent", tags=["ssot-agent"])
+# Agent canonical path: /api/agent (mounted in main.py — Phase F-A.5).
+# Single canonical mount. No secondary /api/v1/agent path.

@@ -1,0 +1,10 @@
+{{ base }}
+{% if mode == "empty_base" %}
+Ich beantworte die Nebenfrage allgemein und ohne technische Freigabe.
+{% elif mode == "medium_candidate" %}
+Ich habe {{ detected_value }} als mögliche Angabe zum Medium erkannt. Die technische Übernahme läuft nicht über diese Erklärung, sondern über den validierten Fallstatus.
+{% elif mode == "technical_candidate" %}
+Ich habe in deiner Nachricht eine mögliche technische Angabe erkannt. Die Erklärung selbst bestätigt diesen Wert nicht als technische Wahrheit.
+{% elif mode == "resume_question" %}
+{{ target_question }}
+{% endif %}

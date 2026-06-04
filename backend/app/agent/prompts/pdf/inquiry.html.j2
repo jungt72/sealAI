@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>SeaLAI Technical Inquiry</title>
+  <style>
+{{ styles_css | indent(4, true) }}
+  </style>
+</head>
+<body>
+  <main class="document">
+    <header class="document-header">
+      <div>
+        <div class="eyebrow">SeaLAI Technical Inquiry</div>
+        <h1>Technische Anfragebasis</h1>
+      </div>
+      <dl class="meta-grid">
+        {% if case_id %}
+        <div>
+          <dt>Case</dt>
+          <dd>{{ case_id }}</dd>
+        </div>
+        {% endif %}
+        {% if created_at %}
+        <div>
+          <dt>Erstellt</dt>
+          <dd>{{ created_at }}</dd>
+        </div>
+        {% endif %}
+        {% if basis_hash %}
+        <div>
+          <dt>Basis-Hash</dt>
+          <dd>{{ basis_hash }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </header>
+
+    <section>
+      <h2>1. Bedarfsanalyse</h2>
+      {% if demand_analysis %}
+      <table>
+        <tbody>
+          {% for item in demand_analysis %}
+          <tr>
+            <th>{{ item.label }}</th>
+            <td>{{ item.value }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">Keine Bedarfsanalyse verfuegbar.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>2. Parameter</h2>
+      {% if parameters %}
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Wert</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in parameters %}
+          <tr>
+            <th>{{ item.label }}</th>
+            <td>{{ item.value }}</td>
+            <td>
+              <span class="badge badge-{{ item.status_class }}">{{ item.status_label }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">Noch keine belastbaren Parameter verfuegbar.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>3. Berechnungen</h2>
+      {% if calculations %}
+      <table>
+        <thead>
+          <tr>
+            <th>Berechnung</th>
+            <th>Formel / Basis</th>
+            <th>Ergebnis</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in calculations %}
+          <tr>
+            <th>{{ item.label }}</th>
+            <td>{{ item.formula }}</td>
+            <td>{{ item.value }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">Keine Berechnungen verfuegbar.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>4. Normreferenzen</h2>
+      {% if norm_references %}
+      <ul class="bullet-list">
+        {% for item in norm_references %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">Keine Normreferenzen hinterlegt.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>5. Technische Vorauswahl</h2>
+      {% if preselection_items %}
+      <table>
+        <thead>
+          <tr>
+            <th>Baustein</th>
+            <th>Vorschlag</th>
+            <th>fit_score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in preselection_items %}
+          <tr>
+            <th>{{ item.label }}</th>
+            <td>{{ item.value }}</td>
+            <td>{{ item.fit_score }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">Noch keine technische Vorauswahl verfuegbar.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>6. Annahmen</h2>
+      {% if assumptions %}
+      <ul class="bullet-list">
+        {% for item in assumptions %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">Keine Annahmen dokumentiert.</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>7. Offene Pruefpunkte fuer Hersteller</h2>
+      {% if open_points %}
+      <ul class="bullet-list checklist">
+        {% for item in open_points %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">Keine offenen Pruefpunkte dokumentiert.</p>
+      {% endif %}
+    </section>
+
+    <section class="disclaimer">
+      <h2>Hinweis</h2>
+      <p>{{ disclaimer }}</p>
+    </section>
+  </main>
+</body>
+</html>

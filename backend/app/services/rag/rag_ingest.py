@@ -33,18 +33,19 @@ from typing import Any, Dict, Iterable, List, Optional
 from qdrant_client import QdrantClient, models
 
 from langchain_community.document_loaders import Docx2txtLoader
+from app.observability.langsmith import wrap_openai_client
 
 try:
     from langchain_qdrant import QdrantVectorStore
-except ImportError:
+except Exception:
     QdrantVectorStore = None
 
 try:
     from langchain_huggingface import HuggingFaceEmbeddings
-except ImportError:
+except Exception:
     HuggingFaceEmbeddings = None
 
-from app.services.rag.rag_schema import ChunkMetadata, Domain, EngineeringProps, MaterialFamily, SourceType, TempRange
+from app.services.rag.rag_schema import ChunkMetadata, Domain, EngineeringProps, MaterialFamily, SourceType, TempRange, classify_pack_affinity
 from app.services.rag.document import Document
 from app.services.rag.rag_etl_pipeline import (
     LLMDocumentExtraction, process_document_pipeline
@@ -52,6 +53,7 @@ from app.services.rag.rag_etl_pipeline import (
 from app.services.rag.qdrant_state_machine import transition_to_published_bulletproof
 from app.services.rag.constants import RAG_SHARED_TENANT_ID
 from app.services.rag.route_resolver import DEFAULT_ROUTE_KEY
+from app.common.redaction import safe_error_message
 from app.common.jinja import render_template
 
 log = logging.getLogger(__name__)
@@ -82,6 +84,8 @@ SPARSE_MODEL = os.getenv("RAG_SPARSE_MODEL", "prithivida/Splade_PP_en_v1")
 # Chunking
 MAX_CHUNK_CHARS   = int(os.getenv("RAG_MAX_CHUNK_CHARS", "6000"))
 RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
+RAG_MAX_PAGES = int(os.getenv("RAG_MAX_PAGES", "80"))
+RAG_MAX_CHUNKS = int(os.getenv("RAG_MAX_CHUNKS", "400"))
 
 # Sparse vectors only if the target collection supports it.
 ENABLE_SPARSE = os.getenv("RAG_SPARSE_ENABLED", "0").strip().lower() not in ("0", "false", "no")
@@ -94,10 +98,17 @@ LEGACY_VECTORSTORE_ENABLED = os.getenv("RAG_INGEST_LEGACY_VECTORSTORE", "0").str
 DEFAULT_INGEST_TENANT = (os.getenv("RAG_INGEST_DEFAULT_TENANT") or RAG_SHARED_TENANT_ID).strip() or RAG_SHARED_TENANT_ID
 RAG_SHARED_TENANT_ENABLED = os.getenv("RAG_SHARED_TENANT_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 RAG_SHARED_TENANT_ID_ENV = (os.getenv("RAG_SHARED_TENANT_ID") or "").strip()
-RAG_DYNAMIC_METADATA_LLM_ENABLED = os.getenv("RAG_DYNAMIC_METADATA_LLM_ENABLED", "1").strip().lower() not in (
-    "0",
-    "false",
-    "no",
+RAG_DOCUMENT_CONTENT_LLM_ENABLED = os.getenv("RAG_DOCUMENT_CONTENT_LLM_ENABLED", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+RAG_DYNAMIC_METADATA_LLM_ENABLED = os.getenv("RAG_DYNAMIC_METADATA_LLM_ENABLED", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
 )
 RAG_DYNAMIC_METADATA_LLM_MODEL = (os.getenv("RAG_DYNAMIC_METADATA_LLM_MODEL") or "gpt-4.1-mini").strip()
 RAG_DYNAMIC_METADATA_MAX_CHARS = int(os.getenv("RAG_DYNAMIC_METADATA_MAX_CHARS", "12000"))
@@ -128,7 +139,7 @@ def _safe_read_text_file(path: str) -> str:
         with open(path, "r", encoding="latin-1", errors="replace") as f:
             return f.read()
     except Exception as e:
-        print(f"[WARN] Could not read text file {path}: {e}")
+        print(f"[WARN] Could not read text file: {safe_error_message(e)}")
         return ""
 
 
@@ -200,7 +211,7 @@ def _load_pdf_pages(file_path: str) -> List[tuple[int, str]]:
                 except Exception:
                     decrypted = 0
                 if not decrypted:
-                    raise ValueError(f"encrypted_pdf_not_supported: {file_path}")
+                    raise ValueError("encrypted_pdf_not_supported")
 
             pages: List[tuple[int, str]] = []
             has_text = False
@@ -208,20 +219,22 @@ def _load_pdf_pages(file_path: str) -> List[tuple[int, str]]:
                 try:
                     page_text = page.extract_text() or ""
                 except Exception as exc:
-                    print(f"[WARN] Could not extract PDF page {idx + 1} from {file_path}: {exc}")
+                    print(f"[WARN] Could not extract PDF page {idx + 1}: {safe_error_message(exc)}")
                     page_text = ""
                 if page_text.strip():
                     has_text = True
                 pages.append((idx + 1, page_text))
+                if len(pages) >= RAG_MAX_PAGES:
+                    break
 
             if not has_text:
-                print(f"[WARN] No text extracted from PDF {file_path}")
+                print("[WARN] No text extracted from PDF")
                 return []
             return pages
     except ValueError:
         raise
     except Exception as exc:
-        print(f"[WARN] Could not load PDF {file_path}: {exc}")
+        print(f"[WARN] Could not load PDF: {safe_error_message(exc)}")
         return []
 
 
@@ -247,7 +260,7 @@ def _load_text(file_path: str) -> str:
             return ""
         return _safe_read_text_file(file_path)
     except Exception as e:
-        print(f"[WARN] Could not load {file_path}: {e}")
+        print(f"[WARN] Could not load document: {safe_error_message(e)}")
         return ""
 
 
@@ -286,6 +299,8 @@ def _chunk_pages(pages: List[tuple[Optional[int], str]], filename: str = "") -> 
                 # Platinum Blueprint v4.1: Prepend context to every chunk
                 prefix = f"[Document: {filename}] " if filename else ""
                 chunks.append((f"{prefix}{chunk}", page_number))
+                if len(chunks) >= RAG_MAX_CHUNKS:
+                    return chunks
     return chunks
 
 
@@ -635,7 +650,7 @@ def _extract_dynamic_metadata_llm(
     """
     result: Dict[str, Any] = dict(seed or {})
 
-    if not RAG_DYNAMIC_METADATA_LLM_ENABLED:
+    if not (RAG_DOCUMENT_CONTENT_LLM_ENABLED and RAG_DYNAMIC_METADATA_LLM_ENABLED):
         return result
 
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
@@ -647,7 +662,7 @@ def _extract_dynamic_metadata_llm(
         from openai import OpenAI  # type: ignore
         excerpt = (text or "").strip()[:RAG_DYNAMIC_METADATA_MAX_CHARS]
 
-        client = OpenAI(api_key=api_key)
+        client = wrap_openai_client(OpenAI(api_key=api_key))
         system = render_template("rag_metadata_extractor.j2")
         response = client.chat.completions.create(
             model=RAG_DYNAMIC_METADATA_LLM_MODEL,
@@ -668,7 +683,7 @@ def _extract_dynamic_metadata_llm(
     except Exception as exc:
         log.warning(
             "dynamic_metadata_llm_failed",
-            extra={"doc_filename": filename, "error": str(exc)},
+            extra={"doc_filename": filename, "error": safe_error_message(exc)},
         )
 
     return result
@@ -682,6 +697,9 @@ def _extract_platinum_structured_llm(
     """
     V5.2 PED-Platinum: Uses Vision-LLM to extract structured operating points.
     """
+    if not RAG_DOCUMENT_CONTENT_LLM_ENABLED:
+        raise ValueError("document_content_llm_processing_disabled")
+
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise ValueError("OPENAI_API_KEY missing for Platinum Extraction.")
@@ -691,7 +709,7 @@ def _extract_platinum_structured_llm(
     if len(excerpt) > RAG_DYNAMIC_METADATA_MAX_CHARS:
         excerpt = excerpt[:RAG_DYNAMIC_METADATA_MAX_CHARS]
     
-    client = OpenAI(api_key=api_key)
+    client = wrap_openai_client(OpenAI(api_key=api_key))
     
     system = render_template("rag_platinum_extractor.j2")
     
@@ -707,7 +725,7 @@ def _extract_platinum_structured_llm(
         )
         return response.choices[0].message.parsed
     except Exception as exc:
-        log.error("platinum_extraction_failed", extra={"doc_filename": filename, "error": str(exc)})
+        log.error("platinum_extraction_failed", extra={"doc_filename": filename, "error": safe_error_message(exc)})
         raise
 
 
@@ -728,6 +746,8 @@ _SPECIALIZED_PDF_ROUTE_KEYS = {"material_datasheet", "product_datasheet"}
 
 
 def _should_use_specialized_pdf_path(*, filename: str, route_key: str | None) -> bool:
+    if not RAG_DOCUMENT_CONTENT_LLM_ENABLED:
+        return False
     if not filename.lower().endswith(".pdf"):
         return False
     normalized_route = (route_key or "").strip().lower()
@@ -1000,6 +1020,14 @@ class IngestPipeline:
                 source_uri=file_path,
                 source_type=source_type,
                 domain=domain,
+                pack_affinity=classify_pack_affinity(
+                    domain=getattr(domain, "value", domain),
+                    entity=entity,
+                    route_key=normalized_route_key,
+                    category=category,
+                    tags=raw_tags,
+                    text=chunk_text,
+                ),
                 chunk_index=idx,
                 entity=entity,
                 aspect=aspects,

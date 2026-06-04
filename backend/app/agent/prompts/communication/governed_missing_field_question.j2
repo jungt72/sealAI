@@ -1,0 +1,9 @@
+{% if kind == "pressure" -%}
+Welcher Druck liegt direkt an der Dichtstelle an?
+{%- elif kind == "temperature" -%}
+In welchem Temperaturbereich arbeitet die Dichtstelle?
+{%- elif kind == "sealing_principle" -%}
+Um welches Dichtprinzip geht es, zum Beispiel O-Ring, Wellendichtring, Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?
+{%- elif kind == "asset" -%}
+Wo sitzt die Dichtung genau, zum Beispiel an Pumpe, Welle, Flansch, Zylinder oder Behälter?
+{%- endif %}

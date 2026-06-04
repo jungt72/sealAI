@@ -57,7 +57,8 @@ async def retrieve_with_tenant(
     *,
     k: int = 5,
     user_id: Optional[str] = None,
-) -> list[dict[str, Any]]:
+    return_metrics: bool = False,
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], dict[str, Any]]:
     """
     3-Tier RAG cascade with mandatory tenant_id enforcement.
 
@@ -72,11 +73,17 @@ async def retrieve_with_tenant(
 
     Blueprint Section 10: tenant_id is enforced in every tier.
     """
-    if not tenant_id:
-        logger.warning(
-            "[real_rag] tenant_id is None — retrieval will NOT be tenant-scoped. "
-            "Blueprint Section 10 violation risk."
+    # Phase 0C.3: tenant_id is mandatory — hard-abort instead of warn-and-proceed.
+    # Returning [] is safe; the caller (graph.py) uses an empty list gracefully.
+    if not (tenant_id and tenant_id.strip()):
+        logger.error(
+            "[real_rag] ABORT — tenant_id is None. "
+            "Cross-tenant data leakage risk (Blueprint Section 10). "
+            "Returning empty result set."
         )
+        if return_metrics:
+            return [], {"tier": "tenant_abort", "k_requested": k, "k_returned": 0}
+        return []
 
     loop = asyncio.get_event_loop()
     t_start = time.monotonic()
@@ -96,9 +103,14 @@ async def retrieve_with_tenant(
                 tenant=tenant_id,
                 k=k,
                 user_id=user_id,
+                return_metrics=return_metrics,
             ),
         )
-        tier1_hits = raw or []
+        tier1_meta: dict[str, Any] = {}
+        if return_metrics:
+            tier1_hits, tier1_meta = raw or ([], {})
+        else:
+            tier1_hits = raw or []
         logger.info(
             "[real_rag] tier1_hybrid: %d hits (%.2fs) tenant=%s",
             len(tier1_hits),
@@ -122,6 +134,13 @@ async def retrieve_with_tenant(
             len(cards),
             tenant_id,
         )
+        if return_metrics:
+            return cards, {
+                "tier": "tier1_hybrid",
+                "k_requested": k,
+                "k_returned": len(cards),
+                "hybrid": tier1_meta,
+            }
         return cards
 
     # Log why we are cascading to Tier 2.
@@ -147,11 +166,8 @@ async def retrieve_with_tenant(
         from app.services.rag.bm25_store import bm25_repo
         from app.services.rag.rag_orchestrator import QDRANT_COLLECTION_DEFAULT
 
-        # Build a metadata filter that enforces tenant_id.
-        # bm25_repo.search filters with exact-match: metadata.get(k) == v.
-        bm25_filters: dict[str, Any] = {}
-        if tenant_id:
-            bm25_filters["tenant_id"] = tenant_id
+        # tenant_id is guaranteed non-None here (hard-abort above).
+        bm25_filters: dict[str, Any] = {"tenant_id": tenant_id}
 
         bm25_hits: list[dict[str, Any]] = await loop.run_in_executor(
             None,
@@ -159,7 +175,7 @@ async def retrieve_with_tenant(
                 QDRANT_COLLECTION_DEFAULT,
                 query,
                 top_k=k,
-                metadata_filters=bm25_filters if bm25_filters else None,
+                metadata_filters=bm25_filters,
             ),
         )
         bm25_hits = bm25_hits or []
@@ -177,6 +193,12 @@ async def retrieve_with_tenant(
                 len(cards),
                 tenant_id,
             )
+            if return_metrics:
+                return cards, {
+                    "tier": "tier2_bm25",
+                    "k_requested": k,
+                    "k_returned": len(cards),
+                }
             return cards
 
         # Tier 2 returned no hits either — fall through to Tier 3.
@@ -202,4 +224,6 @@ async def retrieve_with_tenant(
         query[:80],
         tenant_id,
     )
+    if return_metrics:
+        return [], {"tier": "tier3_empty", "k_requested": k, "k_returned": 0}
     return []

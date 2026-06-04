@@ -1,5 +1,5 @@
 import pytest
-from app.agent.agent.tools import submit_claim
+from app.agent.graph.tools import submit_claim
 from app.agent.evidence.models import ClaimType
 from pydantic import ValidationError
 
@@ -44,7 +44,12 @@ def test_submit_claim_args_schema():
     """
     Test: Das args_schema des Tools muss die Felder des Claim-Modells widerspiegeln.
     """
-    schema = submit_claim.args_schema.model_json_schema()
+    schema_model = getattr(submit_claim, "args_schema", None) or getattr(
+        submit_claim,
+        "input_schema",
+        None,
+    )
+    schema = schema_model.model_json_schema()
     
     properties = schema["properties"]
     assert "claim_type" in properties

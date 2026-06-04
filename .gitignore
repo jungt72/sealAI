@@ -1,8 +1,26 @@
-# Envs
-.env*
+# Env files
+#
+# Real env files, host-local overrides, backups, and rollback snapshots must
+# never be committed. Example/template files are allowed only when they contain
+# placeholders.
+.env
+.env.*
+*.env
+*.env.*
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+*.env.bak
+*.env.backup
+*.env.rollback*
+*.env.save*
+.env*.bak*
+.env*.backup*
+.env*.rollback*
+.env*.save*
 !.env.example
-backend/.env
-frontend/.env
+!.env.prod.example
 
 # Node / Next
 node_modules/
@@ -34,6 +52,8 @@ build/
 
 # Local scratch
 *.sql
+# Exception: audit schema dumps ARE allowed (Gate 0→1 artifacts, no user data)
+!audits/sealai_schema_*.sql
 *.docx
 *.tx_
 backups/
@@ -52,6 +72,7 @@ coverage/
 
 # Misc
 .DS_Store
+._*
 *.pem
 sealai_inventory_*/
 code_dump.part.*
@@ -67,6 +88,8 @@ test_input.json
 .trash/
 _audits/
 frontend_backup_*/
+_deploy_backups/
+_release_backups/
 
 # editor/backup files
 *.save
@@ -81,8 +104,11 @@ frontend_backup_*/
 code_dump_*.txt
 *.dump
 *.log
-*.env
-.env.*
+realm-export*.json
+*realm*backup*.json
+keycloak-realm-backup/
+!keycloak/realm-export.json
+!keycloak/import/realm-export.json
 
 # runtime data
 /data/
@@ -102,8 +128,24 @@ paperless/media/
 
 # Next generated
 frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+frontend/public/robots.txt
+frontend/public/sitemap*.xml
+
+# Restore / diagnostics artefacts
+nginx/*.pre-restore-*
+nginx/certs/
+/serverinfo.json
+/401
+/BFF-
+/Backend-Auth-Flow
+/Session-
+/Token-Pfad
 
 # Local concept material
 konzept/
 
 erpnext-stack/
+.claude/settings.local.json
+.claude/.gate-logs/
+_archive/

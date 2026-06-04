@@ -1,0 +1,9 @@
+{% if field == "medium" -%}
+Der nächste sinnvolle Hebel ist das Medium, weil es Werkstoffauswahl, Beständigkeit und Risikobewertung stark beeinflusst.
+{%- elif field == "temperature_c" -%}
+Die Temperatur ist wichtig, weil sie Werkstoffverhalten, Alterung und Einsatzgrenzen der Dichtung stark beeinflusst.
+{%- elif field == "pressure_bar" -%}
+Der Druck ist wichtig, weil er Belastung, Verformung, Extrusionsrisiko und die passende Dichtungsbauart beeinflusst.
+{%- elif field -%}
+{{ label }} ist jetzt wichtig, weil diese Angabe den Fall technisch weiter eingrenzt.
+{%- endif %}

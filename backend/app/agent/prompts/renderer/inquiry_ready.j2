@@ -1,0 +1,19 @@
+## Antwortmodus: Inquiry Ready
+
+Die Anfrage ist bereit fuer die Weiterleitung an Hersteller.
+
+Informiere den Nutzer ueber:
+1. Was in der Anfrage enthalten ist (Parameter, Berechnungen, Vorauswahl)
+2. An welche Hersteller weitergeleitet wird (Kurzuebersicht)
+3. Was der Nutzer noch tun muss (PDF pruefen, Absenden bestaetigen)
+4. Was danach passiert (SLA, Herstellerantwort)
+
+Disclaimer: "SeaLAI leitet weiter — die finale Entscheidung und Freigabe
+liegt beim ausgewaehlten Hersteller."
+
+{% if missing_for_inquiry is defined and missing_for_inquiry and missing_for_inquiry | length > 0 %}
+HINWEIS: Folgende Punkte sind noch offen und sollten vom Hersteller geklaert werden:
+{% for item in missing_for_inquiry %}
+- {{ item }}
+{% endfor %}
+{% endif %}

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.agent.state import OutcomeLayer, SealingAIState
+from app.agent.state.agent_state import OutcomeLayer, SealingAIState
 
 
 # ---------------------------------------------------------------------------
@@ -122,37 +122,24 @@ class TestOutcomeInSealingAIState:
 # ---------------------------------------------------------------------------
 
 class TestOutcomeNotWrittenByGraph:
-    def test_selection_node_does_not_write_outcome(self):
-        """selection_node return value must not include 'outcome'."""
-        from langchain_core.messages import HumanMessage
-        from app.agent.agent.graph import selection_node
-        from app.agent.tests.test_graph_routing import _make_state
+    @pytest.mark.asyncio
+    async def test_matching_node_does_not_write_outcome(self):
+        """matching_node return value must not include 'outcome'."""
+        from app.agent.graph import GraphState
+        from app.agent.graph.nodes.matching_node import matching_node
 
-        state = _make_state(
-            policy_path="structured",
-            result_form="direct_answer",
-            messages=[HumanMessage(content="test")],
-        )
-        result = selection_node(state)
-        new_sealing = result.get("sealing_state", {})
-        assert "outcome" not in new_sealing, (
-            "selection_node must not write 'outcome' — it is reserved for external feedback"
+        result = await matching_node(GraphState())
+        assert "outcome" not in result.model_dump(), (
+            "matching_node must not write 'outcome' — it is reserved for external feedback"
         )
 
-    def test_final_response_node_does_not_write_outcome(self):
-        """final_response_node must not populate the outcome layer."""
-        import asyncio
-        from langchain_core.messages import HumanMessage
-        from app.agent.agent.graph import final_response_node
-        from app.agent.tests.test_graph_routing import _make_state
+    @pytest.mark.asyncio
+    async def test_output_contract_node_does_not_write_outcome(self):
+        """output_contract_node must not populate the outcome layer."""
+        from app.agent.graph import GraphState
+        from app.agent.graph.nodes.output_contract_node import output_contract_node
 
-        state = _make_state(
-            policy_path="structured",
-            result_form="direct_answer",
-            messages=[HumanMessage(content="test")],
-        )
-        result = asyncio.run(final_response_node(state))
-        new_sealing = result.get("sealing_state", {})
-        assert "outcome" not in new_sealing, (
-            "final_response_node must not write 'outcome' — it is reserved for external feedback"
+        result = await output_contract_node(GraphState())
+        assert "outcome" not in result.model_dump(), (
+            "output_contract_node must not write 'outcome' — it is reserved for external feedback"
         )

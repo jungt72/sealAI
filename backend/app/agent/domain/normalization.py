@@ -15,10 +15,48 @@ New API surface: MappingConfidence, NormalizedEntity, normalize_parameter().
 """
 from __future__ import annotations
 
+import json
+import logging
+import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
+
+from app.domain.critical_field_contract import (
+    CRITICAL_CASE_FIELDS,
+    HARDNESS_FIELDS,
+    MM_FIELDS,
+    PRESSURE_FIELDS,
+    ROUGHNESS_FIELDS,
+    RPM_FIELDS,
+    TEMPERATURE_FIELDS,
+    is_critical_case_field,
+    is_critical_technical_field,
+)
+from app.agent.domain.medium_registry import (
+    classify_medium_value,
+    extract_medium_mentions,
+    is_medium_placeholder_value,
+    medium_registry_entries,
+)
+from app.observability.langsmith import wrap_openai_client
+
+logger = logging.getLogger(__name__)
+
+# Fast/cheap model for the medium-extraction fallback.
+# Override via env var SEALAI_MEDIUM_FALLBACK_MODEL.
+_MEDIUM_LLM_FALLBACK_MODEL: str = os.environ.get(
+    "SEALAI_MEDIUM_FALLBACK_MODEL", "gpt-4o-mini"
+)
+
+# Phase 0C.2: LLM in a deterministic layer is an architecture violation.
+# The fallback is disabled by default; set SEALAI_ENABLE_MEDIUM_LLM_FALLBACK=1
+# to re-enable for offline diagnostics only.
+_MEDIUM_LLM_FALLBACK_ENABLED: bool = (
+    os.environ.get("SEALAI_ENABLE_MEDIUM_LLM_FALLBACK", "0").strip() == "1"
+)
 
 
 # ===========================================================================
@@ -67,6 +105,48 @@ class NormalizedEntity:
     warning_message: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class CriticalFieldNormalization:
+    """EngineeringValue-light contract for v0.7 critical technical fields."""
+
+    field_name: str
+    raw_value: Any
+    canonical_value: Optional[Any]
+    unit: Optional[str]
+    quantity_kind: str
+    interpretation: Optional[str]
+    confidence: MappingConfidence
+    normalization_warnings: tuple[str, ...] = ()
+    normalized_at: Optional[str] = None
+
+    def as_engineering_value_dict(self) -> dict[str, Any]:
+        return {
+            "raw_value": self.raw_value,
+            "canonical_value": self.canonical_value,
+            "unit": self.unit,
+            "quantity_kind": self.quantity_kind,
+            "interpretation": self.interpretation,
+            "normalized_at": self.normalized_at,
+            "normalization_warnings": list(self.normalization_warnings),
+        }
+
+
+@dataclass(frozen=True)
+class MediumSpecialistInput:
+    latest_user_message: str = ""
+    observed_notes: tuple[str, ...] = ()
+    candidate_media_tokens: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MediumSpecialistResult:
+    canonical_medium: Optional[str]
+    medium_confidence: MappingConfidence
+    medium_uncertainty_reason: Optional[str] = None
+    followup_question_if_needed: Optional[str] = None
+    candidate_media_token: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # V1 Mapping Tables
 # ---------------------------------------------------------------------------
@@ -105,55 +185,23 @@ _MAT_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {
 
 # ── Media ────────────────────────────────────────────────────────────────────
 
-_MED_CONFIRMED: dict[str, str] = {
-    "wasser":          "Wasser",
-    "water":           "Wasser",
-    "reinwasser":      "Wasser",
-    "druckluft":       "Druckluft",
-    "compressed air":  "Druckluft",
-    "luft":            "Luft",
-    "stickstoff":      "Stickstoff",
-    "nitrogen":        "Stickstoff",
-    "sauerstoff":      "Sauerstoff",
-    "oxygen":          "Sauerstoff",
-}
-
-_MED_ESTIMATED: dict[str, tuple[str, str]] = {
-    "öl":          ("Öl",     "generic_oil:Öltyp nicht spezifiziert — HLP/HEES/VG klären"),
-    "oil":         ("Öl",     "generic_oil:oil type not specified"),
-    "mineralöl":   ("Öl",     "mineral_oil:wahrscheinlich HLP/ISO VG"),
-    "hydrauliköl": ("Öl",     "hydraulic_oil:wahrscheinlich HLP"),
-    "hlp":         ("Öl",     "hydraulic_oil_hlp:HLP-Hydrauliköl"),
-    "bio-öl":      ("Bio-Öl", "bio_oil:HEES oder ähnlich"),
-    "hees":        ("Bio-Öl", "bio_oil_hees:HEES-Esteröl"),
-    "kraftstoff":  ("Kraftstoff", "fuel:Kraftstofftyp klären"),
-    "diesel":      ("Kraftstoff", "fuel_diesel"),
-    "benzin":      ("Kraftstoff", "fuel_petrol"),
-    "ethanol":     ("Kraftstoff", "fuel_ethanol"),
-}
-
-_MED_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {
-    # Phase-aware or inherently ambiguous media
-    "heißdampf":    ("Dampf", (
-        "medium_ambiguous:Heißdampf — überhitzter Dampf; "
-        "Temperatur und Druck sind zwingend für Materialauswahl; "
-        "gesättigter vs. überhitzter Dampf beeinflusst Materialwahl erheblich"
-    )),
-    "dampf":        ("Dampf", (
-        "medium_ambiguous:Dampf — Sattdampf vs. Heißdampf unklar; "
-        "Betriebstemperatur und -druck erforderlich"
-    )),
-    "steam":        ("Dampf",          "medium_ambiguous:steam — phase clarification required"),
-    "säure":        ("Säure",          "medium_ambiguous:Säure — Konzentration, Typ und Temperatur erforderlich"),
-    "acid":         ("Säure",          "medium_ambiguous:acid — concentration and type required"),
-    "lauge":        ("Lauge",          "medium_ambiguous:Lauge — Konzentration und NaOH/KOH-Typ erforderlich"),
-    "lösungsmittel":("Lösungsmittel",  "medium_ambiguous:Lösungsmittel — Typ erforderlich"),
-    "solvent":      ("Lösungsmittel",  "medium_ambiguous:solvent — type required"),
-    "kühlmittel":   ("Kühlmittel",     "medium_ambiguous:Kühlmittel — Typ und Konzentration erforderlich"),
-    "coolant":      ("Kühlmittel",     "medium_ambiguous:coolant — type and concentration required"),
-    "panolin":      ("Bio-Öl",         "trade_name_ambiguous:panolin — HEES-Bio-Öl-Marke; Typ bestätigen"),
-    "ester":        ("Bio-Öl",         "medium_ambiguous:ester — Esterbasis und Typ unklar"),
-}
+_MED_CONFIRMED: dict[str, str] = {}
+_MED_ESTIMATED: dict[str, tuple[str, str]] = {}
+_MED_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {}
+for _entry in medium_registry_entries():
+    for _alias in _entry.aliases:
+        if _entry.mapping_confidence == "confirmed":
+            _MED_CONFIRMED[_alias] = _entry.canonical_label
+        elif _entry.mapping_confidence == "estimated":
+            _MED_ESTIMATED[_alias] = (
+                _entry.canonical_label,
+                _entry.mapping_reason or f"medium_registry:{_entry.registry_key}",
+            )
+        else:
+            _MED_REQUIRES_CONFIRMATION[_alias] = (
+                _entry.canonical_label,
+                _entry.mapping_reason or f"medium_registry:{_entry.registry_key}",
+            )
 
 # ── Unit conversion tables ────────────────────────────────────────────────────
 
@@ -169,9 +217,247 @@ _TEMP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _PRESSURE_PATTERN = re.compile(
-    r"^([+-]?\d+(?:[.,]\d+)?)\s*(bar|psi|mpa|kpa)\s*$",
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)\s*$",
     re.IGNORECASE,
 )
+_PRESSURE_WITH_CONTEXT_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*"
+    r"(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)"
+    r"(?:\s+(direct_at_seal|system_pressure|differential|gauge|absolute))?\s*$",
+    re.IGNORECASE,
+)
+
+_RPM_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:rpm|u[/.]?\s*min|1\s*/\s*min|min-?1)\s*$",
+    re.IGNORECASE,
+)
+
+_MM_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:mm|millimeter)\s*$",
+    re.IGNORECASE,
+)
+
+_UM_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:um|µm|μm|micrometer|mikrometer)\s*$",
+    re.IGNORECASE,
+)
+
+_HRC_PATTERN = re.compile(
+    r"^([+-]?\d+(?:[.,]\d+)?)\s*(?:hrc|rockwell\s*c)?\s*$",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN = re.compile(
+    r"\b(?:wellen?durchmesser|wellendurchmesser|durchmesser|diameter)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_SYMBOL_PATTERN = re.compile(
+    r"\b(?:d|d1)\s*[:=]\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_MM_WITH_CONTEXT_PATTERN = re.compile(
+    r"([+-]?\d+(?:[.,]\d+)?)\s*mm\b",
+    re.IGNORECASE,
+)
+
+_SHAFT_DIAMETER_CONTEXT_RE = re.compile(
+    r"\b(?:welle|shaft|durchmesser|diameter|rwdr|radialwellendichtring)\b",
+    re.IGNORECASE,
+)
+
+_ROUGHNESS_RA_VALUE_PATTERN = re.compile(
+    r"\b(?:rauheit\s*)?ra\s*(?:=|:)?\s*([+-]?\d+(?:[.,]\d+)?)\s*"
+    r"(?:µm|μm|um|mikrometer)?\b",
+    re.IGNORECASE,
+)
+
+_HARDNESS_HRC_VALUE_PATTERN = re.compile(
+    r"\b(?:h(?:ä|ae)rte|hardness)\s*(?:=|:)?\s*([+-]?\d+(?:[.,]\d+)?)\s*"
+    r"(?:hrc|rockwell\s*c)?\b|\b([+-]?\d+(?:[.,]\d+)?)\s*(?:hrc|rockwell\s*c)\b",
+    re.IGNORECASE,
+)
+
+_RUNOUT_VALUE_PATTERN = re.compile(
+    r"\b(?:rundlauf|wellenschlag|runout)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_ECCENTRICITY_VALUE_PATTERN = re.compile(
+    r"\b(?:exzentrizitaet|exzentrizität|eccentricity)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_AXIAL_MOVEMENT_VALUE_PATTERN = re.compile(
+    r"\b(?:axial(?:e|er)?\s+(?:bewegung|versatz|verschiebung)|axialversatz|axial\s*movement)\b"
+    r"(?:\s*(?:liegt\s*(?:bei)?|ist|beträgt|betragt|=|:))?\s*"
+    r"([+-]?\d+(?:[.,]\d+)?)\s*(?:mm\b)?",
+    re.IGNORECASE,
+)
+
+_MEDIUM_FALLBACK_PATTERN = re.compile(
+    r"\b(?:mit|medium|fluid|flüssigkeit)(?:\s+(?:ist|is|liegt|sind))?\s+([\w\-äöüÄÖÜß]+)\b",
+    re.I,
+)
+
+_MEDIUM_FALLBACK_STOPWORDS: frozenset[str] = frozenset({"ist", "is", "liegt", "sind"})
+
+_MEDIUM_FOLLOWUP_QUESTIONS: dict[str, str] = {
+    "Dampf": "Handelt es sich um Sattdampf oder Heißdampf, und in welchem Druck- und Temperaturbereich arbeiten Sie?",
+    "Säure": "Um welche Säure handelt es sich genau, in welcher Konzentration und bei welcher Temperatur?",
+    "Lauge": "Welche Lauge liegt an, in welcher Konzentration und bei welcher Temperatur?",
+    "Lösungsmittel": "Welches Lösungsmittel liegt genau an?",
+    "Kühlmittel": "Welcher Kühlmitteltyp und welche Konzentration liegen an?",
+    "Öl": "Welcher Öltyp liegt genau an?",
+    "Bio-Öl": "Welcher Öltyp liegt genau an?",
+}
+
+
+def _mapping_confidence_rank(confidence: MappingConfidence) -> int:
+    return {
+        MappingConfidence.CONFIRMED: 4,
+        MappingConfidence.ESTIMATED: 3,
+        MappingConfidence.INFERRED: 2,
+        MappingConfidence.REQUIRES_CONFIRMATION: 1,
+    }[confidence]
+
+
+def _unique_nonempty(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        unique.append(text)
+    return unique
+
+
+def _extract_candidate_media_tokens(text: str) -> list[str]:
+    message = str(text or "").strip()
+    if not message:
+        return []
+    capture = extract_medium_mentions(message)
+    candidates = list(capture.raw_mentions)
+    fallback_match = _MEDIUM_FALLBACK_PATTERN.search(message)
+    if fallback_match:
+        raw_medium = str(fallback_match.group(1) or "").strip()
+        if (
+            raw_medium
+            and raw_medium.lower() not in _MEDIUM_FALLBACK_STOPWORDS
+            and not is_medium_placeholder_value(raw_medium)
+            and not re.match(r"^\d", raw_medium)
+        ):
+            candidates.append(raw_medium)
+    return _unique_nonempty(candidates)
+
+
+def _followup_question_for_medium(
+    canonical_medium: Optional[str],
+    confidence: MappingConfidence,
+    reason: Optional[str],
+) -> Optional[str]:
+    if canonical_medium and canonical_medium in _MEDIUM_FOLLOWUP_QUESTIONS:
+        if confidence in {
+            MappingConfidence.ESTIMATED,
+            MappingConfidence.INFERRED,
+            MappingConfidence.REQUIRES_CONFIRMATION,
+        }:
+            return _MEDIUM_FOLLOWUP_QUESTIONS[canonical_medium]
+    if confidence not in {
+        MappingConfidence.INFERRED,
+        MappingConfidence.REQUIRES_CONFIRMATION,
+    }:
+        return None
+    if canonical_medium and canonical_medium in _MEDIUM_FOLLOWUP_QUESTIONS:
+        return _MEDIUM_FOLLOWUP_QUESTIONS[canonical_medium]
+    if reason and str(reason).startswith("medium_conflict:"):
+        return "Welches Medium liegt genau an?"
+    return "Welches Medium liegt genau an?"
+
+
+def _medium_result_from_token(token: str) -> MediumSpecialistResult:
+    entity = normalize_parameter("medium", token)
+    canonical_medium = entity.normalized_value
+    return MediumSpecialistResult(
+        canonical_medium=canonical_medium,
+        medium_confidence=entity.confidence,
+        medium_uncertainty_reason=entity.warning_message,
+        followup_question_if_needed=_followup_question_for_medium(
+            canonical_medium,
+            entity.confidence,
+            entity.warning_message,
+        ),
+        candidate_media_token=str(token or "").strip() or None,
+    )
+
+
+def run_medium_specialist(
+    specialist_input: MediumSpecialistInput,
+) -> MediumSpecialistResult:
+    """Bounded internal specialist for deterministic medium interpretation."""
+    candidates = list(specialist_input.candidate_media_tokens)
+    if not candidates and specialist_input.latest_user_message:
+        candidates.extend(_extract_candidate_media_tokens(specialist_input.latest_user_message))
+    for note in specialist_input.observed_notes:
+        candidates.extend(_extract_candidate_media_tokens(note))
+    candidates = _unique_nonempty(candidates)
+
+    if not candidates:
+        return MediumSpecialistResult(
+            canonical_medium=None,
+            medium_confidence=MappingConfidence.REQUIRES_CONFIRMATION,
+            medium_uncertainty_reason="no_medium_candidate_found",
+            followup_question_if_needed="Welches Medium liegt genau an?",
+        )
+
+    results = [_medium_result_from_token(token) for token in candidates]
+    canonicals = {
+        str(result.canonical_medium).strip().lower(): str(result.canonical_medium).strip()
+        for result in results
+        if str(result.canonical_medium or "").strip()
+    }
+    if len(canonicals) > 1:
+        canonical_values = list(canonicals.values())
+        most_specific = max(canonical_values, key=lambda value: len(value.casefold()))
+        if all(value.casefold() in most_specific.casefold() for value in canonical_values):
+            return max(
+                (
+                    result
+                    for result in results
+                    if str(result.canonical_medium or "").strip() == most_specific
+                ),
+                key=lambda item: (
+                    _mapping_confidence_rank(item.medium_confidence),
+                    len(str(item.canonical_medium or "")),
+                ),
+            )
+        return MediumSpecialistResult(
+            canonical_medium=None,
+            medium_confidence=MappingConfidence.REQUIRES_CONFIRMATION,
+            medium_uncertainty_reason="medium_conflict:" + " | ".join(sorted(canonicals.values())),
+            followup_question_if_needed="Welches Medium liegt genau an?",
+        )
+
+    selected = max(
+        results,
+        key=lambda item: (
+            1 if str(item.canonical_medium or "").strip() else 0,
+            _mapping_confidence_rank(item.medium_confidence),
+        ),
+    )
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +470,28 @@ def _parse_temp_input(raw: Any) -> Optional[tuple[float, str]]:
     text = str(raw).strip().replace(",", ".")
     m = _TEMP_PATTERN.match(text)
     return (float(m.group(1)), m.group(2).upper()) if m else None
+
+
+def _coerce_number(raw: Any) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    text = str(raw or "").strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _value_with_unit(raw_value: Any, unit: str | None) -> Any:
+    if unit is None or str(unit).strip() == "":
+        return raw_value
+    if isinstance(raw_value, str) and re.search(r"[a-z°]", raw_value, re.IGNORECASE):
+        return raw_value
+    return f"{raw_value} {unit}"
 
 
 def _normalize_temperature_entity(raw: Any) -> NormalizedEntity:
@@ -207,7 +515,16 @@ def _parse_pressure_input(raw: Any) -> Optional[tuple[float, str]]:
         return float(raw), "bar"
     text = str(raw).strip().replace(",", ".")
     m = _PRESSURE_PATTERN.match(text)
-    return (float(m.group(1)), m.group(2).lower()) if m else None
+    if not m:
+        m = _PRESSURE_WITH_CONTEXT_PATTERN.match(text)
+    if not m:
+        return None
+    unit = re.sub(r"[\s\(\)\[\]]", "", m.group(2).lower())
+    if unit in {"barg", "bara"}:
+        unit = "bar"
+    elif unit.startswith("bar"):
+        unit = "bar"
+    return float(m.group(1)), unit
 
 
 def _normalize_pressure_entity(raw: Any) -> NormalizedEntity:
@@ -221,6 +538,180 @@ def _normalize_pressure_entity(raw: Any) -> NormalizedEntity:
     bar_val = round(value * factor, 4)
     warn = f"Umgerechnet von {value} {unit.upper()} → {bar_val} bar" if unit != "bar" else None
     return NormalizedEntity(raw, bar_val, "pressure", MappingConfidence.CONFIRMED, warn)
+
+
+def _pressure_interpretation(raw: Any, unit: str | None = None) -> str:
+    text = f"{raw or ''} {unit or ''}".casefold()
+    if re.search(r"\b(?:direct_at_seal|direkt\s+(?:an|auf)\s+der\s+(?:dichtung|dichtstelle|dichtlippe)|dichtstelle|dichtlippe)\b", text):
+        return "direct_at_seal"
+    if re.search(r"\b(?:system_pressure|systemdruck|system\s*druck|leitungsdruck|pumpendruck)\b", text):
+        return "system_pressure"
+    if re.search(r"\b(?:delta\s*p|differential|differenzdruck|dp|Δp)\b", text):
+        return "differential"
+    if re.search(r"\b(?:barg|bar\s*[\(\[]?\s*g\s*[\)\]]?|gauge|ueberdruck|überdruck)\b", text):
+        return "gauge"
+    if re.search(r"\b(?:bara|bar\s*[\(\[]?\s*a\s*[\)\]]?|absolute?|abs)\b", text):
+        return "absolute"
+    return "unknown"
+
+
+_PRESSURE_FIELD_INTERPRETATION: dict[str, str] = {
+    "pressure_system_bar": "system_pressure",
+    "pressure_at_seal_bar": "direct_at_seal",
+    "pressure_delta_bar": "differential",
+    "ambiguous_pressure_bar": "unknown",
+}
+
+_PRESSURE_INTERPRETATION_FIELD: dict[str, str] = {
+    "system_pressure": "pressure_system_bar",
+    "direct_at_seal": "pressure_at_seal_bar",
+    "differential": "pressure_delta_bar",
+}
+
+
+def pressure_field_for_interpretation(interpretation: str | None) -> str | None:
+    return _PRESSURE_INTERPRETATION_FIELD.get(str(interpretation or "").strip())
+
+
+def pressure_interpretation_from_text(text: str | None, unit: str | None = None) -> str:
+    return _pressure_interpretation(text, unit)
+
+
+def _critical_field_quantity(field_name: str) -> tuple[str, str | None]:
+    if field_name in TEMPERATURE_FIELDS:
+        return "temperature", "degC"
+    if field_name in PRESSURE_FIELDS:
+        return "pressure", "bar"
+    if field_name in RPM_FIELDS:
+        return "rotational_speed", "rpm"
+    if field_name in ROUGHNESS_FIELDS:
+        return "surface_roughness", "um"
+    if field_name in HARDNESS_FIELDS:
+        return "surface_hardness", "HRC"
+    if field_name in MM_FIELDS:
+        return "length", "mm"
+    return field_name, None
+
+
+def _length_interpretation(field_name: str) -> str:
+    if any(token in field_name for token in ("runout", "eccentricity", "misalignment", "gap")):
+        return "runout_or_gap"
+    if "diameter" in field_name or "bore" in field_name:
+        return "diameter"
+    return "width"
+
+
+def normalize_critical_field_value(
+    field_name: str,
+    raw_value: Any,
+    *,
+    unit: str | None = None,
+) -> CriticalFieldNormalization | None:
+    """Normalize a known critical technical field into EngineeringValue shape.
+
+    The helper is intentionally small and deterministic. It does not replace a
+    future unit engine; it only prevents pressure/temp/rpm/mm values from being
+    treated as dimensionless accepted truth.
+    """
+
+    field_name = str(field_name or "").strip()
+    if not is_critical_technical_field(field_name):
+        return None
+
+    quantity_kind, canonical_unit = _critical_field_quantity(field_name)
+    warnings: list[str] = []
+    confidence = MappingConfidence.CONFIRMED
+    canonical_value: Any = None
+    interpretation: str | None = None
+    raw_with_unit = _value_with_unit(raw_value, unit)
+
+    if field_name in TEMPERATURE_FIELDS:
+        entity = _normalize_temperature_entity(raw_with_unit)
+        canonical_value = entity.normalized_value
+        if entity.warning_message:
+            warnings.append(entity.warning_message)
+        confidence = entity.confidence
+        interpretation = "celsius"
+    elif field_name in PRESSURE_FIELDS:
+        entity = _normalize_pressure_entity(raw_with_unit)
+        canonical_value = entity.normalized_value
+        if entity.warning_message:
+            warnings.append(entity.warning_message)
+        confidence = entity.confidence
+        interpretation = _PRESSURE_FIELD_INTERPRETATION.get(
+            field_name,
+            _pressure_interpretation(raw_value, unit),
+        )
+        if interpretation == "unknown":
+            warnings.append("pressure_interpretation_unknown")
+            confidence = MappingConfidence.REQUIRES_CONFIRMATION
+    elif field_name in RPM_FIELDS:
+        match = _RPM_PATTERN.match(str(raw_with_unit).strip().replace(",", "."))
+        if match:
+            canonical_value = float(match.group(1))
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name == "speed_rpm" else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("rotational_speed_unit_required")
+        interpretation = "rotational_speed"
+    elif field_name in ROUGHNESS_FIELDS:
+        text_value = str(raw_with_unit).strip().replace(",", ".")
+        um_match = _UM_PATTERN.match(text_value)
+        mm_match = _MM_PATTERN.match(text_value)
+        if um_match:
+            canonical_value = float(um_match.group(1))
+        elif mm_match:
+            canonical_value = round(float(mm_match.group(1)) * 1000.0, 6)
+            warnings.append("converted_from_mm_to_micrometer")
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name.endswith("_um") else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("roughness_unit_required")
+        interpretation = "surface_roughness"
+    elif field_name in HARDNESS_FIELDS:
+        text_value = str(raw_with_unit).strip().replace(",", ".")
+        hrc_match = _HRC_PATTERN.match(text_value)
+        if hrc_match:
+            canonical_value = float(hrc_match.group(1))
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name.endswith("_hrc") else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("hardness_unit_required")
+        interpretation = "rockwell_c_hardness"
+    elif field_name in MM_FIELDS:
+        text_value = str(raw_with_unit).strip().replace(",", ".")
+        mm_match = _MM_PATTERN.match(text_value)
+        um_match = _UM_PATTERN.match(text_value)
+        if mm_match:
+            canonical_value = float(mm_match.group(1))
+        elif um_match:
+            canonical_value = round(float(um_match.group(1)) / 1000.0, 6)
+            warnings.append("converted_from_micrometer_to_mm")
+        else:
+            canonical_value = _coerce_number(raw_value) if field_name.endswith("_mm") else None
+            if canonical_value is None:
+                confidence = MappingConfidence.REQUIRES_CONFIRMATION
+                warnings.append("length_unit_required")
+        interpretation = _length_interpretation(field_name)
+
+    if canonical_value is None and confidence == MappingConfidence.CONFIRMED:
+        confidence = MappingConfidence.REQUIRES_CONFIRMATION
+        warnings.append("normalization_required")
+
+    return CriticalFieldNormalization(
+        field_name=field_name,
+        raw_value=raw_value,
+        canonical_value=canonical_value,
+        unit=canonical_unit,
+        quantity_kind=quantity_kind,
+        interpretation=interpretation,
+        confidence=confidence,
+        normalization_warnings=tuple(dict.fromkeys(warnings)),
+        normalized_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 def _normalize_material_entity(raw: Any) -> NormalizedEntity:
@@ -249,18 +740,20 @@ def _normalize_medium_entity(raw: Any) -> NormalizedEntity:
         return NormalizedEntity(None, None, "medium",
                                 MappingConfidence.REQUIRES_CONFIRMATION,
                                 "Kein Mediumwert übergeben")
-    key = str(raw).strip().lower()
-    if key in _MED_CONFIRMED:
-        return NormalizedEntity(raw, _MED_CONFIRMED[key], "medium",
-                                MappingConfidence.CONFIRMED)
-    if key in _MED_ESTIMATED:
-        canonical, reason = _MED_ESTIMATED[key]
-        return NormalizedEntity(raw, canonical, "medium",
-                                MappingConfidence.ESTIMATED, reason)
-    if key in _MED_REQUIRES_CONFIRMATION:
-        canonical, reason = _MED_REQUIRES_CONFIRMATION[key]
-        return NormalizedEntity(raw, canonical, "medium",
-                                MappingConfidence.REQUIRES_CONFIRMATION, reason)
+    if is_medium_placeholder_value(str(raw)):
+        return NormalizedEntity(raw, None, "medium",
+                                MappingConfidence.REQUIRES_CONFIRMATION,
+                                "medium_placeholder_or_unknown")
+    decision = classify_medium_value(str(raw))
+    if decision.canonical_label and decision.mapping_confidence == "confirmed":
+        return NormalizedEntity(raw, decision.canonical_label, "medium",
+                                MappingConfidence.CONFIRMED, decision.mapping_reason)
+    if decision.canonical_label and decision.mapping_confidence == "estimated":
+        return NormalizedEntity(raw, decision.canonical_label, "medium",
+                                MappingConfidence.ESTIMATED, decision.mapping_reason)
+    if decision.canonical_label and decision.mapping_confidence == "requires_confirmation":
+        return NormalizedEntity(raw, decision.canonical_label, "medium",
+                                MappingConfidence.REQUIRES_CONFIRMATION, decision.mapping_reason)
     return NormalizedEntity(raw, None, "medium", MappingConfidence.INFERRED,
                             f"Medium nicht im V1-Mapping: {raw!r}")
 
@@ -351,35 +844,95 @@ _MATERIAL_CONFIRMATION = {
     "kalrez": ("FFKM", "trade_name_requires_confirmation:kalrez"),
 }
 
-_MEDIUM_DIRECT = {
-    "wasser": "Wasser",
-    "water": "Wasser",
-    "öl": "Öl",
-    "oil": "Öl",
-    "mineralöl": "Öl",
-    "hydrauliköl": "Öl",
-    "hlp": "Öl",
-    "bio-öl": "Bio-Öl",
-    "hees": "Bio-Öl",
+# ---------------------------------------------------------------------------
+# STS-code direct lookup (used by normalize_material() — not decision layer)
+# Maps lowercased input → canonical STS-MAT-* code.
+# normalize_material_decision() is intentionally untouched (backward compat).
+# ---------------------------------------------------------------------------
+_GENERIC_TO_STS: dict[str, str] = {
+    "NBR":    "STS-MAT-NBR-A1",
+    "PTFE":   "STS-MAT-PTFE-A1",
+    "FKM":    "STS-MAT-FKM-A1",
+    "FFKM":   "STS-MAT-FFKM-A1",
+    "EPDM":   "STS-MAT-EPDM-A1",
+    "SILIKON": "STS-MAT-SI-A1",
+    "HNBR":   "STS-MAT-HNBR-A1",
+    "ACM":    "STS-MAT-ACM-A1",
+    "AU":     "STS-MAT-AU-A1",
+    "EU":     "STS-MAT-EU-A1",
 }
+
+_MAT_DIRECT_STS: dict[str, str] = {
+    # Ceramic / cermet
+    "sic":                      "STS-MAT-SIC-A1",
+    "ssic":                     "STS-MAT-SIC-A1",
+    "siliziumkarbid":           "STS-MAT-SIC-A1",
+    "siliziumcarbid":           "STS-MAT-SIC-A1",
+    "silicon carbide":          "STS-MAT-SIC-A1",
+    "siliciumcarbide":          "STS-MAT-SIC-A1",
+    "rbsic":                    "STS-MAT-SIC-B1",
+    "sisic":                    "STS-MAT-SIC-B1",
+    "reaktionsgebundenes sic":  "STS-MAT-SIC-B1",
+    "wc":                       "STS-MAT-WC-A1",
+    "wolframkarbid":            "STS-MAT-WC-A1",
+    "tungsten carbide":         "STS-MAT-WC-A1",
+    "al2o3":                    "STS-MAT-AL2O3-A1",
+    "aluminiumoxid":            "STS-MAT-AL2O3-A1",
+    "alumina":                  "STS-MAT-AL2O3-A1",
+    # Elastomers
+    "nbr":                      "STS-MAT-NBR-A1",
+    "nitrilkautschuk":          "STS-MAT-NBR-A1",
+    "buna n":                   "STS-MAT-NBR-A1",
+    "buna-n":                   "STS-MAT-NBR-A1",
+    "nitril":                   "STS-MAT-NBR-A1",
+    "fkm":                      "STS-MAT-FKM-A1",
+    "viton":                    "STS-MAT-FKM-A1",
+    "fluorokautschuk":          "STS-MAT-FKM-A1",
+    "fluorkautschuk":           "STS-MAT-FKM-A1",
+    "ffkm":                     "STS-MAT-FFKM-A1",
+    "kalrez":                   "STS-MAT-FFKM-A1",
+    "perfluorkautschuk":        "STS-MAT-FFKM-A1",
+    "epdm":                     "STS-MAT-EPDM-A1",
+    "hnbr":                     "STS-MAT-HNBR-A1",
+    "hydrierter nitrilkautschuk": "STS-MAT-HNBR-A1",
+    "cr":                       "STS-MAT-CR-A1",
+    "neopren":                  "STS-MAT-CR-A1",
+    "chloropren":               "STS-MAT-CR-A1",
+    "chloroprenkautschuk":      "STS-MAT-CR-A1",
+    "silikon":                  "STS-MAT-SI-A1",
+    "vmq":                      "STS-MAT-SI-A1",
+    "silikonkautschuk":         "STS-MAT-SI-A1",
+    "silicon":                  "STS-MAT-SI-A1",
+    # Polymers
+    "ptfe":                     "STS-MAT-PTFE-A1",
+    "teflon":                   "STS-MAT-PTFE-A1",
+    "polytetrafluorethylen":    "STS-MAT-PTFE-A1",
+    "peek":                     "STS-MAT-PEEK-A1",
+    "polyetheretherketon":      "STS-MAT-PEEK-A1",
+    "pvdf":                     "STS-MAT-PVDF-A1",
+    "polyvinylidenfluorid":     "STS-MAT-PVDF-A1",
+    # Carbon / graphite
+    "grafit":                   "STS-MAT-GRAFIT-A1",
+    "graphit":                  "STS-MAT-GRAFIT-A1",
+    "graphite":                 "STS-MAT-GRAFIT-A1",
+    "carbon":                   "STS-MAT-CARBON-A1",
+    "kohle":                    "STS-MAT-CARBON-A1",
+}
+
+_MEDIUM_DIRECT: dict[str, str] = {}
 _MEDIUM_INFERRED: dict[str, Any] = {}
-_MEDIUM_CONFIRMATION = {
-    "panolin": ("Bio-Öl", "trade_name_requires_confirmation:panolin"),
-    "ester": ("Bio-Öl", "trade_name_requires_confirmation:ester"),
-}
-_MEDIUM_ID = {
-    "bio-öl": "hees",
-    "panolin": "hees",
-    "ester": "hees",
-    "hees": "hees",
-    "öl": "hlp",
-    "oil": "hlp",
-    "mineralöl": "hlp",
-    "hydrauliköl": "hlp",
-    "hlp": "hlp",
-    "wasser": "wasser",
-    "water": "wasser",
-}
+_MEDIUM_CONFIRMATION: dict[str, tuple[str, str]] = {}
+_MEDIUM_ID: dict[str, str] = {}
+for _entry in medium_registry_entries():
+    for _alias in _entry.aliases:
+        if _entry.mapping_confidence in {"confirmed", "estimated"}:
+            _MEDIUM_DIRECT[_alias] = _entry.canonical_label
+        else:
+            _MEDIUM_CONFIRMATION[_alias] = (
+                _entry.canonical_label,
+                _entry.mapping_reason or f"medium_registry:{_entry.registry_key}",
+            )
+        _MEDIUM_ID[_alias] = _entry.registry_key
 
 
 def _lowered(value: Any) -> Optional[str]:
@@ -409,20 +962,51 @@ def normalize_medium_decision(value: Any) -> Optional[NormalizationDecision]:
     lowered = _lowered(value)
     if lowered is None:
         return None
-    if lowered in _MEDIUM_DIRECT:
-        return NormalizationDecision(_MEDIUM_DIRECT[lowered], "confirmed", f"normalized_medium:{lowered}")
-    if lowered in _MEDIUM_INFERRED:
-        canonical, reason = _MEDIUM_INFERRED[lowered]
-        return NormalizationDecision(canonical, "inferred", reason)
-    if lowered in _MEDIUM_CONFIRMATION:
-        canonical, reason = _MEDIUM_CONFIRMATION[lowered]
-        return NormalizationDecision(canonical, "confirmation_required", reason)
+    decision = classify_medium_value(lowered)
+    if decision.canonical_label and decision.mapping_confidence == "confirmed":
+        return NormalizationDecision(
+            decision.canonical_label,
+            "confirmed",
+            f"normalized_medium:{lowered}",
+        )
+    if decision.canonical_label and decision.mapping_confidence == "estimated":
+        return NormalizationDecision(
+            decision.canonical_label,
+            "inferred",
+            decision.mapping_reason or f"medium_registry:{decision.registry_key or lowered}",
+        )
+    if decision.canonical_label and decision.mapping_confidence == "requires_confirmation":
+        return NormalizationDecision(
+            decision.canonical_label,
+            "confirmation_required",
+            decision.mapping_reason or f"medium_registry:{decision.registry_key or lowered}",
+        )
     return NormalizationDecision(str(value), "unknown", "medium_unmapped")
 
 
 def normalize_material(value: Any) -> Any:
+    """Normalize a material term to its canonical STS-MAT-* code.
+
+    Returns a STS code string (e.g. ``"STS-MAT-FKM-A1"``) when the input can
+    be resolved, otherwise the generic canonical name or the raw input.
+
+    Note: ``normalize_material_decision()`` still returns generic names
+    (``"FKM"``, ``"PTFE"`` …) for backward compatibility.
+    """
+    lowered = _lowered(value)
+    if lowered is None:
+        return None
+    # 1. Direct STS-code lookup (covers ceramics, trade names, synonyms)
+    if lowered in _MAT_DIRECT_STS:
+        return _MAT_DIRECT_STS[lowered]
+    # 2. Generic-name → STS-code via decision layer
     decision = normalize_material_decision(value)
-    return None if decision is None else decision.canonical_value
+    if decision is None:
+        return None
+    generic = decision.canonical_value
+    if isinstance(generic, str) and generic in _GENERIC_TO_STS:
+        return _GENERIC_TO_STS[generic]
+    return generic
 
 
 def normalize_medium(value: Any) -> Any:
@@ -448,60 +1032,433 @@ def normalize_unit_value(value: float, unit: str) -> tuple[float, str]:
     normalized_unit = unit.strip().lower()
     if normalized_unit == "psi":
         return float(value) / 14.5038, "bar"
+    if normalized_unit == "mpa":
+        return float(value) * 10.0, "bar"
+    if normalized_unit == "kpa":
+        return float(value) * 0.01, "bar"
     if normalized_unit == "f":
         return (float(value) - 32.0) * 5.0 / 9.0, "C"
     if normalized_unit in {"bar", "c"}:
         return float(value), "C" if normalized_unit == "c" else "bar"
     return float(value), unit
 
+def extract_shaft_diameter_mm(text: str, *, allow_context_free_mm: bool = False) -> float | None:
+    message = str(text or "").strip()
+    if not message:
+        return None
+
+    for pattern in (_SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN, _SHAFT_DIAMETER_SYMBOL_PATTERN):
+        match = pattern.search(message)
+        if match:
+            return float(match.group(1).replace(",", "."))
+
+    mm_match = _SHAFT_DIAMETER_MM_WITH_CONTEXT_PATTERN.search(message)
+    if not mm_match:
+        return None
+    if allow_context_free_mm or _SHAFT_DIAMETER_CONTEXT_RE.search(message):
+        return float(mm_match.group(1).replace(",", "."))
+    return None
+
+
+def _llm_extract_medium(text: str) -> Optional[dict[str, Any]]:
+    """LLM fallback for medium extraction when regex yields nothing.
+
+    Uses a fast, cheap model (default: gpt-4o-mini, overridable via
+    SEALAI_MEDIUM_FALLBACK_MODEL) via the synchronous OpenAI client.
+
+    Returns a dict with keys "medium" (str | None) and "properties" (list[str]),
+    or None when the call fails or no medium is found.
+    """
+    try:
+        from openai import OpenAI  # lazy import — not required for pure-regex path
+    except ImportError:
+        logger.debug("openai package not available — skipping LLM medium fallback")
+        return None
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        logger.debug("OPENAI_API_KEY not set — skipping LLM medium fallback")
+        return None
+
+    prompt = (
+        "Du bist ein technischer Assistent für Dichtungstechnik. "
+        "Extrahiere aus dem folgenden Text das Medium (die Flüssigkeit, das Gas oder das Material), "
+        "das abgedichtet werden soll. "
+        "Extrahiere außerdem relevante Eigenschaften (z.B. abrasiv, klebrig, aggressiv). "
+        'Antworte ausschließlich als JSON: {"medium": "Name oder null", "properties": ["klebrig", ...]}. '
+        f"Text: {text}"
+    )
+
+    try:
+        client = wrap_openai_client(OpenAI(api_key=api_key))
+        response = client.chat.completions.create(
+            model=_MEDIUM_LLM_FALLBACK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=80,
+        )
+        raw_content = response.choices[0].message.content or ""
+        # Strip markdown code fences if present
+        raw_content = raw_content.strip()
+        if raw_content.startswith("```"):
+            raw_content = re.sub(r"^```[a-z]*\n?", "", raw_content)
+            raw_content = re.sub(r"\n?```$", "", raw_content)
+        result: dict[str, Any] = json.loads(raw_content)
+        medium = result.get("medium")
+        if medium and str(medium).lower() not in ("null", "none", ""):
+            return {
+                "medium": str(medium).strip(),
+                "properties": [str(p) for p in result.get("properties", []) if p],
+            }
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("LLM medium fallback failed: %s", exc)
+        return None
+
+
+# motion_type — ordered by specificity; first match wins
+_MOTION_TYPE_PATTERNS: list[tuple[str, str]] = [
+    (r'\b(?:linear|lineare?|hub(?:bewegung)?|hin[- ]?und[- ]?her|translat(?:ion|ions?bewegung)?)\b', 'linear'),
+    (r'\b(?:rotier(?:end)?|drehend|dreht|radial(?:welle)?|rotierende?\s+welle)\b', 'rotary'),
+    (r'\b(?:statisch|keine\s+bewegung|stillstand|flansch(?:abdichtung)?)\b', 'static'),
+]
+
+_SEALING_TYPE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:hydraulik[- ]?stangendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+rod\s+seal)\b", "hydraulic_rod_seal"),
+    (r"\b(?:hydraulik[- ]?kolbendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+piston\s+seal)\b", "hydraulic_piston_seal"),
+    (r"\b(?:pneumatik[- ]?stangendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+rod\s+seal)\b", "pneumatic_rod_seal"),
+    (r"\b(?:pneumatik[- ]?kolbendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+piston\s+seal)\b", "pneumatic_piston_seal"),
+    (r"\b(?:abstreifer|wiper\s+seal)\b", "hydraulic_wiper"),
+    (r"\b(?:f[uü]hrungsring|guide\s+ring)\b", "hydraulic_guide_ring"),
+    (r"\b(?:gleitringdichtung|gleitring|mechanical\s+seal)\b", "mechanical_seal"),
+    (r"\b(?:rwdr|radialwellendichtring|simmerring|simmering|wellendichtring)\b", "rwdr"),
+    (r"\b(?:o[- ]?ring|oring)\b", "o_ring"),
+    (r"\b(?:flachdichtung|flat\s+gasket|cut\s+gasket|gasket)\b", "flat_gasket"),
+    (r"\b(?:packung|stopfbuchse)\b", "packing"),
+]
+
+_PRESSURE_DIRECTION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:beidseitig|wechselnd\w*\s+druck|druck\s+wechselnd|bidirectional)\b", "bidirectional"),
+    (r"\b(?:von\s+innen\s+nach\s+aussen|von\s+innen\s+nach\s+außen|innen\s+nach\s+aussen|innen\s+nach\s+außen)\b", "inside_out"),
+    (r"\b(?:von\s+aussen\s+nach\s+innen|von\s+außen\s+nach\s+innen|aussen\s+nach\s+innen|außen\s+nach\s+innen)\b", "outside_in"),
+    (r"\b(?:drucklos|atmosphaerisch|atmosphärisch)\b", "pressureless_or_atmospheric"),
+]
+
+_DUTY_PROFILE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:24\s*/\s*7|dauerbetrieb|kontinuierlich|permanent|continuous)\b", "continuous"),
+    (r"\b(?:gelegentlich\w*|intermittierend|zeitweise|batch|taktbetrieb|anlaufbetrieb)\b", "intermittent"),
+    (r"\b(?:trockenlauf|dry\s*run(?:ning)?)\b", "dry_running_risk"),
+]
+
+_INSTALLATION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:pumpe|kreiselpumpe|pump)\b", "pump"),
+    (r"\b(?:ventil|valve)\b", "valve"),
+    (r"\b(?:flansch|flange)\b", "flange"),
+    (r"\b(?:gehaeuse|gehäuse|housing)\b", "housing"),
+    (r"\b(?:einbauraum|bauraum|radialer\s+bauraum|axialer\s+bauraum|nur\s+\d+(?:[.,]\d+)?\s*mm)\b", "limited_installation_space"),
+]
+
+_GEOMETRY_CONTEXT_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:nut|nute|nutgeometrie|groove)\b", "groove"),
+    (r"\b(?:bohrung|dichtsitz|dichtstelle|bauform|geometrie)\b", "geometry_context"),
+    (r"\b(?:cartouche|cartridge|kartusche)\b", "cartridge_geometry"),
+]
+
+_CONTAMINATION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:schmutz|verschmutz\w*|partikel|feststoff\w*|solids?)\b", "solids_or_particles"),
+    (r"\b(?:abrasiv\w*|sand|slurry|schlamm)\b", "abrasive"),
+]
+
+_COUNTERFACE_SURFACE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:gegenlauf(?:flaeche|fläche|partner)|wellenzustand|wellenoberflaeche|wellenoberfläche|laufpartner)\b", "counterface_condition"),
+    (r"\b(?:rauheit|ra\s*\d|oberflaeche|oberfläche|verschlissen|riefen)\b", "surface_quality_context"),
+    (r"\b(?:huelse|hülse|buchse|wellenwerkstoff)\b", "counterface_material_context"),
+]
+
+_COUNTERFACE_SURFACE_CONDITION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:beschädigt|beschaedigt|riefen|damage(?:d)?)\b", "damaged"),
+    (r"\b(?:eingelaufen|verschlissen|verschleiss|verschleiß|worn)\b", "worn"),
+    (r"\b(?:korrodiert|korrosion|corroded|corrosion)\b", "corroded"),
+    (r"\b(?:beschichtet|coated)\b", "coated"),
+    (r"\b(?:neu|new)\b", "new"),
+    (r"\b(?:unbekannt|unknown|unklar)\b", "unknown"),
+]
+
+_TOLERANCE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:rundlauf|runout|exzentrizitaet|exzentrizität)\b", "runout_or_eccentricity"),
+    (r"\b(?:toleranz\w*|spiel|spalt|clearance)\b", "tolerance_or_clearance"),
+]
+
+_LUBRICATION_CONDITION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:trockenlauf|dry\s*run(?:ning)?|dry-run)\b", "dry_run_possible"),
+    (r"\b(?:mangelschmierung|mangel\s*schmierung|insufficient\s+lubrication|poor\s+lubrication)\b", "insufficient_lubrication"),
+    (r"\b(?:geschmiert|oelgeschmiert|ölgeschmiert|lubricated)\b", "lubricated"),
+    (r"\b(?:schmierung\s+unbekannt|lubrication\s+unknown)\b", "unknown"),
+]
+
+_CONTAMINATION_CONDITION_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:abrasiver?\s+staub|abrasive\s+dust)\b", "abrasive_dust"),
+    (r"\b(?:abrasiv\w*|sand|staub|schmutz|partikel|feststoff\w*|solids?)\b", "particles_or_abrasive"),
+    (r"\b(?:sauber|keine\s+(?:verschmutzung|partikel)|clean|no\s+(?:dirt|particles))\b", "clean"),
+    (r"\b(?:verschmutzung\s+unbekannt|contamination\s+unknown)\b", "unknown"),
+]
+
+_INDUSTRY_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:lebensmittel\w*|food|pharma|hygien\w*)\b", "food_pharma"),
+    (r"\b(?:chemie|chemisch\w*|chemical|prozess(?:technik|industrie)?)\b", "chemical_process"),
+    (r"\b(?:wasser|abwasser|marine|schiff)\b", "water_or_marine"),
+]
+
+_COMPLIANCE_PATTERNS: list[tuple[str, str]] = [
+    (r"\b(?:fda|eu\s*10/2011|lebensmittelkonform)\b", "food_contact"),
+    (r"\b(?:atex|explosionsschutz|ex[- ]?zone)\b", "atex"),
+    (r"\b(?:ta[- ]?luft|api\s*682|din\s+en\s+12756|din\s+3760)\b", "norm_or_regulatory"),
+]
+
+_MEDIUM_QUALIFIER_PATTERNS: list[tuple[str, str]] = [
+    (r"(?:\b(?:konzentration|konzentriert|prozent)\b|\d+(?:[.,]\d+)?\s*%)", "concentration_context"),
+    (r"\b(?:chlorid(?:e|gehalt)?|chlorides?|salzgehalt|nacl)\b", "chlorides_or_salinity"),
+    (r"\b(?:abrasiv\w*|partikel|feststoff\w*|solids?|slurry|schlamm)\b", "solids_or_abrasives"),
+    (r"\b(?:sattdampf|heissdampf|heißdampf|dampfqualitaet|dampfqualität)\b", "steam_detail"),
+    (r"\b(?:saeure|säure|salzsaeure|salzsäure|lauge|loesungsmittel|lösungsmittel)\b", "chemistry_detail"),
+]
+
+
+def _extract_motion_type(text: str) -> str | None:
+    """Return 'rotary', 'linear', or 'static' if motion type is detectable, else None."""
+    text_lower = text.lower()
+    for pattern, motion in _MOTION_TYPE_PATTERNS:
+        if re.search(pattern, text_lower):
+            return motion
+    return None
+
+
+def _first_pattern_value(text: str, patterns: list[tuple[str, str]]) -> str | None:
+    for pattern, value in patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return value
+    return None
+
+
+# Negation words that directly precede a matched term, e.g. "kein Gleitring".
+# Matches only when a negation word appears within 1 word before the match end.
+# "kein Gleitring" → match; "kein Gleitring sondern " → no match (too far away).
+_NEGATION_BEFORE_RE = re.compile(
+    r"\b(?:kein|keine|keinen|keinem|nicht|statt|anstatt|anstelle(?:\s+von)?|no|not)\s+\w*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _sealing_type_value(text: str, patterns: list[tuple[str, str]]) -> str | None:
+    """Negation-aware sealing type extraction.
+
+    Unlike _first_pattern_value, this:
+    - Skips matches that are immediately preceded by a negation word
+      (kein, nicht, statt, …).
+    - Returns the last non-negated match so that corrections like
+      "kein Gleitring sondern RWDR" yield 'rwdr', not 'mechanical_seal'.
+    """
+    best_value: str | None = None
+    best_pos: int = -1
+    for pattern, value in patterns:
+        for m in re.finditer(pattern, text, re.IGNORECASE):
+            before = text[: m.start()]
+            if _NEGATION_BEFORE_RE.search(before):
+                continue  # This match is negated — skip
+            if m.start() > best_pos:
+                best_value = value
+                best_pos = m.start()
+    return best_value
+
+
+def normalize_sealing_type_value(text: str | None) -> str | None:
+    """Normalize a user supplied seal-type alias using the productive patterns."""
+
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    return _sealing_type_value(raw, _SEALING_TYPE_PATTERNS)
+
+
+def _all_pattern_values(text: str, patterns: list[tuple[str, str]]) -> list[str]:
+    values: list[str] = []
+    for pattern, value in patterns:
+        if re.search(pattern, text, re.IGNORECASE) and value not in values:
+            values.append(value)
+    return values
+
+
+def _float_from_match(match: re.Match[str] | None) -> float | None:
+    if match is None:
+        return None
+    for group in match.groups():
+        if group:
+            return float(group.replace(",", "."))
+    return None
+
 
 def extract_parameters(text: str) -> dict[str, Any]:
     extracted: dict[str, Any] = {}
-    temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*°?\s*([CF])\b", text, re.I)
+    unsafe_instruction_text = bool(
+        re.search(
+            r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|regeln|system|developer|sicherheits)\b",
+            text,
+            re.I,
+        )
+        or re.search(
+            r"\b(sag(?:e)?|behaupte|bestaetige|bestätige)\b.*\b(geeignet|freigegeben|garantiert|passend)\b",
+            text,
+            re.I,
+        )
+    )
+    # Match "80°C", "80C", "80 Grad", "80 grad" — group(2) is None for bare "grad" → default Celsius
+    temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°?\s*([CF])\b|\bgrad\b)", text, re.I)
     if temp_match:
         raw = temp_match.group(0)
         value = float(temp_match.group(1).replace(",", "."))
-        temp_value, _ = normalize_unit_value(value, temp_match.group(2))
+        unit = temp_match.group(2) or "C"  # "grad" without explicit C/F → Celsius
+        temp_value, _ = normalize_unit_value(value, unit)
         extracted["temperature_raw"] = raw
         extracted["temperature_c"] = temp_value
-    pressure_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(bar|psi)\b", text, re.I)
+    pressure_match = re.search(
+        r"(\d+(?:[.,]\d+)?)\s*(bar(?:\s*[\(\[]?\s*[ag]\s*[\)\]]?)?|barg|bara|psi|mpa|kpa)(?=$|[\s,.;])",
+        text,
+        re.I,
+    )
     if pressure_match:
         raw = pressure_match.group(0)
         value = float(pressure_match.group(1).replace(",", "."))
-        pressure_value, _ = normalize_unit_value(value, pressure_match.group(2))
+        raw_unit = pressure_match.group(2)
+        pressure_value, normalized_unit = normalize_unit_value(value, raw_unit)
+        pressure_role = pressure_interpretation_from_text(text, raw_unit)
         extracted["pressure_raw"] = raw
         extracted["pressure_bar"] = pressure_value
-    diameter_match = re.search(r"(\d+(?:[.,]\d+)?)\s*mm\b", text, re.I)
-    if diameter_match and re.search(r"\bwelle|\bshaft", text, re.I):
-        extracted["diameter_mm"] = float(diameter_match.group(1).replace(",", "."))
-    speed_match = re.search(r"(\d+(?:[.,]\d+)?)\s*rpm\b", text, re.I)
+        extracted["pressure_unit"] = raw_unit
+        extracted["pressure_normalized_unit"] = normalized_unit
+        if pressure_role == "system_pressure":
+            extracted["pressure_system_bar"] = pressure_value
+        elif pressure_role == "direct_at_seal":
+            extracted["pressure_at_seal_bar"] = pressure_value
+        elif pressure_role == "differential":
+            extracted["pressure_delta_bar"] = pressure_value
+        else:
+            extracted["ambiguous_pressure_bar"] = pressure_value
+    diameter_value = extract_shaft_diameter_mm(text)
+    if diameter_value is not None:
+        extracted["diameter_mm"] = diameter_value
+    speed_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:rpm|u[/.]?min)\b", text, re.I)
     if speed_match:
-        extracted["speed_rpm"] = float(speed_match.group(1).replace(",", "."))
+        raw_rpm = float(speed_match.group(1).replace(",", "."))
+        # Store as int when there's no fractional part (6000.0 → 6000)
+        extracted["speed_rpm"] = int(raw_rpm) if raw_rpm == int(raw_rpm) else raw_rpm
 
-    for raw in ("Panolin", "HEES", "Ester", "Bio-Öl", "Wasser", "water", "Öl", "oil", "Mineralöl", "HLP"):
-        if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
-            decision = normalize_medium_decision(raw)
-            if decision and decision.status == "confirmation_required":
-                extracted["medium_confirmation_required"] = decision.canonical_value
-            elif decision and decision.status != "unknown":
-                extracted["medium_normalized"] = decision.canonical_value
-            if decision:
-                extracted["medium_normalization_status"] = decision.status
-                extracted["medium_mapping_reason"] = decision.mapping_reason
-                extracted["medium_raw"] = raw
-            break
+    roughness_value = _float_from_match(_ROUGHNESS_RA_VALUE_PATTERN.search(text))
+    if roughness_value is not None:
+        extracted["shaft_roughness_ra_um"] = roughness_value
 
-    for raw in ("Viton", "Kalrez", "Teflon", "Nitril", "NBR", "PTFE", "FKM"):
-        if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
-            decision = normalize_material_decision(raw)
-            if decision and decision.status == "confirmation_required":
-                extracted["material_confirmation_required"] = decision.canonical_value
-            elif decision and decision.status != "unknown":
-                extracted["material_normalized"] = decision.canonical_value
-            if decision:
-                extracted["material_normalization_status"] = decision.status
-                extracted["material_mapping_reason"] = decision.mapping_reason
-                extracted["material_raw"] = raw
-            break
+    hardness_value = _float_from_match(_HARDNESS_HRC_VALUE_PATTERN.search(text))
+    if hardness_value is not None:
+        extracted["shaft_hardness_hrc"] = hardness_value
+
+    runout_value = _float_from_match(_RUNOUT_VALUE_PATTERN.search(text))
+    if runout_value is not None:
+        extracted["runout_mm"] = runout_value
+
+    eccentricity_value = _float_from_match(_ECCENTRICITY_VALUE_PATTERN.search(text))
+    if eccentricity_value is not None:
+        extracted["eccentricity_mm"] = eccentricity_value
+
+    axial_movement_value = _float_from_match(_AXIAL_MOVEMENT_VALUE_PATTERN.search(text))
+    if axial_movement_value is not None:
+        extracted["axial_movement_mm"] = axial_movement_value
+
+    motion_type = _extract_motion_type(text)
+    if motion_type is not None:
+        extracted["motion_type"] = motion_type
+
+    # sealing_type uses negation-aware extraction to handle corrections like
+    # "kein Gleitring sondern RWDR" correctly.
+    sealing_type_value = normalize_sealing_type_value(text)
+    if sealing_type_value is not None:
+        extracted["sealing_type"] = sealing_type_value
+
+    for field_name, patterns in (
+        ("pressure_direction", _PRESSURE_DIRECTION_PATTERNS),
+        ("duty_profile", _DUTY_PROFILE_PATTERNS),
+        ("installation", _INSTALLATION_PATTERNS),
+        ("geometry_context", _GEOMETRY_CONTEXT_PATTERNS),
+        ("contamination", _CONTAMINATION_PATTERNS),
+        ("counterface_surface", _COUNTERFACE_SURFACE_PATTERNS),
+        ("counterface_surface_condition", _COUNTERFACE_SURFACE_CONDITION_PATTERNS),
+        ("lubrication_condition", _LUBRICATION_CONDITION_PATTERNS),
+        ("contamination_condition", _CONTAMINATION_CONDITION_PATTERNS),
+        ("tolerances", _TOLERANCE_PATTERNS),
+        ("industry", _INDUSTRY_PATTERNS),
+    ):
+        value = _first_pattern_value(text, patterns)
+        if value is not None:
+            extracted[field_name] = value
+
+    if extracted.get("installation") == "limited_installation_space":
+        extracted["installation_space_summary"] = extracted["installation"]
+
+    compliance = _all_pattern_values(text, _COMPLIANCE_PATTERNS)
+    if compliance:
+        extracted["compliance"] = compliance
+
+    medium_qualifiers = _all_pattern_values(text, _MEDIUM_QUALIFIER_PATTERNS)
+    if medium_qualifiers:
+        extracted["medium_qualifiers"] = medium_qualifiers
+
+    medium_result = run_medium_specialist(
+        MediumSpecialistInput(
+            latest_user_message=text,
+            candidate_media_tokens=tuple(_extract_candidate_media_tokens(text)),
+        )
+    )
+    if medium_result.canonical_medium:
+        if medium_result.medium_confidence == MappingConfidence.REQUIRES_CONFIRMATION:
+            extracted["medium_confirmation_required"] = medium_result.canonical_medium
+        else:
+            extracted["medium_normalized"] = medium_result.canonical_medium
+        extracted["medium_normalization_status"] = medium_result.medium_confidence.value
+        extracted["medium_mapping_reason"] = (
+            medium_result.medium_uncertainty_reason
+            or f"medium_specialist:{str(medium_result.candidate_media_token or medium_result.canonical_medium).lower()}"
+        )
+        extracted["medium_raw"] = medium_result.candidate_media_token or medium_result.canonical_medium
+        if medium_result.followup_question_if_needed:
+            extracted["medium_followup_question"] = medium_result.followup_question_if_needed
+
+    # LLM fallback: fires only when regex + whitelist both found nothing.
+    # Disabled by default (Phase 0C.2 — LLM must not run inside a deterministic node).
+    # Enable via SEALAI_ENABLE_MEDIUM_LLM_FALLBACK=1 for offline diagnostics only.
+    if (
+        _MEDIUM_LLM_FALLBACK_ENABLED
+        and "medium_normalized" not in extracted
+        and "medium_confirmation_required" not in extracted
+    ):
+        llm_result = _llm_extract_medium(text)
+        if llm_result:
+            extracted["medium_normalized"] = llm_result["medium"].capitalize()
+            extracted["medium_normalization_status"] = "llm_fallback"
+            extracted["medium_mapping_reason"] = f"llm_fallback:{llm_result['medium'].lower()}"
+            extracted["medium_raw"] = llm_result["medium"]
+            if llm_result["properties"]:
+                extracted["medium_properties"] = llm_result["properties"]
+
+    if not unsafe_instruction_text:
+        for raw in ("Viton", "Kalrez", "Teflon", "Nitril", "NBR", "PTFE", "FKM"):
+            if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
+                decision = normalize_material_decision(raw)
+                if decision and decision.status == "confirmation_required":
+                    extracted["material_confirmation_required"] = decision.canonical_value
+                elif decision and decision.status != "unknown":
+                    extracted["material_normalized"] = decision.canonical_value
+                if decision:
+                    extracted["material_normalization_status"] = decision.status
+                    extracted["material_mapping_reason"] = decision.mapping_reason
+                    extracted["material_raw"] = raw
+                break
 
     return extracted

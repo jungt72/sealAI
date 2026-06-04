@@ -1,11 +1,25 @@
 from typing import Optional
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 import os
-import sys
-import structlog
 
 class Settings(BaseSettings):
+    # Application / startup controls
+    app_name: str = "sealAI-backend"
+    app_version: str = Field(default_factory=lambda: os.getenv("GIT_SHA", "dev"))
+    app_env: str = "development"
+    frontend_origin: str = "https://sealai.net"
+    enable_cors: bool = True
+    warmup_on_start: bool = False
+    job_worker_enabled: bool = False
+    job_worker_poll_sec: float = 1.5
+    dev_clear_langgraph_checkpoints_on_startup: bool = False
+    langgraph_v2_redis_url: Optional[str] = None
+    qdrant_bootstrap_on_startup: bool = False
+    audit_log_bootstrap_on_startup: bool = False
+    fastapi_docs_enabled: bool = False
+
     # Datenbank
     postgres_user: str
     postgres_password: str
@@ -25,13 +39,28 @@ class Settings(BaseSettings):
 
     # Qdrant - Festgelegt auf sealai_knowledge
     qdrant_url: str
+    qdrant_api_key: Optional[str] = None
     qdrant_collection: str = "sealai_knowledge"
     qdrant_collection_ltm: Optional[str] = "sealai_ltm"
     rag_k: int = 4
+    rag_document_llm_processing_enabled: bool = False
+    rag_dynamic_metadata_llm_enabled: bool = False
+    knowledge_llm_research_fallback_enabled: bool = False
+    rag_dynamic_metadata_llm_model: str = "gpt-4.1-mini"
+    rag_dynamic_metadata_max_chars: int = 12000
+    rag_max_pages: int = 80
+    rag_max_chunks: int = 400
+    gotenberg_url: Optional[str] = None
+    tika_url: Optional[str] = None
+    paperless_url: Optional[str] = None
+    paperless_token: Optional[str] = None
+    paperless_webhook_token: Optional[str] = None
+    paperless_sync_process_limit: int = 3
 
     # Weiteres (Redis, Auth, Memory etc.)
     redis_url: str
     REDIS_URL: str = "redis://redis:6379/0"
+    ltm_enable: bool = False
     chat_history_ttl_days: int = 30
     chat_max_conversations_per_user: int = 50
     nextauth_url: str
@@ -43,9 +72,18 @@ class Settings(BaseSettings):
     keycloak_expected_azp: str
 
     # LangSmith / OpenTelemetry tracing (auto-picked up by LangChain via os.environ)
+    langsmith_tracing: bool = False
+    langsmith_api_key: Optional[str] = None
+    langsmith_endpoint: Optional[str] = None
+    langsmith_project: str = "sealai-production"
+    sealai_trace_hash_salt: Optional[str] = None
+    langsmith_trace_salt: Optional[str] = None
+    langsmith_capture_llm_content: bool = False
+    langsmith_trace_langgraph_children: bool = False
     langchain_tracing_v2: bool = False
     langchain_api_key: Optional[str] = None
-    langchain_project: str = "sealai-v4"
+    langchain_endpoint: Optional[str] = None
+    langchain_project: str = "sealai-production"
 
     # Prometheus metrics
     prometheus_enabled: bool = True
@@ -54,11 +92,30 @@ class Settings(BaseSettings):
     rate_limit_upload: int = 20        # max requests per window
     rate_limit_window_s: int = 60      # window size in seconds
 
+    # Phase F Feature-Flags — default on so productive chat uses the
+    # user-facing Runtime / Governed path unless explicitly disabled.
+    # Rollback remains env-only: set either flag to false.
+    SEALAI_ENABLE_BINARY_GATE: bool = True
+    SEALAI_ENABLE_CONVERSATION_RUNTIME: bool = True
+    ENABLE_LEGACY_V2_ENDPOINT: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
     def backend_keycloak_issuer(self) -> str:
         return self.keycloak_issuer
+
+    @property
+    def normalized_app_env(self) -> str:
+        return (self.app_env or "").strip().lower()
+
+    @property
+    def is_dev_or_test(self) -> bool:
+        return self.normalized_app_env in {"dev", "development", "local", "test"}
+
+    @property
+    def QDRANT_COLLECTION_NAME(self) -> str:
+        return self.qdrant_collection
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -1,93 +1,194 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, ArrowUp, Paperclip, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from "react";
+import { AudioLines, ChevronDown, Mic, Plus, SendHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
-    onSend: (message: string) => void;
-    isLoading?: boolean;
-    autoFocus?: boolean;
-    externalValue?: string | null;
+  onSend: (message: string) => void;
+  onUpload?: (file: File) => void;
+  isLoading?: boolean;
+  isUploading?: boolean;
+  autoFocus?: boolean;
+  externalValue?: string | null;
+  placeholder?: string;
+  variant?: "default" | "hero";
 }
 
-export default function ChatComposer({ onSend, isLoading, autoFocus, externalValue }: ChatComposerProps) {
-    const [message, setMessage] = useState('');
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+export default function ChatComposer({
+  onSend,
+  onUpload,
+  isLoading,
+  isUploading,
+  autoFocus,
+  externalValue,
+  placeholder = "Was möchtest du wissen",
+  variant = "default",
+}: ChatComposerProps) {
+  const [draft, setDraft] = useState(() => ({
+    lastExternalValue: externalValue ?? null,
+    message: externalValue ?? "",
+  }));
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const message = draft.message;
 
-    // Patch C4: Handle external value setting
-    useEffect(() => {
-        if (externalValue !== undefined && externalValue !== null) {
-            setMessage(externalValue);
-            // Focus and move cursor to end
-            if (textareaRef.current) {
-                textareaRef.current.focus();
-            }
-        }
-    }, [externalValue]);
+  if (draft.lastExternalValue !== (externalValue ?? null)) {
+    setDraft((current) => ({
+      lastExternalValue: externalValue ?? null,
+      message: externalValue ?? current.message,
+    }));
+  }
 
-    // Auto-resize logic
-    useEffect(() => {
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-        }
-    }, [message]);
+  useEffect(() => {
+    if (externalValue !== undefined && externalValue !== null) {
+      textareaRef.current?.focus();
+    }
+  }, [externalValue]);
 
-    const handleSubmit = (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (message.trim() && !isLoading) {
-            onSend(message);
-            setMessage('');
-        }
-    };
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 220)}px`;
+    }
+  }, [message]);
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit();
-        }
-    };
+  const setMessage = (nextMessage: string) => {
+    setDraft((current) => ({
+      ...current,
+      message: nextMessage,
+    }));
+  };
 
-    return (
-        <div className="w-full">
+  const handleSubmit = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const trimmed = message.trim();
+    if (trimmed && !isLoading) {
+      onSend(trimmed);
+      setMessage("");
+    }
+  };
 
-            <form
-                onSubmit={handleSubmit}
-                className="bg-white/90 backdrop-blur-md rounded-[32px] shadow-[0_20px_70px_-20px_rgba(0,0,0,0.1)] border border-gray-200/50 p-2 flex items-end gap-2 transition-all duration-300 focus-within:shadow-[0_20px_70px_-10px_rgba(0,122,255,0.1)]"
-            >
-                {/* Attachment Button */}
-                <button
-                    type="button"
-                    className="w-10 h-10 rounded-full bg-[#F5F5F7] hover:bg-[#E5E5EA] flex items-center justify-center text-gray-500 transition-all duration-200 cursor-pointer active:scale-95 flex-shrink-0"
-                >
-                    <Plus size={20} />
-                </button>
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit();
+    }
+  };
 
-                {/* Textarea Input */}
-                <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Frag mich, zieh PDFs hierher oder iteriere Parameter..."
-                    className="w-full bg-transparent px-4 py-3 text-[17px] text-gray-900 placeholder-gray-400 focus:outline-none resize-none max-h-48 leading-relaxed"
-                    disabled={isLoading}
-                    autoFocus={autoFocus}
-                />
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file && onUpload && !isLoading && !isUploading) {
+      onUpload(file);
+    }
+  };
 
-                {/* Send Button */}
-                <button
-                    type="submit"
-                    disabled={!message.trim() || isLoading}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm transition-all duration-300 active:scale-90 flex-shrink-0 ${message.trim()
-                        ? 'bg-[#007AFF] hover:bg-[#0066CC] shadow-[#007AFF]/20'
-                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        }`}
-                >
-                    <ArrowUp size={20} strokeWidth={2.5} />
-                </button>
-            </form>
+  const canSend = Boolean(message.trim()) && !isLoading;
+  const canUpload = Boolean(onUpload) && !isLoading && !isUploading;
+  const isHero = variant === "hero";
+  const uploadButton = (
+    <button
+      type="button"
+      title="Anhang hinzufügen"
+      aria-label="Anhang hinzufügen"
+      onClick={() => fileInputRef.current?.click()}
+      disabled={!canUpload}
+      className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center text-[#64748B] transition-colors hover:bg-white/55 hover:text-[#1F2933] disabled:cursor-not-allowed disabled:opacity-50",
+        "rounded-full",
+      )}
+    >
+      <Plus size={22} strokeWidth={1.9} />
+    </button>
+  );
+  const modeButton = (
+    <button
+      type="button"
+      title="Antwortlänge"
+      aria-label="Antwortlänge"
+      className={cn(
+        "hidden h-10 shrink-0 items-center gap-1 px-3 text-sm font-medium text-[#1F2933] transition-colors hover:bg-white/55 sm:inline-flex",
+        "rounded-full",
+      )}
+    >
+      <span>Länger</span>
+      <ChevronDown size={15} />
+    </button>
+  );
+  const micButton = (
+    <button
+      type="button"
+      title="Spracheingabe"
+      aria-label="Spracheingabe"
+      className={cn(
+        "hidden h-10 w-10 shrink-0 items-center justify-center text-[#1F2933] transition-colors hover:bg-white/55 sm:inline-flex",
+        "rounded-full",
+      )}
+    >
+      <Mic size={18} />
+    </button>
+  );
+  const sendButton = (
+    <button
+      type="submit"
+      title={canSend ? "Senden" : "Sprachmodus"}
+      aria-label={canSend ? "Senden" : "Sprachmodus"}
+      disabled={!canSend}
+      className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center transition-colors",
+        "rounded-full",
+        canSend
+          ? "bg-seal-blue text-white hover:opacity-90"
+          : "cursor-not-allowed bg-white/45 text-[#94A3B8]",
+      )}
+    >
+      {canSend ? <SendHorizontal size={18} /> : <AudioLines size={18} />}
+    </button>
+  );
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      data-private
+      className={cn(
+        "w-full border border-white/70 bg-white/54 shadow-[0_18px_55px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.86)] backdrop-blur-xl",
+        "rounded-full px-4 py-2.5 ring-1 ring-[#CBD5E1]/45",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".pdf,.txt,.md,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={handleFileChange}
+          disabled={!canUpload}
+        />
+        {uploadButton}
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className={cn(
+            "max-h-[220px] flex-1 resize-none bg-transparent text-[#1F2933] placeholder:text-[#667085] focus:outline-none",
+            isHero
+              ? "min-h-10 overflow-hidden px-1 py-2 text-[16px] leading-6"
+              : "min-h-10 overflow-hidden px-1 py-2 text-[16px] leading-6",
+          )}
+          disabled={isLoading}
+          autoFocus={autoFocus}
+        />
+
+        <div className="flex shrink-0 items-center gap-1">
+          {modeButton}
+          {micButton}
+          {canSend ? sendButton : null}
         </div>
-    );
+      </div>
+    </form>
+  );
 }

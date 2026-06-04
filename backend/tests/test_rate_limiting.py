@@ -171,8 +171,14 @@ async def test_rate_limit_different_tenants_independent():
 # ---------------------------------------------------------------------------
 
 def test_config_has_rate_limit_upload_field():
-    from app.core.config import Settings
+    import importlib
+    import sys
 
-    fields = Settings.model_fields
+    config_module = sys.modules.get("app.core.config")
+    if config_module is None or not hasattr(config_module, "Settings"):
+        sys.modules.pop("app.core.config", None)
+        config_module = importlib.import_module("app.core.config")
+
+    fields = config_module.Settings.model_fields
     assert "rate_limit_upload" in fields
     assert "rate_limit_window_s" in fields

@@ -1,0 +1,575 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Literal
+
+
+MediumFamily = Literal[
+    "waessrig",
+    "waessrig_salzhaltig",
+    "oelhaltig",
+    "gasfoermig",
+    "dampffoermig",
+    "loesemittelhaltig",
+    "chemisch_aggressiv",
+    "lebensmittelnah",
+    "partikelhaltig",
+    "unknown",
+]
+
+MediumClassificationStatus = Literal[
+    "recognized",
+    "family_only",
+    "mentioned_unclassified",
+    "unavailable",
+]
+
+MediumClassificationConfidence = Literal["high", "medium", "low"]
+
+MediumMappingConfidence = Literal[
+    "confirmed",
+    "estimated",
+    "inferred",
+    "requires_confirmation",
+]
+
+
+@dataclass(frozen=True)
+class MediumRegistryEntry:
+    registry_key: str
+    canonical_label: str
+    family: MediumFamily
+    aliases: tuple[str, ...]
+    mapping_confidence: MediumMappingConfidence = "confirmed"
+    classification_confidence: MediumClassificationConfidence = "high"
+    normalization_source: str = "deterministic_alias_map"
+    mapping_reason: str | None = None
+    followup_question: str | None = None
+
+
+@dataclass(frozen=True)
+class MediumClassificationDecision:
+    raw_text: str | None
+    canonical_label: str | None
+    family: MediumFamily
+    status: MediumClassificationStatus
+    confidence: MediumClassificationConfidence
+    normalization_source: str | None
+    mapping_confidence: MediumMappingConfidence
+    mapping_reason: str | None = None
+    registry_key: str | None = None
+    matched_alias: str | None = None
+    followup_question: str | None = None
+
+
+@dataclass(frozen=True)
+class MediumCaptureDecision:
+    raw_mentions: tuple[str, ...]
+    primary_raw_text: str | None
+
+
+def _normalize_lookup_token(value: str | None) -> str:
+    text = str(value or "").strip().casefold()
+    replacements = {
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "ß": "ss",
+    }
+    for src, target in replacements.items():
+        text = text.replace(src, target)
+    text = re.sub(r"[^a-z0-9+\-./ ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+_PLACEHOLDER_MEDIUM_KEYS: frozenset[str] = frozenset(
+    {
+        "-",
+        "--",
+        "/",
+        "n/a",
+        "n.a.",
+        "na",
+        "none",
+        "null",
+        "medium",
+        "das medium",
+        "fluid",
+        "das fluid",
+        "fluessigkeit",
+        "die fluessigkeit",
+        "stoff",
+        "der stoff",
+        "unbekannt",
+        "unbekanntes medium",
+        "nicht bekannt",
+        "weiss ich nicht",
+        "weis ich nicht",
+        "ich weiss es nicht",
+        "ich weis es nicht",
+        "keine ahnung",
+    }
+)
+
+_GENERIC_MEDIUM_PLACEHOLDER_RE = re.compile(
+    r"^(?:das|der|die|ein|eine|einen)?\s*(?:medium|fluid|fluessigkeit|stoff)\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_medium_placeholder_value(value: str | None) -> bool:
+    """Return True for generic or explicitly unknown medium placeholders."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return True
+    if raw in {"?", "-", "--", "/"}:
+        return True
+    key = _normalize_lookup_token(raw)
+    if not key:
+        return True
+    if key in _PLACEHOLDER_MEDIUM_KEYS:
+        return True
+    return bool(_GENERIC_MEDIUM_PLACEHOLDER_RE.fullmatch(key))
+
+
+_HYDRAULIC_FLUID_GRADE_PATTERN = re.compile(
+    r"\b(?P<fluid_type>HLP|HVLP|HEES|HETG|HEPG|HFDU|HFAE|HFC)"
+    r"\s*[-/]?\s*(?P<viscosity>\d{1,3})?\b",
+    re.IGNORECASE,
+)
+
+
+def _hydraulic_fluid_grade_label(value: str | None) -> str | None:
+    match = _HYDRAULIC_FLUID_GRADE_PATTERN.search(str(value or ""))
+    if not match:
+        return None
+    fluid_type = str(match.group("fluid_type") or "").upper()
+    viscosity = str(match.group("viscosity") or "").strip()
+    if viscosity:
+        return f"{fluid_type} {viscosity}"
+    return fluid_type
+
+
+def _classify_hydraulic_fluid_grade(value: str | None) -> MediumClassificationDecision | None:
+    grade_label = _hydraulic_fluid_grade_label(value)
+    if not grade_label:
+        return None
+    fluid_type = grade_label.split()[0]
+    has_viscosity = bool(re.search(r"\d", grade_label))
+    canonical_prefix = (
+        "Bio-Hydraulikflüssigkeit"
+        if fluid_type in {"HEES", "HETG", "HEPG"}
+        else "Hydrauliköl"
+    )
+    canonical_label = f"{canonical_prefix} {grade_label}"
+    return MediumClassificationDecision(
+        raw_text=str(value or "").strip() or grade_label,
+        canonical_label=canonical_label,
+        family="oelhaltig",
+        status="recognized",
+        confidence="high" if has_viscosity else "medium",
+        normalization_source="deterministic_hydraulic_fluid_grade",
+        mapping_confidence="estimated",
+        mapping_reason=(
+            f"specific_hydraulic_fluid_grade:{grade_label}"
+            if has_viscosity
+            else f"hydraulic_fluid_type_without_viscosity:{grade_label}"
+        ),
+        registry_key=f"hydraulic_fluid_{_normalize_lookup_token(grade_label).replace(' ', '_')}",
+        matched_alias=grade_label,
+        followup_question=None
+        if has_viscosity
+        else "Welche ISO-VG-Klasse oder Viskosität hat das Hydraulikmedium?",
+    )
+
+
+_REGISTRY: tuple[MediumRegistryEntry, ...] = (
+    MediumRegistryEntry(
+        registry_key="salzwasser",
+        canonical_label="Salzwasser",
+        family="waessrig_salzhaltig",
+        aliases=("salzwasser",),
+    ),
+    MediumRegistryEntry(
+        registry_key="meerwasser",
+        canonical_label="Meerwasser",
+        family="waessrig_salzhaltig",
+        aliases=("meerwasser", "seewasser"),
+    ),
+    MediumRegistryEntry(
+        registry_key="wasser",
+        canonical_label="Wasser",
+        family="waessrig",
+        aliases=("wasser", "water", "reinwasser"),
+    ),
+    MediumRegistryEntry(
+        registry_key="glykol",
+        canonical_label="Glykol",
+        family="waessrig",
+        aliases=("glykol", "glycol"),
+        mapping_confidence="estimated",
+        classification_confidence="medium",
+        mapping_reason="glycol_family:Wasser-Glykol-Anteil und Konzentration klaeren",
+    ),
+    MediumRegistryEntry(
+        registry_key="oel",
+        canonical_label="Öl",
+        family="oelhaltig",
+        aliases=(
+            "öl",
+            "oel",
+            "oil",
+            "mineralöl",
+            "mineraloel",
+        ),
+        mapping_confidence="estimated",
+        classification_confidence="medium",
+        mapping_reason="generic_oil:Öltyp nicht spezifiziert — HLP/HEES/VG klären",
+        followup_question="Welcher Öltyp liegt genau an?",
+    ),
+    MediumRegistryEntry(
+        registry_key="hydraulikoel",
+        canonical_label="Hydrauliköl",
+        family="oelhaltig",
+        aliases=("hydrauliköl", "hydraulikoel", "hydraulikfluid", "hlp", "hvlp"),
+        mapping_confidence="estimated",
+        classification_confidence="medium",
+        mapping_reason="hydraulic_oil_family:Hydrauliköltyp, Basisöl und ISO-VG klären",
+        followup_question="Welcher Hydrauliköltyp liegt genau an, zum Beispiel HLP, HVLP, HEES oder eine ISO-VG-Klasse?",
+    ),
+    MediumRegistryEntry(
+        registry_key="getriebeoel",
+        canonical_label="Getriebeöl",
+        family="oelhaltig",
+        aliases=("getriebeöl", "getriebeoel", "gear oil"),
+        mapping_confidence="estimated",
+        classification_confidence="medium",
+        mapping_reason="gear_oil_family:Getriebeöltyp, Additivierung und Viskosität klären",
+        followup_question="Welcher Getriebeöltyp liegt genau an, inklusive Viskosität und Additivierung?",
+    ),
+    MediumRegistryEntry(
+        registry_key="bio_oel",
+        canonical_label="Bio-Öl",
+        family="oelhaltig",
+        aliases=("bio-öl", "bio-oel", "hees"),
+        mapping_confidence="estimated",
+        classification_confidence="medium",
+        mapping_reason="bio_oil_family:Öltyp und Basis genauer einordnen",
+        followup_question="Welcher Öltyp liegt genau an?",
+    ),
+    MediumRegistryEntry(
+        registry_key="bio_oel_trade",
+        canonical_label="Bio-Öl",
+        family="oelhaltig",
+        aliases=("ester", "panolin"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="trade_name_ambiguous:panolin_ester — Typ bestaetigen",
+        followup_question="Welcher Öltyp liegt genau an?",
+    ),
+    MediumRegistryEntry(
+        registry_key="ethanol",
+        canonical_label="Ethanol",
+        family="loesemittelhaltig",
+        aliases=("ethanol", "ethylalkohol", "ethyl alcohol"),
+        mapping_confidence="confirmed",
+        classification_confidence="high",
+        mapping_reason="specific_medium:ethanol",
+    ),
+    MediumRegistryEntry(
+        registry_key="kraftstoff",
+        canonical_label="Kraftstoff",
+        family="oelhaltig",
+        aliases=("kraftstoff", "diesel", "benzin"),
+        mapping_confidence="estimated",
+        classification_confidence="medium",
+        mapping_reason="fuel_family:Kraftstofftyp genauer klaeren",
+    ),
+    MediumRegistryEntry(
+        registry_key="luft",
+        canonical_label="Luft",
+        family="gasfoermig",
+        aliases=("luft", "air"),
+    ),
+    MediumRegistryEntry(
+        registry_key="druckluft",
+        canonical_label="Druckluft",
+        family="gasfoermig",
+        aliases=("druckluft", "compressed air"),
+    ),
+    MediumRegistryEntry(
+        registry_key="stickstoff",
+        canonical_label="Stickstoff",
+        family="gasfoermig",
+        aliases=("stickstoff", "nitrogen"),
+    ),
+    MediumRegistryEntry(
+        registry_key="sauerstoff",
+        canonical_label="Sauerstoff",
+        family="gasfoermig",
+        aliases=("sauerstoff", "oxygen"),
+    ),
+    MediumRegistryEntry(
+        registry_key="dampf",
+        canonical_label="Dampf",
+        family="dampffoermig",
+        aliases=("dampf", "steam", "heißdampf", "heissdampf"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        normalization_source="deterministic_alias_map",
+        mapping_reason=(
+            "medium_ambiguous:Dampf — Sattdampf vs. Heißdampf unklar; "
+            "Betriebstemperatur und -druck erforderlich"
+        ),
+        followup_question="Handelt es sich um Sattdampf oder Heißdampf, und in welchem Druck- und Temperaturbereich arbeiten Sie?",
+    ),
+    MediumRegistryEntry(
+        registry_key="saeure",
+        canonical_label="Säure",
+        family="chemisch_aggressiv",
+        aliases=("säure", "saeure", "acid"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="medium_ambiguous:Säure — Konzentration, Typ und Temperatur erforderlich",
+        followup_question="Um welche Säure handelt es sich genau, in welcher Konzentration und bei welcher Temperatur?",
+    ),
+    MediumRegistryEntry(
+        registry_key="salzsaeure",
+        canonical_label="Salzsäure",
+        family="chemisch_aggressiv",
+        aliases=("salzsäure", "salzsaeure", "hcl", "hydrochloric acid"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="acid_specific_but_condition_dependent:Salzsäure — Konzentration, Temperatur und Verunreinigungen erforderlich",
+        followup_question="Welche Salzsäure-Konzentration liegt an, bei welcher Temperatur und mit welcher Kontaktzeit?",
+    ),
+    MediumRegistryEntry(
+        registry_key="lauge",
+        canonical_label="Lauge",
+        family="chemisch_aggressiv",
+        aliases=("lauge",),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="medium_ambiguous:Lauge — Konzentration und NaOH/KOH-Typ erforderlich",
+        followup_question="Welche Lauge liegt an, in welcher Konzentration und bei welcher Temperatur?",
+    ),
+    MediumRegistryEntry(
+        registry_key="natronlauge",
+        canonical_label="Natronlauge",
+        family="chemisch_aggressiv",
+        aliases=("natronlauge", "naoh"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="medium_ambiguous:Natronlauge — Konzentration und Temperatur erforderlich",
+        followup_question="Welche Natronlauge-Konzentration liegt an und bei welcher Temperatur?",
+    ),
+    MediumRegistryEntry(
+        registry_key="loesungsmittel",
+        canonical_label="Lösungsmittel",
+        family="loesemittelhaltig",
+        aliases=("lösungsmittel", "loesungsmittel", "solvent"),
+        mapping_confidence="requires_confirmation",
+        classification_confidence="medium",
+        mapping_reason="medium_ambiguous:Lösungsmittel — Typ erforderlich",
+        followup_question="Welches Lösungsmittel liegt genau an?",
+    ),
+)
+
+_EXACT_ALIAS_MAP: dict[str, tuple[MediumRegistryEntry, str]] = {}
+for _entry in _REGISTRY:
+    for _alias in _entry.aliases:
+        _EXACT_ALIAS_MAP.setdefault(_normalize_lookup_token(_alias), (_entry, _alias))
+    _EXACT_ALIAS_MAP.setdefault(
+        _normalize_lookup_token(_entry.canonical_label),
+        (_entry, _entry.canonical_label),
+    )
+
+_ALIAS_PATTERNS: list[tuple[re.Pattern[str], str]] = []
+for _alias_key, (_entry, _alias) in sorted(
+    _EXACT_ALIAS_MAP.items(),
+    key=lambda item: len(item[0]),
+    reverse=True,
+):
+    pattern = re.compile(rf"(?<!\w){re.escape(_alias_key)}(?!\w)", re.IGNORECASE)
+    _ALIAS_PATTERNS.append((pattern, _alias))
+
+_FAMILY_HINTS: tuple[tuple[re.Pattern[str], MediumFamily, str], ...] = (
+    (
+        re.compile(r"\b(?:alkalisch\w*|reinigungsloesung|reinigungsmittel|cleaner)\b", re.IGNORECASE),
+        "chemisch_aggressiv",
+        "deterministic_family_hint:alkalisch_reinigend",
+    ),
+    (
+        re.compile(r"\b(?:loesung|lösung|dispersion)\b", re.IGNORECASE),
+        "waessrig",
+        "deterministic_family_hint:solution_like",
+    ),
+    (
+        re.compile(r"\b(?:saeurehaltig|säurehaltig|salzsaeure|salzsäure|hcl|korrosiv)\b", re.IGNORECASE),
+        "chemisch_aggressiv",
+        "deterministic_family_hint:corrosive",
+    ),
+    (
+        re.compile(r"\b(?:partikel|schlamm|slurry)\b", re.IGNORECASE),
+        "partikelhaltig",
+        "deterministic_family_hint:particle_loaded",
+    ),
+)
+
+_CAPTURE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\bmedium(?:\s+(?:ist|is|=|:))?\s+([a-z0-9äöüß+\-./]+(?:\s+[a-z0-9äöüß+\-./]+){0,3})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bes geht um\s+([a-z0-9äöüß+\-./]+(?:\s+[a-z0-9äöüß+\-./]+){0,3})",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:muss|soll|moechte|möchte)\s+([a-z0-9äöüß+\-./]+(?:\s+[a-z0-9äöüß+\-./]+){0,3})\s+(?:abgedichtet|abdichten|getrennt|trennen|gefoerdert|gefördert|foerdern|fördern)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def medium_registry_entries() -> tuple[MediumRegistryEntry, ...]:
+    return _REGISTRY
+
+
+def normalize_medium_lookup_key(value: str | None) -> str | None:
+    key = _normalize_lookup_token(value)
+    return key or None
+
+
+def resolve_medium_entry(value: str | None) -> tuple[MediumRegistryEntry | None, str | None]:
+    key = normalize_medium_lookup_key(value)
+    if not key:
+        return None, None
+    return _EXACT_ALIAS_MAP.get(key, (None, None))
+
+
+def extract_medium_mentions(text: str | None) -> MediumCaptureDecision:
+    message = str(text or "").strip()
+    if not message:
+        return MediumCaptureDecision(raw_mentions=(), primary_raw_text=None)
+
+    normalized_message = _normalize_lookup_token(message)
+    mentions: list[str] = []
+
+    hydraulic_grade = _hydraulic_fluid_grade_label(message)
+    if hydraulic_grade:
+        mentions.append(hydraulic_grade)
+
+    for pattern, alias in _ALIAS_PATTERNS:
+        if pattern.search(normalized_message):
+            mentions.append(alias)
+
+    for pattern in _CAPTURE_PATTERNS:
+        match = pattern.search(message)
+        if not match:
+            continue
+        candidate = str(match.group(1) or "").strip(" ,.;:")
+        if candidate and not is_medium_placeholder_value(candidate):
+            mentions.append(candidate)
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for mention in mentions:
+        normalized = _normalize_lookup_token(mention)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(mention.strip())
+
+    return MediumCaptureDecision(
+        raw_mentions=tuple(unique),
+        primary_raw_text=unique[0] if unique else None,
+    )
+
+
+def classify_medium_value(value: str | None) -> MediumClassificationDecision:
+    text = str(value or "").strip()
+    if not text or is_medium_placeholder_value(text):
+        return MediumClassificationDecision(
+            raw_text=text or None,
+            canonical_label=None,
+            family="unknown",
+            status="unavailable",
+            confidence="low",
+            normalization_source=None,
+            mapping_confidence="requires_confirmation",
+            mapping_reason="medium_placeholder_or_unknown" if text else None,
+            followup_question="Welches Medium liegt an der Dichtung an?" if text else None,
+        )
+
+    normalized = _normalize_lookup_token(text)
+    if normalized in {"chlor", "chlorine"}:
+        return MediumClassificationDecision(
+            raw_text=text,
+            canonical_label="Chlor",
+            family="chemisch_aggressiv",
+            status="recognized",
+            confidence="medium",
+            normalization_source="deterministic_contextual_medium",
+            mapping_confidence="requires_confirmation",
+            mapping_reason="chlorine_form_ambiguous:Chlorgas/Chlorwasser/Hypochlorit klaeren",
+            registry_key="chlor_contextual",
+            matched_alias=normalized,
+            followup_question=(
+                "Geht es um Chlorgas, Chlorwasser, Natriumhypochlorit/Chlorbleichlauge "
+                "oder ein chlorhaltiges Reinigungsmedium?"
+            ),
+        )
+
+    hydraulic_grade = _classify_hydraulic_fluid_grade(text)
+    if hydraulic_grade is not None:
+        return hydraulic_grade
+
+    entry, matched_alias = resolve_medium_entry(text)
+    if entry is not None:
+        return MediumClassificationDecision(
+            raw_text=text,
+            canonical_label=entry.canonical_label,
+            family=entry.family,
+            status="recognized",
+            confidence=entry.classification_confidence,
+            normalization_source=entry.normalization_source,
+            mapping_confidence=entry.mapping_confidence,
+            mapping_reason=entry.mapping_reason,
+            registry_key=entry.registry_key,
+            matched_alias=matched_alias,
+            followup_question=entry.followup_question,
+        )
+
+    normalized = _normalize_lookup_token(text)
+    for pattern, family, source in _FAMILY_HINTS:
+        if pattern.search(normalized):
+            return MediumClassificationDecision(
+                raw_text=text,
+                canonical_label=None,
+                family=family,
+                status="family_only",
+                confidence="medium",
+                normalization_source=source,
+                mapping_confidence="requires_confirmation",
+                mapping_reason=f"{source}:exact_medium_unresolved",
+            )
+
+    return MediumClassificationDecision(
+        raw_text=text,
+        canonical_label=None,
+        family="unknown",
+        status="mentioned_unclassified",
+        confidence="low",
+        normalization_source="deterministic_capture_only",
+        mapping_confidence="requires_confirmation",
+        mapping_reason="medium_capture_without_classification",
+    )
+
+
+def classify_medium_text(text: str | None) -> tuple[MediumCaptureDecision, MediumClassificationDecision]:
+    capture = extract_medium_mentions(text)
+    classification = classify_medium_value(capture.primary_raw_text)
+    return capture, classification

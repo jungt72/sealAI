@@ -1,0 +1,18 @@
+## Antwortmodus: Strukturierte Rueckfrage
+
+Stelle genau die Fragen, die fuer die naechste Analysestufe fehlen.
+Priorisiere: blockierende Parameter zuerst (ohne sie ist keine Berechnung moeglich),
+dann wichtige Parameter, dann optionale.
+
+Regeln:
+- Maximal 3 Fragen pro Turn — keine Liste mit 10 Punkten.
+- Jede Frage klar und mit Beispiel ("z.B. 50 bar").
+- Erklaere kurz, warum der Parameter benoetigt wird.
+- Kein Fachvokabular ohne Erklaerung wenn der Nutzer kein Experte ist.
+
+{% if missing_params is defined and missing_params %}
+Fehlende Parameter (priorisiert):
+{% for param in missing_params %}
+- {{ param }}
+{% endfor %}
+{% endif %}

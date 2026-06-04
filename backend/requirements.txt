@@ -4,8 +4,8 @@
 # Architektur:
 # - Async FastAPI Runtime (asyncpg)
 # - LangGraph v2 (Redis Checkpoint, Supervisor)
-# - RAG via Qdrant (Single-Collection, tenant-scoped)
-# - Alembic mit *sync* DB-Driver (psycopg2) für Migrationen
+# - RAG via Qdrant (Single‑Collection, tenant‑scoped)
+# - Alembic mit *sync* DB‑Driver (psycopg2) für Migrationen
 #
 # Prinzipien:
 # - Reproduzierbare Builds (strict pinning)
@@ -16,46 +16,46 @@
 # =============================================================================
 # Web Framework / Runtime
 # =============================================================================
-fastapi==0.128.0
+fastapi==0.135.3
 starlette==0.50.0
-uvicorn[standard]==0.40.0
+uvicorn[standard]==0.43.0
 websockets==16.0
 
 httpx==0.28.1
 httpcore==1.0.9
-anyio==4.12.1
+anyio==4.13.0
 
-orjson==3.11.5
-python-dotenv==1.2.1
+orjson==3.11.8
+python-dotenv==1.2.2
 PyYAML==6.0.3
 
 pydantic==2.12.5
 pydantic-core==2.41.5
-pydantic-settings==2.12.0
+pydantic-settings==2.13.1
 typing-extensions==4.15.0
-tenacity==9.1.2
+tenacity==9.1.4
 
 # =============================================================================
 # OpenAI / Tokenization
 # =============================================================================
-openai==2.23.0
+openai==2.30.0
 tiktoken==0.12.0
 
 # =============================================================================
 # LangChain / LangGraph (v2)
 # =============================================================================
-langchain==1.2.10
-langchain-core==1.2.15
+langchain==1.2.15
+langchain-core==1.2.26
 langchain-community==0.4.1
-langchain-openai==1.1.10
+langchain-openai==1.1.12
 langchain-text-splitters==1.1.1
 langchain-qdrant==1.1.0
-langsmith==0.7.6
+langsmith==0.7.25
 
 # LangGraph v2 Core
-langgraph==1.0.9
-langgraph-checkpoint==3.0.1
-langgraph-checkpoint-redis==0.3.5
+langgraph==1.1.6
+langgraph-checkpoint==4.0.1
+langgraph-checkpoint-redis==0.4.0
 langgraph-supervisor==0.0.31
 
 # Optional – nur aktivieren, wenn explizit importiert
@@ -65,42 +65,42 @@ langgraph-supervisor==0.0.31
 # =============================================================================
 # Vector DB / Retrieval
 # =============================================================================
-qdrant-client==1.16.2
-redis==7.1.0
+qdrant-client==1.17.1
+redis==7.4.0
 
 # Lokale Embeddings (RAG Ingest & Query)
-fastembed==0.7.4
-onnxruntime==1.23.2
-numpy==2.3.4
+fastembed==0.8.0
+onnxruntime==1.24.4
+numpy==2.4.4
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.8.0+cpu
-sentence-transformers==5.1.2
+torch==2.11.0+cpu
+sentence-transformers==5.3.0
 
 # =============================================================================
 # Datenbanken
 # =============================================================================
-SQLAlchemy==2.0.46
-alembic==1.18.1
+SQLAlchemy==2.0.49
+alembic==1.18.4
 
 # Async Runtime DB Driver (App)
-asyncpg==0.31.0     # postgresql+asyncpg://
+asyncpg==0.31.0
 
 # Sync DB Driver (Alembic / Migrations ONLY)
-psycopg2-binary==2.9.11   # postgresql+psycopg2://
+psycopg2-binary==2.9.11
 
 # =============================================================================
 # Auth / Security
 # =============================================================================
-python-keycloak==7.0.3
+python-keycloak==7.1.1
 python-jose[cryptography]==3.5.0
-cryptography==46.0.4
+cryptography==46.0.6
 
 # =============================================================================
 # Logging / Observability
 # =============================================================================
 structlog==25.5.0
-prometheus-client==0.19.0
-prometheus-fastapi-instrumentator==6.1.0
+prometheus-client==0.24.1
+prometheus-fastapi-instrumentator==7.1.0
 
 # =============================================================================
 # Prompting / Templates
@@ -110,10 +110,10 @@ Jinja2==3.1.6
 # =============================================================================
 # File Parsing / RAG Ingestion
 # =============================================================================
-python-multipart==0.0.22   # FastAPI Uploads
+python-multipart==0.0.22
 docx2txt==0.9
 python-docx==1.2.0
-pypdf==5.6.0
+pypdf==6.9.2
 
 ###############################################################################
 # Hinweise:
@@ -121,5 +121,5 @@ pypdf==5.6.0
 # - Runtime nutzt DATABASE_URL (asyncpg)
 ###############################################################################
 nest_asyncio==1.6.0
-psycopg-pool
-psycopg[binary]
+psycopg-pool==3.3.0
+psycopg[binary]==3.3.3

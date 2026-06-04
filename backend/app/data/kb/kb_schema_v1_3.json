@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealai.local/kb_schema_v1_3.json",
+  "title": "SealAI PTFE KB Schema v1.3",
+  "type": "object",
+  "required": ["schema_version", "sources", "factcards"],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "doc": {
+      "type": "object"
+    },
+    "runtime_policy": {
+      "type": "object"
+    },
+    "gates": {
+      "type": "array"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/sourceEntry"
+      }
+    },
+    "factcards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/factcard"
+      }
+    }
+  },
+  "$defs": {
+    "scopeList": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ]
+    },
+    "sourceEntry": {
+      "type": "object",
+      "required": ["title", "url", "type", "rank"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "edition": {
+          "type": "string"
+        },
+        "clause": {
+          "type": "string"
+        },
+        "revision_date": {
+          "type": "string",
+          "minLength": 4
+        },
+        "published_at": {
+          "type": "string",
+          "minLength": 4
+        },
+        "edition_year": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1900,
+              "maximum": 2100
+            },
+            {
+              "type": "string",
+              "pattern": "^(19|20)\\d{2}$"
+            }
+          ]
+        },
+        "document_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manufacturer_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_line": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grade_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "material_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_scope": {
+          "$ref": "#/$defs/scopeList"
+        },
+        "scope_of_validity": {
+          "$ref": "#/$defs/scopeList"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "manufacturer_datasheet"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["manufacturer_name", "material_family"],
+            "anyOf": [
+              {
+                "required": ["revision_date"]
+              },
+              {
+                "required": ["published_at"]
+              },
+              {
+                "required": ["edition_year"]
+              },
+              {
+                "required": ["document_revision"]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "factcardMetadata": {
+      "type": "object",
+      "properties": {
+        "material_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grade_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manufacturer_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_line": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision_date": {
+          "type": "string",
+          "minLength": 4
+        },
+        "published_at": {
+          "type": "string",
+          "minLength": 4
+        },
+        "edition_year": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1900,
+              "maximum": 2100
+            },
+            {
+              "type": "string",
+              "pattern": "^(19|20)\\d{2}$"
+            }
+          ]
+        },
+        "document_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_scope": {
+          "$ref": "#/$defs/scopeList"
+        },
+        "scope_of_validity": {
+          "$ref": "#/$defs/scopeList"
+        }
+      },
+      "additionalProperties": true
+    },
+    "factcard": {
+      "type": "object",
+      "required": ["id", "source", "source_type", "source_rank", "topic"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1
+        },
+        "property": {
+          "type": "string"
+        },
+        "conditions": {},
+        "value": {},
+        "units": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "do_not_infer": {
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/factcardMetadata"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

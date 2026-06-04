@@ -424,7 +424,7 @@ class TestMaterialProfiles:
 
 class TestToolWrapper:
     def test_tool_returns_json_string(self):
-        from app.agent.agent.tools import calculate_rwdr_specifications
+        from app.agent.graph.tools import calculate_rwdr_specifications
         result = calculate_rwdr_specifications.invoke({
             "shaft_diameter_mm": 80.0,
             "rpm": 1450.0,
@@ -436,7 +436,7 @@ class TestToolWrapper:
 
     def test_tool_all_optional_params_none(self):
         """Calling with only required params must not crash."""
-        from app.agent.agent.tools import calculate_rwdr_specifications
+        from app.agent.graph.tools import calculate_rwdr_specifications
         result = calculate_rwdr_specifications.invoke({
             "shaft_diameter_mm": 50.0,
             "rpm": 1000.0,
@@ -446,7 +446,7 @@ class TestToolWrapper:
 
     def test_tool_full_params(self):
         """Full parameter set must work end-to-end."""
-        from app.agent.agent.tools import calculate_rwdr_specifications
+        from app.agent.graph.tools import calculate_rwdr_specifications
         result = calculate_rwdr_specifications.invoke({
             "shaft_diameter_mm": 80.0,
             "rpm": 1450.0,
@@ -469,7 +469,7 @@ class TestToolWrapper:
 
     def test_tool_registered_in_reasoning_node(self):
         """calculate_rwdr_specifications must be importable from tools and in tools list."""
-        from app.agent.agent.tools import calculate_rwdr_specifications, submit_claim
+        from app.agent.graph.tools import calculate_rwdr_specifications, submit_claim
         from langchain_core.tools import BaseTool
         assert isinstance(calculate_rwdr_specifications, BaseTool)
         assert calculate_rwdr_specifications.name == "calculate_rwdr_specifications"
@@ -498,3 +498,74 @@ class TestDataClasses:
         assert hasattr(result, "extrusion_risk")
         assert hasattr(result, "geometry_warning")
         assert hasattr(result, "shrinkage_risk")
+
+
+# ---------------------------------------------------------------------------
+# Phase 1A — PATCH 3: Dn-Wert tests
+# ---------------------------------------------------------------------------
+
+class TestDnValue:
+    """Dn = d × n [mm·min⁻¹] — CLAUDE.md spec: Dn > 500 000 → WARN_HIGH_DN."""
+
+    def test_dn_formula(self):
+        """Dn = diameter_mm × rpm — exact value check."""
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"shaft_diameter": 100.0, "speed_rpm": 3000.0})
+        assert result["dn_value"] == pytest.approx(300_000.0)
+
+    def test_dn_none_when_diameter_missing(self):
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"speed_rpm": 3000.0})
+        assert result["dn_value"] is None
+        assert result["dn_warning"] is False
+
+    def test_dn_none_when_rpm_missing(self):
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"shaft_diameter": 100.0})
+        assert result["dn_value"] is None
+        assert result["dn_warning"] is False
+
+    def test_dn_below_threshold_no_warning(self):
+        """Dn = 100 × 3000 = 300 000 < 500 000 → no warning."""
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"shaft_diameter": 100.0, "speed_rpm": 3000.0})
+        assert result["dn_warning"] is False
+
+    def test_dn_at_threshold_boundary_no_warning(self):
+        """Dn exactly at 500 000 is NOT above threshold → no warning."""
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"shaft_diameter": 500.0, "speed_rpm": 1000.0})
+        assert result["dn_value"] == pytest.approx(500_000.0)
+        assert result["dn_warning"] is False
+
+    def test_dn_above_threshold_fires_warning(self):
+        """Dn = 200 × 3000 = 600 000 > 500 000 → warning."""
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"shaft_diameter": 200.0, "speed_rpm": 3000.0})
+        assert result["dn_warning"] is True
+
+    def test_dn_warning_adds_note(self):
+        """Dn warning must produce a German-language note in the notes list."""
+        from app.agent.domain.rwdr_calc import calc_tribology
+        result = calc_tribology({"shaft_diameter": 200.0, "speed_rpm": 3000.0})
+        dn_notes = [n for n in result["notes"] if "Dn" in n or "600" in n]
+        assert len(dn_notes) >= 1, "Dn warning must produce a note"
+
+    def test_dn_warning_propagates_to_calculate_rwdr_status(self):
+        """Dn warning must cause overall status to be 'warning' (not 'ok')."""
+        result = calculate_rwdr(RwdrCalcInput(shaft_diameter_mm=200.0, rpm=3000.0))
+        assert result.dn_warning is True
+        assert result.status in ("warning", "critical"), (
+            "Dn warning must prevent status=='ok'"
+        )
+
+    def test_dn_value_in_rwdr_calc_result(self):
+        """calculate_rwdr must expose dn_value in the typed result."""
+        result = calculate_rwdr(RwdrCalcInput(shaft_diameter_mm=50.0, rpm=3000.0))
+        assert result.dn_value == pytest.approx(150_000.0)
+
+    def test_dn_no_regression_v_surface_still_correct(self):
+        """Adding Dn must not change v_surface_m_s calculation."""
+        result = calculate_rwdr(RwdrCalcInput(shaft_diameter_mm=50.0, rpm=3000.0))
+        expected_v = (50.0 * math.pi * 3000.0) / 60000.0
+        assert result.v_surface_m_s == pytest.approx(expected_v, rel=1e-6)

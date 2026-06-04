@@ -6,7 +6,7 @@ require() { command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2;
 require curl
 require awk
 
-BASE_URL="${NGINX_BASE_URL:-https://sealai.net}"
+BASE_URL="${NGINX_BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"
 CHAT_ID="${CHAT_ID:-param-sync-$(date +%s)}"
 INPUT_TEXT="${INPUT_TEXT:-Param sync SSE check}"

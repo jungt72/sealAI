@@ -3,7 +3,13 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: sealai-backend
+  - job_name: "sealai-backend"
+    metrics_path: /metrics
     static_configs:
       - targets: ["backend:8000"]
-    metrics_path: /metrics
+
+# Current stack note:
+# - backend exposes /metrics when ENABLE_METRICS=true (set in docker-compose.yml)
+# - qdrant/redis exporter scrape targets from the target architecture are not
+#   added here yet because they are not provisioned as stable metrics endpoints
+#   in the current compose stack

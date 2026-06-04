@@ -1,0 +1,100 @@
+{
+  "STS-OPEN-001": {
+    "canonical_name": "Wellendurchmesser nicht spezifiziert",
+    "category": "geometry",
+    "severity": "blocking",
+    "description": "Ohne Wellendurchmesser kann keine PV-Berechnung oder Groessenauswahl erfolgen.",
+    "affected_calculations": ["pv_value", "velocity", "seal_size"],
+    "typical_question": "Wie gross ist der Wellendurchmesser an der Dichtstelle (in mm)?"
+  },
+  "STS-OPEN-002": {
+    "canonical_name": "Betriebsdruck nicht spezifiziert",
+    "category": "operating_condition",
+    "severity": "blocking",
+    "description": "Druckangabe fehlt. Fuer Gleitringdichtungen und Requirement-Class-Bestimmung notwendig.",
+    "affected_calculations": ["requirement_class", "seal_type_selection"],
+    "typical_question": "Wie hoch ist der Betriebsdruck am Dichtungssitz (in bar)?"
+  },
+  "STS-OPEN-003": {
+    "canonical_name": "Betriebstemperatur nicht spezifiziert",
+    "category": "operating_condition",
+    "severity": "blocking",
+    "description": "Temperaturangabe fehlt. Entscheidend fuer Materialauswahl und Grenzwertpruefung.",
+    "affected_calculations": ["material_suitability", "requirement_class"],
+    "typical_question": "Wie hoch ist die Betriebstemperatur des Mediums (in Grad C)?"
+  },
+  "STS-OPEN-004": {
+    "canonical_name": "Medium nicht identifiziert",
+    "category": "medium",
+    "severity": "blocking",
+    "description": "Das abzudichtende Medium ist unbekannt. Materialvertraeglichkeit nicht pruefbar.",
+    "affected_calculations": ["material_suitability", "requirement_class", "norm_selection"],
+    "typical_question": "Welches Medium wird abgedichtet (z.B. Wasser, Oel, Saeure, Dampf)?"
+  },
+  "STS-OPEN-005": {
+    "canonical_name": "Drehzahl nicht spezifiziert",
+    "category": "operating_condition",
+    "severity": "blocking",
+    "description": "Drehzahlangabe fehlt. Notwendig fuer PV-Berechnung und Dichtungstypauswahl.",
+    "affected_calculations": ["pv_value", "velocity", "seal_type_selection"],
+    "typical_question": "Mit welcher Drehzahl laeuft die Welle (in U/min)?"
+  },
+  "STS-OPEN-006": {
+    "canonical_name": "Druckspitzen unklar",
+    "category": "operating_condition",
+    "severity": "important",
+    "description": "Angaben zu Druckspitzen oder Druckwechseln fehlen. Relevant fuer Dichtungsauslegung.",
+    "affected_calculations": ["requirement_class", "safety_factor"],
+    "typical_question": "Treten Druckspitzen oder -schwankungen auf? Falls ja, wie hoch und wie haeufig?"
+  },
+  "STS-OPEN-007": {
+    "canonical_name": "Einbausituation unklar",
+    "category": "geometry",
+    "severity": "important",
+    "description": "Die Einbausituation (horizontal/vertikal, Platz, Zugaenglichkeit) ist nicht beschrieben.",
+    "affected_calculations": ["seal_type_selection"],
+    "typical_question": "Ist die Welle horizontal oder vertikal eingebaut? Wie viel Einbauraum steht zur Verfuegung?"
+  },
+  "STS-OPEN-008": {
+    "canonical_name": "Leckagetoleranz nicht definiert",
+    "category": "requirement",
+    "severity": "important",
+    "description": "Zuleassige Leckage nicht spezifiziert. Entscheidend fuer Wahl zwischen Einfach-/Doppeldichtung.",
+    "affected_calculations": ["seal_type_selection", "flush_plan"],
+    "typical_question": "Ist eine sichtbare Leckage akzeptabel oder muss die Dichtung technisch leckagefrei sein?"
+  },
+  "STS-OPEN-009": {
+    "canonical_name": "Mediumkonzentration unklar",
+    "category": "medium",
+    "severity": "important",
+    "description": "Konzentration des Mediums (z.B. Saeure-Prozent) nicht angegeben. Beeinflusst Materialauswahl.",
+    "affected_calculations": ["material_suitability"],
+    "typical_question": "Welche Konzentration hat das Medium (z.B. 20% NaOH, 98% H2SO4)?"
+  },
+  "STS-OPEN-010": {
+    "canonical_name": "Feststoffgehalt im Medium unklar",
+    "category": "medium",
+    "severity": "important",
+    "description": "Feststoffanteil oder Abrasivitaet des Mediums nicht bekannt. Kritisch fuer Gleitflaechenverschleiss.",
+    "affected_calculations": ["material_suitability", "seal_type_selection"],
+    "typical_question": "Enthaelt das Medium Feststoffe oder abrasive Partikel? Falls ja, welche Groesse und Konzentration?"
+  },
+  "STS-OPEN-011": {
+    "canonical_name": "ATEX-Zone nicht spezifiziert",
+    "category": "requirement",
+    "severity": "conditional",
+    "condition": "Einsatz in potentiell explosionsgefaehrdeter Umgebung",
+    "description": "Explosionsschutzzone nicht angegeben. Bestimmt Zuendschutzart und Temperaturklasse.",
+    "affected_calculations": ["requirement_class", "norm_selection"],
+    "typical_question": "In welcher ATEX-Zone befindet sich die Anlage (Zone 0, 1 oder 2)?"
+  },
+  "STS-OPEN-012": {
+    "canonical_name": "Hygienestandard nicht spezifiziert",
+    "category": "requirement",
+    "severity": "conditional",
+    "condition": "Einsatz in Lebensmittel-/Pharma-Umgebung",
+    "description": "Erforderliche Hygienezulassungen unklar (FDA, EHEDG, 3-A). Beeinflusst Material- und Bauformauswahl.",
+    "affected_calculations": ["material_suitability", "requirement_class"],
+    "typical_question": "Welche Hygienezulassungen werden benoetigt (z.B. FDA, EHEDG, EG 1935/2004)?"
+  }
+}

@@ -1,0 +1,7 @@
+[Unit]
+Description=SealAI SEO monthly DataForSEO keyword refresh
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/thorsten/sealai
+ExecStart=/home/thorsten/sealai/seo/scripts/run_dataforseo_keyword_refresh.sh

@@ -1,5 +1,5 @@
 import pytest
-from app.agent.agent.sync import sync_working_profile_to_state
+from app.agent.state.sync import sync_working_profile_to_state
 
 def test_sync_no_longer_writes_upstream():
     """

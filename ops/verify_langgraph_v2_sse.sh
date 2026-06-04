@@ -24,7 +24,7 @@ if [[ "$dot_count" -ne 2 ]]; then
   exit 2
 fi
 
-NGINX_BASE_URL="${NGINX_BASE_URL:-https://sealai.net}"
+NGINX_BASE_URL="${NGINX_BASE_URL:-https://sealingai.com}"
 BACKEND_BASE_URL="${BACKEND_BASE_URL:-http://localhost:8000}"
 MAX_EVENTS="${MAX_EVENTS:-5}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-25}"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import re
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,23 +27,43 @@ from app.services.rag.constants import (
 from app.core.config import settings
 from app.database import get_db
 from app.models.rag_document import RagDocument
-from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin
+from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin, require_tenant_id
 
 from app.services.rag.route_resolver import resolve_route_key
+from app.services.rag.material_evidence_dry_run import (
+    build_material_evidence_dry_run_report,
+    load_material_evidence_indexed_snippet_raw_items,
+)
 from app.services.rag.utils import (
-    ALLOWED_CT,
-    ALLOWED_EXT,
+    MAGIC_READ_BYTES,
     RAG_UPLOAD_MAX_BYTES,
     cleanup_upload_path,
     ensure_upload_directory,
     find_existing_document,
     normalize_tags,
+    redact_internal_paths,
     resolve_upload_dir,
+    safe_error_message,
     sanitize_filename,
+    validate_upload_signature,
 )
 
 router = APIRouter(prefix="/rag", tags=["rag"])
+internal_router = APIRouter(prefix="/internal/rag", tags=["rag-internal"])
 logger = structlog.get_logger("api.rag")
+
+
+def _request_tenant_id(current_user: RequestUser) -> str:
+    # P0-2: strict tenant scope for private RAG — missing claim is 401.
+    return require_tenant_id(current_user)
+
+
+def _material_evidence_dry_run_limit(limit: int) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = 25
+    return max(1, min(value, 100))
 
 
 async def _check_upload_rate_limit(tenant_id: str) -> None:
@@ -94,8 +115,68 @@ QDRANT_API_KEY = (os.getenv("QDRANT_API_KEY") or "").strip() or None
 QDRANT_COLLECTION = (os.getenv("QDRANT_COLLECTION") or "sealai_knowledge").strip()
 
 
-def _is_admin(user: RequestUser) -> bool:
-    return "admin" in (user.roles or [])
+async def _load_rag_document_for_user(
+    *,
+    session: AsyncSession,
+    document_id: str,
+    current_user: RequestUser,
+    allow_shared_admin: bool = False,
+) -> RagDocument | None:
+    request_tenant_id = _request_tenant_id(current_user)
+    result = await session.execute(
+        select(RagDocument)
+        .where(RagDocument.document_id == document_id)
+        .where(RagDocument.tenant_id == request_tenant_id)
+        .limit(1)
+    )
+    doc = result.scalar_one_or_none()
+    if doc is not None or not (allow_shared_admin and is_rag_admin(current_user)):
+        return doc
+    shared_result = await session.execute(
+        select(RagDocument)
+        .where(RagDocument.document_id == document_id)
+        .where(RagDocument.tenant_id == RAG_SHARED_TENANT_ID)
+        .limit(1)
+    )
+    return shared_result.scalar_one_or_none()
+
+
+async def _load_material_evidence_dry_run_documents(
+    *,
+    session: AsyncSession,
+    source_system: str,
+    route: str | None,
+    limit: int,
+) -> list[RagDocument]:
+    stmt = (
+        select(RagDocument)
+        .where(RagDocument.tenant_id == RAG_SHARED_TENANT_ID)
+        .where(RagDocument.enabled.is_not(False))
+        .where(RagDocument.source_system == source_system)
+    )
+    if route:
+        stmt = stmt.where(RagDocument.route_key == route)
+    stmt = stmt.order_by(RagDocument.updated_at.desc(), RagDocument.created_at.desc()).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+def _require_paperless_webhook_token(received_token: str | None) -> None:
+    expected = (getattr(settings, "paperless_webhook_token", None) or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail=error_detail("paperless_webhook_not_configured"),
+        )
+    if not received_token or not hmac.compare_digest(received_token, expected):
+        raise HTTPException(
+            status_code=403,
+            detail=error_detail("paperless_webhook_forbidden"),
+        )
+
+
+def _safe_backend_error_detail(code: str, exc: BaseException) -> dict[str, Any]:
+    return error_detail(code, reason=safe_error_message(exc))
 
 
 def _qdrant_client():
@@ -104,7 +185,7 @@ def _qdrant_client():
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail=error_detail("qdrant_client_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_client_unavailable", exc),
         ) from exc
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
@@ -115,7 +196,7 @@ def _qdrant_vector_count(*, tenant_id: str, document_id: str) -> int:
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail=error_detail("qdrant_models_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_models_unavailable", exc),
         ) from exc
     client = _qdrant_client()
     result = client.count(
@@ -143,7 +224,7 @@ def _qdrant_delete_document(*, tenant_id: str, document_id: str) -> None:
     except Exception as exc:
         raise HTTPException(
             status_code=503,
-            detail=error_detail("qdrant_models_unavailable", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_models_unavailable", exc),
         ) from exc
     client = _qdrant_client()
     client.delete(
@@ -164,6 +245,106 @@ def _qdrant_delete_document(*, tenant_id: str, document_id: str) -> None:
         ),
         wait=True,
     )
+
+
+def _extract_text_preview_for_delta(path: Path, *, limit: int = 12000) -> str:
+    try:
+        from app.services.rag.rag_ingest import load_document  # noqa: PLC0415
+
+        docs = load_document(str(path))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("document_delta_text_extraction_skipped", reason=safe_error_message(exc))
+        return ""
+    parts: list[str] = []
+    remaining = limit
+    for doc in docs:
+        content = str(getattr(doc, "page_content", "") or "").strip()
+        if not content:
+            continue
+        parts.append(content[:remaining])
+        remaining -= len(parts[-1])
+        if remaining <= 0:
+            break
+    return "\n\n".join(parts)
+
+
+async def _try_persist_document_delta_for_case(
+    *,
+    current_user: RequestUser,
+    case_id: str | None,
+    doc: RagDocument,
+    path: Path,
+) -> dict[str, Any] | None:
+    normalized_case_id = str(case_id or "").strip()
+    if not normalized_case_id:
+        return None
+    text_preview = _extract_text_preview_for_delta(path)
+    try:
+        from app.agent.api.loaders import (  # noqa: PLC0415
+            _load_live_governed_state,
+            _persist_live_governed_state,
+        )
+        from app.agent.api.utils import _with_case_event  # noqa: PLC0415
+        from app.agent.domain.case_delta import build_document_delta_event  # noqa: PLC0415
+        from app.agent.domain.document_delta import document_delta_from_text  # noqa: PLC0415
+
+        delta = document_delta_from_text(
+            text=text_preview,
+            filename=doc.filename,
+            category=doc.category,
+            tags=doc.tags or [],
+        )
+        if not delta.fields:
+            return {
+                "case_id": normalized_case_id,
+                "document_id": doc.document_id,
+                "status": "no_fields_detected",
+                "field_count": 0,
+                "fields": [],
+            }
+        governed = await _load_live_governed_state(
+            current_user=current_user,
+            session_id=normalized_case_id,
+            create_if_missing=True,
+        )
+        event = build_document_delta_event(
+            case_id=normalized_case_id,
+            document_id=doc.document_id,
+            filename=doc.filename,
+            delta=delta,
+            persistence_marker=governed.persistence_marker if governed else None,
+        )
+        updated = _with_case_event(governed, event=event) if governed else None
+        if updated is None:
+            return None
+        await _persist_live_governed_state(
+            current_user=current_user,
+            session_id=normalized_case_id,
+            state=updated,
+        )
+        return {
+            "case_id": normalized_case_id,
+            "document_id": doc.document_id,
+            "event_id": event.event_id,
+            "status": "proposed",
+            "field_count": len(delta.fields),
+            "fields": [field.model_dump(mode="json") for field in delta.fields],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "document_delta_persist_failed",
+            case_id=normalized_case_id,
+            document_id=doc.document_id,
+            reason=safe_error_message(exc),
+        )
+        return {
+            "case_id": normalized_case_id,
+            "document_id": doc.document_id,
+            "status": "error",
+            "error": "document_candidate_extraction_failed",
+            "field_count": 0,
+            "fields": [],
+        }
 @router.get("/health")
 async def rag_health() -> Dict[str, Any]:
     """Health check for the RAG subsystem."""
@@ -177,6 +358,7 @@ async def upload_rag_document(
     tags: Optional[str] = Form(default=None),
     visibility: str = Form(default="private"),
     scope: str = Form(default="tenant"),
+    case_id: Optional[str] = Form(default=None),
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -191,7 +373,7 @@ async def upload_rag_document(
         tenant_id = RAG_SHARED_TENANT_ID
         visibility = RAG_VISIBILITY_PUBLIC
     else:
-        tenant_id = current_user.user_id
+        tenant_id = _request_tenant_id(current_user)
 
     await _check_upload_rate_limit(tenant_id)
     if visibility not in ALLOWED_VISIBILITY:
@@ -200,16 +382,6 @@ async def upload_rag_document(
     document_id = uuid.uuid4().hex
     safe_name = sanitize_filename(file.filename or "")
     ext = Path(safe_name).suffix.lower()
-    if ext not in ALLOWED_EXT:
-        raise HTTPException(
-            status_code=415, detail=error_detail("unsupported_extension", extension=ext or None)
-        )
-    content_type = getattr(file, "content_type", None)
-    if content_type and content_type not in ALLOWED_CT:
-        raise HTTPException(
-            status_code=415,
-            detail=error_detail("unsupported_content_type", content_type=content_type),
-        )
     target_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=document_id)
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -228,12 +400,17 @@ async def upload_rag_document(
 
     digest = hashlib.sha256()
     byte_count = 0
+    signature_sample = b""
+    content_type = None
     with target_path.open("wb") as handle:
         while True:
             chunk = await file.read(1024 * 1024)
             if not chunk:
                 break
             byte_count += len(chunk)
+            if len(signature_sample) < MAGIC_READ_BYTES:
+                remaining = MAGIC_READ_BYTES - len(signature_sample)
+                signature_sample += chunk[:remaining]
             if byte_count > RAG_UPLOAD_MAX_BYTES:
                 await file.close()
                 try:
@@ -251,6 +428,15 @@ async def upload_rag_document(
             digest.update(chunk)
             handle.write(chunk)
     await file.close()
+    try:
+        content_type = validate_upload_signature(
+            extension=ext,
+            content_type=getattr(file, "content_type", None),
+            sample=signature_sample,
+        )
+    except HTTPException:
+        cleanup_upload_path(target_path)
+        raise
     sha256 = digest.hexdigest()
     try:
         size_bytes = target_path.stat().st_size
@@ -264,7 +450,17 @@ async def upload_rag_document(
     if existing_doc:
         if existing_doc.status not in {"failed", "error"}:
             cleanup_upload_path(target_path)
-            return {"document_id": existing_doc.document_id, "status": existing_doc.status}
+            document_delta = await _try_persist_document_delta_for_case(
+                current_user=current_user,
+                case_id=case_id,
+                doc=existing_doc,
+                path=Path(existing_doc.path),
+            )
+            return {
+                "document_id": existing_doc.document_id,
+                "status": existing_doc.status,
+                "document_delta": document_delta,
+            }
 
         retry_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=existing_doc.document_id)
         try:
@@ -302,11 +498,26 @@ async def upload_rag_document(
         existing_doc.tags = tags_list
         existing_doc.sha256 = sha256
         existing_doc.path = str(retry_path)
+        existing_doc.enabled = True
+        existing_doc.extraction_status = "candidate_extraction_pending" if case_id else (existing_doc.extraction_status or "not_extracted")
+        existing_doc.extracted_candidates = existing_doc.extracted_candidates or []
+        existing_doc.evidence_refs = existing_doc.evidence_refs or []
+        existing_doc.provenance = "documented"
         session.add(existing_doc)
         await session.commit()
         await session.refresh(existing_doc)
 
-        return {"document_id": existing_doc.document_id, "status": "processing"}
+        document_delta = await _try_persist_document_delta_for_case(
+            current_user=current_user,
+            case_id=case_id,
+            doc=existing_doc,
+            path=Path(existing_doc.path),
+        )
+        return {
+            "document_id": existing_doc.document_id,
+            "status": "processing",
+            "document_delta": document_delta,
+        }
 
     doc = RagDocument(
         document_id=document_id,
@@ -322,17 +533,29 @@ async def upload_rag_document(
         tags=tags_list,
         sha256=sha256,
         path=str(target_path),
+        extraction_status="candidate_extraction_pending" if case_id else "not_extracted",
+        extracted_candidates=[],
+        evidence_refs=[],
+        provenance="documented",
     )
     doc.size_bytes = size_bytes
     session.add(doc)
     await session.commit()
     await session.refresh(doc)
 
-    return {"document_id": doc.document_id, "status": doc.status}
+    document_delta = await _try_persist_document_delta_for_case(
+        current_user=current_user,
+        case_id=case_id,
+        doc=doc,
+        path=target_path,
+    )
+    return {"document_id": doc.document_id, "status": doc.status, "document_delta": document_delta}
 
 
 @router.post("/sync-paperless")
 async def sync_paperless(
+    process: bool = Query(default=False),
+    limit: int | None = Query(default=None, ge=0, le=25),
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -340,8 +563,88 @@ async def sync_paperless(
     if not is_rag_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin rights required for Paperless sync")
 
-    from app.services.rag.paperless import sync_paperless_to_rag
-    return await sync_paperless_to_rag(session)
+    from app.services.rag.paperless import process_pending_paperless_documents, sync_paperless_to_rag
+
+    result = await sync_paperless_to_rag(session)
+    if process:
+        result = dict(result)
+        result["processing"] = await process_pending_paperless_documents(session, limit=limit)
+    return result
+
+
+@router.get("/material-evidence/dry-run")
+async def material_evidence_dry_run(
+    source_system: str = Query(default="paperless", min_length=1, max_length=64),
+    route: Optional[str] = Query(default=None, max_length=80),
+    limit: int = Query(default=25, ge=1, le=100),
+    include_invalid: bool = Query(default=True),
+    include_indexed_snippets: bool = Query(default=True),
+    current_user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Read-only admin report for Paperless/RAG material evidence card readiness."""
+    if not is_rag_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin rights required for material evidence dry-run")
+
+    normalized_source_system = (source_system or "paperless").strip() or "paperless"
+    normalized_route = (route or "").strip() or None
+    capped_limit = _material_evidence_dry_run_limit(limit)
+    docs = await _load_material_evidence_dry_run_documents(
+        session=session,
+        source_system=normalized_source_system,
+        route=normalized_route,
+        limit=capped_limit,
+    )
+    indexed_snippet_items: list[Dict[str, Any]] = []
+    indexed_snippet_summary: Dict[str, Any] = {
+        "enabled": False,
+        "source": "qdrant_payload",
+        "status": "not_requested",
+    }
+    if include_indexed_snippets:
+        indexed_snippet_items, indexed_snippet_summary = load_material_evidence_indexed_snippet_raw_items(
+            docs,
+            tenant_id=RAG_SHARED_TENANT_ID,
+            max_documents=capped_limit,
+        )
+    return build_material_evidence_dry_run_report(
+        docs,
+        include_invalid=include_invalid,
+        source_system=normalized_source_system,
+        route=normalized_route,
+        limit=capped_limit,
+        indexed_snippet_items=indexed_snippet_items,
+        indexed_snippet_summary=indexed_snippet_summary,
+    )
+
+
+@internal_router.post("/ingest")
+async def ingest_paperless_webhook(
+    payload: Optional[Dict[str, Any]] = Body(default=None),
+    x_sealai_webhook_token: Optional[str] = Header(default=None, alias="X-SeaLAI-Webhook-Token"),
+    session: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Minimal internal webhook entry for the first Paperless ingest pilot."""
+    _require_paperless_webhook_token(x_sealai_webhook_token)
+
+    payload = payload or {}
+    document_id = payload.get("document_id")
+    if document_id in (None, ""):
+        raise HTTPException(
+            status_code=400,
+            detail=error_detail("paperless_webhook_invalid_payload", field="document_id"),
+        )
+
+    from app.services.rag.paperless import process_pending_paperless_documents, sync_paperless_to_rag
+
+    result = await sync_paperless_to_rag(session)
+    processing = await process_pending_paperless_documents(session)
+    return {
+        "status": "accepted",
+        "document_id": str(document_id),
+        "sync": result,
+        "processing": processing,
+    }
 
 
 @router.get("/documents/{document_id}")
@@ -350,19 +653,25 @@ async def get_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-
-    if doc.tenant_id != current_user.user_id:
-        if not (doc.visibility == "public" and _is_admin(current_user)):
-            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     return {
         "document_id": doc.document_id,
         "status": doc.status,
-        "error": doc.error,
-        "ingest_stats": doc.ingest_stats,
+        "error": redact_internal_paths(doc.error),
+        "ingest_stats": redact_internal_paths(doc.ingest_stats),
+        "enabled": doc.enabled,
+        "extraction_status": doc.extraction_status,
+        "extracted_candidates": doc.extracted_candidates or [],
+        "evidence_refs": doc.evidence_refs or [],
+        "provenance": doc.provenance,
     }
 
 
@@ -372,11 +681,14 @@ async def rag_document_health_check(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    if doc.tenant_id != current_user.user_id:
-        raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     file_exists = Path(doc.path).exists()
     qdrant_points = 0
@@ -384,7 +696,7 @@ async def rag_document_health_check(
     try:
         qdrant_points = _qdrant_vector_count(tenant_id=doc.tenant_id, document_id=doc.document_id)
     except Exception as exc:
-        qdrant_error = f"{type(exc).__name__}: {exc}"
+        qdrant_error = safe_error_message(exc)
 
     status_now = str(doc.status or "")
     indexed_like = status_now in {"indexed", "done"}
@@ -405,7 +717,6 @@ async def rag_document_health_check(
         "status": status_now,
         "collection": QDRANT_COLLECTION,
         "filesystem": {
-            "path": doc.path,
             "exists": file_exists,
         },
         "qdrant": {
@@ -423,24 +734,27 @@ async def reingest_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    if doc.tenant_id != current_user.user_id:
-        if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
-            pass
-        else:
-            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     if not Path(doc.path).exists():
         raise HTTPException(
             status_code=409,
-            detail=error_detail("source_file_missing", path=doc.path),
+            detail=error_detail("source_file_missing"),
         )
 
     doc.status = "processing"
     doc.error = None
     doc.ingest_stats = None
+    doc.enabled = True
+    doc.extraction_status = doc.extraction_status or "not_extracted"
+    doc.provenance = doc.provenance or "documented"
     session.add(doc)
     await session.commit()
 
@@ -453,21 +767,21 @@ async def delete_rag_document(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    doc = await session.get(RagDocument, document_id)
+    doc = await _load_rag_document_for_user(
+        session=session,
+        document_id=document_id,
+        current_user=current_user,
+        allow_shared_admin=True,
+    )
     if not doc:
         raise HTTPException(status_code=404, detail=error_detail("document_not_found"))
-    if doc.tenant_id != current_user.user_id:
-        if doc.tenant_id == RAG_SHARED_TENANT_ID and is_rag_admin(current_user):
-            pass
-        else:
-            raise HTTPException(status_code=403, detail=error_detail("forbidden"))
 
     try:
         _qdrant_delete_document(tenant_id=doc.tenant_id, document_id=doc.document_id)
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=error_detail("qdrant_delete_failed", reason=f"{type(exc).__name__}: {exc}"),
+            detail=_safe_backend_error_detail("qdrant_delete_failed", exc),
         ) from exc
 
     path = Path(doc.path)
@@ -488,7 +802,7 @@ async def list_rag_documents(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    stmt = select(RagDocument).where(RagDocument.tenant_id == current_user.user_id)
+    stmt = select(RagDocument).where(RagDocument.tenant_id == _request_tenant_id(current_user))
     if status:
         stmt = stmt.where(RagDocument.status == status)
     if category:
@@ -511,8 +825,13 @@ async def list_rag_documents(
                 "status": doc.status,
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
-                "ingest_stats": doc.ingest_stats,
-                "error": doc.error,
+                "ingest_stats": redact_internal_paths(doc.ingest_stats),
+                "error": redact_internal_paths(doc.error),
+                "enabled": doc.enabled,
+                "extraction_status": doc.extraction_status,
+                "extracted_candidates": doc.extracted_candidates or [],
+                "evidence_refs": doc.evidence_refs or [],
+                "provenance": doc.provenance,
             }
         )
     return {"items": items}

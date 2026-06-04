@@ -1,23 +1,16 @@
 """
-RWDR Deterministic Calculation Core — Phase P3 Vertical Slice Migration.
+RWDR Deterministic Calculation Core.
 
-Extracted from app/services/rag/nodes/p4_live_calc.py (legacy v5/v6 stack).
-MATH IS PRESERVED 1:1 — no changes to formulas or limit constants.
+Pure-function physics engine for RWDR (Radialwellendichtring) analysis.
+All formulas are deterministic; no LLM calls, no external service dependencies.
 
-What was removed:
-- LangGraph node wrappers (node_p4_live_calc)
-- State/WorkingProfile reading (_collect_parameter_payload, _collect_captured_parameters)
-- External service calls (normalize_entity, get_material_repository, get_chemical_repository)
-  → replaced by a self-contained static material profile table (_MATERIAL_PROFILES)
-
-What was added:
-- RwdrCalcInput  dataclass — typed, validated input for the agent tool
-- RwdrCalcResult dataclass — typed, serialisable output
-- calculate_rwdr() — top-level pure function (input → result)
-- Static _MATERIAL_PROFILES dict covering standard RWDR elastomers
-
-All formulas and limit constants are identical to the legacy implementation.
 DIN 3760 reference for Umfangsgeschwindigkeit: v = (d * π * n) / 60 000 [m/s]
+
+Public API:
+- calculate_rwdr(input: RwdrCalcInput) → RwdrCalcResult
+- calc_tribology(payload: dict) → dict
+- calc_extrusion(payload: dict) → dict
+- calc_geometry(payload: dict) → dict
 """
 from __future__ import annotations
 
@@ -27,13 +20,14 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Literal, Optional
 
 # ---------------------------------------------------------------------------
-# Expert limits (preserved verbatim from p4_live_calc.py)
+# Expert limits
 # ---------------------------------------------------------------------------
 
 _HRC_WARNING_MIN = 58.0
 _HRC_CRITICAL_MIN = 55.0
 _RUNOUT_WARNING_MAX_MM = 0.2
 _RUNOUT_CRITICAL_MAX_MM = 0.3
+_DN_WARNING_THRESHOLD = 500_000.0   # mm·min⁻¹ — Dn = d × n (CLAUDE.md)
 _FRICTION_COEFF_PTFE = 0.15
 _PTFE_ALPHA_PER_K = 1.2e-4
 
@@ -44,9 +38,7 @@ _RWDR_HRC_MIN_HIGH_SPEED = 45.0
 _RWDR_HIGH_SPEED_THRESHOLD = 4.0
 
 # ---------------------------------------------------------------------------
-# Static material profile table
-# (replaces get_material_repository() call — same values the repo returns
-#  for standard RWDR elastomers; conservative fallbacks preserved)
+# Static material profile table (standard RWDR elastomers; conservative fallbacks)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -101,7 +93,7 @@ def _resolve_material_profile(material_raw: str) -> Optional[RwdrMaterialProfile
 
 
 # ---------------------------------------------------------------------------
-# Utility functions (preserved verbatim from p4_live_calc.py)
+# Utility functions
 # ---------------------------------------------------------------------------
 
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
@@ -151,15 +143,11 @@ def _get_diameter_mm(payload: Dict[str, Any]) -> Optional[float]:
 
 
 # ---------------------------------------------------------------------------
-# Pure calculation functions (formulas preserved verbatim, state deps removed)
+# Pure calculation functions
 # ---------------------------------------------------------------------------
 
 def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Tribology calculations for RWDR.
-
-    Formulas preserved 1:1 from p4_live_calc.py::calc_tribology().
-    External repo dependency replaced by _resolve_material_profile().
-    """
+    """Tribology calculations for RWDR: v_surface, pv-value, Dn-value, warnings."""
     diameter_mm = _get_diameter_mm(payload)
     rpm = _first_float(payload, ("speed_rpm", "rpm", "n", "n_max"))
     pressure_bar = _first_float(payload, ("pressure_max_bar", "pressure_bar", "pressure", "p_max"))
@@ -169,6 +157,11 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     material_raw = str(payload.get("elastomer_material") or payload.get("material") or "").strip()
     material = material_raw.upper()
+
+    # Dn-Wert: Dn = d × n [mm·min⁻¹] — kinematic bearing indicator (CLAUDE.md)
+    dn_value: Optional[float] = None
+    if diameter_mm is not None and rpm is not None and diameter_mm >= 0 and rpm >= 0:
+        dn_value = diameter_mm * rpm
 
     # DIN 3760: v = (d * π * n) / 60 000 [m/s]
     v_surface_m_s: Optional[float] = None
@@ -241,9 +234,17 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     # NBR speed limit (preserved verbatim)
     if v_surface_m_s is not None and v_surface_m_s > _RWDR_SPEED_LIMIT_NBR and "NBR" in material:
-        hrc_warning = True  # backward-compat UI signal
+        hrc_warning = True
 
     runout_warning = bool(runout_mm is not None and runout_mm > _RUNOUT_WARNING_MAX_MM)
+
+    # Dn warning: Dn > 500 000 mm·min⁻¹ indicates elevated bearing/seal stress
+    dn_warning = bool(dn_value is not None and dn_value > _DN_WARNING_THRESHOLD)
+    if dn_warning:
+        notes.append(
+            f"Dn-Wert ({dn_value:.0f} mm·min⁻¹) überschreitet Richtwert "
+            f"{_DN_WARNING_THRESHOLD:.0f} mm·min⁻¹ — erhöhte tribologische Beanspruchung."
+        )
 
     pv_warning = bool(pv_value_mpa_m_s is not None and pv_value_mpa_m_s > pv_warning_limit)
     pv_critical_exceeded = bool(pv_value_mpa_m_s is not None and pv_value_mpa_m_s > pv_critical_limit)
@@ -276,12 +277,14 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     has_data = any(
         v is not None
-        for v in (diameter_mm, rpm, pressure_bar, v_surface_m_s, pv_value_mpa_m_s, hrc_value, runout_mm)
+        for v in (diameter_mm, rpm, pressure_bar, v_surface_m_s, pv_value_mpa_m_s, hrc_value, runout_mm, dn_value)
     )
 
     return {
         "v_surface_m_s": v_surface_m_s,
         "pv_value_mpa_m_s": pv_value_mpa_m_s,
+        "dn_value": dn_value,
+        "dn_warning": dn_warning,
         "hrc_value": hrc_value,
         "hrc_warning": hrc_warning,
         "runout_warning": runout_warning,
@@ -295,7 +298,7 @@ def calc_tribology(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def calc_extrusion(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Extrusion-gap risk check (preserved verbatim from p4_live_calc.py)."""
+    """Extrusion-gap risk check."""
     pressure_bar = _first_float(payload, ("pressure_bar", "pressure_max_bar", "pressure", "p_max"))
     clearance_gap_mm = _first_float(payload, ("clearance_gap_mm", "clearance_gap", "gap_mm"))
 
@@ -313,7 +316,7 @@ def calc_extrusion(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def calc_geometry(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """O-ring / seal geometry checks (preserved verbatim from p4_live_calc.py)."""
+    """O-ring / seal geometry checks: compression ratio, groove fill, radial gap."""
     cross_section_d2 = _first_float(payload, ("cross_section_d2", "d2", "seal_cross_section"))
     groove_depth = _first_float(payload, ("groove_depth", "groove_depth_mm"))
     groove_width = _first_float(payload, ("groove_width", "groove_width_mm"))
@@ -418,8 +421,10 @@ class RwdrCalcResult:
     # Tribology
     v_surface_m_s: Optional[float]
     pv_value_mpa_m_s: Optional[float]
+    dn_value: Optional[float]
     friction_power_watts: Optional[float]
     # Warnings
+    dn_warning: bool
     hrc_warning: bool
     runout_warning: bool
     pv_warning: bool
@@ -484,7 +489,8 @@ def calculate_rwdr(inp: RwdrCalcInput) -> RwdrCalcResult:
     risk_flags = bool(extru["extrusion_risk"] or geom["geometry_warning"] or therm["shrinkage_risk"])
     base_critical = bool(tribo["critical"])
     warning_flags = bool(
-        tribo["hrc_warning"]
+        tribo["dn_warning"]
+        or tribo["hrc_warning"]
         or tribo["runout_warning"]
         or tribo["pv_warning"]
         or tribo["dry_running_risk"]
@@ -516,7 +522,9 @@ def calculate_rwdr(inp: RwdrCalcInput) -> RwdrCalcResult:
     return RwdrCalcResult(
         v_surface_m_s=tribo["v_surface_m_s"],
         pv_value_mpa_m_s=tribo["pv_value_mpa_m_s"],
+        dn_value=tribo["dn_value"],
         friction_power_watts=tribo["friction_power_watts"],
+        dn_warning=tribo["dn_warning"],
         hrc_warning=tribo["hrc_warning"],
         runout_warning=tribo["runout_warning"],
         pv_warning=tribo["pv_warning"],

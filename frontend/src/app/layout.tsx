@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import "@fontsource-variable/google-sans-flex/standard.css";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/Providers";
+import { GoogleMarketingTags } from "@/components/analytics/GoogleMarketingTags";
+import { RybbitAnalytics } from "@/components/analytics/RybbitAnalytics";
+import { getSiteOrigin } from "@/lib/site";
 
-const inter = Inter({ subsets: ["latin"] });
+const siteOrigin = getSiteOrigin();
 
 export const metadata: Metadata = {
-  title: "SealAI | Industrial AI Orchestration",
-  description: "High-Performance Agent Supervisor for Hydrogen Sealing Tech.",
+  title: "SealingAI — Sealing Intelligence",
+  description: "Professionelle technische Vorqualifizierung und Analyse für industrielle Dichtungslösungen.",
+  metadataBase: siteOrigin,
 };
 
 export default function RootLayout({
@@ -17,8 +21,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={cn(inter.className, "bg-slate-950 text-slate-100 antialiased")}>
+    <html lang="de" className="light" suppressHydrationWarning>
+      <body className={cn("font-sans bg-background text-[#1F1F1F] antialiased")}>
+        <RybbitAnalytics />
+        <GoogleMarketingTags />
         <Providers>
           {children}
         </Providers>

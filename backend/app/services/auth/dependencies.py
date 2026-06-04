@@ -16,12 +16,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
 from app.core.config import settings              # <-- korrekter Pfad!
+from app.common.errors import error_detail
 import app.services.auth.token as auth_token
-try:
-    from app._legacy_v2.contracts import error_detail
-except Exception:  # pragma: no cover - minimal import repair for bounded tests
-    def error_detail(code: str, **kwargs: object) -> str:
-        return code
 
 
 # --------------------------------------------------------------------------- #
@@ -124,6 +120,24 @@ def canonical_user_id(user: RequestUser) -> str:
     return user.user_id or user.sub
 
 
+def require_tenant_id(user: RequestUser) -> str:
+    """Strict request-scoped tenant (P0-2). Single source of truth.
+
+    Returns the verified ``tenant_id`` claim. A missing/empty claim is a hard
+    401 — never collapse to ``"default"`` or ``user_id``, which would silently
+    merge tenants. Shared-knowledge paths (RAG_SHARED_TENANT_ID, e.g. the
+    Paperless webhook / no-case knowledge) deliberately fall back to the shared
+    tenant and must NOT use this resolver.
+    """
+    tenant_id = str(getattr(user, "tenant_id", None) or "").strip()
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_tenant_claim"),
+        )
+    return tenant_id
+
+
 _DEV_BYPASS_USER = RequestUser(
     user_id="dev-user",
     username="dev-user",
@@ -147,7 +161,11 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     zurückgegeben. Ausschließlich für lokales Testen — niemals in Produktion.
     """
     # --- DEV BYPASS (nur wenn explizit aktiviert) ---
-    if os.getenv("BYPASS_AUTH") == "1" and x_bypass_auth == "1":
+    if (
+        getattr(settings, "is_dev_or_test", False)
+        and os.getenv("BYPASS_AUTH") == "1"
+        and x_bypass_auth == "1"
+    ):
         return _DEV_BYPASS_USER
 
     if not authorization or not authorization.startswith("Bearer "):

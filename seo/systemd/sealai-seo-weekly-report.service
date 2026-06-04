@@ -1,0 +1,7 @@
+[Unit]
+Description=SealAI SEO weekly quick-win report
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/thorsten/sealai
+ExecStart=/home/thorsten/sealai/seo/scripts/run_weekly_reports.sh

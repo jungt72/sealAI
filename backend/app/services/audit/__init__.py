@@ -1,5 +1,13 @@
-"""Audit log service for SEALAI v4.4.0 (Sprint 9)."""
+"""Audit log service for SEALAI."""
 
-from .audit_logger import AuditLogger
+from .event_builder import TrustAuditEvent, TrustAuditEventBuilder
 
-__all__ = ["AuditLogger"]
+__all__ = ["AuditLogger", "TrustAuditEvent", "TrustAuditEventBuilder"]
+
+
+def __getattr__(name: str):
+    if name == "AuditLogger":
+        from .audit_logger import AuditLogger
+
+        return AuditLogger
+    raise AttributeError(name)

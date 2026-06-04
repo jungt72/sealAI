@@ -7,36 +7,40 @@ def use_responses_api(model: str) -> bool:
     # GPT-5 / o4 / o3 nutzen die Responses API
     return m.startswith("gpt-5") or m.startswith("o4") or m.startswith("o3")
 
-def _to_input_parts(content: Any) -> List[Dict[str, Any]]:
+def _to_input_parts(content: Any, part_type: str = "input_text") -> List[Dict[str, Any]]:
     """
     Responses-API erwartet strukturierte Parts.
-    Strings -> [{"type":"input_text","text": "..."}]
+    Strings -> [{"type": part_type, "text": "..."}]
     Bereits strukturierte Parts werden durchgereicht.
+
+    ``part_type`` muss rollenabhaengig gesetzt werden: Assistant-Content
+    "output_text", User/System "input_text". Ein Assistant-Turn mit
+    "input_text" loest OpenAI 400 invalid_value aus.
     """
     parts: List[Dict[str, Any]] = []
     if content is None:
         return parts
     if isinstance(content, str):
-        return [{"type": "input_text", "text": content}]
+        return [{"type": part_type, "text": content}]
     if isinstance(content, list):
         for c in content:
             if isinstance(c, str):
-                parts.append({"type": "input_text", "text": c})
+                parts.append({"type": part_type, "text": c})
             elif isinstance(c, dict):
                 if "type" in c:
                     parts.append(c)
                 elif "text" in c:
-                    parts.append({"type": "input_text", "text": str(c["text"])})
+                    parts.append({"type": part_type, "text": str(c["text"])})
                 else:
-                    parts.append({"type": "input_text", "text": str(c)})
-        return parts or [{"type": "input_text", "text": str(content)}]
+                    parts.append({"type": part_type, "text": str(c)})
+        return parts or [{"type": part_type, "text": str(content)}]
     if isinstance(content, dict):
         if "type" in content:
             return [content]
         if "text" in content:
-            return [{"type": "input_text", "text": str(content["text"])}]
-        return [{"type": "input_text", "text": str(content)}]
-    return [{"type": "input_text", "text": str(content)}]
+            return [{"type": part_type, "text": str(content["text"])}]
+        return [{"type": part_type, "text": str(content)}]
+    return [{"type": part_type, "text": str(content)}]
 
 def messages_to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
@@ -47,7 +51,8 @@ def messages_to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str
     for m in messages or []:
         role = (m.get("role") or m.get("type") or "user").strip()
         content = m.get("content")
-        parts = _to_input_parts(content)
+        part_type = "output_text" if role == "assistant" else "input_text"
+        parts = _to_input_parts(content, part_type)
         if parts:
             out.append({"role": role, "content": parts})
     return out

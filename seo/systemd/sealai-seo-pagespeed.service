@@ -1,0 +1,7 @@
+[Unit]
+Description=SealAI SEO PageSpeed and Core Web Vitals check
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/thorsten/sealai
+ExecStart=/home/thorsten/sealai/seo/scripts/run_pagespeed_check.sh

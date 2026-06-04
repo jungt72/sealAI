@@ -12,7 +12,7 @@ from typing_extensions import TypedDict
 
 
 # ---------------------------------------------------------------------------
-# Helpers (reused pattern from langgraph_v2/state/sealai_state.py)
+# Helpers reused from the legacy v2 state shape.
 # ---------------------------------------------------------------------------
 
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")

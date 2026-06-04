@@ -10,7 +10,7 @@ Sources:
   - PTFE compound matrix                     →  app.services.knowledge.compound_matrix
 
 Integration point:
-  Called from evaluate_claim_conflicts() in app.agent.agent.logic before any
+  Called from evaluate_claim_conflicts() in app.agent.domain.logic before any
   validated_params are written into the sealing_state.  Every submit_claim call
   passes through this gate automatically.
 

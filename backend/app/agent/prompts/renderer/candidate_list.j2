@@ -1,0 +1,21 @@
+## Antwortmodus: Kandidatenliste
+
+Praesentierende die gefilterte Herstellerkandidaten-Shortlist.
+
+Jeder Kandidat enthaelt:
+- Herstellername (Listing-verifiziert)
+- Abgedeckte STS-Codes
+- fit_score zur technischen Anfrage
+- Hinweis auf nicht abgedeckte Parameter (falls vorhanden)
+
+Wichtig:
+- Nur Hersteller mit verifiziertem Listing zeigen.
+- fit_score ist kein "Ranking" — mehrere Kandidaten koennen gleichwertig sein.
+- Immer: "Finale Entscheidung liegt beim Nutzer und Hersteller."
+
+{% if candidates is defined and candidates %}
+Kandidaten ({{ candidates | length }}):
+{% for c in candidates %}
+- {{ c.name | default('?') }}: fit_score={{ c.fit_score | default('?') }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,519 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Literal
+
+from app.services.knowledge.material_comparison import extract_material_ids
+
+
+KnowledgeEvidenceSourceType = Literal[
+    "fact_card",
+    "rag",
+    "deterministic",
+    "fallback",
+    "unknown",
+]
+
+_DEFAULT_HISTORY_LIMIT = 6
+_DEFAULT_EVIDENCE_LIMIT = 6
+_MAX_HISTORY_CHARS = 900
+_MAX_EVIDENCE_CHARS = 900
+_MAX_DETERMINISTIC_EVIDENCE_CHARS = 1200
+
+_GENERAL_LIMITATION = (
+    "General technical orientation only; no final engineering release, no final "
+    "compatibility proof, no manufacturer approval."
+)
+_RAG_MISS_LIMITATION = (
+    "No sufficient curated/RAG source was available in the deterministic knowledge "
+    "result; preserve that uncertainty."
+)
+_REGULATORY_CURRENTNESS_LIMITATION = (
+    "No live regulatory source was retrieved in this path; answer must be framed "
+    "as technical orientation, not current legal advice."
+)
+_REGULATORY_RE = re.compile(
+    r"\b(pfas|reach|echa|eu\s+regulation|eu-regulation|eu\s+verordnung|"
+    r"verordnung|verbot|regulierung|gesetzlich|legal|compliance|"
+    r"regulation|regulatory)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationTurn:
+    role: Literal["user", "assistant"]
+    content: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"role": self.role, "content": self.content}
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeEvidenceItem:
+    content: str
+    source_type: KnowledgeEvidenceSourceType = "unknown"
+    title: str | None = None
+    source_name: str | None = None
+    source_note: str | None = None
+    confidence: float | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "source_type": self.source_type,
+            "content": self.content,
+            "source_name": self.source_name,
+            "source_note": self.source_note,
+            "confidence": self.confidence,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeAnswerContext:
+    user_message: str
+    deterministic_answer: str
+    requested_subjects: tuple[str, ...] = field(default_factory=tuple)
+    recent_history: tuple[ConversationTurn, ...] = field(default_factory=tuple)
+    evidence_items: tuple[KnowledgeEvidenceItem, ...] = field(default_factory=tuple)
+    route_label: str | None = None
+    knowledge_mode: str | None = None
+    intent: str | None = None
+    no_case: bool = True
+    limitations: tuple[str, ...] = field(default_factory=tuple)
+    language_hint: str = "de"
+    regulatory_currentness_required: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "user_message": self.user_message,
+            "deterministic_answer": self.deterministic_answer,
+            "requested_subjects": list(self.requested_subjects),
+            "recent_history": [turn.as_dict() for turn in self.recent_history],
+            "evidence_items": [item.as_dict() for item in self.evidence_items],
+            "route_label": self.route_label,
+            "knowledge_mode": self.knowledge_mode,
+            "intent": self.intent,
+            "no_case": self.no_case,
+            "limitations": list(self.limitations),
+            "language_hint": self.language_hint,
+            "regulatory_currentness_required": self.regulatory_currentness_required,
+        }
+
+
+class KnowledgeContextBuilder:
+    """Builds a read-only context for no-case knowledge answer composition."""
+
+    def __init__(
+        self,
+        *,
+        history_limit: int | None = _DEFAULT_HISTORY_LIMIT,
+        history_char_limit: int | None = _MAX_HISTORY_CHARS,
+        evidence_limit: int = _DEFAULT_EVIDENCE_LIMIT,
+    ) -> None:
+        self.history_limit = None if history_limit is None else max(0, int(history_limit))
+        self.history_char_limit = (
+            None if history_char_limit is None else max(0, int(history_char_limit))
+        )
+        self.evidence_limit = max(1, int(evidence_limit))
+
+    def build(
+        self,
+        *,
+        user_message: str,
+        deterministic_answer: str,
+        knowledge_response: Any | None = None,
+        answer_view: Any | None = None,
+        recent_history: Iterable[Any] | None = None,
+        route_label: str | None = None,
+        knowledge_mode: str | None = None,
+        intent: str | None = None,
+        language_hint: str = "de",
+    ) -> KnowledgeAnswerContext:
+        history_source = tuple(recent_history or ())
+        answer_view = answer_view or getattr(
+            knowledge_response,
+            "knowledge_answer_view",
+            None,
+        )
+        deterministic_text = _safe_text(
+            deterministic_answer or getattr(knowledge_response, "content", "")
+        )
+        evidence_items = self._evidence_items(
+            answer_view=answer_view,
+            deterministic_answer=deterministic_text,
+        )
+        regulatory_currentness_required = _requires_regulatory_currentness(user_message)
+        limitations = self._limitations(
+            answer_view=answer_view,
+            regulatory_currentness_required=regulatory_currentness_required,
+        )
+        return KnowledgeAnswerContext(
+            user_message=_safe_text(user_message, limit=self.history_char_limit),
+            deterministic_answer=deterministic_text,
+            requested_subjects=_requested_material_subjects(
+                user_message,
+                history_source,
+                deterministic_answer=deterministic_text,
+            ),
+            recent_history=self._recent_history(history_source),
+            evidence_items=evidence_items,
+            route_label=_optional_text(route_label),
+            knowledge_mode=_optional_text(knowledge_mode),
+            intent=_optional_text(intent),
+            no_case=True,
+            limitations=limitations,
+            language_hint=_optional_text(language_hint) or "de",
+            regulatory_currentness_required=regulatory_currentness_required,
+        )
+
+    def _recent_history(
+        self,
+        recent_history: Iterable[Any] | None,
+    ) -> tuple[ConversationTurn, ...]:
+        visible_turns: list[ConversationTurn] = []
+        for raw_turn in recent_history or ():
+            role = _turn_value(raw_turn, "role")
+            if role not in {"user", "assistant"}:
+                continue
+            content = _safe_text(
+                _turn_value(raw_turn, "content"),
+                limit=self.history_char_limit,
+            )
+            if not content:
+                continue
+            visible_turns.append(
+                ConversationTurn(role=role, content=content)  # type: ignore[arg-type]
+            )
+        if not visible_turns:
+            return ()
+        if self.history_limit == 0:
+            return ()
+        if self.history_limit is None:
+            return tuple(visible_turns)
+        return tuple(visible_turns[-self.history_limit :])
+
+    def _evidence_items(
+        self,
+        *,
+        answer_view: Any | None,
+        deterministic_answer: str,
+    ) -> tuple[KnowledgeEvidenceItem, ...]:
+        items: list[KnowledgeEvidenceItem] = []
+        seen: set[str] = set()
+
+        explicit_items = [
+            item
+            for item in (
+                _evidence_from_explicit(raw)
+                for raw in tuple(getattr(answer_view, "knowledge_evidence", ()) or ())
+            )
+            if item is not None
+        ]
+        for source_type in ("rag", "fact_card"):
+            for item in explicit_items:
+                if item.source_type != source_type:
+                    continue
+                _append_evidence_item(items, item, seen=seen, limit=self.evidence_limit)
+                if len(items) >= self.evidence_limit:
+                    return tuple(items)
+
+        has_explicit_retrieval_evidence = any(
+            item.source_type in {"rag", "fact_card"} for item in explicit_items
+        )
+        if not has_explicit_retrieval_evidence:
+            for source in tuple(getattr(answer_view, "sources", ()) or ()):
+                item = _evidence_from_source(source)
+                _append_evidence_item(items, item, seen=seen, limit=self.evidence_limit)
+                if len(items) >= self.evidence_limit:
+                    return tuple(items)
+
+        for source_type in ("deterministic", "fallback", "unknown"):
+            for item in explicit_items:
+                if item.source_type != source_type:
+                    continue
+                _append_evidence_item(items, item, seen=seen, limit=self.evidence_limit)
+                if len(items) >= self.evidence_limit:
+                    return tuple(items)
+
+        deterministic_item = _deterministic_evidence_item(answer_view, deterministic_answer)
+        _append_evidence_item(
+            items,
+            deterministic_item,
+            seen=seen,
+            limit=self.evidence_limit,
+        )
+
+        return tuple(items[: self.evidence_limit])
+
+    @staticmethod
+    def _limitations(
+        *,
+        answer_view: Any | None,
+        regulatory_currentness_required: bool,
+    ) -> tuple[str, ...]:
+        limitations: list[str] = [_GENERAL_LIMITATION]
+        if answer_view is not None and bool(getattr(answer_view, "rag_miss", False)):
+            limitations.append(_RAG_MISS_LIMITATION)
+        if regulatory_currentness_required:
+            limitations.append(_REGULATORY_CURRENTNESS_LIMITATION)
+        return tuple(dict.fromkeys(limitations))
+
+
+def build_knowledge_answer_context(**kwargs: Any) -> KnowledgeAnswerContext:
+    return KnowledgeContextBuilder().build(**kwargs)
+
+
+_CONTEXTUAL_COMPARISON_RE = re.compile(
+    r"\b(?:vergleiche?|vergleich|unterschied|gegen[üu]ber|gegenueber|vs\.?|versus|mit|gegen)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _requested_material_subjects(
+    user_message: str,
+    recent_history: tuple[Any, ...],
+    *,
+    deterministic_answer: str = "",
+) -> tuple[str, ...]:
+    latest = list(extract_material_ids(user_message))
+    if len(latest) == 0 and _looks_like_contextual_material_comparison(user_message):
+        from_answer = _comparison_subjects_from_answer(deterministic_answer)
+        if from_answer:
+            return from_answer
+    if len(latest) != 1 or not _CONTEXTUAL_COMPARISON_RE.search(str(user_message or "")):
+        return tuple(latest)
+
+    anchor = _last_history_material_subject(
+        recent_history,
+        exclude=set(latest),
+    )
+    if not anchor:
+        return tuple(latest)
+
+    subjects = [anchor]
+    subjects.extend(material for material in latest if material != anchor)
+    return tuple(subjects)
+
+
+def _looks_like_contextual_material_comparison(user_message: str) -> bool:
+    text = str(user_message or "").casefold()
+    return bool(
+        re.search(
+            r"\b(?:die\s+beiden|beide(?:n|s)?\s+materialien|beide|"
+            r"welche[rs]?\s+ist\s+besser|besser\s+für|besser\s+fuer|vergleich)\b",
+            text,
+        )
+    )
+
+
+def _comparison_subjects_from_answer(deterministic_answer: str) -> tuple[str, ...]:
+    answer = str(deterministic_answer or "")
+    if not answer:
+        return ()
+    first_screen = "\n".join(answer.splitlines()[:12])
+    if "vergleich" not in first_screen.casefold() and " vs " not in first_screen.casefold():
+        return ()
+    subjects: list[str] = []
+    for material in extract_material_ids(first_screen):
+        if material not in subjects:
+            subjects.append(material)
+        if len(subjects) >= 2:
+            break
+    return tuple(subjects)
+
+
+def _last_history_material_subject(
+    recent_history: tuple[Any, ...],
+    *,
+    exclude: set[str],
+) -> str | None:
+    user_candidates: list[str] = []
+    assistant_candidates: list[str] = []
+    for turn in recent_history:
+        role = _turn_value(turn, "role")
+        content = _turn_value(turn, "content")
+        if role not in {"user", "assistant"} or not content:
+            continue
+        for material in extract_material_ids(content):
+            if material in exclude:
+                continue
+            if role == "user":
+                user_candidates.append(material)
+            else:
+                assistant_candidates.append(material)
+    for material in reversed(user_candidates):
+        return material
+    for material in reversed(assistant_candidates):
+        return material
+    return None
+
+
+def _evidence_from_source(source: Any) -> KnowledgeEvidenceItem | None:
+    excerpt = _safe_text(getattr(source, "excerpt", None), limit=_MAX_EVIDENCE_CHARS)
+    title = _optional_text(getattr(source, "title", None))
+    content = excerpt or title or ""
+    if not content:
+        return None
+
+    source_type = _evidence_source_type(source, has_excerpt=bool(excerpt))
+    validation_status = _enum_value(getattr(source, "validation_status", None))
+    confidence = _float_or_none(getattr(source, "confidence", None))
+    note_parts = []
+    if validation_status:
+        note_parts.append(f"validation_status={validation_status}")
+    if confidence is not None:
+        note_parts.append(f"confidence={confidence:.3g}")
+    return KnowledgeEvidenceItem(
+        title=title,
+        source_type=source_type,
+        content=content,
+        source_name=title,
+        source_note="; ".join(note_parts) or None,
+        confidence=confidence,
+    )
+
+
+def _evidence_from_explicit(raw_evidence: Any) -> KnowledgeEvidenceItem | None:
+    content = _safe_text(
+        _value(raw_evidence, "content"),
+        limit=_MAX_EVIDENCE_CHARS,
+    )
+    if not content:
+        return None
+    source_type = _normalize_evidence_source_type(_value(raw_evidence, "source_type"))
+    title = _optional_text(_value(raw_evidence, "title"))
+    source_name = _optional_text(_value(raw_evidence, "source_name"))
+    note = _optional_text(_value(raw_evidence, "note"))
+    confidence = _float_or_none(_value(raw_evidence, "confidence"))
+    note_parts = []
+    if source_name:
+        note_parts.append(f"source={source_name}")
+    if note:
+        note_parts.append(note)
+    if confidence is not None:
+        note_parts.append(f"confidence={confidence:.3g}")
+    return KnowledgeEvidenceItem(
+        title=title,
+        source_type=source_type,
+        content=content,
+        source_name=source_name,
+        source_note="; ".join(note_parts) or None,
+        confidence=confidence,
+    )
+
+
+def _deterministic_evidence_item(
+    answer_view: Any | None,
+    deterministic_answer: str,
+) -> KnowledgeEvidenceItem | None:
+    content = _safe_text(
+        deterministic_answer,
+        limit=_MAX_DETERMINISTIC_EVIDENCE_CHARS,
+    )
+    if not content:
+        return None
+    validation_status = _enum_value(getattr(answer_view, "validation_status", None))
+    label = _optional_text(getattr(answer_view, "user_visible_label", None))
+    note_parts = []
+    if validation_status:
+        note_parts.append(f"validation_status={validation_status}")
+    if label:
+        note_parts.append(f"label={label}")
+    return KnowledgeEvidenceItem(
+        title="Deterministic KnowledgeService answer",
+        source_type="deterministic",
+        content=content,
+        source_note="; ".join(note_parts) or None,
+    )
+
+
+def _evidence_source_type(
+    source: Any,
+    *,
+    has_excerpt: bool,
+) -> KnowledgeEvidenceSourceType:
+    raw_source_type = _enum_value(getattr(source, "source_type", None))
+    if raw_source_type == "rag_verified":
+        return "rag" if has_excerpt else "fact_card"
+    if raw_source_type == "llm_research_fallback":
+        return "fallback"
+    if raw_source_type in {"system_derived", "deterministic_calculation"}:
+        return "deterministic"
+    if has_excerpt:
+        return "rag"
+    return "unknown"
+
+
+def _normalize_evidence_source_type(value: Any) -> KnowledgeEvidenceSourceType:
+    normalized = str(getattr(value, "value", value) or "").strip().lower()
+    if normalized in {"fact_card", "factcard", "curated_fact_card"}:
+        return "fact_card"
+    if normalized in {"rag", "rag_verified", "retrieval", "retrieved_chunk"}:
+        return "rag"
+    if normalized in {"deterministic", "system_derived", "deterministic_calculation"}:
+        return "deterministic"
+    if normalized in {"fallback", "llm_research_fallback", "llm_fallback"}:
+        return "fallback"
+    return "unknown"
+
+
+def _append_evidence_item(
+    items: list[KnowledgeEvidenceItem],
+    item: KnowledgeEvidenceItem | None,
+    *,
+    seen: set[str],
+    limit: int,
+) -> None:
+    if item is None or len(items) >= limit:
+        return
+    key = _dedupe_key(item)
+    if key in seen:
+        return
+    seen.add(key)
+    items.append(item)
+
+
+def _dedupe_key(item: KnowledgeEvidenceItem) -> str:
+    return " ".join(str(item.content or "").casefold().split())
+
+
+def _requires_regulatory_currentness(user_message: str) -> bool:
+    return bool(_REGULATORY_RE.search(str(user_message or "")))
+
+
+def _turn_value(turn: Any, key: str) -> str:
+    return str(_value(turn, key) or "").strip()
+
+
+def _value(item: Any, key: str) -> Any:
+    if isinstance(item, dict):
+        return item.get(key)
+    return getattr(item, key, None)
+
+
+def _safe_text(value: Any, *, limit: int | None = None) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return ""
+    if limit is not None and len(text) > limit:
+        return text[: max(0, limit - 3)].rstrip() + "..."
+    return text
+
+
+def _optional_text(value: Any) -> str | None:
+    text = _safe_text(value)
+    return text or None
+
+
+def _enum_value(value: Any) -> str | None:
+    raw = getattr(value, "value", value)
+    return _optional_text(raw)
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

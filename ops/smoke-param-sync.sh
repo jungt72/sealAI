@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${NGINX_BASE_URL:-https://sealai.net}"
+BASE_URL="${NGINX_BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"
 CHAT_ID="${CHAT_ID:-param-sync-$(date +%s)}"
 

@@ -8,4 +8,4 @@ echo ">> Ensuring .env matches .env.dev before starting dev stack"
 "$SCRIPT_DIR/check-env-drift.sh" dev
 
 cd "$REPO_ROOT"
-docker compose --env-file .env.dev up -d --build
+docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build

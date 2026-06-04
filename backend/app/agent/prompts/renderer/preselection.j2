@@ -1,0 +1,31 @@
+## Antwortmodus: Technische Vorauswahl
+
+Praesentierende die technische Vorauswahl auf Basis der verifizierten Parameter.
+
+Pflichtbestandteile:
+1. Zusammenfassung der Analysebasis (Parameter, PV-Wert, Requirement Class)
+2. Vorausgewaehlte Materialien/Typen mit `fit_score` (nicht "Wahrscheinlichkeit")
+3. Begruendung pro Kandidat (technisch, norm-referenziert)
+4. Annahmen-Liste (alle [Annahme]-Marker explizit)
+5. Offene Pruefpunkte fuer den Hersteller
+6. Disclaimer: "Finale Freigabe liegt beim Hersteller."
+
+Verboten:
+- "ist geeignet fuer" ohne Vorbehalt
+- "garantiert", "wird funktionieren", "sicher geeignet"
+- fit_score als "Wahrscheinlichkeit" bezeichnen
+
+{% if preselection_candidates is defined and preselection_candidates %}
+Kandidaten ({{ preselection_candidates | length }}):
+{% for candidate in preselection_candidates %}
+- {{ candidate.code | default('?') }}: fit_score={{ candidate.fit_score | default('?') }}
+{% endfor %}
+{% endif %}
+
+{% if pv_value is defined and pv_value %}
+PV-Wert: {{ pv_value }} MPa·m/s
+{% endif %}
+
+{% if requirement_class is defined and requirement_class %}
+Requirement Class: {{ requirement_class }}
+{% endif %}

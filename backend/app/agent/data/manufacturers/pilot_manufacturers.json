@@ -1,0 +1,205 @@
+[
+  {
+    "id": "mfr-001",
+    "slug": "dichtungstechnik-nord",
+    "name": "DichtungsTechnik Nord GmbH",
+    "listing_tier": "premium",
+    "active": true,
+    "capabilities": {
+      "sealing_types": [
+        "STS-TYPE-GS-CART",
+        "STS-TYPE-GS-S",
+        "STS-TYPE-GS-D"
+      ],
+      "materials": [
+        "STS-MAT-SIC-A1",
+        "STS-MAT-SIC-B1",
+        "STS-MAT-FKM-A1",
+        "STS-MAT-FKM-HT-A1",
+        "STS-MAT-WC-A1"
+      ],
+      "media_families": ["saltwater", "acids", "bases", "hydrocarbons"],
+      "pressure_max_bar": 40,
+      "temperature_max_c": 220,
+      "shaft_diameter_min_mm": 20,
+      "shaft_diameter_max_mm": 200
+    },
+    "specialty": ["chemie", "prozess", "marine", "offshore"],
+    "avg_lead_time_days": 10,
+    "location": {"country": "DE", "city": "Hamburg"},
+    "inquiry_config": {
+      "format": "json",
+      "contact": "anfrage@dichtungstechnik-nord.example"
+    }
+  },
+  {
+    "id": "mfr-002",
+    "slug": "pharmaseal-suedwest",
+    "name": "PharmaSeal Südwest GmbH",
+    "listing_tier": "premium",
+    "active": true,
+    "capabilities": {
+      "sealing_types": [
+        "STS-TYPE-RWDR-A",
+        "STS-TYPE-OR-A",
+        "STS-TYPE-FLAT-A",
+        "STS-TYPE-GS-CART"
+      ],
+      "materials": [
+        "STS-MAT-PTFE-A1",
+        "STS-MAT-EPDM-A1",
+        "STS-MAT-FKM-A1",
+        "STS-MAT-GRAFIT-A1"
+      ],
+      "media_families": ["water", "steam", "food", "pharma", "cleaning"],
+      "pressure_max_bar": 25,
+      "temperature_max_c": 180,
+      "shaft_diameter_min_mm": 10,
+      "shaft_diameter_max_mm": 120
+    },
+    "specialty": ["lebensmittel", "pharma", "hygienic", "clean_in_place"],
+    "avg_lead_time_days": 7,
+    "location": {"country": "DE", "city": "München"},
+    "inquiry_config": {
+      "format": "json",
+      "contact": "inquiry@pharmaseal-suedwest.example"
+    }
+  },
+  {
+    "id": "mfr-003",
+    "slug": "hochtemp-seal-technik",
+    "name": "HochTemp Seal Technik AG",
+    "listing_tier": "standard",
+    "active": true,
+    "capabilities": {
+      "sealing_types": [
+        "STS-TYPE-GS-S",
+        "STS-TYPE-GS-CART",
+        "STS-TYPE-RWDR-B"
+      ],
+      "materials": [
+        "STS-MAT-FKM-HT-A1",
+        "STS-MAT-WC-A1",
+        "STS-MAT-SIC-A1",
+        "STS-MAT-SIC-B1"
+      ],
+      "media_families": [
+        "thermal_oil",
+        "steam",
+        "hydrocarbons",
+        "acids"
+      ],
+      "pressure_max_bar": 60,
+      "temperature_max_c": 400,
+      "shaft_diameter_min_mm": 25,
+      "shaft_diameter_max_mm": 300
+    },
+    "specialty": ["hochtemperatur", "thermisch", "kraftwerk", "petrochemie"],
+    "avg_lead_time_days": 15,
+    "location": {"country": "DE", "city": "Stuttgart"},
+    "inquiry_config": {
+      "format": "json",
+      "contact": "sales@hochtemp-seal-technik.example"
+    }
+  },
+  {
+    "id": "mfr-004",
+    "slug": "grosswellen-dichtungen-rhein",
+    "name": "Grosswellen Dichtungen Rhein GmbH",
+    "listing_tier": "standard",
+    "active": true,
+    "capabilities": {
+      "sealing_types": [
+        "STS-TYPE-GS-D",
+        "STS-TYPE-GS-CART",
+        "STS-TYPE-GS-S",
+        "STS-TYPE-RWDR-A",
+        "STS-TYPE-RWDR-B"
+      ],
+      "materials": [
+        "STS-MAT-SIC-A1",
+        "STS-MAT-SIC-B1",
+        "STS-MAT-FKM-A1",
+        "STS-MAT-WC-A1",
+        "STS-MAT-PTFE-A1"
+      ],
+      "media_families": [
+        "water",
+        "saltwater",
+        "hydrocarbons",
+        "slurry",
+        "acids"
+      ],
+      "pressure_max_bar": 80,
+      "temperature_max_c": 250,
+      "shaft_diameter_min_mm": 80,
+      "shaft_diameter_max_mm": 800
+    },
+    "specialty": [
+      "sonderloesungen",
+      "grosswelle",
+      "bergbau",
+      "marine",
+      "pumpen"
+    ],
+    "avg_lead_time_days": 25,
+    "location": {"country": "DE", "city": "Düsseldorf"},
+    "inquiry_config": {
+      "format": "json",
+      "contact": "technik@grosswellen-dichtungen-rhein.example"
+    }
+  },
+  {
+    "id": "mfr-005",
+    "slug": "universal-seal-mitte",
+    "name": "Universal Seal Mitte GmbH",
+    "listing_tier": "standard",
+    "active": true,
+    "capabilities": {
+      "sealing_types": [
+        "STS-TYPE-GS-CART",
+        "STS-TYPE-GS-S",
+        "STS-TYPE-GS-D",
+        "STS-TYPE-RWDR-A",
+        "STS-TYPE-RWDR-B",
+        "STS-TYPE-OR-A",
+        "STS-TYPE-FLAT-A"
+      ],
+      "materials": [
+        "STS-MAT-SIC-A1",
+        "STS-MAT-FKM-A1",
+        "STS-MAT-EPDM-A1",
+        "STS-MAT-PTFE-A1",
+        "STS-MAT-NBR-A1",
+        "STS-MAT-WC-A1"
+      ],
+      "media_families": [
+        "water",
+        "saltwater",
+        "steam",
+        "hydrocarbons",
+        "acids",
+        "bases",
+        "food"
+      ],
+      "pressure_max_bar": 35,
+      "temperature_max_c": 200,
+      "shaft_diameter_min_mm": 15,
+      "shaft_diameter_max_mm": 250
+    },
+    "specialty": [
+      "generalist",
+      "chemie",
+      "wasser",
+      "lebensmittel",
+      "prozess",
+      "allgemein"
+    ],
+    "avg_lead_time_days": 8,
+    "location": {"country": "DE", "city": "Frankfurt am Main"},
+    "inquiry_config": {
+      "format": "json",
+      "contact": "info@universal-seal-mitte.example"
+    }
+  }
+]

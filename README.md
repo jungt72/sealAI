@@ -33,10 +33,13 @@ See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, li
 - MIGRATION: Phase-2 - Full architecture.
 
 ## Monitoring Runbook (Phase 6)
-- Start stack: `docker-compose up -d`
+- Start dev stack: `./ops/up-dev.sh`
+- Start prod stack: `./ops/up-prod.sh`
+- Production Docker services are `backend`, `keycloak`, and the `frontend` container (Compose `frontend-container` profile); deploy the frontend with `./ops/release-frontend.sh`.
+- Production uses a local `.env.prod` created from `.env.prod.example`; images must be pinned as immutable refs, not `:latest`.
 - API: `http://localhost:8000`
 - Health: `http://localhost:8000/health`
 - Metrics: `http://localhost:8000/metrics`
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000` (`admin` / `admin`)
-- Smoke test: `python test_monitoring.py`
+- Smoke test: `cd /home/thorsten/sealai && pytest backend/app/agent/tests -q --maxfail=1 --ignore=backend/app/agent/tests/test_agent_health.py`

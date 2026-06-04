@@ -1,44 +1,190 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-@layer base {
-  :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+@theme {
+  --font-sans: "Google Sans Flex Variable", "Google Sans Flex", "Google Sans", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+  --color-background: #FCFCFC;
+  --color-foreground: #1F1F1F;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+  /* SealingAI Professional B2B Palette */
+  --color-seal-blue: #002A5B;
+  --color-seal-light-blue: color-mix(in srgb, var(--color-seal-blue) 14%, #FFFFFF);
 
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+  --color-sidebar: color-mix(in srgb, var(--color-seal-blue) 8%, #FFFFFF);
+  --color-surface: #FFFFFF;
+  --color-border: #E3E3E3;
+  --color-muted: #F5F5F7;
+  --color-muted-foreground: #444746;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-  }
+  --radius-xxl: 32px;
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
 }
 
 @layer base {
-  * {
-    @apply border-border;
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 12.2%;
   }
+
+  .dark {
+    --background: 240 6.7% 8.4%;
+    --foreground: 0 0% 98%;
+    
+    --color-background: #0B1221;
+    --color-foreground: #E3E3E3;
+    --color-sidebar: #111827;
+    --color-surface: #020617;
+    --color-border: #1F2937;
+    --color-muted: #1F2937;
+    --color-muted-foreground: #9CA3AF;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply antialiased bg-background text-foreground;
+    color: #1F1F1F;
+    font-family: "Google Sans Flex Variable", "Google Sans Flex", "Google Sans", "Helvetica Neue", sans-serif;
+    font-feature-settings: "kern", "liga";
+    font-optical-sizing: auto;
+    font-variation-settings: "GRAD" 0, "slnt" 0;
+    letter-spacing: 0;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+@keyframes sealai-hero-drift {
+  0%,
+  100% {
+    transform: translate3d(-0.7%, 0, 0) scale(1.025);
+  }
+
+  50% {
+    transform: translate3d(0.7%, -0.6%, 0) scale(1.045);
+  }
+}
+
+@keyframes sealai-hero-sheen {
+  0%,
+  100% {
+    opacity: 0.08;
+    transform: translate3d(-12%, 0, 0);
+  }
+
+  50% {
+    opacity: 0.18;
+    transform: translate3d(12%, 0, 0);
+  }
+}
+
+@keyframes sealai-thinking-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sealai-thinking-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.92);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+.sealai-thinking-icon {
+  position: relative;
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #E3E7EE;
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: var(--color-seal-blue);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+.sealai-thinking-icon::before {
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: conic-gradient(from 40deg, transparent 0 34%, rgba(0, 42, 91, 0.58) 42%, transparent 58% 100%);
+  content: "";
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  animation: sealai-thinking-orbit 1.35s linear infinite;
+}
+
+.sealai-thinking-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  animation: sealai-thinking-breathe 1.55s ease-in-out infinite;
+}
+
+.sealai-hero-motion {
+  animation: sealai-hero-drift 22s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.sealai-hero-sheen {
+  animation: sealai-hero-sheen 18s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sealai-hero-motion {
+    animation: none;
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+
+  .sealai-hero-sheen {
+    animation: none;
+    opacity: 0.12;
+    transform: translate3d(0, 0, 0);
+  }
+
+  .sealai-thinking-icon::before,
+  .sealai-thinking-core {
+    animation: none;
+  }
+}
+
+@layer utilities {
+
+  .seal-card {
+    @apply rounded-xl bg-surface border border-border shadow-sm;
+  }
+
+  .chat-scroll-viewport {
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-seal-blue) 18%, transparent) transparent;
+  }
+
+  .chat-scroll-viewport::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .chat-scroll-viewport::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chat-scroll-viewport::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--color-seal-blue) 18%, transparent);
+    background-clip: padding-box;
+  }
+
+  .chat-scroll-viewport:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-seal-blue) 28%, transparent);
   }
 }

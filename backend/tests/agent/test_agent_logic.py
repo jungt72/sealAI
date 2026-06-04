@@ -1,4 +1,4 @@
-from app.agent.agent.logic import process_cycle_update
+from app.agent.domain.logic import process_cycle_update
 from app.agent.cli import create_initial_state
 
 
@@ -12,7 +12,7 @@ def test_process_cycle_update_marks_trade_name_medium_as_confirmation_required()
     )
     medium_identity = new_state["normalized"]["identity_records"]["medium"]
     assert medium_identity["identity_class"] == "identity_unresolved"
-    assert medium_identity["mapping_reason"] == "trade_name_requires_confirmation:panolin"
+    assert medium_identity["mapping_reason"] == "trade_name_ambiguous:panolin_ester — Typ bestaetigen"
     assert "medium_confirmation_required" in new_state["governance"]["unknowns_release_blocking"]
 
 

@@ -12,14 +12,14 @@ RUN set -eux; \
   mkdir -p /opt/spooles; tar -xzf spooles.2.2.tgz -C /opt/spooles; \
   cd /opt/spooles; [ -f Make.inc ] && sed -i 's/^CC[[:space:]]*=.*/CC = gcc/' Make.inc || true; \
   make lib; cd MT/src; [ -f makefile ] && sed -i 's/^CC[[:space:]]*=.*/CC = gcc/' makefile || true; make
-ARG CCX_VER=2.22
+ARG CCX_VER=2.23
 RUN set -eux; \
   wget -q http://www.dhondt.de/ccx_${CCX_VER}.src.tar.bz2; \
   bunzip2 ccx_${CCX_VER}.src.tar.bz2; tar -xf ccx_${CCX_VER}.src.tar; \
   CCX_SRC_DIR="CalculiX/ccx_${CCX_VER}/src"; [ -d "$CCX_SRC_DIR" ] || CCX_SRC_DIR="ccx_${CCX_VER}/src"; \
   cd "$CCX_SRC_DIR"; ln -sfn /opt/spooles ../SPOOLES.2.2; \
   mkdir -p ../ARPACK; printf 'INPUT(-larpack -llapack -lblas)\n' > ../ARPACK/libarpack_INTEL.a; \
-  make -f Makefile_MT CC=gcc FFLAGS='-O3 -fopenmp' CFLAGS='-O3 -DARCH="Linux" -DARPACK -DMATRIXSTORAGE -DUSE_MT=1'; \
+  make -f Makefile_MT CC=gcc FFLAGS='-O3 -fopenmp -cpp -D__GFORTRAN__' CFLAGS='-O3 -DARCH="Linux" -DARPACK -DMATRIXSTORAGE -DUSE_MT=1'; \
   install -m 0755 ccx_${CCX_VER}_MT /usr/local/bin/ccx
 
 # ---------- runtime stage ----------

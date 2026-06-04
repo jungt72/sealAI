@@ -1,6 +1,13 @@
 
 import sys
-import asyncio
+
+import pytest
+
+pytest.importorskip(
+    "app.langgraph_v2",
+    reason="Legacy LangGraph v2 smoke test; V10 runtime uses app.agent entrypoints.",
+)
+
 from app.langgraph_v2.nodes.nodes_intent import intent_projector_node
 from app.langgraph_v2.nodes.nodes_consulting import consulting_supervisor_node
 from app.langgraph_v2.state import SealAIState

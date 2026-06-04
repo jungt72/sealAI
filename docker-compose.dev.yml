@@ -1,0 +1,66 @@
+services:
+  keycloak:
+    image: sealai-keycloak
+    build: { context: ./keycloak, dockerfile: Dockerfile }
+    env_file: [ ./.env.dev ]
+    ports: ["8080:8080"]
+    volumes:
+      - ./keycloak/providers:/opt/keycloak/providers
+
+  backend:
+    image: sealai-backend:dev
+    build:
+      context: ./backend
+      args:
+        INSTALL_DEV: "true"
+    env_file:
+      - ./backend/.env
+      - ./.env.dev
+    environment:
+      BYPASS_AUTH: "1"
+      SEALAI_ENABLE_BINARY_GATE: "true"
+      SEALAI_ENABLE_CONVERSATION_RUNTIME: "true"
+      SEALAI_ENABLE_GOVERNED_REDUCERS: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTEST_ADDOPTS: "--cache-dir=/tmp/pytest-cache"
+      RUFF_CACHE_DIR: "/tmp/ruff-cache"
+      MYPY_CACHE_DIR: "/tmp/mypy-cache"
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --timeout-keep-alive
+      - "120"
+      - --reload
+      - --reload-dir
+      - /app/app
+      - --reload-dir
+      - /app/agents
+      - --reload-dir
+      - /app/prompts
+      - --reload-dir
+      - /app/alembic
+    ports: ["8000:8000"]
+    volumes:
+      # Dev stays bind-mounted on purpose: on this VPS, direct source visibility
+      # plus uvicorn reload is simpler and clearer than a second compose watch loop.
+      - ./backend:/app
+      - ./data/backend:/app/data
+
+  qdrant:
+    ports: ["6333:6333", "6334:6334"]
+
+  frontend_test:
+    profiles: ["test"]
+    build:
+      context: ./frontend
+      target: test
+    depends_on:
+      backend: { condition: service_healthy }
+    env_file: [ ./.env.dev ]
+    environment:
+      NEXT_PUBLIC_PARAM_SYNC_DEBUG: "1"
+    command: ["npm", "run", "test:fast"]
