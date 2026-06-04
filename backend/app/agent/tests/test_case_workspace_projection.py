@@ -1410,3 +1410,22 @@ class TestCaseWorkspacePackRoutingFreeze:
         assert len(result) == 1
         assert result[0].calc_type == "rwdr"
         assert result[0].v_surface_m_s is not None  # live derivation inserted
+
+    def test_technical_derivation_dotted_rwdr_calc_type_does_not_dedup(self) -> None:
+        # A `rwdr.<id>` calc_type is NOT the coarse "rwdr" type label: the legacy
+        # `== "rwdr"` does NOT match it, so the live derivation is still inserted.
+        # Exact-match routing (pack_for_calc_type) must preserve this; the broader
+        # pack_for_calc_id (which matches the rwdr.<id> namespace) would wrongly
+        # dedup it.
+        result = _build_technical_derivations(
+            working_profile_pillar={
+                "engineering_profile": {"shaft_diameter_mm": 50, "speed_rpm": 1500}
+            },
+            system={
+                "technical_derivations": [
+                    {"calc_type": "rwdr.surface_speed", "status": "ok"}
+                ]
+            },
+        )
+        assert len(result) == 2  # existing dotted item + inserted live rwdr derivation
+        assert any(item.v_surface_m_s is not None for item in result)

@@ -116,6 +116,19 @@ def is_pack_calculation(calc_id: str) -> bool:
     return any(cid in pack.calculations() for pack in _PACKS)
 
 
+def pack_for_calc_type(calc_type: str | None) -> DomainPack | None:
+    """Pack whose ``pack_id`` EXACTLY equals a coarse calc_type label (legacy
+    exact ``calc_type == "rwdr"``), or ``None``.
+
+    Distinct from ``pack_for_calc_id``: this mirrors equality on the coarse
+    ``calc_type`` field and deliberately does NOT match the ``rwdr.<id>`` calc-id
+    namespace (a ``calc_type`` of ``"rwdr.surface_speed"`` is NOT the rwdr type
+    label), so it stays byte-for-byte equivalent to the legacy ``== "rwdr"``.
+    """
+    value = str(calc_type or "")
+    return next((pack for pack in _PACKS if pack.pack_id == value), None)
+
+
 def pack_for_engineering_path(engineering_path: str | None) -> DomainPack | None:
     """Pack whose ``pack_id`` equals the engineering path (legacy:
     `engineering_path == "rwdr"`), or ``None``."""
