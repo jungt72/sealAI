@@ -52,3 +52,19 @@ permissions (`.claude/settings.json`); they are also the contract for humans.
   in-session** — no session restart needed (verified 2026-06-04; see
   `docs/ops/GOVERNANCE_LOG.md`). Renaming a `.proposed` settings file onto
   `.claude/settings.json` makes the gates live for the next tool call.
+
+## Runtime kill-switches (incident-only, default = enforced)
+- **`SEALAI_TIER0_RETRIEVAL_GUARD`** (P1-2 TEIL B) — fail-closed guard at the RAG
+  retrieval funnel (`rag_orchestrator.hybrid_retrieve`): a turn declared **Tier-0**
+  (GREETING / META_QUESTION / BLOCKED — no-retrieval fast routes) that reaches
+  retrieval raises `TierViolation`. **Default ON** (unset or any value not in
+  `{0,false,no,off}` = enforced).
+  - **Set `=0` ONLY during an incident** where the guard is wrongly blocking a
+    legitimate retrieval (a suspected false-trip), to restore service while the
+    real cause is fixed. The bypass is **logged** (`tier0_retrieval_guard_BYPASS`),
+    never silent.
+  - It is **not a steady state**: a bypass means a tier-label-vs-behaviour
+    contradiction is live → open a finding, fix the label or the route, re-enforce.
+  - Toggling it is an env change on the running service (`.env.prod` is operator-
+    owned; never read/printed by agents) — re-enforce as soon as the incident is
+    resolved.
