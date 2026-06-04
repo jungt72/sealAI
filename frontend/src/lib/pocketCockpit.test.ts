@@ -92,6 +92,23 @@ describe("resolvePocketCockpitView", () => {
     expect(resolved.chips).toEqual(BACKEND_CHIPS);
   });
 
+  it("backfills rfq_status from the local derivation ONLY when the backend patch omits it", () => {
+    // Backend patch present but without an rfq_status field: the local
+    // derivation is the fallback (never a hardcoded literal). Backend value,
+    // when present, still wins verbatim (covered above).
+    const patchWithoutStatus = {
+      recognized: [{ label: "Fall", value: "Leckage", status: "candidate" }],
+    } as PocketCockpitPatch;
+
+    const resolved = resolvePocketCockpitView(
+      { patch: patchWithoutStatus, chips: null },
+      { isRfqReady: true },
+    );
+
+    expect(resolved.source).toBe("backend");
+    expect(resolved.patch.rfq_status).toBe("MANUFACTURER_REVIEW_READY");
+  });
+
   it("falls back to buildPocketCockpitView when no backend patch is present", () => {
     const fallbackInput = {
       recognizedFacts: [{ label: "Medium", value: "Öl" }],

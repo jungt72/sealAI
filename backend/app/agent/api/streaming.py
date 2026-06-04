@@ -335,21 +335,45 @@ def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
         "data_version": DETERMINISTIC_DATA_VERSION,
     }
 
-def _rwdr_p0_pocket_cockpit_fields(message: str) -> dict[str, Any]:
+def _rwdr_p0_pocket_cockpit_fields(
+    message: str, governed_state: "GovernedSessionState | None" = None
+) -> dict[str, Any]:
     """Additive backend-owned Pocket Cockpit fields for the governed RWDR P0 text
     case (``pocket_cockpit_patch`` + display-only ``action_chips``).
 
     Returns an empty dict for non-RWDR turns, so other governed/light/exploration
     turns are untouched. The patch is a deterministic projection (candidate facts,
     not confirmed truth) built by the RWDR service — no RFQ orchestration runs.
+
+    ``rfq_status`` is single-sourced: when an active case exists it is the
+    authoritative readiness (``pocket_rfq_status_from_state`` → the same
+    ``evaluate_rfq_readiness`` SoT as REST/desktop), so the pocket agrees with the
+    desktop/REST snapshot. Without an active case it stays the turn-local default.
     """
+
+    authoritative_rfq_status: str | None = None
+    if governed_state is not None:
+        try:
+            from app.agent.v92.dashboard_contract import (  # noqa: PLC0415
+                pocket_rfq_status_from_state,
+            )
+
+            authoritative_rfq_status = pocket_rfq_status_from_state(governed_state)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning(
+                "[rwdr_pocket_cockpit] authoritative rfq_status projection failed (%s: %s)",
+                type(exc).__name__,
+                exc,
+            )
 
     try:
         from app.services.rwdr_mvp_brief import (  # noqa: PLC0415
             build_rwdr_p0_pocket_cockpit_patch,
         )
 
-        result = build_rwdr_p0_pocket_cockpit_patch(str(message or ""))
+        result = build_rwdr_p0_pocket_cockpit_patch(
+            str(message or ""), rfq_status=authoritative_rfq_status
+        )
     except Exception as exc:  # noqa: BLE001
         _log.warning(
             "[rwdr_pocket_cockpit] projection failed (%s: %s)",
@@ -879,7 +903,7 @@ async def _stream_light_runtime(
             # Additive backend-owned Pocket Cockpit for the governed RWDR P0 text
             # case. No-op for non-RWDR turns; never replaces the workspace
             # projection (v92_dashboard / turn_envelope / reply stay intact).
-            payload.update(_rwdr_p0_pocket_cockpit_fields(message))
+            payload.update(_rwdr_p0_pocket_cockpit_fields(message, state_for_projection))
             yield event_builder.frame(payload, event_type="state_update", is_final=True)
             continue
 

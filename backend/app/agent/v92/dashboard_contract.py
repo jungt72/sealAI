@@ -89,6 +89,37 @@ def _current_facts(state: GovernedSessionState | None) -> list[dict[str, Any]]:
     return facts
 
 
+def pocket_rfq_status_from_state(state: GovernedSessionState | None) -> str | None:
+    """Authoritative pocket ``rfq_status`` for an active case.
+
+    Single source of truth: derives the RFQ readiness via
+    :func:`evaluate_rfq_readiness` — the *same* function the REST one-pager and
+    desktop readiness use — from the case's confirmed facts. Returns ``None``
+    when there is no active case (no confirmed facts), so the streamed pocket
+    falls back to the turn-local, candidate-derived default instead of inventing
+    a second status. Vocabulary stays within ``RFQ_READINESS_BANDS``.
+    """
+    facts = _current_facts(state)
+    if not facts:
+        return None
+    from app.agent.communication.rfq_one_pager import evaluate_rfq_readiness  # noqa: PLC0415 — local: avoid import cycle
+
+    present = [name for fact in facts if (name := str(fact.get("field_name") or "").strip())]
+    completeness = getattr(getattr(state, "engineering", None), "completeness_matrix", None)
+    missing = [
+        key
+        for item in (getattr(completeness, "blocking_missing_fields", []) or [])
+        if (
+            key := str(
+                (item.get("key") or item.get("label") or item.get("field") or "")
+                if isinstance(item, dict)
+                else item
+            ).strip()
+        )
+    ]
+    return evaluate_rfq_readiness(present, missing_fields=missing).status
+
+
 def _risk_matrix(state: GovernedSessionState | None) -> list[dict[str, Any]]:
     if state is None:
         return []

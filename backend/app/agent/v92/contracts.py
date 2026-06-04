@@ -300,8 +300,9 @@ class AssistantTurnEnvelope(BaseModel):
     chat_reply: ChatReply
     cockpit_patch: CockpitPatch = Field(default_factory=CockpitPatch)
     pocket_cockpit_patch: PocketCockpitPatch | None = None
-    case_understanding_patch: dict[str, Any] | None = None
-    rfq_brief_patch: dict[str, Any] | None = None
+    # P0-3: case_understanding_patch / rfq_brief_patch removed — they had no
+    # writer and no consumer. The in-turn delivery contract is pocket_cockpit_patch
+    # + rfq_readiness_projection + cockpit_patch (+ REST one-pager on demand).
     pending_question: dict[str, Any] | None = None
     action_chips: list[ActionChip] = Field(default_factory=list)
     trace: dict[str, Any] = Field(default_factory=dict)

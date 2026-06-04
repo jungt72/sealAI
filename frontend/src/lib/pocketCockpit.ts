@@ -107,11 +107,17 @@ export function resolvePocketCockpitView(
 ): ResolvedPocketCockpit {
   const backendPatch = backend?.patch ?? null;
   if (backendPatch) {
-    return {
-      patch: backendPatch,
-      chips: Array.isArray(backend?.chips) ? backend.chips : [],
-      source: "backend",
-    };
+    const chips = Array.isArray(backend?.chips) ? backend.chips : [];
+    // Backend rfq_status wins verbatim. The local derivation is the fallback
+    // ONLY when the backend omits the field — never a hardcoded literal.
+    if (backendPatch.rfq_status == null) {
+      return {
+        patch: { ...backendPatch, rfq_status: buildPocketCockpitView(fallbackInput).patch.rfq_status },
+        chips,
+        source: "backend",
+      };
+    }
+    return { patch: backendPatch, chips, source: "backend" };
   }
   const { patch, chips } = buildPocketCockpitView(fallbackInput);
   return { patch, chips, source: "client_derived" };

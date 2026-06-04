@@ -1746,6 +1746,18 @@ Für jedes Template:
 
 ## 11. Multi-Output Contract
 
+> **Amendment 2026-06-04 (P0-3, gap-audit C7 — Owner decision Option 2).** The
+> in-turn delivery contract is **`pocket_cockpit_patch`**
+> (recognized / critical / next_step / **rfq_status** — single-sourced from
+> `evaluate_rfq_readiness`) + **`rfq_readiness_projection`** (readiness) +
+> **`cockpit_patch`** (desktop documentation) + the **REST RFQ one-pager** on
+> demand. The previously-listed `case_understanding_patch` and `rfq_brief_patch`
+> were **stubs with no writer and no consumer** and are **removed** from the
+> envelope (here and in §28.2). The original "§6.4" reference resolves to this
+> §11 envelope definition (and the §28.2 schema) — §6.4 does not exist as a
+> heading. Reason: align the documented envelope with the implemented, tested
+> delivery path; stop carrying inert fields.
+
 Jeder fachliche Turn erzeugt intern einen Output-Envelope:
 
 ```json
@@ -1754,8 +1766,6 @@ Jeder fachliche Turn erzeugt intern einen Output-Envelope:
     "chat_reply": {},
     "cockpit_patch": {},
     "pocket_cockpit_patch": {},
-    "case_understanding_patch": {},
-    "rfq_brief_patch": {},
     "pending_question": {},
     "action_chips": [],
     "trace": {}
@@ -3534,8 +3544,8 @@ class AssistantTurnEnvelope(BaseModel):
     chat_reply: ChatReply
     cockpit_patch: CockpitPatch = Field(default_factory=CockpitPatch)
     pocket_cockpit_patch: Optional[PocketCockpitPatch] = None
-    case_understanding_patch: Optional[dict[str, Any]] = None
-    rfq_brief_patch: Optional[dict[str, Any]] = None
+    # P0-3 (2026-06-04, C7): case_understanding_patch / rfq_brief_patch removed —
+    # inert stubs (no writer, no consumer). See §11 amendment.
     pending_question: Optional[dict[str, Any]] = None
     action_chips: list[ActionChip] = Field(default_factory=list)
     trace: dict[str, Any] = Field(default_factory=dict)
