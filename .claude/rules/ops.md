@@ -19,14 +19,23 @@ permissions (`.claude/settings.json`); they are also the contract for humans.
 - Never quote a rollback anchor from memory or from a prior turn.
 
 ## Production deploy
-- Prod changes go **only** through `ops/release-backend.sh` (backend only): build
-  → push GHCR → pin `@sha256` in `.env.prod` → recreate backend → health +
+- Prod changes go **only** through the sanctioned release scripts: backend via
+  `ops/release-backend.sh`, frontend via `ops/release-frontend.sh`. Both: build →
+  push GHCR → pin `@sha256` in `.env.prod` → recreate the one service → health +
   auto-rollback (health-fail) → nginx reload → live pilot smoke.
 - The **deploy gate** (`ops/hooks/deploy-gate.sh`) blocks `release-backend.sh`
-  until both sentinels above are fresh (< 1h). The project permission then still
-  **asks** the human to confirm.
+  until both sentinels above are fresh (< 1h); the project permission then still
+  **asks** the human to confirm. The frontend script is **not** sentinel-gated by the
+  hook — its pre-deploy gate is a green `next build` + frontend tests (the known
+  pre-existing `workspaceMapping` vitest fail is the only tolerated red; nothing new
+  may break) + the rollback anchor read from the running daemon.
 - After deploy: record the new live digest, re-run the smoke, and verify live
-  acceptance in the deployed container (`docker exec backend …`).
+  acceptance in the deployed container (`docker exec … `).
+- **Every prod deploy is logged in `docs/ops/GOVERNANCE_LOG.md` — no exceptions**
+  (backend, frontend, doctrine or brand; owner rule 2026-06-04). One entry per
+  deploy with: the new pinned `@sha256` digest, the rollback target (read from the
+  running daemon, never memory), the pre-deploy gate result, and the live-smoke
+  outcome.
 
 ## Secrets & untouchables
 - `.env*` files are never read, printed, or committed (denied in permissions).
