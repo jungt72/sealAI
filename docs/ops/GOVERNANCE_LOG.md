@@ -6,6 +6,30 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T18:37Z — Frontend Brand/UI-Refresh prod deploy
+
+Frontend-only release of the Codex-authored brand/chat-UI refresh (owner-approved; PR #72 on
+`demo/rwdr-limited-external`, checked in verbatim). Not a doctrine/governance change — logged
+per the **owner's standing rule (2026-06-04): every prod deploy is recorded here, no exceptions**
+(backend, frontend, doctrine or brand).
+
+**Scope:** new PNG logos + `SealAiBrand` (inline SVG → `next/image`); `DashboardShell`
+header/sidebar restyle + user-identity card; `ChatComposer` pill/glass restyle; `ChatPane`
+empty-start simplified (starter prompts + client-side JWT name greeting removed). 9 files, no
+secrets / `.env` / build artifacts.
+
+**Quality gate:** `next build` EXIT=0; `vitest` 198/199 — the only red, `workspaceMapping.test.tsx`,
+**proven pre-existing** (fails on the clean tree with the changes stashed); `test:node` 35/35.
+
+**Deploy (`ops/release-frontend.sh`, EXIT=0):** new pinned image
+`ghcr.io/jungt72/sealai-frontend:d40d7145-20260604-183558@sha256:fdb5ced64153aee727b1b2eb7ad8d7fda0dec398c5b8d225cfabfb3ff7cc19d6`.
+Frontend healthy (`/api/health` → `ok`); nginx reloaded; **live pilot smoke 14/14 PASS**. Rollback
+target `…sealai-frontend:7eb3d9f4-20260604-174637@sha256:59e433fd58dba0baf9d9d3179780bc6d7d2fde113f440e2ccae3ab4a66ebc723`
+via `.env.prod.rollback-20260604-183558` (read from the running daemon, not memory). Owner does the
+visual acceptance check on https://sealingai.com.
+
+---
+
 ## 2026-06-04T18:14Z — P1-4 prod deploy (C1/C9/S3 + enforcers)
 
 Follow-up deploy to the demo-merge entry below. HALT-before-prod honoured: the four-part risk
