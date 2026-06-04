@@ -15,6 +15,7 @@ from app.agent.domain.compatibility_precheck import (
     compatibility_check_status,
 )
 from app.agent.domain.risk_claims import risk_claim_payload
+from app.domain.seal_packs import pack_for_engineering_path
 
 
 @dataclass(frozen=True)
@@ -290,7 +291,7 @@ def _build_rwdr_professional_check_results(
     profile: dict[str, Any],
     engineering_path: str | None,
 ) -> list[dict[str, Any]]:
-    if str(engineering_path or "") != "rwdr":
+    if pack_for_engineering_path(engineering_path) is None:
         return []
 
     results: list[dict[str, Any]] = []
