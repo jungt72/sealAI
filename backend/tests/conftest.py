@@ -20,6 +20,7 @@ if STUB_PATH.exists() and str(STUB_PATH) not in sys.path:
     sys.path.insert(0, str(STUB_PATH))
 
 if "prometheus_client" not in sys.modules:
+
     class _MetricValue:
         def __init__(self) -> None:
             self._current = 0.0

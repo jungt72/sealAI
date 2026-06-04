@@ -175,7 +175,11 @@ def stub_answers() -> Dict[str, str]:
     }
 
     # Enforce ChatGPT-level structure in the regression stubs.
-    rag_ids = {"gp_04_material_comparison", "gp_06_high_temp", "gp_08_lead_helix_direction"}
+    rag_ids = {
+        "gp_04_material_comparison",
+        "gp_06_high_temp",
+        "gp_08_lead_helix_direction",
+    }
     for key, text in list(answers.items()):
         if key in rag_ids:
             text = text.replace("## Quellen", "## Wissensdatenbank (Quellen)")
@@ -199,8 +203,12 @@ def minimal_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("postgres_host", "localhost")
     monkeypatch.setenv("postgres_port", "5432")
     monkeypatch.setenv("postgres_db", "test")
-    monkeypatch.setenv("database_url", "postgresql+psycopg://test:test@localhost:5432/test")
-    monkeypatch.setenv("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/test")
+    monkeypatch.setenv(
+        "database_url", "postgresql+psycopg://test:test@localhost:5432/test"
+    )
+    monkeypatch.setenv(
+        "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/test"
+    )
     monkeypatch.setenv("openai_api_key", "dummy")
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
     monkeypatch.setenv("qdrant_url", "http://localhost:6333")
