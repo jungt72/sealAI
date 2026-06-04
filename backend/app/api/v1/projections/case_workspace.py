@@ -47,6 +47,7 @@ from app.agent.domain.dependency_graph import derived_values_for_projection
 from app.agent.domain.medium_registry import classify_medium_value
 from app.agent.domain.risk_readiness import evaluate_readiness, evaluate_risks
 from app.domain.case_type import assign_case_type_from_legacy_routing
+from app.domain.seal_packs import pack_for_calc_id, pack_for_engineering_path
 from app.domain.seal_type import (
     normalize_seal_type,
     type_specific_missing_hints_for_type,
@@ -973,7 +974,10 @@ def _field_requirement_tier(
         ]
     )
     if field_id in mandatory:
-        if str(engineering_path or "") == "rwdr" and field_id == "pressure_at_seal_bar":
+        if (
+            pack_for_engineering_path(engineering_path) is not None
+            and field_id == "pressure_at_seal_bar"
+        ):
             return "required_for_rwdr_precheck"
         return "required_for_basic_orientation"
     tiers = check_tiers.get(field_id, [])
@@ -1340,7 +1344,7 @@ def _build_deep_dive_tabs(
     )
     seal_type = _deep_value(profile, "sealing_type", "seal_type") or (
         "PTFE-RWDR"
-        if str(cockpit_view.engineering_path or "") == "rwdr"
+        if pack_for_engineering_path(cockpit_view.engineering_path) is not None
         else "Dichtungstyp noch offen"
     )
     application = (
@@ -1832,7 +1836,7 @@ def _build_technical_derivations(
         live_calc_tile
     ) or _technical_derivation_from_current_profile(profile)
     if live_calc_derivation is not None and not any(
-        item.calc_type == "rwdr" for item in items
+        pack_for_calc_id(item.calc_type) is not None for item in items
     ):
         items.insert(0, live_calc_derivation)
     return items
