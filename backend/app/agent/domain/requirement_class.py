@@ -59,7 +59,10 @@ def _has_rotary_install_hint(payload: RequirementClassSpecialistInput) -> bool:
         if _specialist_value(payload, field_name) is not None:
             return True
     geometry_hints = payload.geometry_install_hints or {}
-    return any(geometry_hints.get(field_name) is not None for field_name in ("shaft_diameter_mm", "speed_rpm"))
+    return any(
+        geometry_hints.get(field_name) is not None
+        for field_name in ("shaft_diameter_mm", "speed_rpm")
+    )
 
 
 def _has_rotary_hint_asserted_only(payload: RequirementClassSpecialistInput) -> bool:
@@ -89,7 +92,10 @@ def _installation_text(payload: RequirementClassSpecialistInput) -> str:
 
 def _has_static_install_hint(payload: RequirementClassSpecialistInput) -> bool:
     text = _installation_text(payload)
-    return any(marker in text for marker in ("flansch", "gehaeuse", "gehäuse", "statisch", "deckel", "platte"))
+    return any(
+        marker in text
+        for marker in ("flansch", "gehaeuse", "gehäuse", "statisch", "deckel", "platte")
+    )
 
 
 def _has_geometry_context(payload: RequirementClassSpecialistInput) -> bool:
@@ -97,7 +103,10 @@ def _has_geometry_context(payload: RequirementClassSpecialistInput) -> bool:
         if _specialist_value(payload, field_name) is not None:
             return True
     text = _installation_text(payload)
-    return any(marker in text for marker in ("nut", "bohrung", "welle", "flansch", "gehaeuse", "gehäuse"))
+    return any(
+        marker in text
+        for marker in ("nut", "bohrung", "welle", "flansch", "gehaeuse", "gehäuse")
+    )
 
 
 def _append_unique(items: list[str], value: str | None) -> None:
@@ -106,7 +115,9 @@ def _append_unique(items: list[str], value: str | None) -> None:
 
 
 def _class(class_id: str, description: str, seal_type: str) -> RequirementClass:
-    return RequirementClass(class_id=class_id, description=description, seal_type=seal_type)
+    return RequirementClass(
+        class_id=class_id, description=description, seal_type=seal_type
+    )
 
 
 def run_requirement_class_specialist(
@@ -126,11 +137,17 @@ def run_requirement_class_specialist(
             requirement_class_candidates=(),
             preferred_requirement_class=None,
             open_points=("medium",),
-            scope_of_validity=("Requirement-class derivation requires a resolved medium.",),
+            scope_of_validity=(
+                "Requirement-class derivation requires a resolved medium.",
+            ),
         )
 
-    rotary_hint = _has_rotary_install_hint(payload)  # includes geometry hints — scope notes only
-    rotary_hint_asserted = _has_rotary_hint_asserted_only(payload)  # asserted only — class selection
+    rotary_hint = _has_rotary_install_hint(
+        payload
+    )  # includes geometry hints — scope notes only
+    rotary_hint_asserted = _has_rotary_hint_asserted_only(
+        payload
+    )  # asserted only — class selection
     if rotary_hint:
         _append_unique(
             scope_of_validity,
@@ -151,14 +168,19 @@ def run_requirement_class_specialist(
                 "PTFE steam sealing class for elevated thermal load.",
                 "gasket",
             )
-            _append_unique(scope_of_validity, "Derived from asserted PTFE material family and steam medium.")
+            _append_unique(
+                scope_of_validity,
+                "Derived from asserted PTFE material family and steam medium.",
+            )
         else:
             preferred = _class(
                 "PTFE-GEN-1",
                 "General PTFE sealing class for chemically broad service.",
                 "gasket",
             )
-            _append_unique(scope_of_validity, "Derived from asserted PTFE material family.")
+            _append_unique(
+                scope_of_validity, "Derived from asserted PTFE material family."
+            )
     elif material == "FKM":
         if temp_c is not None and temp_c >= 150:
             preferred = _class(
@@ -166,14 +188,19 @@ def run_requirement_class_specialist(
                 "High-temperature FKM sealing class.",
                 "radial_shaft_seal",
             )
-            _append_unique(scope_of_validity, "Derived from asserted FKM material family and elevated temperature.")
+            _append_unique(
+                scope_of_validity,
+                "Derived from asserted FKM material family and elevated temperature.",
+            )
         else:
             preferred = _class(
                 "FKM-GEN-1",
                 "General FKM sealing class for elastomer service.",
                 "radial_shaft_seal",
             )
-            _append_unique(scope_of_validity, "Derived from asserted FKM material family.")
+            _append_unique(
+                scope_of_validity, "Derived from asserted FKM material family."
+            )
     elif "dampf" in medium or "steam" in medium:
         preferred = _class(
             "PTFE10",
@@ -221,7 +248,11 @@ def run_requirement_class_specialist(
             if _specialist_value(payload, "speed_rpm") is None:
                 _append_unique(open_points, "speed_rpm")
         preferred = _class(
-            "ROTARY-B1" if rotary_hint_asserted else "STATIC-B1" if _has_static_install_hint(payload) else "GENERAL-B1",
+            "ROTARY-B1"
+            if rotary_hint_asserted
+            else "STATIC-B1"
+            if _has_static_install_hint(payload)
+            else "GENERAL-B1",
             "General sealing requirement — further qualification required.",
             "radial_shaft_seal" if rotary_hint_asserted else "gasket",
         )

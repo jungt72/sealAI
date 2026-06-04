@@ -20,7 +20,11 @@ def test_candidate_conflict_uses_provenance_priority_and_question() -> None:
 def test_numeric_values_inside_field_tolerance_do_not_conflict() -> None:
     result = ConflictDetectionService().detect(
         {"temperature_c": {"value": 80.0, "provenance": "documented"}},
-        [ConflictCandidate(field_name="temperature_c", value="80.4 C", provenance="user_stated")],
+        [
+            ConflictCandidate(
+                field_name="temperature_c", value="80.4 C", provenance="user_stated"
+            )
+        ],
     )
 
     assert result.has_conflicts is False
@@ -31,8 +35,18 @@ def test_observed_candidates_detect_warning_for_different_values() -> None:
     result = ConflictDetectionService().detect_observed_candidates(
         "pressure_bar",
         [
-            ConflictCandidate(field_name="pressure_bar", value=4.0, provenance="llm", source_turn_index=1),
-            ConflictCandidate(field_name="pressure_bar", value=6.0, provenance="llm", source_turn_index=2),
+            ConflictCandidate(
+                field_name="pressure_bar",
+                value=4.0,
+                provenance="llm",
+                source_turn_index=1,
+            ),
+            ConflictCandidate(
+                field_name="pressure_bar",
+                value=6.0,
+                provenance="llm",
+                source_turn_index=2,
+            ),
         ],
     )
 

@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
-from app.agent.state.models import CaseEvent, ConversationMessage, GovernedSessionState, ObservedExtraction
+from app.agent.state.models import (
+    CaseEvent,
+    ConversationMessage,
+    GovernedSessionState,
+    ObservedExtraction,
+)
 from app.agent.state.reducers import produce_governance
 from app.agent.graph import GraphState
 from app.agent.runtime.answer_trace import build_answer_trace, with_answer_trace
@@ -46,6 +51,7 @@ _LIGHT_CASE_SUMMARY_UNITS: dict[str, str] = {
     "speed_rpm": "rpm",
 }
 
+
 def _conversation_message_payload(
     *,
     role: str,
@@ -57,6 +63,7 @@ def _conversation_message_payload(
         "content": content,
         "created_at": created_at or datetime.now(timezone.utc).isoformat(),
     }
+
 
 def _with_governed_conversation_turn(
     state: GovernedSessionState,
@@ -70,7 +77,6 @@ def _with_governed_conversation_turn(
     return state.model_copy(update={"conversation_messages": new_messages})
 
 
-
 def _with_case_event(
     state: GovernedSessionState,
     *,
@@ -80,12 +86,14 @@ def _with_case_event(
 
     return state.model_copy(update={"case_events": list(state.case_events) + [event]})
 
+
 def _governed_history_slice(
     state: GovernedSessionState,
     *,
     limit: int = _LIGHT_HISTORY_MESSAGES,
 ) -> list[ConversationMessage]:
     return list(state.conversation_messages[-limit:])
+
 
 def _serialize_governed_history_payload(
     *,
@@ -96,6 +104,7 @@ def _serialize_governed_history_payload(
         _conversation_message_payload(role=m.role, content=m.content)
         for m in _governed_history_slice(state, limit=limit)
     ]
+
 
 def _governed_working_profile_snapshot(state: GovernedSessionState) -> dict[str, Any]:
     profile: dict[str, Any] = {}
@@ -108,6 +117,7 @@ def _governed_working_profile_snapshot(state: GovernedSessionState) -> dict[str,
         profile["calc_results"] = working_profile.calc_results
     return profile
 
+
 def _governed_messages_as_langchain(
     state: GovernedSessionState,
 ) -> list[BaseMessage]:
@@ -119,12 +129,16 @@ def _governed_messages_as_langchain(
             lc_messages.append(AIMessage(content=m.content))
     return lc_messages
 
+
 def _governed_release_status_snapshot(state: GovernedSessionState) -> str:
-    if state.rfq.rfq_ready or (state.governance.rfq_admissible and state.rfq.critical_review_passed):
+    if state.rfq.rfq_ready or (
+        state.governance.rfq_admissible and state.rfq.critical_review_passed
+    ):
         return "released"
     if state.governance.rfq_admissible:
         return "technical_release_admissible"
     return "in_progress"
+
 
 def _overlay_live_governed_snapshot(
     *,
@@ -135,9 +149,8 @@ def _overlay_live_governed_snapshot(
     state["messages"] = _governed_messages_as_langchain(governed_state)
 
     case_meta_source = getattr(governed_state, "case_meta", None)
-    phase = (
-        getattr(case_meta_source, "phase", None)
-        or getattr(governed_state.case_lifecycle, "phase", None)
+    phase = getattr(case_meta_source, "phase", None) or getattr(
+        governed_state.case_lifecycle, "phase", None
     )
     runtime_path = getattr(case_meta_source, "runtime_path", "governed_graph")
     binding_level = getattr(case_meta_source, "binding_level", "ORIENTATION")
@@ -154,6 +167,7 @@ def _overlay_live_governed_snapshot(
     state["case_state"] = case_state
     state["policy_path"] = runtime_path
     state["result_form"] = "governed_session"
+
 
 def _sync_governed_state_from_review_outcome(
     governed_state: GovernedSessionState,
@@ -180,19 +194,31 @@ def _sync_governed_state_from_review_outcome(
 
     updated_governance = produce_governance(
         governed_state.governance,
-        requirement_class=requirement_class_payload or governed_state.governance.requirement_class,
+        requirement_class=requirement_class_payload
+        or governed_state.governance.requirement_class,
         rfq_admissible=str(
             governance_state.get("rfq_admissibility")
             or rfq_state.get("rfq_admissibility")
             or "inadmissible"
-        ) == "ready",
+        )
+        == "ready",
     )
 
     updated_rfq = governed_state.rfq.model_copy(
         update={
-            "status": str(rfq_state.get("handover_status") or rfq_state.get("status") or governed_state.rfq.status),
-            "rfq_admissible": str(governance_state.get("rfq_admissibility") or rfq_state.get("rfq_admissibility") or "inadmissible") == "ready",
-            "selected_manufacturer_ref": selected_manufacturer_ref or governed_state.rfq.selected_manufacturer_ref,
+            "status": str(
+                rfq_state.get("handover_status")
+                or rfq_state.get("status")
+                or governed_state.rfq.status
+            ),
+            "rfq_admissible": str(
+                governance_state.get("rfq_admissibility")
+                or rfq_state.get("rfq_admissibility")
+                or "inadmissible"
+            )
+            == "ready",
+            "selected_manufacturer_ref": selected_manufacturer_ref
+            or governed_state.rfq.selected_manufacturer_ref,
         }
     )
 
@@ -203,8 +229,13 @@ def _sync_governed_state_from_review_outcome(
         }
     )
 
-def _current_governed_medium_label(state: GovernedSessionState | GraphState) -> str | None:
-    classification_label = str(state.medium_classification.canonical_label or "").strip()
+
+def _current_governed_medium_label(
+    state: GovernedSessionState | GraphState,
+) -> str | None:
+    classification_label = str(
+        state.medium_classification.canonical_label or ""
+    ).strip()
     if classification_label:
         return classification_label
 
@@ -218,9 +249,11 @@ def _current_governed_medium_label(state: GovernedSessionState | GraphState) -> 
 
     return None
 
+
 def _truncate_light_topic(message: str, *, limit: int = 160) -> str | None:
     text = " ".join(str(message or "").split()).strip()
     return text[:limit] if text else None
+
 
 def _extract_extractions_from_working_profile(
     working_profile: dict[str, Any],
@@ -231,6 +264,7 @@ def _extract_extractions_from_working_profile(
             continue
         extractions.append(ObservedExtraction(field_name=k, value=v))
     return extractions
+
 
 def _build_param_summary(governed_state_data: dict) -> Optional[str]:
     assertions = (governed_state_data.get("asserted") or {}).get("assertions") or {}
@@ -255,20 +289,30 @@ def _build_param_summary(governed_state_data: dict) -> Optional[str]:
 
     return ", ".join(lines) if lines else None
 
+
 def _collect_light_missing_fields(state: GovernedSessionState) -> list[str]:
-    missing = list(state.asserted.blocking_unknowns) + list(state.asserted.conflict_flags)
+    missing = list(state.asserted.blocking_unknowns) + list(
+        state.asserted.conflict_flags
+    )
     return [str(m) for m in missing]
+
 
 def _collect_tentative_domain_signals(state: GovernedSessionState) -> list[str]:
     signals: list[str] = []
     if state.governance.requirement_class:
-        signals.append(f"requirement_class:{state.governance.requirement_class.class_id}")
+        signals.append(
+            f"requirement_class:{state.governance.requirement_class.class_id}"
+        )
     if state.governance.gov_class:
         signals.append(f"gov_class:{state.governance.gov_class}")
     return signals
 
+
 def _light_summary_label(field_name: str) -> str:
-    return _LIGHT_CASE_SUMMARY_FIELD_LABELS.get(field_name, field_name.replace("_", " "))
+    return _LIGHT_CASE_SUMMARY_FIELD_LABELS.get(
+        field_name, field_name.replace("_", " ")
+    )
+
 
 def _safe_model_dump(value: Any) -> dict[str, Any]:
     if value is None:
@@ -286,6 +330,7 @@ def _safe_model_dump(value: Any) -> dict[str, Any]:
             return {}
     return {}
 
+
 def _light_value_text(value: Any, *, limit: int = 180) -> str:
     if value is None:
         return ""
@@ -298,7 +343,11 @@ def _light_value_text(value: Any, *, limit: int = 180) -> str:
     elif isinstance(value, str):
         text = " ".join(value.split()).strip()
     elif isinstance(value, (list, tuple, set)):
-        text = ", ".join(_light_value_text(item, limit=80) for item in value if _light_value_text(item, limit=80))
+        text = ", ".join(
+            _light_value_text(item, limit=80)
+            for item in value
+            if _light_value_text(item, limit=80)
+        )
     elif isinstance(value, dict):
         try:
             text = json.dumps(value, ensure_ascii=False, default=str, sort_keys=True)
@@ -311,10 +360,14 @@ def _light_value_text(value: Any, *, limit: int = 180) -> str:
         return f"{text[:limit - 1].rstrip()}..."
     return text
 
-def _append_unique_light_item(items: list[str], value: Any, *, limit: int = 180) -> None:
+
+def _append_unique_light_item(
+    items: list[str], value: Any, *, limit: int = 180
+) -> None:
     text = _light_value_text(value, limit=limit)
     if text and text not in items:
         items.append(text)
+
 
 def _light_asserted_parameters(state: GovernedSessionState) -> list[dict[str, Any]]:
     parameters: list[dict[str, Any]] = []
@@ -323,7 +376,9 @@ def _light_asserted_parameters(state: GovernedSessionState) -> list[dict[str, An
         if value in (None, ""):
             continue
         engineering_value = getattr(claim, "engineering_value", None)
-        unit = getattr(engineering_value, "unit", None) or _LIGHT_CASE_SUMMARY_UNITS.get(field_name)
+        unit = getattr(
+            engineering_value, "unit", None
+        ) or _LIGHT_CASE_SUMMARY_UNITS.get(field_name)
         value_text = _light_value_text(value)
         if unit and value_text and not value_text.lower().endswith(str(unit).lower()):
             value_text = f"{value_text} {unit}"
@@ -339,6 +394,7 @@ def _light_asserted_parameters(state: GovernedSessionState) -> list[dict[str, An
         )
     return parameters[:16]
 
+
 def _light_observed_candidates(state: GovernedSessionState) -> list[dict[str, Any]]:
     asserted_fields = set(state.asserted.assertions.keys())
     candidates: list[dict[str, Any]] = []
@@ -351,7 +407,11 @@ def _light_observed_candidates(state: GovernedSessionState) -> list[dict[str, An
             continue
         raw_unit = getattr(extraction, "raw_unit", None)
         value_text = _light_value_text(raw_value)
-        if raw_unit and value_text and not value_text.lower().endswith(str(raw_unit).lower()):
+        if (
+            raw_unit
+            and value_text
+            and not value_text.lower().endswith(str(raw_unit).lower())
+        ):
             value_text = f"{value_text} {raw_unit}"
         item = {
             "field": field_name,
@@ -365,6 +425,7 @@ def _light_observed_candidates(state: GovernedSessionState) -> list[dict[str, An
         if len(candidates) >= 8:
             break
     return list(reversed(candidates))
+
 
 def _light_calculation_results(state: GovernedSessionState) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
@@ -381,7 +442,9 @@ def _light_calculation_results(state: GovernedSessionState) -> list[dict[str, An
                 output_parts.append(f"{_light_summary_label(str(key))}: {text}")
         results.append(
             {
-                "id": getattr(result, "calculation_id", "") or getattr(result, "calculator", "") or "calculation",
+                "id": getattr(result, "calculation_id", "")
+                or getattr(result, "calculator", "")
+                or "calculation",
                 "status": getattr(result, "status", None),
                 "claim_level": getattr(result, "claim_level", None),
                 "outputs": output_parts,
@@ -393,6 +456,7 @@ def _light_calculation_results(state: GovernedSessionState) -> list[dict[str, An
         if len(results) >= 6:
             break
     return results
+
 
 def _light_plausibility_items(state: GovernedSessionState) -> list[str]:
     items: list[str] = []
@@ -408,9 +472,20 @@ def _light_plausibility_items(state: GovernedSessionState) -> list[str]:
             return items
     for risk in list(getattr(state.engineering, "risk_findings", []) or []):
         payload = _safe_model_dump(risk)
-        title = payload.get("title") or payload.get("risk_name") or payload.get("name") or payload.get("risk")
-        summary = payload.get("summary") or payload.get("explanation_short") or payload.get("reason")
-        severity = payload.get("severity") or payload.get("score") or payload.get("label")
+        title = (
+            payload.get("title")
+            or payload.get("risk_name")
+            or payload.get("name")
+            or payload.get("risk")
+        )
+        summary = (
+            payload.get("summary")
+            or payload.get("explanation_short")
+            or payload.get("reason")
+        )
+        severity = (
+            payload.get("severity") or payload.get("score") or payload.get("label")
+        )
         _append_unique_light_item(items, f"{severity}: {title} - {summary}".strip(" -"))
         if len(items) >= 6:
             return items
@@ -427,6 +502,7 @@ def _light_plausibility_items(state: GovernedSessionState) -> list[str]:
         if len(items) >= 8:
             break
     return items
+
 
 def _light_next_questions(state: GovernedSessionState) -> list[dict[str, str]]:
     questions: list[dict[str, str]] = []
@@ -454,7 +530,9 @@ def _light_next_questions(state: GovernedSessionState) -> list[dict[str, str]]:
             f"offenes Feld: {getattr(pending, 'target_field', '')}",
             "pending_question",
         )
-    challenge_question = getattr(getattr(state, "challenge", None), "next_best_question", None)
+    challenge_question = getattr(
+        getattr(state, "challenge", None), "next_best_question", None
+    )
     if challenge_question is not None:
         add(
             getattr(challenge_question, "question", None),
@@ -473,8 +551,13 @@ def _light_next_questions(state: GovernedSessionState) -> list[dict[str, str]]:
         add(plan.get(key), plan.get("reason") or plan.get("rationale"), "question_plan")
     for item in list(plan.get("questions") or plan.get("items") or [])[:3]:
         if isinstance(item, dict):
-            add(item.get("question") or item.get("text"), item.get("reason"), "question_plan")
+            add(
+                item.get("question") or item.get("text"),
+                item.get("reason"),
+                "question_plan",
+            )
     return questions[:4]
+
 
 def _legacy_light_case_summary(governed_state: GovernedSessionState) -> Optional[str]:
     parts: list[str] = []
@@ -486,6 +569,7 @@ def _legacy_light_case_summary(governed_state: GovernedSessionState) -> Optional
     if governed_state.governance.gov_class:
         parts.append(f"Gov: {governed_state.governance.gov_class}")
     return " | ".join(parts) if parts else None
+
 
 def _build_light_case_summary(governed_state: GovernedSessionState) -> Optional[str]:
     context = {
@@ -503,8 +587,12 @@ def _build_light_case_summary(governed_state: GovernedSessionState) -> Optional[
             ),
             "gov_class": governed_state.governance.gov_class,
             "rfq_admissible": governed_state.governance.rfq_admissible,
-            "validity_limits": list(governed_state.governance.validity_limits or [])[:6],
-            "open_validation_points": list(governed_state.governance.open_validation_points or [])[:6],
+            "validity_limits": list(governed_state.governance.validity_limits or [])[
+                :6
+            ],
+            "open_validation_points": list(
+                governed_state.governance.open_validation_points or []
+            )[:6],
         },
         "engine_status": {
             "engineering": getattr(governed_state.engineering, "status", None),
@@ -526,11 +614,15 @@ def _build_light_case_summary(governed_state: GovernedSessionState) -> Optional[
     )
     if not has_context:
         return None
-    return render_communication_template(
-        "free_conversation_engine_context",
-        context,
-        fallback=_legacy_light_case_summary(governed_state) or "",
-    ) or None
+    return (
+        render_communication_template(
+            "free_conversation_engine_context",
+            context,
+            fallback=_legacy_light_case_summary(governed_state) or "",
+        )
+        or None
+    )
+
 
 def _light_case_active(governed_state: GovernedSessionState) -> bool:
     if governed_state.conversation_messages:
@@ -538,6 +630,7 @@ def _light_case_active(governed_state: GovernedSessionState) -> bool:
     if governed_state.asserted.assertions:
         return True
     return False
+
 
 def _with_light_route_progress(
     state: GovernedSessionState,
@@ -565,6 +658,7 @@ def _with_light_route_progress(
         )
     return state.model_copy(update=update_data)
 
+
 def _compose_deterministic_governed_reply(
     *,
     response_class: str,
@@ -573,6 +667,7 @@ def _compose_deterministic_governed_reply(
     if response_class == "governed_state_update":
         return "Ich habe die Parameter Ihrer Anfrage strukturiert erfasst und das Modell aktualisiert."
     return deterministic_reply
+
 
 def _governed_state_extras_inquiry(state: GovernedSessionState) -> dict[str, Any]:
     selected = state.rfq.selected_manufacturer_ref
@@ -583,6 +678,7 @@ def _governed_state_extras_inquiry(state: GovernedSessionState) -> dict[str, Any
         "dispatch_status": state.dispatch.status,
     }
 
+
 def _governed_state_extras_shortlist(state: GovernedSessionState) -> dict[str, Any]:
     selected = state.matching.selected_manufacturer_ref
     return {
@@ -590,14 +686,16 @@ def _governed_state_extras_shortlist(state: GovernedSessionState) -> dict[str, A
         "primary_candidate": selected,
     }
 
-def _governed_structured_state(state: GovernedSessionState, response_class: str) -> dict[str, Any]:
+
+def _governed_structured_state(
+    state: GovernedSessionState, response_class: str
+) -> dict[str, Any]:
     response_class = normalize_outward_response_class(response_class)
     view = project_for_ui(state).model_dump(mode="json")
     case_meta_source = getattr(state, "case_meta", None)
     binding_level = getattr(case_meta_source, "binding_level", "ORIENTATION")
-    phase = (
-        getattr(case_meta_source, "phase", None)
-        or getattr(state.case_lifecycle, "phase", None)
+    phase = getattr(case_meta_source, "phase", None) or getattr(
+        state.case_lifecycle, "phase", None
     )
     runtime_path = getattr(case_meta_source, "runtime_path", "governed_graph")
     requirement_class = state.governance.requirement_class
@@ -630,15 +728,15 @@ def _governed_structured_state(state: GovernedSessionState, response_class: str)
         "extras": extras,
     }
 
+
 def _light_structured_state(
     state: GovernedSessionState,
     *,
     governance_class: str = "B",
 ) -> dict[str, Any]:
     case_meta_source = getattr(state, "case_meta", None)
-    phase = (
-        getattr(case_meta_source, "phase", None)
-        or getattr(state.case_lifecycle, "phase", None)
+    phase = getattr(case_meta_source, "phase", None) or getattr(
+        state.case_lifecycle, "phase", None
     )
     runtime_path = getattr(case_meta_source, "runtime_path", "conversation")
     return {
@@ -658,6 +756,7 @@ def _light_structured_state(
         ),
     }
 
+
 def _fast_response_run_meta(fast_response: Any) -> dict[str, Any]:
     registration_prompt = getattr(fast_response, "registration_prompt", None)
     return with_answer_trace(
@@ -668,7 +767,9 @@ def _fast_response_run_meta(fast_response: Any) -> dict[str, Any]:
                     "value",
                     getattr(fast_response, "source_classification", None),
                 ),
-                "no_case_created": bool(getattr(fast_response, "no_case_created", True)),
+                "no_case_created": bool(
+                    getattr(fast_response, "no_case_created", True)
+                ),
                 "registration_prompt": (
                     dataclasses.asdict(registration_prompt)
                     if dataclasses.is_dataclass(registration_prompt)
@@ -693,11 +794,7 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
         if dataclasses.is_dataclass(citation)
     ]
     answer_view = getattr(knowledge_response, "knowledge_answer_view", None)
-    answer_contract = (
-        answer_view.as_dict()
-        if hasattr(answer_view, "as_dict")
-        else None
-    )
+    answer_contract = answer_view.as_dict() if hasattr(answer_view, "as_dict") else None
     rag_audit = _knowledge_rag_audit(
         knowledge_response=knowledge_response,
         answer_contract=answer_contract,
@@ -710,8 +807,12 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
                 "value",
                 getattr(knowledge_response, "source_classification", None),
             ),
-            "output_class": getattr(knowledge_response, "output_class", "conversational_answer"),
-            "no_case_created": bool(getattr(knowledge_response, "no_case_created", True)),
+            "output_class": getattr(
+                knowledge_response, "output_class", "conversational_answer"
+            ),
+            "no_case_created": bool(
+                getattr(knowledge_response, "no_case_created", True)
+            ),
             "citations": citations,
             "knowledge_answer": answer_contract,
             "rag_audit": rag_audit,
@@ -750,6 +851,7 @@ def _knowledge_response_run_meta(knowledge_response: Any) -> dict[str, Any]:
             base_trace,
         )
     return meta
+
 
 def _knowledge_rag_audit(
     *,
@@ -831,6 +933,7 @@ def _knowledge_rag_audit(
         ),
     }
 
+
 def _knowledge_grounding_strategy(
     *,
     answer_found: bool,
@@ -860,6 +963,7 @@ def _knowledge_grounding_strategy(
         return "rag_miss_answer_limited", "limited_answer_without_rag_source"
     return "source_grounded_or_deterministic", "source_grounded_or_deterministic"
 
+
 def _knowledge_source_summaries(raw_sources: Any) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
     for index, raw in enumerate(list(raw_sources or []), start=1):
@@ -887,6 +991,7 @@ def _knowledge_source_summaries(raw_sources: Any) -> list[dict[str, Any]]:
         )
     return summaries
 
+
 def _state_from_interrupt_payload(interrupts: object) -> GraphState | None:
     if interrupts is None:
         return None
@@ -909,7 +1014,9 @@ def _state_from_interrupt_payload(interrupts: object) -> GraphState | None:
 
 def _materialize_governed_graph_result(raw_result: object) -> GraphState:
     if isinstance(raw_result, dict) and "__interrupt__" in raw_result:
-        interrupted_state = _state_from_interrupt_payload(raw_result.get("__interrupt__"))
+        interrupted_state = _state_from_interrupt_payload(
+            raw_result.get("__interrupt__")
+        )
         if interrupted_state is not None:
             return interrupted_state
         return GraphState()
@@ -917,13 +1024,14 @@ def _materialize_governed_graph_result(raw_result: object) -> GraphState:
         return raw_result
     return GraphState.model_validate(raw_result)
 
+
 def _parameters_public(state: GraphState) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for field_name, claim in state.asserted.assertions.items():
         out[field_name] = {
-            "value":      claim.asserted_value,
+            "value": claim.asserted_value,
             "confidence": claim.confidence,
-            "origin":      claim.origin,
-            "unit":        claim.unit,
+            "origin": claim.origin,
+            "unit": claim.unit,
         }
     return out

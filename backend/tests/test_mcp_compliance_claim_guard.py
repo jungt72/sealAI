@@ -22,7 +22,9 @@ FORBIDDEN_USER_VISIBLE_FRAGMENTS = (
 
 def _assert_no_overclaim(text: str) -> None:
     lowered = text.lower()
-    violations = [fragment for fragment in FORBIDDEN_USER_VISIBLE_FRAGMENTS if fragment in lowered]
+    violations = [
+        fragment for fragment in FORBIDDEN_USER_VISIBLE_FRAGMENTS if fragment in lowered
+    ]
     assert violations == []
     assert "Herstellerprüfung erforderlich".lower() in lowered or "prüfen" in lowered
 
@@ -38,7 +40,9 @@ def test_fda_compliance_reasons_are_review_oriented_not_approval_claims() -> Non
 
 def test_atex_compliance_reasons_are_review_oriented_not_certification_claims() -> None:
     result = check_compliance("PTFE", medium="ethanol", flags=[ComplianceFlag.ATEX])
-    atex = next(flag for flag in result.flag_results if flag.flag == ComplianceFlag.ATEX)
+    atex = next(
+        flag for flag in result.flag_results if flag.flag == ComplianceFlag.ATEX
+    )
 
     assert atex.passed is True
     assert atex.severity == "warning"
@@ -48,7 +52,9 @@ def test_atex_compliance_reasons_are_review_oriented_not_certification_claims() 
 
 def test_food_hygiene_compliance_reasons_do_not_claim_release() -> None:
     result = check_compliance("NBR", flags=[ComplianceFlag.EHEDG])
-    ehedg = next(flag for flag in result.flag_results if flag.flag == ComplianceFlag.EHEDG)
+    ehedg = next(
+        flag for flag in result.flag_results if flag.flag == ComplianceFlag.EHEDG
+    )
 
     assert ehedg.passed is False
     for reason in ehedg.reasons:
@@ -73,7 +79,9 @@ def test_chemical_resistance_results_do_not_render_final_suitability_claims(
     _assert_no_overclaim(result.recommendation)
 
 
-def test_compatible_materials_are_still_ranked_without_recommendation_language() -> None:
+def test_compatible_materials_are_still_ranked_without_recommendation_language() -> (
+    None
+):
     results = get_compatible_materials("Dampf")
 
     assert [item.rating for item in results] == sorted(item.rating for item in results)
@@ -93,7 +101,9 @@ def test_compatible_materials_are_still_ranked_without_recommendation_language()
         "Diese Dichtung ist ATEX freigegeben.",
     ],
 )
-def test_output_guard_blocks_broader_compliance_and_chemical_overclaims(claim: str) -> None:
+def test_output_guard_blocks_broader_compliance_and_chemical_overclaims(
+    claim: str,
+) -> None:
     safe, category = check_fast_path_output(claim)
 
     assert safe is False

@@ -8,6 +8,7 @@ Responsibility:
     the productive governed state after governance, matching, RFQ, and dispatch
     have completed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,7 +70,9 @@ def _qualified_material_names(state: GraphState) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
     for material in state.rfq.qualified_materials:
-        name = str(material.get("grade_name") or material.get("material_family") or "").strip()
+        name = str(
+            material.get("grade_name") or material.get("material_family") or ""
+        ).strip()
         if not name or name in seen:
             continue
         names.append(name)
@@ -94,7 +97,10 @@ def _application_summary(state: GraphState) -> str | None:
 def _norm_status(state: GraphState) -> str:
     if state.rfq.rfq_ready:
         return "rfq_ready"
-    if state.governance.requirement_class is not None and state.governance.gov_class in {"A", "B"}:
+    if (
+        state.governance.requirement_class is not None
+        and state.governance.gov_class in {"A", "B"}
+    ):
         return "governed"
     if state.asserted.assertions:
         return "draft"
@@ -119,8 +125,14 @@ def _dimension_value(state: GraphState, *field_names: str) -> Any:
     return None
 
 
-def _norm_context(state: GraphState, *, engineering_path: str | None, material_family: str | None) -> dict[str, Any]:
-    requirement_class = state.rfq.requirement_class or state.dispatch.requirement_class or state.governance.requirement_class
+def _norm_context(
+    state: GraphState, *, engineering_path: str | None, material_family: str | None
+) -> dict[str, Any]:
+    requirement_class = (
+        state.rfq.requirement_class
+        or state.dispatch.requirement_class
+        or state.governance.requirement_class
+    )
     material = derive_sealing_material_family(
         asserted_material=_asserted_value(state, "material"),
         sealai_norm_material_family=material_family,
@@ -128,11 +140,20 @@ def _norm_context(state: GraphState, *, engineering_path: str | None, material_f
     )
     return {
         "engineering_path": engineering_path,
-        "seal_kind": _first_value(_asserted_value(state, "sealing_type"), _asserted_value(state, "seal_kind")),
-        "seal_type_family": _first_value(_asserted_value(state, "seal_family"), requirement_class.seal_type if requirement_class else None),
+        "seal_kind": _first_value(
+            _asserted_value(state, "sealing_type"), _asserted_value(state, "seal_kind")
+        ),
+        "seal_type_family": _first_value(
+            _asserted_value(state, "seal_family"),
+            requirement_class.seal_type if requirement_class else None,
+        ),
         "motion_type": _asserted_value(state, "motion_type"),
-        "shaft_diameter_mm": _dimension_value(state, "shaft_diameter_mm", "shaft_diameter", "diameter"),
-        "housing_bore_diameter_mm": _dimension_value(state, "housing_bore_diameter_mm", "housing_diameter_mm", "bore_diameter_mm"),
+        "shaft_diameter_mm": _dimension_value(
+            state, "shaft_diameter_mm", "shaft_diameter", "diameter"
+        ),
+        "housing_bore_diameter_mm": _dimension_value(
+            state, "housing_bore_diameter_mm", "housing_diameter_mm", "bore_diameter_mm"
+        ),
         "seal_width_mm": _dimension_value(state, "seal_width_mm", "width_mm"),
         "seal_type": _asserted_value(state, "seal_type"),
         "pressure_bar": _asserted_value(state, "pressure_bar"),
@@ -140,12 +161,18 @@ def _norm_context(state: GraphState, *, engineering_path: str | None, material_f
         "shaft_surface_finish": _asserted_value(state, "shaft_surface_finish"),
         "medium_name": _asserted_value(state, "medium"),
         "sealing_material_family": material,
-        "material_name": _first_value(_asserted_value(state, "material_name"), _asserted_value(state, "material"), material_family),
+        "material_name": _first_value(
+            _asserted_value(state, "material_name"),
+            _asserted_value(state, "material"),
+            material_family,
+        ),
         "cleaning_regime": _asserted_value(state, "cleaning_regime"),
         "food_contact_region": _asserted_value(state, "food_contact_region"),
         "intended_us_market": _asserted_value(state, "intended_us_market"),
         "certification_records": _asserted_value(state, "certification_records"),
-        "manufacturer_declaration_present": _asserted_value(state, "manufacturer_declaration_present"),
+        "manufacturer_declaration_present": _asserted_value(
+            state, "manufacturer_declaration_present"
+        ),
         "traceability_present": _asserted_value(state, "traceability_present"),
         "migration_test_available": _asserted_value(state, "migration_test_available"),
     }
@@ -172,7 +199,9 @@ def _norm_check_payload(result: NormCheckResult) -> dict[str, Any]:
     }
 
 
-def _run_norm_checks(context: dict[str, Any]) -> tuple[list[NormCheckResult], list[dict[str, Any]]]:
+def _run_norm_checks(
+    context: dict[str, Any],
+) -> tuple[list[NormCheckResult], list[dict[str, Any]]]:
     try:
         return build_default_registry().run_checks(context), []
     except Exception as exc:  # pragma: no cover - defensive fail-open guard
@@ -200,15 +229,23 @@ def _run_norm_checks(context: dict[str, Any]) -> tuple[list[NormCheckResult], li
 
 async def norm_node(state: GraphState) -> GraphState:
     """Derive the bounded SealAI norm object from the current governed state."""
-    requirement_class = state.rfq.requirement_class or state.dispatch.requirement_class or state.governance.requirement_class
+    requirement_class = (
+        state.rfq.requirement_class
+        or state.dispatch.requirement_class
+        or state.governance.requirement_class
+    )
     material_family = _material_family(state)
     engineering_path = derive_engineering_path(
         engineering_path=_asserted_value(state, "engineering_path"),
     )
     norm_results, registry_failures = _run_norm_checks(
-        _norm_context(state, engineering_path=engineering_path, material_family=material_family)
+        _norm_context(
+            state, engineering_path=engineering_path, material_family=material_family
+        )
     )
-    norm_checks = [_norm_check_payload(result) for result in norm_results] + registry_failures
+    norm_checks = [
+        _norm_check_payload(result) for result in norm_results
+    ] + registry_failures
     open_validation_points = list(state.governance.open_validation_points)
     for result in norm_results:
         for field_name in result.missing_required_fields:
@@ -224,7 +261,8 @@ async def norm_node(state: GraphState) -> GraphState:
         if point not in open_validation_points:
             open_validation_points.append(point)
     manufacturer_validation_required = bool(open_validation_points) or any(
-        result.has_blocking_issue or result.escalation is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
+        result.has_blocking_issue
+        or result.escalation is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
         for result in norm_results
     )
 
@@ -233,9 +271,13 @@ async def norm_node(state: GraphState) -> GraphState:
         identity=SealaiNormIdentity(
             sealai_request_id=_session_request_id(state),
             norm_version="sealai_norm_v1",
-            requirement_class_id=requirement_class.class_id if requirement_class is not None else None,
+            requirement_class_id=requirement_class.class_id
+            if requirement_class is not None
+            else None,
             engineering_path=engineering_path,
-            seal_family=requirement_class.seal_type if requirement_class is not None else None,
+            seal_family=requirement_class.seal_type
+            if requirement_class is not None
+            else None,
         ),
         application_summary=_application_summary(state),
         operating_conditions=SealaiNormOperatingConditions(
@@ -254,7 +296,9 @@ async def norm_node(state: GraphState) -> GraphState:
             ),
             qualified_materials=_qualified_material_names(state),
         ),
-        assumptions=[assumption.description for assumption in state.normalized.assumptions],
+        assumptions=[
+            assumption.description for assumption in state.normalized.assumptions
+        ],
         validity_limits=list(state.governance.validity_limits),
         open_validation_points=open_validation_points,
         norm_checks=norm_checks,

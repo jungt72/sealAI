@@ -13,7 +13,9 @@ from app.domain.pre_gate_classification import PreGateClassification
 from app.services.pre_gate_classifier import PreGateClassifier
 
 
-async def _run_pipeline(state: GraphState, *, include_output: bool = True) -> GraphState:
+async def _run_pipeline(
+    state: GraphState, *, include_output: bool = True
+) -> GraphState:
     nodes = [
         intake_module.intake_observe_node,
         normalize_node,
@@ -24,8 +26,12 @@ async def _run_pipeline(state: GraphState, *, include_output: bool = True) -> Gr
         state = await node(state)
     if include_output:
         response_class = output_assembly._determine_response_class(state)
-        strategy = output_assembly.build_governed_conversation_strategy_contract(state, response_class)
-        reply = await output_assembly._build_reply(state, response_class, strategy=strategy)
+        strategy = output_assembly.build_governed_conversation_strategy_contract(
+            state, response_class
+        )
+        reply = await output_assembly._build_reply(
+            state, response_class, strategy=strategy
+        )
         pending_question = output_assembly._pending_question_from_strategy(
             state=state,
             response_class=response_class,
@@ -41,7 +47,9 @@ async def _run_pipeline(state: GraphState, *, include_output: bool = True) -> Gr
     return state
 
 
-def _pending_medium_question(*, question_text: str | None = "Bitte nenne das abzudichtende Fluid?") -> PendingQuestion:
+def _pending_medium_question(
+    *, question_text: str | None = "Bitte nenne das abzudichtende Fluid?"
+) -> PendingQuestion:
     return PendingQuestion(
         target_field="medium",
         expected_answer_type="medium_value",
@@ -59,7 +67,10 @@ async def _run_answer_to_pending_medium(message: str) -> GraphState:
             pending_message=message,
             pending_question=_pending_medium_question(),
             conversation_messages=[
-                ConversationMessage(role="assistant", content="Andere Formulierung ohne Slot-Schlüsselwort."),
+                ConversationMessage(
+                    role="assistant",
+                    content="Andere Formulierung ohne Slot-Schlüsselwort.",
+                ),
                 ConversationMessage(role="user", content=message),
             ],
             user_turn_index=2,
@@ -83,7 +94,9 @@ def test_pending_question_state_model_carries_structured_slot_metadata() -> None
 
 
 @pytest.mark.asyncio
-async def test_pending_question_is_written_from_structured_next_question_decision() -> None:
+async def test_pending_question_is_written_from_structured_next_question_decision() -> (
+    None
+):
     message = "ich möchte mit dir eine dichtungslösung erarbeiten"
     state = await _run_pipeline(
         GraphState(
@@ -98,28 +111,42 @@ async def test_pending_question_is_written_from_structured_next_question_decisio
     assert state.pending_question.expected_answer_type == "medium_value"
     assert state.pending_question.source == "governed_next_question"
     assert state.pending_question.status == "open"
-    assert state.pending_question.question_text == "Welches Medium soll abgedichtet werden?"
+    assert (
+        state.pending_question.question_text
+        == "Welches Medium soll abgedichtet werden?"
+    )
 
 
 @pytest.mark.asyncio
-async def test_short_answer_binds_through_pending_question_without_assistant_text_dependency() -> None:
+async def test_short_answer_binds_through_pending_question_without_assistant_text_dependency() -> (
+    None
+):
     state = await _run_answer_to_pending_medium("chlor")
 
     assert state.last_slot_answer_binding is not None
     assert state.last_slot_answer_binding.target_field == "medium"
     assert state.last_slot_answer_binding.source == "pending_question"
-    assert state.pending_question is None or state.pending_question.target_field != "medium"
+    assert (
+        state.pending_question is None
+        or state.pending_question.target_field != "medium"
+    )
     assert state.asserted.assertions["medium"].asserted_value == "Chlor"
 
 
 @pytest.mark.asyncio
-async def test_changed_assistant_wording_does_not_break_pending_medium_binding() -> None:
+async def test_changed_assistant_wording_does_not_break_pending_medium_binding() -> (
+    None
+):
     state = await _run_pipeline(
         GraphState(
             pending_message="chlor",
-            pending_question=_pending_medium_question(question_text="Welcher Stoff liegt direkt an?"),
+            pending_question=_pending_medium_question(
+                question_text="Welcher Stoff liegt direkt an?"
+            ),
             conversation_messages=[
-                ConversationMessage(role="assistant", content="Kurz gesagt: nenne mir bitte den Stoff."),
+                ConversationMessage(
+                    role="assistant", content="Kurz gesagt: nenne mir bitte den Stoff."
+                ),
                 ConversationMessage(role="user", content="chlor"),
             ],
             user_turn_index=2,
@@ -132,7 +159,9 @@ async def test_changed_assistant_wording_does_not_break_pending_medium_binding()
 
 
 @pytest.mark.asyncio
-async def test_pending_medium_chlor_binds_as_ambiguous_and_asks_specific_clarification() -> None:
+async def test_pending_medium_chlor_binds_as_ambiguous_and_asks_specific_clarification() -> (
+    None
+):
     state = await _run_answer_to_pending_medium("chlor")
 
     assert state.last_slot_answer_binding is not None
@@ -163,7 +192,9 @@ async def test_pending_medium_chlor_binds_as_ambiguous_and_asks_specific_clarifi
         ("natronlauge", "Natronlauge"),
     ],
 )
-async def test_pending_medium_short_answer_binds_supported_media(message: str, expected: str) -> None:
+async def test_pending_medium_short_answer_binds_supported_media(
+    message: str, expected: str
+) -> None:
     state = await _run_answer_to_pending_medium(message)
 
     assert state.last_slot_answer_binding is not None
@@ -193,7 +224,9 @@ async def test_short_answer_without_pending_question_does_not_bind_chlor() -> No
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message", ["prima", "super", "passt", "los geht's"])
-async def test_social_acknowledgement_does_not_bind_as_pending_medium(message: str) -> None:
+async def test_social_acknowledgement_does_not_bind_as_pending_medium(
+    message: str,
+) -> None:
     state = await _run_answer_to_pending_medium(message)
 
     assert state.last_slot_answer_binding is None
@@ -205,10 +238,27 @@ async def test_social_acknowledgement_does_not_bind_as_pending_medium(message: s
 def test_existing_routing_boundaries_remain_unchanged() -> None:
     classifier = PreGateClassifier()
 
-    assert classifier.classify(
-        "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
-    ).classification == PreGateClassification.DOMAIN_INQUIRY
-    assert classifier.classify("Was bedeutet PFAS für Dichtungen?").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Was ist bei Salzwasser und Dichtungen kritisch?").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Vergleiche FKM und EPDM für Dichtungen.").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Hallo, wie geht es dir?").classification == PreGateClassification.GREETING
+    assert (
+        classifier.classify(
+            "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
+        ).classification
+        == PreGateClassification.DOMAIN_INQUIRY
+    )
+    assert (
+        classifier.classify("Was bedeutet PFAS für Dichtungen?").classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify(
+            "Was ist bei Salzwasser und Dichtungen kritisch?"
+        ).classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify("Vergleiche FKM und EPDM für Dichtungen.").classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify("Hallo, wie geht es dir?").classification
+        == PreGateClassification.GREETING
+    )

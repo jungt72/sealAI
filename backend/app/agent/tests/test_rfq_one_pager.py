@@ -66,7 +66,11 @@ def test_draft_when_core_missing_names_minimum_input() -> None:
 def test_rfq_with_open_points_when_core_present_and_critical_open() -> None:
     readiness = evaluate_rfq_readiness(
         _CORE_PRESENT,
-        missing_fields=["shaft_condition_known", "temperature_max_c", "pressure_differential"],
+        missing_fields=[
+            "shaft_condition_known",
+            "temperature_max_c",
+            "pressure_differential",
+        ],
     )
     assert readiness.status == RFQ_READINESS_WITH_OPEN_POINTS
     assert readiness.can_generate_brief is True
@@ -74,7 +78,9 @@ def test_rfq_with_open_points_when_core_present_and_critical_open() -> None:
 
 
 def test_minimal_rfq_when_core_present_only_helpful_open() -> None:
-    readiness = evaluate_rfq_readiness(_CORE_PRESENT, missing_fields=["rotation_direction"])
+    readiness = evaluate_rfq_readiness(
+        _CORE_PRESENT, missing_fields=["rotation_direction"]
+    )
     assert readiness.status == RFQ_READINESS_MINIMAL_RFQ
     assert readiness.can_generate_brief is True
 
@@ -96,7 +102,12 @@ def test_out_of_scope_is_blocked() -> None:
 
 def test_prioritize_open_points_three_tiers() -> None:
     tiers = prioritize_open_points(
-        ["shaft_condition_known", "rotation_direction", "quantity", "target_delivery_date"]
+        [
+            "shaft_condition_known",
+            "rotation_direction",
+            "quantity",
+            "target_delivery_date",
+        ]
     )
     assert tiers["critical"] == ["shaft_condition_known"]
     assert tiers["helpful"] == ["rotation_direction"]
@@ -107,16 +118,30 @@ def test_prioritize_open_points_three_tiers() -> None:
 
 
 def test_snapshot_stable_for_same_revision() -> None:
-    readiness = evaluate_rfq_readiness(_CORE_PRESENT, missing_fields=["shaft_condition_known"])
-    snap_a = build_rfq_snapshot(case_id="c1", case_revision=4, readiness=readiness, confirmed_facts=["RWDR 45x62x8"])
-    snap_b = build_rfq_snapshot(case_id="c1", case_revision=4, readiness=readiness, confirmed_facts=["RWDR 45x62x8"])
+    readiness = evaluate_rfq_readiness(
+        _CORE_PRESENT, missing_fields=["shaft_condition_known"]
+    )
+    snap_a = build_rfq_snapshot(
+        case_id="c1",
+        case_revision=4,
+        readiness=readiness,
+        confirmed_facts=["RWDR 45x62x8"],
+    )
+    snap_b = build_rfq_snapshot(
+        case_id="c1",
+        case_revision=4,
+        readiness=readiness,
+        confirmed_facts=["RWDR 45x62x8"],
+    )
     assert snap_a == snap_b
     assert snap_a["snapshot_id"] == snap_b["snapshot_id"]
     assert snap_a["case_revision"] == 4
 
 
 def test_snapshot_changes_with_revision() -> None:
-    readiness = evaluate_rfq_readiness(_CORE_PRESENT, missing_fields=["shaft_condition_known"])
+    readiness = evaluate_rfq_readiness(
+        _CORE_PRESENT, missing_fields=["shaft_condition_known"]
+    )
     snap_a = build_rfq_snapshot(case_id="c1", case_revision=4, readiness=readiness)
     snap_b = build_rfq_snapshot(case_id="c1", case_revision=5, readiness=readiness)
     assert snap_a["snapshot_id"] != snap_b["snapshot_id"]

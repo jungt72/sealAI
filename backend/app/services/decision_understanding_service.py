@@ -365,7 +365,7 @@ def _derive_confidence_notes(
 
 
 def build_decision_understanding_projection(
-    state: Mapping[str, Any]
+    state: Mapping[str, Any],
 ) -> DecisionUnderstandingProjection:
     fields = {key: _field(state, key) for key in _FIELD_ALIASES}
     understood = _compact(

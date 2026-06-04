@@ -4,7 +4,9 @@ from app.api.v1.projections.case_workspace import project_case_workspace
 from app.domain.source_validation import SourceType, ValidationStatus
 
 
-def _workspace_state(*, system: dict | None = None, profile: dict | None = None) -> dict:
+def _workspace_state(
+    *, system: dict | None = None, profile: dict | None = None
+) -> dict:
     return {
         "conversation": {"thread_id": "source-validation-projection"},
         "working_profile": {
@@ -26,7 +28,9 @@ def _workspace_state(*, system: dict | None = None, profile: dict | None = None)
     }
 
 
-def test_workspace_projection_exposes_source_and_validation_for_cockpit_fields() -> None:
+def test_workspace_projection_exposes_source_and_validation_for_cockpit_fields() -> (
+    None
+):
     state = _workspace_state(
         profile={
             "medium": "Salzwasser",
@@ -43,9 +47,7 @@ def test_workspace_projection_exposes_source_and_validation_for_cockpit_fields()
         "parameter_provenance": {"pressure_at_seal_bar": "user_override"},
         "parameter_confidence": {"pressure_at_seal_bar": "confirmed"},
     }
-    projection = project_case_workspace(
-        state
-    )
+    projection = project_case_workspace(state)
 
     operating_geometry = next(
         section

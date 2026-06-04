@@ -17,7 +17,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("ck_inquiry_extracts_artifact_type", "inquiry_extracts", type_="check")
+    op.drop_constraint(
+        "ck_inquiry_extracts_artifact_type", "inquiry_extracts", type_="check"
+    )
     op.create_check_constraint(
         "ck_inquiry_extracts_artifact_type",
         "inquiry_extracts",
@@ -72,13 +74,17 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_inquiry_extracts_consent_status", table_name="inquiry_extracts")
-    op.drop_constraint("ck_inquiry_extracts_consent_status", "inquiry_extracts", type_="check")
+    op.drop_constraint(
+        "ck_inquiry_extracts_consent_status", "inquiry_extracts", type_="check"
+    )
     op.drop_column("inquiry_extracts", "dispatch_enabled")
     op.drop_column("inquiry_extracts", "consent_scope")
     op.drop_column("inquiry_extracts", "consent_granted_by")
     op.drop_column("inquiry_extracts", "consent_granted_at")
     op.drop_column("inquiry_extracts", "consent_status")
-    op.drop_constraint("ck_inquiry_extracts_artifact_type", "inquiry_extracts", type_="check")
+    op.drop_constraint(
+        "ck_inquiry_extracts_artifact_type", "inquiry_extracts", type_="check"
+    )
     op.create_check_constraint(
         "ck_inquiry_extracts_artifact_type",
         "inquiry_extracts",

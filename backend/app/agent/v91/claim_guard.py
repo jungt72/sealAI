@@ -75,10 +75,27 @@ def _material_finality(text: str) -> bool:
     lowered = text.casefold()
     if not any(
         token in lowered
-        for token in ("fkm", "ffkm", "epdm", "nbr", "ptfe", "pom", "peek", "werkstoff", "material")
+        for token in (
+            "fkm",
+            "ffkm",
+            "epdm",
+            "nbr",
+            "ptfe",
+            "pom",
+            "peek",
+            "werkstoff",
+            "material",
+        )
     ):
         return False
     return any(
         token in lowered
-        for token in ("nehmen sie", "nimm ", "verwenden sie", "ist die beste", "beste loesung", "beste lösung")
+        for token in (
+            "nehmen sie",
+            "nimm ",
+            "verwenden sie",
+            "ist die beste",
+            "beste loesung",
+            "beste lösung",
+        )
     )

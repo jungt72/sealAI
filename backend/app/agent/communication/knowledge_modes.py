@@ -43,7 +43,9 @@ KNOWLEDGE_MODE_MUTATES: dict[KnowledgeMode, bool] = {
     "why_question_active_case": False,
 }
 
-_WHY_RE = re.compile(r"\b(?:warum|wieso|weshalb|wozu|aus\s+welchem\s+grund)\b", re.IGNORECASE)
+_WHY_RE = re.compile(
+    r"\b(?:warum|wieso|weshalb|wozu|aus\s+welchem\s+grund)\b", re.IGNORECASE
+)
 _COMPARISON_RE = re.compile(
     r"\b(?:vs\.?|versus|oder|besser|schlechter|vergleich(?:e|en)?|unterschied|"
     r"gegen(?:über)?|im\s+vergleich)\b",
@@ -75,7 +77,9 @@ def mode_mutates(mode: str) -> bool:
     return KNOWLEDGE_MODE_MUTATES.get(mode, False)  # type: ignore[arg-type]
 
 
-def extract_knowledge_facts(message: str | None, *, turn_index: int = 0) -> list[ObservedExtraction]:
+def extract_knowledge_facts(
+    message: str | None, *, turn_index: int = 0
+) -> list[ObservedExtraction]:
     """Extract concrete technical facts from a knowledge turn.
 
     Reuses the canonical deterministic extractor (``extract_parameters``) and the
@@ -120,7 +124,12 @@ def has_new_technical_facts(message: str | None) -> bool:
 
     names_material_or_medium = any(
         params.get(key)
-        for key in ("material_normalized", "material_raw", "medium_normalized", "medium_raw")
+        for key in (
+            "material_normalized",
+            "material_raw",
+            "medium_normalized",
+            "medium_raw",
+        )
     )
     if names_material_or_medium and "?" not in text and _FACT_ASSERTION_RE.search(text):
         return True

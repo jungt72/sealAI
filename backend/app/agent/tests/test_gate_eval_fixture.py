@@ -46,17 +46,23 @@ def test_gate_eval_fixture_cases(case: dict) -> None:
     enable_direct_reply = bool(case.get("enable_direct_reply", False))
 
     if llm_result is None:
-        with patch("app.agent.runtime.gate._ENABLE_GATE_DIRECT_REPLY", enable_direct_reply):
+        with patch(
+            "app.agent.runtime.gate._ENABLE_GATE_DIRECT_REPLY", enable_direct_reply
+        ):
             decision = decide_route(str(case["input_text"]), session)
     else:
         with (
-            patch("app.agent.runtime.gate._ENABLE_GATE_DIRECT_REPLY", enable_direct_reply),
+            patch(
+                "app.agent.runtime.gate._ENABLE_GATE_DIRECT_REPLY", enable_direct_reply
+            ),
             patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result),
         ):
             decision = decide_route(str(case["input_text"]), session)
 
     assert decision.route == case["expected_route"], case["why"]
-    assert decision.allow_direct_reply is bool(case["expected_allow_direct_reply"]), case["why"]
+    assert decision.allow_direct_reply is bool(
+        case["expected_allow_direct_reply"]
+    ), case["why"]
     if case["expected_allow_direct_reply"]:
         assert decision.direct_reply is not None, case["why"]
     else:

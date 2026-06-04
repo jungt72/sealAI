@@ -65,12 +65,16 @@ class KnowledgeCaseBridgeService:
         session_id: str | None = None,
         role: str = "user",
     ) -> KnowledgeSessionContext:
-        base = context or KnowledgeSessionContext(session_id=str(session_id or "default"))
+        base = context or KnowledgeSessionContext(
+            session_id=str(session_id or "default")
+        )
         clean_text = " ".join(str(turn_text or "").split()).strip()
         if not clean_text:
             return base
 
-        turns = base.conversation_turns + (KnowledgeConversationTurn(role=role, content=clean_text),)
+        turns = base.conversation_turns + (
+            KnowledgeConversationTurn(role=role, content=clean_text),
+        )
         update_data: dict[str, object] = {"conversation_turns": turns}
 
         if role != "user":
@@ -79,7 +83,9 @@ class KnowledgeCaseBridgeService:
         turn_index = base.user_turn_index + 1
         extracted = extract_parameters(clean_text)
         merged_parameters = dict(base.mentioned_parameters)
-        merged_parameters.update(self._parameter_seeds_from_extract(extracted, turn_index=turn_index))
+        merged_parameters.update(
+            self._parameter_seeds_from_extract(extracted, turn_index=turn_index)
+        )
         explored_concepts = self._merge_concepts(
             base.explored_concepts,
             self._extract_concepts(clean_text, extracted),
@@ -110,9 +116,13 @@ class KnowledgeCaseBridgeService:
             reasons.append("possessive_reference")
         if re.search(r"\d+(?:[.,]\d+)?\s*(mm|bar|rpm|u\.?/?min|c|grad)", text):
             reasons.append("concrete_parameter")
-        if re.search(r"\b(ich\s+brauche|wir\s+brauchen|suche|benoetige|brauche)\b", text):
+        if re.search(
+            r"\b(ich\s+brauche|wir\s+brauchen|suche|benoetige|brauche)\b", text
+        ):
             reasons.append("explicit_need")
-        if re.search(r"(welche|was soll|empfiehl|where do i buy|who makes|hersteller)", text):
+        if re.search(
+            r"(welche|was soll|empfiehl|where do i buy|who makes|hersteller)", text
+        ):
             reasons.append("outcome_or_match_seeking")
         if context and context.mentioned_parameters:
             reasons.append("session_has_parameters")
@@ -148,7 +158,9 @@ class KnowledgeCaseBridgeService:
             "einen technischen Fall aufbauen und die fehlenden Betriebsdaten geordnet nachziehen."
         )
 
-    def build_governed_seed(self, context: KnowledgeSessionContext) -> KnowledgeCaseSeed:
+    def build_governed_seed(
+        self, context: KnowledgeSessionContext
+    ) -> KnowledgeCaseSeed:
         observed_extractions = tuple(
             ObservedExtraction(
                 field_name=seed.field_name,
@@ -181,7 +193,9 @@ class KnowledgeCaseBridgeService:
         )
 
     @staticmethod
-    def mark_transition_offered(context: KnowledgeSessionContext) -> KnowledgeSessionContext:
+    def mark_transition_offered(
+        context: KnowledgeSessionContext,
+    ) -> KnowledgeSessionContext:
         return KnowledgeSessionContext(
             session_id=context.session_id,
             mentioned_parameters=dict(context.mentioned_parameters),
@@ -210,7 +224,9 @@ class KnowledgeCaseBridgeService:
         return KnowledgeSessionContext(**payload)
 
     @staticmethod
-    def _merge_concepts(existing: tuple[str, ...], new_items: list[str]) -> tuple[str, ...]:
+    def _merge_concepts(
+        existing: tuple[str, ...], new_items: list[str]
+    ) -> tuple[str, ...]:
         merged: list[str] = []
         seen: set[str] = set()
         for item in list(existing) + new_items:
@@ -227,7 +243,12 @@ class KnowledgeCaseBridgeService:
     @staticmethod
     def _extract_concepts(turn_text: str, extracted: dict[str, object]) -> list[str]:
         concepts: list[str] = []
-        for key in ("material_normalized", "material_confirmation_required", "medium_normalized", "medium_confirmation_required"):
+        for key in (
+            "material_normalized",
+            "material_confirmation_required",
+            "medium_normalized",
+            "medium_confirmation_required",
+        ):
             value = extracted.get(key)
             if value:
                 concepts.append(str(value))
@@ -249,7 +270,13 @@ class KnowledgeCaseBridgeService:
     ) -> dict[str, ParameterSeed]:
         seeds: dict[str, ParameterSeed] = {}
 
-        def _add(field_name: str, value: object, *, unit: str | None = None, confidence: float = 0.75) -> None:
+        def _add(
+            field_name: str,
+            value: object,
+            *,
+            unit: str | None = None,
+            confidence: float = 0.75,
+        ) -> None:
             if value is None:
                 return
             seeds[field_name] = ParameterSeed(
@@ -260,23 +287,40 @@ class KnowledgeCaseBridgeService:
                 source_turn_index=turn_index,
             )
 
-        _add("temperature_c", extracted.get("temperature_c"), unit="°C", confidence=0.92)
+        _add(
+            "temperature_c", extracted.get("temperature_c"), unit="°C", confidence=0.92
+        )
         _add("pressure_bar", extracted.get("pressure_bar"), unit="bar", confidence=0.92)
-        _add("shaft_diameter_mm", extracted.get("diameter_mm"), unit="mm", confidence=0.92)
+        _add(
+            "shaft_diameter_mm",
+            extracted.get("diameter_mm"),
+            unit="mm",
+            confidence=0.92,
+        )
         _add("speed_rpm", extracted.get("speed_rpm"), unit="rpm", confidence=0.92)
         _add("medium", extracted.get("medium_normalized"), confidence=0.85)
         if "medium" not in seeds:
-            _add("medium", extracted.get("medium_confirmation_required"), confidence=0.60)
+            _add(
+                "medium", extracted.get("medium_confirmation_required"), confidence=0.60
+            )
         _add("material", extracted.get("material_normalized"), confidence=0.85)
         if "material" not in seeds:
-            _add("material", extracted.get("material_confirmation_required"), confidence=0.60)
+            _add(
+                "material",
+                extracted.get("material_confirmation_required"),
+                confidence=0.60,
+            )
         _add("motion_type", extracted.get("motion_type"), confidence=0.88)
         return seeds
 
     @staticmethod
     def _observed_topic(context: KnowledgeSessionContext) -> str | None:
         last_user_turn = next(
-            (turn.content for turn in reversed(context.conversation_turns) if turn.role == "user"),
+            (
+                turn.content
+                for turn in reversed(context.conversation_turns)
+                if turn.role == "user"
+            ),
             "",
         ).strip()
         if last_user_turn:

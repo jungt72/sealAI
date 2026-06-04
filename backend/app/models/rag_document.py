@@ -1,7 +1,17 @@
 # backend/app/models/rag_document.py
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, Text, func, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Integer,
+    JSON,
+    String,
+    Text,
+    func,
+    text,
+)
 
 from app.database import Base
 
@@ -24,12 +34,18 @@ class RagDocument(Base):
     source_system = Column(String, nullable=True)
     source_document_id = Column(String, nullable=True)
     source_modified_at = Column(DateTime(timezone=True), nullable=True)
-    extraction_status = Column(String, nullable=False, default="not_extracted", server_default="not_extracted")
+    extraction_status = Column(
+        String, nullable=False, default="not_extracted", server_default="not_extracted"
+    )
     extracted_candidates = Column(JSON, nullable=True)
     evidence_refs = Column(JSON, nullable=True)
-    provenance = Column(String, nullable=False, default="documented", server_default="documented")
+    provenance = Column(
+        String, nullable=False, default="documented", server_default="documented"
+    )
     path = Column(Text, nullable=False)
     error = Column(Text, nullable=True)
     ingest_stats = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

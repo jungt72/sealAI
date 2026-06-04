@@ -8,6 +8,7 @@ Responsibility:
     RFQ, and dispatch readiness without introducing manufacturer-specific
     codes, connector details, or transport internals.
 """
+
 from __future__ import annotations
 
 import logging
@@ -63,10 +64,15 @@ def _unresolved_points(state: GraphState) -> list[str]:
     return points
 
 
-def _export_status(state: GraphState, recipients: list[str], unresolved_points: list[str]) -> str:
+def _export_status(
+    state: GraphState, recipients: list[str], unresolved_points: list[str]
+) -> str:
     if state.dispatch.dispatch_ready and state.rfq.rfq_ready and recipients:
         return "ready"
-    if state.sealai_norm.identity.requirement_class_id or state.sealai_norm.application_summary:
+    if (
+        state.sealai_norm.identity.requirement_class_id
+        or state.sealai_norm.application_summary
+    ):
         return "partial" if unresolved_points else "not_ready"
     if state.sealai_norm.status != "pending":
         return "not_ready"
@@ -84,14 +90,20 @@ def _export_notes(state: GraphState) -> list[str]:
 
 async def export_profile_node(state: GraphState) -> GraphState:
     """Derive the bounded export profile from norm + commercial readiness."""
-    selected = state.rfq.selected_manufacturer_ref or state.dispatch.selected_manufacturer_ref or state.matching.selected_manufacturer_ref
+    selected = (
+        state.rfq.selected_manufacturer_ref
+        or state.dispatch.selected_manufacturer_ref
+        or state.matching.selected_manufacturer_ref
+    )
     recipients = _recipient_refs(state)
     unresolved_points = _unresolved_points(state)
     export_profile = ExportProfileState(
         status=_export_status(state, recipients, unresolved_points),
         export_profile_version="sealai_export_profile_v1",
         sealai_request_id=state.sealai_norm.identity.sealai_request_id,
-        selected_manufacturer=selected.manufacturer_name if selected is not None else None,
+        selected_manufacturer=selected.manufacturer_name
+        if selected is not None
+        else None,
         recipient_refs=recipients,
         requirement_class_id=state.sealai_norm.identity.requirement_class_id,
         application_summary=state.sealai_norm.application_summary,

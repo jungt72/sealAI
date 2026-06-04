@@ -10,6 +10,7 @@ PARAM_TO_ASSERTED_SUB  – routing table (field → asserted sub-dict name)
 MEDIUM_ALIASES         – partial German→English normalization
 route_patch_to_ssot()  – main entry point (returns deep-copied updated state)
 """
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -22,33 +23,33 @@ from typing import Any
 # ---------------------------------------------------------------------------
 PARAM_TO_ASSERTED_SUB: dict[str, str] = {
     # operating_conditions
-    "pressure_bar":           "operating_conditions",
-    "pressure_raw":           "operating_conditions",
-    "temperature_c":          "operating_conditions",
-    "temperature_C":          "operating_conditions",
-    "temperature_max_c":      "operating_conditions",  # Frontend alias
-    "temperature_raw":        "operating_conditions",
-    "pressure_max_bar":       "operating_conditions",
-    "pressure_min_bar":       "operating_conditions",
+    "pressure_bar": "operating_conditions",
+    "pressure_raw": "operating_conditions",
+    "temperature_c": "operating_conditions",
+    "temperature_C": "operating_conditions",
+    "temperature_max_c": "operating_conditions",  # Frontend alias
+    "temperature_raw": "operating_conditions",
+    "pressure_max_bar": "operating_conditions",
+    "pressure_min_bar": "operating_conditions",
     # machine_profile
-    "shaft_diameter_mm":      "machine_profile",
-    "shaft_diameter":         "machine_profile",       # Frontend alias
-    "bore_diameter_mm":       "machine_profile",
+    "shaft_diameter_mm": "machine_profile",
+    "shaft_diameter": "machine_profile",  # Frontend alias
+    "bore_diameter_mm": "machine_profile",
     "piston_rod_diameter_mm": "machine_profile",
-    "groove_width_mm":        "machine_profile",
-    "groove_depth_mm":        "machine_profile",
-    "rpm":                    "machine_profile",       # Frontend alias
-    "speed_rpm":              "machine_profile",       # Frontend alias
-    "shaft_runout_mm":        "machine_profile",
-    "shaft_hardness_hrc":     "machine_profile",
+    "groove_width_mm": "machine_profile",
+    "groove_depth_mm": "machine_profile",
+    "rpm": "machine_profile",  # Frontend alias
+    "speed_rpm": "machine_profile",  # Frontend alias
+    "shaft_runout_mm": "machine_profile",
+    "shaft_hardness_hrc": "machine_profile",
     # medium_profile
-    "medium":                 "medium_profile",
-    "medium_detail":          "medium_profile",
-    "medium_type":            "medium_profile",
-    "medium_additives":       "medium_profile",
-    "medium_viscosity":       "medium_profile",
+    "medium": "medium_profile",
+    "medium_detail": "medium_profile",
+    "medium_type": "medium_profile",
+    "medium_additives": "medium_profile",
+    "medium_viscosity": "medium_profile",
     # installation_profile
-    "dynamic_type":           "installation_profile",
+    "dynamic_type": "installation_profile",
     # Fields below are working_profile-only (no asserted sub-dict):
     # material, flange_standard, emission_class, industry_sector → omitted here
 }
@@ -59,19 +60,19 @@ PARAM_TO_ASSERTED_SUB: dict[str, str] = {
 # Full normalization pipeline is Sprint 11+ work.
 # ---------------------------------------------------------------------------
 MEDIUM_ALIASES: dict[str, str] = {
-    "wasser":       "water",
-    "öl":           "oil",
-    "oel":          "oil",
-    "hydrauliköl":  "hydraulic_oil",
+    "wasser": "water",
+    "öl": "oil",
+    "oel": "oil",
+    "hydrauliköl": "hydraulic_oil",
     "hydraulikoel": "hydraulic_oil",
-    "kraftstoff":   "fuel",
-    "benzin":       "fuel_gasoline",
-    "diesel":       "fuel_diesel",
-    "luft":         "air",
-    "stickstoff":   "nitrogen",
-    "dampf":        "steam",
-    "säure":        "acid",
-    "lauge":        "alkali",
+    "kraftstoff": "fuel",
+    "benzin": "fuel_gasoline",
+    "diesel": "fuel_diesel",
+    "luft": "air",
+    "stickstoff": "nitrogen",
+    "dampf": "steam",
+    "säure": "acid",
+    "lauge": "alkali",
 }
 
 

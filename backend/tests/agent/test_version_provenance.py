@@ -38,14 +38,19 @@ from app.agent.case_state import (
     PROJECTION_VERSION,
     build_case_state,
 )
-from app.agent.runtime.interaction_policy import evaluate_policy as evaluate_interaction_policy
+from app.agent.runtime.interaction_policy import (
+    evaluate_policy as evaluate_interaction_policy,
+)
 from app.agent.runtime.policy import INTERACTION_POLICY_VERSION
 
 
 def test_reasoning_prompt_version_matches_builder():
     """Hash is now derived from PromptBuilder.PROMPT_VERSION, not the raw template string."""
     assert REASONING_PROMPT_VERSION == PromptBuilder.PROMPT_VERSION
-    assert REASONING_PROMPT_HASH == hashlib.sha256(REASONING_PROMPT_VERSION.encode()).hexdigest()[:12]
+    assert (
+        REASONING_PROMPT_HASH
+        == hashlib.sha256(REASONING_PROMPT_VERSION.encode()).hexdigest()[:12]
+    )
 
 
 def test_visible_reply_prompt_hash_is_deterministic():
@@ -54,7 +59,10 @@ def test_visible_reply_prompt_hash_is_deterministic():
 
 
 def test_policy_decision_carries_policy_version():
-    assert evaluate_interaction_policy("Was ist PTFE?").policy_version == INTERACTION_POLICY_VERSION
+    assert (
+        evaluate_interaction_policy("Was ist PTFE?").policy_version
+        == INTERACTION_POLICY_VERSION
+    )
 
 
 def test_version_constants_are_strings():
@@ -66,16 +74,33 @@ def test_version_constants_are_strings():
 
 
 def test_build_case_state_with_provenance_populates_case_meta():
-    state = {"messages": [], "sealing_state": {"cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}}, "working_profile": {}, "relevant_fact_cards": []}
+    state = {
+        "messages": [],
+        "sealing_state": {
+            "cycle": {"state_revision": 1, "analysis_cycle_id": "cycle-1"}
+        },
+        "working_profile": {},
+        "relevant_fact_cards": [],
+    }
     cs = build_case_state(
         state,
         session_id="s1",
         runtime_path="STRUCTURED_QUALIFICATION",
         binding_level="ORIENTATION",
-        version_provenance={"model_id": "gpt-4o-mini", "policy_version": INTERACTION_POLICY_VERSION, "projection_version": PROJECTION_VERSION, "case_state_builder_version": CASE_STATE_BUILDER_VERSION, "service_version": DETERMINISTIC_SERVICE_VERSION, "data_version": DETERMINISTIC_DATA_VERSION},
+        version_provenance={
+            "model_id": "gpt-4o-mini",
+            "policy_version": INTERACTION_POLICY_VERSION,
+            "projection_version": PROJECTION_VERSION,
+            "case_state_builder_version": CASE_STATE_BUILDER_VERSION,
+            "service_version": DETERMINISTIC_SERVICE_VERSION,
+            "data_version": DETERMINISTIC_DATA_VERSION,
+        },
     )
     assert cs["case_meta"]["version_provenance"]["model_version"] == "gpt-4o-mini"
-    assert cs["audit_trail"][0]["details"]["version_provenance"]["policy_version"] == INTERACTION_POLICY_VERSION
+    assert (
+        cs["audit_trail"][0]["details"]["version_provenance"]["policy_version"]
+        == INTERACTION_POLICY_VERSION
+    )
 
 
 def test_structured_provenance_has_required_fields():

@@ -8,7 +8,10 @@ _TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 
 
 def is_final_answer_layer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", "true").strip().lower() in _TRUE_VALUES
+    return (
+        os.getenv("SEALAI_ENABLE_FINAL_ANSWER_LAYER", "true").strip().lower()
+        in _TRUE_VALUES
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +52,9 @@ def _trace_source(run_meta: dict[str, Any] | None, key: str) -> str | None:
     return None
 
 
-def apply_final_answer_layer(payload: dict[str, Any], envelope: FinalAnswerEnvelope) -> dict[str, Any]:
+def apply_final_answer_layer(
+    payload: dict[str, Any], envelope: FinalAnswerEnvelope
+) -> dict[str, Any]:
     """Select the final visible answer without changing deterministic truth.
 
     The layer is intentionally fallback-first. When disabled it returns the
@@ -62,7 +67,9 @@ def apply_final_answer_layer(payload: dict[str, Any], envelope: FinalAnswerEnvel
 
     updated = dict(payload)
     reply = _clean_text(updated.get("reply") or envelope.deterministic_fallback_reply)
-    explicit_answer = _clean_text(envelope.existing_answer_markdown or updated.get("answer_markdown"))
+    explicit_answer = _clean_text(
+        envelope.existing_answer_markdown or updated.get("answer_markdown")
+    )
     selected = explicit_answer or reply
 
     existing_source = envelope.existing_answer_markdown_source or _trace_source(

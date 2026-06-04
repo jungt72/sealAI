@@ -44,7 +44,11 @@ def test_eu_applies_to_food_contact_eu_contexts(context) -> None:
     "context",
     [
         {"application_domain": "chemical", "food_contact_region": "eu"},
-        {"food_contact_required": False, "medium_name": "hydraulic oil", "market_region": "eu"},
+        {
+            "food_contact_required": False,
+            "medium_name": "hydraulic oil",
+            "market_region": "eu",
+        },
         {"application_domain": "food processing", "food_contact_region": "us"},
     ],
 )
@@ -63,7 +67,10 @@ def test_eu_required_fields_are_stable() -> None:
 
 
 def test_eu_escalation_policy_is_manufacturer_review() -> None:
-    assert EuFoodContactModule().escalation_policy() is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
+    assert (
+        EuFoodContactModule().escalation_policy()
+        is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
+    )
 
 
 def test_eu_check_not_applicable_for_non_food_context() -> None:
@@ -74,7 +81,13 @@ def test_eu_check_not_applicable_for_non_food_context() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["medium_name", "sealing_material_family", "material_name", "temperature_c", "cleaning_regime"],
+    [
+        "medium_name",
+        "sealing_material_family",
+        "material_name",
+        "temperature_c",
+        "cleaning_regime",
+    ],
 )
 def test_eu_check_insufficient_data_for_missing_core_fields(field: str) -> None:
     context = _eu_context(**{field: None})
@@ -88,7 +101,10 @@ def test_eu_check_insufficient_data_for_missing_core_fields(field: str) -> None:
     ("override", "expected_code"),
     [
         ({}, "eu_food_contact_evidence_missing"),
-        ({"certification_records": [{"standard": "EU 10/2011", "valid": True}]}, "eu_food_contact_declaration_missing"),
+        (
+            {"certification_records": [{"standard": "EU 10/2011", "valid": True}]},
+            "eu_food_contact_declaration_missing",
+        ),
         (
             {
                 "certification_records": [{"standard": "EU 10/2011", "valid": True}],
@@ -106,7 +122,9 @@ def test_eu_check_insufficient_data_for_missing_core_fields(field: str) -> None:
         ),
     ],
 )
-def test_eu_check_review_required_for_partial_evidence(override, expected_code: str) -> None:
+def test_eu_check_review_required_for_partial_evidence(
+    override, expected_code: str
+) -> None:
     result = EuFoodContactModule().check(_eu_context(**override))
     assert result.status is NormCheckStatus.REVIEW_REQUIRED
     assert result.escalation is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
@@ -117,12 +135,19 @@ def test_eu_check_fail_for_explicit_negative_certification_context() -> None:
     result = EuFoodContactModule().check(
         _eu_context(
             certification_records=[
-                {"standard": "EU 10/2011", "valid": False, "source_reference": "expired-cert"}
+                {
+                    "standard": "EU 10/2011",
+                    "valid": False,
+                    "source_reference": "expired-cert",
+                }
             ]
         )
     )
     assert result.status is NormCheckStatus.FAIL
-    assert any(finding.code == "eu_food_contact_negative_evidence" for finding in result.findings)
+    assert any(
+        finding.code == "eu_food_contact_negative_evidence"
+        for finding in result.findings
+    )
 
 
 def test_eu_check_pass_only_with_minimal_complete_evidence() -> None:

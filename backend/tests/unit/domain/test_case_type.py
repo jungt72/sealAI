@@ -41,9 +41,7 @@ def test_case_type_serializes_as_string() -> None:
     payload = {"case_type": CaseType.compatibility_inquiry}
 
     assert isinstance(CaseType.compatibility_inquiry, str)
-    assert json.loads(json.dumps(payload)) == {
-        "case_type": "compatibility_inquiry"
-    }
+    assert json.loads(json.dumps(payload)) == {"case_type": "compatibility_inquiry"}
 
 
 @pytest.mark.parametrize(

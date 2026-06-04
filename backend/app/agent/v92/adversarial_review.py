@@ -65,29 +65,50 @@ def review_answer_draft(
     if _FINALITY_RE.search(text):
         forbidden_claims.append("final_release_or_approval_claim")
         revision_instructions.append("Remove release, approval and guarantee language.")
-    if _SUITABILITY_RE.search(text) and context.allowed_claim_level != "L6_expert_approved":
+    if (
+        _SUITABILITY_RE.search(text)
+        and context.allowed_claim_level != "L6_expert_approved"
+    ):
         forbidden_claims.append("suitability_claim_without_expert_scope")
         downgrade.append("suitability_language")
-        revision_instructions.append("Downgrade suitability to screening or hypothesis language.")
+        revision_instructions.append(
+            "Downgrade suitability to screening or hypothesis language."
+        )
     if _CONFORMITY_RE.search(text):
         forbidden_claims.append("standards_or_conformity_claim")
-        standards_concerns.append("Conformity wording requires licensed rule evidence or expert review.")
-        revision_instructions.append("Replace conformity wording with standards-reference boundary language.")
+        standards_concerns.append(
+            "Conformity wording requires licensed rule evidence or expert review."
+        )
+        revision_instructions.append(
+            "Replace conformity wording with standards-reference boundary language."
+        )
     if _ROOT_CAUSE_RE.search(text):
         forbidden_claims.append("definitive_root_cause_claim")
         downgrade.append("root_cause_language")
-        revision_instructions.append("Downgrade root cause language to hypothesis/indicator language.")
+        revision_instructions.append(
+            "Downgrade root cause language to hypothesis/indicator language."
+        )
     if _COMPOUND_PRODUCT_RE.search(text):
-        has_compound_evidence = bool(context.compound_candidates or context.product_candidates)
+        has_compound_evidence = bool(
+            context.compound_candidates or context.product_candidates
+        )
         if not has_compound_evidence:
-            unsupported_claims.append("compound_or_product_claim_without_layer_evidence")
-            revision_instructions.append("Do not derive compound/product claims from material-family context.")
+            unsupported_claims.append(
+                "compound_or_product_claim_without_layer_evidence"
+            )
+            revision_instructions.append(
+                "Do not derive compound/product claims from material-family context."
+            )
 
     if context.stale_items:
         stale_concerns.append("stale_items_present")
-        warnings.append("Some calculations or derived outputs are stale and must not be used as current basis.")
+        warnings.append(
+            "Some calculations or derived outputs are stale and must not be used as current basis."
+        )
     if context.review_required:
-        missing_context.extend(context.human_review_reasons or ["human_review_required"])
+        missing_context.extend(
+            context.human_review_reasons or ["human_review_required"]
+        )
         warnings.append("Expert review is required before release-level claims.")
     if context.evidence_summary.get("unresolved_gaps"):
         evidence_concerns.append("unresolved_evidence_gaps")
@@ -154,7 +175,10 @@ def build_adversarial_review_messages(
     }
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
+        {
+            "role": "user",
+            "content": json.dumps(payload, ensure_ascii=True, default=str),
+        },
     ]
 
 
@@ -190,7 +214,10 @@ async def _create_completion_with_registry_fallback(
         )
     except Exception as exc:  # noqa: BLE001
         fallback_model = get_registry_default_model_for_role(role)
-        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+        if (
+            model != fallback_model
+            and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES
+        ):
             return await client.chat.completions.create(
                 model=fallback_model,
                 messages=messages,
@@ -212,7 +239,9 @@ class LLMAdversarialReviewer:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
-    async def review(self, draft: str, context: FinalAnswerContext) -> AdversarialReviewVerdict:
+    async def review(
+        self, draft: str, context: FinalAnswerContext
+    ) -> AdversarialReviewVerdict:
         messages = build_adversarial_review_messages(draft=draft, context=context)
         client, model = get_async_llm("critique")
         response = await _create_completion_with_registry_fallback(

@@ -83,7 +83,9 @@ def _base_state() -> GraphState:
             rfq_ready=True,
             rfq_admissible=True,
             selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-            recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+            recipient_refs=[
+                RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+            ],
             requirement_class=requirement_class,
             notes=["Governed output is releasable and handover-ready."],
         ),
@@ -91,10 +93,14 @@ def _base_state() -> GraphState:
             dispatch_ready=True,
             dispatch_status="envelope_ready",
             selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-            recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+            recipient_refs=[
+                RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+            ],
             requirement_class=requirement_class,
             transport_channel="internal_transport_envelope",
-            dispatch_notes=["Internal transport envelope is ready for later sender/connector consumption."],
+            dispatch_notes=[
+                "Internal transport envelope is ready for later sender/connector consumption."
+            ],
         ),
     )
 
@@ -105,7 +111,9 @@ class TestExportProfileNode:
         result = await export_profile_node(_base_state())
 
         assert result.export_profile.status == "ready"
-        assert result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        assert (
+            result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        )
         assert result.export_profile.selected_manufacturer == "Acme"
         assert result.export_profile.requirement_class_id == "PTFE10"
         assert result.export_profile.rfq_ready is True
@@ -115,7 +123,9 @@ class TestExportProfileNode:
     async def test_incomplete_case_builds_valid_partial_export_profile(self):
         state = _base_state().model_copy(
             update={
-                "dispatch": DispatchState(dispatch_ready=False, dispatch_status="not_ready"),
+                "dispatch": DispatchState(
+                    dispatch_ready=False, dispatch_status="not_ready"
+                ),
                 "rfq": RfqState(status="not_ready", rfq_ready=False),
             }
         )
@@ -123,8 +133,12 @@ class TestExportProfileNode:
         result = await export_profile_node(state)
 
         assert result.export_profile.status in {"partial", "not_ready"}
-        assert result.export_profile.export_profile_version == "sealai_export_profile_v1"
-        assert result.export_profile.sealai_request_id == "sealai-phaseh-export-node-001"
+        assert (
+            result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        )
+        assert (
+            result.export_profile.sealai_request_id == "sealai-phaseh-export-node-001"
+        )
 
     @pytest.mark.asyncio
     async def test_missing_data_does_not_crash(self):
@@ -132,4 +146,6 @@ class TestExportProfileNode:
 
         assert isinstance(result.export_profile, ExportProfileState)
         assert result.export_profile.status == "pending"
-        assert result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        assert (
+            result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        )

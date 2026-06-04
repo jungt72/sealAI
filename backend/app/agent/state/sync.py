@@ -4,6 +4,7 @@ from typing import Dict, Any
 # The function exists for PATCH-based state merges (external tooling / tests).
 # In-graph state updates go through evidence_tool_node → process_cycle_update only.
 
+
 def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Back-sync: asserted_state → working_profile for Live-UI tiles (Phase H8/K17).
@@ -14,11 +15,13 @@ def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     wp = state.get("working_profile", {})
     ss = state.get("sealing_state", {})
-    
+
     if ss:
-        if "asserted" not in ss: ss["asserted"] = {}
-        if "machine_profile" not in ss["asserted"]: ss["asserted"]["machine_profile"] = {}
-        
+        if "asserted" not in ss:
+            ss["asserted"] = {}
+        if "machine_profile" not in ss["asserted"]:
+            ss["asserted"]["machine_profile"] = {}
+
         # Wave 1: Upstream Sync von working_profile nach asserted wurde entfernt.
         # Heuristische Daten aus wp dürfen nicht mehr direkt in ss["asserted"] schreiben.
         pass
@@ -27,21 +30,27 @@ def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
     if ss.get("asserted"):
         # Medium
         mp = ss["asserted"].get("medium_profile", {})
-        if mp.get("name"): wp["medium"] = mp["name"]
-        
+        if mp.get("name"):
+            wp["medium"] = mp["name"]
+
         # Machine / Material
         mapr = ss["asserted"].get("machine_profile", {})
-        if mapr.get("material"): wp["material"] = mapr["material"]
-        
+        if mapr.get("material"):
+            wp["material"] = mapr["material"]
+
         # Operating Conditions
         oc = ss["asserted"].get("operating_conditions", {})
-        if oc.get("pressure"): wp["pressure"] = oc["pressure"]
-        if oc.get("temperature"): wp["temperature"] = oc["temperature"]
+        if oc.get("pressure"):
+            wp["pressure"] = oc["pressure"]
+        if oc.get("temperature"):
+            wp["temperature"] = oc["temperature"]
 
     # Erzeuge LiveCalcTile Mapping für das Frontend (Phase H8 Sync)
     live_calc_tile = {
         "v_surface_m_s": wp.get("v_m_s"),
-        "pv_value_mpa_m_s": round(wp.get("pv_value", 0) / 10.0, 3) if wp.get("pv_value") else None,
+        "pv_value_mpa_m_s": round(wp.get("pv_value", 0) / 10.0, 3)
+        if wp.get("pv_value")
+        else None,
         "status": "ok" if wp.get("v_m_s") else "insufficient_data",
         "parameters": {
             "speed": wp.get("speed"),
@@ -51,10 +60,10 @@ def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
             "medium": wp.get("medium"),
             "eccentricity": wp.get("eccentricity"),
             "material": wp.get("material"),
-            "seal_material": wp.get("seal_material")
+            "seal_material": wp.get("seal_material"),
         },
         "risk_warning": wp.get("risk_warning"),
-        "alternatives": wp.get("alternatives")
+        "alternatives": wp.get("alternatives"),
     }
 
     # --- CHEMISCHE BESTÄNDIGKEIT (Phase K18 KI-gesteuert) ---
@@ -80,9 +89,9 @@ def sync_working_profile_to_state(state: Dict[str, Any]) -> Dict[str, Any]:
         "rating": rating,
         "swelling": swelling,
         "temp_limit": "Materialspezifisch",
-        "notes": notes
+        "notes": notes,
     }
 
     wp["live_calc_tile"] = live_calc_tile
-    
+
     return state

@@ -114,7 +114,9 @@ def test_injected_rag_retriever_is_used_after_curated_miss() -> None:
     assert view.fallback_used is False
 
 
-def test_named_material_query_ignores_unrelated_ptfe_factcards_and_uses_domain_definition() -> None:
+def test_named_material_query_ignores_unrelated_ptfe_factcards_and_uses_domain_definition() -> (
+    None
+):
     calls: list[dict[str, object]] = []
 
     def rag_retriever(**kwargs):

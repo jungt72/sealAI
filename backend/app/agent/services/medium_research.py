@@ -18,9 +18,21 @@ _log = logging.getLogger(__name__)
 
 
 SourceType = Literal["deterministic", "rag", "web"]
-ValidationStatus = Literal["system_derived", "documented", "web_retrieved", "not_available"]
-ResearchStatus = Literal["ok", "no_hits", "not_requested", "disabled", "not_configured", "error", "tenant_missing"]
-AnswerMarkdownSource = Literal["deterministic_sections", "medium_composer", "composer_fallback"]
+ValidationStatus = Literal[
+    "system_derived", "documented", "web_retrieved", "not_available"
+]
+ResearchStatus = Literal[
+    "ok",
+    "no_hits",
+    "not_requested",
+    "disabled",
+    "not_configured",
+    "error",
+    "tenant_missing",
+]
+AnswerMarkdownSource = Literal[
+    "deterministic_sections", "medium_composer", "composer_fallback"
+]
 AnswerDepth = Literal["instant", "deep"]
 
 _TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -90,7 +102,9 @@ class MediumResearchResult(BaseModel):
     sections: list[MediumResearchSection] = Field(default_factory=list)
     evidence: list[MediumEvidenceItem] = Field(default_factory=list)
     research_status: MediumResearchStatus = Field(default_factory=MediumResearchStatus)
-    composer: MediumAnswerComposerStatus = Field(default_factory=MediumAnswerComposerStatus)
+    composer: MediumAnswerComposerStatus = Field(
+        default_factory=MediumAnswerComposerStatus
+    )
     limitations: list[str] = Field(default_factory=list)
     not_for_release_decisions: bool = True
 
@@ -168,7 +182,11 @@ class MediumResearchService:
                 source="deterministic_sections",
             )
         else:
-            answer_markdown, answer_source, composer_status = await _compose_medium_answer_markdown(
+            (
+                answer_markdown,
+                answer_source,
+                composer_status,
+            ) = await _compose_medium_answer_markdown(
                 medium_label=medium_label,
                 context=context,
                 sections=sections,
@@ -210,11 +228,15 @@ async def _compose_medium_answer_markdown(
         limitations=limitations,
     )
     if not _medium_answer_composer_enabled():
-        return fallback, "deterministic_sections", MediumAnswerComposerStatus(
-            enabled=False,
-            attempted=False,
-            succeeded=False,
-            source="deterministic_sections",
+        return (
+            fallback,
+            "deterministic_sections",
+            MediumAnswerComposerStatus(
+                enabled=False,
+                attempted=False,
+                succeeded=False,
+                source="deterministic_sections",
+            ),
         )
 
     status = MediumAnswerComposerStatus(
@@ -224,8 +246,10 @@ async def _compose_medium_answer_markdown(
         source="composer_fallback",
     )
     if not os.getenv("OPENAI_API_KEY", "").strip():
-        return fallback, "composer_fallback", status.model_copy(
-            update={"fallback_reason": "provider_not_configured"}
+        return (
+            fallback,
+            "composer_fallback",
+            status.model_copy(update={"fallback_reason": "provider_not_configured"}),
         )
 
     try:
@@ -247,8 +271,16 @@ async def _compose_medium_answer_markdown(
         )
         raw_content = response.choices[0].message.content
         answer = _parse_medium_answer_output(raw_content)
-        return answer, "medium_composer", status.model_copy(
-            update={"succeeded": True, "source": "medium_composer", "fallback_reason": None}
+        return (
+            answer,
+            "medium_composer",
+            status.model_copy(
+                update={
+                    "succeeded": True,
+                    "source": "medium_composer",
+                    "fallback_reason": None,
+                }
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         reason = _safe_reason(exc)
@@ -257,11 +289,18 @@ async def _compose_medium_answer_markdown(
             medium_label[:80],
             reason,
         )
-        return fallback, "composer_fallback", status.model_copy(update={"fallback_reason": reason})
+        return (
+            fallback,
+            "composer_fallback",
+            status.model_copy(update={"fallback_reason": reason}),
+        )
 
 
 def _medium_answer_composer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "").strip().lower() in _TRUE_VALUES
+    return (
+        os.getenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "").strip().lower()
+        in _TRUE_VALUES
+    )
 
 
 def _normalize_answer_depth(value: AnswerDepth | str | None) -> AnswerDepth:
@@ -292,7 +331,12 @@ def _instant_answer_markdown(
         or "SeaLAI behandelt das Medium zunaechst als Arbeitsstand. Fuer eine belastbare Einordnung helfen konkrete Betriebsdaten und Dokumente.",
     ]
     for section in sections:
-        if section.id in {"identity", "sealing_relevance", "saltwater_deep_dive", "questions"}:
+        if section.id in {
+            "identity",
+            "sealing_relevance",
+            "saltwater_deep_dive",
+            "questions",
+        }:
             lines.extend(["", f"#### {section.title}", "", section.content])
             for bullet in section.bullets[:5]:
                 lines.append(f"- {bullet}")
@@ -321,7 +365,10 @@ async def _create_medium_answer_completion(
         )
     except Exception as exc:  # noqa: BLE001
         fallback_model = get_registry_default_model_for_role("medium_answer_composer")
-        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+        if (
+            model != fallback_model
+            and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES
+        ):
             return await client.chat.completions.create(
                 model=fallback_model,
                 messages=messages,
@@ -364,7 +411,10 @@ def _medium_answer_messages(
     }
     return [
         {"role": "system", "content": _medium_answer_system_prompt()},
-        {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
+        {
+            "role": "user",
+            "content": json.dumps(payload, ensure_ascii=True, default=str),
+        },
     ]
 
 
@@ -488,7 +538,9 @@ async def _retrieve_rag_evidence(
             user_id=user_id,
             return_metrics=True,
         )
-        raw_hits, metrics = raw_result if isinstance(raw_result, tuple) else (raw_result, {})
+        raw_hits, metrics = (
+            raw_result if isinstance(raw_result, tuple) else (raw_result, {})
+        )
     except Exception as exc:  # noqa: BLE001
         _log.warning(
             "[medium_research] RAG retrieval failed for medium=%r: %s",
@@ -501,8 +553,12 @@ async def _retrieve_rag_evidence(
             note="RAG konnte nicht ausgewertet werden.",
         )
 
-    hits = [hit for hit in (raw_hits or []) if _clean_text(hit.get("content"), limit=10)]
-    evidence = [_rag_hit_to_evidence(hit, index) for index, hit in enumerate(hits[:k], start=1)]
+    hits = [
+        hit for hit in (raw_hits or []) if _clean_text(hit.get("content"), limit=10)
+    ]
+    evidence = [
+        _rag_hit_to_evidence(hit, index) for index, hit in enumerate(hits[:k], start=1)
+    ]
     tier = str((metrics or {}).get("tier") or "").strip() or None
     return evidence, MediumResearchAttempt(
         attempted=True,
@@ -513,7 +569,9 @@ async def _retrieve_rag_evidence(
     )
 
 
-async def _retrieve_web_evidence(medium: str) -> tuple[list[MediumEvidenceItem], MediumResearchAttempt]:
+async def _retrieve_web_evidence(
+    medium: str,
+) -> tuple[list[MediumEvidenceItem], MediumResearchAttempt]:
     enabled = os.getenv("SEALAI_ENABLE_MEDIUM_WEB_RESEARCH", "").strip().lower() in {
         "1",
         "true",
@@ -590,7 +648,9 @@ async def _retrieve_web_evidence(medium: str) -> tuple[list[MediumEvidenceItem],
     )
 
 
-def _web_research_not_requested() -> tuple[list[MediumEvidenceItem], MediumResearchAttempt]:
+def _web_research_not_requested() -> (
+    tuple[list[MediumEvidenceItem], MediumResearchAttempt]
+):
     return [], MediumResearchAttempt(
         attempted=False,
         status="not_requested",
@@ -606,7 +666,11 @@ def _build_sections(
     rag_hit_count: int,
     web_hit_count: int,
 ) -> list[MediumResearchSection]:
-    context_ref = ["medium-context"] if any(item.id == "medium-context" for item in evidence) else []
+    context_ref = (
+        ["medium-context"]
+        if any(item.id == "medium-context" for item in evidence)
+        else []
+    )
     rag_refs = [item.id for item in evidence if item.source_type == "rag"][:3]
     web_refs = [item.id for item in evidence if item.source_type == "web"][:1]
     resolved = context.medium_label or medium_label
@@ -617,7 +681,8 @@ def _build_sections(
             MediumResearchSection(
                 id="identity",
                 title="Einordnung",
-                content=context.summary or f"{resolved} ist als Medium erkannt, aber noch nicht vollständig belegt.",
+                content=context.summary
+                or f"{resolved} ist als Medium erkannt, aber noch nicht vollständig belegt.",
                 bullets=context.properties[:6],
                 evidence_ref_ids=context_ref,
             )
@@ -681,13 +746,15 @@ def _build_sections(
                 "Fuer eine belastbare technische Einordnung zaehlen konkrete Betriebsdaten mehr "
                 "als ein allgemeiner Medienname."
             ),
-            bullets=_compact([
-                *context.followup_points,
-                "direkter Druck an der Dichtstelle",
-                "Temperatur inklusive Spitzen",
-                "statisch, rotierend, linear oder oszillierend",
-                "Konzentration, Additive, Partikel und Reinigungszyklen",
-            ])[:8],
+            bullets=_compact(
+                [
+                    *context.followup_points,
+                    "direkter Druck an der Dichtstelle",
+                    "Temperatur inklusive Spitzen",
+                    "statisch, rotierend, linear oder oszillierend",
+                    "Konzentration, Additive, Partikel und Reinigungszyklen",
+                ]
+            )[:8],
             evidence_ref_ids=context_ref,
         )
     )
@@ -702,7 +769,11 @@ def _build_sections(
                     f" und {web_hit_count} Live-Web-Hinweise fuer diesen Medium-Deep-Dive markiert. "
                     "Die Quellen werden als Orientierung angezeigt und ersetzen keine Herstellerfreigabe."
                 ),
-                bullets=[item.title for item in evidence if item.source_type in {"rag", "web"}][:6],
+                bullets=[
+                    item.title
+                    for item in evidence
+                    if item.source_type in {"rag", "web"}
+                ][:6],
                 evidence_ref_ids=rag_refs + web_refs,
             )
         )
@@ -760,9 +831,13 @@ def _limitations(web_attempt: MediumResearchAttempt) -> list[str]:
         "Werkstoff-, Norm- und Compliance-Aussagen muessen spaeter durch Hersteller oder qualifizierte Fachstelle bestaetigt werden.",
     ]
     if web_attempt.status == "not_requested":
-        items.append("Live-Websearch wurde nicht automatisch gestartet; sie kann bei Bedarf gezielt nachgeladen werden.")
+        items.append(
+            "Live-Websearch wurde nicht automatisch gestartet; sie kann bei Bedarf gezielt nachgeladen werden."
+        )
     elif web_attempt.status in {"disabled", "not_configured", "error", "no_hits"}:
-        items.append("Es werden keine Live-Webaussagen angezeigt, solange keine verwertbare Webquelle erfolgreich abgerufen wurde.")
+        items.append(
+            "Es werden keine Live-Webaussagen angezeigt, solange keine verwertbare Webquelle erfolgreich abgerufen wurde."
+        )
     return items
 
 

@@ -205,7 +205,9 @@ def test_enabled_fallback_returns_unvalidated_general_orientation_contract() -> 
     assert "nicht validiert" in view.user_visible_label
     assert view.not_final_release is True
     assert view.use_scope == "general_orientation_only"
-    assert payload["source_validation_badges"][0]["source_type"] == "llm_research_fallback"
+    assert (
+        payload["source_validation_badges"][0]["source_type"] == "llm_research_fallback"
+    )
     assert payload["source_validation_badges"][0]["validation_status"] == "unvalidated"
     assert payload["source_validation_badges"][0]["not_final_release"] is True
     assert payload["knowledge_evidence"][0]["source_type"] == "fallback"
@@ -233,7 +235,9 @@ def test_fallback_result_is_not_authoritative_by_source_validation_helpers() -> 
     assert is_unvalidated_source(view.source_type, view.validation_status)
 
 
-def test_fallback_provider_exception_returns_safe_miss_without_leaking_details() -> None:
+def test_fallback_provider_exception_returns_safe_miss_without_leaking_details() -> (
+    None
+):
     def fallback_runner(**kwargs):
         raise RuntimeError("secret stack trace detail")
 

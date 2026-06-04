@@ -93,17 +93,15 @@ class TestValidation:
         catalogs = load_all()
         for prefix, data in catalogs.items():
             for code in data:
-                assert code.startswith(prefix), (
-                    f"{code} beginnt nicht mit {prefix}"
-                )
+                assert code.startswith(prefix), f"{code} beginnt nicht mit {prefix}"
 
     def test_no_duplicate_canonical_names_per_catalog(self):
         catalogs = load_all()
         for prefix, data in catalogs.items():
             names = [e["canonical_name"] for e in data.values()]
-            assert len(names) == len(set(names)), (
-                f"Doppelte canonical_names in {prefix}"
-            )
+            assert len(names) == len(
+                set(names)
+            ), f"Doppelte canonical_names in {prefix}"
 
     def test_validate_catalog_detects_missing_field(self):
         bad_data = {"STS-MAT-BAD": {"canonical_name": "Test"}}
@@ -144,9 +142,9 @@ class TestRequiredMaterials:
     def test_required_material_present(self, code: str, name_part: str):
         mat = get_material(code)
         assert mat is not None, f"{code} fehlt"
-        assert name_part.lower() in mat["canonical_name"].lower(), (
-            f"{code}: '{name_part}' nicht in canonical_name"
-        )
+        assert (
+            name_part.lower() in mat["canonical_name"].lower()
+        ), f"{code}: '{name_part}' nicht in canonical_name"
 
 
 # ── Pflicht-Dichtungstypen ─────────────────────────────────────────
@@ -170,9 +168,9 @@ class TestRequiredSealingTypes:
     def test_required_sealing_type_present(self, code: str, name_part: str):
         st = get_sealing_type(code)
         assert st is not None, f"{code} fehlt"
-        assert name_part.lower() in st["canonical_name"].lower(), (
-            f"{code}: '{name_part}' nicht in canonical_name"
-        )
+        assert (
+            name_part.lower() in st["canonical_name"].lower()
+        ), f"{code}: '{name_part}' nicht in canonical_name"
 
 
 # ── Code-Lookup (codes.py) ─────────────────────────────────────────
@@ -238,9 +236,9 @@ class TestDataQuality:
     def test_materials_have_temperature(self):
         catalog = load_catalog("STS-MAT")
         for code, entry in catalog.items():
-            assert isinstance(entry["temperature_max_c"], (int, float)), (
-                f"{code}: temperature_max_c ist kein Zahlwert"
-            )
+            assert isinstance(
+                entry["temperature_max_c"], (int, float)
+            ), f"{code}: temperature_max_c ist kein Zahlwert"
 
     def test_sealing_types_have_category(self):
         catalog = load_catalog("STS-TYPE")
@@ -251,17 +249,17 @@ class TestDataQuality:
             "compression_packing",
         }
         for code, entry in catalog.items():
-            assert entry["category"] in valid_categories, (
-                f"{code}: unbekannte Kategorie '{entry['category']}'"
-            )
+            assert (
+                entry["category"] in valid_categories
+            ), f"{code}: unbekannte Kategorie '{entry['category']}'"
 
     def test_requirement_classes_severity_order(self):
         catalog = load_catalog("STS-RS")
         valid_severities = {"low", "medium", "high", "critical"}
         for code, entry in catalog.items():
-            assert entry["severity"] in valid_severities, (
-                f"{code}: unbekannte severity '{entry['severity']}'"
-            )
+            assert (
+                entry["severity"] in valid_severities
+            ), f"{code}: unbekannte severity '{entry['severity']}'"
 
     def test_media_have_category(self):
         catalog = load_catalog("STS-MED")
@@ -273,19 +271,17 @@ class TestDataQuality:
             "gas",
         }
         for code, entry in catalog.items():
-            assert entry["category"] in valid_categories, (
-                f"{code}: unbekannte Kategorie '{entry['category']}'"
-            )
+            assert (
+                entry["category"] in valid_categories
+            ), f"{code}: unbekannte Kategorie '{entry['category']}'"
 
     def test_open_points_have_typical_question(self):
         catalog = load_catalog("STS-OPEN")
         for code, entry in catalog.items():
-            assert "typical_question" in entry, (
-                f"{code}: typical_question fehlt"
-            )
-            assert entry["typical_question"].endswith("?"), (
-                f"{code}: typical_question endet nicht mit '?'"
-            )
+            assert "typical_question" in entry, f"{code}: typical_question fehlt"
+            assert entry["typical_question"].endswith(
+                "?"
+            ), f"{code}: typical_question endet nicht mit '?'"
 
     def test_material_sealing_type_cross_references(self):
         """Alle sealing_types in Materialien muessen existieren."""
@@ -293,6 +289,6 @@ class TestDataQuality:
         types = load_catalog("STS-TYPE")
         for code, entry in materials.items():
             for st_code in entry.get("sealing_types", []):
-                assert st_code in types, (
-                    f"{code}: referenziert unbekannten Typ {st_code}"
-                )
+                assert (
+                    st_code in types
+                ), f"{code}: referenziert unbekannten Typ {st_code}"

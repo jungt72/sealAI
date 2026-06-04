@@ -59,7 +59,11 @@ class TestManufacturerMappingNode:
         state = _base_state().model_copy(
             update={
                 "sealai_norm": _base_state().sealai_norm.model_copy(
-                    update={"identity": _base_state().sealai_norm.identity.model_copy(update={"seal_family": None})}
+                    update={
+                        "identity": _base_state().sealai_norm.identity.model_copy(
+                            update={"seal_family": None}
+                        )
+                    }
                 ),
                 "export_profile": _base_state().export_profile.model_copy(
                     update={"dimensions_summary": []}
@@ -70,7 +74,10 @@ class TestManufacturerMappingNode:
         result = await manufacturer_mapping_node(state)
 
         assert result.manufacturer_mapping.status in {"partial", "not_ready"}
-        assert "product_family_hint_missing" in result.manufacturer_mapping.unresolved_mapping_points
+        assert (
+            "product_family_hint_missing"
+            in result.manufacturer_mapping.unresolved_mapping_points
+        )
 
     @pytest.mark.asyncio
     async def test_missing_data_does_not_crash(self):

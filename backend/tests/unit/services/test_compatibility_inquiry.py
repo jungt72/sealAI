@@ -37,7 +37,9 @@ def test_water_sodium_and_potassium_are_review_relevant_candidates() -> None:
     analytes = {candidate.analyte for candidate in artifact.lab_value_candidates}
     assert {"Wasser", "Natrium", "Kalium"} <= analytes
     assert all(candidate.review_required for candidate in artifact.lab_value_candidates)
-    assert any(item.status == "review_required" for item in artifact.compatibility_matrix)
+    assert any(
+        item.status == "review_required" for item in artifact.compatibility_matrix
+    )
 
 
 def test_missing_values_units_and_methods_are_open_points() -> None:
@@ -61,10 +63,7 @@ def test_artifact_contains_no_final_limit_or_compatibility_claim() -> None:
         (
             *artifact.technical_inquiry_summary,
             artifact.boundary_notice,
-            *(
-                item.reason
-                for item in artifact.compatibility_matrix
-            ),
+            *(item.reason for item in artifact.compatibility_matrix),
         )
     ).casefold()
 
@@ -83,12 +82,16 @@ def test_artifact_contains_no_final_limit_or_compatibility_claim() -> None:
 
 
 def test_artifact_serializes_to_safe_projection_dict() -> None:
-    payload = CompatibilityInquiryService().build(
-        {
-            "product_designation": "WDR AS 75x95x10 DIN 3760 FKM",
-            "lab_report": "Wasser 12 mg/l Methode ICP",
-        }
-    ).as_dict()
+    payload = (
+        CompatibilityInquiryService()
+        .build(
+            {
+                "product_designation": "WDR AS 75x95x10 DIN 3760 FKM",
+                "lab_report": "Wasser 12 mg/l Methode ICP",
+            }
+        )
+        .as_dict()
+    )
 
     assert payload["schema_version"] == "compatibility_inquiry_v0.8.3"
     assert payload["case_type"] == "compatibility_inquiry"

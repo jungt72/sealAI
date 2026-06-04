@@ -44,6 +44,7 @@ Coverage:
         27. max_cycles respected from state (not just env default)
         28. max_cycles=1 → Class B cycle=0 → CONTINUE, cycle=1 → TERMINATE
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -69,6 +70,7 @@ from app.agent.state.models import GovernanceState
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _gov(gov_class=None, rfq_admissible: bool = False) -> GovernanceState:
     return GovernanceState(gov_class=gov_class, rfq_admissible=rfq_admissible)
 
@@ -90,6 +92,7 @@ def _state(
 # 1–3. Class A → always TERMINATE
 # ---------------------------------------------------------------------------
 
+
 class TestClassA:
     def test_class_a_cycle_0(self):
         assert decide_cycle(_state("A", cycle=0)) == CycleDecision.TERMINATE
@@ -109,29 +112,43 @@ class TestClassA:
 # 4–9. Class B: CONTINUE within budget, TERMINATE at/over limit
 # ---------------------------------------------------------------------------
 
+
 class TestClassB:
     def test_class_b_cycle_0_continue(self):
-        assert decide_cycle(_state("B", cycle=0, max_cycles=3)) == CycleDecision.CONTINUE
+        assert (
+            decide_cycle(_state("B", cycle=0, max_cycles=3)) == CycleDecision.CONTINUE
+        )
 
     def test_class_b_cycle_1_continue(self):
-        assert decide_cycle(_state("B", cycle=1, max_cycles=3)) == CycleDecision.CONTINUE
+        assert (
+            decide_cycle(_state("B", cycle=1, max_cycles=3)) == CycleDecision.CONTINUE
+        )
 
     def test_class_b_cycle_max_minus_1_continue(self):
-        assert decide_cycle(_state("B", cycle=2, max_cycles=3)) == CycleDecision.CONTINUE
+        assert (
+            decide_cycle(_state("B", cycle=2, max_cycles=3)) == CycleDecision.CONTINUE
+        )
 
     def test_class_b_cycle_equals_max_terminate(self):
-        assert decide_cycle(_state("B", cycle=3, max_cycles=3)) == CycleDecision.TERMINATE
+        assert (
+            decide_cycle(_state("B", cycle=3, max_cycles=3)) == CycleDecision.TERMINATE
+        )
 
     def test_class_b_cycle_max_plus_1_terminate(self):
-        assert decide_cycle(_state("B", cycle=4, max_cycles=3)) == CycleDecision.TERMINATE
+        assert (
+            decide_cycle(_state("B", cycle=4, max_cycles=3)) == CycleDecision.TERMINATE
+        )
 
     def test_class_b_cycle_5_over_max_terminate(self):
-        assert decide_cycle(_state("B", cycle=5, max_cycles=3)) == CycleDecision.TERMINATE
+        assert (
+            decide_cycle(_state("B", cycle=5, max_cycles=3)) == CycleDecision.TERMINATE
+        )
 
 
 # ---------------------------------------------------------------------------
 # 10–11. Class C and D → always TERMINATE
 # ---------------------------------------------------------------------------
+
 
 class TestClassCD:
     def test_class_c_terminate(self):
@@ -151,6 +168,7 @@ class TestClassCD:
 # 12. gov_class=None → TERMINATE (fail-safe)
 # ---------------------------------------------------------------------------
 
+
 class TestGovClassNone:
     def test_none_gov_class_terminate(self):
         assert decide_cycle(_state(gov_class=None)) == CycleDecision.TERMINATE
@@ -162,6 +180,7 @@ class TestGovClassNone:
 # ---------------------------------------------------------------------------
 # 13. decide_cycle does not mutate state
 # ---------------------------------------------------------------------------
+
 
 class TestDecideCycleImmutability:
     def test_does_not_mutate_state(self):
@@ -177,6 +196,7 @@ class TestDecideCycleImmutability:
 # 14. decide_cycle never calls LLM
 # ---------------------------------------------------------------------------
 
+
 class TestDecideCycleNoLLM:
     def test_openai_never_called(self):
         with patch("openai.AsyncOpenAI") as mock_cls:
@@ -187,6 +207,7 @@ class TestDecideCycleNoLLM:
 # ---------------------------------------------------------------------------
 # 15–20. increment_cycle
 # ---------------------------------------------------------------------------
+
 
 class TestIncrementCycle:
     def test_cycle_increments_by_one(self):
@@ -234,6 +255,7 @@ class TestIncrementCycle:
 # 21–22. cycle_increment_node (async wrapper)
 # ---------------------------------------------------------------------------
 
+
 class TestCycleIncrementNode:
     @pytest.mark.asyncio
     async def test_async_node_increments_cycle(self):
@@ -257,6 +279,7 @@ class TestCycleIncrementNode:
 # ---------------------------------------------------------------------------
 # 23–28. Topology integration
 # ---------------------------------------------------------------------------
+
 
 class TestTopologyIntegration:
     def test_node_cycle_increment_constant_defined(self):

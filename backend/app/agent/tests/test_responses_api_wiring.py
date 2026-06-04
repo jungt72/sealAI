@@ -91,7 +91,9 @@ def test_knowledge_question_resolves_to_knowledge_mode() -> None:
         == "knowledge_general"
     )
     assert (
-        resolve_knowledge_mode("was bedeutet ffkm in meinem fall?", has_active_case=True)
+        resolve_knowledge_mode(
+            "was bedeutet ffkm in meinem fall?", has_active_case=True
+        )
         == "knowledge_case_aware"
     )
 
@@ -101,7 +103,9 @@ def test_knowledge_turn_does_not_mutate_state() -> None:
     from app.agent.state.models import GovernedSessionState
 
     state = GovernedSessionState()
-    result = apply_knowledge_turn(state, "bitte gebe mir infos zu ptfe", has_active_case=False)
+    result = apply_knowledge_turn(
+        state, "bitte gebe mir infos zu ptfe", has_active_case=False
+    )
     assert result is state
 
 

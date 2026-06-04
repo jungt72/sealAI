@@ -178,13 +178,24 @@ def _infer_case_type(
             pass
 
     normalized = text.casefold()
-    if any(token in normalized for token in ("anlage steht", "notfall", "sofort", "heute ersatz")):
+    if any(
+        token in normalized
+        for token in ("anlage steht", "notfall", "sofort", "heute ersatz")
+    ):
         return CaseType.emergency_mro
-    if any(token in normalized for token in ("angebot", "angebote", "quote", "preisvergleich")):
+    if any(
+        token in normalized
+        for token in ("angebot", "angebote", "quote", "preisvergleich")
+    ):
         return CaseType.quote_comparison
-    if any(token in normalized for token in ("pfas", "alternative", "ersetzen", "substitution")):
+    if any(
+        token in normalized
+        for token in ("pfas", "alternative", "ersetzen", "substitution")
+    ):
         return CaseType.material_substitution
-    if evidence_refs or any(token in normalized for token in ("zeichnung", "drawing", "gefertigt")):
+    if evidence_refs or any(
+        token in normalized for token in ("zeichnung", "drawing", "gefertigt")
+    ):
         return CaseType.drawing_review
     return CaseType.drawing_review
 

@@ -214,7 +214,9 @@ def _consented_preview(
         ),
         source_kind="case_revision",
         consent_status=consent_status,
-        consent_scope=consent_scope if consent_scope is not None else _valid_consent_scope(),
+        consent_scope=consent_scope
+        if consent_scope is not None
+        else _valid_consent_scope(),
         dispatch_enabled=dispatch_enabled,
     )
 
@@ -248,9 +250,10 @@ def test_rfq_preview_groups_casefield_envelopes_by_status_and_provenance() -> No
     )
     assert groups["user_stated"]["motion_type"]["value"] == "rotary"
     assert groups["inferred"]["shaft_diameter_mm"]["confirmation_required"] is True
-    assert groups["calculated"]["calculated_speed_m_s"]["engineering_value"][
-        "unit"
-    ] == "m/s"
+    assert (
+        groups["calculated"]["calculated_speed_m_s"]["engineering_value"]["unit"]
+        == "m/s"
+    )
     assert groups["conflicting"]["pressure_bar"]["evidence_refs"] == (
         "chat:turn-3",
         "upload:datasheet-2#p1",
@@ -285,9 +288,12 @@ def test_rfq_preview_field_envelopes_include_source_validation_contract() -> Non
     assert fields["shaft_surface_finish"]["source_type"] == "unknown"
     assert fields["shaft_surface_finish"]["validation_status"] == "unknown"
     assert fields["shaft_surface_finish"]["authoritative"] is False
-    assert payload["rfq_preview"]["source_validation_summary"][
-        "by_validation_status"
-    ]["candidate"] >= 1
+    assert (
+        payload["rfq_preview"]["source_validation_summary"]["by_validation_status"][
+            "candidate"
+        ]
+        >= 1
+    )
     assert payload["rfq_preview"]["evidence_refs_summary"]["items"] == (
         "upload:datasheet-1#p2",
         "chat:turn-3",
@@ -328,7 +334,9 @@ def test_rfq_preview_sections_render_critical_values_as_envelopes() -> None:
     assert calculated_speed["confirmation_required"] is False
 
 
-def test_rfq_preview_release_boundary_is_review_oriented_not_compliance_approval() -> None:
+def test_rfq_preview_release_boundary_is_review_oriented_not_compliance_approval() -> (
+    None
+):
     payload = build_rfq_preview_payload(
         case_row=_case(),
         snapshot=_snapshot_with_field_envelopes(),
@@ -382,15 +390,24 @@ def test_rfq_preview_payload_is_frozen_and_has_all_v07_sections() -> None:
     )
     assert payload["consent_boundary"]["automatic_dispatch_allowed"] is False
     assert payload["consent_boundary"]["dispatch_enabled"] is False
-    assert payload["consent_boundary"]["required_acknowledgements"][
-        "user_acknowledged_no_final_release"
-    ] is True
-    assert payload["consent_boundary"]["required_acknowledgements"][
-        "user_acknowledged_export_intent"
-    ] is True
-    assert payload["consent_boundary"]["required_acknowledgements"][
-        "user_acknowledged_partner_network_disclosure"
-    ] is False
+    assert (
+        payload["consent_boundary"]["required_acknowledgements"][
+            "user_acknowledged_no_final_release"
+        ]
+        is True
+    )
+    assert (
+        payload["consent_boundary"]["required_acknowledgements"][
+            "user_acknowledged_export_intent"
+        ]
+        is True
+    )
+    assert (
+        payload["consent_boundary"]["required_acknowledgements"][
+            "user_acknowledged_partner_network_disclosure"
+        ]
+        is False
+    )
     assert [section["title"] for section in payload["rfq_preview"]["sections"]] == list(
         RFQ_PREVIEW_SECTIONS
     )
@@ -456,9 +473,7 @@ def test_rfq_preview_marks_unconfirmed_fields_as_open_points_not_release() -> No
         "Bestaetigung erforderlich: pressure_bar" in item
         for item in payload["manufacturer_extract"]["open_points"]
     )
-    assert (
-        payload["consent_boundary"]["open_points_acknowledgement_required"] is True
-    )
+    assert payload["consent_boundary"]["open_points_acknowledgement_required"] is True
     release_boundary = payload["rfq_preview"]["manufacturer_release_boundary"].lower()
     assert "no final technical release" in release_boundary
     assert "approved" not in release_boundary
@@ -489,12 +504,17 @@ def test_rfq_preview_does_not_require_matching_or_manufacturer_shortlist() -> No
     assert "matching" not in payload["rfq_preview"]
     assert "manufacturer_shortlist" not in payload["rfq_preview"]
     assert "manufacturer_shortlist" not in payload["manufacturer_extract"]
-    assert payload["consent_boundary"]["required_acknowledgements"][
-        "user_acknowledged_partner_network_disclosure"
-    ] is False
+    assert (
+        payload["consent_boundary"]["required_acknowledgements"][
+            "user_acknowledged_partner_network_disclosure"
+        ]
+        is False
+    )
 
 
-def test_rfq_preview_payload_has_no_unsafe_positive_release_or_approval_wording() -> None:
+def test_rfq_preview_payload_has_no_unsafe_positive_release_or_approval_wording() -> (
+    None
+):
     payload = build_rfq_preview_payload(
         case_row=_case(),
         snapshot=_snapshot_with_field_envelopes(),
@@ -610,7 +630,9 @@ def test_consent_scope_requires_export_intent_acknowledgement() -> None:
         )
 
 
-def test_consent_scope_accepts_valid_acknowledgements_and_ignores_dispatch_flag() -> None:
+def test_consent_scope_accepts_valid_acknowledgements_and_ignores_dispatch_flag() -> (
+    None
+):
     scope = normalize_consent_scope(
         {
             "shared_sections": ["rfq_preview"],
@@ -765,6 +787,7 @@ async def test_get_latest_preview_rejects_cross_tenant_case_id() -> None:
             user_id="user-1",
         )
 
+
 @pytest.mark.asyncio
 async def test_create_preview_rejects_cross_user_case_id() -> None:
     service = RfqPreviewService(_FilteringPreviewSession([_case(), _snapshot()]))
@@ -915,7 +938,9 @@ async def test_generate_export_rejects_cross_user_case_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_payload() -> None:
+async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_payload() -> (
+    None
+):
     payload = build_rfq_preview_payload(
         case_row=_case(),
         snapshot=_snapshot_with_field_envelopes(),
@@ -1012,15 +1037,20 @@ async def test_generate_export_succeeds_after_valid_consent_with_allowlisted_pay
     assert export_payload["content"]["sealing_intelligence"]["schema_version"] == (
         "sealingai_rfq_projection_v9_1"
     )
-    assert export_payload["content"]["sealing_intelligence"][
-        "no_final_technical_release"
-    ] is True
-    assert export_payload["content"]["technical_rwdr_rfq_brief"][
-        "artifact_title"
-    ] == "Technical RWDR RFQ Brief"
-    assert export_payload["content"]["technical_rwdr_rfq_brief"][
-        "manufacturer_matching_enabled"
-    ] is False
+    assert (
+        export_payload["content"]["sealing_intelligence"]["no_final_technical_release"]
+        is True
+    )
+    assert (
+        export_payload["content"]["technical_rwdr_rfq_brief"]["artifact_title"]
+        == "Technical RWDR RFQ Brief"
+    )
+    assert (
+        export_payload["content"]["technical_rwdr_rfq_brief"][
+            "manufacturer_matching_enabled"
+        ]
+        is False
+    )
     assert export_payload["content"]["evidence_references"] == (
         "upload:datasheet-1#p2",
         "chat:turn-3",
@@ -1042,7 +1072,9 @@ async def test_generate_export_blocks_if_dispatch_is_enabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_export_blocks_if_automatic_dispatch_allowed_in_preview_payload() -> None:
+async def test_generate_export_blocks_if_automatic_dispatch_allowed_in_preview_payload() -> (
+    None
+):
     payload = build_rfq_preview_payload(
         case_row=_case(),
         snapshot=_snapshot_with_field_envelopes(),
@@ -1057,6 +1089,7 @@ async def test_generate_export_blocks_if_automatic_dispatch_allowed_in_preview_p
             tenant_id="tenant-1",
             user_id="user-1",
         )
+
 
 class _FakeScalarResult:
     def __init__(self, value: object) -> None:

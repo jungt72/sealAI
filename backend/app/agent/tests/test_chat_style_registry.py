@@ -118,9 +118,9 @@ def test_blocked_boundary_keeps_explicit_boundary_disclaimer() -> None:
 
 @pytest.mark.parametrize("phrase", FORBIDDEN_NORMAL_TURN_PHRASES)
 def test_detect_flags_each_forbidden_normal_turn_phrase(phrase: str) -> None:
-    assert detect_no_go_phrases(f"... {phrase} ...") == [phrase] or phrase in detect_no_go_phrases(
-        f"... {phrase} ..."
-    )
+    assert detect_no_go_phrases(f"... {phrase} ...") == [
+        phrase
+    ] or phrase in detect_no_go_phrases(f"... {phrase} ...")
 
 
 def test_render_blocks_forbidden_structural_phrase() -> None:

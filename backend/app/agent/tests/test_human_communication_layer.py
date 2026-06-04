@@ -46,7 +46,9 @@ class CapturingLLM(FakeLLM):
         return await super().create_response(**kwargs)
 
 
-def _orchestrator(contract: LLMResponseContract | Exception) -> ConversationOrchestrator:
+def _orchestrator(
+    contract: LLMResponseContract | Exception,
+) -> ConversationOrchestrator:
     return ConversationOrchestrator(llm_service=FakeLLM(contract), enabled=True)
 
 
@@ -85,7 +87,9 @@ def _state(**updates) -> CaseConversationState:
                 reason="Ohne Wellendurchmesser kann die Umfangsgeschwindigkeit nicht berechnet werden.",
             ),
         ],
-        readiness=ReadinessFact(status="not_ready", blocking_reasons=["speed_rpm", "shaft_diameter_mm"]),
+        readiness=ReadinessFact(
+            status="not_ready", blocking_reasons=["speed_rpm", "shaft_diameter_mm"]
+        ),
         allowed_next_actions=["Drehzahl und Wellendurchmesser klaeren"],
     )
     return base.model_copy(update=updates)
@@ -115,7 +119,9 @@ def test_case_context_marks_deep_research_open_points_as_critical() -> None:
     raw_state = SimpleNamespace(
         session_id="case-critical-fields",
         tenant_id="tenant-1",
-        asserted=SimpleNamespace(blocking_unknowns=["shaft_runout", "material_or_compound"]),
+        asserted=SimpleNamespace(
+            blocking_unknowns=["shaft_runout", "material_or_compound"]
+        ),
         governance=SimpleNamespace(
             preselection_blockers=["verification_criteria"],
             compliance_blockers=[],
@@ -140,7 +146,9 @@ def test_case_context_marks_deep_research_open_points_as_critical() -> None:
 
 
 @pytest.mark.asyncio
-async def test_general_knowledge_question_is_explanatory_without_final_approval() -> None:
+async def test_general_knowledge_question_is_explanatory_without_final_approval() -> (
+    None
+):
     contract = LLMResponseContract(
         mode=ConversationMode.GENERAL_KNOWLEDGE,
         assistant_message=(
@@ -189,11 +197,17 @@ async def test_concrete_case_asks_for_missing_speed_and_shaft_diameter() -> None
 
 
 @pytest.mark.asyncio
-async def test_final_solution_question_with_insufficient_state_does_not_recommend_material() -> None:
+async def test_final_solution_question_with_insufficient_state_does_not_recommend_material() -> (
+    None
+):
     contract = LLMResponseContract(
         mode=ConversationMode.CASE_QUALIFICATION,
         assistant_message="Dafuer fehlen noch Drehzahl und Wellendurchmesser. Eine finale Auswahl waere jetzt zu frueh.",
-        used_claim_ids=["field.missing.speed_rpm", "field.missing.shaft_diameter_mm", "limitation.no_final_release"],
+        used_claim_ids=[
+            "field.missing.speed_rpm",
+            "field.missing.shaft_diameter_mm",
+            "limitation.no_final_release",
+        ],
         asks_for_fields=["speed_rpm", "shaft_diameter_mm"],
     )
 
@@ -215,7 +229,9 @@ async def test_social_thanks_does_not_create_false_progress() -> None:
         used_claim_ids=["field.missing.speed_rpm"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="danke", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="danke", case_state=_state()
+    )
 
     assert result.used_fallback is False
     assert "genau dort weiter" in result.assistant_message
@@ -232,7 +248,9 @@ async def test_unmatched_yes_does_not_confirm_anything() -> None:
         assistant_message="Alles klar, das ist geklaert.",
     )
 
-    result = await _orchestrator(contract).handle(user_message="ja danke", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="ja danke", case_state=_state()
+    )
 
     assert result.used_fallback is False
     assert "Worauf bezieht sich dein Ja" in result.assistant_message
@@ -250,7 +268,9 @@ async def test_unknown_answer_does_not_mark_field_as_done() -> None:
         assistant_message="Danke, der Punkt ist geklaert.",
     )
 
-    result = await _orchestrator(contract).handle(user_message="weiß ich nicht", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="weiß ich nicht", case_state=_state()
+    )
 
     assert result.used_fallback is False
     assert "nicht als geklaert" in result.assistant_message
@@ -273,7 +293,9 @@ async def test_technical_answer_with_thanks_allows_slot_candidate() -> None:
         ],
     )
 
-    result = await _orchestrator(contract).handle(user_message="O-Ring, danke", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="O-Ring, danke", case_state=_state()
+    )
 
     assert result.used_fallback is False
     assert result.proposed_field_updates[0].key == "seal_type"
@@ -331,10 +353,15 @@ async def test_no_progress_guard_blocks_working_state_claim_without_patch() -> N
         used_claim_ids=["field.missing.speed_rpm"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Ich habe dazu eine Frage.", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="Ich habe dazu eine Frage.", case_state=_state()
+    )
 
     assert result.used_fallback is True
-    assert any("false_progress_language_without_state_patch" in item for item in result.trace.validation_errors)
+    assert any(
+        "false_progress_language_without_state_patch" in item
+        for item in result.trace.validation_errors
+    )
     assert "Arbeitsstand:" not in result.assistant_message
 
 
@@ -345,7 +372,9 @@ async def test_trace_contains_state_transition_operational_metadata() -> None:
         assistant_message="Ein RWDR dichtet typischerweise eine rotierende Welle gegen ein Medium ab.",
     )
 
-    result = await _orchestrator(contract).handle(user_message="Was ist ein RWDR?", case_state=None)
+    result = await _orchestrator(contract).handle(
+        user_message="Was ist ein RWDR?", case_state=None
+    )
 
     assert result.trace.route == ConversationMode.GENERAL_KNOWLEDGE.value
     assert result.trace.session_id == result.trace.case_id
@@ -363,7 +392,9 @@ async def test_confirmed_field_may_be_stated_as_confirmed() -> None:
         used_claim_ids=["field.confirmed.medium"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Was weisst du schon?", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="Was weisst du schon?", case_state=_state()
+    )
 
     assert "Salzwasser" in result.assistant_message
     assert result.used_fallback is False
@@ -389,7 +420,9 @@ async def test_proposed_field_is_not_treated_as_confirmed() -> None:
         used_claim_ids=["field.proposed.speed_rpm"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="1450 U/min", case_state=state)
+    result = await _orchestrator(contract).handle(
+        user_message="1450 U/min", case_state=state
+    )
 
     assert "Kandidat" in result.assistant_message
     assert "noch nicht bestaetigt" in result.assistant_message
@@ -398,14 +431,18 @@ async def test_proposed_field_is_not_treated_as_confirmed() -> None:
 
 @pytest.mark.asyncio
 async def test_stale_field_is_not_treated_as_reliable() -> None:
-    state = _state(stale_fields=[StaleField(key="pv_load", reason="Druck wurde geaendert.")])
+    state = _state(
+        stale_fields=[StaleField(key="pv_load", reason="Druck wurde geaendert.")]
+    )
     contract = LLMResponseContract(
         mode=ConversationMode.CASE_QUALIFICATION,
         assistant_message="Der PV-Wert ist stale und muss nach der Druckaenderung neu berechnet werden.",
         used_claim_ids=["field.stale.pv_load"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Ist der PV Wert noch okay?", case_state=state)
+    result = await _orchestrator(contract).handle(
+        user_message="Ist der PV Wert noch okay?", case_state=state
+    )
 
     assert "stale" in result.assistant_message
     assert result.used_fallback is False
@@ -413,14 +450,25 @@ async def test_stale_field_is_not_treated_as_reliable() -> None:
 
 @pytest.mark.asyncio
 async def test_backend_risk_claim_can_be_explained() -> None:
-    state = _state(risks=[RiskFact(id="dry_run", label="Trockenlauf", severity="high", reason="Benetzung ist unklar.")])
+    state = _state(
+        risks=[
+            RiskFact(
+                id="dry_run",
+                label="Trockenlauf",
+                severity="high",
+                reason="Benetzung ist unklar.",
+            )
+        ]
+    )
     contract = LLMResponseContract(
         mode=ConversationMode.CASE_QUALIFICATION,
         assistant_message="SeaLAI markiert Trockenlauf als Risiko, weil die Benetzung noch unklar ist.",
         used_claim_ids=["risk.dry_run"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Welche Risiken siehst du?", case_state=state)
+    result = await _orchestrator(contract).handle(
+        user_message="Welche Risiken siehst du?", case_state=state
+    )
 
     assert "Trockenlauf" in result.assistant_message
     assert result.used_fallback is False
@@ -434,7 +482,9 @@ async def test_unsupported_risk_is_blocked() -> None:
         used_claim_ids=["field.confirmed.medium"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Welche Risiken siehst du?", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="Welche Risiken siehst du?", case_state=_state()
+    )
 
     assert result.used_fallback is True
     assert "Korrosionsrisiko ist hier hoch" not in result.assistant_message
@@ -449,7 +499,9 @@ async def test_final_approval_request_is_blocked() -> None:
         used_claim_ids=["field.confirmed.medium"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Ist das freigegeben?", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="Ist das freigegeben?", case_state=_state()
+    )
 
     assert result.used_fallback is False
     assert "abschliessende Auslegungszusage" in result.assistant_message
@@ -476,7 +528,9 @@ async def test_prompt_injection_does_not_override_rules() -> None:
 
 
 @pytest.mark.asyncio
-async def test_prompt_injection_gets_deterministic_guardrail_and_no_field_proposals() -> None:
+async def test_prompt_injection_gets_deterministic_guardrail_and_no_field_proposals() -> (
+    None
+):
     contract = LLMResponseContract(
         mode=ConversationMode.OUT_OF_SCOPE_OR_UNSAFE,
         assistant_message="FKM ist geeignet.",
@@ -584,7 +638,9 @@ async def test_fabricated_claim_id_is_rejected() -> None:
         used_claim_ids=["claim.does.not.exist"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Hast du eine Quelle?", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="Hast du eine Quelle?", case_state=_state()
+    )
 
     assert result.used_fallback is True
     assert any("fabricated_claim_id" in item for item in result.trace.validation_errors)
@@ -608,10 +664,15 @@ async def test_fabricated_evidence_ref_is_rejected_without_claim_error() -> None
         cited_evidence_ref_ids=["doc_fake"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Hast du eine Quelle?", case_state=state)
+    result = await _orchestrator(contract).handle(
+        user_message="Hast du eine Quelle?", case_state=state
+    )
 
     assert result.used_fallback is True
-    assert any("fabricated_evidence_ref:doc_fake" in item for item in result.trace.validation_errors)
+    assert any(
+        "fabricated_evidence_ref:doc_fake" in item
+        for item in result.trace.validation_errors
+    )
 
 
 @pytest.mark.asyncio
@@ -632,7 +693,9 @@ async def test_valid_evidence_ref_is_accepted_when_claim_is_used() -> None:
         cited_evidence_ref_ids=["doc_real"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Hast du eine Quelle?", case_state=state)
+    result = await _orchestrator(contract).handle(
+        user_message="Hast du eine Quelle?", case_state=state
+    )
 
     assert result.used_fallback is False
     assert result.trace.cited_evidence_ref_ids_used == ["doc_real"]
@@ -646,7 +709,9 @@ async def test_forbidden_phrase_is_blocked() -> None:
         used_claim_ids=["field.confirmed.medium"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Passt das?", case_state=_state())
+    result = await _orchestrator(contract).handle(
+        user_message="Passt das?", case_state=_state()
+    )
 
     assert result.used_fallback is True
     assert "garantiert dicht" not in result.assistant_message.lower()
@@ -661,7 +726,9 @@ async def test_rfq_readiness_requires_readiness_claim_usage() -> None:
         used_claim_ids=["readiness.current", "limitation.no_final_release"],
     )
 
-    result = await _orchestrator(contract).handle(user_message="Kann ich eine RFQ vorbereiten?", case_state=state)
+    result = await _orchestrator(contract).handle(
+        user_message="Kann ich eine RFQ vorbereiten?", case_state=state
+    )
 
     assert "RFQ-Preview" in result.assistant_message
     assert result.used_fallback is False
@@ -735,7 +802,10 @@ async def test_llm_cannot_introduce_unextracted_field_proposal() -> None:
     )
 
     assert result.used_fallback is True
-    assert any("unsupported_proposed_field:material" in item for item in result.trace.validation_errors)
+    assert any(
+        "unsupported_proposed_field:material" in item
+        for item in result.trace.validation_errors
+    )
     assert result.proposed_field_updates == []
 
 
@@ -769,7 +839,9 @@ async def test_trace_sink_receives_append_only_metadata() -> None:
 
 
 @pytest.mark.asyncio
-async def test_governed_reply_context_does_not_feed_legacy_working_state_text_to_llm() -> None:
+async def test_governed_reply_context_does_not_feed_legacy_working_state_text_to_llm() -> (
+    None
+):
     llm = CapturingLLM(
         LLMResponseContract(
             mode=ConversationMode.CASE_QUALIFICATION,
@@ -798,5 +870,7 @@ async def test_governed_reply_context_does_not_feed_legacy_working_state_text_to
 
     assert llm.state is None
     assert "Arbeitsstand:" not in result.assistant_message
-    assert "Welches Medium liegt direkt an der Dichtstelle an?" in result.assistant_message
+    assert (
+        "Welches Medium liegt direkt an der Dichtstelle an?" in result.assistant_message
+    )
     assert result.trace.state_patch_size == 0

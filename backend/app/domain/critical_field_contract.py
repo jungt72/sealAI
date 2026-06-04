@@ -3,6 +3,7 @@
 This module is intentionally dependency-light so durable services can enforce
 the contract without importing agent/LangGraph code.
 """
+
 from __future__ import annotations
 
 

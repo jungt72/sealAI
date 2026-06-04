@@ -217,11 +217,11 @@ def _extract_product_designation(text: str) -> ProductDesignation:
     normalized = text.casefold()
     designation = _extract_designation(text)
     dimensions = _extract_dimensions(text)
-    seal_type = "radial_shaft_seal" if _contains_any(normalized, ("wdr", "rwdr")) else None
-    material = _extract_material(normalized)
-    norms = tuple(
-        f"DIN {match.group('number')}" for match in _DIN_RE.finditer(text)
+    seal_type = (
+        "radial_shaft_seal" if _contains_any(normalized, ("wdr", "rwdr")) else None
     )
+    material = _extract_material(normalized)
+    norms = tuple(f"DIN {match.group('number')}" for match in _DIN_RE.finditer(text))
     compliance_flags = tuple(
         label for token, label in _COMPLIANCE_FLAGS.items() if token in normalized
     )
@@ -264,7 +264,9 @@ def _extract_designation(text: str) -> str | None:
             relevant.append(word.upper())
             keep_next = True
             continue
-        if _DIMENSION_RE.fullmatch(word) or re.fullmatch(r"\d{1,4}[xX]\d{1,4}[xX]\d{1,4}", word):
+        if _DIMENSION_RE.fullmatch(word) or re.fullmatch(
+            r"\d{1,4}[xX]\d{1,4}[xX]\d{1,4}", word
+        ):
             relevant.append(word)
             keep_next = True
             continue
@@ -316,7 +318,9 @@ def _extract_lab_value_candidates(text: str) -> tuple[LabValueCandidate, ...]:
             method_present=method_present,
         )
         status = (
-            "candidate" if raw_value and unit and method_present else "candidate_incomplete"
+            "candidate"
+            if raw_value and unit and method_present
+            else "candidate_incomplete"
         )
         candidates.append(
             LabValueCandidate(
@@ -394,7 +398,9 @@ def _build_matrix(
                 else "Keine Laborwerte im Anfragekontext erkannt."
             ),
             open_points=tuple(
-                value for value in missing_values if "." in value or value == "lab_values"
+                value
+                for value in missing_values
+                if "." in value or value == "lab_values"
             ),
         ),
         CompatibilityMatrixItem(

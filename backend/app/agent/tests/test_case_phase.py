@@ -49,5 +49,7 @@ def test_unknown_mixed_with_authority_value_returns_none() -> None:
         {"conversation_phase": "matching"},
     ],
 )
-def test_neighbouring_signals_do_not_derive_case_phase(signals: dict[str, object]) -> None:
+def test_neighbouring_signals_do_not_derive_case_phase(
+    signals: dict[str, object],
+) -> None:
     assert derive_case_phase(**signals) is None

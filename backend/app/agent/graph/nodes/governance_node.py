@@ -23,6 +23,7 @@ Reducer semantics (see state/reducers.py for full spec):
     D — none of the core required fields asserted at all
         → out of scope, rfq_admissible = False
 """
+
 from __future__ import annotations
 
 import logging

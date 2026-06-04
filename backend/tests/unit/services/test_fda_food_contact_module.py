@@ -45,7 +45,11 @@ def test_fda_applies_to_food_contact_us_contexts(context) -> None:
     "context",
     [
         {"application_domain": "chemical", "market_region": "us"},
-        {"food_contact_required": False, "medium_name": "hydraulic oil", "market_region": "us"},
+        {
+            "food_contact_required": False,
+            "medium_name": "hydraulic oil",
+            "market_region": "us",
+        },
         {"application_domain": "food processing", "food_contact_region": "eu"},
     ],
 )
@@ -64,7 +68,10 @@ def test_fda_required_fields_are_stable() -> None:
 
 
 def test_fda_escalation_policy_is_manufacturer_review() -> None:
-    assert FdaFoodContactModule().escalation_policy() is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
+    assert (
+        FdaFoodContactModule().escalation_policy()
+        is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
+    )
 
 
 def test_fda_check_not_applicable_for_non_food_context() -> None:
@@ -75,7 +82,13 @@ def test_fda_check_not_applicable_for_non_food_context() -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["medium_name", "sealing_material_family", "material_name", "temperature_c", "intended_us_market"],
+    [
+        "medium_name",
+        "sealing_material_family",
+        "material_name",
+        "temperature_c",
+        "intended_us_market",
+    ],
 )
 def test_fda_check_insufficient_data_for_missing_core_fields(field: str) -> None:
     context = _fda_context(**{field: None})
@@ -89,17 +102,28 @@ def test_fda_check_insufficient_data_for_missing_core_fields(field: str) -> None
     ("override", "expected_code"),
     [
         ({}, "fda_food_contact_evidence_missing"),
-        ({"certification_records": [{"standard": "FDA 21 CFR 177.1550", "valid": True}]}, "fda_food_contact_declaration_missing"),
         (
             {
-                "certification_records": [{"standard": "FDA 21 CFR 177.1550", "valid": True}],
+                "certification_records": [
+                    {"standard": "FDA 21 CFR 177.1550", "valid": True}
+                ]
+            },
+            "fda_food_contact_declaration_missing",
+        ),
+        (
+            {
+                "certification_records": [
+                    {"standard": "FDA 21 CFR 177.1550", "valid": True}
+                ],
                 "manufacturer_declaration_present": True,
             },
             "fda_food_contact_traceability_missing",
         ),
     ],
 )
-def test_fda_check_review_required_for_partial_evidence(override, expected_code: str) -> None:
+def test_fda_check_review_required_for_partial_evidence(
+    override, expected_code: str
+) -> None:
     result = FdaFoodContactModule().check(_fda_context(**override))
     assert result.status is NormCheckStatus.REVIEW_REQUIRED
     assert result.escalation is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
@@ -111,7 +135,10 @@ def test_fda_check_fail_for_explicit_negative_certification_context() -> None:
         _fda_context(explicitly_not_food_contact_certified=True)
     )
     assert result.status is NormCheckStatus.FAIL
-    assert any(finding.code == "fda_food_contact_negative_evidence" for finding in result.findings)
+    assert any(
+        finding.code == "fda_food_contact_negative_evidence"
+        for finding in result.findings
+    )
 
 
 def test_fda_check_pass_only_with_minimal_complete_evidence() -> None:
@@ -130,7 +157,9 @@ def test_fda_check_pass_only_with_minimal_complete_evidence() -> None:
     )
     assert result.status is NormCheckStatus.PASS
     assert result.escalation is EscalationPolicy.NO_ESCALATION
-    assert any("not a final regulatory" in finding.message for finding in result.findings)
+    assert any(
+        "not a final regulatory" in finding.message for finding in result.findings
+    )
 
 
 def test_default_registry_contains_fda_food_contact_module() -> None:

@@ -9,7 +9,9 @@ def main() -> int:
     try:
         result = bootstrap_rag_collection()
         print(f"[qdrant_bootstrap] result={result}")
-        return 0 if result in {"ok", "created", "upgraded", "recreated", "skipped"} else 1
+        return (
+            0 if result in {"ok", "created", "upgraded", "recreated", "skipped"} else 1
+        )
     except Exception as exc:
         print(f"[qdrant_bootstrap] ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2

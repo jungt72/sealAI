@@ -22,13 +22,17 @@ MATERIAL_PATTERN = re.compile(
     r")(?:[-_/]?(\d{2,3}))?\b",
     re.IGNORECASE,
 )
-SHORE_PATTERN = re.compile(r"\b(?:shore(?:\s*[ad])?|sh)\s*[:=]?\s*(\d{2,3})\b", re.IGNORECASE)
+SHORE_PATTERN = re.compile(
+    r"\b(?:shore(?:\s*[ad])?|sh)\s*[:=]?\s*(\d{2,3})\b", re.IGNORECASE
+)
 KYROLON_PATTERN = re.compile(r"\bkyrolon\s+(\d{2,3})[a-z]?\b", re.IGNORECASE)
 TEMP_RANGE_C_PATTERN = re.compile(
     r"([−-]?\d{1,3}(?:[.,]\d+)?)\s*(?:to|bis|[-–—]{1,2})\s*([−-]?\d{1,3}(?:[.,]\d+)?)\s*°\s*c\b",
     re.IGNORECASE,
 )
-TEMP_C_VALUE_PATTERN = re.compile(r"([−-]?\d{1,3}(?:[.,]\d+)?)\s*°\s*c\b", re.IGNORECASE)
+TEMP_C_VALUE_PATTERN = re.compile(
+    r"([−-]?\d{1,3}(?:[.,]\d+)?)\s*°\s*c\b", re.IGNORECASE
+)
 TEMP_UPPER_THRESHOLD_PATTERN = re.compile(
     r"(?:over|above|ueber|über|oberhalb|beginnt bei)\s*([−-]?\d{1,3}(?:[.,]\d+)?)\s*°\s*c\b",
     re.IGNORECASE,
@@ -72,9 +76,7 @@ def _normalize_docx_text(path: Path) -> str:
     with zipfile.ZipFile(path) as archive:
         raw = archive.read("word/document.xml").decode("utf-8", errors="ignore")
     normalized = (
-        raw.replace("</w:p>", "\n")
-        .replace("</w:tr>", "\n")
-        .replace("</w:tc>", "\t")
+        raw.replace("</w:p>", "\n").replace("</w:tr>", "\n").replace("</w:tc>", "\t")
     )
     text = re.sub(r"<[^>]+>", "", normalized)
     return html.unescape(text)
@@ -97,7 +99,9 @@ def _read_text(path: Path) -> str:
         return ""
 
 
-def _map_source_to_local_path(source: str | None, uploads_root: Path, fallback_filename: str) -> Path | None:
+def _map_source_to_local_path(
+    source: str | None, uploads_root: Path, fallback_filename: str
+) -> Path | None:
     if source:
         src = source.strip()
         if src:
@@ -204,7 +208,9 @@ def _extract_temp_range(text: str, material_code: str) -> tuple[float, float]:
 
 def _extract_specs(text: str, filename: str) -> ExtractedSpec:
     material_code = _extract_material_code(text=text, filename=filename)
-    shore = _extract_shore_hardness(text=text, filename=filename, material_code=material_code)
+    shore = _extract_shore_hardness(
+        text=text, filename=filename, material_code=material_code
+    )
     min_c, max_c = _extract_temp_range(text=text, material_code=material_code)
     if min_c > max_c:
         min_c, max_c = max_c, min_c
@@ -217,12 +223,18 @@ def _extract_specs(text: str, filename: str) -> ExtractedSpec:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Backfill RAG technical metadata in Qdrant.")
+    parser = argparse.ArgumentParser(
+        description="Backfill RAG technical metadata in Qdrant."
+    )
     parser.add_argument("--collection", default="sealai_knowledge_v3")
-    parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"))
+    parser.add_argument(
+        "--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333")
+    )
     parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY") or None)
     parser.add_argument("--uploads-root", default="data/backend/uploads")
-    parser.add_argument("--apply", action="store_true", help="Persist updates to Qdrant.")
+    parser.add_argument(
+        "--apply", action="store_true", help="Persist updates to Qdrant."
+    )
     args = parser.parse_args()
 
     uploads_root = Path(args.uploads_root).resolve()
@@ -246,15 +258,24 @@ def main() -> int:
         for point in points:
             payload = point.payload or {}
             metadata = payload.get("metadata") or {}
-            doc_id = str(payload.get("document_id") or metadata.get("document_id") or metadata.get("doc_id") or "")
+            doc_id = str(
+                payload.get("document_id")
+                or metadata.get("document_id")
+                or metadata.get("doc_id")
+                or ""
+            )
             if not doc_id:
                 continue
             record = by_doc[doc_id]
             record["points"].append(point)
             if not record["filename"]:
-                record["filename"] = str(payload.get("filename") or metadata.get("title") or "")
+                record["filename"] = str(
+                    payload.get("filename") or metadata.get("title") or ""
+                )
             if not record["source"]:
-                record["source"] = str(payload.get("source") or metadata.get("source_uri") or "")
+                record["source"] = str(
+                    payload.get("source") or metadata.get("source_uri") or ""
+                )
             chunk_text = str(payload.get("text") or metadata.get("text") or "")
             if chunk_text.strip():
                 record["text_parts"].append(chunk_text)
@@ -267,7 +288,9 @@ def main() -> int:
     for doc_id, info in sorted(by_doc.items(), key=lambda item: item[0]):
         filename = str(info.get("filename") or "")
         source = str(info.get("source") or "")
-        local_path = _map_source_to_local_path(source=source, uploads_root=uploads_root, fallback_filename=filename)
+        local_path = _map_source_to_local_path(
+            source=source, uploads_root=uploads_root, fallback_filename=filename
+        )
         file_text = _read_text(local_path) if local_path else ""
         merged_text = "\n".join([file_text, *info.get("text_parts", [])])
         specs = _extract_specs(merged_text, filename=filename)
@@ -331,11 +354,17 @@ def main() -> int:
                     null_material += 1
                 if shore in (None, "", "None"):
                     null_shore += 1
-                if not isinstance(temp, dict) or temp.get("min_c") is None or temp.get("max_c") is None:
+                if (
+                    not isinstance(temp, dict)
+                    or temp.get("min_c") is None
+                    or temp.get("max_c") is None
+                ):
                     null_temp += 1
             if offset is None:
                 break
-        print(f"post_check_null_material={null_material} post_check_null_shore={null_shore} post_check_null_temp={null_temp}")
+        print(
+            f"post_check_null_material={null_material} post_check_null_shore={null_shore} post_check_null_temp={null_temp}"
+        )
 
     return 0
 

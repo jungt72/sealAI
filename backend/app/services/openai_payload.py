@@ -2,12 +2,16 @@
 from __future__ import annotations
 from typing import Dict, List, Tuple, Any
 
+
 def use_responses_api(model: str) -> bool:
     m = (model or "").lower().strip()
     # GPT-5 / o4 / o3 nutzen die Responses API
     return m.startswith("gpt-5") or m.startswith("o4") or m.startswith("o3")
 
-def _to_input_parts(content: Any, part_type: str = "input_text") -> List[Dict[str, Any]]:
+
+def _to_input_parts(
+    content: Any, part_type: str = "input_text"
+) -> List[Dict[str, Any]]:
     """
     Responses-API erwartet strukturierte Parts.
     Strings -> [{"type": part_type, "text": "..."}]
@@ -42,6 +46,7 @@ def _to_input_parts(content: Any, part_type: str = "input_text") -> List[Dict[st
         return [{"type": part_type, "text": str(content)}]
     return [{"type": part_type, "text": str(content)}]
 
+
 def messages_to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Chat-Message-Format -> Responses-API 'input'
@@ -57,6 +62,7 @@ def messages_to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str
             out.append({"role": role, "content": parts})
     return out
 
+
 def _responses_sampling_supported(model: str) -> bool:
     """
     Einige Responses-Modelle (z. B. gpt-5-mini) akzeptieren KEIN 'temperature'/'top_p'.
@@ -64,6 +70,7 @@ def _responses_sampling_supported(model: str) -> bool:
     Stelle hier ggf. eine Whitelist her, falls du Modelle hast, die Sampling erlauben.
     """
     return False  # konservativ: keine Sampling-Parameter senden
+
 
 def build_openai_payload(
     model: str,

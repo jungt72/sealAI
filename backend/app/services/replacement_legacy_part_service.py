@@ -245,7 +245,11 @@ def _extract_markings(
 def _has_evidence(payload: str | Mapping[str, Any]) -> bool:
     if isinstance(payload, str):
         return False
-    evidence = payload.get("evidence_refs") or payload.get("photos") or payload.get("documents")
+    evidence = (
+        payload.get("evidence_refs")
+        or payload.get("photos")
+        or payload.get("documents")
+    )
     if evidence is None:
         return False
     if isinstance(evidence, (str, bytes)):
@@ -316,13 +320,18 @@ def _infer_case_type(payload: str | Mapping[str, Any], text: str) -> str:
         raw = str(payload.get("case_type") or "")
         try:
             case_type = CaseType(raw)
-            if case_type in {CaseType.replacement_reorder, CaseType.unknown_legacy_part}:
+            if case_type in {
+                CaseType.replacement_reorder,
+                CaseType.unknown_legacy_part,
+            }:
                 return case_type.value
         except ValueError:
             pass
 
     normalized = text.casefold()
-    if any(token in normalized for token in ("steht nur", "nur", "unbekannt", "altteil")):
+    if any(
+        token in normalized for token in ("steht nur", "nur", "unbekannt", "altteil")
+    ):
         return CaseType.unknown_legacy_part.value
     return CaseType.replacement_reorder.value
 

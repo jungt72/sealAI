@@ -99,7 +99,9 @@ def _open_points_count(*states: Any) -> int:
     return 0
 
 
-def _graph_thread_config(*, current_user: RequestUser, session_id: str) -> dict[str, Any]:
+def _graph_thread_config(
+    *, current_user: RequestUser, session_id: str
+) -> dict[str, Any]:
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=session_id)
     return {
         "configurable": {
@@ -153,9 +155,17 @@ def _interrupt_summary(value: Any) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
     for item in items[:8]:
         payload = getattr(item, "value", item)
-        payload_mapping = payload if isinstance(payload, dict) else _state_mapping(payload)
-        kind = payload_mapping.get("kind") if isinstance(payload_mapping, dict) else None
-        message = payload_mapping.get("message") if isinstance(payload_mapping, dict) else None
+        payload_mapping = (
+            payload if isinstance(payload, dict) else _state_mapping(payload)
+        )
+        kind = (
+            payload_mapping.get("kind") if isinstance(payload_mapping, dict) else None
+        )
+        message = (
+            payload_mapping.get("message")
+            if isinstance(payload_mapping, dict)
+            else None
+        )
         summaries.append(
             {
                 "kind": str(kind or "interrupt"),
@@ -232,7 +242,8 @@ async def _emit_graph_event_observations(
                 "node_names": observation.get("nodes"),
                 "expected_interrupt": status == "expected_interrupt",
                 "tenant_id": getattr(current_user, "tenant_id", None),
-                "user_id": getattr(current_user, "user_id", None) or getattr(current_user, "sub", None),
+                "user_id": getattr(current_user, "user_id", None)
+                or getattr(current_user, "sub", None),
             },
         )
     if len(observations) > 80:
@@ -261,9 +272,7 @@ def build_governed_graph_input(
 
     tenant_id, _, _ = _canonical_scope(current_user, case_id=session_id)
     governed_with_user = (
-        _with_governed_conversation_turn(
-            governed_state, role="user", content=message
-        )
+        _with_governed_conversation_turn(governed_state, role="user", content=message)
         if append_user_message
         else governed_state
     )
@@ -341,7 +350,9 @@ async def run_governed_graph_turn(
         pre_gate_classification=pre_gate_classification,
         runtime_action_answer_mode=_runtime_action_answer_mode(runtime_action),
     )
-    graph_config = _graph_thread_config(current_user=current_user, session_id=session_id)
+    graph_config = _graph_thread_config(
+        current_user=current_user, session_id=session_id
+    )
     governed_graph = await get_governed_graph()
 
     progress_events: list[Any] = []
@@ -379,7 +390,11 @@ async def run_governed_graph_turn(
                     )
                 if mode == "values":
                     latest_values = _materialize_governed_graph_result(data)
-                elif mode == "updates" and isinstance(data, dict) and "__interrupt__" in data:
+                elif (
+                    mode == "updates"
+                    and isinstance(data, dict)
+                    and "__interrupt__" in data
+                ):
                     latest_values = _materialize_governed_graph_result(data)
                 elif mode == "custom":
                     progress_events.append(data)
@@ -423,13 +438,22 @@ async def run_governed_graph_turn(
             if observation.get("status") == "expected_interrupt"
         ),
         pending_question_present=bool(
-            _state_value(result_state, "pending_question", "next_question", "clarification_question")
+            _state_value(
+                result_state,
+                "pending_question",
+                "next_question",
+                "clarification_question",
+            )
         ),
         open_points_count=_open_points_count(result_state, persisted_state),
         triggered_findings_count=_count_collection(
-            _state_value(result_state, "triggered_findings", "challenge_findings", "findings")
+            _state_value(
+                result_state, "triggered_findings", "challenge_findings", "findings"
+            )
         ),
-        risk_drivers_count=_count_collection(_state_value(result_state, "risk_drivers")),
+        risk_drivers_count=_count_collection(
+            _state_value(result_state, "risk_drivers")
+        ),
         medium_intelligence_status=(
             result_state.medium_intelligence.get("validation_status")
             if isinstance(result_state.medium_intelligence, dict)
@@ -448,9 +472,15 @@ async def run_governed_graph_turn(
         ),
         uncertainty_level=_state_value(result_state, "uncertainty_level"),
         forbidden_claim_check=_state_value(result_state, "forbidden_claim_check"),
-        v92_present=bool(_state_value(result_state, "seal_system", "engineering", "dossier")),
-        v92_engineering_status=getattr(_state_value(result_state, "engineering"), "status", None),
-        v92_dossier_status=getattr(_state_value(result_state, "dossier"), "status", None),
+        v92_present=bool(
+            _state_value(result_state, "seal_system", "engineering", "dossier")
+        ),
+        v92_engineering_status=getattr(
+            _state_value(result_state, "engineering"), "status", None
+        ),
+        v92_dossier_status=getattr(
+            _state_value(result_state, "dossier"), "status", None
+        ),
     )
 
     return GovernedGraphTurnResult(

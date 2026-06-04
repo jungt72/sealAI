@@ -8,8 +8,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -33,6 +37,7 @@ from app.mcp.calculations.compliance import (
 # ──────────────────────────────────────────────────────────────────────────────
 # Tests aus der Aufgabenstellung
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_nbr_fda_blocked():
     r = check_compliance("NBR", flags=[ComplianceFlag.FDA])
@@ -73,6 +78,7 @@ def test_aed_epdm_blocked():
 # ──────────────────────────────────────────────────────────────────────────────
 # Erweiterte Tests
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_ffkm_fda_ok():
     r = check_compliance("FFKM", flags=[ComplianceFlag.FDA])
@@ -164,14 +170,18 @@ def test_ped_below_threshold_ok():
 
 
 def test_ped_group1_warning():
-    r = check_compliance("FKM", medium="H2", pressure_bar=50.0, flags=[ComplianceFlag.PED])
+    r = check_compliance(
+        "FKM", medium="H2", pressure_bar=50.0, flags=[ComplianceFlag.PED]
+    )
     ped = next(f for f in r.flag_results if f.flag == ComplianceFlag.PED)
     assert ped.passed
     assert ped.severity == "warning"
 
 
 def test_ped_group2_ok():
-    r = check_compliance("NBR", medium="Wasser", pressure_bar=50.0, flags=[ComplianceFlag.PED])
+    r = check_compliance(
+        "NBR", medium="Wasser", pressure_bar=50.0, flags=[ComplianceFlag.PED]
+    )
     ped = next(f for f in r.flag_results if f.flag == ComplianceFlag.PED)
     assert ped.passed
     assert ped.severity == "ok"
@@ -236,6 +246,7 @@ def test_alias_viton_fkm():
 
 def test_unknown_material_raises():
     import pytest
+
     with pytest.raises(KeyError):
         check_compliance("Unobtainium")
 

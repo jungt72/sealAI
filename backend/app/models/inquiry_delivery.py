@@ -1,4 +1,5 @@
 """ORM model for inquiry_deliveries — Phase H1.4/H1.5."""
+
 from __future__ import annotations
 
 import uuid
@@ -20,7 +21,9 @@ class InquiryDelivery(Base):
 
     __tablename__ = "inquiry_deliveries"
     __table_args__ = (
-        UniqueConstraint("idempotency_key", name="uq_inquiry_deliveries_idempotency_key"),
+        UniqueConstraint(
+            "idempotency_key", name="uq_inquiry_deliveries_idempotency_key"
+        ),
     )
 
     id = Column(

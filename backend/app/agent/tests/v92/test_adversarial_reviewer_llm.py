@@ -61,7 +61,9 @@ def test_parse_adversarial_reviewer_output_rejects_invalid_json() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_payload_reviewer_preserves_payload_when_feature_flag_disabled() -> None:
+async def test_async_payload_reviewer_preserves_payload_when_feature_flag_disabled() -> (
+    None
+):
     payload = {
         "answer_markdown": "EPDM als Screening prüfen.",
         "turn_envelope": {
@@ -76,7 +78,9 @@ async def test_async_payload_reviewer_preserves_payload_when_feature_flag_disabl
 
 
 @pytest.mark.asyncio
-async def test_async_payload_reviewer_updates_challenge_card_when_enabled(monkeypatch) -> None:
+async def test_async_payload_reviewer_updates_challenge_card_when_enabled(
+    monkeypatch,
+) -> None:
     trace_calls: list[dict] = []
 
     async def fake_review(_draft, _context):  # noqa: ANN001
@@ -114,7 +118,10 @@ async def test_async_payload_reviewer_updates_challenge_card_when_enabled(monkey
 
     assert result["v92_dashboard"]["challenge_card"]["summary"] == "LLM review passed."
     assert result["run_meta"]["v92"]["adversarial_review_decision"] == "pass"
-    assert result["run_meta"]["v92"]["adversarial_review_source"] == "deterministic_fallback"
+    assert (
+        result["run_meta"]["v92"]["adversarial_review_source"]
+        == "deterministic_fallback"
+    )
     assert result["run_meta"]["v92"]["llm_reviewer_enabled"] is True
     assert result["run_meta"]["v92"]["llm_reviewer_succeeded"] is False
     assert trace_calls
@@ -124,7 +131,9 @@ async def test_async_payload_reviewer_updates_challenge_card_when_enabled(monkey
 
 
 @pytest.mark.asyncio
-async def test_async_payload_reviewer_marks_llm_source_when_prompt_trace_present(monkeypatch) -> None:
+async def test_async_payload_reviewer_marks_llm_source_when_prompt_trace_present(
+    monkeypatch,
+) -> None:
     async def fake_review(_draft, _context):  # noqa: ANN001
         return AdversarialReviewVerdict(
             decision="pass",
@@ -163,4 +172,9 @@ async def test_async_payload_reviewer_marks_llm_source_when_prompt_trace_present
 
     assert result["run_meta"]["v92"]["adversarial_review_source"] == "llm"
     assert result["run_meta"]["v92"]["llm_reviewer_succeeded"] is True
-    assert result["final_answer_context"]["adversarial_review"]["prompt_trace"]["model_role"] == "critique"
+    assert (
+        result["final_answer_context"]["adversarial_review"]["prompt_trace"][
+            "model_role"
+        ]
+        == "critique"
+    )

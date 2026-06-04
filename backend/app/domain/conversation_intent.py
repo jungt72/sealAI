@@ -235,7 +235,9 @@ def _normalized(text: str) -> str:
 
 
 def _compile(*patterns: str) -> tuple[Pattern[str], ...]:
-    return tuple(re.compile(pattern, re.IGNORECASE | re.UNICODE) for pattern in patterns)
+    return tuple(
+        re.compile(pattern, re.IGNORECASE | re.UNICODE) for pattern in patterns
+    )
 
 
 def _matches(patterns: tuple[Pattern[str], ...], text: str) -> bool:

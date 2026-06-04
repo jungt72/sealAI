@@ -27,6 +27,7 @@ Reducer semantics (see state/reducers.py for full spec):
     5. Blocking ConflictRefs → conflict_flags.
     6. Core required fields absent entirely → blocking_unknowns.
 """
+
 from __future__ import annotations
 
 import logging

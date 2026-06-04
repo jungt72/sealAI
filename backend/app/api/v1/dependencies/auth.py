@@ -62,7 +62,9 @@ JWKS_URL = (
     or f"{_norm_url(ISSUER_ENV)}/protocol/openid-connect/certs"
 )
 
-ALLOWED_AUDIENCES = set(_csv("ALLOWED_AUDIENCES") or ["account", "nextauth", "sealai-backend-api"])
+ALLOWED_AUDIENCES = set(
+    _csv("ALLOWED_AUDIENCES") or ["account", "nextauth", "sealai-backend-api"]
+)
 
 JWKS_TTL_SEC = int(os.getenv("JWKS_TTL_SEC", "600"))
 CLOCK_SKEW = int(os.getenv("WS_CLOCK_SKEW_LEEWAY", "120"))
@@ -199,7 +201,9 @@ def extract_bearer_or_query_token(websocket: WebSocket) -> Optional[str]:
     Returns the extracted token, or `None` if no token was found.
     """
     # 1) Authorization header
-    auth = websocket.headers.get("authorization") or websocket.headers.get("Authorization")
+    auth = websocket.headers.get("authorization") or websocket.headers.get(
+        "Authorization"
+    )
     if auth and auth.lower().startswith("bearer "):
         return auth.split(" ", 1)[1].strip()
 
@@ -214,7 +218,9 @@ def extract_bearer_or_query_token(websocket: WebSocket) -> Optional[str]:
             return token
 
     # 3) Sec-WebSocket-Protocol header
-    sp = websocket.headers.get("sec-websocket-protocol") or websocket.headers.get("Sec-WebSocket-Protocol")
+    sp = websocket.headers.get("sec-websocket-protocol") or websocket.headers.get(
+        "Sec-WebSocket-Protocol"
+    )
     if sp:
         # Split on commas into individual protocols
         protocols = [p.strip() for p in sp.split(",") if p.strip()]

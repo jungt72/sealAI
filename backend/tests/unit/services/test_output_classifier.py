@@ -51,10 +51,7 @@ def test_non_domain_pre_gate_outputs_conversational_answer(
     classifier: OutputClassifier,
     pre_gate: PreGateClassification,
 ) -> None:
-    assert (
-        _classify(classifier, pre_gate=pre_gate)
-        is OutputClass.CONVERSATIONAL_ANSWER
-    )
+    assert _classify(classifier, pre_gate=pre_gate) is OutputClass.CONVERSATIONAL_ANSWER
 
 
 def test_domain_conversation_mode_outputs_conversational_answer(
@@ -126,8 +123,6 @@ def test_governance_a_with_preselection_blockers_stays_clarification(
         )
         is OutputClass.STRUCTURED_CLARIFICATION
     )
-
-
 
 
 @pytest.mark.parametrize(

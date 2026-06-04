@@ -7,11 +7,7 @@ headers = {"Content-Type": "application/json"}
 
 # 1. Test tools/list
 print("Testing tools/list...")
-payload_list = {
-    "jsonrpc": "2.0",
-    "method": "tools/list",
-    "id": 1
-}
+payload_list = {"jsonrpc": "2.0", "method": "tools/list", "id": 1}
 
 try:
     response = requests.post(url, json=payload_list, headers=headers)
@@ -31,11 +27,8 @@ print("\nTesting tools/call...")
 payload_call = {
     "jsonrpc": "2.0",
     "method": "tools/call",
-    "params": {
-        "name": "example_tool",
-        "arguments": {"query": "test query"}
-    },
-    "id": 2
+    "params": {"name": "example_tool", "arguments": {"query": "test query"}},
+    "id": 2,
 }
 
 try:

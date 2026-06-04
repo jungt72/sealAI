@@ -246,7 +246,10 @@ def test_pre_gate_question_scenario_matrix(scenario: QuestionScenario) -> None:
 
         if scenario.route_family.startswith("knowledge"):
             assert result.escalate_to_graph is False
-        if scenario.route_family.startswith("no_case") or scenario.route_family == "blocked":
+        if (
+            scenario.route_family.startswith("no_case")
+            or scenario.route_family == "blocked"
+        ):
             assert result.escalate_to_graph is False
         if scenario.route_family.startswith("governed"):
             assert result.escalate_to_graph is True
@@ -354,7 +357,9 @@ async def test_runtime_question_matrix_uses_semantic_router_for_language_variant
     )
 
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message=message, session_id=f"matrix-{expected_classification.value}"),
+        ChatRequest(
+            message=message, session_id=f"matrix-{expected_classification.value}"
+        ),
         current_user=_user(),
     )
 
@@ -384,7 +389,9 @@ async def test_runtime_question_matrix_preserves_governed_intake_for_real_case(
         current_user=_user(),
     )
 
-    assert dispatch.pre_gate_classification == PreGateClassification.DOMAIN_INQUIRY.value
+    assert (
+        dispatch.pre_gate_classification == PreGateClassification.DOMAIN_INQUIRY.value
+    )
     assert dispatch.runtime_mode == "GOVERNED"
     assert dispatch.knowledge_response is None
     load_state.assert_awaited_once()

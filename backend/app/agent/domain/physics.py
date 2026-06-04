@@ -3,6 +3,7 @@ Physics Engine — Kinematik, Tribologie, Thermodynamik, Mechanik.
 
 Layer 1–4 physics calculations for sealing parameter profiles.
 """
+
 import math
 import logging
 from typing import Dict, Any
@@ -13,7 +14,7 @@ logger = logging.getLogger("app.agent.domain.physics")
 def calc_kinematics(profile: Dict[str, Any]) -> Dict[str, Any]:
     """Layer 1: Kinematik (Geschwindigkeiten, Beschleunigung)"""
     d = profile.get("diameter")  # in mm
-    n = profile.get("speed")     # in U/min
+    n = profile.get("speed")  # in U/min
 
     if d is not None and n is not None:
         try:
@@ -36,7 +37,9 @@ def calc_tribology(profile: Dict[str, Any]) -> Dict[str, Any]:
         try:
             pv_value = float(p) * float(v_m_s)
             profile["pv_value"] = round(pv_value, 3)
-            profile["pv_value_mpa_m_s"] = round(pv_value / 10.0, 3)  # LiveCalcTileData (MPa·m/s)
+            profile["pv_value_mpa_m_s"] = round(
+                pv_value / 10.0, 3
+            )  # LiveCalcTileData (MPa·m/s)
         except (ValueError, TypeError) as e:
             logger.debug(f"Fehler in calc_tribology: {e}")
 

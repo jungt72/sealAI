@@ -15,6 +15,7 @@ Quellen:
   - PED:     EU PED 2014/68/EU / EN 13480-3
   - AED:     VDI 2440 / DIN EN ISO 15848-1
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,25 +29,27 @@ from .material_limits import MATERIAL_ALIASES, MATERIAL_LIMITS
 # Enum
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class ComplianceFlag(str, Enum):
-    FDA     = "FDA"      # US Food & Drug Administration — 21 CFR 177
-    ATEX    = "ATEX"     # ATmosphères EXplosibles — EU 2014/34/EU
-    EHEDG   = "EHEDG"    # European Hygienic Engineering & Design Group
+    FDA = "FDA"  # US Food & Drug Administration — 21 CFR 177
+    ATEX = "ATEX"  # ATmosphères EXplosibles — EU 2014/34/EU
+    EHEDG = "EHEDG"  # European Hygienic Engineering & Design Group
     TA_LUFT = "TA_LUFT"  # Deutsche TA-Luft 2021, §5.2 — Fugitive Emissions
-    NORSOK  = "NORSOK"   # NORSOK M-710 / ISO 23936 — Sour Service
-    PED     = "PED"      # Pressure Equipment Directive — EU 2014/68/EU
-    AED     = "AED"      # Außendichtheitsnachweis — VDI 2440
+    NORSOK = "NORSOK"  # NORSOK M-710 / ISO 23936 — Sour Service
+    PED = "PED"  # Pressure Equipment Directive — EU 2014/68/EU
+    AED = "AED"  # Außendichtheitsnachweis — VDI 2440
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Datenmodelle
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class FlagResult:
     flag: ComplianceFlag
-    passed: bool          # True = internal deterministic rule condition passed
-    severity: str         # "ok" | "warning" | "blocker"
+    passed: bool  # True = internal deterministic rule condition passed
+    severity: str  # "ok" | "warning" | "blocker"
     reasons: list[str]
     norm_ref: str
 
@@ -69,69 +72,122 @@ class ComplianceResult:
 # ──────────────────────────────────────────────────────────────────────────────
 
 # FDA 21 CFR 177.1550 / 177.2600
-_FDA_OK      = frozenset({"PTFE", "FFKM", "EPDM", "VMQ"})
-_FDA_WARN    = frozenset({"FKM"})        # nur Food-Grade Compound
+_FDA_OK = frozenset({"PTFE", "FFKM", "EPDM", "VMQ"})
+_FDA_WARN = frozenset({"FKM"})  # nur Food-Grade Compound
 _FDA_BLOCKED = frozenset({"NBR", "HNBR", "CR"})
 
 # EHEDG Doc. 8 / EN 1935/2004
-_EHEDG_OK      = frozenset({"PTFE", "FFKM", "EPDM", "VMQ"})
-_EHEDG_WARN    = frozenset({"FKM"})     # nur EHEDG-zertifizierter Compound
+_EHEDG_OK = frozenset({"PTFE", "FFKM", "EPDM", "VMQ"})
+_EHEDG_WARN = frozenset({"FKM"})  # nur EHEDG-zertifizierter Compound
 _EHEDG_BLOCKED = frozenset({"NBR", "HNBR", "CR"})
 
 # NORSOK M-710 / ISO 23936-1/-2
-_NORSOK_OK      = frozenset({"FKM", "HNBR", "FFKM", "PTFE"})
-_NORSOK_WARN    = frozenset({"NBR", "EPDM"})   # begrenzte Scope-Freigabe
+_NORSOK_OK = frozenset({"FKM", "HNBR", "FFKM", "PTFE"})
+_NORSOK_WARN = frozenset({"NBR", "EPDM"})  # begrenzte Scope-Freigabe
 _NORSOK_BLOCKED = frozenset({"CR", "VMQ"})
 
 # Medien die NORSOK-Prüfung auslösen (Sour Service)
-_NORSOK_SOUR_MEDIA = frozenset({
-    "h2", "hydrogen", "wasserstoff",
-    "h2s", "schwefelwasserstoff",
-    "co2", "kohlendioxid",
-    "o2", "oxygen", "sauerstoff",
-    "cl2", "chlor", "chlorine",
-    "nh3", "ammoniak", "ammonia",
-    "hf", "flusssaeure", "fluorwasserstoff",
-    "crude_oil", "rohoel",
-    "natural_gas", "erdgas",
-})
+_NORSOK_SOUR_MEDIA = frozenset(
+    {
+        "h2",
+        "hydrogen",
+        "wasserstoff",
+        "h2s",
+        "schwefelwasserstoff",
+        "co2",
+        "kohlendioxid",
+        "o2",
+        "oxygen",
+        "sauerstoff",
+        "cl2",
+        "chlor",
+        "chlorine",
+        "nh3",
+        "ammoniak",
+        "ammonia",
+        "hf",
+        "flusssaeure",
+        "fluorwasserstoff",
+        "crude_oil",
+        "rohoel",
+        "natural_gas",
+        "erdgas",
+    }
+)
 
 # ATEX — brennbare Medien (EN 13463-1)
-_ATEX_FLAMMABLE_MEDIA = frozenset({
-    "h2", "hydrogen", "wasserstoff",
-    "diesel",
-    "ethanol", "alkohol", "alcohol",
-    "methanol",
-    "propan", "propane",
-    "butan", "butane",
-    "natural_gas", "erdgas",
-})
+_ATEX_FLAMMABLE_MEDIA = frozenset(
+    {
+        "h2",
+        "hydrogen",
+        "wasserstoff",
+        "diesel",
+        "ethanol",
+        "alkohol",
+        "alcohol",
+        "methanol",
+        "propan",
+        "propane",
+        "butan",
+        "butane",
+        "natural_gas",
+        "erdgas",
+    }
+)
 
 # PED Gruppe 1 — Gefahrmedien (EU PED 2014/68/EU Anhang II)
-_PED_GROUP1_MEDIA = frozenset({
-    "h2", "hydrogen", "wasserstoff",
-    "o2", "oxygen", "sauerstoff",
-    "cl2", "chlor", "chlorine",
-    "nh3", "ammoniak", "ammonia",
-    "hf", "flusssaeure", "fluorwasserstoff",
-    "ethanol", "alkohol", "alcohol",
-    "diesel",
-    "natural_gas", "erdgas",
-})
+_PED_GROUP1_MEDIA = frozenset(
+    {
+        "h2",
+        "hydrogen",
+        "wasserstoff",
+        "o2",
+        "oxygen",
+        "sauerstoff",
+        "cl2",
+        "chlor",
+        "chlorine",
+        "nh3",
+        "ammoniak",
+        "ammonia",
+        "hf",
+        "flusssaeure",
+        "fluorwasserstoff",
+        "ethanol",
+        "alkohol",
+        "alcohol",
+        "diesel",
+        "natural_gas",
+        "erdgas",
+    }
+)
 
 # is_critical_application — immer kritische Medien
-_CRITICAL_MEDIA = frozenset({
-    "h2", "hydrogen", "wasserstoff",
-    "o2", "oxygen", "sauerstoff",
-    "cl2", "chlor", "chlorine",
-    "hf", "flusssaeure", "fluorwasserstoff",
-    "nh3", "ammoniak", "ammonia",
-})
+_CRITICAL_MEDIA = frozenset(
+    {
+        "h2",
+        "hydrogen",
+        "wasserstoff",
+        "o2",
+        "oxygen",
+        "sauerstoff",
+        "cl2",
+        "chlor",
+        "chlorine",
+        "hf",
+        "flusssaeure",
+        "fluorwasserstoff",
+        "nh3",
+        "ammoniak",
+        "ammonia",
+    }
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Normalisierung
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _normalize_material(material: str) -> str:
     key = MATERIAL_ALIASES.get(material.lower().strip())
@@ -160,7 +216,10 @@ def _normalize_medium(medium: Optional[str]) -> Optional[str]:
 # Flag-Checker
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _check_fda(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]) -> FlagResult:
+
+def _check_fda(
+    mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]
+) -> FlagResult:
     if mat in _FDA_OK:
         return FlagResult(
             flag=ComplianceFlag.FDA,
@@ -195,7 +254,9 @@ def _check_fda(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[
     )
 
 
-def _check_atex(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Optional[float]) -> FlagResult:
+def _check_atex(
+    mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Optional[float]
+) -> FlagResult:
     medium_norm = _normalize_medium(medium_raw) or ""
     flammable = medium_norm in _ATEX_FLAMMABLE_MEDIA
 
@@ -237,7 +298,9 @@ def _check_atex(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Op
     )
 
 
-def _check_ehedg(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]) -> FlagResult:
+def _check_ehedg(
+    mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]
+) -> FlagResult:
     if mat in _EHEDG_OK:
         return FlagResult(
             flag=ComplianceFlag.EHEDG,
@@ -272,7 +335,9 @@ def _check_ehedg(mat: str, _med: Optional[str], _t: Optional[float], _p: Optiona
     )
 
 
-def _check_ta_luft(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]) -> FlagResult:
+def _check_ta_luft(
+    mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]
+) -> FlagResult:
     lim = MATERIAL_LIMITS[mat]
     if lim.aed_certifiable:
         return FlagResult(
@@ -297,7 +362,9 @@ def _check_ta_luft(mat: str, _med: Optional[str], _t: Optional[float], _p: Optio
     )
 
 
-def _check_norsok(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Optional[float]) -> FlagResult:
+def _check_norsok(
+    mat: str, medium_raw: Optional[str], _t: Optional[float], _p: Optional[float]
+) -> FlagResult:
     medium_norm = _normalize_medium(medium_raw) or ""
     is_sour = medium_norm in _NORSOK_SOUR_MEDIA
 
@@ -347,7 +414,12 @@ def _check_norsok(mat: str, medium_raw: Optional[str], _t: Optional[float], _p: 
     )
 
 
-def _check_ped(mat: str, medium_raw: Optional[str], _t: Optional[float], pressure_bar: Optional[float]) -> FlagResult:
+def _check_ped(
+    mat: str,
+    medium_raw: Optional[str],
+    _t: Optional[float],
+    pressure_bar: Optional[float],
+) -> FlagResult:
     p = pressure_bar or 0.0
 
     if p <= 0.5:
@@ -378,7 +450,9 @@ def _check_ped(mat: str, medium_raw: Optional[str], _t: Optional[float], pressur
     )
 
 
-def _check_aed(mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]) -> FlagResult:
+def _check_aed(
+    mat: str, _med: Optional[str], _t: Optional[float], _p: Optional[float]
+) -> FlagResult:
     lim = MATERIAL_LIMITS[mat]
     if lim.aed_certifiable:
         return FlagResult(
@@ -411,19 +485,20 @@ _FLAG_DISPATCH: dict[
     ComplianceFlag,
     Callable[[str, Optional[str], Optional[float], Optional[float]], FlagResult],
 ] = {
-    ComplianceFlag.FDA:     _check_fda,
-    ComplianceFlag.ATEX:    _check_atex,
-    ComplianceFlag.EHEDG:   _check_ehedg,
+    ComplianceFlag.FDA: _check_fda,
+    ComplianceFlag.ATEX: _check_atex,
+    ComplianceFlag.EHEDG: _check_ehedg,
     ComplianceFlag.TA_LUFT: _check_ta_luft,
-    ComplianceFlag.NORSOK:  _check_norsok,
-    ComplianceFlag.PED:     _check_ped,
-    ComplianceFlag.AED:     _check_aed,
+    ComplianceFlag.NORSOK: _check_norsok,
+    ComplianceFlag.PED: _check_ped,
+    ComplianceFlag.AED: _check_aed,
 }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def check_compliance(
     material: str,
@@ -452,18 +527,19 @@ def check_compliance(
     active_flags: list[ComplianceFlag] = flags or []
 
     flag_results: list[FlagResult] = [
-        _FLAG_DISPATCH[flag](mat, medium, temp_c, pressure_bar)
-        for flag in active_flags
+        _FLAG_DISPATCH[flag](mat, medium, temp_c, pressure_bar) for flag in active_flags
     ]
 
     blockers = [
         f"{fr.flag.value}: {reason}"
-        for fr in flag_results if fr.severity == "blocker"
+        for fr in flag_results
+        if fr.severity == "blocker"
         for reason in fr.reasons
     ]
     warnings = [
         f"{fr.flag.value}: {reason}"
-        for fr in flag_results if fr.severity == "warning"
+        for fr in flag_results
+        if fr.severity == "warning"
         for reason in fr.reasons
     ]
     overall_passed = all(fr.passed for fr in flag_results)

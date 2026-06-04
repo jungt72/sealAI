@@ -9,7 +9,10 @@ from app.agent.runtime.user_facing_reply import (
     assemble_user_facing_reply,
     derive_public_response_class,
 )
-BindingLevel = Literal["KNOWLEDGE", "ORIENTATION", "CALCULATION", "QUALIFIED_PRESELECTION", "RFQ_BASIS"]
+
+BindingLevel = Literal[
+    "KNOWLEDGE", "ORIENTATION", "CALCULATION", "QUALIFIED_PRESELECTION", "RFQ_BASIS"
+]
 # Legacy -> blueprint v1.1 outward class mapping:
 # - legacy "guidance" + "_response"          -> conversational_answer
 # - legacy structured_clarification          -> structured_clarification
@@ -25,7 +28,9 @@ ResponseClass = Literal[
     "candidate_shortlist",
     "inquiry_ready",
 ]
-_NON_STRUCTURED_POLICY_PATHS: frozenset[str] = frozenset({"fast", "blocked", "meta", "greeting"})
+_NON_STRUCTURED_POLICY_PATHS: frozenset[str] = frozenset(
+    {"fast", "blocked", "meta", "greeting"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +40,7 @@ _NON_STRUCTURED_POLICY_PATHS: frozenset[str] = frozenset({"fast", "blocked", "me
 # ---------------------------------------------------------------------------
 # F-B.3 — Override Endpoint models
 # ---------------------------------------------------------------------------
+
 
 class OverrideItem(BaseModel):
     """A single field override submitted by the UI tile.
@@ -130,6 +136,7 @@ class CaseDeltaDecisionResponse(BaseModel):
 
 class ReviewRequest(BaseModel):
     """Payload for the POST /review endpoint (human-in-the-loop decision)."""
+
     session_id: str = Field(..., min_length=1)
     action: Literal["approve", "reject"] = Field(
         ...,
@@ -145,6 +152,7 @@ class ReviewRequest(BaseModel):
 
 class ReviewResponse(BaseModel):
     """Response from POST /review."""
+
     session_id: str
     action: str
     review_state: str
@@ -159,6 +167,7 @@ class ReviewResponse(BaseModel):
 
 class ReviewSeedResponse(BaseModel):
     """Response from POST /review/seed (test-only helper)."""
+
     session_id: str
     review_state: str
     release_status: str
@@ -273,13 +282,25 @@ class VisibleCaseNarrativeItemResponse(BaseModel):
 
 class VisibleCaseNarrativeResponse(BaseModel):
     governed_summary: str
-    technical_direction: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
-    validity_envelope: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
-    next_best_inputs: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
-    suggested_next_questions: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
-    failure_analysis: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
+    technical_direction: list[VisibleCaseNarrativeItemResponse] = Field(
+        default_factory=list
+    )
+    validity_envelope: list[VisibleCaseNarrativeItemResponse] = Field(
+        default_factory=list
+    )
+    next_best_inputs: list[VisibleCaseNarrativeItemResponse] = Field(
+        default_factory=list
+    )
+    suggested_next_questions: list[VisibleCaseNarrativeItemResponse] = Field(
+        default_factory=list
+    )
+    failure_analysis: list[VisibleCaseNarrativeItemResponse] = Field(
+        default_factory=list
+    )
     case_summary: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
-    qualification_status: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
+    qualification_status: list[VisibleCaseNarrativeItemResponse] = Field(
+        default_factory=list
+    )
     coverage_scope: list[VisibleCaseNarrativeItemResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -339,9 +360,13 @@ def _assert_public_response_core_mapping(
 
     if response_class == "governed_state_update":
         if not state_update or structured_state is None:
-            raise ValueError("governed_state_update requires state_update=True and structured_state")
+            raise ValueError(
+                "governed_state_update requires state_update=True and structured_state"
+            )
         if policy_path in _NON_STRUCTURED_POLICY_PATHS:
-            raise ValueError("governed_state_update must not use a non-structured policy_path")
+            raise ValueError(
+                "governed_state_update must not use a non-structured policy_path"
+            )
         return
 
     if structured_state is None:
@@ -369,7 +394,9 @@ class ChatResponse(BaseModel):
     result_contract: Optional[Dict[str, Any]] = None
     rfq_ready: Optional[bool] = None
     rfq_readiness_projection: Optional[Dict[str, Any]] = None
-    visible_case_narrative: Optional[VisibleCaseNarrativeResponse | Dict[str, Any]] = None
+    visible_case_narrative: Optional[VisibleCaseNarrativeResponse | Dict[str, Any]] = (
+        None
+    )
     result_form: Optional[str] = None
     path: Optional[str] = None
     stream_mode: Optional[str] = None
@@ -403,4 +430,6 @@ class ChatResponse(BaseModel):
     def _normalize_response_class(cls, value: Any) -> Any:
         if value is None:
             return value
-        return normalize_outward_response_class(value, default="structured_clarification")
+        return normalize_outward_response_class(
+            value, default="structured_clarification"
+        )

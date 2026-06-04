@@ -13,6 +13,7 @@ outside the sanctioned single-writer modules. Call sites that need a determinist
 governed-layer content-sync use `reducers.produce_governance` /
 `reducers.produce_decision` instead.
 """
+
 from __future__ import annotations
 
 import ast

@@ -21,7 +21,10 @@ _PAPERLESS_SOURCE_SYSTEM = "paperless"
 async def pick_next_rag_document(session: AsyncSession) -> RagDocument | None:
     stmt = (
         select(RagDocument)
-        .where(RagDocument.status.in_(("queued", "processing")), RagDocument.enabled.is_(True))
+        .where(
+            RagDocument.status.in_(("queued", "processing")),
+            RagDocument.enabled.is_(True),
+        )
         .order_by(RagDocument.created_at.asc())
         .with_for_update(skip_locked=True)
     )
@@ -91,14 +94,18 @@ async def process_rag_document(
         doc.provenance = doc.provenance or "documented"
         if doc.evidence_refs is None:
             doc.evidence_refs = []
-        extracted_candidates, extraction_summary = _extract_material_evidence_candidates_for_indexed_doc(doc)
+        extracted_candidates, extraction_summary = (
+            _extract_material_evidence_candidates_for_indexed_doc(doc)
+        )
         if extracted_candidates:
             doc.extracted_candidates = extracted_candidates
             doc.extraction_status = "candidate_extraction_ready"
         else:
             if doc.extracted_candidates is None:
                 doc.extracted_candidates = []
-            doc.extraction_status = "indexed_no_candidates" if _is_paperless_doc(doc) else "indexed"
+            doc.extraction_status = (
+                "indexed_no_candidates" if _is_paperless_doc(doc) else "indexed"
+            )
         if extraction_summary:
             stats["candidate_extraction"] = extraction_summary
         doc.ingest_stats = stats
@@ -110,12 +117,16 @@ async def process_rag_document(
         doc.status = "error"
         doc.extraction_status = "error"
         doc.error = safe_error_message(exc)
-        track_rag_ingest(doc.source_system or "upload", "error", time.perf_counter() - started)
+        track_rag_ingest(
+            doc.source_system or "upload", "error", time.perf_counter() - started
+        )
     session.add(doc)
     await session.commit()
 
 
-def _extract_material_evidence_candidates_for_indexed_doc(doc: RagDocument) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _extract_material_evidence_candidates_for_indexed_doc(
+    doc: RagDocument,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if not _is_paperless_doc(doc):
         return [], {}
     try:
@@ -147,12 +158,16 @@ async def process_once(
     *,
     ingest_func: IngestFunc | None = None,
     use_thread: bool = True,
-    picker: Callable[[AsyncSession], Awaitable[Optional[RagDocument]]] = pick_next_rag_document,
+    picker: Callable[
+        [AsyncSession], Awaitable[Optional[RagDocument]]
+    ] = pick_next_rag_document,
 ) -> bool:
     doc = await picker(session)
     if not doc:
         return False
-    await process_rag_document(session, doc, ingest_func=ingest_func, use_thread=use_thread)
+    await process_rag_document(
+        session, doc, ingest_func=ingest_func, use_thread=use_thread
+    )
     return True
 
 

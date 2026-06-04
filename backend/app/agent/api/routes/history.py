@@ -16,6 +16,7 @@ _log = logging.getLogger(__name__)
 router = APIRouter()
 _CHAT_HISTORY_READ_LIMIT = 200
 
+
 @router.get("/chat/history/{case_id}", response_model=List[ConversationResponse])
 async def get_live_chat_history(
     case_id: str,
@@ -23,7 +24,8 @@ async def get_live_chat_history(
 ):
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id=case_id)
 
-    from app.agent.api.loaders import _load_live_governed_state # noqa: PLC0415
+    from app.agent.api.loaders import _load_live_governed_state  # noqa: PLC0415
+
     governed = await _load_live_governed_state(
         current_user=current_user,
         session_id=case_id,

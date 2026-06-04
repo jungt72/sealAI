@@ -4,6 +4,7 @@ LangChain Tool Definitions — LLM-callable tools for the governed graph.
 submit_claim: The only mechanism by which the LLM can write to ObservedState.
 calculate_rwdr_specifications: Deterministic RWDR calculation tool.
 """
+
 import json
 from langchain_core.tools import tool
 from app.agent.evidence.models import Claim, ClaimType
@@ -15,7 +16,7 @@ def submit_claim(
     claim_type: ClaimType,
     statement: str,
     confidence: float,
-    source_fact_ids: List[str] = []
+    source_fact_ids: List[str] = [],
 ) -> str:
     """
     Übergibt eine strukturierte fachliche Erkenntnis (Claim) an den SealingAIState.
@@ -26,7 +27,7 @@ def submit_claim(
         claim_type=claim_type,
         statement=statement,
         confidence=confidence,
-        source_fact_ids=source_fact_ids
+        source_fact_ids=source_fact_ids,
     )
     return f"Claim empfangen: [{claim.claim_type.value}] {claim.statement} (Confidence: {claim.confidence})"
 
@@ -111,22 +112,25 @@ def calculate_rwdr_specifications(
         seal_inner_diameter_mm=seal_inner_diameter_mm,
     )
     result = calculate_rwdr(inp)
-    return json.dumps({
-        "v_surface_m_s": result.v_surface_m_s,
-        "pv_value_mpa_m_s": result.pv_value_mpa_m_s,
-        "friction_power_watts": result.friction_power_watts,
-        "hrc_warning": result.hrc_warning,
-        "runout_warning": result.runout_warning,
-        "pv_warning": result.pv_warning,
-        "dry_running_risk": result.dry_running_risk,
-        "extrusion_risk": result.extrusion_risk,
-        "requires_backup_ring": result.requires_backup_ring,
-        "compression_ratio_pct": result.compression_ratio_pct,
-        "groove_fill_pct": result.groove_fill_pct,
-        "stretch_pct": result.stretch_pct,
-        "geometry_warning": result.geometry_warning,
-        "thermal_expansion_mm": result.thermal_expansion_mm,
-        "shrinkage_risk": result.shrinkage_risk,
-        "status": result.status,
-        "notes": result.notes,
-    }, ensure_ascii=False)
+    return json.dumps(
+        {
+            "v_surface_m_s": result.v_surface_m_s,
+            "pv_value_mpa_m_s": result.pv_value_mpa_m_s,
+            "friction_power_watts": result.friction_power_watts,
+            "hrc_warning": result.hrc_warning,
+            "runout_warning": result.runout_warning,
+            "pv_warning": result.pv_warning,
+            "dry_running_risk": result.dry_running_risk,
+            "extrusion_risk": result.extrusion_risk,
+            "requires_backup_ring": result.requires_backup_ring,
+            "compression_ratio_pct": result.compression_ratio_pct,
+            "groove_fill_pct": result.groove_fill_pct,
+            "stretch_pct": result.stretch_pct,
+            "geometry_warning": result.geometry_warning,
+            "thermal_expansion_mm": result.thermal_expansion_mm,
+            "shrinkage_risk": result.shrinkage_risk,
+            "status": result.status,
+            "notes": result.notes,
+        },
+        ensure_ascii=False,
+    )

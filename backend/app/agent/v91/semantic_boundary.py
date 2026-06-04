@@ -71,7 +71,9 @@ def build_v91_turn_policy(
     active_case_exists = _has_active_case(governed_state)
     pre_gate = _enum_value(pre_gate_classification)
 
-    red_flags = _red_flags(normalized_message, graph_allowed=graph_allowed, action_type=action_type)
+    red_flags = _red_flags(
+        normalized_message, graph_allowed=graph_allowed, action_type=action_type
+    )
     intent = _semantic_intent(
         message=normalized_message,
         pre_gate=pre_gate,
@@ -125,13 +127,20 @@ def build_v91_turn_policy(
     communication_plan = CommunicationPlan(
         goal=_communication_goal(intent, freedom_decision, response_policy),
         response_mode=_communication_response_mode(intent, freedom_decision),
-        response_moves=_communication_response_moves(intent, freedom_decision, response_policy),
+        response_moves=_communication_response_moves(
+            intent, freedom_decision, response_policy
+        ),
         response_depth=_communication_response_depth(response_policy.answer_depth),
         answer_depth=response_policy.answer_depth,
-        answer_first=_communication_answer_first(intent, freedom_decision, response_policy),
-        ask_user_question=_enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value,
+        answer_first=_communication_answer_first(
+            intent, freedom_decision, response_policy
+        ),
+        ask_user_question=_enum_value(response_policy.action)
+        == ResponseAction.WAIT_FOR_USER.value,
         max_new_questions=(
-            1 if _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value else 0
+            1
+            if _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value
+            else 0
         ),
         question_justification_required=(
             _enum_value(response_policy.action) == ResponseAction.WAIT_FOR_USER.value
@@ -172,7 +181,11 @@ def merge_v91_trace_into_runtime_action(
     runtime_action: Any | None,
     policy: V91TurnPolicyBundle | None,
 ) -> Any | None:
-    if runtime_action is None or policy is None or not hasattr(runtime_action, "model_copy"):
+    if (
+        runtime_action is None
+        or policy is None
+        or not hasattr(runtime_action, "model_copy")
+    ):
         return runtime_action
     trace = dict(getattr(runtime_action, "trace", {}) or {})
     trace.update(policy.as_trace())
@@ -202,7 +215,8 @@ def _semantic_intent(
         answer_mode == "rfq_readiness"
         or answer_builder == "rfq_readiness"
         or "rfq" in str(pre_gate_reason or "").casefold()
-        or action_type in {
+        or action_type
+        in {
             "show_rfq_readiness",
             "answer_rfq_status",
             "build_rfq_preview",
@@ -281,7 +295,11 @@ def _case_binding(
     mutation_policy: str,
     graph_allowed: bool,
 ) -> CaseBinding:
-    if graph_allowed or mutation_policy in {"proposed", "allowed_by_validator", "correction"}:
+    if graph_allowed or mutation_policy in {
+        "proposed",
+        "allowed_by_validator",
+        "correction",
+    }:
         return (
             CaseBinding.CASE_MUTATION_CANDIDATE
             if active_case_exists
@@ -330,13 +348,18 @@ def _freedom_decision(
             forbidden_actions=forbidden,
             reason="blocked_or_unsafe_turn",
         )
-    if graph_allowed or red_flags or intent in {
-        SemanticIntent.CONCRETE_SUITABILITY,
-        SemanticIntent.SAFETY_OR_COMPLIANCE,
-        SemanticIntent.RFQ_OR_EXPORT,
-        SemanticIntent.PENDING_SLOT_ANSWER,
-        SemanticIntent.CORRECTION,
-    }:
+    if (
+        graph_allowed
+        or red_flags
+        or intent
+        in {
+            SemanticIntent.CONCRETE_SUITABILITY,
+            SemanticIntent.SAFETY_OR_COMPLIANCE,
+            SemanticIntent.RFQ_OR_EXPORT,
+            SemanticIntent.PENDING_SLOT_ANSWER,
+            SemanticIntent.CORRECTION,
+        }
+    ):
         return LLMFreedomDecision(
             level=LLMFreedomLevel.RESTRICTED_CASE_CLAIMS,
             red_flags=red_flags,
@@ -376,7 +399,8 @@ def _response_policy(
         action=action,
         answer_depth=_answer_depth(answer_mode, freedom_decision),
         graph_allowed=graph_allowed,
-        answer_first=action in {ResponseAction.ANSWER_ONLY, ResponseAction.ANSWER_THEN_RESUME},
+        answer_first=action
+        in {ResponseAction.ANSWER_ONLY, ResponseAction.ANSWER_THEN_RESUME},
         must_resume_primary_task=action is ResponseAction.ANSWER_THEN_RESUME,
         reason=freedom_decision.reason,
     )
@@ -415,7 +439,11 @@ def _knowledge_policy(
             source_scope="case_orientation",
             reason="case_claims_or_red_flags_require_controlled_context",
         )
-    if answer_mode in {"no_case_knowledge", "material_comparison", "active_case_side_question"}:
+    if answer_mode in {
+        "no_case_knowledge",
+        "material_comparison",
+        "active_case_side_question",
+    }:
         return KnowledgePolicy(
             rag_policy=KnowledgeRagPolicy.OPTIONAL,
             can_use_general_model_knowledge=True,
@@ -501,10 +529,15 @@ def _response_action(
         return ResponseAction.ANSWER_ONLY
 
 
-def _answer_depth(answer_mode: str, freedom_decision: LLMFreedomDecision) -> AnswerDepth:
+def _answer_depth(
+    answer_mode: str, freedom_decision: LLMFreedomDecision
+) -> AnswerDepth:
     if answer_mode in {"material_comparison", "active_case_side_question"}:
         return AnswerDepth.DEEP
-    if _enum_value(freedom_decision.level) == LLMFreedomLevel.RESTRICTED_CASE_CLAIMS.value:
+    if (
+        _enum_value(freedom_decision.level)
+        == LLMFreedomLevel.RESTRICTED_CASE_CLAIMS.value
+    ):
         return AnswerDepth.NORMAL
     if answer_mode in {"smalltalk", "meta_question"}:
         return AnswerDepth.SHORT
@@ -519,9 +552,16 @@ def _communication_response_mode(
         return "boundary_refusal"
     if intent in {SemanticIntent.CASE_INTAKE, SemanticIntent.CONCRETE_SUITABILITY}:
         return "case_challenge"
-    if intent in {SemanticIntent.PENDING_SLOT_ANSWER, SemanticIntent.LOW_SIGNAL, SemanticIntent.UNCLEAR}:
+    if intent in {
+        SemanticIntent.PENDING_SLOT_ANSWER,
+        SemanticIntent.LOW_SIGNAL,
+        SemanticIntent.UNCLEAR,
+    }:
         return "clarification"
-    if intent in {SemanticIntent.GENERAL_KNOWLEDGE, SemanticIntent.MATERIAL_OR_MEDIUM_KNOWLEDGE}:
+    if intent in {
+        SemanticIntent.GENERAL_KNOWLEDGE,
+        SemanticIntent.MATERIAL_OR_MEDIUM_KNOWLEDGE,
+    }:
         return "direct_answer"
     return "guided_explanation"
 
@@ -568,7 +608,9 @@ def _communication_response_moves(
         moves.append(ResponseMove.ANSWER)
     if intent is SemanticIntent.NON_SEALING_UTILITY:
         moves.extend([ResponseMove.BOUNDARY, ResponseMove.REDIRECT])
-    elif _enum_value(freedom_decision.level) == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value:
+    elif (
+        _enum_value(freedom_decision.level) == LLMFreedomLevel.BLOCKED_OR_REFUSAL.value
+    ):
         moves.append(ResponseMove.BOUNDARY)
     elif intent in {SemanticIntent.SAFETY_OR_COMPLIANCE, SemanticIntent.RFQ_OR_EXPORT}:
         moves.extend([ResponseMove.BOUNDARY, ResponseMove.ESCALATE])
@@ -656,7 +698,9 @@ def _has_active_case(governed_state: Any | None) -> bool:
 
 def _confidence(turn_decision: Any | None) -> float:
     try:
-        return max(0.0, min(1.0, float(getattr(turn_decision, "confidence", 0.5) or 0.5)))
+        return max(
+            0.0, min(1.0, float(getattr(turn_decision, "confidence", 0.5) or 0.5))
+        )
     except Exception:
         return 0.5
 

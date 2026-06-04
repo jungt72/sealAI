@@ -45,16 +45,17 @@ from sqlalchemy.orm import Session
 # Verbindung
 # ---------------------------------------------------------------------------
 
+
 def _get_seed_url() -> str:
     """Liest POSTGRES_SYNC_URL oder DATABASE_URL aus ENV, rewritet asyncpg→psycopg."""
     raw = (
-        os.environ.get("POSTGRES_SYNC_URL", "")
-        or os.environ.get("DATABASE_URL", "")
+        os.environ.get("POSTGRES_SYNC_URL", "") or os.environ.get("DATABASE_URL", "")
     ).strip()
     if not raw:
         # Fallback: Settings laden (funktioniert nur wenn APP im Python-Path)
         try:
             from app.core.config import settings
+
             raw = (
                 str(getattr(settings, "POSTGRES_SYNC_URL", "") or "").strip()
                 or str(getattr(settings, "database_url", "") or "").strip()
@@ -373,6 +374,7 @@ _INSERT_DIN_NORM = text("""
 # ---------------------------------------------------------------------------
 # Seed-Ausführung
 # ---------------------------------------------------------------------------
+
 
 def _seed_material_limits(session: Session) -> Dict[str, int]:
     inserted = 0

@@ -1,4 +1,5 @@
 """Conflict projection for proposed deltas versus governed case state."""
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -38,11 +39,12 @@ def _decided_source_event_ids(state: GovernedSessionState) -> set[str]:
     for event in state.case_events:
         if event.event_type not in {"case_delta_accepted", "case_delta_rejected"}:
             continue
-        for payload in list(event.accepted_delta.values()) + list(event.rejected_delta.values()):
+        for payload in list(event.accepted_delta.values()) + list(
+            event.rejected_delta.values()
+        ):
             if isinstance(payload, dict) and payload.get("source_event_id"):
                 decided.add(str(payload["source_event_id"]))
     return decided
-
 
 
 def detect_delta_conflicts(
@@ -64,7 +66,9 @@ def detect_delta_conflicts(
 
     for field_name, candidate_payload in accepted_delta_candidate.items():
         if isinstance(candidate_payload, dict):
-            new_value = candidate_payload.get("proposed_value", candidate_payload.get("value"))
+            new_value = candidate_payload.get(
+                "proposed_value", candidate_payload.get("value")
+            )
             new_provenance = str(candidate_payload.get("provenance") or "unknown")
         else:
             new_value = candidate_payload
@@ -74,8 +78,14 @@ def detect_delta_conflicts(
         if current_payload is None:
             continue
         if isinstance(current_payload, dict):
-            old_value = current_payload.get("value", current_payload.get("asserted_value"))
-            old_provenance = str(current_payload.get("provenance") or current_payload.get("source") or "case_state")
+            old_value = current_payload.get(
+                "value", current_payload.get("asserted_value")
+            )
+            old_provenance = str(
+                current_payload.get("provenance")
+                or current_payload.get("source")
+                or "case_state"
+            )
         else:
             old_value = current_payload
             old_provenance = "case_state"
@@ -88,14 +98,24 @@ def detect_delta_conflicts(
         tolerance = field_tolerances.get(field_name)
         if tolerance is not None:
             try:
-                if abs(float(str(old_value).replace(',', '.')) - float(str(new_value).replace(',', '.'))) <= tolerance:
+                if (
+                    abs(
+                        float(str(old_value).replace(",", "."))
+                        - float(str(new_value).replace(",", "."))
+                    )
+                    <= tolerance
+                ):
                     continue
             except (TypeError, ValueError):
                 pass
 
         old_rank = provenance_priority.get(old_provenance, 0)
         new_rank = provenance_priority.get(new_provenance, 0)
-        resolution = "accept_new_value_and_invalidate_dependents" if new_rank >= old_rank else "requires_user_resolution"
+        resolution = (
+            "accept_new_value_and_invalidate_dependents"
+            if new_rank >= old_rank
+            else "requires_user_resolution"
+        )
         severity = "blocking" if resolution == "requires_user_resolution" else "warning"
         conflicts.append(
             {
@@ -133,6 +153,7 @@ def detect_delta_conflicts(
         "suggested_resolution_question": suggested_question,
     }
 
+
 def build_governed_conflict_items(state: GovernedSessionState) -> list[dict[str, Any]]:
     """Expose unresolved normalized and proposed-delta conflicts for workspace UI."""
     items: list[dict[str, Any]] = []
@@ -152,7 +173,10 @@ def build_governed_conflict_items(state: GovernedSessionState) -> list[dict[str,
     decided_event_ids = _decided_source_event_ids(state)
     parameters = state.normalized.parameters
     for event in state.case_events:
-        if event.event_type not in {"assistant_delta_proposed", "document_delta_proposed"}:
+        if event.event_type not in {
+            "assistant_delta_proposed",
+            "document_delta_proposed",
+        }:
             continue
         if event.event_id in decided_event_ids:
             continue
@@ -163,14 +187,18 @@ def build_governed_conflict_items(state: GovernedSessionState) -> list[dict[str,
             existing = parameters.get(field.field_name)
             if existing is None:
                 continue
-            if _canonical_value(existing.value) == _canonical_value(field.proposed_value):
+            if _canonical_value(existing.value) == _canonical_value(
+                field.proposed_value
+            ):
                 continue
             source_label = _proposal_source_label(event.event_type, field)
             items.append(
                 {
                     "conflict_type": "DELTA_SOURCE_CONFLICT",
                     "field_name": field.field_name,
-                    "severity": "blocking" if proposal_source == "document" else "warning",
+                    "severity": "blocking"
+                    if proposal_source == "document"
+                    else "warning",
                     "summary": (
                         f"{field.field_name}: aktueller Case-Wert "
                         f"{_format_value(existing.value, existing.unit)} widerspricht "

@@ -330,7 +330,9 @@ class WorkingProfile(BaseModel):
         "p_min",
     )
     @classmethod
-    def _pressure_non_negative(cls, value: Optional[float], info: Any) -> Optional[float]:
+    def _pressure_non_negative(
+        cls, value: Optional[float], info: Any
+    ) -> Optional[float]:
         if value is not None and value < 0:
             raise ValueError(f"{info.field_name} must be >= 0, got {value}")
         return value
@@ -350,7 +352,9 @@ class WorkingProfile(BaseModel):
         "T_ambient_max",
     )
     @classmethod
-    def _temperature_above_absolute_zero(cls, value: Optional[float], info: Any) -> Optional[float]:
+    def _temperature_above_absolute_zero(
+        cls, value: Optional[float], info: Any
+    ) -> Optional[float]:
         if value is not None and value < -273.15:
             raise ValueError(f"{info.field_name} must be >= -273.15 °C, got {value}")
         return value
@@ -366,7 +370,9 @@ class WorkingProfile(BaseModel):
     @classmethod
     def _valid_flange_class(cls, value: Optional[int]) -> Optional[int]:
         if value is not None and value not in _VALID_FLANGE_CLASSES:
-            raise ValueError(f"flange_class must be one of {sorted(_VALID_FLANGE_CLASSES)}, got {value}")
+            raise ValueError(
+                f"flange_class must be one of {sorted(_VALID_FLANGE_CLASSES)}, got {value}"
+            )
         return value
 
     @field_validator("bolt_count")
@@ -389,8 +395,14 @@ class WorkingProfile(BaseModel):
             raise ValueError(
                 f"pressure_min_bar ({self.pressure_min_bar}) must be <= pressure_max_bar ({self.pressure_max_bar})"
             )
-        if self.pressure_min is not None and self.pressure_max is not None and self.pressure_min > self.pressure_max:
-            raise ValueError(f"pressure_min ({self.pressure_min}) must be <= pressure_max ({self.pressure_max})")
+        if (
+            self.pressure_min is not None
+            and self.pressure_max is not None
+            and self.pressure_min > self.pressure_max
+        ):
+            raise ValueError(
+                f"pressure_min ({self.pressure_min}) must be <= pressure_max ({self.pressure_max})"
+            )
         if (
             self.temperature_min_c is not None
             and self.temperature_max_c is not None
@@ -399,10 +411,18 @@ class WorkingProfile(BaseModel):
             raise ValueError(
                 f"temperature_min_c ({self.temperature_min_c}) must be <= temperature_max_c ({self.temperature_max_c})"
             )
-        if self.temp_min is not None and self.temp_max is not None and self.temp_min > self.temp_max:
-            raise ValueError(f"temp_min ({self.temp_min}) must be <= temp_max ({self.temp_max})")
+        if (
+            self.temp_min is not None
+            and self.temp_max is not None
+            and self.temp_min > self.temp_max
+        ):
+            raise ValueError(
+                f"temp_min ({self.temp_min}) must be <= temp_max ({self.temp_max})"
+            )
         if self.temp_range is not None and self.temp_range[0] > self.temp_range[1]:
-            raise ValueError(f"temp_range min ({self.temp_range[0]}) must be <= max ({self.temp_range[1]})")
+            raise ValueError(
+                f"temp_range min ({self.temp_range[0]}) must be <= max ({self.temp_range[1]})"
+            )
         return self
 
     _PROFILE_FIELDS: frozenset[str] = frozenset(

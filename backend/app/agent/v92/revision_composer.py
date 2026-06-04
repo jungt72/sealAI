@@ -24,15 +24,22 @@ def revise_answer_once(
 
     replacements = (
         (
-            re.compile(r"\bist\s+(?:sicher\s+|final\s+|gut\s+)?geeignet\b", re.IGNORECASE),
+            re.compile(
+                r"\bist\s+(?:sicher\s+|final\s+|gut\s+)?geeignet\b", re.IGNORECASE
+            ),
             "ist als Screening-Hypothese zu pruefen",
         ),
         (
-            re.compile(r"\bsind\s+(?:sicher\s+|final\s+|gut\s+)?geeignet\b", re.IGNORECASE),
+            re.compile(
+                r"\bsind\s+(?:sicher\s+|final\s+|gut\s+)?geeignet\b", re.IGNORECASE
+            ),
             "sind als Screening-Hypothesen zu pruefen",
         ),
         (
-            re.compile(r"\bfreigegeben|zugelassen|technisch\s+validiert|garantiert\b", re.IGNORECASE),
+            re.compile(
+                r"\bfreigegeben|zugelassen|technisch\s+validiert|garantiert\b",
+                re.IGNORECASE,
+            ),
             "nicht freigegeben",
         ),
         (
@@ -70,5 +77,7 @@ def revise_answer_once(
             seen.add(key)
             deduped.append(line)
     if deduped:
-        text = f"{text}\n\nGrenzen der Aussage:\n" + "\n".join(f"- {line}" for line in deduped)
+        text = f"{text}\n\nGrenzen der Aussage:\n" + "\n".join(
+            f"- {line}" for line in deduped
+        )
     return text.strip()

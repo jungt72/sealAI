@@ -138,8 +138,7 @@ def classify_rfq_readiness_intent(message: str) -> RfqReadinessIntent:
         )
     )
     asks_preview = any(
-        term in text
-        for term in ("pdf", "vorschau", "preview", "export", "dokument")
+        term in text for term in ("pdf", "vorschau", "preview", "export", "dokument")
     )
     asks_build = any(
         term in text
@@ -222,9 +221,17 @@ def build_rfq_readiness_answer(
     pending_field = str(pending.get("target_field") or "").strip() or None
     pending_question = str(pending.get("question_text") or "").strip() or None
     rfq_ready = projection.rfq_basis_ready
-    rfq_admissible = _bool_attr(getattr(governed_state, "governance", None), "rfq_admissible")
-    dispatch_ready = _bool_attr(getattr(governed_state, "dispatch", None), "dispatch_ready")
-    action_type = _runtime_action_type(intent=intent, active_case_exists=active_case_exists, has_missing=bool(missing_fields))
+    rfq_admissible = _bool_attr(
+        getattr(governed_state, "governance", None), "rfq_admissible"
+    )
+    dispatch_ready = _bool_attr(
+        getattr(governed_state, "dispatch", None), "dispatch_ready"
+    )
+    action_type = _runtime_action_type(
+        intent=intent,
+        active_case_exists=active_case_exists,
+        has_missing=bool(missing_fields),
+    )
 
     if not active_case_exists:
         answer = render_communication_template(
@@ -322,7 +329,9 @@ def build_rfq_readiness_projection(
     # as the single source — never re-derive the safety/value split here.
     gov_class = str(getattr(governance, "gov_class", "") or "")
     blocking_reasons = list(
-        _blocking_reasons(governed_state, missing_fields, open_points, gov_class=gov_class)
+        _blocking_reasons(
+            governed_state, missing_fields, open_points, gov_class=gov_class
+        )
     )
     for blocker in professional_check_blockers:
         if blocker not in blocking_reasons:
@@ -424,7 +433,11 @@ def _active_readiness_answer(
             "Ich kann den RFQ-Status nur aus dem vorhandenen governed State ableiten und erfinde keine "
             f"fehlenden Werte.\n\nOffene Punkte: {open_points}.\n\n"
             "Das ist eine RFQ-Basis fuer die Klaerung mit einem Hersteller oder Spezialisten, keine technische Endentscheidung."
-            + (f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question else "")
+            + (
+                f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}"
+                if pending_question
+                else ""
+            )
         ),
     )
 
@@ -465,7 +478,11 @@ def _active_build_answer(
             "die Herstellerpruefung entstehen. Die dauerhafte Anfragevorschau wird ueber die explizite "
             "Aktion 'Anfragevorschau vorbereiten' erstellt. Das ist keine technische Endentscheidung "
             "und kein automatischer Versand."
-            + (f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}" if pending_question else "")
+            + (
+                f"\n\nDer naechste sinnvolle Schritt bleibt: {pending_question}"
+                if pending_question
+                else ""
+            )
         ),
     )
 
@@ -719,7 +736,15 @@ def _engineering_path(profile: dict[str, Any]) -> str | None:
         str(profile.get(key) or "")
         for key in ("engineering_path", "sealing_type", "seal_type", "application")
     ).casefold()
-    if any(token in raw for token in ("rwdr", "radialwellendichtring", "wellendichtring", "radial_shaft_seal")):
+    if any(
+        token in raw
+        for token in (
+            "rwdr",
+            "radialwellendichtring",
+            "wellendichtring",
+            "radial_shaft_seal",
+        )
+    ):
         return "rwdr"
     return None
 
@@ -777,7 +802,9 @@ def _safe_check_payload(check: dict[str, Any]) -> dict[str, Any]:
         "allowed_user_wording",
         "blocking_reason",
     )
-    payload = {key: check.get(key) for key in allowed if check.get(key) not in (None, "", [])}
+    payload = {
+        key: check.get(key) for key in allowed if check.get(key) not in (None, "", [])
+    }
     payload["final_approval_claim_allowed"] = False
     return payload
 
@@ -795,7 +822,9 @@ def _professional_check_blockers(checks: list[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(blockers))[:8]
 
 
-def _professional_evidence_status(checks: list[dict[str, Any]], blockers: list[str]) -> str:
+def _professional_evidence_status(
+    checks: list[dict[str, Any]], blockers: list[str]
+) -> str:
     if not checks:
         return "not_available"
     if blockers:

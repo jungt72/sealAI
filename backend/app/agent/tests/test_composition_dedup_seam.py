@@ -14,6 +14,7 @@ Two roots, both OUTPUT-TEXT assembly only (no mutation/routing/enforcement):
     evades its own keyword guard (which checks "ich setze kein medium voraus" —
     without "dabei"), so it is the concrete duplicate.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -56,7 +57,9 @@ def test_side_answer_keeps_medium_seam_when_value_absent() -> None:
 
 # --- active_case_side_claim_policy _ensure_required_context (:422) ------------
 
-_NO_MEDIUM = "Ich setze dabei kein Medium voraus; dieser Wert ist im aktuellen Fall noch offen."
+_NO_MEDIUM = (
+    "Ich setze dabei kein Medium voraus; dieser Wert ist im aktuellen Fall noch offen."
+)
 
 
 def test_ensure_required_context_does_not_duplicate_existing_addition() -> None:

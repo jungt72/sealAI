@@ -18,7 +18,9 @@ from app.agent.v92.contracts import ChatReplyStyle
 def test_every_declared_style_is_registered() -> None:
     declared = set(typing.get_args(ChatReplyStyle))
     registered = set(CHAT_TEMPLATE_REGISTRY)
-    assert declared == registered, f"unregistered styles: {sorted(declared - registered)}"
+    assert (
+        declared == registered
+    ), f"unregistered styles: {sorted(declared - registered)}"
 
 
 @pytest.mark.parametrize("style", sorted(typing.get_args(ChatReplyStyle)))

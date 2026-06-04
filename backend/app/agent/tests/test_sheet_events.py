@@ -44,7 +44,11 @@ def test_sheet_bulk_input_applies_all_fields() -> None:
         GovernedSessionState(),
         _event(
             "sheet_bulk_input",
-            [("speed_rpm", 3000, None), ("temperature_c", 90, "°C"), ("medium", "Öl", None)],
+            [
+                ("speed_rpm", 3000, None),
+                ("temperature_c", 90, "°C"),
+                ("medium", "Öl", None),
+            ],
             client_event_id="bulk1",
         ),
     )
@@ -71,7 +75,9 @@ def test_sheet_conflict_resolution_applies_and_is_relevant() -> None:
 
 def test_sheet_to_rfq_requests_rfq_without_mutating() -> None:
     state = GovernedSessionState()
-    result = apply_sheet_event(state, _event("sheet_to_rfq", [], client_event_id="rfq1"))
+    result = apply_sheet_event(
+        state, _event("sheet_to_rfq", [], client_event_id="rfq1")
+    )
     assert result.rfq_requested is True
     assert result.applied is False
     assert result.state is state  # no mutation here (RFQ generation is Patch 9)
@@ -83,7 +89,9 @@ def test_sheet_to_rfq_requests_rfq_without_mutating() -> None:
 
 def test_same_client_event_id_does_not_mutate_twice() -> None:
     seen: set[str] = set()
-    event = _event("sheet_field_edit", [("speed_rpm", 1500, None)], client_event_id="dup")
+    event = _event(
+        "sheet_field_edit", [("speed_rpm", 1500, None)], client_event_id="dup"
+    )
 
     first = apply_sheet_event(GovernedSessionState(), event, seen_event_ids=seen)
     assert first.applied is True
@@ -142,7 +150,11 @@ def test_stale_write_keeps_other_fields_usable() -> None:
 def test_irrelevant_field_edit_is_silent() -> None:
     result = apply_sheet_event(
         GovernedSessionState(),
-        _event("sheet_field_edit", [("operator_note", "Schichtnotiz", None)], client_event_id="note1"),
+        _event(
+            "sheet_field_edit",
+            [("operator_note", "Schichtnotiz", None)],
+            client_event_id="note1",
+        ),
     )
     assert result.applied is True
     # Non-critical, no conflict → cockpit updates but chat stays silent.

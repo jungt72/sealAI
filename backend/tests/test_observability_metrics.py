@@ -30,6 +30,7 @@ class TestMetricsModuleExists:
             mcp_tool_calls_total,
             qgate_checks_total,
         )
+
         assert http_requests_total is not None
         assert http_request_duration_seconds is not None
         assert graph_node_runs_total is not None
@@ -45,13 +46,19 @@ class TestMetricsModuleExists:
 class TestCounterIncrements:
     def test_http_requests_total_increments(self):
         from app.core.metrics import http_requests_total
-        before = _counter_value(http_requests_total, method="GET", path="/test", status="200")
+
+        before = _counter_value(
+            http_requests_total, method="GET", path="/test", status="200"
+        )
         http_requests_total.labels(method="GET", path="/test", status="200").inc()
-        after = _counter_value(http_requests_total, method="GET", path="/test", status="200")
+        after = _counter_value(
+            http_requests_total, method="GET", path="/test", status="200"
+        )
         assert after == before + 1
 
     def test_graph_node_runs_total_increments(self):
         from app.core.metrics import graph_node_runs_total
+
         before = _counter_value(graph_node_runs_total, node="final_answer_node")
         graph_node_runs_total.labels(node="final_answer_node").inc()
         after = _counter_value(graph_node_runs_total, node="final_answer_node")
@@ -59,22 +66,34 @@ class TestCounterIncrements:
 
     def test_qgate_checks_total_increments(self):
         from app.core.metrics import qgate_checks_total
+
         before = _counter_value(
-            qgate_checks_total, check_name="thermal_margin", severity="WARNING", passed="True"
+            qgate_checks_total,
+            check_name="thermal_margin",
+            severity="WARNING",
+            passed="True",
         )
         qgate_checks_total.labels(
             check_name="thermal_margin", severity="WARNING", passed="True"
         ).inc()
         after = _counter_value(
-            qgate_checks_total, check_name="thermal_margin", severity="WARNING", passed="True"
+            qgate_checks_total,
+            check_name="thermal_margin",
+            severity="WARNING",
+            passed="True",
         )
         assert after == before + 1
 
     def test_mcp_tool_calls_total_increments(self):
         from app.core.metrics import mcp_tool_calls_total
-        before = _counter_value(mcp_tool_calls_total, tool="mcp_calc_gasket", status="ok")
+
+        before = _counter_value(
+            mcp_tool_calls_total, tool="mcp_calc_gasket", status="ok"
+        )
         mcp_tool_calls_total.labels(tool="mcp_calc_gasket", status="ok").inc()
-        after = _counter_value(mcp_tool_calls_total, tool="mcp_calc_gasket", status="ok")
+        after = _counter_value(
+            mcp_tool_calls_total, tool="mcp_calc_gasket", status="ok"
+        )
         assert after == before + 1
 
 
@@ -86,9 +105,14 @@ class TestCounterIncrements:
 class TestHistogramObserve:
     def test_http_request_duration_observe_does_not_raise(self):
         from app.core.metrics import http_request_duration_seconds
+
         # Should not raise for any valid float
-        http_request_duration_seconds.labels(method="POST", path="/api/v1/test").observe(0.42)
-        http_request_duration_seconds.labels(method="POST", path="/api/v1/test").observe(0.001)
+        http_request_duration_seconds.labels(
+            method="POST", path="/api/v1/test"
+        ).observe(0.42)
+        http_request_duration_seconds.labels(
+            method="POST", path="/api/v1/test"
+        ).observe(0.001)
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +188,10 @@ class TestPrometheusPathNormalization:
 
         middleware = _PrometheusMiddleware(FastAPI())
         path = "/api/v1/rag/documents/0c26f6b46bac4644917fb24cca23ca3d/health-check"
-        assert middleware._normalize_path(path) == "/api/v1/rag/documents/{id}/health-check"
+        assert (
+            middleware._normalize_path(path)
+            == "/api/v1/rag/documents/{id}/health-check"
+        )
 
     def test_normalize_numeric_segment_only(self):
         from fastapi import FastAPI
@@ -186,7 +213,11 @@ class TestQGateMetricHook:
 
         checks = [
             {"check_id": "thermal_margin", "severity": "WARNING", "passed": True},
-            {"check_id": "medium_compatibility", "severity": "CRITICAL", "passed": False},
+            {
+                "check_id": "medium_compatibility",
+                "severity": "CRITICAL",
+                "passed": False,
+            },
             {"check_id": "critical_flag", "severity": "FLAG", "passed": True},
         ]
 

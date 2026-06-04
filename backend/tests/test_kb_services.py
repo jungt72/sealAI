@@ -1,4 +1,5 @@
 """Tests for KB Knowledge Services: FactCardStore, CompoundDecisionMatrix, GateChecker."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +13,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers — build minimal in-memory KB files
 # ---------------------------------------------------------------------------
+
 
 def _make_factcard_kb(tmp_path: Path) -> Path:
     data = {
@@ -35,7 +37,10 @@ def _make_factcard_kb(tmp_path: Path) -> Path:
                 "food_grade": True,
                 "fda_approved": True,
                 "answer_template": "PTFE virgin ist chemisch universal beständig.",
-                "deterministic_triggers": ["chemical_resistance_query", "food_grade_query"],
+                "deterministic_triggers": [
+                    "chemical_resistance_query",
+                    "food_grade_query",
+                ],
             },
             {
                 "id": "FC-TEST-002",
@@ -134,6 +139,7 @@ def _make_matrix_kb(tmp_path: Path) -> Path:
 # FactCardStore
 # ---------------------------------------------------------------------------
 
+
 class TestFactCardStore:
     def test_load_from_file(self, tmp_path: Path):
         from app.services.knowledge.factcard_store import FactCardStore
@@ -215,7 +221,9 @@ class TestFactCardStore:
 
         path = _make_factcard_kb(tmp_path)
         store = FactCardStore(kb_path=path)
-        results = store.match_query_to_cards("welche chemisch beständigen Werkstoffe gibt es?")
+        results = store.match_query_to_cards(
+            "welche chemisch beständigen Werkstoffe gibt es?"
+        )
         assert any(c["compound_id"] == "ptfe_virgin" for c in results)
 
     def test_match_query_food_grade_filter(self, tmp_path: Path):
@@ -244,6 +252,7 @@ class TestFactCardStore:
 # ---------------------------------------------------------------------------
 # CompoundDecisionMatrix
 # ---------------------------------------------------------------------------
+
 
 class TestCompoundDecisionMatrix:
     def test_load_from_file(self, tmp_path: Path):
@@ -319,6 +328,7 @@ class TestCompoundDecisionMatrix:
 # ---------------------------------------------------------------------------
 # GateChecker
 # ---------------------------------------------------------------------------
+
 
 class TestGateChecker:
     def _make_gates(self) -> List[Dict]:
@@ -443,6 +453,7 @@ class TestGateChecker:
 # ---------------------------------------------------------------------------
 # Integration: bundled KB files exist and load successfully
 # ---------------------------------------------------------------------------
+
 
 def test_bundled_kb_factcards_load():
     """Bundled factcard KB file must be valid JSON and load at least 3 cards."""

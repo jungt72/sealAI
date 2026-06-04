@@ -5,6 +5,7 @@ GREEN before AND after the move (no red-before-green; this is a freeze).
 Snapshot taken 2026-06-04 against the pre-refactor core hardcode in
 `app/agent/v92/orchestrator.py`.
 """
+
 from __future__ import annotations
 
 import pytest

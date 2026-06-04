@@ -3,13 +3,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 UnitType = Literal["bar", "psi", "C", "F"]
 
+
 class PhysicalParameter(BaseModel):
     """
     Repräsentiert einen physikalischen Parameter mit Einheitenkonvertierung (Phase G2).
     Unterstützt Druck (bar, psi) und Temperatur (C, F).
     """
+
     value: float = Field(..., description="Der numerische Wert des Parameters.")
-    unit: UnitType = Field(..., description="Die Einheit des Parameters (bar, psi, C, F).")
+    unit: UnitType = Field(
+        ..., description="Die Einheit des Parameters (bar, psi, C, F)."
+    )
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

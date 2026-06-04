@@ -209,7 +209,9 @@ def _as_number(value: Any) -> float | None:
         return None
 
 
-def _evidence_fields(profile: dict[str, Any], required_inputs: tuple[str, ...]) -> list[str]:
+def _evidence_fields(
+    profile: dict[str, Any], required_inputs: tuple[str, ...]
+) -> list[str]:
     fields: list[str] = []
     for key in required_inputs:
         if _profile_value(profile, key) not in (None, "", [], {}):
@@ -300,7 +302,10 @@ def _build_rwdr_professional_check_results(
     has_system_pressure = _has_profile_value(profile, "pressure_system_bar")
     has_ambiguous_pressure = _has_profile_value(profile, "ambiguous_pressure_bar")
     if has_seal_pressure:
-        pressure_field = _profile_present_field(profile, "pressure_at_seal_bar") or "pressure_at_seal_bar"
+        pressure_field = (
+            _profile_present_field(profile, "pressure_at_seal_bar")
+            or "pressure_at_seal_bar"
+        )
         results.append(
             _check_result(
                 calc_id="rwdr_pressure_role_check",
@@ -383,7 +388,19 @@ def _build_rwdr_professional_check_results(
             )
         )
     else:
-        damaged = any(token in surface_text for token in ("damaged", "besch", "rief", "worn", "eingelaufen", "verschliss", "corrod", "korro"))
+        damaged = any(
+            token in surface_text
+            for token in (
+                "damaged",
+                "besch",
+                "rief",
+                "worn",
+                "eingelaufen",
+                "verschliss",
+                "corrod",
+                "korro",
+            )
+        )
         results.append(
             _check_result(
                 calc_id="rwdr_surface_condition_check",
@@ -403,7 +420,12 @@ def _build_rwdr_professional_check_results(
 
     roughness_value = _as_number(_profile_value(profile, "shaft_roughness_ra_um"))
     if roughness_value is None:
-        has_roughness_text = _profile_value(profile, "shaft_roughness_ra_um") not in (None, "", [], {})
+        has_roughness_text = _profile_value(profile, "shaft_roughness_ra_um") not in (
+            None,
+            "",
+            [],
+            {},
+        )
         results.append(
             _check_result(
                 calc_id="rwdr_roughness_check",
@@ -411,7 +433,9 @@ def _build_rwdr_professional_check_results(
                 required_fields=("shaft_roughness_ra_um",),
                 subject_field="shaft_roughness_ra_um",
                 status="blocked" if has_roughness_text else "pending",
-                claim_type="ambiguity_risk" if has_roughness_text else "missing_input_risk",
+                claim_type="ambiguity_risk"
+                if has_roughness_text
+                else "missing_input_risk",
                 severity="medium",
                 evidence_fields=["shaft_roughness_ra_um"] if has_roughness_text else [],
                 missing_fields=["shaft_roughness_ra_um"],
@@ -442,7 +466,12 @@ def _build_rwdr_professional_check_results(
 
     hardness_value = _as_number(_profile_value(profile, "shaft_hardness_hrc"))
     if hardness_value is None:
-        has_hardness_text = _profile_value(profile, "shaft_hardness_hrc") not in (None, "", [], {})
+        has_hardness_text = _profile_value(profile, "shaft_hardness_hrc") not in (
+            None,
+            "",
+            [],
+            {},
+        )
         results.append(
             _check_result(
                 calc_id="rwdr_hardness_check",
@@ -450,7 +479,9 @@ def _build_rwdr_professional_check_results(
                 required_fields=("shaft_hardness_hrc",),
                 subject_field="shaft_hardness_hrc",
                 status="blocked" if has_hardness_text else "pending",
-                claim_type="ambiguity_risk" if has_hardness_text else "missing_input_risk",
+                claim_type="ambiguity_risk"
+                if has_hardness_text
+                else "missing_input_risk",
                 severity="medium",
                 evidence_fields=["shaft_hardness_hrc"] if has_hardness_text else [],
                 missing_fields=["shaft_hardness_hrc"],
@@ -479,7 +510,9 @@ def _build_rwdr_professional_check_results(
             )
         )
 
-    runout_field = "runout_mm" if _has_profile_value(profile, "runout_mm") else "eccentricity_mm"
+    runout_field = (
+        "runout_mm" if _has_profile_value(profile, "runout_mm") else "eccentricity_mm"
+    )
     runout_value = _as_number(_profile_value(profile, runout_field))
     if runout_value is None:
         results.append(
@@ -537,7 +570,10 @@ def _build_rwdr_professional_check_results(
             )
         )
     else:
-        risky_lubrication = any(token in lubrication_text for token in ("dry", "trocken", "mangel", "insufficient", "poor"))
+        risky_lubrication = any(
+            token in lubrication_text
+            for token in ("dry", "trocken", "mangel", "insufficient", "poor")
+        )
         results.append(
             _check_result(
                 calc_id="rwdr_lubrication_check",
@@ -573,7 +609,18 @@ def _build_rwdr_professional_check_results(
             )
         )
     else:
-        abrasive = any(token in contamination_text for token in ("abras", "staub", "dust", "sand", "partikel", "solid", "schmutz"))
+        abrasive = any(
+            token in contamination_text
+            for token in (
+                "abras",
+                "staub",
+                "dust",
+                "sand",
+                "partikel",
+                "solid",
+                "schmutz",
+            )
+        )
         results.append(
             _check_result(
                 calc_id="rwdr_contamination_check",
@@ -638,9 +685,7 @@ def _build_material_medium_compatibility_check_result(
         evidence_fields=precheck.evidence_fields,
         missing_fields=precheck.missing_fields,
         blocked_reason=(
-            f"compatibility_{compatibility_status}"
-            if status == "blocked"
-            else None
+            f"compatibility_{compatibility_status}" if status == "blocked" else None
         ),
         allowed_user_wording=precheck.allowed_user_wording,
         forbidden_user_wording=precheck.forbidden_user_wording,
@@ -729,7 +774,9 @@ def _human_reason(
             + ", ".join(missing_inputs)
         )
     if status == "pending":
-        return f"{definition.label} wartet auf eine berechnete Ableitung aus dem Backend."
+        return (
+            f"{definition.label} wartet auf eine berechnete Ableitung aus dem Backend."
+        )
     if status == "failed":
         return f"{definition.label} hat einen auffaelligen Vorcheck-Status."
     if status == "not_applicable":

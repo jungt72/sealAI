@@ -14,6 +14,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 
 if "prometheus_client" not in sys.modules:
+
     class _MetricValue:
         def __init__(self) -> None:
             self._current = 0.0

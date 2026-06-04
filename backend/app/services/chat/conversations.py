@@ -125,7 +125,9 @@ def _normalize_preview(value: str | None) -> str | None:
     return trimmed.rstrip(".,;:!?")
 
 
-def _cleanup_excess_conversations(r: Redis, tenant_id: Optional[str], owner_id: str, key_set: str) -> None:
+def _cleanup_excess_conversations(
+    r: Redis, tenant_id: Optional[str], owner_id: str, key_set: str
+) -> None:
     limit = settings.chat_max_conversations_per_user
     if not limit or limit <= 0:
         return
@@ -136,7 +138,9 @@ def _cleanup_excess_conversations(r: Redis, tenant_id: Optional[str], owner_id: 
             return
         oldest = r.zrange(key_set, 0, overflow - 1)
         for conversation_id in oldest:
-            delete_conversation(owner_id, conversation_id, tenant_id=tenant_id, reason="limit")
+            delete_conversation(
+                owner_id, conversation_id, tenant_id=tenant_id, reason="limit"
+            )
     except Exception as exc:
         logger.warning("Failed to enforce conversation limit: %s", exc)
 
@@ -176,7 +180,11 @@ def upsert_conversation(
         else:
             final_title = derive_conversation_title(first_user_message)
             final_flag = "0"
-        preview_value = _normalize_preview(last_preview) or _normalize_preview(first_user_message) or _normalize_preview(current_preview)
+        preview_value = (
+            _normalize_preview(last_preview)
+            or _normalize_preview(first_user_message)
+            or _normalize_preview(current_preview)
+        )
         mapping = {
             "id": conversation_id,
             "user_id": owner_id,
@@ -218,7 +226,11 @@ def _collect_from_sorted_set(
             continue
         updated_raw = data.get("updated_at")
         try:
-            updated = datetime.fromisoformat(updated_raw) if updated_raw else datetime.now(timezone.utc)
+            updated = (
+                datetime.fromisoformat(updated_raw)
+                if updated_raw
+                else datetime.now(timezone.utc)
+            )
         except ValueError:
             updated = datetime.now(timezone.utc)
         result.append(
@@ -236,7 +248,9 @@ def _collect_from_sorted_set(
     return result
 
 
-def _collect_for_owner(owner_id: str, *, tenant_id: str | None = None) -> List[ConversationMeta]:
+def _collect_for_owner(
+    owner_id: str, *, tenant_id: str | None = None
+) -> List[ConversationMeta]:
     result: List[ConversationMeta] = []
     if not owner_id:
         return result
@@ -267,7 +281,9 @@ def _collect_for_owner(owner_id: str, *, tenant_id: str | None = None) -> List[C
     return result
 
 
-def list_conversations(owner_id: str, *, legacy_owner_id: str | None = None, tenant_id: str | None = None) -> List[ConversationMeta]:
+def list_conversations(
+    owner_id: str, *, legacy_owner_id: str | None = None, tenant_id: str | None = None
+) -> List[ConversationMeta]:
     merged: Dict[str, ConversationMeta] = {}
     for candidate in (owner_id, legacy_owner_id):
         if not candidate:

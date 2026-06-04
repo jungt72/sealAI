@@ -25,13 +25,21 @@ def _case_revision(state: GovernedSessionState | None) -> int | None:
         getattr(marker, "postgres_case_revision", None),
         getattr(marker, "postgres_snapshot_revision", None),
         getattr(getattr(state, "dossier", None), "case_revision", None),
-        getattr(getattr(getattr(state, "calculation", None), "input_snapshot", None), "case_revision", None),
+        getattr(
+            getattr(getattr(state, "calculation", None), "input_snapshot", None),
+            "case_revision",
+            None,
+        ),
     ):
         if isinstance(value, int) and value > 0:
             return value
     case_events = list(getattr(state, "case_events", []) or [])
     revisions = [
-        int(getattr(event, "case_revision_after", 0) or getattr(event, "state_revision_after", 0) or 0)
+        int(
+            getattr(event, "case_revision_after", 0)
+            or getattr(event, "state_revision_after", 0)
+            or 0
+        )
         for event in case_events
     ]
     if revisions:
@@ -62,7 +70,9 @@ def _current_facts(state: GovernedSessionState | None) -> list[dict[str, Any]]:
     if state is None:
         return []
     facts: list[dict[str, Any]] = []
-    for key, assertion in (getattr(getattr(state, "asserted", None), "assertions", {}) or {}).items():
+    for key, assertion in (
+        getattr(getattr(state, "asserted", None), "assertions", {}) or {}
+    ).items():
         value = getattr(assertion, "asserted_value", None)
         if value is None:
             continue
@@ -74,7 +84,9 @@ def _current_facts(state: GovernedSessionState | None) -> list[dict[str, Any]]:
                 "source": "asserted_state",
             }
         )
-    for key, parameter in (getattr(getattr(state, "normalized", None), "parameters", {}) or {}).items():
+    for key, parameter in (
+        getattr(getattr(state, "normalized", None), "parameters", {}) or {}
+    ).items():
         if any(fact.get("field_name") == key for fact in facts):
             continue
         facts.append(
@@ -104,8 +116,12 @@ def pocket_rfq_status_from_state(state: GovernedSessionState | None) -> str | No
         return None
     from app.agent.communication.rfq_one_pager import evaluate_rfq_readiness  # noqa: PLC0415 — local: avoid import cycle
 
-    present = [name for fact in facts if (name := str(fact.get("field_name") or "").strip())]
-    completeness = getattr(getattr(state, "engineering", None), "completeness_matrix", None)
+    present = [
+        name for fact in facts if (name := str(fact.get("field_name") or "").strip())
+    ]
+    completeness = getattr(
+        getattr(state, "engineering", None), "completeness_matrix", None
+    )
     missing = [
         key
         for item in (getattr(completeness, "blocking_missing_fields", []) or [])
@@ -124,7 +140,9 @@ def _risk_matrix(state: GovernedSessionState | None) -> list[dict[str, Any]]:
     if state is None:
         return []
     risks: list[dict[str, Any]] = []
-    for finding in list(getattr(getattr(state, "engineering", None), "risk_findings", []) or []):
+    for finding in list(
+        getattr(getattr(state, "engineering", None), "risk_findings", []) or []
+    ):
         item = _dump(finding)
         if item:
             risks.append(item)
@@ -139,7 +157,12 @@ def _risk_matrix(state: GovernedSessionState | None) -> list[dict[str, Any]]:
 def _calculation_items(state: GovernedSessionState | None) -> list[dict[str, Any]]:
     if state is None:
         return []
-    items = [_dump(result) for result in list(getattr(getattr(state, "calculation", None), "results", []) or [])]
+    items = [
+        _dump(result)
+        for result in list(
+            getattr(getattr(state, "calculation", None), "results", []) or []
+        )
+    ]
     for result in list(getattr(state, "compute_results", []) or []):
         if isinstance(result, dict):
             items.append(dict(result))
@@ -151,13 +174,18 @@ def _stale_items(state: GovernedSessionState | None) -> list[dict[str, Any]]:
         return []
     calculation = getattr(state, "calculation", None)
     stale_ids = list(getattr(calculation, "stale_result_ids", []) or [])
-    items = [{"item_id": str(item_id), "kind": "calculation", "status": "stale"} for item_id in stale_ids]
+    items = [
+        {"item_id": str(item_id), "kind": "calculation", "status": "stale"}
+        for item_id in stale_ids
+    ]
     for result in list(getattr(calculation, "results", []) or []):
         dumped = _dump(result)
         if dumped.get("status") == "stale" or dumped.get("validity_status") == "stale":
             items.append(
                 {
-                    "item_id": dumped.get("calculation_id") or dumped.get("calculator") or "calculation",
+                    "item_id": dumped.get("calculation_id")
+                    or dumped.get("calculator")
+                    or "calculation",
                     "kind": "calculation",
                     "status": "stale",
                 }
@@ -170,7 +198,11 @@ def _readiness_band(state: GovernedSessionState | None) -> str:
         return "not_ready"
     for value in (
         getattr(getattr(state, "dossier", None), "readiness_band", None),
-        getattr(getattr(getattr(state, "engineering", None), "completeness_matrix", None), "readiness_band", None),
+        getattr(
+            getattr(getattr(state, "engineering", None), "completeness_matrix", None),
+            "readiness_band",
+            None,
+        ),
     ):
         if value:
             return str(value)
@@ -221,7 +253,8 @@ def _active_question(state: GovernedSessionState | None) -> dict[str, Any] | Non
     return {
         "field": field or None,
         "question": text or None,
-        "expected_answer_type": str(getattr(pending, "expected_answer_type", "") or "") or None,
+        "expected_answer_type": str(getattr(pending, "expected_answer_type", "") or "")
+        or None,
         "status": str(getattr(pending, "status", "open") or "open"),
     }
 
@@ -231,7 +264,9 @@ def _conflicts(state: GovernedSessionState | None) -> list[dict[str, Any]]:
     if state is None:
         return []
     out: list[dict[str, Any]] = []
-    for conflict in list(getattr(getattr(state, "normalized", None), "conflicts", []) or []):
+    for conflict in list(
+        getattr(getattr(state, "normalized", None), "conflicts", []) or []
+    ):
         dumped = _dump(conflict)
         if dumped:
             out.append(dumped)
@@ -273,21 +308,29 @@ def build_v92_dashboard_contract(
     calculations = _calculation_items(state)
 
     completeness = getattr(engineering, "completeness_matrix", None)
-    missing_fields = _string_items(list(getattr(seal_system, "missing_fields", []) or []))
+    missing_fields = _string_items(
+        list(getattr(seal_system, "missing_fields", []) or [])
+    )
     if completeness is not None:
-        missing_fields.extend(_string_items(list(getattr(completeness, "missing_fields", []) or [])))
+        missing_fields.extend(
+            _string_items(list(getattr(completeness, "missing_fields", []) or []))
+        )
     blocking_missing = _string_items(
         list(getattr(completeness, "blocking_missing_fields", []) or [])
         or list(getattr(engineering, "blockers", []) or [])
     )
 
     recommendation_card = None
-    next_action = str(getattr(engineering, "next_best_engineering_action", "") or "").strip()
+    next_action = str(
+        getattr(engineering, "next_best_engineering_action", "") or ""
+    ).strip()
     if next_action or _readiness_band(state) != "not_ready":
         recommendation_card = {
             "status": str(getattr(engineering, "status", "pending") or "pending"),
             "allowed_claim_level": str(
-                getattr(getattr(state, "review_state", None), "approved_claim_level", None)
+                getattr(
+                    getattr(state, "review_state", None), "approved_claim_level", None
+                )
                 or "L2_screening"
             ),
             "next_action": next_action or "collect_missing_inputs",
@@ -330,7 +373,9 @@ def build_v92_dashboard_contract(
         standards_summary={
             "status": str(getattr(standards, "status", "pending") or "pending"),
             "registry_version": str(getattr(standards, "registry_version", "") or ""),
-            "applicable_count": len(list(getattr(standards, "applicable_entries", []) or [])),
+            "applicable_count": len(
+                list(getattr(standards, "applicable_entries", []) or [])
+            ),
             "blocking_gaps": list(getattr(standards, "blocking_gaps", []) or []),
             "claim_boundary": str(getattr(standards, "claim_boundary", "") or ""),
         },
@@ -348,8 +393,12 @@ def build_v92_dashboard_contract(
             "calculated_values": calculations,
             "evidence_summary": list(getattr(dossier, "evidence_summary", []) or []),
             "forbidden_claims": list(getattr(dossier, "forbidden_claims", []) or []),
-            "allowed_next_actions": list(getattr(dossier, "allowed_next_actions", []) or []),
-            "no_final_technical_release": bool(getattr(dossier, "no_final_technical_release", True)),
+            "allowed_next_actions": list(
+                getattr(dossier, "allowed_next_actions", []) or []
+            ),
+            "no_final_technical_release": bool(
+                getattr(dossier, "no_final_technical_release", True)
+            ),
         }
         if dossier is not None
         else None,
@@ -383,11 +432,19 @@ def build_legacy_v92_ui_tile(state: GovernedSessionState | None) -> dict[str, An
                 for item in contract.missing_fields
                 if item
             ],
-            "validity_boundaries": (contract.seal_system or {}).get("validity_boundaries", []),
+            "validity_boundaries": (contract.seal_system or {}).get(
+                "validity_boundaries", []
+            ),
         },
         "engineering": {
-            "status": str(getattr(getattr(state, "engineering", None), "status", "pending") or "pending"),
-            "route": str(getattr(getattr(state, "engineering", None), "route", "unknown") or "unknown"),
+            "status": str(
+                getattr(getattr(state, "engineering", None), "status", "pending")
+                or "pending"
+            ),
+            "route": str(
+                getattr(getattr(state, "engineering", None), "route", "unknown")
+                or "unknown"
+            ),
             "next_best_engineering_action": str(
                 getattr(
                     getattr(state, "engineering", None),
@@ -396,17 +453,30 @@ def build_legacy_v92_ui_tile(state: GovernedSessionState | None) -> dict[str, An
                 )
                 or "identify_seal_system"
             ),
-            "blockers": list(getattr(getattr(state, "engineering", None), "blockers", []) or []),
+            "blockers": list(
+                getattr(getattr(state, "engineering", None), "blockers", []) or []
+            ),
         },
         "calculations": {
-            "status": str(getattr(getattr(state, "calculation", None), "status", "pending") or "pending"),
+            "status": str(
+                getattr(getattr(state, "calculation", None), "status", "pending")
+                or "pending"
+            ),
             "result_count": len(contract.calculations),
-            "blocked_calculations": list(getattr(getattr(state, "calculation", None), "blocked_calculations", []) or []),
-            "guardrail_violations": list(getattr(getattr(state, "calculation", None), "guardrail_violations", []) or []),
+            "blocked_calculations": list(
+                getattr(getattr(state, "calculation", None), "blocked_calculations", [])
+                or []
+            ),
+            "guardrail_violations": list(
+                getattr(getattr(state, "calculation", None), "guardrail_violations", [])
+                or []
+            ),
         },
         "standards": {
             "status": contract.standards_summary.get("status", "pending"),
-            "registry_version": contract.standards_summary.get("registry_version", "standards_registry_metadata_v1"),
+            "registry_version": contract.standards_summary.get(
+                "registry_version", "standards_registry_metadata_v1"
+            ),
             "applicable_count": contract.standards_summary.get("applicable_count", 0),
             "blocking_gaps": contract.standards_summary.get("blocking_gaps", []),
             "claim_boundary": contract.standards_summary.get("claim_boundary", ""),
@@ -417,24 +487,42 @@ def build_legacy_v92_ui_tile(state: GovernedSessionState | None) -> dict[str, An
             "unresolved_gaps": contract.evidence_summary.get("unresolved_gaps", []),
         },
         "compound": {
-            "status": str(getattr(getattr(state, "compound_state", None), "status", "pending") or "pending"),
+            "status": str(
+                getattr(getattr(state, "compound_state", None), "status", "pending")
+                or "pending"
+            ),
             "material_family_count": len(contract.material_family_screening),
             "compound_count": len(contract.compound_candidates),
             "product_count": len(contract.product_candidates),
-            "separation_violations": list(getattr(getattr(state, "compound_state", None), "separation_violations", []) or []),
+            "separation_violations": list(
+                getattr(
+                    getattr(state, "compound_state", None), "separation_violations", []
+                )
+                or []
+            ),
         },
         "review": {
             "status": contract.review_status.get("status", "not_started"),
             "blocking_findings": contract.review_status.get("blocking_findings", []),
-            "required_corrections": contract.review_status.get("required_corrections", []),
+            "required_corrections": contract.review_status.get(
+                "required_corrections", []
+            ),
         },
         "dossier": {
             "status": (contract.rfq_dossier_preview or {}).get("status", "pending"),
             "dossier_id": (contract.rfq_dossier_preview or {}).get("dossier_id"),
-            "fact_count": len(getattr(getattr(state, "dossier", None), "facts", []) or []),
-            "calculation_count": len(getattr(getattr(state, "dossier", None), "calculations", []) or []),
-            "candidate_count": len(getattr(getattr(state, "dossier", None), "candidates", []) or []),
+            "fact_count": len(
+                getattr(getattr(state, "dossier", None), "facts", []) or []
+            ),
+            "calculation_count": len(
+                getattr(getattr(state, "dossier", None), "calculations", []) or []
+            ),
+            "candidate_count": len(
+                getattr(getattr(state, "dossier", None), "candidates", []) or []
+            ),
             "blockers": (contract.rfq_dossier_preview or {}).get("blockers", []),
-            "no_final_technical_release": (contract.rfq_dossier_preview or {}).get("no_final_technical_release", True),
+            "no_final_technical_release": (contract.rfq_dossier_preview or {}).get(
+                "no_final_technical_release", True
+            ),
         },
     }

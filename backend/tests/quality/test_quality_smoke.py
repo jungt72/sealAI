@@ -29,7 +29,9 @@ def _sse_transcript_for_answer(answer: str) -> List[Dict[str, Any]]:
 def _assert_sse_done_exactly_once(transcript: List[Dict[str, Any]]) -> None:
     events = [item.get("event") for item in transcript]
     done_count = sum(1 for e in events if e == "done")
-    assert done_count == 1, f"expected exactly 1 done event, got {done_count} ({events})"
+    assert (
+        done_count == 1
+    ), f"expected exactly 1 done event, got {done_count} ({events})"
     assert events[-1] == "done", f"expected last event to be done, got {events[-1]!r}"
 
 
@@ -49,13 +51,19 @@ def test_quality_golden_prompts_score_and_gates(
             "## Kurz-Zusammenfassung" in answer or "TL;DR" in answer
         ), f"{case['id']} must start with a TL;DR/Kurz-Zusammenfassung section"
 
-        assert "## Allgemeines Fachwissen" in answer, f"{case['id']} must contain 'Allgemeines Fachwissen' section"
+        assert (
+            "## Allgemeines Fachwissen" in answer
+        ), f"{case['id']} must contain 'Allgemeines Fachwissen' section"
 
         if not requires_rag:
-            assert "Wissensdatenbank" not in answer, f"{case['id']} must not mention Wissensdatenbank without RAG"
+            assert (
+                "Wissensdatenbank" not in answer
+            ), f"{case['id']} must not mention Wissensdatenbank without RAG"
             assert "## Wissensdatenbank (Quellen)" not in answer
         else:
-            assert "## Wissensdatenbank (Quellen)" in answer, f"{case['id']} must include Wissensdatenbank section when RAG required"
+            assert (
+                "## Wissensdatenbank (Quellen)" in answer
+            ), f"{case['id']} must include Wissensdatenbank section when RAG required"
             # Require at least one citation-like bullet.
             assert (
                 "\n- " in answer and ("Quelle:" in answer or "Dokument:" in answer)
@@ -63,14 +71,20 @@ def test_quality_golden_prompts_score_and_gates(
 
         result = score_answer(case, answer)
 
-        assert not result.gate_failures, f"{case['id']} gate failures: {result.gate_failures}"
-        assert result.total >= 24, f"{case['id']} score too low: total={result.total} categories={result.categories}"
+        assert (
+            not result.gate_failures
+        ), f"{case['id']} gate failures: {result.gate_failures}"
+        assert (
+            result.total >= 24
+        ), f"{case['id']} score too low: total={result.total} categories={result.categories}"
 
         transcript = _sse_transcript_for_answer(answer)
         _assert_sse_done_exactly_once(transcript)
 
 
-def test_quality_templates_render_with_seed_state(minimal_settings_env: None, golden_prompts: List[Dict[str, Any]]) -> None:
+def test_quality_templates_render_with_seed_state(
+    minimal_settings_env: None, golden_prompts: List[Dict[str, Any]]
+) -> None:
     # Deterministic renderability gate: run Jinja render for the final templates using the seed_state.
     from app.common.jinja import render_template
 
@@ -97,7 +111,13 @@ def test_quality_templates_render_with_seed_state(minimal_settings_env: None, go
                 pressure_margin=None,
                 notes=[],
             ),
-            "recommendation": {"material": "", "profile": "", "summary": "", "rationale": "", "risk_hints": []},
+            "recommendation": {
+                "material": "",
+                "profile": "",
+                "summary": "",
+                "rationale": "",
+                "risk_hints": [],
+            },
             "working_memory": {},
             "plan": {},
             "draft": "DRAFT",
@@ -109,7 +129,12 @@ def test_quality_templates_render_with_seed_state(minimal_settings_env: None, go
             "critical": {"status": None},
             "products": {"manufacturer": None, "matches": [], "match_quality": None},
             "comparison_notes": {},
-            "troubleshooting": {"symptoms": [], "hypotheses": [], "pattern_match": None, "done": False},
+            "troubleshooting": {
+                "symptoms": [],
+                "hypotheses": [],
+                "pattern_match": None,
+                "done": False,
+            },
         }
 
         # Render both: router draft + at least one final template.

@@ -170,16 +170,46 @@ _HELPFUL_FIELDS: tuple[str, ...] = tuple(
 _OUT_OF_SCOPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (reason, re.compile(pattern, re.IGNORECASE))
     for reason, pattern in (
-        ("Gleitringdichtungen sind nicht Teil des RWDR-MVP-Scopes.", r"\bgleitringdichtung(en)?\b|\bmechanical\s+face\s+seal\b|\bmechanical\s+seal\b|\bface\s+seal\b"),
-        ("Hydraulik-Stangen-/Kolbendichtungen sind nicht Teil des RWDR-MVP-Scopes.", r"hydraulik[-\s]*(stangen|kolben)dichtung|hydraulic\s+(rod|piston)\s+seal"),
-        ("O-Ring-Nutberechnung ist nicht Teil des RWDR-MVP-Scopes.", r"o[-\s]?ring[-\s]*nutberechnung|o[-\s]?ring\s+groove\s+design"),
-        ("Statische Flachdichtungen als Primärfall sind nicht Teil des RWDR-MVP-Scopes.", r"statische\s+flachdichtung|flange\s+gasket\s+as\s+primary"),
-        ("Labyrinthdichtungen als Primärdesign sind nicht Teil des RWDR-MVP-Scopes.", r"labyrinth(dichtung)?"),
-        ("ATEX- oder Explosionsschutzfälle sind nicht Teil des RWDR-MVP-Scopes.", r"\batex\b|explosionsgesch[uü]tzt|explosive\s+atmosphere"),
-        ("Wasserstoff- und Hochdruckgasfälle sind nicht Teil des RWDR-MVP-Scopes.", r"\bhydrogen\b|\bwasserstoff\b|high[-\s]*pressure\s+gas|hochdruckgas"),
-        ("Nuklear-, Luftfahrt- und medizinisch kritische Fälle sind nicht Teil des RWDR-MVP-Scopes.", r"\bnuclear\b|kerntechnik|aerospace|luftfahrt|medical[-\s]*device[-\s]*critical"),
-        ("Toxische Prozessmedien sind nicht Teil des RWDR-MVP-Scopes.", r"toxic\s+process\s+media|giftiges\s+prozessmedium"),
-        ("Sicherheitskritische Freigabe-, Garantie- oder finale Designentscheidungen sind nicht Teil des RWDR-MVP-Scopes.", r"safety[-\s]*critical\s+approval|life\s+guarantee|final\s+design\s+approval|lebensdauer\s*garantie|finale\s+designfreigabe"),
+        (
+            "Gleitringdichtungen sind nicht Teil des RWDR-MVP-Scopes.",
+            r"\bgleitringdichtung(en)?\b|\bmechanical\s+face\s+seal\b|\bmechanical\s+seal\b|\bface\s+seal\b",
+        ),
+        (
+            "Hydraulik-Stangen-/Kolbendichtungen sind nicht Teil des RWDR-MVP-Scopes.",
+            r"hydraulik[-\s]*(stangen|kolben)dichtung|hydraulic\s+(rod|piston)\s+seal",
+        ),
+        (
+            "O-Ring-Nutberechnung ist nicht Teil des RWDR-MVP-Scopes.",
+            r"o[-\s]?ring[-\s]*nutberechnung|o[-\s]?ring\s+groove\s+design",
+        ),
+        (
+            "Statische Flachdichtungen als Primärfall sind nicht Teil des RWDR-MVP-Scopes.",
+            r"statische\s+flachdichtung|flange\s+gasket\s+as\s+primary",
+        ),
+        (
+            "Labyrinthdichtungen als Primärdesign sind nicht Teil des RWDR-MVP-Scopes.",
+            r"labyrinth(dichtung)?",
+        ),
+        (
+            "ATEX- oder Explosionsschutzfälle sind nicht Teil des RWDR-MVP-Scopes.",
+            r"\batex\b|explosionsgesch[uü]tzt|explosive\s+atmosphere",
+        ),
+        (
+            "Wasserstoff- und Hochdruckgasfälle sind nicht Teil des RWDR-MVP-Scopes.",
+            r"\bhydrogen\b|\bwasserstoff\b|high[-\s]*pressure\s+gas|hochdruckgas",
+        ),
+        (
+            "Nuklear-, Luftfahrt- und medizinisch kritische Fälle sind nicht Teil des RWDR-MVP-Scopes.",
+            r"\bnuclear\b|kerntechnik|aerospace|luftfahrt|medical[-\s]*device[-\s]*critical",
+        ),
+        (
+            "Toxische Prozessmedien sind nicht Teil des RWDR-MVP-Scopes.",
+            r"toxic\s+process\s+media|giftiges\s+prozessmedium",
+        ),
+        (
+            "Sicherheitskritische Freigabe-, Garantie- oder finale Designentscheidungen sind nicht Teil des RWDR-MVP-Scopes.",
+            r"safety[-\s]*critical\s+approval|life\s+guarantee|final\s+design\s+approval|lebensdauer\s*garantie|finale\s+designfreigabe",
+        ),
     )
 )
 
@@ -289,7 +319,11 @@ _BLOCKING_FIELD_STATUSES = frozenset(
 _SEMANTIC_FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     "application": ("application",),
     "medium": ("inside_medium",),
-    "temperature": ("temperature_max_c", "temperature_min_c", "explicitly_unknown_temperature"),
+    "temperature": (
+        "temperature_max_c",
+        "temperature_min_c",
+        "explicitly_unknown_temperature",
+    ),
     "pressure": ("pressure_differential", "explicitly_unknown_pressure"),
     "shaft_diameter": ("shaft_diameter_d1_mm",),
     "housing_bore": ("housing_bore_D_mm",),
@@ -412,9 +446,7 @@ class RWDREvaluation:
                 dict(item) for item in self.measurement_recommendations
             ],
             "computed_values": [dict(item) for item in self.computed_values],
-            "normative_references": [
-                dict(item) for item in self.normative_references
-            ],
+            "normative_references": [dict(item) for item in self.normative_references],
             "knowledge_sources": [dict(item) for item in self.knowledge_sources],
             "quality_metrics": dict(self.quality_metrics or {}),
         }
@@ -507,7 +539,10 @@ class EvidenceConfirmationIntelligence:
 
     def _field_from_envelope(self, field: Mapping[str, Any]) -> EvidenceField:
         raw_name = str(
-            field.get("field") or field.get("field_key") or field.get("field_name") or ""
+            field.get("field")
+            or field.get("field_key")
+            or field.get("field_name")
+            or ""
         ).strip()
         name = _canonical_field_name(raw_name)
         engineering_value = _object_mapping(field.get("engineering_value"))
@@ -518,8 +553,12 @@ class EvidenceConfirmationIntelligence:
         )
         status = _token(field.get("status"))
         provenance = _token(field.get("provenance"))
-        origin = _normalize_origin(field, source_type=source_type, provenance=provenance, status=status)
-        confirmation_status = _normalize_confirmation_status(field, status=status, validation_status=validation_status)
+        origin = _normalize_origin(
+            field, source_type=source_type, provenance=provenance, status=status
+        )
+        confirmation_status = _normalize_confirmation_status(
+            field, status=status, validation_status=validation_status
+        )
         evidence_refs = _text_tuple(field.get("evidence_refs"))
         source_span = _source_span(field, engineering_value=engineering_value)
         liability_bearing = name in _LIABILITY_BEARING_FIELDS
@@ -573,28 +612,22 @@ class RWDRCaseStateValidationError(ValueError):
 
 
 class RWDRCaseStateRepositoryProtocol(Protocol):
-    def create_from_raw_inquiry(self, raw_inquiry: str) -> dict[str, Any]:
-        ...
+    def create_from_raw_inquiry(self, raw_inquiry: str) -> dict[str, Any]: ...
 
-    def get(self, case_id: str) -> dict[str, Any]:
-        ...
+    def get(self, case_id: str) -> dict[str, Any]: ...
 
     def apply_confirmations(
         self,
         *,
         case_id: str,
         decisions: Sequence[Mapping[str, Any]],
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
-    def evaluate(self, case_id: str) -> dict[str, Any]:
-        ...
+    def evaluate(self, case_id: str) -> dict[str, Any]: ...
 
-    def generate_brief(self, case_id: str) -> dict[str, Any]:
-        ...
+    def generate_brief(self, case_id: str) -> dict[str, Any]: ...
 
-    def export_markdown(self, case_id: str) -> dict[str, Any]:
-        ...
+    def export_markdown(self, case_id: str) -> dict[str, Any]: ...
 
 
 class RWDRCaseStateRepository:
@@ -655,7 +688,10 @@ class RWDRCaseStateRepository:
         return self.get(case_id)
 
     def evaluate(self, case_id: str) -> dict[str, Any]:
-        return dict(_object_mapping(self._require(case_id).generated_brief).get("evaluation") or {})
+        return dict(
+            _object_mapping(self._require(case_id).generated_brief).get("evaluation")
+            or {}
+        )
 
     def generate_brief(self, case_id: str) -> dict[str, Any]:
         state = self._with_brief(self._require(case_id))
@@ -719,12 +755,20 @@ class RWDRCaseStateRepository:
             "updated_at": state.updated_at,
             "evidence_fields": [dict(item) for item in state.evidence_fields],
             "evaluation_status": brief.get("status"),
-            "missing_critical_fields": list(canonical.get("missing_critical_fields") or ()),
-            "missing_helpful_fields": list(canonical.get("missing_helpful_fields") or ()),
+            "missing_critical_fields": list(
+                canonical.get("missing_critical_fields") or ()
+            ),
+            "missing_helpful_fields": list(
+                canonical.get("missing_helpful_fields") or ()
+            ),
             "computed_values": list(evaluation.get("computed_values") or ()),
             "review_flags": list(evaluation.get("review_flags") or ()),
-            "manufacturer_questions": list(evaluation.get("manufacturer_questions") or ()),
-            "measurement_recommendations": list(evaluation.get("measurement_recommendations") or ()),
+            "manufacturer_questions": list(
+                evaluation.get("manufacturer_questions") or ()
+            ),
+            "measurement_recommendations": list(
+                evaluation.get("measurement_recommendations") or ()
+            ),
             "source_evidence_summary": _section_items(brief, "source_evidence_summary"),
             "technical_rwdr_rfq_brief": brief,
             "export_metadata": {
@@ -745,16 +789,32 @@ class RWDRCaseStateRepository:
             raise RWDRCaseStateValidationError("field is required")
         action = _token(decision.get("action"))
         current_index = next(
-            (index for index, item in enumerate(fields) if _canonical_field_name(str(item.get("field") or "")) == field_name),
+            (
+                index
+                for index, item in enumerate(fields)
+                if _canonical_field_name(str(item.get("field") or "")) == field_name
+            ),
             None,
         )
-        current = dict(fields[current_index]) if current_index is not None else {"field": field_name}
+        current = (
+            dict(fields[current_index])
+            if current_index is not None
+            else {"field": field_name}
+        )
         current["field"] = field_name
         current["user_action_timestamp"] = _utc_now()
         if action == "confirm":
-            source_span = _optional_text(decision.get("source_span")) or _optional_text(current.get("source_span"))
-            if _token(current.get("origin")) == "llm_extracted" and current.get("liability_bearing") is not False and not source_span:
-                raise RWDRCaseStateValidationError("source_span_required_for_confirmed_extracted_liability_field")
+            source_span = _optional_text(decision.get("source_span")) or _optional_text(
+                current.get("source_span")
+            )
+            if (
+                _token(current.get("origin")) == "llm_extracted"
+                and current.get("liability_bearing") is not False
+                and not source_span
+            ):
+                raise RWDRCaseStateValidationError(
+                    "source_span_required_for_confirmed_extracted_liability_field"
+                )
             current.update(
                 {
                     "confirmation_status": "confirmed",
@@ -794,7 +854,9 @@ class RWDRCaseStateRepository:
                 }
             )
         else:
-            raise RWDRCaseStateValidationError(f"unsupported confirmation action: {action}")
+            raise RWDRCaseStateValidationError(
+                f"unsupported confirmation action: {action}"
+            )
         if current_index is None:
             fields.append(current)
         else:
@@ -1140,7 +1202,11 @@ class DbRWDRCaseStateRepository:
     async def _snapshot_rows(self, case_id: str) -> list[CaseStateSnapshot]:
         if hasattr(self.session, "snapshots"):
             return sorted(
-                [row for row in getattr(self.session, "snapshots") if row.case_id == case_id],
+                [
+                    row
+                    for row in getattr(self.session, "snapshots")
+                    if row.case_id == case_id
+                ],
                 key=lambda row: int(row.revision),
             )
         result = await self.session.execute(
@@ -1152,7 +1218,7 @@ class DbRWDRCaseStateRepository:
 
     async def _next_snapshot_revision(self, case_id: str) -> int:
         rows = await self._snapshot_rows(case_id)
-        return (max((int(row.revision) for row in rows), default=0) + 1)
+        return max((int(row.revision) for row in rows), default=0) + 1
 
     async def _write_snapshot(
         self,
@@ -1251,7 +1317,9 @@ class ApplicationIntelligence:
                 )
             )
             flags.append("oil_additive_material_review_if_oil_unknown")
-        elif any(token in lowered for token in ("rührwerk", "ruehrwerk", "mixer", "agitator")):
+        elif any(
+            token in lowered for token in ("rührwerk", "ruehrwerk", "mixer", "agitator")
+        ):
             questions.extend(
                 (
                     "Welches Produktmedium liegt an?",
@@ -1295,8 +1363,12 @@ class GeometryDimensionIntelligence:
         if width is not None and width <= 0:
             flags.append("dimension_contradiction_width_not_positive")
         questions = (
-            "Bitte bestätigen Sie die Abmessung als d1 x D x b, z. B. 45 x 62 x 8 mm.",
-        ) if missing else ()
+            (
+                "Bitte bestätigen Sie die Abmessung als d1 x D x b, z. B. 45 x 62 x 8 mm.",
+            )
+            if missing
+            else ()
+        )
         return RWDRModuleResult(
             flags=tuple(flags),
             questions=questions,
@@ -1326,32 +1398,57 @@ class MediumIntelligence:
                     "Enthält das Medium Feststoffe, Zuckerpartikel oder abrasive Bestandteile?",
                 )
             )
-        if any(token in medium for token in ("chemie", "chemical", "lösungsmittel", "loesungsmittel")):
+        if any(
+            token in medium
+            for token in ("chemie", "chemical", "lösungsmittel", "loesungsmittel")
+        ):
             flags.append("material_compatibility_unresolved")
         return RWDRModuleResult(flags=tuple(flags), questions=tuple(questions))
 
 
 class MaterialIntelligence:
-    _families = ("NBR", "HNBR", "FKM", "FPM", "ACM", "VMQ", "MVQ", "PTFE", "PEEK", "PPS", "PI")
+    _families = (
+        "NBR",
+        "HNBR",
+        "FKM",
+        "FPM",
+        "ACM",
+        "VMQ",
+        "MVQ",
+        "PTFE",
+        "PEEK",
+        "PPS",
+        "PI",
+    )
 
-    def evaluate(self, fields: Mapping[str, EvidenceField], text: str) -> RWDRModuleResult:
-        combined = " ".join([text, *(_field_text(fields, key) for key in fields)]).upper()
+    def evaluate(
+        self, fields: Mapping[str, EvidenceField], text: str
+    ) -> RWDRModuleResult:
+        combined = " ".join(
+            [text, *(_field_text(fields, key) for key in fields)]
+        ).upper()
         flags = []
         questions = []
         for family in self._families:
             if family in combined:
                 flags.append(f"material_mention_{family.lower()}_review_required")
         if flags:
-            questions.append("Werkstoffprüfung durch Hersteller erforderlich; genanntes Material wurde nicht als Empfehlung übernommen.")
+            questions.append(
+                "Werkstoffprüfung durch Hersteller erforderlich; genanntes Material wurde nicht als Empfehlung übernommen."
+            )
         if "PTFE" in combined:
-            flags.extend(("PTFE_counterface_review_required", "PTFE_mounting_review_required"))
+            flags.extend(
+                ("PTFE_counterface_review_required", "PTFE_mounting_review_required")
+            )
             questions.extend(
                 (
                     "Ist die Wellenoberfläche und Härte für eine PTFE-/Thermoplast-Lippe bekannt?",
                     "Ist ein Einführkonus oder eine Montagehülse verfügbar?",
                 )
             )
-        return RWDRModuleResult(flags=tuple(dict.fromkeys(flags)), questions=tuple(dict.fromkeys(questions)))
+        return RWDRModuleResult(
+            flags=tuple(dict.fromkeys(flags)), questions=tuple(dict.fromkeys(questions))
+        )
 
     def reference_table(self) -> tuple[dict[str, Any], ...]:
         return tuple(
@@ -1365,9 +1462,20 @@ class MaterialIntelligence:
                 "customer_facing_recommendation_forbidden": True,
             }
             for family in (
-                "NBR", "HNBR", "FKM/FPM", "ACM", "VMQ/MVQ", "PTFE",
-                "PEEK", "PPS", "PI", "spring_steel", "stainless_spring",
-                "metal_case", "stainless_case", "OD_coating_acrylic_sealant",
+                "NBR",
+                "HNBR",
+                "FKM/FPM",
+                "ACM",
+                "VMQ/MVQ",
+                "PTFE",
+                "PEEK",
+                "PPS",
+                "PI",
+                "spring_steel",
+                "stainless_spring",
+                "metal_case",
+                "stainless_case",
+                "OD_coating_acrylic_sealant",
                 "unknown",
             )
         )
@@ -1377,28 +1485,52 @@ class OperatingConditionIntelligence:
     def evaluate(self, fields: Mapping[str, EvidenceField]) -> RWDRModuleResult:
         flags: list[str] = []
         questions: list[str] = []
-        if not _field_satisfied(fields, "max_speed_rpm") and not _field_satisfied(fields, "explicitly_unknown_speed"):
+        if not _field_satisfied(fields, "max_speed_rpm") and not _field_satisfied(
+            fields, "explicitly_unknown_speed"
+        ):
             questions.append("Welche Drehzahl liegt an der Welle an?")
-        if not _field_satisfied(fields, "pressure_differential") and not _field_satisfied(fields, "explicitly_unknown_pressure"):
+        if not _field_satisfied(
+            fields, "pressure_differential"
+        ) and not _field_satisfied(fields, "explicitly_unknown_pressure"):
             questions.append("Ist die Anwendung drucklos oder liegt Differenzdruck an?")
         if _truthy_field(fields, "reversing_operation"):
             flags.append("pumping_direction_or_lip_profile_review_required")
-        if _field_satisfied(fields, "pressure_differential") and _field_satisfied(fields, "max_speed_rpm"):
+        if _field_satisfied(fields, "pressure_differential") and _field_satisfied(
+            fields, "max_speed_rpm"
+        ):
             flags.append("pressure_speed_review_required")
         return RWDRModuleResult(flags=tuple(flags), questions=tuple(questions))
 
 
 class ShaftCounterfaceIntelligence:
-    def evaluate(self, fields: Mapping[str, EvidenceField], *, speed_class: str = "unknown") -> RWDRModuleResult:
+    def evaluate(
+        self, fields: Mapping[str, EvidenceField], *, speed_class: str = "unknown"
+    ) -> RWDRModuleResult:
         flags: list[str] = []
         questions: list[str] = []
         shaft_condition = _field_text(fields, "shaft_condition_known").casefold()
-        if any(token in shaft_condition for token in ("eingelaufen", "groove", "grooved", "worn", "korrosion", "corroded")):
+        if any(
+            token in shaft_condition
+            for token in (
+                "eingelaufen",
+                "groove",
+                "grooved",
+                "worn",
+                "korrosion",
+                "corroded",
+            )
+        ):
             flags.append("shaft_sleeve_review_required")
-            questions.append("Ist die Wellenlauffläche eingelaufen, beschädigt oder korrodiert?")
-        if speed_class in {"high", "extreme"} and not _field_satisfied(fields, "dynamic_runout_DRO"):
+            questions.append(
+                "Ist die Wellenlauffläche eingelaufen, beschädigt oder korrodiert?"
+            )
+        if speed_class in {"high", "extreme"} and not _field_satisfied(
+            fields, "dynamic_runout_DRO"
+        ):
             flags.append("dynamic_runout_review_required")
-            questions.append("Ist der dynamische Rundlauf der Welle an der Dichtstelle bekannt?")
+            questions.append(
+                "Ist der dynamische Rundlauf der Welle an der Dichtstelle bekannt?"
+            )
         if not _field_satisfied(fields, "shaft_surface_ra"):
             flags.append("shaft_surface_review_required")
         return RWDRModuleResult(flags=tuple(flags), questions=tuple(questions))
@@ -1408,16 +1540,28 @@ class HousingInstallationIntelligence:
     def evaluate(self, fields: Mapping[str, EvidenceField]) -> RWDRModuleResult:
         flags: list[str] = []
         questions: list[str] = []
-        if _truthy_field(fields, "no_shaft_disassembly_possible") or _field_text(fields, "shaft_removal_possible").casefold() in {"false", "no", "nein"}:
+        if _truthy_field(fields, "no_shaft_disassembly_possible") or _field_text(
+            fields, "shaft_removal_possible"
+        ).casefold() in {"false", "no", "nein"}:
             flags.append("split_seal_review_required")
-            questions.append("Kann die Welle für die Montage demontiert werden oder muss eine geteilte Lösung geprüft werden?")
+            questions.append(
+                "Kann die Welle für die Montage demontiert werden oder muss eine geteilte Lösung geprüft werden?"
+            )
         install = " ".join(
             _field_text(fields, key)
-            for key in ("mounting_over_keyway_thread_sharp_edge", "installation_situation")
+            for key in (
+                "mounting_over_keyway_thread_sharp_edge",
+                "installation_situation",
+            )
         ).casefold()
-        if any(token in install for token in ("nut", "keyway", "gewinde", "thread", "scharf", "sharp")):
+        if any(
+            token in install
+            for token in ("nut", "keyway", "gewinde", "thread", "scharf", "sharp")
+        ):
             flags.append("mounting_damage_risk")
-            questions.append("Erfolgt die Montage über Nut, Gewinde oder scharfe Kanten?")
+            questions.append(
+                "Erfolgt die Montage über Nut, Gewinde oder scharfe Kanten?"
+            )
         if _field_satisfied(fields, "pressure_differential"):
             flags.append("axial_retention_review_required")
         return RWDRModuleResult(flags=tuple(flags), questions=tuple(questions))
@@ -1435,16 +1579,34 @@ class LubricationIntelligence:
 
 
 class EnvironmentContaminationIntelligence:
-    def evaluate(self, fields: Mapping[str, EvidenceField], text: str) -> RWDRModuleResult:
-        combined = " ".join([text, _field_text(fields, "outside_environment_or_contamination")]).casefold()
+    def evaluate(
+        self, fields: Mapping[str, EvidenceField], text: str
+    ) -> RWDRModuleResult:
+        combined = " ".join(
+            [text, _field_text(fields, "outside_environment_or_contamination")]
+        ).casefold()
         flags = []
         questions = []
-        if any(token in combined for token in ("staub", "dust", "schmutz", "dirt", "sand")):
+        if any(
+            token in combined for token in ("staub", "dust", "schmutz", "dirt", "sand")
+        ):
             flags.append("dust_lip_or_excluder_review_required")
-            questions.append("Gibt es Staub, Schmutz oder abrasive Partikel auf der Außenseite der Dichtung?")
-        if any(token in combined for token in ("schlamm", "mud", "baumaschine", "construction")):
-            flags.extend(("cassette_or_additional_protection_review_required", "shaft_wear_and_lip_wear_review_required"))
-        return RWDRModuleResult(flags=tuple(dict.fromkeys(flags)), questions=tuple(questions))
+            questions.append(
+                "Gibt es Staub, Schmutz oder abrasive Partikel auf der Außenseite der Dichtung?"
+            )
+        if any(
+            token in combined
+            for token in ("schlamm", "mud", "baumaschine", "construction")
+        ):
+            flags.extend(
+                (
+                    "cassette_or_additional_protection_review_required",
+                    "shaft_wear_and_lip_wear_review_required",
+                )
+            )
+        return RWDRModuleResult(
+            flags=tuple(dict.fromkeys(flags)), questions=tuple(questions)
+        )
 
 
 class LipContactMechanicsIntelligence:
@@ -1476,9 +1638,21 @@ class RegulatoryComplianceIntelligence:
         lowered = text.casefold()
         flags = []
         questions = []
-        if any(token in lowered for token in ("fda", "ehEDG".casefold(), "3-a", "1935/2004", "lebensmittel", "food")):
+        if any(
+            token in lowered
+            for token in (
+                "fda",
+                "ehEDG".casefold(),
+                "3-a",
+                "1935/2004",
+                "lebensmittel",
+                "food",
+            )
+        ):
             flags.append("regulatory_requirement_confirmation_required")
-            questions.append("Welche Lebensmittel-/Normanforderung soll der Hersteller konkret bewerten?")
+            questions.append(
+                "Welche Lebensmittel-/Normanforderung soll der Hersteller konkret bewerten?"
+            )
         return RWDRModuleResult(flags=tuple(flags), questions=tuple(questions))
 
 
@@ -1580,16 +1754,26 @@ class CalculationIntelligence:
 
 
 class ContradictionIntelligence:
-    def evaluate(self, fields: Mapping[str, EvidenceField], flags: Sequence[str]) -> RWDRModuleResult:
-        contradiction_flags = tuple(flag for flag in flags if flag.startswith("dimension_contradiction"))
+    def evaluate(
+        self, fields: Mapping[str, EvidenceField], flags: Sequence[str]
+    ) -> RWDRModuleResult:
+        contradiction_flags = tuple(
+            flag for flag in flags if flag.startswith("dimension_contradiction")
+        )
         questions = (
-            "Bitte widersprüchliche Abmessungen oder Angaben vor Herstellerbewertung klären.",
-        ) if contradiction_flags else ()
+            (
+                "Bitte widersprüchliche Abmessungen oder Angaben vor Herstellerbewertung klären.",
+            )
+            if contradiction_flags
+            else ()
+        )
         return RWDRModuleResult(flags=contradiction_flags, questions=questions)
 
 
 class PriorityRiskTriageIntelligence:
-    def evaluate(self, missing_critical: Sequence[str], missing_helpful: Sequence[str]) -> RWDRModuleResult:
+    def evaluate(
+        self, missing_critical: Sequence[str], missing_helpful: Sequence[str]
+    ) -> RWDRModuleResult:
         flags = [f"critical_missing_{item}" for item in missing_critical]
         flags.extend(f"helpful_missing_{item}" for item in missing_helpful[:8])
         return RWDRModuleResult(flags=tuple(flags))
@@ -1610,8 +1794,14 @@ class QuestionIntelligence:
         "shaft_condition_known": "Ist die Wellenlauffläche eingelaufen, beschädigt oder korrodiert?",
     }
 
-    def evaluate(self, missing_critical: Sequence[str], existing_questions: Sequence[str]) -> RWDRModuleResult:
-        questions = [self._QUESTIONS[item] for item in missing_critical if item in self._QUESTIONS]
+    def evaluate(
+        self, missing_critical: Sequence[str], existing_questions: Sequence[str]
+    ) -> RWDRModuleResult:
+        questions = [
+            self._QUESTIONS[item]
+            for item in missing_critical
+            if item in self._QUESTIONS
+        ]
         questions.extend(existing_questions)
         return RWDRModuleResult(questions=tuple(dict.fromkeys(questions)))
 
@@ -1655,11 +1845,30 @@ class EvaluationQualityIntelligence:
     ) -> RWDRModuleResult:
         metrics = {
             "field_extraction_count": len(fields),
-            "confirmed_field_count": len([field for field in fields if field.allowed_in_brief and field.confirmation_status != "explicitly_unknown"]),
-            "unconfirmed_liability_field_count": len([field for field in fields if field.liability_bearing and not field.allowed_in_brief]),
+            "confirmed_field_count": len(
+                [
+                    field
+                    for field in fields
+                    if field.allowed_in_brief
+                    and field.confirmation_status != "explicitly_unknown"
+                ]
+            ),
+            "unconfirmed_liability_field_count": len(
+                [
+                    field
+                    for field in fields
+                    if field.liability_bearing and not field.allowed_in_brief
+                ]
+            ),
             "missing_critical_field_count": len(missing_critical),
             "out_of_scope_flag_count": len(out_of_scope_reasons),
-            "brief_completeness_score": max(0.0, round(1.0 - (len(missing_critical) / max(1, len(_CRITICAL_REQUIREMENTS))), 2)),
+            "brief_completeness_score": max(
+                0.0,
+                round(
+                    1.0 - (len(missing_critical) / max(1, len(_CRITICAL_REQUIREMENTS))),
+                    2,
+                ),
+            ),
             "measurement_recommendation_count": len(measurements),
             "advanced_calculation_hidden_count": 1,
             "forbidden_language_violation_count": len(forbidden_violations),
@@ -1669,24 +1878,53 @@ class EvaluationQualityIntelligence:
 
 class MeasurementVerificationIntelligence:
     _METHODS: dict[str, tuple[str, str]] = {
-        "shaft_diameter_d1_mm": ("outside micrometer / Bügelmessschraube", "field_measurable"),
-        "housing_bore_D_mm": ("3-point bore gauge / Innenmessgerät", "workshop_measurable"),
+        "shaft_diameter_d1_mm": (
+            "outside micrometer / Bügelmessschraube",
+            "field_measurable",
+        ),
+        "housing_bore_D_mm": (
+            "3-point bore gauge / Innenmessgerät",
+            "workshop_measurable",
+        ),
         "seal_width_b_mm": ("caliper / Messschieber / Zeichnung", "field_measurable"),
         "dynamic_runout_DRO": ("dial indicator / Messuhr", "workshop_measurable"),
         "static_eccentricity_STBM": ("dial indicator / CMM", "workshop_measurable"),
         "shaft_surface_ra": ("stylus profilometer", "workshop_measurable"),
         "shaft_surface_rz": ("stylus profilometer", "workshop_measurable"),
-        "surface_lead_directionality": ("profilometer / optical inspection", "laboratory_or_manufacturer_test"),
-        "shaft_hardness_hrc": ("Rockwell C / Vickers for coating", "workshop_measurable"),
+        "surface_lead_directionality": (
+            "profilometer / optical inspection",
+            "laboratory_or_manufacturer_test",
+        ),
+        "shaft_hardness_hrc": (
+            "Rockwell C / Vickers for coating",
+            "workshop_measurable",
+        ),
         "material": ("FTIR-ATR / DSC/TGA", "laboratory_or_manufacturer_test"),
-        "lubricant_aging": ("viscosity, FTIR oil analysis, TAN/TBN", "laboratory_or_manufacturer_test"),
-        "particle_contamination": ("particle count, microscopy, ferrography", "laboratory_or_manufacturer_test"),
+        "lubricant_aging": (
+            "viscosity, FTIR oil analysis, TAN/TBN",
+            "laboratory_or_manufacturer_test",
+        ),
+        "particle_contamination": (
+            "particle count, microscopy, ferrography",
+            "laboratory_or_manufacturer_test",
+        ),
         "radial_force": ("manufacturer/lab test", "laboratory_or_manufacturer_test"),
-        "leakage_friction_temperature": ("test bench", "laboratory_or_manufacturer_test"),
-        "PTFE_mounting": ("installation cone / bullet / sleeve check", "workshop_measurable"),
+        "leakage_friction_temperature": (
+            "test bench",
+            "laboratory_or_manufacturer_test",
+        ),
+        "PTFE_mounting": (
+            "installation cone / bullet / sleeve check",
+            "workshop_measurable",
+        ),
     }
 
-    def evaluate(self, fields: Mapping[str, EvidenceField], missing: Sequence[str], flags: Sequence[str]) -> RWDRModuleResult:
+    def evaluate(
+        self,
+        fields: Mapping[str, EvidenceField],
+        missing: Sequence[str],
+        flags: Sequence[str],
+    ) -> RWDRModuleResult:
         targets = list(missing)
         if "dynamic_runout_review_required" in flags:
             targets.append("dynamic_runout_DRO")
@@ -1713,12 +1951,42 @@ class MeasurementVerificationIntelligence:
 class NormativeReferenceIntelligence:
     def evaluate(self) -> RWDRModuleResult:
         references = (
-            ("ISO_6194_1", "ISO 6194-1", "elastomeric radial shaft seals", "types, nominal dimensions, tolerances"),
-            ("ISO_6194_3", "ISO 6194-3", "elastomeric radial shaft seals", "storage, handling, installation"),
-            ("ISO_6194_4", "ISO 6194-4", "elastomeric radial shaft seals", "performance / qualification tests"),
-            ("ISO_6194_5", "ISO 6194-5", "elastomeric radial shaft seals", "visible defects"),
-            ("ISO_16589", "ISO 16589 family", "thermoplastic / PTFE radial shaft seals", "reference family"),
-            ("DIN_3760", "DIN 3760", "German market reference for standard RWDR", "standard RWDR reference"),
+            (
+                "ISO_6194_1",
+                "ISO 6194-1",
+                "elastomeric radial shaft seals",
+                "types, nominal dimensions, tolerances",
+            ),
+            (
+                "ISO_6194_3",
+                "ISO 6194-3",
+                "elastomeric radial shaft seals",
+                "storage, handling, installation",
+            ),
+            (
+                "ISO_6194_4",
+                "ISO 6194-4",
+                "elastomeric radial shaft seals",
+                "performance / qualification tests",
+            ),
+            (
+                "ISO_6194_5",
+                "ISO 6194-5",
+                "elastomeric radial shaft seals",
+                "visible defects",
+            ),
+            (
+                "ISO_16589",
+                "ISO 16589 family",
+                "thermoplastic / PTFE radial shaft seals",
+                "reference family",
+            ),
+            (
+                "DIN_3760",
+                "DIN 3760",
+                "German market reference for standard RWDR",
+                "standard RWDR reference",
+            ),
         )
         return RWDRModuleResult(
             normative_references=tuple(
@@ -1737,17 +2005,25 @@ class NormativeReferenceIntelligence:
 
 
 class LeakageServiceLifeIntelligence:
-    def evaluate(self, text: str, fields: Mapping[str, EvidenceField]) -> RWDRModuleResult:
+    def evaluate(
+        self, text: str, fields: Mapping[str, EvidenceField]
+    ) -> RWDRModuleResult:
         lowered = text.casefold()
         questions = []
-        if any(token in lowered for token in ("dicht", "keine leckage", "leckagefrei", "no leakage")):
+        if any(
+            token in lowered
+            for token in ("dicht", "keine leckage", "leckagefrei", "no leakage")
+        ):
             questions.extend(
                 (
                     "Welche Leckageanforderung soll der Hersteller bewerten?",
                     "Ist sichtbare Leckage zulässig?",
                 )
             )
-        if any(token in lowered for token in ("lange standzeit", "wartungsfrei", "2 jahre", "service life")) or _field_satisfied(fields, "desired_service_life_or_maintenance_interval"):
+        if any(
+            token in lowered
+            for token in ("lange standzeit", "wartungsfrei", "2 jahre", "service life")
+        ) or _field_satisfied(fields, "desired_service_life_or_maintenance_interval"):
             questions.extend(
                 (
                     "Welche Zielstandzeit oder welches Wartungsintervall wird erwartet?",
@@ -1785,6 +2061,7 @@ class ForbiddenLanguageIntelligence:
             normalized = normalized.replace(allowed, "")
         return tuple(term for term in _FORBIDDEN_TERMS if term in normalized)
 
+
 class RWDRCaseOrchestrator:
     """Build the RWDR MVP brief from the existing RFQ/state boundary."""
 
@@ -1815,27 +2092,32 @@ class RWDRCaseOrchestrator:
             dict.fromkeys((*scope_result.out_of_scope_reasons, *scope_oos_reasons))
         )
         calc_result = self._calculation.evaluate(canonical_fields)
-        computed_fields = tuple(_computed_evidence_field(item) for item in calc_result.computed_values if item.get("field") == "circumferential_speed_mps")
+        computed_fields = tuple(
+            _computed_evidence_field(item)
+            for item in calc_result.computed_values
+            if item.get("field") == "circumferential_speed_mps"
+        )
         if computed_fields:
-            evidence_fields = tuple(sorted((*evidence_fields, *computed_fields), key=lambda item: item.field))
+            evidence_fields = tuple(
+                sorted(
+                    (*evidence_fields, *computed_fields), key=lambda item: item.field
+                )
+            )
             canonical_fields = _canonical_field_map(evidence_fields)
         module_results = self._run_modules(
             fields=canonical_fields,
             raw_text=raw_text,
             calculation_result=calc_result,
         )
-        all_flags = _unique(
-            item
-            for result in module_results
-            for item in result.flags
-        )
+        all_flags = _unique(item for result in module_results for item in result.flags)
         missing_semantics = _missing_required_semantics(evidence_fields)
         missing_critical = _missing_critical_fields(canonical_fields)
         missing_helpful = _missing_helpful_fields(canonical_fields)
         blocked_fields = tuple(
             field
             for field in evidence_fields
-            if field.liability_bearing and not field.allowed_in_brief
+            if field.liability_bearing
+            and not field.allowed_in_brief
             and not _semantic_group_satisfied_by_other_field(field, evidence_fields)
         )
         open_fields = tuple(
@@ -1846,7 +2128,12 @@ class RWDRCaseOrchestrator:
         scope_confirmation_required = scope != "rwdr"
         if out_of_scope_reasons or scope == "out_of_scope":
             status = RWDR_STATUS_OUT_OF_SCOPE
-        elif scope_confirmation_required or missing_critical or blocked_fields or _has_contradictions(all_flags):
+        elif (
+            scope_confirmation_required
+            or missing_critical
+            or blocked_fields
+            or _has_contradictions(all_flags)
+        ):
             status = RWDR_STATUS_NEEDS_CLARIFICATION
         else:
             status = RWDR_STATUS_COMPLETE
@@ -1854,13 +2141,15 @@ class RWDRCaseOrchestrator:
         confirmed_fields = tuple(
             field
             for field in evidence_fields
-            if field.allowed_in_brief and field.source_type != "deterministic_calculation"
+            if field.allowed_in_brief
+            and field.source_type != "deterministic_calculation"
             and field.confirmation_status != "explicitly_unknown"
         )
         calculation_fields = tuple(
             field
             for field in evidence_fields
-            if field.allowed_in_brief and field.source_type == "deterministic_calculation"
+            if field.allowed_in_brief
+            and field.source_type == "deterministic_calculation"
         )
         canonical_case = CanonicalRWDRCase(
             case_id=str(case_row.id),
@@ -1910,8 +2199,7 @@ class RWDRCaseOrchestrator:
         )
         evaluation = RWDREvaluation(
             status=status,
-            complete_enough_for_manufacturer_evaluation=status
-            == RWDR_STATUS_COMPLETE,
+            complete_enough_for_manufacturer_evaluation=status == RWDR_STATUS_COMPLETE,
             open_points=_open_points(
                 (*missing_critical, *missing_semantics),
                 blocked_fields,
@@ -1920,7 +2208,9 @@ class RWDRCaseOrchestrator:
                 else (),
             ),
             out_of_scope_reasons=out_of_scope_reasons,
-            safe_redirect_message=scope_result.safe_redirect_message if out_of_scope_reasons else None,
+            safe_redirect_message=scope_result.safe_redirect_message
+            if out_of_scope_reasons
+            else None,
             review_flags=all_flags,
             manufacturer_questions=question_result.questions,
             measurement_recommendations=measurement_result.measurement_recommendations,
@@ -1998,11 +2288,15 @@ def build_technical_rwdr_rfq_brief(
     snapshot: CaseStateSnapshot,
     technical_field_envelopes: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    return RWDRCaseOrchestrator().build(
-        case_row=case_row,
-        snapshot=snapshot,
-        technical_field_envelopes=technical_field_envelopes,
-    ).as_dict()
+    return (
+        RWDRCaseOrchestrator()
+        .build(
+            case_row=case_row,
+            snapshot=snapshot,
+            technical_field_envelopes=technical_field_envelopes,
+        )
+        .as_dict()
+    )
 
 
 # --- RWDR P0 leakage/replacement chat guidance (deterministic) -------------
@@ -2117,7 +2411,10 @@ def build_rwdr_p0_pocket_cockpit_patch(text: str, *, rfq_status: str | None = No
     recognized: list[dict[str, Any]] = [
         {"label": "Fall", "value": "RWDR-Leckage / Ersatzfall", "status": "candidate"}
     ]
-    dims = [candidates.get(name) for name in ("shaft_diameter_d1_mm", "housing_bore_D_mm", "seal_width_b_mm")]
+    dims = [
+        candidates.get(name)
+        for name in ("shaft_diameter_d1_mm", "housing_bore_D_mm", "seal_width_b_mm")
+    ]
     if all(dims):
         recognized.append(
             {
@@ -2128,14 +2425,26 @@ def build_rwdr_p0_pocket_cockpit_patch(text: str, *, rfq_status: str | None = No
         )
     application = candidates.get("application")
     if application:
-        recognized.append({"label": "Anwendung", "value": str(application["value"]), "status": "candidate"})
+        recognized.append(
+            {
+                "label": "Anwendung",
+                "value": str(application["value"]),
+                "status": "candidate",
+            }
+        )
     medium = candidates.get("inside_medium")
     if medium:
-        recognized.append({"label": "Medium", "value": str(medium["value"]), "status": "candidate"})
+        recognized.append(
+            {"label": "Medium", "value": str(medium["value"]), "status": "candidate"}
+        )
 
-    critical: list[dict[str, Any]] = [{"label": "Wellenlauffläche prüfen", "severity": "high"}]
+    critical: list[dict[str, Any]] = [
+        {"label": "Wellenlauffläche prüfen", "severity": "high"}
+    ]
     if "dust_lip_or_excluder_review_required" in guidance.review_flags:
-        critical.append({"label": "Staubumgebung / Schutzlippe prüfen", "severity": "high"})
+        critical.append(
+            {"label": "Staubumgebung / Schutzlippe prüfen", "severity": "high"}
+        )
 
     # Single-source rfq_status: the authoritative case readiness when the caller
     # supplies it (call site has the governed state), else derive from this
@@ -2143,21 +2452,29 @@ def build_rwdr_p0_pocket_cockpit_patch(text: str, *, rfq_status: str | None = No
     resolved_rfq_status = rfq_status
     if resolved_rfq_status is None:
         from app.agent.communication.rfq_one_pager import evaluate_rfq_readiness  # noqa: PLC0415
+
         resolved_rfq_status = evaluate_rfq_readiness(list(candidates.keys())).status
 
     patch = PocketCockpitPatch(
         recognized=recognized[:4],
         critical=critical,
-        next_step={"question": guidance.next_question, "field": "shaft_condition_known"},
+        next_step={
+            "question": guidance.next_question,
+            "field": "shaft_condition_known",
+        },
         rfq_status=resolved_rfq_status,
         details_available=True,
         collapsed_by_default=True,
     )
     chips = [
         ActionChip(label="glatt", value="glatt", field="shaft_condition_known"),
-        ActionChip(label="Rille sichtbar", value="rille", field="shaft_condition_known"),
+        ActionChip(
+            label="Rille sichtbar", value="rille", field="shaft_condition_known"
+        ),
         ActionChip(label="Korrosion", value="korrosion", field="shaft_condition_known"),
-        ActionChip(label="weiß ich nicht", value="unknown", field="shaft_condition_known"),
+        ActionChip(
+            label="weiß ich nicht", value="unknown", field="shaft_condition_known"
+        ),
         ActionChip(label="Foto senden", action="upload_photo"),
     ]
     return patch, chips
@@ -2182,7 +2499,9 @@ def analyze_rwdr_inquiry_text(raw_inquiry: str) -> dict[str, Any]:
 
 
 def create_persisted_rwdr_case(raw_inquiry: str) -> dict[str, Any]:
-    return RWDR_CASE_STATE_REPOSITORY.create_from_raw_inquiry(str(raw_inquiry or "").strip())
+    return RWDR_CASE_STATE_REPOSITORY.create_from_raw_inquiry(
+        str(raw_inquiry or "").strip()
+    )
 
 
 def get_persisted_rwdr_case(case_id: str) -> dict[str, Any]:
@@ -2385,39 +2704,91 @@ def _extract_rwdr_candidate_fields(raw_inquiry: str) -> tuple[dict[str, Any], ..
         span = dimension_match.group(0)
         candidates.extend(
             (
-                _candidate_field("shaft_diameter_d1_mm", _number_text(dimension_match.group("d1")), "mm", span),
-                _candidate_field("housing_bore_D_mm", _number_text(dimension_match.group("D")), "mm", span),
-                _candidate_field("seal_width_b_mm", _number_text(dimension_match.group("b")), "mm", span),
+                _candidate_field(
+                    "shaft_diameter_d1_mm",
+                    _number_text(dimension_match.group("d1")),
+                    "mm",
+                    span,
+                ),
+                _candidate_field(
+                    "housing_bore_D_mm",
+                    _number_text(dimension_match.group("D")),
+                    "mm",
+                    span,
+                ),
+                _candidate_field(
+                    "seal_width_b_mm",
+                    _number_text(dimension_match.group("b")),
+                    "mm",
+                    span,
+                ),
             )
         )
     for pattern, field, unit in (
-        (r"(?P<span>(?P<value>\d+(?:[.,]\d+)?)\s*(?:u/min|rpm|min-1|1/min))", "max_speed_rpm", "rpm"),
-        (r"(?P<span>(?:ca\.?\s*)?(?P<value>-?\d+(?:[.,]\d+)?)\s*(?:°c|grad|degc))", "temperature_max_c", "degC"),
-        (r"(?P<span>(?:druck\s*)?(?P<value>\d+(?:[.,]\d+)?)\s*bar)", "pressure_differential", "bar"),
+        (
+            r"(?P<span>(?P<value>\d+(?:[.,]\d+)?)\s*(?:u/min|rpm|min-1|1/min))",
+            "max_speed_rpm",
+            "rpm",
+        ),
+        (
+            r"(?P<span>(?:ca\.?\s*)?(?P<value>-?\d+(?:[.,]\d+)?)\s*(?:°c|grad|degc))",
+            "temperature_max_c",
+            "degC",
+        ),
+        (
+            r"(?P<span>(?:druck\s*)?(?P<value>\d+(?:[.,]\d+)?)\s*bar)",
+            "pressure_differential",
+            "bar",
+        ),
     ):
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            candidates.append(_candidate_field(field, _number_text(match.group("value")), unit, match.group("span")))
+            candidates.append(
+                _candidate_field(
+                    field, _number_text(match.group("value")), unit, match.group("span")
+                )
+            )
     keyword_candidates = (
         ("application", ("getriebe", "gearbox"), "Getriebe"),
         ("application", ("rührwerk", "ruehrwerk", "mixer", "agitator"), "Rührwerk"),
         ("application", ("pumpe", "pump"), "Pumpe"),
         ("inside_medium", ("öl", "oel", "oil"), "Öl"),
         ("inside_medium", ("schokolade", "chocolate"), "Schokolade"),
-        ("outside_environment_or_contamination", ("staub", "dust"), "staubige Umgebung"),
+        (
+            "outside_environment_or_contamination",
+            ("staub", "dust"),
+            "staubige Umgebung",
+        ),
         ("sealing_function", ("undicht", "leckage", "leak"), "oil_retention"),
     )
     lowered = text.casefold()
     for field, tokens, value in keyword_candidates:
-        if any(token in lowered for token in tokens) and not any(item["field"] == field for item in candidates):
+        if any(token in lowered for token in tokens) and not any(
+            item["field"] == field for item in candidates
+        ):
             span = _source_span_for_tokens(text, tokens)
             candidates.append(_candidate_field(field, value, None, span))
-    if "rwdr" in lowered or "wellendichtring" in lowered or "radialwellendichtring" in lowered:
-        candidates.append(_candidate_field("seal_family", "radial_shaft_seal", None, _source_span_for_tokens(text, ("rwdr", "wellendichtring", "radialwellendichtring"))))
+    if (
+        "rwdr" in lowered
+        or "wellendichtring" in lowered
+        or "radialwellendichtring" in lowered
+    ):
+        candidates.append(
+            _candidate_field(
+                "seal_family",
+                "radial_shaft_seal",
+                None,
+                _source_span_for_tokens(
+                    text, ("rwdr", "wellendichtring", "radialwellendichtring")
+                ),
+            )
+        )
     return tuple(candidates)
 
 
-def _candidate_field(field: str, value: Any, unit: str | None, source_span: str | None) -> dict[str, Any]:
+def _candidate_field(
+    field: str, value: Any, unit: str | None, source_span: str | None
+) -> dict[str, Any]:
     return _drop_none(
         {
             "field": field,
@@ -2429,15 +2800,14 @@ def _candidate_field(field: str, value: Any, unit: str | None, source_span: str 
             "validation_status": "candidate",
             "confirmation_status": "unconfirmed",
             "source_span": source_span,
-            "liability_bearing": _canonical_field_name(field) in _CONFIRMATION_LIABILITY_FIELDS,
+            "liability_bearing": _canonical_field_name(field)
+            in _CONFIRMATION_LIABILITY_FIELDS,
             "confirmation_required": True,
         }
     )
 
 
-_MANUFACTURER_ECHO_SAFE_FALLBACK = (
-    "Herstellerrückmeldung liegt vor – Prüfung durch verantwortliche Stelle erforderlich."
-)
+_MANUFACTURER_ECHO_SAFE_FALLBACK = "Herstellerrückmeldung liegt vor – Prüfung durch verantwortliche Stelle erforderlich."
 _MANUFACTURER_FIELD_PREFIX = "manufacturer_response__"
 
 
@@ -2453,7 +2823,11 @@ def _manufacturer_feedback_envelope(item: Mapping[str, Any]) -> dict[str, Any]:
     # Namespace the stored key so a manufacturer response can never shadow a real
     # case field in a naive {field: item} map. The target field is preserved for the
     # echo label. Non-liability by construction; the brief gate blocks it anyway.
-    namespaced = f"{_MANUFACTURER_FIELD_PREFIX}{field_name}" if field_name else "manufacturer_response"
+    namespaced = (
+        f"{_MANUFACTURER_FIELD_PREFIX}{field_name}"
+        if field_name
+        else "manufacturer_response"
+    )
     return _drop_none(
         {
             "field": namespaced,
@@ -2544,7 +2918,9 @@ def _brief_markdown(
         section_id = str(section.get("id") or "")
         if section_id in {"header", "export_metadata"}:
             continue
-        title = _rwdr_section_title(section_id, str(section.get("title") or section_id or "Section"))
+        title = _rwdr_section_title(
+            section_id, str(section.get("title") or section_id or "Section")
+        )
         lines.append(f"## {title}")
         items = list(section.get("items") or ())
         if not items:
@@ -2578,7 +2954,9 @@ def _rwdr_section_title(section_id: str, fallback: str) -> str:
 
 def _markdown_value(value: Any) -> str:
     if isinstance(value, Mapping):
-        return "; ".join(f"{key}: {_markdown_value(item)}" for key, item in sorted(value.items()))
+        return "; ".join(
+            f"{key}: {_markdown_value(item)}" for key, item in sorted(value.items())
+        )
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return ", ".join(_markdown_value(item) for item in value)
     if value is None:
@@ -2613,7 +2991,9 @@ def _rwdr_payload_from_state(state: StoredRWDRCaseState) -> dict[str, Any]:
         "computed_values": list(evaluation.get("computed_values") or ()),
         "review_flags": list(evaluation.get("review_flags") or ()),
         "manufacturer_questions": list(evaluation.get("manufacturer_questions") or ()),
-        "measurement_recommendations": list(evaluation.get("measurement_recommendations") or ()),
+        "measurement_recommendations": list(
+            evaluation.get("measurement_recommendations") or ()
+        ),
         "source_evidence_summary": _section_items(brief, "source_evidence_summary"),
         "technical_rwdr_rfq_brief": brief,
         "markdown_export_content": markdown,
@@ -2638,11 +3018,15 @@ def _rwdr_deterministic_snapshot_payload(state: StoredRWDRCaseState) -> dict[str
 
 
 def _stable_hash(value: Mapping[str, Any]) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:32]
 
 
-def _confirmation_event_types(decisions: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
+def _confirmation_event_types(
+    decisions: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
     events: list[str] = []
     for decision in decisions:
         action = _token(decision.get("action"))
@@ -2668,7 +3052,8 @@ def _snapshot_summary(row: CaseStateSnapshot) -> dict[str, Any]:
         "schema_version": state.get("schema_version"),
         "rule_version": state.get("rule_version"),
         "extraction_version": state.get("extraction_version"),
-        "deterministic_payload_hash": row.basis_hash or state.get("deterministic_payload_hash"),
+        "deterministic_payload_hash": row.basis_hash
+        or state.get("deterministic_payload_hash"),
         "previous_revision_number": state.get("previous_revision_number"),
         "export_reference": state.get("export_reference") or {},
     }
@@ -2676,12 +3061,18 @@ def _snapshot_summary(row: CaseStateSnapshot) -> dict[str, Any]:
 
 def _snapshot_detail(row: CaseStateSnapshot) -> dict[str, Any]:
     detail = _snapshot_summary(row)
-    detail["snapshot_payload"] = _object_mapping(row.state_json).get("snapshot_payload") or {}
-    detail["deterministic_payload_json"] = _object_mapping(row.state_json).get("deterministic_payload_json") or {}
+    detail["snapshot_payload"] = (
+        _object_mapping(row.state_json).get("snapshot_payload") or {}
+    )
+    detail["deterministic_payload_json"] = (
+        _object_mapping(row.state_json).get("deterministic_payload_json") or {}
+    )
     return detail
 
 
-def _rwdr_snapshot_diff(from_row: CaseStateSnapshot, to_row: CaseStateSnapshot) -> dict[str, Any]:
+def _rwdr_snapshot_diff(
+    from_row: CaseStateSnapshot, to_row: CaseStateSnapshot
+) -> dict[str, Any]:
     from_state = _object_mapping(from_row.state_json)
     to_state = _object_mapping(to_row.state_json)
     from_payload = _deterministic_snapshot_payload_from_row(from_row)
@@ -2690,9 +3081,13 @@ def _rwdr_snapshot_diff(from_row: CaseStateSnapshot, to_row: CaseStateSnapshot) 
 
     status_from = _payload_status(from_payload)
     status_to = _payload_status(to_payload)
-    evidence_field_diffs = [] if same_revision else _evidence_field_diffs(
-        from_payload.get("evidence_fields"),
-        to_payload.get("evidence_fields"),
+    evidence_field_diffs = (
+        []
+        if same_revision
+        else _evidence_field_diffs(
+            from_payload.get("evidence_fields"),
+            to_payload.get("evidence_fields"),
+        )
     )
     missing_critical_diff = _list_diff(
         from_payload.get("missing_critical_fields"),
@@ -2729,14 +3124,21 @@ def _rwdr_snapshot_diff(from_row: CaseStateSnapshot, to_row: CaseStateSnapshot) 
     export_diff = _export_diff(from_state, to_state, from_payload, to_payload)
 
     if same_revision:
-        missing_critical_diff = _empty_list_diff(from_payload.get("missing_critical_fields"))
-        missing_helpful_diff = _empty_list_diff(from_payload.get("missing_helpful_fields"))
+        missing_critical_diff = _empty_list_diff(
+            from_payload.get("missing_critical_fields")
+        )
+        missing_helpful_diff = _empty_list_diff(
+            from_payload.get("missing_helpful_fields")
+        )
         computed_values_diff = _empty_keyed_diff()
         review_flags_diff = _empty_keyed_diff()
         manufacturer_questions_diff = _empty_keyed_diff()
         measurement_recommendations_diff = _empty_keyed_diff()
         source_evidence_summary_diff = _empty_keyed_diff()
-        brief_diff = _brief_diff(from_payload.get("technical_rwdr_rfq_brief"), from_payload.get("technical_rwdr_rfq_brief"))
+        brief_diff = _brief_diff(
+            from_payload.get("technical_rwdr_rfq_brief"),
+            from_payload.get("technical_rwdr_rfq_brief"),
+        )
         export_diff = _export_diff(from_state, from_state, from_payload, from_payload)
 
     return {
@@ -2747,13 +3149,26 @@ def _rwdr_snapshot_diff(from_row: CaseStateSnapshot, to_row: CaseStateSnapshot) 
         "to_event_type": to_state.get("event_type"),
         "summary": {
             "changed_fields_count": len(evidence_field_diffs),
-            "added_missing_fields_count": len(missing_critical_diff["added"]) + len(missing_helpful_diff["added"]),
-            "removed_missing_fields_count": len(missing_critical_diff["removed"]) + len(missing_helpful_diff["removed"]),
-            "status_changed": (status_from != status_to) if not same_revision else False,
-            "brief_changed": bool(brief_diff.get("section_changes")) if not same_revision else False,
-            "export_changed": bool(export_diff.get("markdown_export_changed") or export_diff.get("pdf_export_changed")) if not same_revision else False,
+            "added_missing_fields_count": len(missing_critical_diff["added"])
+            + len(missing_helpful_diff["added"]),
+            "removed_missing_fields_count": len(missing_critical_diff["removed"])
+            + len(missing_helpful_diff["removed"]),
+            "status_changed": (status_from != status_to)
+            if not same_revision
+            else False,
+            "brief_changed": bool(brief_diff.get("section_changes"))
+            if not same_revision
+            else False,
+            "export_changed": bool(
+                export_diff.get("markdown_export_changed")
+                or export_diff.get("pdf_export_changed")
+            )
+            if not same_revision
+            else False,
         },
-        "status_diff": {"from": status_from, "to": status_to} if status_from != status_to and not same_revision else {},
+        "status_diff": {"from": status_from, "to": status_to}
+        if status_from != status_to and not same_revision
+        else {},
         "evidence_field_diffs": evidence_field_diffs,
         "missing_critical_fields_diff": missing_critical_diff,
         "missing_helpful_fields_diff": missing_helpful_diff,
@@ -2785,7 +3200,14 @@ def _strip_audit_metadata(value: Any) -> Any:
         return {
             str(key): _strip_audit_metadata(item)
             for key, item in value.items()
-            if str(key) not in {"created_at", "updated_at", "trace_id", "request_id", "user_action_timestamp"}
+            if str(key)
+            not in {
+                "created_at",
+                "updated_at",
+                "trace_id",
+                "request_id",
+                "user_action_timestamp",
+            }
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [_strip_audit_metadata(item) for item in value]
@@ -2837,7 +3259,9 @@ def _evidence_field_diffs(from_fields: Any, to_fields: Any) -> list[dict[str, An
                 "change_type": change_type,
                 "from": left or {},
                 "to": right or {},
-                "source_span_changed": bool((left or {}).get("source_span") != (right or {}).get("source_span")),
+                "source_span_changed": bool(
+                    (left or {}).get("source_span") != (right or {}).get("source_span")
+                ),
             }
         )
     return diffs
@@ -2869,7 +3293,11 @@ def _list_diff(from_items: Any, to_items: Any) -> dict[str, list[str]]:
 
 
 def _empty_list_diff(items: Any) -> dict[str, list[str]]:
-    return {"added": [], "removed": [], "unchanged": sorted(str(item) for item in (items or []))}
+    return {
+        "added": [],
+        "removed": [],
+        "unchanged": sorted(str(item) for item in (items or [])),
+    }
 
 
 def _keyed_list_diff(from_items: Any, to_items: Any) -> dict[str, list[Any]]:
@@ -2899,7 +3327,15 @@ def _sequence_items(value: Any) -> list[Any]:
 
 def _diff_item_key(item: Any) -> str:
     if isinstance(item, Mapping):
-        for key in ("field", "id", "code", "question", "flag", "method", "reference_id"):
+        for key in (
+            "field",
+            "id",
+            "code",
+            "question",
+            "flag",
+            "method",
+            "reference_id",
+        ):
             if item.get(key):
                 return f"{key}:{item.get(key)}"
     return _stable_json(item)
@@ -2916,7 +3352,9 @@ def _brief_diff(from_brief: Any, to_brief: Any) -> dict[str, Any]:
             changes.append({"section_id": section_id, "change_type": "section_added"})
         elif section_id not in right_sections:
             changes.append({"section_id": section_id, "change_type": "section_removed"})
-        elif _stable_json(left_sections[section_id]) != _stable_json(right_sections[section_id]):
+        elif _stable_json(left_sections[section_id]) != _stable_json(
+            right_sections[section_id]
+        ):
             changes.append({"section_id": section_id, "change_type": "section_changed"})
     return {
         "brief_present_from": bool(left),
@@ -2928,7 +3366,9 @@ def _brief_diff(from_brief: Any, to_brief: Any) -> dict[str, Any]:
 def _sections_by_id(brief: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     sections: dict[str, dict[str, Any]] = {}
     for index, section in enumerate(_as_mappings(brief.get("sections"))):
-        section_id = str(section.get("id") or section.get("title") or f"section_{index}")
+        section_id = str(
+            section.get("id") or section.get("title") or f"section_{index}"
+        )
         sections[section_id] = {
             "id": section.get("id"),
             "title": section.get("title"),
@@ -2949,16 +3389,21 @@ def _export_diff(
     from_format = _optional_text(from_export.get("format"))
     to_format = _optional_text(to_export.get("format"))
     return {
-        "markdown_export_changed": from_format != to_format and "markdown" in {from_format, to_format},
-        "pdf_export_changed": from_format != to_format and "pdf" in {from_format, to_format},
+        "markdown_export_changed": from_format != to_format
+        and "markdown" in {from_format, to_format},
+        "pdf_export_changed": from_format != to_format
+        and "pdf" in {from_format, to_format},
         "from_export_reference": from_export,
         "to_export_reference": to_export,
-        "export_metadata_changed": _stable_json(from_payload.get("export_metadata")) != _stable_json(to_payload.get("export_metadata")),
+        "export_metadata_changed": _stable_json(from_payload.get("export_metadata"))
+        != _stable_json(to_payload.get("export_metadata")),
     }
 
 
 def _stable_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+    )
 
 
 def _stored_rwdr_state_from_row(row: CaseRecord) -> StoredRWDRCaseState:
@@ -2971,9 +3416,11 @@ def _stored_rwdr_state_from_row(row: CaseRecord) -> StoredRWDRCaseState:
     )
     return StoredRWDRCaseState(
         case_id=str(row.id),
-        schema_version=_optional_text(payload.get("schema_version")) or RWDR_CASE_STATE_SCHEMA_VERSION,
+        schema_version=_optional_text(payload.get("schema_version"))
+        or RWDR_CASE_STATE_SCHEMA_VERSION,
         raw_inquiry_text=_optional_text(payload.get("raw_inquiry_text")) or "",
-        extraction_version=_optional_text(payload.get("extraction_version")) or RWDR_EXTRACTION_VERSION,
+        extraction_version=_optional_text(payload.get("extraction_version"))
+        or RWDR_EXTRACTION_VERSION,
         rule_version=_optional_text(payload.get("rule_version")) or RWDR_RULE_VERSION,
         created_at=created_at,
         updated_at=updated_at,
@@ -2992,7 +3439,9 @@ def _rwdr_pdf_content(
     return {
         "title": RWDR_MVP_ARTIFACT_TITLE,
         "safe_case_reference": {
-            "case_id": metadata.get("case_id") or _object_mapping(brief.get("canonical_case")).get("case_id") or "rwdr",
+            "case_id": metadata.get("case_id")
+            or _object_mapping(brief.get("canonical_case")).get("case_id")
+            or "rwdr",
         },
         "revision": {"case_revision": metadata.get("revision_number") or 0},
         "technical_fields": list(brief.get("confirmed_case_fields") or ()),
@@ -3054,7 +3503,10 @@ def _transient_rwdr_snapshot(raw_inquiry: str) -> CaseStateSnapshot:
     return CaseStateSnapshot(
         case_id="rwdr-confirmation-draft",
         revision=0,
-        state_json={"raw_inquiry": raw_inquiry, "case_state": {"raw_inquiry": raw_inquiry}},
+        state_json={
+            "raw_inquiry": raw_inquiry,
+            "case_state": {"raw_inquiry": raw_inquiry},
+        },
     )
 
 
@@ -3087,12 +3539,17 @@ def _normalize_origin(
     status: str,
 ) -> str:
     raw = _token(field.get("origin"))
-    if raw in {"user_entered", "llm_extracted", "deterministic_calculation", "inferred"}:
+    if raw in {
+        "user_entered",
+        "llm_extracted",
+        "deterministic_calculation",
+        "inferred",
+    }:
         return raw
-    combined = " ".join(
-        item for item in (source_type, provenance, status) if item
-    )
-    if any(token in combined for token in ("calculated", "calculation", "deterministic")):
+    combined = " ".join(item for item in (source_type, provenance, status) if item)
+    if any(
+        token in combined for token in ("calculated", "calculation", "deterministic")
+    ):
         return "deterministic_calculation"
     if any(token in combined for token in ("llm", "extracted")):
         return "llm_extracted"
@@ -3123,15 +3580,26 @@ def _normalize_confirmation_status(
         return "explicitly_unknown"
     if status in {"rejected"} or validation_status == "rejected":
         return "rejected"
-    if bool(field.get("confirmation_required")) or status in {
-        "candidate",
-        "needs_confirmation",
-        "unvalidated",
-        "unknown",
-        "missing",
-    } or validation_status in {"candidate", "unvalidated", "unknown"}:
+    if (
+        bool(field.get("confirmation_required"))
+        or status
+        in {
+            "candidate",
+            "needs_confirmation",
+            "unvalidated",
+            "unknown",
+            "missing",
+        }
+        or validation_status in {"candidate", "unvalidated", "unknown"}
+    ):
         return "unconfirmed"
-    if status in {"confirmed", "user_confirmed", "documented", "validated", "user_stated"} or validation_status in {
+    if status in {
+        "confirmed",
+        "user_confirmed",
+        "documented",
+        "validated",
+        "user_stated",
+    } or validation_status in {
         "confirmed",
         "validated",
         "documented",
@@ -3173,7 +3641,9 @@ def _raw_case_text(
         str(state.get("raw_inquiry") or state.get("message") or ""),
     ]
     case_state = _object_mapping(state.get("case_state"))
-    fragments.append(str(case_state.get("raw_inquiry") or case_state.get("user_message") or ""))
+    fragments.append(
+        str(case_state.get("raw_inquiry") or case_state.get("user_message") or "")
+    )
     fragments.extend(str(field.value or "") for field in fields)
     fragments.extend(str(field.source_span or "") for field in fields)
     return " ".join(fragment for fragment in fragments if fragment).strip()
@@ -3197,7 +3667,11 @@ def _field_text(fields: Mapping[str, EvidenceField], name: str) -> str:
 
 def _truthy_field(fields: Mapping[str, EvidenceField], name: str) -> bool:
     value = _field_text(fields, name).casefold()
-    return value in {"true", "yes", "ja", "1"} or value.startswith("yes") or value.startswith("ja")
+    return (
+        value in {"true", "yes", "ja", "1"}
+        or value.startswith("yes")
+        or value.startswith("ja")
+    )
 
 
 def _field_number(fields: Mapping[str, EvidenceField], name: str) -> float | None:
@@ -3226,7 +3700,9 @@ def _missing_critical_fields(fields: Mapping[str, EvidenceField]) -> tuple[str, 
 
 
 def _missing_helpful_fields(fields: Mapping[str, EvidenceField]) -> tuple[str, ...]:
-    return tuple(field for field in _HELPFUL_FIELDS if not _field_satisfied(fields, field))
+    return tuple(
+        field for field in _HELPFUL_FIELDS if not _field_satisfied(fields, field)
+    )
 
 
 def _speed_class(speed_mps: float | None) -> str:
@@ -3339,7 +3815,10 @@ def _blocked_reason(
             return "llm_extracted_field_not_user_confirmed"
         if not source_span:
             return "llm_extracted_field_missing_source_span"
-        if status in _BLOCKING_FIELD_STATUSES and status not in {"candidate", "needs_confirmation"}:
+        if status in _BLOCKING_FIELD_STATUSES and status not in {
+            "candidate",
+            "needs_confirmation",
+        }:
             return f"field_status_{status}"
         return None
     if origin == "deterministic_calculation":
@@ -3357,11 +3836,17 @@ def _rwdr_scope(
     case_row: CaseRecord, fields: Sequence[EvidenceField]
 ) -> tuple[str, tuple[str, ...]]:
     engineering_path = str(getattr(case_row, "engineering_path", "") or "").casefold()
-    if any(token in engineering_path for token in ("o-ring", "oring", "statisch", "hydraulik")):
+    if any(
+        token in engineering_path
+        for token in ("o-ring", "oring", "statisch", "hydraulik")
+    ):
         return "out_of_scope", (
             "Der MVP-Brief ist auf RWDR/Radialwellendichtringe begrenzt.",
         )
-    if any(token in engineering_path for token in ("rwdr", "radialwellendichtring", "wellendichtring")):
+    if any(
+        token in engineering_path
+        for token in ("rwdr", "radialwellendichtring", "wellendichtring")
+    ):
         return "rwdr", ()
 
     scope_tokens = [
@@ -3373,9 +3858,14 @@ def _rwdr_scope(
         if field.field in {"sealing_type", "seal_function", "application_pattern"}
     )
     normalized = " ".join(scope_tokens).casefold()
-    if any(token in normalized for token in ("rwdr", "radialwellendichtring", "wellendichtring")):
+    if any(
+        token in normalized
+        for token in ("rwdr", "radialwellendichtring", "wellendichtring")
+    ):
         return "rwdr", ()
-    if any(token in normalized for token in ("o-ring", "oring", "statisch", "hydraulik")):
+    if any(
+        token in normalized for token in ("o-ring", "oring", "statisch", "hydraulik")
+    ):
         return "out_of_scope", (
             "Der MVP-Brief ist auf RWDR/Radialwellendichtringe begrenzt.",
         )
@@ -3466,7 +3956,9 @@ def _brief_sections(
         {
             "id": "user_confirmed_application_category",
             "title": "User-confirmed application category",
-            "items": [_field_text(canonical_case.canonical_fields, "application") or "unknown"],
+            "items": [
+                _field_text(canonical_case.canonical_fields, "application") or "unknown"
+            ],
         },
         {"id": "confirmed_data", "title": "Confirmed data", "items": confirmed},
         {"id": "unconfirmed_data", "title": "Unconfirmed data", "items": unconfirmed},
@@ -3502,7 +3994,9 @@ def _brief_sections(
             "items": [
                 flag
                 for flag in evaluation.review_flags
-                if flag.endswith("_required") or "regulatory" in flag or "documentation" in flag
+                if flag.endswith("_required")
+                or "regulatory" in flag
+                or "documentation" in flag
             ],
         },
         {
@@ -3511,7 +4005,9 @@ def _brief_sections(
             "items": [
                 question
                 for question in evaluation.manufacturer_questions
-                if "Leckage" in question or "Zielstandzeit" in question or "Wartungsintervall" in question
+                if "Leckage" in question
+                or "Zielstandzeit" in question
+                or "Wartungsintervall" in question
             ],
         },
         {

@@ -67,12 +67,18 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
     fallback_reply = str(state.output_reply or "").strip()
     existing_source = str(state.output_answer_markdown_source or "").strip()
     existing_answer = str(state.output_answer_markdown or "").strip()
-    if existing_source in {"deterministic_reply", "governed_composer", "composer_fallback"} and existing_answer:
+    if (
+        existing_source
+        in {"deterministic_reply", "governed_composer", "composer_fallback"}
+        and existing_answer
+    ):
         return state
 
     context: GovernedAnswerContext | None = None
     try:
-        context = GovernedAnswerContext.model_validate(state.governed_answer_context or {})
+        context = GovernedAnswerContext.model_validate(
+            state.governed_answer_context or {}
+        )
     except Exception:  # noqa: BLE001
         context = None
 
@@ -116,8 +122,12 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
 
     try:
         if context is None:
-            context = GovernedAnswerContext.model_validate(state.governed_answer_context or {})
-        composer_basis_reply = render_governed_contextual_fallback(context, fallback_reply)
+            context = GovernedAnswerContext.model_validate(
+                state.governed_answer_context or {}
+            )
+        composer_basis_reply = render_governed_contextual_fallback(
+            context, fallback_reply
+        )
         if not str(composer_basis_reply or "").strip():
             composer_basis_reply = fallback_reply
         composer_input = GovernedAnswerComposerInput(
@@ -156,7 +166,11 @@ async def governed_answer_composer_node(state: GraphState) -> GraphState:
         else:
             result = await composer.compose(composer_input)
             result_answer = result.answer_markdown
-            prompt_trace = result.prompt_trace.model_dump(mode="json") if result.prompt_trace else {}
+            prompt_trace = (
+                result.prompt_trace.model_dump(mode="json")
+                if result.prompt_trace
+                else {}
+            )
         return state.model_copy(
             update={
                 "output_answer_markdown": result_answer,

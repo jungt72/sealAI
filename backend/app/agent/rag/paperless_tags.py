@@ -38,8 +38,19 @@ PAPERLESS_PILOT_TAGS: tuple[str, ...] = (
     "source:hersteller-name",
 )
 
-PAPERLESS_PILOT_FIELDS: tuple[str, ...] = ("doc_type", "sts_mat", "sts_type", "lang", "source")
-PAPERLESS_INGEST_BASIS_FIELDS: tuple[str, ...] = ("sts_mat", "sts_type", "sts_med", "sts_rs")
+PAPERLESS_PILOT_FIELDS: tuple[str, ...] = (
+    "doc_type",
+    "sts_mat",
+    "sts_type",
+    "lang",
+    "source",
+)
+PAPERLESS_INGEST_BASIS_FIELDS: tuple[str, ...] = (
+    "sts_mat",
+    "sts_type",
+    "sts_med",
+    "sts_rs",
+)
 
 _SMART_MATERIAL_TAGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("STS-MAT-HNBR-A1", ("hnbr", "hydrierter nitrilkautschuk")),
@@ -47,7 +58,10 @@ _SMART_MATERIAL_TAGS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("STS-MAT-PTFE-A1", ("ptfe", "teflon")),
     ("STS-MAT-EPDM-A1", ("epdm",)),
     ("STS-MAT-FKM-A1", ("fkm", "viton")),
-    ("STS-MAT-NBR-A1", ("nbr", "nitril", "nitrilkautschuk", "buna-n", "buna n", "perbunan")),
+    (
+        "STS-MAT-NBR-A1",
+        ("nbr", "nitril", "nitrilkautschuk", "buna-n", "buna n", "perbunan"),
+    ),
     ("STS-MAT-SIC-A1", ("sic", "siliciumcarbid", "silicon carbide")),
 )
 
@@ -96,7 +110,7 @@ def _values_for_prefix(tags: list[str], prefix: str) -> list[str]:
         lowered = tag.lower()
         if not lowered.startswith(prefix_lower):
             continue
-        values.append(tag[len(prefix):].strip())
+        values.append(tag[len(prefix) :].strip())
     return [value for value in values if value]
 
 
@@ -193,13 +207,19 @@ def evaluate_paperless_tag_readiness(raw_tags: Any) -> dict[str, Any]:
         for field, prefix in PAPERLESS_TAG_PREFIXES.items()
         if _values_for_prefix(parsed["raw_tags"], prefix)
     }
-    has_ingest_basis = any(parsed[f"{field}_codes"] for field in PAPERLESS_INGEST_BASIS_FIELDS)
-    missing_pilot_fields = [field for field in PAPERLESS_PILOT_FIELDS if field not in present_fields]
+    has_ingest_basis = any(
+        parsed[f"{field}_codes"] for field in PAPERLESS_INGEST_BASIS_FIELDS
+    )
+    missing_pilot_fields = [
+        field for field in PAPERLESS_PILOT_FIELDS if field not in present_fields
+    ]
     return {
         "parsed": parsed,
         "present_fields": sorted(present_fields),
         "rag_enabled": bool(parsed["rag_enabled"]),
-        "ingest_ready": bool(parsed["rag_enabled"] and parsed["doc_type"] and has_ingest_basis),
+        "ingest_ready": bool(
+            parsed["rag_enabled"] and parsed["doc_type"] and has_ingest_basis
+        ),
         "pilot_ready": bool(parsed["rag_enabled"] and len(missing_pilot_fields) == 0),
         "missing_pilot_fields": missing_pilot_fields,
     }

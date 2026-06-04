@@ -53,7 +53,9 @@ def is_information_request_about_technical_subject(message: str) -> bool:
     text = str(message or "").strip()
     if not text:
         return False
-    return _matches(KNOWLEDGE_INFORMATION_REQUEST_PATTERNS, text) and has_technical_knowledge_subject(text)
+    return _matches(
+        KNOWLEDGE_INFORMATION_REQUEST_PATTERNS, text
+    ) and has_technical_knowledge_subject(text)
 
 
 def is_standalone_technical_subject(message: str) -> bool:

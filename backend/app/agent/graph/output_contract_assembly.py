@@ -604,7 +604,8 @@ def build_clarification_strategy_fields(state: GraphState) -> dict[str, str | No
             )
             return {
                 "focus_key": focus_key,
-                "user_signal_mirror": correction_mirror or "Gerne unterstütze ich dich.",
+                "user_signal_mirror": correction_mirror
+                or "Gerne unterstütze ich dich.",
                 "primary_question": (
                     "Erzähl mir bitte kurz von deiner Dichtungssituation: Welche Anwendung "
                     "liegt vor, welches Medium berührt die Dichtung und welche "
@@ -834,8 +835,12 @@ def _build_output_public_base(state: GraphState, response_class: str) -> dict[st
     """
     return {
         "response_class": response_class,
-        "answer_mode": str(getattr(state, "runtime_answer_mode", "") or "").strip() or None,
-        "answer_mode_source": str(getattr(state, "runtime_answer_mode_source", "") or "").strip() or None,
+        "answer_mode": str(getattr(state, "runtime_answer_mode", "") or "").strip()
+        or None,
+        "answer_mode_source": str(
+            getattr(state, "runtime_answer_mode_source", "") or ""
+        ).strip()
+        or None,
         "gov_class": state.governance.gov_class,
         **build_admissibility_payload(state.governance.rfq_admissible),
         "parameters": _parameters_public(state),
@@ -1054,7 +1059,9 @@ def _v92_public(state: GraphState) -> dict[str, Any]:
         },
         "compound": {
             "status": state.compound_state.status,
-            "material_family_count": len(state.compound_state.material_family_candidates),
+            "material_family_count": len(
+                state.compound_state.material_family_candidates
+            ),
             "compound_count": len(state.compound_state.compound_candidates),
             "product_count": len(state.compound_state.product_candidates),
             "separation_violations": list(state.compound_state.separation_violations),
@@ -1062,14 +1069,20 @@ def _v92_public(state: GraphState) -> dict[str, Any]:
         "document_evidence": {
             "status": state.document_evidence.status,
             "document_count": len(state.document_evidence.documents_seen),
-            "prompt_injection_findings": list(state.document_evidence.prompt_injection_findings),
+            "prompt_injection_findings": list(
+                state.document_evidence.prompt_injection_findings
+            ),
             "sds_limitations": list(state.document_evidence.sds_limitations),
             "extraction_gaps": list(state.document_evidence.extraction_gaps),
         },
         "failure_observation": {
             "status": state.failure_observation.status,
-            "morphology_indicators": list(state.failure_observation.morphology_indicators),
-            "required_diagnostics": list(state.failure_observation.required_diagnostics),
+            "morphology_indicators": list(
+                state.failure_observation.morphology_indicators
+            ),
+            "required_diagnostics": list(
+                state.failure_observation.required_diagnostics
+            ),
             "forbidden_claims": list(state.failure_observation.forbidden_claims),
         },
         "review": {
@@ -1395,7 +1408,9 @@ def _reply_clarification(
     if is_rfq_turn:
         question = primary_question
         if not question:
-            priority = select_clarification_priority(state, missing) if missing else None
+            priority = (
+                select_clarification_priority(state, missing) if missing else None
+            )
             question = priority.question if priority is not None else ""
         parts = [
             (
@@ -1406,7 +1421,11 @@ def _reply_clarification(
         ]
         if missing:
             labels = [_CORE_FIELD_LABELS.get(f, f) for f in missing[:4]]
-            parts.append("Noch offen für eine belastbare Anfragebasis: " + ", ".join(labels) + ".")
+            parts.append(
+                "Noch offen für eine belastbare Anfragebasis: "
+                + ", ".join(labels)
+                + "."
+            )
         if question:
             parts.append(question)
         return compose_user_facing_mouth_reply(
@@ -1458,7 +1477,10 @@ def _reply_clarification(
                 return compose_user_facing_mouth_reply(
                     f"{calculation_sentence} {question}",
                     turn_context.model_copy(
-                        update={"primary_question": question, "supporting_reason": reason}
+                        update={
+                            "primary_question": question,
+                            "supporting_reason": reason,
+                        }
                     ),
                     response_class=_STRUCTURED_CLARIFICATION,
                 )
@@ -1506,7 +1528,12 @@ def _calculation_screening_sentence(state: GraphState) -> str:
         outputs = dict(getattr(result, "outputs", {}) or {})
         units = dict(getattr(result, "units", {}) or {})
         for key, value in outputs.items():
-            if key in {"status", "calc_type", "pressure_window"} or value in (None, "", [], {}):
+            if key in {"status", "calc_type", "pressure_window"} or value in (
+                None,
+                "",
+                [],
+                {},
+            ):
                 continue
             label = _CALC_OUTPUT_LABELS.get(str(key), str(key))
             unit = str(units.get(key) or "").strip()

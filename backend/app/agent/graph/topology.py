@@ -165,7 +165,9 @@ def _build_default_checkpointer() -> Any | None:
         return None
     redis_url = _redis_checkpoint_url()
     if redis_url:
-        log.info("[topology] Redis checkpointing deferred to async governed graph runtime")
+        log.info(
+            "[topology] Redis checkpointing deferred to async governed graph runtime"
+        )
         return None
     try:
         from langgraph.checkpoint.memory import InMemorySaver  # type: ignore
@@ -173,12 +175,18 @@ def _build_default_checkpointer() -> Any | None:
         log.warning("[topology] LangGraph in-memory checkpointer enabled")
         return InMemorySaver()
     except Exception as exc:  # noqa: BLE001
-        log.warning("[topology] LangGraph checkpointer disabled (%s: %s)", type(exc).__name__, exc)
+        log.warning(
+            "[topology] LangGraph checkpointer disabled (%s: %s)",
+            type(exc).__name__,
+            exc,
+        )
         return None
 
 
 async def _setup_checkpointer_async(checkpointer: Any) -> None:
-    setup = getattr(checkpointer, "asetup", None) or getattr(checkpointer, "setup", None)
+    setup = getattr(checkpointer, "asetup", None) or getattr(
+        checkpointer, "setup", None
+    )
     if setup is None:
         return
     result = setup()
@@ -204,7 +212,9 @@ async def _build_async_default_checkpointer() -> Any | None:
 
             manager = AsyncRedisSaver.from_conn_string(redis_url)
             checkpointer = (
-                await manager.__aenter__() if hasattr(manager, "__aenter__") else manager
+                await manager.__aenter__()
+                if hasattr(manager, "__aenter__")
+                else manager
             )
             await _setup_checkpointer_async(checkpointer)
             if hasattr(manager, "__aexit__"):
@@ -265,6 +275,7 @@ async def close_governed_graph_resources() -> None:
     if manager is not None and hasattr(manager, "__aexit__"):
         with suppress(Exception):
             await manager.__aexit__(None, None, None)
+
 
 # ---------------------------------------------------------------------------
 # Node name constants

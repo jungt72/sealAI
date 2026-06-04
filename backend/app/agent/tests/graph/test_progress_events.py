@@ -20,9 +20,7 @@ async def test_evidence_node_emits_evidence_retrieved_event() -> None:
     writer = []
     state = GraphState(
         tenant_id="tenant-1",
-        asserted=AssertedState(
-            assertions={"medium": _claim("medium", "Dampf")}
-        ),
+        asserted=AssertedState(assertions={"medium": _claim("medium", "Dampf")}),
     )
     with (
         patch(
@@ -85,4 +83,6 @@ async def test_governance_node_emits_governance_ready_event() -> None:
 
     assert result.governance.gov_class == "B"
     assert result.governance.preselection_blockers == ["sealing_type"]
-    assert writer == [{"event_type": "governance_ready", "outward_class": "structured_clarification"}]
+    assert writer == [
+        {"event_type": "governance_ready", "outward_class": "structured_clarification"}
+    ]

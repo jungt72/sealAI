@@ -3,6 +3,7 @@
 Singleton pattern: use ``CompoundDecisionMatrix.get_instance()`` for shared access.
 Falls back gracefully if KB files are absent.
 """
+
 from __future__ import annotations
 
 import json
@@ -59,11 +60,15 @@ class CompoundDecisionMatrix:
 
     def _load(self) -> None:
         if not self._path.exists():
-            log.warning("compound_matrix.kb_file_missing", extra={"path": str(self._path)})
+            log.warning(
+                "compound_matrix.kb_file_missing", extra={"path": str(self._path)}
+            )
             return
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
-            self._matrix = data.get("compound_decision_matrix") or data.get("matrix") or []
+            self._matrix = (
+                data.get("compound_decision_matrix") or data.get("matrix") or []
+            )
             self._loaded = True
             log.info("compound_matrix.loaded", extra={"entries": len(self._matrix)})
         except Exception as exc:
@@ -115,12 +120,22 @@ class CompoundDecisionMatrix:
                 continue
 
             reason_notes = list(entry.get("forbidden_conditions") or [])
-            custom_blocks = ((entry.get("forbidden_conditions_structured") or {}).get("custom_blocks") or [])
+            custom_blocks = (entry.get("forbidden_conditions_structured") or {}).get(
+                "custom_blocks"
+            ) or []
             enriched = dict(entry)
-            enriched["rationale"] = " | ".join(str(x) for x in [*reason_notes, *custom_blocks] if str(x).strip())
-            enriched["recommended_for"] = [entry.get("recommended_use")] if entry.get("recommended_use") else []
+            enriched["rationale"] = " | ".join(
+                str(x) for x in [*reason_notes, *custom_blocks] if str(x).strip()
+            )
+            enriched["recommended_for"] = (
+                [entry.get("recommended_use")] if entry.get("recommended_use") else []
+            )
             enriched["compound_name"] = entry.get("filler_type")
-            enriched["food_grade"] = "FDA" not in str(entry.get("forbidden_conditions_structured", {}).get("forbidden_purity_classes", []))
+            enriched["food_grade"] = "FDA" not in str(
+                entry.get("forbidden_conditions_structured", {}).get(
+                    "forbidden_purity_classes", []
+                )
+            )
             if "score" not in enriched:
                 enriched["score"] = self._default_score(entry)
             results.append(enriched)
@@ -187,7 +202,9 @@ class CompoundDecisionMatrix:
         legacy_medium_ids: List[str] = hard_excl.get("medium_ids") or []
         if legacy_medium_ids:
             user_medium_id: Optional[str] = conditions.get("medium_id")
-            if user_medium_id and user_medium_id.lower() in [m.lower() for m in legacy_medium_ids]:
+            if user_medium_id and user_medium_id.lower() in [
+                m.lower() for m in legacy_medium_ids
+            ]:
                 return True
 
         rules = entry.get("forbidden_conditions_structured") or {}
@@ -197,8 +214,20 @@ class CompoundDecisionMatrix:
         if min_hrc is not None:
             if user_hrc is not None and float(user_hrc) < float(min_hrc):
                 return True
-            counterface_material = str(conditions.get("counterface_material") or "").lower()
-            if any(tok in counterface_material for tok in ("aluminum", "aluminium", "bronze", "messing", "brass", "soft")):
+            counterface_material = str(
+                conditions.get("counterface_material") or ""
+            ).lower()
+            if any(
+                tok in counterface_material
+                for tok in (
+                    "aluminum",
+                    "aluminium",
+                    "bronze",
+                    "messing",
+                    "brass",
+                    "soft",
+                )
+            ):
                 return True
 
         max_pv = rules.get("max_pv_limit_MPa_m_s")
@@ -207,13 +236,25 @@ class CompoundDecisionMatrix:
             if pv is not None and float(pv) > float(max_pv):
                 return True
 
-        media_tags = {str(x).strip().lower() for x in (conditions.get("media_tags") or []) if str(x).strip()}
-        forbidden_media = {str(x).strip().lower() for x in (rules.get("forbidden_media_tags") or []) if str(x).strip()}
+        media_tags = {
+            str(x).strip().lower()
+            for x in (conditions.get("media_tags") or [])
+            if str(x).strip()
+        }
+        forbidden_media = {
+            str(x).strip().lower()
+            for x in (rules.get("forbidden_media_tags") or [])
+            if str(x).strip()
+        }
         if media_tags and forbidden_media and media_tags.intersection(forbidden_media):
             return True
 
         purity_class = str(conditions.get("purity_class") or "").strip()
-        forbidden_purity = {str(x).strip() for x in (rules.get("forbidden_purity_classes") or []) if str(x).strip()}
+        forbidden_purity = {
+            str(x).strip()
+            for x in (rules.get("forbidden_purity_classes") or [])
+            if str(x).strip()
+        }
         if purity_class and forbidden_purity and purity_class in forbidden_purity:
             return True
 

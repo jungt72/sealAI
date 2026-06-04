@@ -24,7 +24,12 @@ async def turn_boundary_node(state: GraphState) -> GraphState:
         or "governed",
         runtime_mode="GOVERNED",
         pre_gate_classification=(
-            str(state.v92_turn_boundary_decision.get("trace", {}).get("pre_gate_classification") or "")
+            str(
+                state.v92_turn_boundary_decision.get("trace", {}).get(
+                    "pre_gate_classification"
+                )
+                or ""
+            )
             if isinstance(state.v92_turn_boundary_decision, dict)
             else ""
         ),

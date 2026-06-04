@@ -115,10 +115,16 @@ def main() -> int:
     # The live collection is driven by QDRANT_COLLECTION (sealai_knowledge_v3 in
     # prod); the literal fallback matches that so a host-run without env hits the
     # real corpus, not an empty/legacy name.
-    parser.add_argument("--collection", default=os.getenv("QDRANT_COLLECTION", "sealai_knowledge_v3"))
-    parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"))
+    parser.add_argument(
+        "--collection", default=os.getenv("QDRANT_COLLECTION", "sealai_knowledge_v3")
+    )
+    parser.add_argument(
+        "--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333")
+    )
     parser.add_argument("--qdrant-api-key", default=os.getenv("QDRANT_API_KEY") or None)
-    parser.add_argument("--apply", action="store_true", help="Persist updates to Qdrant.")
+    parser.add_argument(
+        "--apply", action="store_true", help="Persist updates to Qdrant."
+    )
     args = parser.parse_args()
 
     from qdrant_client import QdrantClient
@@ -142,7 +148,8 @@ def main() -> int:
         missing = sum(
             1
             for point in _scroll_all(client, args.collection)
-            if "pack_affinity" not in (dict((point.payload or {}).get("metadata") or {}))
+            if "pack_affinity"
+            not in (dict((point.payload or {}).get("metadata") or {}))
         )
         print(f"applied_writes={plan.write_count} post_check_missing_marker={missing}")
     else:

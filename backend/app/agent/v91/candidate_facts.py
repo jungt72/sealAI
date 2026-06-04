@@ -20,7 +20,9 @@ def candidate_fact_from_observed_extraction(
     the only path from observed candidates to normalized/asserted case truth.
     """
 
-    method = extraction_method or _method_from_source(getattr(extraction, "source", None))
+    method = extraction_method or _method_from_source(
+        getattr(extraction, "source", None)
+    )
     confidence = _bounded_confidence(getattr(extraction, "confidence", 0.5))
     return CandidateFact(
         field_id=str(getattr(extraction, "field_name", "") or "").strip(),
@@ -119,7 +121,9 @@ def build_field_governance_decisions(
             event_type = (
                 "correction"
                 if previous_assertion is not None
-                and _canonical_compare_value(getattr(previous_assertion, "asserted_value", None))
+                and _canonical_compare_value(
+                    getattr(previous_assertion, "asserted_value", None)
+                )
                 != _canonical_compare_value(getattr(assertion, "asserted_value", None))
                 else "new_value"
             )
@@ -127,7 +131,9 @@ def build_field_governance_decisions(
                 _field_decision(
                     candidate,
                     decision="accepted_to_case_state",
-                    provenance=str(getattr(assertion, "provenance", None) or "confirmed"),
+                    provenance=str(
+                        getattr(assertion, "provenance", None) or "confirmed"
+                    ),
                     normalized_status=_status(normalized_parameter),
                     case_status=str(getattr(assertion, "status", "") or "confirmed"),
                     case_revision_event_type=event_type,
@@ -152,7 +158,9 @@ def build_field_governance_decisions(
                         if field_id in blocking_unknowns or needs_confirmation
                         else "normalized_candidate"
                     ),
-                    provenance=str(getattr(normalized_parameter, "provenance", None) or "inferred"),
+                    provenance=str(
+                        getattr(normalized_parameter, "provenance", None) or "inferred"
+                    ),
                     normalized_status=_status(normalized_parameter),
                     case_status=None,
                     requires_user_confirmation=needs_confirmation,

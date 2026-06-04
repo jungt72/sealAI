@@ -29,8 +29,12 @@ def upgrade() -> None:
         sa.Column("path", sa.Text(), nullable=False),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("ingest_stats", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_rag_documents_document_id", "rag_documents", ["document_id"])
     op.create_index("ix_rag_documents_tenant_id", "rag_documents", ["tenant_id"])

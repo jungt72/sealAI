@@ -1,4 +1,7 @@
-from app.agent.runtime.reply_builder import MANUFACTURER_VALIDATION_REPLY, build_final_reply
+from app.agent.runtime.reply_builder import (
+    MANUFACTURER_VALIDATION_REPLY,
+    build_final_reply,
+)
 from app.agent.runtime.selection import build_selection_state
 
 
@@ -52,7 +55,9 @@ def test_governance_block_prevents_direct_rationale_carry_through():
     )
     state["output_contract_projection"]["output_status"] = "governed_non_binding_result"
     state["output_contract_projection"]["suppress_recommendation_details"] = False
-    state["case_summary_projection"]["current_case_status"] = "governed_non_binding_result"
+    state["case_summary_projection"]["current_case_status"] = (
+        "governed_non_binding_result"
+    )
     state["case_summary_projection"]["active_blockers"] = []
 
     reply = build_final_reply(state, asserted_state=_full_asserted())
@@ -71,5 +76,8 @@ def test_releasable_governed_result_may_still_surface_rationale_summary():
 
     reply = build_final_reply(state, asserted_state=_full_asserted())
 
-    assert state["output_contract_projection"]["output_status"] == "governed_non_binding_result"
+    assert (
+        state["output_contract_projection"]["output_status"]
+        == "governed_non_binding_result"
+    )
     assert state["recommendation_artifact"]["rationale_summary"] in reply

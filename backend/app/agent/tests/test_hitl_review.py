@@ -13,6 +13,7 @@ Tests cover:
 9. Integration: selection_state with manufacturer_validation_required
    produces output containing the review pending marker
 """
+
 from __future__ import annotations
 
 import pytest
@@ -34,6 +35,7 @@ from app.agent.state.agent_state import ReviewLayer, SealingAIState
 # ---------------------------------------------------------------------------
 # 1. Structural: ReviewLayer fields and SealingAIState typing
 # ---------------------------------------------------------------------------
+
 
 class TestReviewLayerStructure:
     def test_review_layer_fields_exist(self):
@@ -82,6 +84,7 @@ class TestReviewLayerStructure:
 # ---------------------------------------------------------------------------
 # 2–5. evaluate_review_trigger
 # ---------------------------------------------------------------------------
+
 
 class TestEvaluateReviewTrigger:
     def test_manufacturer_validation_required_fires_pending(self):
@@ -159,6 +162,7 @@ class TestEvaluateReviewTrigger:
 # 6–7. build_boundary_block review notice injection
 # ---------------------------------------------------------------------------
 
+
 class TestBoundaryBlockReviewNotice:
     def test_review_pending_notice_present_when_flagged(self):
         block = build_boundary_block(
@@ -191,6 +195,7 @@ class TestBoundaryBlockReviewNotice:
     def test_fast_path_ignores_review_flags(self):
         """Fast-path disclaimer is invariant — review kwargs must be ignored."""
         from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
+
         block = build_boundary_block(
             "fast",
             review_required=True,
@@ -201,13 +206,16 @@ class TestBoundaryBlockReviewNotice:
 
     def test_review_reason_included_in_notice(self):
         reason = "Demo-Daten im Scope — governe Materialdaten nicht vorhanden."
-        block = build_boundary_block("structured", review_required=True, review_reason=reason)
+        block = build_boundary_block(
+            "structured", review_required=True, review_reason=reason
+        )
         assert reason in block
 
 
 # ---------------------------------------------------------------------------
 # 8. build_final_reply forwards review kwargs
 # ---------------------------------------------------------------------------
+
 
 def _make_minimal_selection_state(
     *, selection_status: str = "blocked_no_candidates"
@@ -276,7 +284,9 @@ class TestBuildFinalReplyReview:
         state = _make_minimal_selection_state()
         state["release_status"] = "manufacturer_validation_required"
         state["rfq_admissibility"] = "provisional"
-        state["recommendation_artifact"]["release_status"] = "manufacturer_validation_required"
+        state["recommendation_artifact"]["release_status"] = (
+            "manufacturer_validation_required"
+        )
         state["recommendation_artifact"]["rfq_admissibility"] = "provisional"
         reply = build_final_reply(
             state,
@@ -284,5 +294,6 @@ class TestBuildFinalReplyReview:
             review_reason=REASON_MANUFACTURER_VALIDATION,
         )
         from app.agent.runtime.selection import MANUFACTURER_VALIDATION_REPLY
+
         assert MANUFACTURER_VALIDATION_REPLY in reply
         assert REVIEW_PENDING_PREFIX in reply

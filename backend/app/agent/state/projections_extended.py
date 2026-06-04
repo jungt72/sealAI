@@ -81,14 +81,31 @@ def project_review_escalation_state(
     domain_scope_projection: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     missing_items = _missing_core_input_items(asserted_state)
-    ambiguous_candidate_ids = list(viable_candidate_ids) if selection_status == "multiple_viable_candidates" else []
-    evidence_status = str((evidence_provenance_projection or {}).get("status") or "no_evidence")
-    provenance_refs = list((evidence_provenance_projection or {}).get("provenance_refs") or [])
-    conflict_status = str((conflict_status_projection or {}).get("status") or "no_conflict")
+    ambiguous_candidate_ids = (
+        list(viable_candidate_ids)
+        if selection_status == "multiple_viable_candidates"
+        else []
+    )
+    evidence_status = str(
+        (evidence_provenance_projection or {}).get("status") or "no_evidence"
+    )
+    provenance_refs = list(
+        (evidence_provenance_projection or {}).get("provenance_refs") or []
+    )
+    conflict_status = str(
+        (conflict_status_projection or {}).get("status") or "no_conflict"
+    )
     affected_keys = list((conflict_status_projection or {}).get("affected_keys") or [])
-    integrity_status = str((parameter_integrity_projection or {}).get("integrity_status") or "normalized_ok")
-    integrity_blocking_keys = list((parameter_integrity_projection or {}).get("blocking_keys") or [])
-    domain_scope_status = str((domain_scope_projection or {}).get("status") or "in_domain_scope")
+    integrity_status = str(
+        (parameter_integrity_projection or {}).get("integrity_status")
+        or "normalized_ok"
+    )
+    integrity_blocking_keys = list(
+        (parameter_integrity_projection or {}).get("blocking_keys") or []
+    )
+    domain_scope_status = str(
+        (domain_scope_projection or {}).get("status") or "in_domain_scope"
+    )
 
     if missing_items:
         return {
@@ -109,7 +126,8 @@ def project_review_escalation_state(
     if demo_data_present:
         return {
             "status": "withheld_demo_data",
-            "reason": blocking_reason or "Demo data is quarantined from governed output.",
+            "reason": blocking_reason
+            or "Demo data is quarantined from governed output.",
             "missing_items": [],
             "ambiguous_candidate_ids": [],
             "evidence_status": evidence_status,
@@ -157,7 +175,8 @@ def project_review_escalation_state(
     if selection_status == "multiple_viable_candidates":
         return {
             "status": "ambiguous_but_reviewable",
-            "reason": blocking_reason or "Multiple viable candidates remain after deterministic checks.",
+            "reason": blocking_reason
+            or "Multiple viable candidates remain after deterministic checks.",
             "missing_items": [],
             "ambiguous_candidate_ids": ambiguous_candidate_ids,
             "evidence_status": evidence_status,
@@ -174,7 +193,11 @@ def project_review_escalation_state(
     if review.get("review_required"):
         return {
             "status": "review_pending",
-            "reason": str(review.get("review_reason") or blocking_reason or "Human review pending."),
+            "reason": str(
+                review.get("review_reason")
+                or blocking_reason
+                or "Human review pending."
+            ),
             "missing_items": [],
             "ambiguous_candidate_ids": [],
             "evidence_status": evidence_status,
@@ -206,7 +229,8 @@ def project_review_escalation_state(
     if integrity_status == "unusable_until_clarified":
         return {
             "status": "escalation_needed",
-            "reason": blocking_reason or "Parameterintegrität erfordert weitere Klärung oder Review.",
+            "reason": blocking_reason
+            or "Parameterintegrität erfordert weitere Klärung oder Review.",
             "missing_items": [],
             "ambiguous_candidate_ids": ambiguous_candidate_ids,
             "evidence_status": evidence_status,
@@ -222,7 +246,8 @@ def project_review_escalation_state(
     if (conflict_status_projection or {}).get("conflict_still_open"):
         return {
             "status": "escalation_needed",
-            "reason": blocking_reason or "Offener Parameterkonflikt erfordert Klärung oder Review.",
+            "reason": blocking_reason
+            or "Offener Parameterkonflikt erfordert Klärung oder Review.",
             "missing_items": [],
             "ambiguous_candidate_ids": ambiguous_candidate_ids,
             "evidence_status": evidence_status,
@@ -238,10 +263,15 @@ def project_review_escalation_state(
     reviewable_escalation = selection_status in {
         "blocked_no_candidates",
         "blocked_no_viable_candidates",
-    } or readiness_status in {"candidate_ambiguity", "no_governed_candidate", "governance_blocked"}
+    } or readiness_status in {
+        "candidate_ambiguity",
+        "no_governed_candidate",
+        "governance_blocked",
+    }
     return {
         "status": "escalation_needed",
-        "reason": blocking_reason or "Deterministic engineering escalation is required.",
+        "reason": blocking_reason
+        or "Deterministic engineering escalation is required.",
         "missing_items": [],
         "ambiguous_candidate_ids": ambiguous_candidate_ids,
         "evidence_status": evidence_status,
@@ -300,10 +330,14 @@ def _build_evidence_binding_note(
     refs = list(projection.get("provenance_refs") or [])
     ref_text = ", ".join(refs) if refs else "keine"
     if status == "grounded_evidence":
-        return "Die technischen Angaben sind durch qualifizierte Referenzdaten gestützt."
+        return (
+            "Die technischen Angaben sind durch qualifizierte Referenzdaten gestützt."
+        )
     if status == "thin_evidence":
         return "Die technische Referenzbasis ist eingeschränkt; eine ergänzende Herstellerprüfung ist ratsam."
-    return "Qualifizierte technische Referenzdaten sind für diese Anfrage nicht verfügbar."
+    return (
+        "Qualifizierte technische Referenzdaten sind für diese Anfrage nicht verfügbar."
+    )
 
 
 def _extract_observed_field_values(
@@ -338,11 +372,21 @@ def _resolve_current_field_value(
     normalized_parameters = (normalized_state or {}).get("normalized_parameters") or {}
     operating = asserted.get("operating_conditions") or {}
     if field_name == "medium":
-        return (asserted.get("medium_profile") or {}).get("name") or normalized_parameters.get("medium_normalized")
+        return (asserted.get("medium_profile") or {}).get(
+            "name"
+        ) or normalized_parameters.get("medium_normalized")
     if field_name == "pressure":
-        return operating.get("pressure") if operating.get("pressure") is not None else normalized_parameters.get("pressure_bar")
+        return (
+            operating.get("pressure")
+            if operating.get("pressure") is not None
+            else normalized_parameters.get("pressure_bar")
+        )
     if field_name == "temperature":
-        return operating.get("temperature") if operating.get("temperature") is not None else normalized_parameters.get("temperature_c")
+        return (
+            operating.get("temperature")
+            if operating.get("temperature") is not None
+            else normalized_parameters.get("temperature_c")
+        )
     return None
 
 
@@ -358,8 +402,7 @@ def project_conflict_status(
     normalized_identities = (normalized_state or {}).get("identity_records") or {}
 
     conflicting_fields = sorted(
-        field_name for field_name, values in observed_values.items()
-        if len(values) > 1
+        field_name for field_name, values in observed_values.items() if len(values) > 1
     )
     open_conflict_fields = {
         str(conflict.get("field"))
@@ -369,7 +412,11 @@ def project_conflict_status(
     for field_name, identity in normalized_identities.items():
         if field_name not in {"medium", "pressure", "temperature"}:
             continue
-        if identity.get("identity_class") == "identity_unresolved" and "conflict" in str(identity.get("mapping_reason") or ""):
+        if identity.get(
+            "identity_class"
+        ) == "identity_unresolved" and "conflict" in str(
+            identity.get("mapping_reason") or ""
+        ):
             open_conflict_fields.add(field_name)
 
     corrected_fields: List[str] = []
@@ -379,9 +426,16 @@ def project_conflict_status(
 
     for field_name in conflicting_fields:
         values = list(observed_values.get(field_name) or [])
-        current_value = _resolve_current_field_value(field_name, asserted_state, normalized_state)
+        current_value = _resolve_current_field_value(
+            field_name, asserted_state, normalized_state
+        )
         previous_value = values[0]
-        if len(values) > 1 and current_value not in (None, "") and current_value == values[-1] and field_name not in unresolved_fields:
+        if (
+            len(values) > 1
+            and current_value not in (None, "")
+            and current_value == values[-1]
+            and field_name not in unresolved_fields
+        ):
             corrected_fields.append(field_name)
             previous_parts.append(f"{field_name}={previous_value}")
             current_parts.append(f"{field_name}={current_value}")
@@ -442,7 +496,9 @@ def _field_integrity_status(
 ) -> Optional[str]:
     identity_records = (normalized_state or {}).get("identity_records") or {}
     identity = identity_records.get(field_name) or {}
-    current_value = _identity_or_normalized_value(field_name, normalized_state, asserted_state)
+    current_value = _identity_or_normalized_value(
+        field_name, normalized_state, asserted_state
+    )
     if current_value in (None, ""):
         return None
 
@@ -461,7 +517,9 @@ def _field_integrity_status(
             return "unusable_until_clarified"
         if numeric_value < -273.15:
             return "implausible_value"
-        if raw_value.endswith("grad") or (raw_value and re.fullmatch(r"[+-]?\\d+(?:[.,]\\d+)?", raw_value)):
+        if raw_value.endswith("grad") or (
+            raw_value and re.fullmatch(r"[+-]?\\d+(?:[.,]\\d+)?", raw_value)
+        ):
             return "unit_ambiguous"
         if "umgerechnet von" in mapping_reason.lower():
             return "usable_with_warning"
@@ -481,7 +539,10 @@ def _field_integrity_status(
         return "normalized_ok"
 
     if field_name == "medium":
-        if identity_class == "identity_probable" or normalization_certainty == "inferred":
+        if (
+            identity_class == "identity_probable"
+            or normalization_certainty == "inferred"
+        ):
             return "usable_with_warning"
         if identity_class == "identity_unresolved":
             return "unusable_until_clarified"
@@ -502,11 +563,11 @@ def project_unit_normalization_status(
             statuses[field_name] = status
 
     warning_keys = sorted(
-        key for key, status in statuses.items()
-        if status == "usable_with_warning"
+        key for key, status in statuses.items() if status == "usable_with_warning"
     )
     blocking_keys = sorted(
-        key for key, status in statuses.items()
+        key
+        for key, status in statuses.items()
         if status in {"unit_ambiguous", "implausible_value", "unusable_until_clarified"}
     )
     return {
@@ -599,11 +660,19 @@ def _build_integrity_note(
     statuses = dict(unit_projection.get("statuses") or {})
     if integrity_status == "unusable_until_clarified":
         param_count = len(blocking_keys) if blocking_keys else 1
-        subject = "Ein Betriebsparameter bedarf" if param_count == 1 else f"{param_count} Betriebsparameter bedürfen"
+        subject = (
+            "Ein Betriebsparameter bedarf"
+            if param_count == 1
+            else f"{param_count} Betriebsparameter bedürfen"
+        )
         return f"{INTEGRITY_UNUSABLE_REPLY} {subject} fachlicher Klärung."
     if integrity_status == "usable_with_warning":
         param_count = len(warning_keys) if warning_keys else 1
-        subject = "Ein Betriebsparameter ist" if param_count == 1 else f"{param_count} Betriebsparameter sind"
+        subject = (
+            "Ein Betriebsparameter ist"
+            if param_count == 1
+            else f"{param_count} Betriebsparameter sind"
+        )
         return f"{INTEGRITY_WARNING_PREFIX} {subject} mit Vorbehalt verwendbar."
     return ""
 
@@ -649,13 +718,22 @@ def project_user_facing_output_status(
         status = "withheld_escalation"
     elif selection_status == "blocked_missing_required_inputs":
         status = "clarification_needed"
-    elif release_status in {"precheck_only", "manufacturer_validation_required"} or rfq_admissibility == "provisional":
+    elif (
+        release_status in {"precheck_only", "manufacturer_validation_required"}
+        or rfq_admissibility == "provisional"
+    ):
         status = "withheld_review"
-    elif review_status == "withheld_no_evidence" or readiness_status == "evidence_missing":
+    elif (
+        review_status == "withheld_no_evidence"
+        or readiness_status == "evidence_missing"
+    ):
         status = "withheld_no_evidence"
     elif domain_status == "out_of_domain_scope":
         status = "withheld_domain_block"
-    elif review_status in {"review_pending", "ambiguous_but_reviewable"} or readiness_status == "review_pending":
+    elif (
+        review_status in {"review_pending", "ambiguous_but_reviewable"}
+        or readiness_status == "review_pending"
+    ):
         status = "withheld_review"
     elif review_status == "escalation_needed" or readiness_status in {
         "conflict_unresolved",
@@ -688,7 +766,9 @@ def build_output_contract_projection(
     threshold_projection: Optional[Dict[str, Any]],
     projection_invariant_projection: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    output_status = str((user_facing_output_projection or {}).get("status") or "withheld_escalation")
+    output_status = str(
+        (user_facing_output_projection or {}).get("status") or "withheld_escalation"
+    )
     artifact = recommendation_artifact or {}
     clarification = clarification_projection or {}
     review_projection = review_escalation_projection or {}
@@ -763,7 +843,9 @@ def build_output_contract_projection(
 
     return {
         "output_status": output_status,
-        "allowed_surface_claims": visible_warning_flags and list(dict.fromkeys(allowed_surface_claims)) or allowed_surface_claims,
+        "allowed_surface_claims": visible_warning_flags
+        and list(dict.fromkeys(allowed_surface_claims))
+        or allowed_surface_claims,
         "next_user_action": next_user_action,
         "visible_warning_flags": list(dict.fromkeys(visible_warning_flags)),
         "suppress_recommendation_details": suppress_recommendation_details,
@@ -798,8 +880,14 @@ def project_projection_invariants(
     evidence_status = str(evidence_projection.get("status") or "no_evidence")
     clarification_meaningful = bool(clarification.get("clarification_still_meaningful"))
     conflict_open = bool(conflict_projection.get("conflict_still_open"))
-    integrity_blocked = str(integrity_projection.get("integrity_status") or "") == "unusable_until_clarified"
-    domain_blocked = str(domain_scope.get("status") or "") in {"out_of_domain_scope", "escalation_required"}
+    integrity_blocked = (
+        str(integrity_projection.get("integrity_status") or "")
+        == "unusable_until_clarified"
+    )
+    domain_blocked = str(domain_scope.get("status") or "") in {
+        "out_of_domain_scope",
+        "escalation_required",
+    }
     blocked_by_review = review_status in {
         "review_pending",
         "ambiguous_but_reviewable",
@@ -829,12 +917,12 @@ def project_projection_invariants(
     ):
         violations.append("governed_result_conflicts_with_blocking_projection")
     if output_status == "clarification_needed" and (
-        blocked_clarification_step
-        or domain_blocked
-        or evidence_status == "no_evidence"
+        blocked_clarification_step or domain_blocked or evidence_status == "no_evidence"
     ):
         violations.append("clarification_output_conflicts_with_blocking_projection")
-    if conflict_open and (output_status == "governed_non_binding_result" or candidate_projection):
+    if conflict_open and (
+        output_status == "governed_non_binding_result" or candidate_projection
+    ):
         violations.append("unresolved_conflict_cannot_surface_technical_preselection")
     if readiness_status == "releasable" and (
         review_status != "releasable"
@@ -878,11 +966,17 @@ def _apply_invariant_safeguards(
     safe_user_facing = {"status": "withheld_escalation"}
     safe_output_contract = dict(output_contract_projection)
     safe_output_contract["output_status"] = "withheld_escalation"
-    safe_output_contract["allowed_surface_claims"] = ["withheld", "state_invariant_violation"]
+    safe_output_contract["allowed_surface_claims"] = [
+        "withheld",
+        "state_invariant_violation",
+    ]
     safe_output_contract["suppress_recommendation_details"] = True
-    safe_output_contract["visible_warning_flags"] = list(dict.fromkeys(
-        list(safe_output_contract.get("visible_warning_flags") or []) + ["invariant_violation"]
-    ))
+    safe_output_contract["visible_warning_flags"] = list(
+        dict.fromkeys(
+            list(safe_output_contract.get("visible_warning_flags") or [])
+            + ["invariant_violation"]
+        )
+    )
 
     return safe_artifact, safe_user_facing, safe_output_contract, True
 
@@ -915,7 +1009,9 @@ def build_state_trace_audit_projection(
     rfq_admissibility = str(artifact.get("rfq_admissibility") or "")
     candidate_projection = artifact.get("candidate_projection")
     conflict_open = bool(conflict_projection.get("conflict_still_open"))
-    integrity_status = str(integrity_projection.get("integrity_status") or "normalized_ok")
+    integrity_status = str(
+        integrity_projection.get("integrity_status") or "normalized_ok"
+    )
     domain_status = str(domain_scope.get("status") or "in_domain_scope")
     invariant_violations = list(invariant_projection.get("invariant_violations") or [])
     missing_items = list(clarification.get("missing_items") or [])
@@ -940,10 +1036,16 @@ def build_state_trace_audit_projection(
         if review_status == "review_pending":
             primary_reason = "review_pending"
             blocking_reasons.append("review_pending")
-        elif review_status == "ambiguous_but_reviewable" or selection_status == "multiple_viable_candidates":
+        elif (
+            review_status == "ambiguous_but_reviewable"
+            or selection_status == "multiple_viable_candidates"
+        ):
             primary_reason = "review_candidate_ambiguity"
             blocking_reasons.append("candidate_ambiguity")
-        elif release_status in {"precheck_only", "manufacturer_validation_required"} or rfq_admissibility == "provisional":
+        elif (
+            release_status in {"precheck_only", "manufacturer_validation_required"}
+            or rfq_admissibility == "provisional"
+        ):
             primary_reason = "review_governance_withheld"
             blocking_reasons.append("governance_withheld")
         else:
@@ -958,10 +1060,16 @@ def build_state_trace_audit_projection(
     elif conflict_open or readiness_status == "conflict_unresolved":
         primary_reason = "escalation_conflict_open"
         blocking_reasons.append("conflict_open")
-    elif integrity_status == "unusable_until_clarified" or readiness_status == "integrity_unusable":
+    elif (
+        integrity_status == "unusable_until_clarified"
+        or readiness_status == "integrity_unusable"
+    ):
         primary_reason = "escalation_integrity_blocked"
         blocking_reasons.append("integrity_blocked")
-    elif domain_status == "escalation_required" or readiness_status == "domain_scope_blocked":
+    elif (
+        domain_status == "escalation_required"
+        or readiness_status == "domain_scope_blocked"
+    ):
         primary_reason = "escalation_domain_threshold"
         blocking_reasons.append("domain_threshold_blocked")
     elif selection_status == "blocked_no_candidates":
@@ -1011,7 +1119,10 @@ def build_state_trace_audit_projection(
         trace_flags.append("domain_warning")
     if artifact.get("evidence_status") == "no_evidence":
         contributing_reasons.append("no_evidence")
-    if release_status in {"precheck_only", "manufacturer_validation_required"} or rfq_admissibility == "provisional":
+    if (
+        release_status in {"precheck_only", "manufacturer_validation_required"}
+        or rfq_admissibility == "provisional"
+    ):
         contributing_reasons.append("governance_withheld")
 
     return {
@@ -1022,7 +1133,9 @@ def build_state_trace_audit_projection(
     }
 
 
-def get_primary_trace_reason(state_trace_audit_projection: Optional[Dict[str, Any]]) -> str:
+def get_primary_trace_reason(
+    state_trace_audit_projection: Optional[Dict[str, Any]],
+) -> str:
     projection = state_trace_audit_projection or {}
     return str(projection.get("primary_status_reason") or "")
 
@@ -1032,7 +1145,9 @@ def is_blocked_by_trace(
     reason_code: Optional[str] = None,
 ) -> bool:
     projection = state_trace_audit_projection or {}
-    blocking_reasons = set(str(item) for item in (projection.get("blocking_reasons") or []))
+    blocking_reasons = set(
+        str(item) for item in (projection.get("blocking_reasons") or [])
+    )
     if reason_code is None:
         return bool(blocking_reasons)
     return str(reason_code) in blocking_reasons
@@ -1051,16 +1166,23 @@ def build_case_summary_projection(
 
     missing_core_fields = _missing_core_input_items(asserted_state)
     confirmed_core_fields = [
-        key for key in STRUCTURED_REQUIRED_CORE_PARAMS
-        if key not in missing_core_fields
+        key for key in STRUCTURED_REQUIRED_CORE_PARAMS if key not in missing_core_fields
     ]
-    current_case_status = str(output_contract.get("output_status") or "withheld_escalation")
+    current_case_status = str(
+        output_contract.get("output_status") or "withheld_escalation"
+    )
     active_blockers = list(trace_projection.get("blocking_reasons") or [])
     next_step = str(output_contract.get("next_user_action") or "")
 
     if "invariant_blocked" in active_blockers:
         next_step = "engineering_escalation"
-    elif current_case_status == "withheld_escalation" and active_blockers and not set(active_blockers).issubset({"review_pending", "candidate_ambiguity", "review_required"}):
+    elif (
+        current_case_status == "withheld_escalation"
+        and active_blockers
+        and not set(active_blockers).issubset(
+            {"review_pending", "candidate_ambiguity", "review_required"}
+        )
+    ):
         next_step = "engineering_escalation"
     elif current_case_status == "clarification_needed" and not next_step:
         next_step = (
@@ -1111,7 +1233,9 @@ def build_actionability_projection(
     clarification = clarification_projection or {}
     invariant_projection = projection_invariant_projection or {}
 
-    current_case_status = str(summary.get("current_case_status") or "withheld_escalation")
+    current_case_status = str(
+        summary.get("current_case_status") or "withheld_escalation"
+    )
     active_blockers = list(summary.get("active_blockers") or [])
     next_expected_user_action = str(
         summary.get("next_step")
@@ -1121,7 +1245,10 @@ def build_actionability_projection(
     review_status = str(review_projection.get("status") or "")
     handover_possible = bool(review_projection.get("handover_possible"))
 
-    if not invariant_projection.get("invariant_ok", True) or "invariant_blocked" in active_blockers:
+    if (
+        not invariant_projection.get("invariant_ok", True)
+        or "invariant_blocked" in active_blockers
+    ):
         actionability_status = "blocked"
         primary_allowed_action = "no_action_until_clarified"
     elif current_case_status == "clarification_needed":
@@ -1149,8 +1276,7 @@ def build_actionability_projection(
         primary_allowed_action = "escalate_engineering"
 
     blocked_actions = [
-        action for action in _ACTIONABILITY_ACTIONS
-        if action != primary_allowed_action
+        action for action in _ACTIONABILITY_ACTIONS if action != primary_allowed_action
     ]
     return {
         "actionability_status": actionability_status,
@@ -1160,12 +1286,16 @@ def build_actionability_projection(
     }
 
 
-def get_primary_allowed_action(actionability_projection: Optional[Dict[str, Any]]) -> str:
+def get_primary_allowed_action(
+    actionability_projection: Optional[Dict[str, Any]],
+) -> str:
     projection = actionability_projection or {}
     return str(projection.get("primary_allowed_action") or "")
 
 
-def get_next_expected_user_action(actionability_projection: Optional[Dict[str, Any]]) -> str:
+def get_next_expected_user_action(
+    actionability_projection: Optional[Dict[str, Any]],
+) -> str:
     projection = actionability_projection or {}
     return str(projection.get("next_expected_user_action") or "")
 
@@ -1175,7 +1305,9 @@ def is_action_blocked(
     action_code: str,
 ) -> bool:
     projection = actionability_projection or {}
-    blocked_actions = set(str(item) for item in (projection.get("blocked_actions") or []))
+    blocked_actions = set(
+        str(item) for item in (projection.get("blocked_actions") or [])
+    )
     return str(action_code) in blocked_actions
 
 
@@ -1220,24 +1352,51 @@ def _delta_state_severity(selection_state: Optional[Dict[str, Any]]) -> int:
     domain_scope = state.get("domain_scope_projection") or {}
     threshold_projection = state.get("threshold_projection") or {}
     integrity_projection = state.get("parameter_integrity_projection") or {}
-    active_blockers = set(str(item) for item in (case_summary.get("active_blockers") or []))
+    active_blockers = set(
+        str(item) for item in (case_summary.get("active_blockers") or [])
+    )
     output_status = str(output_contract.get("output_status") or "")
     actionability_status = str(actionability.get("actionability_status") or "")
 
-    if not invariant_projection.get("invariant_ok", True) or "invariant_blocked" in active_blockers:
+    if (
+        not invariant_projection.get("invariant_ok", True)
+        or "invariant_blocked" in active_blockers
+    ):
         return 6
-    if output_status in {"withheld_domain_block", "withheld_escalation", "withheld_no_evidence"} or actionability_status in {"blocked", "escalation_required", "evidence_required"}:
+    if output_status in {
+        "withheld_domain_block",
+        "withheld_escalation",
+        "withheld_no_evidence",
+    } or actionability_status in {
+        "blocked",
+        "escalation_required",
+        "evidence_required",
+    }:
         return 5
-    if output_status == "withheld_review" or actionability_status in {"review_pending", "handoverable_restricted"}:
+    if output_status == "withheld_review" or actionability_status in {
+        "review_pending",
+        "handoverable_restricted",
+    }:
         return 4
-    if output_status == "clarification_needed" or actionability_status == "input_required":
+    if (
+        output_status == "clarification_needed"
+        or actionability_status == "input_required"
+    ):
         return 3
-    if _threshold_scope_level(
-        threshold_projection=threshold_projection,
-        domain_scope_projection=domain_scope,
-    ) == "warning" or str(integrity_projection.get("integrity_status") or "") == "usable_with_warning":
+    if (
+        _threshold_scope_level(
+            threshold_projection=threshold_projection,
+            domain_scope_projection=domain_scope,
+        )
+        == "warning"
+        or str(integrity_projection.get("integrity_status") or "")
+        == "usable_with_warning"
+    ):
         return 2
-    if output_status == "governed_non_binding_result" and actionability_status == "result_available":
+    if (
+        output_status == "governed_non_binding_result"
+        and actionability_status == "result_available"
+    ):
         return 0
     return 4
 
@@ -1288,7 +1447,9 @@ def build_state_delta_projection(
     current_invariant = current_state.get("projection_invariant_projection") or {}
 
     case_status_delta = compare_case_status(previous_summary, current_summary)
-    actionability_delta = compare_actionability(previous_actionability, current_actionability)
+    actionability_delta = compare_actionability(
+        previous_actionability, current_actionability
+    )
     threshold_scope_delta = compare_threshold_scope(
         previous_threshold_projection=previous_threshold,
         current_threshold_projection=current_threshold,
@@ -1298,7 +1459,13 @@ def build_state_delta_projection(
 
     changed_statuses: Dict[str, Dict[str, Any]] = {}
 
-    def record_change(key: str, previous_value: Any, current_value: Any, *, delta: Optional[str] = None) -> None:
+    def record_change(
+        key: str,
+        previous_value: Any,
+        current_value: Any,
+        *,
+        delta: Optional[str] = None,
+    ) -> None:
         if previous_value == current_value:
             return
         payload: Dict[str, Any] = {
@@ -1311,8 +1478,12 @@ def build_state_delta_projection(
 
     previous_active_blockers = list(previous_summary.get("active_blockers") or [])
     current_active_blockers = list(current_summary.get("active_blockers") or [])
-    previous_blocked_actions = sorted(str(item) for item in (previous_actionability.get("blocked_actions") or []))
-    current_blocked_actions = sorted(str(item) for item in (current_actionability.get("blocked_actions") or []))
+    previous_blocked_actions = sorted(
+        str(item) for item in (previous_actionability.get("blocked_actions") or [])
+    )
+    current_blocked_actions = sorted(
+        str(item) for item in (current_actionability.get("blocked_actions") or [])
+    )
 
     record_change(
         "invariant_ok",
@@ -1420,10 +1591,7 @@ def build_state_delta_projection(
         ),
     )
 
-    changed_keys = [
-        key for key in _STATE_DELTA_FIELD_ORDER
-        if key in changed_statuses
-    ]
+    changed_keys = [key for key in _STATE_DELTA_FIELD_ORDER if key in changed_statuses]
 
     if "invariant_ok" in changed_statuses:
         primary_delta_reason = "invariant_status_changed"
@@ -1431,15 +1599,24 @@ def build_state_delta_projection(
         primary_delta_reason = "conflict_status_changed"
     elif "integrity_status" in changed_statuses:
         primary_delta_reason = "integrity_status_changed"
-    elif "domain_scope_status" in changed_statuses or "threshold_status" in changed_statuses:
+    elif (
+        "domain_scope_status" in changed_statuses
+        or "threshold_status" in changed_statuses
+    ):
         primary_delta_reason = "threshold_scope_changed"
     elif "output_status" in changed_statuses:
         primary_delta_reason = "output_status_changed"
     elif "case_status" in changed_statuses:
         primary_delta_reason = "case_status_changed"
-    elif "actionability_status" in changed_statuses or "primary_allowed_action" in changed_statuses:
+    elif (
+        "actionability_status" in changed_statuses
+        or "primary_allowed_action" in changed_statuses
+    ):
         primary_delta_reason = "actionability_changed"
-    elif "next_step" in changed_statuses or "next_expected_user_action" in changed_statuses:
+    elif (
+        "next_step" in changed_statuses
+        or "next_expected_user_action" in changed_statuses
+    ):
         primary_delta_reason = "next_step_changed"
     elif "active_blockers" in changed_statuses:
         primary_delta_reason = "blocker_set_changed"
@@ -1467,7 +1644,9 @@ def build_structured_snapshot(
 ) -> Dict[str, Any]:
     state = selection_state or {}
     output_contract = state.get("output_contract_projection") or {}
-    trace_projection = state.get("state_trace_audit_projection") or build_state_trace_audit_projection(
+    trace_projection = state.get(
+        "state_trace_audit_projection"
+    ) or build_state_trace_audit_projection(
         selection_status=str(state.get("selection_status") or ""),
         recommendation_artifact=state.get("recommendation_artifact"),
         review_escalation_projection=state.get("review_escalation_projection"),
@@ -1478,13 +1657,17 @@ def build_structured_snapshot(
         output_contract_projection=output_contract,
         projection_invariant_projection=state.get("projection_invariant_projection"),
     )
-    case_summary = state.get("case_summary_projection") or build_case_summary_projection(
+    case_summary = state.get(
+        "case_summary_projection"
+    ) or build_case_summary_projection(
         asserted_state=asserted_state,
         output_contract_projection=output_contract,
         clarification_projection=state.get("clarification_projection"),
         state_trace_audit_projection=trace_projection,
     )
-    actionability = state.get("actionability_projection") or build_actionability_projection(
+    actionability = state.get(
+        "actionability_projection"
+    ) or build_actionability_projection(
         case_summary_projection=case_summary,
         output_contract_projection=output_contract,
         review_escalation_projection=state.get("review_escalation_projection"),
@@ -1533,6 +1716,8 @@ def compare_structured_snapshots(
             "added": sorted(current_blocker_set - previous_blocker_set),
             "removed": sorted(previous_blocker_set - current_blocker_set),
         },
-        "primary_delta_reason": str(delta.get("primary_delta_reason") or "no_relevant_change"),
+        "primary_delta_reason": str(
+            delta.get("primary_delta_reason") or "no_relevant_change"
+        ),
         "delta_direction": str(delta.get("delta_direction") or "unchanged"),
     }

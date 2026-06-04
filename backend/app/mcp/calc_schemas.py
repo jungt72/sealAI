@@ -14,8 +14,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class CalcInput(BaseModel):
     """Input parameters for gasket calculation."""
 
-    pressure_max_bar: float = Field(..., ge=0, description="Max operating pressure in bar")
-    temperature_max_c: float = Field(..., ge=-273.15, description="Max operating temperature in C")
+    pressure_max_bar: float = Field(
+        ..., ge=0, description="Max operating pressure in bar"
+    )
+    temperature_max_c: float = Field(
+        ..., ge=-273.15, description="Max operating temperature in C"
+    )
     flange_standard: Optional[str] = None
     flange_dn: Optional[int] = Field(default=None, gt=0)
     flange_pn: Optional[int] = Field(default=None, gt=0)
@@ -34,7 +38,9 @@ class CalcInput(BaseModel):
     def _valid_flange_class(cls, value: Optional[int]) -> Optional[int]:
         valid = {150, 300, 600, 900, 1500, 2500}
         if value is not None and value not in valid:
-            raise ValueError(f"flange_class must be one of {sorted(valid)}, got {value}")
+            raise ValueError(
+                f"flange_class must be one of {sorted(valid)}, got {value}"
+            )
         return value
 
     @field_validator("bolt_count")

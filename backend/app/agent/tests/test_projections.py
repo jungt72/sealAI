@@ -116,8 +116,7 @@ def test_light_structured_state_exposes_json_object_view() -> None:
     structured = _light_structured_state(_full_state())
     encoded = json.loads(json.dumps(structured, default=str))
     field_names = {
-        entry["field_name"]
-        for entry in encoded["view"]["parameter"]["parameters"]
+        entry["field_name"] for entry in encoded["view"]["parameter"]["parameters"]
     }
 
     assert isinstance(encoded["view"], dict)
@@ -148,7 +147,9 @@ def test_assumptions_and_open_points_map_to_assumption_tile() -> None:
 
     assert any(item.kind == "assumption" for item in tile.items)
     assert any(item.kind == "open_point" for item in tile.items)
-    assert any("Medium" in item or "Medium angeben" in item for item in tile.open_points)
+    assert any(
+        "Medium" in item or "Medium angeben" in item for item in tile.open_points
+    )
     assert "Betriebstemperatur" in tile.open_points
     assert tile.has_open_points is True
 
@@ -157,7 +158,13 @@ def test_assumption_tile_renders_family_only_medium_open_point_status_aware() ->
     state = _state_from_observed(_observed(("pressure_bar", 12.0, 0.95))).model_copy(
         update={
             "asserted": AssertedState(
-                assertions={"pressure_bar": AssertedClaim(field_name="pressure_bar", asserted_value=12.0, confidence="confirmed")},
+                assertions={
+                    "pressure_bar": AssertedClaim(
+                        field_name="pressure_bar",
+                        asserted_value=12.0,
+                        confidence="confirmed",
+                    )
+                },
                 blocking_unknowns=["medium", "temperature_c"],
                 conflict_flags=[],
             ),
@@ -183,13 +190,21 @@ def test_assumption_tile_renders_family_only_medium_open_point_status_aware() ->
     assert all(item != "Medium" for item in tile.open_points)
 
 
-def test_assumption_tile_prioritizes_application_anchor_before_pressure_for_recognized_medium() -> None:
+def test_assumption_tile_prioritizes_application_anchor_before_pressure_for_recognized_medium() -> (
+    None
+):
     state = GraphState.model_validate(
         {
             **_state_from_observed(_observed()).model_dump(),
             "pending_message": "ich muss salzwasser draussen halten",
             "asserted": AssertedState(
-                assertions={"medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser", confidence="confirmed")},
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="Salzwasser",
+                        confidence="confirmed",
+                    )
+                },
                 blocking_unknowns=["pressure_bar", "temperature_c"],
                 conflict_flags=[],
             ),
@@ -218,12 +233,20 @@ def test_assumption_tile_prioritizes_application_anchor_before_pressure_for_reco
     assert recommendation.open_points[0] == "Anwendungs- und Bewegungsart präzisieren"
 
 
-def test_assumption_tile_uses_persisted_rotary_hint_before_pressure_after_reload() -> None:
+def test_assumption_tile_uses_persisted_rotary_hint_before_pressure_after_reload() -> (
+    None
+):
     state = GraphState.model_validate(
         {
             **_state_from_observed(_observed()).model_dump(),
             "asserted": AssertedState(
-                assertions={"medium": AssertedClaim(field_name="medium", asserted_value="Salzwasser", confidence="confirmed")},
+                assertions={
+                    "medium": AssertedClaim(
+                        field_name="medium",
+                        asserted_value="Salzwasser",
+                        confidence="confirmed",
+                    )
+                },
                 blocking_unknowns=["pressure_bar", "temperature_c"],
                 conflict_flags=[],
             ),
@@ -377,7 +400,10 @@ def test_requirement_class_is_projected_without_raw_governance_class() -> None:
     projection = project_for_ui(state.model_copy(update={"governance": governance}))
 
     assert projection.recommendation.requirement_class == "PTFE10"
-    assert projection.recommendation.requirement_summary == "High-temperature steam application"
+    assert (
+        projection.recommendation.requirement_summary
+        == "High-temperature steam application"
+    )
     assert projection.recommendation.scope_status != "A"
 
 
@@ -392,7 +418,9 @@ def test_rfq_tile_projects_clean_result_when_available() -> None:
                     manufacturer_name="Acme",
                     candidate_ids=["registry-ptfe-g25-acme"],
                 ),
-                recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+                recipient_refs=[
+                    RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+                ],
                 qualified_material_ids=["registry-ptfe-g25-acme"],
                 requirement_class=RequirementClass(
                     class_id="PTFE10",
@@ -423,7 +451,9 @@ def test_rfq_tile_includes_clean_dispatch_visibility_when_available() -> None:
                 rfq_ready=True,
                 rfq_admissible=True,
                 selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-                recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+                recipient_refs=[
+                    RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+                ],
                 qualified_material_ids=["registry-ptfe-g25-acme"],
                 requirement_class=RequirementClass(
                     class_id="PTFE10",
@@ -434,13 +464,17 @@ def test_rfq_tile_includes_clean_dispatch_visibility_when_available() -> None:
                 dispatch_ready=True,
                 dispatch_status="envelope_ready",
                 selected_manufacturer_ref=ManufacturerRef(manufacturer_name="Acme"),
-                recipient_refs=[RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)],
+                recipient_refs=[
+                    RecipientRef(manufacturer_name="Acme", qualified_for_rfq=True)
+                ],
                 requirement_class=RequirementClass(
                     class_id="PTFE10",
                     description="High-temperature PTFE class",
                 ),
                 transport_channel="internal_transport_envelope",
-                dispatch_notes=["Internal transport envelope is ready for later sender/connector consumption."],
+                dispatch_notes=[
+                    "Internal transport envelope is ready for later sender/connector consumption."
+                ],
             ),
         }
     )
@@ -529,7 +563,9 @@ def test_manufacturer_mapping_tile_projects_clean_result_when_available() -> Non
                 mapped_product_family="Flachdichtung",
                 mapped_material_family="PTFE",
                 geometry_export_hint="dn_mm=50.0",
-                mapping_notes=["Mapping remains category-level only; no SKU or compound code is inferred."],
+                mapping_notes=[
+                    "Mapping remains category-level only; no SKU or compound code is inferred."
+                ],
             )
         }
     )
@@ -563,7 +599,9 @@ def test_dispatch_contract_tile_projects_clean_result_when_available() -> None:
                 rfq_ready=True,
                 dispatch_ready=True,
                 mapping_summary="material_family=PTFE",
-                handover_notes=["Connector-ready contract remains systemneutral and transport-free."],
+                handover_notes=[
+                    "Connector-ready contract remains systemneutral and transport-free."
+                ],
             )
         }
     )

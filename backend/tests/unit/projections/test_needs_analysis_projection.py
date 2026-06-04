@@ -4,7 +4,9 @@ from app.api.v1.projections.case_workspace import project_case_workspace
 from app.domain.case_type import CaseType
 
 
-def _workspace_state(*, system: dict | None = None, profile: dict | None = None) -> dict:
+def _workspace_state(
+    *, system: dict | None = None, profile: dict | None = None
+) -> dict:
     return {
         "conversation": {"thread_id": "needs-analysis-projection"},
         "working_profile": {
@@ -26,7 +28,9 @@ def _workspace_state(*, system: dict | None = None, profile: dict | None = None)
     }
 
 
-def test_projection_exposes_needs_current_state_nbq_and_score_without_old_field_breakage() -> None:
+def test_projection_exposes_needs_current_state_nbq_and_score_without_old_field_breakage() -> (
+    None
+):
     projection = project_case_workspace(
         _workspace_state(
             system={"request_type": "new_design"},

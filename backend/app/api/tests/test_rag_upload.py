@@ -42,8 +42,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -172,11 +176,19 @@ async def test_rag_upload_unauthorized(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_rag_upload_and_status(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
 
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     payload = await rag_endpoint.upload_rag_document(
         file=file_obj,
@@ -202,7 +214,9 @@ async def test_rag_upload_and_status(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
 
 @pytest.mark.anyio
-async def test_rag_document_read_rejects_cross_tenant_document_id(tmp_path: Path) -> None:
+async def test_rag_document_read_rejects_cross_tenant_document_id(
+    tmp_path: Path,
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
     other_doc = RagDocument(
@@ -219,7 +233,13 @@ async def test_rag_document_read_rejects_cross_tenant_document_id(tmp_path: Path
         path=str(tmp_path / "other.txt"),
     )
     dummy_session.add(other_doc)
-    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[], tenant_id="tenant-a")
+    user_a = RequestUser(
+        user_id="tenant-a",
+        username="user",
+        sub="tenant-a",
+        roles=[],
+        tenant_id="tenant-a",
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await rag_endpoint.get_rag_document(
@@ -232,7 +252,9 @@ async def test_rag_document_read_rejects_cross_tenant_document_id(tmp_path: Path
 
 
 @pytest.mark.anyio
-async def test_rag_document_admin_cannot_read_other_private_tenant_document(tmp_path: Path) -> None:
+async def test_rag_document_admin_cannot_read_other_private_tenant_document(
+    tmp_path: Path,
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
     dummy_session.add(
@@ -294,7 +316,13 @@ async def test_rag_document_health_reingest_and_delete_reject_cross_tenant_id(
     )
     monkeypatch.setattr(rag_endpoint, "_qdrant_vector_count", lambda **_kwargs: 1)
     monkeypatch.setattr(rag_endpoint, "_qdrant_delete_document", lambda **_kwargs: None)
-    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[], tenant_id="tenant-a")
+    user_a = RequestUser(
+        user_id="tenant-a",
+        username="user",
+        sub="tenant-a",
+        roles=[],
+        tenant_id="tenant-a",
+    )
 
     for call in (
         rag_endpoint.rag_document_health_check,
@@ -312,11 +340,19 @@ async def test_rag_document_health_reingest_and_delete_reject_cross_tenant_id(
 
 
 @pytest.mark.anyio
-async def test_rag_upload_dedup_same_tenant(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_rag_upload_dedup_same_tenant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
 
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     first = await rag_endpoint.upload_rag_document(
         file=file_obj,
@@ -348,8 +384,20 @@ async def test_rag_upload_same_sha_different_tenant(
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
 
-    user_a = RequestUser(user_id="tenant-a", username="user", sub="tenant-a", roles=[], tenant_id="tenant-a")
-    user_b = RequestUser(user_id="tenant-b", username="user", sub="tenant-b", roles=[], tenant_id="tenant-b")
+    user_a = RequestUser(
+        user_id="tenant-a",
+        username="user",
+        sub="tenant-a",
+        roles=[],
+        tenant_id="tenant-a",
+    )
+    user_b = RequestUser(
+        user_id="tenant-b",
+        username="user",
+        sub="tenant-b",
+        roles=[],
+        tenant_id="tenant-b",
+    )
 
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     first = await rag_endpoint.upload_rag_document(
@@ -376,7 +424,9 @@ async def test_rag_upload_same_sha_different_tenant(
 
 
 @pytest.mark.anyio
-async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_rag_upload_retry_failed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
 
@@ -404,7 +454,9 @@ async def test_rag_upload_retry_failed(monkeypatch: pytest.MonkeyPatch, tmp_path
     )
     dummy_session.add(failed_doc)
 
-    user = RequestUser(user_id=tenant_id, username="user", sub=tenant_id, roles=[], tenant_id=tenant_id)
+    user = RequestUser(
+        user_id=tenant_id, username="user", sub=tenant_id, roles=[], tenant_id=tenant_id
+    )
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     payload = await rag_endpoint.upload_rag_document(
         file=file_obj,
@@ -426,7 +478,9 @@ async def test_rag_upload_prefers_tenant_claim_over_user_id(tmp_path: Path) -> N
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
 
-    user = RequestUser(user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1"
+    )
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
     payload = await rag_endpoint.upload_rag_document(
         file=file_obj,
@@ -442,7 +496,9 @@ async def test_rag_upload_prefers_tenant_claim_over_user_id(tmp_path: Path) -> N
 
 
 @pytest.mark.anyio
-async def test_rag_document_access_prefers_tenant_claim_over_user_id(tmp_path: Path) -> None:
+async def test_rag_document_access_prefers_tenant_claim_over_user_id(
+    tmp_path: Path,
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
 
@@ -461,7 +517,9 @@ async def test_rag_document_access_prefers_tenant_claim_over_user_id(tmp_path: P
     )
     dummy_session.add(doc)
 
-    user = RequestUser(user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1"
+    )
     payload = await rag_endpoint.get_rag_document(
         document_id="doc-1",
         current_user=user,
@@ -495,7 +553,13 @@ async def test_rag_document_health_does_not_expose_internal_path(
         path=str(internal_path),
     )
     dummy_session.add(doc)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     monkeypatch.setattr(rag_endpoint, "_qdrant_vector_count", lambda **_kwargs: 1)
 
     payload = await rag_endpoint.rag_document_health_check(
@@ -509,7 +573,9 @@ async def test_rag_document_health_does_not_expose_internal_path(
 
 
 @pytest.mark.anyio
-async def test_rag_reingest_missing_file_error_does_not_expose_internal_path(tmp_path: Path) -> None:
+async def test_rag_reingest_missing_file_error_does_not_expose_internal_path(
+    tmp_path: Path,
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
     doc = RagDocument(
@@ -526,7 +592,13 @@ async def test_rag_reingest_missing_file_error_does_not_expose_internal_path(tmp
         path=str(tmp_path / "tenant-1" / "doc-1" / "missing.txt"),
     )
     dummy_session.add(doc)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
 
     try:
         await rag_endpoint.reingest_rag_document(
@@ -543,7 +615,9 @@ async def test_rag_reingest_missing_file_error_does_not_expose_internal_path(tmp
 
 
 @pytest.mark.anyio
-async def test_rag_document_status_redacts_stored_parser_error_path(tmp_path: Path) -> None:
+async def test_rag_document_status_redacts_stored_parser_error_path(
+    tmp_path: Path,
+) -> None:
     _configure_upload_root(tmp_path)
     dummy_session = DummySession()
     internal_path = tmp_path / "tenant-1" / "doc-1" / "original.txt"
@@ -562,7 +636,13 @@ async def test_rag_document_status_redacts_stored_parser_error_path(tmp_path: Pa
         error=f"ParserError: failed at {internal_path}",
     )
     dummy_session.add(doc)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
 
     payload = await rag_endpoint.get_rag_document(
         document_id="doc-1",

@@ -37,13 +37,17 @@ def test_normalize_certification_records_accepts_dict_record() -> None:
 
 
 def test_normalize_certification_records_accepts_string_record() -> None:
-    records = normalize_certification_records({"certification_records": ["FDA 21 CFR 177.1550"]})
+    records = normalize_certification_records(
+        {"certification_records": ["FDA 21 CFR 177.1550"]}
+    )
     assert records[0].standard == "FDA 21 CFR 177.1550"
     assert records[0].valid is True
 
 
 def test_normalize_certification_records_ignores_invalid_entries() -> None:
-    records = normalize_certification_records({"certification_records": [None, 123, {"issuer": "x"}]})
+    records = normalize_certification_records(
+        {"certification_records": [None, 123, {"issuer": "x"}]}
+    )
     assert records == ()
 
 
@@ -87,9 +91,15 @@ def test_summarize_certification_evidence_matches_normalized_standard_tokens() -
 
 
 def test_context_text_indicates_food_contact_from_domain_and_medium() -> None:
-    assert context_text_indicates_food_contact({"application_domain": "food processing"}) is True
+    assert (
+        context_text_indicates_food_contact({"application_domain": "food processing"})
+        is True
+    )
     assert context_text_indicates_food_contact({"medium_name": "milk"}) is True
-    assert context_text_indicates_food_contact({"application_category": "chemical"}) is False
+    assert (
+        context_text_indicates_food_contact({"application_category": "chemical"})
+        is False
+    )
 
 
 def test_region_matches_handles_both_and_none() -> None:

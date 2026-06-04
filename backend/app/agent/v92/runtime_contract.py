@@ -10,7 +10,10 @@ from uuid import uuid4
 
 from app.agent.runtime.output_guard import FAST_PATH_GUARD_FALLBACK
 from app.agent.state.models import GovernedSessionState
-from app.agent.v92.adversarial_review import review_answer_draft, review_answer_draft_with_llm_fallback
+from app.agent.v92.adversarial_review import (
+    review_answer_draft,
+    review_answer_draft_with_llm_fallback,
+)
 from app.agent.v92.contracts import (
     AdversarialReviewVerdict,
     FinalAnswerContext,
@@ -113,8 +116,12 @@ def _emit_v92_output_quality_trace(
         ),
         adversarial_review_decision=getattr(adversarial_review, "decision", None),
         adversarial_review_severity=getattr(adversarial_review, "severity", None),
-        unsupported_claims_count=len(getattr(adversarial_review, "unsupported_claims", []) or []),
-        forbidden_claims_count=len(getattr(adversarial_review, "forbidden_claims", []) or []),
+        unsupported_claims_count=len(
+            getattr(adversarial_review, "unsupported_claims", []) or []
+        ),
+        forbidden_claims_count=len(
+            getattr(adversarial_review, "forbidden_claims", []) or []
+        ),
         required_revision_count=len(
             getattr(adversarial_review, "required_revision_instructions", []) or []
         ),
@@ -149,7 +156,9 @@ def infer_turn_route(
     answer_mode: str | None = None,
     user_message: str = "",
 ) -> TurnRoute:
-    value = (route_hint or answer_mode or policy_path or response_class or "").casefold()
+    value = (
+        route_hint or answer_mode or policy_path or response_class or ""
+    ).casefold()
     message = user_message.casefold()
     if "unsafe" in value or "blocked" in value or "guard" in value:
         return "unsafe_or_blocked"
@@ -158,18 +167,33 @@ def infer_turn_route(
     if "active_case_process" in value:
         return "knowledge_case_side_question"
     if "side" in value or "knowledge" in value:
-        return "knowledge_case_side_question" if "side" in value else "knowledge_general"
+        return (
+            "knowledge_case_side_question" if "side" in value else "knowledge_general"
+        )
     if "smalltalk" in value or "fast" in value or "conversation" in value:
         return "smalltalk"
     if "review" in value:
         return "expert_review_action"
-    if any(token in message for token in ("leckage", "schaden", "ausfall", "root cause", "ursache")):
+    if any(
+        token in message
+        for token in ("leckage", "schaden", "ausfall", "root cause", "ursache")
+    ):
         return "leakage_failure_analysis"
-    if any(token in message for token in ("norm", "standard", "konform", "atex", "fda", "reach")):
+    if any(
+        token in message
+        for token in ("norm", "standard", "konform", "atex", "fda", "reach")
+    ):
         return "standards_or_compliance"
     if any(
         token in message
-        for token in ("bewerte", "beurteile", "einschaetz", "einschätz", "screening", "eignung")
+        for token in (
+            "bewerte",
+            "beurteile",
+            "einschaetz",
+            "einschätz",
+            "screening",
+            "eignung",
+        )
     ):
         return "engineering_recommendation"
     if response_class in {"technical_preselection", "candidate_shortlist"}:
@@ -180,7 +204,13 @@ def infer_turn_route(
 
 
 def _route_mutation_policy(route: TurnRoute) -> StateMutationPolicy:
-    if route in {"smalltalk", "abusive_or_shit_chat", "knowledge_general", "knowledge_case_side_question", "unsafe_or_blocked"}:
+    if route in {
+        "smalltalk",
+        "abusive_or_shit_chat",
+        "knowledge_general",
+        "knowledge_case_side_question",
+        "unsafe_or_blocked",
+    }:
         return "none"
     if route == "expert_review_action":
         return "review_action"
@@ -263,8 +293,12 @@ def _case_state_summary(state: GovernedSessionState | None) -> dict[str, Any]:
     return {
         "state_present": True,
         "user_turn_index": int(getattr(state, "user_turn_index", 0) or 0),
-        "assertion_count": len(getattr(getattr(state, "asserted", None), "assertions", {}) or {}),
-        "normalized_parameter_count": len(getattr(getattr(state, "normalized", None), "parameters", {}) or {}),
+        "assertion_count": len(
+            getattr(getattr(state, "asserted", None), "assertions", {}) or {}
+        ),
+        "normalized_parameter_count": len(
+            getattr(getattr(state, "normalized", None), "parameters", {}) or {}
+        ),
         "pending_question": _dump(getattr(state, "pending_question", None)) or None,
         "persistence_marker": _dump(getattr(state, "persistence_marker", None)) or None,
     }
@@ -276,20 +310,34 @@ def _required_warnings(state: GovernedSessionState | None) -> list[str]:
         "Berechnete Werte sind Screening-/Pruefwerte, keine Freigabeclaims.",
     ]
     if state is None:
-        warnings.append("Kein vollstaendig persistierter CaseState fuer diese Antwort sichtbar.")
+        warnings.append(
+            "Kein vollstaendig persistierter CaseState fuer diese Antwort sichtbar."
+        )
         return warnings
-    stale_ids = list(getattr(getattr(state, "calculation", None), "stale_result_ids", []) or [])
+    stale_ids = list(
+        getattr(getattr(state, "calculation", None), "stale_result_ids", []) or []
+    )
     if stale_ids:
-        warnings.append("Stale Berechnungen muessen vor technischen Zusagen erneuert werden.")
+        warnings.append(
+            "Stale Berechnungen muessen vor technischen Zusagen erneuert werden."
+        )
     if getattr(getattr(state, "standards", None), "blocking_gaps", None):
-        warnings.append("Norm-/Compliance-Aussagen bleiben ohne lizenzierten Nachweis oder Review begrenzt.")
-    if getattr(getattr(state, "document_evidence", None), "prompt_injection_findings", None):
-        warnings.append("Upload-Inhalte wurden als untrusted evidence behandelt, nicht als Instruktion.")
+        warnings.append(
+            "Norm-/Compliance-Aussagen bleiben ohne lizenzierten Nachweis oder Review begrenzt."
+        )
+    if getattr(
+        getattr(state, "document_evidence", None), "prompt_injection_findings", None
+    ):
+        warnings.append(
+            "Upload-Inhalte wurden als untrusted evidence behandelt, nicht als Instruktion."
+        )
     return warnings
 
 
 def _allowed_claim_level(state: GovernedSessionState | None) -> str:
-    approved = getattr(getattr(state, "review_state", None), "approved_claim_level", None)
+    approved = getattr(
+        getattr(state, "review_state", None), "approved_claim_level", None
+    )
     if approved:
         return str(approved)
     if state is None:
@@ -320,14 +368,17 @@ def build_final_answer_context(
         state is None
         or stale_items
         or list(getattr(review, "required_review_types", []) or [])
-        or str(getattr(review, "status", "not_started") or "") in {"pending", "changes_required", "blocked"}
+        or str(getattr(review, "status", "not_started") or "")
+        in {"pending", "changes_required", "blocked"}
     )
     human_review_reasons: list[str] = []
     if state is None:
         human_review_reasons.append("case_state_missing")
     if stale_items:
         human_review_reasons.append("stale_calculation_or_screening_present")
-    human_review_reasons.extend([str(item) for item in list(getattr(review, "required_review_types", []) or [])])
+    human_review_reasons.extend(
+        [str(item) for item in list(getattr(review, "required_review_types", []) or [])]
+    )
 
     return FinalAnswerContext(
         turn_id=envelope.turn_id,
@@ -354,15 +405,24 @@ def build_final_answer_context(
         risk_findings=_dump_list(getattr(engineering, "risk_findings", []) or [])
         + _dump_list(getattr(challenge, "findings", []) or []),
         completeness=_dump(completeness) or None,
-        material_candidates=_dump_list(getattr(compound, "material_family_candidates", []) or []),
-        compound_candidates=_dump_list(getattr(compound, "compound_candidates", []) or []),
-        product_candidates=_dump_list(getattr(compound, "product_candidates", []) or []),
+        material_candidates=_dump_list(
+            getattr(compound, "material_family_candidates", []) or []
+        ),
+        compound_candidates=_dump_list(
+            getattr(compound, "compound_candidates", []) or []
+        ),
+        product_candidates=_dump_list(
+            getattr(compound, "product_candidates", []) or []
+        ),
         allowed_claim_level=_allowed_claim_level(state),
         forbidden_claims=list(
             dict.fromkeys(
                 [
                     *_DEFAULT_FORBIDDEN_CLAIMS,
-                    *list(getattr(getattr(state, "dossier", None), "forbidden_claims", []) or []),
+                    *list(
+                        getattr(getattr(state, "dossier", None), "forbidden_claims", [])
+                        or []
+                    ),
                 ]
             )
         ),
@@ -387,9 +447,15 @@ def apply_v92_contracts_to_payload(
     case_id: str | None = None,
 ) -> dict[str, Any]:
     updated = dict(payload)
-    response_class = str(updated.get("response_class") or updated.get("responseClass") or "")
+    response_class = str(
+        updated.get("response_class") or updated.get("responseClass") or ""
+    )
     run_meta = dict(updated.get("run_meta") or {})
-    answer_trace = run_meta.get("answer_trace") if isinstance(run_meta.get("answer_trace"), dict) else {}
+    answer_trace = (
+        run_meta.get("answer_trace")
+        if isinstance(run_meta.get("answer_trace"), dict)
+        else {}
+    )
     composer_meta = (
         run_meta.get("governed_answer_composer")
         if isinstance(run_meta.get("governed_answer_composer"), dict)
@@ -397,7 +463,8 @@ def apply_v92_contracts_to_payload(
     )
     prompt_trace = (
         composer_meta.get("prompt_trace")
-        if isinstance(composer_meta, dict) and isinstance(composer_meta.get("prompt_trace"), dict)
+        if isinstance(composer_meta, dict)
+        and isinstance(composer_meta.get("prompt_trace"), dict)
         else None
     )
     answer_mode = str(answer_trace.get("answer_mode") or "")
@@ -436,7 +503,10 @@ def apply_v92_contracts_to_payload(
     )
     dashboard_payload = dashboard.model_dump(mode="json")
     visible_answer = str(
-        updated.get("answer_markdown") or updated.get("assistant_message") or updated.get("reply") or ""
+        updated.get("answer_markdown")
+        or updated.get("assistant_message")
+        or updated.get("reply")
+        or ""
     ).strip()
 
     adversarial_review: AdversarialReviewVerdict | None = None
@@ -469,7 +539,10 @@ def apply_v92_contracts_to_payload(
             adversarial_review=adversarial_review,
         )
         initial_guard = final_guard
-        if final_guard.decision in {"block", "human_review"} or not final_guard.final_stream_allowed:
+        if (
+            final_guard.decision in {"block", "human_review"}
+            or not final_guard.final_stream_allowed
+        ):
             guarded_fallback_used = True
             visible_answer = guarded_fallback_answer(
                 context=final_context,
@@ -495,18 +568,27 @@ def apply_v92_contracts_to_payload(
             envelope=envelope,
             dashboard_projection=dashboard_payload,
         )
-        final_guard = validate_final_output(visible_answer, context=nontechnical_context)
+        final_guard = validate_final_output(
+            visible_answer, context=nontechnical_context
+        )
         initial_guard = final_guard
         # F2: a non-technical block must ENFORCE, not just record telemetry —
         # substitute the same safe fallback the technical branch (:471) and L1 use,
         # then re-validate. Without this, a detected knowledge-turn leak (e.g. an
         # L2-only "sind geeignet") still left in visible_answer below.
-        if final_guard.decision in {"block", "human_review"} or not final_guard.final_stream_allowed:
+        if (
+            final_guard.decision in {"block", "human_review"}
+            or not final_guard.final_stream_allowed
+        ):
             guarded_fallback_used = True
             visible_answer = FAST_PATH_GUARD_FALLBACK
-            final_guard = validate_final_output(visible_answer, context=nontechnical_context)
+            final_guard = validate_final_output(
+                visible_answer, context=nontechnical_context
+            )
         nontechnical_context.guard_trace = final_guard.model_dump(mode="json")
-        updated["nontechnical_answer_context"] = nontechnical_context.model_dump(mode="json")
+        updated["nontechnical_answer_context"] = nontechnical_context.model_dump(
+            mode="json"
+        )
 
     updated["answer_markdown"] = visible_answer
     updated["assistant_message"] = visible_answer
@@ -575,13 +657,18 @@ async def apply_async_adversarial_review_to_payload(
     if not isinstance(payload.get("final_answer_context"), dict):
         return payload
     envelope = payload.get("turn_envelope")
-    if not isinstance(envelope, dict) or not bool(envelope.get("requires_adversarial_review")):
+    if not isinstance(envelope, dict) or not bool(
+        envelope.get("requires_adversarial_review")
+    ):
         return payload
 
     updated = dict(payload)
     final_context = FinalAnswerContext.model_validate(updated["final_answer_context"])
     visible_answer = str(
-        updated.get("answer_markdown") or updated.get("assistant_message") or updated.get("reply") or ""
+        updated.get("answer_markdown")
+        or updated.get("assistant_message")
+        or updated.get("reply")
+        or ""
     ).strip()
     verdict = await review_answer_draft_with_llm_fallback(visible_answer, final_context)
     revision_applied = False
@@ -601,7 +688,9 @@ async def apply_async_adversarial_review_to_payload(
     guarded_fallback_used = False
     if guard.decision in {"block", "human_review"} or not guard.final_stream_allowed:
         guarded_fallback_used = True
-        visible_answer = guarded_fallback_answer(context=final_context, guard_result=guard)
+        visible_answer = guarded_fallback_answer(
+            context=final_context, guard_result=guard
+        )
         guard = validate_final_output(visible_answer, context=final_context)
 
     final_context.adversarial_review = verdict.model_dump(mode="json")
@@ -646,7 +735,9 @@ async def apply_async_adversarial_review_to_payload(
     except Exception:  # noqa: BLE001
         envelope_model = TurnEnvelope(
             turn_id=str(envelope.get("turn_id") or final_context.turn_id),
-            session_id=str(envelope.get("session_id") or final_context.case_id or "unknown"),
+            session_id=str(
+                envelope.get("session_id") or final_context.case_id or "unknown"
+            ),
             case_id=final_context.case_id,
             case_revision_before=None,
             case_revision_after=final_context.case_revision,
@@ -659,7 +750,9 @@ async def apply_async_adversarial_review_to_payload(
             ),
             requires_engine=bool(envelope.get("requires_engine", True)),
             requires_evidence=bool(envelope.get("requires_evidence", True)),
-            requires_adversarial_review=bool(envelope.get("requires_adversarial_review", True)),
+            requires_adversarial_review=bool(
+                envelope.get("requires_adversarial_review", True)
+            ),
             requires_final_guard=bool(envelope.get("requires_final_guard", True)),
             streaming_policy=str(  # type: ignore[arg-type]
                 envelope.get("streaming_policy") or "status_only_until_guarded_final"

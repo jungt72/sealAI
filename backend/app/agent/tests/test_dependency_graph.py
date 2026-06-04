@@ -56,7 +56,10 @@ def test_mark_stale_derived_values_preserves_values_and_marks_metadata() -> None
 
     assert updated.derived_values["rwdr_pv_precheck"].value == 0.42
     assert updated.derived_values["rwdr_pv_precheck"].status == "stale"
-    assert updated.derived_values["rwdr_pv_precheck"].stale_reason == "accepted_case_delta_changed_inputs"
+    assert (
+        updated.derived_values["rwdr_pv_precheck"].stale_reason
+        == "accepted_case_delta_changed_inputs"
+    )
     assert "rwdr_pv_precheck" in updated.stale_derived_value_ids
     assert updated.field_status["rwdr_pv_precheck"] == "stale"
     assert updated.derived_values["material_direction"].status == "stale"
@@ -76,7 +79,10 @@ def test_snapshot_stale_marking_handles_plain_durable_state_dict() -> None:
                 "pv_load": {
                     "value": 0.63,
                     "status": "valid",
-                    "derived_from_fields": ["pressure_nominal", "circumferential_speed"],
+                    "derived_from_fields": [
+                        "pressure_nominal",
+                        "circumferential_speed",
+                    ],
                     "derived_from_revision": 2,
                     "calculation_id": "pv_load",
                 },
@@ -96,9 +102,17 @@ def test_snapshot_stale_marking_handles_plain_durable_state_dict() -> None:
         reason="accepted_case_delta_changed_inputs",
     )
 
-    assert state_json["derived"]["derived_values"]["circumferential_speed"]["status"] == "valid"
-    assert updated["derived"]["derived_values"]["circumferential_speed"]["status"] == "stale"
-    assert updated["derived"]["derived_values"]["circumferential_speed"]["value"] == 3.14
+    assert (
+        state_json["derived"]["derived_values"]["circumferential_speed"]["status"]
+        == "valid"
+    )
+    assert (
+        updated["derived"]["derived_values"]["circumferential_speed"]["status"]
+        == "stale"
+    )
+    assert (
+        updated["derived"]["derived_values"]["circumferential_speed"]["value"] == 3.14
+    )
     assert updated["derived"]["derived_values"]["pv_load"]["status"] == "stale"
     assert updated["derived"]["field_status"]["pv_load"] == "stale"
     assert updated["derived"]["stale_derived_value_ids"] == [

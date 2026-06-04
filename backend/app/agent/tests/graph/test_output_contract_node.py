@@ -681,7 +681,6 @@ class TestResponseClassConsistency:
         assert "Druck direkt an der Dichtung" in strategy.primary_question
         assert "Differenzdruck" in strategy.primary_question
 
-
     def test_filled_shaft_diameter_is_not_asked_again(self):
         state = GraphState(
             asserted=AssertedState(

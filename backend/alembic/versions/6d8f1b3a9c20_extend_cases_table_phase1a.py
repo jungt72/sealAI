@@ -108,9 +108,7 @@ def upgrade() -> None:
 
     op.add_column(
         "cases",
-        sa.Column(
-            "rfq_ready", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("rfq_ready", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
     op.add_column(
         "cases",

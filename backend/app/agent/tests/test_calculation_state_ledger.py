@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.state.models import GovernedSessionState, ObservedExtraction, ObservedState
+from app.agent.state.models import (
+    GovernedSessionState,
+    ObservedExtraction,
+    ObservedState,
+)
 from app.agent.state.projections import project_for_ui
 from app.agent.state.reducers import (
     reduce_normalized_to_asserted,

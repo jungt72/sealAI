@@ -62,7 +62,10 @@ def test_v91_policy_maps_general_knowledge_to_free_answer_only() -> None:
     )
 
     assert policy.semantic_boundary.intent == SemanticIntent.GENERAL_KNOWLEDGE.value
-    assert policy.semantic_boundary.domain_relevance == DomainRelevance.SEALING_RELATED.value
+    assert (
+        policy.semantic_boundary.domain_relevance
+        == DomainRelevance.SEALING_RELATED.value
+    )
     assert policy.semantic_boundary.case_binding == CaseBinding.NONE.value
     assert policy.freedom_decision.level == LLMFreedomLevel.FREE_EXPLANATION.value
     assert policy.response_policy.action == ResponseAction.ANSWER_ONLY.value

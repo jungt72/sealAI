@@ -7,7 +7,9 @@ from app.agent.v92.contracts import FinalAnswerContext
 from app.agent.v92.final_guard import validate_final_output
 
 
-def _risk_payloads(profile: dict[str, object], *, engineering_path: str = "rwdr") -> list[dict[str, object]]:
+def _risk_payloads(
+    profile: dict[str, object], *, engineering_path: str = "rwdr"
+) -> list[dict[str, object]]:
     return [
         risk.to_dict()
         for risk in evaluate_risks(profile, engineering_path=engineering_path)
@@ -29,7 +31,9 @@ def _state(assertions: dict[str, object]) -> GovernedSessionState:
     )
 
 
-def _final_context(*, risk_findings: list[dict[str, object]] | None = None) -> FinalAnswerContext:
+def _final_context(
+    *, risk_findings: list[dict[str, object]] | None = None
+) -> FinalAnswerContext:
     return FinalAnswerContext(
         turn_id="turn-patch4",
         case_id="case-patch4",
@@ -48,12 +52,14 @@ def test_no_high_runout_claim_without_runout_value() -> None:
 
     assert surface["claim_type"] == "missing_input_risk"
     assert "runout_mm" in surface["missing_fields"]
-    assert "offen" in str(surface["allowed_user_wording"]).casefold() or "nicht angegeben" in str(surface["allowed_user_wording"]).casefold()
+    assert (
+        "offen" in str(surface["allowed_user_wording"]).casefold()
+        or "nicht angegeben" in str(surface["allowed_user_wording"]).casefold()
+    )
     assert "Der Wellenschlag ist hoch." in surface["forbidden_user_wording"]
     assert all(
         not (
-            item["risk_name"] == "runout_risk"
-            and item["claim_type"] == "measured_risk"
+            item["risk_name"] == "runout_risk" and item["claim_type"] == "measured_risk"
         )
         for item in payloads
     )
@@ -71,9 +77,7 @@ def test_high_runout_claim_requires_measured_value() -> None:
 
 
 def test_system_pressure_does_not_create_seal_pressure_risk_claim() -> None:
-    payloads = _risk_payloads(
-        {"sealing_type": "rwdr", "pressure_system_bar": 5.0}
-    )
+    payloads = _risk_payloads({"sealing_type": "rwdr", "pressure_system_bar": 5.0})
     pressure = _risk_by_name(payloads, "pressure_risk")
 
     assert pressure["claim_type"] == "missing_input_risk"
@@ -85,9 +89,7 @@ def test_system_pressure_does_not_create_seal_pressure_risk_claim() -> None:
 
 
 def test_ambiguous_pressure_creates_ambiguity_risk_not_measured_risk() -> None:
-    payloads = _risk_payloads(
-        {"sealing_type": "rwdr", "ambiguous_pressure_bar": 5.0}
-    )
+    payloads = _risk_payloads({"sealing_type": "rwdr", "ambiguous_pressure_bar": 5.0})
     pressure = _risk_by_name(payloads, "pressure_risk")
 
     assert pressure["claim_type"] == "ambiguity_risk"
@@ -105,7 +107,9 @@ def test_unknown_medium_blocks_material_risk_claim() -> None:
     assert corrosion["claim_type"] == "missing_input_risk"
     assert corrosion["blocked_reason"] == "medium_missing_or_placeholder"
     assert "medium_name" in corrosion["missing_fields"]
-    assert "Werkstoffvertraeglichkeit bleibt offen" in str(corrosion["allowed_user_wording"])
+    assert "Werkstoffvertraeglichkeit bleibt offen" in str(
+        corrosion["allowed_user_wording"]
+    )
     assert "Das Medium ist chemisch kritisch." in corrosion["forbidden_user_wording"]
 
 
@@ -122,7 +126,12 @@ def test_rwdr_type_is_not_rwdr_suitability_claim() -> None:
         for finding in challenge.findings
     ).casefold()
 
-    assert _state({"sealing_type": "rwdr"}).asserted.assertions["sealing_type"].asserted_value == "rwdr"
+    assert (
+        _state({"sealing_type": "rwdr"})
+        .asserted.assertions["sealing_type"]
+        .asserted_value
+        == "rwdr"
+    )
     assert "rwdr ist geeignet" not in visible_wording
     assert "rwdr ist ungeeignet" not in visible_wording
     assert "freigegeben" not in visible_wording

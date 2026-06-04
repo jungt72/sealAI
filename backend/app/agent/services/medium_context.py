@@ -4,7 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.agent.domain.medium_registry import classify_medium_value, normalize_medium_lookup_key, resolve_medium_entry
+from app.agent.domain.medium_registry import (
+    classify_medium_value,
+    normalize_medium_lookup_key,
+    resolve_medium_entry,
+)
 
 
 MediumContextStatus = Literal["unavailable", "available"]
@@ -324,7 +328,11 @@ _FAMILY_LIBRARY: dict[str, dict[str, object]] = {
     "chemisch_aggressiv": {
         "medium_label": "Chemisch aggressives Medium",
         "summary": "Chemisch aggressive Medien muessen ueber Stofftyp, Konzentration und Temperatur sauber eingegrenzt werden, bevor technische Aussagen belastbar sind.",
-        "properties": ["stofflich variabel", "reaktionsrelevant", "temperaturabhaengig"],
+        "properties": [
+            "stofflich variabel",
+            "reaktionsrelevant",
+            "temperaturabhaengig",
+        ],
         "challenges": [
             "Exakte Stoffbezeichnung oder Zusammensetzung klaeren",
             "Konzentration und Temperatur sauber abgrenzen",
@@ -408,12 +416,19 @@ def build_medium_context(
     ):
         payload["medium_label"] = classification.canonical_label
 
-    resolved_label = str(payload.get("medium_label") or classification.canonical_label or medium_label or "").strip()
+    resolved_label = str(
+        payload.get("medium_label")
+        or classification.canonical_label
+        or medium_label
+        or ""
+    ).strip()
     if not resolved_label:
         return MediumContext()
 
     summary = str(payload.get("summary") or "").strip()
-    generic_followups = list(payload.get("followup_points") or []) + _default_followup_points()
+    generic_followups = (
+        list(payload.get("followup_points") or []) + _default_followup_points()
+    )
     properties = _claim_safe(list(payload.get("properties") or []))
     challenges = _claim_safe(list(payload.get("challenges") or []))
     followup_points = _claim_safe(generic_followups)
@@ -422,7 +437,8 @@ def build_medium_context(
         medium_label=resolved_label,
         status="available",
         scope="orientierend",
-        summary=summary or f"{resolved_label} wird hier als allgemeiner Medium-Kontext eingeordnet.",
+        summary=summary
+        or f"{resolved_label} wird hier als allgemeiner Medium-Kontext eingeordnet.",
         properties=properties[:4],
         challenges=challenges[:4],
         followup_points=followup_points[:4],

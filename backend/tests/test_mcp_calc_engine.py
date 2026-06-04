@@ -17,7 +17,9 @@ from app.mcp.calc_engine import (
     _EN_GASKET_DIMENSIONS,
     _BOLT_CAPACITY_KN,
 )
-from app.mcp.calculations.compliance import is_critical_application as _is_critical_medium
+from app.mcp.calculations.compliance import (
+    is_critical_application as _is_critical_medium,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -150,12 +152,16 @@ class TestCriticalApplication:
         assert result.is_critical_application is True
 
     def test_hydrogen_is_critical(self):
-        params = CalcInput(pressure_max_bar=10.0, temperature_max_c=20.0, medium="Hydrogen")
+        params = CalcInput(
+            pressure_max_bar=10.0, temperature_max_c=20.0, medium="Hydrogen"
+        )
         result = mcp_calc_gasket(params)
         assert result.is_critical_application is True
 
     def test_wasserstoff_is_critical(self):
-        params = CalcInput(pressure_max_bar=10.0, temperature_max_c=20.0, medium="Wasserstoff")
+        params = CalcInput(
+            pressure_max_bar=10.0, temperature_max_c=20.0, medium="Wasserstoff"
+        )
         result = mcp_calc_gasket(params)
         assert result.is_critical_application is True
 
@@ -165,17 +171,23 @@ class TestCriticalApplication:
         assert result.is_critical_application is True
 
     def test_steam_50bar_is_not_critical(self):
-        params = CalcInput(pressure_max_bar=50.0, temperature_max_c=200.0, medium="Dampf")
+        params = CalcInput(
+            pressure_max_bar=50.0, temperature_max_c=200.0, medium="Dampf"
+        )
         result = mcp_calc_gasket(params)
         assert result.is_critical_application is False
 
     def test_high_pressure_is_critical(self):
-        params = CalcInput(pressure_max_bar=120.0, temperature_max_c=200.0, medium="Wasser")
+        params = CalcInput(
+            pressure_max_bar=120.0, temperature_max_c=200.0, medium="Wasser"
+        )
         result = mcp_calc_gasket(params)
         assert result.is_critical_application is True
 
     def test_high_temperature_is_critical(self):
-        params = CalcInput(pressure_max_bar=10.0, temperature_max_c=450.0, medium="Dampf")
+        params = CalcInput(
+            pressure_max_bar=10.0, temperature_max_c=450.0, medium="Dampf"
+        )
         result = mcp_calc_gasket(params)
         assert result.is_critical_application is True
 

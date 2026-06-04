@@ -39,7 +39,9 @@ class PersistedStructuredCasePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def build_structured_case_storage_key(tenant_id: str, owner_id: str, case_id: str) -> str:
+def build_structured_case_storage_key(
+    tenant_id: str, owner_id: str, case_id: str
+) -> str:
     return f"agent_case:{tenant_id}:{owner_id}:{case_id}"
 
 
@@ -48,7 +50,9 @@ def _build_legacy_storage_key(owner_id: str, case_id: str) -> str:
 
 
 def _message_preview(message: BaseMessage | Any) -> str:
-    content = getattr(message, "content", "") if isinstance(message, BaseMessage) else ""
+    content = (
+        getattr(message, "content", "") if isinstance(message, BaseMessage) else ""
+    )
     if isinstance(content, str):
         return content.strip()
     return str(content).strip()
@@ -160,14 +164,22 @@ def _apply_persisted_lifecycle(
         governance_state["review_state"] = sealing_review.get("review_state")
 
     if persisted_lifecycle.get("review_required") is not None:
-        governance_state["review_required"] = bool(persisted_lifecycle.get("review_required"))
+        governance_state["review_required"] = bool(
+            persisted_lifecycle.get("review_required")
+        )
     elif sealing_review.get("review_required") is not None:
-        governance_state["review_required"] = bool(sealing_review.get("review_required"))
+        governance_state["review_required"] = bool(
+            sealing_review.get("review_required")
+        )
 
     if persisted_lifecycle.get("selected_partner_id"):
-        recipient_selection["selected_partner_id"] = persisted_lifecycle.get("selected_partner_id")
+        recipient_selection["selected_partner_id"] = persisted_lifecycle.get(
+            "selected_partner_id"
+        )
     elif sealing_selection.get("selected_partner_id"):
-        recipient_selection["selected_partner_id"] = sealing_selection.get("selected_partner_id")
+        recipient_selection["selected_partner_id"] = sealing_selection.get(
+            "selected_partner_id"
+        )
 
     if persisted_lifecycle.get("rfq_admissibility") is not None:
         rfq_state["rfq_admissibility"] = persisted_lifecycle.get("rfq_admissibility")
@@ -192,14 +204,22 @@ def _apply_persisted_lifecycle(
         rfq_state["rfq_confirmed"] = bool(sealing_handover.get("rfq_confirmed"))
 
     if persisted_lifecycle.get("rfq_handover_initiated") is not None:
-        rfq_state["rfq_handover_initiated"] = bool(persisted_lifecycle.get("rfq_handover_initiated"))
+        rfq_state["rfq_handover_initiated"] = bool(
+            persisted_lifecycle.get("rfq_handover_initiated")
+        )
     elif sealing_handover.get("handover_completed") is not None:
-        rfq_state["rfq_handover_initiated"] = bool(sealing_handover.get("handover_completed"))
+        rfq_state["rfq_handover_initiated"] = bool(
+            sealing_handover.get("handover_completed")
+        )
 
     if persisted_lifecycle.get("rfq_html_report_present") is not None:
-        rfq_state["rfq_html_report_present"] = bool(persisted_lifecycle.get("rfq_html_report_present"))
+        rfq_state["rfq_html_report_present"] = bool(
+            persisted_lifecycle.get("rfq_html_report_present")
+        )
     elif sealing_handover.get("rfq_html_report") is not None:
-        rfq_state["rfq_html_report_present"] = bool(sealing_handover.get("rfq_html_report"))
+        rfq_state["rfq_html_report_present"] = bool(
+            sealing_handover.get("rfq_html_report")
+        )
 
     case_state["case_meta"] = case_meta
     case_state["governance_state"] = governance_state
@@ -227,12 +247,18 @@ def _apply_persisted_concurrency_token(
         case_meta["state_revision"] = sealing_cycle.get("state_revision")
 
     if persisted_concurrency_token.get("snapshot_parent_revision") is not None:
-        case_meta["snapshot_parent_revision"] = persisted_concurrency_token.get("snapshot_parent_revision")
+        case_meta["snapshot_parent_revision"] = persisted_concurrency_token.get(
+            "snapshot_parent_revision"
+        )
     elif sealing_cycle.get("snapshot_parent_revision") is not None:
-        case_meta["snapshot_parent_revision"] = sealing_cycle.get("snapshot_parent_revision")
+        case_meta["snapshot_parent_revision"] = sealing_cycle.get(
+            "snapshot_parent_revision"
+        )
 
     if persisted_concurrency_token.get("analysis_cycle_id") is not None:
-        case_meta["analysis_cycle_id"] = persisted_concurrency_token.get("analysis_cycle_id")
+        case_meta["analysis_cycle_id"] = persisted_concurrency_token.get(
+            "analysis_cycle_id"
+        )
     elif sealing_cycle.get("analysis_cycle_id") is not None:
         case_meta["analysis_cycle_id"] = sealing_cycle.get("analysis_cycle_id")
 
@@ -256,24 +282,41 @@ def _apply_persisted_case_state_reload_overlay(
 
     persisted_case_meta = dict(persisted_case_state.get("case_meta") or {})
     case_meta = dict(case_state.get("case_meta") or {})
-    for key in ("phase", "state_revision", "snapshot_parent_revision", "analysis_cycle_id", "version"):
+    for key in (
+        "phase",
+        "state_revision",
+        "snapshot_parent_revision",
+        "analysis_cycle_id",
+        "version",
+    ):
         if persisted_case_meta.get(key) is not None:
             case_meta[key] = persisted_case_meta.get(key)
     if case_meta:
         case_state["case_meta"] = case_meta
 
-    persisted_governance_state = dict(persisted_case_state.get("governance_state") or {})
+    persisted_governance_state = dict(
+        persisted_case_state.get("governance_state") or {}
+    )
     governance_state = dict(case_state.get("governance_state") or {})
-    for key in ("release_status", "rfq_admissibility", "review_state", "review_required"):
+    for key in (
+        "release_status",
+        "rfq_admissibility",
+        "review_state",
+        "review_required",
+    ):
         if persisted_governance_state.get(key) is not None:
             governance_state[key] = persisted_governance_state.get(key)
     if governance_state:
         case_state["governance_state"] = governance_state
 
-    persisted_recipient_selection = dict(persisted_case_state.get("recipient_selection") or {})
+    persisted_recipient_selection = dict(
+        persisted_case_state.get("recipient_selection") or {}
+    )
     recipient_selection = dict(case_state.get("recipient_selection") or {})
     if persisted_recipient_selection.get("selected_partner_id"):
-        recipient_selection["selected_partner_id"] = persisted_recipient_selection.get("selected_partner_id")
+        recipient_selection["selected_partner_id"] = persisted_recipient_selection.get(
+            "selected_partner_id"
+        )
     if recipient_selection:
         case_state["recipient_selection"] = recipient_selection
 
@@ -321,78 +364,78 @@ def _apply_persisted_canonical_bounded_slices(
         "dispatch_intent": (
             ("dispatch_status", "dispatch_ready"),
             (
-            "dispatch_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "recipient_selection",
-            "requirement_class",
-            "recommendation_identity",
-            "rfq_object_basis",
+                "dispatch_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "recipient_selection",
+                "requirement_class",
+                "recommendation_identity",
+                "rfq_object_basis",
             ),
         ),
         "dispatch_trigger": (
             ("trigger_status", "trigger_allowed"),
             (
-            "trigger_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "requirement_class",
-            "recommendation_identity",
+                "trigger_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "requirement_class",
+                "recommendation_identity",
             ),
         ),
         "dispatch_dry_run": (
             ("dry_run_status", "would_dispatch"),
             (
-            "dry_run_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "requirement_class",
-            "recommendation_identity",
-            "trigger_source",
+                "dry_run_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "requirement_class",
+                "recommendation_identity",
+                "trigger_source",
             ),
         ),
         "dispatch_event": (
             ("event_status", "would_dispatch", "dry_run_status"),
             (
-            "event_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "requirement_class",
-            "recommendation_identity",
-            "trigger_source",
+                "event_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "requirement_class",
+                "recommendation_identity",
+                "trigger_source",
             ),
         ),
         "dispatch_bridge": (
             ("bridge_status", "dry_run_status"),
             (
-            "bridge_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "requirement_class",
-            "recommendation_identity",
-            "bridge_payload_summary",
+                "bridge_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "requirement_class",
+                "recommendation_identity",
+                "bridge_payload_summary",
             ),
         ),
         "dispatch_handoff": (
             ("handoff_status", "bridge_status"),
             (
-            "handoff_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "requirement_class",
-            "recommendation_identity",
-            "payload_summary",
+                "handoff_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "requirement_class",
+                "recommendation_identity",
+                "payload_summary",
             ),
         ),
         "dispatch_transport_envelope": (
             ("envelope_status", "handoff_status"),
             (
-            "envelope_blockers",
-            "recipient_refs",
-            "selected_manufacturer_ref",
-            "requirement_class",
-            "recommendation_identity",
-            "payload_summary",
+                "envelope_blockers",
+                "recipient_refs",
+                "selected_manufacturer_ref",
+                "requirement_class",
+                "recommendation_identity",
+                "payload_summary",
             ),
         ),
     }
@@ -465,7 +508,9 @@ def _build_structured_case_payload(
         persisted_lifecycle=persisted_lifecycle,
         persisted_concurrency_token=persisted_concurrency_token,
         working_profile=jsonable_encoder(canonical_state.get("working_profile", {})),
-        relevant_fact_cards=jsonable_encoder(canonical_state.get("relevant_fact_cards", [])),
+        relevant_fact_cards=jsonable_encoder(
+            canonical_state.get("relevant_fact_cards", [])
+        ),
         messages=messages_to_dict(canonical_state.get("messages", [])),
         tenant_id=tenant_id,
     )
@@ -475,7 +520,9 @@ class ConcurrencyConflictError(Exception):
     pass
 
 
-def _extract_sealing_cycle_concurrency_token(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+def _extract_sealing_cycle_concurrency_token(
+    payload: Dict[str, Any] | None,
+) -> Dict[str, Any]:
     root = dict(payload or {})
     sealing_state = dict(root.get("sealing_state") or {})
     cycle = dict(sealing_state.get("cycle") or {})
@@ -486,7 +533,9 @@ def _extract_sealing_cycle_concurrency_token(payload: Dict[str, Any] | None) -> 
     }
 
 
-def _extract_case_meta_concurrency_token(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+def _extract_case_meta_concurrency_token(
+    payload: Dict[str, Any] | None,
+) -> Dict[str, Any]:
     root = dict(payload or {})
     case_state = dict(root.get("case_state") or {})
     case_meta = dict(case_state.get("case_meta") or {})
@@ -497,7 +546,9 @@ def _extract_case_meta_concurrency_token(payload: Dict[str, Any] | None) -> Dict
     }
 
 
-def _extract_persisted_concurrency_token(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+def _extract_persisted_concurrency_token(
+    payload: Dict[str, Any] | None,
+) -> Dict[str, Any]:
     root = dict(payload or {})
     token = dict(root.get("persisted_concurrency_token") or {})
     return {
@@ -507,7 +558,9 @@ def _extract_persisted_concurrency_token(payload: Dict[str, Any] | None) -> Dict
     }
 
 
-def _resolve_preferred_concurrency_token(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+def _resolve_preferred_concurrency_token(
+    payload: Dict[str, Any] | None,
+) -> Dict[str, Any]:
     for token in (
         _extract_case_meta_concurrency_token(payload),
         _extract_persisted_concurrency_token(payload),
@@ -522,7 +575,9 @@ def _resolve_preferred_concurrency_token(payload: Dict[str, Any] | None) -> Dict
     }
 
 
-def _verify_concurrency_token_parity(payload: Dict[str, Any] | None, *, source_label: str) -> Dict[str, Any]:
+def _verify_concurrency_token_parity(
+    payload: Dict[str, Any] | None, *, source_label: str
+) -> Dict[str, Any]:
     sealing_token = _extract_sealing_cycle_concurrency_token(payload)
     preferred_token = _resolve_preferred_concurrency_token(payload)
     if preferred_token != sealing_token:
@@ -535,9 +590,16 @@ def _verify_concurrency_token_parity(payload: Dict[str, Any] | None, *, source_l
     return preferred_token
 
 
-def _resolve_lock_comparison_token(payload: Dict[str, Any] | None, *, source_label: str) -> Dict[str, Any]:
-    preferred_token = _verify_concurrency_token_parity(payload, source_label=source_label)
-    if all(preferred_token.get(key) is not None for key in ("state_revision", "snapshot_parent_revision", "analysis_cycle_id")):
+def _resolve_lock_comparison_token(
+    payload: Dict[str, Any] | None, *, source_label: str
+) -> Dict[str, Any]:
+    preferred_token = _verify_concurrency_token_parity(
+        payload, source_label=source_label
+    )
+    if all(
+        preferred_token.get(key) is not None
+        for key in ("state_revision", "snapshot_parent_revision", "analysis_cycle_id")
+    ):
         return preferred_token
     return _extract_sealing_cycle_concurrency_token(payload)
 
@@ -576,7 +638,9 @@ async def save_structured_case(
     messages = state.get("messages", [])
     summary = _latest_assistant_preview(messages)
 
-    incoming_token = _resolve_lock_comparison_token(state, source_label=f"incoming_state:{case_id}")
+    incoming_token = _resolve_lock_comparison_token(
+        state, source_label=f"incoming_state:{case_id}"
+    )
     incoming_rev = incoming_token.get("state_revision")
     incoming_parent_rev = incoming_token.get("snapshot_parent_revision")
     incoming_cycle_id = incoming_token.get("analysis_cycle_id")
@@ -591,14 +655,21 @@ async def save_structured_case(
             db_rev = existing_token.get("state_revision")
             db_cycle_id = existing_token.get("analysis_cycle_id")
             if db_rev is not None and incoming_rev is not None:
-                is_valid = incoming_parent_rev == db_rev if incoming_cycle_id != db_cycle_id else incoming_rev == db_rev
+                is_valid = (
+                    incoming_parent_rev == db_rev
+                    if incoming_cycle_id != db_cycle_id
+                    else incoming_rev == db_rev
+                )
                 if not is_valid:
                     raise ConcurrencyConflictError(
                         f"State revision conflict on case {case_id}: DB is at revision {db_rev}, but incoming state expects parent {incoming_parent_rev} or same rev {incoming_rev}."
                     )
             existing.user_id = owner_id
             existing.summary = summary
-            existing.contributors = {"runtime_path": runtime_path, "binding_level": binding_level}
+            existing.contributors = {
+                "runtime_path": runtime_path,
+                "binding_level": binding_level,
+            }
             existing.metadata_json = payload.model_dump(mode="python")
         else:
             session.add(
@@ -606,7 +677,10 @@ async def save_structured_case(
                     chat_id=storage_key,
                     user_id=owner_id,
                     summary=summary,
-                    contributors={"runtime_path": runtime_path, "binding_level": binding_level},
+                    contributors={
+                        "runtime_path": runtime_path,
+                        "binding_level": binding_level,
+                    },
                     metadata_json=payload.model_dump(mode="python"),
                 )
             )
@@ -621,7 +695,9 @@ async def save_structured_case(
     )
 
 
-async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -> AgentState | None:
+async def load_structured_case(
+    *, tenant_id: str, owner_id: str, case_id: str
+) -> AgentState | None:
     from app.database import AsyncSessionLocal
     from app.models.chat_transcript import ChatTranscript
 
@@ -644,7 +720,9 @@ async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -
             logger.warning("Failed to validate structured case payload: %s", exc)
             return None
 
-    if loaded_from_legacy and not _legacy_payload_matches_tenant(payload, tenant_id=tenant_id):
+    if loaded_from_legacy and not _legacy_payload_matches_tenant(
+        payload, tenant_id=tenant_id
+    ):
         return None
     if payload.tenant_id is not None and payload.tenant_id != tenant_id:
         return None
@@ -679,13 +757,21 @@ async def load_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -
         payload.persisted_concurrency_token or {},
         _build_case_meta_concurrency_token(payload.case_state or {}),
     )
-    hydrated_state = _apply_persisted_case_state_reload_overlay(hydrated_state, payload.case_state or {})
-    hydrated_state = _apply_persisted_concurrency_token(hydrated_state, reload_concurrency_token)
+    hydrated_state = _apply_persisted_case_state_reload_overlay(
+        hydrated_state, payload.case_state or {}
+    )
+    hydrated_state = _apply_persisted_concurrency_token(
+        hydrated_state, reload_concurrency_token
+    )
     hydrated_state = _apply_persisted_lifecycle(hydrated_state, reload_lifecycle)
-    return _apply_persisted_canonical_bounded_slices(hydrated_state, payload.case_state or {})
+    return _apply_persisted_canonical_bounded_slices(
+        hydrated_state, payload.case_state or {}
+    )
 
 
-async def delete_structured_case(*, tenant_id: str, owner_id: str, case_id: str) -> None:
+async def delete_structured_case(
+    *, tenant_id: str, owner_id: str, case_id: str
+) -> None:
     from app.database import AsyncSessionLocal
     from app.models.chat_transcript import ChatTranscript
 

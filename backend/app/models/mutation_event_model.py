@@ -107,7 +107,13 @@ class MutationEventModel(Base):
             raise ValueError(f"{key} is required")
         return normalized
 
-    @validates("payload", "proposed_delta", "accepted_delta", "rejected_delta", "rejection_reasons")
+    @validates(
+        "payload",
+        "proposed_delta",
+        "accepted_delta",
+        "rejected_delta",
+        "rejection_reasons",
+    )
     def _validate_json_object(self, key: str, value: Any) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise ValueError(f"{key} must be a dict")

@@ -57,7 +57,9 @@ def test_build_bridge_invitation_only_once_per_context() -> None:
     )
 
 
-def test_build_bridge_invitation_skips_plain_definition_even_with_existing_context() -> None:
+def test_build_bridge_invitation_skips_plain_definition_even_with_existing_context() -> (
+    None
+):
     service = KnowledgeCaseBridgeService()
     context = service.update_context(
         "Was ist PTFE bei 180 C und 12 bar Dampf?",
@@ -99,7 +101,9 @@ def test_build_governed_seed_preserves_history_and_parameters() -> None:
     assert seed.observed_topic is not None
 
 
-def test_transition_signal_uses_existing_context_when_user_turn_becomes_concrete() -> None:
+def test_transition_signal_uses_existing_context_when_user_turn_becomes_concrete() -> (
+    None
+):
     service = KnowledgeCaseBridgeService()
     context = KnowledgeSessionContext(session_id="knowledge-4")
     context = service.update_context(

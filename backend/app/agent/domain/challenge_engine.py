@@ -396,8 +396,12 @@ def _findings_from_risks(
                 evidence_fields=list(risk_payload.get("evidence_fields") or []),
                 missing_fields=list(risk_payload.get("missing_fields") or []),
                 blocked_reason=risk_payload.get("blocked_reason"),
-                allowed_user_wording=str(risk_payload.get("allowed_user_wording") or ""),
-                forbidden_user_wording=list(risk_payload.get("forbidden_user_wording") or []),
+                allowed_user_wording=str(
+                    risk_payload.get("allowed_user_wording") or ""
+                ),
+                forbidden_user_wording=list(
+                    risk_payload.get("forbidden_user_wording") or []
+                ),
             )
         )
     for index, result in enumerate(compute_results):
@@ -428,7 +432,9 @@ def _findings_from_risks(
                 ),
                 related_fields=["shaft_diameter_mm", "speed_rpm"],
                 action_mode="RUN_DERIVED_CALCULATIONS",
-                claim_id=_finding_id("derived_claim", str(result.get("calc_type") or "calc"), index),
+                claim_id=_finding_id(
+                    "derived_claim", str(result.get("calc_type") or "calc"), index
+                ),
                 claim_type="context_advisory",
                 subject_field="technical_derivation",
                 evidence_fields=["shaft_diameter_mm", "speed_rpm"],
@@ -448,7 +454,10 @@ def _findings_from_medium(
     summary = dict(material_projection.get("input_summary") or {})
     medium = _text(summary.get("medium") or profile.get("medium"))
     family = _text(summary.get("medium_family"))
-    if (not medium or is_medium_placeholder_value(medium)) and family in {"", "unknown"}:
+    if (not medium or is_medium_placeholder_value(medium)) and family in {
+        "",
+        "unknown",
+    }:
         return []
     triggers = (
         "salz",
@@ -485,8 +494,12 @@ def _findings_from_medium(
             claim_id=_finding_id("medium_claim", medium or family),
             claim_type="context_advisory",
             subject_field="medium",
-            evidence_fields=["medium"] if medium and not is_medium_placeholder_value(medium) else [],
-            missing_fields=["medium"] if not medium or is_medium_placeholder_value(medium) else [],
+            evidence_fields=["medium"]
+            if medium and not is_medium_placeholder_value(medium)
+            else [],
+            missing_fields=["medium"]
+            if not medium or is_medium_placeholder_value(medium)
+            else [],
             blocked_reason=(
                 "medium_missing_or_placeholder"
                 if not medium or is_medium_placeholder_value(medium)

@@ -1248,8 +1248,12 @@ class GovernedSessionState(BaseModel):
     standards: StandardsState = Field(default_factory=StandardsState)
     evidence_graph: EvidenceGraphState = Field(default_factory=EvidenceGraphState)
     compound_state: CompoundState = Field(default_factory=CompoundState)
-    document_evidence: DocumentEvidenceState = Field(default_factory=DocumentEvidenceState)
-    failure_observation: FailureObservationState = Field(default_factory=FailureObservationState)
+    document_evidence: DocumentEvidenceState = Field(
+        default_factory=DocumentEvidenceState
+    )
+    failure_observation: FailureObservationState = Field(
+        default_factory=FailureObservationState
+    )
     review_state: ReviewState = Field(default_factory=ReviewState)
     dossier: DossierState = Field(default_factory=DossierState)
     matching: MatchingState = Field(default_factory=MatchingState)
@@ -1274,9 +1278,13 @@ class GovernedSessionState(BaseModel):
     applied_sheet_event_ids: list[str] = Field(default_factory=list)
     governed_answer_context: dict[str, Any] = Field(default_factory=dict)
     v91_candidate_facts: list[CandidateFact] = Field(default_factory=list)
-    v91_field_governance_decisions: list[FieldGovernanceDecision] = Field(default_factory=list)
+    v91_field_governance_decisions: list[FieldGovernanceDecision] = Field(
+        default_factory=list
+    )
     v91_question_plan: Optional[QuestionPlan] = None
-    v91_conversation_task: ConversationTaskState = Field(default_factory=ConversationTaskState)
+    v91_conversation_task: ConversationTaskState = Field(
+        default_factory=ConversationTaskState
+    )
     v91_dialogue_debt: DialogueDebt = Field(default_factory=DialogueDebt)
     v91_final_answer_context: Optional[FinalAnswerContext] = None
     case_events: list[CaseEvent] = Field(default_factory=list)

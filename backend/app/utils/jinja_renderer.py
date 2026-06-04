@@ -25,7 +25,9 @@ def _env() -> jinja2.Environment:
     )
 
 
-def render_and_hash(template_path: str, context: dict[str, Any], version: str = "1.0.0") -> RenderedPrompt:
+def render_and_hash(
+    template_path: str, context: dict[str, Any], version: str = "1.0.0"
+) -> RenderedPrompt:
     """
     Render a prompt template and return a cryptographically verifiable trace.
 

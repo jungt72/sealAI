@@ -24,6 +24,7 @@ Conflict format (matches the existing contract in evaluate_claim_conflicts):
         "source":          str,          # which rule table fired
     }
 """
+
 from __future__ import annotations
 
 import math
@@ -36,14 +37,14 @@ from typing import Any, Dict, List, Optional, Tuple
 # Values are for lubricated sealing faces; reduce by 30 % for dry running.
 # ─────────────────────────────────────────────────────────────────────────────
 _RWDR_V_LIMITS_M_S: Dict[str, float] = {
-    "NBR":  6.0,    # Standard compound, lubricated
-    "FKM":  8.0,    # Standard; high-performance grades up to 12 m/s
-    "PTFE": 15.0,   # PTFE lip; highest rotary capability
-    "EPDM": 4.0,    # Limited rotary use (primarily static / hydraulics)
-    "HNBR": 8.0,    # Similar to FKM; excellent abrasion resistance
-    "FFKM": 6.0,    # Very high chemical resistance, moderate v_max
-    "CR":   4.0,    # Low rotary; ozone-resistant weather seals
-    "VMQ":  3.0,    # Low abrasion resistance, slow rotation only
+    "NBR": 6.0,  # Standard compound, lubricated
+    "FKM": 8.0,  # Standard; high-performance grades up to 12 m/s
+    "PTFE": 15.0,  # PTFE lip; highest rotary capability
+    "EPDM": 4.0,  # Limited rotary use (primarily static / hydraulics)
+    "HNBR": 8.0,  # Similar to FKM; excellent abrasion resistance
+    "FFKM": 6.0,  # Very high chemical resistance, moderate v_max
+    "CR": 4.0,  # Low rotary; ozone-resistant weather seals
+    "VMQ": 3.0,  # Low abrasion resistance, slow rotation only
 }
 
 # Absolute physical upper-bound regardless of material — prevents data-entry errors
@@ -53,15 +54,18 @@ _ABSOLUTE_V_SURFACE_MAX_M_S = 25.0
 
 # Operational domain hard limits (DIN 3760 / ISO 10766)
 _OPERATIONAL_LIMITS: Dict[str, Dict[str, float]] = {
-    "pressure_bar_dynamic_max": {"all": 400.0},   # hard upper for any dynamic seal
-    "temp_c_absolute_max":       {"all": 330.0},   # above FFKM peak — physically irrelevant for elastomers
-    "temp_c_absolute_min":       {"all": -200.0},  # below PTFE cryo limit
+    "pressure_bar_dynamic_max": {"all": 400.0},  # hard upper for any dynamic seal
+    "temp_c_absolute_max": {
+        "all": 330.0
+    },  # above FFKM peak — physically irrelevant for elastomers
+    "temp_c_absolute_min": {"all": -200.0},  # below PTFE cryo limit
 }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: surface velocity from shaft diameter + RPM
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _v_surface(diameter_mm: float, rpm: float) -> float:
     """v = π × d [mm] × n [rpm] / 60 000  →  [m/s]  (DIN 3760)"""
@@ -71,6 +75,7 @@ def _v_surface(diameter_mm: float, rpm: float) -> float:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: normalise a bare float token from a claim statement
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _extract_rpm(text: str) -> Optional[float]:
     """Return RPM value if found in text (matches `<number> rpm`, `U/min`, `min⁻¹`)."""
@@ -118,6 +123,7 @@ def _extract_pressure_bar(text: str) -> Optional[float]:
 # Core public API
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def validate_claim_against_matrix(
     claim_statement: str,
     *,
@@ -164,59 +170,68 @@ def validate_claim_against_matrix(
 
     # ── 1. Absolute RPM domain limit ─────────────────────────────────────────
     if rpm is not None and rpm > _ABSOLUTE_RPM_MAX:
-        conflicts.append({
-            "type": "DOMAIN_LIMIT_VIOLATION",
-            "severity": "CRITICAL",
-            "field": "rpm",
-            "message": (
-                f"Drehzahl {rpm:.0f} rpm überschreitet absolutes Domainlimit "
-                f"von {_ABSOLUTE_RPM_MAX:,} rpm für Radialwellendichtringe (DIN 3760). "
-                f"Keine Elastomerdichtung für diesen Betriebspunkt qualifizierbar."
-            ),
-            "claim_statement": claim_statement,
-            "source": "compound_validator.absolute_rpm_limit",
-        })
+        conflicts.append(
+            {
+                "type": "DOMAIN_LIMIT_VIOLATION",
+                "severity": "CRITICAL",
+                "field": "rpm",
+                "message": (
+                    f"Drehzahl {rpm:.0f} rpm überschreitet absolutes Domainlimit "
+                    f"von {_ABSOLUTE_RPM_MAX:,} rpm für Radialwellendichtringe (DIN 3760). "
+                    f"Keine Elastomerdichtung für diesen Betriebspunkt qualifizierbar."
+                ),
+                "claim_statement": claim_statement,
+                "source": "compound_validator.absolute_rpm_limit",
+            }
+        )
 
     # ── 2. Surface velocity per material (only if we have both d and n) ─────
     if rpm is not None and diameter_mm is not None:
         v = _v_surface(diameter_mm, rpm)
 
         if v > _ABSOLUTE_V_SURFACE_MAX_M_S:
-            conflicts.append({
-                "type": "DOMAIN_LIMIT_VIOLATION",
-                "severity": "CRITICAL",
-                "field": "v_surface",
-                "message": (
-                    f"Umfangsgeschwindigkeit {v:.2f} m/s (d={diameter_mm} mm, "
-                    f"n={rpm:.0f} rpm) überschreitet physikalisches Absolut-Limit "
-                    f"von {_ABSOLUTE_V_SURFACE_MAX_M_S} m/s — kein bekanntes "
-                    f"Dichtungsmaterial einsetzbar."
-                ),
-                "claim_statement": claim_statement,
-                "source": "compound_validator.absolute_v_limit",
-            })
+            conflicts.append(
+                {
+                    "type": "DOMAIN_LIMIT_VIOLATION",
+                    "severity": "CRITICAL",
+                    "field": "v_surface",
+                    "message": (
+                        f"Umfangsgeschwindigkeit {v:.2f} m/s (d={diameter_mm} mm, "
+                        f"n={rpm:.0f} rpm) überschreitet physikalisches Absolut-Limit "
+                        f"von {_ABSOLUTE_V_SURFACE_MAX_M_S} m/s — kein bekanntes "
+                        f"Dichtungsmaterial einsetzbar."
+                    ),
+                    "claim_statement": claim_statement,
+                    "source": "compound_validator.absolute_v_limit",
+                }
+            )
         elif candidate_materials:
             for mat in candidate_materials:
                 mat_key = mat.strip().upper()
                 v_limit = _RWDR_V_LIMITS_M_S.get(mat_key)
                 if v_limit is not None and v > v_limit:
-                    conflicts.append({
-                        "type": "DOMAIN_LIMIT_VIOLATION",
-                        "severity": "CRITICAL",
-                        "field": "v_surface",
-                        "message": (
-                            f"{mat_key}: Umfangsgeschwindigkeit {v:.2f} m/s überschreitet "
-                            f"Grenzwert {v_limit} m/s (DIN 3760). "
-                            f"Welle: {diameter_mm} mm, {rpm:.0f} rpm."
-                        ),
-                        "claim_statement": claim_statement,
-                        "source": "compound_validator.rwdr_v_limit",
-                    })
+                    conflicts.append(
+                        {
+                            "type": "DOMAIN_LIMIT_VIOLATION",
+                            "severity": "CRITICAL",
+                            "field": "v_surface",
+                            "message": (
+                                f"{mat_key}: Umfangsgeschwindigkeit {v:.2f} m/s überschreitet "
+                                f"Grenzwert {v_limit} m/s (DIN 3760). "
+                                f"Welle: {diameter_mm} mm, {rpm:.0f} rpm."
+                            ),
+                            "claim_statement": claim_statement,
+                            "source": "compound_validator.rwdr_v_limit",
+                        }
+                    )
 
     # ── 3. Temperature + 4. Pressure via material_limits table ──────────────
     if candidate_materials and (temp_c is not None or pressure_bar is not None):
         try:
-            from app.mcp.calculations.material_limits import check as mat_check, MATERIAL_ALIASES
+            from app.mcp.calculations.material_limits import (
+                check as mat_check,
+                MATERIAL_ALIASES,
+            )
         except ImportError:
             mat_check = None  # fail-open: skip if import fails
 
@@ -232,16 +247,26 @@ def validate_claim_against_matrix(
                     is_dynamic=True,
                 )
                 for warning in result.warnings:
-                    severity = "CRITICAL" if result.temp_ok is False or result.pressure_ok is False else "WARNING"
-                    field = "temperature" if "Temperatur" in warning or "Temp" in warning else "pressure"
-                    conflicts.append({
-                        "type": "DOMAIN_LIMIT_VIOLATION",
-                        "severity": severity,
-                        "field": field,
-                        "message": warning,
-                        "claim_statement": claim_statement,
-                        "source": f"compound_validator.material_limits.{mat.upper()}",
-                    })
+                    severity = (
+                        "CRITICAL"
+                        if result.temp_ok is False or result.pressure_ok is False
+                        else "WARNING"
+                    )
+                    field = (
+                        "temperature"
+                        if "Temperatur" in warning or "Temp" in warning
+                        else "pressure"
+                    )
+                    conflicts.append(
+                        {
+                            "type": "DOMAIN_LIMIT_VIOLATION",
+                            "severity": severity,
+                            "field": field,
+                            "message": warning,
+                            "claim_statement": claim_statement,
+                            "source": f"compound_validator.material_limits.{mat.upper()}",
+                        }
+                    )
 
     return conflicts
 

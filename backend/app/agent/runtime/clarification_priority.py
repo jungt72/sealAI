@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from app.agent.domain.medium_registry import is_medium_placeholder_value
-from app.agent.runtime.medium_status_text import medium_status_primary_question, render_open_point_label
+from app.agent.runtime.medium_status_text import (
+    medium_status_primary_question,
+    render_open_point_label,
+)
 from app.agent.state.models import GovernedSessionState
 
 
@@ -195,7 +198,9 @@ def _nested_text(container: object, key: str) -> str:
 def _has_value(state: GovernedSessionState, field_name: str) -> bool:
     asserted = state.asserted.assertions.get(field_name)
     if asserted is not None and asserted.asserted_value is not None:
-        if field_name == "medium" and is_medium_placeholder_value(str(asserted.asserted_value)):
+        if field_name == "medium" and is_medium_placeholder_value(
+            str(asserted.asserted_value)
+        ):
             return False
         return True
     normalized = state.normalized.parameters.get(field_name)
@@ -206,7 +211,9 @@ def _has_value(state: GovernedSessionState, field_name: str) -> bool:
     return True
 
 
-def _observed_unasserted_value(state: GovernedSessionState, field_name: str) -> object | None:
+def _observed_unasserted_value(
+    state: GovernedSessionState, field_name: str
+) -> object | None:
     asserted = state.asserted.assertions.get(field_name)
     if asserted is not None and asserted.asserted_value is not None:
         return None
@@ -251,10 +258,14 @@ def _state_value(state: GovernedSessionState, field_name: str) -> object | None:
 
 
 def _has_design_pressure_value(state: GovernedSessionState) -> bool:
-    return _has_value(state, "pressure_at_seal_bar") or _has_value(state, "pressure_delta_bar")
+    return _has_value(state, "pressure_at_seal_bar") or _has_value(
+        state, "pressure_delta_bar"
+    )
 
 
-def _pressure_role_priority(state: GovernedSessionState) -> ClarificationPriority | None:
+def _pressure_role_priority(
+    state: GovernedSessionState,
+) -> ClarificationPriority | None:
     if _has_design_pressure_value(state):
         return None
 
@@ -354,7 +365,11 @@ def _current_turn_text(state: GovernedSessionState) -> str:
 def _rotary_context_detected(state: GovernedSessionState) -> bool:
     if _motion_hint_label(state) in {"linear", "static"}:
         return False
-    if _application_hint_label(state) in {"linear_sealing", "static_sealing", "housing_sealing"}:
+    if _application_hint_label(state) in {
+        "linear_sealing",
+        "static_sealing",
+        "housing_sealing",
+    }:
         return False
     if _has_value(state, "speed_rpm") or _has_value(state, "shaft_diameter_mm"):
         return True
@@ -370,9 +385,19 @@ def _rotary_context_detected(state: GovernedSessionState) -> bool:
 
 def _rwdr_context_detected(state: GovernedSessionState) -> bool:
     sealing_type = str(_state_value(state, "sealing_type") or "").casefold()
-    if "rwdr" in sealing_type or "radialwellendichtring" in sealing_type or "wellendichtring" in sealing_type:
+    if (
+        "rwdr" in sealing_type
+        or "radialwellendichtring" in sealing_type
+        or "wellendichtring" in sealing_type
+    ):
         return True
-    return bool(re.search(r"\b(?:rwdr|radialwellendichtring|wellendichtring|simmerring|simmering)\b", _current_turn_text(state), re.IGNORECASE))
+    return bool(
+        re.search(
+            r"\b(?:rwdr|radialwellendichtring|wellendichtring|simmerring|simmering)\b",
+            _current_turn_text(state),
+            re.IGNORECASE,
+        )
+    )
 
 
 def _application_anchor_present(state: GovernedSessionState) -> bool:
@@ -393,19 +418,27 @@ def _application_anchor_present(state: GovernedSessionState) -> bool:
 
 
 def _geometry_context_present(*, known_fields: set[str], current_text: str) -> bool:
-    return "geometry_context" in known_fields or bool(_GEOMETRY_CONTEXT_RE.search(current_text))
+    return "geometry_context" in known_fields or bool(
+        _GEOMETRY_CONTEXT_RE.search(current_text)
+    )
 
 
 def _clearance_context_present(*, known_fields: set[str], current_text: str) -> bool:
-    return "clearance_gap_mm" in known_fields or bool(_CLEARANCE_CONTEXT_RE.search(current_text))
+    return "clearance_gap_mm" in known_fields or bool(
+        _CLEARANCE_CONTEXT_RE.search(current_text)
+    )
 
 
 def _surface_context_present(*, known_fields: set[str], current_text: str) -> bool:
-    return "counterface_surface" in known_fields or bool(_SURFACE_CONTEXT_RE.search(current_text))
+    return "counterface_surface" in known_fields or bool(
+        _SURFACE_CONTEXT_RE.search(current_text)
+    )
 
 
 def _counterface_material_present(*, known_fields: set[str], current_text: str) -> bool:
-    return "counterface_material" in known_fields or bool(_COUNTERFACE_MATERIAL_RE.search(current_text))
+    return "counterface_material" in known_fields or bool(
+        _COUNTERFACE_MATERIAL_RE.search(current_text)
+    )
 
 
 def _priority_from_field(field_name: str) -> ClarificationPriority | None:
@@ -445,7 +478,11 @@ def select_next_focus_from_known_context(
     linear_context_detected = bool(_LINEAR_CONTEXT_RE.search(current))
     if linear_context_detected:
         rotary_context_detected = False
-    if not linear_context_detected and not rotary_context_detected and _ROTARY_CONTEXT_RE.search(current):
+    if (
+        not linear_context_detected
+        and not rotary_context_detected
+        and _ROTARY_CONTEXT_RE.search(current)
+    ):
         rotary_context_detected = True
     if rwdr_context_detected:
         rotary_context_detected = True
@@ -466,8 +503,7 @@ def select_next_focus_from_known_context(
         current_text=current,
     )
     pressure_present = bool(
-        known
-        & {"pressure_bar", "pressure_at_seal_bar", "pressure_delta_bar"}
+        known & {"pressure_bar", "pressure_at_seal_bar", "pressure_delta_bar"}
     )
 
     if medium_status == "recognized":
@@ -520,7 +556,11 @@ def select_next_focus_from_known_context(
             priority = _priority_from_field("geometry_context")
             if priority is not None:
                 return priority
-        if geometry_context_present and not clearance_context_present and ("pressure_bar" in known or "temperature_c" in known):
+        if (
+            geometry_context_present
+            and not clearance_context_present
+            and ("pressure_bar" in known or "temperature_c" in known)
+        ):
             priority = _priority_from_field("clearance_gap_mm")
             if priority is not None:
                 return priority
@@ -587,7 +627,9 @@ def select_clarification_priority(
             )
         if _has_value(state, "medium"):
             field_set.discard("medium")
-            field_list = [field_name for field_name in field_list if field_name != "medium"]
+            field_list = [
+                field_name for field_name in field_list if field_name != "medium"
+            ]
             if not field_set:
                 return None
         else:
@@ -606,7 +648,9 @@ def select_clarification_priority(
             if priority is not None:
                 return priority
 
-    has_explicit_medium_context = _nested_text(state.medium_classification, "status") == "recognized"
+    has_explicit_medium_context = (
+        _nested_text(state.medium_classification, "status") == "recognized"
+    )
 
     for field_name in (
         "pressure_bar",
@@ -617,7 +661,11 @@ def select_clarification_priority(
         "shaft_diameter_mm",
     ):
         if field_name in field_set:
-            if field_name in {"pressure_bar", "pressure_at_seal_bar", "pressure_delta_bar"}:
+            if field_name in {
+                "pressure_bar",
+                "pressure_at_seal_bar",
+                "pressure_delta_bar",
+            }:
                 pressure_role = _pressure_role_priority(state)
                 if pressure_role is not None:
                     return pressure_role
@@ -780,9 +828,14 @@ def prioritized_open_point_labels(
             and medium_status_primary_question(state) is None
         ):
             continue
-        if field_name in {"speed_rpm", "shaft_diameter_mm"} and not _rotary_context_detected(state):
+        if field_name in {
+            "speed_rpm",
+            "shaft_diameter_mm",
+        } and not _rotary_context_detected(state):
             continue
-        if isinstance(field_name, str) and field_name.startswith("Unresolved conflict:"):
+        if isinstance(field_name, str) and field_name.startswith(
+            "Unresolved conflict:"
+        ):
             label = field_name
         else:
             label = render_open_point_label(state, str(field_name))

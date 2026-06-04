@@ -5,7 +5,9 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 
-ADVISORY_DISCLAIMER = "Nicht alle Umstände dieses konkreten Falls konnten berücksichtigt werden."
+ADVISORY_DISCLAIMER = (
+    "Nicht alle Umstände dieses konkreten Falls konnten berücksichtigt werden."
+)
 
 
 class AdvisorySeverity(str, Enum):
@@ -93,7 +95,9 @@ class AdvisoryEngine:
             triggers.append("material_review_needed")
         if _sequence(context.get("material_suitability_hints")):
             triggers.append("material_suitability_hints")
-        suitability_status = _normalized_text(context.get("material_suitability_status"))
+        suitability_status = _normalized_text(
+            context.get("material_suitability_status")
+        )
         if suitability_status in {"suboptimal", "review_required", "not_recommended"}:
             triggers.append("material_suitability_status")
         if not triggers:
@@ -112,9 +116,13 @@ class AdvisoryEngine:
         )
 
     def _missing_critical_input(self, context: Mapping[str, Any]) -> Advisory | None:
-        missing = tuple(str(item) for item in _sequence(context.get("missing_critical_fields")))
+        missing = tuple(
+            str(item) for item in _sequence(context.get("missing_critical_fields"))
+        )
         if not missing:
-            missing = tuple(str(item) for item in _sequence(context.get("missing_fields")) if item)
+            missing = tuple(
+                str(item) for item in _sequence(context.get("missing_fields")) if item
+            )
         if not missing:
             return None
         return Advisory(
@@ -133,12 +141,15 @@ class AdvisoryEngine:
     def _norm_review_required(self, context: Mapping[str, Any]) -> Advisory | None:
         norm_results = _sequence(context.get("norm_results"))
         flagged = [
-            result for result in norm_results
+            result
+            for result in norm_results
             if _norm_status(result) in {"review_required", "fail", "insufficient_data"}
         ]
         if not flagged:
             return None
-        blocking = any(_norm_status(result) in {"fail", "insufficient_data"} for result in flagged)
+        blocking = any(
+            _norm_status(result) in {"fail", "insufficient_data"} for result in flagged
+        )
         modules = tuple(filter(None, (_norm_module_id(result) for result in flagged)))
         return Advisory(
             advisory_id="adv_norm_review_required",
@@ -153,7 +164,9 @@ class AdvisoryEngine:
             blocking=blocking,
         )
 
-    def _food_contact_review_required(self, context: Mapping[str, Any]) -> Advisory | None:
+    def _food_contact_review_required(
+        self, context: Mapping[str, Any]
+    ) -> Advisory | None:
         if not bool(context.get("food_contact_required")):
             return None
         if bool(context.get("food_contact_evidence_complete")):
@@ -165,7 +178,10 @@ class AdvisoryEngine:
             title="Food-contact evidence needs review",
             message="Food-contact use is indicated, but the structured evidence is incomplete.",
             reason_code="food_contact_review_required",
-            triggering_parameters=("food_contact_required", "food_contact_evidence_complete"),
+            triggering_parameters=(
+                "food_contact_required",
+                "food_contact_evidence_complete",
+            ),
             evidence_tags=("food_contact", "norm_modules"),
             recommended_action="Request grade-specific EU/FDA declarations and traceability before release.",
             blocking=False,
@@ -202,7 +218,9 @@ class AdvisoryEngine:
         return Advisory(
             advisory_id="adv_quantity_capability_gap",
             category=AdvisoryCategory.QUANTITY_ECONOMIC_CONSIDERATION,
-            severity=AdvisorySeverity.WARNING if quantity <= 10 else AdvisorySeverity.CAUTION,
+            severity=AdvisorySeverity.WARNING
+            if quantity <= 10
+            else AdvisorySeverity.CAUTION,
             title="Quantity capability gap",
             message="Requested quantity is not covered by the available manufacturer capability signal.",
             reason_code="quantity_capability_gap",
@@ -212,7 +230,9 @@ class AdvisoryEngine:
             blocking=quantity <= 10,
         )
 
-    def _geometry_consistency_issue(self, context: Mapping[str, Any]) -> Advisory | None:
+    def _geometry_consistency_issue(
+        self, context: Mapping[str, Any]
+    ) -> Advisory | None:
         if bool(context.get("geometry_consistency_issue")):
             return _geometry_advisory(("geometry_consistency_issue",))
 
@@ -292,10 +312,14 @@ class AdvisoryEngine:
             blocking=False,
         )
 
-    def _manufacturer_review_required(self, context: Mapping[str, Any]) -> Advisory | None:
+    def _manufacturer_review_required(
+        self, context: Mapping[str, Any]
+    ) -> Advisory | None:
         if not bool(context.get("manufacturer_review_required")):
             return None
-        reason = str(context.get("manufacturer_review_reason") or "manufacturer_review_required")
+        reason = str(
+            context.get("manufacturer_review_reason") or "manufacturer_review_required"
+        )
         return Advisory(
             advisory_id="adv_manufacturer_review_required",
             category=AdvisoryCategory.LIFESPAN_EXPECTATION_MISMATCH,

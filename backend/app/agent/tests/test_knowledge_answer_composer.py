@@ -38,14 +38,24 @@ def _user() -> RequestUser:
 
 def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fail_governed(*_args, **_kwargs):
-        raise AssertionError("knowledge composer path must not invoke governed case runtime")
+        raise AssertionError(
+            "knowledge composer path must not invoke governed case runtime"
+        )
 
     async def fail_persist(*_args, **_kwargs):
-        raise AssertionError("knowledge composer path must not persist governed case state")
+        raise AssertionError(
+            "knowledge composer path must not persist governed case state"
+        )
 
-    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_light_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.loaders._persist_live_governed_state", fail_persist
+    )
 
 
 def _answer_trace(response) -> dict:
@@ -69,7 +79,9 @@ def test_knowledge_service_answers_epdm_hlp46_without_case_slot_question() -> No
     response = KnowledgeService(
         factcard_store=_FactcardStore([]),
         llm_research_fallback_enabled=False,
-    ).answer("Ist EPDM für Hydrauliköl HLP46 bei 80 °C und 10 bar geeignet? Keine Freigabe, nur Einordnung.")
+    ).answer(
+        "Ist EPDM für Hydrauliköl HLP46 bei 80 °C und 10 bar geeignet? Keine Freigabe, nur Einordnung."
+    )
 
     assert "EPDM" in response.content
     assert "HLP46" in response.content
@@ -82,7 +94,9 @@ def test_knowledge_service_uses_deterministic_hot_water_risk_comparison() -> Non
     response = KnowledgeService(
         factcard_store=_FactcardStore([]),
         llm_research_fallback_enabled=False,
-    ).answer("Vergleiche PTFE, FKM und EPDM für Heißwasser bei 120 °C. Wo liegen die typischen Risiken?")
+    ).answer(
+        "Vergleiche PTFE, FKM und EPDM für Heißwasser bei 120 °C. Wo liegen die typischen Risiken?"
+    )
 
     assert "PTFE" in response.content
     assert "FKM" in response.content
@@ -136,7 +150,9 @@ def test_ptfe_fkm_comparison_prompt_uses_compact_sealing_axes() -> None:
         deterministic_answer="Deterministische Orientierung zu PTFE und FKM.",
     )
 
-    messages = build_knowledge_answer_composer_messages(KnowledgeAnswerComposerInput(context=context))
+    messages = build_knowledge_answer_composer_messages(
+        KnowledgeAnswerComposerInput(context=context)
+    )
     system_prompt = messages[0]["content"]
 
     assert "PTFE is a Fluorpolymer" in system_prompt
@@ -169,7 +185,9 @@ def test_ptfe_fkm_comparison_rejects_encyclopedia_length() -> None:
         "Kosten, Verfügbarkeit und Wirtschaftlichkeit werden betrachtet. "
     ) * 12
 
-    with pytest.raises(KnowledgeAnswerComposerError, match="material_comparison_too_broad"):
+    with pytest.raises(
+        KnowledgeAnswerComposerError, match="material_comparison_too_broad"
+    ):
         enforce_material_comparison_depth(
             KnowledgeAnswerComposerInput(context=context),
             KnowledgeAnswerComposerOutput(answer_markdown=long_answer),
@@ -233,7 +251,10 @@ async def test_knowledge_answer_composer_enabled_keeps_reply_and_sets_answer_mar
     # comparisons now use the deterministic renderer (see
     # test_doctrine_comparative_ranking_guard for the passthrough contract).
     response = await chat_endpoint(
-        ChatRequest(message="Was bedeutet Shore A bei Dichtungswerkstoffen?", session_id="composer-on"),
+        ChatRequest(
+            message="Was bedeutet Shore A bei Dichtungswerkstoffen?",
+            session_id="composer-on",
+        ),
         current_user=_user(),
     )
 
@@ -299,7 +320,10 @@ async def test_knowledge_answer_composer_receives_enriched_history_and_evidence(
     )
 
     request = captured["request"]
-    assert [turn.role for turn in request.context.recent_history] == ["user", "assistant"]
+    assert [turn.role for turn in request.context.recent_history] == [
+        "user",
+        "assistant",
+    ]
     assert "PTFE ist ein Fluorpolymer" in request.context.recent_history[1].content
     assert request.context.evidence_items
     assert response.reply
@@ -350,7 +374,10 @@ async def test_knowledge_answer_composer_receives_factcard_evidence(
     assert request.context.evidence_items[0].source_type == "fact_card"
     assert "PTFE: Temperaturbereich" in request.context.evidence_items[0].content
     assert response.content == knowledge_response.content
-    assert response.answer_markdown == "**PTFE:** Temperaturhinweis aus kuratierter Evidenz."
+    assert (
+        response.answer_markdown
+        == "**PTFE:** Temperaturhinweis aus kuratierter Evidenz."
+    )
     assert response.answer_trace is not None
     assert response.answer_trace["reply_source"] == "knowledge_service"
     assert response.answer_trace["answer_markdown_source"] == "knowledge_composer"
@@ -369,7 +396,9 @@ async def test_high_fidelity_material_definition_bypasses_composer(
     ).answer("bitte gebe mir informationen zu PTFE")
 
     async def fail_compose(*_args, **_kwargs):
-        raise AssertionError("high-fidelity deterministic material answers should not be rewritten")
+        raise AssertionError(
+            "high-fidelity deterministic material answers should not be rewritten"
+        )
 
     monkeypatch.setattr(
         "app.agent.communication.answer_composer.KnowledgeAnswerComposer.compose",
@@ -451,23 +480,23 @@ async def test_knowledge_answer_composer_retries_registry_default_when_configure
             class Message:
                 content = (
                     '{"answer_markdown":"## Werkstoffvergleich: NBR vs PTFE\\n\\n'
-                    'NBR ist ein elastischer Nitrilkautschuk, PTFE ist ein '
-                    'Fluorpolymer und kein Elastomer. Für die technische '
-                    'Vorprüfung sind Temperatur, Medium, Härte, Compound, '
-                    'Dynamik und Herstellerdaten entscheidend. NBR liegt '
-                    'orientierend oft bei -30 bis +100 °C, häufig 60 bis 90 '
-                    'Shore A und wird bei Mineralöl, Fett und HLP-Fluids '
-                    'geprüft. Kritisch sind Ozon, UV, Dampf, Heißwasser, '
-                    'Ketone, Ester, Aromaten, Quellung und Druckverformungsrest. '
-                    'PTFE hat ein viel breiteres Temperaturfenster und eine '
-                    'breite Chemieorientierung, dichtet aber nicht über '
-                    'elastische Rückstellung. Dort zählen Kaltfluss, Kriechen, '
-                    'Füllstoff, Gegenlauffläche, Rauheit, Wärmeabfuhr, '
-                    'Vorspannung und Dichtungsgeometrie. Bei dynamischen '
-                    'Dichtungen unterscheiden sich Reibung, Verschleiß und '
-                    'Wärmeeintrag deutlich. Kosten und Verfügbarkeit liegen '
-                    'bei NBR meist günstiger, PTFE ist konstruktionsintensiver. '
-                    'Das ist technische Orientierung, keine Herstellerfreigabe '
+                    "NBR ist ein elastischer Nitrilkautschuk, PTFE ist ein "
+                    "Fluorpolymer und kein Elastomer. Für die technische "
+                    "Vorprüfung sind Temperatur, Medium, Härte, Compound, "
+                    "Dynamik und Herstellerdaten entscheidend. NBR liegt "
+                    "orientierend oft bei -30 bis +100 °C, häufig 60 bis 90 "
+                    "Shore A und wird bei Mineralöl, Fett und HLP-Fluids "
+                    "geprüft. Kritisch sind Ozon, UV, Dampf, Heißwasser, "
+                    "Ketone, Ester, Aromaten, Quellung und Druckverformungsrest. "
+                    "PTFE hat ein viel breiteres Temperaturfenster und eine "
+                    "breite Chemieorientierung, dichtet aber nicht über "
+                    "elastische Rückstellung. Dort zählen Kaltfluss, Kriechen, "
+                    "Füllstoff, Gegenlauffläche, Rauheit, Wärmeabfuhr, "
+                    "Vorspannung und Dichtungsgeometrie. Bei dynamischen "
+                    "Dichtungen unterscheiden sich Reibung, Verschleiß und "
+                    "Wärmeeintrag deutlich. Kosten und Verfügbarkeit liegen "
+                    "bei NBR meist günstiger, PTFE ist konstruktionsintensiver. "
+                    "Das ist technische Orientierung, keine Herstellerfreigabe "
                     'und keine Kompatibilitätszusage.",'
                     '"confidence_note":null}'
                 )
@@ -497,7 +526,9 @@ async def test_knowledge_answer_composer_retries_registry_default_when_configure
         lambda _role: (FakeClient(), "gpt-5.4-nano"),
     )
 
-    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    result = await KnowledgeAnswerComposer().compose(
+        KnowledgeAnswerComposerInput(context=context)
+    )
 
     assert result.answer_markdown.startswith("## Werkstoffvergleich: NBR vs PTFE")
     assert completions.models == ["gpt-5.4-nano", "gpt-4o-mini"]
@@ -525,13 +556,13 @@ async def test_simple_material_definition_answer_is_compacted(
             class Message:
                 content = (
                     '{"answer_markdown":"### NBR (Acrylnitril-Butadien-Kautschuk)\\n\\n'
-                    'NBR ist ein Elastomerwerkstoff.\\n\\n'
-                    '### Typische Eigenschaften und Anwendungen\\n\\n'
-                    '- Medienverträglichkeit: mineralölbasierte Medien.\\n'
-                    '- Kritische Einflüsse: Ozon und UV.\\n\\n'
-                    '### Limitierungen/Annahmen\\n\\n'
-                    'Diese Informationen dienen nur der technischen Orientierung.\\n\\n'
-                    '### Nächste Frage\\n\\n'
+                    "NBR ist ein Elastomerwerkstoff.\\n\\n"
+                    "### Typische Eigenschaften und Anwendungen\\n\\n"
+                    "- Medienverträglichkeit: mineralölbasierte Medien.\\n"
+                    "- Kritische Einflüsse: Ozon und UV.\\n\\n"
+                    "### Limitierungen/Annahmen\\n\\n"
+                    "Diese Informationen dienen nur der technischen Orientierung.\\n\\n"
+                    "### Nächste Frage\\n\\n"
                     'Welche Anwendung liegt vor?",'
                     '"confidence_note":null}'
                 )
@@ -555,7 +586,9 @@ async def test_simple_material_definition_answer_is_compacted(
         lambda _role: (FakeClient(), "gpt-4o-mini"),
     )
 
-    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    result = await KnowledgeAnswerComposer().compose(
+        KnowledgeAnswerComposerInput(context=context)
+    )
 
     assert result.answer_markdown.startswith("NBR steht für Acrylnitril")
     assert "Limitierungen/Annahmen" not in result.answer_markdown
@@ -607,7 +640,9 @@ async def test_simple_definition_compaction_respects_requested_material(
         lambda _role: (FakeClient(), "gpt-4o-mini"),
     )
 
-    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    result = await KnowledgeAnswerComposer().compose(
+        KnowledgeAnswerComposerInput(context=context)
+    )
 
     assert result.answer_markdown.startswith("FFKM ist")
     assert "Acrylnitril" not in result.answer_markdown
@@ -622,7 +657,9 @@ async def test_composer_rejects_material_subject_drift(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("bitte gebe mir detaillierte informationen zu FFKM").content,
+        )
+        .answer("bitte gebe mir detaillierte informationen zu FFKM")
+        .content,
         recent_history=(
             KnowledgeConversationTurn(
                 role="user",
@@ -664,7 +701,9 @@ async def test_composer_rejects_material_subject_drift(
     )
 
     with pytest.raises(KnowledgeAnswerComposerError, match="requested_subject"):
-        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+        await KnowledgeAnswerComposer().compose(
+            KnowledgeAnswerComposerInput(context=context)
+        )
 
 
 @pytest.mark.asyncio
@@ -676,7 +715,9 @@ async def test_composer_rejects_comparison_pair_drift_to_fkm(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("bitte vergleiche NBR mit FFKM").content,
+        )
+        .answer("bitte vergleiche NBR mit FFKM")
+        .content,
     )
 
     class FakeCompletions:
@@ -684,7 +725,7 @@ async def test_composer_rejects_comparison_pair_drift_to_fkm(
             class Message:
                 content = (
                     '{"answer_markdown":"## Werkstoffvergleich: FFKM vs FKM\\n\\n'
-                    'FFKM und FKM unterscheiden sich bei Chemie und Temperatur. '
+                    "FFKM und FKM unterscheiden sich bei Chemie und Temperatur. "
                     'Das ist technische Orientierung, keine Freigabe.",'
                     '"confidence_note":null}'
                 )
@@ -709,7 +750,9 @@ async def test_composer_rejects_comparison_pair_drift_to_fkm(
     )
 
     with pytest.raises(KnowledgeAnswerComposerError, match="requested_subject"):
-        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+        await KnowledgeAnswerComposer().compose(
+            KnowledgeAnswerComposerInput(context=context)
+        )
 
 
 @pytest.mark.asyncio
@@ -721,7 +764,9 @@ async def test_composer_rejects_unscoped_material_suitability_claim(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("bitte gebe mir detaillierte informationen zu NBR").content,
+        )
+        .answer("bitte gebe mir detaillierte informationen zu NBR")
+        .content,
     )
 
     class FakeCompletions:
@@ -752,8 +797,12 @@ async def test_composer_rejects_unscoped_material_suitability_claim(
         lambda _role: (FakeClient(), "gpt-4o-mini"),
     )
 
-    with pytest.raises(KnowledgeAnswerComposerError, match="unsafe_material_suitability"):
-        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    with pytest.raises(
+        KnowledgeAnswerComposerError, match="unsafe_material_suitability"
+    ):
+        await KnowledgeAnswerComposer().compose(
+            KnowledgeAnswerComposerInput(context=context)
+        )
 
 
 @pytest.mark.asyncio
@@ -765,7 +814,9 @@ async def test_composer_rejects_eignet_sich_material_suitability_claim(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("bitte gebe mir detaillierte informationen zu PTFE").content,
+        )
+        .answer("bitte gebe mir detaillierte informationen zu PTFE")
+        .content,
     )
 
     class FakeCompletions:
@@ -797,7 +848,9 @@ async def test_composer_rejects_eignet_sich_material_suitability_claim(
     )
 
     with pytest.raises(KnowledgeAnswerComposerError, match="unsafe_answer_markdown"):
-        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+        await KnowledgeAnswerComposer().compose(
+            KnowledgeAnswerComposerInput(context=context)
+        )
 
 
 @pytest.mark.asyncio
@@ -809,7 +862,9 @@ async def test_composer_rejects_unscoped_eignung_label(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("bitte gebe mir detaillierte informationen zu NBR").content,
+        )
+        .answer("bitte gebe mir detaillierte informationen zu NBR")
+        .content,
     )
 
     class FakeCompletions:
@@ -840,8 +895,12 @@ async def test_composer_rejects_unscoped_eignung_label(
         lambda _role: (FakeClient(), "gpt-4o-mini"),
     )
 
-    with pytest.raises(KnowledgeAnswerComposerError, match="unsafe_material_suitability_label"):
-        await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    with pytest.raises(
+        KnowledgeAnswerComposerError, match="unsafe_material_suitability_label"
+    ):
+        await KnowledgeAnswerComposer().compose(
+            KnowledgeAnswerComposerInput(context=context)
+        )
 
 
 @pytest.mark.asyncio
@@ -853,7 +912,9 @@ async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("bitte gebe mir detaillierte informationen zu NBR").content,
+        )
+        .answer("bitte gebe mir detaillierte informationen zu NBR")
+        .content,
     )
 
     class FakeCompletions:
@@ -876,25 +937,25 @@ async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
             if self.calls > 1:
                 Message.content = (
                     '{"answer_markdown":"## NBR in der Dichtungstechnik\\n\\n'
-                    'NBR wird bei Mineralölen, Schmierfetten und vielen '
-                    'klassischen HLP-/HLVP-Hydraulikfluiden häufig als '
-                    'naheliegende Prüfrichtung betrachtet. Technisch relevant '
-                    'sind aber Medium, Additive, Temperatur, Härte, Compound '
-                    'und Dichtungsgeometrie. Orientierend liegt Standard-NBR '
-                    'oft bei etwa -30 bis +100 °C; Sondermischungen können '
-                    'Tieftemperatur oder kurze Spitzen verbessern. Häufige '
-                    'Härtebereiche liegen etwa bei 60 bis 90 Shore A. Der '
-                    'ACN-Anteil prägt Ölbeständigkeit und Tieftemperaturverhalten. '
-                    'Bei O-Ringen zählen Verpressung, Nutfüllung, Quellung, '
-                    'Druckverformungsrest und Spaltextrusion. Bei RWDR zählen '
-                    'Schmierung, Reibung, Wellenrauheit, Härte, Rundlauf, '
-                    'Drehzahl und Dichtkantentemperatur. Kritisch zu prüfen '
-                    'sind Ozon, UV, Witterung, Dampf, Heißwasser, Ketone, '
-                    'Ester, Aromaten, starke Oxidationsmittel und aggressive '
-                    'Reiniger. Für eine belastbare Bewertung brauche ich das '
-                    'exakte Medium, Temperaturprofil, Druck, Bewegung, '
-                    'Einbauraum, Gegenlauffläche, Herstellerdaten und geforderte '
-                    'Nachweise. Das bleibt technische Orientierung, keine '
+                    "NBR wird bei Mineralölen, Schmierfetten und vielen "
+                    "klassischen HLP-/HLVP-Hydraulikfluiden häufig als "
+                    "naheliegende Prüfrichtung betrachtet. Technisch relevant "
+                    "sind aber Medium, Additive, Temperatur, Härte, Compound "
+                    "und Dichtungsgeometrie. Orientierend liegt Standard-NBR "
+                    "oft bei etwa -30 bis +100 °C; Sondermischungen können "
+                    "Tieftemperatur oder kurze Spitzen verbessern. Häufige "
+                    "Härtebereiche liegen etwa bei 60 bis 90 Shore A. Der "
+                    "ACN-Anteil prägt Ölbeständigkeit und Tieftemperaturverhalten. "
+                    "Bei O-Ringen zählen Verpressung, Nutfüllung, Quellung, "
+                    "Druckverformungsrest und Spaltextrusion. Bei RWDR zählen "
+                    "Schmierung, Reibung, Wellenrauheit, Härte, Rundlauf, "
+                    "Drehzahl und Dichtkantentemperatur. Kritisch zu prüfen "
+                    "sind Ozon, UV, Witterung, Dampf, Heißwasser, Ketone, "
+                    "Ester, Aromaten, starke Oxidationsmittel und aggressive "
+                    "Reiniger. Für eine belastbare Bewertung brauche ich das "
+                    "exakte Medium, Temperaturprofil, Druck, Bewegung, "
+                    "Einbauraum, Gegenlauffläche, Herstellerdaten und geforderte "
+                    "Nachweise. Das bleibt technische Orientierung, keine "
                     'Freigabe und keine Kompatibilitätszusage.",'
                     '"confidence_note":null}'
                 )
@@ -924,7 +985,9 @@ async def test_composer_repairs_unsafe_material_wording_with_second_llm_call(
         lambda _role: (FakeClient(), "gpt-4o-mini"),
     )
 
-    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    result = await KnowledgeAnswerComposer().compose(
+        KnowledgeAnswerComposerInput(context=context)
+    )
 
     assert completions.calls == 2
     assert completions.repair_payload_seen is True
@@ -942,7 +1005,9 @@ async def test_composer_repairs_shallow_ptfe_overview_with_second_llm_call(
         deterministic_answer=KnowledgeService(
             factcard_store=_FactcardStore([]),
             llm_research_fallback_enabled=False,
-        ).answer("was kannst du mir über PTFE sagen?").content,
+        )
+        .answer("was kannst du mir über PTFE sagen?")
+        .content,
     )
 
     rich_answer = "\n\n".join(
@@ -1000,7 +1065,9 @@ async def test_composer_repairs_shallow_ptfe_overview_with_second_llm_call(
         lambda _role: (FakeClient(), "gpt-4o-mini"),
     )
 
-    result = await KnowledgeAnswerComposer().compose(KnowledgeAnswerComposerInput(context=context))
+    result = await KnowledgeAnswerComposer().compose(
+        KnowledgeAnswerComposerInput(context=context)
+    )
 
     assert completions.calls == 2
     assert len(result.answer_markdown) > 900
@@ -1033,7 +1100,10 @@ async def test_material_comparison_answer_markdown_does_not_use_cockpit_placehol
     )
 
     response = await chat_endpoint(
-        ChatRequest(message="Vergleich FKM und EPDM fuer Dichtungen.", session_id="composer-material"),
+        ChatRequest(
+            message="Vergleich FKM und EPDM fuer Dichtungen.",
+            session_id="composer-material",
+        ),
         current_user=_user(),
     )
 

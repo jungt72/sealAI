@@ -24,8 +24,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -83,7 +87,9 @@ class DummySession:
 
 
 class _DummyResponse:
-    def __init__(self, status_code: int, payload=None, content: bytes = b"", headers=None) -> None:
+    def __init__(
+        self, status_code: int, payload=None, content: bytes = b"", headers=None
+    ) -> None:
         self.status_code = status_code
         self._payload = payload
         self.content = content
@@ -116,7 +122,9 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _install_httpx_stub(monkeypatch: pytest.MonkeyPatch, responses: dict[str, _DummyResponse]) -> None:
+def _install_httpx_stub(
+    monkeypatch: pytest.MonkeyPatch, responses: dict[str, _DummyResponse]
+) -> None:
     monkeypatch.setattr(
         paperless_mod.httpx,
         "AsyncClient",
@@ -130,9 +138,18 @@ def _configure_upload_root(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_paperless_sync_skips_unchanged_document(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(paperless_mod.settings, "paperless_url", "https://paperless.example", raising=False)
-    monkeypatch.setattr(paperless_mod.settings, "paperless_token", "token", raising=False)
+async def test_paperless_sync_skips_unchanged_document(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        paperless_mod.settings,
+        "paperless_url",
+        "https://paperless.example",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        paperless_mod.settings, "paperless_token", "token", raising=False
+    )
     _configure_upload_root(tmp_path)
 
     content = b"same"
@@ -147,12 +164,20 @@ async def test_paperless_sync_skips_unchanged_document(monkeypatch: pytest.Monke
             filename="old.pdf",
             size_bytes=len(content),
             sha256=sha256,
-                path=str(tmp_path / "sealai" / "doc-1" / "original.pdf"),
-                tags=["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"],
-                route_key="standard_or_norm",
-                source_system="paperless",
-                source_document_id="11",
-                source_modified_at=paperless_mod._parse_source_modified_at("2026-03-11T10:00:00Z"),
+            path=str(tmp_path / "sealai" / "doc-1" / "original.pdf"),
+            tags=[
+                "rag:enabled",
+                "doc_type:datasheet",
+                "norm",
+                "knowledge",
+                "sts_mat:PTFE",
+            ],
+            route_key="standard_or_norm",
+            source_system="paperless",
+            source_document_id="11",
+            source_modified_at=paperless_mod._parse_source_modified_at(
+                "2026-03-11T10:00:00Z"
+            ),
         )
     )
 
@@ -168,11 +193,17 @@ async def test_paperless_sync_skips_unchanged_document(monkeypatch: pytest.Monke
                         "title": "Spec",
                         "original_file_name": "spec.pdf",
                         "modified": "2026-03-11T10:00:00Z",
-                        "tags": ["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"],
+                        "tags": [
+                            "rag:enabled",
+                            "doc_type:datasheet",
+                            "norm",
+                            "knowledge",
+                            "sts_mat:PTFE",
+                        ],
                     }
                 ]
             },
-        )
+        ),
     }
     _install_httpx_stub(monkeypatch, responses)
 
@@ -183,15 +214,28 @@ async def test_paperless_sync_skips_unchanged_document(monkeypatch: pytest.Monke
     assert len(session.docs) == 1
     stored = session.docs["doc-1"]
     assert stored.route_key == "standard_or_norm"
-    assert stored.tags == ["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"]
+    assert stored.tags == [
+        "rag:enabled",
+        "doc_type:datasheet",
+        "norm",
+        "knowledge",
+        "sts_mat:PTFE",
+    ]
 
 
 @pytest.mark.anyio
 async def test_paperless_sync_reuses_existing_document_for_changed_source(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(paperless_mod.settings, "paperless_url", "https://paperless.example", raising=False)
-    monkeypatch.setattr(paperless_mod.settings, "paperless_token", "token", raising=False)
+    monkeypatch.setattr(
+        paperless_mod.settings,
+        "paperless_url",
+        "https://paperless.example",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        paperless_mod.settings, "paperless_token", "token", raising=False
+    )
     _configure_upload_root(tmp_path)
 
     old_content = b"old"
@@ -209,13 +253,21 @@ async def test_paperless_sync_reuses_existing_document_for_changed_source(
             visibility="public",
             filename="old.pdf",
             size_bytes=len(old_content),
-                sha256=hashlib.sha256(old_content).hexdigest(),
-                path=str(existing_path),
-                tags=["rag:enabled", "doc_type:datasheet", "material", "compound", "sts_mat:PTFE"],
-                route_key="material_datasheet",
-                source_system="paperless",
-                source_document_id="11",
-                source_modified_at=paperless_mod._parse_source_modified_at("2026-03-11T10:00:00Z"),
+            sha256=hashlib.sha256(old_content).hexdigest(),
+            path=str(existing_path),
+            tags=[
+                "rag:enabled",
+                "doc_type:datasheet",
+                "material",
+                "compound",
+                "sts_mat:PTFE",
+            ],
+            route_key="material_datasheet",
+            source_system="paperless",
+            source_document_id="11",
+            source_modified_at=paperless_mod._parse_source_modified_at(
+                "2026-03-11T10:00:00Z"
+            ),
         )
     )
 
@@ -231,7 +283,13 @@ async def test_paperless_sync_reuses_existing_document_for_changed_source(
                         "title": "Spec",
                         "original_file_name": "spec.pdf",
                         "modified": "2026-03-12T10:00:00Z",
-                        "tags": ["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"],
+                        "tags": [
+                            "rag:enabled",
+                            "doc_type:datasheet",
+                            "norm",
+                            "knowledge",
+                            "sts_mat:PTFE",
+                        ],
                     }
                 ]
             },
@@ -249,9 +307,17 @@ async def test_paperless_sync_reuses_existing_document_for_changed_source(
     assert stored.sha256 == hashlib.sha256(new_content).hexdigest()
     assert stored.source_system == "paperless"
     assert stored.source_document_id == "11"
-    assert stored.source_modified_at == paperless_mod._parse_source_modified_at("2026-03-12T10:00:00Z")
+    assert stored.source_modified_at == paperless_mod._parse_source_modified_at(
+        "2026-03-12T10:00:00Z"
+    )
     assert stored.route_key == "standard_or_norm"
-    assert stored.tags == ["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"]
+    assert stored.tags == [
+        "rag:enabled",
+        "doc_type:datasheet",
+        "norm",
+        "knowledge",
+        "sts_mat:PTFE",
+    ]
     assert existing_path.read_bytes() == new_content
 
 
@@ -259,9 +325,18 @@ async def test_paperless_sync_reuses_existing_document_for_changed_source(
 async def test_paperless_sync_rejects_signature_mismatch_and_disables_existing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(paperless_mod.settings, "paperless_url", "https://paperless.example", raising=False)
-    monkeypatch.setattr(paperless_mod.settings, "paperless_token", "token", raising=False)
-    monkeypatch.setattr(paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        paperless_mod.settings,
+        "paperless_url",
+        "https://paperless.example",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        paperless_mod.settings, "paperless_token", "token", raising=False
+    )
+    monkeypatch.setattr(
+        paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True
+    )
     _configure_upload_root(tmp_path)
 
     existing_dir = tmp_path / RAG_SHARED_TENANT_ID / "doc-bad"
@@ -283,7 +358,9 @@ async def test_paperless_sync_rejects_signature_mismatch_and_disables_existing(
             route_key="material_datasheet",
             source_system="paperless",
             source_document_id="11",
-            source_modified_at=paperless_mod._parse_source_modified_at("2026-03-11T10:00:00Z"),
+            source_modified_at=paperless_mod._parse_source_modified_at(
+                "2026-03-11T10:00:00Z"
+            ),
         )
     )
 
@@ -321,19 +398,58 @@ async def test_paperless_sync_rejects_signature_mismatch_and_disables_existing(
 
 
 def test_route_key_resolver_is_deterministic() -> None:
-    assert resolve_route_key(tags=["route:product_datasheet"], category="norms") == "product_datasheet"
-    assert resolve_route_key(tags=["rag:enabled", "doc_type:datasheet", "material", "compound", "sts_mat:PTFE"], category=None) == "material_datasheet"
-    assert resolve_route_key(tags=["rag:enabled", "doc_type:datasheet", "norm", "knowledge", "sts_mat:PTFE"], category=None) == "standard_or_norm"
-    assert resolve_route_key(tags=None, category=None, filename="upload.txt") == "general_technical_doc"
+    assert (
+        resolve_route_key(tags=["route:product_datasheet"], category="norms")
+        == "product_datasheet"
+    )
+    assert (
+        resolve_route_key(
+            tags=[
+                "rag:enabled",
+                "doc_type:datasheet",
+                "material",
+                "compound",
+                "sts_mat:PTFE",
+            ],
+            category=None,
+        )
+        == "material_datasheet"
+    )
+    assert (
+        resolve_route_key(
+            tags=[
+                "rag:enabled",
+                "doc_type:datasheet",
+                "norm",
+                "knowledge",
+                "sts_mat:PTFE",
+            ],
+            category=None,
+        )
+        == "standard_or_norm"
+    )
+    assert (
+        resolve_route_key(tags=None, category=None, filename="upload.txt")
+        == "general_technical_doc"
+    )
 
 
 @pytest.mark.anyio
 async def test_paperless_sync_removes_existing_document_when_rag_flag_is_removed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(paperless_mod.settings, "paperless_url", "https://paperless.example", raising=False)
-    monkeypatch.setattr(paperless_mod.settings, "paperless_token", "token", raising=False)
-    monkeypatch.setattr(paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        paperless_mod.settings,
+        "paperless_url",
+        "https://paperless.example",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        paperless_mod.settings, "paperless_token", "token", raising=False
+    )
+    monkeypatch.setattr(
+        paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True
+    )
     _configure_upload_root(tmp_path)
 
     existing_dir = tmp_path / RAG_SHARED_TENANT_ID / "doc-removed"
@@ -355,7 +471,9 @@ async def test_paperless_sync_removes_existing_document_when_rag_flag_is_removed
             route_key="material_datasheet",
             source_system="paperless",
             source_document_id="11",
-            source_modified_at=paperless_mod._parse_source_modified_at("2026-03-11T10:00:00Z"),
+            source_modified_at=paperless_mod._parse_source_modified_at(
+                "2026-03-11T10:00:00Z"
+            ),
         )
     )
 
@@ -395,9 +513,18 @@ async def test_paperless_sync_removes_existing_document_when_rag_flag_is_removed
 async def test_paperless_sync_removes_existing_document_when_source_disappears(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(paperless_mod.settings, "paperless_url", "https://paperless.example", raising=False)
-    monkeypatch.setattr(paperless_mod.settings, "paperless_token", "token", raising=False)
-    monkeypatch.setattr(paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        paperless_mod.settings,
+        "paperless_url",
+        "https://paperless.example",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        paperless_mod.settings, "paperless_token", "token", raising=False
+    )
+    monkeypatch.setattr(
+        paperless_mod, "_delete_qdrant_document", lambda **_kwargs: True
+    )
     _configure_upload_root(tmp_path)
 
     existing_dir = tmp_path / RAG_SHARED_TENANT_ID / "doc-missing"
@@ -419,14 +546,18 @@ async def test_paperless_sync_removes_existing_document_when_source_disappears(
             route_key="material_datasheet",
             source_system="paperless",
             source_document_id="11",
-            source_modified_at=paperless_mod._parse_source_modified_at("2026-03-11T10:00:00Z"),
+            source_modified_at=paperless_mod._parse_source_modified_at(
+                "2026-03-11T10:00:00Z"
+            ),
         )
     )
 
     base = "https://paperless.example"
     responses = {
         f"{base}/api/tags/?page_size=500": _DummyResponse(200, payload={"results": []}),
-        f"{base}/api/documents/?page_size=100": _DummyResponse(200, payload={"results": []}),
+        f"{base}/api/documents/?page_size=100": _DummyResponse(
+            200, payload={"results": []}
+        ),
     }
     _install_httpx_stub(monkeypatch, responses)
 
@@ -440,7 +571,9 @@ async def test_paperless_sync_removes_existing_document_when_source_disappears(
 
 
 @pytest.mark.anyio
-async def test_process_pending_paperless_documents_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_pending_paperless_documents_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     docs = [
         RagDocument(
@@ -480,7 +613,9 @@ async def test_process_pending_paperless_documents_is_bounded(monkeypatch: pytes
         docs.pop(0)
         return True
 
-    monkeypatch.setattr(paperless_mod, "_pick_next_pending_paperless_document", _fake_pick)
+    monkeypatch.setattr(
+        paperless_mod, "_pick_next_pending_paperless_document", _fake_pick
+    )
     monkeypatch.setattr("app.services.jobs.worker.process_once", _fake_process_once)
 
     result = await paperless_mod.process_pending_paperless_documents(object(), limit=1)

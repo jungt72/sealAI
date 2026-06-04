@@ -55,8 +55,14 @@ def _phase_1_journey_source() -> dict:
                 "asset_type": {"origin": "user_stated", "confidence": "confirmed"},
                 "medium": {"origin": "user_stated", "confidence": "confirmed"},
                 "temperature_c": {"origin": "user_stated", "confidence": "confirmed"},
-                "pressure_bar": {"origin": "user_stated", "confidence": "requires_confirmation"},
-                "shaft_diameter_mm": {"origin": "documented", "confidence": "confirmed"},
+                "pressure_bar": {
+                    "origin": "user_stated",
+                    "confidence": "requires_confirmation",
+                },
+                "shaft_diameter_mm": {
+                    "origin": "documented",
+                    "confidence": "confirmed",
+                },
                 "speed_rpm": {"origin": "user_stated", "confidence": "confirmed"},
             },
         },
@@ -249,7 +255,9 @@ def test_phase_1_mvp_journey_projects_decision_cockpit_and_tabs() -> None:
     assert cockpit.readiness.readiness_level < 5
     assert cockpit.readiness.rfq_possible is False
     assert cockpit.readiness.missing_required_fields
-    assert any(check.calc_id == "rwdr_circumferential_speed" for check in cockpit.checks)
+    assert any(
+        check.calc_id == "rwdr_circumferential_speed" for check in cockpit.checks
+    )
 
     tabs_by_id = {tab.tab_id: tab for tab in projection.deep_dive_tabs}
     assert {"analysis", "medium", "material", "seal_type"}.issubset(tabs_by_id)
@@ -276,7 +284,9 @@ def test_phase_1_mvp_journey_builds_frozen_rfq_preview_without_dispatch() -> Non
         is True
     )
     assert payload["consent_boundary"]["open_points_acknowledgement_required"] is True
-    assert payload["consent_boundary"]["no_final_release_acknowledgement_required"] is True
+    assert (
+        payload["consent_boundary"]["no_final_release_acknowledgement_required"] is True
+    )
     assert payload["consent_boundary"]["export_intent_acknowledgement_required"] is True
     v91_projection = payload["rfq_preview"]["v91_rfq_projection"]
     assert v91_projection["schema_version"] == "sealingai_rfq_projection_v9_1"
@@ -303,12 +313,10 @@ def test_phase_1_mvp_journey_builds_frozen_rfq_preview_without_dispatch() -> Non
     assert "calculated_speed_m_s" in groups["calculated"]
     assert "pressure_bar" in groups["needs_confirmation"]
     assert "shaft_surface_finish" in groups["missing"]
-    assert "shaft_surface_finish" in payload["rfq_preview"][
-        "confirmation_required_fields"
-    ]
-    assert "pressure_bar" in payload["rfq_preview"][
-        "confirmation_required_fields"
-    ]
+    assert (
+        "shaft_surface_finish" in payload["rfq_preview"]["confirmation_required_fields"]
+    )
+    assert "pressure_bar" in payload["rfq_preview"]["confirmation_required_fields"]
 
     consent = normalize_consent_scope(
         {

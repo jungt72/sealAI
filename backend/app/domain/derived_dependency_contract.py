@@ -1,4 +1,5 @@
 """Shared dependency/stale contract for derived engineering values."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -160,8 +161,8 @@ def mark_stale_snapshot_derived_values(
     top_level_derived_values = updated.get("derived_values")
     has_top_level_derived_values = isinstance(top_level_derived_values, dict)
     derived = updated.get("derived")
-    has_nested_derived_values = (
-        isinstance(derived, dict) and isinstance(derived.get("derived_values"), dict)
+    has_nested_derived_values = isinstance(derived, dict) and isinstance(
+        derived.get("derived_values"), dict
     )
 
     if has_nested_derived_values or not has_top_level_derived_values:

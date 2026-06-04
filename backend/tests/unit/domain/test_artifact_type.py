@@ -38,7 +38,9 @@ def test_artifact_type_contains_stable_v083_values() -> None:
     }
 
     assert {member.value for member in ArtifactType} == expected
-    assert {item.artifact_type for item in all_artifact_type_metadata()} == set(ArtifactType)
+    assert {item.artifact_type for item in all_artifact_type_metadata()} == set(
+        ArtifactType
+    )
 
 
 def test_artifact_type_serializes_as_string() -> None:
@@ -128,7 +130,9 @@ def test_legacy_summary_artifacts_map_conservatively(
 ) -> None:
     view = artifact_registry_view(legacy_value)
 
-    assert normalize_artifact_type(legacy_value) is ArtifactType.technical_inquiry_summary
+    assert (
+        normalize_artifact_type(legacy_value) is ArtifactType.technical_inquiry_summary
+    )
     assert view.artifact_type_mapped_from_legacy_artifact is True
     assert view.event_name == "ArtifactTypeMappedFromLegacyArtifact"
     assert is_artifact_type_implemented(legacy_value) is True

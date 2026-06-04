@@ -39,7 +39,9 @@ STARTUP_FLAG_ENV = {
 }
 
 
-def _install_required_env(monkeypatch: pytest.MonkeyPatch, *, app_env: str = "production", **flags: str) -> None:
+def _install_required_env(
+    monkeypatch: pytest.MonkeyPatch, *, app_env: str = "production", **flags: str
+) -> None:
     for key in STARTUP_FLAG_ENV:
         monkeypatch.delenv(key, raising=False)
     for key, value in REQUIRED_ENV.items():
@@ -82,7 +84,9 @@ def _reload_main(monkeypatch: pytest.MonkeyPatch):
     return importlib.reload(main_module), config_module
 
 
-def test_settings_define_backend_referenced_attributes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_define_backend_referenced_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _install_required_env(monkeypatch)
     config_module = _reload_config(monkeypatch)
     settings = config_module.get_settings()
@@ -135,7 +139,9 @@ def test_settings_define_backend_referenced_attributes(monkeypatch: pytest.Monke
     assert missing == []
 
 
-def test_production_defaults_do_not_enable_startup_mutations(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_production_defaults_do_not_enable_startup_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _install_required_env(monkeypatch, app_env="production")
     config_module = _reload_config(monkeypatch)
     settings = config_module.get_settings()
@@ -147,8 +153,12 @@ def test_production_defaults_do_not_enable_startup_mutations(monkeypatch: pytest
     assert settings.fastapi_docs_enabled is False
 
 
-def test_fastapi_docs_openapi_and_redoc_are_setting_gated(monkeypatch: pytest.MonkeyPatch) -> None:
-    _install_required_env(monkeypatch, app_env="production", FASTAPI_DOCS_ENABLED="false")
+def test_fastapi_docs_openapi_and_redoc_are_setting_gated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_required_env(
+        monkeypatch, app_env="production", FASTAPI_DOCS_ENABLED="false"
+    )
     main_module, _config_module = _reload_main(monkeypatch)
 
     app = main_module.create_app()
@@ -159,13 +169,19 @@ def test_fastapi_docs_openapi_and_redoc_are_setting_gated(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_lifespan_skips_prod_mutating_bootstraps_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_lifespan_skips_prod_mutating_bootstraps_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _install_required_env(monkeypatch, app_env="production")
     main_module, _config_module = _reload_main(monkeypatch)
     calls: list[str] = []
 
-    monkeypatch.setattr(main_module, "ensure_upload_directory", lambda: calls.append("upload_dir"))
-    monkeypatch.setattr(main_module, "bootstrap_rag_collection", lambda: calls.append("qdrant"))
+    monkeypatch.setattr(
+        main_module, "ensure_upload_directory", lambda: calls.append("upload_dir")
+    )
+    monkeypatch.setattr(
+        main_module, "bootstrap_rag_collection", lambda: calls.append("qdrant")
+    )
 
     async def _audit() -> None:
         calls.append("audit")
@@ -184,7 +200,9 @@ async def test_lifespan_skips_prod_mutating_bootstraps_by_default(monkeypatch: p
 
 
 @pytest.mark.asyncio
-async def test_langgraph_checkpoint_clear_requires_dev_or_test_even_when_flagged(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_langgraph_checkpoint_clear_requires_dev_or_test_even_when_flagged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _install_required_env(
         monkeypatch,
         app_env="production",
@@ -196,7 +214,9 @@ async def test_langgraph_checkpoint_clear_requires_dev_or_test_even_when_flagged
 
 
 @pytest.mark.asyncio
-async def test_worker_start_requires_explicit_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_worker_start_requires_explicit_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _install_required_env(monkeypatch, app_env="test", JOB_WORKER_ENABLED="true")
     main_module, _config_module = _reload_main(monkeypatch)
     calls: list[str] = []

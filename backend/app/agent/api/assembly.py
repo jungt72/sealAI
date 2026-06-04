@@ -3,18 +3,35 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
-from app.agent.state.models import GovernedSessionState, TurnContextContract, ProposedCaseDelta
+from app.agent.state.models import (
+    GovernedSessionState,
+    TurnContextContract,
+    ProposedCaseDelta,
+)
 from app.agent.graph import GraphState
 from app.agent.state.projections import project_for_ui
-from app.agent.runtime.answer_trace import AnswerTrace, build_answer_trace, with_answer_trace
-from app.agent.runtime.final_answer_layer import FinalAnswerEnvelope, apply_final_answer_layer
+from app.agent.runtime.answer_trace import (
+    AnswerTrace,
+    build_answer_trace,
+    with_answer_trace,
+)
+from app.agent.runtime.final_answer_layer import (
+    FinalAnswerEnvelope,
+    apply_final_answer_layer,
+)
 from app.agent.runtime.response_renderer import render_response
-from app.agent.graph.output_contract_assembly import build_governed_conversation_strategy_contract
+from app.agent.graph.output_contract_assembly import (
+    build_governed_conversation_strategy_contract,
+)
 from app.agent.domain.case_delta import proposed_case_delta_from_extractions
 from app.agent.runtime.turn_context import build_governed_turn_context
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
 from app.agent.api.utils import _governed_structured_state
-from app.agent.api.deps import _GRAPH_MODEL_ID, VISIBLE_REPLY_PROMPT_VERSION, VISIBLE_REPLY_PROMPT_HASH
+from app.agent.api.deps import (
+    _GRAPH_MODEL_ID,
+    VISIBLE_REPLY_PROMPT_VERSION,
+    VISIBLE_REPLY_PROMPT_HASH,
+)
 from app.agent.prompts import REASONING_PROMPT_HASH, REASONING_PROMPT_VERSION
 from app.agent.v92.runtime_contract import apply_v92_contracts_to_payload
 from app.agent.state.case_state import (
@@ -25,6 +42,7 @@ from app.agent.state.case_state import (
 )
 
 _log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class GovernedReplyAssemblyContext:
@@ -39,7 +57,9 @@ class GovernedReplyAssemblyContext:
     answer_markdown: str | None = None
     answer_markdown_source: str = "deterministic_reply"
     answer_markdown_error: str | None = None
-    proposed_case_delta: ProposedCaseDelta = dataclasses.field(default_factory=ProposedCaseDelta)
+    proposed_case_delta: ProposedCaseDelta = dataclasses.field(
+        default_factory=ProposedCaseDelta
+    )
     domain_context: dict[str, Any] = dataclasses.field(default_factory=dict)
     v91_field_governance_decisions: list[Any] = dataclasses.field(default_factory=list)
     v91_question_plan: Any | None = None
@@ -47,7 +67,10 @@ class GovernedReplyAssemblyContext:
     v91_dialogue_debt: Any | None = None
     v91_final_answer_context: Any | None = None
 
-def _build_structured_version_provenance(*, decision: Any, rwdr_config_version: str | None = None) -> dict[str, Any]:
+
+def _build_structured_version_provenance(
+    *, decision: Any, rwdr_config_version: str | None = None
+) -> dict[str, Any]:
     vp = {
         "model_id": _GRAPH_MODEL_ID,
         "model_version": _GRAPH_MODEL_ID,
@@ -65,6 +88,7 @@ def _build_structured_version_provenance(*, decision: Any, rwdr_config_version: 
         vp["rwdr_config_version"] = rwdr_config_version
     return vp
 
+
 def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
     return {
         "model_id": None,
@@ -76,6 +100,7 @@ def _build_fast_path_version_provenance(*, decision: Any) -> dict[str, Any]:
         "data_version": DETERMINISTIC_DATA_VERSION,
     }
 
+
 def _build_governed_reply_context(
     *,
     result_state: GraphState,
@@ -83,8 +108,14 @@ def _build_governed_reply_context(
 ) -> GovernedReplyAssemblyContext:
     def _sanitize_public_notes(notes: list[Any]) -> list[str]:
         blocked_fragments = (
-            "transport", "bridge", "handoff", "dry-run", "internal trigger",
-            "sender/connector", "connector consumption", "envelope",
+            "transport",
+            "bridge",
+            "handoff",
+            "dry-run",
+            "internal trigger",
+            "sender/connector",
+            "connector consumption",
+            "envelope",
         )
         public_notes: list[str] = []
         for note in notes:
@@ -97,11 +128,20 @@ def _build_governed_reply_context(
 
     def _strip_forbidden_keys(value: Any) -> Any:
         forbidden_keys = {
-            "event_id", "event_key", "analysis_cycle_id", "partner_id",
-            "transport_channel", "manufacturer_sku", "compound_code",
+            "event_id",
+            "event_key",
+            "analysis_cycle_id",
+            "partner_id",
+            "transport_channel",
+            "manufacturer_sku",
+            "compound_code",
         }
         if isinstance(value, dict):
-            return {k: _strip_forbidden_keys(v) for k, v in value.items() if k not in forbidden_keys}
+            return {
+                k: _strip_forbidden_keys(v)
+                for k, v in value.items()
+                if k not in forbidden_keys
+            }
         if isinstance(value, list):
             return [_strip_forbidden_keys(v) for v in value]
         return value
@@ -110,16 +150,22 @@ def _build_governed_reply_context(
     if "inquiry" not in ui_payload and isinstance(ui_payload.get("rfq"), dict):
         ui_payload["inquiry"] = dict(ui_payload["rfq"])
     for tile_name, note_field in (
-        ("rfq", "notes"), ("inquiry", "notes"),
-        ("export_profile", "notes"), ("dispatch_contract", "handover_notes"),
+        ("rfq", "notes"),
+        ("inquiry", "notes"),
+        ("export_profile", "notes"),
+        ("dispatch_contract", "handover_notes"),
     ):
         tile = ui_payload.get(tile_name)
         if isinstance(tile, dict) and isinstance(tile.get(note_field), list):
             tile[note_field] = _sanitize_public_notes(tile[note_field])
     ui_payload = _strip_forbidden_keys(ui_payload)
 
-    response_class = str(result_state.output_response_class or "structured_clarification")
-    conversation_strategy = build_governed_conversation_strategy_contract(result_state, response_class)
+    response_class = str(
+        result_state.output_response_class or "structured_clarification"
+    )
+    conversation_strategy = build_governed_conversation_strategy_contract(
+        result_state, response_class
+    )
     turn_context = build_governed_turn_context(
         state=result_state,
         strategy=conversation_strategy,
@@ -128,14 +174,24 @@ def _build_governed_reply_context(
     assertions_payload: dict[str, Any] = {}
     for k, e in (result_state.asserted.assertions or {}).items():
         if e.asserted_value is not None:
-            assertions_payload[k] = {"value": str(e.asserted_value), "confidence": e.confidence}
+            assertions_payload[k] = {
+                "value": str(e.asserted_value),
+                "confidence": e.confidence,
+            }
 
     structured_state = _governed_structured_state(persisted_state, response_class)
     deterministic_reply = str(result_state.output_reply or "").strip()
     answer_markdown = str(result_state.output_answer_markdown or "").strip() or None
-    answer_markdown_source = str(result_state.output_answer_markdown_source or "").strip() or "deterministic_reply"
-    answer_markdown_error = str(result_state.governed_answer_composer_error or "").strip() or None
-    turn_index = int(getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0)
+    answer_markdown_source = (
+        str(result_state.output_answer_markdown_source or "").strip()
+        or "deterministic_reply"
+    )
+    answer_markdown_error = (
+        str(result_state.governed_answer_composer_error or "").strip() or None
+    )
+    turn_index = int(
+        getattr(result_state, "user_turn_index", 0) or result_state.analysis_cycle or 0
+    )
     proposed_case_delta = proposed_case_delta_from_extractions(
         result_state.observed.raw_extractions,
         turn_index=turn_index,
@@ -152,7 +208,9 @@ def _build_governed_reply_context(
             "governed_answer_composer": {
                 "source": answer_markdown_source,
                 "error": answer_markdown_error,
-                "prompt_trace": dict(getattr(result_state, "governed_answer_prompt_trace", {}) or {}),
+                "prompt_trace": dict(
+                    getattr(result_state, "governed_answer_prompt_trace", {}) or {}
+                ),
             },
             "v91": {
                 "field_governance_decisions": [
@@ -167,9 +225,7 @@ def _build_governed_reply_context(
                 "conversation_task": result_state.v91_conversation_task.model_dump(
                     mode="json"
                 ),
-                "dialogue_debt": result_state.v91_dialogue_debt.model_dump(
-                    mode="json"
-                ),
+                "dialogue_debt": result_state.v91_dialogue_debt.model_dump(mode="json"),
                 "final_answer_context": (
                     result_state.v91_final_answer_context.model_dump(mode="json")
                     if result_state.v91_final_answer_context is not None
@@ -189,6 +245,7 @@ def _build_governed_reply_context(
         v91_dialogue_debt=result_state.v91_dialogue_debt,
         v91_final_answer_context=result_state.v91_final_answer_context,
     )
+
 
 def _assemble_governed_stream_payload(
     *,

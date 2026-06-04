@@ -79,7 +79,10 @@ def test_blocking_findings_fail_critical_review() -> None:
 
     assert result.critical_review_passed is False
     assert "unknowns_release_blocking" in result.blocking_findings
-    assert "Resolve release-blocking unknowns before RFQ handover." in result.required_corrections
+    assert (
+        "Resolve release-blocking unknowns before RFQ handover."
+        in result.required_corrections
+    )
 
 
 def test_soft_findings_stay_non_blocking() -> None:
@@ -95,23 +98,26 @@ def test_soft_findings_stay_non_blocking() -> None:
     assert "manufacturer_validation:material" in result.soft_findings
 
 
-def test_missing_requirement_class_sets_required_correction_without_artificial_safety() -> None:
-    result = run_critical_review_specialist(
-        _payload(requirement_class=None)
-    )
+def test_missing_requirement_class_sets_required_correction_without_artificial_safety() -> (
+    None
+):
+    result = run_critical_review_specialist(_payload(requirement_class=None))
 
     assert result.critical_review_passed is False
     assert "requirement_class_missing" in result.blocking_findings
-    assert "Resolve the requirement class before RFQ handover." in result.required_corrections
+    assert (
+        "Resolve the requirement class before RFQ handover."
+        in result.required_corrections
+    )
 
 
 def test_result_can_be_projected_back_to_existing_review_dict_shape() -> None:
     result = critical_review_result_to_dict(
-        run_critical_review_specialist(
-            _payload(rfq_object={"requirement_class": None})
-        )
+        run_critical_review_specialist(_payload(rfq_object={"requirement_class": None}))
     )
 
     assert result["critical_review_status"] == "passed"
     assert result["critical_review_passed"] is True
-    assert result["soft_findings"] == ["rfq_object_missing_requirement_class_projection"]
+    assert result["soft_findings"] == [
+        "rfq_object_missing_requirement_class_projection"
+    ]

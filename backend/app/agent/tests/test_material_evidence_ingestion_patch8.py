@@ -64,7 +64,9 @@ def test_missing_source_is_invalid_or_insufficient() -> None:
 
 
 def test_unknown_schema_version_rejected() -> None:
-    result = validate_material_evidence_card(_card(schema_version="material_evidence_card.v9"))
+    result = validate_material_evidence_card(
+        _card(schema_version="material_evidence_card.v9")
+    )
 
     assert result.valid is False
     assert "unsupported_schema_version" in result.reasons
@@ -210,7 +212,9 @@ def test_valid_card_becomes_evidence_ref_for_precheck() -> None:
 
 
 def test_conflicting_exact_duplicate_card_id_rejected() -> None:
-    results = validate_material_evidence_cards([_card(), _card(statement_short="Second card.")])
+    results = validate_material_evidence_cards(
+        [_card(), _card(statement_short="Second card.")]
+    )
 
     assert results[0].valid is True
     assert results[1].valid is False

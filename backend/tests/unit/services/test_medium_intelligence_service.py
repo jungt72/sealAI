@@ -1,4 +1,7 @@
-from app.services.medium_intelligence_service import MediumIntelligenceService, ProvenanceTier
+from app.services.medium_intelligence_service import (
+    MediumIntelligenceService,
+    ProvenanceTier,
+)
 
 
 def test_registry_medium_is_tier_one_grounded() -> None:

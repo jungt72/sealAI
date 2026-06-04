@@ -9,6 +9,7 @@ positive would nuke the neutral deterministic comparison):
 The denylist is a leaky backstop only; prompt shaping (#1) and the deterministic
 passthrough (#4) remain primary.
 """
+
 from __future__ import annotations
 
 import re
@@ -34,7 +35,9 @@ def _ranking_hits(text: str) -> list[str]:
 
 
 def test_new_category_is_registered() -> None:
-    assert _RANKING_PATTERNS, "comparative_ranking patterns must be compiled into _COMPILED"
+    assert (
+        _RANKING_PATTERNS
+    ), "comparative_ranking patterns must be compiled into _COMPILED"
 
 
 # --- POSITIVE: the real incident sentences are caught ----------------------
@@ -186,7 +189,13 @@ def test_no_profile_field_triggers_comparative_ranking() -> None:
 
 @pytest.mark.parametrize(
     "pair",
-    [("FKM", "EPDM"), ("PTFE", "FKM"), ("HNBR", "NBR"), ("FFKM", "FKM"), ("NBR", "PTFE")],
+    [
+        ("FKM", "EPDM"),
+        ("PTFE", "FKM"),
+        ("HNBR", "NBR"),
+        ("FFKM", "FKM"),
+        ("NBR", "PTFE"),
+    ],
 )
 def test_full_deterministic_render_never_triggers_comparative_ranking(
     pair: tuple[str, str],
@@ -195,6 +204,6 @@ def test_full_deterministic_render_never_triggers_comparative_ranking(
 
     answer = build_material_comparison_answer(f"Vergleiche {pair[0]} und {pair[1]}")
     assert answer is not None
-    assert _ranking_hits(answer.answer) == [], (
-        f"deterministic render {pair} must not match comparative_ranking"
-    )
+    assert (
+        _ranking_hits(answer.answer) == []
+    ), f"deterministic render {pair} must not match comparative_ranking"

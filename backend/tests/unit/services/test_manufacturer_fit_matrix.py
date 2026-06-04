@@ -46,7 +46,9 @@ def _projection(
     profile: ManufacturerCapabilityProfile | None = None,
     verification_level: str = "verified",
 ) -> PartnerCapabilityProjection:
-    capability_profile = profile or _profile(manufacturer_id, evidence_level=verification_level)
+    capability_profile = profile or _profile(
+        manufacturer_id, evidence_level=verification_level
+    )
     return PartnerCapabilityProjection(
         manufacturer_id=manufacturer_id,
         display_name=manufacturer_id.title(),

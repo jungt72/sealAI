@@ -3,6 +3,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, func
 from app.database import Base
 
+
 class LongTermMemory(Base):
     __tablename__ = "long_term_memory"
     id = Column(Integer, primary_key=True, autoincrement=True)

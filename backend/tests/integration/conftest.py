@@ -26,4 +26,3 @@ _ENV_DEFAULTS = {
 def pytest_configure() -> None:
     for key, value in _ENV_DEFAULTS.items():
         os.environ.setdefault(key, value)
-

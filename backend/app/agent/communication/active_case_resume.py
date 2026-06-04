@@ -7,7 +7,11 @@ from typing import Any
 from app.agent.communication.templates import render_communication_template
 from app.agent.communication.v7_contracts import TurnDecision
 from app.agent.graph.slot_answer_binding import resolve_slot_answer_binding
-from app.agent.state.models import GovernedSessionState, PendingQuestion, SlotAnswerBinding
+from app.agent.state.models import (
+    GovernedSessionState,
+    PendingQuestion,
+    SlotAnswerBinding,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +46,11 @@ def reevaluate_active_case_resume(
     state.
     """
 
-    pending = getattr(governed_state, "pending_question", None) if governed_state is not None else None
+    pending = (
+        getattr(governed_state, "pending_question", None)
+        if governed_state is not None
+        else None
+    )
     message = str(latest_user_message or "").strip()
     slot_binding = _detect_pending_slot_answer(
         pending_question=pending,
@@ -156,7 +164,10 @@ def _detect_explicit_medium_answer(
 ) -> SlotAnswerBinding | None:
     if str(getattr(pending_question, "target_field", "") or "") != "medium":
         return None
-    if str(getattr(pending_question, "expected_answer_type", "") or "") != "medium_value":
+    if (
+        str(getattr(pending_question, "expected_answer_type", "") or "")
+        != "medium_value"
+    ):
         return None
     normalized = " ".join(str(message or "").strip().split())
     if not normalized:
@@ -183,14 +194,20 @@ def _detect_explicit_medium_answer(
     )
 
 
-def _field_has_asserted_value(governed_state: GovernedSessionState | None, field_name: str) -> bool:
-    assertions = getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
+def _field_has_asserted_value(
+    governed_state: GovernedSessionState | None, field_name: str
+) -> bool:
+    assertions = (
+        getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
+    )
     claim = assertions.get(field_name)
     value = getattr(claim, "asserted_value", None)
     return value is not None and str(value).strip() != ""
 
 
-def _next_missing_field(governed_state: GovernedSessionState | None, *, exclude: set[str]) -> str | None:
+def _next_missing_field(
+    governed_state: GovernedSessionState | None, *, exclude: set[str]
+) -> str | None:
     asserted = getattr(governed_state, "asserted", None)
     assertions = getattr(asserted, "assertions", {}) or {}
     for field in list(getattr(asserted, "blocking_unknowns", []) or []):

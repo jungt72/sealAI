@@ -114,7 +114,9 @@ def test_safety_flags_forbid_mutation_truth_dispatch_contact_and_export() -> Non
     }
 
 
-def test_capability_output_contains_no_forbidden_approval_or_suitability_wording() -> None:
+def test_capability_output_contains_no_forbidden_approval_or_suitability_wording() -> (
+    None
+):
     registry = build_default_capability_registry()
 
     known = registry.invoke("medium_intelligence", {"medium_query": "HLP46"})
@@ -131,8 +133,7 @@ def _flatten_text(value: Any) -> str:
         return value
     if isinstance(value, Mapping):
         return " ".join(
-            f"{_flatten_text(key)} {_flatten_text(item)}"
-            for key, item in value.items()
+            f"{_flatten_text(key)} {_flatten_text(item)}" for key, item in value.items()
         )
     if isinstance(value, (list, tuple, set)):
         return " ".join(_flatten_text(item) for item in value)

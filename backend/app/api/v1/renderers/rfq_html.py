@@ -4,6 +4,7 @@
 Pure function — no I/O, no LLM, no DB calls.
 Generates a self-contained HTML string suitable for browser display or print-to-PDF.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

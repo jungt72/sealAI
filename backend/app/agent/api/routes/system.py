@@ -8,9 +8,11 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
 @router.get("/health")
 async def agent_health() -> dict:
     return {"status": "ok", "service": "SSoT Agent Authority"}
+
 
 @router.get("/medium-intelligence")
 async def get_medium_intelligence(

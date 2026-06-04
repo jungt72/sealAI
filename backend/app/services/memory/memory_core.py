@@ -26,6 +26,7 @@ from app.core.config import settings
 # Qdrant Client & Collection
 # ---------------------------------------------------------------------------
 
+
 def _get_qdrant_client() -> QdrantClient:
     kwargs = {"url": settings.qdrant_url}
     if settings.qdrant_api_key:
@@ -38,7 +39,9 @@ def _ltm_collection_name() -> str:
     Eigene LTM-Collection verwenden, um keine Vektorgrößen-Konflikte mit der
     RAG-Collection zu riskieren. Fallback: "<qdrant_collection>-ltm".
     """
-    return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
+    return (
+        settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm"
+    ).strip()
 
 
 def ensure_ltm_collection(client: QdrantClient) -> None:
@@ -61,15 +64,22 @@ def ensure_ltm_collection(client: QdrantClient) -> None:
 # Export / Delete
 # ---------------------------------------------------------------------------
 
-def _build_user_filter(user: str, tenant_id: str, chat_id: Optional[str] = None) -> models.Filter:
+
+def _build_user_filter(
+    user: str, tenant_id: str, chat_id: Optional[str] = None
+) -> models.Filter:
     # Tenant scoping is mandatory (V1.7 §8 / audit C6): pin BOTH user and tenant
     # so a user that spans tenants can never read/delete another tenant's points.
     must: List[models.FieldCondition] = [
         models.FieldCondition(key="user", match=models.MatchValue(value=user)),
-        models.FieldCondition(key="tenant_id", match=models.MatchValue(value=tenant_id)),
+        models.FieldCondition(
+            key="tenant_id", match=models.MatchValue(value=tenant_id)
+        ),
     ]
     if chat_id:
-        must.append(models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id)))
+        must.append(
+            models.FieldCondition(key="chat_id", match=models.MatchValue(value=chat_id))
+        )
     return models.Filter(must=must)
 
 
@@ -110,10 +120,12 @@ def ltm_export_all(
         if not points:
             break
         for p in points:
-            out.append({
-                "id": str(p.id),
-                "payload": dict(p.payload or {}),
-            })
+            out.append(
+                {
+                    "id": str(p.id),
+                    "payload": dict(p.payload or {}),
+                }
+            )
         fetched += len(points)
         if next_page is None:
             break

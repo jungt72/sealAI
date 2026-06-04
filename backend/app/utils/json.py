@@ -1,4 +1,5 @@
 """JSON serialization utilities with fallbacks for complex objects."""
+
 from __future__ import annotations
 
 import base64
@@ -23,20 +24,22 @@ def to_jsonable(obj: Any) -> Any:
 
     # Try fastapi jsonable_encoder first, with bytes to base64
     try:
-        return jsonable_encoder(obj, custom_encoder={bytes: lambda b: base64.b64encode(b).decode('ascii')})
+        return jsonable_encoder(
+            obj, custom_encoder={bytes: lambda b: base64.b64encode(b).decode("ascii")}
+        )
     except (AttributeError, TypeError) as e:
         # If it fails, try other methods
         pass
 
     # Try Pydantic v2 model_dump
-    if hasattr(obj, 'model_dump') and callable(getattr(obj, 'model_dump')):
+    if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
         try:
             return obj.model_dump()
         except Exception:
             pass
 
     # Try Pydantic v1 dict
-    if hasattr(obj, 'dict') and callable(getattr(obj, 'dict')):
+    if hasattr(obj, "dict") and callable(getattr(obj, "dict")):
         try:
             return obj.dict()
         except Exception:
@@ -50,12 +53,14 @@ def to_jsonable(obj: Any) -> Any:
             pass
 
     # Special cases for LangChain/BaseMessage
-    if hasattr(obj, '__class__') and 'BaseMessage' in obj.__class__.__name__:
+    if hasattr(obj, "__class__") and "BaseMessage" in obj.__class__.__name__:
         try:
             result = {
-                'type': getattr(obj, 'type', 'unknown'),
-                'content': getattr(obj, 'content', ''),
-                'tool_calls': getattr(obj, 'tool_calls', None) if hasattr(obj, 'tool_calls') else None,
+                "type": getattr(obj, "type", "unknown"),
+                "content": getattr(obj, "content", ""),
+                "tool_calls": getattr(obj, "tool_calls", None)
+                if hasattr(obj, "tool_calls")
+                else None,
             }
             # Remove None values
             return {k: v for k, v in result.items() if v is not None}
@@ -63,24 +68,29 @@ def to_jsonable(obj: Any) -> Any:
             pass
 
     # Special case for RAG Document
-    if hasattr(obj, '__class__') and 'Document' in obj.__class__.__name__:
+    if hasattr(obj, "__class__") and "Document" in obj.__class__.__name__:
         try:
             result = {
-                'id': getattr(obj, 'id', None) or getattr(obj, 'page_content', '')[:50] + '...',
-                'page_content': getattr(obj, 'page_content', ''),
-                'metadata': getattr(obj, 'metadata', {}),
-                'score': getattr(obj, 'score', None),
+                "id": getattr(obj, "id", None)
+                or getattr(obj, "page_content", "")[:50] + "...",
+                "page_content": getattr(obj, "page_content", ""),
+                "metadata": getattr(obj, "metadata", {}),
+                "score": getattr(obj, "score", None),
             }
             # Remove None values except score if present
-            return {k: v for k, v in result.items() if v is not None or k == 'score'}
+            return {k: v for k, v in result.items() if v is not None or k == "score"}
         except Exception:
             pass
 
     # For bytes/audio, encode as base64 with MIME hint
     if isinstance(obj, bytes):
         try:
-            mime = 'application/octet-stream'  # Default, could be detected
-            return {'data': base64.b64encode(obj).decode('ascii'), 'mime': mime, 'type': 'bytes'}
+            mime = "application/octet-stream"  # Default, could be detected
+            return {
+                "data": base64.b64encode(obj).decode("ascii"),
+                "mime": mime,
+                "type": "bytes",
+            }
         except Exception:
             pass
 

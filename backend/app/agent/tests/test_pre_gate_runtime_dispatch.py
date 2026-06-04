@@ -41,7 +41,9 @@ def _user() -> RequestUser:
     )
 
 
-def _mock_light_response(session_id: str, text: str = "LLM conversation answer") -> ChatResponse:
+def _mock_light_response(
+    session_id: str, text: str = "LLM conversation answer"
+) -> ChatResponse:
     return ChatResponse(
         session_id=session_id,
         reply=text,
@@ -89,7 +91,11 @@ class _FakeSemanticRouterClient:
     [
         ("Hallo", PreGateClassification.GREETING, "CONVERSATION"),
         ("Was kann SeaLAI?", PreGateClassification.META_QUESTION, "CONVERSATION"),
-        ("Was wollte ich von dir?", PreGateClassification.META_QUESTION, "CONVERSATION"),
+        (
+            "Was wollte ich von dir?",
+            PreGateClassification.META_QUESTION,
+            "CONVERSATION",
+        ),
         ("Worum ging es gerade?", PreGateClassification.META_QUESTION, "CONVERSATION"),
         ("Was ist PTFE?", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
         ("infos zu NBR", PreGateClassification.KNOWLEDGE_QUERY, "CONVERSATION"),
@@ -131,14 +137,18 @@ async def test_runtime_dispatch_uses_pre_gate_before_three_mode_gate(
     )
     assert dispatch.gate_route == expected_gate_route
     assert dispatch.gate_applied is False
-    assert dispatch.gate_reason.startswith(("pre_gate:", "pre_gate_llm_fast_responder:"))
+    assert dispatch.gate_reason.startswith(
+        ("pre_gate:", "pre_gate_llm_fast_responder:")
+    )
     if classification in {
         PreGateClassification.GREETING,
         PreGateClassification.META_QUESTION,
     }:
         assert dispatch.fast_response is None
         assert dispatch.runtime_action is not None
-        assert dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+        assert (
+            dispatch.runtime_action.answer_builder == RuntimeAnswerBuilder.LIGHT_RUNTIME
+        )
         assert dispatch.knowledge_response is None
     elif classification is PreGateClassification.BLOCKED:
         assert dispatch.fast_response is not None
@@ -240,7 +250,9 @@ async def test_semantic_pre_gate_corrects_casual_material_question_to_knowledge(
     )
 
     assert fake_router_client.calls
-    assert dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    assert (
+        dispatch.pre_gate_classification == PreGateClassification.KNOWLEDGE_QUERY.value
+    )
     assert dispatch.pre_gate_reason.startswith(
         "semantic_intent_router:knowledge_explain"
     )
@@ -258,7 +270,10 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(
     monkeypatch,
 ) -> None:
     async def fake_light_runtime(*args, **kwargs):
-        return _mock_light_response("fast-no-persist", "SeaLAI hilft dir, Dichtungsfragen sauber zu strukturieren.")
+        return _mock_light_response(
+            "fast-no-persist",
+            "SeaLAI hilft dir, Dichtungsfragen sauber zu strukturieren.",
+        )
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Fast Responder must not persist state")
@@ -284,7 +299,10 @@ async def test_fast_responder_chat_path_does_not_invoke_graph_or_persist(
     assert response.response_class == "conversational_answer"
     assert "fast_responder" not in response.run_meta
     assert response.run_meta["answer_trace"]["reply_source"] == "light_conversation"
-    assert response.run_meta["answer_trace"]["answer_markdown_source"] == "light_conversation"
+    assert (
+        response.run_meta["answer_trace"]["answer_markdown_source"]
+        == "light_conversation"
+    )
     assert response.run_meta["answer_trace"]["composer_attempted"] is True
     assert response.structured_state is None
 
@@ -294,7 +312,9 @@ async def test_greeting_chat_path_uses_fast_responder_without_case_persistence(
     monkeypatch,
 ) -> None:
     async def fake_light_runtime(*args, **kwargs):
-        return _mock_light_response("greeting-no-case", "Hallo, schoen dass du da bist.")
+        return _mock_light_response(
+            "greeting-no-case", "Hallo, schoen dass du da bist."
+        )
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Greeting must not persist governed state")
@@ -330,7 +350,9 @@ async def test_bare_compound_greeting_uses_fast_responder_without_case_persisten
     monkeypatch,
 ) -> None:
     async def fake_light_runtime(*args, **kwargs):
-        return _mock_light_response("bare-greeting-no-case", "Guten Morgen, ich bin da.")
+        return _mock_light_response(
+            "bare-greeting-no-case", "Guten Morgen, ich bin da."
+        )
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Bare greeting must not persist governed state")
@@ -561,7 +583,9 @@ async def test_social_conversation_with_typo_uses_fast_responder_without_graph(
     monkeypatch,
 ) -> None:
     async def fake_light_runtime(*args, **kwargs):
-        return _mock_light_response("social-typo-no-case", "Guten Morgen, mir geht es gut.")
+        return _mock_light_response(
+            "social-typo-no-case", "Guten Morgen, mir geht es gut."
+        )
 
     async def fail_persist(*args, **kwargs):
         raise AssertionError("Social conversation must not persist governed state")
@@ -605,7 +629,10 @@ async def test_social_conversation_dispatch_with_typo_does_not_enter_governed() 
     )
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
-    assert dispatch.gate_reason == "pre_gate_llm_fast_responder:deterministic_social_conversation"
+    assert (
+        dispatch.gate_reason
+        == "pre_gate_llm_fast_responder:deterministic_social_conversation"
+    )
     assert dispatch.runtime_mode == "CONVERSATION"
     assert dispatch.fast_response is None
     assert dispatch.runtime_action is not None
@@ -628,7 +655,10 @@ async def test_social_conversation_colloquial_wellbeing_does_not_enter_governed(
     )
 
     assert dispatch.pre_gate_classification == PreGateClassification.GREETING.value
-    assert dispatch.gate_reason == "pre_gate_llm_fast_responder:deterministic_social_conversation"
+    assert (
+        dispatch.gate_reason
+        == "pre_gate_llm_fast_responder:deterministic_social_conversation"
+    )
     assert dispatch.runtime_mode == "CONVERSATION"
     assert dispatch.fast_response is None
     assert dispatch.runtime_action is not None
@@ -921,10 +951,14 @@ async def test_domain_inquiry_chat_path_runs_engine_sidecar_then_free_conversati
     monkeypatch,
 ) -> None:
     async def fail_governed_visible_response(*args, **kwargs):
-        raise AssertionError("Domain inquiry must not use governed graph as visible answer")
+        raise AssertionError(
+            "Domain inquiry must not use governed graph as visible answer"
+        )
 
     conversation_first_runner = AsyncMock(
-        return_value=_mock_light_response("domain-json", "Gerne, lass uns frei starten.")
+        return_value=_mock_light_response(
+            "domain-json", "Gerne, lass uns frei starten."
+        )
     )
 
     monkeypatch.setattr(
@@ -951,7 +985,10 @@ async def test_domain_inquiry_chat_path_runs_engine_sidecar_then_free_conversati
     assert response.response_class == "conversational_answer"
     assert response.reply == "Gerne, lass uns frei starten."
     conversation_first_runner.assert_awaited_once()
-    assert conversation_first_runner.await_args.kwargs["pre_gate_classification"] == "DOMAIN_INQUIRY"
+    assert (
+        conversation_first_runner.await_args.kwargs["pre_gate_classification"]
+        == "DOMAIN_INQUIRY"
+    )
 
 
 @pytest.mark.asyncio
@@ -1119,7 +1156,9 @@ async def test_domain_inquiry_stream_path_runs_engine_sidecar_then_free_conversa
     monkeypatch,
 ) -> None:
     async def fail_governed_stream(*args, **kwargs):
-        raise AssertionError("Domain inquiry stream must not expose governed graph answer")
+        raise AssertionError(
+            "Domain inquiry stream must not expose governed graph answer"
+        )
 
     async def stub_conversation_first_stream(*args, **kwargs):
         yield 'data: {"type": "state_update", "reply": "conversation"}\n\n'

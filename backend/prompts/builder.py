@@ -5,6 +5,7 @@ All LLM prompts pass through this class. No raw prompt strings in
 production code. StrictUndefined enforced — missing template variables
 raise immediately rather than silently rendering empty.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +52,7 @@ class PromptBuilder:
         result = f"{persona_prefix}{laws_block}\n\n{rendered}".strip()
         # Collapse triple+ blank lines to double
         import re
+
         result = re.sub(r"\n{3,}", "\n\n", result)
         elapsed_ms = (time.perf_counter() - start) * 1000
         tokens_approx = len(result) // 4

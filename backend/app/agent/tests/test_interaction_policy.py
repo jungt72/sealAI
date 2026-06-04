@@ -14,6 +14,7 @@ Test coverage:
 - Deterministic pre-checks (meta, block, fast→structured upgrade) run independently
 - Missing-parameter signals are surfaced for the structured path
 """
+
 from __future__ import annotations
 
 import re
@@ -30,6 +31,7 @@ from app.services.output_classifier import OutputClass
 # ---------------------------------------------------------------------------
 # Autouse fixture: deterministic routing LLM mock
 # ---------------------------------------------------------------------------
+
 
 def _rule_based_routing(user_input: str) -> str:
     """Deterministic stand-in for the routing LLM.
@@ -51,7 +53,7 @@ def _rule_based_routing(user_input: str) -> str:
         r"\b(FDA|ATEX|NORSOK|Zertifikat|Freigabe|RFQ|DIN-Norm|Herstellerfreigabe"
         r"|DIN|ISO|REACH|Konformit|Qualifikation)\b"
         r"|"
-        r"\b(Berechne|Berechnung)\b",   # any calc keyword → Structured
+        r"\b(Berechne|Berechnung)\b",  # any calc keyword → Structured
         re.IGNORECASE,
     )
     return "Structured" if structured_pattern.search(user_input) else "Fast"
@@ -70,6 +72,7 @@ def deterministic_routing(monkeypatch):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _state_with_params(**kwargs) -> dict:
     """Build a minimal AgentState dict with the given operating conditions."""
     medium = kwargs.get("medium")
@@ -82,7 +85,9 @@ def _state_with_params(**kwargs) -> dict:
                 "medium_profile": {"name": medium} if medium else {},
                 "machine_profile": {"material": material} if material else {},
                 "operating_conditions": {
-                    k: v for k, v in [("pressure", pressure), ("temperature", temperature)] if v
+                    k: v
+                    for k, v in [("pressure", pressure), ("temperature", temperature)]
+                    if v
                 },
             }
         }
@@ -99,54 +104,140 @@ def _state_with_params(**kwargs) -> dict:
 #   - Queries with numeric units (mm, bar, °C, rpm, …) are upgraded from Fast
 #     to Structured by the deterministic fast→structured upgrade check.
 
-@pytest.mark.parametrize("query, expected_form, expected_pre_gate, expected_policy_path", [
-    # 1. Glossary / concept explanation → conversational answer / FAST
-    ("Was ist FKM?",                             OutputClass.CONVERSATIONAL_ANSWER,     PreGateClassification.KNOWLEDGE_QUERY, "fast"),
-    ("Was bedeutet NBR?",                        OutputClass.CONVERSATIONAL_ANSWER,     PreGateClassification.KNOWLEDGE_QUERY, "fast"),
-    ("Was ist eine Labyrinthdichtung?",          OutputClass.CONVERSATIONAL_ANSWER,     PreGateClassification.KNOWLEDGE_QUERY, "fast"),
-    ("Erkläre mir den Begriff Shore-Härte.",     OutputClass.CONVERSATIONAL_ANSWER,     PreGateClassification.KNOWLEDGE_QUERY, "fast"),
-    ("Was versteht man unter AED?",              OutputClass.CONVERSATIONAL_ANSWER,     PreGateClassification.KNOWLEDGE_QUERY, "fast"),
 
-    # 2. Material comparison → varies by whether fast→structured upgrade fires
-    #    "FKM … für Hydrauliköl" matches the material+context upgrade pattern → STRUCTURED
-    #    "PTFE und EPDM" has no context keyword after material → stays FAST
-    #    "FKM für Heißdampf" matches material+context upgrade pattern → STRUCTURED
-    ("Vergleich FKM vs NBR für Hydrauliköl",    OutputClass.CONVERSATIONAL_ANSWER, PreGateClassification.KNOWLEDGE_QUERY, "fast"),
-    ("Was ist der Unterschied zwischen PTFE und EPDM?",
-                                                  OutputClass.CONVERSATIONAL_ANSWER,     PreGateClassification.KNOWLEDGE_QUERY, "fast"),
-    ("Welches Material ist besser als FKM für Heißdampf?",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-
-    # 3. Open guidance questions without numeric params → conversational / FAST
-    ("Ich suche eine Dichtung für aggressives Medium.",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("Welcher Werkstoff empfiehlt sich für Lebensmittelkontakt?",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-
-    # 4. Guidance question WITH numeric temperature → upgraded to STRUCTURED
-    #    "200°C" matches the fast→structured upgrade pattern (numeric+unit).
-    ("Welche Dichtung brauche ich für 200°C Hydrauliköl?",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-
-    # 5. Calculation with numeric evidence → structured clarification / STRUCTURED
-    #    (Upgrade fires independently of LLM decision)
-    ("Berechne RWDR für 50mm Welle, 3000 rpm",  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("Umlaufgeschwindigkeit bei 80mm und 1450 U/min",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("Gleitgeschwindigkeit: Welle 60mm, 2000 rpm",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-
-    # 6. Certification / formal release → structured clarification / STRUCTURED
-    ("Ich brauche eine FDA-konforme Freigabe für Anlage X",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("Zertifikat für ATEX-Zone 1 benötigt",      OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("Welche Materialien sind NORSOK-freigegeben?",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("Herstellerfreigabe für Sonderkonstruktion", OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-    ("RFQ für Druckbehälter-Dichtung nach DIN-Norm",
-                                                  OutputClass.STRUCTURED_CLARIFICATION, PreGateClassification.DOMAIN_INQUIRY, "structured"),
-])
-def test_policy_output_class_and_pre_gate(query, expected_form, expected_pre_gate, expected_policy_path):
+@pytest.mark.parametrize(
+    "query, expected_form, expected_pre_gate, expected_policy_path",
+    [
+        # 1. Glossary / concept explanation → conversational answer / FAST
+        (
+            "Was ist FKM?",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        (
+            "Was bedeutet NBR?",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        (
+            "Was ist eine Labyrinthdichtung?",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        (
+            "Erkläre mir den Begriff Shore-Härte.",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        (
+            "Was versteht man unter AED?",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        # 2. Material comparison → varies by whether fast→structured upgrade fires
+        #    "FKM … für Hydrauliköl" matches the material+context upgrade pattern → STRUCTURED
+        #    "PTFE und EPDM" has no context keyword after material → stays FAST
+        #    "FKM für Heißdampf" matches material+context upgrade pattern → STRUCTURED
+        (
+            "Vergleich FKM vs NBR für Hydrauliköl",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        (
+            "Was ist der Unterschied zwischen PTFE und EPDM?",
+            OutputClass.CONVERSATIONAL_ANSWER,
+            PreGateClassification.KNOWLEDGE_QUERY,
+            "fast",
+        ),
+        (
+            "Welches Material ist besser als FKM für Heißdampf?",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        # 3. Open guidance questions without numeric params → conversational / FAST
+        (
+            "Ich suche eine Dichtung für aggressives Medium.",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "Welcher Werkstoff empfiehlt sich für Lebensmittelkontakt?",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        # 4. Guidance question WITH numeric temperature → upgraded to STRUCTURED
+        #    "200°C" matches the fast→structured upgrade pattern (numeric+unit).
+        (
+            "Welche Dichtung brauche ich für 200°C Hydrauliköl?",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        # 5. Calculation with numeric evidence → structured clarification / STRUCTURED
+        #    (Upgrade fires independently of LLM decision)
+        (
+            "Berechne RWDR für 50mm Welle, 3000 rpm",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "Umlaufgeschwindigkeit bei 80mm und 1450 U/min",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "Gleitgeschwindigkeit: Welle 60mm, 2000 rpm",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        # 6. Certification / formal release → structured clarification / STRUCTURED
+        (
+            "Ich brauche eine FDA-konforme Freigabe für Anlage X",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "Zertifikat für ATEX-Zone 1 benötigt",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "Welche Materialien sind NORSOK-freigegeben?",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "Herstellerfreigabe für Sonderkonstruktion",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+        (
+            "RFQ für Druckbehälter-Dichtung nach DIN-Norm",
+            OutputClass.STRUCTURED_CLARIFICATION,
+            PreGateClassification.DOMAIN_INQUIRY,
+            "structured",
+        ),
+    ],
+)
+def test_policy_output_class_and_pre_gate(
+    query, expected_form, expected_pre_gate, expected_policy_path
+):
     decision = evaluate_policy(query)
     assert decision.output_class == expected_form, (
         f"Query: {query!r}\n"
@@ -166,13 +257,17 @@ def test_policy_output_class_and_pre_gate(query, expected_form, expected_pre_gat
 # has_case_state consistency
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("query, expected_has_case_state", [
-    ("Was ist FKM?",               False),
-    ("Vergleich FKM vs NBR",       False),
-    ("Welche Dichtung für Heißdampf?", True),
-    ("Berechne RWDR 50mm 1500 rpm", True),    # numeric upgrade → structured
-    ("FDA Freigabe für Anlage",     True),     # mock → Structured → has_case_state=True
-])
+
+@pytest.mark.parametrize(
+    "query, expected_has_case_state",
+    [
+        ("Was ist FKM?", False),
+        ("Vergleich FKM vs NBR", False),
+        ("Welche Dichtung für Heißdampf?", True),
+        ("Berechne RWDR 50mm 1500 rpm", True),  # numeric upgrade → structured
+        ("FDA Freigabe für Anlage", True),  # mock → Structured → has_case_state=True
+    ],
+)
 def test_has_case_state(query, expected_has_case_state):
     decision = evaluate_policy(query)
     assert decision.has_case_state == expected_has_case_state, (
@@ -185,6 +280,7 @@ def test_has_case_state(query, expected_has_case_state):
 # Missing-parameter surfacing on the structured path
 # ---------------------------------------------------------------------------
 
+
 def test_structured_path_surfaces_missing_params_when_no_state():
     """Without current_state, structured path reports all critical params as missing."""
     # "Berechne" + numbers → deterministically Structured
@@ -193,7 +289,10 @@ def test_structured_path_surfaces_missing_params_when_no_state():
     assert decision.pre_gate_classification is PreGateClassification.DOMAIN_INQUIRY
     assert decision.path == "structured"
     assert "medium" in decision.required_fields
-    assert "pressure" in decision.required_fields or "temperature" in decision.required_fields
+    assert (
+        "pressure" in decision.required_fields
+        or "temperature" in decision.required_fields
+    )
 
 
 def test_structured_path_no_missing_params_when_state_complete():
@@ -221,6 +320,7 @@ def test_calc_keyword_without_numbers_still_reaches_structured_via_mock():
 # ---------------------------------------------------------------------------
 # Phase 0D deterministic pre-checks — run BEFORE the routing LLM
 # ---------------------------------------------------------------------------
+
 
 def test_meta_query_bypasses_llm_entirely():
     """Meta queries must route to META_PATH without any LLM call.
@@ -271,7 +371,9 @@ def test_blocked_query_bypasses_llm_entirely():
 def test_fast_to_structured_upgrade_overrides_llm_fast_decision():
     """Numeric+unit input is upgraded to Structured even if LLM would say Fast."""
     # Force mock to return "Fast" even for a numeric input
-    with patch("app.agent.runtime.interaction_policy._call_routing_llm", return_value="Fast"):
+    with patch(
+        "app.agent.runtime.interaction_policy._call_routing_llm", return_value="Fast"
+    ):
         decision = evaluate_policy("Welle 50mm, 3000 rpm")
 
     # The fast→structured upgrade must fire and override the LLM "Fast" decision
@@ -285,6 +387,7 @@ def test_fast_to_structured_upgrade_overrides_llm_fast_decision():
 
 def test_llm_error_falls_back_to_structured():
     """Any routing LLM exception must fall back to the Structured path."""
+
     def _raise(*args, **kwargs):
         raise ConnectionError("LLM unavailable")
 
@@ -292,14 +395,15 @@ def test_llm_error_falls_back_to_structured():
         decision = evaluate_policy("Dichtung für Pumpe?")
 
     assert decision.pre_gate_classification is PreGateClassification.DOMAIN_INQUIRY
-    assert decision.path == "structured", (
-        "LLM error must fall back to Structured (safe default)"
-    )
+    assert (
+        decision.path == "structured"
+    ), "LLM error must fall back to Structured (safe default)"
 
 
 # ---------------------------------------------------------------------------
 # Routing intent tests — structured vs fast semantics
 # ---------------------------------------------------------------------------
+
 
 def test_knowledge_question_routes_to_fast():
     """Pure knowledge questions must route to the fast path."""
@@ -330,12 +434,16 @@ def test_structured_routing_empty_required_fields_when_state_complete():
 # Open-ended sealing questions — must NOT land on heavy structured pipeline
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("query", [
-    "Ich habe einen Hydraulikzylinder und suche eine Dichtung.",
-    "Für meine Pumpenanlage welche Materialien?",
-    "Dichtung für aggressive Medien gesucht.",
-    "Bitte empfehlt mir etwas für hohe Temperaturen.",
-])
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Ich habe einen Hydraulikzylinder und suche eine Dichtung.",
+        "Für meine Pumpenanlage welche Materialien?",
+        "Dichtung für aggressive Medien gesucht.",
+        "Bitte empfehlt mir etwas für hohe Temperaturen.",
+    ],
+)
 def test_open_sealing_question_does_not_land_on_structured_path(query):
     """
     Regression guard: open sealing questions without qualification signals
@@ -343,15 +451,16 @@ def test_open_sealing_question_does_not_land_on_structured_path(query):
     """
     decision = evaluate_policy(query)
     assert decision.pre_gate_classification is PreGateClassification.DOMAIN_INQUIRY
-    assert decision.path == "structured", (
-        f"Open question routed to structured path (regression): {query!r}"
-    )
+    assert (
+        decision.path == "structured"
+    ), f"Open question routed to structured path (regression): {query!r}"
     assert decision.output_class != OutputClass.GOVERNED_STATE_UPDATE
 
 
 # ---------------------------------------------------------------------------
 # Return type and version invariants
 # ---------------------------------------------------------------------------
+
 
 def test_return_type():
     decision = evaluate_policy("anything")
@@ -393,26 +502,30 @@ def test_all_five_paths_reachable():
 # Phase 0D+: Greeting / smalltalk deterministic path
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("query", [
-    "Hallo",
-    "Hi!",
-    "Hey",
-    "Guten Morgen",
-    "Guten Tag!",
-    "Danke",
-    "Vielen Dank!",
-    "Tschüss",
-    "Wie geht's?",
-    "Moin!",
-    "Servus",
-])
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Hallo",
+        "Hi!",
+        "Hey",
+        "Guten Morgen",
+        "Guten Tag!",
+        "Danke",
+        "Vielen Dank!",
+        "Tschüss",
+        "Wie geht's?",
+        "Moin!",
+        "Servus",
+    ],
+)
 def test_greeting_routes_to_greeting_path(query):
     """Trivial greetings must route to GREETING_PATH — no LLM, no RAG."""
     decision = evaluate_policy(query)
     assert decision.pre_gate_classification is PreGateClassification.GREETING
-    assert decision.path == "greeting", (
-        f"Query {query!r} should route to GREETING_PATH, got {decision.path}"
-    )
+    assert (
+        decision.path == "greeting"
+    ), f"Query {query!r} should route to GREETING_PATH, got {decision.path}"
     assert decision.has_case_state is False
     assert decision.interaction_class == "GREETING"
 
@@ -445,14 +558,17 @@ def test_greeting_bypasses_llm_entirely():
     )
 
 
-@pytest.mark.parametrize("query", [
-    "Hallo, ich brauche eine Dichtung für 50mm Welle",
-    "Hi, Berechne RWDR für 3000 rpm",
-    "Danke, und was ist mit 200 bar?",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Hallo, ich brauche eine Dichtung für 50mm Welle",
+        "Hi, Berechne RWDR für 3000 rpm",
+        "Danke, und was ist mit 200 bar?",
+    ],
+)
 def test_greeting_with_technical_content_does_not_match(query):
     """Greetings mixed with technical content must NOT match the greeting pattern."""
     decision = evaluate_policy(query)
-    assert decision.path != "greeting", (
-        f"Query {query!r} has technical content and must NOT route to GREETING_PATH"
-    )
+    assert (
+        decision.path != "greeting"
+    ), f"Query {query!r} has technical content and must NOT route to GREETING_PATH"

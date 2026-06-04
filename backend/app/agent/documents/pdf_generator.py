@@ -90,25 +90,40 @@ def _preselection_items(preselection: dict[str, Any] | None) -> list[dict[str, s
         if marker in seen:
             continue
         seen.add(marker)
-        items.append({"label": label, "value": _format_value(raw), "fit_score": fit_score})
+        items.append(
+            {"label": label, "value": _format_value(raw), "fit_score": fit_score}
+        )
 
     if not items:
         for key, raw in preselection.items():
             if key == "fit_score" or raw in (None, "", [], {}):
                 continue
-            items.append({"label": str(key).replace("_", " ").title(), "value": _format_value(raw), "fit_score": fit_score})
+            items.append(
+                {
+                    "label": str(key).replace("_", " ").title(),
+                    "value": _format_value(raw),
+                    "fit_score": fit_score,
+                }
+            )
     return items
 
 
 def _demand_analysis(state: GovernedSessionState) -> list[dict[str, str]]:
     items: list[dict[str, str]] = []
     if state.sealai_norm.application_summary:
-        items.append({"label": "Anwendung", "value": state.sealai_norm.application_summary})
+        items.append(
+            {"label": "Anwendung", "value": state.sealai_norm.application_summary}
+        )
     seal_family = state.sealai_norm.identity.seal_family
     if seal_family:
         items.append({"label": "Dichtungsart", "value": seal_family})
     if state.decision.requirement_class and state.decision.requirement_class.class_id:
-        items.append({"label": "Requirement Class", "value": state.decision.requirement_class.class_id})
+        items.append(
+            {
+                "label": "Requirement Class",
+                "value": state.decision.requirement_class.class_id,
+            }
+        )
     if state.decision.gov_class:
         items.append({"label": "Governance-Klasse", "value": state.decision.gov_class})
     return items
@@ -121,7 +136,9 @@ def build_pdf_context(state: GovernedSessionState) -> dict[str, Any]:
             param = parameter
         else:
             param = NormalizedParameter.model_validate(parameter)
-        status_label, status_class = _status_label(state.normalized.parameter_status.get(field_name))
+        status_label, status_class = _status_label(
+            state.normalized.parameter_status.get(field_name)
+        )
         parameters.append(
             {
                 "label": param.field_name.replace("_", " ").title(),
@@ -203,7 +220,9 @@ async def generate_pdf_from_html(
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text.strip() or str(exc)
-        raise PdfGenerationError(f"Gotenberg HTML->PDF request failed: {detail}") from exc
+        raise PdfGenerationError(
+            f"Gotenberg HTML->PDF request failed: {detail}"
+        ) from exc
     except httpx.RequestError as exc:
         raise PdfGenerationError(f"Gotenberg HTML->PDF request failed: {exc}") from exc
 

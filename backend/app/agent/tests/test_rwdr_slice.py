@@ -34,6 +34,7 @@ Tests cover:
 30. Tool wrapper: missing optional params do not crash
 31. RwdrCalcInput / RwdrCalcResult dataclass round-trip
 """
+
 from __future__ import annotations
 
 import json
@@ -62,6 +63,7 @@ from app.agent.domain.rwdr_calc import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _payload(
     d: float = 80.0,
@@ -96,6 +98,7 @@ def _expected_v(d_mm: float, rpm: float) -> float:
 # ---------------------------------------------------------------------------
 # 1–3. Core tribology formulas
 # ---------------------------------------------------------------------------
+
 
 class TestTribologyMath:
     def test_umfangsgeschwindigkeit_80mm_1450rpm(self):
@@ -142,6 +145,7 @@ class TestTribologyMath:
 # ---------------------------------------------------------------------------
 # 4–12. Expert limits
 # ---------------------------------------------------------------------------
+
 
 class TestExpertLimits:
     def test_material_speed_limit_nbr_exceeded(self):
@@ -201,6 +205,7 @@ class TestExpertLimits:
 # 13–14. PV thresholds (FKM: warn=2.0, crit=3.0)
 # ---------------------------------------------------------------------------
 
+
 class TestPVThresholds:
     def test_pv_above_warning_limit_fkm(self):
         """FKM pv_warning at 2.0 MPa·m/s."""
@@ -228,6 +233,7 @@ class TestPVThresholds:
 # 15–16. Extrusion
 # ---------------------------------------------------------------------------
 
+
 class TestExtrusion:
     def test_extrusion_risk_high_pressure_and_gap(self):
         payload = {"pressure_bar": 150.0, "clearance_gap_mm": 0.15}
@@ -253,6 +259,7 @@ class TestExtrusion:
 # ---------------------------------------------------------------------------
 # 17–20. Geometry
 # ---------------------------------------------------------------------------
+
 
 class TestGeometry:
     def test_compression_ratio_formula(self):
@@ -302,10 +309,12 @@ class TestGeometry:
 # 21–22. Thermal
 # ---------------------------------------------------------------------------
 
+
 class TestThermal:
     def test_thermal_expansion_formula(self):
         """expansion = d * alpha * delta_T  (alpha = 1.2e-4 /K for PTFE)"""
         from app.agent.domain.rwdr_calc import _PTFE_ALPHA_PER_K
+
         payload = {"shaft_diameter": 80.0, "temp_min_c": -20.0, "temp_max_c": 80.0}
         r = calc_thermal(payload)
         expected = 80.0 * _PTFE_ALPHA_PER_K * (80.0 - (-20.0))
@@ -326,6 +335,7 @@ class TestThermal:
 # 23–26. calculate_rwdr status
 # ---------------------------------------------------------------------------
 
+
 class TestCalculateRwdrStatus:
     def test_status_ok_minimal_inputs(self):
         inp = RwdrCalcInput(shaft_diameter_mm=30.0, rpm=500.0)
@@ -336,18 +346,17 @@ class TestCalculateRwdrStatus:
     def test_status_warning_pv_exceeds_fkm_warning(self):
         # FKM pv_warning = 2.0; 80mm@1450rpm p=35bar → pv≈2.12
         inp = RwdrCalcInput(
-            shaft_diameter_mm=80.0, rpm=1450.0,
-            pressure_bar=35.0, elastomer_material="FKM"
+            shaft_diameter_mm=80.0,
+            rpm=1450.0,
+            pressure_bar=35.0,
+            elastomer_material="FKM",
         )
         result = calculate_rwdr(inp)
         assert result.status in ("warning", "critical")
         assert result.pv_warning is True
 
     def test_status_critical_extrusion_risk(self):
-        inp = RwdrCalcInput(
-            shaft_diameter_mm=80.0, rpm=500.0,
-            pressure_bar=260.0
-        )
+        inp = RwdrCalcInput(shaft_diameter_mm=80.0, rpm=500.0, pressure_bar=260.0)
         result = calculate_rwdr(inp)
         assert result.status == "critical"
         assert result.extrusion_risk is True
@@ -358,7 +367,13 @@ class TestCalculateRwdrStatus:
         v_surface_m_s is None when either diameter or rpm is absent (None).
         We simulate this by directly calling calc_tribology with an empty payload.
         """
-        from app.agent.domain.rwdr_calc import calc_tribology, calc_extrusion, calc_geometry, calc_thermal
+        from app.agent.domain.rwdr_calc import (
+            calc_tribology,
+            calc_extrusion,
+            calc_geometry,
+            calc_thermal,
+        )
+
         # All sub-functions with empty payload produce None / False outputs
         tribo = calc_tribology({})
         extru = calc_extrusion({})
@@ -373,6 +388,7 @@ class TestCalculateRwdrStatus:
 # ---------------------------------------------------------------------------
 # 27–30. Material profile lookups
 # ---------------------------------------------------------------------------
+
 
 class TestMaterialProfiles:
     def test_fkm_speed_limit_16ms(self):
@@ -396,7 +412,9 @@ class TestMaterialProfiles:
         assert v < 20.0
         r = calc_tribology(_payload(100.0, 3600.0, mat="PTFE"))
         # Should NOT be critical from speed alone
-        speed_note = any("Umfangsgeschwindigkeit" in n and "PTFE" in n for n in r["notes"])
+        speed_note = any(
+            "Umfangsgeschwindigkeit" in n and "PTFE" in n for n in r["notes"]
+        )
         assert not speed_note
 
     def test_alias_viton_resolves_to_fkm_profile(self):
@@ -422,13 +440,17 @@ class TestMaterialProfiles:
 # 31–33. Tool wrapper
 # ---------------------------------------------------------------------------
 
+
 class TestToolWrapper:
     def test_tool_returns_json_string(self):
         from app.agent.graph.tools import calculate_rwdr_specifications
-        result = calculate_rwdr_specifications.invoke({
-            "shaft_diameter_mm": 80.0,
-            "rpm": 1450.0,
-        })
+
+        result = calculate_rwdr_specifications.invoke(
+            {
+                "shaft_diameter_mm": 80.0,
+                "rpm": 1450.0,
+            }
+        )
         assert isinstance(result, str)
         parsed = json.loads(result)
         assert "v_surface_m_s" in parsed
@@ -437,31 +459,37 @@ class TestToolWrapper:
     def test_tool_all_optional_params_none(self):
         """Calling with only required params must not crash."""
         from app.agent.graph.tools import calculate_rwdr_specifications
-        result = calculate_rwdr_specifications.invoke({
-            "shaft_diameter_mm": 50.0,
-            "rpm": 1000.0,
-        })
+
+        result = calculate_rwdr_specifications.invoke(
+            {
+                "shaft_diameter_mm": 50.0,
+                "rpm": 1000.0,
+            }
+        )
         parsed = json.loads(result)
         assert parsed["v_surface_m_s"] == pytest.approx(_expected_v(50.0, 1000.0))
 
     def test_tool_full_params(self):
         """Full parameter set must work end-to-end."""
         from app.agent.graph.tools import calculate_rwdr_specifications
-        result = calculate_rwdr_specifications.invoke({
-            "shaft_diameter_mm": 80.0,
-            "rpm": 1450.0,
-            "pressure_bar": 30.0,
-            "temperature_max_c": 120.0,
-            "temperature_min_c": -30.0,
-            "surface_hardness_hrc": 60.0,
-            "runout_mm": 0.1,
-            "elastomer_material": "FKM",
-            "medium": "Hydrauliköl",
-            "cross_section_d2_mm": 3.0,
-            "groove_depth_mm": 2.4,
-            "groove_width_mm": 3.5,
-            "seal_inner_diameter_mm": 77.0,
-        })
+
+        result = calculate_rwdr_specifications.invoke(
+            {
+                "shaft_diameter_mm": 80.0,
+                "rpm": 1450.0,
+                "pressure_bar": 30.0,
+                "temperature_max_c": 120.0,
+                "temperature_min_c": -30.0,
+                "surface_hardness_hrc": 60.0,
+                "runout_mm": 0.1,
+                "elastomer_material": "FKM",
+                "medium": "Hydrauliköl",
+                "cross_section_d2_mm": 3.0,
+                "groove_depth_mm": 2.4,
+                "groove_width_mm": 3.5,
+                "seal_inner_diameter_mm": 77.0,
+            }
+        )
         parsed = json.loads(result)
         assert parsed["status"] in ("ok", "warning", "critical")
         assert "notes" in parsed
@@ -471,6 +499,7 @@ class TestToolWrapper:
         """calculate_rwdr_specifications must be importable from tools and in tools list."""
         from app.agent.graph.tools import calculate_rwdr_specifications, submit_claim
         from langchain_core.tools import BaseTool
+
         assert isinstance(calculate_rwdr_specifications, BaseTool)
         assert calculate_rwdr_specifications.name == "calculate_rwdr_specifications"
 
@@ -479,9 +508,15 @@ class TestToolWrapper:
 # 34. RwdrCalcInput / RwdrCalcResult dataclass
 # ---------------------------------------------------------------------------
 
+
 class TestDataClasses:
     def test_rwdr_calc_input_round_trip(self):
-        inp = RwdrCalcInput(shaft_diameter_mm=80.0, rpm=1450.0, pressure_bar=30.0, elastomer_material="FKM")
+        inp = RwdrCalcInput(
+            shaft_diameter_mm=80.0,
+            rpm=1450.0,
+            pressure_bar=30.0,
+            elastomer_material="FKM",
+        )
         assert inp.shaft_diameter_mm == 80.0
         assert inp.rpm == 1450.0
         assert inp.pressure_bar == 30.0
@@ -504,23 +539,27 @@ class TestDataClasses:
 # Phase 1A — PATCH 3: Dn-Wert tests
 # ---------------------------------------------------------------------------
 
+
 class TestDnValue:
     """Dn = d × n [mm·min⁻¹] — CLAUDE.md spec: Dn > 500 000 → WARN_HIGH_DN."""
 
     def test_dn_formula(self):
         """Dn = diameter_mm × rpm — exact value check."""
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"shaft_diameter": 100.0, "speed_rpm": 3000.0})
         assert result["dn_value"] == pytest.approx(300_000.0)
 
     def test_dn_none_when_diameter_missing(self):
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"speed_rpm": 3000.0})
         assert result["dn_value"] is None
         assert result["dn_warning"] is False
 
     def test_dn_none_when_rpm_missing(self):
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"shaft_diameter": 100.0})
         assert result["dn_value"] is None
         assert result["dn_warning"] is False
@@ -528,12 +567,14 @@ class TestDnValue:
     def test_dn_below_threshold_no_warning(self):
         """Dn = 100 × 3000 = 300 000 < 500 000 → no warning."""
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"shaft_diameter": 100.0, "speed_rpm": 3000.0})
         assert result["dn_warning"] is False
 
     def test_dn_at_threshold_boundary_no_warning(self):
         """Dn exactly at 500 000 is NOT above threshold → no warning."""
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"shaft_diameter": 500.0, "speed_rpm": 1000.0})
         assert result["dn_value"] == pytest.approx(500_000.0)
         assert result["dn_warning"] is False
@@ -541,12 +582,14 @@ class TestDnValue:
     def test_dn_above_threshold_fires_warning(self):
         """Dn = 200 × 3000 = 600 000 > 500 000 → warning."""
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"shaft_diameter": 200.0, "speed_rpm": 3000.0})
         assert result["dn_warning"] is True
 
     def test_dn_warning_adds_note(self):
         """Dn warning must produce a German-language note in the notes list."""
         from app.agent.domain.rwdr_calc import calc_tribology
+
         result = calc_tribology({"shaft_diameter": 200.0, "speed_rpm": 3000.0})
         dn_notes = [n for n in result["notes"] if "Dn" in n or "600" in n]
         assert len(dn_notes) >= 1, "Dn warning must produce a note"
@@ -555,9 +598,10 @@ class TestDnValue:
         """Dn warning must cause overall status to be 'warning' (not 'ok')."""
         result = calculate_rwdr(RwdrCalcInput(shaft_diameter_mm=200.0, rpm=3000.0))
         assert result.dn_warning is True
-        assert result.status in ("warning", "critical"), (
-            "Dn warning must prevent status=='ok'"
-        )
+        assert result.status in (
+            "warning",
+            "critical",
+        ), "Dn warning must prevent status=='ok'"
 
     def test_dn_value_in_rwdr_calc_result(self):
         """calculate_rwdr must expose dn_value in the typed result."""

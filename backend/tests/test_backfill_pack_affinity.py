@@ -12,9 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 _SCRIPT = (
-    Path(__file__).resolve().parents[1]
-    / "scripts"
-    / "backfill_pack_affinity_qdrant.py"
+    Path(__file__).resolve().parents[1] / "scripts" / "backfill_pack_affinity_qdrant.py"
 )
 _spec = importlib.util.spec_from_file_location("backfill_pack_affinity_qdrant", _SCRIPT)
 assert _spec and _spec.loader
@@ -23,8 +21,12 @@ sys.modules[_spec.name] = backfill  # dataclass annotation resolution needs this
 _spec.loader.exec_module(backfill)
 
 
-def _point(point_id: str, metadata: dict | None = None, text: str = "") -> SimpleNamespace:
-    return SimpleNamespace(id=point_id, payload={"metadata": metadata or {}, "text": text})
+def _point(
+    point_id: str, metadata: dict | None = None, text: str = ""
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=point_id, payload={"metadata": metadata or {}, "text": text}
+    )
 
 
 def test_plan_backfill_classifies_and_conserves() -> None:

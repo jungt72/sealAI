@@ -38,7 +38,9 @@ def _install_qdrant_stub(monkeypatch, client_cls):
     qdrant_mod.models = models_mod
 
     monkeypatch.setitem(sys.modules, "qdrant_client", qdrant_mod)
-    monkeypatch.setitem(sys.modules, "qdrant_client.http", types.ModuleType("qdrant_client.http"))
+    monkeypatch.setitem(
+        sys.modules, "qdrant_client.http", types.ModuleType("qdrant_client.http")
+    )
     monkeypatch.setitem(sys.modules, "qdrant_client.http.exceptions", exceptions_mod)
 
     return _UnexpectedResponse

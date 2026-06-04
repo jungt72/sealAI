@@ -7,7 +7,11 @@ import pathlib
 
 import pytest
 
-from app.agent.domain.fit_score import compute_fit_score, rank_manufacturers, EU_COUNTRIES
+from app.agent.domain.fit_score import (
+    compute_fit_score,
+    rank_manufacturers,
+    EU_COUNTRIES,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -15,7 +19,9 @@ from app.agent.domain.fit_score import compute_fit_score, rank_manufacturers, EU
 
 DATA_PATH = (
     pathlib.Path(__file__).parent.parent
-    / "data" / "manufacturers" / "pilot_manufacturers.json"
+    / "data"
+    / "manufacturers"
+    / "pilot_manufacturers.json"
 )
 
 
@@ -26,6 +32,7 @@ def pilot_manufacturers() -> list[dict]:
 
 def _chemie_state():
     """Derived/normalized state for 80 °C Salzwasser SiC cartridge, ∅50 mm."""
+
     class Derived:
         pressure_bar = 10.0
         temp_c = 80.0
@@ -43,6 +50,7 @@ def _chemie_state():
 
 def _pharma_state():
     """Derived/normalized state for 120 °C steam, PTFE, ∅30 mm."""
+
     class Derived:
         pressure_bar = 5.0
         temp_c = 120.0
@@ -60,6 +68,7 @@ def _pharma_state():
 
 def _hightemp_state():
     """Derived/normalized state for 380 °C thermal oil, FKM-HT, ∅80 mm."""
+
     class Derived:
         pressure_bar = 25.0
         temp_c = 380.0
@@ -78,6 +87,7 @@ def _hightemp_state():
 # ---------------------------------------------------------------------------
 # Basic invariants
 # ---------------------------------------------------------------------------
+
 
 class TestFitScoreInvariants:
     def test_score_between_zero_and_one(self, pilot_manufacturers):
@@ -109,21 +119,22 @@ class TestFitScoreInvariants:
 # Mismatch penalty
 # ---------------------------------------------------------------------------
 
+
 class TestMismatchPenalty:
     def test_wrong_sealing_type_gives_low_score(self):
         """Manufacturer with no matching STS-TYPE stays below 0.5."""
         mfr = {
             "id": "test-mfr",
             "capabilities": {
-                "sealing_types": ["STS-TYPE-FLAT-A"],    # no GS-CART
-                "materials": [],                          # no SiC
-                "pressure_max_bar": 5,                    # too low
-                "temperature_max_c": 50,                  # too low
-                "shaft_diameter_min_mm": 500,             # wrong range
+                "sealing_types": ["STS-TYPE-FLAT-A"],  # no GS-CART
+                "materials": [],  # no SiC
+                "pressure_max_bar": 5,  # too low
+                "temperature_max_c": 50,  # too low
+                "shaft_diameter_min_mm": 500,  # wrong range
                 "shaft_diameter_max_mm": 800,
             },
-            "specialty": ["lebensmittel"],               # wrong industry
-            "location": {"country": "CN"},               # non-EU
+            "specialty": ["lebensmittel"],  # wrong industry
+            "location": {"country": "CN"},  # non-EU
             "active": True,
         }
         derived, normalized = _chemie_state()
@@ -157,6 +168,7 @@ class TestMismatchPenalty:
 # Perfect match
 # ---------------------------------------------------------------------------
 
+
 class TestPerfectMatch:
     def test_perfect_match_exceeds_085(self, pilot_manufacturers):
         """A manufacturer that matches type, material, capabilities, industry, and country
@@ -185,13 +197,14 @@ class TestPerfectMatch:
 # Ranking
 # ---------------------------------------------------------------------------
 
+
 class TestRanking:
     def test_chemie_specialist_ranks_first_for_chemie_query(self, pilot_manufacturers):
         derived, normalized = _chemie_state()
         ranked = rank_manufacturers(pilot_manufacturers, derived, normalized)
-        assert ranked[0][1]["id"] == "mfr-001", (
-            f"Expected mfr-001 top, got {ranked[0][1]['id']} (score {ranked[0][0]})"
-        )
+        assert (
+            ranked[0][1]["id"] == "mfr-001"
+        ), f"Expected mfr-001 top, got {ranked[0][1]['id']} (score {ranked[0][0]})"
 
     def test_ranking_descending(self, pilot_manufacturers):
         derived, normalized = _chemie_state()
@@ -211,7 +224,9 @@ class TestRanking:
         manufacturers = list(pilot_manufacturers)
         manufacturers[0] = dict(manufacturers[0], active=False)
         derived, normalized = _chemie_state()
-        ranked = rank_manufacturers(manufacturers, derived, normalized, active_only=False)
+        ranked = rank_manufacturers(
+            manufacturers, derived, normalized, active_only=False
+        )
         ids = [r[1]["id"] for r in ranked]
         assert "mfr-001" in ids
 
@@ -219,6 +234,7 @@ class TestRanking:
 # ---------------------------------------------------------------------------
 # Geo scoring
 # ---------------------------------------------------------------------------
+
 
 class TestGeoScoring:
     def test_de_gets_full_geo_bonus(self):
@@ -236,6 +252,7 @@ class TestGeoScoring:
             "location": {"country": "DE"},
             "active": True,
         }
+
         # With no type/mat/industry match, only capability + geo contribute
         class Empty:
             pressure_bar = 5.0
@@ -262,6 +279,7 @@ class TestGeoScoring:
 # Edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestEdgeCases:
     def test_none_shaft_diameter_does_not_crash(self, pilot_manufacturers):
         class DerivedNoShaft:
@@ -272,7 +290,9 @@ class TestEdgeCases:
             material = "STS-MAT-SIC-A1"
             shaft_diameter_mm = None
 
-        score = compute_fit_score(pilot_manufacturers[0], DerivedNoShaft(), DerivedNoShaft())
+        score = compute_fit_score(
+            pilot_manufacturers[0], DerivedNoShaft(), DerivedNoShaft()
+        )
         assert 0.0 <= score <= 1.0
 
     def test_dict_state_works_same_as_object(self, pilot_manufacturers):

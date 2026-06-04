@@ -10,7 +10,10 @@ from app.agent.prompts import prompts
 from app.agent.runtime.output_guard import check_fast_path_output
 from app.llm.factory import get_async_llm
 from app.llm.registry import get_registry_default_model_for_role
-from app.services.knowledge.material_comparison import extract_material_ids, supported_material_ids
+from app.services.knowledge.material_comparison import (
+    extract_material_ids,
+    supported_material_ids,
+)
 
 _MODEL_FALLBACK_ERROR_NAMES = {"BadRequestError", "NotFoundError"}
 KNOWLEDGE_ANSWER_COMPOSER_PROMPT_VERSION = "sealai_knowledge_answer_composer_v2"
@@ -50,7 +53,9 @@ class KnowledgeAnswerComposer:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
-    async def compose(self, request: KnowledgeAnswerComposerInput) -> KnowledgeAnswerComposerOutput:
+    async def compose(
+        self, request: KnowledgeAnswerComposerInput
+    ) -> KnowledgeAnswerComposerOutput:
         client, model = get_async_llm("knowledge_answer_composer")
         messages = build_knowledge_answer_composer_messages(request)
         try:
@@ -118,7 +123,10 @@ async def _create_completion_with_registry_fallback(
         )
     except Exception as exc:  # noqa: BLE001
         fallback_model = get_registry_default_model_for_role(role)
-        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+        if (
+            model != fallback_model
+            and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES
+        ):
             return await client.chat.completions.create(
                 model=fallback_model,
                 messages=messages,
@@ -135,7 +143,10 @@ def build_knowledge_answer_composer_messages(
     payload = request.context.as_dict()
     return [
         {"role": "system", "content": _system_prompt()},
-        {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
+        {
+            "role": "user",
+            "content": json.dumps(payload, ensure_ascii=True, default=str),
+        },
     ]
 
 
@@ -189,7 +200,9 @@ def _should_retry_visible_answer(exc: KnowledgeAnswerComposerError) -> bool:
     )
 
 
-def parse_knowledge_answer_composer_output(raw_content: Any) -> KnowledgeAnswerComposerOutput:
+def parse_knowledge_answer_composer_output(
+    raw_content: Any,
+) -> KnowledgeAnswerComposerOutput:
     try:
         payload = json.loads(str(raw_content or "{}"))
     except json.JSONDecodeError as exc:
@@ -236,7 +249,9 @@ def compact_simple_definition_answer(
         return output
 
     requested = _single_requested_material(request)
-    if requested and requested not in extract_material_ids(request.deterministic_answer):
+    if requested and requested not in extract_material_ids(
+        request.deterministic_answer
+    ):
         return output
 
     compact = _compact_from_deterministic_answer(request.deterministic_answer)
@@ -387,7 +402,11 @@ def _material_overview_topic_patterns(material_id: str) -> tuple[str, ...]:
     if material_id == "NBR":
         return (*generic, r"acn|acrylnitril|nitril", r"ozon|uv|witter")
     if material_id == "FFKM":
-        return (*generic, r"perfluor|premium|kosten|lieferzeit", r"compression|druckverform")
+        return (
+            *generic,
+            r"perfluor|premium|kosten|lieferzeit",
+            r"compression|druckverform",
+        )
     return generic
 
 
@@ -402,7 +421,10 @@ def _is_contextual_material_comparison_request(
         return True
     deterministic = str(request.deterministic_answer or "")
     title = deterministic.splitlines()[0] if deterministic else ""
-    return all(material in title for material in requested[:2]) and "vergleich" in title.casefold()
+    return (
+        all(material in title for material in requested[:2])
+        and "vergleich" in title.casefold()
+    )
 
 
 def enforce_requested_subject_fidelity(
@@ -421,7 +443,8 @@ def enforce_requested_subject_fidelity(
         missing = [
             material
             for material in requested_materials
-            if material not in answer_materials and material.casefold() not in answer.casefold()
+            if material not in answer_materials
+            and material.casefold() not in answer.casefold()
         ]
         if missing:
             raise KnowledgeAnswerComposerError(
@@ -434,7 +457,9 @@ def enforce_requested_subject_fidelity(
             if heading_materials[: len(expected_heading)] != expected_heading:
                 raise KnowledgeAnswerComposerError("requested_subject_drift")
             unexpected_heading = [
-                material for material in heading_materials if material not in requested_materials
+                material
+                for material in heading_materials
+                if material not in requested_materials
             ]
             if unexpected_heading:
                 raise KnowledgeAnswerComposerError("requested_subject_drift")
@@ -449,7 +474,10 @@ def enforce_requested_subject_fidelity(
         return output
 
     requested = requested_materials[0]
-    if requested not in answer_materials and requested.casefold() not in answer.casefold():
+    if (
+        requested not in answer_materials
+        and requested.casefold() not in answer.casefold()
+    ):
         raise KnowledgeAnswerComposerError("requested_subject_missing")
 
     first_materials = extract_material_ids(answer[:500])
@@ -551,7 +579,9 @@ def _compact_from_deterministic_answer(deterministic_answer: str) -> str:
 
 
 def _extract_orientation_bullets(text: str) -> list[str]:
-    match = re.search(r"\bTypische Orientierung:\s*(?P<section>.*)", text, flags=re.DOTALL)
+    match = re.search(
+        r"\bTypische Orientierung:\s*(?P<section>.*)", text, flags=re.DOTALL
+    )
     if not match:
         return [
             _single_line(line.lstrip("- ").strip())

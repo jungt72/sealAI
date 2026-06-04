@@ -59,5 +59,7 @@ def test_is_dev_or_test_false_outside_dev_or_test(app_env: str) -> None:
     ("app_env", "expected"),
     [("  TEST  ", True), ("Development", True), ("  Production ", False)],
 )
-def test_is_dev_or_test_normalizes_case_and_whitespace(app_env: str, expected: bool) -> None:
+def test_is_dev_or_test_normalizes_case_and_whitespace(
+    app_env: str, expected: bool
+) -> None:
     assert _settings_with_app_env(app_env).is_dev_or_test is expected

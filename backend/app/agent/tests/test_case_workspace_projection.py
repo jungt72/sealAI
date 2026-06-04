@@ -173,7 +173,9 @@ def test_workspace_projection_exposes_medium_context_as_separate_orienting_slice
     assert projection.medium_context.not_for_release_decisions is True
 
 
-def test_workspace_projection_derives_medium_context_for_existing_unavailable_state() -> None:
+def test_workspace_projection_derives_medium_context_for_existing_unavailable_state() -> (
+    None
+):
     projection = project_case_workspace(
         {
             "conversation": {"thread_id": "case-medium-heal"},
@@ -259,13 +261,18 @@ def test_workspace_projection_exposes_v91_backend_owned_intelligence_tabs() -> N
 
     v91_workspace = projection.v91_workspace
 
-    assert v91_workspace.intelligence_state.schema_version == "sealing_intelligence_v9_1"
+    assert (
+        v91_workspace.intelligence_state.schema_version == "sealing_intelligence_v9_1"
+    )
     assert v91_workspace.intelligence_state.case_revision == 9
     assert v91_workspace.intelligence_state.overall_status == "review_needed"
     assert v91_workspace.intelligence_state.medium.status == "available"
     assert "wasserbasiert" in v91_workspace.intelligence_state.medium.signals
     assert v91_workspace.intelligence_state.document.status == "documented"
-    assert "Compound-Datenblatt fehlt" in v91_workspace.intelligence_state.document.blockers
+    assert (
+        "Compound-Datenblatt fehlt"
+        in v91_workspace.intelligence_state.document.blockers
+    )
     assert {tab.tab_id for tab in v91_workspace.tab_state} >= {
         "overview",
         "parameters",
@@ -275,7 +282,9 @@ def test_workspace_projection_exposes_v91_backend_owned_intelligence_tabs() -> N
         "documents",
         "rfq",
     }
-    parameter_tab = next(tab for tab in v91_workspace.tab_state if tab.tab_id == "parameters")
+    parameter_tab = next(
+        tab for tab in v91_workspace.tab_state if tab.tab_id == "parameters"
+    )
     assert parameter_tab.next_action
     assert parameter_tab.not_for_release_decisions is True
 
@@ -1398,7 +1407,9 @@ class TestCaseWorkspacePackRoutingFreeze:
             system={"technical_derivations": [{"calc_type": "rwdr", "status": "ok"}]},
         )
         assert len(result) == 1
-        assert result[0].v_surface_m_s is None  # pre-existing item kept, live not inserted
+        assert (
+            result[0].v_surface_m_s is None
+        )  # pre-existing item kept, live not inserted
 
     def test_technical_derivation_insert_when_no_rwdr(self) -> None:
         result = _build_technical_derivations(

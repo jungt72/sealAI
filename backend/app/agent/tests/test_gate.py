@@ -14,6 +14,7 @@ Covers all cases from Umbauplan F-A.1:
 
 All LLM calls are mocked — no network I/O.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -36,6 +37,7 @@ from app.agent.runtime.gate import (
 # Minimal session stub
 # ---------------------------------------------------------------------------
 
+
 class _Session:
     def __init__(self, zone: str = "conversation"):
         self.session_zone = zone
@@ -48,6 +50,7 @@ GOV_SESSION = _Session("governed")
 # ---------------------------------------------------------------------------
 # check_hard_overrides (deterministic, no mocking needed)
 # ---------------------------------------------------------------------------
+
 
 class TestCheckHardOverrides:
     def test_numeric_celsius(self):
@@ -112,7 +115,9 @@ class TestCheckHardOverrides:
         assert result.trigger == "correction"
 
     def test_ambiguity_intent(self):
-        result = check_hard_overrides("Die Angaben sind widersprüchlich und mehrdeutig.")
+        result = check_hard_overrides(
+            "Die Angaben sind widersprüchlich und mehrdeutig."
+        )
         assert result is not None
         assert result.trigger in ("ambiguity", "correction")
 
@@ -125,13 +130,16 @@ class TestCheckHardOverrides:
         assert result is None
 
     def test_general_knowledge_no_override(self):
-        result = check_hard_overrides("Erkläre mir den Unterschied zwischen FKM und NBR")
+        result = check_hard_overrides(
+            "Erkläre mir den Unterschied zwischen FKM und NBR"
+        )
         assert result is None
 
 
 # ---------------------------------------------------------------------------
 # _apply_llm_result (unit tests for the decision mapping logic)
 # ---------------------------------------------------------------------------
+
 
 class TestApplyLLMResult:
     def test_parse_error_yields_governed(self):
@@ -196,16 +204,26 @@ class TestApplyLLMResult:
 class TestCallGateLLM:
     def test_schema_failure_returns_parse_error_and_uses_json_schema_format(self):
         fake_response = MagicMock()
-        fake_response.choices = [MagicMock(message=MagicMock(content='{"route":"CONVERSATION","confidence":0.91}'))]
+        fake_response.choices = [
+            MagicMock(
+                message=MagicMock(content='{"route":"CONVERSATION","confidence":0.91}')
+            )
+        ]
         fake_client = MagicMock()
         fake_client.chat.completions.create.return_value = fake_response
 
-        with patch("app.agent.runtime.gate.get_sync_llm", return_value=(fake_client, "test-gate-model")):
+        with patch(
+            "app.agent.runtime.gate.get_sync_llm",
+            return_value=(fake_client, "test-gate-model"),
+        ):
             result = _call_gate_llm("Danke")
 
         assert result.parse_error is True
         assert result.route == "GOVERNED"
-        assert fake_client.chat.completions.create.call_args.kwargs["response_format"] == _GATE_RESPONSE_FORMAT
+        assert (
+            fake_client.chat.completions.create.call_args.kwargs["response_format"]
+            == _GATE_RESPONSE_FORMAT
+        )
 
 
 class TestClassifyLightRoute:
@@ -259,6 +277,7 @@ class TestClassifyLightRoute:
 # decide_route integration tests (LLM mocked)
 # ---------------------------------------------------------------------------
 
+
 class TestDecideRoute:
     # ── Hard override cases ────────────────────────────────────────────────
 
@@ -273,14 +292,18 @@ class TestDecideRoute:
     def test_gate_hard_override_calculation(self):
         """Calculation keyword triggers GOVERNED without any LLM call."""
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("Bitte berechne den RWDR für 3000 rpm", CONV_SESSION)
+            decision = decide_route(
+                "Bitte berechne den RWDR für 3000 rpm", CONV_SESSION
+            )
         mock_llm.assert_not_called()
         assert decision.route == "GOVERNED"
 
     def test_gate_hard_override_matching(self):
         """Manufacturer/matching trigger → GOVERNED, no LLM."""
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("Welche Hersteller liefern FKM-Dichtungen?", CONV_SESSION)
+            decision = decide_route(
+                "Welche Hersteller liefern FKM-Dichtungen?", CONV_SESSION
+            )
         mock_llm.assert_not_called()
         assert decision.route == "GOVERNED"
 
@@ -294,7 +317,9 @@ class TestDecideRoute:
     def test_gate_hard_override_plain_grad_payload(self):
         """Plain 'grad' temperatures must also force GOVERNED."""
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("Danke, und jetzt zu Salzwasser bei 80 grad", CONV_SESSION)
+            decision = decide_route(
+                "Danke, und jetzt zu Salzwasser bei 80 grad", CONV_SESSION
+            )
         mock_llm.assert_not_called()
         assert decision.route == "GOVERNED"
 
@@ -314,7 +339,9 @@ class TestDecideRoute:
 
     def test_gate_problem_statement_routes_to_EXPLORATION(self):
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("Wir haben immer wieder Leckageprobleme.", CONV_SESSION)
+            decision = decide_route(
+                "Wir haben immer wieder Leckageprobleme.", CONV_SESSION
+            )
         mock_llm.assert_not_called()
         assert decision.route == "EXPLORATION"
 
@@ -326,7 +353,9 @@ class TestDecideRoute:
 
     def test_gate_uncertainty_routes_to_EXPLORATION(self):
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("Ich bin unsicher, welche Richtung sinnvoll ist.", CONV_SESSION)
+            decision = decide_route(
+                "Ich bin unsicher, welche Richtung sinnvoll ist.", CONV_SESSION
+            )
         mock_llm.assert_not_called()
         assert decision.route == "EXPLORATION"
 
@@ -345,7 +374,9 @@ class TestDecideRoute:
     def test_gate_governed_session_hard_override_stays_governed_no_llm(self):
         """Governed session + hard override → GOVERNED immediately, LLM not called."""
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("PTFE-Dichtung für 180°C Dampf, 12 bar", GOV_SESSION)
+            decision = decide_route(
+                "PTFE-Dichtung für 180°C Dampf, 12 bar", GOV_SESSION
+            )
         mock_llm.assert_not_called()
         assert decision.route == "GOVERNED"
         assert "hard_override" in decision.reason
@@ -369,7 +400,9 @@ class TestDecideRoute:
     def test_gate_governed_session_calls_llm_for_non_technical_message(self):
         """Governed session without hard override → LLM IS consulted."""
         llm_result = LLMGateResult(route="GOVERNED", confidence=0.70)
-        with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result) as mock_llm:
+        with patch(
+            "app.agent.runtime.gate._call_gate_llm", return_value=llm_result
+        ) as mock_llm:
             decide_route("Verstehe.", GOV_SESSION)
         mock_llm.assert_called_once()
 
@@ -382,7 +415,9 @@ class TestDecideRoute:
 
     def test_gate_governed_session_light_override(self):
         """Governed session + clear non-technical light turn → light mode."""
-        llm_result = LLMGateResult(route="EXPLORATION", confidence=_GOVERNED_LIGHT_THRESHOLD)
+        llm_result = LLMGateResult(
+            route="EXPLORATION", confidence=_GOVERNED_LIGHT_THRESHOLD
+        )
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Nur kurz ohne Technik.", GOV_SESSION)
         assert decision.route == "EXPLORATION"
@@ -419,7 +454,9 @@ class TestDecideRoute:
 
     def test_gate_governed_session_llm_failure_stays_governed(self):
         """Governed session + LLM error → GOVERNED (fail-safe)."""
-        with patch("app.agent.runtime.gate._call_gate_llm", side_effect=TimeoutError("timeout")):
+        with patch(
+            "app.agent.runtime.gate._call_gate_llm", side_effect=TimeoutError("timeout")
+        ):
             decision = decide_route("Verstehe.", GOV_SESSION)
         assert decision.route == "GOVERNED"
         assert decision.reason == "sticky_governed_session"
@@ -452,7 +489,9 @@ class TestDecideRoute:
         )
         with (
             patch("app.agent.runtime.gate._ENABLE_GATE_DIRECT_REPLY", False),
-            patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result) as mock_llm,
+            patch(
+                "app.agent.runtime.gate._call_gate_llm", return_value=llm_result
+            ) as mock_llm,
         ):
             decision = decide_route("Danke", CONV_SESSION)
         mock_llm.assert_not_called()
@@ -470,7 +509,9 @@ class TestDecideRoute:
         )
         with (
             patch("app.agent.runtime.gate._ENABLE_GATE_DIRECT_REPLY", True),
-            patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result) as mock_llm,
+            patch(
+                "app.agent.runtime.gate._call_gate_llm", return_value=llm_result
+            ) as mock_llm,
         ):
             decision = decide_route("Danke", CONV_SESSION)
         mock_llm.assert_called_once()
@@ -494,6 +535,7 @@ class TestDecideRoute:
         Here we verify the unit-level path via _apply_llm_result directly.
         """
         from app.agent.runtime.gate import _apply_llm_result
+
         result = LLMGateResult(route="CONVERSATION", confidence=0.0, timeout=True)
         decision = _apply_llm_result(result, "RWDR berechnen bitte")
         assert decision.route == "GOVERNED"
@@ -523,6 +565,7 @@ class TestDecideRoute:
 # ---------------------------------------------------------------------------
 # GateDecision contract
 # ---------------------------------------------------------------------------
+
 
 class TestGateDecisionContract:
     def test_route_is_three_mode(self):

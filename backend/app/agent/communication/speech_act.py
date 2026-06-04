@@ -31,7 +31,9 @@ class SpeechActClassifier:
         r"\b(danke|vielen\s+dank|dankeschoen|dankeschön|merci|thanks|thank\s+you)\b",
         re.IGNORECASE | re.UNICODE,
     )
-    _yes_re = re.compile(r"^\s*(ja|jep|genau|ok(?:ay)?|yes|yep|correct)\b", re.IGNORECASE | re.UNICODE)
+    _yes_re = re.compile(
+        r"^\s*(ja|jep|genau|ok(?:ay)?|yes|yep|correct)\b", re.IGNORECASE | re.UNICODE
+    )
     _no_re = re.compile(r"^\s*(nein|nee|no|nope)\b", re.IGNORECASE | re.UNICODE)
     _unknown_re = re.compile(
         r"\b(weiss\s+ich\s+nicht|weiß\s+ich\s+nicht|keine\s+ahnung|nicht\s+sicher|unklar|not\s+sure|unknown)\b",
@@ -55,8 +57,13 @@ class SpeechActClassifier:
         r")\b",
         re.IGNORECASE | re.UNICODE,
     )
-    _cancel_re = re.compile(r"\b(stopp|stop|abbrechen|cancel|spaeter|später)\b", re.IGNORECASE | re.UNICODE)
-    _oos_re = re.compile(r"\b(wetter|weather|witz|joke|fussball|fußball|aktienkurs)\b", re.IGNORECASE | re.UNICODE)
+    _cancel_re = re.compile(
+        r"\b(stopp|stop|abbrechen|cancel|spaeter|später)\b", re.IGNORECASE | re.UNICODE
+    )
+    _oos_re = re.compile(
+        r"\b(wetter|weather|witz|joke|fussball|fußball|aktienkurs)\b",
+        re.IGNORECASE | re.UNICODE,
+    )
     _technical_answer_re = re.compile(
         r"\b(mm|bar|barg|bara|mpa|rpm|u\.?/?min|grad|celsius|°\s*c|"
         r"o-?ring|rwdr|wellendichtring|gleitringdichtung|flachdichtung|"

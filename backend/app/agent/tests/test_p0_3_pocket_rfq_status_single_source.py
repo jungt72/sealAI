@@ -10,6 +10,7 @@ Red-before-green:
 * the state→status helper does not exist yet (call-site authoritative source);
 * the builder cannot yet accept the authoritative status (it hardcodes DRAFT).
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace

@@ -110,15 +110,19 @@ def test_valid_atex_capability_claim_insert_succeeds(test_db_engine_at_head):
             )
         )
 
-        claim = conn.execute(
-            text(
-                """
+        claim = (
+            conn.execute(
+                text(
+                    """
                 SELECT capability_type, atex_capable
                 FROM manufacturer_capability_claims
                 WHERE claim_id = 'claim-atex-1'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     assert claim["capability_type"] == "certification"
     assert claim["atex_capable"] is True
@@ -157,14 +161,18 @@ def test_atex_capability_unknown_can_remain_null(test_db_engine_at_head):
             )
         )
 
-        claim = conn.execute(
-            text(
-                """
+        claim = (
+            conn.execute(
+                text(
+                    """
                 SELECT atex_capable
                 FROM manufacturer_capability_claims
                 WHERE claim_id = 'claim-atex-null'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     assert claim["atex_capable"] is None

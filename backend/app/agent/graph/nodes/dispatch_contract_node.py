@@ -8,6 +8,7 @@ Responsibility:
     norm, export profile, and manufacturer mapping layers without introducing
     connector-specific IDs or transport internals.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,9 +63,8 @@ def _contract_status(state: GraphState, unresolved_points: list[str]) -> str:
 
 def _handover_notes(state: GraphState) -> list[str]:
     notes: list[str] = []
-    for note in (
-        list(state.export_profile.export_notes)
-        + list(state.manufacturer_mapping.mapping_notes)
+    for note in list(state.export_profile.export_notes) + list(
+        state.manufacturer_mapping.mapping_notes
     ):
         text = str(note or "").strip()
         if text and text not in notes:
@@ -82,7 +82,8 @@ async def dispatch_contract_node(state: GraphState) -> GraphState:
         selected_manufacturer=state.export_profile.selected_manufacturer,
         recipient_refs=list(state.export_profile.recipient_refs),
         requirement_class_id=state.sealai_norm.identity.requirement_class_id,
-        application_summary=state.export_profile.application_summary or state.sealai_norm.application_summary,
+        application_summary=state.export_profile.application_summary
+        or state.sealai_norm.application_summary,
         material_summary=state.export_profile.material_summary,
         dimensions_summary=list(state.export_profile.dimensions_summary),
         rfq_ready=state.rfq.rfq_ready,

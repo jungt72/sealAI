@@ -78,7 +78,9 @@ async def test_pressure_system_answer_sets_system_pressure_only() -> None:
                 status="open",
             ),
             conversation_messages=[
-                ConversationMessage(role="assistant", content="Wie hoch ist der Druck?"),
+                ConversationMessage(
+                    role="assistant", content="Wie hoch ist der Druck?"
+                ),
                 ConversationMessage(role="user", content="5 bar Systemdruck"),
             ],
             user_turn_index=2,
@@ -156,7 +158,10 @@ async def test_direct_seal_pressure_closes_pressure_role() -> None:
     )
 
     assert strategy.focus_key != "pressure_bar"
-    assert strategy.primary_question is None or "Systemdruck" not in strategy.primary_question
+    assert (
+        strategy.primary_question is None
+        or "Systemdruck" not in strategy.primary_question
+    )
 
 
 @pytest.mark.asyncio
@@ -234,6 +239,14 @@ def test_legacy_pressure_bar_interpretation_adapter(
 
 def test_extract_parameters_maps_pressure_roles() -> None:
     assert extract_parameters("5 bar Systemdruck")["pressure_system_bar"] == 5.0
-    assert extract_parameters("5 bar direkt an der Dichtung")["pressure_at_seal_bar"] == 5.0
-    assert extract_parameters("1,5 bar Differenzdruck über der Dichtung")["pressure_delta_bar"] == 1.5
+    assert (
+        extract_parameters("5 bar direkt an der Dichtung")["pressure_at_seal_bar"]
+        == 5.0
+    )
+    assert (
+        extract_parameters("1,5 bar Differenzdruck über der Dichtung")[
+            "pressure_delta_bar"
+        ]
+        == 1.5
+    )
     assert extract_parameters("5 bar")["ambiguous_pressure_bar"] == 5.0

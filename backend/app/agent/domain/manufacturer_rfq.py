@@ -37,8 +37,12 @@ class ManufacturerRfqScopePackage:
 @dataclass(frozen=True)
 class ManufacturerRfqSpecialistInput:
     admissible_request_package: ManufacturerRfqAdmissibleRequestPackage
-    manufacturer_capabilities: ManufacturerCapabilityPackage = field(default_factory=ManufacturerCapabilityPackage)
-    scope_package: ManufacturerRfqScopePackage = field(default_factory=ManufacturerRfqScopePackage)
+    manufacturer_capabilities: ManufacturerCapabilityPackage = field(
+        default_factory=ManufacturerCapabilityPackage
+    )
+    scope_package: ManufacturerRfqScopePackage = field(
+        default_factory=ManufacturerRfqScopePackage
+    )
     rfq_object: dict[str, Any] | None = None
     recipient_refs: tuple[dict[str, Any], ...] = ()
     review_required: bool = False
@@ -105,13 +109,17 @@ def _manufacturer_state(payload: ManufacturerRfqSpecialistInput) -> dict[str, An
     request = payload.admissible_request_package
     return {
         "manufacturer_refs": _compact_dicts(capabilities.manufacturer_refs),
-        "manufacturer_capabilities": _compact_dicts(capabilities.manufacturer_capabilities),
+        "manufacturer_capabilities": _compact_dicts(
+            capabilities.manufacturer_capabilities
+        ),
         "recommendation_identity": _compact_dict(capabilities.recommendation_identity),
         "requirement_class": _compact_dict(request.requirement_class),
     }
 
 
-def _recipient_selection(payload: ManufacturerRfqSpecialistInput) -> dict[str, Any] | None:
+def _recipient_selection(
+    payload: ManufacturerRfqSpecialistInput,
+) -> dict[str, Any] | None:
     capabilities = payload.manufacturer_capabilities
     selected = _compact_dict(capabilities.selected_manufacturer_ref)
     candidates = _compact_dicts(capabilities.manufacturer_refs)
@@ -168,7 +176,9 @@ def _build_rfq_basis(
         "target_system": basis.get("target_system"),
         "requirement_class": _compact_dict(request.requirement_class),
         "recipient_refs": _compact_dicts(payload.recipient_refs),
-        "selected_manufacturer_ref": _compact_dict(payload.manufacturer_capabilities.selected_manufacturer_ref),
+        "selected_manufacturer_ref": _compact_dict(
+            payload.manufacturer_capabilities.selected_manufacturer_ref
+        ),
         "scope_of_validity": list(payload.scope_package.scope_of_validity),
         "open_points": list(payload.scope_package.open_points),
     }
@@ -197,9 +207,13 @@ def _build_rfq_send_payload(
         "send_status": "send_ready" if send_ready else "send_blocked",
         "blocking_reasons": blocking_reasons,
         "recipient_refs": recipient_refs,
-        "selected_manufacturer_ref": _compact_dict(payload.manufacturer_capabilities.selected_manufacturer_ref),
+        "selected_manufacturer_ref": _compact_dict(
+            payload.manufacturer_capabilities.selected_manufacturer_ref
+        ),
         "target_system": rfq_basis.get("target_system") if rfq_basis else None,
-        "handover_payload": dict(rfq_basis.get("handover_payload") or {}) if rfq_basis else None,
+        "handover_payload": dict(rfq_basis.get("handover_payload") or {})
+        if rfq_basis
+        else None,
         "requirement_class": _compact_dict(request.requirement_class),
         "scope_of_validity": list(payload.scope_package.scope_of_validity),
         "open_points": list(payload.scope_package.open_points),
@@ -235,7 +249,9 @@ def build_manufacturer_rfq_specialist_input_from_runtime_state(
         or {}
     )
     selection_state = dict(sealing_state.get("selection") or {})
-    governance_state = dict(sealing_state.get("governance") or case_state.get("governance_state") or {})
+    governance_state = dict(
+        sealing_state.get("governance") or case_state.get("governance_state") or {}
+    )
     review_state = dict(sealing_state.get("review") or {})
 
     matching_outcome = (
@@ -258,33 +274,62 @@ def build_manufacturer_rfq_specialist_input_from_runtime_state(
     )
     selected_manufacturer_ref = _first_dict(
         [
-            (matching_outcome if isinstance(matching_outcome, dict) else {}).get("selected_manufacturer_ref"),
-            (recipient_selection if isinstance(recipient_selection, dict) else {}).get("selected_manufacturer_ref"),
-            ((recipient_selection if isinstance(recipient_selection, dict) else {}).get("selected_recipient_refs") or [None])[0],
+            (matching_outcome if isinstance(matching_outcome, dict) else {}).get(
+                "selected_manufacturer_ref"
+            ),
+            (recipient_selection if isinstance(recipient_selection, dict) else {}).get(
+                "selected_manufacturer_ref"
+            ),
+            (
+                (
+                    recipient_selection if isinstance(recipient_selection, dict) else {}
+                ).get("selected_recipient_refs")
+                or [None]
+            )[0],
         ]
     )
     candidate_recipient_refs = tuple(
         dict(ref)
-        for ref in list((recipient_selection if isinstance(recipient_selection, dict) else {}).get("candidate_recipient_refs") or [])
+        for ref in list(
+            (recipient_selection if isinstance(recipient_selection, dict) else {}).get(
+                "candidate_recipient_refs"
+            )
+            or []
+        )
         if isinstance(ref, dict) and ref
     )
     selected_recipient_refs = tuple(
         dict(ref)
-        for ref in list((recipient_selection if isinstance(recipient_selection, dict) else {}).get("selected_recipient_refs") or [])
+        for ref in list(
+            (recipient_selection if isinstance(recipient_selection, dict) else {}).get(
+                "selected_recipient_refs"
+            )
+            or []
+        )
         if isinstance(ref, dict) and ref
     )
-    recipient_refs = selected_recipient_refs or candidate_recipient_refs or tuple(
-        dict(ref)
-        for ref in list(manufacturer_state.get("manufacturer_refs") or [])
-        if isinstance(ref, dict) and ref
+    recipient_refs = (
+        selected_recipient_refs
+        or candidate_recipient_refs
+        or tuple(
+            dict(ref)
+            for ref in list(manufacturer_state.get("manufacturer_refs") or [])
+            if isinstance(ref, dict) and ref
+        )
     )
     return ManufacturerRfqSpecialistInput(
         admissible_request_package=ManufacturerRfqAdmissibleRequestPackage(
             matchability_status=str(
                 matching_state.get("matchability_status")
-                or ("ready_for_matching" if matching_state.get("matchable") else "not_ready")
+                or (
+                    "ready_for_matching"
+                    if matching_state.get("matchable")
+                    else "not_ready"
+                )
             ),
-            rfq_admissibility=str(governance_state.get("rfq_admissibility") or "inadmissible"),
+            rfq_admissibility=str(
+                governance_state.get("rfq_admissibility") or "inadmissible"
+            ),
             requirement_class=_compact_dict(requirement_class),
         ),
         manufacturer_capabilities=ManufacturerCapabilityPackage(
@@ -300,29 +345,49 @@ def build_manufacturer_rfq_specialist_input_from_runtime_state(
             ),
             manufacturer_capabilities=tuple(
                 dict(item)
-                for item in list(manufacturer_state.get("manufacturer_capabilities") or [])
+                for item in list(
+                    manufacturer_state.get("manufacturer_capabilities") or []
+                )
                 if isinstance(item, dict) and item
             ),
-            winner_candidate_id=str(selection_state.get("winner_candidate_id") or matching_state.get("winner_candidate_id") or "") or None,
+            winner_candidate_id=str(
+                selection_state.get("winner_candidate_id")
+                or matching_state.get("winner_candidate_id")
+                or ""
+            )
+            or None,
             recommendation_identity=_compact_dict(recommendation_identity),
             selected_manufacturer_ref=selected_manufacturer_ref,
         ),
         scope_package=ManufacturerRfqScopePackage(
             scope_of_validity=tuple(
                 str(item)
-                for item in list(governance_state.get("scope_of_validity") or governance_state.get("validity_limits") or [])
+                for item in list(
+                    governance_state.get("scope_of_validity")
+                    or governance_state.get("validity_limits")
+                    or []
+                )
                 if item is not None
             ),
             open_points=tuple(
                 str(item)
-                for item in list(governance_state.get("unknowns_manufacturer_validation") or governance_state.get("open_validation_points") or [])
+                for item in list(
+                    governance_state.get("unknowns_manufacturer_validation")
+                    or governance_state.get("open_validation_points")
+                    or []
+                )
                 if item is not None
             ),
         ),
         rfq_object=_compact_dict(rfq_state.get("rfq_object")),
         recipient_refs=recipient_refs,
         review_required=bool(
-            matching_state.get("review_required", rfq_state.get("review_required", review_state.get("review_required", False)))
+            matching_state.get(
+                "review_required",
+                rfq_state.get(
+                    "review_required", review_state.get("review_required", False)
+                ),
+            )
         ),
         contract_obsolete=bool(
             matching_state.get("contract_obsolete")
@@ -359,16 +424,35 @@ def project_rfq_payload_basis_from_specialist_result(
     )
     return {
         "object_type": str(rfq_object.get("object_type") or "rfq_payload_basis"),
-        "object_version": str(rfq_object.get("object_version") or "rfq_payload_basis_v1"),
+        "object_version": str(
+            rfq_object.get("object_version") or "rfq_payload_basis_v1"
+        ),
         "recommendation_identity": _compact_dict(recommendation_identity),
         "requirement_class": projected_requirement_class,
         "requirement_class_hint": requirement_class_hint,
-        "qualified_material_ids": list(handover_payload.get("qualified_material_ids") or rfq_object.get("qualified_material_ids") or []),
-        "qualified_materials": list(handover_payload.get("qualified_materials") or rfq_object.get("qualified_materials") or []),
-        "confirmed_parameters": dict(handover_payload.get("confirmed_parameters") or rfq_object.get("confirmed_parameters") or {}),
-        "dimensions": dict(handover_payload.get("dimensions") or rfq_object.get("dimensions") or {}),
-        "target_system": rfq_basis.get("target_system") or rfq_object.get("target_system"),
-        "payload_present": bool(handover_payload or rfq_object.get("payload_present", False)),
+        "qualified_material_ids": list(
+            handover_payload.get("qualified_material_ids")
+            or rfq_object.get("qualified_material_ids")
+            or []
+        ),
+        "qualified_materials": list(
+            handover_payload.get("qualified_materials")
+            or rfq_object.get("qualified_materials")
+            or []
+        ),
+        "confirmed_parameters": dict(
+            handover_payload.get("confirmed_parameters")
+            or rfq_object.get("confirmed_parameters")
+            or {}
+        ),
+        "dimensions": dict(
+            handover_payload.get("dimensions") or rfq_object.get("dimensions") or {}
+        ),
+        "target_system": rfq_basis.get("target_system")
+        or rfq_object.get("target_system"),
+        "payload_present": bool(
+            handover_payload or rfq_object.get("payload_present", False)
+        ),
     }
 
 
@@ -426,7 +510,9 @@ def project_dispatch_intent_from_rfq_send_payload(
     recommendation_identity = None
     if qualified_material_ids or selected_manufacturer_ref:
         recommendation_identity = {
-            "candidate_id": qualified_material_ids[0] if qualified_material_ids else None,
+            "candidate_id": qualified_material_ids[0]
+            if qualified_material_ids
+            else None,
             "manufacturer_name": (
                 selected_manufacturer_ref.get("manufacturer_name")
                 if isinstance(selected_manufacturer_ref, dict)
@@ -434,7 +520,9 @@ def project_dispatch_intent_from_rfq_send_payload(
             ),
         }
 
-    selected_recipient_refs = [selected_manufacturer_ref] if selected_manufacturer_ref else []
+    selected_recipient_refs = (
+        [selected_manufacturer_ref] if selected_manufacturer_ref else []
+    )
 
     base_projection = {
         "dispatch_ready": bool(payload.get("send_ready")),
@@ -459,7 +547,11 @@ def project_dispatch_intent_from_rfq_send_payload(
     }
 
     if projection == "rfq_dispatch":
-        projected_selection = dict(recipient_selection or {}) if isinstance(recipient_selection, dict) else {}
+        projected_selection = (
+            dict(recipient_selection or {})
+            if isinstance(recipient_selection, dict)
+            else {}
+        )
         selected_refs = [
             dict(ref)
             for ref in list(projected_selection.get("selected_recipient_refs") or [])
@@ -477,7 +569,9 @@ def project_dispatch_intent_from_rfq_send_payload(
             "dispatch_ready": base_projection["dispatch_ready"],
             "dispatch_status": base_projection["dispatch_status"],
             "dispatch_blockers": blocking_reasons,
-            "dispatch_open_points": list(dict.fromkeys(str(item) for item in list(dispatch_open_points) if item)),
+            "dispatch_open_points": list(
+                dict.fromkeys(str(item) for item in list(dispatch_open_points) if item)
+            ),
             "recipient_basis_summary": {
                 "recipient_count": len(effective_recipient_refs),
                 "selected_recipient_count": len(selected_refs),

@@ -22,7 +22,13 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 # Suppress noisy sub-loggers
-for noisy in ("httpx", "httpcore", "qdrant_client", "fastembed", "sentence_transformers"):
+for noisy in (
+    "httpx",
+    "httpcore",
+    "qdrant_client",
+    "fastembed",
+    "sentence_transformers",
+):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -57,7 +63,9 @@ results = _run(
 elapsed = time.monotonic() - t0
 print(f"\n→ {len(results)} cards returned in {elapsed:.2f}s")
 for i, c in enumerate(results[:3]):
-    print(f"  [{i}] {c.get('source_ref', '?')[:60]}  score={c.get('retrieval_score', 0):.3f}")
+    print(
+        f"  [{i}] {c.get('source_ref', '?')[:60]}  score={c.get('retrieval_score', 0):.3f}"
+    )
 if not results:
     print("  (0 results — likely empty Qdrant index in dev; tier2/tier3 logged above)")
 
@@ -86,7 +94,9 @@ def _raise_connection(*args, **kwargs):
     raise ConnectionError("Qdrant unreachable (simulated for test)")
 
 
-with patch("app.services.rag.rag_orchestrator.hybrid_retrieve", side_effect=_raise_connection):
+with patch(
+    "app.services.rag.rag_orchestrator.hybrid_retrieve", side_effect=_raise_connection
+):
     t0 = time.monotonic()
     results_t2 = _run(
         retrieve_with_tenant(
@@ -112,7 +122,10 @@ def _raise_bm25(*args, **kwargs):
 
 
 with (
-    patch("app.services.rag.rag_orchestrator.hybrid_retrieve", side_effect=_raise_connection),
+    patch(
+        "app.services.rag.rag_orchestrator.hybrid_retrieve",
+        side_effect=_raise_connection,
+    ),
     patch("app.services.rag.bm25_store.bm25_repo.search", side_effect=_raise_bm25),
 ):
     t0 = time.monotonic()
@@ -135,8 +148,12 @@ print("→ Check log above for TIER3 graceful degradation WARNING")
 _section("Test 5 — Tier 1 returns only 1 hit → cascade to Tier 2")
 
 _ONE_HIT = [
-    {"text": "FKM single result", "source": "test_doc.pdf",
-     "fused_score": 0.9, "metadata": {"tenant_id": "dev-tenant"}}
+    {
+        "text": "FKM single result",
+        "source": "test_doc.pdf",
+        "fused_score": 0.9,
+        "metadata": {"tenant_id": "dev-tenant"},
+    }
 ]
 
 
@@ -144,7 +161,9 @@ def _return_one_hit(*args, **kwargs):
     return _ONE_HIT
 
 
-with patch("app.services.rag.rag_orchestrator.hybrid_retrieve", side_effect=_return_one_hit):
+with patch(
+    "app.services.rag.rag_orchestrator.hybrid_retrieve", side_effect=_return_one_hit
+):
     t0 = time.monotonic()
     results_t5 = _run(
         retrieve_with_tenant(

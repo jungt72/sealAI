@@ -14,7 +14,9 @@ from typing import Dict, List, Optional, Tuple
 import structlog
 
 from app.mcp.calc_schemas import CalcInput, CalcOutput
-from app.mcp.calculations.compliance import is_critical_application as _compliance_is_critical
+from app.mcp.calculations.compliance import (
+    is_critical_application as _compliance_is_critical,
+)
 
 logger = structlog.get_logger("mcp.calc_engine")
 
@@ -91,7 +93,6 @@ _BOLT_CAPACITY_KN: Dict[str, float] = {
 # Material temperature limits (generic upper bounds, °C).
 _MATERIAL_T_MAX_C = 550.0  # Spiral-wound 316L + flexible graphite filler
 _MATERIAL_P_MAX_BAR = 250.0  # Conservative spiral-wound pressure rating
-
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +172,9 @@ def mcp_calc_gasket(params: CalcInput) -> CalcOutput:
     bore_area_mm2 = math.pi / 4.0 * inner_d**2
     pressure_mpa = params.pressure_max_bar * 0.1  # 1 bar = 0.1 MPa
     force_from_pressure_n = pressure_mpa * bore_area_mm2  # N (MPa * mm^2 = N)
-    required_gasket_stress_mpa = force_from_pressure_n / gasket_area_mm2 if gasket_area_mm2 > 0 else 0.0
+    required_gasket_stress_mpa = (
+        force_from_pressure_n / gasket_area_mm2 if gasket_area_mm2 > 0 else 0.0
+    )
 
     # Minimum gasket seating stress (spiral-wound, flexible graphite filler)
     min_seating_stress_mpa = 69.0  # EN 13555 y-value for CG-type
@@ -189,8 +192,14 @@ def mcp_calc_gasket(params: CalcInput) -> CalcOutput:
     if bolt_capacity_per_bolt is not None and params.bolt_count:
         available_bolt_load_kn = bolt_capacity_per_bolt * params.bolt_count
         available_force_n = available_bolt_load_kn * 1000.0  # kN -> N
-        available_stress_mpa = available_force_n / gasket_area_mm2 if gasket_area_mm2 > 0 else 0.0
-        safety_factor = available_stress_mpa / required_gasket_stress_mpa if required_gasket_stress_mpa > 0 else 0.0
+        available_stress_mpa = (
+            available_force_n / gasket_area_mm2 if gasket_area_mm2 > 0 else 0.0
+        )
+        safety_factor = (
+            available_stress_mpa / required_gasket_stress_mpa
+            if required_gasket_stress_mpa > 0
+            else 0.0
+        )
     else:
         # Without bolt data, estimate conservative safety factor
         safety_factor = 1.0
@@ -212,7 +221,11 @@ def mcp_calc_gasket(params: CalcInput) -> CalcOutput:
         warnings.append(
             f"Safety factor {safety_factor:.2f} < 1.0 — bolt load insufficient for required gasket stress."
         )
-    if safety_factor < 1.5 and safety_factor >= 1.0 and available_bolt_load_kn is not None:
+    if (
+        safety_factor < 1.5
+        and safety_factor >= 1.0
+        and available_bolt_load_kn is not None
+    ):
         warnings.append(
             f"Safety factor {safety_factor:.2f} < 1.5 — marginal bolt load; review recommended."
         )
@@ -227,14 +240,18 @@ def mcp_calc_gasket(params: CalcInput) -> CalcOutput:
     if params.cyclic_load:
         warnings.append("Cyclic load detected — fatigue analysis recommended.")
     if is_critical:
-        warnings.append("Critical application flagged — enhanced QA/inspection required.")
+        warnings.append(
+            "Critical application flagged — enhanced QA/inspection required."
+        )
 
     result = CalcOutput(
         gasket_inner_d_mm=round(inner_d, 1),
         gasket_outer_d_mm=round(outer_d, 1),
         bolt_circle_d_mm=round(bolt_circle_d, 1) if bolt_circle_d else None,
         required_gasket_stress_mpa=round(required_gasket_stress_mpa, 2),
-        available_bolt_load_kn=round(available_bolt_load_kn, 1) if available_bolt_load_kn is not None else None,
+        available_bolt_load_kn=round(available_bolt_load_kn, 1)
+        if available_bolt_load_kn is not None
+        else None,
         safety_factor=round(safety_factor, 2),
         temperature_margin_c=round(temperature_margin_c, 1),
         pressure_margin_bar=round(pressure_margin_bar, 1),
@@ -270,16 +287,28 @@ CALC_GASKET_TOOL_SPEC = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "pressure_max_bar": {"type": "number", "description": "Max operating pressure in bar"},
-            "temperature_max_c": {"type": "number", "description": "Max operating temperature in C"},
-            "flange_standard": {"type": "string", "description": "Flange standard (e.g. EN 1092-1, ASME B16.5)"},
+            "pressure_max_bar": {
+                "type": "number",
+                "description": "Max operating pressure in bar",
+            },
+            "temperature_max_c": {
+                "type": "number",
+                "description": "Max operating temperature in C",
+            },
+            "flange_standard": {
+                "type": "string",
+                "description": "Flange standard (e.g. EN 1092-1, ASME B16.5)",
+            },
             "flange_dn": {"type": "integer", "description": "Nominal diameter DN"},
             "flange_pn": {"type": "integer", "description": "Nominal pressure PN"},
             "flange_class": {"type": "integer", "description": "ASME pressure class"},
             "bolt_count": {"type": "integer", "description": "Number of bolts"},
             "bolt_size": {"type": "string", "description": "Bolt size (e.g. M20)"},
             "medium": {"type": "string", "description": "Process medium"},
-            "cyclic_load": {"type": "boolean", "description": "Whether cyclic loading is present"},
+            "cyclic_load": {
+                "type": "boolean",
+                "description": "Whether cyclic loading is present",
+            },
         },
         "required": ["pressure_max_bar", "temperature_max_c"],
     },

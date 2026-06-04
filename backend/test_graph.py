@@ -2,7 +2,8 @@
 
 import sys
 import os
-sys.path.append('/root/sealai/backend')
+
+sys.path.append("/root/sealai/backend")
 
 try:
     from app.langgraph.compile import create_main_graph
@@ -31,4 +32,5 @@ try:
 except Exception as e:
     print(f"Error: {type(e).__name__}: {str(e)}")
     import traceback
+
     traceback.print_exc()

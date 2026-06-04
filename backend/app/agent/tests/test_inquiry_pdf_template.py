@@ -61,7 +61,10 @@ def _state() -> GovernedSessionState:
             gov_class="B",
             decision_basis_hash="abc123def4567890",
             assumptions=["Einbaulage horizontal (nicht bestaetigt)"],
-            open_validation_points=["Chloridgehalt bestaetigen", "Wellentoleranz pruefen"],
+            open_validation_points=[
+                "Chloridgehalt bestaetigen",
+                "Wellentoleranz pruefen",
+            ],
             preselection={
                 "type": "Gleitring Cartridge",
                 "material": "SiC/SiC",
@@ -106,7 +109,9 @@ def test_pdf_prompt_template_renders_from_explicit_context() -> None:
             "case_id": "STS-INQ-001",
             "created_at": "2026-04-09T17:00:00Z",
             "basis_hash": "sha256:a3f9",
-            "demand_analysis": [{"label": "Anwendung", "value": "Kreiselpumpe, Chemie"}],
+            "demand_analysis": [
+                {"label": "Anwendung", "value": "Kreiselpumpe, Chemie"}
+            ],
             "parameters": [
                 {
                     "label": "Medium",

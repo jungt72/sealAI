@@ -13,6 +13,7 @@ same source:
 Contextvar-scoped so concurrent turns never cross. If the timer was never started
 (non-streaming callers), every reader degrades to ``None`` — no exceptions.
 """
+
 from __future__ import annotations
 
 import time

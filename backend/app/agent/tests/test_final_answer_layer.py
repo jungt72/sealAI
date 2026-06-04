@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from app.agent.runtime.final_answer_layer import FinalAnswerEnvelope, apply_final_answer_layer
+from app.agent.runtime.final_answer_layer import (
+    FinalAnswerEnvelope,
+    apply_final_answer_layer,
+)
 
 
 def test_final_answer_layer_disabled_is_passthrough(monkeypatch):
@@ -57,7 +60,9 @@ def test_final_answer_layer_enabled_falls_back_to_deterministic_reply(monkeypatc
     assert result["answer_markdown"] == "Deterministische Antwort"
     assert result["run_meta"]["final_answer_layer"]["fallback_used"] is True
     assert result["run_meta"]["final_answer_layer"]["route"] == "governed"
-    assert result["run_meta"]["answer_trace"]["answer_mode"] == "structured_clarification"
+    assert (
+        result["run_meta"]["answer_trace"]["answer_mode"] == "structured_clarification"
+    )
 
 
 def test_final_answer_layer_enabled_preserves_prepared_answer(monkeypatch):
@@ -83,7 +88,10 @@ def test_final_answer_layer_enabled_preserves_prepared_answer(monkeypatch):
     assert result["reply"] == "Deterministische Antwort"
     assert result["answer_markdown"] == "Natuerliche Antwort"
     assert result["run_meta"]["final_answer_layer"]["fallback_used"] is False
-    assert result["run_meta"]["final_answer_layer"]["selected_source"] == "governed_composer"
+    assert (
+        result["run_meta"]["final_answer_layer"]["selected_source"]
+        == "governed_composer"
+    )
     assert result["run_meta"]["answer_trace"]["composer_tier"] == "tier_b"
 
 

@@ -152,7 +152,9 @@ def _hydraulic_fluid_grade_label(value: str | None) -> str | None:
     return fluid_type
 
 
-def _classify_hydraulic_fluid_grade(value: str | None) -> MediumClassificationDecision | None:
+def _classify_hydraulic_fluid_grade(
+    value: str | None,
+) -> MediumClassificationDecision | None:
     grade_label = _hydraulic_fluid_grade_label(value)
     if not grade_label:
         return None
@@ -397,7 +399,10 @@ for _alias_key, (_entry, _alias) in sorted(
 
 _FAMILY_HINTS: tuple[tuple[re.Pattern[str], MediumFamily, str], ...] = (
     (
-        re.compile(r"\b(?:alkalisch\w*|reinigungsloesung|reinigungsmittel|cleaner)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:alkalisch\w*|reinigungsloesung|reinigungsmittel|cleaner)\b",
+            re.IGNORECASE,
+        ),
         "chemisch_aggressiv",
         "deterministic_family_hint:alkalisch_reinigend",
     ),
@@ -407,7 +412,10 @@ _FAMILY_HINTS: tuple[tuple[re.Pattern[str], MediumFamily, str], ...] = (
         "deterministic_family_hint:solution_like",
     ),
     (
-        re.compile(r"\b(?:saeurehaltig|säurehaltig|salzsaeure|salzsäure|hcl|korrosiv)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:saeurehaltig|säurehaltig|salzsaeure|salzsäure|hcl|korrosiv)\b",
+            re.IGNORECASE,
+        ),
         "chemisch_aggressiv",
         "deterministic_family_hint:corrosive",
     ),
@@ -443,7 +451,9 @@ def normalize_medium_lookup_key(value: str | None) -> str | None:
     return key or None
 
 
-def resolve_medium_entry(value: str | None) -> tuple[MediumRegistryEntry | None, str | None]:
+def resolve_medium_entry(
+    value: str | None,
+) -> tuple[MediumRegistryEntry | None, str | None]:
     key = normalize_medium_lookup_key(value)
     if not key:
         return None, None
@@ -501,7 +511,9 @@ def classify_medium_value(value: str | None) -> MediumClassificationDecision:
             normalization_source=None,
             mapping_confidence="requires_confirmation",
             mapping_reason="medium_placeholder_or_unknown" if text else None,
-            followup_question="Welches Medium liegt an der Dichtung an?" if text else None,
+            followup_question="Welches Medium liegt an der Dichtung an?"
+            if text
+            else None,
         )
 
     normalized = _normalize_lookup_token(text)
@@ -569,7 +581,9 @@ def classify_medium_value(value: str | None) -> MediumClassificationDecision:
     )
 
 
-def classify_medium_text(text: str | None) -> tuple[MediumCaptureDecision, MediumClassificationDecision]:
+def classify_medium_text(
+    text: str | None,
+) -> tuple[MediumCaptureDecision, MediumClassificationDecision]:
     capture = extract_medium_mentions(text)
     classification = classify_medium_value(capture.primary_raw_text)
     return capture, classification

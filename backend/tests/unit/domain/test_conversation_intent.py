@@ -194,8 +194,16 @@ def test_v083_route_decision_for_required_examples(
 @pytest.mark.parametrize(
     "pre_gate, expected_intent, expected_mode",
     [
-        (PreGateClassification.GREETING, ConversationIntent.small_talk, ResponseMode.fast_responder),
-        (PreGateClassification.META_QUESTION, ConversationIntent.meta_question, ResponseMode.fast_responder),
+        (
+            PreGateClassification.GREETING,
+            ConversationIntent.small_talk,
+            ResponseMode.fast_responder,
+        ),
+        (
+            PreGateClassification.META_QUESTION,
+            ConversationIntent.meta_question,
+            ResponseMode.fast_responder,
+        ),
         (
             PreGateClassification.KNOWLEDGE_QUERY,
             ConversationIntent.general_sealing_question,
@@ -206,7 +214,11 @@ def test_v083_route_decision_for_required_examples(
             ConversationIntent.general_sealing_question,
             ResponseMode.knowledge_answer,
         ),
-        (PreGateClassification.BLOCKED, ConversationIntent.unsupported, ResponseMode.refusal_or_boundary),
+        (
+            PreGateClassification.BLOCKED,
+            ConversationIntent.unsupported,
+            ResponseMode.refusal_or_boundary,
+        ),
         (
             PreGateClassification.DOMAIN_INQUIRY,
             ConversationIntent.new_rfq,
@@ -224,7 +236,9 @@ def test_old_pre_gate_categories_map_to_v083_taxonomy(
     expected_intent: ConversationIntent,
     expected_mode: ResponseMode,
 ) -> None:
-    decision = classify_conversation_route("Unklarer Text", pre_gate_classification=pre_gate)
+    decision = classify_conversation_route(
+        "Unklarer Text", pre_gate_classification=pre_gate
+    )
 
     assert decision.intent is expected_intent
     assert decision.response_mode is expected_mode

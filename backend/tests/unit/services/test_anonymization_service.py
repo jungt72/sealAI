@@ -41,16 +41,61 @@ def service() -> AnonymizationService:
         ("last_name", "Muster", REDACTED_PERSON, RedactionCategory.PERSON_NAME),
         ("person_name", "Alice Muster", REDACTED_PERSON, RedactionCategory.PERSON_NAME),
         ("user_name", "amuster", REDACTED_PERSON, RedactionCategory.PERSON_NAME),
-        ("customer_name", "Alice Muster", REDACTED_PERSON, RedactionCategory.PERSON_NAME),
+        (
+            "customer_name",
+            "Alice Muster",
+            REDACTED_PERSON,
+            RedactionCategory.PERSON_NAME,
+        ),
         ("address", "Hauptstrasse 1", REDACTED_ADDRESS, RedactionCategory.ADDRESS),
-        ("billing_address", "Hauptstrasse 1", REDACTED_ADDRESS, RedactionCategory.ADDRESS),
-        ("contact_identifier", "alice@example.com", REDACTED_CONTACT, RedactionCategory.CONTACT_IDENTIFIER),
-        ("project_code", "PRJ-SECRET-42", REDACTED_PROJECT_CODE, RedactionCategory.PROJECT_CODE),
-        ("customer_project_code", "K-2026-ABC", REDACTED_PROJECT_CODE, RedactionCategory.PROJECT_CODE),
-        ("internal_project_code", "INT-PROJ-7", REDACTED_PROJECT_CODE, RedactionCategory.PROJECT_CODE),
-        ("internal_article_number", "INT-4711", REDACTED_ARTICLE_NUMBER, RedactionCategory.CUSTOMER_ARTICLE_NUMBER),
-        ("customer_internal_article_number", "CUST-4711", REDACTED_ARTICLE_NUMBER, RedactionCategory.CUSTOMER_ARTICLE_NUMBER),
-        ("customer_part_number", "CUST-PART-5", REDACTED_ARTICLE_NUMBER, RedactionCategory.CUSTOMER_ARTICLE_NUMBER),
+        (
+            "billing_address",
+            "Hauptstrasse 1",
+            REDACTED_ADDRESS,
+            RedactionCategory.ADDRESS,
+        ),
+        (
+            "contact_identifier",
+            "alice@example.com",
+            REDACTED_CONTACT,
+            RedactionCategory.CONTACT_IDENTIFIER,
+        ),
+        (
+            "project_code",
+            "PRJ-SECRET-42",
+            REDACTED_PROJECT_CODE,
+            RedactionCategory.PROJECT_CODE,
+        ),
+        (
+            "customer_project_code",
+            "K-2026-ABC",
+            REDACTED_PROJECT_CODE,
+            RedactionCategory.PROJECT_CODE,
+        ),
+        (
+            "internal_project_code",
+            "INT-PROJ-7",
+            REDACTED_PROJECT_CODE,
+            RedactionCategory.PROJECT_CODE,
+        ),
+        (
+            "internal_article_number",
+            "INT-4711",
+            REDACTED_ARTICLE_NUMBER,
+            RedactionCategory.CUSTOMER_ARTICLE_NUMBER,
+        ),
+        (
+            "customer_internal_article_number",
+            "CUST-4711",
+            REDACTED_ARTICLE_NUMBER,
+            RedactionCategory.CUSTOMER_ARTICLE_NUMBER,
+        ),
+        (
+            "customer_part_number",
+            "CUST-PART-5",
+            REDACTED_ARTICLE_NUMBER,
+            RedactionCategory.CUSTOMER_ARTICLE_NUMBER,
+        ),
     ],
 )
 def test_structured_sensitive_fields_are_replaced(
@@ -98,7 +143,9 @@ def test_sensitive_containers_are_removed(
     assert result.events[0].category is category
 
 
-def test_company_name_is_redacted_only_in_customer_context(service: AnonymizationService) -> None:
+def test_company_name_is_redacted_only_in_customer_context(
+    service: AnonymizationService,
+) -> None:
     result = service.anonymize_payload(
         {
             "manufacturer": {"company_name": "Neutral Seal Supplier"},
@@ -106,8 +153,13 @@ def test_company_name_is_redacted_only_in_customer_context(service: Anonymizatio
         }
     )
 
-    assert result.redacted_payload["manufacturer"]["company_name"] == "Neutral Seal Supplier"
-    assert result.redacted_payload["customer_details"]["company_name"] == REDACTED_COMPANY
+    assert (
+        result.redacted_payload["manufacturer"]["company_name"]
+        == "Neutral Seal Supplier"
+    )
+    assert (
+        result.redacted_payload["customer_details"]["company_name"] == REDACTED_COMPANY
+    )
     assert RedactionCategory.COMPANY_IDENTIFIER in result.redaction_categories
 
 
@@ -164,7 +216,9 @@ def test_text_redacts_multiple_patterns(service: AnonymizationService) -> None:
     assert result.redaction_count == 3
 
 
-def test_text_does_not_perform_general_name_detection(service: AnonymizationService) -> None:
+def test_text_does_not_perform_general_name_detection(
+    service: AnonymizationService,
+) -> None:
     result = service.anonymize_text("Max sagt: Welle 42 mm, Druck 3 bar.")
 
     assert result.redacted_payload == "Max sagt: Welle 42 mm, Druck 3 bar."
@@ -172,7 +226,9 @@ def test_text_does_not_perform_general_name_detection(service: AnonymizationServ
     assert "does not perform general name recognition" in result.warnings[0]
 
 
-def test_recursive_dict_and_list_structures_are_redacted(service: AnonymizationService) -> None:
+def test_recursive_dict_and_list_structures_are_redacted(
+    service: AnonymizationService,
+) -> None:
     result = service.anonymize_payload(
         {
             "case": {
@@ -194,7 +250,9 @@ def test_recursive_dict_and_list_structures_are_redacted(service: AnonymizationS
 
 
 def test_tuple_structure_is_preserved(service: AnonymizationService) -> None:
-    result = service.anonymize_payload(("alice@example.com", {"phone": "+49 221 123456"}))
+    result = service.anonymize_payload(
+        ("alice@example.com", {"phone": "+49 221 123456"})
+    )
 
     assert result.redacted_payload == (REDACTED_EMAIL, {"phone": REDACTED_PHONE})
 
@@ -243,7 +301,10 @@ def test_customer_internal_reference_is_redacted(service: AnonymizationService) 
         }
     )
 
-    assert result.redacted_payload["article_references"][0]["value"] == REDACTED_ARTICLE_NUMBER
+    assert (
+        result.redacted_payload["article_references"][0]["value"]
+        == REDACTED_ARTICLE_NUMBER
+    )
     assert RedactionCategory.CUSTOMER_ARTICLE_NUMBER in result.redaction_categories
 
 
@@ -264,7 +325,10 @@ def test_public_reference_not_marked_manufacturer_visible_can_still_redact_neste
     )
 
     assert result.redacted_payload["article_references"][0]["value"] == "MFR-42"
-    assert result.redacted_payload["article_references"][0]["comment"] == f"ask {REDACTED_EMAIL}"
+    assert (
+        result.redacted_payload["article_references"][0]["comment"]
+        == f"ask {REDACTED_EMAIL}"
+    )
 
 
 def test_redact_known_sensitive_fields_alias(service: AnonymizationService) -> None:
@@ -304,14 +368,18 @@ def test_summary_reports_categories_and_warnings(service: AnonymizationService) 
 
 
 def test_events_include_paths(service: AnonymizationService) -> None:
-    result = service.anonymize_payload({"outer": {"contact_email": "alice@example.com"}})
+    result = service.anonymize_payload(
+        {"outer": {"contact_email": "alice@example.com"}}
+    )
 
     assert result.events[0].path == "outer.contact_email"
     assert result.events[0].category is RedactionCategory.EMAIL
     assert result.events[0].action is RedactionAction.REPLACED
 
 
-def test_inquiry_extract_like_payload_remains_stable(service: AnonymizationService) -> None:
+def test_inquiry_extract_like_payload_remains_stable(
+    service: AnonymizationService,
+) -> None:
     payload = {
         "meta": {"case_id": "case-1", "case_revision": 2},
         "technical_scope": {"request_type": "retrofit", "engineering_path": "rwdr"},
@@ -339,8 +407,14 @@ def test_inquiry_extract_like_payload_with_leakage_is_redacted(
     )
 
     assert result.redacted_payload["technical_parameters"]["shaft_diameter_mm"] == 42
-    assert result.redacted_payload["technical_parameters"]["customer_email"] == REDACTED_EMAIL
-    assert result.redacted_payload["technical_parameters"]["project_code"] == REDACTED_PROJECT_CODE
+    assert (
+        result.redacted_payload["technical_parameters"]["customer_email"]
+        == REDACTED_EMAIL
+    )
+    assert (
+        result.redacted_payload["technical_parameters"]["project_code"]
+        == REDACTED_PROJECT_CODE
+    )
 
 
 @pytest.mark.parametrize(

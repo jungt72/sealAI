@@ -64,7 +64,9 @@ def test_turn_boundary_routes_standalone_material_limits_as_knowledge() -> None:
     assert decision.short_path_allowed is True
 
 
-def test_turn_boundary_promotes_case_specific_material_assessment_to_recommendation() -> None:
+def test_turn_boundary_promotes_case_specific_material_assessment_to_recommendation() -> (
+    None
+):
     decision = resolve_turn_boundary(
         user_message=(
             "Bitte bewerte PTFE fuer RWDR bei Wasser-Glykol, 80 C, "
@@ -81,7 +83,9 @@ def test_turn_boundary_promotes_case_specific_material_assessment_to_recommendat
     assert decision.streaming_policy == "status_only_until_guarded_final"
 
 
-def test_turn_boundary_promotes_assessment_even_when_graph_hint_is_clarification() -> None:
+def test_turn_boundary_promotes_assessment_even_when_graph_hint_is_clarification() -> (
+    None
+):
     decision = resolve_turn_boundary(
         user_message=(
             "Bitte bewerte PTFE fuer RWDR bei Wasser-Glykol, 80 C, "
@@ -191,7 +195,9 @@ def test_turn_boundary_respects_rfq_hint_as_review_limited_short_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_turn_boundary_node_writes_boundary_and_envelope_into_graph_state() -> None:
+async def test_turn_boundary_node_writes_boundary_and_envelope_into_graph_state() -> (
+    None
+):
     state = GraphState(
         session_id="case-1",
         pending_message="Empfiehl mir EPDM fuer HLP.",
@@ -200,5 +206,8 @@ async def test_turn_boundary_node_writes_boundary_and_envelope_into_graph_state(
     result = await turn_boundary_node(state)
 
     assert result.v92_turn_boundary_decision["route"] == "engineering_recommendation"
-    assert result.v92_turn_boundary_decision["streaming_policy"] == "status_only_until_guarded_final"
+    assert (
+        result.v92_turn_boundary_decision["streaming_policy"]
+        == "status_only_until_guarded_final"
+    )
     assert result.v92_turn_envelope["requires_final_guard"] is True

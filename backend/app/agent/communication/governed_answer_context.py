@@ -122,7 +122,9 @@ class GovernedAnswerContext(BaseModel):
     response_class: str | None = None
     allowed_claims: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=lambda: list(_FORBIDDEN_CLAIMS))
-    safety_boundaries: list[str] = Field(default_factory=lambda: list(_SAFETY_BOUNDARIES))
+    safety_boundaries: list[str] = Field(
+        default_factory=lambda: list(_SAFETY_BOUNDARIES)
+    )
     answer_goal: str = "acknowledge valid newly supplied information, clarify ambiguous values, and ask the next best required question"
     answer_markdown_source: AnswerMarkdownSource = "not_composed_yet"
 
@@ -130,7 +132,9 @@ class GovernedAnswerContext(BaseModel):
 
 
 def _unique(items: list[str]) -> list[str]:
-    return list(dict.fromkeys(str(item).strip() for item in items if str(item or "").strip()))
+    return list(
+        dict.fromkeys(str(item).strip() for item in items if str(item or "").strip())
+    )
 
 
 def _latest_user_message(state: Any) -> str | None:
@@ -263,21 +267,45 @@ def _confirmed_facts(state: Any) -> list[GovernedFact]:
 
 
 def _missing_fields(state: Any, output_public: dict[str, Any] | None) -> list[str]:
-    if isinstance(output_public, dict) and isinstance(output_public.get("missing_fields"), list):
-        return _unique([str(item) for item in output_public.get("missing_fields") or []])
+    if isinstance(output_public, dict) and isinstance(
+        output_public.get("missing_fields"), list
+    ):
+        return _unique(
+            [str(item) for item in output_public.get("missing_fields") or []]
+        )
     raw: list[str] = []
-    raw.extend(str(item) for item in list(getattr(getattr(state, "asserted", None), "blocking_unknowns", []) or []) if item)
+    raw.extend(
+        str(item)
+        for item in list(
+            getattr(getattr(state, "asserted", None), "blocking_unknowns", []) or []
+        )
+        if item
+    )
     governance = getattr(state, "governance", None)
-    for attr in ("preselection_blockers", "compliance_blockers", "type_sensitive_required"):
-        raw.extend(str(item) for item in list(getattr(governance, attr, []) or []) if item)
+    for attr in (
+        "preselection_blockers",
+        "compliance_blockers",
+        "type_sensitive_required",
+    ):
+        raw.extend(
+            str(item) for item in list(getattr(governance, attr, []) or []) if item
+        )
     return _unique(raw)
 
 
 def _open_points(state: Any, output_public: dict[str, Any] | None) -> list[str]:
-    if isinstance(output_public, dict) and isinstance(output_public.get("open_points"), list):
+    if isinstance(output_public, dict) and isinstance(
+        output_public.get("open_points"), list
+    ):
         return _unique([str(item) for item in output_public.get("open_points") or []])
     governance = getattr(state, "governance", None)
-    return _unique([str(item) for item in list(getattr(governance, "open_validation_points", []) or []) if item])
+    return _unique(
+        [
+            str(item)
+            for item in list(getattr(governance, "open_validation_points", []) or [])
+            if item
+        ]
+    )
 
 
 def _challenge_findings(state: Any) -> list[dict[str, Any]]:
@@ -370,8 +398,7 @@ def _calculation_results(state: Any) -> list[GovernedCalculationFact]:
                 units=dict(getattr(item, "units", {}) or {}),
                 status=status,
                 claim_level=str(
-                    getattr(item, "claim_level", "")
-                    or "L3_deterministic_calculation"
+                    getattr(item, "claim_level", "") or "L3_deterministic_calculation"
                 ),
                 validity_status=validity_status,
                 limitation=(
@@ -389,12 +416,18 @@ def _slot_answer_bindings(state: Any) -> list[SlotAnswerBinding]:
     return [binding] if isinstance(binding, SlotAnswerBinding) else []
 
 
-def _accepted_updates(state: Any, bindings: list[SlotAnswerBinding]) -> list[GovernedAnswerUpdate]:
+def _accepted_updates(
+    state: Any, bindings: list[SlotAnswerBinding]
+) -> list[GovernedAnswerUpdate]:
     updates: list[GovernedAnswerUpdate] = []
     assertions = dict(getattr(getattr(state, "asserted", None), "assertions", {}) or {})
     for binding in bindings:
         claim = assertions.get(binding.target_field)
-        normalized_value = getattr(claim, "asserted_value", None) if claim is not None else binding.normalized_value
+        normalized_value = (
+            getattr(claim, "asserted_value", None)
+            if claim is not None
+            else binding.normalized_value
+        )
         updates.append(
             GovernedAnswerUpdate(
                 field_key=binding.target_field,
@@ -402,7 +435,9 @@ def _accepted_updates(state: Any, bindings: list[SlotAnswerBinding]) -> list[Gov
                 value=normalized_value,
                 unit=_field_unit(state, binding.target_field),
                 source=binding.source,
-                status="candidate_needs_clarification" if binding.needs_clarification else "accepted",
+                status="candidate_needs_clarification"
+                if binding.needs_clarification
+                else "accepted",
                 confidence=(
                     str(getattr(claim, "confidence", "") or "")
                     if claim is not None
@@ -419,7 +454,9 @@ def _medium_clarification_question(state: Any) -> str | None:
     return question or None
 
 
-def _ambiguous_values(state: Any, bindings: list[SlotAnswerBinding]) -> list[GovernedAmbiguousValue]:
+def _ambiguous_values(
+    state: Any, bindings: list[SlotAnswerBinding]
+) -> list[GovernedAmbiguousValue]:
     values: list[GovernedAmbiguousValue] = []
     for binding in bindings:
         if not (binding.ambiguity or binding.needs_clarification):
@@ -454,11 +491,17 @@ def _rejected_updates(state: Any) -> list[GovernedRejectedUpdate]:
     return rejected
 
 
-def _next_best_question(strategy: Any | None, ambiguous_values: list[GovernedAmbiguousValue]) -> str | None:
+def _next_best_question(
+    strategy: Any | None, ambiguous_values: list[GovernedAmbiguousValue]
+) -> str | None:
     for item in ambiguous_values:
         if item.clarification_question:
             return item.clarification_question
-    primary = str(getattr(strategy, "primary_question", "") or "").strip() if strategy is not None else ""
+    primary = (
+        str(getattr(strategy, "primary_question", "") or "").strip()
+        if strategy is not None
+        else ""
+    )
     if primary:
         return primary
     return None
@@ -483,14 +526,21 @@ def _allowed_claims(
     return _unique(claims)
 
 
-def _explicit_answer_mode(state: Any, output_public: dict[str, Any] | None) -> tuple[str | None, str | None]:
+def _explicit_answer_mode(
+    state: Any, output_public: dict[str, Any] | None
+) -> tuple[str | None, str | None]:
     if isinstance(output_public, dict):
         value = str(output_public.get("answer_mode") or "").strip()
         if value:
-            return value, str(output_public.get("answer_mode_source") or "output_public.answer_mode")
+            return value, str(
+                output_public.get("answer_mode_source") or "output_public.answer_mode"
+            )
     value = str(getattr(state, "runtime_answer_mode", "") or "").strip()
     if value:
-        return value, str(getattr(state, "runtime_answer_mode_source", "") or "state.runtime_answer_mode")
+        return value, str(
+            getattr(state, "runtime_answer_mode_source", "")
+            or "state.runtime_answer_mode"
+        )
     return None, None
 
 
@@ -521,7 +571,9 @@ def build_governed_answer_context(
     next_question = _next_best_question(strategy, ambiguous)
     latest_message = _latest_user_message(state)
     state_snapshot = _answer_state_snapshot(state)
-    explicit_answer_mode, answer_mode_source = _explicit_answer_mode(state, output_public)
+    explicit_answer_mode, answer_mode_source = _explicit_answer_mode(
+        state, output_public
+    )
     technical_case_challenge_plan = None
     if explicit_answer_mode == ANSWER_MODE_TECHNICAL_CASE_CHALLENGE:
         technical_case_challenge_plan = build_technical_case_challenge_plan(
@@ -541,14 +593,14 @@ def build_governed_answer_context(
             explicit_answer_mode = ANSWER_MODE_TECHNICAL_CASE_CHALLENGE
             answer_mode_source = "fallback_latest_user_message"
     if technical_case_challenge_plan is not None:
-        next_question = technical_case_challenge_plan.next_best_question or next_question
+        next_question = (
+            technical_case_challenge_plan.next_best_question or next_question
+        )
     question_plan = build_question_plan_from_strategy(
         strategy=strategy,
         state=state,
         override_question=next_question,
-        override_target_field=(
-            ambiguous[0].field_key if ambiguous else None
-        ),
+        override_target_field=(ambiguous[0].field_key if ambiguous else None),
         override_reason=(
             "Der zuletzt genannte Wert ist noch mehrdeutig und braucht eine klare Einordnung."
             if ambiguous
@@ -561,7 +613,9 @@ def build_governed_answer_context(
         answer_mode_source=answer_mode_source,
         conversation_messages=_conversation_messages(state),
         state_snapshot=state_snapshot,
-        pending_question=pending_question if pending_question is not None else getattr(state, "pending_question", None),
+        pending_question=pending_question
+        if pending_question is not None
+        else getattr(state, "pending_question", None),
         slot_answer_bindings=bindings,
         accepted_updates=_accepted_updates(state, bindings),
         ambiguous_values=ambiguous,
@@ -575,7 +629,9 @@ def build_governed_answer_context(
         technical_case_challenge_plan=technical_case_challenge_plan,
         next_best_question=next_question,
         v91_question_plan=question_plan,
-        response_class=response_class or str(getattr(state, "output_response_class", "") or "") or None,
+        response_class=response_class
+        or str(getattr(state, "output_response_class", "") or "")
+        or None,
         allowed_claims=_allowed_claims(
             confirmed_facts=confirmed,
             missing_fields=missing,

@@ -80,7 +80,9 @@ def _print_results(title: str, hits: List[Dict[str, Any]]) -> None:
         print("    metadata:", json.dumps(metadata, ensure_ascii=False, indent=2))
 
 
-def _keyword_scan_kyrolon(client: QdrantClient, collection: str, *, max_points: int = 4000) -> List[Dict[str, Any]]:
+def _keyword_scan_kyrolon(
+    client: QdrantClient, collection: str, *, max_points: int = 4000
+) -> List[Dict[str, Any]]:
     offset: Any = None
     scanned = 0
     results: List[Dict[str, Any]] = []
@@ -97,10 +99,21 @@ def _keyword_scan_kyrolon(client: QdrantClient, collection: str, *, max_points: 
         for point in points:
             scanned += 1
             payload = point.payload or {}
-            text = str(payload.get("text") or payload.get("chunk") or payload.get("content") or "")
+            text = str(
+                payload.get("text")
+                or payload.get("chunk")
+                or payload.get("content")
+                or ""
+            )
             if "kyrolon" not in text.lower():
                 continue
-            results.append({"text": text, "metadata": payload, "source": payload.get("source", "payload")})
+            results.append(
+                {
+                    "text": text,
+                    "metadata": payload,
+                    "source": payload.get("source", "payload"),
+                }
+            )
             if len(results) >= 2:
                 return results
         if offset is None:
@@ -132,12 +145,16 @@ def main() -> int:
         print(f"Main collection points_count: {points_count}")
         print(f"Main collection indexed_vectors_count: {indexed_vectors_count}")
     except Exception as exc:
-        print(f"Failed to read main collection '{collection}': {type(exc).__name__}: {exc}")
+        print(
+            f"Failed to read main collection '{collection}': {type(exc).__name__}: {exc}"
+        )
         if names:
             collection_for_search = names[0]
             print(f"Fallback collection for search: {collection_for_search}")
 
-    tenant_id = (os.getenv("DIAGNOSTIC_TENANT_ID") or os.getenv("TENANT_ID") or "").strip() or None
+    tenant_id = (
+        os.getenv("DIAGNOSTIC_TENANT_ID") or os.getenv("TENANT_ID") or ""
+    ).strip() or None
     print(f"Semantic search query: 'Kyrolon' (tenant_id={tenant_id})")
 
     semantic_hits: List[Dict[str, Any]] = []
@@ -151,7 +168,10 @@ def main() -> int:
             return_metrics=True,
         )
         semantic_hits = list(retrieved or [])
-        print("Semantic retrieval metrics:", json.dumps(metrics, ensure_ascii=False, indent=2))
+        print(
+            "Semantic retrieval metrics:",
+            json.dumps(metrics, ensure_ascii=False, indent=2),
+        )
     except Exception as exc:
         print(f"Semantic retrieval failed: {type(exc).__name__}: {exc}")
 

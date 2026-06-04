@@ -25,6 +25,7 @@ Coverage:
     14. LLM/regex candidate without promotion → no AssertedClaim
     15. User override field (confirmed) → AssertedClaim present
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -69,10 +70,7 @@ def _state_with_params(**kwargs) -> GraphState:
 
     kwargs maps field_name → (value, confidence) tuple.
     """
-    params = {
-        field: _param(field, val, conf)
-        for field, (val, conf) in kwargs.items()
-    }
+    params = {field: _param(field, val, conf) for field, (val, conf) in kwargs.items()}
     normalized = NormalizedState(parameters=params)
     return GraphState(normalized=normalized)
 
@@ -80,10 +78,10 @@ def _state_with_params(**kwargs) -> GraphState:
 def _state_with_conflict(field: str, severity: str = "blocking") -> GraphState:
     """Build a state with a single blocking or warning conflict for field."""
     params = {
-        "medium":        _param("medium",        "Dampf", "confirmed"),
-        "pressure_bar":  _param("pressure_bar",  12.0,    "confirmed"),
-        "temperature_c": _param("temperature_c", 180.0,   "confirmed"),
-        field:           _param(field,            "X",     "confirmed"),
+        "medium": _param("medium", "Dampf", "confirmed"),
+        "pressure_bar": _param("pressure_bar", 12.0, "confirmed"),
+        "temperature_c": _param("temperature_c", 180.0, "confirmed"),
+        field: _param(field, "X", "confirmed"),
     }
     conflict = ConflictRef(
         field_name=field,
@@ -97,6 +95,7 @@ def _state_with_conflict(field: str, severity: str = "blocking") -> GraphState:
 # ---------------------------------------------------------------------------
 # 1. All three core fields confirmed
 # ---------------------------------------------------------------------------
+
 
 class TestCoreFieldsConfirmed:
     @pytest.mark.asyncio
@@ -140,6 +139,7 @@ class TestCoreFieldsConfirmed:
 # 2. requires_confirmation → blocking_unknowns
 # ---------------------------------------------------------------------------
 
+
 class TestRequiresConfirmation:
     @pytest.mark.asyncio
     async def test_field_not_in_assertions(self):
@@ -165,6 +165,7 @@ class TestRequiresConfirmation:
 # ---------------------------------------------------------------------------
 # 3. inferred → AssertedClaim present
 # ---------------------------------------------------------------------------
+
 
 class TestInferred:
     @pytest.mark.asyncio
@@ -202,6 +203,7 @@ class TestInferred:
 # 3b. LLM/regex candidate without promotion → no AssertedClaim
 # ---------------------------------------------------------------------------
 
+
 class TestUnpromotedLlmCandidate:
     @pytest.mark.asyncio
     async def test_confirmed_llm_candidate_not_asserted(self):
@@ -224,7 +226,9 @@ class TestUnpromotedLlmCandidate:
         state = GraphState(
             normalized=NormalizedState(
                 parameters={
-                    "pressure_bar": _param("pressure_bar", 12.0, "inferred", source="llm"),
+                    "pressure_bar": _param(
+                        "pressure_bar", 12.0, "inferred", source="llm"
+                    ),
                 }
             )
         )
@@ -238,6 +242,7 @@ class TestUnpromotedLlmCandidate:
 # ---------------------------------------------------------------------------
 # 4. Missing core field → blocking_unknowns
 # ---------------------------------------------------------------------------
+
 
 class TestMissingCoreField:
     @pytest.mark.asyncio
@@ -272,6 +277,7 @@ class TestMissingCoreField:
 # 5. All core fields missing
 # ---------------------------------------------------------------------------
 
+
 class TestAllCoreFieldsMissing:
     @pytest.mark.asyncio
     async def test_empty_normalized_all_core_in_blocking(self):
@@ -291,6 +297,7 @@ class TestAllCoreFieldsMissing:
 # 6. Blocking conflict → conflict_flags
 # ---------------------------------------------------------------------------
 
+
 class TestBlockingConflict:
     @pytest.mark.asyncio
     async def test_blocking_conflict_in_conflict_flags(self):
@@ -303,6 +310,7 @@ class TestBlockingConflict:
 # 7. Warning conflict → conflict_flags empty
 # ---------------------------------------------------------------------------
 
+
 class TestWarningConflict:
     @pytest.mark.asyncio
     async def test_warning_conflict_not_in_conflict_flags(self):
@@ -314,6 +322,7 @@ class TestWarningConflict:
 # ---------------------------------------------------------------------------
 # 8 & 9. Immutability
 # ---------------------------------------------------------------------------
+
 
 class TestImmutability:
     @pytest.mark.asyncio
@@ -359,6 +368,7 @@ class TestImmutability:
 # 10. No LLM call
 # ---------------------------------------------------------------------------
 
+
 class TestNoLLM:
     @pytest.mark.asyncio
     async def test_openai_never_called(self):
@@ -382,14 +392,15 @@ class TestNoLLM:
 # 11. User override field (confirmed via normalize → assert)
 # ---------------------------------------------------------------------------
 
+
 class TestUserOverrideField:
     @pytest.mark.asyncio
     async def test_user_override_asserted_at_confirmed(self):
         """Fields normalized from user_override source are confirmed → AssertedClaim."""
         params = {
-            "medium":        _param("medium",        "Dampf", "confirmed", source="user_override"),
-            "pressure_bar":  _param("pressure_bar",  12.0,    "confirmed"),
-            "temperature_c": _param("temperature_c", 180.0,   "confirmed"),
+            "medium": _param("medium", "Dampf", "confirmed", source="user_override"),
+            "pressure_bar": _param("pressure_bar", 12.0, "confirmed"),
+            "temperature_c": _param("temperature_c", 180.0, "confirmed"),
         }
         normalized = NormalizedState(parameters=params)
         state = GraphState(normalized=normalized)

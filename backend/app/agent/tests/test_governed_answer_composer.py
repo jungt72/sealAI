@@ -34,7 +34,9 @@ from app.agent.graph import GraphState
 from app.agent.graph import output_contract_assembly as output_assembly
 from app.agent.graph.nodes.assert_node import assert_node
 from app.agent.graph.nodes.governance_node import governance_node
-from app.agent.graph.nodes.governed_answer_composer_node import governed_answer_composer_node
+from app.agent.graph.nodes.governed_answer_composer_node import (
+    governed_answer_composer_node,
+)
 from app.agent.graph.nodes.normalize_node import normalize_node
 from app.agent.runtime.clarification_priority import select_clarification_priority
 from app.agent.state.models import (
@@ -89,7 +91,9 @@ async def _run_governed_nodes(state: GraphState) -> GraphState:
 
 async def _assemble_output(state: GraphState) -> GraphState:
     response_class = output_assembly._determine_response_class(state)
-    strategy = output_assembly.build_governed_conversation_strategy_contract(state, response_class)
+    strategy = output_assembly.build_governed_conversation_strategy_contract(
+        state, response_class
+    )
     output_public = output_assembly._build_output_public_base(state, response_class)
     reply = await output_assembly._build_reply(state, response_class, strategy=strategy)
     output_public["message"] = reply
@@ -132,12 +136,17 @@ def test_output_public_carries_runtime_answer_mode() -> None:
     assert output_public["answer_mode_source"] == "runtime_action.answer_mode"
 
 
-async def _run_turn(message: str, *, pending_question: PendingQuestion | None = None) -> GraphState:
+async def _run_turn(
+    message: str, *, pending_question: PendingQuestion | None = None
+) -> GraphState:
     state = GraphState(
         pending_message=message,
         pending_question=pending_question,
         conversation_messages=[
-            ConversationMessage(role="assistant", content="Die sichtbare Frage ist fuer Slot-Bindung nicht massgeblich."),
+            ConversationMessage(
+                role="assistant",
+                content="Die sichtbare Frage ist fuer Slot-Bindung nicht massgeblich.",
+            ),
             ConversationMessage(role="user", content=message),
         ],
         user_turn_index=2 if pending_question else 1,
@@ -163,7 +172,9 @@ def _interrupted_state(raw: object) -> GraphState:
     return GraphState.model_validate(payload["state"])
 
 
-def test_contextual_fallback_asks_next_best_question_without_routine_confirmation() -> None:
+def test_contextual_fallback_asks_next_best_question_without_routine_confirmation() -> (
+    None
+):
     context = GovernedAnswerContext(
         accepted_updates=[
             GovernedAnswerUpdate(
@@ -184,7 +195,10 @@ def test_contextual_fallback_asks_next_best_question_without_routine_confirmatio
         "Betriebsparameter erfasst: Drehzahl: 4000. Als naechstes brauche ich noch genau einen Kernwert.",
     )
 
-    assert answer == "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?"
+    assert (
+        answer
+        == "Welcher Druck oder welche Druckdifferenz liegt direkt an der Dichtstelle an?"
+    )
     assert "Danke" not in answer
     assert "4000" not in answer
     assert "bestaetig" not in answer.casefold()
@@ -288,7 +302,9 @@ def test_sbb_rwdr_challenge_fallback_is_single_structured_answer() -> None:
         next_best_question=plan.next_best_question,
     )
 
-    answer = render_governed_contextual_fallback(context, "Welcher Druck liegt direkt an der Dichtstelle an?")
+    answer = render_governed_contextual_fallback(
+        context, "Welcher Druck liegt direkt an der Dichtstelle an?"
+    )
 
     assert "### Kurzurteil" in answer
     assert "### Kritische Punkte" in answer
@@ -408,7 +424,9 @@ async def test_node_uses_composer_for_contextual_orientation_when_enabled(
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         assert "Ursachencluster" in request.deterministic_reply
         return GovernedAnswerComposerOutput(
             answer_markdown=(
@@ -488,7 +506,9 @@ def test_contextual_answer_discipline_rejects_bare_medium_intake_question() -> N
         response_class="structured_clarification",
     )
 
-    with pytest.raises(GovernedAnswerComposerError, match="bare_medium_intake_question"):
+    with pytest.raises(
+        GovernedAnswerComposerError, match="bare_medium_intake_question"
+    ):
         composer_module._validate_contextual_answer_discipline(
             (
                 "Eine Leckage würde ich zuerst als Fallbild sauber eingrenzen.\n\n"
@@ -498,7 +518,9 @@ def test_contextual_answer_discipline_rejects_bare_medium_intake_question() -> N
         )
 
 
-def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_installation() -> None:
+def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_installation() -> (
+    None
+):
     state = GraphState(
         asserted=AssertedState(
             assertions={
@@ -525,13 +547,18 @@ def test_rotary_context_with_speed_and_shaft_prioritizes_pressure_before_install
     assert "druck" in priority.question.casefold()
 
 
-def test_governed_answer_composer_prompt_requires_next_best_question_and_no_routine_thanks() -> None:
+def test_governed_answer_composer_prompt_requires_next_best_question_and_no_routine_thanks() -> (
+    None
+):
     system_prompt = _GOVERNED_ANSWER_COMPOSER_PROMPT.read_text(encoding="utf-8")
 
     assert "next_best_question" in system_prompt
     assert "Do not ask the user to confirm a value they just supplied" in system_prompt
     assert "without thanking or repeating them routinely" in system_prompt
-    assert 'do not write the bare question "Welches Medium soll abgedichtet werden?"' in system_prompt
+    assert (
+        'do not write the bare question "Welches Medium soll abgedichtet werden?"'
+        in system_prompt
+    )
 
 
 async def _run_structured_output_contract(
@@ -557,10 +584,14 @@ async def _run_structured_output_contract(
 
 
 @pytest.mark.asyncio
-async def test_feature_flag_disabled_does_not_call_composer(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_feature_flag_disabled_does_not_call_composer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not be called while disabled")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -576,10 +607,14 @@ async def test_feature_flag_disabled_does_not_call_composer(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
-async def test_feature_flag_disabled_humanizes_first_leakage_intake(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_feature_flag_disabled_humanizes_first_leakage_intake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not be called while disabled")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -592,7 +627,9 @@ async def test_feature_flag_disabled_humanizes_first_leakage_intake(monkeypatch:
     assert result.output_answer_markdown_source == "composer_fallback"
     assert "Leckage" in result.output_answer_markdown
     assert "Dafür muss ich zuerst wissen" in result.output_answer_markdown
-    assert "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
+    assert (
+        "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
+    )
     assert result.output_answer_markdown != result.output_reply
 
 
@@ -602,7 +639,9 @@ async def test_feature_flag_disabled_opens_generic_dichtungssituation_help_warml
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not be called while disabled")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -621,15 +660,21 @@ async def test_feature_flag_disabled_opens_generic_dichtungssituation_help_warml
     assert "Medium" in result.output_answer_markdown
     assert "Rahmenbedingungen" in result.output_answer_markdown
     assert "belastbaren Hebel" not in result.output_answer_markdown
-    assert "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
+    assert (
+        "Welches Medium soll abgedichtet werden?" not in result.output_answer_markdown
+    )
     assert result.output_answer_markdown == result.output_reply
 
 
 @pytest.mark.asyncio
-async def test_composer_success_sets_answer_markdown_without_truth_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_composer_success_sets_answer_markdown_without_truth_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         assert request.context.ambiguous_values
         assert request.context.slot_answer_bindings[0].target_field == "medium"
         return GovernedAnswerComposerOutput(
@@ -658,10 +703,14 @@ async def test_composer_success_sets_answer_markdown_without_truth_mutation(monk
 
 
 @pytest.mark.asyncio
-async def test_composer_failure_falls_back_without_secret_leak(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_composer_failure_falls_back_without_secret_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         raise RuntimeError("OPENAI_API_KEY=secret-value")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -684,7 +733,9 @@ async def test_composer_retries_registry_default_when_configured_model_is_reject
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = await _run_turn("chlor", pending_question=_pending_medium_question())
-    context = composer_module.GovernedAnswerContext.model_validate(state.governed_answer_context)
+    context = composer_module.GovernedAnswerContext.model_validate(
+        state.governed_answer_context
+    )
 
     class BadRequestError(Exception):
         pass
@@ -733,7 +784,9 @@ async def test_composer_retries_registry_default_when_configured_model_is_reject
     )
 
     result = await GovernedAnswerComposer().compose(
-        GovernedAnswerComposerInput(context=context, deterministic_reply=state.output_reply)
+        GovernedAnswerComposerInput(
+            context=context, deterministic_reply=state.output_reply
+        )
     )
 
     assert result.answer_markdown.startswith("Chlor")
@@ -808,7 +861,9 @@ async def test_stream_repairs_slot_only_material_answer_with_live_reset(
         async def create(self, **kwargs):
             self.calls.append(kwargs)
             assert kwargs["stream"] is True
-            return FakeStream([first_answer] if len(self.calls) == 1 else [repaired_answer])
+            return FakeStream(
+                [first_answer] if len(self.calls) == 1 else [repaired_answer]
+            )
 
     completions = FakeCompletions()
 
@@ -837,7 +892,12 @@ async def test_stream_repairs_slot_only_material_answer_with_live_reset(
         )
     ]
 
-    assert [event.event_type for event in events] == ["chunk", "reset", "chunk", "final"]
+    assert [event.event_type for event in events] == [
+        "chunk",
+        "reset",
+        "chunk",
+        "final",
+    ]
     assert events[0].text == first_answer
     assert events[2].text == repaired_answer
     assert events[-1].output is not None
@@ -845,7 +905,11 @@ async def test_stream_repairs_slot_only_material_answer_with_live_reset(
     assert len(completions.calls) == 2
     repair_payload = json.loads(completions.calls[1]["messages"][1]["content"])
     assert repair_payload["repair"]["reason"] == "missing_material_orientation"
-    assert repair_payload["repair"]["must_mention_user_material_terms"] == ["EPDM", "FKM", "NBR"]
+    assert repair_payload["repair"]["must_mention_user_material_terms"] == [
+        "EPDM",
+        "FKM",
+        "NBR",
+    ]
 
 
 @pytest.mark.asyncio
@@ -856,7 +920,9 @@ async def test_composer_can_acknowledge_simple_medium_and_ask_next_question(
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         return GovernedAnswerComposerOutput(
             answer_markdown="Damit kann ich weiterarbeiten. Welche Temperatur sieht die Dichtstelle?",
             confidence_note=None,
@@ -878,7 +944,9 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         return GovernedAnswerComposerOutput(
             answer_markdown="Chlor ist als Medium im Arbeitsstand. Um welche Chlorform geht es?",
             confidence_note=None,
@@ -889,14 +957,20 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
         await _run_turn("chlor", pending_question=_pending_medium_question())
     )
     persisted = GovernedSessionState.model_validate(state.model_dump(mode="python"))
-    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+    context = _build_governed_reply_context(
+        result_state=state, persisted_state=persisted
+    )
 
-    payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_answer_markdown)
+    payload = _assemble_governed_stream_payload(
+        context=context, visible_reply=state.output_answer_markdown
+    )
 
     assert payload["reply"] == state.output_answer_markdown
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
-    assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
+    assert (
+        payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
+    )
     trace = payload["run_meta"]["answer_trace"]
     assert trace["reply_source"] == "governed_output_contract"
     assert trace["answer_markdown_source"] == "governed_composer"
@@ -909,7 +983,9 @@ async def test_assembly_preserves_deterministic_reply_and_exposes_composer_markd
     assert trace["final_layer_source"] == "governed_composer"
 
 
-def test_materialize_governed_graph_result_extracts_state_from_interrupt_payload() -> None:
+def test_materialize_governed_graph_result_extracts_state_from_interrupt_payload() -> (
+    None
+):
     state = GraphState(
         output_reply="Deterministischer Fallback",
         output_answer_markdown="Komponierte Antwort",
@@ -920,7 +996,9 @@ def test_materialize_governed_graph_result_extracts_state_from_interrupt_payload
         def __init__(self, value: dict) -> None:
             self.value = value
 
-    raw = {"__interrupt__": (FakeInterrupt({"state": state.model_dump(mode="python")}),)}
+    raw = {
+        "__interrupt__": (FakeInterrupt({"state": state.model_dump(mode="python")}),)
+    }
 
     result = _materialize_governed_graph_result(raw)
 
@@ -939,7 +1017,9 @@ def test_assembly_polishes_visible_governed_markdown_before_payload() -> None:
         output_answer_markdown_source="governed_composer",
     )
     persisted = GovernedSessionState.model_validate(state.model_dump(mode="python"))
-    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+    context = _build_governed_reply_context(
+        result_state=state, persisted_state=persisted
+    )
 
     payload = _assemble_governed_stream_payload(context=context)
 
@@ -956,7 +1036,9 @@ async def test_structured_clarification_output_contract_uses_composer_for_visibl
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
     calls: list[str] = []
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         calls.append(request.context.response_class or "")
         return GovernedAnswerComposerOutput(
             answer_markdown="Composer-Antwort: Ich frage als Nächstes gezielt nach dem Medium.",
@@ -981,7 +1063,9 @@ async def test_structured_clarification_composer_disabled_uses_contextual_markdo
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "false")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         pytest.fail("governed composer must not run in full graph while disabled")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -1003,7 +1087,9 @@ async def test_structured_clarification_composer_failure_falls_back_safely(
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         raise RuntimeError("OPENAI_API_KEY=secret-value")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -1023,7 +1109,9 @@ async def test_structured_clarification_assembly_preserves_composed_markdown_fro
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         return GovernedAnswerComposerOutput(
             answer_markdown="Composer-Antwort: Bitte beschreibe kurz das Medium an der Dichtstelle.",
             confidence_note=None,
@@ -1033,16 +1121,28 @@ async def test_structured_clarification_assembly_preserves_composed_markdown_fro
 
     _payload, state = await _run_structured_output_contract()
     persisted = GovernedSessionState.model_validate(state.model_dump(mode="python"))
-    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+    context = _build_governed_reply_context(
+        result_state=state, persisted_state=persisted
+    )
 
-    payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_answer_markdown)
+    payload = _assemble_governed_stream_payload(
+        context=context, visible_reply=state.output_answer_markdown
+    )
 
     assert payload["reply"] == state.output_answer_markdown
     assert payload["answer_markdown"] == state.output_answer_markdown
     assert payload["assistant_message"] == state.output_answer_markdown
-    assert payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
-    assert payload["run_meta"]["answer_trace"]["reply_source"] == "governed_output_contract"
-    assert payload["run_meta"]["answer_trace"]["answer_markdown_source"] == "governed_composer"
+    assert (
+        payload["run_meta"]["governed_answer_composer"]["source"] == "governed_composer"
+    )
+    assert (
+        payload["run_meta"]["answer_trace"]["reply_source"]
+        == "governed_output_contract"
+    )
+    assert (
+        payload["run_meta"]["answer_trace"]["answer_markdown_source"]
+        == "governed_composer"
+    )
     assert payload["run_meta"]["answer_trace"]["composer_attempted"] is True
     assert payload["run_meta"]["answer_trace"]["composer_succeeded"] is True
 
@@ -1053,7 +1153,9 @@ async def test_assembly_traces_governed_composer_fallback_without_leaking_except
 ) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fail_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fail_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         raise RuntimeError("OPENAI_API_KEY=secret-value")
 
     monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", fail_compose)
@@ -1061,9 +1163,13 @@ async def test_assembly_traces_governed_composer_fallback_without_leaking_except
         await _run_turn("chlor", pending_question=_pending_medium_question())
     )
     persisted = GovernedSessionState.model_validate(state.model_dump(mode="python"))
-    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+    context = _build_governed_reply_context(
+        result_state=state, persisted_state=persisted
+    )
 
-    payload = _assemble_governed_stream_payload(context=context, visible_reply=state.output_reply)
+    payload = _assemble_governed_stream_payload(
+        context=context, visible_reply=state.output_reply
+    )
 
     assert payload["reply"] == state.output_answer_markdown
     assert payload["answer_markdown"] == state.output_answer_markdown
@@ -1086,7 +1192,9 @@ def test_assembly_ignores_legacy_visible_reply_when_no_governed_composer_runs() 
         output_response_class="structured_clarification",
     )
     persisted = GovernedSessionState()
-    context = _build_governed_reply_context(result_state=state, persisted_state=persisted)
+    context = _build_governed_reply_context(
+        result_state=state, persisted_state=persisted
+    )
 
     payload = _assemble_governed_stream_payload(
         context=context,
@@ -1117,12 +1225,24 @@ def test_assembly_ignores_legacy_visible_reply_when_no_governed_composer_runs() 
 def test_existing_non_governed_routes_do_not_require_governed_composer() -> None:
     classifier = PreGateClassifier()
 
-    assert classifier.classify("Was bedeutet PFAS für Dichtungen?").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Vergleiche FKM und EPDM für Dichtungen.").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Hallo, wie geht es dir?").classification == PreGateClassification.GREETING
-    assert classifier.classify(
-        "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
-    ).classification == PreGateClassification.DOMAIN_INQUIRY
+    assert (
+        classifier.classify("Was bedeutet PFAS für Dichtungen?").classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify("Vergleiche FKM und EPDM für Dichtungen.").classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify("Hallo, wie geht es dir?").classification
+        == PreGateClassification.GREETING
+    )
+    assert (
+        classifier.classify(
+            "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
+        ).classification
+        == PreGateClassification.DOMAIN_INQUIRY
+    )
 
 
 def test_governed_answer_composer_prompt_uses_compact_context() -> None:
@@ -1130,8 +1250,7 @@ def test_governed_answer_composer_prompt_uses_compact_context() -> None:
     context = GovernedAnswerContext(
         latest_user_message="Salzwasser",
         conversation_messages=[
-            {"role": "user", "content": f"{index}: {huge}"}
-            for index in range(20)
+            {"role": "user", "content": f"{index}: {huge}"} for index in range(20)
         ],
         state_snapshot={"large_internal_state": huge},
         pending_question=_pending_medium_question(),
@@ -1182,7 +1301,9 @@ def test_governed_answer_composer_prompt_uses_compact_context() -> None:
         "answer_goal",
     }
     missing_required = required_keys - set(governed_context)
-    assert not missing_required, f"compact context dropped wording-critical keys: {missing_required}"
+    assert (
+        not missing_required
+    ), f"compact context dropped wording-critical keys: {missing_required}"
     assert governed_context["next_best_question"] == "Welche Temperatur liegt an?"
     assert governed_context["pending_question"] is not None
 
@@ -1204,7 +1325,9 @@ def test_complete_answer_rejects_structural_no_go_phrase() -> None:
 
 def test_complete_answer_passes_clean_governed_text() -> None:
     """A clean, natural governed answer is unaffected by the structural guard."""
-    clean = "Okay, damit kann ich weiterarbeiten. Welche Temperatur sieht die Dichtstelle?"
+    clean = (
+        "Okay, damit kann ich weiterarbeiten. Welche Temperatur sieht die Dichtstelle?"
+    )
     # Must not raise.
     composer_module._validate_complete_answer(clean, GovernedAnswerContext())
 
@@ -1213,7 +1336,9 @@ def test_structural_guard_ignores_affirmative_release_wording() -> None:
     """Structural check is purely structural; release wording stays the safety guard's job."""
     # No structural protocol phrase present -> structural guard is silent even
     # though release-style wording exists (that path is owned by the safety guard).
-    composer_module._validate_structural_no_go("Garantiert dicht bei diesen Bedingungen.")
+    composer_module._validate_structural_no_go(
+        "Garantiert dicht bei diesen Bedingungen."
+    )
 
 
 @pytest.mark.asyncio
@@ -1269,7 +1394,9 @@ async def test_stream_repairs_structural_no_go_phrase_with_live_reset(
         async def create(self, **kwargs):
             self.calls.append(kwargs)
             assert kwargs["stream"] is True
-            return FakeStream([first_answer] if len(self.calls) == 1 else [repaired_answer])
+            return FakeStream(
+                [first_answer] if len(self.calls) == 1 else [repaired_answer]
+            )
 
     completions = FakeCompletions()
 
@@ -1298,7 +1425,12 @@ async def test_stream_repairs_structural_no_go_phrase_with_live_reset(
         )
     ]
 
-    assert [event.event_type for event in events] == ["chunk", "reset", "chunk", "final"]
+    assert [event.event_type for event in events] == [
+        "chunk",
+        "reset",
+        "chunk",
+        "final",
+    ]
     assert events[0].text == first_answer
     assert events[2].text == repaired_answer
     assert events[-1].output is not None
@@ -1314,7 +1446,9 @@ def test_safety_guard_still_hard_rejects_release_wording() -> None:
         composer_module._validate_answer_markdown("Die Lösung ist freigegeben.")
     assert str(exc.value) == "forbidden_engineering_claim"
     # Safety reasons are NOT recoverable: no repair re-prompt, immediate fallback.
-    assert "forbidden_engineering_claim" not in composer_module._RECOVERABLE_REPAIR_REASONS
+    assert (
+        "forbidden_engineering_claim" not in composer_module._RECOVERABLE_REPAIR_REASONS
+    )
 
 
 @pytest.mark.asyncio
@@ -1337,7 +1471,9 @@ async def test_exhausted_structural_repair_emits_graceful_fallback(
         # Simulates first attempt + repair both still tripping the structural guard.
         raise GovernedAnswerComposerError("structural_no_go_phrase")
 
-    monkeypatch.setattr(composer_module.GovernedAnswerComposer, "compose", exhausted_compose)
+    monkeypatch.setattr(
+        composer_module.GovernedAnswerComposer, "compose", exhausted_compose
+    )
     state = await _run_turn("chlor", pending_question=_pending_medium_question())
 
     # No exception escapes -> turn does not crash.

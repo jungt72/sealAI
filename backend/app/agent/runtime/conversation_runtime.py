@@ -20,6 +20,7 @@ Productive SSE wire format:
     data: {"type": "state_update", "reply": "..."}\n\n
     data: [DONE]\n\n
 """
+
 from __future__ import annotations
 
 import json
@@ -32,7 +33,9 @@ from typing import Any, AsyncGenerator, Literal
 from app.agent.communication.templates import render_communication_template
 from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
-from app.agent.runtime.clarification_priority import select_next_focus_from_known_context
+from app.agent.runtime.clarification_priority import (
+    select_next_focus_from_known_context,
+)
 from app.agent.runtime.reply_composition import (
     _build_turn_context_instruction,
     build_conversation_phase_prompt,
@@ -54,7 +57,9 @@ log = logging.getLogger(__name__)
 
 _prompt_builder = PromptBuilder()
 
-_GREETING_RE = re.compile(r"^\s*(hallo|hi|hey|guten tag|guten morgen|moin)\b[\s!,.?]*$", re.IGNORECASE)
+_GREETING_RE = re.compile(
+    r"^\s*(hallo|hi|hey|guten tag|guten morgen|moin)\b[\s!,.?]*$", re.IGNORECASE
+)
 _SMALLTALK_RE = re.compile(
     r"^\s*((hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend))[\s,!.?]+)?"
     r"(wie\s+geht('?s|\s+es\s+dir)(?:\s+heute)?|hallo|hi|hey|moin|servus|guten\s+(tag|morgen|abend)|danke|vielen\s+dank|dankesch[oö]n|merci|thanks|thank\s+you|prima|super|klasse|top|perfekt|sehr\s+gut|klingt\s+gut|passt|gern|gerne|los\s+geht('?s)?|lass\s+uns\s+loslegen|ich\s+bin\s+(auch\s+)?gespannt|tsch[üu]ss|ciao|bye)"
@@ -77,10 +82,19 @@ _ORIENTATION_QUESTION_RE = re.compile(
     r"^\s*(was\s+ist|was\s+bedeutet|wie\s+funktioniert|erklaer|erklär|wofuer|wofür|wann\s+nimmt\s+man)\b",
     re.IGNORECASE,
 )
-_LEAKAGE_RE = re.compile(r"\b(leck\w*|leckage\w*|undicht\w*|dichtheit\w*)\b", re.IGNORECASE)
-_PROBLEM_RE = re.compile(r"\b(problem\w*|ausfall\w*|stoer\w*|stör\w*|schaden\w*|fehler\w*|undicht\w*|leckage\w*)\b", re.IGNORECASE)
-_UNCERTAINTY_RE = re.compile(r"\b(unsicher|unklar|weiss nicht|weiß nicht|nicht sicher|offen)\b", re.IGNORECASE)
-_CORRECTION_RE = re.compile(r"\b(korrigier\w*|korrektur|nicht\s+[^.?!]+\s+sondern|stattdessen)\b", re.IGNORECASE)
+_LEAKAGE_RE = re.compile(
+    r"\b(leck\w*|leckage\w*|undicht\w*|dichtheit\w*)\b", re.IGNORECASE
+)
+_PROBLEM_RE = re.compile(
+    r"\b(problem\w*|ausfall\w*|stoer\w*|stör\w*|schaden\w*|fehler\w*|undicht\w*|leckage\w*)\b",
+    re.IGNORECASE,
+)
+_UNCERTAINTY_RE = re.compile(
+    r"\b(unsicher|unklar|weiss nicht|weiß nicht|nicht sicher|offen)\b", re.IGNORECASE
+)
+_CORRECTION_RE = re.compile(
+    r"\b(korrigier\w*|korrektur|nicht\s+[^.?!]+\s+sondern|stattdessen)\b", re.IGNORECASE
+)
 
 # Detects medium mentions in user turns — used to suppress repeated "Welches Medium?" questions
 # when the user has already mentioned a medium in prior conversation history.
@@ -101,6 +115,7 @@ ConversationLightMode = Literal["CONVERSATION", "EXPLORATION"]
 # SSE helpers
 # ---------------------------------------------------------------------------
 
+
 def _sse(event_type: str, text: str) -> str:
     return f"data: {json.dumps({'type': event_type, 'text': text})}\n\n"
 
@@ -113,7 +128,9 @@ def _sse_error(message: str) -> str:
     return f"data: {json.dumps({'type': 'error', 'message': message})}\n\n"
 
 
-def _conversation_visible_event(event_type: str, text: str, **metadata: Any) -> dict[str, Any]:
+def _conversation_visible_event(
+    event_type: str, text: str, **metadata: Any
+) -> dict[str, Any]:
     """Single exit seam for visible conversation text events."""
     event: dict[str, Any] = {"type": event_type, "text": text}
     event.update(metadata)
@@ -146,6 +163,7 @@ def _conversation_state_update_event(
 # ---------------------------------------------------------------------------
 # History helpers
 # ---------------------------------------------------------------------------
+
 
 def _case_summary_text(case_summary: Any) -> str:
     if case_summary is None:
@@ -193,7 +211,8 @@ def _build_messages(
     system_prompt = (
         _prompt_builder.conversation(case_summary=None)
         if mode == "CONVERSATION"
-        else phase_prompt or _prompt_builder.conversation(case_summary=case_summary_text or None)
+        else phase_prompt
+        or _prompt_builder.conversation(case_summary=case_summary_text or None)
     )
     msgs: list[dict[str, str]] = []
     if system_prompt:
@@ -230,7 +249,11 @@ def _build_messages(
             include_reason=False,
         )
     )
-    if phase_prompt is not None and strategy_instruction and turn_context.primary_question:
+    if (
+        phase_prompt is not None
+        and strategy_instruction
+        and turn_context.primary_question
+    ):
         strategy_instruction = (
             f"{strategy_instruction}\n"
             "- Relevanter offener Fokus: siehe Phase-Prompt."
@@ -244,14 +267,16 @@ def _build_messages(
     # Skipped for CONVERSATION mode (smalltalk) — state facts must NOT surface
     # in greetings, thanks, or simple questions.
     if mode != "CONVERSATION" and case_summary_text:
-        msgs.append({
-            "role": "system",
-            "content": (
-                "BEREITS BEKANNTE PARAMETER — DIESE NICHT ERNEUT ERFRAGEN:\n"
-                + case_summary_text
-                + "\n\nFrage KEINEN dieser Parameter erneut ab. Baue stattdessen auf ihnen auf."
-            ),
-        })
+        msgs.append(
+            {
+                "role": "system",
+                "content": (
+                    "BEREITS BEKANNTE PARAMETER — DIESE NICHT ERNEUT ERFRAGEN:\n"
+                    + case_summary_text
+                    + "\n\nFrage KEINEN dieser Parameter erneut ab. Baue stattdessen auf ihnen auf."
+                ),
+            }
+        )
     msgs.append({"role": "user", "content": message})
     return msgs
 
@@ -304,7 +329,9 @@ def _iter_normalized_history(history: list[Any] | None):
 
 
 def _count_user_turns(history: list[Any] | None) -> int:
-    return sum(1 for turn in _iter_normalized_history(history) if turn["role"] == "user")
+    return sum(
+        1 for turn in _iter_normalized_history(history) if turn["role"] == "user"
+    )
 
 
 def _last_user_turn_text(message: str, history: list[Any] | None) -> str:
@@ -388,7 +415,9 @@ def _is_smalltalk_turn(message: str) -> bool:
     return bool(_SMALLTALK_RE.search(str(message or "").strip()))
 
 
-def _suppress_preview_stream_for_smalltalk(message: str, mode: ConversationLightMode | None) -> bool:
+def _suppress_preview_stream_for_smalltalk(
+    message: str, mode: ConversationLightMode | None
+) -> bool:
     """Avoid showing unguarded draft tokens for social turns.
 
     The final smalltalk reply may be lightly normalized for voice and safety.
@@ -399,7 +428,9 @@ def _suppress_preview_stream_for_smalltalk(message: str, mode: ConversationLight
     return mode == "CONVERSATION" and _is_smalltalk_turn(message)
 
 
-def _trim_smalltalk_technical_capture(reply: str, *, message: str, mode: ConversationLightMode | None) -> str:
+def _trim_smalltalk_technical_capture(
+    reply: str, *, message: str, mode: ConversationLightMode | None
+) -> str:
     text = str(reply or "").strip()
     if not text or mode != "CONVERSATION" or not _is_smalltalk_turn(message):
         return text
@@ -542,13 +573,17 @@ def _build_conversation_strategy_contract(
     if is_correction:
         user_signal_mirror = "Verstanden, ich gehe jetzt von deiner Korrektur aus"
     elif is_problem:
-        user_signal_mirror = "Verstanden, du beschreibst ein konkretes Leckage- oder Ausfallbild"
+        user_signal_mirror = (
+            "Verstanden, du beschreibst ein konkretes Leckage- oder Ausfallbild"
+        )
     elif is_goal:
         user_signal_mirror = "Gerne unterstütze ich dich dabei"
     elif is_uncertain:
         user_signal_mirror = "Verstanden, die Lage ist noch nicht ganz klar"
     elif has_technical_markers:
-        user_signal_mirror = "Verstanden, damit liegen schon technische Randbedingungen vor"
+        user_signal_mirror = (
+            "Verstanden, damit liegen schon technische Randbedingungen vor"
+        )
     else:
         user_signal_mirror = ""
 
@@ -560,7 +595,11 @@ def _build_conversation_strategy_contract(
                 None,
                 [
                     text,
-                    *(turn["content"] for turn in list(_iter_normalized_history(history))[-4:] if turn["role"] == "user"),
+                    *(
+                        turn["content"]
+                        for turn in list(_iter_normalized_history(history))[-4:]
+                        if turn["role"] == "user"
+                    ),
                     case_summary_text,
                 ],
             )
@@ -589,7 +628,11 @@ def _build_conversation_strategy_contract(
         elif focus_priority is not None and has_case_context:
             conversation_phase = "narrowing"
         else:
-            conversation_phase = "exploration" if turn_index in (2, 3) and not has_case_context else "recommendation"
+            conversation_phase = (
+                "exploration"
+                if turn_index in (2, 3) and not has_case_context
+                else "recommendation"
+            )
 
     if conversation_phase == "rapport":
         return ConversationStrategyContract(
@@ -616,13 +659,17 @@ def _build_conversation_strategy_contract(
             primary_question_reason = "Der sichtbarste Auftretensmoment macht die naechste Eingrenzung am belastbarsten."
         elif is_goal:
             primary_question = "Welche Anwendung oder Situation sollen wir uns dafuer als Erstes genauer ansehen?"
-            primary_question_reason = "Der erste Anwendungsanker setzt den sinnvollsten weiteren Fokus."
+            primary_question_reason = (
+                "Der erste Anwendungsanker setzt den sinnvollsten weiteren Fokus."
+            )
         elif is_uncertain:
             primary_question = "Welche Stelle der Situation ist fuer dich im Moment noch am unklarsten?"
             primary_question_reason = "Die groesste Unklarheit zeigt, wo wir zuerst Struktur schaffen sollten."
         else:
             primary_question = "Welche Situation sollen wir uns als Naechstes gemeinsam genauer ansehen?"
-            primary_question_reason = "So setzen wir den naechsten Schritt auf den relevantesten Aspekt."
+            primary_question_reason = (
+                "So setzen wir den naechsten Schritt auf den relevantesten Aspekt."
+            )
         return ConversationStrategyContract(
             conversation_phase="exploration",
             turn_goal="expand_case_understanding",
@@ -656,7 +703,8 @@ def _build_conversation_strategy_contract(
         return ConversationStrategyContract(
             conversation_phase="narrowing",
             turn_goal="clarify_primary_open_point",
-            user_signal_mirror=user_signal_mirror or "Dann setze ich jetzt den naechsten technischen Hebel.",
+            user_signal_mirror=user_signal_mirror
+            or "Dann setze ich jetzt den naechsten technischen Hebel.",
             primary_question=focus_priority.question,
             primary_question_reason=focus_priority.reason,
             response_mode="single_question",
@@ -671,7 +719,10 @@ def _build_conversation_strategy_contract(
         response_mode="single_question",
     )
 
-def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str, list[dict[str, Any]]]:
+
+def _responses_input_from_messages(
+    messages: list[dict[str, str]],
+) -> tuple[str, list[dict[str, Any]]]:
     instructions: list[str] = []
     response_input: list[dict[str, Any]] = []
     for message in messages:
@@ -746,6 +797,7 @@ def _text_from_stream_chunk(chunk: Any) -> str | None:
 # Core conversation execution
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ConversationResult:
     reply_text: str
@@ -797,7 +849,9 @@ async def iter_conversation_events(
     if direct_reply is not None:
         final_reply = str(direct_reply or "").strip()
         if final_reply:
-            final_reply = str(render_response(final_reply, path="CONVERSATION").text or final_reply).strip()
+            final_reply = str(
+                render_response(final_reply, path="CONVERSATION").text or final_reply
+            ).strip()
             final_reply = _normalize_informal_address(final_reply)
         yield _conversation_state_update_event(
             reply=final_reply,
@@ -810,7 +864,9 @@ async def iter_conversation_events(
         return
 
     client, model = get_async_llm("conversation")
-    messages = _build_messages(message, effective_history, case_summary=case_summary, mode=mode)
+    messages = _build_messages(
+        message, effective_history, case_summary=case_summary, mode=mode
+    )
     suppress_preview_stream = _suppress_preview_stream_for_smalltalk(message, mode)
 
     accumulated: list[str] = []
@@ -825,10 +881,14 @@ async def iter_conversation_events(
                 continue
             accumulated.append(clean)
             if not suppress_preview_stream:
-                yield _conversation_visible_event("text_chunk", clean, preview_only=True)
+                yield _conversation_visible_event(
+                    "text_chunk", clean, preview_only=True
+                )
 
     except Exception as exc:
-        log.error("[conversation_runtime] LLM stream error: %s: %s", type(exc).__name__, exc)
+        log.error(
+            "[conversation_runtime] LLM stream error: %s: %s", type(exc).__name__, exc
+        )
         yield {
             "type": "error",
             "message": render_communication_template(
@@ -841,14 +901,18 @@ async def iter_conversation_events(
     full_text = "".join(accumulated)
     rendered = render_response(full_text, path="CONVERSATION")
     final_reply = str(rendered.text or "").strip()
-    final_reply = _trim_smalltalk_technical_capture(final_reply, message=message, mode=mode)
+    final_reply = _trim_smalltalk_technical_capture(
+        final_reply, message=message, mode=mode
+    )
     final_reply = compose_user_facing_mouth_reply(
         final_reply,
         turn_context,
         response_class="conversational_answer",
     )
     if final_reply:
-        final_reply = str(render_response(final_reply, path="CONVERSATION").text or final_reply).strip()
+        final_reply = str(
+            render_response(final_reply, path="CONVERSATION").text or final_reply
+        ).strip()
         final_reply = _normalize_informal_address(final_reply)
 
     if rendered.policy_violation:
@@ -904,7 +968,9 @@ async def run_conversation(
             continue
         if event_type == "error":
             message_text = str(event.get("message") or "").strip()
-            return ConversationResult(reply_text=message_text, error_message=message_text or None)
+            return ConversationResult(
+                reply_text=message_text, error_message=message_text or None
+            )
     return ConversationResult(reply_text=reply_text.strip())
 
 

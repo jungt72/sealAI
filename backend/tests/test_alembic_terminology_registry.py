@@ -167,8 +167,13 @@ def test_terminology_registry_constraints_and_indexes_exist(test_db_engine_at_he
             "term_audit_log",
         )
     }
-    assert "ix_generic_concepts_engineering_path" in indexes_by_table["generic_concepts"]
-    assert "ix_generic_concepts_sealing_material_family" in indexes_by_table["generic_concepts"]
+    assert (
+        "ix_generic_concepts_engineering_path" in indexes_by_table["generic_concepts"]
+    )
+    assert (
+        "ix_generic_concepts_sealing_material_family"
+        in indexes_by_table["generic_concepts"]
+    )
     assert "uq_product_terms_normalized_scope" in indexes_by_table["product_terms"]
     assert "ix_product_terms_normalized_term" in indexes_by_table["product_terms"]
     assert "uq_term_mappings_source_window" in indexes_by_table["term_mappings"]
@@ -236,15 +241,19 @@ def test_minimal_valid_terminology_registry_insert_succeeds(test_db_engine_at_he
             )
         )
 
-        mapping = conn.execute(
-            text(
-                """
+        mapping = (
+            conn.execute(
+                text(
+                    """
                 SELECT source_type, confidence, reviewer_status
                 FROM term_mappings
                 WHERE mapping_id = 'mapping-variseal-1'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         assert mapping["source_type"] == "manufacturer_datasheet"
         assert mapping["confidence"] == 5
         assert mapping["reviewer_status"] == "published"

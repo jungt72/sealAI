@@ -75,7 +75,9 @@ class CommunicationRuntimeV8DecisionProposal:
 
 
 def _communication_runtime_llm_enabled() -> bool:
-    return os.environ.get("SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM", "false").lower() in {
+    return os.environ.get(
+        "SEALAI_ENABLE_COMMUNICATION_RUNTIME_LLM", "false"
+    ).lower() in {
         "1",
         "true",
         "yes",
@@ -98,7 +100,9 @@ class CommunicationRuntimeV8(ConversationControllerV7):
             return deterministic
         return self._apply_safe_llm_proposal(payload, deterministic, proposal)
 
-    def decide_deterministic(self, payload: ConversationControllerInput) -> TurnDecision:
+    def decide_deterministic(
+        self, payload: ConversationControllerInput
+    ) -> TurnDecision:
         # V8 priority: safety, pending slot, process/meta, side questions,
         # knowledge, smalltalk, then governed intake.
         if payload.pre_gate_classification is PreGateClassification.BLOCKED:
@@ -115,12 +119,15 @@ class CommunicationRuntimeV8(ConversationControllerV7):
                 return self._active_case_process_question(payload)
             return self._meta(payload)
 
-        if payload.active_case_exists and self._looks_like_case_specific_engineering_request(
-            payload.user_message
+        if (
+            payload.active_case_exists
+            and self._looks_like_case_specific_engineering_request(payload.user_message)
         ):
             return self._governed_intake(payload)
 
-        if payload.active_case_exists and self._looks_like_side_question(payload.user_message):
+        if payload.active_case_exists and self._looks_like_side_question(
+            payload.user_message
+        ):
             return self._knowledge_or_side_question(payload)
 
         if payload.pre_gate_classification in {
@@ -133,7 +140,11 @@ class CommunicationRuntimeV8(ConversationControllerV7):
             return self._smalltalk(payload)
 
         if payload.pre_gate_classification is PreGateClassification.META_QUESTION:
-            return self._active_case_process_question(payload) if payload.active_case_exists else self._meta(payload)
+            return (
+                self._active_case_process_question(payload)
+                if payload.active_case_exists
+                else self._meta(payload)
+            )
 
         return self._governed_intake(payload)
 
@@ -254,7 +265,8 @@ class CommunicationRuntimeV8(ConversationControllerV7):
             payload.slot_answer_binding is not None
             and current_mode_value == AnswerMode.PENDING_SLOT_ANSWER.value
             and proposal.intent in {"knowledge", "active_case_side_question"}
-            and classify_message_as_knowledge_side_question(payload.user_message) is None
+            and classify_message_as_knowledge_side_question(payload.user_message)
+            is None
         ):
             return deterministic
         if current_mode_value == AnswerMode.TECHNICAL_CASE_CHALLENGE.value:
@@ -264,21 +276,38 @@ class CommunicationRuntimeV8(ConversationControllerV7):
             AnswerMode.PENDING_SLOT_ANSWER.value,
             AnswerMode.TECHNICAL_CASE_CHALLENGE.value,
             AnswerMode.GOVERNED_INTAKE.value,
-        } and proposal.intent not in {"knowledge", "active_case_side_question", "smalltalk", "meta"}:
+        } and proposal.intent not in {
+            "knowledge",
+            "active_case_side_question",
+            "smalltalk",
+            "meta",
+        }:
             return deterministic
 
-        if proposal.intent == "smalltalk" and not contains_concrete_case_marker(payload.user_message):
+        if proposal.intent == "smalltalk" and not contains_concrete_case_marker(
+            payload.user_message
+        ):
             return self._smalltalk(payload)
 
         if proposal.intent == "meta":
-            return self._active_case_process_question(payload) if payload.active_case_exists else self._meta(payload)
+            return (
+                self._active_case_process_question(payload)
+                if payload.active_case_exists
+                else self._meta(payload)
+            )
 
         if proposal.intent in {"knowledge", "active_case_side_question"}:
             # Concrete operating data still belongs to governed intake.
             if contains_concrete_case_marker(payload.user_message):
                 return deterministic
-            if classify_message_as_knowledge_side_question(payload.user_message) is None:
-                if proposal.intent != "knowledge" or not has_technical_knowledge_subject(payload.user_message):
+            if (
+                classify_message_as_knowledge_side_question(payload.user_message)
+                is None
+            ):
+                if (
+                    proposal.intent != "knowledge"
+                    or not has_technical_knowledge_subject(payload.user_message)
+                ):
                     return deterministic
             return self._knowledge_or_side_question(payload)
 
@@ -325,7 +354,10 @@ async def _create_completion_with_registry_fallback(
         )
     except Exception as exc:  # noqa: BLE001
         fallback_model = get_registry_default_model_for_role(role)
-        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+        if (
+            model != fallback_model
+            and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES
+        ):
             log.warning(
                 "[communication_runtime_v8] configured model rejected; retrying registry default"
             )
@@ -401,7 +433,9 @@ def _answer_mode_value(decision: TurnDecision) -> str:
     return str(getattr(mode, "value", mode) or "")
 
 
-def _responses_input_from_messages(messages: list[dict[str, str]]) -> tuple[str, list[dict[str, Any]]]:
+def _responses_input_from_messages(
+    messages: list[dict[str, str]],
+) -> tuple[str, list[dict[str, Any]]]:
     instructions: list[str] = []
     response_input: list[dict[str, Any]] = []
     for message in messages:

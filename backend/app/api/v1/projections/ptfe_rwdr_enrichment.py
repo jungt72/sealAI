@@ -155,31 +155,31 @@ def _build_ptfe_rwdr_case_for_services(profile: Dict[str, Any]) -> Dict[str, Any
     if shaft_diameter is not None:
         case.setdefault("shaft", {})["diameter_mm"] = shaft_diameter
     if speed_rpm is not None:
-        case.setdefault("operating", {}).setdefault("shaft_speed", {})[
-            "rpm_nom"
-        ] = speed_rpm
+        case.setdefault("operating", {}).setdefault("shaft_speed", {})["rpm_nom"] = (
+            speed_rpm
+        )
     if pressure_bar is not None:
-        case.setdefault("operating", {}).setdefault("pressure", {})[
-            "max_bar"
-        ] = pressure_bar
+        case.setdefault("operating", {}).setdefault("pressure", {})["max_bar"] = (
+            pressure_bar
+        )
     if sealing_type not in (None, ""):
         case["sealing_type"] = str(sealing_type)
     if temperature_c is not None:
-        case.setdefault("operating", {}).setdefault("temperature", {})[
-            "max_c"
-        ] = temperature_c
+        case.setdefault("operating", {}).setdefault("temperature", {})["max_c"] = (
+            temperature_c
+        )
     if temperature_nom_c is not None:
-        case.setdefault("operating", {}).setdefault("temperature", {})[
-            "nom_c"
-        ] = temperature_nom_c
+        case.setdefault("operating", {}).setdefault("temperature", {})["nom_c"] = (
+            temperature_nom_c
+        )
     if radial_force is not None:
-        case.setdefault("rwdr", {}).setdefault("lip", {})[
-            "radial_force_n_per_mm"
-        ] = radial_force
+        case.setdefault("rwdr", {}).setdefault("lip", {})["radial_force_n_per_mm"] = (
+            radial_force
+        )
     if contact_width is not None:
-        case.setdefault("rwdr", {}).setdefault("lip", {})[
-            "contact_width_mm"
-        ] = contact_width
+        case.setdefault("rwdr", {}).setdefault("lip", {})["contact_width_mm"] = (
+            contact_width
+        )
     if extrusion_gap is not None:
         case.setdefault("rwdr", {})["extrusion_gap_mm"] = extrusion_gap
     if years is not None:

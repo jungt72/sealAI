@@ -135,7 +135,9 @@ def redact_known_sensitive_fields(payload: Any) -> AnonymizationResult:
 def summarize_redactions(result: AnonymizationResult) -> dict[str, Any]:
     return {
         "redaction_count": result.redaction_count,
-        "redaction_categories": tuple(category.value for category in result.redaction_categories),
+        "redaction_categories": tuple(
+            category.value for category in result.redaction_categories
+        ),
         "warnings": result.warnings,
     }
 
@@ -154,7 +156,9 @@ class AnonymizationService:
         redacted, events = self._redact_text(str(text), path="")
         return _result(redacted, events)
 
-    def _redact_value(self, value: Any, *, path: str) -> tuple[Any, list[RedactionEvent]]:
+    def _redact_value(
+        self, value: Any, *, path: str
+    ) -> tuple[Any, list[RedactionEvent]]:
         if isinstance(value, Mapping):
             return self._redact_mapping(value, path=path)
         if isinstance(value, list):
@@ -250,7 +254,9 @@ class AnonymizationService:
             redacted,
         )
         events.extend(
-            RedactionEvent(path, RedactionCategory.PROJECT_CODE, RedactionAction.REPLACED)
+            RedactionEvent(
+                path, RedactionCategory.PROJECT_CODE, RedactionAction.REPLACED
+            )
             for _ in range(count)
         )
 
@@ -282,19 +288,45 @@ def _category_for_key(key: str, *, parent_path: str) -> RedactionCategory | None
         return RedactionCategory.INTERNAL_METADATA
     if normalized in {"email", "contact_email", "user_email", "customer_email"}:
         return RedactionCategory.EMAIL
-    if normalized in {"phone", "telephone", "contact_phone", "user_phone", "customer_phone"}:
+    if normalized in {
+        "phone",
+        "telephone",
+        "contact_phone",
+        "user_phone",
+        "customer_phone",
+    }:
         return RedactionCategory.PHONE
     if normalized in {"contact_identifier", "contact_id", "contact"}:
         return RedactionCategory.CONTACT_IDENTIFIER
-    if normalized in {"address", "street_address", "billing_address", "shipping_address"}:
+    if normalized in {
+        "address",
+        "street_address",
+        "billing_address",
+        "shipping_address",
+    }:
         return RedactionCategory.ADDRESS
-    if normalized in {"first_name", "last_name", "person_name", "user_name", "customer_name", "name"}:
+    if normalized in {
+        "first_name",
+        "last_name",
+        "person_name",
+        "user_name",
+        "customer_name",
+        "name",
+    }:
         return RedactionCategory.PERSON_NAME
-    if normalized in {"company_name", "legal_name", "customer_company", "organization_name"} and (
-        "customer" in parent or "internal" in parent or "contact" in parent
-    ):
+    if normalized in {
+        "company_name",
+        "legal_name",
+        "customer_company",
+        "organization_name",
+    } and ("customer" in parent or "internal" in parent or "contact" in parent):
         return RedactionCategory.COMPANY_IDENTIFIER
-    if normalized in {"project_code", "project_id", "customer_project_code", "internal_project_code"}:
+    if normalized in {
+        "project_code",
+        "project_id",
+        "customer_project_code",
+        "internal_project_code",
+    }:
         return RedactionCategory.PROJECT_CODE
     if normalized in CUSTOMER_ARTICLE_KEYS:
         return RedactionCategory.CUSTOMER_ARTICLE_NUMBER
@@ -346,7 +378,9 @@ def _is_public_article_reference(container: Mapping[Any, Any], key: str) -> bool
     )
 
 
-def _is_customer_article_reference_value(container: Mapping[Any, Any], key: str) -> bool:
+def _is_customer_article_reference_value(
+    container: Mapping[Any, Any], key: str
+) -> bool:
     normalized = _normalize_key(key)
     reference_type = _normalize_key(str(container.get("reference_type") or ""))
     return normalized == "value" and reference_type in CUSTOMER_ARTICLE_KEYS

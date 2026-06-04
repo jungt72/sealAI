@@ -35,4 +35,3 @@ def upgrade():
 
 def downgrade():
     op.drop_table("user_profiles", schema="public")
-

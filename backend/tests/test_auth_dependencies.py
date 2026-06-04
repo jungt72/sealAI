@@ -19,7 +19,9 @@ class DummyWebSocket:
         self.closed_codes.append(code)
 
 
-def test_get_current_request_user_rejects_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_current_request_user_rejects_invalid_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_verify(token: str) -> dict[str, str]:
         raise ValueError("expired access token")
 
@@ -32,7 +34,9 @@ def test_get_current_request_user_rejects_invalid_token(monkeypatch: pytest.Monk
     assert "expired access token" in str(exc_info.value.detail)
 
 
-def test_bypass_auth_is_disabled_outside_dev_or_test(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bypass_auth_is_disabled_outside_dev_or_test(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("BYPASS_AUTH", "1")
     # Outside dev/test, the bypass branch must stay disabled. Replace the settings
     # reference the dependency resolves (`getattr(settings, "is_dev_or_test", …)`)
@@ -51,7 +55,9 @@ def test_bypass_auth_is_disabled_outside_dev_or_test(monkeypatch: pytest.MonkeyP
     assert exc_info.value.status_code == 401
 
 
-def test_get_current_ws_user_rejects_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_current_ws_user_rejects_invalid_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fake_verify(token: str) -> dict[str, str]:
         raise ValueError("jwt invalid")
 

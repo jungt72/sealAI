@@ -92,7 +92,9 @@ def _base_context(**overrides):
     return context
 
 
-def test_build_success_for_clean_technical_context(service: InquiryExtractService) -> None:
+def test_build_success_for_clean_technical_context(
+    service: InquiryExtractService,
+) -> None:
     extract = service.build_inquiry_extract(_base_context())
 
     assert extract.case_id == "case-123"
@@ -115,11 +117,17 @@ def test_dispatch_target_is_persistable_metadata_not_payload(
     assert "dispatched_to_manufacturer_id" not in extract.payload["meta"]
 
 
-def test_build_payload_helper_matches_service_payload(service: InquiryExtractService) -> None:
+def test_build_payload_helper_matches_service_payload(
+    service: InquiryExtractService,
+) -> None:
     context = _base_context()
 
-    assert build_inquiry_extract_payload(context) == service.build_inquiry_extract_payload(context)
-    assert build_inquiry_extract(context).payload == service.build_inquiry_extract_payload(context)
+    assert build_inquiry_extract_payload(
+        context
+    ) == service.build_inquiry_extract_payload(context)
+    assert build_inquiry_extract(
+        context
+    ).payload == service.build_inquiry_extract_payload(context)
 
 
 def test_request_type_engineering_path_and_material_family_are_projected(
@@ -134,7 +142,9 @@ def test_request_type_engineering_path_and_material_family_are_projected(
     }
 
 
-def test_missing_fields_are_projected_as_open_points(service: InquiryExtractService) -> None:
+def test_missing_fields_are_projected_as_open_points(
+    service: InquiryExtractService,
+) -> None:
     payload = service.build_inquiry_extract_payload(_base_context())
 
     assert payload["open_points"] == ("shaft_surface_finish", "lead_time_criticality")
@@ -253,7 +263,9 @@ def test_customer_or_internal_root_metadata_is_not_copied(
     service: InquiryExtractService,
     root_key: str,
 ) -> None:
-    payload = service.build_inquiry_extract_payload(_base_context(**{root_key: {"secret": True}}))
+    payload = service.build_inquiry_extract_payload(
+        _base_context(**{root_key: {"secret": True}})
+    )
 
     assert root_key not in payload
 
@@ -310,7 +322,9 @@ def test_customer_article_number_from_unapproved_field_is_not_included(
     assert "article_references" not in payload
 
 
-def test_explicit_neutral_article_reference_is_included(service: InquiryExtractService) -> None:
+def test_explicit_neutral_article_reference_is_included(
+    service: InquiryExtractService,
+) -> None:
     payload = service.build_inquiry_extract_payload(
         _base_context(
             article_references=[
@@ -346,7 +360,9 @@ def test_free_note_text_is_not_copied_even_when_note_is_approved(
     )
 
 
-def test_unapproved_manufacturer_note_is_not_included(service: InquiryExtractService) -> None:
+def test_unapproved_manufacturer_note_is_not_included(
+    service: InquiryExtractService,
+) -> None:
     payload = service.build_inquiry_extract_payload(
         _base_context(
             manufacturer_facing_notes=[
@@ -362,7 +378,9 @@ def test_unapproved_manufacturer_note_is_not_included(service: InquiryExtractSer
     assert "manufacturer_facing_notes" not in payload
 
 
-def test_optional_fields_can_be_missing_without_breaking(service: InquiryExtractService) -> None:
+def test_optional_fields_can_be_missing_without_breaking(
+    service: InquiryExtractService,
+) -> None:
     payload = service.build_inquiry_extract_payload(
         {
             "case_id": "case-min",
@@ -398,14 +416,18 @@ def test_required_extract_fields_are_validated(
         service.build_inquiry_extract(context)
 
 
-def test_artifact_type_and_source_kind_are_validated(service: InquiryExtractService) -> None:
+def test_artifact_type_and_source_kind_are_validated(
+    service: InquiryExtractService,
+) -> None:
     with pytest.raises(InquiryExtractValidationError, match="artifact_type"):
         service.build_inquiry_extract(_base_context(), artifact_type="dispatch")
     with pytest.raises(InquiryExtractValidationError, match="source_kind"):
         service.build_inquiry_extract(_base_context(), source_kind="event_stream")
 
 
-def test_payload_does_not_include_tenant_or_contact_data(service: InquiryExtractService) -> None:
+def test_payload_does_not_include_tenant_or_contact_data(
+    service: InquiryExtractService,
+) -> None:
     payload = service.build_inquiry_extract_payload(
         _base_context(
             tenant_id="tenant-secret",
@@ -434,7 +456,9 @@ def test_validate_manufacturer_view_accepts_service_payload(
 def test_validate_manufacturer_view_flags_blocked_root_key(
     service: InquiryExtractService,
 ) -> None:
-    result = service.validate_manufacturer_view({"customer_metadata": {"name": "Secret"}})
+    result = service.validate_manufacturer_view(
+        {"customer_metadata": {"name": "Secret"}}
+    )
 
     assert result.valid is False
     assert result.violations == (

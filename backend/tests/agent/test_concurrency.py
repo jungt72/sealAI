@@ -43,7 +43,13 @@ from app.services.history.persist import (
 def _mock_state(revision: int, parent_revision: int, cycle_id: str):
     return {
         "messages": [],
-        "sealing_state": {"cycle": {"state_revision": revision, "snapshot_parent_revision": parent_revision, "analysis_cycle_id": cycle_id}},
+        "sealing_state": {
+            "cycle": {
+                "state_revision": revision,
+                "snapshot_parent_revision": parent_revision,
+                "analysis_cycle_id": cycle_id,
+            }
+        },
         "working_profile": {},
         "relevant_fact_cards": [],
     }
@@ -62,20 +68,50 @@ def test_concurrency_conflict_detected():
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
         mock_transcript = SimpleNamespace(
             user_id="user-test",
-            metadata_json={"sealing_state": {"cycle": {"state_revision": 5, "snapshot_parent_revision": 4, "analysis_cycle_id": "cycle-initial"}}},
+            metadata_json={
+                "sealing_state": {
+                    "cycle": {
+                        "state_revision": 5,
+                        "snapshot_parent_revision": 4,
+                        "analysis_cycle_id": "cycle-initial",
+                    }
+                }
+            },
         )
         mock_session.get.side_effect = [None, mock_transcript]
         fake_db = types.SimpleNamespace(AsyncSessionLocal=lambda: mock_session_ctx)
+
         class FakeChatTranscript:
             def __init__(self, **kwargs):
                 self.__dict__.update(kwargs)
 
         fake_models = types.SimpleNamespace(ChatTranscript=FakeChatTranscript)
-        with patch.dict(sys.modules, {"app.database": fake_db, "app.models.chat_transcript": fake_models}):
-            await save_structured_case(tenant_id="tenant-test", owner_id="user-test", case_id="concurrency-test", state=state_a, runtime_path="test", binding_level="ORIENTATION")
-            mock_transcript.metadata_json["sealing_state"]["cycle"]["state_revision"] = 6
-            mock_transcript.metadata_json["sealing_state"]["cycle"]["analysis_cycle_id"] = "cycle-A"
-            await save_structured_case(tenant_id="tenant-test", owner_id="user-test", case_id="concurrency-test", state=state_b, runtime_path="test", binding_level="ORIENTATION")
+        with patch.dict(
+            sys.modules,
+            {"app.database": fake_db, "app.models.chat_transcript": fake_models},
+        ):
+            await save_structured_case(
+                tenant_id="tenant-test",
+                owner_id="user-test",
+                case_id="concurrency-test",
+                state=state_a,
+                runtime_path="test",
+                binding_level="ORIENTATION",
+            )
+            mock_transcript.metadata_json["sealing_state"]["cycle"][
+                "state_revision"
+            ] = 6
+            mock_transcript.metadata_json["sealing_state"]["cycle"][
+                "analysis_cycle_id"
+            ] = "cycle-A"
+            await save_structured_case(
+                tenant_id="tenant-test",
+                owner_id="user-test",
+                case_id="concurrency-test",
+                state=state_b,
+                runtime_path="test",
+                binding_level="ORIENTATION",
+            )
 
     with pytest.raises(ConcurrencyConflictError):
         asyncio.run(_run())
@@ -135,9 +171,25 @@ def test_extract_case_meta_and_persisted_concurrency_tokens_read_same_bridge_fie
 def test_resolve_preferred_concurrency_token_prefers_case_meta_then_persisted_then_sealing_cycle():
     assert _resolve_preferred_concurrency_token(
         {
-            "case_state": {"case_meta": {"state_revision": 7, "snapshot_parent_revision": 6, "analysis_cycle_id": "case-cycle"}},
-            "persisted_concurrency_token": {"state_revision": 5, "snapshot_parent_revision": 4, "analysis_cycle_id": "persisted-cycle"},
-            "sealing_state": {"cycle": {"state_revision": 3, "snapshot_parent_revision": 2, "analysis_cycle_id": "sealing-cycle"}},
+            "case_state": {
+                "case_meta": {
+                    "state_revision": 7,
+                    "snapshot_parent_revision": 6,
+                    "analysis_cycle_id": "case-cycle",
+                }
+            },
+            "persisted_concurrency_token": {
+                "state_revision": 5,
+                "snapshot_parent_revision": 4,
+                "analysis_cycle_id": "persisted-cycle",
+            },
+            "sealing_state": {
+                "cycle": {
+                    "state_revision": 3,
+                    "snapshot_parent_revision": 2,
+                    "analysis_cycle_id": "sealing-cycle",
+                }
+            },
         }
     ) == {
         "state_revision": 7,
@@ -147,8 +199,18 @@ def test_resolve_preferred_concurrency_token_prefers_case_meta_then_persisted_th
 
     assert _resolve_preferred_concurrency_token(
         {
-            "persisted_concurrency_token": {"state_revision": 5, "snapshot_parent_revision": 4, "analysis_cycle_id": "persisted-cycle"},
-            "sealing_state": {"cycle": {"state_revision": 3, "snapshot_parent_revision": 2, "analysis_cycle_id": "sealing-cycle"}},
+            "persisted_concurrency_token": {
+                "state_revision": 5,
+                "snapshot_parent_revision": 4,
+                "analysis_cycle_id": "persisted-cycle",
+            },
+            "sealing_state": {
+                "cycle": {
+                    "state_revision": 3,
+                    "snapshot_parent_revision": 2,
+                    "analysis_cycle_id": "sealing-cycle",
+                }
+            },
         }
     ) == {
         "state_revision": 5,
@@ -158,7 +220,13 @@ def test_resolve_preferred_concurrency_token_prefers_case_meta_then_persisted_th
 
     assert _resolve_preferred_concurrency_token(
         {
-            "sealing_state": {"cycle": {"state_revision": 3, "snapshot_parent_revision": 2, "analysis_cycle_id": "sealing-cycle"}},
+            "sealing_state": {
+                "cycle": {
+                    "state_revision": 3,
+                    "snapshot_parent_revision": 2,
+                    "analysis_cycle_id": "sealing-cycle",
+                }
+            },
         }
     ) == {
         "state_revision": 3,
@@ -167,13 +235,27 @@ def test_resolve_preferred_concurrency_token_prefers_case_meta_then_persisted_th
     }
 
 
-def test_verify_concurrency_token_parity_warns_but_does_not_switch_authority(caplog: pytest.LogCaptureFixture):
+def test_verify_concurrency_token_parity_warns_but_does_not_switch_authority(
+    caplog: pytest.LogCaptureFixture,
+):
     caplog.set_level("WARNING")
 
     preferred = _verify_concurrency_token_parity(
         {
-            "case_state": {"case_meta": {"state_revision": 7, "snapshot_parent_revision": 6, "analysis_cycle_id": "case-cycle"}},
-            "sealing_state": {"cycle": {"state_revision": 3, "snapshot_parent_revision": 2, "analysis_cycle_id": "sealing-cycle"}},
+            "case_state": {
+                "case_meta": {
+                    "state_revision": 7,
+                    "snapshot_parent_revision": 6,
+                    "analysis_cycle_id": "case-cycle",
+                }
+            },
+            "sealing_state": {
+                "cycle": {
+                    "state_revision": 3,
+                    "snapshot_parent_revision": 2,
+                    "analysis_cycle_id": "sealing-cycle",
+                }
+            },
         },
         source_label="test-source",
     )
@@ -193,8 +275,20 @@ def test_resolve_lock_comparison_token_prefers_complete_bridge_token_and_falls_b
 
     assert _resolve_lock_comparison_token(
         {
-            "case_state": {"case_meta": {"state_revision": 7, "snapshot_parent_revision": 6, "analysis_cycle_id": "case-cycle"}},
-            "sealing_state": {"cycle": {"state_revision": 3, "snapshot_parent_revision": 2, "analysis_cycle_id": "sealing-cycle"}},
+            "case_state": {
+                "case_meta": {
+                    "state_revision": 7,
+                    "snapshot_parent_revision": 6,
+                    "analysis_cycle_id": "case-cycle",
+                }
+            },
+            "sealing_state": {
+                "cycle": {
+                    "state_revision": 3,
+                    "snapshot_parent_revision": 2,
+                    "analysis_cycle_id": "sealing-cycle",
+                }
+            },
         },
         source_label="preferred-complete",
     ) == {
@@ -205,8 +299,16 @@ def test_resolve_lock_comparison_token_prefers_complete_bridge_token_and_falls_b
 
     assert _resolve_lock_comparison_token(
         {
-            "case_state": {"case_meta": {"state_revision": 7, "analysis_cycle_id": "case-cycle"}},
-            "sealing_state": {"cycle": {"state_revision": 3, "snapshot_parent_revision": 2, "analysis_cycle_id": "sealing-cycle"}},
+            "case_state": {
+                "case_meta": {"state_revision": 7, "analysis_cycle_id": "case-cycle"}
+            },
+            "sealing_state": {
+                "cycle": {
+                    "state_revision": 3,
+                    "snapshot_parent_revision": 2,
+                    "analysis_cycle_id": "sealing-cycle",
+                }
+            },
         },
         source_label="preferred-incomplete",
     ) == {
@@ -237,9 +339,25 @@ def test_concurrency_comparison_prefers_bridge_token_over_stale_raw_cycle():
         mock_transcript = SimpleNamespace(
             user_id="user-test",
             metadata_json={
-                "sealing_state": {"cycle": {"state_revision": 5, "snapshot_parent_revision": 4, "analysis_cycle_id": "cycle-initial"}},
-                "case_state": {"case_meta": {"state_revision": 5, "snapshot_parent_revision": 4, "analysis_cycle_id": "cycle-A"}},
-                "persisted_concurrency_token": {"state_revision": 5, "snapshot_parent_revision": 4, "analysis_cycle_id": "cycle-A"},
+                "sealing_state": {
+                    "cycle": {
+                        "state_revision": 5,
+                        "snapshot_parent_revision": 4,
+                        "analysis_cycle_id": "cycle-initial",
+                    }
+                },
+                "case_state": {
+                    "case_meta": {
+                        "state_revision": 5,
+                        "snapshot_parent_revision": 4,
+                        "analysis_cycle_id": "cycle-A",
+                    }
+                },
+                "persisted_concurrency_token": {
+                    "state_revision": 5,
+                    "snapshot_parent_revision": 4,
+                    "analysis_cycle_id": "cycle-A",
+                },
             },
         )
         mock_session.get.side_effect = [None, mock_transcript]
@@ -250,7 +368,10 @@ def test_concurrency_comparison_prefers_bridge_token_over_stale_raw_cycle():
                 self.__dict__.update(kwargs)
 
         fake_models = types.SimpleNamespace(ChatTranscript=FakeChatTranscript)
-        with patch.dict(sys.modules, {"app.database": fake_db, "app.models.chat_transcript": fake_models}):
+        with patch.dict(
+            sys.modules,
+            {"app.database": fake_db, "app.models.chat_transcript": fake_models},
+        ):
             await save_structured_case(
                 tenant_id="tenant-test",
                 owner_id="user-test",
@@ -259,8 +380,12 @@ def test_concurrency_comparison_prefers_bridge_token_over_stale_raw_cycle():
                 runtime_path="test",
                 binding_level="ORIENTATION",
             )
-            mock_transcript.metadata_json["sealing_state"]["cycle"]["state_revision"] = 6
-            mock_transcript.metadata_json["sealing_state"]["cycle"]["analysis_cycle_id"] = "stale-cycle"
+            mock_transcript.metadata_json["sealing_state"]["cycle"][
+                "state_revision"
+            ] = 6
+            mock_transcript.metadata_json["sealing_state"]["cycle"][
+                "analysis_cycle_id"
+            ] = "stale-cycle"
             await save_structured_case(
                 tenant_id="tenant-test",
                 owner_id="user-test",

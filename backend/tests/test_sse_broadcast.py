@@ -124,6 +124,8 @@ def test_sse_backpressure_drops_oldest_and_marks_slow() -> None:
         first = queue.get_nowait()
         second = queue.get_nowait()
         assert {first[1], second[1]} == {"token", "slow_client"}
-        assert any(item[1] == "token" and item[2]["seq"] == 3 for item in (first, second))
+        assert any(
+            item[1] == "token" and item[2]["seq"] == 3 for item in (first, second)
+        )
 
     asyncio.run(_run())

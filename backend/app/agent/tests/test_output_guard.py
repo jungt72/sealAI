@@ -4,6 +4,7 @@ Tests for Fast-Path Output Guard — Phase 0C.1
 Covers all three violation categories (manufacturer, recommendation, suitability)
 and verifies clean output passes through unchanged.
 """
+
 import pytest
 
 from app.agent.runtime.output_guard import (
@@ -17,9 +18,12 @@ from app.agent.runtime.surface_claims import get_surface_claims_spec
 # Violation: manufacturer name
 # ---------------------------------------------------------------------------
 
+
 class TestManufacturerViolations:
     def test_freudenberg_blocked(self):
-        safe, cat = check_fast_path_output("Freudenberg bietet dafür passende Produkte an.")
+        safe, cat = check_fast_path_output(
+            "Freudenberg bietet dafür passende Produkte an."
+        )
         assert safe is False
         assert cat == "manufacturer"
 
@@ -34,7 +38,9 @@ class TestManufacturerViolations:
         assert cat == "manufacturer"
 
     def test_trelleborg_blocked(self):
-        safe, cat = check_fast_path_output("Trelleborg hat solche Dichtringe im Programm.")
+        safe, cat = check_fast_path_output(
+            "Trelleborg hat solche Dichtringe im Programm."
+        )
         assert safe is False
         assert cat == "manufacturer"
 
@@ -47,6 +53,7 @@ class TestManufacturerViolations:
 # ---------------------------------------------------------------------------
 # Violation: recommendation language
 # ---------------------------------------------------------------------------
+
 
 class TestRecommendationViolations:
     def test_empfehlen_blocked(self):
@@ -79,6 +86,7 @@ class TestRecommendationViolations:
 # Violation: suitability assertion
 # ---------------------------------------------------------------------------
 
+
 class TestSuitabilityViolations:
     def test_geeignet_blocked(self):
         safe, cat = check_fast_path_output("FKM ist gut geeignet für dieses Medium.")
@@ -91,12 +99,16 @@ class TestSuitabilityViolations:
         assert cat == "suitability"
 
     def test_eignet_sich_fuer_blocked(self):
-        safe, cat = check_fast_path_output("PTFE eignet sich hervorragend für aggressive Medien.")
+        safe, cat = check_fast_path_output(
+            "PTFE eignet sich hervorragend für aggressive Medien."
+        )
         assert safe is False
         assert cat == "suitability"
 
     def test_geeignet_macht_blocked(self):
-        safe, cat = check_fast_path_output("Das macht PTFE für Hochtemperaturanwendungen geeignet.")
+        safe, cat = check_fast_path_output(
+            "Das macht PTFE für Hochtemperaturanwendungen geeignet."
+        )
         assert safe is False
         assert cat == "suitability"
 
@@ -113,7 +125,9 @@ class TestSuitabilityViolations:
 
     def test_das_funktioniert_erklaerung_passiert(self):
         # Mechanism explanation — must NOT be blocked
-        safe, cat = check_fast_path_output("Das funktioniert durch radialen Anpressdruck der Dichtlippe.")
+        safe, cat = check_fast_path_output(
+            "Das funktioniert durch radialen Anpressdruck der Dichtlippe."
+        )
         assert safe is True
         assert cat is None
 
@@ -123,7 +137,9 @@ class TestSuitabilityViolations:
         assert cat == "suitability"
 
     def test_freigegeben_fuer_blocked(self):
-        safe, cat = check_fast_path_output("Das Material ist freigegeben für Lebensmittelkontakt.")
+        safe, cat = check_fast_path_output(
+            "Das Material ist freigegeben für Lebensmittelkontakt."
+        )
         assert safe is False
         assert cat == "suitability"
 
@@ -174,6 +190,7 @@ class TestComplianceOverclaimViolations:
 # Clean output: passes through unchanged
 # ---------------------------------------------------------------------------
 
+
 class TestCleanOutput:
     def test_factual_knowledge_passes(self):
         text = "FKM ist ein Fluorelastomer mit hoher Temperaturbeständigkeit bis ca. 200°C."
@@ -189,7 +206,9 @@ class TestCleanOutput:
         assert cat is None
 
     def test_greeting_passes(self):
-        safe, cat = check_fast_path_output("Hallo! Ich helfe Ihnen gerne bei Ihrer technischen Frage.")
+        safe, cat = check_fast_path_output(
+            "Hallo! Ich helfe Ihnen gerne bei Ihrer technischen Frage."
+        )
         assert safe is True
         assert cat is None
 
@@ -208,6 +227,7 @@ class TestCleanOutput:
 # ---------------------------------------------------------------------------
 # Fallback constant is deterministic (not empty, not LLM-generated)
 # ---------------------------------------------------------------------------
+
 
 class TestFallbackConstant:
     def test_fallback_is_non_empty(self):

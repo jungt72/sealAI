@@ -65,7 +65,9 @@ async def test_rwdr_analyze_endpoint_returns_source_span_candidates() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints() -> None:
+async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints() -> (
+    None
+):
     session = _RwdrFakeSession()
     created = await analyze_rwdr_inquiry(
         body=RwdrAnalyzeRequest(raw_inquiry="Wellendichtring 45x62x8, Öl, 1500 U/min."),
@@ -73,7 +75,9 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
         session=session,
     )
     case_id = created["case_id"]
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     assert [item["event_type"] for item in listed["snapshots"]] == [
         "case_created_after_analyze",
         "extraction_candidates_stored",
@@ -83,11 +87,23 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
         case_id=case_id,
         body=RwdrConfirmationsRequest(
             decisions=[
-                RwdrConfirmationDecision(field="shaft_diameter_d1_mm", action="confirm", source_span="45x62x8"),
-                RwdrConfirmationDecision(field="housing_bore_D_mm", action="confirm", source_span="45x62x8"),
-                RwdrConfirmationDecision(field="seal_width_b_mm", action="confirm", source_span="45x62x8"),
-                RwdrConfirmationDecision(field="max_speed_rpm", action="confirm", source_span="1500 U/min"),
-                RwdrConfirmationDecision(field="pressure_differential", action="explicitly_unknown"),
+                RwdrConfirmationDecision(
+                    field="shaft_diameter_d1_mm",
+                    action="confirm",
+                    source_span="45x62x8",
+                ),
+                RwdrConfirmationDecision(
+                    field="housing_bore_D_mm", action="confirm", source_span="45x62x8"
+                ),
+                RwdrConfirmationDecision(
+                    field="seal_width_b_mm", action="confirm", source_span="45x62x8"
+                ),
+                RwdrConfirmationDecision(
+                    field="max_speed_rpm", action="confirm", source_span="1500 U/min"
+                ),
+                RwdrConfirmationDecision(
+                    field="pressure_differential", action="explicitly_unknown"
+                ),
             ],
         ),
         user=_user(),
@@ -95,12 +111,18 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
     )
     fields = {item["field"]: item for item in updated["evidence_fields"]}
     assert fields["shaft_diameter_d1_mm"]["confirmation_status"] == "confirmed"
-    assert fields["pressure_differential"]["confirmation_status"] == "explicitly_unknown"
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    assert (
+        fields["pressure_differential"]["confirmation_status"] == "explicitly_unknown"
+    )
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     events = [item["event_type"] for item in listed["snapshots"]]
     assert "confirmation_decision_applied" in events
     assert "field_marked_explicitly_unknown" in events
-    assert [item["revision_number"] for item in listed["snapshots"]] == list(range(1, len(listed["snapshots"]) + 1))
+    assert [item["revision_number"] for item in listed["snapshots"]] == list(
+        range(1, len(listed["snapshots"]) + 1)
+    )
 
     initial_diff = await diff_rwdr_case_snapshots(
         case_id=case_id,
@@ -125,35 +147,56 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
         session=session,
     )
     field_diffs = {item["field"]: item for item in diff["evidence_field_diffs"]}
-    assert field_diffs["shaft_diameter_d1_mm"]["change_type"] == "confirmation_status_changed"
-    assert field_diffs["shaft_diameter_d1_mm"]["from"]["confirmation_status"] == "unconfirmed"
-    assert field_diffs["shaft_diameter_d1_mm"]["to"]["confirmation_status"] == "confirmed"
+    assert (
+        field_diffs["shaft_diameter_d1_mm"]["change_type"]
+        == "confirmation_status_changed"
+    )
+    assert (
+        field_diffs["shaft_diameter_d1_mm"]["from"]["confirmation_status"]
+        == "unconfirmed"
+    )
+    assert (
+        field_diffs["shaft_diameter_d1_mm"]["to"]["confirmation_status"] == "confirmed"
+    )
     assert "shaft_diameter_d1_mm" in diff["missing_critical_fields_diff"]["removed"]
     assert {
-        item["field"] for item in diff["computed_values_diff"]["added"] if isinstance(item, dict)
+        item["field"]
+        for item in diff["computed_values_diff"]["added"]
+        if isinstance(item, dict)
     } == {"circumferential_speed_mps"}
 
     reloaded = await get_rwdr_case(case_id=case_id, user=_user(), session=session)
     assert reloaded["case_id"] == case_id
     assert {
-        item["field"]: item["confirmation_status"] for item in reloaded["evidence_fields"]
+        item["field"]: item["confirmation_status"]
+        for item in reloaded["evidence_fields"]
     }["shaft_diameter_d1_mm"] == "confirmed"
 
-    evaluation = await evaluate_rwdr_case(case_id=case_id, user=_user(), session=session)
+    evaluation = await evaluate_rwdr_case(
+        case_id=case_id, user=_user(), session=session
+    )
     assert "computed_values" in evaluation
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     assert listed["snapshots"][-1]["event_type"] == "evaluation_generated"
 
-    brief = await generate_persisted_rwdr_case_brief(case_id=case_id, user=_user(), session=session)
+    brief = await generate_persisted_rwdr_case_brief(
+        case_id=case_id, user=_user(), session=session
+    )
     computed = {item["field"]: item for item in brief["calculation_fields"]}
     assert computed["circumferential_speed_mps"]["value"] == 3.53
     assert "pressure_differential" not in {
         item["field"] for item in brief["confirmed_case_fields"]
     }
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     assert listed["snapshots"][-1]["event_type"] == "technical_brief_generated"
 
-    exported = await export_rwdr_case_markdown(case_id=case_id, user=_user(), session=session)
+    exported = await export_rwdr_case_markdown(
+        case_id=case_id, user=_user(), session=session
+    )
     assert exported["case_id"] == case_id
     assert exported["export_format"] == "markdown"
     assert "Technical RWDR RFQ Brief" in exported["content"]
@@ -171,7 +214,9 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
     assert pdf.media_type == "application/pdf"
     assert pdf.body.startswith(b"%PDF-")
     assert b"Technical RWDR RFQ Brief" in pdf.body
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     assert listed["snapshots"][-1]["event_type"] == "pdf_export_generated"
     export_diff = await diff_rwdr_case_snapshots(
         case_id=case_id,
@@ -184,7 +229,9 @@ async def test_rwdr_case_state_confirmation_evaluate_brief_and_export_endpoints(
 
 
 @pytest.mark.asyncio
-async def test_rwdr_manufacturer_feedback_records_open_point_not_confirmed_fact() -> None:
+async def test_rwdr_manufacturer_feedback_records_open_point_not_confirmed_fact() -> (
+    None
+):
     """C10: manufacturer feedback persists as candidate, never a confirmed fact, and
     cannot overwrite an already-confirmed field."""
     session = _RwdrFakeSession()
@@ -199,7 +246,9 @@ async def test_rwdr_manufacturer_feedback_records_open_point_not_confirmed_fact(
         body=RwdrConfirmationsRequest(
             decisions=[
                 RwdrConfirmationDecision(
-                    field="shaft_diameter_d1_mm", action="confirm", source_span="45x62x8"
+                    field="shaft_diameter_d1_mm",
+                    action="confirm",
+                    source_span="45x62x8",
                 ),
             ],
         ),
@@ -245,14 +294,18 @@ async def test_rwdr_manufacturer_feedback_records_open_point_not_confirmed_fact(
     assert len(confirmed) == 1
     assert confirmed[0]["confirmation_status"] == "confirmed"
 
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     assert "manufacturer_response_recorded" in [
         s["event_type"] for s in listed["snapshots"]
     ]
 
 
 @pytest.mark.asyncio
-async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisions() -> None:
+async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisions() -> (
+    None
+):
     session = _RwdrFakeSession()
     created = await analyze_rwdr_inquiry(
         body=RwdrAnalyzeRequest(raw_inquiry="Wellendichtring 45x62x8, Öl, 1500 U/min."),
@@ -265,16 +318,24 @@ async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisi
         case_id=case_id,
         body=RwdrConfirmationsRequest(
             decisions=[
-                RwdrConfirmationDecision(field="shaft_diameter_d1_mm", action="edit", value="46", unit="mm"),
-                RwdrConfirmationDecision(field="pressure_differential", action="explicitly_unknown"),
+                RwdrConfirmationDecision(
+                    field="shaft_diameter_d1_mm", action="edit", value="46", unit="mm"
+                ),
+                RwdrConfirmationDecision(
+                    field="pressure_differential", action="explicitly_unknown"
+                ),
                 RwdrConfirmationDecision(field="inside_medium", action="reject"),
             ],
         ),
         user=_user(),
         session=session,
     )
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
-    by_event = {item["event_type"]: item["revision_number"] for item in listed["snapshots"]}
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
+    by_event = {
+        item["event_type"]: item["revision_number"] for item in listed["snapshots"]
+    }
     edit_diff = await diff_rwdr_case_snapshots(
         case_id=case_id,
         from_revision=1,
@@ -282,7 +343,9 @@ async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisi
         user=_user(),
         session=session,
     )
-    edit_field = {item["field"]: item for item in edit_diff["evidence_field_diffs"]}["shaft_diameter_d1_mm"]
+    edit_field = {item["field"]: item for item in edit_diff["evidence_field_diffs"]}[
+        "shaft_diameter_d1_mm"
+    ]
     assert edit_field["change_type"] in {"confirmation_status_changed", "value_changed"}
     assert edit_field["to"]["value"] == "46"
     assert str(edit_field["to"]["previous_value"]) in {"45", "45.0"}
@@ -311,8 +374,12 @@ async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisi
         for item in reject_diff["evidence_field_diffs"]
     }["inside_medium"] == "rejected"
 
-    session.snapshots[-1].state_json["snapshot_payload"]["updated_at"] = "2099-01-01T00:00:00Z"
-    session.snapshots[-1].state_json["deterministic_payload_json"]["updated_at"] = "2099-01-01T00:00:00Z"
+    session.snapshots[-1].state_json["snapshot_payload"]["updated_at"] = (
+        "2099-01-01T00:00:00Z"
+    )
+    session.snapshots[-1].state_json["deterministic_payload_json"]["updated_at"] = (
+        "2099-01-01T00:00:00Z"
+    )
     audit_diff = await diff_rwdr_case_snapshots(
         case_id=case_id,
         from_revision=by_event["field_rejected"],
@@ -321,7 +388,10 @@ async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisi
         session=session,
     )
     assert audit_diff["summary"]["changed_fields_count"] == 0
-    assert audit_diff["audit_metadata"]["audit_metadata_excluded_from_deterministic_diff"] is True
+    assert (
+        audit_diff["audit_metadata"]["audit_metadata_excluded_from_deterministic_diff"]
+        is True
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await diff_rwdr_case_snapshots(
@@ -345,7 +415,9 @@ async def test_rwdr_revision_diff_handles_edit_reject_unknown_and_missing_revisi
 
 
 @pytest.mark.asyncio
-async def test_rwdr_case_state_rejects_confirmed_extracted_field_without_source_span() -> None:
+async def test_rwdr_case_state_rejects_confirmed_extracted_field_without_source_span() -> (
+    None
+):
     session = _RwdrFakeSession()
     created = await analyze_rwdr_inquiry(
         body=RwdrAnalyzeRequest(raw_inquiry="Wellendichtring 45x62x8."),
@@ -573,7 +645,9 @@ async def test_rfq_preview_create_endpoint_maps_expected_revision_mismatch(
 
 
 @pytest.mark.asyncio
-async def test_rfq_preview_export_endpoint_returns_manual_json_contract(monkeypatch) -> None:
+async def test_rfq_preview_export_endpoint_returns_manual_json_contract(
+    monkeypatch,
+) -> None:
     class FakeExportDocument:
         def as_dict(self) -> dict[str, object]:
             return {
@@ -627,7 +701,9 @@ async def test_rfq_preview_export_endpoint_returns_manual_json_contract(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_rfq_preview_export_pdf_endpoint_returns_allowlisted_pdf(monkeypatch) -> None:
+async def test_rfq_preview_export_pdf_endpoint_returns_allowlisted_pdf(
+    monkeypatch,
+) -> None:
     class FakeExportDocument:
         preview_id = "preview-1"
         case_id = "case-123"
@@ -735,7 +811,9 @@ class _Request:
 
 
 class _ScalarResult:
-    def __init__(self, row: object | None = None, rows: list[object] | None = None) -> None:
+    def __init__(
+        self, row: object | None = None, rows: list[object] | None = None
+    ) -> None:
         self.row = row
         self.rows = rows or ([] if row is None else [row])
 
@@ -803,7 +881,11 @@ async def test_get_rwdr_case_forwards_authenticated_owner_scope(monkeypatch) -> 
     result = await get_rwdr_case(case_id="case-1", user=_user(), session=object())
 
     assert result["case_id"] == "case-1"
-    assert captured == {"case_id": "case-1", "tenant_id": "tenant-1", "user_id": "user-1"}
+    assert captured == {
+        "case_id": "case-1",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+    }
 
 
 @pytest.mark.asyncio
@@ -821,14 +903,18 @@ async def test_get_rwdr_case_maps_ownership_miss_to_404(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_confirmations_forwards_authenticated_owner_scope(monkeypatch) -> None:
+async def test_update_confirmations_forwards_authenticated_owner_scope(
+    monkeypatch,
+) -> None:
     captured: dict[str, object] = {}
 
     async def _fake_update(*, session, case_id, decisions, tenant_id, user_id):
         captured.update(case_id=case_id, tenant_id=tenant_id, user_id=user_id)
         return {"case_id": case_id, "evidence_fields": []}
 
-    monkeypatch.setattr(rfq_endpoint, "update_db_persisted_rwdr_confirmations", _fake_update)
+    monkeypatch.setattr(
+        rfq_endpoint, "update_db_persisted_rwdr_confirmations", _fake_update
+    )
 
     await update_rwdr_confirmations(
         case_id="case-1",
@@ -837,4 +923,8 @@ async def test_update_confirmations_forwards_authenticated_owner_scope(monkeypat
         session=object(),
     )
 
-    assert captured == {"case_id": "case-1", "tenant_id": "tenant-1", "user_id": "user-1"}
+    assert captured == {
+        "case_id": "case-1",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+    }

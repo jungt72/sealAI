@@ -12,8 +12,13 @@ class ConversationModeRouter:
         r"\b(ignore|ignoriere|vergiss)\b.*\b(rule|rules|regeln|system|developer|sicherheits)\b",
         re.IGNORECASE | re.UNICODE,
     )
-    _rfq_re = re.compile(r"\b(rfq|anfrage|angebot|anfragen|anfragevorschau|export)\b", re.IGNORECASE)
-    _failure_re = re.compile(r"\b(leckage|undicht|ausfall|schaden|verschleiss|verschleiß|failure|root cause|ursache)\b", re.IGNORECASE)
+    _rfq_re = re.compile(
+        r"\b(rfq|anfrage|angebot|anfragen|anfragevorschau|export)\b", re.IGNORECASE
+    )
+    _failure_re = re.compile(
+        r"\b(leckage|undicht|ausfall|schaden|verschleiss|verschleiß|failure|root cause|ursache)\b",
+        re.IGNORECASE,
+    )
     _field_update_re = re.compile(
         r"\b\d+(?:[.,]\d+)?\s*(?:mm|bar|barg|bara|°?\s*c|grad|rpm|u\.?/?min|1/min)\b"
         r"|\b(medium\s+ist|temperatur|druck|drehzahl|welle|wellendurchmesser)\b",
@@ -47,7 +52,9 @@ class ConversationModeRouter:
             return ConversationMode.RFQ_PREPARATION
         if self._failure_re.search(lowered):
             return ConversationMode.FAILURE_ANALYSIS
-        if self._knowledge_re.search(lowered) and not self._explicit_case_context_re.search(lowered):
+        if self._knowledge_re.search(
+            lowered
+        ) and not self._explicit_case_context_re.search(lowered):
             return ConversationMode.GENERAL_KNOWLEDGE
         if self._field_update_re.search(lowered):
             return ConversationMode.FIELD_EXTRACTION

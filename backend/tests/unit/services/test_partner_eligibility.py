@@ -77,7 +77,9 @@ def db():
         yield conn
 
 
-def _insert_profile(db, manufacturer_id: str, *, account_status: str = "active") -> None:
+def _insert_profile(
+    db, manufacturer_id: str, *, account_status: str = "active"
+) -> None:
     db.execute(
         sa.text(
             """
@@ -136,23 +138,37 @@ def _claim(
     )
 
 
-def test_partner_projection_excludes_inactive_manufacturer(service: CapabilityService, db) -> None:
+def test_partner_projection_excludes_inactive_manufacturer(
+    service: CapabilityService, db
+) -> None:
     _insert_profile(db, "inactive-paid", account_status="suspended")
-    service.create_claim(db, _claim("claim-inactive-paid", "inactive-paid", payload={"is_paid_partner": True}))
+    service.create_claim(
+        db,
+        _claim(
+            "claim-inactive-paid", "inactive-paid", payload={"is_paid_partner": True}
+        ),
+    )
 
     assert service.list_partner_capability_projections(db) == []
 
 
-def test_partner_projection_excludes_unpaid_active_manufacturer(service: CapabilityService, db) -> None:
+def test_partner_projection_excludes_unpaid_active_manufacturer(
+    service: CapabilityService, db
+) -> None:
     _insert_profile(db, "active-unpaid")
     service.create_claim(db, _claim("claim-active-unpaid", "active-unpaid"))
 
     assert service.list_partner_capability_projections(db) == []
 
 
-def test_partner_projection_includes_active_paid_manufacturer(service: CapabilityService, db) -> None:
+def test_partner_projection_includes_active_paid_manufacturer(
+    service: CapabilityService, db
+) -> None:
     _insert_profile(db, "active-paid")
-    service.create_claim(db, _claim("claim-active-paid", "active-paid", payload={"is_paid_partner": True}))
+    service.create_claim(
+        db,
+        _claim("claim-active-paid", "active-paid", payload={"is_paid_partner": True}),
+    )
 
     projections = service.list_partner_capability_projections(db)
 
@@ -161,7 +177,9 @@ def test_partner_projection_includes_active_paid_manufacturer(service: Capabilit
     assert projections[0].capability_profile.supported_seal_types == ("rwdr",)
 
 
-def test_partner_projection_surfaces_verification_level(service: CapabilityService, db) -> None:
+def test_partner_projection_surfaces_verification_level(
+    service: CapabilityService, db
+) -> None:
     _insert_profile(db, "verified-paid")
     service.create_claim(
         db,

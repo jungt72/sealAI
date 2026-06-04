@@ -27,6 +27,7 @@ Coverage:
     11. Node name constants defined in topology module
     12. Full RWDR path: shaft + speed in message → compute_results populated
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
@@ -59,6 +60,7 @@ from app.agent.state.models import ObservedState, UserOverride
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _state_with_message(msg: str, tenant_id: str = "test_tenant") -> GraphState:
     return GraphState(pending_message=msg, tenant_id=tenant_id)
 
@@ -69,18 +71,33 @@ def _state_with_extractions(**fields) -> GraphState:
     """
     observed = ObservedState()
     for field_name, (value, _conf) in fields.items():
-        observed = observed.with_override(UserOverride(
-            field_name=field_name,
-            override_value=value,
-            turn_index=0,
-        ))
+        observed = observed.with_override(
+            UserOverride(
+                field_name=field_name,
+                override_value=value,
+                turn_index=0,
+            )
+        )
     return GraphState(observed=observed, tenant_id="test_tenant")
 
 
 _REQUIRED_OUTPUT_KEYS = {
-    "response_class", "gov_class", "inquiry_admissible",
-    "parameters", "missing_fields", "conflicts",
-    "validity_notes", "open_points", "compute", "rfq", "dispatch", "norm", "export_profile", "manufacturer_mapping", "dispatch_contract", "message",
+    "response_class",
+    "gov_class",
+    "inquiry_admissible",
+    "parameters",
+    "missing_fields",
+    "conflicts",
+    "validity_notes",
+    "open_points",
+    "compute",
+    "rfq",
+    "dispatch",
+    "norm",
+    "export_profile",
+    "manufacturer_mapping",
+    "dispatch_contract",
+    "message",
 }
 
 
@@ -94,6 +111,7 @@ def _result_state(raw: dict) -> GraphState:
 # ---------------------------------------------------------------------------
 # 1–3. Graph compilation
 # ---------------------------------------------------------------------------
+
 
 class TestGraphCompilation:
     def test_governed_graph_singleton_not_none(self):
@@ -109,17 +127,17 @@ class TestGraphCompilation:
         assert g1 is not g2
 
     def test_node_name_constants_defined(self):
-        assert NODE_INTAKE_OBSERVE  == "intake_observe"
-        assert NODE_NORMALIZE       == "normalize"
-        assert NODE_ASSERT          == "assert"
-        assert NODE_EVIDENCE        == "evidence"
-        assert NODE_COMPUTE         == "compute"
-        assert NODE_GOVERNANCE      == "governance"
-        assert NODE_MATCHING        == "matching"
-        assert NODE_RFQ_HANDOVER    == "rfq_handover"
-        assert NODE_DISPATCH        == "dispatch"
-        assert NODE_NORM            == "norm"
-        assert NODE_EXPORT_PROFILE  == "export_profile"
+        assert NODE_INTAKE_OBSERVE == "intake_observe"
+        assert NODE_NORMALIZE == "normalize"
+        assert NODE_ASSERT == "assert"
+        assert NODE_EVIDENCE == "evidence"
+        assert NODE_COMPUTE == "compute"
+        assert NODE_GOVERNANCE == "governance"
+        assert NODE_MATCHING == "matching"
+        assert NODE_RFQ_HANDOVER == "rfq_handover"
+        assert NODE_DISPATCH == "dispatch"
+        assert NODE_NORM == "norm"
+        assert NODE_EXPORT_PROFILE == "export_profile"
         assert NODE_MANUFACTURER_MAPPING == "manufacturer_mapping"
         assert NODE_DISPATCH_CONTRACT == "dispatch_contract"
         assert NODE_OUTPUT_CONTRACT == "output_contract"
@@ -128,6 +146,7 @@ class TestGraphCompilation:
 # ---------------------------------------------------------------------------
 # 4–5. Empty state end-to-end
 # ---------------------------------------------------------------------------
+
 
 class TestEmptyStateEndToEnd:
     @pytest.mark.asyncio
@@ -161,6 +180,7 @@ class TestEmptyStateEndToEnd:
 # ---------------------------------------------------------------------------
 # 6–10. Pre-loaded extractions end-to-end (bypasses LLM)
 # ---------------------------------------------------------------------------
+
 
 class TestPreloadedExtractionsEndToEnd:
     @pytest.mark.asyncio
@@ -237,7 +257,8 @@ class TestPreloadedExtractionsEndToEnd:
         state = state.model_copy(update={"max_cycles": 1, "analysis_cycle": 1})
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
-            new_callable=AsyncMock, return_value=([], {}),
+            new_callable=AsyncMock,
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -250,7 +271,8 @@ class TestPreloadedExtractionsEndToEnd:
         state = state.model_copy(update={"max_cycles": 1, "analysis_cycle": 1})
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
-            new_callable=AsyncMock, return_value=([], {}),
+            new_callable=AsyncMock,
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -266,7 +288,8 @@ class TestPreloadedExtractionsEndToEnd:
         )
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
-            new_callable=AsyncMock, return_value=([], {}),
+            new_callable=AsyncMock,
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -286,7 +309,8 @@ class TestPreloadedExtractionsEndToEnd:
         )
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
-            new_callable=AsyncMock, return_value=([], {}),
+            new_callable=AsyncMock,
+            return_value=([], {}),
         ):
             raw = await GOVERNED_GRAPH.ainvoke(state)
 
@@ -297,7 +321,9 @@ class TestPreloadedExtractionsEndToEnd:
         assert result.matching.shortlist_ready is False
         assert result.rfq.rfq_ready is False
         assert result.sealai_norm.identity.norm_version == "sealai_norm_v1"
-        assert result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        assert (
+            result.export_profile.export_profile_version == "sealai_export_profile_v1"
+        )
         assert result.export_profile.rfq_ready is False
         assert result.manufacturer_mapping.mapping_version == "manufacturer_mapping_v1"
         assert result.dispatch_contract.contract_version == "dispatch_contract_v1"
@@ -306,6 +332,7 @@ class TestPreloadedExtractionsEndToEnd:
 # ---------------------------------------------------------------------------
 # 11. Regex-extractable message → GOVERNED path (intake_observe LLM disabled)
 # ---------------------------------------------------------------------------
+
 
 class TestRegexMessageEndToEnd:
     @pytest.mark.asyncio
@@ -359,7 +386,9 @@ class TestRegexMessageEndToEnd:
         assert isinstance(result.compute_results, list)
 
     @pytest.mark.asyncio
-    async def test_salzwasser_is_recognized_before_clarification_and_not_reasked_as_medium(self):
+    async def test_salzwasser_is_recognized_before_clarification_and_not_reasked_as_medium(
+        self,
+    ):
         state = GraphState(
             pending_message="ich muss salzwasser draussen halten",
             tenant_id="test_tenant",
@@ -367,7 +396,10 @@ class TestRegexMessageEndToEnd:
             max_cycles=1,
         )
         with (
-            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION",
+                False,
+            ),
             patch(
                 "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
@@ -383,7 +415,9 @@ class TestRegexMessageEndToEnd:
         assert "Medium angeben" not in result.output_public.get("open_points", [])
 
     @pytest.mark.asyncio
-    async def test_oel_is_recognized_before_clarification_and_not_reasked_as_medium(self):
+    async def test_oel_is_recognized_before_clarification_and_not_reasked_as_medium(
+        self,
+    ):
         state = GraphState(
             pending_message="medium ist oel",
             tenant_id="test_tenant",
@@ -391,7 +425,10 @@ class TestRegexMessageEndToEnd:
             max_cycles=1,
         )
         with (
-            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION",
+                False,
+            ),
             patch(
                 "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
@@ -414,7 +451,10 @@ class TestRegexMessageEndToEnd:
             max_cycles=1,
         )
         with (
-            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION",
+                False,
+            ),
             patch(
                 "app.agent.graph.nodes.evidence_node.retrieve_evidence",
                 new_callable=AsyncMock,
@@ -454,7 +494,10 @@ class TestGraphOrdering:
                 new_callable=AsyncMock,
                 return_value=([], {}),
             ),
-            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION",
+                False,
+            ),
         ):
             graph = build_governed_graph()
             await graph.ainvoke(
