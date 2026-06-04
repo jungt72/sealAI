@@ -136,14 +136,31 @@ service env (V10 runtime rule), and land it **together with** the existing-row
 data migration (353 `default` + 42 `user_id`) so legacy cases are not orphaned,
 with cross-tenant read/delete tests green.
 
-### Outstanding manual follow-ups (operator — do NOT auto-run; order is binding)
-- **(a) Pre-restart blocker — Keycloak build config.** The `bootstrap-admin` runs
-  persisted `health-enabled=false` / `metrics-enabled=false` into the container's
-  build config. The image (`keycloak/Dockerfile`) builds `true/true` and runs
-  `start --optimized`, so a **restart would boot the persisted false/false build**
-  → `:9000/health/ready` breaks → unhealthy/restart-loop risk. Before the next
-  restart: verify the start command (`--optimized`?) and reset the build config to
-  `true/true`. (Container is currently `Up`, so not yet triggered.)
+### Follow-ups (operator — do NOT auto-run; order is binding)
+- **(a) Build-config reset + controlled restart — ✅ DONE (2026-06-04).** The
+  concern: `start --optimized` (confirmed via `docker inspect`: Cmd
+  `["start","--optimized"]`) boots from the **persisted on-disk build**, so a
+  build that the `bootstrap-admin` runs may have left at `health/metrics=false`
+  would only surface on the next restart, silently dropping the `:9000`
+  management interface. (No docker healthcheck is defined on the container, so the
+  feared *unhealthy/restart-loop* could not actually trigger — the real exposure
+  was a silent loss of `:9000`.) Resolution, evidence-gated:
+  - **Build reset:** `kc.sh build --health-enabled=true --metrics-enabled=true`
+    → *"Server configuration updated and persisted"* (no ports bound; running
+    server untouched).
+  - **Pre-restart proof (`kc.sh show-config`):** `kc.health-enabled = true`,
+    `kc.metrics-enabled = true`, `kc.optimized = true (Persisted)` — the gate for
+    "no restart without proof".
+  - **Controlled restart:** `docker restart keycloak` at **2026-06-04T08:15:07Z**
+    (discarded SSO sessions + the kcadm token — expected). Boot clean:
+    `Keycloak 26.6.1 … started in 6.290s. … Management interface listening on
+    http://0.0.0.0:9000`, `Profile prod activated`, `Bootstrap completed in
+    3.428s`, no ERROR/FATAL.
+  - **Post-restart acceptance:** `:9000/health/ready` + `/health/live` +
+    `/metrics` → 200 (the authoritative proof the persisted build is now
+    true/true under `--optimized`); OIDC discovery 200, issuer
+    `https://sealingai.com/realms/sealAI`; backend `/health` 200 (`healthy`);
+    frontend signin 200 (`healthy`).
 - **(b)** Half-created **master-realm** user `jungt` (row without a valid
   credential from a crashed run) — clarify / delete.
 - **(c)** Rotate the **real admin password** (Thorsten) → verify login → **only
