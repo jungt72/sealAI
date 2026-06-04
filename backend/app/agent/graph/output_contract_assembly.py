@@ -89,6 +89,7 @@ from app.agent.v91.conversation_state import (
     build_dialogue_debt,
 )
 from app.domain.pre_gate_classification import PreGateClassification
+from app.domain.seal_packs import pack_for_calc_type
 from app.services.output_classifier import OutputClassificationInput, OutputClassifier
 
 log = logging.getLogger(__name__)
@@ -749,7 +750,7 @@ def _compute_public(state: GraphState) -> list[dict[str, Any]]:
     summaries = []
     for r in state.compute_results:
         calc_type = r.get("calc_type", "unknown")
-        if calc_type == "rwdr":
+        if pack_for_calc_type(calc_type) is not None:
             summaries.append(
                 {
                     "calc_type": "rwdr",

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from app.domain.seal_packs import pack_for_calc_id
+from app.domain.seal_packs import pack_for_calc_id, pack_for_calc_type
 
 
 _RWDR_OUTPUT_KEYS: tuple[str, ...] = (
@@ -159,6 +159,8 @@ def calculation_ledger_derivations(calculation_or_results: Any) -> list[dict[str
                 break
         derivations.append(rwdr)
 
-    derivations.extend(item for item in items if item.get("calc_type") != "rwdr")
+    derivations.extend(
+        item for item in items if pack_for_calc_type(item.get("calc_type")) is None
+    )
     return derivations
 
