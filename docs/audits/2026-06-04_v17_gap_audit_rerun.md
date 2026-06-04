@@ -28,6 +28,33 @@
 >   `healthy`. `git diff --stat ac7402ea..HEAD -- frontend/` = **leer** → Frontend-Code
 >   aktuell mit demo-HEAD; der P0-3-Fix (PocketCockpit `rfq_status`) ist live.
 
+---
+
+## ✅ AMENDMENT 2026-06-04T18:14Z (P1-4) — Gesamtverdikt → „ja-mit-Amendments"
+
+Der HIGH-Befund **C1** (und die LOW-Vorbehalte **C9** + **S3**) sind geschlossen und **live
+deployed**. Acht kleine PRs (#63–#70) auf `demo/rwdr-limited-external`, P1-1-Disziplin
+(Charakterisierungs-Freeze vor jedem Refactor, verhaltensneutral), zwei `doctrine-reviewer`-APPROVEs:
+
+- **C1 → ERFÜLLT** — die drei auditierten Core-Flächen (`reducers.py`, `challenge_engine.py`,
+  `case_workspace.py`) **plus** die per Inventur gefundenen Decision-A-Extras
+  (`checks_registry.py`, `output_contract_assembly.py`, `calculation_projection.py`) über die
+  Pack-Seam geroutet; **Architektur-Enforcer** `test_core_seal_type_branching.py` verbietet künftiges
+  Core-Branching (Allowlist = die heterogenen `risk_readiness`-Checks + der
+  `normalize_seal_type`-Klassifizierer, je dokumentiert).
+- **C9 → geschlossen** — `_oring_calculations` aus dem v92-Core nach
+  `app/agent/domain/oring_calc.py` relocatet (kein `OringPack`).
+- **S3 → ERFÜLLT** — alle governed-Layer-`model_copy`-Syncs über `reducers.produce_*` geroutet;
+  Enforcer `test_single_writer_invariant.py`.
+
+Deployed `…@sha256:6d3c38266ccf116a9632b0e7f86974a53fd1b84ca7dc885fee923106fdb64877`
+(running/healthy, live pilot smoke 14/14 PASS); scoped C1/C9/S3/C10-Re-Verifikation am deployten
+Image bestätigt (keine Core-`== "rwdr"`-Branches, `oring_calc` relocatet, `produce_*` live, kein
+governed `model_copy`-Bypass; C10-Echo bewusst deferred). **C10** bleibt ERFÜLLT (Echo
+„vorgesehen"); **S5** bleibt TEILWEISE (gewollte Divergenz). Damit: **V1.7 erreicht —
+ja-mit-Amendments.** Belege: `docs/ops/GOVERNANCE_LOG.md` (P1-4-Einträge) +
+`docs/architecture/CORE_PACK_BOUNDARY.md`.
+
 ## 1. IST-Zustand
 
 Der Runtime ist ein governed V9.2/V10-Stack. Die **C6-Tenant-Härtung** (P0-1/P0-2)
@@ -244,6 +271,10 @@ Dokumentations-Gap (die Seam existiert und wirkt für die auditierten Dateien; s
 nicht über den ganzen Kern durchgesetzt), kein Produktfunktions-Ausfall — schließbar durch
 verhaltensneutrales Routen der drei Flächen über die bestehende Pack-Seam plus Korrektur der
 Boundary-Doku, womit C1 auf ERFÜLLT und das Gesamtverdikt auf „ja-mit-Amendments" käme.
+
+> **Nachtrag 2026-06-04T18:14Z (P1-4):** genau das ist geschehen — C1/C9/S3 verhaltensneutral
+> geschlossen, Boundary-Doku korrigiert, zwei Architektur-Enforcer installiert, **live deployed**
+> (`…@sha256:6d3c3826…`, smoke 14/14). **Gesamtverdikt jetzt „ja-mit-Amendments"** (s. Amendment-Block oben).
 
 ---
 

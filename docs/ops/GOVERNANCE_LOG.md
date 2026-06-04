@@ -6,6 +6,40 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-04T18:14Z — P1-4 prod deploy (C1/C9/S3 + enforcers)
+
+Follow-up deploy to the demo-merge entry below. HALT-before-prod honoured: the four-part risk
+summary presented (behaviour-neutral; all freezes byte-identical; both enforcers synthetic-proven;
+L1/L2 + Tier-0 untouched; four comparative-ranking repros still block; two `doctrine-reviewer`
+APPROVEs) + explicit operator **go**.
+
+**Pre-deploy gate:** full backend suite `EXIT=0` re-run on the exact deployed commit `2d325acf`
+→ fresh `pytest-green`; rollback anchor `…@sha256:05953eda…` (running/healthy from
+`docker inspect backend`, never memory) → fresh `anchor-verified`. Confirmed PR6's docs-only merge
+did **not** revert PR5b (3-way merge took demo's PR5b versions; `produce_*` + both enforcers
+present on HEAD).
+
+**Deploy (`ops/release-backend.sh`, RELEASE-EXIT=0):** new pinned image
+`ghcr.io/jungt72/sealai-backend:2d325acf-20260604-181319@sha256:6d3c38266ccf116a9632b0e7f86974a53fd1b84ca7dc885fee923106fdb64877`.
+Backend healthy (redis/qdrant collections=2/agent_runtime); nginx reloaded; **live pilot smoke
+14/14 PASS**. Rollback target `…@sha256:05953eda…` via `.env.prod.rollback-20260604-181319`.
+
+**Scoped re-verification on the deployed image (`docker exec backend`):**
+- **C1 → ERFÜLLT** — seam selectors live in `seal_packs.py`; **zero** `== "rwdr"`/`!= "rwdr"`
+  control-flow in the routed core (`reducers`/`challenge_engine`/`case_workspace`/`checks_registry`/
+  `calculation_projection`).
+- **C9 → closed** — `app/agent/domain/oring_calc.py` present; orchestrator core has **0**
+  `_oring_calculations`.
+- **S3 → ERFÜLLT** — 3 `produce_*` single-writer helpers live; **zero** governed-layer
+  `model_copy` bypass in the routed sites.
+- **C10 → ERFÜLLT (deferred, unchanged)** — `manufacturer_response_echo_notes` still caller-less,
+  by design.
+
+Re-Run-Doc verdict updated **nein → ja-mit-Amendments**. No guard/lexicon/doctrine test weakened;
+no gate bypassed.
+
+---
+
 ## 2026-06-04T17:57Z — P1-4 C1/C9/S3 closure + architecture enforcers (demo-merged; HALT-before-prod)
 
 Closes the V1.7 re-run audit's open verdicts (`docs/audits/2026-06-04_v17_gap_audit_rerun.md`):
