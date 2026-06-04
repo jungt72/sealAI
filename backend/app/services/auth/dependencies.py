@@ -120,6 +120,24 @@ def canonical_user_id(user: RequestUser) -> str:
     return user.user_id or user.sub
 
 
+def require_tenant_id(user: RequestUser) -> str:
+    """Strict request-scoped tenant (P0-2). Single source of truth.
+
+    Returns the verified ``tenant_id`` claim. A missing/empty claim is a hard
+    401 — never collapse to ``"default"`` or ``user_id``, which would silently
+    merge tenants. Shared-knowledge paths (RAG_SHARED_TENANT_ID, e.g. the
+    Paperless webhook / no-case knowledge) deliberately fall back to the shared
+    tenant and must NOT use this resolver.
+    """
+    tenant_id = str(getattr(user, "tenant_id", None) or "").strip()
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_tenant_claim"),
+        )
+    return tenant_id
+
+
 _DEV_BYPASS_USER = RequestUser(
     user_id="dev-user",
     username="dev-user",

@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user
+from app.services.auth.dependencies import RequestUser, canonical_user_id, get_current_request_user, require_tenant_id
 from app.services.chat.conversations import ConversationMeta, delete_conversation, list_conversations, upsert_conversation
 from app.services.history.persist import delete_structured_case, load_structured_case
 
@@ -128,7 +128,7 @@ async def get_conversations(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    tenant_id = current_user.tenant_id or owner_id
+    tenant_id = require_tenant_id(current_user)
     entries = list_conversations(owner_id, legacy_owner_id=legacy_owner_id, tenant_id=tenant_id)
     return [_conversation_to_dict(entry) for entry in entries]
 
@@ -142,7 +142,7 @@ async def rename_conversation(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    tenant_id = current_user.tenant_id or owner_id
+    tenant_id = require_tenant_id(current_user)
     entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -165,7 +165,7 @@ async def delete_conversation_endpoint(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    tenant_id = current_user.tenant_id or owner_id
+    tenant_id = require_tenant_id(current_user)
     entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -186,7 +186,7 @@ async def get_conversation_history(
     owner_id, legacy_owner_id = _resolve_owner_ids(current_user)
     if not owner_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    tenant_id = current_user.tenant_id or owner_id
+    tenant_id = require_tenant_id(current_user)
     entry = _find_conversation(owner_id, conversation_id, legacy_owner_id, tenant_id=tenant_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Conversation not found")

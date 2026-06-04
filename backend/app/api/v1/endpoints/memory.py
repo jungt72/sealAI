@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from qdrant_client import QdrantClient, models as qmodels
 
 from app.core.config import settings
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user, require_tenant_id
 from app.services.memory.memory_core import (
     ltm_export_all,
     ltm_delete_all,
@@ -31,13 +31,11 @@ def _ltm_collection() -> str:
 def _ltm_tenant_id(user: RequestUser) -> str:
     """Authoritative tenant scope for LTM (V1.7 §8 / audit C6).
 
-    Mirrors the canonical case scope (services/auth/dependencies + agent deps):
-    user_id stays the primary isolation key, tenant_id is additive. The live
-    Keycloak does not yet issue a tenant_id claim, so this resolves to "default"
-    today and tightens to the real tenant automatically once the P0-2 Keycloak
-    mapper lands. Never trust a client-supplied tenant_id.
+    P0-2: the Keycloak ``tenant_id`` mapper is live, so this is the strict
+    request tenant — a missing claim is a 401, never the legacy "default"
+    collapse. Never trust a client-supplied tenant_id.
     """
-    return str(getattr(user, "tenant_id", None) or "default")
+    return require_tenant_id(user)
 
 
 # ----------------------------------------------------------------------

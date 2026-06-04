@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.renderers.rfq_pdf import render_rfq_export_pdf
 from app.common.errors import error_detail
 from app.database import get_db
-from app.services.auth.dependencies import RequestUser, get_current_request_user
+from app.services.auth.dependencies import RequestUser, get_current_request_user, require_tenant_id
 from app.services.rfq_preview_service import (
     RFQ_PREVIEW_ARTIFACT_TYPE,
     RfqExportBlockedError,
@@ -39,13 +39,8 @@ router = APIRouter()
 
 
 def _request_tenant_id(user: RequestUser) -> str:
-    tenant_id = str(user.tenant_id or user.user_id or "").strip()
-    if not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=error_detail("missing_tenant_or_user_scope"),
-        )
-    return tenant_id
+    # P0-2: strict tenant scope — missing claim is 401, never user_id fallback.
+    return require_tenant_id(user)
 
 
 class RfqPreviewCreateRequest(BaseModel):
