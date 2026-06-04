@@ -32,6 +32,7 @@ from app.services.rwdr_mvp_brief import (
     get_db_persisted_rwdr_case_snapshot,
     get_db_persisted_rwdr_case,
     list_db_persisted_rwdr_case_snapshots,
+    record_db_persisted_rwdr_manufacturer_feedback,
     update_db_persisted_rwdr_confirmations,
 )
 
@@ -94,6 +95,24 @@ class RwdrConfirmationDecision(BaseModel):
 
 class RwdrConfirmationsRequest(BaseModel):
     decisions: list[RwdrConfirmationDecision] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RwdrManufacturerFeedbackItem(BaseModel):
+    field: str = Field(..., min_length=1)
+    value: Any | None = None
+    unit: str | None = None
+    source_span: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RwdrManufacturerFeedbackRequest(BaseModel):
+    responses: list[RwdrManufacturerFeedbackItem] = Field(
+        default_factory=list, min_length=1
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -255,6 +274,36 @@ async def update_rwdr_confirmations(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
     except RWDRCaseStateValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error_detail("rwdr_confirmation_invalid", message=str(exc))) from exc
+
+
+@router.post("/rwdr/cases/{case_id}/manufacturer-feedback")
+async def record_rwdr_manufacturer_feedback(
+    case_id: str,
+    body: RwdrManufacturerFeedbackRequest,
+    user: RequestUser = Depends(get_current_request_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """C10: record post-RFQ manufacturer responses as open-point candidates.
+
+    Never a confirmed brief fact (manufacturer_response is barred from the brief);
+    matching/dispatch stay disabled. Echoed in chat only as rag_supported notes.
+    """
+    if not user.user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+    try:
+        return _json_safe(
+            await record_db_persisted_rwdr_manufacturer_feedback(
+                session=session,
+                case_id=case_id,
+                feedback=[item.model_dump() for item in body.responses],
+                tenant_id=_request_tenant_id(user),
+                user_id=user.user_id,
+            )
+        )
+    except RWDRCaseStateNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+    except RWDRCaseStateValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error_detail("rwdr_manufacturer_feedback_invalid", message=str(exc))) from exc
 
 
 @router.post("/rwdr/cases/{case_id}/evaluate")
