@@ -105,7 +105,9 @@ def test_full_solution_journey_question_suite_routes_each_phase() -> None:
         assert result.escalate_to_graph is turn.expected_escalate_to_graph, turn.phase
 
 
-def test_free_manufacturer_recommendation_stays_blocked_but_case_bound_selection_enters_governed() -> None:
+def test_free_manufacturer_recommendation_stays_blocked_but_case_bound_selection_enters_governed() -> (
+    None
+):
     classifier = PreGateClassifier()
 
     free_recommendation = classifier.classify("Welchen Hersteller empfiehlst du?")
@@ -117,7 +119,9 @@ def test_free_manufacturer_recommendation_stays_blocked_but_case_bound_selection
     )
     assert case_bound_selection.classification is PreGateClassification.DOMAIN_INQUIRY
     assert case_bound_selection.escalate_to_graph is True
-    assert case_bound_selection.reasoning == "deterministic_governed_manufacturer_handover"
+    assert (
+        case_bound_selection.reasoning == "deterministic_governed_manufacturer_handover"
+    )
 
 
 def test_journey_can_start_with_free_knowledge_then_continue_into_case() -> None:
@@ -150,7 +154,9 @@ def test_journey_can_start_with_free_knowledge_then_continue_into_case() -> None
     assert case_turn.escalate_to_graph is True
 
 
-def test_deterministic_manufacturer_selection_rfq_projection_and_export_contract_are_clean() -> None:
+def test_deterministic_manufacturer_selection_rfq_projection_and_export_contract_are_clean() -> (
+    None
+):
     manufacturers = json.loads(_MANUFACTURERS_PATH.read_text())
     derived = {
         "pressure_bar": 5.0,
@@ -185,7 +191,9 @@ def test_deterministic_manufacturer_selection_rfq_projection_and_export_contract
         description="PTFE O-Ring inquiry basis for pharma/CIP operating window",
         seal_type="O-Ring",
     )
-    application_summary = "Pharma-Pumpe, Dampf/CIP, PTFE O-Ring, 120 C, 5 bar, Welle 30 mm"
+    application_summary = (
+        "Pharma-Pumpe, Dampf/CIP, PTFE O-Ring, 120 C, 5 bar, Welle 30 mm"
+    )
 
     state = state.model_copy(
         update={
@@ -260,7 +268,9 @@ def test_deterministic_manufacturer_selection_rfq_projection_and_export_contract
                     sealing_material_family="PTFE",
                     qualified_materials=["STS-MAT-PTFE-A1"],
                 ),
-                open_validation_points=["Finale Werkstoff- und Compoundvalidierung durch Hersteller"],
+                open_validation_points=[
+                    "Finale Werkstoff- und Compoundvalidierung durch Hersteller"
+                ],
                 manufacturer_validation_required=True,
             ),
             "export_profile": ExportProfileState(
@@ -300,7 +310,9 @@ def test_deterministic_manufacturer_selection_rfq_projection_and_export_contract
                 dispatch_ready=True,
                 unresolved_points=["Herstellerfreigabe und konkrete Compounddaten"],
                 mapping_summary="material_family=PTFE; product_family=O-Ring",
-                handover_notes=["System-neutral handover; no external transport event is emitted."],
+                handover_notes=[
+                    "System-neutral handover; no external transport event is emitted."
+                ],
             ),
         }
     )
@@ -314,7 +326,9 @@ def test_deterministic_manufacturer_selection_rfq_projection_and_export_contract
     assert projection.rfq.dispatch_ready is True
     assert projection.rfq.dispatch_status == "envelope_ready"
     assert projection.export_profile.selected_manufacturer == top_manufacturer["name"]
-    assert projection.dispatch_contract.selected_manufacturer == top_manufacturer["name"]
+    assert (
+        projection.dispatch_contract.selected_manufacturer == top_manufacturer["name"]
+    )
 
     visible_projection = str(projection.model_dump()).lower()
     assert "candidate_ids" not in visible_projection

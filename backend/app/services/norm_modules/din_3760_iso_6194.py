@@ -33,7 +33,9 @@ class Din3760Iso6194Module(NormModule):
         if engineering_path == "rwdr":
             return True
 
-        seal_kind = _norm_text(context.get("seal_kind") or context.get("seal_type_family"))
+        seal_kind = _norm_text(
+            context.get("seal_kind") or context.get("seal_type_family")
+        )
         motion_type = _norm_text(context.get("motion_type"))
         return seal_kind in {"rwdr", "radial_shaft_seal"} or motion_type == "rotary"
 
@@ -112,7 +114,9 @@ class Din3760Iso6194Module(NormModule):
             references=self.references,
         )
 
-    def _geometry_findings(self, context: NormCheckContext) -> tuple[NormCheckFinding, ...]:
+    def _geometry_findings(
+        self, context: NormCheckContext
+    ) -> tuple[NormCheckFinding, ...]:
         shaft = to_float(context.get("shaft_diameter_mm"))
         housing = to_float(context.get("housing_bore_diameter_mm"))
         width = to_float(context.get("seal_width_mm"))
@@ -168,7 +172,9 @@ class Din3760Iso6194Module(NormModule):
             )
         return ()
 
-    def _review_findings(self, context: NormCheckContext) -> tuple[NormCheckFinding, ...]:
+    def _review_findings(
+        self, context: NormCheckContext
+    ) -> tuple[NormCheckFinding, ...]:
         findings: list[NormCheckFinding] = []
         pressure = to_float(context.get("pressure_bar"))
         if pressure is not None and pressure > 0:

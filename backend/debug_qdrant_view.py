@@ -32,15 +32,24 @@ def _safe_post(client: httpx.Client, path: str, body: Dict[str, Any]) -> Dict[st
 
 def list_collections(client: httpx.Client) -> List[str]:
     data = _safe_get(client, "/collections")
-    cols = [c.get("name") for c in (data.get("result", {}).get("collections") or []) if c.get("name")]
+    cols = [
+        c.get("name")
+        for c in (data.get("result", {}).get("collections") or [])
+        if c.get("name")
+    ]
     _print_json("Task 1: All collections", cols)
     return cols
 
 
 def count_points(client: httpx.Client, collection: str) -> int:
-    data = _safe_post(client, f"/collections/{collection}/points/count", {"exact": True})
+    data = _safe_post(
+        client, f"/collections/{collection}/points/count", {"exact": True}
+    )
     count = int((data.get("result") or {}).get("count") or 0)
-    _print_json(f"Task 2: Total points in '{collection}'", {"collection": collection, "count": count})
+    _print_json(
+        f"Task 2: Total points in '{collection}'",
+        {"collection": collection, "count": count},
+    )
     return count
 
 
@@ -64,7 +73,9 @@ def first_five_tenants(client: httpx.Client, collection: str) -> List[Dict[str, 
     return view
 
 
-def kyrolon_scroll_filter(client: httpx.Client, collection: str) -> List[Dict[str, Any]]:
+def kyrolon_scroll_filter(
+    client: httpx.Client, collection: str
+) -> List[Dict[str, Any]]:
     # Raw scroll with payload filter to find likely Kyrolon fields.
     body = {
         "limit": 20,
@@ -92,17 +103,24 @@ def kyrolon_scroll_filter(client: httpx.Client, collection: str) -> List[Dict[st
     for p in points:
         payload = p.get("payload") or {}
         metadata = payload.get("metadata") or {}
-        text = payload.get("text") or payload.get("chunk") or payload.get("content") or ""
+        text = (
+            payload.get("text") or payload.get("chunk") or payload.get("content") or ""
+        )
         view.append(
             {
                 "id": p.get("id"),
                 "tenant_id": payload.get("tenant_id") or metadata.get("tenant_id"),
-                "source": payload.get("source") or metadata.get("source") or payload.get("filename"),
+                "source": payload.get("source")
+                or metadata.get("source")
+                or payload.get("filename"),
                 "text_preview": str(text)[:220],
             }
         )
 
-    _print_json('Task 4: Raw scroll filter search for "Kyrolon"', {"hits": len(view), "results": view})
+    _print_json(
+        'Task 4: Raw scroll filter search for "Kyrolon"',
+        {"hits": len(view), "results": view},
+    )
     return view
 
 

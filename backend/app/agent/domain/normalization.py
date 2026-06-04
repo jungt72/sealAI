@@ -13,6 +13,7 @@ All public APIs below the "Backward-compatible layer" header are unchanged
 from v0 and used directly by logic.py / graph.py.
 New API surface: MappingConfidence, NormalizedEntity, normalize_parameter().
 """
+
 from __future__ import annotations
 
 import json
@@ -63,6 +64,7 @@ _MEDIUM_LLM_FALLBACK_ENABLED: bool = (
 # V1 Type Layer — Phase 0B.3
 # ===========================================================================
 
+
 class MappingConfidence(str, Enum):
     """Confidence grade for a normalization mapping.
 
@@ -98,6 +100,7 @@ class NormalizedEntity:
         confidence:        How reliable the mapping is (MappingConfidence).
         warning_message:   Human-readable note when confidence < CONFIRMED.
     """
+
     raw_value: Any
     normalized_value: Optional[Any]
     domain_type: str
@@ -154,33 +157,54 @@ class MediumSpecialistResult:
 # ── Materials ────────────────────────────────────────────────────────────────
 
 _MAT_CONFIRMED: dict[str, str] = {
-    "nbr":         "NBR",
-    "ptfe":        "PTFE",
-    "fkm":         "FKM",
-    "ffkm":        "FFKM",
-    "epdm":        "EPDM",
-    "silikon":     "SILIKON",
-    "hnbr":        "HNBR",
-    "acm":         "ACM",
-    "au":          "AU",
-    "eu":          "EU",
+    "nbr": "NBR",
+    "ptfe": "PTFE",
+    "fkm": "FKM",
+    "ffkm": "FFKM",
+    "epdm": "EPDM",
+    "silikon": "SILIKON",
+    "hnbr": "HNBR",
+    "acm": "ACM",
+    "au": "AU",
+    "eu": "EU",
 }
 
 _MAT_ESTIMATED: dict[str, tuple[str, str]] = {
-    "nitril":          ("NBR",     "synonym:nitril→NBR — sehr gebräuchliches Synonym"),
-    "nitrilkautschuk": ("NBR",     "synonym:nitrilkautschuk→NBR"),
-    "silikonkautschuk":("SILIKON", "synonym:silikonkautschuk→SILIKON"),
-    "perbunan":        ("NBR",     "trade_name:perbunan — gebräuchlicher NBR-Handelsname (Lanxess)"),
+    "nitril": ("NBR", "synonym:nitril→NBR — sehr gebräuchliches Synonym"),
+    "nitrilkautschuk": ("NBR", "synonym:nitrilkautschuk→NBR"),
+    "silikonkautschuk": ("SILIKON", "synonym:silikonkautschuk→SILIKON"),
+    "perbunan": (
+        "NBR",
+        "trade_name:perbunan — gebräuchlicher NBR-Handelsname (Lanxess)",
+    ),
 }
 
 _MAT_REQUIRES_CONFIRMATION: dict[str, tuple[str, str]] = {
     # Trade names: chemically well-known but compound-grade-specific → confirm before binding
-    "viton":     ("FKM",  "trade_name:viton — Chemours-Marke für FKM; Compound-Bestätigung erforderlich"),
-    "kalrez":    ("FFKM", "trade_name:kalrez — DuPont-Marke für FFKM; Compound-Bestätigung erforderlich"),
-    "teflon":    ("PTFE", "trade_name:teflon — Chemours-Marke; PTFE-Typ/Grade-Bestätigung erforderlich"),
-    "tecnoflon": ("FKM",  "trade_name:tecnoflon — Solvay-Marke für FKM; Compound-Bestätigung erforderlich"),
-    "dyneon":    ("FKM",  "trade_name:dyneon — 3M-Marke für FKM; Compound-Bestätigung erforderlich"),
-    "aflas":     ("FKM",  "trade_name:aflas — TFE/P-Copolymer; Anwendungsbestätigung erforderlich"),
+    "viton": (
+        "FKM",
+        "trade_name:viton — Chemours-Marke für FKM; Compound-Bestätigung erforderlich",
+    ),
+    "kalrez": (
+        "FFKM",
+        "trade_name:kalrez — DuPont-Marke für FFKM; Compound-Bestätigung erforderlich",
+    ),
+    "teflon": (
+        "PTFE",
+        "trade_name:teflon — Chemours-Marke; PTFE-Typ/Grade-Bestätigung erforderlich",
+    ),
+    "tecnoflon": (
+        "FKM",
+        "trade_name:tecnoflon — Solvay-Marke für FKM; Compound-Bestätigung erforderlich",
+    ),
+    "dyneon": (
+        "FKM",
+        "trade_name:dyneon — 3M-Marke für FKM; Compound-Bestätigung erforderlich",
+    ),
+    "aflas": (
+        "FKM",
+        "trade_name:aflas — TFE/P-Copolymer; Anwendungsbestätigung erforderlich",
+    ),
 }
 
 # ── Media ────────────────────────────────────────────────────────────────────
@@ -207,9 +231,9 @@ for _entry in medium_registry_entries():
 
 _PRESSURE_TO_BAR: dict[str, float] = {
     "bar": 1.0,
-    "psi": 0.0689476,   # 1 psi = 6894.757 Pa = 0.0689476 bar
-    "mpa": 10.0,        # 1 MPa = 10 bar
-    "kpa": 0.01,        # 1 kPa = 0.01 bar
+    "psi": 0.0689476,  # 1 psi = 6894.757 Pa = 0.0689476 bar
+    "mpa": 10.0,  # 1 MPa = 10 bar
+    "kpa": 0.01,  # 1 kPa = 0.01 bar
 }
 
 _TEMP_PATTERN = re.compile(
@@ -409,7 +433,9 @@ def run_medium_specialist(
     """Bounded internal specialist for deterministic medium interpretation."""
     candidates = list(specialist_input.candidate_media_tokens)
     if not candidates and specialist_input.latest_user_message:
-        candidates.extend(_extract_candidate_media_tokens(specialist_input.latest_user_message))
+        candidates.extend(
+            _extract_candidate_media_tokens(specialist_input.latest_user_message)
+        )
     for note in specialist_input.observed_notes:
         candidates.extend(_extract_candidate_media_tokens(note))
     candidates = _unique_nonempty(candidates)
@@ -424,14 +450,18 @@ def run_medium_specialist(
 
     results = [_medium_result_from_token(token) for token in candidates]
     canonicals = {
-        str(result.canonical_medium).strip().lower(): str(result.canonical_medium).strip()
+        str(result.canonical_medium).strip().lower(): str(
+            result.canonical_medium
+        ).strip()
         for result in results
         if str(result.canonical_medium or "").strip()
     }
     if len(canonicals) > 1:
         canonical_values = list(canonicals.values())
         most_specific = max(canonical_values, key=lambda value: len(value.casefold()))
-        if all(value.casefold() in most_specific.casefold() for value in canonical_values):
+        if all(
+            value.casefold() in most_specific.casefold() for value in canonical_values
+        ):
             return max(
                 (
                     result
@@ -446,7 +476,8 @@ def run_medium_specialist(
         return MediumSpecialistResult(
             canonical_medium=None,
             medium_confidence=MappingConfidence.REQUIRES_CONFIRMATION,
-            medium_uncertainty_reason="medium_conflict:" + " | ".join(sorted(canonicals.values())),
+            medium_uncertainty_reason="medium_conflict:"
+            + " | ".join(sorted(canonicals.values())),
             followup_question_if_needed="Welches Medium liegt genau an?",
         )
 
@@ -463,6 +494,7 @@ def run_medium_specialist(
 # ---------------------------------------------------------------------------
 # Internal normalizers
 # ---------------------------------------------------------------------------
+
 
 def _parse_temp_input(raw: Any) -> Optional[tuple[float, str]]:
     if isinstance(raw, (int, float)):
@@ -497,17 +529,26 @@ def _value_with_unit(raw_value: Any, unit: str | None) -> Any:
 def _normalize_temperature_entity(raw: Any) -> NormalizedEntity:
     parsed = _parse_temp_input(raw)
     if parsed is None:
-        return NormalizedEntity(raw, None, "temperature",
-                                MappingConfidence.REQUIRES_CONFIRMATION,
-                                f"Temperaturformat nicht erkannt: {raw!r}")
+        return NormalizedEntity(
+            raw,
+            None,
+            "temperature",
+            MappingConfidence.REQUIRES_CONFIRMATION,
+            f"Temperaturformat nicht erkannt: {raw!r}",
+        )
     value, unit = parsed
     if unit == "C":
-        return NormalizedEntity(raw, round(value, 2), "temperature",
-                                MappingConfidence.CONFIRMED)
+        return NormalizedEntity(
+            raw, round(value, 2), "temperature", MappingConfidence.CONFIRMED
+        )
     celsius = round((value - 32.0) * 5.0 / 9.0, 2)
-    return NormalizedEntity(raw, celsius, "temperature",
-                            MappingConfidence.CONFIRMED,
-                            f"Umgerechnet von {value}°F → {celsius}°C")
+    return NormalizedEntity(
+        raw,
+        celsius,
+        "temperature",
+        MappingConfidence.CONFIRMED,
+        f"Umgerechnet von {value}°F → {celsius}°C",
+    )
 
 
 def _parse_pressure_input(raw: Any) -> Optional[tuple[float, str]]:
@@ -530,25 +571,41 @@ def _parse_pressure_input(raw: Any) -> Optional[tuple[float, str]]:
 def _normalize_pressure_entity(raw: Any) -> NormalizedEntity:
     parsed = _parse_pressure_input(raw)
     if parsed is None:
-        return NormalizedEntity(raw, None, "pressure",
-                                MappingConfidence.REQUIRES_CONFIRMATION,
-                                f"Druckformat nicht erkannt: {raw!r}")
+        return NormalizedEntity(
+            raw,
+            None,
+            "pressure",
+            MappingConfidence.REQUIRES_CONFIRMATION,
+            f"Druckformat nicht erkannt: {raw!r}",
+        )
     value, unit = parsed
     factor = _PRESSURE_TO_BAR.get(unit, 1.0)
     bar_val = round(value * factor, 4)
-    warn = f"Umgerechnet von {value} {unit.upper()} → {bar_val} bar" if unit != "bar" else None
+    warn = (
+        f"Umgerechnet von {value} {unit.upper()} → {bar_val} bar"
+        if unit != "bar"
+        else None
+    )
     return NormalizedEntity(raw, bar_val, "pressure", MappingConfidence.CONFIRMED, warn)
 
 
 def _pressure_interpretation(raw: Any, unit: str | None = None) -> str:
     text = f"{raw or ''} {unit or ''}".casefold()
-    if re.search(r"\b(?:direct_at_seal|direkt\s+(?:an|auf)\s+der\s+(?:dichtung|dichtstelle|dichtlippe)|dichtstelle|dichtlippe)\b", text):
+    if re.search(
+        r"\b(?:direct_at_seal|direkt\s+(?:an|auf)\s+der\s+(?:dichtung|dichtstelle|dichtlippe)|dichtstelle|dichtlippe)\b",
+        text,
+    ):
         return "direct_at_seal"
-    if re.search(r"\b(?:system_pressure|systemdruck|system\s*druck|leitungsdruck|pumpendruck)\b", text):
+    if re.search(
+        r"\b(?:system_pressure|systemdruck|system\s*druck|leitungsdruck|pumpendruck)\b",
+        text,
+    ):
         return "system_pressure"
     if re.search(r"\b(?:delta\s*p|differential|differenzdruck|dp|Δp)\b", text):
         return "differential"
-    if re.search(r"\b(?:barg|bar\s*[\(\[]?\s*g\s*[\)\]]?|gauge|ueberdruck|überdruck)\b", text):
+    if re.search(
+        r"\b(?:barg|bar\s*[\(\[]?\s*g\s*[\)\]]?|gauge|ueberdruck|überdruck)\b", text
+    ):
         return "gauge"
     if re.search(r"\b(?:bara|bar\s*[\(\[]?\s*a\s*[\)\]]?|absolute?|abs)\b", text):
         return "absolute"
@@ -594,7 +651,10 @@ def _critical_field_quantity(field_name: str) -> tuple[str, str | None]:
 
 
 def _length_interpretation(field_name: str) -> str:
-    if any(token in field_name for token in ("runout", "eccentricity", "misalignment", "gap")):
+    if any(
+        token in field_name
+        for token in ("runout", "eccentricity", "misalignment", "gap")
+    ):
         return "runout_or_gap"
     if "diameter" in field_name or "bore" in field_name:
         return "diameter"
@@ -650,7 +710,9 @@ def normalize_critical_field_value(
         if match:
             canonical_value = float(match.group(1))
         else:
-            canonical_value = _coerce_number(raw_value) if field_name == "speed_rpm" else None
+            canonical_value = (
+                _coerce_number(raw_value) if field_name == "speed_rpm" else None
+            )
             if canonical_value is None:
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("rotational_speed_unit_required")
@@ -665,7 +727,9 @@ def normalize_critical_field_value(
             canonical_value = round(float(mm_match.group(1)) * 1000.0, 6)
             warnings.append("converted_from_mm_to_micrometer")
         else:
-            canonical_value = _coerce_number(raw_value) if field_name.endswith("_um") else None
+            canonical_value = (
+                _coerce_number(raw_value) if field_name.endswith("_um") else None
+            )
             if canonical_value is None:
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("roughness_unit_required")
@@ -676,7 +740,9 @@ def normalize_critical_field_value(
         if hrc_match:
             canonical_value = float(hrc_match.group(1))
         else:
-            canonical_value = _coerce_number(raw_value) if field_name.endswith("_hrc") else None
+            canonical_value = (
+                _coerce_number(raw_value) if field_name.endswith("_hrc") else None
+            )
             if canonical_value is None:
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("hardness_unit_required")
@@ -691,7 +757,9 @@ def normalize_critical_field_value(
             canonical_value = round(float(um_match.group(1)) / 1000.0, 6)
             warnings.append("converted_from_micrometer_to_mm")
         else:
-            canonical_value = _coerce_number(raw_value) if field_name.endswith("_mm") else None
+            canonical_value = (
+                _coerce_number(raw_value) if field_name.endswith("_mm") else None
+            )
             if canonical_value is None:
                 confidence = MappingConfidence.REQUIRES_CONFIRMATION
                 warnings.append("length_unit_required")
@@ -716,51 +784,95 @@ def normalize_critical_field_value(
 
 def _normalize_material_entity(raw: Any) -> NormalizedEntity:
     if raw is None:
-        return NormalizedEntity(None, None, "material",
-                                MappingConfidence.REQUIRES_CONFIRMATION,
-                                "Kein Materialwert übergeben")
+        return NormalizedEntity(
+            None,
+            None,
+            "material",
+            MappingConfidence.REQUIRES_CONFIRMATION,
+            "Kein Materialwert übergeben",
+        )
     key = str(raw).strip().lower()
     if key in _MAT_CONFIRMED:
-        return NormalizedEntity(raw, _MAT_CONFIRMED[key], "material",
-                                MappingConfidence.CONFIRMED)
+        return NormalizedEntity(
+            raw, _MAT_CONFIRMED[key], "material", MappingConfidence.CONFIRMED
+        )
     if key in _MAT_ESTIMATED:
         canonical, reason = _MAT_ESTIMATED[key]
-        return NormalizedEntity(raw, canonical, "material",
-                                MappingConfidence.ESTIMATED, reason)
+        return NormalizedEntity(
+            raw, canonical, "material", MappingConfidence.ESTIMATED, reason
+        )
     if key in _MAT_REQUIRES_CONFIRMATION:
         canonical, reason = _MAT_REQUIRES_CONFIRMATION[key]
-        return NormalizedEntity(raw, canonical, "material",
-                                MappingConfidence.REQUIRES_CONFIRMATION, reason)
-    return NormalizedEntity(raw, None, "material", MappingConfidence.INFERRED,
-                            f"Material nicht im V1-Mapping: {raw!r}")
+        return NormalizedEntity(
+            raw, canonical, "material", MappingConfidence.REQUIRES_CONFIRMATION, reason
+        )
+    return NormalizedEntity(
+        raw,
+        None,
+        "material",
+        MappingConfidence.INFERRED,
+        f"Material nicht im V1-Mapping: {raw!r}",
+    )
 
 
 def _normalize_medium_entity(raw: Any) -> NormalizedEntity:
     if raw is None:
-        return NormalizedEntity(None, None, "medium",
-                                MappingConfidence.REQUIRES_CONFIRMATION,
-                                "Kein Mediumwert übergeben")
+        return NormalizedEntity(
+            None,
+            None,
+            "medium",
+            MappingConfidence.REQUIRES_CONFIRMATION,
+            "Kein Mediumwert übergeben",
+        )
     if is_medium_placeholder_value(str(raw)):
-        return NormalizedEntity(raw, None, "medium",
-                                MappingConfidence.REQUIRES_CONFIRMATION,
-                                "medium_placeholder_or_unknown")
+        return NormalizedEntity(
+            raw,
+            None,
+            "medium",
+            MappingConfidence.REQUIRES_CONFIRMATION,
+            "medium_placeholder_or_unknown",
+        )
     decision = classify_medium_value(str(raw))
     if decision.canonical_label and decision.mapping_confidence == "confirmed":
-        return NormalizedEntity(raw, decision.canonical_label, "medium",
-                                MappingConfidence.CONFIRMED, decision.mapping_reason)
+        return NormalizedEntity(
+            raw,
+            decision.canonical_label,
+            "medium",
+            MappingConfidence.CONFIRMED,
+            decision.mapping_reason,
+        )
     if decision.canonical_label and decision.mapping_confidence == "estimated":
-        return NormalizedEntity(raw, decision.canonical_label, "medium",
-                                MappingConfidence.ESTIMATED, decision.mapping_reason)
-    if decision.canonical_label and decision.mapping_confidence == "requires_confirmation":
-        return NormalizedEntity(raw, decision.canonical_label, "medium",
-                                MappingConfidence.REQUIRES_CONFIRMATION, decision.mapping_reason)
-    return NormalizedEntity(raw, None, "medium", MappingConfidence.INFERRED,
-                            f"Medium nicht im V1-Mapping: {raw!r}")
+        return NormalizedEntity(
+            raw,
+            decision.canonical_label,
+            "medium",
+            MappingConfidence.ESTIMATED,
+            decision.mapping_reason,
+        )
+    if (
+        decision.canonical_label
+        and decision.mapping_confidence == "requires_confirmation"
+    ):
+        return NormalizedEntity(
+            raw,
+            decision.canonical_label,
+            "medium",
+            MappingConfidence.REQUIRES_CONFIRMATION,
+            decision.mapping_reason,
+        )
+    return NormalizedEntity(
+        raw,
+        None,
+        "medium",
+        MappingConfidence.INFERRED,
+        f"Medium nicht im V1-Mapping: {raw!r}",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 def normalize_parameter(domain_type: str, raw_value: Any) -> NormalizedEntity:
     """Normalize a single domain value to its canonical form with confidence grading.
@@ -784,9 +896,13 @@ def normalize_parameter(domain_type: str, raw_value: Any) -> NormalizedEntity:
         return _normalize_pressure_entity(raw_value)
     if domain_type == "medium":
         return _normalize_medium_entity(raw_value)
-    return NormalizedEntity(raw_value, raw_value, domain_type,
-                            MappingConfidence.INFERRED,
-                            f"Unbekannter Domain-Typ: {domain_type!r}")
+    return NormalizedEntity(
+        raw_value,
+        raw_value,
+        domain_type,
+        MappingConfidence.INFERRED,
+        f"Unbekannter Domain-Typ: {domain_type!r}",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -794,12 +910,13 @@ def normalize_parameter(domain_type: str, raw_value: Any) -> NormalizedEntity:
 # (used when populating SealingAIState.normalized.identity_records)
 # ---------------------------------------------------------------------------
 
+
 def confidence_to_identity_class(confidence: MappingConfidence) -> str:
     """Map MappingConfidence to the legacy identity_class string in SealingAIState."""
     return {
-        MappingConfidence.CONFIRMED:             "identity_confirmed",
-        MappingConfidence.ESTIMATED:             "identity_probable",
-        MappingConfidence.INFERRED:              "identity_probable",
+        MappingConfidence.CONFIRMED: "identity_confirmed",
+        MappingConfidence.ESTIMATED: "identity_probable",
+        MappingConfidence.INFERRED: "identity_probable",
         MappingConfidence.REQUIRES_CONFIRMATION: "identity_unresolved",
     }[confidence]
 
@@ -807,9 +924,9 @@ def confidence_to_identity_class(confidence: MappingConfidence) -> str:
 def confidence_to_normalization_certainty(confidence: MappingConfidence) -> str:
     """Map MappingConfidence to the legacy normalization_certainty string."""
     return {
-        MappingConfidence.CONFIRMED:             "explicit_value",
-        MappingConfidence.ESTIMATED:             "inferred",
-        MappingConfidence.INFERRED:              "ambiguous",
+        MappingConfidence.CONFIRMED: "explicit_value",
+        MappingConfidence.ESTIMATED: "inferred",
+        MappingConfidence.INFERRED: "ambiguous",
         MappingConfidence.REQUIRES_CONFIRMATION: "ambiguous",
     }[confidence]
 
@@ -819,6 +936,7 @@ def confidence_to_normalization_certainty(confidence: MappingConfidence) -> str:
 # Used by logic.py, graph.py, and existing tests.
 # DO NOT modify these functions without updating callers in logic.py.
 # ===========================================================================
+
 
 @dataclass(frozen=True)
 class NormalizationDecision:
@@ -850,73 +968,73 @@ _MATERIAL_CONFIRMATION = {
 # normalize_material_decision() is intentionally untouched (backward compat).
 # ---------------------------------------------------------------------------
 _GENERIC_TO_STS: dict[str, str] = {
-    "NBR":    "STS-MAT-NBR-A1",
-    "PTFE":   "STS-MAT-PTFE-A1",
-    "FKM":    "STS-MAT-FKM-A1",
-    "FFKM":   "STS-MAT-FFKM-A1",
-    "EPDM":   "STS-MAT-EPDM-A1",
+    "NBR": "STS-MAT-NBR-A1",
+    "PTFE": "STS-MAT-PTFE-A1",
+    "FKM": "STS-MAT-FKM-A1",
+    "FFKM": "STS-MAT-FFKM-A1",
+    "EPDM": "STS-MAT-EPDM-A1",
     "SILIKON": "STS-MAT-SI-A1",
-    "HNBR":   "STS-MAT-HNBR-A1",
-    "ACM":    "STS-MAT-ACM-A1",
-    "AU":     "STS-MAT-AU-A1",
-    "EU":     "STS-MAT-EU-A1",
+    "HNBR": "STS-MAT-HNBR-A1",
+    "ACM": "STS-MAT-ACM-A1",
+    "AU": "STS-MAT-AU-A1",
+    "EU": "STS-MAT-EU-A1",
 }
 
 _MAT_DIRECT_STS: dict[str, str] = {
     # Ceramic / cermet
-    "sic":                      "STS-MAT-SIC-A1",
-    "ssic":                     "STS-MAT-SIC-A1",
-    "siliziumkarbid":           "STS-MAT-SIC-A1",
-    "siliziumcarbid":           "STS-MAT-SIC-A1",
-    "silicon carbide":          "STS-MAT-SIC-A1",
-    "siliciumcarbide":          "STS-MAT-SIC-A1",
-    "rbsic":                    "STS-MAT-SIC-B1",
-    "sisic":                    "STS-MAT-SIC-B1",
-    "reaktionsgebundenes sic":  "STS-MAT-SIC-B1",
-    "wc":                       "STS-MAT-WC-A1",
-    "wolframkarbid":            "STS-MAT-WC-A1",
-    "tungsten carbide":         "STS-MAT-WC-A1",
-    "al2o3":                    "STS-MAT-AL2O3-A1",
-    "aluminiumoxid":            "STS-MAT-AL2O3-A1",
-    "alumina":                  "STS-MAT-AL2O3-A1",
+    "sic": "STS-MAT-SIC-A1",
+    "ssic": "STS-MAT-SIC-A1",
+    "siliziumkarbid": "STS-MAT-SIC-A1",
+    "siliziumcarbid": "STS-MAT-SIC-A1",
+    "silicon carbide": "STS-MAT-SIC-A1",
+    "siliciumcarbide": "STS-MAT-SIC-A1",
+    "rbsic": "STS-MAT-SIC-B1",
+    "sisic": "STS-MAT-SIC-B1",
+    "reaktionsgebundenes sic": "STS-MAT-SIC-B1",
+    "wc": "STS-MAT-WC-A1",
+    "wolframkarbid": "STS-MAT-WC-A1",
+    "tungsten carbide": "STS-MAT-WC-A1",
+    "al2o3": "STS-MAT-AL2O3-A1",
+    "aluminiumoxid": "STS-MAT-AL2O3-A1",
+    "alumina": "STS-MAT-AL2O3-A1",
     # Elastomers
-    "nbr":                      "STS-MAT-NBR-A1",
-    "nitrilkautschuk":          "STS-MAT-NBR-A1",
-    "buna n":                   "STS-MAT-NBR-A1",
-    "buna-n":                   "STS-MAT-NBR-A1",
-    "nitril":                   "STS-MAT-NBR-A1",
-    "fkm":                      "STS-MAT-FKM-A1",
-    "viton":                    "STS-MAT-FKM-A1",
-    "fluorokautschuk":          "STS-MAT-FKM-A1",
-    "fluorkautschuk":           "STS-MAT-FKM-A1",
-    "ffkm":                     "STS-MAT-FFKM-A1",
-    "kalrez":                   "STS-MAT-FFKM-A1",
-    "perfluorkautschuk":        "STS-MAT-FFKM-A1",
-    "epdm":                     "STS-MAT-EPDM-A1",
-    "hnbr":                     "STS-MAT-HNBR-A1",
+    "nbr": "STS-MAT-NBR-A1",
+    "nitrilkautschuk": "STS-MAT-NBR-A1",
+    "buna n": "STS-MAT-NBR-A1",
+    "buna-n": "STS-MAT-NBR-A1",
+    "nitril": "STS-MAT-NBR-A1",
+    "fkm": "STS-MAT-FKM-A1",
+    "viton": "STS-MAT-FKM-A1",
+    "fluorokautschuk": "STS-MAT-FKM-A1",
+    "fluorkautschuk": "STS-MAT-FKM-A1",
+    "ffkm": "STS-MAT-FFKM-A1",
+    "kalrez": "STS-MAT-FFKM-A1",
+    "perfluorkautschuk": "STS-MAT-FFKM-A1",
+    "epdm": "STS-MAT-EPDM-A1",
+    "hnbr": "STS-MAT-HNBR-A1",
     "hydrierter nitrilkautschuk": "STS-MAT-HNBR-A1",
-    "cr":                       "STS-MAT-CR-A1",
-    "neopren":                  "STS-MAT-CR-A1",
-    "chloropren":               "STS-MAT-CR-A1",
-    "chloroprenkautschuk":      "STS-MAT-CR-A1",
-    "silikon":                  "STS-MAT-SI-A1",
-    "vmq":                      "STS-MAT-SI-A1",
-    "silikonkautschuk":         "STS-MAT-SI-A1",
-    "silicon":                  "STS-MAT-SI-A1",
+    "cr": "STS-MAT-CR-A1",
+    "neopren": "STS-MAT-CR-A1",
+    "chloropren": "STS-MAT-CR-A1",
+    "chloroprenkautschuk": "STS-MAT-CR-A1",
+    "silikon": "STS-MAT-SI-A1",
+    "vmq": "STS-MAT-SI-A1",
+    "silikonkautschuk": "STS-MAT-SI-A1",
+    "silicon": "STS-MAT-SI-A1",
     # Polymers
-    "ptfe":                     "STS-MAT-PTFE-A1",
-    "teflon":                   "STS-MAT-PTFE-A1",
-    "polytetrafluorethylen":    "STS-MAT-PTFE-A1",
-    "peek":                     "STS-MAT-PEEK-A1",
-    "polyetheretherketon":      "STS-MAT-PEEK-A1",
-    "pvdf":                     "STS-MAT-PVDF-A1",
-    "polyvinylidenfluorid":     "STS-MAT-PVDF-A1",
+    "ptfe": "STS-MAT-PTFE-A1",
+    "teflon": "STS-MAT-PTFE-A1",
+    "polytetrafluorethylen": "STS-MAT-PTFE-A1",
+    "peek": "STS-MAT-PEEK-A1",
+    "polyetheretherketon": "STS-MAT-PEEK-A1",
+    "pvdf": "STS-MAT-PVDF-A1",
+    "polyvinylidenfluorid": "STS-MAT-PVDF-A1",
     # Carbon / graphite
-    "grafit":                   "STS-MAT-GRAFIT-A1",
-    "graphit":                  "STS-MAT-GRAFIT-A1",
-    "graphite":                 "STS-MAT-GRAFIT-A1",
-    "carbon":                   "STS-MAT-CARBON-A1",
-    "kohle":                    "STS-MAT-CARBON-A1",
+    "grafit": "STS-MAT-GRAFIT-A1",
+    "graphit": "STS-MAT-GRAFIT-A1",
+    "graphite": "STS-MAT-GRAFIT-A1",
+    "carbon": "STS-MAT-CARBON-A1",
+    "kohle": "STS-MAT-CARBON-A1",
 }
 
 _MEDIUM_DIRECT: dict[str, str] = {}
@@ -947,10 +1065,16 @@ def normalize_material_decision(value: Any) -> Optional[NormalizationDecision]:
     if lowered is None:
         return None
     if lowered in _MATERIAL_DIRECT:
-        return NormalizationDecision(_MATERIAL_DIRECT[lowered], "confirmed", f"normalized_material:{lowered}")
+        return NormalizationDecision(
+            _MATERIAL_DIRECT[lowered], "confirmed", f"normalized_material:{lowered}"
+        )
     if lowered in _MATERIAL_INFERRED:
         canonical, reason = _MATERIAL_INFERRED[lowered]
-        status = "confirmation_required" if reason.startswith("trade_name_requires_confirmation") else "inferred"
+        status = (
+            "confirmation_required"
+            if reason.startswith("trade_name_requires_confirmation")
+            else "inferred"
+        )
         return NormalizationDecision(canonical, status, reason)
     if lowered in _MATERIAL_CONFIRMATION:
         canonical, reason = _MATERIAL_CONFIRMATION[lowered]
@@ -973,13 +1097,18 @@ def normalize_medium_decision(value: Any) -> Optional[NormalizationDecision]:
         return NormalizationDecision(
             decision.canonical_label,
             "inferred",
-            decision.mapping_reason or f"medium_registry:{decision.registry_key or lowered}",
+            decision.mapping_reason
+            or f"medium_registry:{decision.registry_key or lowered}",
         )
-    if decision.canonical_label and decision.mapping_confidence == "requires_confirmation":
+    if (
+        decision.canonical_label
+        and decision.mapping_confidence == "requires_confirmation"
+    ):
         return NormalizationDecision(
             decision.canonical_label,
             "confirmation_required",
-            decision.mapping_reason or f"medium_registry:{decision.registry_key or lowered}",
+            decision.mapping_reason
+            or f"medium_registry:{decision.registry_key or lowered}",
         )
     return NormalizationDecision(str(value), "unknown", "medium_unmapped")
 
@@ -1013,7 +1142,10 @@ def normalize_medium(value: Any) -> Any:
     lowered = _lowered(value)
     if lowered is None:
         return None
-    if any(token in lowered for token in ("öliges", "wasserbasiert", "kühlschmierstoff", "emulsion")):
+    if any(
+        token in lowered
+        for token in ("öliges", "wasserbasiert", "kühlschmierstoff", "emulsion")
+    ):
         return value
     decision = normalize_medium_decision(value)
     return None if decision is None else decision.canonical_value
@@ -1023,7 +1155,10 @@ def normalize_medium_id(value: Any) -> Any:
     lowered = _lowered(value)
     if lowered is None:
         return None
-    if any(token in lowered for token in ("öliges", "wasserbasiert", "kühlschmierstoff", "emulsion")):
+    if any(
+        token in lowered
+        for token in ("öliges", "wasserbasiert", "kühlschmierstoff", "emulsion")
+    ):
         return value
     return _MEDIUM_ID.get(lowered, value)
 
@@ -1042,12 +1177,18 @@ def normalize_unit_value(value: float, unit: str) -> tuple[float, str]:
         return float(value), "C" if normalized_unit == "c" else "bar"
     return float(value), unit
 
-def extract_shaft_diameter_mm(text: str, *, allow_context_free_mm: bool = False) -> float | None:
+
+def extract_shaft_diameter_mm(
+    text: str, *, allow_context_free_mm: bool = False
+) -> float | None:
     message = str(text or "").strip()
     if not message:
         return None
 
-    for pattern in (_SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN, _SHAFT_DIAMETER_SYMBOL_PATTERN):
+    for pattern in (
+        _SHAFT_DIAMETER_KEYWORD_VALUE_PATTERN,
+        _SHAFT_DIAMETER_SYMBOL_PATTERN,
+    ):
         match = pattern.search(message)
         if match:
             return float(match.group(1).replace(",", "."))
@@ -1118,35 +1259,71 @@ def _llm_extract_medium(text: str) -> Optional[dict[str, Any]]:
 
 # motion_type — ordered by specificity; first match wins
 _MOTION_TYPE_PATTERNS: list[tuple[str, str]] = [
-    (r'\b(?:linear|lineare?|hub(?:bewegung)?|hin[- ]?und[- ]?her|translat(?:ion|ions?bewegung)?)\b', 'linear'),
-    (r'\b(?:rotier(?:end)?|drehend|dreht|radial(?:welle)?|rotierende?\s+welle)\b', 'rotary'),
-    (r'\b(?:statisch|keine\s+bewegung|stillstand|flansch(?:abdichtung)?)\b', 'static'),
+    (
+        r"\b(?:linear|lineare?|hub(?:bewegung)?|hin[- ]?und[- ]?her|translat(?:ion|ions?bewegung)?)\b",
+        "linear",
+    ),
+    (
+        r"\b(?:rotier(?:end)?|drehend|dreht|radial(?:welle)?|rotierende?\s+welle)\b",
+        "rotary",
+    ),
+    (r"\b(?:statisch|keine\s+bewegung|stillstand|flansch(?:abdichtung)?)\b", "static"),
 ]
 
 _SEALING_TYPE_PATTERNS: list[tuple[str, str]] = [
-    (r"\b(?:hydraulik[- ]?stangendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+rod\s+seal)\b", "hydraulic_rod_seal"),
-    (r"\b(?:hydraulik[- ]?kolbendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+piston\s+seal)\b", "hydraulic_piston_seal"),
-    (r"\b(?:pneumatik[- ]?stangendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+rod\s+seal)\b", "pneumatic_rod_seal"),
-    (r"\b(?:pneumatik[- ]?kolbendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+piston\s+seal)\b", "pneumatic_piston_seal"),
+    (
+        r"\b(?:hydraulik[- ]?stangendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+rod\s+seal)\b",
+        "hydraulic_rod_seal",
+    ),
+    (
+        r"\b(?:hydraulik[- ]?kolbendichtung|hydraulik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+hydraulik\w*|hydraulic\s+piston\s+seal)\b",
+        "hydraulic_piston_seal",
+    ),
+    (
+        r"\b(?:pneumatik[- ]?stangendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+stangendichtung|stangendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+rod\s+seal)\b",
+        "pneumatic_rod_seal",
+    ),
+    (
+        r"\b(?:pneumatik[- ]?kolbendichtung|pneumatik\w*(?:\s+\w+){0,4}\s+kolbendichtung|kolbendichtung(?:\s+\w+){0,4}\s+pneumatik\w*|pneumatic\s+piston\s+seal)\b",
+        "pneumatic_piston_seal",
+    ),
     (r"\b(?:abstreifer|wiper\s+seal)\b", "hydraulic_wiper"),
     (r"\b(?:f[uü]hrungsring|guide\s+ring)\b", "hydraulic_guide_ring"),
     (r"\b(?:gleitringdichtung|gleitring|mechanical\s+seal)\b", "mechanical_seal"),
-    (r"\b(?:rwdr|radialwellendichtring|simmerring|simmering|wellendichtring)\b", "rwdr"),
+    (
+        r"\b(?:rwdr|radialwellendichtring|simmerring|simmering|wellendichtring)\b",
+        "rwdr",
+    ),
     (r"\b(?:o[- ]?ring|oring)\b", "o_ring"),
     (r"\b(?:flachdichtung|flat\s+gasket|cut\s+gasket|gasket)\b", "flat_gasket"),
     (r"\b(?:packung|stopfbuchse)\b", "packing"),
 ]
 
 _PRESSURE_DIRECTION_PATTERNS: list[tuple[str, str]] = [
-    (r"\b(?:beidseitig|wechselnd\w*\s+druck|druck\s+wechselnd|bidirectional)\b", "bidirectional"),
-    (r"\b(?:von\s+innen\s+nach\s+aussen|von\s+innen\s+nach\s+außen|innen\s+nach\s+aussen|innen\s+nach\s+außen)\b", "inside_out"),
-    (r"\b(?:von\s+aussen\s+nach\s+innen|von\s+außen\s+nach\s+innen|aussen\s+nach\s+innen|außen\s+nach\s+innen)\b", "outside_in"),
+    (
+        r"\b(?:beidseitig|wechselnd\w*\s+druck|druck\s+wechselnd|bidirectional)\b",
+        "bidirectional",
+    ),
+    (
+        r"\b(?:von\s+innen\s+nach\s+aussen|von\s+innen\s+nach\s+außen|innen\s+nach\s+aussen|innen\s+nach\s+außen)\b",
+        "inside_out",
+    ),
+    (
+        r"\b(?:von\s+aussen\s+nach\s+innen|von\s+außen\s+nach\s+innen|aussen\s+nach\s+innen|außen\s+nach\s+innen)\b",
+        "outside_in",
+    ),
     (r"\b(?:drucklos|atmosphaerisch|atmosphärisch)\b", "pressureless_or_atmospheric"),
 ]
 
 _DUTY_PROFILE_PATTERNS: list[tuple[str, str]] = [
-    (r"\b(?:24\s*/\s*7|dauerbetrieb|kontinuierlich|permanent|continuous)\b", "continuous"),
-    (r"\b(?:gelegentlich\w*|intermittierend|zeitweise|batch|taktbetrieb|anlaufbetrieb)\b", "intermittent"),
+    (
+        r"\b(?:24\s*/\s*7|dauerbetrieb|kontinuierlich|permanent|continuous)\b",
+        "continuous",
+    ),
+    (
+        r"\b(?:gelegentlich\w*|intermittierend|zeitweise|batch|taktbetrieb|anlaufbetrieb)\b",
+        "intermittent",
+    ),
     (r"\b(?:trockenlauf|dry\s*run(?:ning)?)\b", "dry_running_risk"),
 ]
 
@@ -1155,7 +1332,10 @@ _INSTALLATION_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:ventil|valve)\b", "valve"),
     (r"\b(?:flansch|flange)\b", "flange"),
     (r"\b(?:gehaeuse|gehäuse|housing)\b", "housing"),
-    (r"\b(?:einbauraum|bauraum|radialer\s+bauraum|axialer\s+bauraum|nur\s+\d+(?:[.,]\d+)?\s*mm)\b", "limited_installation_space"),
+    (
+        r"\b(?:einbauraum|bauraum|radialer\s+bauraum|axialer\s+bauraum|nur\s+\d+(?:[.,]\d+)?\s*mm)\b",
+        "limited_installation_space",
+    ),
 ]
 
 _GEOMETRY_CONTEXT_PATTERNS: list[tuple[str, str]] = [
@@ -1165,13 +1345,22 @@ _GEOMETRY_CONTEXT_PATTERNS: list[tuple[str, str]] = [
 ]
 
 _CONTAMINATION_PATTERNS: list[tuple[str, str]] = [
-    (r"\b(?:schmutz|verschmutz\w*|partikel|feststoff\w*|solids?)\b", "solids_or_particles"),
+    (
+        r"\b(?:schmutz|verschmutz\w*|partikel|feststoff\w*|solids?)\b",
+        "solids_or_particles",
+    ),
     (r"\b(?:abrasiv\w*|sand|slurry|schlamm)\b", "abrasive"),
 ]
 
 _COUNTERFACE_SURFACE_PATTERNS: list[tuple[str, str]] = [
-    (r"\b(?:gegenlauf(?:flaeche|fläche|partner)|wellenzustand|wellenoberflaeche|wellenoberfläche|laufpartner)\b", "counterface_condition"),
-    (r"\b(?:rauheit|ra\s*\d|oberflaeche|oberfläche|verschlissen|riefen)\b", "surface_quality_context"),
+    (
+        r"\b(?:gegenlauf(?:flaeche|fläche|partner)|wellenzustand|wellenoberflaeche|wellenoberfläche|laufpartner)\b",
+        "counterface_condition",
+    ),
+    (
+        r"\b(?:rauheit|ra\s*\d|oberflaeche|oberfläche|verschlissen|riefen)\b",
+        "surface_quality_context",
+    ),
     (r"\b(?:huelse|hülse|buchse|wellenwerkstoff)\b", "counterface_material_context"),
 ]
 
@@ -1191,36 +1380,66 @@ _TOLERANCE_PATTERNS: list[tuple[str, str]] = [
 
 _LUBRICATION_CONDITION_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:trockenlauf|dry\s*run(?:ning)?|dry-run)\b", "dry_run_possible"),
-    (r"\b(?:mangelschmierung|mangel\s*schmierung|insufficient\s+lubrication|poor\s+lubrication)\b", "insufficient_lubrication"),
+    (
+        r"\b(?:mangelschmierung|mangel\s*schmierung|insufficient\s+lubrication|poor\s+lubrication)\b",
+        "insufficient_lubrication",
+    ),
     (r"\b(?:geschmiert|oelgeschmiert|ölgeschmiert|lubricated)\b", "lubricated"),
     (r"\b(?:schmierung\s+unbekannt|lubrication\s+unknown)\b", "unknown"),
 ]
 
 _CONTAMINATION_CONDITION_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:abrasiver?\s+staub|abrasive\s+dust)\b", "abrasive_dust"),
-    (r"\b(?:abrasiv\w*|sand|staub|schmutz|partikel|feststoff\w*|solids?)\b", "particles_or_abrasive"),
-    (r"\b(?:sauber|keine\s+(?:verschmutzung|partikel)|clean|no\s+(?:dirt|particles))\b", "clean"),
+    (
+        r"\b(?:abrasiv\w*|sand|staub|schmutz|partikel|feststoff\w*|solids?)\b",
+        "particles_or_abrasive",
+    ),
+    (
+        r"\b(?:sauber|keine\s+(?:verschmutzung|partikel)|clean|no\s+(?:dirt|particles))\b",
+        "clean",
+    ),
     (r"\b(?:verschmutzung\s+unbekannt|contamination\s+unknown)\b", "unknown"),
 ]
 
 _INDUSTRY_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:lebensmittel\w*|food|pharma|hygien\w*)\b", "food_pharma"),
-    (r"\b(?:chemie|chemisch\w*|chemical|prozess(?:technik|industrie)?)\b", "chemical_process"),
+    (
+        r"\b(?:chemie|chemisch\w*|chemical|prozess(?:technik|industrie)?)\b",
+        "chemical_process",
+    ),
     (r"\b(?:wasser|abwasser|marine|schiff)\b", "water_or_marine"),
 ]
 
 _COMPLIANCE_PATTERNS: list[tuple[str, str]] = [
     (r"\b(?:fda|eu\s*10/2011|lebensmittelkonform)\b", "food_contact"),
     (r"\b(?:atex|explosionsschutz|ex[- ]?zone)\b", "atex"),
-    (r"\b(?:ta[- ]?luft|api\s*682|din\s+en\s+12756|din\s+3760)\b", "norm_or_regulatory"),
+    (
+        r"\b(?:ta[- ]?luft|api\s*682|din\s+en\s+12756|din\s+3760)\b",
+        "norm_or_regulatory",
+    ),
 ]
 
 _MEDIUM_QUALIFIER_PATTERNS: list[tuple[str, str]] = [
-    (r"(?:\b(?:konzentration|konzentriert|prozent)\b|\d+(?:[.,]\d+)?\s*%)", "concentration_context"),
-    (r"\b(?:chlorid(?:e|gehalt)?|chlorides?|salzgehalt|nacl)\b", "chlorides_or_salinity"),
-    (r"\b(?:abrasiv\w*|partikel|feststoff\w*|solids?|slurry|schlamm)\b", "solids_or_abrasives"),
-    (r"\b(?:sattdampf|heissdampf|heißdampf|dampfqualitaet|dampfqualität)\b", "steam_detail"),
-    (r"\b(?:saeure|säure|salzsaeure|salzsäure|lauge|loesungsmittel|lösungsmittel)\b", "chemistry_detail"),
+    (
+        r"(?:\b(?:konzentration|konzentriert|prozent)\b|\d+(?:[.,]\d+)?\s*%)",
+        "concentration_context",
+    ),
+    (
+        r"\b(?:chlorid(?:e|gehalt)?|chlorides?|salzgehalt|nacl)\b",
+        "chlorides_or_salinity",
+    ),
+    (
+        r"\b(?:abrasiv\w*|partikel|feststoff\w*|solids?|slurry|schlamm)\b",
+        "solids_or_abrasives",
+    ),
+    (
+        r"\b(?:sattdampf|heissdampf|heißdampf|dampfqualitaet|dampfqualität)\b",
+        "steam_detail",
+    ),
+    (
+        r"\b(?:saeure|säure|salzsaeure|salzsäure|lauge|loesungsmittel|lösungsmittel)\b",
+        "chemistry_detail",
+    ),
 ]
 
 
@@ -1312,7 +1531,9 @@ def extract_parameters(text: str) -> dict[str, Any]:
         )
     )
     # Match "80°C", "80C", "80 Grad", "80 grad" — group(2) is None for bare "grad" → default Celsius
-    temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°?\s*([CF])\b|\bgrad\b)", text, re.I)
+    temp_match = re.search(
+        r"(\d+(?:[.,]\d+)?)\s*(?:°?\s*([CF])\b|\bgrad\b)", text, re.I
+    )
     if temp_match:
         raw = temp_match.group(0)
         value = float(temp_match.group(1).replace(",", "."))
@@ -1426,9 +1647,13 @@ def extract_parameters(text: str) -> dict[str, Any]:
             medium_result.medium_uncertainty_reason
             or f"medium_specialist:{str(medium_result.candidate_media_token or medium_result.canonical_medium).lower()}"
         )
-        extracted["medium_raw"] = medium_result.candidate_media_token or medium_result.canonical_medium
+        extracted["medium_raw"] = (
+            medium_result.candidate_media_token or medium_result.canonical_medium
+        )
         if medium_result.followup_question_if_needed:
-            extracted["medium_followup_question"] = medium_result.followup_question_if_needed
+            extracted["medium_followup_question"] = (
+                medium_result.followup_question_if_needed
+            )
 
     # LLM fallback: fires only when regex + whitelist both found nothing.
     # Disabled by default (Phase 0C.2 — LLM must not run inside a deterministic node).
@@ -1442,7 +1667,9 @@ def extract_parameters(text: str) -> dict[str, Any]:
         if llm_result:
             extracted["medium_normalized"] = llm_result["medium"].capitalize()
             extracted["medium_normalization_status"] = "llm_fallback"
-            extracted["medium_mapping_reason"] = f"llm_fallback:{llm_result['medium'].lower()}"
+            extracted["medium_mapping_reason"] = (
+                f"llm_fallback:{llm_result['medium'].lower()}"
+            )
             extracted["medium_raw"] = llm_result["medium"]
             if llm_result["properties"]:
                 extracted["medium_properties"] = llm_result["properties"]
@@ -1452,7 +1679,9 @@ def extract_parameters(text: str) -> dict[str, Any]:
             if re.search(rf"\b{re.escape(raw)}\b", text, re.I):
                 decision = normalize_material_decision(raw)
                 if decision and decision.status == "confirmation_required":
-                    extracted["material_confirmation_required"] = decision.canonical_value
+                    extracted["material_confirmation_required"] = (
+                        decision.canonical_value
+                    )
                 elif decision and decision.status != "unknown":
                     extracted["material_normalized"] = decision.canonical_value
                 if decision:

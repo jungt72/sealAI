@@ -103,7 +103,11 @@ def _canonical_missing_key(field_key: str) -> str:
 
 
 def _missing_field_criticality(field_key: str) -> str:
-    return "critical" if is_critical_case_field(_canonical_missing_key(field_key)) else "important"
+    return (
+        "critical"
+        if is_critical_case_field(_canonical_missing_key(field_key))
+        else "important"
+    )
 
 
 def state_snapshot_hash(state: CaseConversationState) -> str:
@@ -136,7 +140,8 @@ class CaseContextAssembler:
                     "user_id": case_owner_id or current_user_id or state.user_id,
                     "tenant_id": tenant_id or state.tenant_id,
                     "latest_user_message": latest_user_message,
-                    "conversation_summary": conversation_summary or state.conversation_summary,
+                    "conversation_summary": conversation_summary
+                    or state.conversation_summary,
                 }
             )
 
@@ -197,7 +202,9 @@ class CaseContextAssembler:
         primary = ""
 
         if turn_context is not None:
-            for idx, item in enumerate(getattr(turn_context, "confirmed_facts_summary", []) or []):
+            for idx, item in enumerate(
+                getattr(turn_context, "confirmed_facts_summary", []) or []
+            ):
                 text = str(item or "").strip()
                 if not text:
                     continue
@@ -233,7 +240,9 @@ class CaseContextAssembler:
             phase=str(getattr(turn_context, "conversation_phase", "") or "unknown"),
             confirmed_fields=confirmed,
             missing_fields=missing,
-            allowed_next_actions=list(dict.fromkeys(action for action in actions if action)),
+            allowed_next_actions=list(
+                dict.fromkeys(action for action in actions if action)
+            ),
             latest_user_message=latest_user_message,
             active_question=primary or None,
             active_question_field_keys=[field.key for field in missing[:3]],
@@ -253,14 +262,19 @@ class CaseContextAssembler:
                 continue
             confidence = str(getattr(claim, "confidence", "") or "")
             status = str(getattr(claim, "status", "") or "")
-            if confidence == "requires_confirmation" or status in {"candidate", "inferred"}:
+            if confidence == "requires_confirmation" or status in {
+                "candidate",
+                "inferred",
+            }:
                 continue
             result.append(
                 ConversationField(
                     key=str(key),
                     label=human_label(str(key)),
                     value=value,
-                    unit=getattr(getattr(claim, "engineering_value", None), "unit", None),
+                    unit=getattr(
+                        getattr(claim, "engineering_value", None), "unit", None
+                    ),
                     source=str(getattr(claim, "provenance", "") or "backend"),
                     status=status or "confirmed",
                     confidence=confidence or "confirmed",
@@ -270,7 +284,9 @@ class CaseContextAssembler:
 
     def _proposed_fields(self, state: Any) -> list[ConversationField]:
         result: list[ConversationField] = []
-        for extraction in getattr(getattr(state, "observed", None), "raw_extractions", []) or []:
+        for extraction in (
+            getattr(getattr(state, "observed", None), "raw_extractions", []) or []
+        ):
             field_name = str(getattr(extraction, "field_name", "") or "").strip()
             value = getattr(extraction, "raw_value", None)
             if not field_name or value in (None, ""):
@@ -281,7 +297,9 @@ class CaseContextAssembler:
                     label=human_label(field_name),
                     value=value,
                     unit=getattr(extraction, "raw_unit", None),
-                    source="user_text" if getattr(extraction, "source", "") == "user" else "llm_extraction",
+                    source="user_text"
+                    if getattr(extraction, "source", "") == "user"
+                    else "llm_extraction",
                     status="pending_validation",
                     confidence="proposed",
                 )
@@ -292,9 +310,20 @@ class CaseContextAssembler:
         raw_items: list[str] = []
         asserted = getattr(state, "asserted", None)
         governance = getattr(state, "governance", None)
-        raw_items.extend(str(item) for item in list(getattr(asserted, "blocking_unknowns", []) or []) if item)
-        for attr in ("preselection_blockers", "compliance_blockers", "type_sensitive_required", "open_validation_points"):
-            raw_items.extend(str(item) for item in list(getattr(governance, attr, []) or []) if item)
+        raw_items.extend(
+            str(item)
+            for item in list(getattr(asserted, "blocking_unknowns", []) or [])
+            if item
+        )
+        for attr in (
+            "preselection_blockers",
+            "compliance_blockers",
+            "type_sensitive_required",
+            "open_validation_points",
+        ):
+            raw_items.extend(
+                str(item) for item in list(getattr(governance, attr, []) or []) if item
+            )
         result: list[MissingField] = []
         seen: set[str] = set()
         for item in raw_items:
@@ -314,12 +343,24 @@ class CaseContextAssembler:
 
     def _stale_fields(self, state: Any) -> list[StaleField]:
         result: list[StaleField] = []
-        for key, status in dict(getattr(getattr(state, "normalized", None), "parameter_status", {}) or {}).items():
+        for key, status in dict(
+            getattr(getattr(state, "normalized", None), "parameter_status", {}) or {}
+        ).items():
             if str(status) in {"stale", "contradicted"}:
-                reason = "Wert muss nach Aenderung oder Widerspruch neu bewertet werden."
+                reason = (
+                    "Wert muss nach Aenderung oder Widerspruch neu bewertet werden."
+                )
                 result.append(StaleField(key=str(key), reason=reason))
-        for key in list(getattr(getattr(state, "derived", None), "stale_derived_value_ids", []) or []):
-            result.append(StaleField(key=str(key), reason="Abgeleiteter Wert ist nach Eingabeaenderung stale."))
+        for key in list(
+            getattr(getattr(state, "derived", None), "stale_derived_value_ids", [])
+            or []
+        ):
+            result.append(
+                StaleField(
+                    key=str(key),
+                    reason="Abgeleiteter Wert ist nach Eingabeaenderung stale.",
+                )
+            )
         return result
 
     def _calculations(self, state: Any) -> list[CalculationFact]:
@@ -330,19 +371,27 @@ class CaseContextAssembler:
                 continue
             calc_id = str(item.get("id") or item.get("calc_type") or "calculation")
             seen_ids.add(calc_id)
-            status = "available" if item.get("status") in {"ok", "available", "computed"} else "blocked_by_missing_inputs"
+            status = (
+                "available"
+                if item.get("status") in {"ok", "available", "computed"}
+                else "blocked_by_missing_inputs"
+            )
             result.append(
                 CalculationFact(
                     id=calc_id,
                     label=str(item.get("label") or calc_id),
-                    value=item.get("value") or item.get("v_surface_m_s") or item.get("pv_value_mpa_m_s"),
+                    value=item.get("value")
+                    or item.get("v_surface_m_s")
+                    or item.get("pv_value_mpa_m_s"),
                     unit=item.get("unit"),
                     inputs=[str(v) for v in list(item.get("inputs") or [])],
                     status=status,
                 )
             )
         for item in calculation_ledger_derivations(getattr(state, "calculation", None)):
-            calc_id = str(item.get("calculation_id") or item.get("calc_type") or "calculation")
+            calc_id = str(
+                item.get("calculation_id") or item.get("calc_type") or "calculation"
+            )
             if calc_id in seen_ids:
                 continue
             seen_ids.add(calc_id)
@@ -350,7 +399,12 @@ class CaseContextAssembler:
             value = item.get("value")
             unit = None
             if value is None:
-                for key in ("v_surface_m_s", "pv_value_mpa_m_s", "dn_value", "temperature_headroom_c"):
+                for key in (
+                    "v_surface_m_s",
+                    "pv_value_mpa_m_s",
+                    "dn_value",
+                    "temperature_headroom_c",
+                ):
                     if item.get(key) is not None:
                         value = item.get(key)
                         unit = dict(item.get("units") or {}).get(key)
@@ -374,7 +428,9 @@ class CaseContextAssembler:
                     status=status,
                 )
             )
-        derived_values = dict(getattr(getattr(state, "derived", None), "derived_values", {}) or {})
+        derived_values = dict(
+            getattr(getattr(state, "derived", None), "derived_values", {}) or {}
+        )
         for key, value in derived_values.items():
             result.append(
                 CalculationFact(
@@ -382,7 +438,9 @@ class CaseContextAssembler:
                     label=human_label(str(key)),
                     value=getattr(value, "value", None),
                     inputs=list(getattr(value, "derived_from_fields", []) or []),
-                    status="available" if getattr(value, "status", "") == "valid" else "blocked_by_missing_inputs",
+                    status="available"
+                    if getattr(value, "status", "") == "valid"
+                    else "blocked_by_missing_inputs",
                 )
             )
         return result
@@ -415,15 +473,29 @@ class CaseContextAssembler:
     def _readiness(self, state: Any) -> ReadinessFact:
         governance = getattr(state, "governance", None)
         rfq = getattr(state, "rfq", None)
-        if bool(getattr(rfq, "rfq_ready", False)) or bool(getattr(governance, "rfq_admissible", False)):
+        if bool(getattr(rfq, "rfq_ready", False)) or bool(
+            getattr(governance, "rfq_admissible", False)
+        ):
             return ReadinessFact(status="rfq_ready")
-        blockers = [str(item) for item in list(getattr(getattr(state, "asserted", None), "blocking_unknowns", []) or [])]
-        blockers.extend(str(item) for item in list(getattr(governance, "preselection_blockers", []) or []))
+        blockers = [
+            str(item)
+            for item in list(
+                getattr(getattr(state, "asserted", None), "blocking_unknowns", []) or []
+            )
+        ]
+        blockers.extend(
+            str(item)
+            for item in list(getattr(governance, "preselection_blockers", []) or [])
+        )
         gov_class = str(getattr(governance, "gov_class", "") or "")
         if gov_class in {"A", "B"}:
-            return ReadinessFact(status="partially_ready", blocking_reasons=list(dict.fromkeys(blockers)))
+            return ReadinessFact(
+                status="partially_ready", blocking_reasons=list(dict.fromkeys(blockers))
+            )
         if blockers:
-            return ReadinessFact(status="not_ready", blocking_reasons=list(dict.fromkeys(blockers)))
+            return ReadinessFact(
+                status="not_ready", blocking_reasons=list(dict.fromkeys(blockers))
+            )
         return ReadinessFact(status="unknown")
 
     def _evidence_refs(self, state: Any) -> list[EvidenceRef]:
@@ -431,7 +503,11 @@ class CaseContextAssembler:
         for idx, item in enumerate(list(getattr(state, "rag_evidence", []) or [])):
             if not isinstance(item, dict):
                 continue
-            ref_id = str(item.get("evidence_ref_id") or item.get("document_id") or f"evidence-{idx}")
+            ref_id = str(
+                item.get("evidence_ref_id")
+                or item.get("document_id")
+                or f"evidence-{idx}"
+            )
             result.append(
                 EvidenceRef(
                     id=ref_id,

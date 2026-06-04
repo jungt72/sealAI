@@ -37,8 +37,7 @@ class BoundedFastResponderLLM(Protocol):
         user_input: str,
         classification: PreGateClassification,
         timeout_seconds: float,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 @dataclass(slots=True)
@@ -47,7 +46,9 @@ class FastResponderMetrics:
     latency_seconds: list[float] = field(default_factory=list)
     escalated_to_graph_total: int = 0
 
-    def record_invocation(self, classification: PreGateClassification, latency_seconds: float) -> None:
+    def record_invocation(
+        self, classification: PreGateClassification, latency_seconds: float
+    ) -> None:
         key = classification.value
         self.invocations_total[key] = self.invocations_total.get(key, 0) + 1
         self.latency_seconds.append(latency_seconds)
@@ -132,7 +133,9 @@ class FastResponderService:
             if result:
                 return result
         language = _detect_language(user_input, session_context)
-        return _fallback_response(classification, language=language, user_input=user_input)
+        return _fallback_response(
+            classification, language=language, user_input=user_input
+        )
 
 
 _DEFAULT_PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts" / "fast_responder"

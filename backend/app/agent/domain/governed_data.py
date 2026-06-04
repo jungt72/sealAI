@@ -11,6 +11,7 @@ Architecture (Ports & Adapters):
 
 Consumers MUST use DomainDataProvider — never import flat-file loaders directly.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 # ---------------------------------------------------------------------------
 # Value Object
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class GovernedMaterialRecord:
@@ -37,16 +39,16 @@ class GovernedMaterialRecord:
     material_family: str
 
     # Provenance
-    source_name: str              # e.g. "Hersteller X Freigabeliste"
-    source_version: str           # e.g. "v2025.1"
+    source_name: str  # e.g. "Hersteller X Freigabeliste"
+    source_version: str  # e.g. "v2025.1"
 
     # Temporal validity
     valid_from: Optional[date] = None
     valid_until: Optional[date] = None
 
     # Lifecycle
-    release_status: str = "draft"         # "active" | "deprecated" | "draft"
-    conflict_status: str = "none"         # "none" | "superseded_by_newer_version"
+    release_status: str = "draft"  # "active" | "deprecated" | "draft"
+    conflict_status: str = "none"  # "none" | "superseded_by_newer_version"
 
     # Scope metadata
     coverage_metadata: dict[str, Any] = field(default_factory=dict)
@@ -91,6 +93,7 @@ class GovernedMaterialRecord:
 # Port (Provider Protocol)
 # ---------------------------------------------------------------------------
 
+
 @runtime_checkable
 class DomainDataProvider(Protocol):
     """
@@ -116,6 +119,7 @@ class DomainDataProvider(Protocol):
 # ---------------------------------------------------------------------------
 # Demo Adapter (wraps the current flat registry — Phase 0B.1 quarantined)
 # ---------------------------------------------------------------------------
+
 
 def _build_demo_records() -> tuple[GovernedMaterialRecord, ...]:
     """

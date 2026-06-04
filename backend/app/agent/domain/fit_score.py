@@ -20,11 +20,35 @@ from typing import Any
 
 EU_COUNTRIES: frozenset[str] = frozenset(
     [
-        "AT", "BE", "BG", "CY", "CZ", "DK", "EE", "FI", "FR",
-        "GR", "HR", "HU", "IE", "IT", "LT", "LU", "LV", "MT",
-        "NL", "PL", "PT", "RO", "SE", "SI", "SK",
+        "AT",
+        "BE",
+        "BG",
+        "CY",
+        "CZ",
+        "DK",
+        "EE",
+        "FI",
+        "FR",
+        "GR",
+        "HR",
+        "HU",
+        "IE",
+        "IT",
+        "LT",
+        "LU",
+        "LV",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SE",
+        "SI",
+        "SK",
         # EEA
-        "IS", "LI", "NO",
+        "IS",
+        "LI",
+        "NO",
         # CH — not EU but operationally equivalent for logistics
         "CH",
     ]
@@ -72,12 +96,8 @@ def compute_fit_score(
         normalized_state, "material"
     )
 
-    type_match = bool(
-        sts_type and sts_type in caps.get("sealing_types", [])
-    )
-    mat_match = bool(
-        sts_mat and sts_mat in caps.get("materials", [])
-    )
+    type_match = bool(sts_type and sts_type in caps.get("sealing_types", []))
+    mat_match = bool(sts_mat and sts_mat in caps.get("materials", []))
     score += 0.40 * (0.5 * type_match + 0.5 * mat_match)
 
     # ------------------------------------------------------------------
@@ -87,14 +107,10 @@ def compute_fit_score(
     temp_c: float | None = _get(derived_state, "temp_c")
     shaft_mm: float | None = _get(normalized_state, "shaft_diameter_mm")
 
-    pressure_ok = (
-        pressure_bar is None
-        or pressure_bar <= caps.get("pressure_max_bar", 0)
+    pressure_ok = pressure_bar is None or pressure_bar <= caps.get(
+        "pressure_max_bar", 0
     )
-    temp_ok = (
-        temp_c is None
-        or temp_c <= caps.get("temperature_max_c", 0)
-    )
+    temp_ok = temp_c is None or temp_c <= caps.get("temperature_max_c", 0)
     shaft_ok: bool
     if shaft_mm is None:
         shaft_ok = True  # unknown → assume compatible

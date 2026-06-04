@@ -8,6 +8,7 @@ primitives (the float reader, the string reader and the CalculationResult
 builder) so this module owns only the O-Ring geometry and never imports back into
 the orchestrator (no import cycle).
 """
+
 from __future__ import annotations
 
 import math
@@ -40,8 +41,15 @@ def oring_calculations(
     )
     groove_depth = float_value(state, "groove_depth_mm", "nuttiefe_mm")
     groove_width = float_value(state, "groove_width_mm", "nutbreite_mm")
-    seal_id = float_value(state, "seal_inner_diameter_mm", "oring_inner_diameter_mm", "o_ring_inner_diameter_mm")
-    shaft_diameter = float_value(state, "shaft_diameter_mm", "rod_diameter_mm", "bore_diameter_mm")
+    seal_id = float_value(
+        state,
+        "seal_inner_diameter_mm",
+        "oring_inner_diameter_mm",
+        "o_ring_inner_diameter_mm",
+    )
+    shaft_diameter = float_value(
+        state, "shaft_diameter_mm", "rod_diameter_mm", "bore_diameter_mm"
+    )
     radial_gap = float_value(state, "radial_gap_mm", "extrusion_gap_mm")
     pressure = float_value(state, "pressure_at_seal_bar", "pressure_delta_bar")
     results: list[CalculationResult] = []
@@ -52,7 +60,11 @@ def oring_calculations(
         missing.append("pressure_at_seal_bar")
         pressure = 0.0
     motion = string_value(state, "motion_type", "dynamic_type").lower()
-    situation = "dynamisch" if any(marker in motion for marker in ("dynam", "rot", "hub", "rezip")) else "statisch"
+    situation = (
+        "dynamisch"
+        if any(marker in motion for marker in ("dynam", "rot", "hub", "rezip"))
+        else "statisch"
+    )
     output = asdict(lookup_nut(cross_section, situation, pressure))
     status = "insufficient_data" if missing else "ok"
     notes = [
@@ -80,12 +92,18 @@ def oring_calculations(
                 "hinweis": "text",
             },
             missing_inputs=missing,
-            dependencies=["oring_cross_section_mm", "pressure_at_seal_bar", "motion_type"],
+            dependencies=[
+                "oring_cross_section_mm",
+                "pressure_at_seal_bar",
+                "motion_type",
+            ],
             formula_refs=["din3770_iso3601_2_metadata_v1.lookup_nut"],
             validity_status="valid_for_screening" if not missing else "input_missing",
             engineering_signals=["o_ring_groove_metadata_screening"],
             notes=notes,
-            limitations=["Metadata-backed groove screening; no ISO conformity claim without licensed rule review."],
+            limitations=[
+                "Metadata-backed groove screening; no ISO conformity claim without licensed rule review."
+            ],
         )
     )
 
@@ -102,12 +120,21 @@ def oring_calculations(
                 outputs={"squeeze_pct": round(squeeze, 2)},
                 units={"squeeze_pct": "%"},
                 dependencies=["oring_cross_section_mm", "groove_depth_mm"],
-                formula_refs=["(cross_section_mm - groove_depth_mm) / cross_section_mm * 100"],
+                formula_refs=[
+                    "(cross_section_mm - groove_depth_mm) / cross_section_mm * 100"
+                ],
                 engineering_signals=["o_ring_squeeze_screening"],
-                limitations=["Screening range depends on seal type, elastomer hardness, tolerances and manufacturer data."],
+                limitations=[
+                    "Screening range depends on seal type, elastomer hardness, tolerances and manufacturer data."
+                ],
             )
         )
-    if groove_depth is not None and groove_width is not None and groove_depth > 0 and groove_width > 0:
+    if (
+        groove_depth is not None
+        and groove_width is not None
+        and groove_depth > 0
+        and groove_width > 0
+    ):
         area_seal = math.pi / 4.0 * cross_section**2
         area_groove = groove_depth * groove_width
         gland_fill = area_seal / area_groove * 100.0
@@ -121,10 +148,18 @@ def oring_calculations(
                 snapshot_hash=snapshot_hash,
                 outputs={"gland_fill_pct": round(gland_fill, 2)},
                 units={"gland_fill_pct": "%"},
-                dependencies=["oring_cross_section_mm", "groove_depth_mm", "groove_width_mm"],
-                formula_refs=["(pi/4*cross_section_mm^2)/(groove_depth_mm*groove_width_mm)*100"],
+                dependencies=[
+                    "oring_cross_section_mm",
+                    "groove_depth_mm",
+                    "groove_width_mm",
+                ],
+                formula_refs=[
+                    "(pi/4*cross_section_mm^2)/(groove_depth_mm*groove_width_mm)*100"
+                ],
                 engineering_signals=["o_ring_gland_fill_screening"],
-                limitations=["Thermal expansion and tolerance stack are not included unless supplied separately."],
+                limitations=[
+                    "Thermal expansion and tolerance stack are not included unless supplied separately."
+                ],
             )
         )
     if seal_id is not None and shaft_diameter is not None and seal_id > 0:
@@ -140,13 +175,21 @@ def oring_calculations(
                 outputs={"stretch_pct": round(stretch, 2)},
                 units={"stretch_pct": "%"},
                 dependencies=["seal_inner_diameter_mm", "shaft_diameter_mm"],
-                formula_refs=["(shaft_diameter_mm - seal_inner_diameter_mm) / seal_inner_diameter_mm * 100"],
+                formula_refs=[
+                    "(shaft_diameter_mm - seal_inner_diameter_mm) / seal_inner_diameter_mm * 100"
+                ],
                 engineering_signals=["o_ring_stretch_screening"],
-                limitations=["Only valid for the supplied installation geometry; confirm whether ID/shaft/bore convention fits the seal case."],
+                limitations=[
+                    "Only valid for the supplied installation geometry; confirm whether ID/shaft/bore convention fits the seal case."
+                ],
             )
         )
     if radial_gap is not None and pressure is not None:
-        severity = "requires_expert_review" if pressure >= 100.0 and radial_gap > 0.2 else "valid_for_screening"
+        severity = (
+            "requires_expert_review"
+            if pressure >= 100.0 and radial_gap > 0.2
+            else "valid_for_screening"
+        )
         results.append(
             calc_result(
                 calculation_id="oring.extrusion_gap_screening",
@@ -159,12 +202,18 @@ def oring_calculations(
                     "pressure_at_seal_bar": pressure,
                     "expert_review_required": severity == "requires_expert_review",
                 },
-                units={"radial_gap_mm": "mm", "pressure_at_seal_bar": "bar", "expert_review_required": "bool"},
+                units={
+                    "radial_gap_mm": "mm",
+                    "pressure_at_seal_bar": "bar",
+                    "expert_review_required": "bool",
+                },
                 dependencies=["radial_gap_mm", "pressure_at_seal_bar"],
                 formula_refs=["pressure_gap_screening_rule_v1"],
                 validity_status=severity,
                 engineering_signals=["o_ring_extrusion_gap_screening"],
-                limitations=["Rule-of-thumb screening only; anti-extrusion ring, hardness and temperature require review."],
+                limitations=[
+                    "Rule-of-thumb screening only; anti-extrusion ring, hardness and temperature require review."
+                ],
             )
         )
     return results

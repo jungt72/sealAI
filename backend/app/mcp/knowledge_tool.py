@@ -64,6 +64,7 @@ def append_tool_call_to_state(_state: Any, _record: Any) -> None:
 def emit_tool_call_record(_record: Any) -> None:
     return None
 
+
 from app.services.rag.rag_orchestrator import hybrid_retrieve
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,10 @@ RAG_MIN_SCORE_THRESHOLD = float(os.getenv("RAG_SCORE_THRESHOLD", "0.05"))
 # MCP transport policy:
 # Prefer Streamable HTTP (JSON-RPC 2.0 over HTTP) for production interoperability.
 # Fallback to SSE transport only when streamable HTTP is unavailable.
-MCP_TRANSPORT_PREFERENCE: Dict[str, str] = {"primary": "streamable_http", "fallback": "sse"}
+MCP_TRANSPORT_PREFERENCE: Dict[str, str] = {
+    "primary": "streamable_http",
+    "fallback": "sse",
+}
 
 SEARCH_TECHNICAL_DOCS_SPEC: Dict[str, Any] = {
     "name": SEARCH_TECHNICAL_DOCS_TOOL_NAME,
@@ -97,7 +101,10 @@ SEARCH_TECHNICAL_DOCS_SPEC: Dict[str, Any] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Technical question or datasheet lookup query."},
+            "query": {
+                "type": "string",
+                "description": "Technical question or datasheet lookup query.",
+            },
             "material_code": {
                 "type": "string",
                 "description": "Optional material code filter (e.g. NBR-90, FKM-75).",
@@ -146,7 +153,10 @@ QUERY_DETERMINISTIC_NORMS_SPEC: Dict[str, Any] = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "material": {"type": "string", "description": "Material identifier (e.g. FKM, NBR, PTFE)."},
+            "material": {
+                "type": "string",
+                "description": "Material identifier (e.g. FKM, NBR, PTFE).",
+            },
             "temp": {"type": "number", "description": "Operating temperature in °C."},
             "pressure": {"type": "number", "description": "Operating pressure in bar."},
             "tenant_id": {"type": "string", "description": "Optional tenant scope."},
@@ -257,7 +267,9 @@ def _has_any_scope(scopes: set[str], required: frozenset[str]) -> bool:
     return bool(scopes & required)
 
 
-def _bound_args_payload(func: Callable[..., Any], args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def _bound_args_payload(
+    func: Callable[..., Any], args: tuple[Any, ...], kwargs: Dict[str, Any]
+) -> Dict[str, Any]:
     try:
         signature = inspect.signature(func)
         bound = signature.bind_partial(*args, **kwargs)
@@ -397,7 +409,9 @@ def _stock_check_tool(sku: str, warehouse: str | None = None) -> Dict[str, Any]:
     }
 
 
-def _approve_discount_tool(quote_id: str, discount_percent: float, reason: str | None = None) -> Dict[str, Any]:
+def _approve_discount_tool(
+    quote_id: str, discount_percent: float, reason: str | None = None
+) -> Dict[str, Any]:
     return {
         "tool": APPROVE_DISCOUNT_TOOL_NAME,
         "quote_id": quote_id,
@@ -408,9 +422,13 @@ def _approve_discount_tool(quote_id: str, discount_percent: float, reason: str |
 
 
 def _build_tool_registry() -> Dict[str, Dict[str, Any]]:
-    search_docs_tool = _audited_tool(SEARCH_TECHNICAL_DOCS_TOOL_NAME, search_technical_docs)
+    search_docs_tool = _audited_tool(
+        SEARCH_TECHNICAL_DOCS_TOOL_NAME, search_technical_docs
+    )
     filters_tool = _audited_tool(GET_AVAILABLE_FILTERS_TOOL_NAME, get_available_filters)
-    deterministic_norms_tool = _audited_tool(QUERY_DETERMINISTIC_NORMS_TOOL_NAME, query_deterministic_norms)
+    deterministic_norms_tool = _audited_tool(
+        QUERY_DETERMINISTIC_NORMS_TOOL_NAME, query_deterministic_norms
+    )
     pricing_tool = _audited_tool(PRICING_TOOL_NAME, _pricing_tool)
     stock_tool = _audited_tool(STOCK_CHECK_TOOL_NAME, _stock_check_tool)
     discount_tool = _audited_tool(APPROVE_DISCOUNT_TOOL_NAME, _approve_discount_tool)
@@ -490,7 +508,9 @@ def get_permitted_tool_specs(user_scopes: List[str]) -> List[Dict[str, Any]]:
     return specs
 
 
-def discover_tools_for_scopes(scopes: Optional[Sequence[str] | str]) -> List[Dict[str, Any]]:
+def discover_tools_for_scopes(
+    scopes: Optional[Sequence[str] | str],
+) -> List[Dict[str, Any]]:
     return get_permitted_tool_specs(list(_normalize_scopes(scopes)))
 
 
@@ -531,7 +551,9 @@ def _contains_material_code(hit: Dict[str, Any], material_code: str) -> bool:
     return False
 
 
-def _normalize_metadata_filters(raw_filters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _normalize_metadata_filters(
+    raw_filters: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
     normalized: Dict[str, Any] = {}
     if not isinstance(raw_filters, dict):
         return normalized
@@ -559,7 +581,11 @@ def _normalize_tenant_scope(tenant_id: Optional[str]) -> List[str]:
 
 
 def _resolve_sync_postgres_url() -> str:
-    raw = str(getattr(settings, "POSTGRES_SYNC_URL", "") or getattr(settings, "database_url", "") or "").strip()
+    raw = str(
+        getattr(settings, "POSTGRES_SYNC_URL", "")
+        or getattr(settings, "database_url", "")
+        or ""
+    ).strip()
     if raw.startswith("postgresql+asyncpg://"):
         return raw.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
     if raw.startswith("postgres+asyncpg://"):
@@ -571,7 +597,9 @@ def _resolve_sync_postgres_url() -> str:
 def _get_sync_engine() -> Engine:
     sync_url = _resolve_sync_postgres_url()
     if not sync_url:
-        raise RuntimeError("POSTGRES_SYNC_URL/database_url is not configured for deterministic norms query.")
+        raise RuntimeError(
+            "POSTGRES_SYNC_URL/database_url is not configured for deterministic norms query."
+        )
     return create_engine(sync_url, future=True, pool_pre_ping=True)
 
 
@@ -734,7 +762,9 @@ def _deterministic_norms_query_params(
 
 
 def _deterministic_norms_no_match_message() -> str:
-    return "Ich finde keine spezifischen Normwerte in der Datenbank für dieses Material."
+    return (
+        "Ich finde keine spezifischen Normwerte in der Datenbank für dieses Material."
+    )
 
 
 def _build_deterministic_norms_payload(
@@ -877,7 +907,9 @@ async def aquery_deterministic_norms(
     try:
         async with AsyncSessionLocal() as session:
             if not isinstance(session, AsyncSession):
-                raise TypeError("AsyncSessionLocal must return an AsyncSession for aquery_deterministic_norms.")
+                raise TypeError(
+                    "AsyncSessionLocal must return an AsyncSession for aquery_deterministic_norms."
+                )
             params = _deterministic_norms_query_params(
                 material_norm=material_norm,
                 temp_value=temp_value,
@@ -955,10 +987,17 @@ def _extract_tables_from_metadata(metadata: Dict[str, Any]) -> List[Dict[str, An
     return table_payloads
 
 
-def _markdown_table(table_payload: Dict[str, Any], max_rows: int = 8, max_cols: int = 6) -> str:
+def _markdown_table(
+    table_payload: Dict[str, Any], max_rows: int = 8, max_cols: int = 6
+) -> str:
     columns = table_payload.get("columns")
     rows = table_payload.get("rows")
-    if not isinstance(columns, list) or not isinstance(rows, list) or not columns or not rows:
+    if (
+        not isinstance(columns, list)
+        or not isinstance(rows, list)
+        or not columns
+        or not rows
+    ):
         return ""
     col_names = [str(col).strip() for col in columns if str(col).strip()]
     if not col_names:
@@ -1007,7 +1046,9 @@ def _format_hit(hit: Dict[str, Any], *, index: int) -> Dict[str, Any]:
         "score": round(score_value, 4),
         "snippet": text,
         "source": metadata.get("source") or hit.get("source"),
-        "document_id": metadata.get("document_id") or metadata.get("doc_id") or metadata.get("id"),
+        "document_id": metadata.get("document_id")
+        or metadata.get("doc_id")
+        or metadata.get("id"),
         "filename": metadata.get("filename") or metadata.get("file_name"),
         "page": metadata.get("page") or metadata.get("page_number"),
         "table_context": table_context,
@@ -1040,7 +1081,12 @@ def _render_context(hits: List[Dict[str, Any]]) -> str:
         return ""
     lines: List[str] = []
     for hit in hits:
-        src = hit.get("source") or hit.get("filename") or hit.get("document_id") or "unknown"
+        src = (
+            hit.get("source")
+            or hit.get("filename")
+            or hit.get("document_id")
+            or "unknown"
+        )
         page = f" page {hit['page']}" if hit.get("page") is not None else ""
         lines.append(f"[{hit['rank']}] {src}{page} (score {hit['score']})")
         snippet = (hit.get("snippet") or "").strip()
@@ -1103,7 +1149,9 @@ def search_technical_docs(
 
     requested_k = max(1, min(int(k or 5), 10))
     retrieval_query = query_text
-    material_code_norm = material_code.strip() if material_code and material_code.strip() else None
+    material_code_norm = (
+        material_code.strip() if material_code and material_code.strip() else None
+    )
     if material_code_norm:
         retrieval_query = f"{query_text} {material_code_norm}"
 
@@ -1113,16 +1161,27 @@ def search_technical_docs(
 
     retrieval_filters: Dict[str, Any] = {}
     if tenant_scope:
-        retrieval_filters["tenant_id"] = tenant_scope if len(tenant_scope) > 1 else tenant_scope[0]
+        retrieval_filters["tenant_id"] = (
+            tenant_scope if len(tenant_scope) > 1 else tenant_scope[0]
+        )
     if material_code_norm:
         retrieval_filters["material_code"] = material_code_norm
     retrieval_filters.update(_normalize_metadata_filters(metadata_filters))
 
-    def _retrieve(filters: Dict[str, Any]) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    def _retrieve(
+        filters: Dict[str, Any],
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
         raw_tenant = filters.get("tenant_id")
         effective_tenant = None
         if isinstance(raw_tenant, list):
-            effective_tenant = next((str(item).strip() for item in raw_tenant if str(item).strip() and str(item).strip() != GLOBAL_SHARED_TENANT), None)
+            effective_tenant = next(
+                (
+                    str(item).strip()
+                    for item in raw_tenant
+                    if str(item).strip() and str(item).strip() != GLOBAL_SHARED_TENANT
+                ),
+                None,
+            )
             if not effective_tenant and raw_tenant:
                 effective_tenant = str(raw_tenant[0]).strip() or None
         else:
@@ -1151,13 +1210,19 @@ def search_technical_docs(
         retrieved, metrics = _retrieve(active_filters)
         metrics["material_code_filter_relaxed"] = True
     filtered = list(retrieved or [])
-    filtered = [hit for hit in filtered if isinstance(hit, dict) and _is_relevant_hit(hit)]
+    filtered = [
+        hit for hit in filtered if isinstance(hit, dict) and _is_relevant_hit(hit)
+    ]
     if material_code_norm:
-        strict = [hit for hit in filtered if _contains_material_code(hit, material_code_norm)]
+        strict = [
+            hit for hit in filtered if _contains_material_code(hit, material_code_norm)
+        ]
         if strict:
             filtered = strict
 
-    final_hits = [_format_hit(hit, index=i + 1) for i, hit in enumerate(filtered[:requested_k])]
+    final_hits = [
+        _format_hit(hit, index=i + 1) for i, hit in enumerate(filtered[:requested_k])
+    ]
     context = _render_context(final_hits)
     top_scores = [float(hit.get("score") or 0.0) for hit in final_hits]
     metrics = dict(metrics or {})
@@ -1165,12 +1230,8 @@ def search_technical_docs(
     metrics["configured_threshold"] = RAG_MIN_SCORE_THRESHOLD
     metrics["k_returned"] = len(final_hits)
     metrics["top_scores"] = top_scores[:5]
-    metrics["rag_low_quality_results"] = (
-        len(final_hits) == 0
-        or (
-            bool(top_scores)
-            and all(s < RAG_MIN_SCORE_THRESHOLD for s in top_scores[:5])
-        )
+    metrics["rag_low_quality_results"] = len(final_hits) == 0 or (
+        bool(top_scores) and all(s < RAG_MIN_SCORE_THRESHOLD for s in top_scores[:5])
     )
     logger.info(
         "mcp_search_technical_docs",
@@ -1209,8 +1270,13 @@ def get_available_filters(
     max_points = max(1, min(int(max_points or 2000), 20000))
     configured_collection = _active_collection_name()
     collection = (configured_collection or collection_name or "").strip()
-    apply_tenant_scope = bool(tenant_id and not _is_global_technical_collection(collection))
-    client = QdrantClient(url=str(settings.qdrant_url).rstrip("/"), api_key=(os.getenv("QDRANT_API_KEY") or None))
+    apply_tenant_scope = bool(
+        tenant_id and not _is_global_technical_collection(collection)
+    )
+    client = QdrantClient(
+        url=str(settings.qdrant_url).rstrip("/"),
+        api_key=(os.getenv("QDRANT_API_KEY") or None),
+    )
 
     offset: Any = None
     while scanned < max_points:
@@ -1288,11 +1354,17 @@ def execute_tool_call(
             tool_fn=search_technical_docs,
             kwargs={
                 "query": str(args.get("query") or ""),
-                "material_code": (str(args.get("material_code")) if args.get("material_code") is not None else None),
+                "material_code": (
+                    str(args.get("material_code"))
+                    if args.get("material_code") is not None
+                    else None
+                ),
                 "tenant_id": tenant_id,
                 "k": int(args.get("k") or 5),
                 "metadata_filters": (
-                    args.get("metadata_filters") if isinstance(args.get("metadata_filters"), dict) else None
+                    args.get("metadata_filters")
+                    if isinstance(args.get("metadata_filters"), dict)
+                    else None
                 ),
             },
             state=state,
@@ -1308,7 +1380,8 @@ def execute_tool_call(
             tool_name=GET_AVAILABLE_FILTERS_TOOL_NAME,
             tool_fn=get_available_filters,
             kwargs={
-                "tenant_id": str(args.get("tenant_id") or tenant_id or "").strip() or None,
+                "tenant_id": str(args.get("tenant_id") or tenant_id or "").strip()
+                or None,
                 "max_points": int(args.get("max_points") or 2000),
             },
             state=state,
@@ -1327,7 +1400,8 @@ def execute_tool_call(
                 "material": str(args.get("material") or ""),
                 "temp": float(args.get("temp")),
                 "pressure": float(args.get("pressure")),
-                "tenant_id": str(args.get("tenant_id") or tenant_id or "").strip() or None,
+                "tenant_id": str(args.get("tenant_id") or tenant_id or "").strip()
+                or None,
             },
             state=state,
             audit_trail=audit_trail,
@@ -1360,7 +1434,11 @@ def execute_tool_call(
             tool_fn=_stock_check_tool,
             kwargs={
                 "sku": str(args.get("sku") or ""),
-                "warehouse": (str(args.get("warehouse")) if args.get("warehouse") is not None else None),
+                "warehouse": (
+                    str(args.get("warehouse"))
+                    if args.get("warehouse") is not None
+                    else None
+                ),
             },
             state=state,
             audit_trail=audit_trail,
@@ -1377,7 +1455,9 @@ def execute_tool_call(
             kwargs={
                 "quote_id": str(args.get("quote_id") or ""),
                 "discount_percent": float(args.get("discount_percent") or 0.0),
-                "reason": (str(args.get("reason")) if args.get("reason") is not None else None),
+                "reason": (
+                    str(args.get("reason")) if args.get("reason") is not None else None
+                ),
             },
             state=state,
             audit_trail=audit_trail,
@@ -1392,7 +1472,11 @@ def execute_tool_call(
 
 def tool_spec_json() -> str:
     return json.dumps(
-        [SEARCH_TECHNICAL_DOCS_SPEC, GET_AVAILABLE_FILTERS_SPEC, QUERY_DETERMINISTIC_NORMS_SPEC],
+        [
+            SEARCH_TECHNICAL_DOCS_SPEC,
+            GET_AVAILABLE_FILTERS_SPEC,
+            QUERY_DETERMINISTIC_NORMS_SPEC,
+        ],
         ensure_ascii=False,
     )
 

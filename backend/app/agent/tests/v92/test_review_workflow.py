@@ -24,10 +24,14 @@ def test_review_workflow_contract_exposes_required_actions_and_claim_boundary() 
     assert workflow["review_required"] is True
     assert "approve_scope" in workflow["allowed_actions"]
     assert workflow["claim_boundary"]["no_final_technical_release"] is True
-    assert workflow["dashboard_contract"]["review_status"]["human_review_required"] is True
+    assert (
+        workflow["dashboard_contract"]["review_status"]["human_review_required"] is True
+    )
 
 
-def test_apply_human_review_decision_requires_scope_and_sets_l6_only_for_approved_scope() -> None:
+def test_apply_human_review_decision_requires_scope_and_sets_l6_only_for_approved_scope() -> (
+    None
+):
     state = GovernedSessionState(
         review_state=ReviewState(
             status="pending",

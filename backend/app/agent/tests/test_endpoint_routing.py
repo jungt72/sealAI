@@ -7,6 +7,7 @@ Verifies:
    (canonical path: /api/agent, mounted in main.py).
 3. Route methods are correct (POST for chat/stream/review, GET for health).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,9 +19,11 @@ import pytest
 # Router route presence
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def agent_router():
     from app.agent.api.router import router
+
     return router
 
 
@@ -46,11 +49,15 @@ class TestAgentRouterRoutes:
 
     def test_chat_stream_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/chat/stream" in paths, "POST /chat/stream must be registered on agent router"
+        assert (
+            "/chat/stream" in paths
+        ), "POST /chat/stream must be registered on agent router"
 
     def test_chat_stream_route_is_post(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "POST" in paths.get("/chat/stream", set()), "/chat/stream must accept POST"
+        assert "POST" in paths.get(
+            "/chat/stream", set()
+        ), "/chat/stream must accept POST"
 
     def test_health_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
@@ -62,19 +69,27 @@ class TestAgentRouterRoutes:
 
     def test_workspace_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/workspace/{case_id}" in paths, "GET /workspace/{case_id} must be registered on agent router"
+        assert (
+            "/workspace/{case_id}" in paths
+        ), "GET /workspace/{case_id} must be registered on agent router"
 
     def test_workspace_route_is_get(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "GET" in paths.get("/workspace/{case_id}", set()), "/workspace/{case_id} must accept GET"
+        assert "GET" in paths.get(
+            "/workspace/{case_id}", set()
+        ), "/workspace/{case_id} must accept GET"
 
     def test_case_metadata_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/cases/{case_id}" in paths, "GET /cases/{case_id} must be registered on agent router"
+        assert (
+            "/cases/{case_id}" in paths
+        ), "GET /cases/{case_id} must be registered on agent router"
 
     def test_case_metadata_route_is_get(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "GET" in paths.get("/cases/{case_id}", set()), "/cases/{case_id} must accept GET"
+        assert "GET" in paths.get(
+            "/cases/{case_id}", set()
+        ), "/cases/{case_id} must accept GET"
 
     def test_case_list_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
@@ -86,48 +101,65 @@ class TestAgentRouterRoutes:
 
     def test_case_latest_snapshot_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/cases/{case_id}/snapshots/latest" in paths, "GET /cases/{case_id}/snapshots/latest must be registered on agent router"
+        assert (
+            "/cases/{case_id}/snapshots/latest" in paths
+        ), "GET /cases/{case_id}/snapshots/latest must be registered on agent router"
 
     def test_case_latest_snapshot_route_is_get(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "GET" in paths.get("/cases/{case_id}/snapshots/latest", set()), "/cases/{case_id}/snapshots/latest must accept GET"
+        assert "GET" in paths.get(
+            "/cases/{case_id}/snapshots/latest", set()
+        ), "/cases/{case_id}/snapshots/latest must accept GET"
 
     def test_case_revision_snapshot_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/cases/{case_id}/snapshots/{revision}" in paths, "GET /cases/{case_id}/snapshots/{revision} must be registered on agent router"
+        assert (
+            "/cases/{case_id}/snapshots/{revision}" in paths
+        ), "GET /cases/{case_id}/snapshots/{revision} must be registered on agent router"
 
     def test_case_revision_snapshot_route_is_get(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "GET" in paths.get("/cases/{case_id}/snapshots/{revision}", set()), "/cases/{case_id}/snapshots/{revision} must accept GET"
+        assert "GET" in paths.get(
+            "/cases/{case_id}/snapshots/{revision}", set()
+        ), "/cases/{case_id}/snapshots/{revision} must accept GET"
 
     def test_case_snapshot_list_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/cases/{case_id}/snapshots" in paths, "GET /cases/{case_id}/snapshots must be registered on agent router"
+        assert (
+            "/cases/{case_id}/snapshots" in paths
+        ), "GET /cases/{case_id}/snapshots must be registered on agent router"
 
     def test_case_snapshot_list_route_is_get(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "GET" in paths.get("/cases/{case_id}/snapshots", set()), "/cases/{case_id}/snapshots must accept GET"
+        assert "GET" in paths.get(
+            "/cases/{case_id}/snapshots", set()
+        ), "/cases/{case_id}/snapshots must accept GET"
 
     def test_workspace_rfq_document_route_registered(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "/workspace/{case_id}/rfq-document" in paths, "GET /workspace/{case_id}/rfq-document must be registered on agent router"
+        assert (
+            "/workspace/{case_id}/rfq-document" in paths
+        ), "GET /workspace/{case_id}/rfq-document must be registered on agent router"
 
     def test_workspace_rfq_document_route_is_get(self, agent_router):
         paths = _route_paths_and_methods(agent_router)
-        assert "GET" in paths.get("/workspace/{case_id}/rfq-document", set()), "/workspace/{case_id}/rfq-document must accept GET"
+        assert "GET" in paths.get(
+            "/workspace/{case_id}/rfq-document", set()
+        ), "/workspace/{case_id}/rfq-document must accept GET"
 
     def test_no_unexpected_double_slash_routes(self, agent_router):
         """Route paths must not start with // (accidental prefix concatenation)."""
         paths = _route_paths_and_methods(agent_router)
         for path in paths:
-            assert not path.startswith("//"), (
-                f"Double-slash route detected: {path!r} — possible prefix misconfiguration"
-            )
+            assert not path.startswith(
+                "//"
+            ), f"Double-slash route detected: {path!r} — possible prefix misconfiguration"
 
 
 # ---------------------------------------------------------------------------
 # No double-mount under /api/v1
 # ---------------------------------------------------------------------------
+
 
 class TestNoDoubleMountUnderV1:
     @pytest.fixture(scope="class")

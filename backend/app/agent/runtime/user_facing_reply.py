@@ -15,7 +15,10 @@ from app.agent.runtime.reply_composition import (
     build_governed_render_prompt,
     guard_governed_rendered_text,
 )
-from app.agent.runtime.outward_names import normalize_outward_response_class, normalize_outward_status
+from app.agent.runtime.outward_names import (
+    normalize_outward_response_class,
+    normalize_outward_status,
+)
 from app.agent.runtime.response_renderer import render_chunk, render_response
 from app.agent.runtime.surface_claims import get_surface_claims_spec
 from app.agent.state.models import TurnContextContract
@@ -149,11 +152,7 @@ async def collect_governed_visible_reply_with_trace(
 
     effective_fallback_text = str(
         fallback_text
-        or (
-            claims_spec.get("fallback_text")
-            if isinstance(claims_spec, dict)
-            else ""
-        )
+        or (claims_spec.get("fallback_text") if isinstance(claims_spec, dict) else "")
         or ""
     ).strip()
     if isinstance(claims_spec, dict):
@@ -188,7 +187,9 @@ async def collect_governed_visible_reply_with_trace(
                 result.trace.model_name,
             )
             if result.used_fallback:
-                rendered_fallback = render_response(result.assistant_message, path="GOVERNED")
+                rendered_fallback = render_response(
+                    result.assistant_message, path="GOVERNED"
+                )
                 return GovernedVisibleReplyResult(
                     text=str(
                         rendered_fallback.text
@@ -226,7 +227,10 @@ async def collect_governed_visible_reply_with_trace(
                 "[user_facing_reply] human communication layer failed (%s) — using deterministic fallback unless legacy renderer is explicitly enabled",
                 exc,
             )
-            if os.environ.get("SEALAI_ENABLE_LEGACY_VISIBLE_RENDERER", "false").lower() != "true":
+            if (
+                os.environ.get("SEALAI_ENABLE_LEGACY_VISIBLE_RENDERER", "false").lower()
+                != "true"
+            ):
                 return GovernedVisibleReplyResult(
                     text=effective_fallback_text,
                     answer_trace=build_answer_trace(
@@ -319,7 +323,10 @@ def _unsafe_user_instruction_context(
     lowered = user_text.casefold()
     if not user_text:
         return None
-    if not (_UNSAFE_USER_INSTRUCTION_RE.search(lowered) or _FORCED_TECHNICAL_CLAIM_RE.search(lowered)):
+    if not (
+        _UNSAFE_USER_INSTRUCTION_RE.search(lowered)
+        or _FORCED_TECHNICAL_CLAIM_RE.search(lowered)
+    ):
         return None
 
     next_question = str(getattr(turn_context, "primary_question", "") or "").strip()
@@ -412,7 +419,10 @@ def _fallback_unsafe_instruction_text(context: UnsafeInstructionContext) -> str:
             "Eine Freigabe bestätige ich nicht ohne konkreten Fall, Hersteller- oder "
             "Normnachweis und geprüfte Dokumente."
         )
-    question = context.next_question or "Wenn du möchtest, klären wir als Nächstes den fehlenden technischen Punkt im Fall."
+    question = (
+        context.next_question
+        or "Wenn du möchtest, klären wir als Nächstes den fehlenden technischen Punkt im Fall."
+    )
     return f"Das kann ich so nicht seriös bestätigen. {boundary} {question}"
 
 
@@ -422,7 +432,9 @@ def derive_public_response_class(
     state_update: bool,
 ) -> str:
     response_class = "conversational_answer"
-    output_status = normalize_outward_status((structured_state or {}).get("output_status"), default="")
+    output_status = normalize_outward_status(
+        (structured_state or {}).get("output_status"), default=""
+    )
 
     if state_update and structured_state is not None:
         return "governed_state_update"

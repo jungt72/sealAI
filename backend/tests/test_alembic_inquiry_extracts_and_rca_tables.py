@@ -131,19 +131,20 @@ def test_fks_constraints_and_indexes_exist(test_db_engine_at_head):
 
     uniques_by_table = {
         table_name: {
-            constraint["name"] for constraint in inspector.get_unique_constraints(table_name)
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints(table_name)
         }
         for table_name in ("inquiry_extracts", "golden_cases")
     }
     assert (
-        "uq_inquiry_extracts_case_revision_type"
-        in uniques_by_table["inquiry_extracts"]
+        "uq_inquiry_extracts_case_revision_type" in uniques_by_table["inquiry_extracts"]
     )
     assert "uq_golden_cases_stable_key_version" in uniques_by_table["golden_cases"]
 
     checks_by_table = {
         table_name: {
-            constraint["name"] for constraint in inspector.get_check_constraints(table_name)
+            constraint["name"]
+            for constraint in inspector.get_check_constraints(table_name)
         }
         for table_name in ("inquiry_extracts", "golden_cases", "rca_early_access")
     }
@@ -176,9 +177,7 @@ def test_fks_constraints_and_indexes_exist(test_db_engine_at_head):
     assert "ix_inquiry_extracts_artifact_type" in indexes_by_table["inquiry_extracts"]
     assert "ix_inquiry_extracts_consent_status" in indexes_by_table["inquiry_extracts"]
     assert "ix_golden_cases_stable_key" in indexes_by_table["golden_cases"]
-    assert (
-        "ix_golden_cases_request_path_material" in indexes_by_table["golden_cases"]
-    )
+    assert "ix_golden_cases_request_path_material" in indexes_by_table["golden_cases"]
     assert "ix_golden_cases_active" in indexes_by_table["golden_cases"]
     assert "ix_rca_early_access_tenant_id" in indexes_by_table["rca_early_access"]
     assert "ix_rca_early_access_status" in indexes_by_table["rca_early_access"]
@@ -243,15 +242,19 @@ def test_minimal_valid_rows_insert_for_each_table(test_db_engine_at_head):
             )
         )
 
-        extract = conn.execute(
-            text(
-                """
+        extract = (
+            conn.execute(
+                text(
+                    """
                 SELECT artifact_type, source_kind
                 FROM inquiry_extracts
                 WHERE extract_id = 'extract-p3-3-valid'
                 """
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         assert extract["artifact_type"] == "manufacturer_inquiry"
         assert extract["source_kind"] == "case_revision"
 

@@ -4,12 +4,16 @@ The resolver intentionally reads backend `PendingQuestion` state, never prior
 assistant wording. Field-specific adapters can be added incrementally while the
 outer contract stays generic.
 """
+
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from app.agent.domain.medium_registry import classify_medium_value, is_medium_placeholder_value
+from app.agent.domain.medium_registry import (
+    classify_medium_value,
+    is_medium_placeholder_value,
+)
 from app.agent.domain.normalization import normalize_sealing_type_value
 from app.agent.state.models import PendingQuestion, SlotAnswerBinding
 
@@ -54,7 +58,10 @@ _PRESSURE_ABSOLUTE_RE = re.compile(
     r"\b(?:bara|bar\s*a|absolutdruck|absolute?r?\s+druck|absolute?)\b",
     re.IGNORECASE,
 )
-_NUMBER_RE = re.compile(r"^\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:bar|°?\s*c|grad|mm|rpm|u[/.]?\s*min)?\s*$", re.IGNORECASE)
+_NUMBER_RE = re.compile(
+    r"^\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:bar|°?\s*c|grad|mm|rpm|u[/.]?\s*min)?\s*$",
+    re.IGNORECASE,
+)
 # Tolerant short-answer markers (§7.5/§7.6): leading fillers and approximation
 # words around a single numeric value, e.g. "jo ca 3000", "etwa 80 grad".
 _APPROX_MARKER_RE = re.compile(
@@ -177,8 +184,13 @@ def _resolve_medium_answer(
         return None
     decision = classify_medium_value(raw)
     normalized: Any = decision.canonical_label or _titlecase_answer(raw)
-    confidence = 0.92 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.72
-    needs_clarification = decision.mapping_confidence == "requires_confirmation" or decision.canonical_label is None
+    confidence = (
+        0.92 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.72
+    )
+    needs_clarification = (
+        decision.mapping_confidence == "requires_confirmation"
+        or decision.canonical_label is None
+    )
 
     return SlotAnswerBinding(
         target_field="medium",
@@ -201,7 +213,9 @@ def _resolve_explicit_medium_answer(
     if not text:
         return None
     lowered = text.casefold()
-    if "?" in text or any(token in lowered for token in ("warum", "wozu", "weshalb", "wieso")):
+    if "?" in text or any(
+        token in lowered for token in ("warum", "wozu", "weshalb", "wieso")
+    ):
         return None
     match = re.search(
         r"\b(?:das\s+)?medium\s+(?:ist|waere|wäre|is|=|:)\s+([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß0-9 /+\-.]{1,48})",
@@ -215,8 +229,13 @@ def _resolve_explicit_medium_answer(
         return None
     decision = classify_medium_value(raw)
     normalized: Any = decision.canonical_label or _titlecase_answer(raw)
-    confidence = 0.9 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.76
-    needs_clarification = decision.mapping_confidence == "requires_confirmation" or decision.canonical_label is None
+    confidence = (
+        0.9 if decision.mapping_confidence in {"confirmed", "estimated"} else 0.76
+    )
+    needs_clarification = (
+        decision.mapping_confidence == "requires_confirmation"
+        or decision.canonical_label is None
+    )
     return SlotAnswerBinding(
         target_field="medium",
         raw_value=raw,
@@ -284,7 +303,10 @@ def _resolve_pressure_answer(
     if expected_type in {"pressure_value", "pressure_value_or_context"}:
         value = _pressure_value_answer(text)
         if value is not None and "bar" in lowered:
-            if str(pending_question.target_field or "").strip() in _PRESSURE_ROLE_FIELDS:
+            if (
+                str(pending_question.target_field or "").strip()
+                in _PRESSURE_ROLE_FIELDS
+            ):
                 target_field = str(pending_question.target_field).strip()
             else:
                 target_field = "ambiguous_pressure_bar"
@@ -311,7 +333,11 @@ def _resolve_numeric_slot_answer(
     expected_type = str(pending_question.expected_answer_type or "")
     if target_field not in {"temperature_c", "shaft_diameter_mm", "speed_rpm"}:
         return None
-    if expected_type not in {"temperature_value", "length_mm_value", "rotational_speed_value"}:
+    if expected_type not in {
+        "temperature_value",
+        "length_mm_value",
+        "rotational_speed_value",
+    }:
         return None
     text = str(message or "").strip()
     if not text or "?" in text:
@@ -446,7 +472,9 @@ def resolve_slot_answer_binding(
         return None
     already_extracted_fields = set(already_extracted_fields or set())
     target_field = str(pending_question.target_field or "").strip()
-    canonical_target_field = "sealing_type" if target_field == "seal_type" else target_field
+    canonical_target_field = (
+        "sealing_type" if target_field == "seal_type" else target_field
+    )
     if not target_field or canonical_target_field in already_extracted_fields:
         return None
     if target_field == "medium":

@@ -88,11 +88,15 @@ class TestWorkingProfileTemperatureValidation:
 
 class TestWorkingProfileCrossFieldValidation:
     def test_pressure_min_gt_max_rejected(self):
-        with pytest.raises(ValidationError, match="pressure_min_bar.*<= pressure_max_bar"):
+        with pytest.raises(
+            ValidationError, match="pressure_min_bar.*<= pressure_max_bar"
+        ):
             WorkingProfile(pressure_min_bar=50.0, pressure_max_bar=10.0)
 
     def test_temperature_min_gt_max_rejected(self):
-        with pytest.raises(ValidationError, match="temperature_min_c.*<= temperature_max_c"):
+        with pytest.raises(
+            ValidationError, match="temperature_min_c.*<= temperature_max_c"
+        ):
             WorkingProfile(temperature_min_c=100.0, temperature_max_c=20.0)
 
     def test_equal_min_max_allowed(self):
@@ -266,18 +270,27 @@ class TestRAGStateTypeStructure:
 
     def test_list_fields_have_operator_add(self):
         import typing
+
         hints = typing.get_type_hints(RAGState, include_extras=True)
         for field_name in ("messages", "sources", "sealing_type_results", "errors"):
             annotation = hints[field_name]
             # Annotated types expose __metadata__
-            assert hasattr(annotation, "__metadata__"), f"{field_name} should be Annotated"
-            assert operator.add in annotation.__metadata__, (
-                f"{field_name} should have operator.add reducer"
-            )
+            assert hasattr(
+                annotation, "__metadata__"
+            ), f"{field_name} should be Annotated"
+            assert (
+                operator.add in annotation.__metadata__
+            ), f"{field_name} should have operator.add reducer"
 
     def test_scalar_fields_present(self):
         hints = RAGState.__annotations__
-        for field_name in ("calculation_result", "error_state", "session_id", "tenant_id", "profile"):
+        for field_name in (
+            "calculation_result",
+            "error_state",
+            "session_id",
+            "tenant_id",
+            "profile",
+        ):
             assert field_name in hints, f"{field_name} missing from RAGState"
 
     def test_operator_add_concatenation(self):

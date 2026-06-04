@@ -251,7 +251,9 @@ def test_explicit_text_beats_weak_engineering_path_hint_with_ambiguity_note() ->
     assert any("explicit alias preferred" in note for note in result.notes)
 
 
-def test_type_specific_hints_are_distinct_for_hydraulic_flat_and_mechanical_cases() -> None:
+def test_type_specific_hints_are_distinct_for_hydraulic_flat_and_mechanical_cases() -> (
+    None
+):
     hydraulic = type_specific_missing_hints_for_type(SealType.hydraulic_rod_seal)
     flat = type_specific_missing_hints_for_type(SealType.flange_gasket)
     mechanical = type_specific_missing_hints_for_type(SealType.mechanical_seal)
@@ -275,5 +277,7 @@ def test_type_specific_hints_are_distinct_for_hydraulic_flat_and_mechanical_case
         (SealType.hydraulic_wiper, "water_content"),
     ],
 )
-def test_additional_families_have_specific_hints(seal_type: SealType, expected: str) -> None:
+def test_additional_families_have_specific_hints(
+    seal_type: SealType, expected: str
+) -> None:
     assert expected in type_specific_missing_hints_for_type(seal_type)

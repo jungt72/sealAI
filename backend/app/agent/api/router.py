@@ -3,7 +3,11 @@ from fastapi import APIRouter
 
 from app.agent.api.routes import chat, workspace, history, review, system
 from app.agent.api.dispatch import _resolve_runtime_dispatch, RuntimeDispatchResolution
-from app.agent.api.streaming import event_generator, _stream_governed_graph, _stream_light_runtime
+from app.agent.api.streaming import (
+    event_generator,
+    _stream_governed_graph,
+    _stream_light_runtime,
+)
 from app.agent.api.loaders import (
     _load_live_governed_state,
     _persist_live_governed_state,
@@ -37,7 +41,9 @@ from app.agent.graph.topology import GOVERNED_GRAPH
 router = APIRouter()
 
 
-async def _load_preferred_governed_workspace_source(*, current_user, session_id=None, case_id=None):
+async def _load_preferred_governed_workspace_source(
+    *, current_user, session_id=None, case_id=None
+):
     """Compatibility wrapper for legacy v1 state facade imports.
 
     Newer agent workspace code uses ``case_id``; the v1 state facade still
@@ -52,6 +58,7 @@ async def _load_preferred_governed_workspace_source(*, current_user, session_id=
         current_user=current_user,
         case_id=resolved_case_id,
     )
+
 
 # Include sub-routers
 router.include_router(chat.router)

@@ -163,7 +163,9 @@ class ComplianceCertificateChecklistArtifact:
             "case_type": self.case_type,
             "artifact_type": self.artifact_type,
             "material_context": self.material_context.as_dict(),
-            "requirements": [requirement.as_dict() for requirement in self.requirements],
+            "requirements": [
+                requirement.as_dict() for requirement in self.requirements
+            ],
             "checklist": [item.as_dict() for item in self.checklist],
             "open_evidence": self.open_evidence,
             "boundary_notice": self.boundary_notice,

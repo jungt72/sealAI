@@ -17,6 +17,7 @@ Architecture rule:
   No direct writes to NormalizedState / AssertedState / GovernanceState here.
   This module is pure I/O — it stores and retrieves what the reducers produce.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +30,10 @@ from typing import Any, Optional
 from app.agent.prompts import REASONING_PROMPT_VERSION
 from app.agent.state.models import GovernedPersistenceMarker, GovernedSessionState
 from app.agent.state.reducers import produce_decision
-from app.services.chat.conversations import derive_conversation_title, upsert_conversation
+from app.services.chat.conversations import (
+    derive_conversation_title,
+    upsert_conversation,
+)
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +77,7 @@ class GovernedStateSnapshotPersistenceResult:
 # ---------------------------------------------------------------------------
 # Redis key helper
 # ---------------------------------------------------------------------------
+
 
 def _governed_state_key(tenant_id: str, session_id: str) -> str:
     return f"governed_state:{tenant_id}:{session_id}"
@@ -124,10 +129,14 @@ def _message_text_from_payload(message: Any) -> str:
 def _message_role_from_payload(message: Any) -> str:
     if isinstance(message, dict):
         return str(message.get("role") or message.get("type") or "").strip()
-    return str(getattr(message, "role", None) or getattr(message, "type", "") or "").strip()
+    return str(
+        getattr(message, "role", None) or getattr(message, "type", "") or ""
+    ).strip()
 
 
-def _governed_conversation_messages(state_json: dict[str, Any] | None) -> list[dict[str, str]]:
+def _governed_conversation_messages(
+    state_json: dict[str, Any] | None,
+) -> list[dict[str, str]]:
     raw_messages = []
     if isinstance(state_json, dict):
         raw_messages = list(state_json.get("conversation_messages") or [])
@@ -140,14 +149,18 @@ def _governed_conversation_messages(state_json: dict[str, Any] | None) -> list[d
     return messages
 
 
-def _first_user_message_from_governed_state(state_json: dict[str, Any] | None) -> str | None:
+def _first_user_message_from_governed_state(
+    state_json: dict[str, Any] | None,
+) -> str | None:
     for message in _governed_conversation_messages(state_json):
         if message["role"] == "user":
             return message["content"]
     return None
 
 
-def _latest_preview_from_governed_state(state_json: dict[str, Any] | None) -> str | None:
+def _latest_preview_from_governed_state(
+    state_json: dict[str, Any] | None,
+) -> str | None:
     messages = _governed_conversation_messages(state_json)
     for message in reversed(messages):
         if message["role"] == "assistant":
@@ -211,6 +224,7 @@ def _without_persistence_marker(state: GovernedSessionState) -> GovernedSessionS
 # Sync helpers (used by tests and sync callers)
 # ---------------------------------------------------------------------------
 
+
 def save_governed_state(
     state: GovernedSessionState,
     *,
@@ -230,7 +244,9 @@ def save_governed_state(
     key = _governed_state_key(tenant_id, session_id)
     payload = state.model_dump_json()
     redis_client.set(key, payload, ex=_GOVERNED_STATE_TTL_SECONDS)  # type: ignore[union-attr]
-    log.debug("[persistence] saved governed_state tenant=%s session=%s", tenant_id, session_id)
+    log.debug(
+        "[persistence] saved governed_state tenant=%s session=%s", tenant_id, session_id
+    )
 
 
 def load_governed_state(
@@ -265,6 +281,7 @@ def load_governed_state(
 # Async helpers (used by FastAPI endpoints)
 # ---------------------------------------------------------------------------
 
+
 async def save_governed_state_async(
     state: GovernedSessionState,
     *,
@@ -281,7 +298,9 @@ async def save_governed_state_async(
     payload = state.model_dump_json()
     await redis_client.set(key, payload, ex=_GOVERNED_STATE_TTL_SECONDS)  # type: ignore[union-attr]
     log.debug(
-        "[persistence] async saved governed_state tenant=%s session=%s", tenant_id, session_id
+        "[persistence] async saved governed_state tenant=%s session=%s",
+        tenant_id,
+        session_id,
     )
 
 
@@ -304,7 +323,9 @@ async def save_governed_state_snapshot_async(
         from app.database import AsyncSessionLocal  # noqa: PLC0415
         from app.domain.engineering_path import AUTHORITY_ENGINEERING_PATHS  # noqa: PLC0415
         from app.domain.pre_gate_classification import PreGateClassification  # noqa: PLC0415
-        from app.domain.sealing_material_family import AUTHORITY_SEALING_MATERIAL_FAMILIES  # noqa: PLC0415
+        from app.domain.sealing_material_family import (
+            AUTHORITY_SEALING_MATERIAL_FAMILIES,
+        )  # noqa: PLC0415
         from app.models.case_record import CaseRecord  # noqa: PLC0415
         from app.services.case_service import CaseService  # noqa: PLC0415
     except ModuleNotFoundError as exc:
@@ -329,13 +350,17 @@ async def save_governed_state_snapshot_async(
     )
     case_updates_from_runtime: dict[str, Any] = {}
     if explicit_pre_gate_classification is not None:
-        case_updates_from_runtime["pre_gate_classification"] = explicit_pre_gate_classification
+        case_updates_from_runtime["pre_gate_classification"] = (
+            explicit_pre_gate_classification
+        )
     case_updates_from_governed_state: dict[str, Any] = {}
     sealing_material_family = str(
         persisted_state.sealai_norm.material.sealing_material_family or ""
     ).strip()
     if sealing_material_family in AUTHORITY_SEALING_MATERIAL_FAMILIES:
-        case_updates_from_governed_state["sealing_material_family"] = sealing_material_family
+        case_updates_from_governed_state["sealing_material_family"] = (
+            sealing_material_family
+        )
     engineering_path = persisted_state.sealai_norm.identity.engineering_path
     if (
         isinstance(engineering_path, str)
@@ -490,10 +515,7 @@ async def list_cases_async(
         return []
 
     async with AsyncSessionLocal() as session:
-        case_query = (
-            select(CaseRecord)
-            .where(CaseRecord.user_id == user_id)
-        )
+        case_query = select(CaseRecord).where(CaseRecord.user_id == user_id)
         if tenant_id is not None:
             case_query = case_query.where(CaseRecord.tenant_id == tenant_id)
         case_query = case_query.order_by(CaseRecord.updated_at.desc()).limit(limit)
@@ -505,7 +527,9 @@ async def list_cases_async(
             latest_snapshot = await service.get_latest_snapshot_for_case_id(
                 str(case_row.id)
             )
-            latest_revision = int(latest_snapshot.revision) if latest_snapshot is not None else None
+            latest_revision = (
+                int(latest_snapshot.revision) if latest_snapshot is not None else None
+            )
             raw_state_json = getattr(latest_snapshot, "state_json", None)
             state_json = raw_state_json if isinstance(raw_state_json, dict) else {}
             first_user_message = _first_user_message_from_governed_state(state_json)
@@ -607,7 +631,9 @@ async def list_governed_case_snapshots_async(
         return []
 
     async with AsyncSessionLocal() as session:
-        snapshot_rows = await CaseService(session).list_snapshot_revisions_for_case_number(
+        snapshot_rows = await CaseService(
+            session
+        ).list_snapshot_revisions_for_case_number(
             case_number=case_number,
             tenant_id=tenant_id,
             user_id=user_id,
@@ -662,6 +688,7 @@ async def load_governed_state_async(
 # ---------------------------------------------------------------------------
 # H1.3 — Case management (session-scoped)
 # ---------------------------------------------------------------------------
+
 
 async def get_or_create_case(
     session_id: str,
@@ -728,9 +755,9 @@ async def _generate_case_number(db: Any) -> str:  # AsyncSession
     today = date.today()
     prefix = f"STS-INQ-{today.year}-{today.month:02d}"
     result = await db.execute(
-        select(func.count()).select_from(CaseRecord).where(
-            CaseRecord.case_number.like(f"{prefix}-%")
-        )
+        select(func.count())
+        .select_from(CaseRecord)
+        .where(CaseRecord.case_number.like(f"{prefix}-%"))
     )
     n = (result.scalar() or 0) + 1
     return f"{prefix}-{n:03d}"

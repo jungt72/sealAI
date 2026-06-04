@@ -5,6 +5,7 @@ Determines which parameters are missing, prioritizes clarification questions,
 and builds the deterministic clarification projection consumed by selection.py
 and projections_extended.py.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -19,9 +20,7 @@ STRUCTURED_SUPPLEMENTARY_PARAMS: tuple[str, ...] = (
     "shaft_diameter",
     "shaft_speed",
 )
-STRUCTURED_CONTEXT_PARAMS: tuple[str, ...] = (
-    "dynamic_type",
-)
+STRUCTURED_CONTEXT_PARAMS: tuple[str, ...] = ("dynamic_type",)
 
 _CLARIFICATION_FIELD_META: dict[str, dict[str, Any]] = {
     "medium": {
@@ -68,7 +67,9 @@ _CLARIFICATION_FIELD_META: dict[str, dict[str, Any]] = {
     },
 }
 
-CLARIFICATION_PAUSED_PREFIX = "Weitere Klärung ist derzeit nicht der nächste erforderliche Schritt."
+CLARIFICATION_PAUSED_PREFIX = (
+    "Weitere Klärung ist derzeit nicht der nächste erforderliche Schritt."
+)
 NEXT_QUESTION_PREFIX = "Nächste Klärungsfrage:"
 
 
@@ -111,7 +112,9 @@ def _build_missing_inputs_text(
     parts: List[str] = []
     if missing:
         missing_list = "\n".join(f"- {item}" for item in missing)
-        parts.append(f"Für eine Auslegungsempfehlung benötige ich noch:\n{missing_list}")
+        parts.append(
+            f"Für eine Auslegungsempfehlung benötige ich noch:\n{missing_list}"
+        )
     if pending:
         pending_list = "\n".join(f"- {item}" for item in pending)
         parts.append(f"Ausstehende Bestätigung:\n{pending_list}")
@@ -145,13 +148,26 @@ def _field_is_known_or_pending(
     machine = asserted.get("machine_profile") or {}
 
     if field_key == "medium":
-        return bool((asserted.get("medium_profile") or {}).get("name") or working.get("medium"))
+        return bool(
+            (asserted.get("medium_profile") or {}).get("name") or working.get("medium")
+        )
     if field_key == "pressure":
-        return operating.get("pressure") is not None or working.get("pressure") is not None or working.get("pressure_bar") is not None
+        return (
+            operating.get("pressure") is not None
+            or working.get("pressure") is not None
+            or working.get("pressure_bar") is not None
+        )
     if field_key == "temperature":
-        return operating.get("temperature") is not None or working.get("temperature") is not None or working.get("temperature_max_c") is not None
+        return (
+            operating.get("temperature") is not None
+            or working.get("temperature") is not None
+            or working.get("temperature_max_c") is not None
+        )
     if field_key == "shaft_diameter":
-        return machine.get("shaft_diameter_mm") is not None or working.get("shaft_diameter_mm") is not None
+        return (
+            machine.get("shaft_diameter_mm") is not None
+            or working.get("shaft_diameter_mm") is not None
+        )
     if field_key == "shaft_speed":
         return (
             machine.get("shaft_speed_rpm") is not None
@@ -174,7 +190,8 @@ def prioritize_missing_inputs(
         + list(STRUCTURED_CONTEXT_PARAMS)
     )
     missing = [
-        key for key in candidates
+        key
+        for key in candidates
         if not _field_is_known_or_pending(key, asserted_state, working_profile)
     ]
     return sorted(
@@ -201,13 +218,26 @@ def build_clarification_projection(
 
     prioritized_missing = prioritize_missing_inputs(asserted_state, working_profile)
     review_status = (review_escalation_projection or {}).get("status")
-    evidence_status = str((evidence_provenance_projection or {}).get("status") or "no_evidence")
-    provenance_refs = list((evidence_provenance_projection or {}).get("provenance_refs") or [])
-    conflict_status = str((conflict_status_projection or {}).get("status") or "no_conflict")
+    evidence_status = str(
+        (evidence_provenance_projection or {}).get("status") or "no_evidence"
+    )
+    provenance_refs = list(
+        (evidence_provenance_projection or {}).get("provenance_refs") or []
+    )
+    conflict_status = str(
+        (conflict_status_projection or {}).get("status") or "no_conflict"
+    )
     affected_keys = list((conflict_status_projection or {}).get("affected_keys") or [])
-    integrity_status = str((parameter_integrity_projection or {}).get("integrity_status") or "normalized_ok")
-    integrity_blocking_keys = list((parameter_integrity_projection or {}).get("blocking_keys") or [])
-    domain_scope_status = str((domain_scope_projection or {}).get("status") or "in_domain_scope")
+    integrity_status = str(
+        (parameter_integrity_projection or {}).get("integrity_status")
+        or "normalized_ok"
+    )
+    integrity_blocking_keys = list(
+        (parameter_integrity_projection or {}).get("blocking_keys") or []
+    )
+    domain_scope_status = str(
+        (domain_scope_projection or {}).get("status") or "in_domain_scope"
+    )
 
     if domain_scope_status in {"out_of_domain_scope", "escalation_required"}:
         return {
@@ -224,21 +254,38 @@ def build_clarification_projection(
         }
 
     if integrity_status == "unusable_until_clarified":
-        next_key = next((key for key in integrity_blocking_keys if key in _CLARIFICATION_FIELD_META), None)
+        next_key = next(
+            (
+                key
+                for key in integrity_blocking_keys
+                if key in _CLARIFICATION_FIELD_META
+            ),
+            None,
+        )
         return {
             "missing_items": prioritized_missing,
             "next_question_key": next_key,
-            "next_question_label": str(_CLARIFICATION_FIELD_META[next_key]["question_label"]) if next_key else None,
+            "next_question_label": str(
+                _CLARIFICATION_FIELD_META[next_key]["question_label"]
+            )
+            if next_key
+            else None,
             "evidence_status": evidence_status,
             "provenance_refs": provenance_refs,
             "conflict_status": conflict_status,
             "integrity_status": integrity_status,
             "affected_keys": sorted(set(affected_keys) | set(integrity_blocking_keys)),
             "clarification_still_meaningful": bool(next_key),
-            "reason_if_not": "" if next_key else "Parameterintegrität erfordert manuelle Klärung.",
+            "reason_if_not": ""
+            if next_key
+            else "Parameterintegrität erfordert manuelle Klärung.",
         }
 
-    if review_status in {"review_pending", "ambiguous_but_reviewable", "escalation_needed"}:
+    if review_status in {
+        "review_pending",
+        "ambiguous_but_reviewable",
+        "escalation_needed",
+    }:
         return {
             "missing_items": prioritized_missing,
             "next_question_key": None,
@@ -262,21 +309,31 @@ def build_clarification_projection(
             "integrity_status": integrity_status,
             "affected_keys": affected_keys,
             "clarification_still_meaningful": False,
-            "reason_if_not": str((review_escalation_projection or {}).get("reason") or ""),
+            "reason_if_not": str(
+                (review_escalation_projection or {}).get("reason") or ""
+            ),
         }
     if (conflict_status_projection or {}).get("conflict_still_open"):
-        next_key = next((key for key in affected_keys if key in _CLARIFICATION_FIELD_META), None)
+        next_key = next(
+            (key for key in affected_keys if key in _CLARIFICATION_FIELD_META), None
+        )
         return {
             "missing_items": prioritized_missing,
             "next_question_key": next_key,
-            "next_question_label": str(_CLARIFICATION_FIELD_META[next_key]["question_label"]) if next_key else None,
+            "next_question_label": str(
+                _CLARIFICATION_FIELD_META[next_key]["question_label"]
+            )
+            if next_key
+            else None,
             "evidence_status": evidence_status,
             "provenance_refs": provenance_refs,
             "conflict_status": conflict_status,
             "integrity_status": integrity_status,
             "affected_keys": affected_keys,
             "clarification_still_meaningful": bool(next_key),
-            "reason_if_not": "" if next_key else "Offener Konflikt erfordert manuelle Klärung.",
+            "reason_if_not": ""
+            if next_key
+            else "Offener Konflikt erfordert manuelle Klärung.",
         }
     if not prioritized_missing:
         return {
@@ -296,7 +353,9 @@ def build_clarification_projection(
     return {
         "missing_items": prioritized_missing,
         "next_question_key": next_key,
-        "next_question_label": str(_CLARIFICATION_FIELD_META[next_key]["question_label"]),
+        "next_question_label": str(
+            _CLARIFICATION_FIELD_META[next_key]["question_label"]
+        ),
         "evidence_status": evidence_status,
         "provenance_refs": provenance_refs,
         "conflict_status": conflict_status,
@@ -322,8 +381,13 @@ def build_next_clarification_question(
             "temperature": "Welche Betriebstemperatur ist korrekt und in welcher Einheit?",
             "medium": "Welches Medium ist fachlich korrekt bestätigt?",
         }
-        return integrity_questions.get(next_key) or str(_CLARIFICATION_FIELD_META[next_key]["question"])
-    if projection.get("conflict_status") in {"conflicting_values", "unresolved_conflict"}:
+        return integrity_questions.get(next_key) or str(
+            _CLARIFICATION_FIELD_META[next_key]["question"]
+        )
+    if projection.get("conflict_status") in {
+        "conflicting_values",
+        "unresolved_conflict",
+    }:
         conflict_questions = {
             "medium": "Welches Medium ist korrekt?",
             "pressure": "Welcher Betriebsdruck ist korrekt?",
@@ -345,7 +409,9 @@ def _build_missing_data_reply(
     next_question = build_next_clarification_question(clarification_projection)
     if next_question:
         return f"{base_text}\n\n{NEXT_QUESTION_PREFIX} {next_question}"
-    if clarification_projection and not clarification_projection.get("clarification_still_meaningful"):
+    if clarification_projection and not clarification_projection.get(
+        "clarification_still_meaningful"
+    ):
         reason = str(clarification_projection.get("reason_if_not") or "").strip()
         if reason:
             return f"{base_text}\n\n{CLARIFICATION_PAUSED_PREFIX} {reason}"

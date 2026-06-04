@@ -28,6 +28,7 @@ Architecture invariants enforced here:
                governed answer composer may write text-only answer_markdown.
   Invariant 8: Only output_public and explicit answer text surface in the API response.
 """
+
 from __future__ import annotations
 
 from typing import Any

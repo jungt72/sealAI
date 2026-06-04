@@ -20,7 +20,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_v083_conversation_routing.py",
-                ("test_greeting_routes_to_frontdoor_without_governed_case_intake", "fast_responder"),
+                (
+                    "test_greeting_routes_to_frontdoor_without_governed_case_intake",
+                    "fast_responder",
+                ),
             ),
         ),
     ),
@@ -29,7 +32,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_knowledge_answer_rag_first.py",
-                ("test_was_ist_fkm_stays_general_knowledge_not_governed_case_intake", "no_case_created"),
+                (
+                    "test_was_ist_fkm_stays_general_knowledge_not_governed_case_intake",
+                    "no_case_created",
+                ),
             ),
         ),
     ),
@@ -91,7 +97,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
             ),
             (
                 "frontend/src/components/dashboard/DecisionUnderstandingPanel.test.tsx",
-                ("LLM-Recherche ist nicht validiert", "validationStatus: \"unvalidated\""),
+                (
+                    "LLM-Recherche ist nicht validiert",
+                    'validationStatus: "unvalidated"',
+                ),
             ),
         ),
     ),
@@ -109,7 +118,11 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_rfq_preview_service.py",
-                ("user_acknowledged_no_final_release", "ExportBlocked", "ExternalDispatchBlocked"),
+                (
+                    "user_acknowledged_no_final_release",
+                    "ExportBlocked",
+                    "ExternalDispatchBlocked",
+                ),
             ),
         ),
     ),
@@ -118,7 +131,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_manufacturer_fit_matrix.py",
-                ("test_unpaid_perfect_partner_is_excluded", "PARTNER_NETWORK_DISCLOSURE"),
+                (
+                    "test_unpaid_perfect_partner_is_excluded",
+                    "PARTNER_NETWORK_DISCLOSURE",
+                ),
             ),
             (
                 "frontend/src/components/dashboard/ManufacturerFitPanel.test.tsx",
@@ -131,7 +147,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_manufacturer_fit_matrix.py",
-                ("test_no_fit_state_is_supported_with_disclosure", "no_suitable_partner"),
+                (
+                    "test_no_fit_state_is_supported_with_disclosure",
+                    "no_suitable_partner",
+                ),
             ),
         ),
     ),
@@ -140,7 +159,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_compatibility_inquiry.py",
-                ("compatibility_inquiry", "hersteller- oder compoundpruefung erforderlich"),
+                (
+                    "compatibility_inquiry",
+                    "hersteller- oder compoundpruefung erforderlich",
+                ),
             ),
         ),
     ),
@@ -153,7 +175,10 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
             ),
             (
                 "backend/tests/unit/services/test_support_artifact_service.py",
-                ("test_support_artifacts_contain_no_liability_or_final_claim", "customer_reply_draft"),
+                (
+                    "test_support_artifacts_contain_no_liability_or_final_claim",
+                    "customer_reply_draft",
+                ),
             ),
         ),
     ),
@@ -198,7 +223,7 @@ CORE_SLICE_EVIDENCE: dict[str, SliceEvidence] = {
         files=(
             (
                 "backend/tests/unit/services/test_shallow_mode_intake_service.py",
-                ("emergency_mro", "next_question.count(\"?\") == 1"),
+                ("emergency_mro", 'next_question.count("?") == 1'),
             ),
         ),
     ),
@@ -308,7 +333,13 @@ def test_core_slices_have_gwt_specs_and_current_test_evidence() -> None:
             continue
 
         section = scenario_slices.split(f"## {slice_id}", 1)[1].split("\n## ", 1)[0]
-        for required_phrase in ("Command", "Events", "Views", "Forbidden side effects", "Given-When-Then tests"):
+        for required_phrase in (
+            "Command",
+            "Events",
+            "Views",
+            "Forbidden side effects",
+            "Given-When-Then tests",
+        ):
             if required_phrase not in section:
                 missing.append(f"{slice_id}: missing {required_phrase}")
 
@@ -325,7 +356,9 @@ def test_core_slices_have_gwt_specs_and_current_test_evidence() -> None:
             content = test_file.read_text(encoding="utf-8")
             for token in tokens:
                 if token not in content:
-                    missing.append(f"{slice_id}: {relative_path} missing token {token!r}")
+                    missing.append(
+                        f"{slice_id}: {relative_path} missing token {token!r}"
+                    )
 
     assert missing == [], missing
 
@@ -365,7 +398,9 @@ def test_security_boundary_map_covers_acceptance_risk_gates() -> None:
         "Secret handling",
     )
 
-    missing = [boundary for boundary in required_boundaries if boundary not in boundary_map]
+    missing = [
+        boundary for boundary in required_boundaries if boundary not in boundary_map
+    ]
 
     assert missing == [], missing
 
@@ -383,7 +418,9 @@ def test_product_copy_avoids_final_release_validation_and_dispatch_claims() -> N
 
 
 def test_acceptance_gate_itself_tracks_v083_required_outcomes() -> None:
-    roadmap = _read("docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md")
+    roadmap = _read(
+        "docs/implementation/SEALAI_V08_3_IMPLEMENTATION_ROADMAP_FROM_AUDIT.md"
+    )
     required_outcomes = (
         "alle Kernflows haben Slice",
         "alle Kernflows haben Tests",

@@ -290,7 +290,9 @@ def is_artifact_type_implemented(value: ArtifactType | str | None) -> bool:
     )
 
 
-def artifact_registry_view(value: ArtifactType | str | None) -> ArtifactTypeRegistryView:
+def artifact_registry_view(
+    value: ArtifactType | str | None,
+) -> ArtifactTypeRegistryView:
     artifact_type = normalize_artifact_type(value)
     source_value = None if value is None else str(getattr(value, "value", value))
     source_key = _normalize(value)

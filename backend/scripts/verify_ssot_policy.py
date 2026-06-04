@@ -11,10 +11,12 @@ import sys
 
 try:
     import httpx
+
     _client_lib = "httpx"
 except ImportError:
     import urllib.request
     import urllib.error
+
     _client_lib = "urllib"
 
 ENDPOINT = "http://localhost:8000/api/v1/agent/chat"
@@ -30,8 +32,21 @@ HEADERS = {
 }
 
 POLICY_INDICATORS = {
-    "fast_path": ["fast", "guidance", "policy_path", "fast_brain", "conversational_rag"],
-    "structured_path": ["qualification", "structured", "rag", "supervisor", "node_p1", "node_p2"],
+    "fast_path": [
+        "fast",
+        "guidance",
+        "policy_path",
+        "fast_brain",
+        "conversational_rag",
+    ],
+    "structured_path": [
+        "qualification",
+        "structured",
+        "rag",
+        "supervisor",
+        "node_p1",
+        "node_p2",
+    ],
     "auth_guard": [401, "unauthorized", "not authenticated", "missing token"],
     "schema_error": [422, "validation error", "field required"],
     "server_error": [500, "internal server error", "traceback"],
@@ -54,7 +69,9 @@ def analyse_response(status_code: int, body: dict | str) -> dict:
         result["guard_triggered"] = "AUTH_GUARD"
         result["policy_path"] = "blocked_at_auth"
         result["deterministic"] = True
-        result["findings"].append("401 Unauthorized — Auth guard functioning correctly per security spec.")
+        result["findings"].append(
+            "401 Unauthorized — Auth guard functioning correctly per security spec."
+        )
         return result
 
     # --- Schema validation error ---
@@ -62,7 +79,9 @@ def analyse_response(status_code: int, body: dict | str) -> dict:
         result["guard_triggered"] = "SCHEMA_VALIDATION"
         result["policy_path"] = "blocked_at_validation"
         result["deterministic"] = True
-        result["findings"].append("422 Unprocessable Entity — Request schema rejected. Check field names.")
+        result["findings"].append(
+            "422 Unprocessable Entity — Request schema rejected. Check field names."
+        )
         return result
 
     # --- Server crash ---
@@ -82,19 +101,32 @@ def analyse_response(status_code: int, body: dict | str) -> dict:
 
         # Fast path indicators
         fast_hits = [kw for kw in POLICY_INDICATORS["fast_path"] if kw in body_str]
-        structured_hits = [kw for kw in POLICY_INDICATORS["structured_path"] if kw in body_str]
+        structured_hits = [
+            kw for kw in POLICY_INDICATORS["structured_path"] if kw in body_str
+        ]
 
         if isinstance(body, dict):
             # Direct policy_path field
             if "policy_path" in body:
                 result["policy_path"] = body["policy_path"]
-                result["findings"].append(f"Explicit policy_path field found: '{body['policy_path']}'")
+                result["findings"].append(
+                    f"Explicit policy_path field found: '{body['policy_path']}'"
+                )
             # Metadata / routing hints
             for field in ("routing", "path", "mode", "intent", "node", "phase"):
                 if field in body:
-                    result["findings"].append(f"Routing hint — '{field}': {body[field]}")
+                    result["findings"].append(
+                        f"Routing hint — '{field}': {body[field]}"
+                    )
             # Response text present?
-            for field in ("answer", "text", "response", "message", "output", "governed_output_text"):
+            for field in (
+                "answer",
+                "text",
+                "response",
+                "message",
+                "output",
+                "governed_output_text",
+            ):
                 if field in body and body[field]:
                     snippet = str(body[field])[:120].replace("\n", " ")
                     result["findings"].append(f"Response text in '{field}': {snippet}…")
@@ -104,7 +136,9 @@ def analyse_response(status_code: int, body: dict | str) -> dict:
             result["findings"].append(f"Fast-path keywords detected: {fast_hits}")
         elif structured_hits:
             result["policy_path"] = "STRUCTURED_PATH (Qualification)"
-            result["findings"].append(f"Structured-path keywords detected: {structured_hits}")
+            result["findings"].append(
+                f"Structured-path keywords detected: {structured_hits}"
+            )
         else:
             result["findings"].append(
                 "No explicit routing metadata in response body. "
@@ -136,7 +170,9 @@ def run():
                     raw_body = resp.text
         else:
             data = json.dumps(PAYLOAD).encode()
-            req = urllib.request.Request(ENDPOINT, data=data, headers=HEADERS, method="POST")
+            req = urllib.request.Request(
+                ENDPOINT, data=data, headers=HEADERS, method="POST"
+            )
             try:
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     status_code = resp.status
@@ -172,7 +208,9 @@ def run():
     print(f"Status Code    : {analysis['status_code']}")
     print(f"Guard Triggered: {analysis['guard_triggered'] or 'None'}")
     print(f"Policy Path    : {analysis['policy_path']}")
-    print(f"Deterministic  : {'YES' % () if analysis['deterministic'] else 'NO — investigate'}")
+    print(
+        f"Deterministic  : {'YES' % () if analysis['deterministic'] else 'NO — investigate'}"
+    )
     print("\nFindings:")
     for i, f in enumerate(analysis["findings"], 1):
         print(f"  [{i}] {f}")
@@ -187,7 +225,9 @@ def run():
     elif analysis["guard_triggered"] == "SCHEMA_VALIDATION":
         print("FAIL — Schema mismatch. Endpoint rejects the test payload.")
     elif status_code == 200 and analysis["deterministic"]:
-        print(f"PASS — Endpoint responded deterministically via: {analysis['policy_path']}")
+        print(
+            f"PASS — Endpoint responded deterministically via: {analysis['policy_path']}"
+        )
     else:
         print(f"INCONCLUSIVE — Status {status_code}, manual inspection needed.")
 

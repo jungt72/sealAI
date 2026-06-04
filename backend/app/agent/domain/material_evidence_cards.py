@@ -49,11 +49,18 @@ class MaterialEvidenceCardValidationResult:
 
     def to_limitation(self) -> str:
         prefix = self.card_id or "unknown_card"
-        details = self.blocked_claims or self.reasons or self.limitations or [self.status]
+        details = (
+            self.blocked_claims or self.reasons or self.limitations or [self.status]
+        )
         return f"{prefix}:{','.join(_dedupe(details))}"
 
 
-SUPPORTED_SCHEMA_VERSIONS = {"material_evidence_card.v1", "material_evidence_card_v1", "v1", "1"}
+SUPPORTED_SCHEMA_VERSIONS = {
+    "material_evidence_card.v1",
+    "material_evidence_card_v1",
+    "v1",
+    "1",
+}
 VALID_CLAIM_LEVELS = {"l1": "L1", "l2": "L2", "l3": "L3"}
 VALID_CLAIM_TYPES: set[str] = {
     "compatibility_observation",
@@ -65,9 +72,22 @@ VALID_CLAIM_TYPES: set[str] = {
     "manufacturer_datasheet_reference",
 }
 SUPPORTING_CLAIM_TYPES = {"compatibility_observation", "compatibility_precheck"}
-COMPLIANCE_SOURCE_KEYS = ("source_url", "doi", "manufacturer", "source_hash", "certificate_id")
+COMPLIANCE_SOURCE_KEYS = (
+    "source_url",
+    "doi",
+    "manufacturer",
+    "source_hash",
+    "certificate_id",
+)
 
-_GENERIC_MATERIAL_KEYS = {"material", "werkstoff", "compound", "elastomer", "kunststoff", "plastic"}
+_GENERIC_MATERIAL_KEYS = {
+    "material",
+    "werkstoff",
+    "compound",
+    "elastomer",
+    "kunststoff",
+    "plastic",
+}
 _GENERIC_MEDIUM_KEYS = {
     "oel",
     "oil",
@@ -267,7 +287,11 @@ def validate_material_evidence_card(
 
     limitations.extend(_list_text(raw.get("limitations")))
     concentration = _text(raw.get("concentration"))
-    medium_key = medium_norm[2] if medium_norm else _text(medium_family_norm[0] if medium_family_norm else "")
+    medium_key = (
+        medium_norm[2]
+        if medium_norm
+        else _text(medium_family_norm[0] if medium_family_norm else "")
+    )
     medium_family = (
         medium_norm[1]
         if medium_norm
@@ -295,7 +319,9 @@ def validate_material_evidence_card(
     if markers:
         compliance_only = markers.issubset(_COMPLIANCE_CLAIM_MARKERS)
         if not (compliance_only and compliance_source_complete):
-            blocked_claims.extend(f"overclaim_wording:{marker}" for marker in sorted(markers))
+            blocked_claims.extend(
+                f"overclaim_wording:{marker}" for marker in sorted(markers)
+            )
 
     if reasons:
         return MaterialEvidenceCardValidationResult(
@@ -322,7 +348,9 @@ def validate_material_evidence_card(
     normalized = {
         "schema_version": "material_evidence_card.v1",
         "card_id": card_id,
-        "material": material_norm[0] if material_norm and not material_context_only else None,
+        "material": material_norm[0]
+        if material_norm and not material_context_only
+        else None,
         "material_family": (
             material_family_norm[0]
             if material_family_norm
@@ -330,7 +358,9 @@ def validate_material_evidence_card(
             if material_norm
             else None
         ),
-        "medium": _text(medium_value) if medium_norm and not medium_context_only else None,
+        "medium": _text(medium_value)
+        if medium_norm and not medium_context_only
+        else None,
         "medium_canonical": medium_norm[0] if medium_norm else None,
         "medium_family": (
             medium_family_norm[1]
@@ -390,7 +420,9 @@ def validate_material_evidence_card(
         normalized["compatibility_status"] = "caution_zone"
 
     status: MaterialEvidenceValidationStatus = (
-        "valid" if support_allowed or normalized["compatibility_status"] != "caution_zone" else "insufficient_evidence"
+        "valid"
+        if support_allowed or normalized["compatibility_status"] != "caution_zone"
+        else "insufficient_evidence"
     )
     return MaterialEvidenceCardValidationResult(
         card_id=card_id or None,
@@ -426,7 +458,9 @@ def _normalize_material(value: Any) -> tuple[str, str, str, str | None] | None:
     if not text:
         return None
     key = _normalized_key(text)
-    canonical, family, limitation = _MATERIAL_ALIASES.get(key, (text.upper(), text.upper(), None))
+    canonical, family, limitation = _MATERIAL_ALIASES.get(
+        key, (text.upper(), text.upper(), None)
+    )
     return canonical, family, key, limitation
 
 

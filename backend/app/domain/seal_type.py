@@ -394,10 +394,26 @@ _EXPLICIT_ALIAS_RULES: tuple[_AliasRule, ...] = (
         SealType.flat_gasket,
         "flat gasket",
     ),
-    _AliasRule(_compile(r"\b(abstreifer|wiper\s+seal)\b"), SealType.hydraulic_wiper, "wiper seal"),
-    _AliasRule(_compile(r"\b(f[uü]hrungsring|guide\s+ring)\b"), SealType.hydraulic_guide_ring, "guide ring"),
-    _AliasRule(_compile(r"\b(pneumatic\s+rod\s+seal)\b"), SealType.pneumatic_rod_seal, "pneumatic rod seal"),
-    _AliasRule(_compile(r"\b(pneumatic\s+piston\s+seal)\b"), SealType.pneumatic_piston_seal, "pneumatic piston seal"),
+    _AliasRule(
+        _compile(r"\b(abstreifer|wiper\s+seal)\b"),
+        SealType.hydraulic_wiper,
+        "wiper seal",
+    ),
+    _AliasRule(
+        _compile(r"\b(f[uü]hrungsring|guide\s+ring)\b"),
+        SealType.hydraulic_guide_ring,
+        "guide ring",
+    ),
+    _AliasRule(
+        _compile(r"\b(pneumatic\s+rod\s+seal)\b"),
+        SealType.pneumatic_rod_seal,
+        "pneumatic rod seal",
+    ),
+    _AliasRule(
+        _compile(r"\b(pneumatic\s+piston\s+seal)\b"),
+        SealType.pneumatic_piston_seal,
+        "pneumatic piston seal",
+    ),
     _AliasRule(_compile(r"\b(o-?\s*ring|oring)\b"), SealType.o_ring, "o-ring"),
     _AliasRule(_compile(r"\b(x-?\s*ring|quad\s+ring)\b"), SealType.x_ring, "x-ring"),
     _AliasRule(
@@ -416,7 +432,11 @@ _EXPLICIT_ALIAS_RULES: tuple[_AliasRule, ...] = (
         SealType.custom_profile,
         "custom profile",
     ),
-    _AliasRule(_compile(r"\b(formteildichtung|molded\s+seal)\b"), SealType.molded_seal, "molded seal"),
+    _AliasRule(
+        _compile(r"\b(formteildichtung|molded\s+seal)\b"),
+        SealType.molded_seal,
+        "molded seal",
+    ),
 )
 
 

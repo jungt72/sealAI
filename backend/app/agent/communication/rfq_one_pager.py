@@ -34,7 +34,12 @@ RFQ_READINESS_BANDS = (
 
 # Minimum viable RFQ core (§20.2). Each group is satisfied by ANY alternative.
 MINIMUM_RFQ_CORE: dict[str, tuple[str, ...]] = {
-    "seal_type_or_photo": ("sealing_function", "seal_type", "sealing_type", "old_part_photo_available"),
+    "seal_type_or_photo": (
+        "sealing_function",
+        "seal_type",
+        "sealing_type",
+        "old_part_photo_available",
+    ),
     "dimensions_or_photo": (
         "shaft_diameter_d1_mm",
         "housing_bore_D_mm",
@@ -43,7 +48,12 @@ MINIMUM_RFQ_CORE: dict[str, tuple[str, ...]] = {
         "old_part_cross_section_or_drawing_available",
     ),
     "application": ("application", "installation_situation"),
-    "medium_or_leakage": ("inside_medium", "medium", "leakage_description", "failure_symptom"),
+    "medium_or_leakage": (
+        "inside_medium",
+        "medium",
+        "leakage_description",
+        "failure_symptom",
+    ),
     "request_goal": ("request_goal", "rfq_goal"),
 }
 
@@ -197,7 +207,8 @@ def _one_pager_context(
     manufacturer_questions: Sequence[str],
 ) -> dict[str, Any]:
     return {
-        "request_goal": request_goal.strip() or "Herstellerbewertbare RWDR-Anfrage vorbereiten.",
+        "request_goal": request_goal.strip()
+        or "Herstellerbewertbare RWDR-Anfrage vorbereiten.",
         "confirmed_facts": [str(f) for f in confirmed_facts],
         "open_points_critical": [str(f) for f in open_points_critical],
         "open_points_helpful": [str(f) for f in open_points_helpful],
@@ -248,7 +259,10 @@ def build_rfq_one_pager(
 
 def _field_name(field: Mapping[str, Any]) -> str:
     return str(
-        field.get("field") or field.get("canonical_field") or field.get("field_name") or ""
+        field.get("field")
+        or field.get("canonical_field")
+        or field.get("field_name")
+        or ""
     ).strip()
 
 
@@ -270,7 +284,11 @@ def attach_rfq_one_pager(brief: Mapping[str, Any]) -> dict[str, Any]:
     """
     augmented = dict(brief)
     canonical = dict(brief.get("canonical_case") or {})
-    confirmed = [dict(f) for f in (brief.get("confirmed_case_fields") or []) if isinstance(f, Mapping)]
+    confirmed = [
+        dict(f)
+        for f in (brief.get("confirmed_case_fields") or [])
+        if isinstance(f, Mapping)
+    ]
 
     present_fields = [name for f in confirmed if (name := _field_name(f))]
     missing_fields = [
@@ -286,7 +304,9 @@ def attach_rfq_one_pager(brief: Mapping[str, Any]) -> dict[str, Any]:
     confirmed_facts = [_fact_text(f) for f in confirmed if _field_name(f)]
     computed_values = [str(v) for v in (brief.get("computed_values") or [])]
     review_flags = [str(v) for v in (brief.get("engineering_review_flags") or [])]
-    manufacturer_questions = [str(v) for v in (brief.get("manufacturer_questions") or [])]
+    manufacturer_questions = [
+        str(v) for v in (brief.get("manufacturer_questions") or [])
+    ]
 
     one_pager = build_rfq_one_pager(
         request_goal="Herstellerbewertbare RWDR-Anfrage vorbereiten.",

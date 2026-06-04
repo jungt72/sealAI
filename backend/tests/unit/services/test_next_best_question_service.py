@@ -26,7 +26,9 @@ def _state(
         "conflicts": {"open": conflicts_open, "items": []},
         "seal_application_profile": {
             "seal_type": seal_type.value,
-            "seal_type_confidence": 0.9 if seal_type is not SealType.unknown_seal else 0.1,
+            "seal_type_confidence": 0.9
+            if seal_type is not SealType.unknown_seal
+            else 0.1,
             "ambiguous": False,
             "type_specific_missing_hints": hints or [],
         },
@@ -69,7 +71,9 @@ def test_new_rfq_after_core_design_data_moves_to_pressure_temperature_life() -> 
     ]
 
 
-def test_radial_shaft_known_medium_temperature_asks_pressure_speed_surface_not_medium() -> None:
+def test_radial_shaft_known_medium_temperature_asks_pressure_speed_surface_not_medium() -> (
+    None
+):
     result = derive_needs_current_state_and_questions(
         _state(
             seal_type=SealType.radial_shaft_seal,
@@ -89,7 +93,9 @@ def test_radial_shaft_known_medium_temperature_asks_pressure_speed_surface_not_m
     assert "medium" not in focuses
 
 
-def test_radial_shaft_after_load_and_surface_asks_runout_or_gap_before_catalog_details() -> None:
+def test_radial_shaft_after_load_and_surface_asks_runout_or_gap_before_catalog_details() -> (
+    None
+):
     result = derive_needs_current_state_and_questions(
         _state(
             seal_type=SealType.radial_shaft_seal,
@@ -105,7 +111,10 @@ def test_radial_shaft_after_load_and_surface_asks_runout_or_gap_before_catalog_d
 
     focuses = _focuses(result)
     assert focuses[0] == "tolerance_gap"
-    assert "Runout" in result.next_best_questions[0].reason or "Exzentrizitaet" in result.next_best_questions[0].reason
+    assert (
+        "Runout" in result.next_best_questions[0].reason
+        or "Exzentrizitaet" in result.next_best_questions[0].reason
+    )
 
 
 def test_flat_gasket_asks_flange_pressure_material_style_question() -> None:
@@ -126,7 +135,9 @@ def test_flat_gasket_question_set_includes_geometry_surface_and_certification() 
 
     focuses = _focuses(result)
     assert focuses[:3] == ["flange_standard", "pressure", "gasket_material"]
-    assert "Wellendichtring" not in " ".join(question.question for question in result.next_best_questions)
+    assert "Wellendichtring" not in " ".join(
+        question.question for question in result.next_best_questions
+    )
 
 
 def test_hydraulic_rod_seal_asks_pressure_fluid_groove_style_question() -> None:
@@ -144,12 +155,20 @@ def test_hydraulic_rod_seal_keeps_cylinder_specific_followups() -> None:
     result = derive_needs_current_state_and_questions(
         _state(
             seal_type=SealType.hydraulic_rod_seal,
-            profile={"pressure_bar": 160, "medium": "HLP 46", "groove_dimensions": "unknown"},
+            profile={
+                "pressure_bar": 160,
+                "medium": "HLP 46",
+                "groove_dimensions": "unknown",
+            },
         )
     )
 
     focuses = _focuses(result)
-    assert focuses[:3] == ["rod_or_piston_diameter", "pressure_peaks", "speed_or_stroke"]
+    assert focuses[:3] == [
+        "rod_or_piston_diameter",
+        "pressure_peaks",
+        "speed_or_stroke",
+    ]
     text = " ".join(question.question for question in result.next_best_questions)
     assert "Stangen- oder Kolbendurchmesser" in text
     assert "Druckspitzen" in text
@@ -160,7 +179,12 @@ def test_mechanical_seal_asks_medium_pressure_flush_or_solids_question() -> None
         _state(
             seal_type=SealType.mechanical_seal,
             profile={"medium": "Wasser"},
-            hints=["medium", "pressure", "flush_or_barrier_fluid", "solids_or_gas_content"],
+            hints=[
+                "medium",
+                "pressure",
+                "flush_or_barrier_fluid",
+                "solids_or_gas_content",
+            ],
         )
     )
 
@@ -171,7 +195,9 @@ def test_mechanical_seal_asks_medium_pressure_flush_or_solids_question() -> None
     ]
 
 
-def test_pneumatic_rod_seal_asks_air_quality_and_lubrication_not_hydraulic_fluid() -> None:
+def test_pneumatic_rod_seal_asks_air_quality_and_lubrication_not_hydraulic_fluid() -> (
+    None
+):
     result = derive_needs_current_state_and_questions(
         _state(
             seal_type=SealType.pneumatic_rod_seal,
@@ -194,7 +220,11 @@ def test_o_ring_asks_dimensions_groove_material_style_question() -> None:
         )
     )
 
-    assert _focuses(result)[:3] == ["inner_diameter", "cross_section", "groove_dimensions"]
+    assert _focuses(result)[:3] == [
+        "inner_diameter",
+        "cross_section",
+        "groove_dimensions",
+    ]
 
 
 def test_general_knowledge_does_not_trigger_case_intake_question() -> None:
@@ -234,13 +264,19 @@ def test_compatibility_inquiry_oil_report_asks_values_units_and_oil_type() -> No
     assert "Messwerte" in result.next_best_questions[0].question
 
 
-def test_complaint_failure_asks_seal_type_or_damage_evidence_without_root_cause() -> None:
+def test_complaint_failure_asks_seal_type_or_damage_evidence_without_root_cause() -> (
+    None
+):
     result = derive_needs_current_state_and_questions(
         _state(case_type=CaseType.failure_analysis)
     )
 
     text = " ".join(question.question for question in result.next_best_questions)
-    assert _focuses(result)[:3] == ["safety_context", "leak_location", "photo_or_evidence"]
+    assert _focuses(result)[:3] == [
+        "safety_context",
+        "leak_location",
+        "photo_or_evidence",
+    ]
     assert "Sicherheits" in result.next_best_questions[0].question
     assert "finale Ursache" not in text
     assert "Root Cause" not in text
@@ -260,7 +296,9 @@ def test_known_failure_seal_type_uses_research_grade_diagnostic_order() -> None:
     assert "Drehzahl" not in result.next_best_questions[0].question
 
 
-def test_replacement_legacy_asks_marking_dimensions_photo_without_identity_claim() -> None:
+def test_replacement_legacy_asks_marking_dimensions_photo_without_identity_claim() -> (
+    None
+):
     result = derive_needs_current_state_and_questions(
         _state(case_type=CaseType.unknown_legacy_part)
     )
@@ -282,7 +320,9 @@ def test_emergency_mro_returns_exactly_one_question() -> None:
     )
 
 
-def test_known_fields_are_not_repeated_and_max_three_questions_have_reason_and_focus() -> None:
+def test_known_fields_are_not_repeated_and_max_three_questions_have_reason_and_focus() -> (
+    None
+):
     result = derive_needs_current_state_and_questions(
         _state(
             seal_type=SealType.radial_shaft_seal,
@@ -303,10 +343,15 @@ def test_known_fields_are_not_repeated_and_max_three_questions_have_reason_and_f
     assert len(focuses) <= 3
     assert "medium" not in focuses
     assert "pressure_or_pressure_difference" not in focuses
-    assert all(question.reason and question.focus_key for question in result.next_best_questions)
+    assert all(
+        question.reason and question.focus_key
+        for question in result.next_best_questions
+    )
 
 
-def test_completeness_score_decreases_with_missing_and_conflicting_critical_fields() -> None:
+def test_completeness_score_decreases_with_missing_and_conflicting_critical_fields() -> (
+    None
+):
     complete = derive_needs_current_state_and_questions(
         _state(
             seal_type=SealType.radial_shaft_seal,

@@ -44,7 +44,10 @@ def _settings_mock():
 def test_key_formats():
     assert _sorted_set_key("tenant-a", "user-1") == "chat:conversations:tenant-a:user-1"
     assert _sorted_set_key_legacy("user-1") == "chat:conversations:user-1"
-    assert _hash_key("tenant-a", "user-1", "conv-1") == "chat:conversation:tenant-a:user-1:conv-1"
+    assert (
+        _hash_key("tenant-a", "user-1", "conv-1")
+        == "chat:conversation:tenant-a:user-1:conv-1"
+    )
     assert _hash_key_legacy("user-1", "conv-1") == "chat:conversation:user-1:conv-1"
 
 
@@ -53,15 +56,32 @@ def test_upsert_uses_tenant_scoped_keys_when_tenant_present():
     r.hgetall.return_value = {}
     r.zcard.return_value = 0
     r.pipeline.return_value = MagicMock()
-    with patch("app.services.chat.conversations._redis_client", return_value=r), patch("app.services.chat.conversations.settings", _settings_mock()):
-        upsert_conversation(owner_id="user-1", conversation_id="conv-1", tenant_id="tenant-a", first_user_message="hello")
+    with patch("app.services.chat.conversations._redis_client", return_value=r), patch(
+        "app.services.chat.conversations.settings", _settings_mock()
+    ):
+        upsert_conversation(
+            owner_id="user-1",
+            conversation_id="conv-1",
+            tenant_id="tenant-a",
+            first_user_message="hello",
+        )
     r.hgetall.assert_called_once_with("chat:conversation:tenant-a:user-1:conv-1")
 
 
 def test_collect_for_owner_rejects_tenantless_legacy_entry_for_tenant_scoped_listing():
     r = MagicMock()
-    r.zrevrange.side_effect = lambda key, start, end: [] if key == _sorted_set_key("tenant-a", "user-1") else ["conv-legacy"]
-    r.hgetall.return_value = {"id": "conv-legacy", "user_id": "user-1", "updated_at": datetime.now(timezone.utc).isoformat(), "title": "Legacy", "last_preview": "preview"}
+    r.zrevrange.side_effect = (
+        lambda key, start, end: []
+        if key == _sorted_set_key("tenant-a", "user-1")
+        else ["conv-legacy"]
+    )
+    r.hgetall.return_value = {
+        "id": "conv-legacy",
+        "user_id": "user-1",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "title": "Legacy",
+        "last_preview": "preview",
+    }
     with patch("app.services.chat.conversations._redis_client", return_value=r):
         assert _collect_for_owner("user-1", tenant_id="tenant-a") == []
 

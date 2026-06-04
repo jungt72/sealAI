@@ -1,4 +1,5 @@
 """Routing observability utilities."""
+
 from __future__ import annotations
 
 import json
@@ -88,7 +89,9 @@ def _percentile(samples: List[float], percentile: float) -> Optional[float]:
     return round(values[lower] * (1 - weight) + values[upper] * weight, 3)
 
 
-def emit_routing_event(metrics: RoutingMetrics, *, extra: Optional[Dict[str, Any]] = None) -> None:
+def emit_routing_event(
+    metrics: RoutingMetrics, *, extra: Optional[Dict[str, Any]] = None
+) -> None:
     """Serialize and emit routing telemetry as structured JSON log."""
     payload = metrics.to_dict()
     if extra:

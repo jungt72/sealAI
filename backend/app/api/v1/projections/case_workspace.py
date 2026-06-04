@@ -538,7 +538,11 @@ _COCKPIT_SECTION_CONFIG: tuple[dict[str, Any], ...] = (
                 "key": "particles_present",
                 "label": "Partikel",
                 "unit": None,
-                "aliases": ("solids_percent", "contamination", "contamination_condition"),
+                "aliases": (
+                    "solids_percent",
+                    "contamination",
+                    "contamination_condition",
+                ),
             },
             {
                 "key": "cleaning_media",
@@ -1027,9 +1031,9 @@ def _build_completeness_metrics(
         )
         reason_parts: list[str] = []
         if field_id in set(
-            _COCKPIT_PATH_RULES.get(str(engineering_path or ""), _DEFAULT_COCKPIT_RULES)[
-                "mandatory"
-            ]
+            _COCKPIT_PATH_RULES.get(
+                str(engineering_path or ""), _DEFAULT_COCKPIT_RULES
+            )["mandatory"]
         ):
             reason_parts.append("Pflichtfeld fuer den aktuellen Engineering-Pfad")
         if check_reasons.get(field_id):
@@ -1062,9 +1066,7 @@ def _build_completeness_metrics(
     required_total = len(required_fields)
     required_known = sum(1 for item in required_fields if item.status == "known")
     completeness_percent = (
-        int(round((required_known / required_total) * 100))
-        if required_total
-        else 0
+        int(round((required_known / required_total) * 100)) if required_total else 0
     )
     return CockpitCompletenessMetrics(
         completeness_percent=completeness_percent,
@@ -1114,7 +1116,10 @@ def _build_cockpit_sections(
             required_key = _required_key_for_field(key, aliases, mandatory_keys)
             is_mandatory = required_key is not None
             is_confirmed = confidence == "confirmed"
-            if required_key == "medium" and classify_medium_value(value).status == "unavailable":
+            if (
+                required_key == "medium"
+                and classify_medium_value(value).status == "unavailable"
+            ):
                 value = None
                 origin = origin or "invalid_placeholder"
             if value in (None, "", []):
@@ -1773,7 +1778,9 @@ def _technical_derivation_from_current_profile(
         and speed_rpm is not None
         else None
     )
-    pressure_bar = _float_from_profile(profile, "pressure_at_seal_bar", "pressure_delta_bar")
+    pressure_bar = _float_from_profile(
+        profile, "pressure_at_seal_bar", "pressure_delta_bar"
+    )
     sealing_type = _deep_value(profile, "sealing_type", "seal_type")
     pv_value_mpa_m_s = (
         pressure_bar * 0.1 * v_surface_m_s
@@ -3042,13 +3049,12 @@ def project_case_workspace(state_values: Dict[str, Any]) -> CaseWorkspaceProject
         or str(parameters.get("medium") or "").strip()
         or str(routing_profile.get("medium") or "").strip()
     )
-    medium_classification_status = str(medium_classification.get("status") or "").strip()
-    if (
-        medium_text_candidate
-        and (
-            not medium_classification
-            or medium_classification_status in {"", "unavailable", "mentioned_unclassified"}
-        )
+    medium_classification_status = str(
+        medium_classification.get("status") or ""
+    ).strip()
+    if medium_text_candidate and (
+        not medium_classification
+        or medium_classification_status in {"", "unavailable", "mentioned_unclassified"}
     ):
         derived_medium = classify_medium_value(medium_text_candidate)
         medium_classification = {

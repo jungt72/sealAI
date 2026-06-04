@@ -18,7 +18,9 @@ depends_on = None
 
 
 def upgrade():
-    state_json_type = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql")
+    state_json_type = sa.JSON().with_variant(
+        postgresql.JSONB(astext_type=sa.Text()), "postgresql"
+    )
 
     op.create_table(
         "cases",
@@ -26,9 +28,21 @@ def upgrade():
         sa.Column("case_number", sa.String(length=50), nullable=False),
         sa.Column("user_id", sa.String(length=255), nullable=False),
         sa.Column("subsegment", sa.String(length=100), nullable=True),
-        sa.Column("status", sa.String(length=50), server_default="active", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "status", sa.String(length=50), server_default="active", nullable=False
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_cases_case_number", "cases", ["case_number"], unique=True)
@@ -44,12 +58,24 @@ def upgrade():
         sa.Column("ontology_version", sa.String(length=50), nullable=True),
         sa.Column("prompt_version", sa.String(length=50), nullable=True),
         sa.Column("model_version", sa.String(length=50), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["case_id"], ["cases.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("case_id", "revision", name="uq_case_state_snapshots_case_revision"),
+        sa.UniqueConstraint(
+            "case_id", "revision", name="uq_case_state_snapshots_case_revision"
+        ),
     )
-    op.create_index("ix_case_state_snapshots_case_id", "case_state_snapshots", ["case_id"], unique=False)
+    op.create_index(
+        "ix_case_state_snapshots_case_id",
+        "case_state_snapshots",
+        ["case_id"],
+        unique=False,
+    )
 
 
 def downgrade():

@@ -46,16 +46,36 @@ _MEDIUM_RE = re.compile(
 )
 _DAMAGE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("leakage", ("leckt", "leckage", "undicht", "oelverlust", "verlust")),
-    ("premature_failure", ("ausgefallen", "haelt nur", "nach 3 monaten", "kurzer laufzeit")),
+    (
+        "premature_failure",
+        ("ausgefallen", "haelt nur", "nach 3 monaten", "kurzer laufzeit"),
+    ),
     ("wear", ("verschleiss", "verschlissen", "abgerieben", "riefen")),
     ("crack_or_break", ("riss", "gerissen", "gebrochen", "bruch")),
     ("thermal_damage", ("verbrannt", "verhaertet", "hart geworden", "ueberhitzt")),
-    ("swelling_or_chemical_attack", ("aufgequollen", "quillt", "chemisch", "angegriffen")),
+    (
+        "swelling_or_chemical_attack",
+        ("aufgequollen", "quillt", "chemisch", "angegriffen"),
+    ),
     ("extrusion", ("extrusion", "spaltextrusion", "in den spalt", "ausgequetscht")),
-    ("compression_set", ("druckverformungsrest", "bleibend verformt", "plattgedrueckt", "plattgedrückt")),
+    (
+        "compression_set",
+        (
+            "druckverformungsrest",
+            "bleibend verformt",
+            "plattgedrueckt",
+            "plattgedrückt",
+        ),
+    ),
     ("twisting_or_spiral_damage", ("verdreht", "verdrillt", "spiral", "spiralbruch")),
-    ("explosive_decompression", ("explosive dekompression", "gasdekompression", "blasen", "blister")),
-    ("deposits_or_crystallization", ("ablagerung", "ablagerungen", "kristall", "verkrustet")),
+    (
+        "explosive_decompression",
+        ("explosive dekompression", "gasdekompression", "blasen", "blister"),
+    ),
+    (
+        "deposits_or_crystallization",
+        ("ablagerung", "ablagerungen", "kristall", "verkrustet"),
+    ),
     ("corrosion_or_particles", ("korrosion", "rost", "partikel", "sand", "abrasiv")),
 )
 _SEAL_TYPE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -94,7 +114,15 @@ _INSTALLATION_PATTERNS: tuple[str, ...] = (
     "schmier",
     "werkzeug",
 )
-_MATERIAL_PATTERNS: tuple[str, ...] = ("fkm", "nbr", "epdm", "ptfe", "pu", "ffkm", "vmq")
+_MATERIAL_PATTERNS: tuple[str, ...] = (
+    "fkm",
+    "nbr",
+    "epdm",
+    "ptfe",
+    "pu",
+    "ffkm",
+    "vmq",
+)
 _GEOMETRY_SURFACE_PATTERNS: tuple[str, ...] = (
     "rauheit",
     "ra ",
@@ -479,7 +507,9 @@ def _extract_diagnostic_context(text: str) -> tuple[DiagnosticContextCandidate, 
                 evidence_required=True,
             )
         )
-    if any(token in normalized for token in _GEOMETRY_SURFACE_PATTERNS) or _SHAFT_DIAMETER_RE.search(text):
+    if any(
+        token in normalized for token in _GEOMETRY_SURFACE_PATTERNS
+    ) or _SHAFT_DIAMETER_RE.search(text):
         candidates.append(
             DiagnosticContextCandidate(
                 field="geometry_surface_context",
@@ -521,7 +551,11 @@ def _extract_diagnostic_context(text: str) -> tuple[DiagnosticContextCandidate, 
 def _has_evidence_refs(payload: str | Mapping[str, Any]) -> bool:
     if isinstance(payload, str):
         return False
-    evidence = payload.get("evidence_refs") or payload.get("documents") or payload.get("photos")
+    evidence = (
+        payload.get("evidence_refs")
+        or payload.get("documents")
+        or payload.get("photos")
+    )
     if evidence is None:
         return False
     if isinstance(evidence, (str, bytes)):
@@ -550,9 +584,9 @@ def _open_points(
     diagnostic_context: Sequence[DiagnosticContextCandidate],
     evidence_present: bool,
 ) -> tuple[str, ...]:
-    present_fields = {
-        candidate.field for candidate in diagnostic_context
-    } | {condition.field for condition in operating_conditions}
+    present_fields = {candidate.field for candidate in diagnostic_context} | {
+        condition.field for condition in operating_conditions
+    }
     present_fields |= {
         mapped
         for condition in operating_conditions

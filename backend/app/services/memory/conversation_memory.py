@@ -62,7 +62,9 @@ def add_message(user_id: str | None, chat_id: str, role: str, content: str) -> N
         return
 
 
-def get_history(user_id: str | None, chat_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+def get_history(
+    user_id: str | None, chat_id: str, limit: int = 20
+) -> List[Dict[str, Any]]:
     try:
         r = _redis()
         key = _stm_key(user_id, chat_id)

@@ -53,7 +53,9 @@ def _user() -> RequestUser:
 
 
 @pytest.mark.asyncio
-async def test_session_override_endpoint_persists_structured_override(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_session_override_endpoint_persists_structured_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_redis = _FakeRedisClient()
     monkeypatch.setenv("REDIS_URL", "redis://fake")
     import redis.asyncio as redis_asyncio
@@ -99,7 +101,9 @@ async def test_session_override_endpoint_persists_structured_override(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_session_override_endpoint_rejects_request_without_tenant_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_session_override_endpoint_rejects_request_without_tenant_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_redis = _FakeRedisClient()
     monkeypatch.setenv("REDIS_URL", "redis://fake")
     import redis.asyncio as redis_asyncio
@@ -126,7 +130,9 @@ async def test_session_override_endpoint_rejects_request_without_tenant_claim(mo
     with pytest.raises(HTTPException) as exc_info:
         await session_override_endpoint(
             session_id="case-tenantless",
-            request=OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
+            request=OverrideRequest(
+                overrides=[OverrideItem(field_name="medium", value="Wasser")]
+            ),
             current_user=user,
         )
     assert exc_info.value.status_code == 401
@@ -172,20 +178,27 @@ async def test_session_override_endpoint_can_run_analysis_after_override(
     )
 
     assert response.session_id == "case-analyze"
-    assert response.answer_markdown == "Die übernommenen Parameter sind jetzt fachlich eingeordnet."
+    assert (
+        response.answer_markdown
+        == "Die übernommenen Parameter sind jetzt fachlich eingeordnet."
+    )
     assert response.response_class == "structured_clarification"
     assert response.structured_state == {"status": "updated"}
     analysis_runner.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_session_override_endpoint_returns_503_without_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_session_override_endpoint_returns_503_without_redis_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("REDIS_URL", raising=False)
 
     with pytest.raises(HTTPException) as exc_info:
         await session_override_endpoint(
             session_id="case-123",
-            request=OverrideRequest(overrides=[OverrideItem(field_name="medium", value="Wasser")]),
+            request=OverrideRequest(
+                overrides=[OverrideItem(field_name="medium", value="Wasser")]
+            ),
             current_user=_user(),
         )
 

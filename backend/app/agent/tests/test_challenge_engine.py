@@ -178,7 +178,9 @@ def test_challenge_engine_flags_rwdr_pressure_direction_context() -> None:
 _T_PRESSURE_AT_SEAL = "RWDR-Druck muss als Dichtstellendruck verifiziert werden"
 _T_SYSTEM_PRESSURE = "Systemdruck ist nicht der Dichtstellendruck"
 _T_AMBIGUOUS_PRESSURE = "Druckrolle ist unklar"
-_T_ROTARY_COUNTERFACE = "Gegenfläche fehlt bei dynamisch relevanter Umfangsgeschwindigkeit"
+_T_ROTARY_COUNTERFACE = (
+    "Gegenfläche fehlt bei dynamisch relevanter Umfangsgeschwindigkeit"
+)
 _T_LUBRICATION = "Schmierfilm, Flush oder Trockenlauf sind noch nicht beschrieben"
 
 
@@ -190,7 +192,9 @@ class TestEngineeringPathRoutingFreeze:
     def test_rwdr_pressure_at_seal_finding_fires(self) -> None:
         titles = _finding_titles(
             build_challenge_state(
-                _state({"medium": "Mineralöl", "sealing_type": "RWDR", "pressure_bar": 2})
+                _state(
+                    {"medium": "Mineralöl", "sealing_type": "RWDR", "pressure_bar": 2}
+                )
             )
         )
         assert _T_PRESSURE_AT_SEAL in titles

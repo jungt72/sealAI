@@ -9,7 +9,11 @@ from app.agent.api.governed_runtime import run_governed_graph_turn
 from app.agent.graph import GraphState
 from app.agent.state.models import GovernedSessionState
 from app.agent.state.projections import project_for_ui
-from app.agent.v92.contracts import FinalAnswerContext, NonTechnicalAnswerContext, TurnEnvelope
+from app.agent.v92.contracts import (
+    FinalAnswerContext,
+    NonTechnicalAnswerContext,
+    TurnEnvelope,
+)
 from app.agent.v92.final_guard import validate_final_output
 from app.agent.v92.runtime_contract import (
     apply_v92_contracts_to_payload,
@@ -94,7 +98,10 @@ def test_final_guard_blocks_compound_or_product_claim_without_evidence_layer() -
     result = validate_final_output("Das Produkt ist geeignet.", context=context)
 
     assert result.decision == "block"
-    assert "compound_or_product_claim_without_evidence_layer" in result.detected_forbidden_claims
+    assert (
+        "compound_or_product_claim_without_evidence_layer"
+        in result.detected_forbidden_claims
+    )
     assert result.evidence_failures
 
 
@@ -155,10 +162,14 @@ def test_final_guard_revises_stale_calculation_usage() -> None:
                 "validity_status": "stale",
             }
         ],
-        stale_items=[{"item_id": "rwdr.surface_speed", "kind": "calculation", "status": "stale"}],
+        stale_items=[
+            {"item_id": "rwdr.surface_speed", "kind": "calculation", "status": "stale"}
+        ],
     )
 
-    result = validate_final_output("Die Berechnung ergibt aktuell 7,85 m/s.", context=context)
+    result = validate_final_output(
+        "Die Berechnung ergibt aktuell 7,85 m/s.", context=context
+    )
 
     assert result.decision == "revise"
     assert result.stale_failures
@@ -184,10 +195,14 @@ def test_final_guard_revises_material_counterindication_guardrail_violation() ->
         ],
     )
 
-    result = validate_final_output("EPDM nur als Prüfhypothese behandeln.", context=context)
+    result = validate_final_output(
+        "EPDM nur als Prüfhypothese behandeln.", context=context
+    )
 
     assert result.decision == "revise"
-    assert result.calculation_failures[0]["guardrail_violations"] == ["counterindication_rating_c"]
+    assert result.calculation_failures[0]["guardrail_violations"] == [
+        "counterindication_rating_c"
+    ]
 
 
 def test_final_guard_allows_nontechnical_smalltalk_without_engine_context() -> None:
@@ -206,7 +221,9 @@ def test_final_guard_allows_nontechnical_smalltalk_without_engine_context() -> N
     assert result.final_stream_allowed is True
 
 
-def test_apply_v92_contracts_revises_material_family_claim_before_payload_leaves() -> None:
+def test_apply_v92_contracts_revises_material_family_claim_before_payload_leaves() -> (
+    None
+):
     payload = {
         "reply": "EPDM ist geeignet.",
         "answer_markdown": "EPDM ist geeignet.",
@@ -269,7 +286,9 @@ async def test_governed_runtime_never_enables_visible_composer_streaming() -> No
         patch("app.agent.api.governed_runtime.emit_quality_trace"),
     ):
         await run_governed_graph_turn(
-            request=SimpleNamespace(session_id="case-1", message="Technische Empfehlung?"),
+            request=SimpleNamespace(
+                session_id="case-1", message="Technische Empfehlung?"
+            ),
             current_user=_request_user(),
             collect_progress=True,
         )

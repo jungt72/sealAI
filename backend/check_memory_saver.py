@@ -7,6 +7,7 @@ except ImportError:
     print("Could not import MemorySaver")
     sys.exit(1)
 
+
 async def main():
     saver = MemorySaver()
     print(f"Has aget_tuple: {hasattr(saver, 'aget_tuple')}")
@@ -20,6 +21,7 @@ async def main():
     except Exception as e:
         # Other errors are fine (e.g. key error), as long as it's not NotImplementedError from base
         print(f"aget_tuple raised {type(e).__name__}: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

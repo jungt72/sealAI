@@ -3,6 +3,7 @@ Tests for runtime/conversation_runtime.py — Phase F-A.4
 
 No network I/O — OpenAI client is fully mocked.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,6 +34,7 @@ from app.agent.runtime.turn_context import build_turn_context_contract
 # SSE helpers unit tests
 # ---------------------------------------------------------------------------
 
+
 class TestSSEHelpers:
     def test_conversation_visible_event_is_canonical_text_adapter(self):
         assert _conversation_visible_event("text_chunk", "Hallo") == {
@@ -60,6 +62,7 @@ class TestSSEHelpers:
 # ---------------------------------------------------------------------------
 # _build_messages unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestBuildMessages:
     def test_system_prompt_first(self):
@@ -108,20 +111,24 @@ class TestBuildMessages:
     def test_open_entry_adds_strategy_system_message(self):
         msgs = _build_messages(
             "Ich moechte eine Dichtungsloesung erarbeiten",
-            history=[{"role": "user", "content": "Hallo"}, {"role": "assistant", "content": "Guten Tag!"}],
+            history=[
+                {"role": "user", "content": "Hallo"},
+                {"role": "assistant", "content": "Guten Tag!"},
+            ],
         )
         assert len(msgs) == 5
         assert msgs[1]["role"] == "system"
         assert "KOMMUNIKATIONSKONTEXT" in msgs[1]["content"]
         assert "Relevanter offener Fokus" in msgs[1]["content"]
 
-
     def test_exploration_mode_strips_history(self):
         history = [
             {"role": "user", "content": "Was ist NBR?"},
             {"role": "assistant", "content": "NBR ist ein synthetischer Kautschuk."},
         ]
-        msgs = _build_messages("Welches Medium vertraegt PTFE?", history=history, mode="EXPLORATION")
+        msgs = _build_messages(
+            "Welches Medium vertraegt PTFE?", history=history, mode="EXPLORATION"
+        )
         roles = [m["role"] for m in msgs]
         # History turns must not appear — only system(s) + user
         assert roles.count("user") == 1
@@ -145,7 +152,10 @@ class TestBuildMessages:
         msgs = _build_messages("Und FKM?", history=history, mode="CONVERSATION")
 
         assert {"role": "user", "content": "Was ist NBR?"} in msgs
-        assert {"role": "assistant", "content": "NBR ist ein synthetischer Kautschuk."} in msgs
+        assert {
+            "role": "assistant",
+            "content": "NBR ist ein synthetischer Kautschuk.",
+        } in msgs
         assert msgs[-1] == {"role": "user", "content": "Und FKM?"}
 
     def test_smalltalk_conversation_omits_case_history_from_llm_messages(self):
@@ -164,7 +174,9 @@ class TestBuildMessages:
 
 class TestConversationStrategyContract:
     def test_greeting_builds_rapport_strategy(self):
-        strategy = _build_conversation_strategy_contract("Hallo", history=None, case_summary=None)
+        strategy = _build_conversation_strategy_contract(
+            "Hallo", history=None, case_summary=None
+        )
 
         assert strategy is not None
         assert strategy.conversation_phase == "rapport"
@@ -189,7 +201,10 @@ class TestConversationStrategyContract:
     def test_turn_two_without_case_context_builds_exploration_strategy(self):
         strategy = _build_conversation_strategy_contract(
             "Ich moechte eine Dichtungsloesung erarbeiten",
-            history=[{"role": "user", "content": "Hallo"}, {"role": "assistant", "content": "Guten Tag!"}],
+            history=[
+                {"role": "user", "content": "Hallo"},
+                {"role": "assistant", "content": "Guten Tag!"},
+            ],
             case_summary=None,
         )
 
@@ -205,7 +220,10 @@ class TestConversationStrategyContract:
     def test_problem_statement_in_exploration_stays_problem_led(self):
         strategy = _build_conversation_strategy_contract(
             "Wir haben immer wieder Leckageprobleme.",
-            history=[{"role": "user", "content": "Hallo"}, {"role": "assistant", "content": "Guten Tag!"}],
+            history=[
+                {"role": "user", "content": "Hallo"},
+                {"role": "assistant", "content": "Guten Tag!"},
+            ],
             case_summary=None,
         )
 
@@ -230,7 +248,9 @@ class TestConversationStrategyContract:
         assert strategy.conversation_phase == "narrowing"
         assert strategy.primary_question == "Welche Drehzahl liegt ungefähr an?"
 
-    def test_explicit_instant_mode_uses_guided_explanation_without_primary_question(self):
+    def test_explicit_instant_mode_uses_guided_explanation_without_primary_question(
+        self,
+    ):
         strategy = _build_conversation_strategy_contract(
             "Hallo",
             history=None,
@@ -259,7 +279,10 @@ class TestConversationStrategyContract:
     def test_strategy_instruction_invites_story_not_parameter_list(self):
         strategy = _build_conversation_strategy_contract(
             "Ich moechte eine Dichtungsloesung erarbeiten",
-            history=[{"role": "user", "content": "Hallo"}, {"role": "assistant", "content": "Guten Tag!"}],
+            history=[
+                {"role": "user", "content": "Hallo"},
+                {"role": "assistant", "content": "Guten Tag!"},
+            ],
             case_summary=None,
         )
 
@@ -269,14 +292,24 @@ class TestConversationStrategyContract:
 
         assert instruction is not None
         assert "KOMMUNIKATIONSKONTEXT" in instruction
-        assert "Der Nutzer befindet sich noch in einer offenen Orientierungsphase." in instruction
+        assert (
+            "Der Nutzer befindet sich noch in einer offenen Orientierungsphase."
+            in instruction
+        )
         assert "Relevanter offener Fokus" in instruction
-        assert "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz" not in instruction
-        assert "Reagiere zuerst konkret auf die letzte Nutzeraeusserung" not in instruction
+        assert (
+            "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz"
+            not in instruction
+        )
+        assert (
+            "Reagiere zuerst konkret auf die letzte Nutzeraeusserung" not in instruction
+        )
         assert "Das Problembild wird noch eingeordnet." in instruction
 
     def test_rapport_instruction_blocks_technical_single_field_opening(self):
-        strategy = _build_conversation_strategy_contract("Hallo", history=None, case_summary=None)
+        strategy = _build_conversation_strategy_contract(
+            "Hallo", history=None, case_summary=None
+        )
 
         instruction = build_turn_context_instruction(
             build_turn_context_contract(strategy=strategy)
@@ -294,9 +327,14 @@ class TestConversationStrategyContract:
         )
 
         assert strategy is not None
-        assert strategy.user_signal_mirror == "Verstanden, ich gehe jetzt von deiner Korrektur aus"
+        assert (
+            strategy.user_signal_mirror
+            == "Verstanden, ich gehe jetzt von deiner Korrektur aus"
+        )
 
-    def test_turn_context_includes_confirmed_facts_and_open_focus_from_case_context(self):
+    def test_turn_context_includes_confirmed_facts_and_open_focus_from_case_context(
+        self,
+    ):
         turn_context = _build_conversation_turn_context(
             "Ich korrigiere: Der Druck liegt bei 18 bar.",
             history=[
@@ -308,7 +346,11 @@ class TestConversationStrategyContract:
         )
 
         assert turn_context is not None
-        assert turn_context.confirmed_facts_summary == ["Medium: Wasser", "Druck: 12 bar", "Wir haben Leckage am Wellenaustritt."]
+        assert turn_context.confirmed_facts_summary == [
+            "Medium: Wasser",
+            "Druck: 12 bar",
+            "Wir haben Leckage am Wellenaustritt.",
+        ]
         assert turn_context.open_points_summary
         assert "Einbausituation" in turn_context.open_points_summary[0]
 
@@ -324,7 +366,9 @@ class TestConversationStrategyContract:
         assert strategy.primary_question == "Welche Drehzahl liegt ungefähr an?"
         assert "rotierenden Welle" in strategy.primary_question_reason
 
-    def test_known_rotary_context_prioritizes_pressure_before_geometry_after_speed_and_shaft(self):
+    def test_known_rotary_context_prioritizes_pressure_before_geometry_after_speed_and_shaft(
+        self,
+    ):
         strategy = _build_conversation_strategy_contract(
             "Es geht um eine bestehende Wellenabdichtung an einer Pumpe.",
             history=[{"role": "user", "content": "Wir dichten Wasser ab."}],
@@ -338,12 +382,17 @@ class TestConversationStrategyContract:
     def test_known_geometry_and_pressure_shift_focus_to_gap_and_tolerance(self):
         strategy = _build_conversation_strategy_contract(
             "Die Dichtung sitzt in einer Nut im Gehaeuse.",
-            history=[{"role": "user", "content": "Es geht um eine Hydraulikanwendung."}],
+            history=[
+                {"role": "user", "content": "Es geht um eine Hydraulikanwendung."}
+            ],
             case_summary="- Medium: Hydraulikoel\n- Geometrie: Nut im Gehaeuse\n- Druck: 180 bar\n- Temperatur: 80 C",
         )
 
         assert strategy is not None
-        assert strategy.primary_question == "Mit welchem Spalt- oder Toleranzbereich muessen wir an der Dichtstelle rechnen?"
+        assert (
+            strategy.primary_question
+            == "Mit welchem Spalt- oder Toleranzbereich muessen wir an der Dichtstelle rechnen?"
+        )
 
     def test_linear_correction_reframes_focus_away_from_rotary_followup(self):
         strategy = _build_conversation_strategy_contract(
@@ -353,13 +402,17 @@ class TestConversationStrategyContract:
         )
 
         assert strategy is not None
-        assert strategy.primary_question == "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?"
+        assert (
+            strategy.primary_question
+            == "Welche Geometrie oder vorhandene Bauform liegt an der Dichtstelle vor?"
+        )
         assert "rotierenden Welle" not in strategy.primary_question_reason
 
 
 # ---------------------------------------------------------------------------
 # Fake OpenAI streaming infrastructure
 # ---------------------------------------------------------------------------
+
 
 class _FakeDelta(NamedTuple):
     content: str | None
@@ -380,11 +433,15 @@ class _FakeResponsesChunk(NamedTuple):
 
 def _make_stream_chunks(texts: list[str]):
     """Build fake OpenAI stream chunks from a list of text deltas."""
-    return [_FakeChunk(choices=[_FakeChoice(delta=_FakeDelta(content=t))]) for t in texts]
+    return [
+        _FakeChunk(choices=[_FakeChoice(delta=_FakeDelta(content=t))]) for t in texts
+    ]
 
 
 def _make_responses_stream_chunks(texts: list[str]):
-    return [_FakeResponsesChunk(type="response.output_text.delta", delta=t) for t in texts]
+    return [
+        _FakeResponsesChunk(type="response.output_text.delta", delta=t) for t in texts
+    ]
 
 
 class _FakeStream:
@@ -425,6 +482,7 @@ def _patch_openai(chunks: list[str], *, model: str = "gpt-4o-mini"):
 # stream_conversation integration tests
 # ---------------------------------------------------------------------------
 
+
 async def _collect(gen: AsyncGenerator[str, None]) -> list[str]:
     """Collect all SSE events from the generator."""
     events = []
@@ -433,7 +491,9 @@ async def _collect(gen: AsyncGenerator[str, None]) -> list[str]:
     return events
 
 
-async def _collect_canonical_reply(message: str, *, history: list[dict[str, str]] | None = None) -> str:
+async def _collect_canonical_reply(
+    message: str, *, history: list[dict[str, str]] | None = None
+) -> str:
     result = await run_conversation(message, history=history)
     return result.reply_text
 
@@ -454,8 +514,12 @@ def _parse_events(events: list[str]) -> list[dict]:
 
 class TestStreamConversation:
     @pytest.mark.asyncio
-    async def test_direct_reply_fast_path_skips_openai_stream_and_emits_state_update(self):
-        with patch("app.agent.runtime.conversation_runtime.get_async_llm") as mock_get_llm:
+    async def test_direct_reply_fast_path_skips_openai_stream_and_emits_state_update(
+        self,
+    ):
+        with patch(
+            "app.agent.runtime.conversation_runtime.get_async_llm"
+        ) as mock_get_llm:
             events = await _collect(
                 stream_conversation(
                     "Danke",
@@ -476,7 +540,10 @@ class TestStreamConversation:
             events = await _collect(stream_conversation("Was ist FKM?"))
         parsed = _parse_events(events)
         text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
-        assert [e.get("text") for e in text_chunks] == ["FKM ist ", "ein Fluorelastomer."]
+        assert [e.get("text") for e in text_chunks] == [
+            "FKM ist ",
+            "ein Fluorelastomer.",
+        ]
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"] == "FKM ist ein Fluorelastomer."
         assert state_update["answer_markdown"] == state_update["reply"]
@@ -487,18 +554,30 @@ class TestStreamConversation:
             events = await _collect(
                 stream_conversation(
                     "Ich korrigiere: Der Druck liegt bei 18 bar.",
-                    history=[{"role": "user", "content": "Wir haben Leckage am Wellenaustritt."}],
+                    history=[
+                        {
+                            "role": "user",
+                            "content": "Wir haben Leckage am Wellenaustritt.",
+                        }
+                    ],
                     case_summary="- Medium: Wasser\n- Druck: 12 bar",
                     mode="EXPLORATION",
                 )
             )
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"].startswith("Verstanden, ich gehe jetzt von deiner Korrektur aus.")
-        assert "Dann schaue ich als Nächstes auf die Einbausituation." in state_update["reply"]
+        assert state_update["reply"].startswith(
+            "Verstanden, ich gehe jetzt von deiner Korrektur aus."
+        )
+        assert (
+            "Dann schaue ich als Nächstes auf die Einbausituation."
+            in state_update["reply"]
+        )
 
     @pytest.mark.asyncio
-    async def test_final_state_update_uses_llm_reply_without_prefix_injection_when_no_context_exists(self):
+    async def test_final_state_update_uses_llm_reply_without_prefix_injection_when_no_context_exists(
+        self,
+    ):
         with _patch_openai(["FKM ist ein Fluorelastomer."]):
             events = await _collect(stream_conversation("Was ist FKM?"))
         parsed = _parse_events(events)
@@ -507,7 +586,9 @@ class TestStreamConversation:
         assert state_update["response_class"] == "conversational_answer"
 
     @pytest.mark.asyncio
-    async def test_CONVERSATION_hallo_keeps_natural_llm_greeting_without_template_prefix(self):
+    async def test_CONVERSATION_hallo_keeps_natural_llm_greeting_without_template_prefix(
+        self,
+    ):
         with _patch_openai(["Hallo, womit kann ich Ihnen helfen?"]):
             events = await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
         parsed = _parse_events(events)
@@ -525,22 +606,35 @@ class TestStreamConversation:
         assert "Sie" not in state_update["reply"]
 
     @pytest.mark.asyncio
-    async def test_CONVERSATION_smalltalk_keeps_human_llm_answer_without_template_prefix(self):
-        with _patch_openai(["Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"]):
-            events = await _collect(stream_conversation("Wie geht es dir?", mode="CONVERSATION"))
+    async def test_CONVERSATION_smalltalk_keeps_human_llm_answer_without_template_prefix(
+        self,
+    ):
+        with _patch_openai(
+            ["Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"]
+        ):
+            events = await _collect(
+                stream_conversation("Wie geht es dir?", mode="CONVERSATION")
+            )
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"] == "Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"
+        assert (
+            state_update["reply"]
+            == "Danke, gut. Wie kann ich bei der Dichtungstechnik helfen?"
+        )
 
     @pytest.mark.asyncio
-    async def test_CONVERSATION_smalltalk_buffers_preview_to_avoid_visible_replacement(self):
+    async def test_CONVERSATION_smalltalk_buffers_preview_to_avoid_visible_replacement(
+        self,
+    ):
         with _patch_openai(
             [
                 "Hallo! Mir geht's richtig gut, danke der Nachfrage! ",
                 "Wie geht's dir heute?",
             ]
         ):
-            events = await _collect(stream_conversation("Hallo, wie geht es dir?", mode="CONVERSATION"))
+            events = await _collect(
+                stream_conversation("Hallo, wie geht es dir?", mode="CONVERSATION")
+            )
 
         parsed = _parse_events(events)
         text_chunks = [e for e in parsed if e.get("type") == "text_chunk"]
@@ -552,17 +646,26 @@ class TestStreamConversation:
         )
 
     @pytest.mark.asyncio
-    async def test_CONVERSATION_thanks_with_langchain_history_does_not_crash_stream(self):
+    async def test_CONVERSATION_thanks_with_langchain_history_does_not_crash_stream(
+        self,
+    ):
         history = [
             HumanMessage(content="Vergleiche NBR und PEEK kurz."),
             AIMessage(content="NBR ist elastomerisch, PEEK ist thermoplastisch."),
         ]
-        with _patch_openai(["Gern. Wenn du weiter eingrenzen möchtest, sag mir den Dichtungstyp."]):
-            events = await _collect(stream_conversation("danke", history=history, mode="CONVERSATION"))
+        with _patch_openai(
+            ["Gern. Wenn du weiter eingrenzen möchtest, sag mir den Dichtungstyp."]
+        ):
+            events = await _collect(
+                stream_conversation("danke", history=history, mode="CONVERSATION")
+            )
 
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"] == "Gern. Wenn du weiter eingrenzen möchtest, sag mir den Dichtungstyp."
+        assert (
+            state_update["reply"]
+            == "Gern. Wenn du weiter eingrenzen möchtest, sag mir den Dichtungstyp."
+        )
         assert [e.get("type") for e in parsed][-1] == "__DONE__"
 
     @pytest.mark.asyncio
@@ -580,7 +683,9 @@ class TestStreamConversation:
 
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
-        assert state_update["reply"] == "Gern. Ich bin da, wenn du weiter machen möchtest."
+        assert (
+            state_update["reply"] == "Gern. Ich bin da, wenn du weiter machen möchtest."
+        )
 
     @pytest.mark.asyncio
     async def test_CONVERSATION_smalltalk_removes_technical_capture_sentences(self):
@@ -590,7 +695,9 @@ class TestStreamConversation:
                 "Wenn du eine konkrete Anwendung hast, nenne Medium, Druck und Temperatur."
             ]
         ):
-            events = await _collect(stream_conversation("Hallo, wie geht es dir?", mode="CONVERSATION"))
+            events = await _collect(
+                stream_conversation("Hallo, wie geht es dir?", mode="CONVERSATION")
+            )
 
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
@@ -606,7 +713,9 @@ class TestStreamConversation:
             return_value=_FakeStream(_make_responses_stream_chunks(["Hallo, gern."]))
         )
         mock_client.chat.completions.create = AsyncMock(
-            side_effect=AssertionError("gpt-5 conversation must not use chat completions")
+            side_effect=AssertionError(
+                "gpt-5 conversation must not use chat completions"
+            )
         )
         with patch(
             "app.agent.runtime.conversation_runtime.get_async_llm",
@@ -621,21 +730,34 @@ class TestStreamConversation:
 
     @pytest.mark.asyncio
     async def test_EXPLORATION_phase_prompt_keeps_domain_entry_natural(self):
-        with _patch_openai(["Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation. Wann zeigt sich die Leckage am deutlichsten?"]):
+        with _patch_openai(
+            [
+                "Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation. Wann zeigt sich die Leckage am deutlichsten?"
+            ]
+        ):
             events = await _collect(
-                stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION")
+                stream_conversation(
+                    "Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION"
+                )
             )
         parsed = _parse_events(events)
         state_update = next(e for e in parsed if e.get("type") == "state_update")
         assert state_update["reply"].startswith(
             "Verstanden, du beschreibst ein konkretes Leckage- oder Ausfallbild."
         )
-        assert "Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation." in state_update["reply"]
+        assert (
+            "Dann ordnen wir das Problem zuerst nach der konkreten Betriebssituation."
+            in state_update["reply"]
+        )
         assert "Wann zeigt sich die Leckage am deutlichsten?" in state_update["reply"]
 
     @pytest.mark.asyncio
     async def test_focus_reply_trims_deficit_language_and_multiple_questions(self):
-        with _patch_openai(["Es fehlen noch Drehzahl und Einbausituation. Welche Drehzahl liegt an? Und wie ist die Einbausituation?"]):
+        with _patch_openai(
+            [
+                "Es fehlen noch Drehzahl und Einbausituation. Welche Drehzahl liegt an? Und wie ist die Einbausituation?"
+            ]
+        ):
             events = await _collect(
                 stream_conversation(
                     "Es ist eine rotierende Welle.",
@@ -666,7 +788,9 @@ class TestStreamConversation:
         ):
             await _collect(stream_conversation("Hallo", mode="CONVERSATION"))
 
-        joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
+        joined = "\n".join(
+            m["content"] for m in captured_messages if m["role"] == "system"
+        )
         assert "Stelle genau diese eine priorisierte Frage" not in joined
 
     @pytest.mark.asyncio
@@ -683,13 +807,26 @@ class TestStreamConversation:
             "app.agent.runtime.conversation_runtime.get_async_llm",
             return_value=(mock_client, "gpt-4o-mini"),
         ):
-            await _collect(stream_conversation("Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION"))
+            await _collect(
+                stream_conversation(
+                    "Wir haben immer wieder Leckageprobleme.", mode="EXPLORATION"
+                )
+            )
 
-        joined = "\n".join(m["content"] for m in captured_messages if m["role"] == "system")
+        joined = "\n".join(
+            m["content"] for m in captured_messages if m["role"] == "system"
+        )
         assert "Relevanter offener Fokus" in joined
-        assert joined.count("In welcher Situation zeigt sich die Leckage oder das Problem am deutlichsten") == 1
+        assert (
+            joined.count(
+                "In welcher Situation zeigt sich die Leckage oder das Problem am deutlichsten"
+            )
+            == 1
+        )
         assert joined.count("Offene Punkte:") == 1
-        assert "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz" not in joined
+        assert (
+            "Beginne die sichtbare Antwort IMMER mit diesem ersten Satz" not in joined
+        )
 
     @pytest.mark.asyncio
     async def test_stream_does_not_expose_boundary_block_as_visible_authority(self):
@@ -740,7 +877,9 @@ class TestStreamConversation:
     @pytest.mark.asyncio
     async def test_clean_text_no_replacement(self):
         """Clean text produces no text_replacement event."""
-        with _patch_openai(["FKM ist ein Fluorelastomer aus der Gruppe der Hochleistungswerkstoffe."]):
+        with _patch_openai(
+            ["FKM ist ein Fluorelastomer aus der Gruppe der Hochleistungswerkstoffe."]
+        ):
             events = await _collect(stream_conversation("Was ist FKM?"))
         parsed = _parse_events(events)
         replacements = [e for e in parsed if e.get("type") == "text_replacement"]
@@ -750,7 +889,9 @@ class TestStreamConversation:
     async def test_llm_error_yields_error_event_then_done(self):
         """LLM exception → error SSE event + [DONE], no crash."""
         mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = ConnectionError("network down")
+        mock_client.chat.completions.create.side_effect = ConnectionError(
+            "network down"
+        )
         with patch(
             "app.agent.runtime.conversation_runtime.get_async_llm",
             return_value=(mock_client, "gpt-4o-mini"),
@@ -860,7 +1001,9 @@ class TestConversationParity:
         with _patch_openai(["Ich empfehle FKM für diese Dichtung."]):
             result = await run_conversation("Welches Material?")
         with _patch_openai(["Ich empfehle FKM für diese Dichtung."]):
-            canonical_from_shared_runtime = await _collect_canonical_reply("Welches Material?")
+            canonical_from_shared_runtime = await _collect_canonical_reply(
+                "Welches Material?"
+            )
 
         assert result.reply_text == canonical_from_shared_runtime
         assert "empfehle" not in result.reply_text
@@ -889,4 +1032,8 @@ class TestConversationParity:
     async def test_iter_conversation_events_has_no_done_sentinel_transport_detail(self):
         with _patch_openai(["Hallo"]):
             events = [event async for event in iter_conversation_events("Hallo")]
-        assert [event["type"] for event in events][-3:] == ["state_update", "boundary_block", "stream_end"]
+        assert [event["type"] for event in events][-3:] == [
+            "state_update",
+            "boundary_block",
+            "stream_end",
+        ]

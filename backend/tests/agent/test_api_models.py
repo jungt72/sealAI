@@ -92,14 +92,20 @@ def test_chat_response_allows_missing_structured_state_for_non_structured_paths(
 def test_build_public_response_core_returns_only_shared_fields():
     core = build_public_response_core(
         reply="Antwort",
-        structured_state={"case_status": "withheld_review", "output_status": "withheld_review"},
+        structured_state={
+            "case_status": "withheld_review",
+            "output_status": "withheld_review",
+        },
         policy_path="structured",
         run_meta={"path": "structured"},
     )
     assert core == {
         "reply": "Antwort",
         "answer_markdown": "Antwort",
-        "structured_state": {"case_status": "withheld_review", "output_status": "withheld_review"},
+        "structured_state": {
+            "case_status": "withheld_review",
+            "output_status": "withheld_review",
+        },
         "policy_path": "structured",
         "run_meta": {"path": "structured"},
         "response_class": "technical_preselection",
@@ -134,7 +140,9 @@ def test_build_public_response_core_delegates_to_central_user_facing_reply_assem
         "run_meta": {"path": "structured"},
         "response_class": "structured_clarification",
     }
-    with patch("app.agent.api.models.assemble_user_facing_reply", return_value=assembled) as mock_assemble:
+    with patch(
+        "app.agent.api.models.assemble_user_facing_reply", return_value=assembled
+    ) as mock_assemble:
         core = build_public_response_core(
             reply="Bitte Medium angeben.",
             structured_state={"output_status": "clarification_needed"},
@@ -181,12 +189,17 @@ def test_build_public_response_core_guards_legacy_governed_recommendation_reply(
     )
 
     assert core["response_class"] == "technical_preselection"
-    assert core["reply"] == "Ich kann die technische Richtung belastbar einordnen und die offenen Prüfpunkte klar benennen."
+    assert (
+        core["reply"]
+        == "Ich kann die technische Richtung belastbar einordnen und die offenen Prüfpunkte klar benennen."
+    )
     assert core["answer_markdown"] == core["reply"]
 
 
 def test_build_public_response_core_rejects_impossible_mapping_combinations():
-    with pytest.raises(ValueError, match="conversational_answer must not expose structured_state"):
+    with pytest.raises(
+        ValueError, match="conversational_answer must not expose structured_state"
+    ):
         _assert_public_response_core_mapping(
             response_class="conversational_answer",
             structured_state={"output_status": "withheld_review"},
@@ -194,7 +207,9 @@ def test_build_public_response_core_rejects_impossible_mapping_combinations():
             state_update=False,
         )
 
-    with pytest.raises(ValueError, match="requires state_update=True and structured_state"):
+    with pytest.raises(
+        ValueError, match="requires state_update=True and structured_state"
+    ):
         _assert_public_response_core_mapping(
             response_class="governed_state_update",
             structured_state={"output_status": "withheld_review"},

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
-from app.services.knowledge.factcard_store import FactCardStore, is_validated_ptfe_factcard_id
+from app.services.knowledge.factcard_store import (
+    FactCardStore,
+    is_validated_ptfe_factcard_id,
+)
 
 
 def test_detailed_parameter_query_is_summarized_by_topic(tmp_path) -> None:

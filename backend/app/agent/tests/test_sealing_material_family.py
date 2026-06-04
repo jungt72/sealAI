@@ -47,7 +47,10 @@ def test_no_silent_defaulting_to_unknown() -> None:
 
 
 def test_explicit_unknown_authority_value_is_preserved() -> None:
-    assert derive_sealing_material_family(sealai_norm_material_family="unknown") == "unknown"
+    assert (
+        derive_sealing_material_family(sealai_norm_material_family="unknown")
+        == "unknown"
+    )
 
 
 def test_conflicting_authority_values_return_none() -> None:

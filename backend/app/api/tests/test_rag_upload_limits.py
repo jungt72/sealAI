@@ -39,8 +39,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -105,7 +109,13 @@ def anyio_backend() -> str:
 async def test_rag_upload_too_large(tmp_path: Path) -> None:
     _configure_upload_root(tmp_path)
     rag_endpoint.RAG_UPLOAD_MAX_BYTES = 4
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile("doc.txt", b"hello", "text/plain")
     try:
         await rag_endpoint.upload_rag_document(
@@ -123,7 +133,13 @@ async def test_rag_upload_too_large(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_rag_upload_invalid_ext(tmp_path: Path) -> None:
     _configure_upload_root(tmp_path)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile("doc.exe", b"hello", "application/pdf")
     try:
         await rag_endpoint.upload_rag_document(
@@ -141,7 +157,13 @@ async def test_rag_upload_invalid_ext(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_rag_upload_invalid_content_type(tmp_path: Path) -> None:
     _configure_upload_root(tmp_path)
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile("doc.txt", b"hello", "application/octet-stream")
     try:
         await rag_endpoint.upload_rag_document(
@@ -160,7 +182,13 @@ async def test_rag_upload_invalid_content_type(tmp_path: Path) -> None:
 async def test_rag_upload_rejects_spoofed_pdf_magic_bytes(tmp_path: Path) -> None:
     _configure_upload_root(tmp_path)
     rag_endpoint.RAG_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile("doc.pdf", b"not actually a pdf", "application/pdf")
     try:
         await rag_endpoint.upload_rag_document(
@@ -180,7 +208,13 @@ async def test_rag_upload_rejects_spoofed_pdf_magic_bytes(tmp_path: Path) -> Non
 async def test_rag_upload_rejects_binary_text_spoof(tmp_path: Path) -> None:
     _configure_upload_root(tmp_path)
     rag_endpoint.RAG_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     file_obj = DummyUploadFile("doc.txt", b"hello\x00world", "text/plain")
     try:
         await rag_endpoint.upload_rag_document(

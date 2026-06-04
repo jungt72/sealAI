@@ -1,11 +1,18 @@
 import pytest
 
 import app.agent.state.case_state as case_state_module
-from app.agent.state.case_state import _infer_unit, _normalize_snapshot_value, build_case_state
+from app.agent.state.case_state import (
+    _infer_unit,
+    _normalize_snapshot_value,
+    build_case_state,
+)
 from app.agent.domain.manufacturer_rfq import ManufacturerRfqSpecialistResult
 
 
-@pytest.mark.parametrize("key,expected", [("pressure", "bar"), ("temperature_f", "F"), ("speed", "rpm"), ("unknown", None)])
+@pytest.mark.parametrize(
+    "key,expected",
+    [("pressure", "bar"), ("temperature_f", "F"), ("speed", "rpm"), ("unknown", None)],
+)
 def test_infer_unit(key, expected):
     assert _infer_unit(key) == expected
 
@@ -40,7 +47,9 @@ def test_build_case_state_exposes_canonical_target_buckets():
             },
             "normalized": {
                 "normalized_parameters": {"material": "PTFE", "temperature_c": 120},
-                "identity_records": {"material": {"source": "normalizer", "confidence": "high"}},
+                "identity_records": {
+                    "material": {"source": "normalizer", "confidence": "high"}
+                },
             },
             "governance": {
                 "release_status": "manufacturer_validation_required",
@@ -70,7 +79,11 @@ def test_build_case_state_exposes_canonical_target_buckets():
                 "rfq_html_report": "<html>rfq</html>",
             },
             "review": {"review_required": True, "review_state": "pending"},
-            "cycle": {"analysis_cycle_id": "cycle-2", "state_revision": 3, "phase": "final"},
+            "cycle": {
+                "analysis_cycle_id": "cycle-2",
+                "state_revision": 3,
+                "phase": "final",
+            },
         },
     }
 
@@ -87,23 +100,45 @@ def test_build_case_state_exposes_canonical_target_buckets():
     assert case_state["parameter_meta"]["material"]["source"] == "normalizer"
     assert case_state["derived_engineering_values"] == {}
     assert case_state["evidence_state"]["evidence_ref_count"] == 1
-    assert case_state["governance_state"]["required_disclaimers"] == ["Manufacturer validation required."]
+    assert case_state["governance_state"]["required_disclaimers"] == [
+        "Manufacturer validation required."
+    ]
     assert case_state["matching_state"]["selection_status"] == "shortlisted"
     assert case_state["matching_state"]["matchable"] is False
-    assert case_state["matching_state"]["matchability_status"] == "blocked_review_required"
-    assert case_state["matching_state"]["blocking_reasons"] == ["review_required", "output_blocked"]
-    assert case_state["matching_state"]["recommendation_identity"]["candidate_id"] == "ptfe::g25::acme"
+    assert (
+        case_state["matching_state"]["matchability_status"] == "blocked_review_required"
+    )
+    assert case_state["matching_state"]["blocking_reasons"] == [
+        "review_required",
+        "output_blocked",
+    ]
+    assert (
+        case_state["matching_state"]["recommendation_identity"]["candidate_id"]
+        == "ptfe::g25::acme"
+    )
     assert case_state["requirement_class"]["object_type"] == "requirement_class"
     assert case_state["requirement_class"]["requirement_class_id"] == "family::PTFE"
     assert case_state["requirement_class"]["derivation_basis"] == "family"
     assert case_state["requirement_class"]["material_family"] == "PTFE"
     assert case_state["matching_state"]["requirement_class_hint"] == "family::PTFE"
-    assert case_state["matching_state"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
+    assert (
+        case_state["matching_state"]["requirement_class"]["requirement_class_id"]
+        == "family::PTFE"
+    )
     assert case_state["matching_state"]["manufacturer_validation_required"] is True
     assert case_state["matching_state"]["review_required"] is True
-    assert case_state["matching_state"]["candidate_summary"]["winner_candidate_id"] == "ptfe::g25::acme"
-    assert case_state["matching_state"]["match_candidates"][0]["candidate_id"] == "ptfe::g25::acme"
-    assert case_state["matching_state"]["matching_basis_summary"]["evidence_ref_count"] == 1
+    assert (
+        case_state["matching_state"]["candidate_summary"]["winner_candidate_id"]
+        == "ptfe::g25::acme"
+    )
+    assert (
+        case_state["matching_state"]["match_candidates"][0]["candidate_id"]
+        == "ptfe::g25::acme"
+    )
+    assert (
+        case_state["matching_state"]["matching_basis_summary"]["evidence_ref_count"]
+        == 1
+    )
     assert case_state["matching_state"]["matching_outcome"] is None
     assert case_state["rfq_state"]["rfq_admissibility"] == "provisional"
     assert case_state["rfq_state"]["rfq_confirmed"] is False
@@ -117,48 +152,151 @@ def test_build_case_state_exposes_canonical_target_buckets():
         "rfq_admissibility_provisional",
         "handover_not_ready",
     ]
-    assert case_state["rfq_state"]["open_points"] == ["manufacturer_validation_required", "review_required"]
+    assert case_state["rfq_state"]["open_points"] == [
+        "manufacturer_validation_required",
+        "review_required",
+    ]
     assert case_state["rfq_state"]["readiness_basis_summary"]["matchable"] is False
-    assert case_state["rfq_state"]["recommendation_identity"]["candidate_id"] == "ptfe::g25::acme"
+    assert (
+        case_state["rfq_state"]["recommendation_identity"]["candidate_id"]
+        == "ptfe::g25::acme"
+    )
     assert case_state["rfq_state"]["requirement_class_hint"] == "family::PTFE"
-    assert case_state["rfq_state"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
-    assert case_state["rfq_state"]["rfq_object"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
+    assert (
+        case_state["rfq_state"]["requirement_class"]["requirement_class_id"]
+        == "family::PTFE"
+    )
+    assert (
+        case_state["rfq_state"]["rfq_object"]["requirement_class"][
+            "requirement_class_id"
+        ]
+        == "family::PTFE"
+    )
     assert case_state["rfq_state"]["rfq_object"]["payload_present"] is True
     assert case_state["recipient_selection"]["object_type"] == "recipient_selection"
     assert case_state["recipient_selection"]["selected_partner_id"] == "partner-1"
-    assert case_state["recipient_selection"]["selection_status"] == "candidate_pool_only"
+    assert (
+        case_state["recipient_selection"]["selection_status"] == "candidate_pool_only"
+    )
     assert case_state["recipient_selection"]["recipient_selection_ready"] is False
     assert case_state["recipient_selection"]["selected_recipient_refs"] == []
-    assert case_state["recipient_selection"]["candidate_recipient_refs"][0]["manufacturer_name"] == "Acme"
-    assert case_state["rfq_state"]["recipient_selection"]["selection_status"] == "candidate_pool_only"
+    assert (
+        case_state["recipient_selection"]["candidate_recipient_refs"][0][
+            "manufacturer_name"
+        ]
+        == "Acme"
+    )
+    assert (
+        case_state["rfq_state"]["recipient_selection"]["selection_status"]
+        == "candidate_pool_only"
+    )
     assert case_state["rfq_state"]["rfq_dispatch"]["object_type"] == "rfq_dispatch"
     assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_ready"] is False
-    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"] == "not_ready_dispatch_blocked"
-    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_blockers"] == ["rfq_not_admissible"]
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"]["recipient_count"] == 1
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"]["selected_recipient_count"] == 0
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"]["has_selected_manufacturer_ref"] is False
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0]["manufacturer_name"] == "Acme"
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_selection"]["selection_status"] == "candidate_pool_only"
-    assert case_state["rfq_state"]["rfq_dispatch"]["rfq_object_basis"]["payload_present"] is True
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"]
+        == "not_ready_dispatch_blocked"
+    )
+    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_blockers"] == [
+        "rfq_not_admissible"
+    ]
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"][
+            "recipient_count"
+        ]
+        == 1
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"][
+            "selected_recipient_count"
+        ]
+        == 0
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_basis_summary"][
+            "has_selected_manufacturer_ref"
+        ]
+        is False
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0][
+            "manufacturer_name"
+        ]
+        == "Acme"
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_selection"][
+            "selection_status"
+        ]
+        == "candidate_pool_only"
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["rfq_object_basis"]["payload_present"]
+        is True
+    )
     assert case_state["manufacturer_state"]["manufacturer_specific"] is True
-    assert case_state["manufacturer_state"]["manufacturer_specificity_status"] == "manufacturer_specific"
-    assert case_state["manufacturer_state"]["manufacturer_refs"][0]["manufacturer_name"] == "Acme"
-    assert case_state["manufacturer_state"]["manufacturer_refs"][0]["capability_hints"] == ["manufacturer_grade_candidate"]
-    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0]["object_type"] == "manufacturer_capability"
-    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0]["manufacturer_name"] == "Acme"
-    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0]["requirement_class_ids"] == ["family::PTFE"]
-    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0]["candidate_kinds"] == ["manufacturer_grade"]
-    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0]["evidence_refs"] == ["fc-1"]
+    assert (
+        case_state["manufacturer_state"]["manufacturer_specificity_status"]
+        == "manufacturer_specific"
+    )
+    assert (
+        case_state["manufacturer_state"]["manufacturer_refs"][0]["manufacturer_name"]
+        == "Acme"
+    )
+    assert case_state["manufacturer_state"]["manufacturer_refs"][0][
+        "capability_hints"
+    ] == ["manufacturer_grade_candidate"]
+    assert (
+        case_state["manufacturer_state"]["manufacturer_capabilities"][0]["object_type"]
+        == "manufacturer_capability"
+    )
+    assert (
+        case_state["manufacturer_state"]["manufacturer_capabilities"][0][
+            "manufacturer_name"
+        ]
+        == "Acme"
+    )
+    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0][
+        "requirement_class_ids"
+    ] == ["family::PTFE"]
+    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0][
+        "candidate_kinds"
+    ] == ["manufacturer_grade"]
+    assert case_state["manufacturer_state"]["manufacturer_capabilities"][0][
+        "evidence_refs"
+    ] == ["fc-1"]
     assert case_state["manufacturer_state"]["requirement_class_hint"] == "family::PTFE"
-    assert case_state["manufacturer_state"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
-    assert case_state["result_contract"]["required_disclaimers"] == ["Manufacturer validation required."]
-    assert case_state["result_contract"]["recommendation_identity"]["candidate_id"] == "ptfe::g25::acme"
+    assert (
+        case_state["manufacturer_state"]["requirement_class"]["requirement_class_id"]
+        == "family::PTFE"
+    )
+    assert case_state["result_contract"]["required_disclaimers"] == [
+        "Manufacturer validation required."
+    ]
+    assert (
+        case_state["result_contract"]["recommendation_identity"]["candidate_id"]
+        == "ptfe::g25::acme"
+    )
     assert case_state["result_contract"]["requirement_class_hint"] == "family::PTFE"
-    assert case_state["result_contract"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
-    assert case_state["sealing_requirement_spec"]["requirement_class_hint"] == "family::PTFE"
-    assert case_state["sealing_requirement_spec"]["requirement_class"]["requirement_class_id"] == "family::PTFE"
-    assert case_state["sealing_requirement_spec"]["recommendation_identity"]["material_family"] == "PTFE"
+    assert (
+        case_state["result_contract"]["requirement_class"]["requirement_class_id"]
+        == "family::PTFE"
+    )
+    assert (
+        case_state["sealing_requirement_spec"]["requirement_class_hint"]
+        == "family::PTFE"
+    )
+    assert (
+        case_state["sealing_requirement_spec"]["requirement_class"][
+            "requirement_class_id"
+        ]
+        == "family::PTFE"
+    )
+    assert (
+        case_state["sealing_requirement_spec"]["recommendation_identity"][
+            "material_family"
+        ]
+        == "PTFE"
+    )
 
 
 def test_build_case_state_prefers_governance_requirement_class_over_legacy_hint_projection():
@@ -189,7 +327,11 @@ def test_build_case_state_prefers_governance_requirement_class_over_legacy_hint_
                     }
                 },
             },
-            "cycle": {"analysis_cycle_id": "cycle-2", "state_revision": 3, "phase": "final"},
+            "cycle": {
+                "analysis_cycle_id": "cycle-2",
+                "state_revision": 3,
+                "phase": "final",
+            },
         },
     }
 
@@ -201,14 +343,27 @@ def test_build_case_state_prefers_governance_requirement_class_over_legacy_hint_
     )
 
     assert case_state["requirement_class"]["requirement_class_id"] == "PTFE10"
-    assert case_state["requirement_class"]["description"] == "PTFE steam sealing class for elevated thermal load."
+    assert (
+        case_state["requirement_class"]["description"]
+        == "PTFE steam sealing class for elevated thermal load."
+    )
     assert case_state["requirement_class"]["seal_type"] == "gasket"
-    assert case_state["matching_state"]["requirement_class"]["requirement_class_id"] == "PTFE10"
-    assert case_state["rfq_state"]["requirement_class"]["requirement_class_id"] == "PTFE10"
-    assert case_state["manufacturer_state"]["requirement_class"]["requirement_class_id"] == "PTFE10"
+    assert (
+        case_state["matching_state"]["requirement_class"]["requirement_class_id"]
+        == "PTFE10"
+    )
+    assert (
+        case_state["rfq_state"]["requirement_class"]["requirement_class_id"] == "PTFE10"
+    )
+    assert (
+        case_state["manufacturer_state"]["requirement_class"]["requirement_class_id"]
+        == "PTFE10"
+    )
 
 
-def test_build_case_state_aligns_rfq_basis_projection_with_specialist_adapter(monkeypatch: pytest.MonkeyPatch):
+def test_build_case_state_aligns_rfq_basis_projection_with_specialist_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr(
         case_state_module,
         "run_manufacturer_rfq_specialist",
@@ -219,14 +374,24 @@ def test_build_case_state_aligns_rfq_basis_projection_with_specialist_adapter(mo
                     "object_type": "rfq_payload_basis",
                     "object_version": "rfq_payload_basis_v1",
                     "qualified_material_ids": ["bounded::candidate"],
-                    "qualified_materials": [{"candidate_id": "bounded::candidate", "manufacturer_name": "BoundedCo"}],
+                    "qualified_materials": [
+                        {
+                            "candidate_id": "bounded::candidate",
+                            "manufacturer_name": "BoundedCo",
+                        }
+                    ],
                     "confirmed_parameters": {"medium": "BoundedMedium"},
                     "dimensions": {"shaft_diameter_mm": 33.0},
                     "target_system": "rfq_portal",
                 },
                 "handover_payload": {
                     "qualified_material_ids": ["bounded::candidate"],
-                    "qualified_materials": [{"candidate_id": "bounded::candidate", "manufacturer_name": "BoundedCo"}],
+                    "qualified_materials": [
+                        {
+                            "candidate_id": "bounded::candidate",
+                            "manufacturer_name": "BoundedCo",
+                        }
+                    ],
                     "confirmed_parameters": {"medium": "BoundedMedium"},
                     "dimensions": {"shaft_diameter_mm": 33.0},
                 },
@@ -237,7 +402,9 @@ def test_build_case_state_aligns_rfq_basis_projection_with_specialist_adapter(mo
                 "object_version": "rfq_send_payload_v1",
                 "send_ready": True,
                 "blocking_reasons": [],
-                "recipient_refs": [{"manufacturer_name": "BoundedCo", "qualified_for_rfq": True}],
+                "recipient_refs": [
+                    {"manufacturer_name": "BoundedCo", "qualified_for_rfq": True}
+                ],
                 "selected_manufacturer_ref": {"manufacturer_name": "BoundedCo"},
                 "requirement_class": {"requirement_class_id": "PTFE10"},
                 "handover_payload": {"qualified_material_ids": ["bounded::candidate"]},
@@ -293,16 +460,33 @@ def test_build_case_state_aligns_rfq_basis_projection_with_specialist_adapter(mo
         binding_level="ORIENTATION",
     )
 
-    assert case_state["rfq_state"]["rfq_object"]["qualified_material_ids"] == ["bounded::candidate"]
-    assert case_state["rfq_state"]["rfq_object"]["confirmed_parameters"] == {"medium": "BoundedMedium"}
-    assert case_state["rfq_state"]["rfq_object"]["dimensions"] == {"shaft_diameter_mm": 33.0}
-    assert case_state["rfq_state"]["rfq_send_payload"]["object_type"] == "rfq_send_payload"
+    assert case_state["rfq_state"]["rfq_object"]["qualified_material_ids"] == [
+        "bounded::candidate"
+    ]
+    assert case_state["rfq_state"]["rfq_object"]["confirmed_parameters"] == {
+        "medium": "BoundedMedium"
+    }
+    assert case_state["rfq_state"]["rfq_object"]["dimensions"] == {
+        "shaft_diameter_mm": 33.0
+    }
+    assert (
+        case_state["rfq_state"]["rfq_send_payload"]["object_type"] == "rfq_send_payload"
+    )
     assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_ready"] is True
-    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"] == "dispatch_ready"
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0]["manufacturer_name"] == "BoundedCo"
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"] == "dispatch_ready"
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0][
+            "manufacturer_name"
+        ]
+        == "BoundedCo"
+    )
 
 
-def test_build_case_state_aligns_blocked_dispatch_projection_with_send_payload(monkeypatch: pytest.MonkeyPatch):
+def test_build_case_state_aligns_blocked_dispatch_projection_with_send_payload(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr(
         case_state_module,
         "run_manufacturer_rfq_specialist",
@@ -369,9 +553,18 @@ def test_build_case_state_aligns_blocked_dispatch_projection_with_send_payload(m
     )
 
     assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_ready"] is False
-    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"] == "not_ready_no_recipients"
-    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_blockers"] == ["review_required", "no_recipient_refs"]
-    assert case_state["rfq_state"]["rfq_send_payload"]["blocking_reasons"] == ["review_required", "no_recipient_refs"]
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["dispatch_status"]
+        == "not_ready_no_recipients"
+    )
+    assert case_state["rfq_state"]["rfq_dispatch"]["dispatch_blockers"] == [
+        "review_required",
+        "no_recipient_refs",
+    ]
+    assert case_state["rfq_state"]["rfq_send_payload"]["blocking_reasons"] == [
+        "review_required",
+        "no_recipient_refs",
+    ]
 
 
 def test_build_case_state_narrows_recipient_selection_with_capability_candidate_link():
@@ -429,7 +622,9 @@ def test_build_case_state_narrows_recipient_selection_with_capability_candidate_
     )
 
     assert len(case_state["manufacturer_state"]["manufacturer_capabilities"]) == 2
-    assert case_state["recipient_selection"]["selection_status"] == "candidate_pool_only"
+    assert (
+        case_state["recipient_selection"]["selection_status"] == "candidate_pool_only"
+    )
     assert case_state["recipient_selection"]["candidate_recipient_refs"] == [
         {
             "manufacturer_name": "Acme",
@@ -455,9 +650,24 @@ def test_build_case_state_narrows_recipient_selection_with_capability_candidate_
             "qualified_for_rfq": False,
         }
     ]
-    assert case_state["recipient_selection"]["selection_basis_summary"]["capability_qualified_candidate_count"] == 1
-    assert case_state["recipient_selection"]["selection_basis_summary"]["capability_recommendation_candidate_id"] == "ptfe::g25::acme"
-    assert case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0]["manufacturer_name"] == "Acme"
+    assert (
+        case_state["recipient_selection"]["selection_basis_summary"][
+            "capability_qualified_candidate_count"
+        ]
+        == 1
+    )
+    assert (
+        case_state["recipient_selection"]["selection_basis_summary"][
+            "capability_recommendation_candidate_id"
+        ]
+        == "ptfe::g25::acme"
+    )
+    assert (
+        case_state["rfq_state"]["rfq_dispatch"]["recipient_refs"][0][
+            "manufacturer_name"
+        ]
+        == "Acme"
+    )
 
 
 def test_build_case_state_carries_full_concurrency_token_in_case_meta():

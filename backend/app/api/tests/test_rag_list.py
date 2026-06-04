@@ -38,8 +38,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -106,7 +110,13 @@ async def test_rag_list_filters_by_tenant() -> None:
         content_type="text/plain",
         size_bytes=12,
     )
-    user = RequestUser(user_id="tenant-1", username="user", sub="tenant-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="tenant-1",
+        username="user",
+        sub="tenant-1",
+        roles=[],
+        tenant_id="tenant-1",
+    )
     session = DummySession([doc_a, doc_b], tenant_id=user.user_id)
 
     payload = await rag_endpoint.list_rag_documents(
@@ -147,7 +157,9 @@ async def test_rag_list_prefers_tenant_claim_over_user_id() -> None:
         content_type="text/plain",
         size_bytes=12,
     )
-    user = RequestUser(user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1")
+    user = RequestUser(
+        user_id="user-1", username="user", sub="user-1", roles=[], tenant_id="tenant-1"
+    )
     session = DummySession([doc_a, doc_b], tenant_id=user.tenant_id)
 
     payload = await rag_endpoint.list_rag_documents(

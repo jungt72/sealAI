@@ -52,7 +52,9 @@ def _clean_text_list(values: Iterable[Any]) -> list[str]:
 def _ledger_item(result: Any) -> dict[str, Any]:
     payload = _as_dict(result)
     outputs = dict(payload.get("outputs") or {})
-    calc_id = str(payload.get("calculation_id") or payload.get("calc_type") or "unknown")
+    calc_id = str(
+        payload.get("calculation_id") or payload.get("calc_type") or "unknown"
+    )
     status = str(payload.get("status") or "insufficient_data")
     notes = _clean_text_list(payload.get("notes") or [])
     notes.extend(_clean_text_list(payload.get("limitations") or []))
@@ -87,7 +89,10 @@ def _is_rwdr_ledger_item(item: Mapping[str, Any]) -> bool:
     # P1-1 PR3: rwdr ownership by pack id-pattern, not a core string branch.
     if pack_for_calc_id(calc_id) is not None:
         return True
-    if calculator in {"surface_speed_from_rpm_and_diameter", "CascadingCalculationEngine"}:
+    if calculator in {
+        "surface_speed_from_rpm_and_diameter",
+        "CascadingCalculationEngine",
+    }:
         return True
     return any(item.get(key) is not None for key in _RWDR_OUTPUT_KEYS)
 
@@ -122,7 +127,9 @@ def calculation_ledger_derivations(calculation_or_results: Any) -> list[dict[str
     existing professional checks consume that historic compute-result shape.
     Individual ledger entries are preserved afterwards for transparency.
     """
-    items = [_ledger_item(result) for result in _calculation_results(calculation_or_results)]
+    items = [
+        _ledger_item(result) for result in _calculation_results(calculation_or_results)
+    ]
     if not items:
         return []
 
@@ -140,12 +147,16 @@ def calculation_ledger_derivations(calculation_or_results: Any) -> list[dict[str
                 "dependencies": [],
                 "outputs": {},
             }
-        rwdr["status"] = _merge_status(str(rwdr.get("status") or ""), str(item.get("status") or ""))
+        rwdr["status"] = _merge_status(
+            str(rwdr.get("status") or ""), str(item.get("status") or "")
+        )
         _merge_unique(rwdr["notes"], item.get("notes") or [])
         _merge_unique(rwdr["missing_inputs"], item.get("missing_inputs") or [])
         _merge_unique(rwdr["dependencies"], item.get("dependencies") or [])
         outputs = dict(item.get("outputs") or {})
-        rwdr["outputs"].update({key: value for key, value in outputs.items() if value is not None})
+        rwdr["outputs"].update(
+            {key: value for key, value in outputs.items() if value is not None}
+        )
         for key in _RWDR_OUTPUT_KEYS:
             if item.get(key) is not None:
                 rwdr[key] = item[key]
@@ -163,4 +174,3 @@ def calculation_ledger_derivations(calculation_or_results: Any) -> list[dict[str
         item for item in items if pack_for_calc_type(item.get("calc_type")) is None
     )
     return derivations
-

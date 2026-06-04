@@ -114,7 +114,11 @@ CHAT_TEMPLATE_REGISTRY: dict[ChatReplyStyle, ChatTemplateMeta] = {
         disclaimer_policy="explicit_boundary_required",
         # Boundary turns legitimately refuse release; no structural-phrase ban.
         forbidden_phrases=(),
-        required_fields=("boundary_statement", "constructive_alternative", "offer_question"),
+        required_fields=(
+            "boundary_statement",
+            "constructive_alternative",
+            "offer_question",
+        ),
     ),
     "knowledge_explainer": ChatTemplateMeta(
         template_id="chat.knowledge_explainer.v1",
@@ -234,9 +238,13 @@ def render_chat_reply(
     meta = get_chat_template_meta(style)
     supplied = dict(fields or {})
 
-    context: dict[str, Any] = {key: supplied.get(key, "") for key in meta.required_fields}
+    context: dict[str, Any] = {
+        key: supplied.get(key, "") for key in meta.required_fields
+    }
     if "action_chips" in meta.required_fields:
-        context["action_chips"] = list(action_chips or supplied.get("action_chips") or [])
+        context["action_chips"] = list(
+            action_chips or supplied.get("action_chips") or []
+        )
 
     markdown = _template_env.render(meta.path, context).strip()
 

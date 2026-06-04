@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app.agent.communication.governed_answer_context import build_governed_answer_context
+from app.agent.communication.governed_answer_context import (
+    build_governed_answer_context,
+)
 from app.agent.communication.v7_contracts import (
     AnswerMode,
     MutationPolicy,
@@ -51,10 +53,16 @@ def test_golden_nbr_question_is_free_knowledge_without_case_mutation() -> None:
         runtime_action=build_runtime_action_from_turn_decision(decision),
     )
 
-    assert policy.semantic_boundary.intent == SemanticIntent.MATERIAL_OR_MEDIUM_KNOWLEDGE.value
+    assert (
+        policy.semantic_boundary.intent
+        == SemanticIntent.MATERIAL_OR_MEDIUM_KNOWLEDGE.value
+    )
     assert policy.semantic_boundary.case_binding == CaseBinding.NONE.value
     assert policy.semantic_boundary.should_mutate_case is False
-    assert policy.semantic_boundary.domain_relevance == DomainRelevance.SEALING_RELATED.value
+    assert (
+        policy.semantic_boundary.domain_relevance
+        == DomainRelevance.SEALING_RELATED.value
+    )
     assert policy.freedom_decision.level == LLMFreedomLevel.FREE_EXPLANATION.value
     assert policy.response_policy.action == ResponseAction.ANSWER_ONLY.value
     assert policy.response_policy.graph_allowed is False
@@ -128,7 +136,9 @@ def test_golden_rfq_send_request_stays_readiness_boundary_without_dispatch() -> 
     assert policy.semantic_boundary.intent == SemanticIntent.RFQ_OR_EXPORT.value
     assert policy.response_policy.graph_allowed is False
     assert policy.response_policy.action == ResponseAction.ANSWER_ONLY.value
-    assert "external_dispatch_without_consent" in policy.freedom_decision.forbidden_actions
+    assert (
+        "external_dispatch_without_consent" in policy.freedom_decision.forbidden_actions
+    )
 
 
 def test_golden_weather_question_is_not_a_sealing_case() -> None:

@@ -34,9 +34,7 @@ def test_quote_comparison_does_not_recommend_cheapest_option() -> None:
 
 
 def test_pfas_fkm_replacement_creates_substitution_risk_brief() -> None:
-    bundle = ShallowModeIntakeService().build(
-        "PFAS-freie Alternative zu FKM gesucht."
-    )
+    bundle = ShallowModeIntakeService().build("PFAS-freie Alternative zu FKM gesucht.")
 
     assert bundle.primary_case_type == CaseType.material_substitution.value
     assert bundle.artifact_type == ArtifactType.material_substitution_brief.value
@@ -46,7 +44,9 @@ def test_pfas_fkm_replacement_creates_substitution_risk_brief() -> None:
 
 
 def test_emergency_triage_asks_exactly_one_most_important_question() -> None:
-    bundle = ShallowModeIntakeService().build("Anlage steht, wir brauchen heute Ersatz.")
+    bundle = ShallowModeIntakeService().build(
+        "Anlage steht, wir brauchen heute Ersatz."
+    )
 
     assert bundle.primary_case_type == CaseType.emergency_mro.value
     assert bundle.artifact_type == ArtifactType.emergency_triage.value

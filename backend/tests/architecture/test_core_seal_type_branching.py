@@ -26,6 +26,7 @@ Allowlist: each entry is a deliberate, documented owner decision (NOT a way to
 green un-routed branches). Inflating it requires the same scrutiny as a doctrine
 change (see CORE_PACK_BOUNDARY.md).
 """
+
 from __future__ import annotations
 
 import ast

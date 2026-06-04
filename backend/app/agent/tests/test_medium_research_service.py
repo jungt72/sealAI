@@ -10,14 +10,20 @@ from app.agent.services.medium_research import MediumResearchService
 
 
 @pytest.mark.asyncio
-async def test_medium_research_builds_source_marked_saltwater_deep_dive(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_research_builds_source_marked_saltwater_deep_dive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_retrieve_with_tenant(*_args, **_kwargs):
         return [], {"tier": "tier3_empty", "k_returned": 0}
 
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
-    monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
+    monkeypatch.setattr(
+        "app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant
+    )
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id="tenant-1", user_id="user-1"
+    )
     dumped = result.model_dump_json().lower()
 
     assert result.not_for_release_decisions is True
@@ -34,7 +40,9 @@ async def test_medium_research_builds_source_marked_saltwater_deep_dive(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_medium_research_injects_rag_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_research_injects_rag_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_retrieve_with_tenant(*_args, **_kwargs):
         return [
             {
@@ -45,9 +53,13 @@ async def test_medium_research_injects_rag_evidence(monkeypatch: pytest.MonkeyPa
         ], {"tier": "tier2_bm25", "k_returned": 1}
 
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
-    monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
+    monkeypatch.setattr(
+        "app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant
+    )
 
-    result = await MediumResearchService().build("Hydraulikoel", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Hydraulikoel", tenant_id="tenant-1", user_id="user-1"
+    )
 
     assert result.research_status.rag.status == "ok"
     assert result.research_status.rag.hit_count == 1
@@ -68,9 +80,13 @@ async def test_medium_research_uses_default_tenant_for_rag_when_auth_tenant_miss
 
     monkeypatch.delenv("SEALAI_DEFAULT_TENANT_ID", raising=False)
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
-    monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
+    monkeypatch.setattr(
+        "app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant
+    )
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id=None, user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id=None, user_id="user-1"
+    )
 
     assert seen["tenant_id"] == "default"
     assert result.research_status.rag.attempted is True
@@ -78,12 +94,16 @@ async def test_medium_research_uses_default_tenant_for_rag_when_auth_tenant_miss
 
 
 @pytest.mark.asyncio
-async def test_medium_research_does_not_fake_web_sources_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_research_does_not_fake_web_sources_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_retrieve_with_tenant(*_args, **_kwargs):
         return [], {"tier": "tier3_empty", "k_returned": 0}
 
     monkeypatch.delenv("SEALAI_ENABLE_MEDIUM_WEB_RESEARCH", raising=False)
-    monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
+    monkeypatch.setattr(
+        "app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant
+    )
 
     result = await MediumResearchService().build(
         "PFAS-haltiges Medium",
@@ -95,38 +115,54 @@ async def test_medium_research_does_not_fake_web_sources_when_disabled(monkeypat
     assert result.research_status.web.attempted is False
     assert result.research_status.web.status == "disabled"
     assert not any(item.source_type == "web" for item in result.evidence)
-    assert any("keine Live-Webaussagen" in limitation for limitation in result.limitations)
+    assert any(
+        "keine Live-Webaussagen" in limitation for limitation in result.limitations
+    )
 
 
 @pytest.mark.asyncio
-async def test_medium_research_skips_web_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_research_skips_web_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fail_if_web_called(_medium: str):
-        raise AssertionError("default medium intelligence must not start live web research")
+        raise AssertionError(
+            "default medium intelligence must not start live web research"
+        )
 
     monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_WEB_RESEARCH", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", fail_if_web_called)
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id="tenant-1", user_id="user-1"
+    )
 
     assert result.research_status.web.attempted is False
     assert result.research_status.web.status == "not_requested"
     assert not any(item.source_type == "web" for item in result.evidence)
-    assert any("nicht automatisch gestartet" in limitation for limitation in result.limitations)
+    assert any(
+        "nicht automatisch gestartet" in limitation for limitation in result.limitations
+    )
 
 
 @pytest.mark.asyncio
-async def test_medium_answer_composer_disabled_does_not_call_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_answer_composer_disabled_does_not_call_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def fail_if_called(_role: str):
-        raise AssertionError("composer provider must not be called when feature flag is disabled")
+        raise AssertionError(
+            "composer provider must not be called when feature flag is disabled"
+        )
 
     monkeypatch.delenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", raising=False)
     monkeypatch.setattr(medium_research, "get_async_llm", fail_if_called)
     monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id="tenant-1", user_id="user-1"
+    )
 
     assert result.answer_markdown_source == "deterministic_sections"
     assert result.composer.enabled is False
@@ -135,15 +171,21 @@ async def test_medium_answer_composer_disabled_does_not_call_provider(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_medium_research_can_accept_mocked_web_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_research_can_accept_mocked_web_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeResponses:
         async def create(self, **_kwargs):
-            return SimpleNamespace(output_text="Webhinweis: Herstellerdaten und Sicherheitsdatenblatt muessen geprueft werden.")
+            return SimpleNamespace(
+                output_text="Webhinweis: Herstellerdaten und Sicherheitsdatenblatt muessen geprueft werden."
+            )
 
     fake_client = SimpleNamespace(responses=FakeResponses())
     monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_WEB_RESEARCH", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(medium_research, "get_async_llm", lambda _role: (fake_client, "test-model"))
+    monkeypatch.setattr(
+        medium_research, "get_async_llm", lambda _role: (fake_client, "test-model")
+    )
     monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
 
     evidence, attempt = await medium_research._retrieve_web_evidence("Salzwasser")
@@ -156,7 +198,9 @@ async def test_medium_research_can_accept_mocked_web_evidence(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
-async def test_medium_answer_composer_can_produce_visible_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_answer_composer_can_produce_visible_markdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCompletions:
         async def create(self, **_kwargs):
             return SimpleNamespace(
@@ -177,11 +221,15 @@ async def test_medium_answer_composer_can_produce_visible_markdown(monkeypatch: 
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(medium_research, "get_async_llm", lambda _role: (fake_client, "test-model"))
+    monkeypatch.setattr(
+        medium_research, "get_async_llm", lambda _role: (fake_client, "test-model")
+    )
     monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id="tenant-1", user_id="user-1"
+    )
 
     assert result.answer_markdown_source == "medium_composer"
     assert result.composer.enabled is True
@@ -231,11 +279,15 @@ async def test_medium_answer_composer_accepts_detailed_bounded_markdown(
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(medium_research, "get_async_llm", lambda _role: (fake_client, "test-model"))
+    monkeypatch.setattr(
+        medium_research, "get_async_llm", lambda _role: (fake_client, "test-model")
+    )
     monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id="tenant-1", user_id="user-1"
+    )
 
     assert result.answer_markdown_source == "medium_composer"
     assert result.composer.succeeded is True
@@ -244,7 +296,9 @@ async def test_medium_answer_composer_accepts_detailed_bounded_markdown(
 
 
 @pytest.mark.asyncio
-async def test_medium_answer_composer_falls_back_on_unsafe_output(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_answer_composer_falls_back_on_unsafe_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCompletions:
         async def create(self, **_kwargs):
             return SimpleNamespace(
@@ -265,11 +319,15 @@ async def test_medium_answer_composer_falls_back_on_unsafe_output(monkeypatch: p
     fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     monkeypatch.setenv("SEALAI_ENABLE_MEDIUM_ANSWER_COMPOSER", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(medium_research, "get_async_llm", lambda _role: (fake_client, "test-model"))
+    monkeypatch.setattr(
+        medium_research, "get_async_llm", lambda _role: (fake_client, "test-model")
+    )
     monkeypatch.setattr(medium_research, "_retrieve_rag_evidence", _empty_rag)
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
 
-    result = await MediumResearchService().build("Salzwasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Salzwasser", tenant_id="tenant-1", user_id="user-1"
+    )
 
     assert result.answer_markdown_source == "composer_fallback"
     assert result.composer.succeeded is False
@@ -278,7 +336,9 @@ async def test_medium_answer_composer_falls_back_on_unsafe_output(monkeypatch: p
 
 
 @pytest.mark.asyncio
-async def test_medium_research_sanitizes_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_medium_research_sanitizes_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def fake_retrieve_with_tenant(*_args, **_kwargs):
         return [
             {
@@ -289,9 +349,13 @@ async def test_medium_research_sanitizes_evidence(monkeypatch: pytest.MonkeyPatc
         ], {"tier": "tier2_bm25", "k_returned": 1}
 
     monkeypatch.setattr(medium_research, "_retrieve_web_evidence", _disabled_web)
-    monkeypatch.setattr("app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant)
+    monkeypatch.setattr(
+        "app.agent.services.real_rag.retrieve_with_tenant", fake_retrieve_with_tenant
+    )
 
-    result = await MediumResearchService().build("Wasser", tenant_id="tenant-1", user_id="user-1")
+    result = await MediumResearchService().build(
+        "Wasser", tenant_id="tenant-1", user_id="user-1"
+    )
     dumped = result.model_dump_json()
 
     assert "sk-secretvalue" not in dumped

@@ -68,7 +68,9 @@ def validate_communication_guard(
         findings.append("communication_guard:missing_question_reason")
     if _answer_first_required(context) and _starts_with_question(text):
         findings.append("communication_guard:answer_first_missing")
-    if _expects_external_utility_redirect(communication_plan) and _contains_external_utility_answer(text):
+    if _expects_external_utility_redirect(
+        communication_plan
+    ) and _contains_external_utility_answer(text):
         findings.append("communication_guard:external_utility_answer")
     if _violates_tab_visibility(text, communication_plan):
         findings.append("communication_guard:tab_spam")
@@ -123,7 +125,9 @@ def _contains_question_reason(text: str, context: FinalAnswerContext) -> bool:
         return True
     reason = str(getattr(context.question_plan, "reason", "") or "").strip()
     if not reason and context.communication_plan is not None:
-        reason = str(getattr(context.communication_plan, "primary_question_reason", "") or "").strip()
+        reason = str(
+            getattr(context.communication_plan, "primary_question_reason", "") or ""
+        ).strip()
     if not reason:
         return False
     lowered_text = text.casefold()

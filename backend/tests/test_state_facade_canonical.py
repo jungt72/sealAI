@@ -46,7 +46,10 @@ os.environ.setdefault("redis_url", "redis://localhost:6379/0")
 os.environ.setdefault("nextauth_url", "http://localhost:3000")
 os.environ.setdefault("nextauth_secret", "dummy-secret")
 os.environ.setdefault("keycloak_issuer", "http://localhost:8080/realms/test")
-os.environ.setdefault("keycloak_jwks_url", "http://localhost:8080/realms/test/protocol/openid-connect/certs")
+os.environ.setdefault(
+    "keycloak_jwks_url",
+    "http://localhost:8080/realms/test/protocol/openid-connect/certs",
+)
 os.environ.setdefault("keycloak_client_id", "sealai-backend")
 os.environ.setdefault("keycloak_client_secret", "client-secret")
 os.environ.setdefault("keycloak_expected_azp", "sealai-frontend")
@@ -379,8 +382,15 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
                         "material_families": ["PTFE"],
                         "grade_names": ["G25"],
                         "candidate_kinds": ["manufacturer_grade"],
-                        "capability_hints": ["manufacturer_grade_candidate", "rfq_qualified_material"],
-                        "source_refs": ["recommendation_identity", "match_candidate", "rfq_qualified_material"],
+                        "capability_hints": [
+                            "manufacturer_grade_candidate",
+                            "rfq_qualified_material",
+                        ],
+                        "source_refs": [
+                            "recommendation_identity",
+                            "match_candidate",
+                            "rfq_qualified_material",
+                        ],
                         "qualified_for_rfq": True,
                     }
                 ],
@@ -389,8 +399,15 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
                         "object_type": "manufacturer_capability",
                         "object_version": "manufacturer_capability_v1",
                         "manufacturer_name": "Acme",
-                        "capability_sources": ["recommendation_identity", "match_candidate", "rfq_qualified_material"],
-                        "capability_hints": ["manufacturer_grade_candidate", "rfq_qualified_material"],
+                        "capability_sources": [
+                            "recommendation_identity",
+                            "match_candidate",
+                            "rfq_qualified_material",
+                        ],
+                        "capability_hints": [
+                            "manufacturer_grade_candidate",
+                            "rfq_qualified_material",
+                        ],
                         "material_families": ["PTFE"],
                         "grade_names": ["G25"],
                         "candidate_kinds": ["manufacturer_grade"],
@@ -428,7 +445,11 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
             "cycle": {"state_revision": 4, "phase": "legacy_phase"},
             "governance": {"release_status": "rfq_ready", "rfq_admissibility": "ready"},
             "handover": {"is_handover_ready": False},
-            "review": {"review_required": True, "review_state": "legacy_pending", "review_reason": "manual review"},
+            "review": {
+                "review_required": True,
+                "review_state": "legacy_pending",
+                "review_reason": "manual review",
+            },
             "selection": {"selected_partner_id": "legacy-partner"},
         },
     }
@@ -442,13 +463,15 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
     ) as mock_load:
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
+        app.dependency_overrides[auth_deps.get_current_request_user] = (
+            lambda: auth_deps.RequestUser(
+                user_id="alice",
+                username="alice",
+                sub="alice",
+                roles=[],
+                scopes=[],
+                tenant_id="tenant-a",
+            )
         )
         client = TestClient(app)
         response = client.get(
@@ -463,28 +486,55 @@ def test_v1_state_facade_reads_canonical_persisted_state(monkeypatch) -> None:
     assert body["working_profile"]["medium"] == "water"
     assert body["governance_metadata"]["release_status"] == "rfq_ready"
     assert body["parameter_provenance"]["material"]["source"] == "normalizer"
-    assert body["state"]["system"]["answer_contract"]["required_disclaimers"] == ["Manufacturer validation required."]
-    assert body["state"]["system"]["rfq_admissibility"]["open_points"] == ["compound pending"]
-    assert body["governance_metadata"]["scope_of_validity"] == ["manufacturer_validation_scope", "release_blocked_pending_unknowns"]
-    assert body["governance_metadata"]["required_disclaimers"] == ["Manufacturer validation required."]
+    assert body["state"]["system"]["answer_contract"]["required_disclaimers"] == [
+        "Manufacturer validation required."
+    ]
+    assert body["state"]["system"]["rfq_admissibility"]["open_points"] == [
+        "compound pending"
+    ]
+    assert body["governance_metadata"]["scope_of_validity"] == [
+        "manufacturer_validation_scope",
+        "release_blocked_pending_unknowns",
+    ]
+    assert body["governance_metadata"]["required_disclaimers"] == [
+        "Manufacturer validation required."
+    ]
     assert body["governance_metadata"]["review_required"] is True
     assert body["governance_metadata"]["review_state"] == "pending"
     assert body["governance_metadata"]["contract_obsolete"] is True
-    assert body["governance_metadata"]["contract_obsolete_reason"] == ["analysis_cycle_advanced"]
-    assert body["state"]["system"]["governance_metadata"]["required_disclaimers"] == ["Manufacturer validation required."]
-    assert body["recommendation_contract"]["requirement_class_hint"] == "compound::ptfe::g25::acme"
-    assert body["recommendation_contract"]["requirement_class"]["requirement_class_id"] == "compound::ptfe::g25::acme"
+    assert body["governance_metadata"]["contract_obsolete_reason"] == [
+        "analysis_cycle_advanced"
+    ]
+    assert body["state"]["system"]["governance_metadata"]["required_disclaimers"] == [
+        "Manufacturer validation required."
+    ]
+    assert (
+        body["recommendation_contract"]["requirement_class_hint"]
+        == "compound::ptfe::g25::acme"
+    )
+    assert (
+        body["recommendation_contract"]["requirement_class"]["requirement_class_id"]
+        == "compound::ptfe::g25::acme"
+    )
 
 
 def test_v1_state_facade_prefers_governed_source_before_canonical_state() -> None:
     auth_deps = importlib.import_module("app.services.auth.dependencies")
     state_mod = importlib.import_module("app.api.v1.endpoints.state")
-    from app.agent.state.models import AssertedClaim, ConversationMessage, GovernedSessionState
+    from app.agent.state.models import (
+        AssertedClaim,
+        ConversationMessage,
+        GovernedSessionState,
+    )
 
     governed_state = GovernedSessionState(
         analysis_cycle=5,
         conversation_messages=[
-            ConversationMessage(role="assistant", content="Governed Hydration", created_at="2026-04-09T00:00:00+00:00"),
+            ConversationMessage(
+                role="assistant",
+                content="Governed Hydration",
+                created_at="2026-04-09T00:00:00+00:00",
+            ),
         ],
     )
     governed_state.asserted.assertions["medium"] = AssertedClaim(
@@ -504,13 +554,15 @@ def test_v1_state_facade_prefers_governed_source_before_canonical_state() -> Non
     ):
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
+        app.dependency_overrides[auth_deps.get_current_request_user] = (
+            lambda: auth_deps.RequestUser(
+                user_id="alice",
+                username="alice",
+                sub="alice",
+                roles=[],
+                scopes=[],
+                tenant_id="tenant-a",
+            )
         )
         client = TestClient(app)
         response = client.get(
@@ -522,7 +574,10 @@ def test_v1_state_facade_prefers_governed_source_before_canonical_state() -> Non
     body = response.json()
     assert body["metadata"]["thread_id"] == "case-1"
     assert body["working_profile"]["medium"] == "Wasser"
-    assert body["governance_metadata"]["release_status"] == "inadmissible" or body["governance_metadata"]["release_status"] == "precheck_only"
+    assert (
+        body["governance_metadata"]["release_status"] == "inadmissible"
+        or body["governance_metadata"]["release_status"] == "precheck_only"
+    )
     assert body["state"]["reasoning"]["state_revision"] == 5
 
 
@@ -559,13 +614,15 @@ def test_v1_state_facade_uses_canonical_fallback_only_without_governed_source() 
     ) as mock_load:
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
+        app.dependency_overrides[auth_deps.get_current_request_user] = (
+            lambda: auth_deps.RequestUser(
+                user_id="alice",
+                username="alice",
+                sub="alice",
+                roles=[],
+                scopes=[],
+                tenant_id="tenant-a",
+            )
         )
         client = TestClient(app)
         response = client.get(
@@ -637,13 +694,15 @@ def test_workspace_projection_prefers_case_state_lifecycle_fields(monkeypatch) -
     ):
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
+        app.dependency_overrides[auth_deps.get_current_request_user] = (
+            lambda: auth_deps.RequestUser(
+                user_id="alice",
+                username="alice",
+                sub="alice",
+                roles=[],
+                scopes=[],
+                tenant_id="tenant-a",
+            )
         )
         client = TestClient(app)
         response = client.get(
@@ -676,14 +735,24 @@ def test_state_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> Non
 
     with patch(
         "app.agent.api.router.load_structured_handover_state",
-        new=AsyncMock(side_effect=AssertionError("legacy RFQ document route must not load handover state")),
+        new=AsyncMock(
+            side_effect=AssertionError(
+                "legacy RFQ document route must not load handover state"
+            )
+        ),
     ) as mock_special_loader, patch(
         "app.agent.api.router._load_preferred_governed_workspace_source",
-        new=AsyncMock(side_effect=AssertionError("governed read helper should not be used for RFQ special-case reads")),
+        new=AsyncMock(
+            side_effect=AssertionError(
+                "governed read helper should not be used for RFQ special-case reads"
+            )
+        ),
     ):
         response = asyncio.run(
             state_mod.get_rfq_document(
-                raw_request=SimpleNamespace(headers={"X-Request-Id": "state-workspace-rfq-special"}),
+                raw_request=SimpleNamespace(
+                    headers={"X-Request-Id": "state-workspace-rfq-special"}
+                ),
                 thread_id="case-1",
                 user=user,
             )
@@ -698,7 +767,9 @@ def test_state_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> Non
     assert body["external_contact_allowed"] is False
     assert body["export_requires_consent"] is True
     assert body["final_approval_claim_allowed"] is False
-    assert body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
+    assert (
+        body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
+    )
     assert body["request_id"] == "state-workspace-rfq-special"
     assert "<html" not in response.body.decode("utf-8").lower()
     assert mock_special_loader.await_count == 0
@@ -707,12 +778,20 @@ def test_state_workspace_rfq_document_legacy_route_is_disabled_and_safe() -> Non
 def test_state_workspace_prefers_governed_source_before_canonical_state() -> None:
     auth_deps = importlib.import_module("app.services.auth.dependencies")
     state_mod = importlib.import_module("app.api.v1.endpoints.state")
-    from app.agent.state.models import AssertedClaim, ConversationMessage, GovernedSessionState
+    from app.agent.state.models import (
+        AssertedClaim,
+        ConversationMessage,
+        GovernedSessionState,
+    )
 
     governed_state = GovernedSessionState(
         analysis_cycle=4,
         conversation_messages=[
-            ConversationMessage(role="assistant", content="Governed Snapshot", created_at="2026-04-09T00:00:00+00:00"),
+            ConversationMessage(
+                role="assistant",
+                content="Governed Snapshot",
+                created_at="2026-04-09T00:00:00+00:00",
+            ),
         ],
     )
     governed_state.asserted.assertions["medium"] = AssertedClaim(
@@ -730,13 +809,15 @@ def test_state_workspace_prefers_governed_source_before_canonical_state() -> Non
     ):
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
+        app.dependency_overrides[auth_deps.get_current_request_user] = (
+            lambda: auth_deps.RequestUser(
+                user_id="alice",
+                username="alice",
+                sub="alice",
+                roles=[],
+                scopes=[],
+                tenant_id="tenant-a",
+            )
         )
         client = TestClient(app)
         response = client.get(
@@ -801,13 +882,15 @@ def test_state_workspace_uses_canonical_fallback_only_without_governed_source() 
     ):
         app = FastAPI()
         app.include_router(getattr(state_mod, "router"))
-        app.dependency_overrides[auth_deps.get_current_request_user] = lambda: auth_deps.RequestUser(
-            user_id="alice",
-            username="alice",
-            sub="alice",
-            roles=[],
-            scopes=[],
-            tenant_id="tenant-a",
+        app.dependency_overrides[auth_deps.get_current_request_user] = (
+            lambda: auth_deps.RequestUser(
+                user_id="alice",
+                username="alice",
+                sub="alice",
+                roles=[],
+                scopes=[],
+                tenant_id="tenant-a",
+            )
         )
         client = TestClient(app)
         response = client.get(

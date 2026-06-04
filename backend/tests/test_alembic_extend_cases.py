@@ -219,9 +219,9 @@ def test_payload_defaults_to_empty_jsonb(test_db_engine_at_head):
         result = conn.execute(
             text("SELECT payload FROM cases WHERE id = 'test-001'")
         ).scalar()
-        assert result == {} or result == "{}", (
-            f"Expected empty JSONB default, got: {result!r}"
-        )
+        assert (
+            result == {} or result == "{}"
+        ), f"Expected empty JSONB default, got: {result!r}"
         conn.execute(text("DELETE FROM cases WHERE id = 'test-001'"))
 
 

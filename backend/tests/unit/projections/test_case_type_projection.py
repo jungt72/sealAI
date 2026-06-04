@@ -4,7 +4,9 @@ from app.api.v1.projections.case_workspace import project_case_workspace
 from app.domain.case_type import CaseType
 
 
-def _workspace_state(*, system: dict | None = None, profile: dict | None = None) -> dict:
+def _workspace_state(
+    *, system: dict | None = None, profile: dict | None = None
+) -> dict:
     return {
         "conversation": {"thread_id": "case-type-projection"},
         "working_profile": {
@@ -59,7 +61,9 @@ def test_projection_maps_legacy_retrofit_to_replacement_reorder() -> None:
     assert projection.request_type == "retrofit"
 
 
-def test_projection_maps_routing_conversation_intent_before_legacy_request_type() -> None:
+def test_projection_maps_routing_conversation_intent_before_legacy_request_type() -> (
+    None
+):
     projection = project_case_workspace(
         _workspace_state(
             system={

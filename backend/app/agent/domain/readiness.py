@@ -1,6 +1,7 @@
 """
 Output Readiness Evaluation — deterministic checks for governed output release.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,7 +33,10 @@ def _governance_projection_blocks_output(governance_state: Dict[str, Any]) -> bo
         return True
     if governance_state.get("gate_failures"):
         return True
-    return any(str(conflict.get("severity") or "").upper() in {"CRITICAL", "BLOCKING_UNKNOWN"} for conflict in governance_state.get("conflicts", []))
+    return any(
+        str(conflict.get("severity") or "").upper() in {"CRITICAL", "BLOCKING_UNKNOWN"}
+        for conflict in governance_state.get("conflicts", [])
+    )
 
 
 def is_releasable(
@@ -121,7 +125,9 @@ def evaluate_output_readiness(
             ),
         )
 
-    if parameter_integrity_projection and not parameter_integrity_projection.get("usable_for_structured_step", True):
+    if parameter_integrity_projection and not parameter_integrity_projection.get(
+        "usable_for_structured_step", True
+    ):
         return OutputReadinessDecision(
             releasable=False,
             status="integrity_unusable",
@@ -131,7 +137,9 @@ def evaluate_output_readiness(
             ),
         )
 
-    if domain_scope_projection and not domain_scope_projection.get("usable_for_governed_step", True):
+    if domain_scope_projection and not domain_scope_projection.get(
+        "usable_for_governed_step", True
+    ):
         return OutputReadinessDecision(
             releasable=False,
             status="domain_scope_blocked",

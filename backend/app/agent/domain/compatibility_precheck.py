@@ -18,7 +18,9 @@ from app.agent.domain.material_evidence_cards import (
     validate_material_evidence_cards,
     valid_compliance_evidence_present,
 )
-from app.mcp.calculations.chemical_resistance import lookup as lookup_chemical_resistance
+from app.mcp.calculations.chemical_resistance import (
+    lookup as lookup_chemical_resistance,
+)
 
 
 CompatibilityStatus = Literal[
@@ -347,7 +349,11 @@ def _as_number(value: Any) -> float | None:
 
 
 def _all_text(profile: dict[str, Any], aliases: tuple[str, ...]) -> str:
-    return " ".join(_text(profile.get(alias)) for alias in aliases if profile.get(alias) not in (None, "", [], {}))
+    return " ".join(
+        _text(profile.get(alias))
+        for alias in aliases
+        if profile.get(alias) not in (None, "", [], {})
+    )
 
 
 def _has_concentration(profile: dict[str, Any]) -> tuple[str | None, bool]:
@@ -355,7 +361,11 @@ def _has_concentration(profile: dict[str, Any]) -> tuple[str | None, bool]:
     if _is_known_text(value):
         return field, True
     qualifiers = _text(profile.get("medium_qualifiers"))
-    if "%" in qualifiers or "konz" in qualifiers.casefold() or "concentration" in qualifiers.casefold():
+    if (
+        "%" in qualifiers
+        or "konz" in qualifiers.casefold()
+        or "concentration" in qualifiers.casefold()
+    ):
         return "medium_qualifiers", True
     return field, False
 
@@ -371,17 +381,16 @@ def _has_ph(profile: dict[str, Any]) -> tuple[str | None, bool]:
 
 
 def _has_explicit_evidence(profile: dict[str, Any]) -> tuple[list[str], bool]:
-    fields = [alias for alias in _EVIDENCE_ALIASES if _is_known_text(profile.get(alias))]
+    fields = [
+        alias for alias in _EVIDENCE_ALIASES if _is_known_text(profile.get(alias))
+    ]
     return fields, bool(fields)
 
 
 def _normalize_material_key(value: Any) -> str:
     text = _text(value).casefold()
     text = (
-        text.replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
+        text.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     )
     return _MATERIAL_NORMALIZATION.get(text, text)
 
@@ -500,7 +509,9 @@ def _temperature_limitation(
 def _card_requires_concentration(card: dict[str, Any]) -> bool:
     if bool(card.get("requires_concentration") or card.get("concentration_required")):
         return True
-    required = " ".join(_text(item).casefold() for item in _list_values(card.get("required_fields")))
+    required = " ".join(
+        _text(item).casefold() for item in _list_values(card.get("required_fields"))
+    )
     return "concentration" in required or "konzentration" in required
 
 
@@ -527,7 +538,9 @@ def _card_match_level(
     }
     material_family_values = {
         _normalize_material_key(value)
-        for value in _card_values(card, "material_family", "material_families", "family")
+        for value in _card_values(
+            card, "material_family", "material_families", "family"
+        )
     }
     medium_exact_values = {
         normalize_medium_lookup_key(value) or _text(value).casefold()
@@ -535,14 +548,20 @@ def _card_match_level(
     }
     medium_family_values = {
         normalize_medium_lookup_key(value) or _text(value).casefold()
-        for value in _card_values(card, "medium_family", "medium_families", "fluid_family")
+        for value in _card_values(
+            card, "medium_family", "medium_families", "fluid_family"
+        )
     }
 
     material_exact = material_key in material_exact_values
     material_family = material_key in material_family_values
     medium_exact = medium_key in medium_exact_values
-    medium_family_match = medium_key in medium_family_values or medium_family in medium_family_values
-    if not (material_exact or material_family) or not (medium_exact or medium_family_match):
+    medium_family_match = (
+        medium_key in medium_family_values or medium_family in medium_family_values
+    )
+    if not (material_exact or material_family) or not (
+        medium_exact or medium_family_match
+    ):
         return None
     explicit_level = _text(card.get("match_level")).casefold()
     if explicit_level in {"exact", "family"}:
@@ -556,7 +575,9 @@ def _evidence_ref_from_card(card: dict[str, Any]) -> CompatibilityEvidenceRef:
     ref_id = _card_id(card)
     limitations = [
         _text(item)
-        for item in _list_values(card.get("limitations") or card.get("evidence_limitations"))
+        for item in _list_values(
+            card.get("limitations") or card.get("evidence_limitations")
+        )
         if _text(item)
     ]
     return CompatibilityEvidenceRef(
@@ -564,11 +585,15 @@ def _evidence_ref_from_card(card: dict[str, Any]) -> CompatibilityEvidenceRef:
         card_id=_text(card.get("card_id") or card.get("id")) or ref_id,
         material=_text(card.get("material") or card.get("material_family")) or None,
         medium=_text(card.get("medium") or card.get("medium_family")) or None,
-        claim_level=_text(card.get("claim_level") or card.get("claim_level_max")) or None,
+        claim_level=_text(card.get("claim_level") or card.get("claim_level_max"))
+        or None,
         source_type=_text(card.get("source_type")) or "knowledge_card",
         source_title=_text(card.get("source_title") or card.get("title")) or None,
         source_url=_text(card.get("source_url") or card.get("url")) or None,
-        excerpt_short=_text(card.get("excerpt_short") or card.get("excerpt") or card.get("summary")) or None,
+        excerpt_short=_text(
+            card.get("excerpt_short") or card.get("excerpt") or card.get("summary")
+        )
+        or None,
         confidence=card.get("confidence"),
         limitations=limitations,
     )
@@ -595,7 +620,9 @@ def lookup_material_compatibility_evidence(
     validation_limitations: list[str] = []
     for result in validate_material_evidence_cards(_iter_evidence_cards(profile)):
         if not result.valid or result.normalized_card is None:
-            validation_limitations.append(f"invalid_evidence_card:{result.to_limitation()}")
+            validation_limitations.append(
+                f"invalid_evidence_card:{result.to_limitation()}"
+            )
             continue
         card = result.normalized_card
         match_level = _card_match_level(
@@ -672,7 +699,9 @@ def lookup_material_compatibility_evidence(
         evidence_summary=summary,
         evidence_limitations=_dedupe(limitations),
         has_exact_support=positive_exact and not has_negative,
-        has_family_only_support=positive_family and not positive_exact and not has_negative,
+        has_family_only_support=positive_family
+        and not positive_exact
+        and not has_negative,
         has_caution=has_caution,
         has_conflict=conflicting,
         has_temperature_gap=has_temperature_gap,
@@ -739,7 +768,9 @@ def _base_item(
     )
 
 
-def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> CompatibilityPrecheckItem:
+def build_material_medium_compatibility_precheck(
+    profile: dict[str, Any],
+) -> CompatibilityPrecheckItem:
     """Return a conservative compatibility precheck for the current profile."""
 
     medium_field, medium_raw = _value(profile, _MEDIUM_ALIASES)
@@ -748,7 +779,13 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
     concentration_field, has_concentration = _has_concentration(profile)
     ph_field, has_ph = _has_ph(profile)
     evidence_fields: list[str] = []
-    for field in (medium_field, material_field, temperature_field, concentration_field, ph_field):
+    for field in (
+        medium_field,
+        material_field,
+        temperature_field,
+        concentration_field,
+        ph_field,
+    ):
         if field and field not in evidence_fields:
             evidence_fields.append(field)
     for field in _EVIDENCE_CARD_ALIASES:
@@ -765,7 +802,9 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             medium_field=medium_field,
             material_field=material_field,
             temperature_field=temperature_field,
-            evidence_fields=[field for field in evidence_fields if field != medium_field],
+            evidence_fields=[
+                field for field in evidence_fields if field != medium_field
+            ],
             missing_fields=["medium"],
             status="missing_input",
             severity="blocking",
@@ -781,7 +820,9 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             medium_field=medium_field,
             material_field=material_field,
             temperature_field=temperature_field,
-            evidence_fields=[field for field in evidence_fields if field != material_field],
+            evidence_fields=[
+                field for field in evidence_fields if field != material_field
+            ],
             missing_fields=["material"],
             status="missing_input",
             severity="blocking",
@@ -792,12 +833,20 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             evidence_limitations=["missing_material"],
         )
 
-    if material_text.strip().casefold() in {"elastomer", "kunststoff", "dichtung", "werkstoff", "material"}:
+    if material_text.strip().casefold() in {
+        "elastomer",
+        "kunststoff",
+        "dichtung",
+        "werkstoff",
+        "material",
+    }:
         return _base_item(
             medium_field=medium_field,
             material_field=material_field,
             temperature_field=temperature_field,
-            evidence_fields=[field for field in evidence_fields if field != material_field],
+            evidence_fields=[
+                field for field in evidence_fields if field != material_field
+            ],
             ambiguous_fields=["material"],
             status="ambiguous_input",
             severity="blocking",
@@ -809,12 +858,17 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             evidence_limitations=["ambiguous_material"],
         )
 
-    if normalized_medium_key in _GENERIC_MEDIUM_KEYS or classification.status == "family_only":
+    if (
+        normalized_medium_key in _GENERIC_MEDIUM_KEYS
+        or classification.status == "family_only"
+    ):
         return _base_item(
             medium_field=medium_field,
             material_field=material_field,
             temperature_field=temperature_field,
-            evidence_fields=[field for field in evidence_fields if field != medium_field],
+            evidence_fields=[
+                field for field in evidence_fields if field != medium_field
+            ],
             ambiguous_fields=["medium"],
             status="ambiguous_input",
             severity="blocking",
@@ -826,8 +880,12 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             evidence_limitations=["ambiguous_medium"],
         )
 
-    compliance_evidence_fields, has_compliance_evidence = _has_explicit_evidence(profile)
-    has_card_compliance_evidence = valid_compliance_evidence_present(_iter_evidence_cards(profile))
+    compliance_evidence_fields, has_compliance_evidence = _has_explicit_evidence(
+        profile
+    )
+    has_card_compliance_evidence = valid_compliance_evidence_present(
+        _iter_evidence_cards(profile)
+    )
     if _compliance_requested(profile, medium_text) and not (
         has_compliance_evidence or has_card_compliance_evidence
     ):
@@ -859,7 +917,9 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             medium_field=medium_field,
             material_field=material_field,
             temperature_field=temperature_field,
-            evidence_fields=[field for field in evidence_fields if field != temperature_field],
+            evidence_fields=[
+                field for field in evidence_fields if field != temperature_field
+            ],
             missing_fields=["temperature_c"],
             status="missing_input",
             severity="blocking",
@@ -905,7 +965,9 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             evidence_summary=(
                 "Evidenzbewertung bleibt begrenzt, weil Konzentration oder pH-Kontext fuer dieses Medium fehlen."
             ),
-            evidence_limitations=_dedupe(["missing_concentration", *evidence_lookup.evidence_limitations]),
+            evidence_limitations=_dedupe(
+                ["missing_concentration", *evidence_lookup.evidence_limitations]
+            ),
         )
 
     if evidence_lookup.evidence_status == "no_evidence":
@@ -952,7 +1014,11 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             if evidence_lookup.has_concentration_gap
             else "material_medium_precheck"
         )
-        missing = ["concentration"] if evidence_lookup.has_concentration_gap else ["compatibility_evidence"]
+        missing = (
+            ["concentration"]
+            if evidence_lookup.has_concentration_gap
+            else ["compatibility_evidence"]
+        )
         return _base_item(
             medium_field=medium_field,
             material_field=material_field,
@@ -961,7 +1027,9 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             ph_field=ph_field,
             evidence_fields=evidence_fields,
             missing_fields=missing,
-            status="missing_input" if evidence_lookup.has_concentration_gap else "insufficient_evidence",
+            status="missing_input"
+            if evidence_lookup.has_concentration_gap
+            else "insufficient_evidence",
             severity="blocking",
             compatibility_claim_type=claim_type,
             human_readable_reason="Vorhandene Evidenzkarten decken den aktuellen Material/Medium-Kontext nicht ausreichend ab.",
@@ -973,12 +1041,18 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
         )
 
     try:
-        table_result = lookup_chemical_resistance(medium=medium_text, material=material_text)
+        table_result = lookup_chemical_resistance(
+            medium=medium_text, material=material_text
+        )
     except KeyError:
         table_result = None
 
     table_caution = table_result is not None and table_result.rating in {"C", "X"}
-    if evidence_lookup.has_family_only_support or evidence_lookup.has_caution or table_caution:
+    if (
+        evidence_lookup.has_family_only_support
+        or evidence_lookup.has_caution
+        or table_caution
+    ):
         return _base_item(
             medium_field=medium_field,
             material_field=material_field,
@@ -986,7 +1060,9 @@ def build_material_medium_compatibility_precheck(profile: dict[str, Any]) -> Com
             concentration_field=concentration_field,
             ph_field=ph_field,
             evidence_fields=evidence_fields,
-            status="caution_zone" if table_result is None or table_result.rating != "X" else "insufficient_evidence",
+            status="caution_zone"
+            if table_result is None or table_result.rating != "X"
+            else "insufficient_evidence",
             severity="high" if table_caution else "medium",
             compatibility_claim_type="material_medium_precheck",
             human_readable_reason="Evidenz reicht nur fuer Orientierung oder markiert einen Pruefpunkt.",

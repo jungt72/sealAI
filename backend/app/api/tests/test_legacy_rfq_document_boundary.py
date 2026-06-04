@@ -30,7 +30,9 @@ def _assert_legacy_document_disabled(response) -> None:
     assert body["external_contact_allowed"] is False
     assert body["export_requires_consent"] is True
     assert body["final_approval_claim_allowed"] is False
-    assert body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
+    assert (
+        body["preview_service_boundary"] == "RfqPreviewService.create_preview_for_case"
+    )
     assert "<html" not in response.body.decode("utf-8").lower()
     return body
 
@@ -45,7 +47,9 @@ async def test_agent_workspace_rfq_document_route_is_disabled_and_safe() -> None
 @pytest.mark.asyncio
 async def test_state_workspace_rfq_document_route_is_disabled_and_safe() -> None:
     response = await get_rfq_document(
-        raw_request=SimpleNamespace(headers={"X-Request-Id": "state-rfq-document-boundary"}),
+        raw_request=SimpleNamespace(
+            headers={"X-Request-Id": "state-rfq-document-boundary"}
+        ),
         thread_id="case-1",
         user=_TEST_USER,
     )

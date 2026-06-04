@@ -4,6 +4,7 @@ The service owns tolerance-aware and provenance-aware conflict decisions.
 Reducers and state builders should call this instead of re-implementing
 field comparison rules locally.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -92,7 +93,9 @@ class ConflictDetectionService:
         provenance_priority: Mapping[str, int] | None = None,
     ) -> None:
         self.field_tolerances = dict(field_tolerances or DEFAULT_FIELD_TOLERANCES)
-        self.provenance_priority = dict(provenance_priority or DEFAULT_PROVENANCE_PRIORITY)
+        self.provenance_priority = dict(
+            provenance_priority or DEFAULT_PROVENANCE_PRIORITY
+        )
 
     def detect(
         self,
@@ -110,11 +113,19 @@ class ConflictDetectionService:
 
         for candidate in candidates:
             field_name = candidate.field_name
-            found, current_value, current_provenance = self._find_current_value(current, field_name)
-            if not found or self._values_equivalent(field_name, current_value, candidate.value, tolerances):
+            found, current_value, current_provenance = self._find_current_value(
+                current, field_name
+            )
+            if not found or self._values_equivalent(
+                field_name, current_value, candidate.value, tolerances
+            ):
                 continue
-            severity = self._severity(current_provenance, candidate.provenance, priority)
-            question = self._resolution_question(field_name, current_value, candidate.value)
+            severity = self._severity(
+                current_provenance, candidate.provenance, priority
+            )
+            question = self._resolution_question(
+                field_name, current_value, candidate.value
+            )
             conflicts.append(
                 DetectedConflict(
                     field_name=field_name,
@@ -145,14 +156,21 @@ class ConflictDetectionService:
         conflicts: list[DetectedConflict] = []
         sorted_candidates = sorted(
             candidates,
-            key=lambda item: (self._priority(item.provenance), item.source_turn_index or 0),
+            key=lambda item: (
+                self._priority(item.provenance),
+                item.source_turn_index or 0,
+            ),
             reverse=True,
         )
         winner = sorted_candidates[0]
         for candidate in sorted_candidates[1:]:
-            if self._values_equivalent(field_name, winner.value, candidate.value, tolerances):
+            if self._values_equivalent(
+                field_name, winner.value, candidate.value, tolerances
+            ):
                 continue
-            question = self._resolution_question(field_name, winner.value, candidate.value)
+            question = self._resolution_question(
+                field_name, winner.value, candidate.value
+            )
             conflicts.append(
                 DetectedConflict(
                     field_name=field_name,
@@ -173,7 +191,11 @@ class ConflictDetectionService:
     def _result(self, conflicts: list[DetectedConflict]) -> ConflictDetectionResult:
         if not conflicts:
             return ConflictDetectionResult()
-        severity = "blocking" if any(conflict.severity == "blocking" for conflict in conflicts) else "warning"
+        severity = (
+            "blocking"
+            if any(conflict.severity == "blocking" for conflict in conflicts)
+            else "warning"
+        )
         return ConflictDetectionResult(
             conflicts=tuple(conflicts),
             conflict_severity=severity,
@@ -186,12 +208,16 @@ class ConflictDetectionService:
     ) -> list[ConflictCandidate]:
         if isinstance(payload, Mapping):
             return [
-                ConflictCandidate(field_name=str(key), value=value, provenance="user_stated")
+                ConflictCandidate(
+                    field_name=str(key), value=value, provenance="user_stated"
+                )
                 for key, value in payload.items()
             ]
         return list(payload)
 
-    def _find_current_value(self, current: Mapping[str, Any], field_name: str) -> tuple[bool, Any, str]:
+    def _find_current_value(
+        self, current: Mapping[str, Any], field_name: str
+    ) -> tuple[bool, Any, str]:
         direct = current.get(field_name)
         if direct is not None:
             return True, self._unwrap_value(direct), self._extract_provenance(direct)
@@ -228,21 +254,40 @@ class ConflictDetectionService:
         right_num = _to_float(right)
         normalized_field = _NUMERIC_ALIASES.get(field_name, field_name)
         if left_num is not None and right_num is not None:
-            tolerance = tolerances.get(normalized_field) or tolerances.get(field_name) or {}
+            tolerance = (
+                tolerances.get(normalized_field) or tolerances.get(field_name) or {}
+            )
             absolute = float(tolerance.get("absolute", 0.0))
-            relative = float(tolerance.get("relative", 0.0)) * max(abs(left_num), abs(right_num), 1.0)
+            relative = float(tolerance.get("relative", 0.0)) * max(
+                abs(left_num), abs(right_num), 1.0
+            )
             return abs(left_num - right_num) <= max(absolute, relative)
         return _canonical(left) == _canonical(right)
 
-    def _severity(self, current_provenance: str, candidate_provenance: str, priority: Mapping[str, int]) -> str:
-        current_priority = int(priority.get(current_provenance, priority.get("unknown", 0)))
-        candidate_priority = int(priority.get(candidate_provenance, priority.get("unknown", 0)))
+    def _severity(
+        self,
+        current_provenance: str,
+        candidate_provenance: str,
+        priority: Mapping[str, int],
+    ) -> str:
+        current_priority = int(
+            priority.get(current_provenance, priority.get("unknown", 0))
+        )
+        candidate_priority = int(
+            priority.get(candidate_provenance, priority.get("unknown", 0))
+        )
         return "blocking" if current_priority >= candidate_priority else "warning"
 
     def _priority(self, provenance: str) -> int:
-        return int(self.provenance_priority.get(provenance, self.provenance_priority.get("unknown", 0)))
+        return int(
+            self.provenance_priority.get(
+                provenance, self.provenance_priority.get("unknown", 0)
+            )
+        )
 
-    def _resolution_question(self, field_name: str, current_value: Any, candidate_value: Any) -> str:
+    def _resolution_question(
+        self, field_name: str, current_value: Any, candidate_value: Any
+    ) -> str:
         return (
             f"Ich sehe zwei unterschiedliche Angaben fuer {field_name}: "
             f"{current_value!r} und {candidate_value!r}. Welche Angabe soll fuer den Fall gelten?"

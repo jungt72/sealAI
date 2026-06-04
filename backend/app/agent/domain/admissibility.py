@@ -12,6 +12,7 @@ AdmissibilityResult.basis_hash mirrors the decision_basis_hash so that
 the inquiry payload is always tied to the exact state snapshot it was
 evaluated against.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -49,6 +50,7 @@ _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 # Result type
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class AdmissibilityResult:
     """Deterministic inquiry admissibility verdict.
@@ -74,6 +76,7 @@ class AdmissibilityResult:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_normalized_keys(state: Any) -> set[str]:
     """Return the set of field names present in normalized.parameters."""
@@ -140,6 +143,7 @@ def _compute_basis_hash(state: Any) -> str:
     """Compact deterministic hash over the normalized+derived snapshot."""
     try:
         from app.agent.state.persistence import compute_decision_basis_hash
+
         return compute_decision_basis_hash(state)
     except Exception:
         pass
@@ -159,6 +163,7 @@ def _compute_basis_hash(state: Any) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def check_inquiry_admissibility(state: Any) -> AdmissibilityResult:
     """Deterministic admissibility check — no LLM, no side effects.

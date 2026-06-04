@@ -15,6 +15,7 @@ exists yet; add when one does, surfaced in the P1-1 audit):
   * ``risk_flags`` — RWDR review flags are computed per case in
     `rwdr_mvp_brief` (`engineering_review_flags`), not a static pack catalog.
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

@@ -15,6 +15,7 @@ Tests cover:
 11. material_core bridge — custom provider is honoured
 12. Provider swap — set_default_domain_data_provider replaces the module singleton
 """
+
 from __future__ import annotations
 
 import pytest
@@ -35,6 +36,7 @@ from app.agent.material_core import load_governed_material_records
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_record(**kwargs) -> GovernedMaterialRecord:
     defaults = dict(
         record_id="test-rec-001",
@@ -52,6 +54,7 @@ def _make_record(**kwargs) -> GovernedMaterialRecord:
 # ---------------------------------------------------------------------------
 # 1. Field types and defaults
 # ---------------------------------------------------------------------------
+
 
 class TestGovernedMaterialRecordFields:
     def test_required_fields_accepted(self):
@@ -112,6 +115,7 @@ class TestGovernedMaterialRecordFields:
 # 2. release_status / conflict_status validation
 # ---------------------------------------------------------------------------
 
+
 class TestGovernedMaterialRecordValidation:
     @pytest.mark.parametrize("rs", ["active", "deprecated", "draft"])
     def test_valid_release_statuses_accepted(self, rs):
@@ -135,6 +139,7 @@ class TestGovernedMaterialRecordValidation:
 # ---------------------------------------------------------------------------
 # 3. is_expired property
 # ---------------------------------------------------------------------------
+
 
 class TestIsExpired:
     def test_no_valid_until_is_not_expired(self):
@@ -165,6 +170,7 @@ class TestIsExpired:
 # 4. is_active property
 # ---------------------------------------------------------------------------
 
+
 class TestIsActive:
     def test_active_status_not_expired_is_active(self):
         rec = _make_record(release_status="active", valid_until=None)
@@ -188,6 +194,7 @@ class TestIsActive:
 # 5. DomainDataProvider Protocol structural check
 # ---------------------------------------------------------------------------
 
+
 class TestDomainDataProviderProtocol:
     def test_dummy_provider_satisfies_protocol(self):
         provider = DummyDomainDataProvider()
@@ -206,6 +213,7 @@ class TestDomainDataProviderProtocol:
 # 6–9. DummyDomainDataProvider
 # ---------------------------------------------------------------------------
 
+
 class TestDummyDomainDataProvider:
     def setup_method(self):
         self.provider = DummyDomainDataProvider()
@@ -221,9 +229,9 @@ class TestDummyDomainDataProvider:
     def test_all_demo_records_are_demo_only(self):
         """Phase 0B.1 quarantine: all dummy records must carry is_demo_only=True."""
         for rec in self.provider.list_material_records():
-            assert rec.is_demo_only is True, (
-                f"Record {rec.record_id!r} has is_demo_only=False — expected True for demo registry"
-            )
+            assert (
+                rec.is_demo_only is True
+            ), f"Record {rec.record_id!r} has is_demo_only=False — expected True for demo registry"
 
     def test_get_material_record_known_id(self):
         rec = self.provider.get_material_record("registry-ptfe-g25-acme")
@@ -247,7 +255,9 @@ class TestDummyDomainDataProvider:
         active = self.provider.list_active_material_records()
         # All demo records are draft, so none should pass is_active
         for rec in active:
-            assert rec.is_active, f"{rec.record_id!r} in active list but is_active is False"
+            assert (
+                rec.is_active
+            ), f"{rec.record_id!r} in active list but is_active is False"
 
     def test_coverage_metadata_present_on_demo_record(self):
         rec = self.provider.get_material_record("registry-ptfe-g25-acme")
@@ -265,6 +275,7 @@ class TestDummyDomainDataProvider:
 # ---------------------------------------------------------------------------
 # 10–11. material_core bridge
 # ---------------------------------------------------------------------------
+
 
 class TestLoadGovernedMaterialRecordsBridge:
     def test_returns_nonempty_list(self):
@@ -295,6 +306,7 @@ class TestLoadGovernedMaterialRecordsBridge:
 # ---------------------------------------------------------------------------
 # 12. Provider swap
 # ---------------------------------------------------------------------------
+
 
 class TestProviderSwap:
     def test_set_default_provider_replaces_singleton(self):

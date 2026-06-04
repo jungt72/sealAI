@@ -112,7 +112,9 @@ def test_check_passes_basic_known_type_and_positive_geometry(seal_type: str) -> 
     assert result.status is NormCheckStatus.PASS
     assert result.applies is True
     assert result.escalation is EscalationPolicy.NO_ESCALATION
-    assert any(finding.code == "din_iso_basic_precheck_passed" for finding in result.findings)
+    assert any(
+        finding.code == "din_iso_basic_precheck_passed" for finding in result.findings
+    )
 
 
 @pytest.mark.parametrize(
@@ -127,7 +129,9 @@ def test_check_passes_basic_known_type_and_positive_geometry(seal_type: str) -> 
         ("seal_width_mm", "abc", "din_iso_numeric_field_invalid"),
     ],
 )
-def test_check_fails_invalid_numeric_geometry(field: str, value, expected_code: str) -> None:
+def test_check_fails_invalid_numeric_geometry(
+    field: str, value, expected_code: str
+) -> None:
     result = Din3760Iso6194Module().check(_valid_context(**{field: value}))
     assert result.status is NormCheckStatus.FAIL
     assert result.escalation is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW
@@ -156,7 +160,9 @@ def test_check_fails_when_housing_is_not_larger_than_shaft() -> None:
         ({"temperature_c": -300}, "din_iso_temperature_extreme_review"),
     ],
 )
-def test_check_review_required_for_conservative_red_flags(override, expected_code: str) -> None:
+def test_check_review_required_for_conservative_red_flags(
+    override, expected_code: str
+) -> None:
     result = Din3760Iso6194Module().check(_valid_context(**override))
     assert result.status is NormCheckStatus.REVIEW_REQUIRED
     assert result.escalation is EscalationPolicy.REQUIRE_MANUFACTURER_REVIEW

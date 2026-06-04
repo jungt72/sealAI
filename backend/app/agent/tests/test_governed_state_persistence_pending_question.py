@@ -4,11 +4,17 @@ import pytest
 
 from app.agent.api import loaders
 from app.agent.graph import GraphState
-from app.agent.state.models import PendingQuestion, SlotAnswerBinding, GovernedSessionState
+from app.agent.state.models import (
+    PendingQuestion,
+    SlotAnswerBinding,
+    GovernedSessionState,
+)
 
 
 @pytest.mark.asyncio
-async def test_post_graph_commit_persists_pending_question_and_slot_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_post_graph_commit_persists_pending_question_and_slot_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     initial = GovernedSessionState(user_turn_index=4)
     pending = PendingQuestion(
         target_field="medium",
@@ -46,8 +52,12 @@ async def test_post_graph_commit_persists_pending_question_and_slot_binding(monk
     async def fake_persist_live_governed_state(**kwargs: object) -> None:
         persisted.append(kwargs["state"])  # type: ignore[index]
 
-    monkeypatch.setattr(loaders, "_load_live_governed_state", fake_load_live_governed_state)
-    monkeypatch.setattr(loaders, "_persist_live_governed_state", fake_persist_live_governed_state)
+    monkeypatch.setattr(
+        loaders, "_load_live_governed_state", fake_load_live_governed_state
+    )
+    monkeypatch.setattr(
+        loaders, "_persist_live_governed_state", fake_persist_live_governed_state
+    )
 
     updated = await loaders._update_governed_state_post_graph(
         current_user=object(),  # type: ignore[arg-type]
@@ -62,6 +72,11 @@ async def test_post_graph_commit_persists_pending_question_and_slot_binding(monk
     assert updated.pending_question.status == "open"
     assert updated.last_slot_answer_binding is not None
     assert updated.last_slot_answer_binding.raw_value == "chlor"
-    assert updated.governed_answer_context["pending_question"]["target_field"] == "medium"
-    assert updated.governed_answer_context["slot_answer_bindings"][0]["target_field"] == "medium"
+    assert (
+        updated.governed_answer_context["pending_question"]["target_field"] == "medium"
+    )
+    assert (
+        updated.governed_answer_context["slot_answer_bindings"][0]["target_field"]
+        == "medium"
+    )
     assert updated.user_turn_index == 6

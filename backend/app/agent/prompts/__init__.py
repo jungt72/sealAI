@@ -120,7 +120,9 @@ import hashlib
 from prompts.builder import PromptBuilder  # top-level prompts package
 
 REASONING_PROMPT_VERSION: str = PromptBuilder.PROMPT_VERSION
-REASONING_PROMPT_HASH: str = hashlib.sha256(REASONING_PROMPT_VERSION.encode()).hexdigest()[:12]
+REASONING_PROMPT_HASH: str = hashlib.sha256(
+    REASONING_PROMPT_VERSION.encode()
+).hexdigest()[:12]
 
 FAST_GUIDANCE_PROMPT_TEMPLATE_ID = "fast/guidance.j2"
 # Backward-compatible export for old imports. This is the template id, not the
@@ -136,7 +138,9 @@ _FAST_GUIDANCE_PROMPT_MODE = {
 
 FAST_GUIDANCE_PROMPT_VERSION = "fast_guidance_prompt_v1"
 FAST_GUIDANCE_PROMPT_HASH = hashlib.sha256(
-    (PROMPTS_DIR / FAST_GUIDANCE_PROMPT_TEMPLATE_ID).read_text(encoding="utf-8").encode()
+    (PROMPTS_DIR / FAST_GUIDANCE_PROMPT_TEMPLATE_ID)
+    .read_text(encoding="utf-8")
+    .encode()
 ).hexdigest()[:12]
 
 
@@ -148,7 +152,9 @@ def build_fast_guidance_prompt(
     current_params: str = "",
 ) -> str:
     """Return the fast-path system prompt adapted to the result_form."""
-    mode = _FAST_GUIDANCE_PROMPT_MODE.get(result_form, _FAST_GUIDANCE_PROMPT_MODE["direct_answer"])
+    mode = _FAST_GUIDANCE_PROMPT_MODE.get(
+        result_form, _FAST_GUIDANCE_PROMPT_MODE["direct_answer"]
+    )
     return prompts.render(
         FAST_GUIDANCE_PROMPT_TEMPLATE_ID,
         {

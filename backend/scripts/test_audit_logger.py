@@ -63,7 +63,9 @@ def main() -> int:
     print("── Step 1: Firing SSoT structured-path request ─────────────────")
     t0 = time.monotonic()
     try:
-        resp = requests.post(chat_endpoint, json=payload, headers=headers, stream=True, timeout=60)
+        resp = requests.post(
+            chat_endpoint, json=payload, headers=headers, stream=True, timeout=60
+        )
     except Exception as exc:
         print(f"CONNECT ERROR: {exc}")
         return 1
@@ -130,15 +132,20 @@ def main() -> int:
 
     if target_row is None:
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc)
         recent = [
-            r for r in rows
+            r
+            for r in rows
             if r.get("phase") == "final_response_node:structured"
-            and (now - r["created_at"].replace(tzinfo=timezone.utc)).total_seconds() < 60
+            and (now - r["created_at"].replace(tzinfo=timezone.utc)).total_seconds()
+            < 60
         ]
         if recent:
             target_row = recent[0]
-            print("NOTE: Session-ID not matched exactly (SSoT uses inquiry_id internally).")
+            print(
+                "NOTE: Session-ID not matched exactly (SSoT uses inquiry_id internally)."
+            )
             print("      Matched by phase + recency instead (within 60s).")
 
     if target_row:

@@ -67,23 +67,34 @@ async def test_worker_persists_paperless_extracted_candidates_after_indexing(
         "temperature_min_c": 0,
         "temperature_max_c": 80,
         "text": "Indexed candidate text.",
-        "metadata": {"document_id": doc.document_id, "snippet_source": "qdrant_payload"},
+        "metadata": {
+            "document_id": doc.document_id,
+            "snippet_source": "qdrant_payload",
+        },
     }
 
     def _ingest(_path: str, **kwargs: object) -> None:
         ingest_calls.append(dict(kwargs))
 
-    def _load_candidates(docs: list[RagDocument], **kwargs: object) -> tuple[list[dict[str, object]], dict[str, object]]:
+    def _load_candidates(
+        docs: list[RagDocument], **kwargs: object
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
         assert docs == [doc]
         assert kwargs["tenant_id"] == RAG_SHARED_TENANT_ID
-        return [candidate], {"enabled": True, "status": "loaded", "loaded_candidate_count": 1}
+        return [candidate], {
+            "enabled": True,
+            "status": "loaded",
+            "loaded_candidate_count": 1,
+        }
 
     monkeypatch.setattr(
         "app.services.rag.material_evidence_dry_run.load_material_evidence_indexed_snippet_raw_items",
         _load_candidates,
     )
 
-    await worker.process_rag_document(session, doc, ingest_func=_ingest, use_thread=False)
+    await worker.process_rag_document(
+        session, doc, ingest_func=_ingest, use_thread=False
+    )
 
     assert ingest_calls[0]["source_system"] == "paperless"
     assert doc.status == "indexed"
@@ -108,15 +119,21 @@ async def test_worker_skips_candidate_extraction_for_non_paperless_docs(
     def _ingest(_path: str, **_kwargs: object) -> None:
         return None
 
-    def _fail_loader(*_args: object, **_kwargs: object) -> tuple[list[dict[str, object]], dict[str, object]]:
-        raise AssertionError("non-Paperless docs must not run Paperless candidate extraction")
+    def _fail_loader(
+        *_args: object, **_kwargs: object
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+        raise AssertionError(
+            "non-Paperless docs must not run Paperless candidate extraction"
+        )
 
     monkeypatch.setattr(
         "app.services.rag.material_evidence_dry_run.load_material_evidence_indexed_snippet_raw_items",
         _fail_loader,
     )
 
-    await worker.process_rag_document(session, doc, ingest_func=_ingest, use_thread=False)
+    await worker.process_rag_document(
+        session, doc, ingest_func=_ingest, use_thread=False
+    )
 
     assert doc.status == "indexed"
     assert doc.extraction_status == "indexed"

@@ -23,7 +23,9 @@ from app.models.case_state_snapshot import CaseStateSnapshot
 from app.services.auth.dependencies import RequestUser
 
 
-FIXTURE_PATH = Path(__file__).parents[3] / "tests" / "fixtures" / "rwdr_golden_cases.json"
+FIXTURE_PATH = (
+    Path(__file__).parents[3] / "tests" / "fixtures" / "rwdr_golden_cases.json"
+)
 
 
 def _golden_cases() -> list[dict[str, Any]]:
@@ -49,17 +51,28 @@ async def test_rwdr_golden_case_end_to_end(case: dict[str, Any]) -> None:
         await update_rwdr_confirmations(
             case_id=case_id,
             body=RwdrConfirmationsRequest(
-                decisions=[RwdrConfirmationDecision(**decision) for decision in case["confirmation_decisions"]]
+                decisions=[
+                    RwdrConfirmationDecision(**decision)
+                    for decision in case["confirmation_decisions"]
+                ]
             ),
             user=_user(),
             session=session,
         )
 
-    evaluation = await evaluate_rwdr_case(case_id=case_id, user=_user(), session=session)
-    brief = await generate_persisted_rwdr_case_brief(case_id=case_id, user=_user(), session=session)
-    markdown = await export_rwdr_case_markdown(case_id=case_id, user=_user(), session=session)
+    evaluation = await evaluate_rwdr_case(
+        case_id=case_id, user=_user(), session=session
+    )
+    brief = await generate_persisted_rwdr_case_brief(
+        case_id=case_id, user=_user(), session=session
+    )
+    markdown = await export_rwdr_case_markdown(
+        case_id=case_id, user=_user(), session=session
+    )
     pdf = await export_rwdr_case_pdf(case_id=case_id, user=_user(), session=session)
-    snapshots = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    snapshots = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
 
     assert brief["status"] == case["expected_status"]
     assert pdf.media_type == "application/pdf"
@@ -84,7 +97,9 @@ async def test_rwdr_golden_case_end_to_end(case: dict[str, Any]) -> None:
     for field, expected_value in case["expected_computed_values"].items():
         assert computed[field]["value"] == expected_value
 
-    questions = "\n".join(str(item) for item in evaluation.get("manufacturer_questions", ()))
+    questions = "\n".join(
+        str(item) for item in evaluation.get("manufacturer_questions", ())
+    )
     for expected in case["expected_manufacturer_questions_contains"]:
         assert expected.casefold() in questions.casefold()
 
@@ -120,13 +135,21 @@ async def test_rwdr_golden_case_end_to_end(case: dict[str, Any]) -> None:
     ):
         assert title in markdown["content"]
 
-    repeat = await generate_persisted_rwdr_case_brief(case_id=case_id, user=_user(), session=session)
+    repeat = await generate_persisted_rwdr_case_brief(
+        case_id=case_id, user=_user(), session=session
+    )
     assert _deterministic_brief(repeat) == _deterministic_brief(brief)
 
 
 @pytest.mark.asyncio
-async def test_rwdr_golden_demo_case_revision_diff_shows_confirmation_and_computation() -> None:
-    case = next(item for item in _golden_cases() if item["fixture_id"] == "simple_gearbox_replacement")
+async def test_rwdr_golden_demo_case_revision_diff_shows_confirmation_and_computation() -> (
+    None
+):
+    case = next(
+        item
+        for item in _golden_cases()
+        if item["fixture_id"] == "simple_gearbox_replacement"
+    )
     session = _GoldenRwdrFakeSession()
     created = await analyze_rwdr_inquiry(
         body=RwdrAnalyzeRequest(raw_inquiry=case["raw_inquiry_text"]),
@@ -137,14 +160,21 @@ async def test_rwdr_golden_demo_case_revision_diff_shows_confirmation_and_comput
     await update_rwdr_confirmations(
         case_id=case_id,
         body=RwdrConfirmationsRequest(
-            decisions=[RwdrConfirmationDecision(**decision) for decision in case["confirmation_decisions"]]
+            decisions=[
+                RwdrConfirmationDecision(**decision)
+                for decision in case["confirmation_decisions"]
+            ]
         ),
         user=_user(),
         session=session,
     )
-    await generate_persisted_rwdr_case_brief(case_id=case_id, user=_user(), session=session)
+    await generate_persisted_rwdr_case_brief(
+        case_id=case_id, user=_user(), session=session
+    )
     await export_rwdr_case_markdown(case_id=case_id, user=_user(), session=session)
-    listed = await list_rwdr_case_snapshots(case_id=case_id, user=_user(), session=session)
+    listed = await list_rwdr_case_snapshots(
+        case_id=case_id, user=_user(), session=session
+    )
     diff = await diff_rwdr_case_snapshots(
         case_id=case_id,
         from_revision=1,
@@ -154,9 +184,14 @@ async def test_rwdr_golden_demo_case_revision_diff_shows_confirmation_and_comput
     )
 
     field_diffs = {item["field"]: item for item in diff["evidence_field_diffs"]}
-    assert field_diffs["shaft_diameter_d1_mm"]["change_type"] == "confirmation_status_changed"
+    assert (
+        field_diffs["shaft_diameter_d1_mm"]["change_type"]
+        == "confirmation_status_changed"
+    )
     assert {
-        item["field"] for item in diff["computed_values_diff"]["added"] if isinstance(item, dict)
+        item["field"]
+        for item in diff["computed_values_diff"]["added"]
+        if isinstance(item, dict)
     } >= {"circumferential_speed_mps"}
 
 
@@ -171,7 +206,9 @@ def _deterministic_brief(brief: dict[str, Any]) -> dict[str, Any]:
 
 
 class _ScalarResult:
-    def __init__(self, row: object | None = None, rows: list[object] | None = None) -> None:
+    def __init__(
+        self, row: object | None = None, rows: list[object] | None = None
+    ) -> None:
         self.row = row
         self.rows = rows or ([] if row is None else [row])
 

@@ -55,12 +55,21 @@ def _conditions(flt) -> dict:
     """key -> matched value from a (stubbed) qdrant Filter."""
     out: dict = {}
     for cond in getattr(flt, "must", []) or []:
-        out[getattr(cond, "key", None)] = getattr(getattr(cond, "match", None), "value", None)
+        out[getattr(cond, "key", None)] = getattr(
+            getattr(cond, "match", None), "value", None
+        )
     return out
 
 
 def _user(tenant_id="tenant-A", user_id="u1") -> RequestUser:
-    return RequestUser(user_id=user_id, username="u1", sub=user_id, roles=[], scopes=[], tenant_id=tenant_id)
+    return RequestUser(
+        user_id=user_id,
+        username="u1",
+        sub=user_id,
+        roles=[],
+        scopes=[],
+        tenant_id=tenant_id,
+    )
 
 
 @pytest.fixture()
@@ -71,13 +80,16 @@ def client(monkeypatch):
     # test is order-independent.
     for mod in (memory_core, memory_api):
         monkeypatch.setattr(mod.settings, "ltm_enable", True, raising=False)
-        monkeypatch.setattr(mod.settings, "qdrant_collection_ltm", "sealai_ltm_test", raising=False)
+        monkeypatch.setattr(
+            mod.settings, "qdrant_collection_ltm", "sealai_ltm_test", raising=False
+        )
     monkeypatch.setattr(memory_core, "_get_qdrant_client", lambda: rec)
     monkeypatch.setattr(memory_api, "_get_qdrant_client", lambda: rec)
     return rec
 
 
 # --- the security invariant: the filter pins user AND tenant -----------------
+
 
 def test_build_user_filter_pins_user_and_tenant():
     conds = _conditions(memory_core._build_user_filter(user="u1", tenant_id="tenant-A"))
@@ -91,6 +103,7 @@ def test_build_user_filter_requires_tenant():
 
 
 # --- export / delete forward the tenant into the Qdrant query ----------------
+
 
 def test_export_scopes_query_by_tenant(client):
     memory_core.ltm_export_all(user="u1", tenant_id="tenant-A")
@@ -118,6 +131,7 @@ def test_delete_requires_tenant():
 
 
 # --- create stamps an authoritative tenant the client cannot override --------
+
 
 @pytest.mark.asyncio
 async def test_create_writes_authoritative_tenant_and_ignores_client_override(client):

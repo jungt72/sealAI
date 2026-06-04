@@ -5,6 +5,7 @@ Each scenario is pinned at BOTH guard layers:
   - A.2  ``final_guard.validate_final_output`` on a   — knowledge-turn backstop
          knowledge-route ``NonTechnicalAnswerContext``
 """
+
 from __future__ import annotations
 
 import pytest
@@ -48,7 +49,10 @@ def test_s3_neutral_render_passes_both_layers() -> None:
     assert answer is not None
     safe, _category = check_fast_path_output(answer.answer)
     assert safe is True
-    assert validate_final_output(answer.answer, context=_knowledge_context()).decision == "pass"
+    assert (
+        validate_final_output(answer.answer, context=_knowledge_context()).decision
+        == "pass"
+    )
 
 
 # --- A.3: the two ORIGINAL reported leak forms — BLOCK at both layers ----------

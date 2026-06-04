@@ -11,7 +11,9 @@ from app.agent.graph.nodes.dispatch_contract_node import dispatch_contract_node
 from app.agent.graph.nodes.dispatch_node import dispatch_node
 from app.agent.graph.nodes.export_profile_node import export_profile_node
 from app.agent.graph.nodes.governance_node import governance_node
-from app.agent.graph.nodes.governed_answer_composer_node import governed_answer_composer_node
+from app.agent.graph.nodes.governed_answer_composer_node import (
+    governed_answer_composer_node,
+)
 from app.agent.graph.nodes.matching_node import matching_node
 from app.agent.graph.nodes.norm_node import norm_node
 from app.agent.graph.nodes.output_contract_node import output_contract_node
@@ -117,7 +119,10 @@ async def test_rwdr_pressure_context_answer_is_bound_and_not_asked_again() -> No
     assert second.last_slot_answer_binding is not None
     assert second.last_slot_answer_binding.target_field == "pressure_bar"
     assert "meinst du damit den Druck direkt" not in second.output_reply
-    assert second.pending_question is None or second.pending_question.target_field != "pressure_bar"
+    assert (
+        second.pending_question is None
+        or second.pending_question.target_field != "pressure_bar"
+    )
 
 
 class _NonDemoProvider:
@@ -199,7 +204,9 @@ def _matchable_state() -> GraphState:
 
 
 @pytest.mark.asyncio
-async def test_full_ready_case_reaches_bounded_manufacturer_shortlist(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_full_ready_case_reaches_bounded_manufacturer_shortlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         matching_node_module,
         "get_default_domain_data_provider",
@@ -231,10 +238,14 @@ async def test_full_ready_case_reaches_bounded_manufacturer_shortlist(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_governed_answers_use_llm_wording_pass_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_governed_answers_use_llm_wording_pass_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true")
 
-    async def fake_compose(self: object, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def fake_compose(
+        self: object, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         assert request.deterministic_reply
         return GovernedAnswerComposerOutput(
             answer_markdown=(

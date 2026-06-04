@@ -40,7 +40,9 @@ def _strings(value: Any, *, limit: int = 6) -> list[str]:
 
 
 def _candidate_label(candidate: Any) -> str | None:
-    label = str(_get(candidate, "label") or _get(candidate, "material_key") or "").strip()
+    label = str(
+        _get(candidate, "label") or _get(candidate, "material_key") or ""
+    ).strip()
     if not label:
         return None
     status = str(
@@ -106,7 +108,9 @@ def _material_slice(material_intelligence: Any) -> IntelligenceSlice:
         blockers.extend(_strings(_get(candidate, "blocking_unknowns"), limit=4))
         blockers.extend(_strings(_get(candidate, "counterindicators"), limit=4))
         evidence_refs.extend(_strings(_get(candidate, "evidence_ref_ids"), limit=6))
-    blockers.extend(_strings(_get(material_intelligence, "missing_field_hints"), limit=6))
+    blockers.extend(
+        _strings(_get(material_intelligence, "missing_field_hints"), limit=6)
+    )
     for evidence in list(_get(material_intelligence, "evidence", []) or []):
         evidence_refs.extend(_strings(_get(evidence, "id"), limit=1))
 
@@ -132,10 +136,7 @@ def _challenge_slice(challenge_intelligence: Any) -> IntelligenceSlice:
     findings = list(_get(challenge_intelligence, "findings", []) or [])
     hypotheses = list(_get(challenge_intelligence, "hypotheses", []) or [])
     finding_titles = _strings(
-        [
-            _get(finding, "title") or _get(finding, "summary")
-            for finding in findings
-        ],
+        [_get(finding, "title") or _get(finding, "summary") for finding in findings],
         limit=6,
     )
     hypothesis_labels = _strings(
@@ -172,7 +173,9 @@ def _challenge_slice(challenge_intelligence: Any) -> IntelligenceSlice:
 def _document_slice(evidence_summary: Any) -> IntelligenceSlice:
     evidence_present = bool(_get(evidence_summary, "evidence_present", False))
     supported = _strings(_get(evidence_summary, "evidence_supported_topics"), limit=6)
-    source_findings = _strings(_get(evidence_summary, "source_backed_findings"), limit=6)
+    source_findings = _strings(
+        _get(evidence_summary, "source_backed_findings"), limit=6
+    )
     evidence_gaps = _strings(_get(evidence_summary, "evidence_gaps"), limit=6)
     open_points = _strings(_get(evidence_summary, "unresolved_open_points"), limit=6)
     count = int(_get(evidence_summary, "evidence_count", 0) or 0)
@@ -228,10 +231,7 @@ def _overall_status(
 ) -> str:
     if rfq.status in {"rfq_basis_ready", "handover_ready"}:
         return "rfq_basis"
-    if any(
-        slice_.blockers
-        for slice_ in (challenge, material, document, rfq)
-    ):
+    if any(slice_.blockers for slice_ in (challenge, material, document, rfq)):
         return "review_needed"
     if (
         medium.status != "unavailable"
@@ -286,17 +286,19 @@ def build_v91_workspace_projection(
     challenge = _challenge_slice(challenge_intelligence)
     document = _document_slice(evidence_summary)
     rfq = _rfq_slice(rfq_status, manufacturer_questions)
-    primary_question = str(_get(communication_context, "primary_question") or "").strip()
+    primary_question = str(
+        _get(communication_context, "primary_question") or ""
+    ).strip()
     open_points = _strings(_get(communication_context, "open_points_summary"), limit=6)
     coverage_gaps = _strings(_get(completeness, "coverage_gaps"), limit=6)
     parameter_source = IntelligenceSlice(
         slice_id="challenge",
         status="open" if open_points or coverage_gaps else "available",
         claim_level="case_projection",
-        summary=(
-            "Parameterstatus aus governed Case- und Completeness-Projektion."
+        summary=("Parameterstatus aus governed Case- und Completeness-Projektion."),
+        signals=_strings(
+            _get(communication_context, "confirmed_facts_summary"), limit=6
         ),
-        signals=_strings(_get(communication_context, "confirmed_facts_summary"), limit=6),
         blockers=_strings([*open_points, *coverage_gaps], limit=8),
         not_for_release_decisions=True,
     )

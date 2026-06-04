@@ -1,4 +1,5 @@
 """Tests for H3: Visibility filter enforcement in _build_qdrant_filter()."""
+
 from __future__ import annotations
 
 import pytest
@@ -7,6 +8,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # _build_qdrant_filter — unit tests
 # ---------------------------------------------------------------------------
+
 
 def test_no_filters_returns_none():
     from app.services.rag.rag_orchestrator import _build_qdrant_filter
@@ -39,10 +41,12 @@ def test_visibility_user_id_adds_should_clause():
     """When _visibility_user_id is set, a should-clause must be added."""
     from app.services.rag.rag_orchestrator import _build_qdrant_filter
 
-    result = _build_qdrant_filter({
-        "tenant_id": ["user-123", "sealai"],
-        "_visibility_user_id": "user-123",
-    })
+    result = _build_qdrant_filter(
+        {
+            "tenant_id": ["user-123", "sealai"],
+            "_visibility_user_id": "user-123",
+        }
+    )
     assert result is not None
 
     # must-clause: tenant scoping
@@ -73,19 +77,24 @@ def test_visibility_user_id_key_not_leaked_as_qdrant_field():
     """_visibility_user_id must not appear as a Qdrant must/should field key."""
     from app.services.rag.rag_orchestrator import _build_qdrant_filter
 
-    result = _build_qdrant_filter({
-        "tenant_id": "user-x",
-        "_visibility_user_id": "user-x",
-    })
+    result = _build_qdrant_filter(
+        {
+            "tenant_id": "user-x",
+            "_visibility_user_id": "user-x",
+        }
+    )
     assert result is not None
 
-    all_keys = [c.get("key", "") for clause_list in result.values() for c in clause_list]
+    all_keys = [
+        c.get("key", "") for clause_list in result.values() for c in clause_list
+    ]
     assert "_visibility_user_id" not in all_keys
 
 
 # ---------------------------------------------------------------------------
 # hybrid_retrieve — visibility propagation integration test
 # ---------------------------------------------------------------------------
+
 
 def test_hybrid_retrieve_injects_visibility_user_id(monkeypatch: pytest.MonkeyPatch):
     """hybrid_retrieve must pass _visibility_user_id to _build_qdrant_filter."""
@@ -106,8 +115,16 @@ def test_hybrid_retrieve_injects_visibility_user_id(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(
         ro,
         "_qdrant_search_with_retry",
-        lambda *a, **kw: ([], {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1,
-                                "retry_backoff_ms": None, "error": None}),
+        lambda *a, **kw: (
+            [],
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
+        ),
     )
     monkeypatch.setattr(ro, "_bm25_search", lambda *a, **kw: ([], None))
     monkeypatch.setattr(ro, "_fallback_external_search", lambda *a, **kw: [])
@@ -127,7 +144,9 @@ def test_hybrid_retrieve_injects_visibility_user_id(monkeypatch: pytest.MonkeyPa
     assert matching[0]["_visibility_user_id"] == "user-42"
 
 
-def test_hybrid_retrieve_visibility_falls_back_to_tenant(monkeypatch: pytest.MonkeyPatch):
+def test_hybrid_retrieve_visibility_falls_back_to_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """When user_id is omitted, tenant acts as the visibility user id."""
     from app.services.rag import rag_orchestrator as ro
 
@@ -146,8 +165,16 @@ def test_hybrid_retrieve_visibility_falls_back_to_tenant(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         ro,
         "_qdrant_search_with_retry",
-        lambda *a, **kw: ([], {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1,
-                                "retry_backoff_ms": None, "error": None}),
+        lambda *a, **kw: (
+            [],
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
+        ),
     )
     monkeypatch.setattr(ro, "_bm25_search", lambda *a, **kw: ([], None))
     monkeypatch.setattr(ro, "_fallback_external_search", lambda *a, **kw: [])

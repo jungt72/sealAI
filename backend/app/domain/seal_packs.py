@@ -8,6 +8,7 @@ explicitly-marked SHALLOW STUBS.
 ⛔ STOP SIGN: a new seal type is added as a `DomainPack` (one entry in `_PACKS`),
 never as another `if seal_type == …` branch in the core or another shallow stub.
 """
+
 from __future__ import annotations
 
 from app.domain.domain_pack import DomainPack
@@ -88,7 +89,11 @@ def required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
     if pack is not None:
         return pack.required_fields()
     # SHALLOW STUBS (no DomainPack) — behaviour preserved, not real packs.
-    if seal_type in {SealType.o_ring.value, SealType.x_ring.value, SealType.backup_ring.value}:
+    if seal_type in {
+        SealType.o_ring.value,
+        SealType.x_ring.value,
+        SealType.backup_ring.value,
+    }:
         return ORING_REQUIRED_FIELDS
     if seal_family in {SealFamily.hydraulic.value, SealFamily.pneumatic.value}:
         return HYDRAULIC_REQUIRED_FIELDS
@@ -98,6 +103,7 @@ def required_fields_for(seal_type: str, seal_family: str) -> tuple[str, ...]:
 # --- calc/risk routing seam (P1-1 PR3) -------------------------------------- #
 # Consumers ask the pack about a calc id / engineering path instead of matching
 # rwdr strings in the core. Each helper mirrors exactly one legacy check.
+
 
 def pack_for_calc_id(calc_id: str) -> DomainPack | None:
     """Pack that owns ``calc_id`` by id pattern (legacy: `== "rwdr"` /

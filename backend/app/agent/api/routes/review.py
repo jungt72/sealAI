@@ -144,11 +144,14 @@ async def _run_override_analysis_turn(
         )
     return payload
 
+
 def _find_session(session_id: str) -> AgentState | None:
     return SESSION_STORE.get(session_id)
 
+
 def _save_session(session_id: str, state: AgentState) -> None:
     SESSION_STORE[session_id] = state
+
 
 def _build_review_handover_response(
     state: AgentState,
@@ -184,13 +187,16 @@ def _build_review_handover_response(
         reply=reply,
     )
 
+
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
 def _as_tuple(value: Any) -> tuple[str, ...]:
     if isinstance(value, (list, tuple, set)):
-        return tuple(str(item) for item in value if item is not None and str(item).strip())
+        return tuple(
+            str(item) for item in value if item is not None and str(item).strip()
+        )
     if value is None or value == "":
         return ()
     return (str(value),)
@@ -257,9 +263,7 @@ def _build_critical_review_input(
         ),
         matching_package=CriticalReviewMatchingPackage(
             status=str(
-                matching_state.get("status")
-                or rfq_state.get("matching_status")
-                or ""
+                matching_state.get("status") or rfq_state.get("matching_status") or ""
             ),
             selected_manufacturer_ref=selected_manufacturer or None,
         ),
@@ -277,18 +281,24 @@ def _build_critical_review_input(
         ),
     )
 
+
 def _apply_review_decision(state: AgentState, request: ReviewRequest) -> AgentState:
-    from copy import deepcopy # noqa: PLC0415
+    from copy import deepcopy  # noqa: PLC0415
+
     new_state = deepcopy(state)
     case_state = new_state.get("case_state") or {}
     case_meta = case_state.get("case_meta") or {}
-    case_meta["lifecycle_status"] = "review_completed" if request.action == "approve" else "review_rejected"
+    case_meta["lifecycle_status"] = (
+        "review_completed" if request.action == "approve" else "review_rejected"
+    )
     case_state["case_meta"] = case_meta
     new_state["case_state"] = case_state
     return new_state
 
+
 def _governed_native_review_commit(state: AgentState) -> tuple[AgentState, str]:
-    from copy import deepcopy # noqa: PLC0415
+    from copy import deepcopy  # noqa: PLC0415
+
     new_state = deepcopy(state)
     case_state = new_state.get("case_state") or {}
     case_meta = case_state.get("case_meta") or {}
@@ -297,12 +307,15 @@ def _governed_native_review_commit(state: AgentState) -> tuple[AgentState, str]:
     new_state["case_state"] = case_state
     return new_state, "governed_graph"
 
+
 @router.post("/review", response_model=ReviewResponse)
 async def review_endpoint(
     request: ReviewRequest,
     current_user: RequestUser = Depends(get_current_request_user),
 ):
-    state = await require_structured_review_state(current_user=current_user, session_id=request.session_id)
+    state = await require_structured_review_state(
+        current_user=current_user, session_id=request.session_id
+    )
 
     outcome = None
     if request.action == "approve":
@@ -340,6 +353,7 @@ async def review_endpoint(
         outcome=outcome,
     )
 
+
 @router.post("/review/seed", response_model=ReviewSeedResponse)
 async def review_seed_endpoint() -> ReviewSeedResponse:
     return ReviewSeedResponse(
@@ -376,7 +390,9 @@ async def review_workflow_endpoint(
     )
 
 
-@router.post("/review/workflow/{session_id}/decision", response_model=HumanReviewWorkflowResponse)
+@router.post(
+    "/review/workflow/{session_id}/decision", response_model=HumanReviewWorkflowResponse
+)
 async def review_workflow_decision_endpoint(
     request: HumanReviewDecisionRequest,
     session_id: str = Path(...),
@@ -416,6 +432,7 @@ async def review_workflow_decision_endpoint(
         reply="Review decision persisted.",
     )
 
+
 @router.patch("/session/{session_id}/override", response_model=OverrideResponse)
 async def session_override_endpoint(
     request: OverrideRequest,
@@ -423,9 +440,12 @@ async def session_override_endpoint(
     current_user: RequestUser = Depends(get_current_request_user),
 ):
     if not os.getenv("REDIS_URL"):
-        raise HTTPException(status_code=503, detail="Live governed state store is not configured")
+        raise HTTPException(
+            status_code=503, detail="Live governed state store is not configured"
+        )
 
-    from app.agent.api.loaders import _load_live_governed_state # noqa: PLC0415
+    from app.agent.api.loaders import _load_live_governed_state  # noqa: PLC0415
+
     governed = await _load_live_governed_state(
         current_user=current_user,
         session_id=session_id,
@@ -454,7 +474,9 @@ async def session_override_endpoint(
 
         seen = set(applied_sheet_ids)
         event = SheetEvent(
-            event_type="sheet_bulk_input" if len(request.overrides) > 1 else "sheet_field_edit",
+            event_type="sheet_bulk_input"
+            if len(request.overrides) > 1
+            else "sheet_field_edit",
             fields=[
                 SheetFieldValue(field_name=o.field_name, value=o.value, unit=o.unit)
                 for o in request.overrides
@@ -466,7 +488,11 @@ async def session_override_endpoint(
         result = apply_sheet_event(governed, event, seen_event_ids=seen)
         if result.already_applied:
             already_applied = True
-            observed, normalized, asserted = governed.observed, governed.normalized, governed.asserted
+            observed, normalized, asserted = (
+                governed.observed,
+                governed.normalized,
+                governed.asserted,
+            )
             applied_fields = []
         else:
             observed = result.state.observed
@@ -511,7 +537,8 @@ async def session_override_endpoint(
         )
     governed = governed.model_copy(update=state_update)
 
-    from app.agent.api.loaders import _persist_live_governed_state # noqa: PLC0415
+    from app.agent.api.loaders import _persist_live_governed_state  # noqa: PLC0415
+
     await _persist_live_governed_state(
         current_user=current_user,
         session_id=session_id,
@@ -545,25 +572,39 @@ async def session_override_endpoint(
             blocking_unknowns=list(response_governed.asserted.blocking_unknowns),
             conflict_flags=list(response_governed.asserted.conflict_flags),
             validity_limits=list(response_governed.governance.validity_limits),
-            open_validation_points=list(response_governed.governance.open_validation_points),
+            open_validation_points=list(
+                response_governed.governance.open_validation_points
+            ),
         ),
         reply=analysis_payload.get("reply") if analysis_payload else None,
-        answer_markdown=analysis_payload.get("answer_markdown") if analysis_payload else None,
-        response_class=analysis_payload.get("response_class") if analysis_payload else None,
-        structured_state=analysis_payload.get("structured_state") if analysis_payload else None,
+        answer_markdown=analysis_payload.get("answer_markdown")
+        if analysis_payload
+        else None,
+        response_class=analysis_payload.get("response_class")
+        if analysis_payload
+        else None,
+        structured_state=analysis_payload.get("structured_state")
+        if analysis_payload
+        else None,
         run_meta=analysis_payload.get("run_meta") if analysis_payload else None,
     )
 
-@router.post("/session/{session_id}/case-delta", response_model=CaseDeltaDecisionResponse)
+
+@router.post(
+    "/session/{session_id}/case-delta", response_model=CaseDeltaDecisionResponse
+)
 async def session_case_delta_decision_endpoint(
     request: CaseDeltaDecisionRequest,
     session_id: str = Path(...),
     current_user: RequestUser = Depends(get_current_request_user),
 ):
     if not os.getenv("REDIS_URL"):
-        raise HTTPException(status_code=503, detail="Live governed state store is not configured")
+        raise HTTPException(
+            status_code=503, detail="Live governed state store is not configured"
+        )
 
-    from app.agent.api.loaders import _load_live_governed_state # noqa: PLC0415
+    from app.agent.api.loaders import _load_live_governed_state  # noqa: PLC0415
+
     governed = await _load_live_governed_state(
         current_user=current_user,
         session_id=session_id,
@@ -581,7 +622,9 @@ async def session_case_delta_decision_endpoint(
         field_names=request.field_names or None,
     )
     if not selected_fields:
-        raise HTTPException(status_code=422, detail="No matching proposed fields selected")
+        raise HTTPException(
+            status_code=422, detail="No matching proposed fields selected"
+        )
 
     rev_before = 0
     marker = governed.persistence_marker
@@ -663,7 +706,8 @@ async def session_case_delta_decision_endpoint(
     )
     updated = _with_case_event(updated, event=decision_event)
 
-    from app.agent.api.loaders import _persist_live_governed_state # noqa: PLC0415
+    from app.agent.api.loaders import _persist_live_governed_state  # noqa: PLC0415
+
     await _persist_live_governed_state(
         current_user=current_user,
         session_id=session_id,

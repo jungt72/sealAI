@@ -35,7 +35,12 @@ class ActiveCaseProcessAnswerResult:
 
 
 def is_active_case_process_answer_composer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_ACTIVE_CASE_PROCESS_ANSWER_COMPOSER", "true").strip().lower() in _TRUE_VALUES
+    return (
+        os.getenv("SEALAI_ENABLE_ACTIVE_CASE_PROCESS_ANSWER_COMPOSER", "true")
+        .strip()
+        .lower()
+        in _TRUE_VALUES
+    )
 
 
 async def build_active_case_process_answer(
@@ -75,8 +80,12 @@ async def build_active_case_process_answer(
     attempted = True
     try:
         answer = await asyncio.wait_for(
-            _compose_process_answer_with_llm(context=context, deterministic_fallback=fallback),
-            timeout=float(os.getenv("SEALAI_ACTIVE_CASE_PROCESS_ANSWER_TIMEOUT_S", "8.0")),
+            _compose_process_answer_with_llm(
+                context=context, deterministic_fallback=fallback
+            ),
+            timeout=float(
+                os.getenv("SEALAI_ACTIVE_CASE_PROCESS_ANSWER_TIMEOUT_S", "8.0")
+            ),
         )
         return ActiveCaseProcessAnswerResult(
             answer_markdown=answer,
@@ -109,10 +118,23 @@ def _build_process_context(
     turn_decision: TurnDecision | None,
     resume_decision: ActiveCaseResumeDecision,
 ) -> dict[str, Any]:
-    pending = getattr(governed_state, "pending_question", None) if governed_state is not None else None
-    recent_messages = list(getattr(governed_state, "conversation_messages", []) or [])[-8:] if governed_state is not None else []
-    assertions = getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
-    missing_fields = list(getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", []) or [])
+    pending = (
+        getattr(governed_state, "pending_question", None)
+        if governed_state is not None
+        else None
+    )
+    recent_messages = (
+        list(getattr(governed_state, "conversation_messages", []) or [])[-8:]
+        if governed_state is not None
+        else []
+    )
+    assertions = (
+        getattr(getattr(governed_state, "asserted", None), "assertions", {}) or {}
+    )
+    missing_fields = list(
+        getattr(getattr(governed_state, "asserted", None), "blocking_unknowns", [])
+        or []
+    )
     known_facts = []
     for field_name, claim in list(assertions.items())[:4]:
         value = getattr(claim, "asserted_value", None)
@@ -130,15 +152,19 @@ def _build_process_context(
         if resume_decision.pending_question_restored
         else ""
     )
-    pending_field = (
-        str(resume_decision.resume_target_field or "")
-        or (str(getattr(pending, "target_field", "") or "") if pending is not None else "")
+    pending_field = str(resume_decision.resume_target_field or "") or (
+        str(getattr(pending, "target_field", "") or "") if pending is not None else ""
     )
     return {
         "latest_user_message": str(latest_user_message or "").strip(),
-        "context_recall": _asks_context_recall(str(latest_user_message or "").casefold()),
+        "context_recall": _asks_context_recall(
+            str(latest_user_message or "").casefold()
+        ),
         "recent_messages": [
-            {"role": str(getattr(message, "role", "") or ""), "content": str(getattr(message, "content", "") or "")}
+            {
+                "role": str(getattr(message, "role", "") or ""),
+                "content": str(getattr(message, "content", "") or ""),
+            }
             for message in recent_messages
             if str(getattr(message, "content", "") or "").strip()
         ],
@@ -148,8 +174,12 @@ def _build_process_context(
         "pending_field": pending_field,
         "pending_field_label": _field_label(pending_field) if pending_field else "",
         "pending_reason": _pending_reason(pending_field),
-        "answer_obligations": list(getattr(turn_decision, "answer_obligations", []) or []),
-        "mutation_policy": str(getattr(turn_decision, "mutation_policy", "forbidden") or "forbidden"),
+        "answer_obligations": list(
+            getattr(turn_decision, "answer_obligations", []) or []
+        ),
+        "mutation_policy": str(
+            getattr(turn_decision, "mutation_policy", "forbidden") or "forbidden"
+        ),
         "resume_strategy": resume_decision.resume_strategy,
         "resume_reason": resume_decision.resume_reason,
         "resume_target_question": resume_decision.resume_target_question or "",
@@ -166,7 +196,11 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
     resume_strategy = str(context.get("resume_strategy") or "").strip()
     slot_answer_detected = bool(context.get("slot_answer_detected"))
     pending_reason = str(context.get("pending_reason") or "").strip()
-    known_facts = context.get("known_facts") if isinstance(context.get("known_facts"), list) else []
+    known_facts = (
+        context.get("known_facts")
+        if isinstance(context.get("known_facts"), list)
+        else []
+    )
     context_recall = _asks_context_recall(message)
 
     if context_recall:
@@ -194,7 +228,9 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
 
     if known_facts:
         facts = ", ".join(
-            f"{item.get('label')}: {item.get('value')}" for item in known_facts if item.get("value")
+            f"{item.get('label')}: {item.get('value')}"
+            for item in known_facts
+            if item.get("value")
         )
         state_line = f"Aktuell halte ich als Arbeitsstand fest: {facts}."
     else:
@@ -216,7 +252,10 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
         )
     elif pending_question and pending_reason and intro != pending_reason:
         bridge = pending_reason
-    elif resume_strategy == "answer_then_reprioritize_next_question" and resume_target_question:
+    elif (
+        resume_strategy == "answer_then_reprioritize_next_question"
+        and resume_target_question
+    ):
         bridge = (
             "Die vorherige offene Frage ist nach aktuellem Arbeitsstand nicht mehr "
             "der beste naechste Schritt. Ich priorisiere deshalb die naechste offene Angabe."
@@ -230,7 +269,9 @@ def _deterministic_process_answer(context: dict[str, Any]) -> str:
             else ""
         )
 
-    fallback = "\n\n".join(part for part in (intro, state_line, bridge, follow_up) if str(part).strip())
+    fallback = "\n\n".join(
+        part for part in (intro, state_line, bridge, follow_up) if str(part).strip()
+    )
     return render_communication_template(
         "active_case_process_answer",
         {
@@ -259,17 +300,25 @@ def _asks_context_recall(message: str) -> bool:
 
 def _context_recall_intro(context: dict[str, Any]) -> str:
     latest = str(context.get("latest_user_message") or "").strip().casefold()
-    recent = context.get("recent_messages") if isinstance(context.get("recent_messages"), list) else []
+    recent = (
+        context.get("recent_messages")
+        if isinstance(context.get("recent_messages"), list)
+        else []
+    )
     for item in reversed(recent):
         if not isinstance(item, dict):
             continue
         if str(item.get("role") or "") != "user":
             continue
         content = str(item.get("content") or "").strip()
-        if not content or content.casefold() == latest or _looks_like_social_ack(content):
+        if (
+            not content
+            or content.casefold() == latest
+            or _looks_like_social_ack(content)
+        ):
             continue
         return (
-            f"Du hattest mich zuletzt hierzu abgeholt: \"{_truncate(content, 180)}\". "
+            f'Du hattest mich zuletzt hierzu abgeholt: "{_truncate(content, 180)}". '
             "Ich habe das im laufenden Dichtungsfall als fachliche Frage im Kontext "
             "deiner Auslegung behandelt."
         )
@@ -469,7 +518,9 @@ def _fallback_question_for_field(field: str) -> str:
 
 
 def _asks_why_current_field(message: str) -> bool:
-    return any(token in message for token in ("warum", "wozu", "weshalb", "wieso", "wichtig"))
+    return any(
+        token in message for token in ("warum", "wozu", "weshalb", "wieso", "wichtig")
+    )
 
 
 def _safe_reason(exc: Exception) -> str:

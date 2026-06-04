@@ -32,14 +32,24 @@ def _user() -> RequestUser:
 
 def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fail_governed(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("knowledge debug trace must not invoke governed case runtime")
+        raise AssertionError(
+            "knowledge debug trace must not invoke governed case runtime"
+        )
 
     async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("knowledge debug trace must not persist governed case state")
+        raise AssertionError(
+            "knowledge debug trace must not persist governed case state"
+        )
 
-    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_light_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.loaders._persist_live_governed_state", fail_persist
+    )
 
 
 def _no_bridge_context(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -134,11 +144,15 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
             session_id="debug-composer-success",
             conversation_turns=(
                 KnowledgeConversationTurn(role="user", content="Was bedeutet Shore A?"),
-                KnowledgeConversationTurn(role="assistant", content="Shore A beschreibt Elastomerhaerte."),
+                KnowledgeConversationTurn(
+                    role="assistant", content="Shore A beschreibt Elastomerhaerte."
+                ),
             ),
         )
 
-    monkeypatch.setattr("app.agent.api.dispatch._load_live_knowledge_session_context", load_context)
+    monkeypatch.setattr(
+        "app.agent.api.dispatch._load_live_knowledge_session_context", load_context
+    )
     monkeypatch.setattr(
         "app.agent.api.dispatch._persist_live_knowledge_session_context",
         AsyncMock(return_value=None),
@@ -162,7 +176,10 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
     )
 
     response = await chat_endpoint(
-        ChatRequest(message="Was bedeutet Shore A bei Dichtungswerkstoffen?", session_id="debug-composer-success"),
+        ChatRequest(
+            message="Was bedeutet Shore A bei Dichtungswerkstoffen?",
+            session_id="debug-composer-success",
+        ),
         current_user=_user(),
     )
     context = captured["request"].context
@@ -173,12 +190,16 @@ async def test_knowledge_debug_trace_enabled_with_composer_success(
     assert debug["composer_attempted"] is True
     assert debug["composer_succeeded"] is True
     assert debug["evidence_count"] == len(context.evidence_items)
-    expected_source_types = list(dict.fromkeys(item.source_type for item in context.evidence_items))
+    expected_source_types = list(
+        dict.fromkeys(item.source_type for item in context.evidence_items)
+    )
     assert debug["evidence_source_types"] == expected_source_types
     assert debug["evidence_source_types"]
     assert debug["history_count"] == len(context.recent_history)
     assert response.reply
-    assert response.answer_markdown == "**PTFE kurz:** Zusammengesetzte Expertenantwort."
+    assert (
+        response.answer_markdown == "**PTFE kurz:** Zusammengesetzte Expertenantwort."
+    )
     assert response.answer_markdown == response.reply
 
 
@@ -200,7 +221,10 @@ async def test_knowledge_debug_trace_enabled_with_composer_fallback(
     )
 
     response = await chat_endpoint(
-        ChatRequest(message="Was bedeutet Shore A bei Dichtungswerkstoffen?", session_id="debug-composer-fallback"),
+        ChatRequest(
+            message="Was bedeutet Shore A bei Dichtungswerkstoffen?",
+            session_id="debug-composer-fallback",
+        ),
         current_user=_user(),
     )
     debug = _knowledge_debug(response)
@@ -316,7 +340,9 @@ async def test_knowledge_debug_trace_does_not_pollute_fast_or_governed_paths(
             run_meta={"version_provenance": {"test": True}},
         )
 
-    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", governed_stub)
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response", governed_stub
+    )
 
     governed_response = await chat_endpoint(
         ChatRequest(

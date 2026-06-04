@@ -50,6 +50,7 @@ _RFQ_DOCUMENT_LEGACY_DISABLED_PAYLOAD = {
     "preview_service_boundary": "RfqPreviewService.create_preview_for_case",
 }
 
+
 @router.get("/cases", response_model=List[CaseListItemResponse])
 async def list_cases(
     limit: int = Query(50, ge=1, le=200),
@@ -58,6 +59,7 @@ async def list_cases(
     tenant_id, owner_id, _ = _canonical_scope(current_user, case_id="cases")
     items = await list_cases_async(user_id=owner_id, tenant_id=tenant_id, limit=limit)
     return [CaseListItemResponse(**item) for item in items]
+
 
 @router.get("/cases/{case_id}", response_model=CaseMetadataResponse)
 async def get_case_metadata(
@@ -74,7 +76,10 @@ async def get_case_metadata(
         raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found")
     return CaseMetadataResponse(**case_data)
 
-@router.get("/cases/{case_id}/snapshots/latest", response_model=GovernedSnapshotResponse)
+
+@router.get(
+    "/cases/{case_id}/snapshots/latest", response_model=GovernedSnapshotResponse
+)
 async def get_latest_case_snapshot(
     case_id: str,
     current_user: RequestUser = Depends(get_current_request_user),
@@ -86,7 +91,9 @@ async def get_latest_case_snapshot(
         user_id=owner_id,
     )
     if not snapshot:
-        raise HTTPException(status_code=404, detail=f"No snapshots found for case '{case_id}'")
+        raise HTTPException(
+            status_code=404, detail=f"No snapshots found for case '{case_id}'"
+        )
 
     return GovernedSnapshotResponse(
         case_number=snapshot.case_number,
@@ -96,7 +103,11 @@ async def get_latest_case_snapshot(
         created_at=snapshot.created_at,
     )
 
-@router.get("/cases/{case_id}/snapshots", response_model=List[GovernedSnapshotRevisionListItemResponse])
+
+@router.get(
+    "/cases/{case_id}/snapshots",
+    response_model=List[GovernedSnapshotRevisionListItemResponse],
+)
 async def list_case_snapshots(
     case_id: str,
     limit: int = Query(50, ge=1, le=200),
@@ -118,7 +129,10 @@ async def list_case_snapshots(
         for s in snapshots
     ]
 
-@router.get("/cases/{case_id}/snapshots/{revision}", response_model=GovernedSnapshotResponse)
+
+@router.get(
+    "/cases/{case_id}/snapshots/{revision}", response_model=GovernedSnapshotResponse
+)
 async def get_case_snapshot_by_revision(
     case_id: str,
     revision: int = Path(..., ge=0),
@@ -145,6 +159,7 @@ async def get_case_snapshot_by_revision(
         created_at=snapshot.created_at,
     )
 
+
 @router.get("/workspace/{case_id}", response_model=CaseWorkspaceProjection)
 async def get_workspace_projection(
     case_id: str,
@@ -164,7 +179,9 @@ async def get_workspace_projection(
         )
     if not governed:
         if revision is not None:
-            raise HTTPException(status_code=404, detail=f"Snapshot revision {revision} missing")
+            raise HTTPException(
+                status_code=404, detail=f"Snapshot revision {revision} missing"
+            )
         governed = await _load_live_governed_state(
             current_user=current_user,
             session_id=case_id,
@@ -172,6 +189,7 @@ async def get_workspace_projection(
         )
 
     return project_case_workspace_from_governed_state(governed, chat_id=case_id)
+
 
 @router.get("/workspace/{case_id}/rfq-document")
 async def get_workspace_rfq_document(

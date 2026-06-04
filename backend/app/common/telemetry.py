@@ -38,7 +38,9 @@ def _instrument_fastapi(app: FastAPI) -> None:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
         from opentelemetry.instrumentation.requests import RequestsInstrumentor
     except ImportError:
-        logger.warning("OpenTelemetry instrumentation not installed – skipping FastAPI/Requests instrumentation.")
+        logger.warning(
+            "OpenTelemetry instrumentation not installed – skipping FastAPI/Requests instrumentation."
+        )
         return
 
     FastAPIInstrumentor().instrument_app(app)
@@ -46,6 +48,7 @@ def _instrument_fastapi(app: FastAPI) -> None:
 
     try:
         from opentelemetry.instrumentation.redis import RedisInstrumentor
+
         RedisInstrumentor().instrument()
     except ImportError:
         logger.debug("Redis instrumentation not available.")
@@ -57,4 +60,6 @@ def configure_telemetry(app: FastAPI) -> None:
     if not _is_enabled("ENABLE_OTEL", True):
         return
     _instrument_fastapi(app)
-    logger.info("Telemetry initialized (OTel=%s, LangSmith=%s)", True, bool(langsmith_enabled))
+    logger.info(
+        "Telemetry initialized (OTel=%s, LangSmith=%s)", True, bool(langsmith_enabled)
+    )

@@ -88,7 +88,9 @@ _STANDARDS_RE = re.compile(
     r"\b(?:norm|standard|konform|compliance|zertifi|atex|fda|reach|ehedg|iso|din)\b",
     re.IGNORECASE,
 )
-_RFQ_RE = re.compile(r"\b(?:rfq|anfrage|angebot|dossier|hersteller|freigabeumfang)\b", re.IGNORECASE)
+_RFQ_RE = re.compile(
+    r"\b(?:rfq|anfrage|angebot|dossier|hersteller|freigabeumfang)\b", re.IGNORECASE
+)
 _REVIEW_RE = re.compile(
     r"\b(?:review|prüf\w*|pruef\w*|experte|expert|freigeben|ablehnen|approve|reject)\b",
     re.IGNORECASE,
@@ -112,7 +114,8 @@ def _has_case_state(state: GovernedSessionState | None) -> bool:
     return bool(
         getattr(getattr(state, "asserted", None), "assertions", None)
         or getattr(getattr(state, "normalized", None), "parameters", None)
-        or getattr(getattr(state, "seal_system", None), "status", "pending") != "pending"
+        or getattr(getattr(state, "seal_system", None), "status", "pending")
+        != "pending"
     )
 
 
@@ -230,14 +233,37 @@ class TurnBoundaryOrchestrator:
             route, reason = "expert_review_action", "message_review"
         elif route is None and _RECOMMENDATION_RE.search(text):
             route, reason = "engineering_recommendation", "message_recommendation"
-        elif route is None and _KNOWLEDGE_RE.search(text) and _CASE_UPDATE_RE.search(text):
-            route, reason = "engineering_case_update", "message_knowledge_with_case_markers"
+        elif (
+            route is None
+            and _KNOWLEDGE_RE.search(text)
+            and _CASE_UPDATE_RE.search(text)
+        ):
+            route, reason = (
+                "engineering_case_update",
+                "message_knowledge_with_case_markers",
+            )
         elif route is None and _KNOWLEDGE_RE.search(text):
-            route = "knowledge_case_side_question" if _has_case_state(state) else "knowledge_general"
-            reason = "message_knowledge_with_case" if _has_case_state(state) else "message_knowledge"
+            route = (
+                "knowledge_case_side_question"
+                if _has_case_state(state)
+                else "knowledge_general"
+            )
+            reason = (
+                "message_knowledge_with_case"
+                if _has_case_state(state)
+                else "message_knowledge"
+            )
         elif route is None and pre_gate_value in {"KNOWLEDGE_QUERY", "DEEP_DIVE"}:
-            route = "knowledge_case_side_question" if _has_case_state(state) else "knowledge_general"
-            reason = "pre_gate_knowledge_with_case" if _has_case_state(state) else "pre_gate_knowledge"
+            route = (
+                "knowledge_case_side_question"
+                if _has_case_state(state)
+                else "knowledge_general"
+            )
+            reason = (
+                "pre_gate_knowledge_with_case"
+                if _has_case_state(state)
+                else "pre_gate_knowledge"
+            )
         elif route is None and _SMALLTALK_RE.search(text):
             route, reason = "smalltalk", "message_smalltalk"
         elif route is None and any(marker in lowered for marker in _ABUSIVE_MARKERS):
@@ -245,15 +271,29 @@ class TurnBoundaryOrchestrator:
         elif route is None and _CASE_UPDATE_RE.search(text):
             route, reason = "engineering_case_update", "message_case_update"
         elif route is None:
-            route = "knowledge_case_side_question" if _has_case_state(state) else "smalltalk"
-            reason = "fallback_case_side" if _has_case_state(state) else "fallback_smalltalk"
+            route = (
+                "knowledge_case_side_question"
+                if _has_case_state(state)
+                else "smalltalk"
+            )
+            reason = (
+                "fallback_case_side" if _has_case_state(state) else "fallback_smalltalk"
+            )
 
         if (
-            route in {"engineering_case_update", "knowledge_case_side_question", "knowledge_general"}
+            route
+            in {
+                "engineering_case_update",
+                "knowledge_case_side_question",
+                "knowledge_general",
+            }
             and _RECOMMENDATION_RE.search(text)
             and _CASE_UPDATE_RE.search(text)
         ):
-            route, reason = "engineering_recommendation", "message_case_specific_recommendation"
+            route, reason = (
+                "engineering_recommendation",
+                "message_case_specific_recommendation",
+            )
 
         mutation_policy = _mutation_policy(route)
         is_technical = route in _TECHNICAL_ROUTES
@@ -280,7 +320,8 @@ class TurnBoundaryOrchestrator:
             graph_required=graph_required,
             short_path_allowed=short_path_allowed,
             unsafe_instruction_blocked=unsafe,
-            case_state_may_mutate=mutation_policy in {"case_revision_allowed", "review_action"},
+            case_state_may_mutate=mutation_policy
+            in {"case_revision_allowed", "review_action"},
             trace={
                 "session_id": session_id,
                 "runtime_mode": _as_value(runtime_mode),

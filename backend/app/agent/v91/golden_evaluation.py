@@ -40,11 +40,21 @@ def evaluate_visible_golden_answer(
     findings = list(guard_result.findings)
     text = str(answer_markdown or "")
     metrics = {
-        "answer_first": not _has_finding(findings, "communication_guard:answer_first_missing"),
-        "one_question": not _has_finding(findings, "communication_guard:too_many_questions"),
-        "question_reason": not _has_finding(findings, "communication_guard:missing_question_reason"),
-        "no_overclaim": not any(finding.startswith("claim_guard:") for finding in findings),
-        "no_external_utility_answer": not _has_finding(findings, "communication_guard:external_utility_answer"),
+        "answer_first": not _has_finding(
+            findings, "communication_guard:answer_first_missing"
+        ),
+        "one_question": not _has_finding(
+            findings, "communication_guard:too_many_questions"
+        ),
+        "question_reason": not _has_finding(
+            findings, "communication_guard:missing_question_reason"
+        ),
+        "no_overclaim": not any(
+            finding.startswith("claim_guard:") for finding in findings
+        ),
+        "no_external_utility_answer": not _has_finding(
+            findings, "communication_guard:external_utility_answer"
+        ),
         "no_tab_spam": not _has_finding(findings, "communication_guard:tab_spam"),
         "evidence_visible": _evidence_visible(text, context),
         "rfq_boundary": _rfq_boundary_kept(text),
@@ -88,7 +98,9 @@ def _has_finding(findings: list[str], code: str) -> bool:
 
 
 def _evidence_visible(text: str, context: FinalAnswerContext) -> bool:
-    refs = [str(ref).strip() for ref in context.evidence_ref_ids if str(ref or "").strip()]
+    refs = [
+        str(ref).strip() for ref in context.evidence_ref_ids if str(ref or "").strip()
+    ]
     if not refs:
         return False
     lowered = text.casefold()
@@ -108,11 +120,25 @@ def _rfq_boundary_kept(text: str) -> bool:
     )
     if any(fragment in lowered for fragment in dispatch_claims):
         return False
-    boundary_terms = ("zustimmung", "consent", "review", "pruef", "prüf", "nicht automatisch", "preview")
+    boundary_terms = (
+        "zustimmung",
+        "consent",
+        "review",
+        "pruef",
+        "prüf",
+        "nicht automatisch",
+        "preview",
+    )
     return any(term in lowered for term in boundary_terms)
 
 
 def _recovery_visible(text: str) -> bool:
     lowered = text.casefold()
-    recovery_terms = ("korrig", "verstanden", "neu ein", "ich uebernehme", "ich übernehme")
+    recovery_terms = (
+        "korrig",
+        "verstanden",
+        "neu ein",
+        "ich uebernehme",
+        "ich übernehme",
+    )
     return any(term in lowered for term in recovery_terms)

@@ -19,7 +19,10 @@ from app.agent.domain.manufacturer_rfq import (
     project_rfq_payload_basis_from_specialist_result,
     run_manufacturer_rfq_specialist,
 )
-from app.agent.services.medium_context import normalize_medium_context_key, resolve_medium_context
+from app.agent.services.medium_context import (
+    normalize_medium_context_key,
+    resolve_medium_context,
+)
 
 
 PROJECTION_VERSION = "visible_case_narrative_v1"
@@ -130,7 +133,9 @@ def build_default_candidate_clusters() -> list[dict[str, Any]]:
     return []
 
 
-def build_default_result_contract(*, analysis_cycle_id: str | None = None, state_revision: int = 0) -> dict[str, Any]:
+def build_default_result_contract(
+    *, analysis_cycle_id: str | None = None, state_revision: int = 0
+) -> dict[str, Any]:
     return {
         "contract_type": "structured_recommendation_contract",
         "contract_version": "structured_recommendation_contract_v1",
@@ -168,7 +173,9 @@ def build_default_result_contract(*, analysis_cycle_id: str | None = None, state
     }
 
 
-def build_default_sealing_requirement_spec(*, analysis_cycle_id: str | None = None, state_revision: int = 0) -> dict[str, Any]:
+def build_default_sealing_requirement_spec(
+    *, analysis_cycle_id: str | None = None, state_revision: int = 0
+) -> dict[str, Any]:
     return {
         "contract_type": "sealing_requirement_spec",
         "contract_version": "sealing_requirement_spec_v1",
@@ -287,20 +294,24 @@ def _build_requirement_class(
 ) -> dict[str, Any] | None:
     persisted = dict(persisted_requirement_class or {})
     persisted_requirement_class_id = str(
-        persisted.get("requirement_class_id")
-        or persisted.get("class_id")
-        or ""
+        persisted.get("requirement_class_id") or persisted.get("class_id") or ""
     ).strip()
-    requirement_class_id = persisted_requirement_class_id or str(requirement_class_hint or "").strip()
+    requirement_class_id = (
+        persisted_requirement_class_id or str(requirement_class_hint or "").strip()
+    )
     if not requirement_class_id:
         return None
 
     identity = dict(recommendation_identity or {})
-    material_family = identity.get("material_family") or persisted.get("material_family")
+    material_family = identity.get("material_family") or persisted.get(
+        "material_family"
+    )
     candidate_id = identity.get("candidate_id") or persisted.get("candidate_id")
     candidate_kind = identity.get("candidate_kind") or persisted.get("candidate_kind")
     grade_name = identity.get("grade_name") or persisted.get("grade_name")
-    manufacturer_name = identity.get("manufacturer_name") or persisted.get("manufacturer_name")
+    manufacturer_name = identity.get("manufacturer_name") or persisted.get(
+        "manufacturer_name"
+    )
     resolved_specificity = (
         identity.get("specificity_level")
         or specificity_level
@@ -364,7 +375,9 @@ def _build_match_candidates(
     if candidates:
         for candidate in candidates:
             candidate_id = candidate.get("candidate_id")
-            viability_status = "viable" if candidate_id in viable_candidate_ids else "blocked"
+            viability_status = (
+                "viable" if candidate_id in viable_candidate_ids else "blocked"
+            )
             blocked = blocked_by_id.get(str(candidate_id))
             match_candidates.append(
                 {
@@ -374,7 +387,9 @@ def _build_match_candidates(
                     "grade_name": candidate.get("grade_name"),
                     "manufacturer_name": candidate.get("manufacturer_name"),
                     "viability_status": viability_status,
-                    "block_reason": blocked.get("reason") if blocked else candidate.get("block_reason"),
+                    "block_reason": blocked.get("reason")
+                    if blocked
+                    else candidate.get("block_reason"),
                     "evidence_refs": list(candidate.get("evidence_refs") or []),
                 }
             )
@@ -388,7 +403,9 @@ def _build_match_candidates(
                 "material_family": candidate_projection.get("material_family"),
                 "grade_name": candidate_projection.get("grade_name"),
                 "manufacturer_name": candidate_projection.get("manufacturer_name"),
-                "viability_status": "viable" if candidate_id in viable_candidate_ids else "projected",
+                "viability_status": "viable"
+                if candidate_id in viable_candidate_ids
+                else "projected",
                 "block_reason": None,
                 "evidence_refs": list(candidate_projection.get("evidence_refs") or []),
             }
@@ -415,7 +432,11 @@ def _build_matching_blocking_reasons(
         reasons.append("output_blocked")
     if blocking_unknowns:
         reasons.append("unknowns_release_blocking")
-    if not viable_candidate_ids and not candidate_clusters and recommendation_identity is None:
+    if (
+        not viable_candidate_ids
+        and not candidate_clusters
+        and recommendation_identity is None
+    ):
         reasons.append("no_matching_basis")
     return reasons
 
@@ -434,7 +455,16 @@ def _derive_matchability_status(
         return "blocked_review_required"
     if not has_matching_basis:
         return "not_ready_no_matching_basis"
-    if release_status in {"manufacturer_validation_required", "rfq_ready", "inquiry_ready", "approved"} and not blocking_reasons:
+    if (
+        release_status
+        in {
+            "manufacturer_validation_required",
+            "rfq_ready",
+            "inquiry_ready",
+            "approved",
+        }
+        and not blocking_reasons
+    ):
         return "ready_for_matching"
     if release_status == "precheck_only":
         return "not_ready_precheck"
@@ -498,8 +528,12 @@ def _build_rfq_open_points(
         open_points.append("manufacturer_validation_required")
     if review_required:
         open_points.append("review_required")
-    open_points.extend(str(item) for item in unknowns_manufacturer_validation if item is not None)
-    open_points.extend(str(item) for item in unknowns_release_blocking if item is not None)
+    open_points.extend(
+        str(item) for item in unknowns_manufacturer_validation if item is not None
+    )
+    open_points.extend(
+        str(item) for item in unknowns_release_blocking if item is not None
+    )
     open_points.extend(str(item) for item in soft_findings if item is not None)
     open_points.extend(str(item) for item in required_corrections if item is not None)
     return list(dict.fromkeys(open_points))
@@ -542,9 +576,15 @@ def _build_manufacturer_refs(
                 ref[key].append(value)
         if source not in ref["source_refs"]:
             ref["source_refs"].append(source)
-        if entry.get("candidate_kind") == "manufacturer_grade" and "manufacturer_grade_candidate" not in ref["capability_hints"]:
+        if (
+            entry.get("candidate_kind") == "manufacturer_grade"
+            and "manufacturer_grade_candidate" not in ref["capability_hints"]
+        ):
             ref["capability_hints"].append("manufacturer_grade_candidate")
-        if source == "rfq_qualified_material" and "rfq_qualified_material" not in ref["capability_hints"]:
+        if (
+            source == "rfq_qualified_material"
+            and "rfq_qualified_material" not in ref["capability_hints"]
+        ):
             ref["capability_hints"].append("rfq_qualified_material")
         if handover_ready:
             ref["qualified_for_rfq"] = True
@@ -607,9 +647,13 @@ def _build_manufacturer_capabilities(
 def build_dispatch_intent(rfq_dispatch: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(rfq_dispatch, dict):
         return None
-    dispatch_blockers = list(dict.fromkeys(str(item) for item in rfq_dispatch.get("dispatch_blockers") or []))
+    dispatch_blockers = list(
+        dict.fromkeys(str(item) for item in rfq_dispatch.get("dispatch_blockers") or [])
+    )
     recipient_refs = [
-        dict(ref) for ref in list(rfq_dispatch.get("recipient_refs") or []) if isinstance(ref, dict)
+        dict(ref)
+        for ref in list(rfq_dispatch.get("recipient_refs") or [])
+        if isinstance(ref, dict)
     ]
     return {
         "object_type": "dispatch_intent",
@@ -618,11 +662,25 @@ def build_dispatch_intent(rfq_dispatch: dict[str, Any] | None) -> dict[str, Any]
         "dispatch_status": rfq_dispatch.get("dispatch_status"),
         "dispatch_blockers": dispatch_blockers,
         "recipient_refs": recipient_refs,
-        "selected_manufacturer_ref": dict(rfq_dispatch.get("selected_manufacturer_ref") or {}) if isinstance(rfq_dispatch.get("selected_manufacturer_ref"), dict) else None,
-        "recipient_selection": dict(rfq_dispatch.get("recipient_selection") or {}) if isinstance(rfq_dispatch.get("recipient_selection"), dict) else None,
-        "requirement_class": dict(rfq_dispatch.get("requirement_class") or {}) if isinstance(rfq_dispatch.get("requirement_class"), dict) else None,
-        "recommendation_identity": dict(rfq_dispatch.get("recommendation_identity") or {}) if isinstance(rfq_dispatch.get("recommendation_identity"), dict) else None,
-        "rfq_object_basis": dict(rfq_dispatch.get("rfq_object_basis") or {}) if isinstance(rfq_dispatch.get("rfq_object_basis"), dict) else None,
+        "selected_manufacturer_ref": dict(
+            rfq_dispatch.get("selected_manufacturer_ref") or {}
+        )
+        if isinstance(rfq_dispatch.get("selected_manufacturer_ref"), dict)
+        else None,
+        "recipient_selection": dict(rfq_dispatch.get("recipient_selection") or {})
+        if isinstance(rfq_dispatch.get("recipient_selection"), dict)
+        else None,
+        "requirement_class": dict(rfq_dispatch.get("requirement_class") or {})
+        if isinstance(rfq_dispatch.get("requirement_class"), dict)
+        else None,
+        "recommendation_identity": dict(
+            rfq_dispatch.get("recommendation_identity") or {}
+        )
+        if isinstance(rfq_dispatch.get("recommendation_identity"), dict)
+        else None,
+        "rfq_object_basis": dict(rfq_dispatch.get("rfq_object_basis") or {})
+        if isinstance(rfq_dispatch.get("rfq_object_basis"), dict)
+        else None,
         "source": "canonical_rfq_dispatch",
     }
 
@@ -641,9 +699,15 @@ def _build_recipient_selection(
         if isinstance(selected, dict) and selected:
             selected_manufacturer_ref = dict(selected)
 
-    candidate_recipient_refs = [dict(ref) for ref in manufacturer_refs if isinstance(ref, dict) and ref]
-    requirement_class_id = str((requirement_class or {}).get("requirement_class_id") or "").strip()
-    recommendation_candidate_id = str((recommendation_identity or {}).get("candidate_id") or "").strip()
+    candidate_recipient_refs = [
+        dict(ref) for ref in manufacturer_refs if isinstance(ref, dict) and ref
+    ]
+    requirement_class_id = str(
+        (requirement_class or {}).get("requirement_class_id") or ""
+    ).strip()
+    recommendation_candidate_id = str(
+        (recommendation_identity or {}).get("candidate_id") or ""
+    ).strip()
     capability_by_manufacturer: dict[str, dict[str, Any]] = {}
     capability_qualified_names: set[str] = set()
     for capability in manufacturer_capabilities:
@@ -654,7 +718,9 @@ def _build_recipient_selection(
             continue
         capability_by_manufacturer[manufacturer_name] = dict(capability)
         requirement_class_ids = {
-            str(item) for item in list(capability.get("requirement_class_ids") or []) if item
+            str(item)
+            for item in list(capability.get("requirement_class_ids") or [])
+            if item
         }
         candidate_ids = {
             str(item) for item in list(capability.get("candidate_ids") or []) if item
@@ -676,21 +742,32 @@ def _build_recipient_selection(
         candidate_recipient_refs = [
             ref
             for ref in candidate_recipient_refs
-            if str(ref.get("manufacturer_name") or "").strip() in capability_qualified_names
+            if str(ref.get("manufacturer_name") or "").strip()
+            in capability_qualified_names
         ]
 
     selected_recipient_refs: list[dict[str, Any]] = []
     non_selected_recipient_refs: list[dict[str, Any]] = []
-    selected_name = str((selected_manufacturer_ref or {}).get("manufacturer_name") or "").strip()
-    selected_candidate_ids = set(str(item) for item in list((selected_manufacturer_ref or {}).get("candidate_ids") or []) if item)
+    selected_name = str(
+        (selected_manufacturer_ref or {}).get("manufacturer_name") or ""
+    ).strip()
+    selected_candidate_ids = set(
+        str(item)
+        for item in list((selected_manufacturer_ref or {}).get("candidate_ids") or [])
+        if item
+    )
 
     for ref in candidate_recipient_refs:
         ref_name = str(ref.get("manufacturer_name") or "").strip()
-        ref_candidate_ids = set(str(item) for item in list(ref.get("candidate_ids") or []) if item)
+        ref_candidate_ids = set(
+            str(item) for item in list(ref.get("candidate_ids") or []) if item
+        )
         is_selected = False
         if selected_name and ref_name == selected_name:
             is_selected = True
-        elif selected_candidate_ids and ref_candidate_ids.intersection(selected_candidate_ids):
+        elif selected_candidate_ids and ref_candidate_ids.intersection(
+            selected_candidate_ids
+        ):
             is_selected = True
         if is_selected:
             selected_recipient_refs.append(dict(ref))
@@ -720,7 +797,8 @@ def _build_recipient_selection(
             "derived_from_matching_outcome": bool(selected_manufacturer_ref),
             "capability_qualified_candidate_count": len(capability_qualified_names),
             "capability_requirement_class_id": requirement_class_id or None,
-            "capability_recommendation_candidate_id": recommendation_candidate_id or None,
+            "capability_recommendation_candidate_id": recommendation_candidate_id
+            or None,
         },
         "selected_manufacturer_ref": selected_manufacturer_ref,
         "recommendation_identity": recommendation_identity,
@@ -747,7 +825,12 @@ def _normalize_snapshot_value(value: Any, key: str) -> Any:
     lowered = key.lower()
     if lowered == "material":
         normalized = normalize_material(value)
-        return value if normalized in {"FKM", "FFKM"} and str(value).strip().lower() in {"viton", "kalrez"} else normalized
+        return (
+            value
+            if normalized in {"FKM", "FFKM"}
+            and str(value).strip().lower() in {"viton", "kalrez"}
+            else normalized
+        )
     if lowered == "medium":
         result = run_medium_specialist(
             MediumSpecialistInput(candidate_media_tokens=(str(value or ""),))
@@ -773,13 +856,17 @@ def _resolve_selected_partner_id(
 
         selected_manufacturer_ref = source.get("selected_manufacturer_ref")
         if isinstance(selected_manufacturer_ref, dict):
-            manufacturer_name = str(selected_manufacturer_ref.get("manufacturer_name") or "").strip()
+            manufacturer_name = str(
+                selected_manufacturer_ref.get("manufacturer_name") or ""
+            ).strip()
             if manufacturer_name:
                 return manufacturer_name
 
         selected_recipient_refs = source.get("selected_recipient_refs") or []
         if selected_recipient_refs and isinstance(selected_recipient_refs[0], dict):
-            manufacturer_name = str(selected_recipient_refs[0].get("manufacturer_name") or "").strip()
+            manufacturer_name = str(
+                selected_recipient_refs[0].get("manufacturer_name") or ""
+            ).strip()
             if manufacturer_name:
                 return manufacturer_name
 
@@ -789,10 +876,16 @@ def _resolve_selected_partner_id(
     return None
 
 
-def _current_medium_label(state: dict[str, Any], existing_case_state: dict[str, Any]) -> str | None:
+def _current_medium_label(
+    state: dict[str, Any], existing_case_state: dict[str, Any]
+) -> str | None:
     sealing_state = dict(state.get("sealing_state") or {})
-    asserted_conditions = dict((sealing_state.get("asserted") or {}).get("operating_conditions") or {})
-    normalized_parameters = dict((sealing_state.get("normalized") or {}).get("normalized_parameters") or {})
+    asserted_conditions = dict(
+        (sealing_state.get("asserted") or {}).get("operating_conditions") or {}
+    )
+    normalized_parameters = dict(
+        (sealing_state.get("normalized") or {}).get("normalized_parameters") or {}
+    )
     working_profile = dict(state.get("working_profile") or {})
     existing_normalized = dict(existing_case_state.get("normalized_parameters") or {})
 
@@ -867,10 +960,18 @@ def build_case_state(
     review_layer = dict(sealing_state.get("review") or {})
     existing_rfq_state = dict(existing_case_state.get("rfq_state") or {})
     recommendation_artifact = dict(selection_layer.get("recommendation_artifact") or {})
-    candidate_projection = dict(recommendation_artifact.get("candidate_projection") or {})
+    candidate_projection = dict(
+        recommendation_artifact.get("candidate_projection") or {}
+    )
     working_profile = dict(state.get("working_profile") or {})
-    medium_capture_bucket = dict(state.get("medium_capture") or existing_case_state.get("medium_capture") or {})
-    medium_classification_bucket = dict(state.get("medium_classification") or existing_case_state.get("medium_classification") or {})
+    medium_capture_bucket = dict(
+        state.get("medium_capture") or existing_case_state.get("medium_capture") or {}
+    )
+    medium_classification_bucket = dict(
+        state.get("medium_classification")
+        or existing_case_state.get("medium_classification")
+        or {}
+    )
     if not medium_classification_bucket:
         inferred_medium = _current_medium_label(state, existing_case_state)
         if inferred_medium:
@@ -892,20 +993,33 @@ def build_case_state(
         medium_classification=medium_classification_bucket,
     )
     relevant_fact_cards = list(state.get("relevant_fact_cards") or [])
-    cycle = ((state.get("sealing_state") or {}).get("cycle") or {})
-    state_revision = int(existing_case_meta.get("state_revision", cycle.get("state_revision", 0)) or 0)
+    cycle = (state.get("sealing_state") or {}).get("cycle") or {}
+    state_revision = int(
+        existing_case_meta.get("state_revision", cycle.get("state_revision", 0)) or 0
+    )
     required_disclaimers = list(
-        ((existing_case_state.get("governance_state") or {}).get("required_disclaimers") or [])
+        (
+            (existing_case_state.get("governance_state") or {}).get(
+                "required_disclaimers"
+            )
+            or []
+        )
         or governance_layer.get("scope_of_validity")
         or []
     )
     case_meta: CaseMeta = {
         "case_id": session_id,
         "session_id": session_id,
-        "analysis_cycle_id": existing_case_meta.get("analysis_cycle_id", cycle.get("analysis_cycle_id")),
+        "analysis_cycle_id": existing_case_meta.get(
+            "analysis_cycle_id", cycle.get("analysis_cycle_id")
+        ),
         "state_revision": state_revision,
-        "snapshot_parent_revision": existing_case_meta.get("snapshot_parent_revision", cycle.get("snapshot_parent_revision")),
-        "version": int(existing_case_meta.get("version", state_revision) or state_revision),
+        "snapshot_parent_revision": existing_case_meta.get(
+            "snapshot_parent_revision", cycle.get("snapshot_parent_revision")
+        ),
+        "version": int(
+            existing_case_meta.get("version", state_revision) or state_revision
+        ),
         "phase": str(existing_case_meta.get("phase") or cycle.get("phase") or ""),
         "runtime_path": runtime_path,
         "binding_level": str(existing_case_meta.get("binding_level") or binding_level),
@@ -930,12 +1044,16 @@ def build_case_state(
         "details": {},
     }
     if version_provenance is not None:
-        audit_event["details"]["version_provenance"] = dict(case_meta["version_provenance"])
+        audit_event["details"]["version_provenance"] = dict(
+            case_meta["version_provenance"]
+        )
     observed_inputs_bucket = {
         "records": list(observed_layer.get("observed_inputs") or []),
         "raw_parameters": dict(observed_layer.get("raw_parameters") or {}),
     }
-    normalized_parameters_bucket = dict(normalized_layer.get("normalized_parameters") or {})
+    normalized_parameters_bucket = dict(
+        normalized_layer.get("normalized_parameters") or {}
+    )
     parameter_meta_bucket = dict(
         existing_case_state.get("parameter_meta")
         or normalized_layer.get("identity_records")
@@ -969,7 +1087,9 @@ def build_case_state(
         ],
     )
     if state.get("run_meta"):
-        evidence_state_bucket.setdefault("rag_path", (state.get("run_meta") or {}).get("rag_path"))
+        evidence_state_bucket.setdefault(
+            "rag_path", (state.get("run_meta") or {}).get("rag_path")
+        )
     governance_state_bucket = dict(existing_case_state.get("governance_state") or {})
     critical_review_status = str(
         governance_state_bucket.get("critical_review_status")
@@ -980,7 +1100,10 @@ def build_case_state(
     critical_review_passed = bool(
         governance_state_bucket.get(
             "critical_review_passed",
-            existing_rfq_state.get("critical_review_passed", review_layer.get("critical_review_passed", False)),
+            existing_rfq_state.get(
+                "critical_review_passed",
+                review_layer.get("critical_review_passed", False),
+            ),
         )
     )
     critical_review_blocking_findings = list(
@@ -1003,23 +1126,60 @@ def build_case_state(
     )
     governance_state_bucket.update(
         {
-            "release_status": governance_state_bucket.get("release_status", governance_layer.get("release_status", "inadmissible")),
-            "rfq_admissibility": governance_state_bucket.get("rfq_admissibility", governance_layer.get("rfq_admissibility", "inadmissible")),
-            "specificity_level": governance_state_bucket.get("specificity_level", governance_layer.get("specificity_level", "family_only")),
-            "scope_of_validity": list(governance_state_bucket.get("scope_of_validity") or governance_layer.get("scope_of_validity") or []),
-            "assumptions_active": list(governance_state_bucket.get("assumptions_active") or governance_layer.get("assumptions_active") or []),
-            "unknowns_release_blocking": list(governance_state_bucket.get("unknowns_release_blocking") or governance_layer.get("unknowns_release_blocking") or []),
-            "unknowns_manufacturer_validation": list(governance_state_bucket.get("unknowns_manufacturer_validation") or governance_layer.get("unknowns_manufacturer_validation") or []),
-            "conflicts": list(governance_state_bucket.get("conflicts") or governance_layer.get("conflicts") or []),
-            "review_state": governance_state_bucket.get("review_state", review_layer.get("review_state")),
-            "review_required": bool(governance_state_bucket.get("review_required", review_layer.get("review_required", False))),
+            "release_status": governance_state_bucket.get(
+                "release_status", governance_layer.get("release_status", "inadmissible")
+            ),
+            "rfq_admissibility": governance_state_bucket.get(
+                "rfq_admissibility",
+                governance_layer.get("rfq_admissibility", "inadmissible"),
+            ),
+            "specificity_level": governance_state_bucket.get(
+                "specificity_level",
+                governance_layer.get("specificity_level", "family_only"),
+            ),
+            "scope_of_validity": list(
+                governance_state_bucket.get("scope_of_validity")
+                or governance_layer.get("scope_of_validity")
+                or []
+            ),
+            "assumptions_active": list(
+                governance_state_bucket.get("assumptions_active")
+                or governance_layer.get("assumptions_active")
+                or []
+            ),
+            "unknowns_release_blocking": list(
+                governance_state_bucket.get("unknowns_release_blocking")
+                or governance_layer.get("unknowns_release_blocking")
+                or []
+            ),
+            "unknowns_manufacturer_validation": list(
+                governance_state_bucket.get("unknowns_manufacturer_validation")
+                or governance_layer.get("unknowns_manufacturer_validation")
+                or []
+            ),
+            "conflicts": list(
+                governance_state_bucket.get("conflicts")
+                or governance_layer.get("conflicts")
+                or []
+            ),
+            "review_state": governance_state_bucket.get(
+                "review_state", review_layer.get("review_state")
+            ),
+            "review_required": bool(
+                governance_state_bucket.get(
+                    "review_required", review_layer.get("review_required", False)
+                )
+            ),
             "critical_review_status": critical_review_status,
-            "critical_review_passed": critical_review_passed and not critical_review_blocking_findings,
+            "critical_review_passed": critical_review_passed
+            and not critical_review_blocking_findings,
             "blocking_findings": critical_review_blocking_findings,
             "soft_findings": critical_review_soft_findings,
             "required_corrections": critical_review_required_corrections,
             "required_disclaimers": required_disclaimers,
-            "binding_level": str(governance_state_bucket.get("binding_level") or binding_level),
+            "binding_level": str(
+                governance_state_bucket.get("binding_level") or binding_level
+            ),
         }
     )
     matching_state_bucket = dict(existing_case_state.get("matching_state") or {})
@@ -1053,30 +1213,52 @@ def build_case_state(
     elif not governance_state_bucket.get("critical_review_passed", False):
         critical_review_gate_blocker = "critical_review_failed"
     rfq_handover_ready = (
-        bool(rfq_state_bucket.get("handover_ready", handover_layer.get("is_handover_ready", False)))
+        bool(
+            rfq_state_bucket.get(
+                "handover_ready", handover_layer.get("is_handover_ready", False)
+            )
+        )
         and governance_state_bucket["rfq_admissibility"] == "ready"
         and bool(governance_state_bucket.get("critical_review_passed", False))
         and not critical_review_blocking_findings
     )
     if governance_state_bucket["rfq_admissibility"] == "ready":
-        default_rfq_status = "ready" if rfq_handover_ready else (
-            "critical_review_pending" if critical_review_status == "not_run" else "blocked_critical_review"
+        default_rfq_status = (
+            "ready"
+            if rfq_handover_ready
+            else (
+                "critical_review_pending"
+                if critical_review_status == "not_run"
+                else "blocked_critical_review"
+            )
         )
     else:
         default_rfq_status = governance_state_bucket["rfq_admissibility"]
     rfq_state_bucket.update(
         {
-            "rfq_admissibility": rfq_state_bucket.get("rfq_admissibility", governance_layer.get("rfq_admissibility", "inadmissible")),
+            "rfq_admissibility": rfq_state_bucket.get(
+                "rfq_admissibility",
+                governance_layer.get("rfq_admissibility", "inadmissible"),
+            ),
             "rfq_ready": rfq_handover_ready,
             "status": default_rfq_status,
             "critical_review_status": critical_review_status,
-            "critical_review_passed": bool(governance_state_bucket.get("critical_review_passed", False)),
+            "critical_review_passed": bool(
+                governance_state_bucket.get("critical_review_passed", False)
+            ),
             "blocking_findings": critical_review_blocking_findings,
             "soft_findings": critical_review_soft_findings,
             "required_corrections": critical_review_required_corrections,
             "handover_ready": rfq_handover_ready,
-            "handover_status": rfq_state_bucket.get("handover_status", handover_layer.get("handover_status")),
-            "handover_payload_present": bool(rfq_state_bucket.get("handover_payload_present", bool(handover_layer.get("handover_payload")))),
+            "handover_status": rfq_state_bucket.get(
+                "handover_status", handover_layer.get("handover_status")
+            ),
+            "handover_payload_present": bool(
+                rfq_state_bucket.get(
+                    "handover_payload_present",
+                    bool(handover_layer.get("handover_payload")),
+                )
+            ),
             "rfq_html_report_present": bool(
                 rfq_state_bucket.get(
                     "rfq_html_report_present",
@@ -1084,11 +1266,20 @@ def build_case_state(
                     or bool(handover_layer.get("rfq_html_report_present", False)),
                 )
             ),
-            "rfq_confirmed": bool(rfq_state_bucket.get("rfq_confirmed", handover_layer.get("rfq_confirmed", False))),
-            "rfq_handover_initiated": bool(
-                rfq_state_bucket.get("rfq_handover_initiated", handover_layer.get("handover_completed", False))
+            "rfq_confirmed": bool(
+                rfq_state_bucket.get(
+                    "rfq_confirmed", handover_layer.get("rfq_confirmed", False)
+                )
             ),
-            "qualified_action_gate": dict(existing_case_state.get("qualified_action_gate") or {}),
+            "rfq_handover_initiated": bool(
+                rfq_state_bucket.get(
+                    "rfq_handover_initiated",
+                    handover_layer.get("handover_completed", False),
+                )
+            ),
+            "qualified_action_gate": dict(
+                existing_case_state.get("qualified_action_gate") or {}
+            ),
         }
     )
     result_contract = dict(
@@ -1103,9 +1294,12 @@ def build_case_state(
         or matching_state_bucket.get("recommendation_identity")
         or {}
     )
-    recommendation_identity = persisted_recommendation_identity or _build_recommendation_identity(
-        candidate_projection=candidate_projection,
-        specificity_level=governance_state_bucket["specificity_level"],
+    recommendation_identity = (
+        persisted_recommendation_identity
+        or _build_recommendation_identity(
+            candidate_projection=candidate_projection,
+            specificity_level=governance_state_bucket["specificity_level"],
+        )
     )
     requirement_class_hint = (
         result_contract.get("requirement_class_hint")
@@ -1118,8 +1312,12 @@ def build_case_state(
         or result_contract.get("requirement_class")
         or matching_state_bucket.get("requirement_class")
         or rfq_state_bucket.get("requirement_class")
-        or (existing_case_state.get("manufacturer_state") or {}).get("requirement_class")
-        or (existing_case_state.get("sealing_requirement_spec") or {}).get("requirement_class")
+        or (existing_case_state.get("manufacturer_state") or {}).get(
+            "requirement_class"
+        )
+        or (existing_case_state.get("sealing_requirement_spec") or {}).get(
+            "requirement_class"
+        )
         or {}
     )
     requirement_class = _build_requirement_class(
@@ -1137,20 +1335,31 @@ def build_case_state(
     candidate_summary = {
         "selection_status": matching_state_bucket.get("selection_status"),
         "winner_candidate_id": matching_state_bucket.get("winner_candidate_id"),
-        "viable_candidate_ids": list(matching_state_bucket.get("viable_candidate_ids") or []),
-        "blocked_candidates": list(matching_state_bucket.get("blocked_candidates") or []),
+        "viable_candidate_ids": list(
+            matching_state_bucket.get("viable_candidate_ids") or []
+        ),
+        "blocked_candidates": list(
+            matching_state_bucket.get("blocked_candidates") or []
+        ),
         "candidate_projection": candidate_projection or None,
     }
     blocking_reasons = _build_matching_blocking_reasons(
         contract_obsolete=bool(cycle.get("contract_obsolete", False)),
         review_required=bool(governance_state_bucket.get("review_required", False)),
         output_blocked=bool(matching_state_bucket.get("output_blocked", True)),
-        blocking_unknowns=list(governance_state_bucket.get("unknowns_release_blocking") or []),
+        blocking_unknowns=list(
+            governance_state_bucket.get("unknowns_release_blocking") or []
+        ),
         viable_candidate_ids=viable_candidate_ids,
         candidate_clusters=candidate_clusters,
         recommendation_identity=recommendation_identity,
     )
-    has_matching_basis = bool(recommendation_identity or viable_candidate_ids or candidate_clusters or match_candidates)
+    has_matching_basis = bool(
+        recommendation_identity
+        or viable_candidate_ids
+        or candidate_clusters
+        or match_candidates
+    )
     matchability_status = _derive_matchability_status(
         contract_obsolete=bool(cycle.get("contract_obsolete", False)),
         review_required=bool(governance_state_bucket.get("review_required", False)),
@@ -1169,15 +1378,23 @@ def build_case_state(
                 "rfq_admissibility": governance_state_bucket["rfq_admissibility"],
                 "specificity_level": governance_state_bucket["specificity_level"],
                 "selection_status": matching_state_bucket.get("selection_status"),
-                "candidate_count": len(list(selection_layer.get("candidates") or [])) or len(match_candidates),
+                "candidate_count": len(list(selection_layer.get("candidates") or []))
+                or len(match_candidates),
                 "viable_candidate_count": len(viable_candidate_ids),
-                "evidence_ref_count": int(evidence_state_bucket.get("evidence_ref_count", 0) or 0),
+                "evidence_ref_count": int(
+                    evidence_state_bucket.get("evidence_ref_count", 0) or 0
+                ),
             },
             "recommendation_identity": recommendation_identity,
             "requirement_class": dict(requirement_class) if requirement_class else None,
             "requirement_class_hint": requirement_class_hint,
-            "manufacturer_validation_required": governance_state_bucket["release_status"] == "manufacturer_validation_required",
-            "review_required": bool(governance_state_bucket.get("review_required", False)),
+            "manufacturer_validation_required": governance_state_bucket[
+                "release_status"
+            ]
+            == "manufacturer_validation_required",
+            "review_required": bool(
+                governance_state_bucket.get("review_required", False)
+            ),
             "candidate_summary": candidate_summary,
             "match_candidates": match_candidates,
             "handover_status": rfq_state_bucket.get("handover_status"),
@@ -1197,16 +1414,31 @@ def build_case_state(
             "rfq_admissibility": governance_state_bucket["rfq_admissibility"],
             "specificity_level": governance_state_bucket["specificity_level"],
             "contract_obsolete": bool(cycle.get("contract_obsolete", False)),
-            "invalidation_reasons": [cycle.get("contract_obsolete_reason")] if cycle.get("contract_obsolete_reason") else [],
+            "invalidation_reasons": [cycle.get("contract_obsolete_reason")]
+            if cycle.get("contract_obsolete_reason")
+            else [],
             "required_disclaimers": required_disclaimers,
             "evidence_ref_count": evidence_state_bucket.get("evidence_ref_count", 0),
             "evidence_refs": list(evidence_state_bucket.get("evidence_refs") or []),
-            "scope_of_validity": list(governance_state_bucket.get("scope_of_validity") or []),
-            "assumptions_active": list(governance_state_bucket.get("assumptions_active") or []),
-            "blocking_unknowns": list(governance_state_bucket.get("unknowns_release_blocking") or []),
-            "manufacturer_validation_required": governance_state_bucket["release_status"] == "manufacturer_validation_required",
-            "review_required": bool(governance_state_bucket.get("review_required", False)),
-            "conflict_summary": _build_conflict_summary(list(governance_state_bucket.get("conflicts") or [])),
+            "scope_of_validity": list(
+                governance_state_bucket.get("scope_of_validity") or []
+            ),
+            "assumptions_active": list(
+                governance_state_bucket.get("assumptions_active") or []
+            ),
+            "blocking_unknowns": list(
+                governance_state_bucket.get("unknowns_release_blocking") or []
+            ),
+            "manufacturer_validation_required": governance_state_bucket[
+                "release_status"
+            ]
+            == "manufacturer_validation_required",
+            "review_required": bool(
+                governance_state_bucket.get("review_required", False)
+            ),
+            "conflict_summary": _build_conflict_summary(
+                list(governance_state_bucket.get("conflicts") or [])
+            ),
             "candidate_summary": candidate_summary,
             "recommendation_identity": recommendation_identity,
             "requirement_class": dict(requirement_class) if requirement_class else None,
@@ -1214,8 +1446,13 @@ def build_case_state(
         }
     )
     qualified_action_gate = dict(existing_case_state.get("qualified_action_gate") or {})
-    qualified_action_block_reasons = list(governance_layer.get("unknowns_release_blocking") or [])
-    if critical_review_gate_blocker and critical_review_gate_blocker not in qualified_action_block_reasons:
+    qualified_action_block_reasons = list(
+        governance_layer.get("unknowns_release_blocking") or []
+    )
+    if (
+        critical_review_gate_blocker
+        and critical_review_gate_blocker not in qualified_action_block_reasons
+    ):
         qualified_action_block_reasons.append(critical_review_gate_blocker)
     for finding in critical_review_blocking_findings:
         if finding not in qualified_action_block_reasons:
@@ -1224,9 +1461,12 @@ def build_case_state(
         {
             "action": QUALIFIED_ACTION_DOWNLOAD_RFQ,
             "allowed": rfq_handover_ready,
-            "rfq_ready": governance_state_bucket["rfq_admissibility"] == "ready" and bool(governance_state_bucket.get("critical_review_passed", False)),
+            "rfq_ready": governance_state_bucket["rfq_admissibility"] == "ready"
+            and bool(governance_state_bucket.get("critical_review_passed", False)),
             "binding_level": binding_level,
-            "summary": "qualified_action_ready" if rfq_handover_ready else "qualified_action_blocked",
+            "summary": "qualified_action_ready"
+            if rfq_handover_ready
+            else "qualified_action_blocked",
             "block_reasons": qualified_action_block_reasons,
         }
     )
@@ -1235,10 +1475,15 @@ def build_case_state(
         contract_obsolete=bool(cycle.get("contract_obsolete", False)),
         review_required=bool(governance_state_bucket.get("review_required", False)),
         critical_review_status=critical_review_status,
-        critical_review_passed=bool(governance_state_bucket.get("critical_review_passed", False)),
+        critical_review_passed=bool(
+            governance_state_bucket.get("critical_review_passed", False)
+        ),
         critical_review_blocking_findings=critical_review_blocking_findings,
-        manufacturer_validation_required=governance_state_bucket["release_status"] == "manufacturer_validation_required",
-        unknowns_release_blocking=list(governance_state_bucket.get("unknowns_release_blocking") or []),
+        manufacturer_validation_required=governance_state_bucket["release_status"]
+        == "manufacturer_validation_required",
+        unknowns_release_blocking=list(
+            governance_state_bucket.get("unknowns_release_blocking") or []
+        ),
         handover_ready=rfq_handover_ready,
         recommendation_identity=recommendation_identity,
         match_candidates=match_candidates,
@@ -1248,16 +1493,28 @@ def build_case_state(
         dict.fromkeys(
             list(rfq_state_bucket.get("open_points") or [])
             + _build_rfq_open_points(
-                review_required=bool(governance_state_bucket.get("review_required", False)),
-                manufacturer_validation_required=governance_state_bucket["release_status"] == "manufacturer_validation_required",
-                unknowns_manufacturer_validation=list(governance_state_bucket.get("unknowns_manufacturer_validation") or []),
-                unknowns_release_blocking=list(governance_state_bucket.get("unknowns_release_blocking") or []),
+                review_required=bool(
+                    governance_state_bucket.get("review_required", False)
+                ),
+                manufacturer_validation_required=governance_state_bucket[
+                    "release_status"
+                ]
+                == "manufacturer_validation_required",
+                unknowns_manufacturer_validation=list(
+                    governance_state_bucket.get("unknowns_manufacturer_validation")
+                    or []
+                ),
+                unknowns_release_blocking=list(
+                    governance_state_bucket.get("unknowns_release_blocking") or []
+                ),
                 soft_findings=critical_review_soft_findings,
                 required_corrections=critical_review_required_corrections,
             )
         )
     )
-    qualified_materials = list((handover_layer.get("handover_payload") or {}).get("qualified_materials") or [])
+    qualified_materials = list(
+        (handover_layer.get("handover_payload") or {}).get("qualified_materials") or []
+    )
     manufacturer_refs = _build_manufacturer_refs(
         recommendation_identity=recommendation_identity,
         match_candidates=match_candidates,
@@ -1272,7 +1529,9 @@ def build_case_state(
     recipient_selection = _build_recipient_selection(
         manufacturer_refs=manufacturer_refs,
         manufacturer_capabilities=manufacturer_capabilities,
-        matching_outcome=matching_outcome if isinstance(matching_outcome, dict) else None,
+        matching_outcome=matching_outcome
+        if isinstance(matching_outcome, dict)
+        else None,
         recommendation_identity=recommendation_identity,
         requirement_class=requirement_class,
     )
@@ -1290,28 +1549,49 @@ def build_case_state(
         and isinstance(matching_outcome.get("selected_manufacturer_ref"), dict)
         else None
     )
-    selected_recipient_refs = list(recipient_selection.get("selected_recipient_refs") or [])
-    candidate_recipient_refs = list(recipient_selection.get("candidate_recipient_refs") or [])
+    selected_recipient_refs = list(
+        recipient_selection.get("selected_recipient_refs") or []
+    )
+    candidate_recipient_refs = list(
+        recipient_selection.get("candidate_recipient_refs") or []
+    )
     manufacturer_rfq_payload = ManufacturerRfqSpecialistInput(
         admissible_request_package=ManufacturerRfqAdmissibleRequestPackage(
             matchability_status=str(
                 matching_state_bucket.get("matchability_status")
-                or ("ready_for_matching" if matching_state_bucket.get("matchable") else "not_ready")
+                or (
+                    "ready_for_matching"
+                    if matching_state_bucket.get("matchable")
+                    else "not_ready"
+                )
             ),
             rfq_admissibility=governance_state_bucket["rfq_admissibility"],
             requirement_class=dict(requirement_class) if requirement_class else None,
-            confirmed_parameters=dict((handover_layer.get("handover_payload") or {}).get("confirmed_parameters") or {}),
-            dimensions=dict((handover_layer.get("handover_payload") or {}).get("dimensions") or {}),
+            confirmed_parameters=dict(
+                (handover_layer.get("handover_payload") or {}).get(
+                    "confirmed_parameters"
+                )
+                or {}
+            ),
+            dimensions=dict(
+                (handover_layer.get("handover_payload") or {}).get("dimensions") or {}
+            ),
         ),
         manufacturer_capabilities=ManufacturerCapabilityPackage(
             match_candidates=tuple(
-                dict(item) for item in match_candidates if isinstance(item, dict) and item
+                dict(item)
+                for item in match_candidates
+                if isinstance(item, dict) and item
             ),
             manufacturer_refs=tuple(
-                dict(item) for item in manufacturer_refs if isinstance(item, dict) and item
+                dict(item)
+                for item in manufacturer_refs
+                if isinstance(item, dict) and item
             ),
             manufacturer_capabilities=tuple(
-                dict(item) for item in manufacturer_capabilities if isinstance(item, dict) and item
+                dict(item)
+                for item in manufacturer_capabilities
+                if isinstance(item, dict) and item
             ),
             winner_candidate_id=str(
                 selection_layer.get("winner_candidate_id")
@@ -1319,37 +1599,60 @@ def build_case_state(
                 or ""
             )
             or None,
-            recommendation_identity=dict(recommendation_identity) if recommendation_identity else None,
+            recommendation_identity=dict(recommendation_identity)
+            if recommendation_identity
+            else None,
             selected_manufacturer_ref=(
                 matching_outcome_selected_ref
                 or (
                     dict(selected_recipient_refs[0])
-                    if selected_recipient_refs and isinstance(selected_recipient_refs[0], dict)
+                    if selected_recipient_refs
+                    and isinstance(selected_recipient_refs[0], dict)
                     else None
                 )
             ),
         ),
         scope_package=ManufacturerRfqScopePackage(
-            scope_of_validity=tuple(str(item) for item in list(governance_state_bucket.get("scope_of_validity") or []) if item is not None),
-            open_points=tuple(str(item) for item in rfq_open_points if item is not None),
+            scope_of_validity=tuple(
+                str(item)
+                for item in list(governance_state_bucket.get("scope_of_validity") or [])
+                if item is not None
+            ),
+            open_points=tuple(
+                str(item) for item in rfq_open_points if item is not None
+            ),
         ),
         rfq_object={
             "object_type": "rfq_payload_basis",
             "object_version": "rfq_payload_basis_v1",
             "requirement_class": dict(requirement_class) if requirement_class else None,
-            "qualified_material_ids": list((handover_layer.get("handover_payload") or {}).get("qualified_material_ids") or []),
-            "qualified_materials": list((handover_layer.get("handover_payload") or {}).get("qualified_materials") or []),
-            "confirmed_parameters": dict((handover_layer.get("handover_payload") or {}).get("confirmed_parameters") or {}),
-            "dimensions": dict((handover_layer.get("handover_payload") or {}).get("dimensions") or {}),
+            "qualified_material_ids": list(
+                (handover_layer.get("handover_payload") or {}).get(
+                    "qualified_material_ids"
+                )
+                or []
+            ),
+            "qualified_materials": list(
+                (handover_layer.get("handover_payload") or {}).get(
+                    "qualified_materials"
+                )
+                or []
+            ),
+            "confirmed_parameters": dict(
+                (handover_layer.get("handover_payload") or {}).get(
+                    "confirmed_parameters"
+                )
+                or {}
+            ),
+            "dimensions": dict(
+                (handover_layer.get("handover_payload") or {}).get("dimensions") or {}
+            ),
             "target_system": handover_layer.get("target_system"),
             "payload_present": bool(handover_layer.get("handover_payload")),
         },
         recipient_refs=tuple(
             dict(ref)
-            for ref in (
-                selected_recipient_refs
-                or candidate_recipient_refs
-            )
+            for ref in (selected_recipient_refs or candidate_recipient_refs)
             if isinstance(ref, dict) and ref
         ),
         review_required=bool(governance_state_bucket.get("review_required", False)),
@@ -1359,15 +1662,21 @@ def build_case_state(
     rfq_payload_basis = project_rfq_payload_basis_from_specialist_result(
         manufacturer_rfq_result,
         payload=manufacturer_rfq_payload,
-        recommendation_identity=dict(recommendation_identity) if recommendation_identity else None,
+        recommendation_identity=dict(recommendation_identity)
+        if recommendation_identity
+        else None,
         requirement_class=dict(requirement_class) if requirement_class else None,
         requirement_class_hint=requirement_class_hint,
     )
-    manufacturer_state_bucket = dict(existing_case_state.get("manufacturer_state") or {})
+    manufacturer_state_bucket = dict(
+        existing_case_state.get("manufacturer_state") or {}
+    )
     manufacturer_state_bucket.update(
         {
             "manufacturer_specific": bool(manufacturer_refs),
-            "manufacturer_specificity_status": "manufacturer_specific" if manufacturer_refs else "not_yet_specific_enough",
+            "manufacturer_specificity_status": "manufacturer_specific"
+            if manufacturer_refs
+            else "not_yet_specific_enough",
             "manufacturer_refs": manufacturer_refs,
             "manufacturer_capabilities": manufacturer_capabilities,
             "manufacturer_basis_summary": {
@@ -1375,7 +1684,9 @@ def build_case_state(
                 "capability_count": len(manufacturer_capabilities),
                 "qualified_material_count": len(qualified_materials),
                 "match_candidate_count": len(match_candidates),
-                "has_recommendation_manufacturer": bool((recommendation_identity or {}).get("manufacturer_name")),
+                "has_recommendation_manufacturer": bool(
+                    (recommendation_identity or {}).get("manufacturer_name")
+                ),
             },
             "recommendation_identity": recommendation_identity,
             "requirement_class": dict(requirement_class) if requirement_class else None,
@@ -1396,7 +1707,9 @@ def build_case_state(
         {
             "status": rfq_state_bucket.get(
                 "status",
-                "ready" if governance_state_bucket["rfq_admissibility"] == "ready" else governance_state_bucket["rfq_admissibility"],
+                "ready"
+                if governance_state_bucket["rfq_admissibility"] == "ready"
+                else governance_state_bucket["rfq_admissibility"],
             ),
             "blocking_reasons": rfq_blocking_reasons,
             "blockers": rfq_blocking_reasons,
@@ -1404,12 +1717,18 @@ def build_case_state(
             "readiness_basis_summary": {
                 "release_status": governance_state_bucket["release_status"],
                 "rfq_admissibility": governance_state_bucket["rfq_admissibility"],
-                "review_required": bool(governance_state_bucket.get("review_required", False)),
+                "review_required": bool(
+                    governance_state_bucket.get("review_required", False)
+                ),
                 "critical_review_status": critical_review_status,
-                "critical_review_passed": bool(governance_state_bucket.get("critical_review_passed", False)),
+                "critical_review_passed": bool(
+                    governance_state_bucket.get("critical_review_passed", False)
+                ),
                 "handover_status": rfq_state_bucket.get("handover_status"),
                 "handover_ready": rfq_handover_ready,
-                "qualified_action_allowed": bool(qualified_action_gate.get("allowed", False)),
+                "qualified_action_allowed": bool(
+                    qualified_action_gate.get("allowed", False)
+                ),
                 "matchable": bool(matching_state_bucket.get("matchable", False)),
                 "matchability_status": matching_state_bucket.get("matchability_status"),
             },
@@ -1417,8 +1736,13 @@ def build_case_state(
             "requirement_class": dict(requirement_class) if requirement_class else None,
             "requirement_class_hint": requirement_class_hint,
             "recipient_selection": recipient_selection,
-            "manufacturer_validation_required": governance_state_bucket["release_status"] == "manufacturer_validation_required",
-            "review_required": bool(governance_state_bucket.get("review_required", False)),
+            "manufacturer_validation_required": governance_state_bucket[
+                "release_status"
+            ]
+            == "manufacturer_validation_required",
+            "review_required": bool(
+                governance_state_bucket.get("review_required", False)
+            ),
             "contract_obsolete": bool(cycle.get("contract_obsolete", False)),
             "rfq_object": rfq_payload_basis,
             "rfq_send_payload": dict(manufacturer_rfq_result.rfq_send_payload or {}),
@@ -1435,7 +1759,9 @@ def build_case_state(
             "handover_ready": rfq_state_bucket["handover_ready"],
         }
     )
-    invalidation_state_bucket = dict(existing_case_state.get("invalidation_state") or {})
+    invalidation_state_bucket = dict(
+        existing_case_state.get("invalidation_state") or {}
+    )
     invalidation_state_bucket.update(
         {
             "contract_obsolete": bool(cycle.get("contract_obsolete", False)),
@@ -1457,7 +1783,11 @@ def build_case_state(
         "matching_state": matching_state_bucket,
         "rfq_state": rfq_state_bucket,
         "manufacturer_state": manufacturer_state_bucket,
-        "raw_inputs": dict(existing_case_state.get("raw_inputs") or observed_inputs_bucket.get("raw_parameters") or {}),
+        "raw_inputs": dict(
+            existing_case_state.get("raw_inputs")
+            or observed_inputs_bucket.get("raw_parameters")
+            or {}
+        ),
         "normalization_identity_snapshot": dict(parameter_meta_bucket),
         "derived_calculations": dict(derived_engineering_values_bucket),
         "engineering_signals": {
@@ -1473,7 +1803,9 @@ def build_case_state(
         "medium_capture": medium_capture_bucket,
         "medium_classification": medium_classification_bucket,
         "medium_context": medium_context_bucket,
-        "candidate_clusters": list(matching_state_bucket.get("candidate_clusters") or []),
+        "candidate_clusters": list(
+            matching_state_bucket.get("candidate_clusters") or []
+        ),
         "sealing_requirement_spec": {
             **build_default_sealing_requirement_spec(
                 analysis_cycle_id=cycle.get("analysis_cycle_id"),
@@ -1484,17 +1816,28 @@ def build_case_state(
             "rfq_admissibility": governance_state_bucket["rfq_admissibility"],
             "specificity_level": governance_state_bucket["specificity_level"],
             "contract_obsolete": bool(cycle.get("contract_obsolete", False)),
-            "candidate_clusters": list(matching_state_bucket.get("candidate_clusters") or []),
+            "candidate_clusters": list(
+                matching_state_bucket.get("candidate_clusters") or []
+            ),
             "candidate_summary": candidate_summary,
             "recommendation_identity": recommendation_identity,
             "requirement_class": dict(requirement_class) if requirement_class else None,
             "requirement_class_hint": requirement_class_hint,
-            "scope_of_validity": list(governance_state_bucket.get("scope_of_validity") or []),
-            "blocking_unknowns": list(governance_state_bucket.get("unknowns_release_blocking") or []),
-            "manufacturer_validation_required": governance_state_bucket["release_status"] == "manufacturer_validation_required",
+            "scope_of_validity": list(
+                governance_state_bucket.get("scope_of_validity") or []
+            ),
+            "blocking_unknowns": list(
+                governance_state_bucket.get("unknowns_release_blocking") or []
+            ),
+            "manufacturer_validation_required": governance_state_bucket[
+                "release_status"
+            ]
+            == "manufacturer_validation_required",
         },
         "qualified_action_gate": qualified_action_gate,
-        "qualified_action_history": list(existing_case_state.get("qualified_action_history") or []),
+        "qualified_action_history": list(
+            existing_case_state.get("qualified_action_history") or []
+        ),
         "readiness": readiness_bucket,
         "invalidation_state": invalidation_state_bucket,
         "audit_trail": [audit_event],
@@ -1547,24 +1890,35 @@ def sync_material_cycle_control(state: dict[str, Any]) -> dict[str, Any]:
     return dict(state)
 
 
-def get_material_input_snapshot_and_fingerprint(state: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    snapshot = dict((((state.get("sealing_state") or {}).get("asserted")) or {}).get("operating_conditions") or {})
+def get_material_input_snapshot_and_fingerprint(
+    state: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    snapshot = dict(
+        (((state.get("sealing_state") or {}).get("asserted")) or {}).get(
+            "operating_conditions"
+        )
+        or {}
+    )
     return snapshot, str(sorted(snapshot.items()))
 
 
-def get_material_provider_snapshot_and_fingerprint(state: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def get_material_provider_snapshot_and_fingerprint(
+    state: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
     snapshot = {"fact_card_count": len(state.get("relevant_fact_cards") or [])}
     return snapshot, str(sorted(snapshot.items()))
 
 
 def resolve_next_step_contract(state: dict[str, Any]) -> dict[str, Any]:
-    cycle = ((state.get("sealing_state") or {}).get("cycle") or {})
+    cycle = (state.get("sealing_state") or {}).get("cycle") or {}
     return {
         "ask_mode": "guided",
         "requested_fields": [],
         "reason_code": "bounded_default",
         "impact_hint": None,
-        "rfq_admissibility": ((state.get("case_state") or {}).get("result_contract") or {}).get("rfq_admissibility", "inadmissible"),
+        "rfq_admissibility": (
+            (state.get("case_state") or {}).get("result_contract") or {}
+        ).get("rfq_admissibility", "inadmissible"),
         "state_revision": int(cycle.get("state_revision", 0) or 0),
     }
 
@@ -1586,13 +1940,19 @@ def _coverage_prefix(coverage_status: str | None) -> str:
     return ""
 
 
-def _build_visible_coverage_scope(policy_context: dict[str, Any] | None) -> list[VisibleNarrativeItem]:
+def _build_visible_coverage_scope(
+    policy_context: dict[str, Any] | None,
+) -> list[VisibleNarrativeItem]:
     if not policy_context:
         return []
     coverage_status = policy_context.get("coverage_status")
     boundary_flags = list(policy_context.get("boundary_flags", []))
     items: list[VisibleNarrativeItem] = []
-    emit_boundary = coverage_status in {"partial", "orientation_only", "out_of_scope"} or bool(boundary_flags)
+    emit_boundary = coverage_status in {
+        "partial",
+        "orientation_only",
+        "out_of_scope",
+    } or bool(boundary_flags)
     if "no_manufacturer_release" in boundary_flags:
         items.append(
             {

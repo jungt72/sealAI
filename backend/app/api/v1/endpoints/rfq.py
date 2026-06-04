@@ -2,14 +2,27 @@ from __future__ import annotations
 
 from typing import Any, Literal, Mapping
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.renderers.rfq_pdf import render_rfq_export_pdf
 from app.common.errors import error_detail
 from app.database import get_db
-from app.services.auth.dependencies import RequestUser, get_current_request_user, require_tenant_id
+from app.services.auth.dependencies import (
+    RequestUser,
+    get_current_request_user,
+    require_tenant_id,
+)
 from app.services.rfq_preview_service import (
     RFQ_PREVIEW_ARTIFACT_TYPE,
     RfqExportBlockedError,
@@ -165,7 +178,10 @@ async def get_rwdr_case(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await get_db_persisted_rwdr_case(
@@ -176,7 +192,10 @@ async def get_rwdr_case(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
 
 
 @router.get("/rwdr/cases/{case_id}/snapshots")
@@ -186,7 +205,10 @@ async def list_rwdr_case_snapshots(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             {
@@ -200,7 +222,10 @@ async def list_rwdr_case_snapshots(
             }
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
 
 
 @router.get("/rwdr/cases/{case_id}/snapshots/{revision_number}")
@@ -211,7 +236,10 @@ async def get_rwdr_case_snapshot(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await get_db_persisted_rwdr_case_snapshot(
@@ -223,7 +251,10 @@ async def get_rwdr_case_snapshot(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_snapshot_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_snapshot_not_found"),
+        ) from exc
 
 
 @router.get("/rwdr/cases/{case_id}/diff/{from_revision}/{to_revision}")
@@ -235,7 +266,10 @@ async def diff_rwdr_case_snapshots(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await diff_db_persisted_rwdr_case_snapshots(
@@ -248,7 +282,10 @@ async def diff_rwdr_case_snapshots(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_snapshot_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_snapshot_not_found"),
+        ) from exc
 
 
 @router.post("/rwdr/cases/{case_id}/confirmations")
@@ -259,7 +296,10 @@ async def update_rwdr_confirmations(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await update_db_persisted_rwdr_confirmations(
@@ -271,9 +311,15 @@ async def update_rwdr_confirmations(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
     except RWDRCaseStateValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error_detail("rwdr_confirmation_invalid", message=str(exc))) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail("rwdr_confirmation_invalid", message=str(exc)),
+        ) from exc
 
 
 @router.post("/rwdr/cases/{case_id}/manufacturer-feedback")
@@ -289,7 +335,10 @@ async def record_rwdr_manufacturer_feedback(
     matching/dispatch stay disabled. Echoed in chat only as rag_supported notes.
     """
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await record_db_persisted_rwdr_manufacturer_feedback(
@@ -301,9 +350,15 @@ async def record_rwdr_manufacturer_feedback(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
     except RWDRCaseStateValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error_detail("rwdr_manufacturer_feedback_invalid", message=str(exc))) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_detail("rwdr_manufacturer_feedback_invalid", message=str(exc)),
+        ) from exc
 
 
 @router.post("/rwdr/cases/{case_id}/evaluate")
@@ -313,7 +368,10 @@ async def evaluate_rwdr_case(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await evaluate_db_persisted_rwdr_case(
@@ -324,7 +382,10 @@ async def evaluate_rwdr_case(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
 
 
 @router.post("/rwdr/cases/{case_id}/brief")
@@ -334,7 +395,10 @@ async def generate_persisted_rwdr_case_brief(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await generate_db_persisted_rwdr_brief(
@@ -345,7 +409,10 @@ async def generate_persisted_rwdr_case_brief(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
 
 
 @router.get("/rwdr/cases/{case_id}/export.md")
@@ -355,7 +422,10 @@ async def export_rwdr_case_markdown(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         return _json_safe(
             await export_db_persisted_rwdr_case_markdown(
@@ -366,7 +436,10 @@ async def export_rwdr_case_markdown(
             )
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
 
 
 @router.get("/rwdr/cases/{case_id}/export.pdf")
@@ -376,7 +449,10 @@ async def export_rwdr_case_pdf(
     session: AsyncSession = Depends(get_db),
 ) -> Response:
     if not user.user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=error_detail("missing_user_scope"))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=error_detail("missing_user_scope"),
+        )
     try:
         document = await export_db_persisted_rwdr_case_pdf_document(
             session=session,
@@ -385,7 +461,10 @@ async def export_rwdr_case_pdf(
             user_id=user.user_id,
         )
     except RWDRCaseStateNotFound as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_detail("rwdr_case_not_found")) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail("rwdr_case_not_found"),
+        ) from exc
     pdf_bytes = render_rfq_export_pdf(document)
     filename = f"sealai-rwdr-{_safe_file_token(case_id)}.pdf"
     return Response(
@@ -409,7 +488,9 @@ async def create_rfq_preview(
     user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     if not body.explicit_user_intent:
         raise HTTPException(
             status_code=422,
@@ -440,7 +521,9 @@ async def create_rfq_preview(
     except RfqPreviewStaleError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=error_detail("rfq_preview_stale", request_id=request_id, message=str(exc)),
+            detail=error_detail(
+                "rfq_preview_stale", request_id=request_id, message=str(exc)
+            ),
         ) from exc
     except RfqPreviewNotFound as exc:
         raise HTTPException(
@@ -450,7 +533,9 @@ async def create_rfq_preview(
     except RfqPreviewError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail("rfq_preview_invalid", request_id=request_id, message=str(exc)),
+            detail=error_detail(
+                "rfq_preview_invalid", request_id=request_id, message=str(exc)
+            ),
         ) from exc
     return _preview_response(view)
 
@@ -462,7 +547,9 @@ async def get_rfq_preview(
     user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     service = RfqPreviewService(session)
     try:
         view = await service.get_latest_preview_for_case(
@@ -485,7 +572,9 @@ async def get_rfq_preview_export(
     user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     service = RfqPreviewService(session)
     try:
         document = await service.generate_export(
@@ -532,7 +621,9 @@ async def get_rfq_preview_export_pdf(
     user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Response:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     service = RfqPreviewService(session)
     try:
         document = await service.generate_export(
@@ -596,7 +687,9 @@ async def grant_rfq_preview_consent(
     user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get("X-Request-ID")
+    request_id = raw_request.headers.get("X-Request-Id") or raw_request.headers.get(
+        "X-Request-ID"
+    )
     service = RfqPreviewService(session)
     try:
         view = await service.grant_preview_consent(
@@ -609,7 +702,9 @@ async def grant_rfq_preview_consent(
     except RfqPreviewStaleError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=error_detail("rfq_preview_stale", request_id=request_id, message=str(exc)),
+            detail=error_detail(
+                "rfq_preview_stale", request_id=request_id, message=str(exc)
+            ),
         ) from exc
     except RfqPreviewNotFound as exc:
         raise HTTPException(
@@ -619,7 +714,9 @@ async def grant_rfq_preview_consent(
     except RfqPreviewError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=error_detail("rfq_preview_consent_invalid", request_id=request_id, message=str(exc)),
+            detail=error_detail(
+                "rfq_preview_consent_invalid", request_id=request_id, message=str(exc)
+            ),
         ) from exc
     return _preview_response(view)
 

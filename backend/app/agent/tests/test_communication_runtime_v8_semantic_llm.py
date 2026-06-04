@@ -5,7 +5,9 @@ import json
 import pytest
 
 from app.agent.communication.communication_runtime_v8 import CommunicationRuntimeV8
-from app.agent.communication.conversation_controller_v7 import ConversationControllerInput
+from app.agent.communication.conversation_controller_v7 import (
+    ConversationControllerInput,
+)
 from app.agent.communication.v7_contracts import AnswerMode, MutationPolicy
 from app.agent.state.models import PendingQuestion, SlotAnswerBinding
 from app.domain.pre_gate_classification import PreGateClassification
@@ -67,7 +69,9 @@ class _FakeChat:
 
 
 class _FakeClient:
-    def __init__(self, completions: _FakeCompletions, responses: _FakeResponses) -> None:
+    def __init__(
+        self, completions: _FakeCompletions, responses: _FakeResponses
+    ) -> None:
         self.chat = _FakeChat(completions)
         self.responses = responses
 

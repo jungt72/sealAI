@@ -6,6 +6,7 @@ from app.services.auth.dependencies import RequestUser
 from app.services.rag import utils as rag_utils
 from typing import Optional
 
+
 class DummyResult:
     def __init__(self, items):
         self._items = items
@@ -15,6 +16,7 @@ class DummyResult:
 
     def first(self):
         return self._items[0] if self._items else None
+
 
 class DummySession:
     def __init__(self) -> None:
@@ -33,8 +35,11 @@ class DummySession:
         # Just return empty result for deduplication logic
         return DummyResult([])
 
+
 class DummyUploadFile:
-    def __init__(self, filename: str, data: bytes, content_type: str = "text/plain") -> None:
+    def __init__(
+        self, filename: str, data: bytes, content_type: str = "text/plain"
+    ) -> None:
         self.filename = filename
         self._data = data
         self.content_type = content_type
@@ -47,21 +52,27 @@ class DummyUploadFile:
     async def close(self) -> None:
         return None
 
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
 
+
 @pytest.mark.anyio
-async def test_rag_upload_global_admin_allowed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_rag_upload_global_admin_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
     rag_utils.UPLOAD_ROOT = str(tmp_path)
     rag_utils._UPLOAD_DIR_READY = False
     monkeypatch.setenv("REDIS_URL", "")
-    
+
     # Mock is_rag_admin
     monkeypatch.setattr("app.api.v1.endpoints.rag.is_rag_admin", lambda user: True)
 
-    user = RequestUser(user_id="user123", username="admin_user", sub="user123", roles=["sealai-admin"])
+    user = RequestUser(
+        user_id="user123", username="admin_user", sub="user123", roles=["sealai-admin"]
+    )
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
 
     # Call with scope="global"
@@ -78,16 +89,20 @@ async def test_rag_upload_global_admin_allowed(monkeypatch: pytest.MonkeyPatch, 
 
 
 @pytest.mark.anyio
-async def test_rag_upload_global_non_admin_denied(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_rag_upload_global_non_admin_denied(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     rag_endpoint.UPLOAD_ROOT = str(tmp_path)
     rag_utils.UPLOAD_ROOT = str(tmp_path)
     rag_utils._UPLOAD_DIR_READY = False
     monkeypatch.setenv("REDIS_URL", "")
-    
+
     # Mock is_rag_admin
     monkeypatch.setattr("app.api.v1.endpoints.rag.is_rag_admin", lambda user: False)
 
-    user = RequestUser(user_id="user123", username="normal_user", sub="user123", roles=[])
+    user = RequestUser(
+        user_id="user123", username="normal_user", sub="user123", roles=[]
+    )
     file_obj = DummyUploadFile(filename="doc.txt", data=b"hello")
 
     try:

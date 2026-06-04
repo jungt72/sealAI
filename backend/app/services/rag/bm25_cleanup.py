@@ -10,6 +10,7 @@ Usage (cron / background task)::
     from app.services.rag.bm25_cleanup import run_cleanup
     await run_cleanup(tenant_id="acme", document_ids_to_remove=deleted_ids)
 """
+
 from __future__ import annotations
 
 import json
@@ -33,6 +34,7 @@ DEFAULT_MAX_SIZE_MB: int = int(os.getenv("RAG_BM25_MAX_SIZE_MB", "500"))
 # ---------------------------------------------------------------------------
 # Path helpers (mirrored from bm25_store.py to avoid circular imports)
 # ---------------------------------------------------------------------------
+
 
 def _resolve_bm25_dir() -> Path:
     upload_root_raw = (os.getenv("RAG_UPLOAD_DIR") or _DEFAULT_UPLOAD_ROOT).strip()
@@ -73,6 +75,7 @@ def _collection_path(bm25_dir: Path, collection: str) -> Path:
 # ---------------------------------------------------------------------------
 # Core service
 # ---------------------------------------------------------------------------
+
 
 class BM25CleanupService:
     """Removes stale entries from the BM25 JSONL store.
@@ -129,11 +132,18 @@ class BM25CleanupService:
                         "remaining": len(kept),
                     },
                 )
-                return {"removed": removed, "remaining": len(kept), "collection": collection}
+                return {
+                    "removed": removed,
+                    "remaining": len(kept),
+                    "collection": collection,
+                }
             except Exception as exc:
                 log.error(
                     "bm25.cleanup.failed",
-                    extra={"collection": collection, "error": f"{type(exc).__name__}: {exc}"},
+                    extra={
+                        "collection": collection,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
                 )
                 return {"removed": 0, "remaining": -1, "collection": collection}
 
@@ -151,10 +161,17 @@ class BM25CleanupService:
         dict
             ``{"truncated": bool, "removed": int, "size_mb_before": float, "collection": str}``
         """
-        limit_bytes = (DEFAULT_MAX_SIZE_MB if max_size_mb is None else max_size_mb) * 1024 * 1024
+        limit_bytes = (
+            (DEFAULT_MAX_SIZE_MB if max_size_mb is None else max_size_mb) * 1024 * 1024
+        )
         path = _collection_path(self._dir, collection)
         if not path.exists():
-            return {"truncated": False, "removed": 0, "size_mb_before": 0.0, "collection": collection}
+            return {
+                "truncated": False,
+                "removed": 0,
+                "size_mb_before": 0.0,
+                "collection": collection,
+            }
 
         size_bytes = path.stat().st_size
         size_mb = size_bytes / (1024 * 1024)
@@ -199,7 +216,10 @@ class BM25CleanupService:
             except Exception as exc:
                 log.error(
                     "bm25.size_limit_failed",
-                    extra={"collection": collection, "error": f"{type(exc).__name__}: {exc}"},
+                    extra={
+                        "collection": collection,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
                 )
                 return {
                     "truncated": False,
@@ -278,6 +298,7 @@ class BM25CleanupService:
 # ---------------------------------------------------------------------------
 # Convenience async wrapper for background tasks
 # ---------------------------------------------------------------------------
+
 
 async def run_cleanup(
     collection: str = "sealai_knowledge",

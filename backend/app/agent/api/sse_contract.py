@@ -22,7 +22,9 @@ SSEEventType = Literal[
 _TURN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
-def stable_turn_id(*, session_id: str | None, message: str | None, explicit_turn_id: str | None = None) -> str:
+def stable_turn_id(
+    *, session_id: str | None, message: str | None, explicit_turn_id: str | None = None
+) -> str:
     if explicit_turn_id:
         candidate = explicit_turn_id.strip()
         if _TURN_ID_RE.fullmatch(candidate):
@@ -76,7 +78,9 @@ class SSEEventBuilder:
 
     @classmethod
     def for_request(cls, request: Any) -> "SSEEventBuilder":
-        explicit_turn_id = getattr(request, "turn_id", None) or getattr(request, "request_id", None)
+        explicit_turn_id = getattr(request, "turn_id", None) or getattr(
+            request, "request_id", None
+        )
         return cls(
             turn_id=stable_turn_id(
                 session_id=str(getattr(request, "session_id", "") or "default"),
@@ -106,8 +110,15 @@ class SSEEventBuilder:
         if is_final and normalized_type == "state_update":
             first_progress_ms, latency_ms = turn_timing()
             if first_progress_ms is not None or latency_ms is not None:
-                trace = dict(normalized.get("trace") or {}) if isinstance(normalized.get("trace"), dict) else {}
-                if trace.get("first_progress_ms") is None and first_progress_ms is not None:
+                trace = (
+                    dict(normalized.get("trace") or {})
+                    if isinstance(normalized.get("trace"), dict)
+                    else {}
+                )
+                if (
+                    trace.get("first_progress_ms") is None
+                    and first_progress_ms is not None
+                ):
                     trace["first_progress_ms"] = first_progress_ms
                 if trace.get("latency_ms") is None and latency_ms is not None:
                     trace["latency_ms"] = latency_ms

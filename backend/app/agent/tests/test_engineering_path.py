@@ -10,7 +10,9 @@ from app.domain.engineering_path import (
 
 @pytest.mark.parametrize("engineering_path", sorted(AUTHORITY_ENGINEERING_PATHS))
 def test_authority_engineering_path_is_preserved(engineering_path: str) -> None:
-    assert derive_engineering_path(engineering_path=engineering_path) == engineering_path
+    assert (
+        derive_engineering_path(engineering_path=engineering_path) == engineering_path
+    )
 
 
 def test_duplicate_identical_authority_signals_are_preserved() -> None:
@@ -28,7 +30,9 @@ def test_empty_engineering_path_returns_none(engineering_path: object) -> None:
     assert derive_engineering_path(engineering_path=engineering_path) is None
 
 
-@pytest.mark.parametrize("engineering_path", ["rotary", "RWDR", "rwdr ", "radial_shaft_seal"])
+@pytest.mark.parametrize(
+    "engineering_path", ["rotary", "RWDR", "rwdr ", "radial_shaft_seal"]
+)
 def test_unknown_explicit_engineering_path_returns_none(engineering_path: str) -> None:
     assert derive_engineering_path(engineering_path=engineering_path) is None
 
@@ -38,7 +42,9 @@ def test_mixed_authority_values_return_none() -> None:
 
 
 def test_unknown_mixed_with_authority_value_returns_none() -> None:
-    assert derive_engineering_path(authority_values=["rwdr", "radial_shaft_seal"]) is None
+    assert (
+        derive_engineering_path(authority_values=["rwdr", "radial_shaft_seal"]) is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -50,5 +56,7 @@ def test_unknown_mixed_with_authority_value_returns_none() -> None:
         {"seal_family": "radial_shaft_seal"},
     ],
 )
-def test_neighbouring_signals_do_not_derive_engineering_path(signals: dict[str, str]) -> None:
+def test_neighbouring_signals_do_not_derive_engineering_path(
+    signals: dict[str, str],
+) -> None:
     assert derive_engineering_path(**signals) is None

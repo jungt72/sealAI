@@ -104,20 +104,39 @@ class ProblemFirstMatchingService:
     ) -> list[ManufacturerMatch]:
         return self.match_manufacturers(case, self.capabilities_from_profiles(profiles))
 
-    def derive_required_capabilities(self, case: Mapping[str, Any]) -> list[CapabilityRequirement]:
+    def derive_required_capabilities(
+        self, case: Mapping[str, Any]
+    ) -> list[CapabilityRequirement]:
         requirements = []
         if case.get("engineering_path"):
-            requirements.append(CapabilityRequirement("engineering_path", {"engineering_path": case["engineering_path"]}))
+            requirements.append(
+                CapabilityRequirement(
+                    "engineering_path", {"engineering_path": case["engineering_path"]}
+                )
+            )
         if case.get("sealing_material_family"):
-            requirements.append(CapabilityRequirement("material_expertise", {"sealing_material_family": case["sealing_material_family"]}))
+            requirements.append(
+                CapabilityRequirement(
+                    "material_expertise",
+                    {"sealing_material_family": case["sealing_material_family"]},
+                )
+            )
         quantity = _quantity(case.get("quantity_requested"))
         if quantity is not None:
-            requirements.append(CapabilityRequirement("lot_size_capability", {"quantity_requested": quantity}))
+            requirements.append(
+                CapabilityRequirement(
+                    "lot_size_capability", {"quantity_requested": quantity}
+                )
+            )
         if case.get("atex_required"):
-            requirements.append(CapabilityRequirement("certification", {"atex_capable": True}))
+            requirements.append(
+                CapabilityRequirement("certification", {"atex_capable": True})
+            )
         return requirements
 
-    def match_manufacturers(self, case: Mapping[str, Any], capabilities: Sequence[ManufacturerCapability]) -> list[ManufacturerMatch]:
+    def match_manufacturers(
+        self, case: Mapping[str, Any], capabilities: Sequence[ManufacturerCapability]
+    ) -> list[ManufacturerMatch]:
         requirements = self.derive_required_capabilities(case)
         by_mfr: dict[str, list[ManufacturerCapability]] = {}
         for capability in capabilities:
@@ -128,14 +147,37 @@ class ProblemFirstMatchingService:
             if coverage.unmet:
                 continue
             base = sum(claim.technical_score for claim in claims) / max(1, len(claims))
-            multiplier = min(1.1, max(0.9, sum(claim.verification_multiplier for claim in claims) / max(1, len(claims))))
-            quantity_ok = "lot_size_capability" in coverage.met or _quantity(case.get("quantity_requested")) is None
+            multiplier = min(
+                1.1,
+                max(
+                    0.9,
+                    sum(claim.verification_multiplier for claim in claims)
+                    / max(1, len(claims)),
+                ),
+            )
+            quantity_ok = (
+                "lot_size_capability" in coverage.met
+                or _quantity(case.get("quantity_requested")) is None
+            )
             sponsored = any(claim.sponsored for claim in claims)
-            matches.append(ManufacturerMatch(manufacturer_id, round(base * multiplier, 2), base, multiplier, coverage, quantity_ok, sponsored=sponsored))
+            matches.append(
+                ManufacturerMatch(
+                    manufacturer_id,
+                    round(base * multiplier, 2),
+                    base,
+                    multiplier,
+                    coverage,
+                    quantity_ok,
+                    sponsored=sponsored,
+                )
+            )
         return sorted(matches, key=lambda match: match.total_score, reverse=True)
 
 
-def _coverage(requirements: Sequence[CapabilityRequirement], claims: Sequence[ManufacturerCapability]) -> CapabilityCoverage:
+def _coverage(
+    requirements: Sequence[CapabilityRequirement],
+    claims: Sequence[ManufacturerCapability],
+) -> CapabilityCoverage:
     met: list[str] = []
     unmet: list[str] = []
     for requirement in requirements:
@@ -146,11 +188,17 @@ def _coverage(requirements: Sequence[CapabilityRequirement], claims: Sequence[Ma
     return CapabilityCoverage(tuple(met), tuple(unmet))
 
 
-def _claim_satisfies(requirement: CapabilityRequirement, claim: ManufacturerCapability) -> bool:
+def _claim_satisfies(
+    requirement: CapabilityRequirement, claim: ManufacturerCapability
+) -> bool:
     if requirement.requirement_type == "engineering_path":
-        return claim.payload.get("engineering_path") == requirement.payload.get("engineering_path")
+        return claim.payload.get("engineering_path") == requirement.payload.get(
+            "engineering_path"
+        )
     if requirement.requirement_type == "material_expertise":
-        return claim.payload.get("sealing_material_family") == requirement.payload.get("sealing_material_family")
+        return claim.payload.get("sealing_material_family") == requirement.payload.get(
+            "sealing_material_family"
+        )
     if requirement.requirement_type == "certification":
         return bool(claim.payload.get("atex_capable")) is True
     if requirement.requirement_type == "lot_size_capability":

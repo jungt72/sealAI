@@ -75,10 +75,27 @@ _MATERIAL_PATTERN = re.compile(
 )
 _MEDIUM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b(water|wasser)\b", re.IGNORECASE), "water"),
-    (re.compile(r"\b(HLP|HVLP|HEES|HETG|HEPG|HFDU|HFAE|HFC)(?:\s*[-/]?\s*\d{1,3})?\b", re.IGNORECASE), "HLP"),
-    (re.compile(r"\b(oil|oel|mineraloel|hydraulic oil|hydraulikoel)\b", re.IGNORECASE), "oil"),
-    (re.compile(r"\b(natronlauge|naoh|sodium hydroxide)\b", re.IGNORECASE), "Natronlauge"),
-    (re.compile(r"\b(salzsaeure|hcl|hydrochloric acid)\b", re.IGNORECASE), "Salzsaeure"),
+    (
+        re.compile(
+            r"\b(HLP|HVLP|HEES|HETG|HEPG|HFDU|HFAE|HFC)(?:\s*[-/]?\s*\d{1,3})?\b",
+            re.IGNORECASE,
+        ),
+        "HLP",
+    ),
+    (
+        re.compile(
+            r"\b(oil|oel|mineraloel|hydraulic oil|hydraulikoel)\b", re.IGNORECASE
+        ),
+        "oil",
+    ),
+    (
+        re.compile(r"\b(natronlauge|naoh|sodium hydroxide)\b", re.IGNORECASE),
+        "Natronlauge",
+    ),
+    (
+        re.compile(r"\b(salzsaeure|hcl|hydrochloric acid)\b", re.IGNORECASE),
+        "Salzsaeure",
+    ),
     (re.compile(r"\b(reiniger|cleaner|cleaning agent)\b", re.IGNORECASE), "cleaner"),
 )
 _GENERIC_MEDIUM_KEYS = {"oil", "oel", "reiniger", "cleaner", "chemical", "chemikalie"}
@@ -100,7 +117,13 @@ _COMPLIANCE_TERMS = (
     "pharma",
     "drinking water",
 )
-_CERTIFICATE_KEYS = ("certificate_id", "source_url", "doi", "manufacturer", "source_hash")
+_CERTIFICATE_KEYS = (
+    "certificate_id",
+    "source_url",
+    "doi",
+    "manufacturer",
+    "source_hash",
+)
 _SOURCE_ANCHOR_KEYS = ("source_url", "doi", "manufacturer", "source_hash")
 _VALID_CLAIM_LEVELS = {"L1", "L2", "L3"}
 
@@ -109,10 +132,17 @@ def build_material_evidence_card_candidate(raw: Mapping[str, Any]) -> dict[str, 
     """Build a conservative Patch-8 card candidate from Paperless/RAG-like data."""
 
     metadata = _mapping(raw.get("metadata"))
-    additional = _mapping(raw.get("additional_metadata")) or _mapping(metadata.get("additional_metadata"))
+    additional = _mapping(raw.get("additional_metadata")) or _mapping(
+        metadata.get("additional_metadata")
+    )
     tags = _tags(raw, metadata)
-    route = _first_text(raw, metadata, keys=("route", "route_key", "metadata.route_key"))
-    source_system = _first_text(raw, metadata, keys=("source_system", "metadata.source_system")) or "rag"
+    route = _first_text(
+        raw, metadata, keys=("route", "route_key", "metadata.route_key")
+    )
+    source_system = (
+        _first_text(raw, metadata, keys=("source_system", "metadata.source_system"))
+        or "rag"
+    )
     source_id = _first_text(
         raw,
         metadata,
@@ -128,55 +158,123 @@ def build_material_evidence_card_candidate(raw: Mapping[str, Any]) -> dict[str, 
             "metadata.chunk_id",
         ),
     )
-    source_reference = _source_reference(source_system=source_system, source_id=source_id)
+    source_reference = _source_reference(
+        source_system=source_system, source_id=source_id
+    )
     source_title = _first_text(
         raw,
         metadata,
-        keys=("source_title", "title", "filename", "metadata.title", "metadata.filename"),
+        keys=(
+            "source_title",
+            "title",
+            "filename",
+            "metadata.title",
+            "metadata.filename",
+        ),
     )
-    source_url = _first_text(raw, metadata, keys=("source_url", "url", "uri", "metadata.source_url", "source"))
-    source_hash = _first_text(
+    source_url = _first_text(
         raw,
         metadata,
-        keys=("source_hash", "sha256", "chunk_hash", "metadata.chunk_hash", "metadata.source_version"),
-    ) or source_reference
+        keys=("source_url", "url", "uri", "metadata.source_url", "source"),
+    )
+    source_hash = (
+        _first_text(
+            raw,
+            metadata,
+            keys=(
+                "source_hash",
+                "sha256",
+                "chunk_hash",
+                "metadata.chunk_hash",
+                "metadata.source_version",
+            ),
+        )
+        or source_reference
+    )
 
     text = _first_text(
         raw,
         metadata,
-        keys=("statement_short", "excerpt_short", "excerpt", "chunk_text", "text", "content", "metadata.text"),
+        keys=(
+            "statement_short",
+            "excerpt_short",
+            "excerpt",
+            "chunk_text",
+            "text",
+            "content",
+            "metadata.text",
+        ),
     )
     material = _first_text(
         raw,
         metadata,
         additional,
-        keys=("material", "compound", "material_code", "metadata.material_code", "entity", "metadata.entity"),
+        keys=(
+            "material",
+            "compound",
+            "material_code",
+            "metadata.material_code",
+            "entity",
+            "metadata.entity",
+        ),
     ) or _extract_tag_value(tags, {"material", "compound", "material_code", "entity"})
-    medium = _first_text(raw, metadata, additional, keys=("medium", "medium_name", "fluid"))
+    medium = _first_text(
+        raw, metadata, additional, keys=("medium", "medium_name", "fluid")
+    )
     medium = medium or _extract_tag_value(tags, {"medium", "medium_name", "fluid"})
 
-    material_from_tags_only = not material and bool(_extract_known_material(_tag_text(tags)))
+    material_from_tags_only = not material and bool(
+        _extract_known_material(_tag_text(tags))
+    )
     medium_from_tags_only = not medium and bool(_extract_known_medium(_tag_text(tags)))
     if not material:
-        material = _extract_known_material(_tag_text(tags)) or _extract_known_material(text)
+        material = _extract_known_material(_tag_text(tags)) or _extract_known_material(
+            text
+        )
     if not medium:
         medium = _extract_known_medium(_tag_text(tags)) or _extract_known_medium(text)
 
-    material_family = _first_text(raw, metadata, additional, keys=("material_family", "metadata.material_family"))
-    medium_family = _first_text(raw, metadata, additional, keys=("medium_family", "fluid_family"))
+    material_family = _first_text(
+        raw, metadata, additional, keys=("material_family", "metadata.material_family")
+    )
+    medium_family = _first_text(
+        raw, metadata, additional, keys=("medium_family", "fluid_family")
+    )
     limitations = _list_text(raw.get("limitations"))
     limitations.extend(_list_text(metadata.get("limitations")))
 
-    if material and (material_from_tags_only or not _first_text(raw, metadata, additional, keys=("material", "compound", "material_code", "metadata.material_code", "entity", "metadata.entity"))):
+    if material and (
+        material_from_tags_only
+        or not _first_text(
+            raw,
+            metadata,
+            additional,
+            keys=(
+                "material",
+                "compound",
+                "material_code",
+                "metadata.material_code",
+                "entity",
+                "metadata.entity",
+            ),
+        )
+    ):
         limitations.append("material_inferred_from_tags_or_text")
-    if medium and (medium_from_tags_only or not _first_text(raw, metadata, additional, keys=("medium", "medium_name", "fluid"))):
+    if medium and (
+        medium_from_tags_only
+        or not _first_text(
+            raw, metadata, additional, keys=("medium", "medium_name", "fluid")
+        )
+    ):
         limitations.append("medium_inferred_from_tags_or_text")
 
     medium_key = _normalized_key(medium)
     if medium_key in _GENERIC_MEDIUM_KEYS:
         limitations.append("exact_medium_specification_missing")
         medium_family = medium_family or medium
-    if medium_key in _AGGRESSIVE_MEDIUM_KEYS and not _first_text(raw, metadata, additional, keys=("concentration", "concentration_percent")):
+    if medium_key in _AGGRESSIVE_MEDIUM_KEYS and not _first_text(
+        raw, metadata, additional, keys=("concentration", "concentration_percent")
+    ):
         limitations.append("missing_concentration")
 
     text_for_claim = " ".join([text, _tag_text(tags), source_title])
@@ -192,8 +290,19 @@ def build_material_evidence_card_candidate(raw: Mapping[str, Any]) -> dict[str, 
         material = None
         medium = None
 
-    claim_level = _claim_level(raw, route=route, exact=bool(material and medium and text), tags_only=tags_only_context)
-    claim_type = _claim_type(raw, route=route, text=text_for_claim, compliance_terms=compliance_terms, tags_only=tags_only_context)
+    claim_level = _claim_level(
+        raw,
+        route=route,
+        exact=bool(material and medium and text),
+        tags_only=tags_only_context,
+    )
+    claim_type = _claim_type(
+        raw,
+        route=route,
+        text=text_for_claim,
+        compliance_terms=compliance_terms,
+        tags_only=tags_only_context,
+    )
 
     statement = _statement_short(
         text,
@@ -206,26 +315,51 @@ def build_material_evidence_card_candidate(raw: Mapping[str, Any]) -> dict[str, 
     source_type = _source_type(raw, route=route, source_system=source_system)
     candidate = {
         "schema_version": "material_evidence_card.v1",
-        "card_id": _card_id(source_system=source_system, source_id=source_id, material=material or material_family, medium=medium or medium_family),
+        "card_id": _card_id(
+            source_system=source_system,
+            source_id=source_id,
+            material=material or material_family,
+            medium=medium or medium_family,
+        ),
         "material": material,
         "material_family": material_family,
         "medium": medium,
         "medium_family": medium_family,
-        "temperature_min_c": _first_number(raw, metadata, additional, keys=("temperature_min_c", "temp_min_c", "metadata.temp_range.min_c")),
-        "temperature_max_c": _first_number(raw, metadata, additional, keys=("temperature_max_c", "temp_max_c", "metadata.temp_range.max_c")),
-        "concentration": _first_text(raw, metadata, additional, keys=("concentration", "concentration_percent")),
+        "temperature_min_c": _first_number(
+            raw,
+            metadata,
+            additional,
+            keys=("temperature_min_c", "temp_min_c", "metadata.temp_range.min_c"),
+        ),
+        "temperature_max_c": _first_number(
+            raw,
+            metadata,
+            additional,
+            keys=("temperature_max_c", "temp_max_c", "metadata.temp_range.max_c"),
+        ),
+        "concentration": _first_text(
+            raw, metadata, additional, keys=("concentration", "concentration_percent")
+        ),
         "ph_min": _first_number(raw, metadata, additional, keys=("ph_min",)),
         "ph_max": _first_number(raw, metadata, additional, keys=("ph_max",)),
         "claim_level": claim_level,
         "claim_type": claim_type,
-        "compatibility_status": "caution_zone" if tags_only_context or claim_type in {"caution", "limitation", "manufacturer_datasheet_reference"} else "supported_precheck",
+        "compatibility_status": "caution_zone"
+        if tags_only_context
+        or claim_type in {"caution", "limitation", "manufacturer_datasheet_reference"}
+        else "supported_precheck",
         "statement_short": statement,
         "source_title": source_title,
         "source_type": source_type,
         "source_url": source_url,
         "doi": _first_text(raw, metadata, additional, keys=("doi",)),
         "manufacturer": _first_text(raw, metadata, additional, keys=("manufacturer",)),
-        "evidence_date": _first_text(raw, metadata, additional, keys=("evidence_date", "source_modified_at", "metadata.source_modified_at")),
+        "evidence_date": _first_text(
+            raw,
+            metadata,
+            additional,
+            keys=("evidence_date", "source_modified_at", "metadata.source_modified_at"),
+        ),
         "limitations": _dedupe(limitations),
         "final_approval_claim_allowed": False,
         "compliance_claim_allowed": _compliance_allowed(raw, claim_type=claim_type),
@@ -257,7 +391,12 @@ def validate_material_evidence_candidate(raw: Mapping[str, Any]) -> AdapterResul
     candidate = build_material_evidence_card_candidate(raw)
     source_reference = _text(candidate.get("source_reference")) or None
     missing_fields = _candidate_missing_fields(candidate)
-    if not candidate.get("material") and not candidate.get("material_family") and not candidate.get("medium") and not candidate.get("medium_family"):
+    if (
+        not candidate.get("material")
+        and not candidate.get("material_family")
+        and not candidate.get("medium")
+        and not candidate.get("medium_family")
+    ):
         return AdapterResult(
             status="skipped",
             card_candidate=candidate,
@@ -270,9 +409,22 @@ def validate_material_evidence_candidate(raw: Mapping[str, Any]) -> AdapterResul
 
     validation = validate_material_evidence_card(candidate)
     status = _adapter_status(validation)
-    missing_fields = _dedupe([*missing_fields, *_missing_fields_from_validation(validation)])
-    limitations = _dedupe([*_list_text(candidate.get("limitations")), *validation.limitations, *validation.blocked_claims])
-    reason = _reason(status=status, validation=validation, missing_fields=missing_fields, limitations=limitations)
+    missing_fields = _dedupe(
+        [*missing_fields, *_missing_fields_from_validation(validation)]
+    )
+    limitations = _dedupe(
+        [
+            *_list_text(candidate.get("limitations")),
+            *validation.limitations,
+            *validation.blocked_claims,
+        ]
+    )
+    reason = _reason(
+        status=status,
+        validation=validation,
+        missing_fields=missing_fields,
+        limitations=limitations,
+    )
     return AdapterResult(
         status=status,
         card_candidate=candidate,
@@ -284,7 +436,9 @@ def validate_material_evidence_candidate(raw: Mapping[str, Any]) -> AdapterResul
     )
 
 
-def dry_run_material_evidence_candidates(items: list[Mapping[str, Any]]) -> DryRunReport:
+def dry_run_material_evidence_candidates(
+    items: list[Mapping[str, Any]],
+) -> DryRunReport:
     """Validate a batch of Paperless/RAG-like items without side effects."""
 
     results = [validate_material_evidence_candidate(item) for item in items]
@@ -295,8 +449,13 @@ def dry_run_material_evidence_candidates(items: list[Mapping[str, Any]]) -> DryR
     for result in results:
         missing_counts.update(result.missing_fields)
         limitation_counts.update(result.limitations)
-        if any("overclaim_wording" in value or "blocked_claim" in value for value in result.limitations):
-            safety_warnings.append(result.source_reference or result.reason or "unsafe_candidate")
+        if any(
+            "overclaim_wording" in value or "blocked_claim" in value
+            for value in result.limitations
+        ):
+            safety_warnings.append(
+                result.source_reference or result.reason or "unsafe_candidate"
+            )
     return DryRunReport(
         total=len(items),
         valid_count=status_counts["valid"],
@@ -326,7 +485,9 @@ def _candidate_missing_fields(candidate: Mapping[str, Any]) -> list[str]:
         missing.append("source_title")
     if not any(_text(candidate.get(key)) for key in _SOURCE_ANCHOR_KEYS):
         missing.append("source_anchor")
-    if not _text(candidate.get("material")) and not _text(candidate.get("material_family")):
+    if not _text(candidate.get("material")) and not _text(
+        candidate.get("material_family")
+    ):
         missing.append("material")
     if not _text(candidate.get("medium")) and not _text(candidate.get("medium_family")):
         missing.append("medium")
@@ -335,7 +496,9 @@ def _candidate_missing_fields(candidate: Mapping[str, Any]) -> list[str]:
     return missing
 
 
-def _missing_fields_from_validation(validation: MaterialEvidenceCardValidationResult) -> list[str]:
+def _missing_fields_from_validation(
+    validation: MaterialEvidenceCardValidationResult,
+) -> list[str]:
     mapping = {
         "missing_card_id": "card_id",
         "unsupported_schema_version": "schema_version",
@@ -369,7 +532,9 @@ def _reason(
     return validation.status
 
 
-def _validation_to_dict(validation: MaterialEvidenceCardValidationResult | None) -> dict[str, Any] | None:
+def _validation_to_dict(
+    validation: MaterialEvidenceCardValidationResult | None,
+) -> dict[str, Any] | None:
     if validation is None:
         return None
     return {
@@ -391,15 +556,25 @@ def _source_type(raw: Mapping[str, Any], *, route: str, source_system: str) -> s
         return explicit
     route_key = route.casefold()
     if route_key == "material_datasheet":
-        return "paperless_material_datasheet" if source_system.casefold() == "paperless" else "material_datasheet"
+        return (
+            "paperless_material_datasheet"
+            if source_system.casefold() == "paperless"
+            else "material_datasheet"
+        )
     if route_key == "technical_knowledge":
-        return "paperless_technical_knowledge" if source_system.casefold() == "paperless" else "technical_knowledge"
+        return (
+            "paperless_technical_knowledge"
+            if source_system.casefold() == "paperless"
+            else "technical_knowledge"
+        )
     if source_system.casefold() == "paperless":
         return "paperless_rag_evidence"
     return "rag_evidence"
 
 
-def _claim_level(raw: Mapping[str, Any], *, route: str, exact: bool, tags_only: bool) -> str:
+def _claim_level(
+    raw: Mapping[str, Any], *, route: str, exact: bool, tags_only: bool
+) -> str:
     explicit = _text(raw.get("claim_level")).upper()
     if explicit:
         return explicit
@@ -429,7 +604,10 @@ def _claim_type(
         return "compliance_certificate" if has_certificate else "limitation"
     if tags_only:
         return "limitation"
-    if any(marker in normalized for marker in ("warn", "limit", "caution", "review", "pruef", "avoid")):
+    if any(
+        marker in normalized
+        for marker in ("warn", "limit", "caution", "review", "pruef", "avoid")
+    ):
         return "caution"
     if route.casefold() == "material_datasheet":
         return "compatibility_precheck"
@@ -437,7 +615,9 @@ def _claim_type(
 
 
 def _compliance_allowed(raw: Mapping[str, Any], *, claim_type: str) -> bool:
-    if claim_type != "compliance_certificate" or not bool(raw.get("compliance_claim_allowed")):
+    if claim_type != "compliance_certificate" or not bool(
+        raw.get("compliance_claim_allowed")
+    ):
         return False
     return any(_text(raw.get(key)) for key in _CERTIFICATE_KEYS)
 
@@ -447,7 +627,9 @@ def _statement_short(text: str, *, fallback: str) -> str:
     if not value:
         return fallback
     sentence_match = re.match(r"(.{1,240}?)(?:[.!?](?:\s|$)|$)", value)
-    statement = sentence_match.group(1).strip() if sentence_match else value[:240].strip()
+    statement = (
+        sentence_match.group(1).strip() if sentence_match else value[:240].strip()
+    )
     return statement[:240].strip() or fallback
 
 
@@ -486,7 +668,9 @@ def _compliance_terms(value: str) -> list[str]:
     return [term for term in _COMPLIANCE_TERMS if term in normalized]
 
 
-def _card_id(*, source_system: str, source_id: str, material: str | None, medium: str | None) -> str:
+def _card_id(
+    *, source_system: str, source_id: str, material: str | None, medium: str | None
+) -> str:
     parts = [
         source_system or "rag",
         source_id or "unknown-source",

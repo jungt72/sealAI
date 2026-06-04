@@ -23,4 +23,3 @@ async def health() -> Dict[str, str]:
 async def search(_payload: SearchRequest) -> List[Dict[str, Any]]:
     # Minimal stub: external fallback is optional; return empty results.
     return []
-

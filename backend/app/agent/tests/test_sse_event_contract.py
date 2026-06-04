@@ -19,16 +19,27 @@ def _payload(frame: str) -> dict:
 
 def _user() -> RequestUser:
     return RequestUser(
-        user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1"
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
     )
 
 
 def test_sse_event_builder_adds_stable_turn_metadata_and_monotonic_sequence() -> None:
     builder = SSEEventBuilder(turn_id="turn-1")
 
-    progress = builder.event({"type": "progress", "data": {"event_type": "final_guard.running"}})
+    progress = builder.event(
+        {"type": "progress", "data": {"event_type": "final_guard.running"}}
+    )
     state = builder.event(
-        {"type": "state_update", "reply": "Final", "answer_mode": "technical_case_challenge"},
+        {
+            "type": "state_update",
+            "reply": "Final",
+            "answer_mode": "technical_case_challenge",
+        },
         event_type="state_update",
         is_final=True,
     )
@@ -48,13 +59,23 @@ def test_sse_event_builder_adds_stable_turn_metadata_and_monotonic_sequence() ->
 
 def test_sse_event_builder_allows_exactly_one_successful_final_event() -> None:
     builder = SSEEventBuilder(turn_id="turn-1")
-    builder.event({"type": "state_update", "reply": "Final"}, event_type="state_update", is_final=True)
+    builder.event(
+        {"type": "state_update", "reply": "Final"},
+        event_type="state_update",
+        is_final=True,
+    )
 
     with pytest.raises(ValueError, match="sse_final_event_already_emitted"):
-        builder.event({"type": "state_update", "reply": "Duplicate"}, event_type="state_update", is_final=True)
+        builder.event(
+            {"type": "state_update", "reply": "Duplicate"},
+            event_type="state_update",
+            is_final=True,
+        )
 
 
-def test_sse_event_builder_error_event_contains_error_code_without_final_success() -> None:
+def test_sse_event_builder_error_event_contains_error_code_without_final_success() -> (
+    None
+):
     builder = SSEEventBuilder(turn_id="turn-1")
     event = builder.event(
         {"type": "error", "message": "Deine Sitzung ist abgelaufen."},
@@ -72,10 +93,14 @@ def test_sse_event_builder_error_event_contains_error_code_without_final_success
 
 def test_sse_event_builder_generates_unique_turn_ids_without_explicit_id() -> None:
     first = SSEEventBuilder.for_request(
-        SimpleNamespace(session_id="session-1", message="identische technische Nachricht")
+        SimpleNamespace(
+            session_id="session-1", message="identische technische Nachricht"
+        )
     )
     second = SSEEventBuilder.for_request(
-        SimpleNamespace(session_id="session-1", message="identische technische Nachricht")
+        SimpleNamespace(
+            session_id="session-1", message="identische technische Nachricht"
+        )
     )
 
     assert first.turn_id != second.turn_id
@@ -87,7 +112,9 @@ def test_sse_event_builder_generates_unique_turn_ids_without_explicit_id() -> No
 
 def test_sse_event_builder_uses_explicit_turn_id() -> None:
     builder = SSEEventBuilder.for_request(
-        SimpleNamespace(session_id="session-1", message="Hallo", turn_id="client-turn-1")
+        SimpleNamespace(
+            session_id="session-1", message="Hallo", turn_id="client-turn-1"
+        )
     )
     event = builder.event({"type": "progress"})
 
@@ -98,7 +125,9 @@ def test_sse_event_builder_uses_explicit_turn_id() -> None:
 
 def test_sse_event_builder_replaces_invalid_explicit_turn_id_with_uuid() -> None:
     builder = SSEEventBuilder.for_request(
-        SimpleNamespace(session_id="session-1", message="Hallo", turn_id="raw user text with spaces")
+        SimpleNamespace(
+            session_id="session-1", message="Hallo", turn_id="raw user text with spaces"
+        )
     )
 
     assert builder.turn_id.startswith("turn:")
@@ -196,7 +225,9 @@ async def test_stream_contract_fast_helper_emits_state_update_then_done() -> Non
 
 
 @pytest.mark.asyncio
-async def test_stream_contract_does_not_replace_state_update_with_v16_envelope() -> None:
+async def test_stream_contract_does_not_replace_state_update_with_v16_envelope() -> (
+    None
+):
     # The terminal event is still the state_update workspace projection contract
     # (v92 dashboard / turn_envelope), NOT a V1.6 AssistantTurnEnvelope event.
     request = SimpleNamespace(session_id="s-env", message="Hallo")
@@ -360,16 +391,22 @@ async def _light_state_update(message: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_governed_rwdr_p0_text_state_update_includes_pocket_cockpit_patch() -> None:
+async def test_governed_rwdr_p0_text_state_update_includes_pocket_cockpit_patch() -> (
+    None
+):
     event = await _light_state_update(_P0_KILLER_INPUT)
     data = event["data"]
 
     # The backend-owned Pocket Cockpit is attached additively.
     patch = data["pocket_cockpit_patch"]
     assert any("RWDR-Leckage" in str(item.get("value")) for item in patch["recognized"])
-    assert any("Wellenlauffläche" in str(item.get("label")) for item in patch["critical"])
+    assert any(
+        "Wellenlauffläche" in str(item.get("label")) for item in patch["critical"]
+    )
     assert "Rille" in patch["next_step"]["question"]
-    assert isinstance(data["action_chips"], list) and isinstance(data["action_chips"][0], dict)
+    assert isinstance(data["action_chips"], list) and isinstance(
+        data["action_chips"][0], dict
+    )
 
     # The existing state_update workspace projection is untouched.
     assert event["event_type"] == "state_update"

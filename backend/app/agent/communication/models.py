@@ -68,7 +68,9 @@ class CalculationFact(BaseModel):
     value: Any = None
     unit: str | None = None
     inputs: list[str] = Field(default_factory=list)
-    status: Literal["available", "blocked_by_missing_inputs"] = "blocked_by_missing_inputs"
+    status: Literal["available", "blocked_by_missing_inputs"] = (
+        "blocked_by_missing_inputs"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -93,7 +95,9 @@ class ReadinessFact(BaseModel):
 class EvidenceRef(BaseModel):
     id: str
     title: str
-    source_type: Literal["rule", "datasheet", "standard", "internal_doc", "calculation", "user_input"] = "user_input"
+    source_type: Literal[
+        "rule", "datasheet", "standard", "internal_doc", "calculation", "user_input"
+    ] = "user_input"
     uri_or_ref: str | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -140,8 +144,12 @@ class AllowedClaim(BaseModel):
     id: str
     type: AllowedClaimType
     statement: str
-    source: Literal["user_confirmed", "backend_rule", "calculation", "evidence", "system_limitation"] = "backend_rule"
-    confidence: Literal["confirmed", "calculated", "proposed", "uncertain"] = "uncertain"
+    source: Literal[
+        "user_confirmed", "backend_rule", "calculation", "evidence", "system_limitation"
+    ] = "backend_rule"
+    confidence: Literal["confirmed", "calculated", "proposed", "uncertain"] = (
+        "uncertain"
+    )
     severity: Literal["none", "low", "medium", "high", "critical"] = "none"
     field_keys: list[str] = Field(default_factory=list)
     evidence_ref_ids: list[str] = Field(default_factory=list)

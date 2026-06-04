@@ -65,7 +65,9 @@ def test_execute_tool_call_forwards_metadata_filters(monkeypatch) -> None:
             "retrieval_meta": {},
         }
 
-    monkeypatch.setattr(knowledge_tool, "search_technical_docs", _fake_search_technical_docs)
+    monkeypatch.setattr(
+        knowledge_tool, "search_technical_docs", _fake_search_technical_docs
+    )
 
     result = knowledge_tool.execute_tool_call(
         tool_name="search_technical_docs",
@@ -78,7 +80,9 @@ def test_execute_tool_call_forwards_metadata_filters(monkeypatch) -> None:
 
     assert result["structuredContent"]["query"] == "Kyrolon 79X"
     assert captured["tenant_id"] == "tenant-1"
-    assert captured["metadata_filters"] == {"additional_metadata.trade_name": "Kyrolon 79X"}
+    assert captured["metadata_filters"] == {
+        "additional_metadata.trade_name": "Kyrolon 79X"
+    }
 
 
 def test_get_permitted_tools_scope_filtering() -> None:

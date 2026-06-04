@@ -26,11 +26,38 @@ _EXPLICIT_ROUTE_TAGS = {
 }
 
 _ROUTE_KEYWORDS = (
-    ("product_datasheet", ("product_datasheet", "produktdatenblatt", "dichtungstyp", "seal_type", "product")),
-    ("material_datasheet", ("material_datasheet", "werkstoffdatenblatt", "compound", "material", "werkstoff")),
-    ("standard_or_norm", ("standard_or_norm", "norm", "standard", "specification", "spezifikation")),
-    ("technical_knowledge", ("technical_knowledge", "fachwissen", "application_note", "guide", "knowledge")),
-    ("general_technical_doc", ("general_technical_doc", "technical_doc", "technical_document", "pdf")),
+    (
+        "product_datasheet",
+        (
+            "product_datasheet",
+            "produktdatenblatt",
+            "dichtungstyp",
+            "seal_type",
+            "product",
+        ),
+    ),
+    (
+        "material_datasheet",
+        (
+            "material_datasheet",
+            "werkstoffdatenblatt",
+            "compound",
+            "material",
+            "werkstoff",
+        ),
+    ),
+    (
+        "standard_or_norm",
+        ("standard_or_norm", "norm", "standard", "specification", "spezifikation"),
+    ),
+    (
+        "technical_knowledge",
+        ("technical_knowledge", "fachwissen", "application_note", "guide", "knowledge"),
+    ),
+    (
+        "general_technical_doc",
+        ("general_technical_doc", "technical_doc", "technical_document", "pdf"),
+    ),
 )
 
 _CATEGORY_ROUTE_MAP = {
@@ -83,7 +110,9 @@ def resolve_route_key(
     category: Optional[str] = None,
     filename: Optional[str] = None,
 ) -> str:
-    normalized_tags = [str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()]
+    normalized_tags = [
+        str(tag).strip().lower() for tag in (tags or []) if str(tag).strip()
+    ]
 
     for tag in normalized_tags:
         explicit = _EXPLICIT_ROUTE_TAGS.get(tag)

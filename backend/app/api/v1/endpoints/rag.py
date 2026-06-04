@@ -10,7 +10,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import structlog
-from fastapi import APIRouter, Body, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +37,12 @@ from app.services.rag.constants import (
 from app.core.config import settings
 from app.database import get_db
 from app.models.rag_document import RagDocument
-from app.services.auth.dependencies import RequestUser, get_current_request_user, is_rag_admin, require_tenant_id
+from app.services.auth.dependencies import (
+    RequestUser,
+    get_current_request_user,
+    is_rag_admin,
+    require_tenant_id,
+)
 
 from app.services.rag.route_resolver import resolve_route_key
 from app.services.rag.material_evidence_dry_run import (
@@ -156,7 +171,9 @@ async def _load_material_evidence_dry_run_documents(
     )
     if route:
         stmt = stmt.where(RagDocument.route_key == route)
-    stmt = stmt.order_by(RagDocument.updated_at.desc(), RagDocument.created_at.desc()).limit(limit)
+    stmt = stmt.order_by(
+        RagDocument.updated_at.desc(), RagDocument.created_at.desc()
+    ).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
@@ -253,7 +270,9 @@ def _extract_text_preview_for_delta(path: Path, *, limit: int = 12000) -> str:
 
         docs = load_document(str(path))
     except Exception as exc:  # noqa: BLE001
-        logger.debug("document_delta_text_extraction_skipped", reason=safe_error_message(exc))
+        logger.debug(
+            "document_delta_text_extraction_skipped", reason=safe_error_message(exc)
+        )
         return ""
     parts: list[str] = []
     remaining = limit
@@ -345,6 +364,8 @@ async def _try_persist_document_delta_for_case(
             "field_count": 0,
             "fields": [],
         }
+
+
 @router.get("/health")
 async def rag_health() -> Dict[str, Any]:
     """Health check for the RAG subsystem."""
@@ -365,11 +386,15 @@ async def upload_rag_document(
     try:
         ensure_upload_directory()
     except PermissionError as exc:
-        raise HTTPException(status_code=500, detail="Storage permission denied") from exc
+        raise HTTPException(
+            status_code=500, detail="Storage permission denied"
+        ) from exc
 
     if scope == RAG_SCOPE_GLOBAL:
         if not is_rag_admin(current_user):
-            raise HTTPException(status_code=403, detail="Admin rights required for global scope")
+            raise HTTPException(
+                status_code=403, detail="Admin rights required for global scope"
+            )
         tenant_id = RAG_SHARED_TENANT_ID
         visibility = RAG_VISIBILITY_PUBLIC
     else:
@@ -395,7 +420,9 @@ async def upload_rag_document(
             gid=os.getgid(),
             error=str(exc),
         )
-        raise HTTPException(status_code=500, detail="Storage permission denied") from exc
+        raise HTTPException(
+            status_code=500, detail="Storage permission denied"
+        ) from exc
     target_path = target_dir / f"original{ext}"
 
     digest = hashlib.sha256()
@@ -462,7 +489,9 @@ async def upload_rag_document(
                 "document_delta": document_delta,
             }
 
-        retry_dir = resolve_upload_dir(tenant_id=tenant_id, document_id=existing_doc.document_id)
+        retry_dir = resolve_upload_dir(
+            tenant_id=tenant_id, document_id=existing_doc.document_id
+        )
         try:
             retry_dir.mkdir(parents=True, exist_ok=True)
         except PermissionError as exc:
@@ -475,7 +504,9 @@ async def upload_rag_document(
                 gid=os.getgid(),
                 error=str(exc),
             )
-            raise HTTPException(status_code=500, detail="Storage permission denied") from exc
+            raise HTTPException(
+                status_code=500, detail="Storage permission denied"
+            ) from exc
         retry_path = retry_dir / f"original{ext}"
         if retry_path != target_path:
             try:
@@ -499,7 +530,11 @@ async def upload_rag_document(
         existing_doc.sha256 = sha256
         existing_doc.path = str(retry_path)
         existing_doc.enabled = True
-        existing_doc.extraction_status = "candidate_extraction_pending" if case_id else (existing_doc.extraction_status or "not_extracted")
+        existing_doc.extraction_status = (
+            "candidate_extraction_pending"
+            if case_id
+            else (existing_doc.extraction_status or "not_extracted")
+        )
         existing_doc.extracted_candidates = existing_doc.extracted_candidates or []
         existing_doc.evidence_refs = existing_doc.evidence_refs or []
         existing_doc.provenance = "documented"
@@ -533,7 +568,9 @@ async def upload_rag_document(
         tags=tags_list,
         sha256=sha256,
         path=str(target_path),
-        extraction_status="candidate_extraction_pending" if case_id else "not_extracted",
+        extraction_status="candidate_extraction_pending"
+        if case_id
+        else "not_extracted",
         extracted_candidates=[],
         evidence_refs=[],
         provenance="documented",
@@ -549,7 +586,11 @@ async def upload_rag_document(
         doc=doc,
         path=target_path,
     )
-    return {"document_id": doc.document_id, "status": doc.status, "document_delta": document_delta}
+    return {
+        "document_id": doc.document_id,
+        "status": doc.status,
+        "document_delta": document_delta,
+    }
 
 
 @router.post("/sync-paperless")
@@ -561,14 +602,21 @@ async def sync_paperless(
 ) -> Dict[str, Any]:
     """Manually trigger a sync from Paperless to the global RAG tenant."""
     if not is_rag_admin(current_user):
-        raise HTTPException(status_code=403, detail="Admin rights required for Paperless sync")
+        raise HTTPException(
+            status_code=403, detail="Admin rights required for Paperless sync"
+        )
 
-    from app.services.rag.paperless import process_pending_paperless_documents, sync_paperless_to_rag
+    from app.services.rag.paperless import (
+        process_pending_paperless_documents,
+        sync_paperless_to_rag,
+    )
 
     result = await sync_paperless_to_rag(session)
     if process:
         result = dict(result)
-        result["processing"] = await process_pending_paperless_documents(session, limit=limit)
+        result["processing"] = await process_pending_paperless_documents(
+            session, limit=limit
+        )
     return result
 
 
@@ -584,7 +632,10 @@ async def material_evidence_dry_run(
 ) -> Dict[str, Any]:
     """Read-only admin report for Paperless/RAG material evidence card readiness."""
     if not is_rag_admin(current_user):
-        raise HTTPException(status_code=403, detail="Admin rights required for material evidence dry-run")
+        raise HTTPException(
+            status_code=403,
+            detail="Admin rights required for material evidence dry-run",
+        )
 
     normalized_source_system = (source_system or "paperless").strip() or "paperless"
     normalized_route = (route or "").strip() or None
@@ -602,10 +653,12 @@ async def material_evidence_dry_run(
         "status": "not_requested",
     }
     if include_indexed_snippets:
-        indexed_snippet_items, indexed_snippet_summary = load_material_evidence_indexed_snippet_raw_items(
-            docs,
-            tenant_id=RAG_SHARED_TENANT_ID,
-            max_documents=capped_limit,
+        indexed_snippet_items, indexed_snippet_summary = (
+            load_material_evidence_indexed_snippet_raw_items(
+                docs,
+                tenant_id=RAG_SHARED_TENANT_ID,
+                max_documents=capped_limit,
+            )
         )
     return build_material_evidence_dry_run_report(
         docs,
@@ -621,7 +674,9 @@ async def material_evidence_dry_run(
 @internal_router.post("/ingest")
 async def ingest_paperless_webhook(
     payload: Optional[Dict[str, Any]] = Body(default=None),
-    x_sealai_webhook_token: Optional[str] = Header(default=None, alias="X-SeaLAI-Webhook-Token"),
+    x_sealai_webhook_token: Optional[str] = Header(
+        default=None, alias="X-SeaLAI-Webhook-Token"
+    ),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
     """Minimal internal webhook entry for the first Paperless ingest pilot."""
@@ -632,10 +687,15 @@ async def ingest_paperless_webhook(
     if document_id in (None, ""):
         raise HTTPException(
             status_code=400,
-            detail=error_detail("paperless_webhook_invalid_payload", field="document_id"),
+            detail=error_detail(
+                "paperless_webhook_invalid_payload", field="document_id"
+            ),
         )
 
-    from app.services.rag.paperless import process_pending_paperless_documents, sync_paperless_to_rag
+    from app.services.rag.paperless import (
+        process_pending_paperless_documents,
+        sync_paperless_to_rag,
+    )
 
     result = await sync_paperless_to_rag(session)
     processing = await process_pending_paperless_documents(session)
@@ -694,7 +754,9 @@ async def rag_document_health_check(
     qdrant_points = 0
     qdrant_error = None
     try:
-        qdrant_points = _qdrant_vector_count(tenant_id=doc.tenant_id, document_id=doc.document_id)
+        qdrant_points = _qdrant_vector_count(
+            tenant_id=doc.tenant_id, document_id=doc.document_id
+        )
     except Exception as exc:
         qdrant_error = safe_error_message(exc)
 
@@ -802,7 +864,9 @@ async def list_rag_documents(
     current_user: RequestUser = Depends(get_current_request_user),
     session: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
-    stmt = select(RagDocument).where(RagDocument.tenant_id == _request_tenant_id(current_user))
+    stmt = select(RagDocument).where(
+        RagDocument.tenant_id == _request_tenant_id(current_user)
+    )
     if status:
         stmt = stmt.where(RagDocument.status == status)
     if category:

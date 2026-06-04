@@ -143,7 +143,6 @@ def _full_asserted(
 
 
 class TestReducerObservedToNormalized:
-
     def test_basic_single_extraction(self):
         obs = _observed(_ext("medium", "Dampf"))
         result = reduce_observed_to_normalized(obs)
@@ -393,7 +392,6 @@ def test_v07_asserted_claim_keeps_documented_case_field_envelope():
 
 
 class TestReducerNormalizedToAsserted:
-
     def _normalized_with(
         self, *, source: str = "user_override", **fields
     ) -> NormalizedState:
@@ -656,7 +654,6 @@ class TestReducerNormalizedToAsserted:
 
 
 class TestReducerAssertedToGovernanceClassA:
-
     def test_class_a_all_core_fields_no_blockers(self):
         asserted = _full_asserted()
         result = reduce_asserted_to_governance(asserted)
@@ -703,7 +700,6 @@ class TestReducerAssertedToGovernanceClassA:
 
 
 class TestReducerAssertedToGovernanceClassB:
-
     def test_class_b_some_core_fields_within_cycle_limit(self):
         asserted = AssertedState(
             assertions={
@@ -833,7 +829,6 @@ class TestReducerAssertedToGovernanceClassB:
 
 
 class TestReducerAssertedToGovernanceClassC:
-
     def test_class_c_cycle_exceeded_with_blockers(self):
         asserted = AssertedState(
             assertions={
@@ -859,10 +854,14 @@ class TestReducerAssertedToGovernanceClassC:
                     field_name="medium", asserted_value="Wasser", confidence="confirmed"
                 ),
                 "pressure_bar": AssertedClaim(
-                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                    field_name="pressure_bar",
+                    asserted_value=6.0,
+                    confidence="confirmed",
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                    field_name="temperature_c",
+                    asserted_value=40.0,
+                    confidence="confirmed",
                 ),
             },
             blocking_unknowns=[],
@@ -880,10 +879,14 @@ class TestReducerAssertedToGovernanceClassC:
                     field_name="medium", asserted_value="Wasser", confidence="confirmed"
                 ),
                 "pressure_bar": AssertedClaim(
-                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                    field_name="pressure_bar",
+                    asserted_value=6.0,
+                    confidence="confirmed",
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                    field_name="temperature_c",
+                    asserted_value=40.0,
+                    confidence="confirmed",
                 ),
             },
             blocking_unknowns=[],
@@ -901,10 +904,14 @@ class TestReducerAssertedToGovernanceClassC:
                     field_name="medium", asserted_value="Wasser", confidence="confirmed"
                 ),
                 "pressure_bar": AssertedClaim(
-                    field_name="pressure_bar", asserted_value=6.0, confidence="confirmed"
+                    field_name="pressure_bar",
+                    asserted_value=6.0,
+                    confidence="confirmed",
                 ),
                 "temperature_c": AssertedClaim(
-                    field_name="temperature_c", asserted_value=40.0, confidence="confirmed"
+                    field_name="temperature_c",
+                    asserted_value=40.0,
+                    confidence="confirmed",
                 ),
                 # food_pharma without a compliance value → active compliance_blocker
                 "industry": AssertedClaim(
@@ -932,7 +939,6 @@ class TestReducerAssertedToGovernanceClassC:
 
 
 class TestReducerAssertedToGovernanceClassD:
-
     def test_class_d_no_core_fields_at_all(self):
         asserted = AssertedState(
             assertions={
@@ -979,7 +985,6 @@ class TestReducerAssertedToGovernanceClassD:
 
 
 class TestGovernanceReturnContract:
-
     def test_returns_governance_state(self):
         asserted = _full_asserted()
         result = reduce_asserted_to_governance(asserted)
@@ -1177,7 +1182,6 @@ class TestNoDirectWriteToGovernance:
 
 
 class TestFullPipeline:
-
     def test_pipeline_class_b_from_legacy_three_field_observations(self):
         obs = ObservedState()
         for field, value in [

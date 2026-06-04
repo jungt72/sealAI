@@ -4,7 +4,9 @@ import json
 
 import pytest
 
-from app.agent.communication.governed_answer_context import build_governed_answer_context
+from app.agent.communication.governed_answer_context import (
+    build_governed_answer_context,
+)
 from app.agent.graph import output_contract_assembly as output_assembly
 from app.agent.graph import GraphState
 from app.agent.graph.nodes.assert_node import assert_node
@@ -12,7 +14,11 @@ from app.agent.graph.nodes.governance_node import governance_node
 import app.agent.graph.nodes.intake_observe_node as intake_module
 from app.agent.graph.nodes.normalize_node import normalize_node
 from app.agent.runtime.user_facing_reply import assemble_user_facing_reply
-from app.agent.state.models import ConversationMessage, ObservedExtraction, PendingQuestion
+from app.agent.state.models import (
+    ConversationMessage,
+    ObservedExtraction,
+    PendingQuestion,
+)
 from app.agent.v92.models import CalculationResult, CalculationState
 from app.domain.pre_gate_classification import PreGateClassification
 from app.services.pre_gate_classifier import PreGateClassifier
@@ -48,7 +54,9 @@ async def _run_governed_nodes(state: GraphState) -> GraphState:
 
 async def _assemble_output(state: GraphState) -> GraphState:
     response_class = output_assembly._determine_response_class(state)
-    strategy = output_assembly.build_governed_conversation_strategy_contract(state, response_class)
+    strategy = output_assembly.build_governed_conversation_strategy_contract(
+        state, response_class
+    )
     output_public = output_assembly._build_output_public_base(state, response_class)
     reply = await output_assembly._build_reply(state, response_class, strategy=strategy)
     output_public["message"] = reply
@@ -76,12 +84,17 @@ async def _assemble_output(state: GraphState) -> GraphState:
     )
 
 
-async def _run_turn(message: str, *, pending_question: PendingQuestion | None = None) -> GraphState:
+async def _run_turn(
+    message: str, *, pending_question: PendingQuestion | None = None
+) -> GraphState:
     state = GraphState(
         pending_message=message,
         pending_question=pending_question,
         conversation_messages=[
-            ConversationMessage(role="assistant", content="Formulierung ist fuer Slot-Bindung irrelevant."),
+            ConversationMessage(
+                role="assistant",
+                content="Formulierung ist fuer Slot-Bindung irrelevant.",
+            ),
             ConversationMessage(role="user", content=message),
         ],
         user_turn_index=2 if pending_question else 1,
@@ -148,7 +161,9 @@ async def test_context_marks_chlorine_ambiguity_without_suitability_approval() -
 
 
 @pytest.mark.asyncio
-async def test_context_confirmed_facts_exclude_unvalidated_extraction_candidate() -> None:
+async def test_context_confirmed_facts_exclude_unvalidated_extraction_candidate() -> (
+    None
+):
     observed = GraphState().observed.with_extraction(
         ObservedExtraction(
             field_name="medium",
@@ -258,7 +273,9 @@ def test_context_builder_marks_latest_message_challenge_as_fallback_inference() 
     assert context.technical_case_challenge_plan is not None
 
 
-def test_context_builder_does_not_infer_challenge_when_explicit_mode_is_knowledge() -> None:
+def test_context_builder_does_not_infer_challenge_when_explicit_mode_is_knowledge() -> (
+    None
+):
     state = GraphState(
         runtime_answer_mode="no_case_knowledge",
         runtime_answer_mode_source="runtime_action.answer_mode",
@@ -275,7 +292,9 @@ def test_context_builder_does_not_infer_challenge_when_explicit_mode_is_knowledg
     assert context.technical_case_challenge_plan is None
 
 
-def test_context_builder_excludes_stale_calculation_results_from_answer_context() -> None:
+def test_context_builder_excludes_stale_calculation_results_from_answer_context() -> (
+    None
+):
     state = GraphState(
         calculation=CalculationState(
             status="ready",
@@ -302,7 +321,9 @@ def test_context_builder_excludes_stale_calculation_results_from_answer_context(
 
 
 @pytest.mark.asyncio
-async def test_context_missing_fields_and_open_points_match_output_contract_source() -> None:
+async def test_context_missing_fields_and_open_points_match_output_contract_source() -> (
+    None
+):
     state = await _run_turn("chlor", pending_question=_pending_medium_question())
     context = build_governed_answer_context(
         state,
@@ -370,10 +391,27 @@ async def test_context_serialization_contains_no_unsafe_payload_shapes() -> None
 def test_context_patch_keeps_existing_route_boundaries() -> None:
     classifier = PreGateClassifier()
 
-    assert classifier.classify(
-        "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
-    ).classification == PreGateClassification.DOMAIN_INQUIRY
-    assert classifier.classify("Was bedeutet PFAS für Dichtungen?").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Was ist bei Salzwasser und Dichtungen kritisch?").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Vergleiche FKM und EPDM für Dichtungen.").classification == PreGateClassification.KNOWLEDGE_QUERY
-    assert classifier.classify("Hallo, wie geht es dir?").classification == PreGateClassification.GREETING
+    assert (
+        classifier.classify(
+            "Ich habe eine rotierende Welle mit 80 mm Durchmesser, 1500 rpm und Öl bei 90 Grad."
+        ).classification
+        == PreGateClassification.DOMAIN_INQUIRY
+    )
+    assert (
+        classifier.classify("Was bedeutet PFAS für Dichtungen?").classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify(
+            "Was ist bei Salzwasser und Dichtungen kritisch?"
+        ).classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify("Vergleiche FKM und EPDM für Dichtungen.").classification
+        == PreGateClassification.KNOWLEDGE_QUERY
+    )
+    assert (
+        classifier.classify("Hallo, wie geht es dir?").classification
+        == PreGateClassification.GREETING
+    )

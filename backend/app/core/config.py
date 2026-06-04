@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 import os
 
+
 class Settings(BaseSettings):
     # Application / startup controls
     app_name: str = "sealAI-backend"
@@ -89,8 +90,8 @@ class Settings(BaseSettings):
     prometheus_enabled: bool = True
 
     # Rate limiting (upload endpoint)
-    rate_limit_upload: int = 20        # max requests per window
-    rate_limit_window_s: int = 60      # window size in seconds
+    rate_limit_upload: int = 20  # max requests per window
+    rate_limit_window_s: int = 60  # window size in seconds
 
     # Phase F Feature-Flags — default on so productive chat uses the
     # user-facing Runtime / Governed path unless explicitly disabled.
@@ -117,8 +118,10 @@ class Settings(BaseSettings):
     def QDRANT_COLLECTION_NAME(self) -> str:
         return self.qdrant_collection
 
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
 
 settings = get_settings()

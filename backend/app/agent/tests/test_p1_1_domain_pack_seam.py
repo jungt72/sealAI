@@ -5,6 +5,7 @@ exactly (the existing characterization test
 `test_p1_1_required_fields_characterization.py` is the behaviour freeze through
 the orchestrator). These tests pin the new pack contract itself.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -51,7 +52,10 @@ def test_rwdr_pack_metadata():
     [
         ("rwdr", True),
         ("rwdr.circumferential_speed", True),
-        ("rwdr_pv_precheck", False),  # explicit ids go through calculations(), not the string check
+        (
+            "rwdr_pv_precheck",
+            False,
+        ),  # explicit ids go through calculations(), not the string check
         ("oring.groove", False),
         ("", False),
     ],
@@ -62,4 +66,7 @@ def test_owns_calc_id_matches_legacy_string_check(calc_id, owned):
 
 def test_seam_routes_rwdr_through_the_pack():
     # required_fields_for for an RWDR signal returns exactly the pack's fields.
-    assert required_fields_for(SealType.radial_shaft_seal.value, "") == RwdrPack().required_fields()
+    assert (
+        required_fields_for(SealType.radial_shaft_seal.value, "")
+        == RwdrPack().required_fields()
+    )

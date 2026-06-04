@@ -9,7 +9,9 @@ from app.api.v1.endpoints import rag as rag_endpoint
 from app.models.rag_document import RagDocument
 from app.services.auth.dependencies import RequestUser
 from app.services.rag.constants import RAG_SHARED_TENANT_ID
-from app.services.rag.material_evidence_dry_run import indexed_snippet_payload_to_material_evidence_raw_items
+from app.services.rag.material_evidence_dry_run import (
+    indexed_snippet_payload_to_material_evidence_raw_items,
+)
 
 
 class DummyResult:
@@ -51,7 +53,9 @@ class DummySession:
         for key, value in filters.items():
             items = [item for item in items if getattr(item, key, None) == value]
         if enabled_not_false:
-            items = [item for item in items if getattr(item, "enabled", None) is not False]
+            items = [
+                item for item in items if getattr(item, "enabled", None) is not False
+            ]
         limit_clause = getattr(stmt, "_limit_clause", None)
         limit_value = getattr(limit_clause, "value", None)
         if isinstance(limit_value, int):
@@ -74,7 +78,9 @@ def anyio_backend() -> str:
 
 
 def _admin() -> RequestUser:
-    return RequestUser(user_id="admin-1", username="admin", sub="admin-1", roles=["rag_admin"])
+    return RequestUser(
+        user_id="admin-1", username="admin", sub="admin-1", roles=["rag_admin"]
+    )
 
 
 def _user() -> RequestUser:
@@ -109,7 +115,9 @@ def _doc(
         path=f"/tmp/{document_id}.pdf",
         source_system=source_system,
         source_document_id=source_id,
-        extraction_status="extracted" if extracted_candidates is not None else "not_extracted",
+        extraction_status="extracted"
+        if extracted_candidates is not None
+        else "not_extracted",
         extracted_candidates=extracted_candidates,
         evidence_refs=[],
         provenance="documented",
@@ -133,13 +141,13 @@ async def test_dry_run_endpoint_requires_rag_admin() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await rag_endpoint.material_evidence_dry_run(
             source_system="paperless",
-        route=None,
-        limit=25,
-        include_invalid=True,
-        include_indexed_snippets=False,
-        current_user=_user(),
-        session=DummySession([]),
-    )
+            route=None,
+            limit=25,
+            include_invalid=True,
+            include_indexed_snippets=False,
+            current_user=_user(),
+            session=DummySession([]),
+        )
 
     assert exc_info.value.status_code == 403
 
@@ -182,7 +190,9 @@ async def test_dry_run_endpoint_reads_paperless_docs_without_writes(
 async def test_dry_run_uses_indexed_snippet_fallback_without_writes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _load_snippets(docs: list[RagDocument], **kwargs: object) -> tuple[list[dict[str, object]], dict[str, object]]:
+    def _load_snippets(
+        docs: list[RagDocument], **kwargs: object
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
         assert kwargs["tenant_id"] == RAG_SHARED_TENANT_ID
         assert [doc.document_id for doc in docs] == ["rag-snippet"]
         return (
@@ -203,7 +213,10 @@ async def test_dry_run_uses_indexed_snippet_fallback_without_writes(
                     "temperature_min_c": 0,
                     "temperature_max_c": 80,
                     "text": "Indexed snippet evidence says FKM is a supported precheck for water from 0 to 80 C.",
-                    "metadata": {"document_id": "rag-snippet", "snippet_source": "qdrant_payload"},
+                    "metadata": {
+                        "document_id": "rag-snippet",
+                        "snippet_source": "qdrant_payload",
+                    },
                 }
             ],
             {
@@ -216,8 +229,12 @@ async def test_dry_run_uses_indexed_snippet_fallback_without_writes(
             },
         )
 
-    monkeypatch.setattr(rag_endpoint, "load_material_evidence_indexed_snippet_raw_items", _load_snippets)
-    session = DummySession([_doc(document_id="rag-snippet", source_id="77", extracted_candidates=[])])
+    monkeypatch.setattr(
+        rag_endpoint, "load_material_evidence_indexed_snippet_raw_items", _load_snippets
+    )
+    session = DummySession(
+        [_doc(document_id="rag-snippet", source_id="77", extracted_candidates=[])]
+    )
 
     payload = await rag_endpoint.material_evidence_dry_run(
         source_system="paperless",
@@ -244,7 +261,9 @@ async def test_dry_run_uses_indexed_snippet_fallback_without_writes(
 async def test_dry_run_fuses_indexed_snippets_with_existing_candidates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _load_snippets(docs: list[RagDocument], **_kwargs: object) -> tuple[list[dict[str, object]], dict[str, object]]:
+    def _load_snippets(
+        docs: list[RagDocument], **_kwargs: object
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
         assert [doc.document_id for doc in docs] == ["rag-fuse"]
         return (
             [
@@ -263,7 +282,10 @@ async def test_dry_run_fuses_indexed_snippets_with_existing_candidates(
                     "temperature_min_c": 0,
                     "temperature_max_c": 80,
                     "text": "Indexed snippet evidence gives PTFE and water with a documented precheck range.",
-                    "metadata": {"document_id": "rag-fuse", "snippet_source": "qdrant_payload"},
+                    "metadata": {
+                        "document_id": "rag-fuse",
+                        "snippet_source": "qdrant_payload",
+                    },
                 }
             ],
             {
@@ -276,13 +298,17 @@ async def test_dry_run_fuses_indexed_snippets_with_existing_candidates(
             },
         )
 
-    monkeypatch.setattr(rag_endpoint, "load_material_evidence_indexed_snippet_raw_items", _load_snippets)
+    monkeypatch.setattr(
+        rag_endpoint, "load_material_evidence_indexed_snippet_raw_items", _load_snippets
+    )
     session = DummySession(
         [
             _doc(
                 document_id="rag-fuse",
                 source_id="91",
-                extracted_candidates=[{"material": "FKM", "text": "Missing exact medium."}],
+                extracted_candidates=[
+                    {"material": "FKM", "text": "Missing exact medium."}
+                ],
             )
         ]
     )
@@ -300,7 +326,10 @@ async def test_dry_run_fuses_indexed_snippets_with_existing_candidates(
     assert payload["total_considered"] == 2
     assert payload["valid_count"] == 1
     assert payload["indexed_snippet_enrichment"]["used_candidate_count"] == 1
-    assert payload["indexed_snippet_enrichment"]["fallback_mode"] == "fused_with_extracted_candidates"
+    assert (
+        payload["indexed_snippet_enrichment"]["fallback_mode"]
+        == "fused_with_extracted_candidates"
+    )
     assert any(
         result["card_candidate"].get("material") == "PTFE"
         for result in payload["results"]
@@ -308,7 +337,9 @@ async def test_dry_run_fuses_indexed_snippets_with_existing_candidates(
     )
 
 
-def test_indexed_snippet_payload_extracts_structured_candidate_without_full_text() -> None:
+def test_indexed_snippet_payload_extracts_structured_candidate_without_full_text() -> (
+    None
+):
     long_tail = " Z" * 1200
     snippet_text = (
         '{"material":"FKM","medium":"water","temperature_min_c":0,'
@@ -342,7 +373,12 @@ def test_indexed_snippet_payload_extracts_structured_candidate_without_full_text
 
 def test_indexed_snippet_payload_rejects_non_material_identifiers() -> None:
     items = indexed_snippet_payload_to_material_evidence_raw_items(
-        _doc(document_id="rag-noise", source_id="99", tags=["STS-MAT-EPDM-A1"], extracted_candidates=[]),
+        _doc(
+            document_id="rag-noise",
+            source_id="99",
+            tags=["STS-MAT-EPDM-A1"],
+            extracted_candidates=[],
+        ),
         {
             "document_id": "rag-noise",
             "text": (
@@ -368,7 +404,9 @@ def test_indexed_snippet_payload_rejects_non_material_identifiers() -> None:
 
 @pytest.mark.anyio
 async def test_dry_run_maps_valid_material_datasheet_doc() -> None:
-    session = DummySession([_doc(source_id="paperless-42", extracted_candidates=[_valid_candidate()])])
+    session = DummySession(
+        [_doc(source_id="paperless-42", extracted_candidates=[_valid_candidate()])]
+    )
 
     payload = await rag_endpoint.material_evidence_dry_run(
         source_system="paperless",
@@ -389,7 +427,16 @@ async def test_dry_run_maps_valid_material_datasheet_doc() -> None:
 
 @pytest.mark.anyio
 async def test_dry_run_reports_invalid_missing_metadata() -> None:
-    session = DummySession([_doc(document_id="rag-missing", source_id=None, filename=None, extracted_candidates=[])])
+    session = DummySession(
+        [
+            _doc(
+                document_id="rag-missing",
+                source_id=None,
+                filename=None,
+                extracted_candidates=[],
+            )
+        ]
+    )
 
     payload = await rag_endpoint.material_evidence_dry_run(
         source_system="paperless",
@@ -405,7 +452,9 @@ async def test_dry_run_reports_invalid_missing_metadata() -> None:
     assert payload["grouped_missing_fields"]["source_title"] == 1
     assert payload["grouped_missing_fields"]["material_or_medium"] == 1
     assert payload["data_quality_status"] == "metadata_gap_no_valid_cards"
-    assert payload["persistence_recommendation"] == "do_not_persist_improve_metadata_first"
+    assert (
+        payload["persistence_recommendation"] == "do_not_persist_improve_metadata_first"
+    )
     assert "repair_source_metadata" in payload["recommended_actions"]
 
 
@@ -438,13 +487,18 @@ async def test_dry_run_downgrades_tags_only() -> None:
     assert payload["results"][0]["status"] == "downgraded"
     assert "tags_only_context" in payload["results"][0]["limitations"]
     assert payload["data_quality_status"] == "metadata_gap_no_valid_cards"
-    assert "extract_text_snippets_or_structured_candidates_from_paperless" in payload["recommended_actions"]
+    assert (
+        "extract_text_snippets_or_structured_candidates_from_paperless"
+        in payload["recommended_actions"]
+    )
 
 
 @pytest.mark.anyio
 async def test_dry_run_does_not_return_full_raw_text() -> None:
     long_text = "A" * 2000
-    session = DummySession([_doc(extracted_candidates=[_valid_candidate(text=long_text)])])
+    session = DummySession(
+        [_doc(extracted_candidates=[_valid_candidate(text=long_text)])]
+    )
 
     payload = await rag_endpoint.material_evidence_dry_run(
         source_system="paperless",
@@ -466,7 +520,11 @@ async def test_dry_run_does_not_return_full_raw_text() -> None:
 @pytest.mark.anyio
 async def test_dry_run_limit_is_capped() -> None:
     docs = [
-        _doc(document_id=f"rag-doc-{index}", source_id=str(index), extracted_candidates=[_valid_candidate()])
+        _doc(
+            document_id=f"rag-doc-{index}",
+            source_id=str(index),
+            extracted_candidates=[_valid_candidate()],
+        )
         for index in range(105)
     ]
     session = DummySession(docs)
@@ -490,8 +548,18 @@ async def test_dry_run_limit_is_capped() -> None:
 async def test_dry_run_route_filter() -> None:
     session = DummySession(
         [
-            _doc(document_id="rag-material", source_id="1", route="material_datasheet", extracted_candidates=[_valid_candidate()]),
-            _doc(document_id="rag-knowledge", source_id="2", route="technical_knowledge", extracted_candidates=[_valid_candidate()]),
+            _doc(
+                document_id="rag-material",
+                source_id="1",
+                route="material_datasheet",
+                extracted_candidates=[_valid_candidate()],
+            ),
+            _doc(
+                document_id="rag-knowledge",
+                source_id="2",
+                route="technical_knowledge",
+                extracted_candidates=[_valid_candidate()],
+            ),
         ]
     )
 

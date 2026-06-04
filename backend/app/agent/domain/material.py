@@ -8,10 +8,19 @@ from app.agent.domain.limits import OperatingLimit
 
 
 _MATERIAL_PATTERN = re.compile(r"\b(NBR|PTFE|FKM|EPDM|SILIKON)\b", re.I)
-_GRADE_PATTERN = re.compile(r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I)
-_FILLER_PATTERN = re.compile(r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I)
+_GRADE_PATTERN = re.compile(
+    r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I
+)
+_FILLER_PATTERN = re.compile(
+    r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I
+)
 _YEAR_PATTERN = re.compile(r"\b(19\d{2}|20\d{2})\b")
-_KB_SOURCE_PATH = Path(__file__).resolve().parents[2] / "data" / "kb" / "SEALAI_KB_PTFE_factcards_gates_v1_3.json"
+_KB_SOURCE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "kb"
+    / "SEALAI_KB_PTFE_factcards_gates_v1_3.json"
+)
 _SOURCE_CATALOG_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
 
@@ -95,10 +104,20 @@ def _classify_source_authority(card_dict: dict) -> Dict[str, Any]:
         "peer_reviewed_review",
         "government_report",
     }
-    if isinstance(source_type, str) and source_type in authoritative_types and source_rank in {1, 2}:
-        return {"quality": "sufficient", "reason": f"authority:{source_type}:rank_{source_rank}"}
+    if (
+        isinstance(source_type, str)
+        and source_type in authoritative_types
+        and source_rank in {1, 2}
+    ):
+        return {
+            "quality": "sufficient",
+            "reason": f"authority:{source_type}:rank_{source_rank}",
+        }
     if source_type or source_rank is not None:
-        return {"quality": "insufficient", "reason": f"authority_insufficient:{source_type or 'unknown'}:rank_{source_rank}"}
+        return {
+            "quality": "insufficient",
+            "reason": f"authority_insufficient:{source_type or 'unknown'}:rank_{source_rank}",
+        }
     return {"quality": "unknown", "reason": "authority_missing"}
 
 
@@ -113,7 +132,11 @@ def _classify_source_temporal_validity(card_dict: dict) -> Dict[str, Any]:
     for candidate in candidates:
         years.extend(int(match) for match in _YEAR_PATTERN.findall(candidate))
     if years:
-        return {"quality": "sufficient", "reason": f"temporal_year:{max(years)}", "year": max(years)}
+        return {
+            "quality": "sufficient",
+            "reason": f"temporal_year:{max(years)}",
+            "year": max(years),
+        }
     return {"quality": "unknown", "reason": "temporal_metadata_missing"}
 
 
@@ -145,7 +168,9 @@ def _extract_filler_hint(card_dict: dict) -> Optional[str]:
 
 def _extract_grade_name(card_dict: dict) -> Optional[str]:
     metadata = card_dict.get("metadata") or {}
-    explicit = _read_metadata_str(metadata, "grade_name", "grade", "compound_code", "compound")
+    explicit = _read_metadata_str(
+        metadata, "grade_name", "grade", "compound_code", "compound"
+    )
     if explicit:
         return explicit
 
@@ -183,20 +208,30 @@ def _metadata_identity_value(card_dict: dict, field_name: str) -> Optional[str]:
     if field_name == "filler_hint":
         return _read_metadata_str(metadata, "filler_hint", "filler", "fill")
     if field_name == "grade_name":
-        return _read_metadata_str(metadata, "grade_name", "grade", "compound_code", "compound")
+        return _read_metadata_str(
+            metadata, "grade_name", "grade", "compound_code", "compound"
+        )
     if field_name == "manufacturer_name":
-        return _read_metadata_str(metadata, "manufacturer_name", "manufacturer", "brand")
+        return _read_metadata_str(
+            metadata, "manufacturer_name", "manufacturer", "brand"
+        )
     return None
 
 
-def _evaluate_identity_quality(card_dict: dict, field_name: str, resolved_value: Optional[str]) -> Dict[str, Any]:
+def _evaluate_identity_quality(
+    card_dict: dict, field_name: str, resolved_value: Optional[str]
+) -> Dict[str, Any]:
     metadata_value = _metadata_identity_value(card_dict, field_name)
     text_value = _identity_text_value(card_dict, field_name)
     evidence_id = card_dict.get("evidence_id") or card_dict.get("id")
     source_ref = card_dict.get("source_ref")
     has_reference = bool(evidence_id) and bool(source_ref)
 
-    if metadata_value and text_value and metadata_value.strip().upper() != text_value.strip().upper():
+    if (
+        metadata_value
+        and text_value
+        and metadata_value.strip().upper() != text_value.strip().upper()
+    ):
         return {
             "source": "metadata_conflict_text",
             "quality": "conflict",
@@ -244,27 +279,39 @@ def _candidate_kind(
     return "family"
 
 
-def _extract_temperature_limits(card_dict: dict) -> Tuple[Optional[float], Optional[float]]:
+def _extract_temperature_limits(
+    card_dict: dict,
+) -> Tuple[Optional[float], Optional[float]]:
     metadata = card_dict.get("metadata") or {}
-    temp_max = _read_metadata_float(metadata, "temperature_max_c", "temp_max_c", "temp_max", "max_temp_c")
-    temp_min = _read_metadata_float(metadata, "temperature_min_c", "temp_min_c", "temp_min", "min_temp_c")
+    temp_max = _read_metadata_float(
+        metadata, "temperature_max_c", "temp_max_c", "temp_max", "max_temp_c"
+    )
+    temp_min = _read_metadata_float(
+        metadata, "temperature_min_c", "temp_min_c", "temp_min", "min_temp_c"
+    )
     if temp_max is not None:
         return temp_min if temp_min is not None else -50.0, temp_max
 
     content = card_dict.get("content", "")
-    temp_max_match = re.search(r"(?:bis|max\.|maximal)\s*(-?\d+(?:[.,]\d+)?)\s*C", content, re.I)
+    temp_max_match = re.search(
+        r"(?:bis|max\.|maximal)\s*(-?\d+(?:[.,]\d+)?)\s*C", content, re.I
+    )
     temp_min_match = re.search(r"(-?\d+(?:[.,]\d+)?)\s*bis", content, re.I)
     if not temp_max_match:
         return None, None
 
     t_max = float(temp_max_match.group(1).replace(",", "."))
-    t_min = float(temp_min_match.group(1).replace(",", ".")) if temp_min_match else -50.0
+    t_min = (
+        float(temp_min_match.group(1).replace(",", ".")) if temp_min_match else -50.0
+    )
     return t_min, t_max
 
 
 def _extract_pressure_max(card_dict: dict) -> Optional[float]:
     metadata = card_dict.get("metadata") or {}
-    explicit = _read_metadata_float(metadata, "pressure_max_bar", "pressure_max", "max_pressure_bar")
+    explicit = _read_metadata_float(
+        metadata, "pressure_max_bar", "pressure_max", "max_pressure_bar"
+    )
     if explicit is not None:
         return explicit
 
@@ -275,7 +322,9 @@ def _extract_pressure_max(card_dict: dict) -> Optional[float]:
         re.I,
     )
     if not match:
-        match = re.search(r"(?:bis|max\.|maximal)\s*(\d+(?:[.,]\d+)?)\s*(bar|psi)\b", content, re.I)
+        match = re.search(
+            r"(?:bis|max\.|maximal)\s*(\d+(?:[.,]\d+)?)\s*(bar|psi)\b", content, re.I
+        )
     if not match:
         return None
 
@@ -296,10 +345,16 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
     authority = _classify_source_authority(card_dict)
     temporal = _classify_source_temporal_validity(card_dict)
     identity_quality = {
-        "material_family": _evaluate_identity_quality(card_dict, "material_family", family),
-        "filler_hint": _evaluate_identity_quality(card_dict, "filler_hint", filler_hint),
+        "material_family": _evaluate_identity_quality(
+            card_dict, "material_family", family
+        ),
+        "filler_hint": _evaluate_identity_quality(
+            card_dict, "filler_hint", filler_hint
+        ),
         "grade_name": _evaluate_identity_quality(card_dict, "grade_name", grade_name),
-        "manufacturer_name": _evaluate_identity_quality(card_dict, "manufacturer_name", manufacturer_name),
+        "manufacturer_name": _evaluate_identity_quality(
+            card_dict, "manufacturer_name", manufacturer_name
+        ),
     }
     quality_reasons = [
         details["reason"]
@@ -309,7 +364,9 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
     evidence_quality = "qualified_identity"
     if any(details["quality"] == "conflict" for details in identity_quality.values()):
         evidence_quality = "conflicted_identity"
-    elif any(details["quality"] == "unqualified" for details in identity_quality.values()):
+    elif any(
+        details["quality"] == "unqualified" for details in identity_quality.values()
+    ):
         evidence_quality = "unqualified_identity"
 
     return {
@@ -319,7 +376,9 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
         "filler_hint": filler_hint,
         "grade_name": grade_name,
         "manufacturer_name": manufacturer_name,
-        "candidate_kind": _candidate_kind(family, filler_hint, grade_name, manufacturer_name),
+        "candidate_kind": _candidate_kind(
+            family, filler_hint, grade_name, manufacturer_name
+        ),
         "normalized_temp_min": temp_min,
         "normalized_temp_max": temp_max,
         "normalized_pressure_max": pressure_max,
@@ -333,10 +392,13 @@ def normalize_fact_card_evidence(card_dict: dict) -> Dict[str, Any]:
         "temporal_year": temporal.get("year"),
     }
 
+
 # Import existing model for compatibility if possible, or define a compatible one
 try:
-    from app.models.material_profile import MaterialPhysicalProfile as BaseMaterialPhysicalProfile
-    
+    from app.models.material_profile import (
+        MaterialPhysicalProfile as BaseMaterialPhysicalProfile,
+    )
+
     class MaterialPhysicalProfile(BaseMaterialPhysicalProfile):
         @classmethod
         def from_fact_card(cls, card_dict: dict) -> Optional["MaterialPhysicalProfile"]:
@@ -344,7 +406,9 @@ try:
             Factory-Methode (Phase H7): Erzeugt ein Profil aus einer RAG FactCard.
             Extrahiert Materialnamen und Limits mittels RegEx.
             """
-            normalized = card_dict.get("normalized_evidence") or normalize_fact_card_evidence(card_dict)
+            normalized = card_dict.get(
+                "normalized_evidence"
+            ) or normalize_fact_card_evidence(card_dict)
             mat_name = normalized.get("material_family")
             t_max = normalized.get("normalized_temp_max")
             if not mat_name or t_max is None:
@@ -353,7 +417,7 @@ try:
             if t_min is None:
                 t_min = -50.0
             pressure_max = normalized.get("normalized_pressure_max")
-            
+
             payload = {
                 "material_id": mat_name,
                 "temp_min": t_min,
@@ -385,7 +449,9 @@ except ImportError:
             """
             Factory-Methode (Phase H7): Erzeugt ein Profil aus einer RAG FactCard.
             """
-            normalized = card_dict.get("normalized_evidence") or normalize_fact_card_evidence(card_dict)
+            normalized = card_dict.get(
+                "normalized_evidence"
+            ) or normalize_fact_card_evidence(card_dict)
             mat_name = normalized.get("material_family")
             t_max = normalized.get("normalized_temp_max")
             if not mat_name or t_max is None:
@@ -394,29 +460,29 @@ except ImportError:
             if t_min is None:
                 t_min = -50.0
             pressure_max = normalized.get("normalized_pressure_max")
-            
+
             return cls(
                 material_id=mat_name,
                 temp_min=t_min,
                 temp_max=t_max,
                 pressure_max=pressure_max,
                 v_surface_max=0,
-                pv_limit_critical=0
+                pv_limit_critical=0,
             )
+
 
 class MaterialValidator:
     """
     Validiert ein Material gegen technische Einsatzbedingungen (Phase H3).
     Nutzt OperatingLimits zur deterministischen Prüfung.
     """
+
     def __init__(self, profile: MaterialPhysicalProfile):
         self.profile = profile
-        
+
         # Erzeuge OperatingLimits aus dem Profil
         self.temp_limit = OperatingLimit(
-            min_value=profile.temp_min,
-            max_value=profile.temp_max,
-            unit="C"
+            min_value=profile.temp_min, max_value=profile.temp_max, unit="C"
         )
         self.pressure_limit = None
         if getattr(profile, "pressure_max", None) is not None:
@@ -425,7 +491,7 @@ class MaterialValidator:
                 max_value=profile.pressure_max,
                 unit="bar",
             )
-        
+
         # Weitere Limits könnten hier initialisiert werden (PV, Speed etc.)
 
     def validate_temperature(self, temp: PhysicalParameter) -> bool:
@@ -438,16 +504,18 @@ class MaterialValidator:
             return True
         return self.pressure_limit.is_within_limits(pressure)
 
-    def get_validation_report(self, conditions: Dict[str, PhysicalParameter]) -> Dict[str, Any]:
+    def get_validation_report(
+        self, conditions: Dict[str, PhysicalParameter]
+    ) -> Dict[str, Any]:
         """
         Erzeugt einen detaillierten Validierungsbericht für mehrere Bedingungen.
         """
         report = {
             "material_id": self.profile.material_id,
             "is_valid": True,
-            "checks": {}
+            "checks": {},
         }
-        
+
         if "temperature" in conditions:
             is_ok = self.validate_temperature(conditions["temperature"])
             report["checks"]["temperature"] = {
@@ -455,7 +523,7 @@ class MaterialValidator:
                 "value": conditions["temperature"].to_base_unit(),
                 "limit_min": self.profile.temp_min,
                 "limit_max": self.profile.temp_max,
-                "unit": "C"
+                "unit": "C",
             }
             if not is_ok:
                 report["is_valid"] = False
@@ -467,9 +535,9 @@ class MaterialValidator:
                 "value": conditions["pressure"].to_base_unit(),
                 "limit_min": 0.0,
                 "limit_max": self.profile.pressure_max,
-                "unit": "bar"
+                "unit": "bar",
             }
             if not is_ok:
                 report["is_valid"] = False
-                
+
         return report

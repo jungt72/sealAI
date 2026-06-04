@@ -2,6 +2,7 @@
 Tests for PromptBuilder — verifies persona injection, template branching,
 product-law inclusion, and output quality invariants.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,7 +16,13 @@ def builder() -> PromptBuilder:
 
 
 def test_fact_cards_rendered(builder: PromptBuilder) -> None:
-    cards = [{"title": "PTFE Eignung", "specificity": 4, "content": "PTFE eignet sich für..."}]
+    cards = [
+        {
+            "title": "PTFE Eignung",
+            "specificity": 4,
+            "content": "PTFE eignet sich für...",
+        }
+    ]
     prompt = builder.governed({}, [], cards)
     assert "PTFE Eignung" in prompt
     assert "AUS DEINER WISSENSBASIS" in prompt
@@ -63,7 +70,9 @@ def test_conversation_with_case_summary(builder: PromptBuilder) -> None:
     assert "PTFE-Dichtung" in prompt
 
 
-def test_conversation_prompt_treats_user_values_as_working_state(builder: PromptBuilder) -> None:
+def test_conversation_prompt_treats_user_values_as_working_state(
+    builder: PromptBuilder,
+) -> None:
     prompt = builder.conversation(case_summary="Medium Wasser, 80 °C.")
 
     assert "Akzeptiere Angaben des Nutzers als Arbeitsstand" in prompt
@@ -73,12 +82,18 @@ def test_conversation_prompt_treats_user_values_as_working_state(builder: Prompt
 
 def test_rfq_admissible_branch(builder: PromptBuilder) -> None:
     admissible = builder.final_answer(
-        parameters={}, assumptions=[], req_class="A",
-        open_points=[], rfq_admissible=True,
+        parameters={},
+        assumptions=[],
+        req_class="A",
+        open_points=[],
+        rfq_admissible=True,
     )
     not_admissible = builder.final_answer(
-        parameters={}, assumptions=[], req_class="A",
-        open_points=["Druck fehlt"], rfq_admissible=False,
+        parameters={},
+        assumptions=[],
+        req_class="A",
+        open_points=["Druck fehlt"],
+        rfq_admissible=False,
     )
     assert "RFQ-ADMISSIBLE" in admissible
     assert "NOCH NICHT RFQ-READY" in not_admissible

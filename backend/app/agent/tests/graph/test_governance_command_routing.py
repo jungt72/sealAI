@@ -21,8 +21,7 @@ def _state(
     **fields,
 ) -> GraphState:
     assertions = {
-        field: _claim(field, val, conf)
-        for field, (val, conf) in fields.items()
+        field: _claim(field, val, conf) for field, (val, conf) in fields.items()
     }
     asserted = AssertedState(
         assertions=assertions,
@@ -37,7 +36,9 @@ def _state(
 
 
 @pytest.mark.asyncio
-async def test_governance_routing_node_uses_command_goto_matching_for_preselection_blockers() -> None:
+async def test_governance_routing_node_uses_command_goto_matching_for_preselection_blockers() -> (
+    None
+):
     state = _state(
         medium=("Dampf", "confirmed"),
         pressure_bar=(12.0, "confirmed"),
@@ -57,7 +58,9 @@ async def test_governance_routing_node_uses_command_goto_matching_for_preselecti
 
 
 @pytest.mark.asyncio
-async def test_governance_routing_node_uses_command_goto_matching_for_core_fields_with_preselection_blocker() -> None:
+async def test_governance_routing_node_uses_command_goto_matching_for_core_fields_with_preselection_blocker() -> (
+    None
+):
     state = _state(
         medium=("Dampf", "confirmed"),
         pressure_bar=(12.0, "confirmed"),

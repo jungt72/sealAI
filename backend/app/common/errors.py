@@ -5,6 +5,7 @@ The canonical source of error_detail is app._legacy_v2.contracts; this module
 re-exports a compatible implementation so that rag.py and rag/utils.py can
 import from their original path without modification.
 """
+
 from __future__ import annotations
 
 from typing import Any

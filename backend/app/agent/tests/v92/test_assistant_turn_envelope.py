@@ -41,7 +41,10 @@ def test_full_envelope_serializes_and_round_trips() -> None:
         chat_reply=ChatReply(
             style="mobile_triage",
             markdown="Ich prüfe das als möglichen Leckagefall.",
-            primary_question={"field": "shaft_rotates", "text": "Dreht sich die Welle?"},
+            primary_question={
+                "field": "shaft_rotates",
+                "text": "Dreht sich die Welle?",
+            },
             template_id="chat.mobile_triage.v1",
         ),
         cockpit_patch=CockpitPatch(

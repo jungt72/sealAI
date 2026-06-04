@@ -223,7 +223,9 @@ class TerminologyService:
         payload: Mapping[str, Any] | None = None,
     ) -> str:
         if not (mapping_id or concept_id or term_id):
-            raise ValueError("term_audit_log requires mapping_id, concept_id, or term_id")
+            raise ValueError(
+                "term_audit_log requires mapping_id, concept_id, or term_id"
+            )
 
         audit_id = str(uuid.uuid4())
         self._execute(
@@ -282,7 +284,9 @@ class TerminologyService:
         elif manufacturer_id is not None:
             scope_filter = "pt.originating_manufacturer_id = :manufacturer_id"
 
-        reviewer_filter = "AND tm.reviewer_status = 'published'" if published_only else ""
+        reviewer_filter = (
+            "AND tm.reviewer_status = 'published'" if published_only else ""
+        )
         active_filter = "AND tm.is_active IS TRUE" if active_only else ""
         validity_filter = ""
         if as_of is not None:

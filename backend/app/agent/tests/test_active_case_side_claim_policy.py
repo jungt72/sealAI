@@ -32,7 +32,9 @@ def _pending_medium_question() -> PendingQuestion:
     )
 
 
-def test_active_case_side_claim_policy_detects_unsafe_material_claim_and_falls_back() -> None:
+def test_active_case_side_claim_policy_detects_unsafe_material_claim_and_falls_back() -> (
+    None
+):
     facts = build_active_case_side_speakable_facts(
         GovernedSessionState(pending_question=_pending_medium_question())
     )
@@ -97,7 +99,9 @@ def test_active_case_side_claim_policy_detects_unscoped_suitability_label() -> N
     assert "unscoped_suitability_label" in result.forbidden_claims_detected
 
 
-def test_active_case_side_claim_policy_bounds_material_limit_answers_even_without_forbidden_claim() -> None:
+def test_active_case_side_claim_policy_bounds_material_limit_answers_even_without_forbidden_claim() -> (
+    None
+):
     facts = build_active_case_side_speakable_facts(
         GovernedSessionState(pending_question=_pending_medium_question())
     )
@@ -164,7 +168,9 @@ def test_active_case_side_evidence_context_uses_existing_knowledge_evidence() ->
     assert "nicht als technische Freigabe" in enriched.answer_markdown
 
 
-def test_active_case_side_claim_policy_catches_unsafe_answer_even_with_evidence_context() -> None:
+def test_active_case_side_claim_policy_catches_unsafe_answer_even_with_evidence_context() -> (
+    None
+):
     knowledge_response = KnowledgeResponse(
         content="FKM ist garantiert geeignet.",
         answer_result=KnowledgeAnswerResult(
@@ -213,7 +219,9 @@ def test_active_case_side_claim_policy_catches_unsafe_answer_even_with_evidence_
     assert "garantiert_geeignet" in result.forbidden_claims_detected
 
 
-def test_active_case_side_speakable_facts_distinguish_known_missing_and_evidence() -> None:
+def test_active_case_side_speakable_facts_distinguish_known_missing_and_evidence() -> (
+    None
+):
     state = GovernedSessionState(
         pending_question=_pending_medium_question(),
         asserted=AssertedState(

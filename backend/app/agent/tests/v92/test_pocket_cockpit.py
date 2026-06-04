@@ -21,8 +21,18 @@ def _contract(**overrides) -> V92DashboardContract:
         "readiness_band": "screening_possible",
         "current_facts": [
             {"field_name": "Dichtungstyp", "value": "RWDR", "confidence": "confirmed"},
-            {"field_name": "Maße", "value": "45x62x8", "unit": "mm", "confidence": "confirmed"},
-            {"field_name": "Drehzahl", "value": 1500, "unit": "rpm", "confidence": "estimated"},
+            {
+                "field_name": "Maße",
+                "value": "45x62x8",
+                "unit": "mm",
+                "confidence": "confirmed",
+            },
+            {
+                "field_name": "Drehzahl",
+                "value": 1500,
+                "unit": "rpm",
+                "confidence": "estimated",
+            },
             {"field_name": "Medium", "value": "Öl", "confidence": "confirmed"},
             {"field_name": "Anwendung", "value": "Getriebe", "confidence": "confirmed"},
         ],
@@ -73,7 +83,10 @@ def test_next_step_from_pending_question_overrides_recommendation() -> None:
         _contract(),
         pending_question={"field": "shaft_rotates", "text": "Dreht sich die Welle?"},
     )
-    assert patch.next_step == {"question": "Dreht sich die Welle?", "field": "shaft_rotates"}
+    assert patch.next_step == {
+        "question": "Dreht sich die Welle?",
+        "field": "shaft_rotates",
+    }
 
 
 def test_next_step_falls_back_to_recommendation_action() -> None:
@@ -82,7 +95,10 @@ def test_next_step_falls_back_to_recommendation_action() -> None:
 
 
 def test_rfq_status_maps_readiness_band() -> None:
-    assert build_pocket_cockpit_patch(_contract(readiness_band="not_ready")).rfq_status == "DRAFT"
+    assert (
+        build_pocket_cockpit_patch(_contract(readiness_band="not_ready")).rfq_status
+        == "DRAFT"
+    )
     assert (
         build_pocket_cockpit_patch(
             _contract(readiness_band="rfq_ready_for_expert_review")
@@ -101,7 +117,10 @@ def test_action_chips_yes_no_question() -> None:
 
 def test_action_chips_from_options() -> None:
     chips = build_action_chips(
-        {"field": "shaft_surface_condition", "options": ["glatt", "Rille sichtbar", "Rost"]}
+        {
+            "field": "shaft_surface_condition",
+            "options": ["glatt", "Rille sichtbar", "Rost"],
+        }
     )
     labels = [c.label for c in chips]
     assert labels == ["glatt", "Rille sichtbar", "Rost", "Weiß ich nicht"]

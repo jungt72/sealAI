@@ -158,7 +158,10 @@ async def test_rwdr_closes_sealing_type_pending_question() -> None:
     assert state.last_slot_answer_binding.normalized_value == "rwdr"
     assert state.asserted.assertions["sealing_type"].asserted_value == "rwdr"
     assert "sealing_type" not in state.asserted.blocking_unknowns
-    assert state.pending_question is None or state.pending_question.target_field != "sealing_type"
+    assert (
+        state.pending_question is None
+        or state.pending_question.target_field != "sealing_type"
+    )
 
 
 @pytest.mark.parametrize(

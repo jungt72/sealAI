@@ -61,7 +61,9 @@ def test_turn_decision_supports_mixed_pending_slot_and_knowledge_turn() -> None:
         ],
         case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT,
         resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
-        resume_target_candidate=ResumeTarget(type="pending_question", target_field="medium"),
+        resume_target_candidate=ResumeTarget(
+            type="pending_question", target_field="medium"
+        ),
         confidence=0.81,
     )
 
@@ -122,7 +124,9 @@ def test_speakable_fact_requires_safe_phrase_and_bounds_candidate_claim() -> Non
         status="ambiguous",
         claim_level_max=ClaimLevel.L2_APPLICATION_ORIENTATION,
         structured_value={"value": "chlor", "needs_clarification": True},
-        safe_phrases=["Ich habe Chlor als Medium verstanden, aber die genaue Form ist noch offen."],
+        safe_phrases=[
+            "Ich habe Chlor als Medium verstanden, aber die genaue Form ist noch offen."
+        ],
         forbidden_phrases=["Chlor ist fuer den Werkstoff geeignet."],
         source="slot_binding",
     )
@@ -138,9 +142,15 @@ def test_answer_plan_carries_resume_target_and_forbidden_claims() -> None:
     plan = AnswerPlan(
         answer_mode=AnswerMode.ACTIVE_CASE_SIDE_QUESTION,
         answer_goal="explain relevance and return to medium intake",
-        response_obligations=["answer_side_question_directly", "return_to_primary_task"],
+        response_obligations=[
+            "answer_side_question_directly",
+            "return_to_primary_task",
+        ],
         resume_target=ResumeTarget(type="pending_question", target_field="medium"),
-        allowed_claim_levels=[ClaimLevel.L1_GENERAL, ClaimLevel.L2_APPLICATION_ORIENTATION],
+        allowed_claim_levels=[
+            ClaimLevel.L1_GENERAL,
+            ClaimLevel.L2_APPLICATION_ORIENTATION,
+        ],
         forbidden_claims=["final_material_suitability", "rfq_ready"],
     )
 
@@ -156,7 +166,9 @@ def test_runtime_action_maps_active_case_side_question_to_answer_then_resume() -
         answer_mode=AnswerMode.ACTIVE_CASE_SIDE_QUESTION,
         mutation_policy=MutationPolicy.FORBIDDEN,
         resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
-        resume_target_candidate=ResumeTarget(type="pending_question", target_field="medium"),
+        resume_target_candidate=ResumeTarget(
+            type="pending_question", target_field="medium"
+        ),
     )
 
     action = build_runtime_action_from_turn_decision(decision)
@@ -185,7 +197,9 @@ def test_runtime_action_maps_pending_slot_answer_to_governed_graph_entry() -> No
 
     assert action.action_type == RuntimeActionType.ENTER_GOVERNED_GRAPH
     assert action.graph_allowed is True
-    assert action.graph_entry_reason == "pending_slot_answer_requires_governed_validation"
+    assert (
+        action.graph_entry_reason == "pending_slot_answer_requires_governed_validation"
+    )
     assert action.slot_candidate_detected is True
 
 
@@ -204,8 +218,13 @@ def test_runtime_action_maps_technical_case_challenge_to_governed_graph_entry() 
     assert action.answer_mode == AnswerMode.TECHNICAL_CASE_CHALLENGE
     assert action.answer_builder == RuntimeAnswerBuilder.GOVERNED_OUTPUT_CONTRACT
     assert action.graph_allowed is True
-    assert action.graph_entry_reason == "technical_case_challenge_requires_governed_graph"
-    assert action.next_runtime_action == "enter_governed_langgraph_for_technical_case_challenge"
+    assert (
+        action.graph_entry_reason == "technical_case_challenge_requires_governed_graph"
+    )
+    assert (
+        action.next_runtime_action
+        == "enter_governed_langgraph_for_technical_case_challenge"
+    )
 
 
 def test_runtime_action_rejects_graph_allowed_for_answer_only_actions() -> None:
@@ -233,7 +252,10 @@ def test_knowledge_override_runtime_action_is_answer_only_and_traceable() -> Non
     trace = action.as_trace()
     assert trace["decision_source"] == "knowledge_override_classifier"
     assert trace["knowledge_override_class"] == "conversational_answer"
-    assert trace["graph_invocation_skipped_reason"] == "legacy_knowledge_override_answer_only"
+    assert (
+        trace["graph_invocation_skipped_reason"]
+        == "legacy_knowledge_override_answer_only"
+    )
 
 
 def test_rfq_readiness_runtime_action_is_answer_only_and_consent_bounded() -> None:
@@ -256,10 +278,15 @@ def test_rfq_readiness_runtime_action_is_answer_only_and_consent_bounded() -> No
     assert trace["external_contact_allowed"] is False
     assert trace["manufacturer_review_framing"] is True
     assert trace["final_approval_claim_allowed"] is False
-    assert trace["graph_invocation_skipped_reason"] == "rfq_readiness_answered_without_governed_graph"
+    assert (
+        trace["graph_invocation_skipped_reason"]
+        == "rfq_readiness_answered_without_governed_graph"
+    )
 
 
-def test_final_answer_contract_keeps_reply_as_fallback_and_answer_markdown_visible() -> None:
+def test_final_answer_contract_keeps_reply_as_fallback_and_answer_markdown_visible() -> (
+    None
+):
     contract = FinalAnswerContract(
         reply="Deterministischer Fallback",
         answer_markdown="Natuerliche finale Antwort",

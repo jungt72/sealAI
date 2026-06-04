@@ -114,7 +114,10 @@ class GovernedAnswerComposerError(ValueError):
 
 
 def is_governed_answer_composer_enabled() -> bool:
-    return os.getenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true").strip().lower() in _TRUE_VALUES
+    return (
+        os.getenv("SEALAI_ENABLE_GOVERNED_ANSWER_COMPOSER", "true").strip().lower()
+        in _TRUE_VALUES
+    )
 
 
 class GovernedAnswerComposer:
@@ -124,7 +127,9 @@ class GovernedAnswerComposer:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
-    async def compose(self, request: GovernedAnswerComposerInput) -> GovernedAnswerComposerOutput:
+    async def compose(
+        self, request: GovernedAnswerComposerInput
+    ) -> GovernedAnswerComposerOutput:
         client, model = get_async_llm("governed_answer_composer")
         messages = build_governed_answer_composer_messages(request)
         try:
@@ -271,7 +276,9 @@ class GovernedAnswerComposer:
             output=GovernedAnswerComposerOutput(
                 answer_markdown=answer_markdown,
                 confidence_note=None,
-                prompt_trace=_prompt_trace_for_messages(request=request, messages=messages),
+                prompt_trace=_prompt_trace_for_messages(
+                    request=request, messages=messages
+                ),
             ),
         )
 
@@ -295,7 +302,10 @@ async def _create_completion_with_registry_fallback(
         )
     except Exception as exc:  # noqa: BLE001
         fallback_model = get_registry_default_model_for_role(role)
-        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+        if (
+            model != fallback_model
+            and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES
+        ):
             log.warning(
                 "[governed_answer_composer] configured model rejected; retrying registry default"
             )
@@ -328,7 +338,10 @@ async def _create_stream_with_registry_fallback(
         )
     except Exception as exc:  # noqa: BLE001
         fallback_model = get_registry_default_model_for_role(role)
-        if model != fallback_model and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES:
+        if (
+            model != fallback_model
+            and exc.__class__.__name__ in _MODEL_FALLBACK_ERROR_NAMES
+        ):
             log.warning(
                 "[governed_answer_composer] configured stream model rejected; retrying registry default"
             )
@@ -352,10 +365,14 @@ def build_governed_answer_composer_messages(
     payload = {
         "prompt_version": GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION,
         "deterministic_reply": request.deterministic_reply,
-        "governed_answer_context": _governed_answer_context_prompt_payload(request.context),
+        "governed_answer_context": _governed_answer_context_prompt_payload(
+            request.context
+        ),
     }
     if repair_reason:
-        must_mention_terms = _user_named_material_terms(request.context.latest_user_message)
+        must_mention_terms = _user_named_material_terms(
+            request.context.latest_user_message
+        )
         payload["repair"] = {
             "reason": repair_reason,
             "failed_answer": str(failed_answer or "")[:MAX_ANSWER_MARKDOWN_CHARS],
@@ -375,7 +392,10 @@ def build_governed_answer_composer_messages(
     )
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(payload, ensure_ascii=True, default=str)},
+        {
+            "role": "user",
+            "content": json.dumps(payload, ensure_ascii=True, default=str),
+        },
     ]
     if repair_reason:
         terms = ", ".join(payload["repair"]["must_mention_user_material_terms"])
@@ -413,7 +433,9 @@ def build_governed_answer_composer_messages(
     return messages
 
 
-def _governed_answer_context_prompt_payload(context: GovernedAnswerContext) -> dict[str, Any]:
+def _governed_answer_context_prompt_payload(
+    context: GovernedAnswerContext,
+) -> dict[str, Any]:
     """Return the compact user-facing composer context."""
 
     def dump(value: Any) -> Any:
@@ -430,7 +452,9 @@ def _governed_answer_context_prompt_payload(context: GovernedAnswerContext) -> d
         "answer_mode_source": context.answer_mode_source,
         "recent_conversation_messages": list(context.conversation_messages or [])[-8:],
         "pending_question": dump(context.pending_question),
-        "slot_answer_bindings": [dump(item) for item in context.slot_answer_bindings[:3]],
+        "slot_answer_bindings": [
+            dump(item) for item in context.slot_answer_bindings[:3]
+        ],
         "accepted_updates": [dump(item) for item in context.accepted_updates[:6]],
         "ambiguous_values": [dump(item) for item in context.ambiguous_values[:4]],
         "rejected_updates": [dump(item) for item in context.rejected_updates[:4]],
@@ -472,11 +496,18 @@ def _bounded_prompt_payload(value: Any, *, string_limit: int = 900) -> Any:
             return text
         return f"{text[:string_limit].rstrip()} ... [gekuerzt: {len(text) - string_limit} Zeichen]"
     if isinstance(value, dict):
-        return {str(key): _bounded_prompt_payload(item, string_limit=string_limit) for key, item in value.items()}
+        return {
+            str(key): _bounded_prompt_payload(item, string_limit=string_limit)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [_bounded_prompt_payload(item, string_limit=string_limit) for item in value]
+        return [
+            _bounded_prompt_payload(item, string_limit=string_limit) for item in value
+        ]
     if isinstance(value, tuple):
-        return [_bounded_prompt_payload(item, string_limit=string_limit) for item in value]
+        return [
+            _bounded_prompt_payload(item, string_limit=string_limit) for item in value
+        ]
     return value
 
 
@@ -495,11 +526,14 @@ def _prompt_trace_for_messages(
         sort_keys=True,
         default=str,
     )
-    trace_id = "prompt_" + re.sub(
-        r"[^a-f0-9]",
-        "",
-        hashlib.sha256(trace_source.encode("utf-8")).hexdigest(),
-    )[:24]
+    trace_id = (
+        "prompt_"
+        + re.sub(
+            r"[^a-f0-9]",
+            "",
+            hashlib.sha256(trace_source.encode("utf-8")).hexdigest(),
+        )[:24]
+    )
     return build_prompt_trace(
         prompt_template_id="governed/answer_composer.j2",
         prompt_template_version=GOVERNED_ANSWER_COMPOSER_PROMPT_VERSION,
@@ -512,7 +546,9 @@ def _prompt_trace_for_messages(
     )
 
 
-def parse_governed_answer_composer_output(raw_content: Any) -> GovernedAnswerComposerOutput:
+def parse_governed_answer_composer_output(
+    raw_content: Any,
+) -> GovernedAnswerComposerOutput:
     try:
         payload = json.loads(str(raw_content or "{}"))
     except json.JSONDecodeError as exc:
@@ -550,7 +586,11 @@ def _user_named_material_terms(latest_user_message: str | None) -> list[str]:
     if not latest:
         return []
     known_terms = ("EPDM", "FKM", "FFKM", "NBR", "HNBR", "PTFE", "PU", "POM", "PEEK")
-    return [term for term in known_terms if re.search(rf"\b{re.escape(term.casefold())}\b", latest)]
+    return [
+        term
+        for term in known_terms
+        if re.search(rf"\b{re.escape(term.casefold())}\b", latest)
+    ]
 
 
 def _is_recoverable_repair_reason(exc: GovernedAnswerComposerError) -> bool:
@@ -650,7 +690,9 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
         getattr(context, "answer_mode", None) == ANSWER_MODE_TECHNICAL_CASE_CHALLENGE
         and context.technical_case_challenge_plan is not None
     ):
-        return render_technical_case_challenge_plan(context.technical_case_challenge_plan)
+        return render_technical_case_challenge_plan(
+            context.technical_case_challenge_plan
+        )
 
     orientation = _technical_orientation_for_user_task(context.latest_user_message)
     calculation_orientation = _calculation_orientation(context)
@@ -660,7 +702,9 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
         item = context.ambiguous_values[0]
         value = _display_value(item.normalized_value or item.raw_value)
         label = _display_label(item.field_key, item.label)
-        question = _clean_question(item.clarification_question or context.next_best_question)
+        question = _clean_question(
+            item.clarification_question or context.next_best_question
+        )
         if value and question:
             clarification = (
                 f"{value} ist als {label} im Arbeitsstand. "
@@ -669,22 +713,36 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
             )
             return _join_orientation_and_question(orientation, clarification)
         if question:
-            return _join_orientation_and_question(orientation, _question_with_reason(question, context))
+            return _join_orientation_and_question(
+                orientation, _question_with_reason(question, context)
+            )
 
     if context.accepted_updates:
-        question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
+        question = _clean_question(
+            context.next_best_question
+            or _question_for_missing_fields(context.missing_fields)
+        )
         if question:
-            return _join_orientation_and_question(orientation, _question_with_reason(question, context))
+            return _join_orientation_and_question(
+                orientation, _question_with_reason(question, context)
+            )
         return _join_orientation_and_question(
             orientation,
             "Ich halte die Angabe als Arbeitsstand fest und prüfe den nächsten sinnvollen Schritt.",
         )
 
-    question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
+    question = _clean_question(
+        context.next_best_question
+        or _question_for_missing_fields(context.missing_fields)
+    )
     if question:
         open_help_prompt = (
             _open_sealing_help_prompt(context.latest_user_message)
-            if not (context.accepted_updates or context.ambiguous_values or context.rejected_updates)
+            if not (
+                context.accepted_updates
+                or context.ambiguous_values
+                or context.rejected_updates
+            )
             else ""
         )
         if open_help_prompt:
@@ -695,7 +753,9 @@ def _contextual_fallback_text(context: GovernedAnswerContext) -> str:
                 intake_orientation,
                 _humanize_intake_question(question),
             )
-        return _join_orientation_and_question(orientation, _question_with_reason(question, context))
+        return _join_orientation_and_question(
+            orientation, _question_with_reason(question, context)
+        )
     return ""
 
 
@@ -704,7 +764,10 @@ def _question_with_reason(question: str, context: GovernedAnswerContext) -> str:
     if not clean_question:
         return ""
     lowered = clean_question.casefold()
-    if any(marker in lowered for marker in ("weil", "wichtig", "damit", "relevant", "beeinflusst")):
+    if any(
+        marker in lowered
+        for marker in ("weil", "wichtig", "damit", "relevant", "beeinflusst")
+    ):
         return clean_question
     reason = ""
     question_plan = getattr(context, "v91_question_plan", None)
@@ -713,7 +776,9 @@ def _question_with_reason(question: str, context: GovernedAnswerContext) -> str:
     final_context = getattr(context, "v91_final_answer_context", None)
     if not reason and final_context is not None:
         final_question_plan = getattr(final_context, "question_plan", None)
-        reason = str(getattr(final_question_plan, "primary_question_reason", "") or "").strip()
+        reason = str(
+            getattr(final_question_plan, "primary_question_reason", "") or ""
+        ).strip()
     if not reason:
         return clean_question
     clean_reason = reason.rstrip(" .")
@@ -753,14 +818,30 @@ def _calculation_orientation(context: GovernedAnswerContext) -> str:
     if not facts:
         return ""
     text = str(context.latest_user_message or "").casefold()
-    if not any(marker in text for marker in ("berech", "umfang", "geschwindigkeit", "grenzwert", "pv", "dn", "wert")):
+    if not any(
+        marker in text
+        for marker in (
+            "berech",
+            "umfang",
+            "geschwindigkeit",
+            "grenzwert",
+            "pv",
+            "dn",
+            "wert",
+        )
+    ):
         return ""
     parts: list[str] = []
     for fact in facts:
         outputs = dict(getattr(fact, "outputs", {}) or {})
         units = dict(getattr(fact, "units", {}) or {})
         for key, value in outputs.items():
-            if key in {"status", "calc_type", "pressure_window"} or value in (None, "", [], {}):
+            if key in {"status", "calc_type", "pressure_window"} or value in (
+                None,
+                "",
+                [],
+                {},
+            ):
                 continue
             label = _CALC_OUTPUT_LABELS.get(str(key), str(key))
             unit = str(units.get(key) or "").strip()
@@ -789,7 +870,10 @@ def _needs_human_intake_fallback(
 
     if str(context.response_class or "").strip() != "structured_clarification":
         return False
-    question = _clean_question(context.next_best_question or _question_for_missing_fields(context.missing_fields))
+    question = _clean_question(
+        context.next_best_question
+        or _question_for_missing_fields(context.missing_fields)
+    )
     if not question:
         return False
     if context.accepted_updates or context.ambiguous_values or context.rejected_updates:
@@ -950,8 +1034,9 @@ def _technical_orientation_for_user_task(latest_user_message: str | None) -> str
     if not asks_risk_orientation:
         return ""
     if (
-        ("rwdr" in text or "wellendichtring" in text or "radialwellendichtring" in text)
-        and any(marker in text for marker in ("leckt", "leckage", "ursachen", "systematisch"))
+        "rwdr" in text or "wellendichtring" in text or "radialwellendichtring" in text
+    ) and any(
+        marker in text for marker in ("leckt", "leckage", "ursachen", "systematisch")
     ):
         return render_communication_template(
             "governed_technical_orientation",
@@ -964,8 +1049,12 @@ def _technical_orientation_for_user_task(latest_user_message: str | None) -> str
                 "Verschmutzung. Das ist eine technische Orientierung, keine Freigabe."
             ),
         )
-    if {"ptfe", "fkm", "epdm", "nbr", "hnbr"}.intersection(set(re.findall(r"\b[a-z0-9]+\b", text))):
-        if ("hydraulik" in text or "hlp" in text or "öl" in text or "oel" in text) and "epdm" in text:
+    if {"ptfe", "fkm", "epdm", "nbr", "hnbr"}.intersection(
+        set(re.findall(r"\b[a-z0-9]+\b", text))
+    ):
+        if (
+            "hydraulik" in text or "hlp" in text or "öl" in text or "oel" in text
+        ) and "epdm" in text:
             return render_communication_template(
                 "governed_technical_orientation",
                 {"mode": "hydraulic_epdm"},
@@ -1054,7 +1143,9 @@ def _clean_question(question: str | None) -> str:
 
 
 def _question_for_missing_fields(missing_fields: list[str]) -> str:
-    normalized = [str(item or "").strip() for item in missing_fields if str(item or "").strip()]
+    normalized = [
+        str(item or "").strip() for item in missing_fields if str(item or "").strip()
+    ]
     for key in normalized:
         lowered = key.casefold()
         if "pressure" in lowered or "druck" in lowered:
@@ -1069,7 +1160,11 @@ def _question_for_missing_fields(missing_fields: list[str]) -> str:
                 {"kind": "temperature"},
                 fallback="In welchem Temperaturbereich arbeitet die Dichtstelle?",
             )
-        if "sealing_type" in lowered or "dichtungstyp" in lowered or "dichtprinzip" in lowered:
+        if (
+            "sealing_type" in lowered
+            or "dichtungstyp" in lowered
+            or "dichtprinzip" in lowered
+        ):
             return render_communication_template(
                 "governed_missing_field_question",
                 {"kind": "sealing_principle"},
@@ -1078,7 +1173,12 @@ def _question_for_missing_fields(missing_fields: list[str]) -> str:
                     "Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
                 ),
             )
-        if "asset" in lowered or "anlage" in lowered or "pump" in lowered or "aggregate" in lowered:
+        if (
+            "asset" in lowered
+            or "anlage" in lowered
+            or "pump" in lowered
+            or "aggregate" in lowered
+        ):
             return render_communication_template(
                 "governed_missing_field_question",
                 {"kind": "asset"},
@@ -1123,7 +1223,9 @@ def _validate_structural_no_go(answer_markdown: str) -> None:
         raise GovernedAnswerComposerError("structural_no_go_phrase")
 
 
-def _validate_complete_answer(answer_markdown: str, context: GovernedAnswerContext) -> None:
+def _validate_complete_answer(
+    answer_markdown: str, context: GovernedAnswerContext
+) -> None:
     _validate_answer_markdown(answer_markdown)
     _validate_v91_final_answer(answer_markdown, context)
     _validate_contextual_answer_discipline(answer_markdown, context)
@@ -1170,7 +1272,9 @@ def _validate_contextual_answer_discipline(
         latest_lowered = latest.casefold()
         material_terms = {"epdm", "fkm", "nbr", "hnbr", "ptfe", "ffkm", "pu"}
         material_task = bool(
-            material_terms.intersection(set(re.findall(r"\b[a-z0-9]+\b", latest_lowered)))
+            material_terms.intersection(
+                set(re.findall(r"\b[a-z0-9]+\b", latest_lowered))
+            )
             and any(
                 marker in latest_lowered
                 for marker in (
@@ -1191,16 +1295,26 @@ def _validate_contextual_answer_discipline(
         if (
             "ich habe schon ein paar eckdaten" in lowered_answer
             or "für den nächsten sinnvollen schritt brauche ich noch" in lowered_answer
-            or "fuer den naechsten sinnvollen schritt brauche ich noch" in lowered_answer
+            or "fuer den naechsten sinnvollen schritt brauche ich noch"
+            in lowered_answer
             or "die technische richtung ist schon enger" in lowered_answer
             or "belastbaren hebel" in lowered_answer
         ) and not any(
             marker in lowered_answer
-            for marker in ("technisch kritisch", "typische risiken", "ursachencluster", "vor allem")
+            for marker in (
+                "technisch kritisch",
+                "typische risiken",
+                "ursachencluster",
+                "vor allem",
+            )
         ):
             raise GovernedAnswerComposerError("slot_question_before_orientation")
 
-    if not context.accepted_updates or context.ambiguous_values or not context.next_best_question:
+    if (
+        not context.accepted_updates
+        or context.ambiguous_values
+        or not context.next_best_question
+    ):
         return
 
     lowered = answer_markdown.casefold()

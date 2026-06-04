@@ -266,7 +266,10 @@ class TestMutationEventModelPersistence:
         with pytest.raises(ValueError, match="payload must be a dict"):
             MutationEventModel(payload=["not", "a", "dict"])
 
-    @pytest.mark.parametrize("field_name", ["proposed_delta", "accepted_delta", "rejected_delta", "rejection_reasons"])
+    @pytest.mark.parametrize(
+        "field_name",
+        ["proposed_delta", "accepted_delta", "rejected_delta", "rejection_reasons"],
+    )
     def test_delta_columns_must_be_dict(self, field_name: str) -> None:
         with pytest.raises(ValueError, match=f"{field_name} must be a dict"):
             MutationEventModel(**{field_name: ["not", "a", "dict"]})

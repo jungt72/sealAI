@@ -21,6 +21,7 @@ from app.database import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
+
 def run_migrations_offline() -> None:
     """Offline: ohne DB-Connection."""
     url = config.get_main_option("sqlalchemy.url")
@@ -34,11 +35,12 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+
 def run_migrations_online() -> None:
     """Online: mit echter Connection."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",            # WICHTIG: erwartet 'sqlalchemy.url'
+        prefix="sqlalchemy.",  # WICHTIG: erwartet 'sqlalchemy.url'
         poolclass=pool.NullPool,
         future=True,
     )
@@ -51,6 +53,7 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

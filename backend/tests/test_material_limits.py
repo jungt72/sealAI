@@ -7,8 +7,12 @@ os.environ.setdefault("postgres_password", "test")
 os.environ.setdefault("postgres_host", "localhost")
 os.environ.setdefault("postgres_port", "5432")
 os.environ.setdefault("postgres_db", "testdb")
-os.environ.setdefault("database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb")
-os.environ.setdefault("POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb")
+os.environ.setdefault(
+    "database_url", "postgresql+asyncpg://test:test@localhost:5432/testdb"
+)
+os.environ.setdefault(
+    "POSTGRES_SYNC_URL", "postgresql://test:test@localhost:5432/testdb"
+)
 os.environ.setdefault("openai_api_key", "sk-test")
 os.environ.setdefault("qdrant_url", "http://localhost:6333")
 os.environ.setdefault("qdrant_collection", "test")
@@ -28,6 +32,7 @@ from app.mcp.calculations.material_limits import get_limits, check
 # ──────────────────────────────────────────────────────────────────────────────
 # get_limits — Grunddaten
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_fkm_limits():
     limits = get_limits("FKM")
@@ -71,6 +76,7 @@ def test_all_eight_materials():
 # check — Temperaturprüfung
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_check_temp_ok():
     r = check("FKM", temp_c=180.0)
     assert r.temp_ok is True
@@ -104,6 +110,7 @@ def test_check_temp_none_when_not_given():
 # ──────────────────────────────────────────────────────────────────────────────
 # check — Druckprüfung
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def test_check_pressure_dynamic_nok():
     # VMQ dynamisch max = 50 bar → 80 bar = False
@@ -139,6 +146,7 @@ def test_check_pressure_none_when_not_given():
 # check — AED-Prüfung
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_check_aed_fail():
     r = check("EPDM", aed_required=True)
     assert r.aed_ok is False
@@ -169,16 +177,21 @@ def test_check_aed_hnbr_pass():
 # check — Kombination + Recommendation
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_check_combined_blocker():
     # NBR bei 160 °C + 300 bar dynamisch + AED → alle drei NOK
-    r = check("NBR", temp_c=160.0, pressure_bar=300.0, is_dynamic=True, aed_required=False)
+    r = check(
+        "NBR", temp_c=160.0, pressure_bar=300.0, is_dynamic=True, aed_required=False
+    )
     assert r.temp_ok is False
     assert r.pressure_ok is False
     assert "BLOCKER" in r.recommendation
 
 
 def test_check_all_ok_recommendation():
-    r = check("HNBR", temp_c=100.0, pressure_bar=200.0, is_dynamic=False, aed_required=True)
+    r = check(
+        "HNBR", temp_c=100.0, pressure_bar=200.0, is_dynamic=False, aed_required=True
+    )
     assert r.temp_ok is True
     assert r.pressure_ok is True
     assert r.aed_ok is True

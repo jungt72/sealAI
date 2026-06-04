@@ -28,6 +28,7 @@ Coverage:
     14. Single assertion still triggers retrieval
     15. Cards returned by RAG are stored unchanged in rag_evidence
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -44,6 +45,7 @@ from app.agent.state.models import AssertedClaim, AssertedState
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _claim(field: str, value, confidence: str = "confirmed") -> AssertedClaim:
     return AssertedClaim(
         field_name=field,
@@ -58,17 +60,17 @@ def _state_with_assertions(tenant_id: str = "tenant_abc", **kwargs) -> GraphStat
     kwargs: field_name → (value, confidence)
     """
     assertions = {
-        field: _claim(field, val, conf)
-        for field, (val, conf) in kwargs.items()
+        field: _claim(field, val, conf) for field, (val, conf) in kwargs.items()
     }
     asserted = AssertedState(assertions=assertions)
     return GraphState(asserted=asserted, tenant_id=tenant_id)
 
 
-def _state_with_normalized_and_asserted(tenant_id: str = "tenant_abc", **kwargs) -> GraphState:
+def _state_with_normalized_and_asserted(
+    tenant_id: str = "tenant_abc", **kwargs
+) -> GraphState:
     assertions = {
-        field: _claim(field, val, conf)
-        for field, (val, conf) in kwargs.items()
+        field: _claim(field, val, conf) for field, (val, conf) in kwargs.items()
     }
     return GraphState(
         asserted=AssertedState(assertions=assertions),
@@ -107,6 +109,7 @@ _MOCK_CARDS = [
 # 1. Empty assertions → skip retrieval
 # ---------------------------------------------------------------------------
 
+
 class TestEmptyAssertions:
     @pytest.mark.asyncio
     async def test_no_retrieval_called(self):
@@ -132,6 +135,7 @@ class TestEmptyAssertions:
 # 2. Missing tenant_id → skip retrieval
 # ---------------------------------------------------------------------------
 
+
 class TestMissingTenantId:
     @pytest.mark.asyncio
     async def test_no_retrieval_called_when_tenant_missing(self):
@@ -156,6 +160,7 @@ class TestMissingTenantId:
 # ---------------------------------------------------------------------------
 # 3. Successful retrieval → rag_evidence populated
 # ---------------------------------------------------------------------------
+
 
 class TestSuccessfulRetrieval:
     @pytest.mark.asyncio
@@ -196,7 +201,9 @@ class TestSuccessfulRetrieval:
         }
 
     @pytest.mark.asyncio
-    async def test_retrieved_evidence_updates_asserted_refs_when_normalized_available(self):
+    async def test_retrieved_evidence_updates_asserted_refs_when_normalized_available(
+        self,
+    ):
         state = _state_with_normalized_and_asserted(
             medium=("Dampf", "inferred"),
             pressure_bar=(12.0, "confirmed"),
@@ -206,7 +213,13 @@ class TestSuccessfulRetrieval:
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(
-                [{"id": "card-dampf", "content": "Dampf Dichtung", "source_ref": "datasheet:1"}],
+                [
+                    {
+                        "id": "card-dampf",
+                        "content": "Dampf Dichtung",
+                        "source_ref": "datasheet:1",
+                    }
+                ],
                 {},
             ),
         ):
@@ -228,7 +241,13 @@ class TestSuccessfulRetrieval:
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
             return_value=(
-                [{"id": "card-other", "content": "RWDR fuer Oel", "source_ref": "datasheet:2"}],
+                [
+                    {
+                        "id": "card-other",
+                        "content": "RWDR fuer Oel",
+                        "source_ref": "datasheet:2",
+                    }
+                ],
                 {},
             ),
         ):
@@ -247,7 +266,10 @@ class TestSuccessfulRetrieval:
         with patch(
             "app.agent.graph.nodes.evidence_node.retrieve_evidence",
             new_callable=AsyncMock,
-            return_value=([], {"tier": "tier3_empty", "k_requested": 5, "k_returned": 0}),
+            return_value=(
+                [],
+                {"tier": "tier3_empty", "k_requested": 5, "k_returned": 0},
+            ),
         ) as mock_rag:
             await evidence_node(state)
 
@@ -277,6 +299,7 @@ class TestSuccessfulRetrieval:
 # ---------------------------------------------------------------------------
 # 4. Retrieval exception → fail-open
 # ---------------------------------------------------------------------------
+
 
 class TestRetrievalFailOpen:
     @pytest.mark.asyncio
@@ -322,6 +345,7 @@ class TestRetrievalFailOpen:
 # ---------------------------------------------------------------------------
 # 5–8. Query construction (unit-tested directly)
 # ---------------------------------------------------------------------------
+
 
 class TestQueryConstruction:
     def _asserted(self, **kwargs) -> GraphState:
@@ -369,6 +393,7 @@ class TestQueryConstruction:
 # ---------------------------------------------------------------------------
 # 9–12. Immutability — other state layers unchanged
 # ---------------------------------------------------------------------------
+
 
 class TestImmutability:
     @pytest.mark.asyncio
@@ -428,6 +453,7 @@ class TestImmutability:
 # 13. No LLM call
 # ---------------------------------------------------------------------------
 
+
 class TestNoLLM:
     @pytest.mark.asyncio
     async def test_openai_never_called(self):
@@ -454,6 +480,7 @@ class TestNoLLM:
 # 14. Single assertion still triggers retrieval
 # ---------------------------------------------------------------------------
 
+
 class TestSingleAssertion:
     @pytest.mark.asyncio
     async def test_single_assertion_triggers_retrieval(self):
@@ -472,12 +499,13 @@ class TestSingleAssertion:
 # 15. Cards stored unchanged
 # ---------------------------------------------------------------------------
 
+
 class TestCardsStoredUnchanged:
     @pytest.mark.asyncio
     async def test_cards_not_modified(self):
         cards = [
             {"id": "x1", "content": "PTFE card", "custom_field": 42},
-            {"id": "x2", "content": "FKM card",  "custom_field": 99},
+            {"id": "x2", "content": "FKM card", "custom_field": 99},
         ]
         state = _state_with_assertions(medium=("Dampf", "confirmed"))
         with patch(

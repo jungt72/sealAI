@@ -7,7 +7,14 @@ def test_hybrid_retrieve_adds_sources(monkeypatch) -> None:
     def fake_embed(_texts):
         return [[0.0, 0.0]]
 
-    def fake_search(_query_vec, _sparse_query, _collection, top_k=6, metadata_filters=None, timeout_s=None):
+    def fake_search(
+        _query_vec,
+        _sparse_query,
+        _collection,
+        top_k=6,
+        metadata_filters=None,
+        timeout_s=None,
+    ):
         hits = [
             {
                 "text": "A",
@@ -31,7 +38,13 @@ def test_hybrid_retrieve_adds_sources(monkeypatch) -> None:
                 },
             },
         ]
-        return hits, {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None}
+        return hits, {
+            "attempts": 1,
+            "timeout_s": 5.0,
+            "elapsed_ms": 1,
+            "retry_backoff_ms": None,
+            "error": None,
+        }
 
     monkeypatch.setattr(ro, "_embed", fake_embed)
     monkeypatch.setattr(ro, "_qdrant_search_with_retry", fake_search)

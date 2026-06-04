@@ -53,7 +53,9 @@ def test_rfq_readiness_projection_public_dict_matches_contract_fixture() -> None
     assert projection["final_approval_claim_allowed"] is False
 
 
-def test_rfq_readiness_projection_does_not_show_asserted_pending_field_as_missing() -> None:
+def test_rfq_readiness_projection_does_not_show_asserted_pending_field_as_missing() -> (
+    None
+):
     projection = build_rfq_readiness_projection(
         governed_state=GovernedSessionState(
             pending_question=PendingQuestion(
@@ -135,7 +137,9 @@ def test_rfq_readiness_projection_maps_professional_check_blockers() -> None:
     assert pressure_checks[0]["final_approval_claim_allowed"] is False
 
 
-def test_rfq_readiness_projection_professional_checks_can_clear_required_blockers() -> None:
+def test_rfq_readiness_projection_professional_checks_can_clear_required_blockers() -> (
+    None
+):
     projection = build_rfq_readiness_projection(
         governed_state=GovernedSessionState(
             asserted=AssertedState(
@@ -187,7 +191,10 @@ def test_rfq_readiness_projection_professional_checks_can_clear_required_blocker
 
     assert projection["professional_check_groups"]
     assert projection["professional_check_blockers"] == []
-    assert projection["evidence_status"] in {"evidence_found", "evidence_found_with_risks"}
+    assert projection["evidence_status"] in {
+        "evidence_found",
+        "evidence_found_with_risks",
+    }
 
 
 def _readiness_intent() -> RfqReadinessIntent:
@@ -198,7 +205,9 @@ def _readiness_intent() -> RfqReadinessIntent:
     )
 
 
-def test_rfq_readiness_projection_class_b_value_conflict_is_open_point_not_blocked() -> None:
+def test_rfq_readiness_projection_class_b_value_conflict_is_open_point_not_blocked() -> (
+    None
+):
     # §12.6: a degraded (non-safety) value conflict lands in Class B. The reducer
     # already decided it is not hard-blocking, so the readiness projection must
     # speak "RFQ with open points": basis available, conflict an open point —

@@ -4,6 +4,7 @@ The renderer is intentionally dependency-free and only consumes the already
 allowlisted RFQ export contract. It does not read files, call an LLM, or contact
 external systems.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -205,7 +206,9 @@ def _build_pdf(pages: Sequence[Sequence[str]]) -> bytes:
     page_refs = " ".join(
         f"{first_page_object_id + index * 2} 0 R" for index in range(total_pages)
     )
-    objects.append(f"<< /Type /Pages /Kids [{page_refs}] /Count {total_pages} >>".encode())
+    objects.append(
+        f"<< /Type /Pages /Kids [{page_refs}] /Count {total_pages} >>".encode()
+    )
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
 
     for index, page_lines in enumerate(pages or [[]]):
@@ -295,7 +298,12 @@ def _wrap_lines(lines: Sequence[str]) -> list[str]:
 
 
 def _pdf_text(value: str) -> str:
-    return _pdf_ascii_text(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    return (
+        _pdf_ascii_text(value)
+        .replace("\\", "\\\\")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+    )
 
 
 def _pdf_ascii_text(value: str) -> str:

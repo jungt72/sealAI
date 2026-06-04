@@ -8,6 +8,7 @@ Covers the #4 + #1 + #3 patch set:
 - #3 fail-closed: a composer doctrine raise ends in the hard guard fallback,
   while a depth/parse raise keeps the existing neutral base passthrough.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,14 +41,22 @@ def _user() -> RequestUser:
 
 def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fail_governed(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("doctrine guard test must not invoke governed case runtime")
+        raise AssertionError(
+            "doctrine guard test must not invoke governed case runtime"
+        )
 
     async def fail_persist(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("doctrine guard test must not persist governed case state")
 
-    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_light_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.loaders._persist_live_governed_state", fail_persist
+    )
 
 
 def _no_bridge_context(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -166,7 +175,9 @@ async def test_doctrine_raise_fails_closed_to_guard_fallback(
 
     # Doctrine raise must fail CLOSED: hard neutral guard fallback, never base.
     assert FAST_PATH_GUARD_FALLBACK in response.answer_markdown
-    assert _knowledge_debug(response)["answer_markdown_source"] == "composer_safe_fallback"
+    assert (
+        _knowledge_debug(response)["answer_markdown_source"] == "composer_safe_fallback"
+    )
 
 
 @pytest.mark.asyncio

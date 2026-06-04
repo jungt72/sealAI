@@ -48,6 +48,7 @@ from app.domain.seal_type import (
     normalize_seal_type,
     seal_family_for_type,
 )
+
 # P1-1: required fields come from the domain pack seam (RWDR pack + shallow stubs),
 # never from a core per-type branch.
 from app.domain.seal_packs import required_fields_for as _required_fields_for
@@ -64,7 +65,13 @@ _MATERIAL_FAMILY_FIELDS = (
     "compound_family",
 )
 _COMPOUND_FIELDS = ("compound", "compound_name", "compound_designation", "grade_name")
-_PRODUCT_FIELDS = ("product", "product_id", "article_ref", "article_number", "part_number")
+_PRODUCT_FIELDS = (
+    "product",
+    "product_id",
+    "article_ref",
+    "article_number",
+    "part_number",
+)
 
 _PROMPT_INJECTION_MARKERS = (
     "ignore previous",
@@ -107,7 +114,11 @@ _STANDARD_METADATA = {
         "publisher": "ISO",
         "edition": "2025",
         "applies_to_seal_types": ["o_ring", "x_ring", "backup_ring"],
-        "relevant_fields": ["oring_cross_section_mm", "groove_depth_mm", "groove_width_mm"],
+        "relevant_fields": [
+            "oring_cross_section_mm",
+            "groove_depth_mm",
+            "groove_width_mm",
+        ],
         "scope": "O-ring housing/gland metadata reference; no licensed dimension table embedded.",
         "source_url": "https://www.iso.org/standard/85921.html",
     },
@@ -152,7 +163,15 @@ _OPTIONAL_FIELDS_BY_FAMILY = {
 
 def _document_text(item: Mapping[str, Any]) -> str:
     parts: list[str] = []
-    for key in ("title", "source_title", "text", "content", "snippet", "summary", "excerpt"):
+    for key in (
+        "title",
+        "source_title",
+        "text",
+        "content",
+        "snippet",
+        "summary",
+        "excerpt",
+    ):
         value = item.get(key)
         if value:
             parts.append(str(value))
@@ -160,13 +179,17 @@ def _document_text(item: Mapping[str, Any]) -> str:
 
 
 def _document_type(item: Mapping[str, Any], text: str) -> str:
-    explicit = str(item.get("document_type") or item.get("type") or item.get("source_type") or "").lower()
+    explicit = str(
+        item.get("document_type") or item.get("type") or item.get("source_type") or ""
+    ).lower()
     haystack = f"{explicit}\n{text.lower()}"
     if any(marker in haystack for marker in _SDS_MARKERS):
         return "sds"
     if any(marker in haystack for marker in _CERTIFICATE_MARKERS):
         return "certificate"
-    if any(marker in haystack for marker in ("drawing", "zeichnung", "technical drawing")):
+    if any(
+        marker in haystack for marker in ("drawing", "zeichnung", "technical drawing")
+    ):
         return "drawing"
     if any(marker in haystack for marker in ("datasheet", "datenblatt", "tds")):
         return "datasheet"
@@ -185,10 +208,15 @@ def _units_present(units: Mapping[str, str], outputs: Mapping[str, Any]) -> bool
     return all(key in units for key in outputs.keys())
 
 
-def _calculation_guard(result: CalculationResult, stale_result_ids: Iterable[str] = ()) -> CalculationGuardResult:
+def _calculation_guard(
+    result: CalculationResult, stale_result_ids: Iterable[str] = ()
+) -> CalculationGuardResult:
     stale_ids = set(stale_result_ids)
     violations: list[str] = []
-    required_present = not result.missing_inputs and result.status not in {"insufficient_data", "blocked"}
+    required_present = not result.missing_inputs and result.status not in {
+        "insufficient_data",
+        "blocked",
+    }
     units_ok = _units_present(result.units, result.outputs)
     formula_ok = bool(result.version and result.formula_refs)
     if not required_present:
@@ -207,9 +235,15 @@ def _calculation_guard(result: CalculationResult, stale_result_ids: Iterable[str
         units_normalized=units_ok,
         formula_version_present=formula_ok,
         output_units_present=units_ok,
-        stale_inputs_detected=result.calculation_id in stale_ids or result.status == "stale",
-        no_final_claim_from_calculation=result.claim_level not in {"L5_document_backed", "L6_expert_approved"},
-        allowed_user_facing=required_present and units_ok and formula_ok and result.validity_status in {
+        stale_inputs_detected=result.calculation_id in stale_ids
+        or result.status == "stale",
+        no_final_claim_from_calculation=result.claim_level
+        not in {"L5_document_backed", "L6_expert_approved"},
+        allowed_user_facing=required_present
+        and units_ok
+        and formula_ok
+        and result.validity_status
+        in {
             "valid_for_screening",
             "valid_with_assumptions",
         },
@@ -221,7 +255,10 @@ def _has_positive_marker(text: str, patterns: Iterable[str]) -> bool:
     for pattern in patterns:
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             prefix = text[max(0, match.start() - 18) : match.start()].lower()
-            if any(marker in prefix for marker in ("kein ", "keine ", "no ", "not ", "ohne ")):
+            if any(
+                marker in prefix
+                for marker in ("kein ", "keine ", "no ", "not ", "ohne ")
+            ):
                 continue
             return True
     return False
@@ -231,7 +268,9 @@ def _extract_first(pattern: str, text: str) -> str | None:
     match = re.search(pattern, text, flags=re.IGNORECASE)
     if not match:
         return None
-    return next((group.strip() for group in match.groups() if group and group.strip()), None)
+    return next(
+        (group.strip() for group in match.groups() if group and group.strip()), None
+    )
 
 
 def _extract_cas_components(text: str) -> list[dict[str, str]]:
@@ -243,7 +282,9 @@ def _extract_cas_components(text: str) -> list[dict[str, str]]:
 
 def _document_metadata(item: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "source_owner": item.get("source_owner") or item.get("owner") or item.get("manufacturer"),
+        "source_owner": item.get("source_owner")
+        or item.get("owner")
+        or item.get("manufacturer"),
         "version": item.get("version") or item.get("revision"),
         "issue_date": item.get("issue_date") or item.get("publication_date"),
         "valid_until": item.get("valid_until"),
@@ -334,7 +375,9 @@ def build_seal_system_state(state: Any) -> SealSystemState:
 
     required = _required_fields_for(seal_type, seal_family)
     missing = [field for field in required if _is_missing(inputs.get(field))]
-    status = "ready" if required and not missing else ("partial" if inputs else "pending")
+    status = (
+        "ready" if required and not missing else ("partial" if inputs else "pending")
+    )
     component = SealSystemComponent(
         component_id="primary_seal",
         role="primary_sealing_function",
@@ -383,7 +426,9 @@ def _calculation_result_from_compute(
     dependencies: list[str] = []
     for record in records:
         if isinstance(record, Mapping):
-            dependencies.extend(str(key) for key in dict(record.get("inputs_used") or {}).keys())
+            dependencies.extend(
+                str(key) for key in dict(record.get("inputs_used") or {}).keys()
+            )
     notes = [str(item) for item in list(result.get("notes") or []) if item]
     status = str(result.get("status") or "ok")
     if status not in {"ok", "warning", "insufficient_data", "stale", "blocked"}:
@@ -418,11 +463,19 @@ def _calculation_result_from_compute(
         input_snapshot_hash=snapshot_hash,
         outputs=outputs,
         units={key: value for key, value in units.items() if key in outputs},
-        formula_refs=[str(record.get("calc_id") or "calculation_engine") for record in records if isinstance(record, Mapping)],
+        formula_refs=[
+            str(record.get("calc_id") or "calculation_engine")
+            for record in records
+            if isinstance(record, Mapping)
+        ],
         output_snapshot_hash=_output_hash(outputs),
-        validity_status="valid_for_screening" if status in {"ok", "warning"} else "input_missing",
+        validity_status="valid_for_screening"
+        if status in {"ok", "warning"}
+        else "input_missing",
         engineering_signals=["deterministic_intermediate_value"],
-        limitations=["Calculated value is a screening intermediate, not a final technical release."],
+        limitations=[
+            "Calculated value is a screening intermediate, not a final technical release."
+        ],
         dependencies=list(dict.fromkeys(dependencies)),
         notes=notes,
     )
@@ -446,7 +499,9 @@ def _calc_result(
     assumptions: Iterable[dict[str, Any]] = (),
     limitations: Iterable[str] = (),
 ) -> CalculationResult:
-    clean_outputs = {key: value for key, value in dict(outputs).items() if value is not None}
+    clean_outputs = {
+        key: value for key, value in dict(outputs).items() if value is not None
+    }
     return CalculationResult(
         calculation_id=calculation_id,
         version=version,
@@ -455,13 +510,16 @@ def _calc_result(
         claim_level="L3_deterministic_calculation",
         input_snapshot_hash=snapshot_hash,
         outputs=clean_outputs,
-        units={key: value for key, value in dict(units).items() if key in clean_outputs},
+        units={
+            key: value for key, value in dict(units).items() if key in clean_outputs
+        },
         formula_refs=list(formula_refs),
         assumptions=list(assumptions),
         output_snapshot_hash=_output_hash(clean_outputs),
         validity_status=validity_status,  # type: ignore[arg-type]
         engineering_signals=list(engineering_signals),
-        limitations=list(limitations) or ["Screening calculation only; no final technical release."],
+        limitations=list(limitations)
+        or ["Screening calculation only; no final technical release."],
         missing_inputs=list(missing_inputs),
         dependencies=list(dict.fromkeys(str(item) for item in dependencies)),
         notes=list(notes),
@@ -474,7 +532,11 @@ def build_calculation_state(state: Any) -> CalculationState:
     snapshot = CalculationInputSnapshot(
         snapshot_hash=snapshot_hash,
         case_revision=int(
-            getattr(getattr(state, "persistence_marker", None), "postgres_case_revision", None)
+            getattr(
+                getattr(state, "persistence_marker", None),
+                "postgres_case_revision",
+                None,
+            )
             or 0
         ),
         inputs=inputs,
@@ -498,11 +560,17 @@ def build_calculation_state(state: Any) -> CalculationState:
     blocked: list[str] = []
     stale_result_ids = [
         str(item)
-        for item in list(getattr(getattr(state, "derived", None), "stale_derived_value_ids", []) or [])
+        for item in list(
+            getattr(getattr(state, "derived", None), "stale_derived_value_ids", [])
+            or []
+        )
         if item
     ]
     seal_system = build_seal_system_state(state)
-    if any(not _is_missing(inputs.get(field)) for field in ("material", "material_family", "temperature_c")):
+    if any(
+        not _is_missing(inputs.get(field))
+        for field in ("material", "material_family", "temperature_c")
+    ):
         temp_screening = registry.calculate(
             "temperature_window_screening",
             inputs=inputs,
@@ -510,8 +578,14 @@ def build_calculation_state(state: Any) -> CalculationState:
         )
         results.append(temp_screening)
         if temp_screening.missing_inputs:
-            blocked.append("material.temperature_missing:" + ",".join(temp_screening.missing_inputs))
-    if any(not _is_missing(inputs.get(field)) for field in ("material", "material_family", "medium")):
+            blocked.append(
+                "material.temperature_missing:"
+                + ",".join(temp_screening.missing_inputs)
+            )
+    if any(
+        not _is_missing(inputs.get(field))
+        for field in ("material", "material_family", "medium")
+    ):
         resistance = registry.calculate(
             "material_family_counterindication_check",
             inputs=inputs,
@@ -519,9 +593,14 @@ def build_calculation_state(state: Any) -> CalculationState:
         )
         results.append(resistance)
         if resistance.missing_inputs:
-            blocked.append("material.chemical_resistance_missing:" + ",".join(resistance.missing_inputs))
+            blocked.append(
+                "material.chemical_resistance_missing:"
+                + ",".join(resistance.missing_inputs)
+            )
     if seal_system.seal_family == SealFamily.rotary_shaft.value:
-        existing_calculations = {item.calculation_id for item in results} | {item.calculator for item in results}
+        existing_calculations = {item.calculation_id for item in results} | {
+            item.calculator for item in results
+        }
         if not existing_calculations.intersection(
             {"rwdr", "rwdr.surface_speed", "surface_speed_from_rpm_and_diameter"}
         ):
@@ -532,7 +611,10 @@ def build_calculation_state(state: Any) -> CalculationState:
             )
             results.append(surface_speed)
             if surface_speed.missing_inputs:
-                blocked.append("rwdr.surface_speed_missing:" + ",".join(surface_speed.missing_inputs))
+                blocked.append(
+                    "rwdr.surface_speed_missing:"
+                    + ",".join(surface_speed.missing_inputs)
+                )
     guard_results = [_calculation_guard(result, stale_result_ids) for result in results]
     guardrail_violations = _unique(
         f"{guard.calculation_id}:{violation}"
@@ -540,7 +622,11 @@ def build_calculation_state(state: Any) -> CalculationState:
         for violation in guard.violations
         if violation != "required_inputs_missing"
     )
-    status = "ready" if results and not blocked else ("partial" if results or inputs else "pending")
+    status = (
+        "ready"
+        if results and not blocked
+        else ("partial" if results or inputs else "pending")
+    )
     return CalculationState(
         status=status,
         input_snapshot=snapshot,
@@ -562,7 +648,11 @@ def _readiness_band(
     if seal_system.missing_fields:
         return "blocked_missing_core_data"
     if blocker_list:
-        return "review_ready_with_open_items" if calculation.results else "engineering_checks_partial"
+        return (
+            "review_ready_with_open_items"
+            if calculation.results
+            else "engineering_checks_partial"
+        )
     if calculation.results:
         return "rfq_ready_for_expert_review"
     if seal_system.status in {"partial", "ready"}:
@@ -588,7 +678,11 @@ def _completeness_matrix(
             }
             for field in seal_system.required_fields
         ],
-        present_fields=[field for field in seal_system.required_fields if not _is_missing(inputs.get(field))],
+        present_fields=[
+            field
+            for field in seal_system.required_fields
+            if not _is_missing(inputs.get(field))
+        ],
         missing_fields=list(seal_system.missing_fields),
         blocking_missing_fields=list(seal_system.missing_fields),
         optional_but_useful_fields=missing_optional,
@@ -607,7 +701,13 @@ def _risk_findings(
 ) -> list[EngineeringRiskFinding]:
     findings: list[EngineeringRiskFinding] = []
     for field in seal_system.missing_fields:
-        category = "geometry" if any(marker in field for marker in ("diameter", "groove", "width", "depth")) else "medium"
+        category = (
+            "geometry"
+            if any(
+                marker in field for marker in ("diameter", "groove", "width", "depth")
+            )
+            else "medium"
+        )
         findings.append(
             EngineeringRiskFinding(
                 finding_id=f"missing_core.{field}",
@@ -616,7 +716,9 @@ def _risk_findings(
                 title=f"Missing core input: {field}",
                 technical_reason=f"{field} is required for the classified seal system.",
                 user_facing_reason=f"Für diesen Dichtungsfall fehlt noch: {field}.",
-                affected_calculations=[item.calculation_id for item in calculation.results],
+                affected_calculations=[
+                    item.calculation_id for item in calculation.results
+                ],
                 affected_claims=["technical_screening", "rfq_dossier"],
                 required_next_evidence=[field],
                 claim_id=f"deterministic_rule.missing_core.{field}",
@@ -650,7 +752,10 @@ def _risk_findings(
                 allowed_user_wording=(
                     "Ein Produkt- oder Compound-Hinweis ersetzt keine Datenblatt- oder Herstellerpruefung."
                 ),
-                forbidden_user_wording=["Das Produkt ist geeignet.", "Das Compound ist freigegeben."],
+                forbidden_user_wording=[
+                    "Das Produkt ist geeignet.",
+                    "Das Compound ist freigegeben.",
+                ],
             )
         )
     for gap in document_evidence.extraction_gaps + document_evidence.sds_limitations:
@@ -709,14 +814,18 @@ def build_engineering_state(
     failure_observation: FailureObservationState | None = None,
     inputs: Mapping[str, Any] | None = None,
 ) -> EngineeringState:
-    blockers = list(dict.fromkeys(seal_system.missing_fields + calculation.blocked_calculations))
+    blockers = list(
+        dict.fromkeys(seal_system.missing_fields + calculation.blocked_calculations)
+    )
     compound_state = compound_state or CompoundState()
     document_evidence = document_evidence or DocumentEvidenceState()
     failure_observation = failure_observation or FailureObservationState()
     blockers.extend(compound_state.separation_violations)
     blockers.extend(document_evidence.prompt_injection_findings)
     blockers = _unique(blockers)
-    readiness_band = _readiness_band(seal_system=seal_system, calculation=calculation, blockers=blockers)
+    readiness_band = _readiness_band(
+        seal_system=seal_system, calculation=calculation, blockers=blockers
+    )
     completeness = _completeness_matrix(
         seal_system=seal_system,
         inputs=inputs or {},
@@ -734,7 +843,9 @@ def build_engineering_state(
             assumption_id=f"seal_system.assumption.{index}",
             text=text,
             affected_fields=seal_system.missing_fields,
-            invalidates_calculations=[item.calculation_id for item in calculation.results],
+            invalidates_calculations=[
+                item.calculation_id for item in calculation.results
+            ],
         )
         for index, text in enumerate(seal_system.assumptions)
     ]
@@ -743,15 +854,23 @@ def build_engineering_state(
         for item in calculation.results
         if item.status in {"ok", "warning"}
     ]
-    next_action = "review_engineering_dossier" if not blockers and ready_calcs else "collect_missing_inputs"
+    next_action = (
+        "review_engineering_dossier"
+        if not blockers and ready_calcs
+        else "collect_missing_inputs"
+    )
     if blockers and "sealing_type" in blockers:
         next_action = "identify_seal_system"
-    elif blockers and any("shaft_diameter" in item or "speed_rpm" in item for item in blockers):
+    elif blockers and any(
+        "shaft_diameter" in item or "speed_rpm" in item for item in blockers
+    ):
         next_action = "collect_geometry_and_motion_inputs"
     decision = EngineeringDecision(
         decision_id="engineering_orchestrator.primary",
         decision_type="prequalification_readiness",
-        status="ready" if not blockers and ready_calcs else ("partial" if seal_system.status != "pending" else "pending"),
+        status="ready"
+        if not blockers and ready_calcs
+        else ("partial" if seal_system.status != "pending" else "pending"),
         rationale="Deterministic V9.2 orchestration over seal-system and calculation state.",
         next_action=next_action,
         blockers=blockers,
@@ -785,13 +904,25 @@ def build_evidence_graph_state(state: Any) -> EvidenceGraphState:
         title = str(item.get("title") or item.get("source_title") or source_ref)
         node_id = f"evidence.{index}"
         metadata = _document_metadata(item)
-        evidence_type = str(item.get("type") or item.get("document_type") or item.get("source_type") or "rag_card")
+        evidence_type = str(
+            item.get("type")
+            or item.get("document_type")
+            or item.get("source_type")
+            or "rag_card"
+        )
         permitted = ["L2_screening"]
-        if evidence_type in {"datasheet", "manufacturer_datasheet", "certificate", "test_report"}:
+        if evidence_type in {
+            "datasheet",
+            "manufacturer_datasheet",
+            "certificate",
+            "test_report",
+        }:
             permitted.append("L5_document_backed")
         if not metadata.get("retrieved_at"):
             lifecycle_gaps.append(f"{source_ref}:retrieved_at_missing")
-        if evidence_type in {"certificate", "test_report"} and not metadata.get("valid_until"):
+        if evidence_type in {"certificate", "test_report"} and not metadata.get(
+            "valid_until"
+        ):
             lifecycle_gaps.append(f"{source_ref}:valid_until_missing")
         nodes.append(
             EvidenceGraphNode(
@@ -811,16 +942,24 @@ def build_evidence_graph_state(state: Any) -> EvidenceGraphState:
                 compound_id=metadata.get("compound_id"),
                 source_scope=metadata.get("source_scope"),
                 permitted_claim_levels=permitted,  # type: ignore[arg-type]
-                confidence=float(item.get("confidence")) if item.get("confidence") is not None else None,
+                confidence=float(item.get("confidence"))
+                if item.get("confidence") is not None
+                else None,
                 limitations=[
                     "Retrieved evidence requires applicability review.",
                     "Source lifecycle metadata limits claim strength until version/date/scope are complete.",
                 ],
             )
         )
-        edges.append(EvidenceGraphEdge(from_node_id=node_id, to_target_id="engineering_prequalification"))
+        edges.append(
+            EvidenceGraphEdge(
+                from_node_id=node_id, to_target_id="engineering_prequalification"
+            )
+        )
     evidence_state = getattr(state, "evidence", None)
-    for index, finding in enumerate(list(getattr(evidence_state, "source_backed_findings", []) or [])):
+    for index, finding in enumerate(
+        list(getattr(evidence_state, "source_backed_findings", []) or [])
+    ):
         node_id = f"source_finding.{index}"
         nodes.append(
             EvidenceGraphNode(
@@ -834,7 +973,12 @@ def build_evidence_graph_state(state: Any) -> EvidenceGraphState:
         )
     gaps = list(getattr(evidence_state, "evidence_gaps", []) or []) + lifecycle_gaps
     status = "ready" if nodes and not gaps else ("partial" if nodes else "pending")
-    return EvidenceGraphState(status=status, nodes=nodes, edges=edges, unresolved_gaps=[str(item) for item in gaps])
+    return EvidenceGraphState(
+        status=status,
+        nodes=nodes,
+        edges=edges,
+        unresolved_gaps=[str(item) for item in gaps],
+    )
 
 
 def build_compound_state(state: Any) -> CompoundState:
@@ -867,14 +1011,20 @@ def build_compound_state(state: Any) -> CompoundState:
     for field_name in _PRODUCT_FIELDS:
         value = inputs.get(field_name)
         if value:
-            products.append(ProductCandidate(product_id=str(value), article_ref=str(value)))
+            products.append(
+                ProductCandidate(product_id=str(value), article_ref=str(value))
+            )
 
     violations: list[str] = []
     if products and not compounds:
         violations.append("product_candidate_without_compound_layer")
     if compounds and not families:
         violations.append("compound_candidate_without_material_family_layer")
-    status = "ready" if families and not violations else ("partial" if families or compounds or products else "pending")
+    status = (
+        "ready"
+        if families and not violations
+        else ("partial" if families or compounds or products else "pending")
+    )
     return CompoundState(
         status=status,
         material_family_candidates=families,
@@ -898,7 +1048,9 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
             continue
         text = _document_text(item)
         lower_text = text.lower()
-        document_ref = str(item.get("document_id") or item.get("source_id") or f"evidence.{index}")
+        document_ref = str(
+            item.get("document_id") or item.get("source_id") or f"evidence.{index}"
+        )
         doc_type = _document_type(item, text)
         docs.append(
             {
@@ -907,7 +1059,11 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
                 "document_type": doc_type,
                 "claim_level": "L1_normalized",
                 "accepted_as_instruction": False,
-                **{key: value for key, value in _document_metadata(item).items() if value},
+                **{
+                    key: value
+                    for key, value in _document_metadata(item).items()
+                    if value
+                },
             }
         )
         if item.get("field") and item.get("value") is not None:
@@ -922,19 +1078,45 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
             )
         for marker in _PROMPT_INJECTION_MARKERS:
             if marker in lower_text:
-                prompt_findings.append(f"{document_ref}:prompt_instruction_marker:{marker}")
+                prompt_findings.append(
+                    f"{document_ref}:prompt_instruction_marker:{marker}"
+                )
         if doc_type == "sds":
-            product_name = item.get("product_name") or _extract_first(r"(?:product|produkt|name)\s*[:=]\s*([^\n;]+)", text)
-            manufacturer = item.get("manufacturer") or _extract_first(r"(?:manufacturer|hersteller)\s*[:=]\s*([^\n;]+)", text)
-            revision = item.get("revision") or _extract_first(r"(?:revision|version|ausgabedatum|revision date)\s*[:=]\s*([0-9A-Za-z_.:/ -]+)", text)
+            product_name = item.get("product_name") or _extract_first(
+                r"(?:product|produkt|name)\s*[:=]\s*([^\n;]+)", text
+            )
+            manufacturer = item.get("manufacturer") or _extract_first(
+                r"(?:manufacturer|hersteller)\s*[:=]\s*([^\n;]+)", text
+            )
+            revision = item.get("revision") or _extract_first(
+                r"(?:revision|version|ausgabedatum|revision date)\s*[:=]\s*([0-9A-Za-z_.:/ -]+)",
+                text,
+            )
             cas_components = item.get("cas_components") or _extract_cas_components(text)
             composition_present = _has_positive_marker(
                 text,
-                (r"\bcomposition\b", r"\bzusammensetzung\b", r"\bsection\s*3\b", r"\babschnitt\s*3\b"),
+                (
+                    r"\bcomposition\b",
+                    r"\bzusammensetzung\b",
+                    r"\bsection\s*3\b",
+                    r"\babschnitt\s*3\b",
+                ),
             )
-            if any(marker in lower_text for marker in ("nicht strukturiert", "not structured", "not disclosed", "nicht offengelegt")):
+            if any(
+                marker in lower_text
+                for marker in (
+                    "nicht strukturiert",
+                    "not structured",
+                    "not disclosed",
+                    "nicht offengelegt",
+                )
+            ):
                 composition_present = False
-            composition_status = "partly_known" if cas_components or composition_present else "product_name_only"
+            composition_status = (
+                "partly_known"
+                if cas_components or composition_present
+                else "product_name_only"
+            )
             sds_payload = {
                 "source_ref": document_ref,
                 "claim_level": "L1_normalized",
@@ -945,15 +1127,23 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
                 "composition_status": composition_status,
                 "limitations": ["SDS is not a complete formulation document."],
             }
-            sds_fields[document_ref] = {key: value for key, value in sds_payload.items() if value not in (None, [], "")}
+            sds_fields[document_ref] = {
+                key: value
+                for key, value in sds_payload.items()
+                if value not in (None, [], "")
+            }
             medium_exposures.append(
                 {
                     "exposure_id": f"medium_exposure.{document_ref}",
                     "medium_role": "process_or_cleaning_medium",
-                    "display_name": str(product_name or item.get("title") or document_ref),
+                    "display_name": str(
+                        product_name or item.get("title") or document_ref
+                    ),
                     "product_name": product_name,
                     "cas_components": cas_components,
-                    "unknown_components": [] if cas_components else ["composition_not_fully_disclosed"],
+                    "unknown_components": []
+                    if cas_components
+                    else ["composition_not_fully_disclosed"],
                     "source_refs": [document_ref],
                     "composition_status": composition_status,
                 }
@@ -963,7 +1153,10 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
             if not composition_present and not cas_components:
                 sds_limitations.append(f"{document_ref}:composition_not_structured")
         if doc_type == "drawing":
-            extracted: dict[str, Any] = {"source_ref": document_ref, "claim_level": "L1_normalized"}
+            extracted: dict[str, Any] = {
+                "source_ref": document_ref,
+                "claim_level": "L1_normalized",
+            }
             drawing_patterns = {
                 "shaft_diameter_mm": r"(?:shaft|welle|wellendurchmesser)\D{0,16}(\d+(?:[,.]\d+)?)\s*mm",
                 "groove_depth_mm": r"(?:groove depth|nuttiefe)\D{0,16}(\d+(?:[,.]\d+)?)\s*mm",
@@ -981,7 +1174,10 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
                             "source_ref": document_ref,
                             "claim_level": "L1_normalized",
                             "requires_user_confirmation": True,
-                            "affects_calculators": ["rwdr.surface_speed", "oring.geometry_screening"],
+                            "affects_calculators": [
+                                "rwdr.surface_speed",
+                                "oring.geometry_screening",
+                            ],
                         }
                     )
             drawing_fields[document_ref] = extracted
@@ -992,7 +1188,11 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
     elif not drawing_fields and not sds_fields:
         extraction_gaps.append("no_governed_drawing_or_sds_fields")
     extraction_gaps.extend(prompt_findings)
-    status = "ready" if docs and not extraction_gaps and not sds_limitations else ("partial" if docs else "pending")
+    status = (
+        "ready"
+        if docs and not extraction_gaps and not sds_limitations
+        else ("partial" if docs else "pending")
+    )
     return DocumentEvidenceState(
         status=status,
         documents_seen=docs,
@@ -1004,6 +1204,7 @@ def build_document_evidence_state(state: Any) -> DocumentEvidenceState:
         sds_limitations=_unique(sds_limitations),
         extraction_gaps=_unique(extraction_gaps),
     )
+
 
 def build_failure_observation_state(state: Any) -> FailureObservationState:
     text = " ".join(
@@ -1031,26 +1232,47 @@ def build_failure_observation_state(state: Any) -> FailureObservationState:
     diagnostics: list[str] = []
     if "leakage" in indicators:
         possible.append("installation_gap_or_surface_or_pressure_boundary")
-        diagnostics.extend(["installation_review", "surface_finish_measurement", "pressure_profile_check"])
+        diagnostics.extend(
+            [
+                "installation_review",
+                "surface_finish_measurement",
+                "pressure_profile_check",
+            ]
+        )
     if "abrasion" in indicators:
         possible.append("friction_or_lubrication_or_surface_boundary")
-        diagnostics.extend(["wear_track_inspection", "lubrication_review", "counterface_hardness_check"])
+        diagnostics.extend(
+            [
+                "wear_track_inspection",
+                "lubrication_review",
+                "counterface_hardness_check",
+            ]
+        )
     if "extrusion_nibbling" in indicators:
         possible.append("gap_or_pressure_or_hardness_boundary")
-        diagnostics.extend(["extrusion_gap_measurement", "pressure_peak_review", "hardness_check"])
+        diagnostics.extend(
+            ["extrusion_gap_measurement", "pressure_peak_review", "hardness_check"]
+        )
     if "thermal_degradation" in indicators:
         possible.append("thermal_or_speed_boundary")
-        diagnostics.extend(["temperature_history_review", "surface_speed_recalculation"])
+        diagnostics.extend(
+            ["temperature_history_review", "surface_speed_recalculation"]
+        )
     if "chemical_swelling" in indicators:
         possible.append("medium_material_incompatibility")
-        diagnostics.extend(["medium_analysis", "compound_datasheet_review", "sds_review"])
+        diagnostics.extend(
+            ["medium_analysis", "compound_datasheet_review", "sds_review"]
+        )
     morphology_tags = [
         {
             "tag_id": indicator,
             "label": indicator.replace("_", " "),
             "possible_indications": possible,
             "required_diagnostics": _unique(diagnostics),
-            "forbidden_claims": ["definitive_root_cause", "final_failure_cause_from_image"],
+            "forbidden_claims": [
+                "definitive_root_cause",
+                "final_failure_cause_from_image",
+            ],
         }
         for indicator in _unique(indicators)
     ]
@@ -1062,6 +1284,7 @@ def build_failure_observation_state(state: Any) -> FailureObservationState:
         possible_causes=_unique(possible),
         required_diagnostics=_unique(diagnostics),
     )
+
 
 def build_engineering_update(state: Any) -> dict[str, Any]:
     inputs = _asserted_inputs(state)
@@ -1092,22 +1315,40 @@ def build_engineering_update(state: Any) -> dict[str, Any]:
 
 def _standard_entry_from_check(check: Mapping[str, Any]) -> StandardsRegistryEntry:
     module_id = str(check.get("module_id") or "unknown_standard_module")
-    metadata = _STANDARD_METADATA.get(module_id) or _STANDARD_METADATA.get(module_id.lower()) or {}
+    metadata = (
+        _STANDARD_METADATA.get(module_id)
+        or _STANDARD_METADATA.get(module_id.lower())
+        or {}
+    )
     if not metadata and "3601" in module_id:
         metadata = _STANDARD_METADATA["iso_3601_2"]
-    title = str(metadata.get("title") or module_id.replace("norm_", "").replace("_", " ").upper())
+    title = str(
+        metadata.get("title")
+        or module_id.replace("norm_", "").replace("_", " ").upper()
+    )
     return StandardsRegistryEntry(
         standard_id=str(metadata.get("standard_id") or module_id),
         title=title,
         publisher=str(metadata.get("publisher") or check.get("publisher") or "unknown"),
         version=str(check.get("version") or metadata.get("edition") or "metadata_only"),
         edition=str(metadata.get("edition") or check.get("edition") or "metadata_only"),
-        publication_date=check.get("publication_date") or metadata.get("publication_date"),
-        scope=str(check.get("scope") or metadata.get("scope") or check.get("status") or ""),
+        publication_date=check.get("publication_date")
+        or metadata.get("publication_date"),
+        scope=str(
+            check.get("scope") or metadata.get("scope") or check.get("status") or ""
+        ),
         region=check.get("region"),
-        applies_to_seal_types=list(metadata.get("applies_to_seal_types") or check.get("applies_to_seal_types") or []),
-        relevant_fields=list(metadata.get("relevant_fields") or check.get("relevant_fields") or []),
-        licensed_content_available=bool(check.get("licensed_content_available") or False),
+        applies_to_seal_types=list(
+            metadata.get("applies_to_seal_types")
+            or check.get("applies_to_seal_types")
+            or []
+        ),
+        relevant_fields=list(
+            metadata.get("relevant_fields") or check.get("relevant_fields") or []
+        ),
+        licensed_content_available=bool(
+            check.get("licensed_content_available") or False
+        ),
         source_url=check.get("source_url") or metadata.get("source_url"),
         source_checked_at=check.get("source_checked_at") or "2026-05-14",
         source_module_id=module_id,
@@ -1118,7 +1359,9 @@ def _standard_entry_from_check(check: Mapping[str, Any]) -> StandardsRegistryEnt
 def build_standards_state(state: Any) -> StandardsState:
     norm_checks = [
         item
-        for item in list(getattr(getattr(state, "sealai_norm", None), "norm_checks", []) or [])
+        for item in list(
+            getattr(getattr(state, "sealai_norm", None), "norm_checks", []) or []
+        )
         if isinstance(item, Mapping)
     ]
     entries = [_standard_entry_from_check(check) for check in norm_checks]
@@ -1129,7 +1372,9 @@ def build_standards_state(state: Any) -> StandardsState:
             module_id = str(check.get("module_id") or "standard")
             for field in list(check.get("missing_required_fields") or []):
                 blocking.append(f"{module_id}:{field}")
-    status = "ready" if entries and not blocking else ("partial" if entries else "pending")
+    status = (
+        "ready" if entries and not blocking else ("partial" if entries else "pending")
+    )
     return StandardsState(
         status=status,
         applicable_entries=entries,
@@ -1140,9 +1385,15 @@ def build_standards_state(state: Any) -> StandardsState:
 
 def build_review_state(state: Any) -> ReviewState:
     rfq = getattr(state, "rfq", None)
-    blocking = [str(item) for item in list(getattr(rfq, "blocking_findings", []) or []) if item]
+    blocking = [
+        str(item) for item in list(getattr(rfq, "blocking_findings", []) or []) if item
+    ]
     soft = [str(item) for item in list(getattr(rfq, "soft_findings", []) or []) if item]
-    corrections = [str(item) for item in list(getattr(rfq, "required_corrections", []) or []) if item]
+    corrections = [
+        str(item)
+        for item in list(getattr(rfq, "required_corrections", []) or [])
+        if item
+    ]
     required_reviews = ["rfq_scope_review", "claim_boundary_review"]
     dossier_modules = ["facts", "calculations", "candidates", "blockers"]
 
@@ -1153,7 +1404,9 @@ def build_review_state(state: Any) -> ReviewState:
 
     if list(getattr(compound_state, "product_candidates", []) or []):
         required_reviews.append("manufacturer_product_review")
-    if list(getattr(compound_state, "compound_candidates", []) or []) or list(getattr(compound_state, "material_family_candidates", []) or []):
+    if list(getattr(compound_state, "compound_candidates", []) or []) or list(
+        getattr(compound_state, "material_family_candidates", []) or []
+    ):
         required_reviews.append("compound_datasheet_review")
     if list(getattr(standards, "applicable_entries", []) or []):
         required_reviews.append("licensed_standards_review")
@@ -1164,22 +1417,44 @@ def build_review_state(state: Any) -> ReviewState:
     if list(getattr(failure_observation, "morphology_indicators", []) or []):
         required_reviews.append("failure_diagnostics_review")
 
-    blocking.extend(str(item) for item in list(getattr(standards, "blocking_gaps", []) or []) if item)
-    blocking.extend(str(item) for item in list(getattr(document_evidence, "prompt_injection_findings", []) or []) if item)
-    blocking.extend(str(item) for item in list(getattr(compound_state, "separation_violations", []) or []) if item)
+    blocking.extend(
+        str(item)
+        for item in list(getattr(standards, "blocking_gaps", []) or [])
+        if item
+    )
+    blocking.extend(
+        str(item)
+        for item in list(
+            getattr(document_evidence, "prompt_injection_findings", []) or []
+        )
+        if item
+    )
+    blocking.extend(
+        str(item)
+        for item in list(getattr(compound_state, "separation_violations", []) or [])
+        if item
+    )
     blocking = _unique(blocking)
 
-    reviewer_id = getattr(rfq, "critical_review_reviewer_id", None) or getattr(rfq, "reviewer_id", None)
+    reviewer_id = getattr(rfq, "critical_review_reviewer_id", None) or getattr(
+        rfq, "reviewer_id", None
+    )
     decision_value = (
         getattr(rfq, "critical_review_decision", None)
         or getattr(rfq, "review_decision", None)
-        or ("accepted_for_rfq" if getattr(rfq, "critical_review_passed", False) else None)
+        or (
+            "accepted_for_rfq"
+            if getattr(rfq, "critical_review_passed", False)
+            else None
+        )
     )
     if blocking:
         status = "blocked"
     elif corrections:
         status = "changes_required"
-    elif getattr(rfq, "critical_review_passed", False) and reviewer_id and decision_value:
+    elif (
+        getattr(rfq, "critical_review_passed", False) and reviewer_id and decision_value
+    ):
         status = "approved_scope"
     elif getattr(rfq, "critical_review_passed", False):
         status = "pending"
@@ -1222,6 +1497,7 @@ def build_review_state(state: Any) -> ReviewState:
         soft_findings=_unique(soft),
         required_corrections=corrections,
     )
+
 
 def _facts_from_assertions(state: Any) -> list[dict[str, Any]]:
     facts: list[dict[str, Any]] = []
@@ -1315,18 +1591,50 @@ def build_dossier_state(state: Any) -> DossierState:
     document_evidence = getattr(state, "document_evidence", DocumentEvidenceState())
     review_state = getattr(state, "review_state", ReviewState())
     blockers: list[str] = []
-    blockers.extend(str(item) for item in list(getattr(engineering, "blockers", []) or []) if item)
-    blockers.extend(str(item) for item in list(getattr(standards, "blocking_gaps", []) or []) if item)
-    blockers.extend(str(item) for item in list(getattr(compound_state, "separation_violations", []) or []) if item)
-    blockers.extend(str(item) for item in list(getattr(document_evidence, "extraction_gaps", []) or []) if item)
-    blockers.extend(str(item) for item in list(getattr(document_evidence, "sds_limitations", []) or []) if item)
-    blockers.extend(str(item) for item in list(getattr(evidence_graph, "unresolved_gaps", []) or []) if item)
-    blockers.extend(str(item) for item in list(getattr(getattr(state, "rfq", None), "blocking_findings", []) or []) if item)
+    blockers.extend(
+        str(item) for item in list(getattr(engineering, "blockers", []) or []) if item
+    )
+    blockers.extend(
+        str(item)
+        for item in list(getattr(standards, "blocking_gaps", []) or [])
+        if item
+    )
+    blockers.extend(
+        str(item)
+        for item in list(getattr(compound_state, "separation_violations", []) or [])
+        if item
+    )
+    blockers.extend(
+        str(item)
+        for item in list(getattr(document_evidence, "extraction_gaps", []) or [])
+        if item
+    )
+    blockers.extend(
+        str(item)
+        for item in list(getattr(document_evidence, "sds_limitations", []) or [])
+        if item
+    )
+    blockers.extend(
+        str(item)
+        for item in list(getattr(evidence_graph, "unresolved_gaps", []) or [])
+        if item
+    )
+    blockers.extend(
+        str(item)
+        for item in list(
+            getattr(getattr(state, "rfq", None), "blocking_findings", []) or []
+        )
+        if item
+    )
     failure = getattr(state, "failure_observation", None)
     if list(getattr(failure, "morphology_indicators", []) or []):
         blockers.append("failure_observation_requires_diagnostics_review")
     blockers = _unique(blockers)
-    status = "ready" if facts and not blockers else ("partial" if facts or calculation_items or candidates else "pending")
+    status = (
+        "ready"
+        if facts and not blockers
+        else ("partial" if facts or calculation_items or candidates else "pending")
+    )
     if seal_system.missing_fields:
         readiness_band = "blocked_missing_core_data"
     elif status == "ready" and review_state.status == "approved_scope":
@@ -1337,15 +1645,25 @@ def build_dossier_state(state: Any) -> DossierState:
         readiness_band = "engineering_checks_partial"
     else:
         readiness_band = "not_ready"
-    allowed_next_actions = ["collect_missing_inputs", "request_datasheets", "request_manufacturer_review"]
+    allowed_next_actions = [
+        "collect_missing_inputs",
+        "request_datasheets",
+        "request_manufacturer_review",
+    ]
     if calculation_items:
         allowed_next_actions.append("export_screening_rfq_dossier")
     if list(getattr(failure, "required_diagnostics", []) or []):
         allowed_next_actions.append("run_failure_diagnostics_review")
     sections = [
         DossierSection(section_id="facts", title="Governed Facts", items=facts),
-        DossierSection(section_id="calculations", title="Deterministic Calculations", items=calculation_items),
-        DossierSection(section_id="candidates", title="Screening Candidates", items=candidates),
+        DossierSection(
+            section_id="calculations",
+            title="Deterministic Calculations",
+            items=calculation_items,
+        ),
+        DossierSection(
+            section_id="candidates", title="Screening Candidates", items=candidates
+        ),
         DossierSection(
             section_id="blockers",
             title="Open Blockers",
@@ -1354,7 +1672,11 @@ def build_dossier_state(state: Any) -> DossierState:
     ]
     session_id = str(getattr(state, "session_id", "") or "")
     material_family_candidates = [
-        {"family": item.family, "claim_level": item.claim_level, "basis": list(item.basis)}
+        {
+            "family": item.family,
+            "claim_level": item.claim_level,
+            "basis": list(item.basis),
+        }
         for item in list(compound_state.material_family_candidates)
     ]
     compound_candidates = [
@@ -1381,7 +1703,11 @@ def build_dossier_state(state: Any) -> DossierState:
     return DossierState(
         status=status,
         dossier_id=f"rfq-dossier-v92-{session_id}" if session_id else None,
-        case_revision=int(getattr(calculation_state.input_snapshot, "case_revision", 0) if calculation_state.input_snapshot else 0),
+        case_revision=int(
+            getattr(calculation_state.input_snapshot, "case_revision", 0)
+            if calculation_state.input_snapshot
+            else 0
+        ),
         seal_system_summary={
             "seal_family": seal_system.seal_family,
             "seal_type": seal_system.seal_type,
@@ -1395,7 +1721,10 @@ def build_dossier_state(state: Any) -> DossierState:
         compound_candidates=compound_candidates,
         product_candidates=product_candidates,
         blockers=blockers,
-        risk_findings=[item.model_dump() for item in list(getattr(engineering, "risk_findings", []) or [])],
+        risk_findings=[
+            item.model_dump()
+            for item in list(getattr(engineering, "risk_findings", []) or [])
+        ],
         document_refs=list(document_evidence.documents_seen),
         evidence_summary=[
             {
@@ -1407,7 +1736,9 @@ def build_dossier_state(state: Any) -> DossierState:
             }
             for node in list(evidence_graph.nodes)
         ],
-        standards_refs=[entry.model_dump() for entry in list(standards.applicable_entries)],
+        standards_refs=[
+            entry.model_dump() for entry in list(standards.applicable_entries)
+        ],
         compliance_notes=[
             {
                 "note": "No compliance or certificate claim without certificate evidence and expert review.",
@@ -1421,11 +1752,14 @@ def build_dossier_state(state: Any) -> DossierState:
         sections=sections,
     )
 
+
 def build_dossier_update(state: Any) -> dict[str, Any]:
     standards = build_standards_state(state)
     state_with_standards = state.model_copy(update={"standards": standards})
     review_state = build_review_state(state_with_standards)
-    state_with_review = state_with_standards.model_copy(update={"review_state": review_state})
+    state_with_review = state_with_standards.model_copy(
+        update={"review_state": review_state}
+    )
     dossier = build_dossier_state(state_with_review)
     return {
         "standards": standards,

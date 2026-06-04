@@ -3,6 +3,7 @@
 Singleton pattern: use ``FactCardStore.get_instance()`` for shared access.
 Falls back gracefully if KB files are absent (returns empty results, no crash).
 """
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,12 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("app.services.knowledge.factcard_store")
 
-_DEFAULT_KB_PATH = Path(__file__).parent.parent.parent / "data" / "kb" / "SEALAI_KB_PTFE_factcards_gates_v1_3.json"
+_DEFAULT_KB_PATH = (
+    Path(__file__).parent.parent.parent
+    / "data"
+    / "kb"
+    / "SEALAI_KB_PTFE_factcards_gates_v1_3.json"
+)
 
 _instance: Optional[FactCardStore] = None
 _PTFE_FACTCARD_ID_PATTERN = re.compile(r"^PTFE-F-\d{3}$", re.IGNORECASE)
@@ -105,7 +111,9 @@ class FactCardStore:
 
     def _load(self) -> None:
         if not self._path.exists():
-            log.warning("factcard_store.kb_file_missing", extra={"path": str(self._path)})
+            log.warning(
+                "factcard_store.kb_file_missing", extra={"path": str(self._path)}
+            )
             return
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -142,7 +150,8 @@ class FactCardStore:
         """Return all FactCards whose ``topic_tags`` contain *topic* (case-insensitive)."""
         topic_lower = topic.lower()
         return [
-            card for card in self._factcards
+            card
+            for card in self._factcards
             if any(t.lower() == topic_lower for t in (card.get("topic_tags") or []))
         ]
 
@@ -150,8 +159,12 @@ class FactCardStore:
         """Return all FactCards whose ``deterministic_triggers`` include *trigger*."""
         trigger_lower = trigger.lower()
         return [
-            card for card in self._factcards
-            if any(t.lower() == trigger_lower for t in (card.get("deterministic_triggers") or []))
+            card
+            for card in self._factcards
+            if any(
+                t.lower() == trigger_lower
+                for t in (card.get("deterministic_triggers") or [])
+            )
         ]
 
     def lookup_property(self, compound_id: str, property_name: str) -> Any:
@@ -194,7 +207,10 @@ class FactCardStore:
 
         legacy_trigger_keywords = {
             "chemical_resistance_query": [
-                "chemisch beständig", "chemical resistance", "beständigkeit", "verträglichkeit"
+                "chemisch beständig",
+                "chemical resistance",
+                "beständigkeit",
+                "verträglichkeit",
             ],
             "food_grade_query": ["food grade", "fda", "pharma", "lebensmittel"],
         }
@@ -204,7 +220,8 @@ class FactCardStore:
                 legacy_matches.add(trigger)
 
         query_tokens = {
-            tok for tok in re.split(r"[^a-z0-9]+", q.lower())
+            tok
+            for tok in re.split(r"[^a-z0-9]+", q.lower())
             if len(tok) >= 3 and tok not in _GENERIC_QUERY_TOKENS
         }
         if medium:
@@ -224,13 +241,23 @@ class FactCardStore:
                 continue
             searchable = " ".join(
                 str(card.get(field) or "")
-                for field in ("topic", "property", "conditions", "value", "units", "do_not_infer")
+                for field in (
+                    "topic",
+                    "property",
+                    "conditions",
+                    "value",
+                    "units",
+                    "do_not_infer",
+                )
             ).lower()
             score = sum(1 for tok in query_tokens if tok in searchable)
             if score <= 0:
                 continue
             if query_number_tokens:
-                if any(token in str(card.get("conditions") or "") for token in query_number_tokens):
+                if any(
+                    token in str(card.get("conditions") or "")
+                    for token in query_number_tokens
+                ):
                     score += 2
             if "tfm1700" in q and "tfm1700" in searchable:
                 score += 3
@@ -255,7 +282,10 @@ class FactCardStore:
         summarized = self._summarize_technical_table_cards(ranked_cards, per_topic=3)
         log.info(
             "factcard_store.summarized_technical_table",
-            extra={"original_count": len(ranked_cards), "returned_count": len(summarized)},
+            extra={
+                "original_count": len(ranked_cards),
+                "returned_count": len(summarized),
+            },
         )
         return summarized
 
@@ -279,14 +309,41 @@ class FactCardStore:
     @staticmethod
     def _topic_bucket(card: Dict[str, Any]) -> Optional[str]:
         topic = str(card.get("topic") or "").strip().lower()
-        tags = [str(t).strip().lower() for t in (card.get("topic_tags") or []) if str(t).strip()]
+        tags = [
+            str(t).strip().lower()
+            for t in (card.get("topic_tags") or [])
+            if str(t).strip()
+        ]
         haystack = " ".join([topic, *tags])
 
-        if any(token in haystack for token in ("thermal", "temperature", "heat", "kryo", "cryogenic")):
+        if any(
+            token in haystack
+            for token in ("thermal", "temperature", "heat", "kryo", "cryogenic")
+        ):
             return "Thermal"
-        if any(token in haystack for token in ("mechanical", "tribology", "friction", "wear", "strength", "modulus")):
+        if any(
+            token in haystack
+            for token in (
+                "mechanical",
+                "tribology",
+                "friction",
+                "wear",
+                "strength",
+                "modulus",
+            )
+        ):
             return "Mechanical"
-        if any(token in haystack for token in ("chemical", "compatibility", "resistance", "permeability", "media", "safety")):
+        if any(
+            token in haystack
+            for token in (
+                "chemical",
+                "compatibility",
+                "resistance",
+                "permeability",
+                "media",
+                "safety",
+            )
+        ):
             return "Chemical"
         return None
 
@@ -295,7 +352,11 @@ class FactCardStore:
         ranked_cards: List[Dict[str, Any]],
         per_topic: int = 3,
     ) -> List[Dict[str, Any]]:
-        grouped: Dict[str, List[Dict[str, Any]]] = {"Thermal": [], "Mechanical": [], "Chemical": []}
+        grouped: Dict[str, List[Dict[str, Any]]] = {
+            "Thermal": [],
+            "Mechanical": [],
+            "Chemical": [],
+        }
         for card in ranked_cards:
             bucket = self._topic_bucket(card)
             if bucket is None:

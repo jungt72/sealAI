@@ -257,7 +257,9 @@ def _rwdr_field(
         "origin": origin,
         "source_type": source_type,
         "status": "confirmed" if confirmation_status == "confirmed" else "candidate",
-        "validation_status": "user_stated" if confirmation_status == "confirmed" else "candidate",
+        "validation_status": "user_stated"
+        if confirmation_status == "confirmed"
+        else "candidate",
         "confirmation_status": confirmation_status,
         "source_span": source_span,
     }
@@ -319,7 +321,9 @@ def test_scope_guard_blocks_hard_out_of_scope_inputs() -> None:
         assert brief["evaluation"]["safe_redirect_message"]
 
 
-def test_evidence_gate_blocks_unconfirmed_llm_extractions_and_explicit_unknown() -> None:
+def test_evidence_gate_blocks_unconfirmed_llm_extractions_and_explicit_unknown() -> (
+    None
+):
     fields = _minimal_confirmed_fields()
     fields.append(
         _rwdr_field(
@@ -409,7 +413,9 @@ def test_circumferential_speed_is_calculated_in_orchestrator() -> None:
 
 def test_low_pressure_boundary_adds_review_flags() -> None:
     fields = [
-        field if field["field"] != "pressure_differential" else _rwdr_field("pressure_differential", 1, unit="bar")
+        field
+        if field["field"] != "pressure_differential"
+        else _rwdr_field("pressure_differential", 1, unit="bar")
         for field in _minimal_confirmed_fields()
     ]
 
@@ -431,7 +437,9 @@ def test_measurement_recommendations_cover_missing_and_uncertain_fields() -> Non
     fields.append(_rwdr_field("max_speed_rpm", 12000, unit="rpm"))
 
     brief = _brief_for(fields)
-    methods = {item["field"]: item["method"] for item in brief["measurement_recommendations"]}
+    methods = {
+        item["field"]: item["method"] for item in brief["measurement_recommendations"]
+    }
 
     assert "housing_bore_D_mm" in methods
     assert "3-point bore gauge" in methods["housing_bore_D_mm"]
@@ -451,7 +459,9 @@ def test_shaft_housing_material_and_leakage_rules_are_review_only() -> None:
             _rwdr_field("desired_service_life_or_maintenance_interval", "2 Jahre"),
         ]
     )
-    brief = _brief_for(fields, engineering_path="RWDR dicht keine Leckage lange Standzeit")
+    brief = _brief_for(
+        fields, engineering_path="RWDR dicht keine Leckage lange Standzeit"
+    )
 
     serialized = json.dumps(brief, ensure_ascii=False).casefold()
     flags = set(brief["engineering_review_flags"])
@@ -459,12 +469,17 @@ def test_shaft_housing_material_and_leakage_rules_are_review_only() -> None:
     assert "split_seal_review_required" in flags
     assert "mounting_damage_risk" in flags
     assert "PTFE_counterface_review_required" in flags
-    assert "Welche Leckageanforderung soll der Hersteller bewerten?".casefold() in serialized
+    assert (
+        "Welche Leckageanforderung soll der Hersteller bewerten?".casefold()
+        in serialized
+    )
     assert "fkm empfohlen" not in serialized
     assert "nbr geeignet" not in serialized
 
 
-def test_brief_contains_required_sections_normative_metadata_and_is_deterministic() -> None:
+def test_brief_contains_required_sections_normative_metadata_and_is_deterministic() -> (
+    None
+):
     first = _brief_for(_minimal_confirmed_fields())
     second = _brief_for(_minimal_confirmed_fields())
 
@@ -488,12 +503,17 @@ def test_brief_contains_required_sections_normative_metadata_and_is_deterministi
         "export_metadata",
         "disclaimer",
     }
-    assert first["evaluation"]["computed_values"] == second["evaluation"]["computed_values"]
+    assert (
+        first["evaluation"]["computed_values"]
+        == second["evaluation"]["computed_values"]
+    )
     assert first["evaluation"]["review_flags"] == second["evaluation"]["review_flags"]
-    assert first["evaluation"]["manufacturer_questions"] == second["evaluation"]["manufacturer_questions"]
+    assert (
+        first["evaluation"]["manufacturer_questions"]
+        == second["evaluation"]["manufacturer_questions"]
+    )
     normative_ids = {
-        item["reference_id"]
-        for item in first["evaluation"]["normative_references"]
+        item["reference_id"] for item in first["evaluation"]["normative_references"]
     }
     assert normative_ids >= {
         "ISO_6194_1",
@@ -513,9 +533,12 @@ def test_forbidden_language_guard_allows_only_explicit_negations() -> None:
     guard = ForbiddenLanguageIntelligence()
 
     assert guard.evaluate_text("FKM empfohlen und approved final solution")
-    assert guard.evaluate_text(
-        "keine finale technische Eignungsfreigabe, keine Materialfreigabe, keine Produktempfehlung"
-    ) == ()
+    assert (
+        guard.evaluate_text(
+            "keine finale technische Eignungsfreigabe, keine Materialfreigabe, keine Produktempfehlung"
+        )
+        == ()
+    )
 
     brief = _brief_for(_minimal_confirmed_fields())
     serialized = json.dumps(brief, ensure_ascii=False).casefold()
@@ -546,7 +569,9 @@ def test_rwdr_confirmation_payload_updates_evidence_and_source_summary() -> None
     assert confirmed["shaft_diameter_d1_mm"]["origin"] == "llm_extracted"
     assert confirmed["shaft_diameter_d1_mm"]["source_span"] == "45x62x8"
     source_summary = next(
-        section for section in brief["sections"] if section["id"] == "source_evidence_summary"
+        section
+        for section in brief["sections"]
+        if section["id"] == "source_evidence_summary"
     )
     assert source_summary["items"][0]["confirmed_source_spans"] == [
         {
@@ -559,13 +584,39 @@ def test_rwdr_confirmation_payload_updates_evidence_and_source_summary() -> None
 
 def test_rwdr_confirmed_input_is_deterministic_and_unknown_not_confirmed() -> None:
     fields = [
-        _rwdr_field("inside_medium", "Öl", origin="llm_extracted", source_type="user_text", confirmation_status="confirmed", source_span="Öl"),
-        _rwdr_field("pressure_differential", None, unit="bar", origin="llm_extracted", source_type="user_text", confirmation_status="explicitly_unknown"),
-        _rwdr_field("temperature_max_c", "80", unit="degC", origin="llm_extracted", source_type="user_text", confirmation_status="unconfirmed", source_span="80 °C"),
+        _rwdr_field(
+            "inside_medium",
+            "Öl",
+            origin="llm_extracted",
+            source_type="user_text",
+            confirmation_status="confirmed",
+            source_span="Öl",
+        ),
+        _rwdr_field(
+            "pressure_differential",
+            None,
+            unit="bar",
+            origin="llm_extracted",
+            source_type="user_text",
+            confirmation_status="explicitly_unknown",
+        ),
+        _rwdr_field(
+            "temperature_max_c",
+            "80",
+            unit="degC",
+            origin="llm_extracted",
+            source_type="user_text",
+            confirmation_status="unconfirmed",
+            source_span="80 °C",
+        ),
     ]
 
-    first = build_rwdr_brief_from_confirmed_fields(raw_inquiry="RWDR Öl 80 °C", fields=fields)
-    second = build_rwdr_brief_from_confirmed_fields(raw_inquiry="RWDR Öl 80 °C", fields=fields)
+    first = build_rwdr_brief_from_confirmed_fields(
+        raw_inquiry="RWDR Öl 80 °C", fields=fields
+    )
+    second = build_rwdr_brief_from_confirmed_fields(
+        raw_inquiry="RWDR Öl 80 °C", fields=fields
+    )
 
     confirmed = {item["field"] for item in first["confirmed_case_fields"]}
     assert "inside_medium" in confirmed
@@ -603,17 +654,26 @@ def test_persisted_rwdr_confirm_edit_unknown_and_reject_decisions() -> None:
             }
         ],
     )
-    shaft = {
-        item["field"]: item for item in confirmed["evidence_fields"]
-    }["shaft_diameter_d1_mm"]
+    shaft = {item["field"]: item for item in confirmed["evidence_fields"]}[
+        "shaft_diameter_d1_mm"
+    ]
     assert shaft["confirmation_status"] == "confirmed"
     assert shaft["source_span"] == "45x62x8"
 
     edited = update_persisted_rwdr_confirmations(
         case_id=case_id,
-        decisions=[{"field": "temperature_max_c", "action": "edit", "value": "85", "unit": "degC"}],
+        decisions=[
+            {
+                "field": "temperature_max_c",
+                "action": "edit",
+                "value": "85",
+                "unit": "degC",
+            }
+        ],
     )
-    temp = {item["field"]: item for item in edited["evidence_fields"]}["temperature_max_c"]
+    temp = {item["field"]: item for item in edited["evidence_fields"]}[
+        "temperature_max_c"
+    ]
     assert temp["value"] == "85"
     assert temp["previous_value"] == 80
     assert temp["confirmation_status"] == "edited_by_user"
@@ -622,7 +682,9 @@ def test_persisted_rwdr_confirm_edit_unknown_and_reject_decisions() -> None:
         case_id=case_id,
         decisions=[{"field": "pressure_differential", "action": "explicitly_unknown"}],
     )
-    pressure = {item["field"]: item for item in unknown["evidence_fields"]}["pressure_differential"]
+    pressure = {item["field"]: item for item in unknown["evidence_fields"]}[
+        "pressure_differential"
+    ]
     assert pressure["confirmation_status"] == "explicitly_unknown"
     confirmed_fields = {
         item["field"]
@@ -634,7 +696,9 @@ def test_persisted_rwdr_confirm_edit_unknown_and_reject_decisions() -> None:
         case_id=case_id,
         decisions=[{"field": "inside_medium", "action": "reject"}],
     )
-    medium = {item["field"]: item for item in rejected["evidence_fields"]}["inside_medium"]
+    medium = {item["field"]: item for item in rejected["evidence_fields"]}[
+        "inside_medium"
+    ]
     assert medium["confirmation_status"] == "rejected"
     confirmed_fields = {
         item["field"]
@@ -643,7 +707,9 @@ def test_persisted_rwdr_confirm_edit_unknown_and_reject_decisions() -> None:
     assert "inside_medium" not in confirmed_fields
 
 
-def test_persisted_rwdr_confirm_without_source_span_for_extracted_liability_is_blocked() -> None:
+def test_persisted_rwdr_confirm_without_source_span_for_extracted_liability_is_blocked() -> (
+    None
+):
     state = create_persisted_rwdr_case("RWDR Öl")
     case_id = state["case_id"]
     stored = RWDR_CASE_STATE_REPOSITORY._cases[case_id]
@@ -687,10 +753,22 @@ def test_persisted_rwdr_brief_and_export_use_confirmed_case_state() -> None:
     update_persisted_rwdr_confirmations(
         case_id=case_id,
         decisions=[
-            {"field": "shaft_diameter_d1_mm", "action": "confirm", "source_span": "45x62x8"},
-            {"field": "housing_bore_D_mm", "action": "confirm", "source_span": "45x62x8"},
+            {
+                "field": "shaft_diameter_d1_mm",
+                "action": "confirm",
+                "source_span": "45x62x8",
+            },
+            {
+                "field": "housing_bore_D_mm",
+                "action": "confirm",
+                "source_span": "45x62x8",
+            },
             {"field": "seal_width_b_mm", "action": "confirm", "source_span": "45x62x8"},
-            {"field": "max_speed_rpm", "action": "confirm", "source_span": "1500 U/min"},
+            {
+                "field": "max_speed_rpm",
+                "action": "confirm",
+                "source_span": "1500 U/min",
+            },
         ],
     )
 
@@ -718,4 +796,7 @@ def test_persisted_rwdr_deterministic_evaluation_ignores_audit_timestamps() -> N
 
     assert first["status"] == RWDR_STATUS_OUT_OF_SCOPE
     assert second["status"] == RWDR_STATUS_OUT_OF_SCOPE
-    assert first["evaluation"]["out_of_scope_reasons"] == second["evaluation"]["out_of_scope_reasons"]
+    assert (
+        first["evaluation"]["out_of_scope_reasons"]
+        == second["evaluation"]["out_of_scope_reasons"]
+    )

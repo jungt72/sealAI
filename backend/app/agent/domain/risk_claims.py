@@ -16,7 +16,9 @@ RISK_CLAIM_TYPES = {
 
 
 def unique_text(items: list[Any] | tuple[Any, ...] | set[Any]) -> list[str]:
-    return list(dict.fromkeys(str(item).strip() for item in items if str(item or "").strip()))
+    return list(
+        dict.fromkeys(str(item).strip() for item in items if str(item or "").strip())
+    )
 
 
 def severity_from_score(score: int) -> str:
@@ -42,7 +44,9 @@ def risk_claim_payload(
     forbidden_user_wording: list[Any] | None = None,
     source: str,
 ) -> dict[str, Any]:
-    normalized_type = claim_type if claim_type in RISK_CLAIM_TYPES else "context_advisory"
+    normalized_type = (
+        claim_type if claim_type in RISK_CLAIM_TYPES else "context_advisory"
+    )
     return {
         "claim_id": claim_id,
         "claim_type": normalized_type,
@@ -89,7 +93,9 @@ def has_measured_risk_evidence(
     return False
 
 
-def unsupported_measured_claim_failures(context: Any, text: str) -> list[dict[str, Any]]:
+def unsupported_measured_claim_failures(
+    context: Any, text: str
+) -> list[dict[str, Any]]:
     answer = str(text or "")
     failures: list[dict[str, Any]] = []
     rules = (
@@ -114,7 +120,11 @@ def unsupported_measured_claim_failures(context: Any, text: str) -> list[dict[st
                 r"ueberschreit|überschreit)\b",
                 re.IGNORECASE | re.UNICODE,
             ),
-            "subject_fields": {"pressure_at_seal_bar", "pressure_delta_bar", "pressure_nominal"},
+            "subject_fields": {
+                "pressure_at_seal_bar",
+                "pressure_delta_bar",
+                "pressure_nominal",
+            },
             "evidence_fields": {"pressure_at_seal_bar", "pressure_delta_bar"},
             "safe_wording": "Systemdruck oder unklarer Druck ersetzt keinen Dichtstellendruck.",
         },
@@ -126,8 +136,18 @@ def unsupported_measured_claim_failures(context: Any, text: str) -> list[dict[st
                 r"nicht\s+verträglich)\b",
                 re.IGNORECASE | re.UNICODE,
             ),
-            "subject_fields": {"medium", "medium_name", "material", "sealing_material_family"},
-            "evidence_fields": {"medium", "medium_name", "material", "sealing_material_family"},
+            "subject_fields": {
+                "medium",
+                "medium_name",
+                "material",
+                "sealing_material_family",
+            },
+            "evidence_fields": {
+                "medium",
+                "medium_name",
+                "material",
+                "sealing_material_family",
+            },
             "safe_wording": "Das Medium muss eindeutig benannt sein, bevor Werkstoffvertraeglichkeit als Fakt bewertet wird.",
         },
     )

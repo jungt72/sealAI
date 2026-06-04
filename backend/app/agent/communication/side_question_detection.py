@@ -57,6 +57,7 @@ _PARAM_UPDATE_MARKERS: tuple[str, ...] = (
     r"\bkorrekt(?:ur)?\b",
 )
 
+
 def classify_message_as_knowledge_side_question(
     message: str,
 ) -> KnowledgeSideQuestionClass | None:
@@ -74,13 +75,17 @@ def classify_message_as_knowledge_side_question(
     if is_material_comparison_question(lowered):
         return "exploration_answer"
 
-    if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _PARAM_UPDATE_MARKERS):
+    if any(
+        re.search(pattern, lowered, re.IGNORECASE) for pattern in _PARAM_UPDATE_MARKERS
+    ):
         return None
 
     if contains_concrete_case_marker(lowered):
         return None
 
-    if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _COMPARISON_PATTERNS):
+    if any(
+        re.search(pattern, lowered, re.IGNORECASE) for pattern in _COMPARISON_PATTERNS
+    ):
         return "exploration_answer"
 
     if _MATERIAL_TOKEN_PATTERN.search(lowered) and any(
@@ -95,7 +100,9 @@ def classify_message_as_knowledge_side_question(
     if is_standalone_technical_subject(lowered):
         return "conversational_answer"
 
-    if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _KNOWLEDGE_PATTERNS):
+    if any(
+        re.search(pattern, lowered, re.IGNORECASE) for pattern in _KNOWLEDGE_PATTERNS
+    ):
         return "conversational_answer"
 
     return None

@@ -158,5 +158,6 @@ class TestGlobalAuditLogger:
 
     def test_get_global_logger_returns_none_before_set(self, monkeypatch):
         import app.services.audit.audit_logger as mod
+
         monkeypatch.setattr(mod, "_global_audit_logger", None)
         assert get_global_audit_logger() is None

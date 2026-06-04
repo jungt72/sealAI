@@ -69,7 +69,7 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
             "versandfähig",
             "bestellbereit",
             "anfragebasis ist bereit",
-            * _MANUFACTURER_FRAGMENTS,
+            *_MANUFACTURER_FRAGMENTS,
         ],
         "class_guard": "Erklaere nur Orientierung und Prozess, aber keine Requirement-Class-, Matching- oder RFQ-Reife-Aussage.",
         "fallback_text": (
@@ -105,7 +105,7 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
             "anfragebasis",
             "versandfaehig",
             "versandfähig",
-            * _MANUFACTURER_FRAGMENTS,
+            *_MANUFACTURER_FRAGMENTS,
         ],
         "class_guard": "Frage nur den naechsten Klaerungspunkt ab und gib keine Empfehlung, keinen Hersteller und keine RFQ-Aussage.",
         "fallback_text": (
@@ -138,7 +138,7 @@ SURFACE_CLAIMS_SPECS: dict[OutwardResponseClass, SurfaceClaimsSpec] = {
             "versandfaehig",
             "versandfähig",
             "bestellbereit",
-            * _MANUFACTURER_FRAGMENTS,
+            *_MANUFACTURER_FRAGMENTS,
         ],
         "class_guard": "Beschreibe nur den belastbaren Status, aber keine finale Empfehlung und keine Hersteller- oder RFQ-Freigabe.",
         "fallback_text": "Ich habe die belastbaren Parameter und offenen Pruefpunkte strukturiert zusammengefasst.",

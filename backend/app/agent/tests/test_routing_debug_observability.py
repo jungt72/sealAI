@@ -5,6 +5,7 @@
                and NO raw sub / email / message body (PII-free, owner hashed)
 - _routing_debug_enabled() default (no flag) is False
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,9 +38,15 @@ def _block_case_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fail_persist(*_a: Any, **_k: Any) -> None:
         raise AssertionError("routing debug test must not persist governed state")
 
-    monkeypatch.setattr("app.agent.api.routes.chat._run_light_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.routes.chat._run_governed_chat_response", fail_governed)
-    monkeypatch.setattr("app.agent.api.loaders._persist_live_governed_state", fail_persist)
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_light_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.routes.chat._run_governed_chat_response", fail_governed
+    )
+    monkeypatch.setattr(
+        "app.agent.api.loaders._persist_live_governed_state", fail_persist
+    )
 
 
 def _no_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,10 +68,14 @@ def _common_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _routing_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
-    return [r.getMessage() for r in caplog.records if "[routing_debug]" in r.getMessage()]
+    return [
+        r.getMessage() for r in caplog.records if "[routing_debug]" in r.getMessage()
+    ]
 
 
-def test_routing_debug_enabled_default_is_false(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_routing_debug_enabled_default_is_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("SEALAI_ROUTING_DEBUG", raising=False)
     assert _routing_debug_enabled() is False
 

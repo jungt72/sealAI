@@ -49,7 +49,12 @@ async def _skip_snapshot_persistence(*_args, **_kwargs):
 
 def _user() -> RequestUser:
     return RequestUser(
-        user_id="user-1", username="tester", sub="user-1", roles=[], scopes=[], tenant_id="tenant-1"
+        user_id="user-1",
+        username="tester",
+        sub="user-1",
+        roles=[],
+        scopes=[],
+        tenant_id="tenant-1",
     )
 
 
@@ -62,7 +67,9 @@ def _override_env(monkeypatch: pytest.MonkeyPatch) -> _FakeRedisClient:
     monkeypatch.setattr(redis_asyncio, "Redis", _FakeRedisFactory(fake_redis))
     import app.agent.api.loaders as loaders_module
 
-    monkeypatch.setattr(loaders_module, "save_governed_state_snapshot_async", _skip_snapshot_persistence)
+    monkeypatch.setattr(
+        loaders_module, "save_governed_state_snapshot_async", _skip_snapshot_persistence
+    )
     return fake_redis
 
 
@@ -70,7 +77,9 @@ def _override_env(monkeypatch: pytest.MonkeyPatch) -> _FakeRedisClient:
 
 
 @pytest.mark.asyncio
-async def test_wire1_action_chip_provenance_end_to_end(_override_env: _FakeRedisClient) -> None:
+async def test_wire1_action_chip_provenance_end_to_end(
+    _override_env: _FakeRedisClient,
+) -> None:
     await session_override_endpoint(
         session_id="case-chip",
         request=OverrideRequest(
@@ -109,7 +118,9 @@ async def test_wire2_photo_sifft_routes_to_mobile_triage() -> None:
 async def test_wire2_text_only_sifft_does_not_trigger_triage() -> None:
     # Without an attachment the existing governed path is unchanged.
     dispatch = await _resolve_runtime_dispatch(
-        ChatRequest(message="die dichtung sifft", session_id="case-text", has_attachment=False),
+        ChatRequest(
+            message="die dichtung sifft", session_id="case-text", has_attachment=False
+        ),
         current_user=_user(),
     )
     assert dispatch.gate_reason != "mobile_leakage_triage"
@@ -118,7 +129,11 @@ async def test_wire2_text_only_sifft_does_not_trigger_triage() -> None:
 # --- AC7: low-confidence photo → measurement guidance, not identification ----
 
 # Forbidden final identification wording (Blueprint Golden H / VISUAL_FORBIDDEN).
-_AC7_FORBIDDEN_IDENTIFICATION = ("Das ist sicher ein", "Material ist", "Artikelnummer ist")
+_AC7_FORBIDDEN_IDENTIFICATION = (
+    "Das ist sicher ein",
+    "Material ist",
+    "Artikelnummer ist",
+)
 
 
 @pytest.mark.asyncio
@@ -169,16 +184,22 @@ async def test_wire2_good_photo_keeps_triage_unchanged() -> None:
 
 
 @pytest.mark.asyncio
-async def test_wire3_sheet_event_idempotent_via_override(_override_env: _FakeRedisClient) -> None:
+async def test_wire3_sheet_event_idempotent_via_override(
+    _override_env: _FakeRedisClient,
+) -> None:
     req = OverrideRequest(
         overrides=[OverrideItem(field_name="temperature_c", value=90, unit="°C")],
         client_event_id="sheet-evt-1",
         turn_index=1,
     )
-    first = await session_override_endpoint(session_id="case-sheet", request=req, current_user=_user())
+    first = await session_override_endpoint(
+        session_id="case-sheet", request=req, current_user=_user()
+    )
     assert first.applied_fields == ["temperature_c"]
 
-    second = await session_override_endpoint(session_id="case-sheet", request=req, current_user=_user())
+    second = await session_override_endpoint(
+        session_id="case-sheet", request=req, current_user=_user()
+    )
     # Same client_event_id → no second mutation.
     assert second.applied_fields == []
 
@@ -232,7 +253,9 @@ async def test_wire4_rfq_one_pager_via_brief_endpoint() -> None:
     from app.api.v1.endpoints.rfq import RwdrBriefRequest, generate_rwdr_brief
 
     result = await generate_rwdr_brief(
-        body=RwdrBriefRequest(raw_inquiry="RWDR 45x62x8, Getriebe, Öl, undicht", fields=[]),
+        body=RwdrBriefRequest(
+            raw_inquiry="RWDR 45x62x8, Getriebe, Öl, undicht", fields=[]
+        ),
         user=_user(),
     )
     # Existing brief keys preserved + V1.6 readiness/one-pager attached.

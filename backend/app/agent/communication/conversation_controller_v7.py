@@ -54,9 +54,14 @@ class ConversationControllerV7:
             if payload.active_case_exists:
                 return self._active_case_process_question(payload)
             return self._meta(payload)
-        if payload.active_case_exists and self._looks_like_side_question(payload.user_message):
+        if payload.active_case_exists and self._looks_like_side_question(
+            payload.user_message
+        ):
             return self._knowledge_or_side_question(payload)
-        if payload.pre_gate_classification in {PreGateClassification.KNOWLEDGE_QUERY, PreGateClassification.DEEP_DIVE}:
+        if payload.pre_gate_classification in {
+            PreGateClassification.KNOWLEDGE_QUERY,
+            PreGateClassification.DEEP_DIVE,
+        }:
             return self._knowledge_or_side_question(payload)
         if payload.pre_gate_classification is PreGateClassification.GREETING:
             return self._smalltalk(payload)
@@ -131,11 +136,15 @@ class ConversationControllerV7:
         ):
             return True
         material_tokens = ("fkm", "nbr", "epdm", "ptfe", "ffkm", "vmq", "hnbr")
-        if normalized.startswith("und ") and any(token in normalized for token in material_tokens):
+        if normalized.startswith("und ") and any(
+            token in normalized for token in material_tokens
+        ):
             return True
         return False
 
-    def _is_technical_case_challenge(self, payload: ConversationControllerInput) -> bool:
+    def _is_technical_case_challenge(
+        self, payload: ConversationControllerInput
+    ) -> bool:
         if not is_technical_case_challenge_request(payload.user_message):
             return False
         return payload.pre_gate_classification not in {
@@ -154,7 +163,9 @@ class ConversationControllerV7:
             active_case_exists=payload.active_case_exists,
         )
 
-    def _task_stack(self, payload: ConversationControllerInput, *, side_topic: str | None = None) -> TaskStack | None:
+    def _task_stack(
+        self, payload: ConversationControllerInput, *, side_topic: str | None = None
+    ) -> TaskStack | None:
         if not payload.active_case_exists and payload.pending_question is None:
             return None
         pending = None
@@ -167,7 +178,11 @@ class ConversationControllerV7:
         primary = TaskFrame(
             task_id="primary",
             type="governed_seal_design",
-            phase=(payload.pending_question.target_field if payload.pending_question else "unknown"),
+            phase=(
+                payload.pending_question.target_field
+                if payload.pending_question
+                else "unknown"
+            ),
             pending_question=pending,
         )
         side = None
@@ -180,10 +195,16 @@ class ConversationControllerV7:
             )
         return TaskStack(primary_task=primary, active_side_task=side)
 
-    def _pending_slot_answer(self, payload: ConversationControllerInput) -> TurnDecision:
+    def _pending_slot_answer(
+        self, payload: ConversationControllerInput
+    ) -> TurnDecision:
         binding = payload.slot_answer_binding
         assert binding is not None
-        mutation_policy = MutationPolicy.PROPOSED if binding.needs_clarification else MutationPolicy.ALLOWED_BY_VALIDATOR
+        mutation_policy = (
+            MutationPolicy.PROPOSED
+            if binding.needs_clarification
+            else MutationPolicy.ALLOWED_BY_VALIDATOR
+        )
         return TurnDecision(
             turn_kind=TurnKind.PENDING_SLOT_ANSWER,
             primary_interpretation="pending_slot_answer",
@@ -195,7 +216,9 @@ class ConversationControllerV7:
                     type=StateActionType.CANDIDATE_FACT,
                     mutation_policy=mutation_policy,
                     field=binding.target_field,
-                    value=binding.normalized_value if binding.normalized_value is not None else binding.raw_value,
+                    value=binding.normalized_value
+                    if binding.normalized_value is not None
+                    else binding.raw_value,
                     source="pending_question",
                     requires_confirmation=binding.needs_clarification,
                     needs_clarification=binding.needs_clarification,
@@ -204,18 +227,24 @@ class ConversationControllerV7:
             ],
             answer_obligations=[
                 "acknowledge_candidate_fact",
-                "clarify_ambiguous_value" if binding.needs_clarification else "ask_next_best_question",
+                "clarify_ambiguous_value"
+                if binding.needs_clarification
+                else "ask_next_best_question",
                 "do_not_claim_material_suitability",
                 "return_to_primary_task",
             ],
             case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT,
             resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
-            resume_target_candidate=ResumeTarget(type="pending_question", target_field=binding.target_field),
+            resume_target_candidate=ResumeTarget(
+                type="pending_question", target_field=binding.target_field
+            ),
             task_stack=self._task_stack(payload),
             confidence=max(payload.pre_gate_confidence, binding.confidence),
         )
 
-    def _knowledge_or_side_question(self, payload: ConversationControllerInput) -> TurnDecision:
+    def _knowledge_or_side_question(
+        self, payload: ConversationControllerInput
+    ) -> TurnDecision:
         if payload.active_case_exists:
             pending_target = None
             if payload.pending_question is not None:
@@ -230,11 +259,19 @@ class ConversationControllerV7:
                 router_signals=self._router_signals(payload),
                 answer_mode=AnswerMode.ACTIVE_CASE_SIDE_QUESTION,
                 mutation_policy=MutationPolicy.FORBIDDEN,
-                answer_obligations=["answer_side_question_directly", "connect_to_active_case", "return_to_primary_task"],
+                answer_obligations=[
+                    "answer_side_question_directly",
+                    "connect_to_active_case",
+                    "return_to_primary_task",
+                ],
                 case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT,
-                resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER if pending_target else ResumeStrategy.NONE,
+                resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER
+                if pending_target
+                else ResumeStrategy.NONE,
                 resume_target_candidate=pending_target,
-                task_stack=self._task_stack(payload, side_topic="knowledge_side_question"),
+                task_stack=self._task_stack(
+                    payload, side_topic="knowledge_side_question"
+                ),
                 confidence=payload.pre_gate_confidence,
             )
         return TurnDecision(
@@ -242,7 +279,8 @@ class ConversationControllerV7:
             primary_interpretation="no_case_knowledge",
             router_signals=self._router_signals(payload),
             answer_mode=AnswerMode.MATERIAL_COMPARISON
-            if "vergleich" in payload.pre_gate_reason or "material" in payload.pre_gate_reason
+            if "vergleich" in payload.pre_gate_reason
+            or "material" in payload.pre_gate_reason
             else AnswerMode.NO_CASE_KNOWLEDGE,
             mutation_policy=MutationPolicy.FORBIDDEN,
             answer_obligations=["answer_user_question", "do_not_create_case"],
@@ -251,7 +289,9 @@ class ConversationControllerV7:
             confidence=payload.pre_gate_confidence,
         )
 
-    def _active_case_process_question(self, payload: ConversationControllerInput) -> TurnDecision:
+    def _active_case_process_question(
+        self, payload: ConversationControllerInput
+    ) -> TurnDecision:
         pending_target = None
         if payload.pending_question is not None:
             pending_target = ResumeTarget(
@@ -274,7 +314,9 @@ class ConversationControllerV7:
                 "do_not_mutate_case_state",
             ],
             case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT,
-            resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER if pending_target else ResumeStrategy.NONE,
+            resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER
+            if pending_target
+            else ResumeStrategy.NONE,
             resume_target_candidate=pending_target,
             task_stack=self._task_stack(payload, side_topic="process_question"),
             confidence=max(payload.pre_gate_confidence, 0.82),
@@ -288,7 +330,9 @@ class ConversationControllerV7:
             answer_mode=AnswerMode.SMALLTALK,
             mutation_policy=MutationPolicy.FORBIDDEN,
             answer_obligations=["respond_briefly", "do_not_mutate_case"],
-            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT if payload.active_case_exists else CaseRelevance.NO_CASE,
+            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT
+            if payload.active_case_exists
+            else CaseRelevance.NO_CASE,
             resume_strategy=ResumeStrategy.NONE,
             task_stack=self._task_stack(payload),
             confidence=payload.pre_gate_confidence,
@@ -309,8 +353,12 @@ class ConversationControllerV7:
             answer_mode=AnswerMode.META_QUESTION,
             mutation_policy=MutationPolicy.FORBIDDEN,
             answer_obligations=["answer_process_question", "return_to_primary_task"],
-            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT if payload.active_case_exists else CaseRelevance.NO_CASE,
-            resume_strategy=ResumeStrategy.RESTORE_TO_PENDING_QUESTION_V1 if pending_target else ResumeStrategy.NONE,
+            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT
+            if payload.active_case_exists
+            else CaseRelevance.NO_CASE,
+            resume_strategy=ResumeStrategy.RESTORE_TO_PENDING_QUESTION_V1
+            if pending_target
+            else ResumeStrategy.NONE,
             resume_target_candidate=pending_target,
             task_stack=self._task_stack(payload),
             confidence=payload.pre_gate_confidence,
@@ -341,14 +389,21 @@ class ConversationControllerV7:
             router_signals=self._router_signals(payload),
             answer_mode=AnswerMode.GOVERNED_INTAKE,
             mutation_policy=MutationPolicy.PROPOSED,
-            answer_obligations=["continue_case_qualification", "ask_one_main_follow_up"],
-            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT if payload.active_case_exists else CaseRelevance.NEW_CASE_CANDIDATE,
+            answer_obligations=[
+                "continue_case_qualification",
+                "ask_one_main_follow_up",
+            ],
+            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT
+            if payload.active_case_exists
+            else CaseRelevance.NEW_CASE_CANDIDATE,
             resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
             task_stack=self._task_stack(payload),
             confidence=payload.pre_gate_confidence,
         )
 
-    def _technical_case_challenge(self, payload: ConversationControllerInput) -> TurnDecision:
+    def _technical_case_challenge(
+        self, payload: ConversationControllerInput
+    ) -> TurnDecision:
         return TurnDecision(
             turn_kind=TurnKind.CASE_INTAKE,
             primary_interpretation="technical_case_challenge",
@@ -362,7 +417,9 @@ class ConversationControllerV7:
                 "do_not_claim_material_suitability",
                 "do_not_create_product_or_manufacturer_recommendation",
             ],
-            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT if payload.active_case_exists else CaseRelevance.NEW_CASE_CANDIDATE,
+            case_relevance=CaseRelevance.ACTIVE_CASE_CONTEXT
+            if payload.active_case_exists
+            else CaseRelevance.NEW_CASE_CANDIDATE,
             resume_strategy=ResumeStrategy.REEVALUATE_AFTER_ANSWER,
             task_stack=self._task_stack(payload),
             confidence=max(payload.pre_gate_confidence, 0.86),

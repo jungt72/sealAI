@@ -4,7 +4,9 @@ from app.api.v1.projections.case_workspace import project_case_workspace
 from app.domain.seal_type import SealFamily, SealType
 
 
-def _workspace_state(*, system: dict | None = None, profile: dict | None = None) -> dict:
+def _workspace_state(
+    *, system: dict | None = None, profile: dict | None = None
+) -> dict:
     return {
         "conversation": {"thread_id": "seal-application-profile"},
         "working_profile": {
@@ -79,7 +81,9 @@ def test_hydraulic_profile_includes_pressure_fluid_groove_hints() -> None:
     assert "groove_dimensions" in profile.type_specific_missing_hints
 
 
-def test_raw_user_text_can_seed_seal_type_profile_when_structured_field_missing() -> None:
+def test_raw_user_text_can_seed_seal_type_profile_when_structured_field_missing() -> (
+    None
+):
     projection = project_case_workspace(
         _workspace_state(
             system={
@@ -98,7 +102,9 @@ def test_raw_user_text_can_seed_seal_type_profile_when_structured_field_missing(
     assert "pressure_peaks" in profile.type_specific_missing_hints
 
 
-def test_parameters_snapshot_exposes_type_specific_fields_for_ui_entry_roundtrip() -> None:
+def test_parameters_snapshot_exposes_type_specific_fields_for_ui_entry_roundtrip() -> (
+    None
+):
     projection = project_case_workspace(
         _workspace_state(
             profile={
@@ -130,7 +136,9 @@ def test_mechanical_seal_profile_includes_flush_barrier_solids_hints() -> None:
     assert "solids_or_gas_content" in profile.type_specific_missing_hints
 
 
-def test_application_profile_is_read_only_additive_to_legacy_projection_fields() -> None:
+def test_application_profile_is_read_only_additive_to_legacy_projection_fields() -> (
+    None
+):
     projection = project_case_workspace(
         _workspace_state(
             system={"request_type": "new_design"},

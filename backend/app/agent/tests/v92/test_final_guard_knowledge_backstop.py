@@ -6,6 +6,7 @@ suitability / comparative-ranking / compliance subset and BLOCK leaks — while
 reading only the answer text, never the FinalAnswerContext-only fields that a
 ``NonTechnicalAnswerContext`` does not carry.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -62,7 +63,9 @@ def test_knowledge_turn_passes_neutral_deterministic_render() -> None:
 # --- smalltalk / abusive / safety stay empty (no scan, no AttributeError) -----
 
 
-@pytest.mark.parametrize("route", ["smalltalk", "abusive_or_shit_chat", "unsafe_or_blocked"])
+@pytest.mark.parametrize(
+    "route", ["smalltalk", "abusive_or_shit_chat", "unsafe_or_blocked"]
+)
 def test_non_knowledge_nontechnical_routes_stay_empty(route: str) -> None:
     # A phrase that WOULD trip the knowledge subset must still pass on these routes.
     result = validate_final_output(

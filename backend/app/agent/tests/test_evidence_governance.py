@@ -8,19 +8,25 @@ Covers:
 3. selection.py: build_final_reply forwards evidence_available to boundary
 4. No-evidence note is deterministic and never LLM-generated
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
 
 import pytest
 
-from app.agent.runtime.boundaries import build_boundary_block, _NO_EVIDENCE_NOTE, STRUCTURED_PATH_SUFFIX
+from app.agent.runtime.boundaries import (
+    build_boundary_block,
+    _NO_EVIDENCE_NOTE,
+    STRUCTURED_PATH_SUFFIX,
+)
 from app.agent.runtime.selection import build_final_reply
 
 
 # ---------------------------------------------------------------------------
 # 1 & 2: boundaries.py evidence flag
 # ---------------------------------------------------------------------------
+
 
 class TestBoundaryEvidenceFlag:
     def test_no_evidence_note_absent_by_default(self):
@@ -43,6 +49,7 @@ class TestBoundaryEvidenceFlag:
     def test_fast_path_ignores_evidence_flag(self):
         """Fast path boundary is invariant — evidence_available has no effect."""
         from app.agent.runtime.boundaries import FAST_PATH_DISCLAIMER
+
         block_with = build_boundary_block("fast", evidence_available=False)
         block_without = build_boundary_block("fast", evidence_available=True)
         assert block_with == FAST_PATH_DISCLAIMER
@@ -71,6 +78,7 @@ class TestBoundaryEvidenceFlag:
 # 3: build_final_reply forwards evidence_available
 # ---------------------------------------------------------------------------
 
+
 def _minimal_selection_state() -> dict:
     return {
         "selection_status": "blocked_no_candidates",
@@ -92,7 +100,12 @@ def _minimal_selection_state() -> dict:
             "evidence_basis": [],
             "evidence_status": "no_evidence",
             "provenance_refs": [],
-            "rationale_basis": ["blocked_no_candidates", "insufficient_inputs", "no_evidence", "non_binding_projection"],
+            "rationale_basis": [
+                "blocked_no_candidates",
+                "insufficient_inputs",
+                "no_evidence",
+                "non_binding_projection",
+            ],
             "release_status": "inadmissible",
             "rfq_admissibility": "inadmissible",
             "specificity_level": "family_only",
@@ -156,7 +169,8 @@ def _delta_selection_state(
         "allowed_surface_claims": [],
         "next_user_action": next_step,
         "visible_warning_flags": [],
-        "suppress_recommendation_details": output_status != "governed_non_binding_result",
+        "suppress_recommendation_details": output_status
+        != "governed_non_binding_result",
     }
     state["case_summary_projection"] = {
         "current_case_status": case_status,
@@ -177,7 +191,8 @@ def _delta_selection_state(
         "warning_thresholds": [],
         "blocking_thresholds": [],
         "threshold_status": threshold_status,
-        "usable_for_governed_step": domain_status not in {"out_of_domain_scope", "escalation_required"},
+        "usable_for_governed_step": domain_status
+        not in {"out_of_domain_scope", "escalation_required"},
     }
     state["threshold_projection"] = {
         "triggered_thresholds": [],
@@ -195,15 +210,23 @@ def _delta_selection_state(
     }
     state["conflict_status_projection"] = {
         "status": conflict_status,
-        "affected_keys": ["pressure"] if conflict_status == "unresolved_conflict" else [],
-        "previous_value_summary": "pressure=5.0" if conflict_status == "unresolved_conflict" else "",
-        "current_value_summary": "pressure=10.0" if conflict_status == "unresolved_conflict" else "",
+        "affected_keys": ["pressure"]
+        if conflict_status == "unresolved_conflict"
+        else [],
+        "previous_value_summary": "pressure=5.0"
+        if conflict_status == "unresolved_conflict"
+        else "",
+        "current_value_summary": "pressure=10.0"
+        if conflict_status == "unresolved_conflict"
+        else "",
         "correction_applied": conflict_status == "corrected_conflict",
         "conflict_still_open": conflict_status == "unresolved_conflict",
     }
     state["projection_invariant_projection"] = {
         "invariant_ok": invariant_ok,
-        "invariant_violations": [] if invariant_ok else ["governed_result_suppressed_details"],
+        "invariant_violations": []
+        if invariant_ok
+        else ["governed_result_suppressed_details"],
     }
     return state
 
@@ -223,16 +246,20 @@ class TestBuildFinalReplyEvidenceFlag:
         state = _minimal_selection_state()
         for ev in (True, False):
             reply = build_final_reply(state, evidence_available=ev)
-            assert STRUCTURED_PATH_SUFFIX in reply, f"Suffix missing for evidence_available={ev}"
+            assert (
+                STRUCTURED_PATH_SUFFIX in reply
+            ), f"Suffix missing for evidence_available={ev}"
 
 
 # ---------------------------------------------------------------------------
 # Phase 1A — PATCH 2: Named engineering gates
 # ---------------------------------------------------------------------------
 
+
 def _make_empty_sealing_state():
     """Minimal SealingAIState with fully empty asserted layer — no core params."""
     from app.agent.domain.logic import _ensure_state_shape
+
     state = {}
     _ensure_state_shape(state)
     return state
@@ -241,6 +268,7 @@ def _make_empty_sealing_state():
 def _make_partial_sealing_state(*, medium=None, pressure=None, temperature=None):
     """SealingAIState with selectively populated asserted core params."""
     from app.agent.domain.logic import _ensure_state_shape
+
     state = {}
     _ensure_state_shape(state)
     asserted = state["asserted"]
@@ -259,30 +287,37 @@ class TestNamedGateConstants:
 
     def test_gate_insufficient_required_inputs_constant(self):
         from app.agent.domain.logic import GATE_INSUFFICIENT_REQUIRED_INPUTS
+
         assert GATE_INSUFFICIENT_REQUIRED_INPUTS == "insufficient_required_inputs"
 
     def test_gate_demo_data_in_scope_constant(self):
         from app.agent.domain.logic import GATE_DEMO_DATA_IN_SCOPE
+
         assert GATE_DEMO_DATA_IN_SCOPE == "demo_data_in_scope"
 
     def test_gate_review_required_constant(self):
         from app.agent.domain.logic import GATE_REVIEW_REQUIRED
+
         assert GATE_REVIEW_REQUIRED == "review_required"
 
     def test_gate_evidence_missing_constant(self):
         from app.agent.domain.logic import GATE_EVIDENCE_MISSING
+
         assert GATE_EVIDENCE_MISSING == "evidence_missing"
 
     def test_gate_evidence_insufficient_constant(self):
         from app.agent.domain.logic import GATE_EVIDENCE_INSUFFICIENT
+
         assert GATE_EVIDENCE_INSUFFICIENT == "evidence_insufficient"
 
     def test_gate_out_of_scope_constant(self):
         from app.agent.domain.logic import GATE_OUT_OF_SCOPE
+
         assert GATE_OUT_OF_SCOPE == "out_of_scope"
 
     def test_gate_blocked_by_boundary_constant(self):
         from app.agent.domain.logic import GATE_BLOCKED_BY_BOUNDARY
+
         assert GATE_BLOCKED_BY_BOUNDARY == "blocked_by_boundary"
 
 
@@ -290,15 +325,21 @@ class TestInsufficientRequiredInputsGate:
     """GATE_INSUFFICIENT_REQUIRED_INPUTS fires when no core param is in asserted."""
 
     def test_empty_asserted_produces_insufficient_required_inputs_gate(self):
-        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import (
+            _derive_governance_from_state,
+            GATE_INSUFFICIENT_REQUIRED_INPUTS,
+        )
+
         state = _make_empty_sealing_state()
         _derive_governance_from_state(state)
-        assert GATE_INSUFFICIENT_REQUIRED_INPUTS in state["governance"]["unknowns_release_blocking"], (
-            "Empty asserted_state must produce GATE_INSUFFICIENT_REQUIRED_INPUTS in unknowns_release_blocking"
-        )
+        assert (
+            GATE_INSUFFICIENT_REQUIRED_INPUTS
+            in state["governance"]["unknowns_release_blocking"]
+        ), "Empty asserted_state must produce GATE_INSUFFICIENT_REQUIRED_INPUTS in unknowns_release_blocking"
 
     def test_empty_asserted_results_in_inadmissible(self):
         from app.agent.domain.logic import _derive_governance_from_state
+
         state = _make_empty_sealing_state()
         _derive_governance_from_state(state)
         assert state["governance"]["release_status"] == "inadmissible"
@@ -306,38 +347,66 @@ class TestInsufficientRequiredInputsGate:
     def test_medium_only_does_not_fire_insufficient_gate(self):
         """Medium confirmed but pressure/temperature missing → gate must NOT fire
         (we have something to work with; the issue is incompleteness, not total absence)."""
-        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
-        state = _make_partial_sealing_state(medium="Hydrauliköl")
-        _derive_governance_from_state(state)
-        assert GATE_INSUFFICIENT_REQUIRED_INPUTS not in state["governance"]["unknowns_release_blocking"], (
-            "Gate must NOT fire when at least one core param is asserted"
+        from app.agent.domain.logic import (
+            _derive_governance_from_state,
+            GATE_INSUFFICIENT_REQUIRED_INPUTS,
         )
 
+        state = _make_partial_sealing_state(medium="Hydrauliköl")
+        _derive_governance_from_state(state)
+        assert (
+            GATE_INSUFFICIENT_REQUIRED_INPUTS
+            not in state["governance"]["unknowns_release_blocking"]
+        ), "Gate must NOT fire when at least one core param is asserted"
+
     def test_pressure_only_does_not_fire_insufficient_gate(self):
-        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import (
+            _derive_governance_from_state,
+            GATE_INSUFFICIENT_REQUIRED_INPUTS,
+        )
+
         state = _make_partial_sealing_state(pressure=10.0)
         _derive_governance_from_state(state)
-        assert GATE_INSUFFICIENT_REQUIRED_INPUTS not in state["governance"]["unknowns_release_blocking"]
+        assert (
+            GATE_INSUFFICIENT_REQUIRED_INPUTS
+            not in state["governance"]["unknowns_release_blocking"]
+        )
 
     def test_all_three_core_params_no_insufficient_gate(self):
-        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
-        state = _make_partial_sealing_state(medium="Wasser", pressure=5.0, temperature=80.0)
+        from app.agent.domain.logic import (
+            _derive_governance_from_state,
+            GATE_INSUFFICIENT_REQUIRED_INPUTS,
+        )
+
+        state = _make_partial_sealing_state(
+            medium="Wasser", pressure=5.0, temperature=80.0
+        )
         _derive_governance_from_state(state)
-        assert GATE_INSUFFICIENT_REQUIRED_INPUTS not in state["governance"]["unknowns_release_blocking"]
+        assert (
+            GATE_INSUFFICIENT_REQUIRED_INPUTS
+            not in state["governance"]["unknowns_release_blocking"]
+        )
 
     def test_gate_not_duplicated_on_second_call(self):
         """Running _derive_governance_from_state twice must not duplicate gate entries."""
-        from app.agent.domain.logic import _derive_governance_from_state, GATE_INSUFFICIENT_REQUIRED_INPUTS
+        from app.agent.domain.logic import (
+            _derive_governance_from_state,
+            GATE_INSUFFICIENT_REQUIRED_INPUTS,
+        )
+
         state = _make_empty_sealing_state()
         _derive_governance_from_state(state)
         _derive_governance_from_state(state)
-        count = state["governance"]["unknowns_release_blocking"].count(GATE_INSUFFICIENT_REQUIRED_INPUTS)
+        count = state["governance"]["unknowns_release_blocking"].count(
+            GATE_INSUFFICIENT_REQUIRED_INPUTS
+        )
         assert count == 1, f"Gate must appear exactly once, got {count}"
 
 
 # ---------------------------------------------------------------------------
 # Phase 1B — PATCH 1: Central OutputReadinessDecision
 # ---------------------------------------------------------------------------
+
 
 def _full_asserted() -> dict:
     return {
@@ -381,9 +450,13 @@ class TestOutputReadinessDecision:
 
     def test_releasable_when_all_conditions_met(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _green_governance(),
-            review_state=None, evidence_available=True, demo_data_present=False,
+            _full_asserted(),
+            _green_governance(),
+            review_state=None,
+            evidence_available=True,
+            demo_data_present=False,
         )
         assert decision.releasable is True
         assert decision.status == "releasable"
@@ -391,19 +464,24 @@ class TestOutputReadinessDecision:
 
     def test_insufficient_inputs_when_no_params(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(None, _green_governance())
         assert decision.releasable is False
         assert decision.status == "insufficient_inputs"
 
     def test_insufficient_inputs_takes_priority_over_governance_blocked(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(None, _blocking_governance())
         assert decision.status == "insufficient_inputs"
 
     def test_demo_data_quarantine_when_demo_data_present(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _green_governance(), demo_data_present=True,
+            _full_asserted(),
+            _green_governance(),
+            demo_data_present=True,
         )
         assert decision.releasable is False
         assert decision.status == "demo_data_quarantine"
@@ -411,52 +489,70 @@ class TestOutputReadinessDecision:
     def test_demo_data_takes_priority_over_evidence_missing(self):
         """demo_data_quarantine fires before evidence_missing when both apply."""
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _green_governance(),
-            demo_data_present=True, evidence_available=False,
+            _full_asserted(),
+            _green_governance(),
+            demo_data_present=True,
+            evidence_available=False,
         )
         assert decision.status == "demo_data_quarantine"
 
     def test_evidence_missing_when_not_available(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _green_governance(), evidence_available=False,
+            _full_asserted(),
+            _green_governance(),
+            evidence_available=False,
         )
         assert decision.releasable is False
         assert decision.status == "evidence_missing"
 
     def test_review_pending_when_review_required(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _green_governance(), review_state=_pending_review(),
+            _full_asserted(),
+            _green_governance(),
+            review_state=_pending_review(),
         )
         assert decision.releasable is False
         assert decision.status == "review_pending"
 
     def test_review_pending_includes_reason_in_blocking_reason(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _green_governance(), review_state=_pending_review(),
+            _full_asserted(),
+            _green_governance(),
+            review_state=_pending_review(),
         )
         assert "Hersteller-Validierung" in decision.blocking_reason
 
     def test_governance_blocked_when_governance_not_ready(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         decision = evaluate_output_readiness(
-            _full_asserted(), _blocking_governance(),
-            review_state=None, evidence_available=True, demo_data_present=False,
+            _full_asserted(),
+            _blocking_governance(),
+            review_state=None,
+            evidence_available=True,
+            demo_data_present=False,
         )
         assert decision.releasable is False
         assert decision.status == "governance_blocked"
 
     def test_governance_blocked_when_gate_failures_present(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         gov = {**_green_governance(), "gate_failures": ["evidence_insufficient"]}
         decision = evaluate_output_readiness(_full_asserted(), gov)
         assert decision.status == "governance_blocked"
 
     def test_governance_blocked_when_blocking_unknowns_present(self):
         from app.agent.runtime.selection import evaluate_output_readiness
+
         gov = {**_green_governance(), "unknowns_release_blocking": ["review_required"]}
         decision = evaluate_output_readiness(_full_asserted(), gov)
         assert decision.status == "governance_blocked"
@@ -464,6 +560,7 @@ class TestOutputReadinessDecision:
     def test_decision_is_deterministic(self):
         """Same inputs must always return identical decision."""
         from app.agent.runtime.selection import evaluate_output_readiness
+
         d1 = evaluate_output_readiness(_full_asserted(), _green_governance())
         d2 = evaluate_output_readiness(_full_asserted(), _green_governance())
         assert d1 == d2
@@ -471,6 +568,7 @@ class TestOutputReadinessDecision:
     def test_blocking_reason_non_empty_when_not_releasable(self):
         """Every non-releasable decision must have an explanatory blocking_reason."""
         from app.agent.runtime.selection import evaluate_output_readiness
+
         for scenario in [
             (None, _green_governance(), {}),
             (_full_asserted(), _green_governance(), {"demo": True}),
@@ -479,14 +577,15 @@ class TestOutputReadinessDecision:
         ]:
             asserted, gov, extras = scenario
             decision = evaluate_output_readiness(
-                asserted, gov,
+                asserted,
+                gov,
                 demo_data_present=extras.get("demo", False),
                 evidence_available=extras.get("ev", True),
             )
             if not decision.releasable:
-                assert decision.blocking_reason, (
-                    f"blocking_reason must be non-empty for status={decision.status!r}"
-                )
+                assert (
+                    decision.blocking_reason
+                ), f"blocking_reason must be non-empty for status={decision.status!r}"
 
 
 class TestEvidenceProvenanceProjection:
@@ -596,7 +695,10 @@ class TestGovernedRecommendationArtifact:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {"pressure": 10.0}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 10.0},
+            },
         )
 
         artifact = state["recommendation_artifact"]
@@ -713,7 +815,16 @@ class TestGovernedRecommendationArtifact:
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
-            governance_state={**_green_governance(), "conflicts": [{"field": "pressure", "type": "parameter_conflict", "severity": "CRITICAL"}]},
+            governance_state={
+                **_green_governance(),
+                "conflicts": [
+                    {
+                        "field": "pressure",
+                        "type": "parameter_conflict",
+                        "severity": "CRITICAL",
+                    }
+                ],
+            },
             asserted_state=_full_asserted(),
             observed_state={
                 "observed_inputs": [
@@ -721,7 +832,10 @@ class TestGovernedRecommendationArtifact:
                     {"raw_text": "Betriebsdruck 10 bar"},
                 ]
             },
-            normalized_state={"normalized_parameters": {"pressure_bar": 10.0}, "identity_records": {}},
+            normalized_state={
+                "normalized_parameters": {"pressure_bar": 10.0},
+                "identity_records": {},
+            },
         )
 
         artifact = state["recommendation_artifact"]
@@ -731,7 +845,10 @@ class TestGovernedRecommendationArtifact:
         assert state["correction_projection"]["conflict_still_open"] is True
 
     def test_corrected_value_keeps_projection_consistent(self):
-        from app.agent.runtime.selection import build_selection_state, CORRECTION_APPLIED_PREFIX
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            CORRECTION_APPLIED_PREFIX,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -744,7 +861,10 @@ class TestGovernedRecommendationArtifact:
                     {"raw_text": "Betriebsdruck 10 bar"},
                 ]
             },
-            normalized_state={"normalized_parameters": {"pressure_bar": 10.0}, "identity_records": {}},
+            normalized_state={
+                "normalized_parameters": {"pressure_bar": 10.0},
+                "identity_records": {},
+            },
         )
 
         artifact = state["recommendation_artifact"]
@@ -754,7 +874,10 @@ class TestGovernedRecommendationArtifact:
         assert CORRECTION_APPLIED_PREFIX in artifact["rationale_summary"]
 
     def test_integrity_warning_keeps_releasable_projection_but_marks_warning(self):
-        from app.agent.runtime.selection import build_selection_state, INTEGRITY_WARNING_PREFIX
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            INTEGRITY_WARNING_PREFIX,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -765,7 +888,10 @@ class TestGovernedRecommendationArtifact:
                 "operating_conditions": {"pressure": 6.8948, "temperature": 80.0},
             },
             normalized_state={
-                "normalized_parameters": {"pressure_bar": 6.8948, "temperature_c": 80.0},
+                "normalized_parameters": {
+                    "pressure_bar": 6.8948,
+                    "temperature_c": 80.0,
+                },
                 "identity_records": {
                     "pressure": {
                         "raw_value": "100 psi",
@@ -841,10 +967,15 @@ class TestGovernedRecommendationArtifact:
         assert artifact["candidate_projection"] is None
         assert artifact["readiness_status"] == "integrity_unusable"
         assert artifact["integrity_status"] == "unusable_until_clarified"
-        assert state["parameter_integrity_projection"]["blocking_keys"] == ["temperature"]
+        assert state["parameter_integrity_projection"]["blocking_keys"] == [
+            "temperature"
+        ]
 
     def test_domain_warning_keeps_candidate_projection_but_marks_scope_warning(self):
-        from app.agent.runtime.selection import build_selection_state, DOMAIN_WARNING_PREFIX
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            DOMAIN_WARNING_PREFIX,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -961,7 +1092,10 @@ class TestReviewEscalationProjection:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {"pressure": 10.0}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 10.0},
+            },
         )
         projection = state["review_escalation_projection"]
         assert projection["status"] == "withheld_missing_core_inputs"
@@ -991,7 +1125,9 @@ class TestReviewEscalationProjection:
         from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
-            relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
+            relevant_fact_cards=[
+                _qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)
+            ],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
@@ -1007,7 +1143,16 @@ class TestReviewEscalationProjection:
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
-            governance_state={**_green_governance(), "conflicts": [{"field": "pressure", "type": "parameter_conflict", "severity": "CRITICAL"}]},
+            governance_state={
+                **_green_governance(),
+                "conflicts": [
+                    {
+                        "field": "pressure",
+                        "type": "parameter_conflict",
+                        "severity": "CRITICAL",
+                    }
+                ],
+            },
             asserted_state=_full_asserted(),
             observed_state={
                 "observed_inputs": [
@@ -1015,7 +1160,10 @@ class TestReviewEscalationProjection:
                     {"raw_text": "Betriebsdruck 10 bar"},
                 ]
             },
-            normalized_state={"normalized_parameters": {"pressure_bar": 10.0}, "identity_records": {}},
+            normalized_state={
+                "normalized_parameters": {"pressure_bar": 10.0},
+                "identity_records": {},
+            },
         )
         projection = state["review_escalation_projection"]
         assert projection["status"] == "escalation_needed"
@@ -1075,7 +1223,10 @@ class TestReviewEscalationProjection:
         )
         projection = state["review_escalation_projection"]
         assert projection["status"] == "escalation_needed"
-        assert "Betriebsbedingungen" in projection["reason"] or "Anwendungsbereich" in projection["reason"]
+        assert (
+            "Betriebsbedingungen" in projection["reason"]
+            or "Anwendungsbereich" in projection["reason"]
+        )
 
 
 class TestClarificationEvidenceBinding:
@@ -1086,7 +1237,10 @@ class TestClarificationEvidenceBinding:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {},
+            },
         )
         projection = state["clarification_projection"]
         assert projection["clarification_still_meaningful"] is True
@@ -1115,7 +1269,16 @@ class TestClarificationEvidenceBinding:
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
-            governance_state={**_green_governance(), "conflicts": [{"field": "pressure", "type": "parameter_conflict", "severity": "CRITICAL"}]},
+            governance_state={
+                **_green_governance(),
+                "conflicts": [
+                    {
+                        "field": "pressure",
+                        "type": "parameter_conflict",
+                        "severity": "CRITICAL",
+                    }
+                ],
+            },
             asserted_state=_full_asserted(),
             evidence_available=False,
             observed_state={
@@ -1124,10 +1287,15 @@ class TestClarificationEvidenceBinding:
                     {"raw_text": "Betriebsdruck 10 bar"},
                 ]
             },
-            normalized_state={"normalized_parameters": {"pressure_bar": 10.0}, "identity_records": {}},
+            normalized_state={
+                "normalized_parameters": {"pressure_bar": 10.0},
+                "identity_records": {},
+            },
         )
         assert state["review_escalation_projection"]["status"] == "withheld_no_evidence"
-        assert state["clarification_projection"]["clarification_still_meaningful"] is False
+        assert (
+            state["clarification_projection"]["clarification_still_meaningful"] is False
+        )
 
     def test_integrity_unusable_drives_targeted_clarification(self):
         from app.agent.runtime.selection import build_selection_state
@@ -1180,7 +1348,10 @@ class TestClarificationEvidenceBinding:
         )
         projection = state["clarification_projection"]
         assert projection["clarification_still_meaningful"] is False
-        assert "Betriebsbedingungen" in projection["reason_if_not"] or "Anwendungsbereich" in projection["reason_if_not"]
+        assert (
+            "Betriebsbedingungen" in projection["reason_if_not"]
+            or "Anwendungsbereich" in projection["reason_if_not"]
+        )
 
 
 class TestUserFacingOutputContract:
@@ -1191,9 +1362,14 @@ class TestUserFacingOutputContract:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {},
+            },
         )
-        assert state["user_facing_output_projection"]["status"] == "clarification_needed"
+        assert (
+            state["user_facing_output_projection"]["status"] == "clarification_needed"
+        )
         contract = state["output_contract_projection"]
         assert contract["output_status"] == "clarification_needed"
         assert contract["next_user_action"] == "answer_next_question"
@@ -1225,7 +1401,9 @@ class TestUserFacingOutputContract:
             asserted_state=_full_asserted(),
             evidence_available=False,
         )
-        assert state["user_facing_output_projection"]["status"] == "withheld_no_evidence"
+        assert (
+            state["user_facing_output_projection"]["status"] == "withheld_no_evidence"
+        )
         contract = state["output_contract_projection"]
         assert contract["output_status"] == "withheld_no_evidence"
         assert contract["next_user_action"] == "obtain_qualified_evidence"
@@ -1245,7 +1423,9 @@ class TestUserFacingOutputContract:
             },
             working_profile={"shaft_diameter_mm": 50.0, "speed_rpm": 1000.0},
         )
-        assert state["user_facing_output_projection"]["status"] == "withheld_domain_block"
+        assert (
+            state["user_facing_output_projection"]["status"] == "withheld_domain_block"
+        )
         contract = state["output_contract_projection"]
         assert contract["output_status"] == "withheld_domain_block"
         assert contract["next_user_action"] == "engineering_escalation"
@@ -1260,7 +1440,10 @@ class TestUserFacingOutputContract:
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
         )
-        assert state["user_facing_output_projection"]["status"] == "governed_non_binding_result"
+        assert (
+            state["user_facing_output_projection"]["status"]
+            == "governed_non_binding_result"
+        )
         contract = state["output_contract_projection"]
         assert contract["output_status"] == "governed_non_binding_result"
         assert contract["next_user_action"] == "confirmed_result_review"
@@ -1269,7 +1452,10 @@ class TestUserFacingOutputContract:
 
 class TestProjectionInvariants:
     def test_consistent_releasable_state_has_no_invariant_violations(self):
-        from app.agent.runtime.selection import build_selection_state, project_projection_invariants
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            project_projection_invariants,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -1291,7 +1477,9 @@ class TestProjectionInvariants:
 
         assert projection == {"invariant_ok": True, "invariant_violations": []}
 
-    def test_projection_invariants_report_deterministic_violations_for_impossible_combo(self):
+    def test_projection_invariants_report_deterministic_violations_for_impossible_combo(
+        self,
+    ):
         from app.agent.runtime.selection import project_projection_invariants
 
         projection = project_projection_invariants(
@@ -1303,7 +1491,9 @@ class TestProjectionInvariants:
             clarification_projection={"clarification_still_meaningful": True},
             evidence_provenance_projection={"status": "no_evidence"},
             conflict_status_projection={"conflict_still_open": True},
-            parameter_integrity_projection={"integrity_status": "unusable_until_clarified"},
+            parameter_integrity_projection={
+                "integrity_status": "unusable_until_clarified"
+            },
             domain_scope_projection={"status": "out_of_domain_scope"},
             output_contract_projection={
                 "output_status": "governed_non_binding_result",
@@ -1319,7 +1509,9 @@ class TestProjectionInvariants:
             "releasable_readiness_conflicts_with_blocking_projection",
         ]
 
-    def test_build_selection_state_downgrades_when_invariant_violation_is_introduced(self):
+    def test_build_selection_state_downgrades_when_invariant_violation_is_introduced(
+        self,
+    ):
         from app.agent.runtime.selection import build_selection_state
 
         def _contradictory_contract(**_: object) -> dict:
@@ -1346,15 +1538,26 @@ class TestProjectionInvariants:
         assert state["projection_invariant_projection"]["invariant_violations"] == [
             "governed_result_cannot_suppress_recommendation_details",
         ]
-        assert state["output_contract_projection"]["output_status"] == "withheld_escalation"
-        assert state["output_contract_projection"]["suppress_recommendation_details"] is True
+        assert (
+            state["output_contract_projection"]["output_status"]
+            == "withheld_escalation"
+        )
+        assert (
+            state["output_contract_projection"]["suppress_recommendation_details"]
+            is True
+        )
         assert state["output_contract_projection"]["allowed_surface_claims"] == [
             "withheld",
             "state_invariant_violation",
         ]
-        assert "invariant_violation" in state["output_contract_projection"]["visible_warning_flags"]
+        assert (
+            "invariant_violation"
+            in state["output_contract_projection"]["visible_warning_flags"]
+        )
         assert state["recommendation_artifact"]["candidate_projection"] is None
-        assert state["recommendation_artifact"]["readiness_status"] == "invariant_blocked"
+        assert (
+            state["recommendation_artifact"]["readiness_status"] == "invariant_blocked"
+        )
         assert state["output_blocked"] is True
 
 
@@ -1366,7 +1569,10 @@ class TestStateTraceAuditProjection:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {},
+            },
         )
         trace = state["state_trace_audit_projection"]
         assert trace["primary_status_reason"] == "clarification_missing_inputs"
@@ -1392,7 +1598,9 @@ class TestStateTraceAuditProjection:
         from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
-            relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
+            relevant_fact_cards=[
+                _qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)
+            ],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
@@ -1427,7 +1635,10 @@ class TestStateTraceAuditProjection:
         trace = state["state_trace_audit_projection"]
         assert trace["primary_status_reason"] == "invariant_blocked"
         assert trace["blocking_reasons"] == ["invariant_blocked"]
-        assert "governed_result_cannot_suppress_recommendation_details" in trace["contributing_reasons"]
+        assert (
+            "governed_result_cannot_suppress_recommendation_details"
+            in trace["contributing_reasons"]
+        )
         assert "invariant_violation" in trace["trace_flags"]
 
     def test_releasable_governed_case_projects_trace_reason(self):
@@ -1445,7 +1656,10 @@ class TestStateTraceAuditProjection:
         assert "thin_evidence" in trace["trace_flags"]
 
     def test_trace_helpers_expose_primary_reason_and_blockers(self):
-        from app.agent.runtime.selection import get_primary_trace_reason, is_blocked_by_trace
+        from app.agent.runtime.selection import (
+            get_primary_trace_reason,
+            is_blocked_by_trace,
+        )
 
         trace = {
             "primary_status_reason": "review_pending",
@@ -1483,7 +1697,10 @@ class TestCaseSummaryProjection:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {},
+            },
         )
         summary = state["case_summary_projection"]
         assert summary["current_case_status"] == "clarification_needed"
@@ -1511,7 +1728,9 @@ class TestCaseSummaryProjection:
         from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
-            relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
+            relevant_fact_cards=[
+                _qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)
+            ],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
@@ -1550,7 +1769,11 @@ class TestCaseSummaryProjection:
         assert summary["next_step"] == "engineering_escalation"
 
     def test_summary_helpers_expose_status_step_and_blockers(self):
-        from app.agent.runtime.selection import get_case_status, get_next_case_step, has_active_blockers
+        from app.agent.runtime.selection import (
+            get_case_status,
+            get_next_case_step,
+            has_active_blockers,
+        )
 
         summary = {
             "current_case_status": "withheld_review",
@@ -1572,7 +1795,10 @@ class TestActionabilityProjection:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {},
+            },
         )
         projection = state["actionability_projection"]
         assert projection["actionability_status"] == "input_required"
@@ -1599,7 +1825,9 @@ class TestActionabilityProjection:
         from app.agent.runtime.selection import build_selection_state
 
         state = build_selection_state(
-            relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
+            relevant_fact_cards=[
+                _qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)
+            ],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
@@ -1646,7 +1874,10 @@ class TestActionabilityProjection:
                 "handover_possible": True,
             },
             clarification_projection={"clarification_still_meaningful": False},
-            projection_invariant_projection={"invariant_ok": True, "invariant_violations": []},
+            projection_invariant_projection={
+                "invariant_ok": True,
+                "invariant_violations": [],
+            },
         )
         assert projection["actionability_status"] == "handoverable_restricted"
         assert projection["primary_allowed_action"] == "prepare_handover"
@@ -1729,7 +1960,10 @@ class TestStateDeltaProjection:
         assert projection["changed_keys"] == ["domain_scope_status", "threshold_status"]
         assert projection["primary_delta_reason"] == "threshold_scope_changed"
         assert projection["delta_direction"] == "degraded"
-        assert projection["changed_statuses"]["domain_scope_status"]["delta"] == "neutral_to_warning"
+        assert (
+            projection["changed_statuses"]["domain_scope_status"]["delta"]
+            == "neutral_to_warning"
+        )
 
     def test_single_parameter_flip_projects_warning_to_blocked(self):
         from app.agent.runtime.selection import build_state_delta_projection
@@ -1762,8 +1996,14 @@ class TestStateDeltaProjection:
         )
         assert projection["primary_delta_reason"] == "threshold_scope_changed"
         assert projection["delta_direction"] == "more_blocked"
-        assert projection["changed_statuses"]["domain_scope_status"]["delta"] == "warning_to_blocked"
-        assert projection["changed_statuses"]["output_status"]["to"] == "withheld_escalation"
+        assert (
+            projection["changed_statuses"]["domain_scope_status"]["delta"]
+            == "warning_to_blocked"
+        )
+        assert (
+            projection["changed_statuses"]["output_status"]["to"]
+            == "withheld_escalation"
+        )
         assert "blocked_actions" in projection["changed_keys"]
 
     def test_conflict_correction_projects_improved_delta(self):
@@ -1795,8 +2035,14 @@ class TestStateDeltaProjection:
         )
         assert projection["primary_delta_reason"] == "conflict_status_changed"
         assert projection["delta_direction"] == "improved"
-        assert projection["changed_statuses"]["conflict_status"]["delta"] == "unresolved_conflict_to_no_conflict"
-        assert projection["changed_statuses"]["output_status"]["delta"] == "withheld_escalation_to_governed_non_binding_result"
+        assert (
+            projection["changed_statuses"]["conflict_status"]["delta"]
+            == "unresolved_conflict_to_no_conflict"
+        )
+        assert (
+            projection["changed_statuses"]["output_status"]["delta"]
+            == "withheld_escalation_to_governed_non_binding_result"
+        )
 
     def test_summary_and_actionability_changes_are_tracked_without_noise(self):
         from app.agent.runtime.selection import build_state_delta_projection
@@ -1818,7 +2064,9 @@ class TestStateDeltaProjection:
             blocked_actions=["provide_missing_input", "consume_governed_result"],
             active_blockers=["review_pending"],
         )
-        current_state["recommendation_artifact"]["rationale_summary"] = "Internal note that must not affect the delta."
+        current_state["recommendation_artifact"]["rationale_summary"] = (
+            "Internal note that must not affect the delta."
+        )
 
         projection = build_state_delta_projection(
             previous_selection_state=previous_state,
@@ -1828,7 +2076,10 @@ class TestStateDeltaProjection:
         assert "next_step" in projection["changed_keys"]
         assert "blocked_actions" in projection["changed_keys"]
         assert "rationale_summary" not in projection["changed_keys"]
-        assert projection["changed_statuses"]["next_step"]["delta"] == "answer_next_question_to_human_review"
+        assert (
+            projection["changed_statuses"]["next_step"]["delta"]
+            == "answer_next_question_to_human_review"
+        )
 
     def test_irrelevant_internal_change_projects_no_delta(self):
         from app.agent.runtime.selection import build_state_delta_projection
@@ -1849,7 +2100,9 @@ class TestStateDeltaProjection:
             primary_allowed_action="consume_governed_result",
             blocked_actions=["await_review", "escalate_engineering"],
         )
-        current_state["recommendation_artifact"]["rationale_summary"] = "Different internal rationale."
+        current_state["recommendation_artifact"]["rationale_summary"] = (
+            "Different internal rationale."
+        )
 
         projection = build_state_delta_projection(
             previous_selection_state=previous_state,
@@ -1860,21 +2113,34 @@ class TestStateDeltaProjection:
         assert projection["delta_direction"] == "unchanged"
 
     def test_delta_helpers_expose_case_actionability_and_threshold_transitions(self):
-        from app.agent.runtime.selection import compare_actionability, compare_case_status, compare_threshold_scope
+        from app.agent.runtime.selection import (
+            compare_actionability,
+            compare_case_status,
+            compare_threshold_scope,
+        )
 
         previous_summary = {"current_case_status": "withheld_review"}
         current_summary = {"current_case_status": "governed_non_binding_result"}
         previous_actionability = {"actionability_status": "review_pending"}
         current_actionability = {"actionability_status": "result_available"}
 
-        assert compare_case_status(previous_summary, current_summary) == "withheld_review_to_governed_non_binding_result"
-        assert compare_actionability(previous_actionability, current_actionability) == "review_pending_to_result_available"
-        assert compare_threshold_scope(
-            previous_threshold_projection={"threshold_status": "threshold_warning"},
-            current_threshold_projection={"threshold_status": "threshold_blocking"},
-            previous_domain_scope_projection={"status": "in_domain_with_warning"},
-            current_domain_scope_projection={"status": "escalation_required"},
-        ) == "warning_to_blocked"
+        assert (
+            compare_case_status(previous_summary, current_summary)
+            == "withheld_review_to_governed_non_binding_result"
+        )
+        assert (
+            compare_actionability(previous_actionability, current_actionability)
+            == "review_pending_to_result_available"
+        )
+        assert (
+            compare_threshold_scope(
+                previous_threshold_projection={"threshold_status": "threshold_warning"},
+                current_threshold_projection={"threshold_status": "threshold_blocking"},
+                previous_domain_scope_projection={"status": "in_domain_with_warning"},
+                current_domain_scope_projection={"status": "escalation_required"},
+            )
+            == "warning_to_blocked"
+        )
 
 
 class TestStructuredSnapshotContract:
@@ -1922,7 +2188,10 @@ class TestStructuredSnapshotContract:
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
-            asserted_state={"medium_profile": {"name": "Hydrauliköl"}, "operating_conditions": {}},
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {},
+            },
         )
         snapshot = state["structured_snapshot_contract"]
         assert snapshot["case_status"] == "clarification_needed"
@@ -2010,9 +2279,18 @@ class TestStructuredSnapshotComparisonContract:
         )
         assert comparison["from_status"] == "withheld_review"
         assert comparison["to_status"] == "governed_non_binding_result"
-        assert comparison["changed_actions"]["from_primary_allowed_action"] == "await_review"
-        assert comparison["changed_actions"]["to_primary_allowed_action"] == "consume_governed_result"
-        assert comparison["changed_blockers"] == {"added": [], "removed": ["review_pending"]}
+        assert (
+            comparison["changed_actions"]["from_primary_allowed_action"]
+            == "await_review"
+        )
+        assert (
+            comparison["changed_actions"]["to_primary_allowed_action"]
+            == "consume_governed_result"
+        )
+        assert comparison["changed_blockers"] == {
+            "added": [],
+            "removed": ["review_pending"],
+        }
         assert comparison["primary_delta_reason"] == "output_status_changed"
         assert comparison["delta_direction"] == "improved"
 
@@ -2068,7 +2346,10 @@ class TestStructuredSnapshotComparisonContract:
         assert comparison["from_status"] == "governed_non_binding_result"
         assert comparison["to_status"] == "withheld_escalation"
         assert comparison["changed_actions"]["action_changed"] is True
-        assert comparison["changed_blockers"] == {"added": ["domain_threshold_blocked"], "removed": []}
+        assert comparison["changed_blockers"] == {
+            "added": ["domain_threshold_blocked"],
+            "removed": [],
+        }
         assert comparison["primary_delta_reason"] == "threshold_scope_changed"
         assert comparison["delta_direction"] == "more_blocked"
 
@@ -2119,9 +2400,17 @@ class TestStructuredSnapshotComparisonContract:
         )
         assert comparison["from_status"] == "clarification_needed"
         assert comparison["to_status"] == "withheld_review"
-        assert comparison["changed_actions"]["from_primary_allowed_action"] == "provide_missing_input"
-        assert comparison["changed_actions"]["to_primary_allowed_action"] == "await_review"
-        assert comparison["changed_blockers"] == {"added": ["review_pending"], "removed": []}
+        assert (
+            comparison["changed_actions"]["from_primary_allowed_action"]
+            == "provide_missing_input"
+        )
+        assert (
+            comparison["changed_actions"]["to_primary_allowed_action"] == "await_review"
+        )
+        assert comparison["changed_blockers"] == {
+            "added": ["review_pending"],
+            "removed": [],
+        }
         assert comparison["primary_delta_reason"] == "output_status_changed"
         assert comparison["delta_direction"] == "degraded"
 
@@ -2179,15 +2468,23 @@ class TestStructuredSnapshotComparisonContract:
 
 class TestFinalReplyRecommendationCoupling:
     def test_artifact_absent_returns_safeguarded_reply(self):
-        from app.agent.runtime.selection import build_final_reply, SAFEGUARDED_WITHHELD_REPLY
+        from app.agent.runtime.selection import (
+            build_final_reply,
+            SAFEGUARDED_WITHHELD_REPLY,
+        )
 
         state = _minimal_selection_state()
         state["recommendation_artifact"] = None
         reply = build_final_reply(state, asserted_state=_full_asserted())
         assert SAFEGUARDED_WITHHELD_REPLY in reply
 
-    def test_invariant_violation_returns_safe_reply_without_recommendation_details(self):
-        from app.agent.runtime.selection import build_final_reply, INVARIANT_BLOCKED_REPLY
+    def test_invariant_violation_returns_safe_reply_without_recommendation_details(
+        self,
+    ):
+        from app.agent.runtime.selection import (
+            build_final_reply,
+            INVARIANT_BLOCKED_REPLY,
+        )
 
         state = _minimal_selection_state()
         state["selection_status"] = "winner_selected"
@@ -2238,10 +2535,16 @@ class TestFinalReplyRecommendationCoupling:
         assert REVIEW_PENDING_REPLY in reply
 
     def test_escalation_reply_stays_consistent_with_trace_reason(self):
-        from app.agent.runtime.selection import build_final_reply, UNRESOLVED_CONFLICT_REPLY
+        from app.agent.runtime.selection import (
+            build_final_reply,
+            UNRESOLVED_CONFLICT_REPLY,
+        )
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["output_contract_projection"] = {
             "output_status": "withheld_escalation",
             "allowed_surface_claims": ["withheld", "escalation_required"],
@@ -2270,7 +2573,10 @@ class TestFinalReplyRecommendationCoupling:
         from app.agent.runtime.selection import build_final_reply
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["state_trace_audit_projection"] = {
             "primary_status_reason": "clarification_missing_inputs",
             "contributing_reasons": ["missing_inputs"],
@@ -2303,7 +2609,10 @@ class TestFinalReplyRecommendationCoupling:
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
         )
-        assert state["state_trace_audit_projection"]["primary_status_reason"] == "governed_releasable_result"
+        assert (
+            state["state_trace_audit_projection"]["primary_status_reason"]
+            == "governed_releasable_result"
+        )
         reply = build_final_reply(state, asserted_state=_full_asserted())
         assert "Orientierungsrahmen" in reply
 
@@ -2311,7 +2620,10 @@ class TestFinalReplyRecommendationCoupling:
         from app.agent.runtime.selection import build_final_reply, REVIEW_PENDING_REPLY
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["case_summary_projection"] = {
             "current_case_status": "withheld_review",
             "confirmed_core_fields": ["medium", "pressure", "temperature"],
@@ -2330,10 +2642,16 @@ class TestFinalReplyRecommendationCoupling:
         assert REVIEW_PENDING_REPLY in reply
 
     def test_escalation_reply_stays_consistent_with_case_summary_blocker(self):
-        from app.agent.runtime.selection import build_final_reply, ESCALATION_NEEDED_REPLY
+        from app.agent.runtime.selection import (
+            build_final_reply,
+            ESCALATION_NEEDED_REPLY,
+        )
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["case_summary_projection"] = {
             "current_case_status": "withheld_escalation",
             "confirmed_core_fields": ["medium", "pressure", "temperature"],
@@ -2355,7 +2673,10 @@ class TestFinalReplyRecommendationCoupling:
         from app.agent.runtime.selection import build_final_reply
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["clarification_projection"] = {
             "missing_items": ["medium"],
             "next_question_key": "medium",
@@ -2383,7 +2704,10 @@ class TestFinalReplyRecommendationCoupling:
         from app.agent.runtime.selection import build_final_reply, REVIEW_PENDING_REPLY
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["actionability_projection"] = {
             "actionability_status": "review_pending",
             "primary_allowed_action": "await_review",
@@ -2402,15 +2726,24 @@ class TestFinalReplyRecommendationCoupling:
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
         )
-        assert state["actionability_projection"]["primary_allowed_action"] == "consume_governed_result"
+        assert (
+            state["actionability_projection"]["primary_allowed_action"]
+            == "consume_governed_result"
+        )
         reply = build_final_reply(state, asserted_state=_full_asserted())
         assert "Orientierungsrahmen" in reply
 
     def test_handoverable_case_reply_stays_consistent_with_prepare_handover(self):
-        from app.agent.runtime.selection import build_final_reply, AMBIGUOUS_CANDIDATE_REPLY
+        from app.agent.runtime.selection import (
+            build_final_reply,
+            AMBIGUOUS_CANDIDATE_REPLY,
+        )
 
         state = _minimal_selection_state()
-        state["projection_invariant_projection"] = {"invariant_ok": True, "invariant_violations": []}
+        state["projection_invariant_projection"] = {
+            "invariant_ok": True,
+            "invariant_violations": [],
+        }
         state["case_summary_projection"] = {
             "current_case_status": "withheld_review",
             "confirmed_core_fields": ["medium", "pressure", "temperature"],
@@ -2428,7 +2761,11 @@ class TestFinalReplyRecommendationCoupling:
         assert AMBIGUOUS_CANDIDATE_REPLY in reply
 
     def test_delta_projection_remains_read_only_for_releasable_reply_surface(self):
-        from app.agent.runtime.selection import build_final_reply, build_selection_state, build_state_delta_projection
+        from app.agent.runtime.selection import (
+            build_final_reply,
+            build_selection_state,
+            build_state_delta_projection,
+        )
 
         previous_state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2485,13 +2822,20 @@ class TestFinalReplyRecommendationCoupling:
 
         reply = build_final_reply(state, asserted_state=_full_asserted())
         artifact = state["recommendation_artifact"]
-        assert state["output_contract_projection"]["output_status"] == "governed_non_binding_result"
+        assert (
+            state["output_contract_projection"]["output_status"]
+            == "governed_non_binding_result"
+        )
         assert artifact["rationale_summary"] in reply
         assert artifact["candidate_projection"]["candidate_id"] not in reply
         assert "eingeschränkt" in reply
 
     def test_ambiguous_projection_reply_matches_ambiguity_class(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, AMBIGUOUS_CANDIDATE_REPLY
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            AMBIGUOUS_CANDIDATE_REPLY,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[
@@ -2508,21 +2852,36 @@ class TestFinalReplyRecommendationCoupling:
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_escalation_projection_reply_matches_escalation_class(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, ESCALATION_NEEDED_REPLY
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            ESCALATION_NEEDED_REPLY,
+        )
 
         state = build_selection_state(
-            relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)],
+            relevant_fact_cards=[
+                _qualified_fact_card("fc_1", grade_name="F1", temp_max=60.0)
+            ],
             cycle_state={"analysis_cycle_id": "cycle-1"},
             governance_state=_green_governance(),
             asserted_state=_full_asserted(),
         )
         reply = build_final_reply(state, asserted_state=_full_asserted())
-        assert state["output_contract_projection"]["output_status"] == "withheld_escalation"
+        assert (
+            state["output_contract_projection"]["output_status"]
+            == "withheld_escalation"
+        )
         assert ESCALATION_NEEDED_REPLY in reply
         assert "Deterministische Candidate-Projektion" not in reply
 
-    def test_corrected_value_reply_mentions_update_without_losing_governed_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, CORRECTION_APPLIED_PREFIX
+    def test_corrected_value_reply_mentions_update_without_losing_governed_projection(
+        self,
+    ):
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            CORRECTION_APPLIED_PREFIX,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2535,19 +2894,38 @@ class TestFinalReplyRecommendationCoupling:
                     {"raw_text": "Betriebsdruck 10 bar"},
                 ]
             },
-            normalized_state={"normalized_parameters": {"pressure_bar": 10.0}, "identity_records": {}},
+            normalized_state={
+                "normalized_parameters": {"pressure_bar": 10.0},
+                "identity_records": {},
+            },
         )
         reply = build_final_reply(state, asserted_state=_full_asserted())
         assert CORRECTION_APPLIED_PREFIX in reply
-        assert state["recommendation_artifact"]["candidate_projection"]["candidate_id"] not in reply
+        assert (
+            state["recommendation_artifact"]["candidate_projection"]["candidate_id"]
+            not in reply
+        )
 
     def test_unresolved_conflict_reply_has_no_normal_governed_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, UNRESOLVED_CONFLICT_REPLY
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            UNRESOLVED_CONFLICT_REPLY,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
             cycle_state={"analysis_cycle_id": "cycle-1"},
-            governance_state={**_green_governance(), "conflicts": [{"field": "pressure", "type": "parameter_conflict", "severity": "CRITICAL"}]},
+            governance_state={
+                **_green_governance(),
+                "conflicts": [
+                    {
+                        "field": "pressure",
+                        "type": "parameter_conflict",
+                        "severity": "CRITICAL",
+                    }
+                ],
+            },
             asserted_state=_full_asserted(),
             observed_state={
                 "observed_inputs": [
@@ -2555,14 +2933,21 @@ class TestFinalReplyRecommendationCoupling:
                     {"raw_text": "Betriebsdruck 10 bar"},
                 ]
             },
-            normalized_state={"normalized_parameters": {"pressure_bar": 10.0}, "identity_records": {}},
+            normalized_state={
+                "normalized_parameters": {"pressure_bar": 10.0},
+                "identity_records": {},
+            },
         )
         reply = build_final_reply(state, asserted_state=_full_asserted())
         assert UNRESOLVED_CONFLICT_REPLY in reply
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_integrity_warning_reply_mentions_warning_but_keeps_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, INTEGRITY_WARNING_PREFIX
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            INTEGRITY_WARNING_PREFIX,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2573,7 +2958,10 @@ class TestFinalReplyRecommendationCoupling:
                 "operating_conditions": {"pressure": 6.8948, "temperature": 80.0},
             },
             normalized_state={
-                "normalized_parameters": {"pressure_bar": 6.8948, "temperature_c": 80.0},
+                "normalized_parameters": {
+                    "pressure_bar": 6.8948,
+                    "temperature_c": 80.0,
+                },
                 "identity_records": {
                     "pressure": {
                         "raw_value": "100 psi",
@@ -2585,15 +2973,23 @@ class TestFinalReplyRecommendationCoupling:
                 },
             },
         )
-        reply = build_final_reply(state, asserted_state=state["recommendation_artifact"]["candidate_projection"] and {
-            "medium_profile": {"name": "Hydrauliköl"},
-            "operating_conditions": {"pressure": 6.8948, "temperature": 80.0},
-        })
+        reply = build_final_reply(
+            state,
+            asserted_state=state["recommendation_artifact"]["candidate_projection"]
+            and {
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 6.8948, "temperature": 80.0},
+            },
+        )
         assert INTEGRITY_WARNING_PREFIX in reply
         assert "Orientierungsrahmen" in reply
 
     def test_integrity_unusable_reply_has_no_normal_governed_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, INTEGRITY_UNUSABLE_REPLY
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            INTEGRITY_UNUSABLE_REPLY,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2616,15 +3012,22 @@ class TestFinalReplyRecommendationCoupling:
                 },
             },
         )
-        reply = build_final_reply(state, asserted_state={
-            "medium_profile": {"name": "Hydrauliköl"},
-            "operating_conditions": {"pressure": 10.0, "temperature": 80.0},
-        })
+        reply = build_final_reply(
+            state,
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 10.0, "temperature": 80.0},
+            },
+        )
         assert INTEGRITY_UNUSABLE_REPLY in reply
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_domain_warning_reply_mentions_scope_warning_but_keeps_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, DOMAIN_WARNING_PREFIX
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            DOMAIN_WARNING_PREFIX,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2637,16 +3040,24 @@ class TestFinalReplyRecommendationCoupling:
             },
             working_profile={"shaft_diameter_mm": 50.0, "speed_rpm": 1000.0},
         )
-        reply = build_final_reply(state, asserted_state=state["recommendation_artifact"] and {
-            "medium_profile": {"name": "Hydrauliköl"},
-            "operating_conditions": {"pressure": 10.0, "temperature": 80.0},
-            "machine_profile": {"material": "FKM"},
-        })
+        reply = build_final_reply(
+            state,
+            asserted_state=state["recommendation_artifact"]
+            and {
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 10.0, "temperature": 80.0},
+                "machine_profile": {"material": "FKM"},
+            },
+        )
         assert DOMAIN_WARNING_PREFIX in reply
         assert "Orientierungsrahmen" in reply
 
     def test_out_of_domain_reply_has_no_normal_governed_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, OUT_OF_DOMAIN_REPLY
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            OUT_OF_DOMAIN_REPLY,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2659,16 +3070,23 @@ class TestFinalReplyRecommendationCoupling:
             },
             working_profile={"shaft_diameter_mm": 50.0, "speed_rpm": 1000.0},
         )
-        reply = build_final_reply(state, asserted_state={
-            "medium_profile": {"name": "Hydrauliköl"},
-            "operating_conditions": {"pressure": 10.0, "temperature": 220.0},
-            "machine_profile": {"material": "FKM"},
-        })
+        reply = build_final_reply(
+            state,
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 10.0, "temperature": 220.0},
+                "machine_profile": {"material": "FKM"},
+            },
+        )
         assert OUT_OF_DOMAIN_REPLY in reply
         assert "Deterministische Candidate-Projektion" not in reply
 
     def test_threshold_escalation_reply_has_no_normal_governed_projection(self):
-        from app.agent.runtime.selection import build_selection_state, build_final_reply, THRESHOLD_ESCALATION_REPLY
+        from app.agent.runtime.selection import (
+            build_selection_state,
+            build_final_reply,
+            THRESHOLD_ESCALATION_REPLY,
+        )
 
         state = build_selection_state(
             relevant_fact_cards=[_qualified_fact_card("fc_1", grade_name="F1")],
@@ -2681,10 +3099,13 @@ class TestFinalReplyRecommendationCoupling:
             },
             working_profile={"shaft_diameter_mm": 50.0, "speed_rpm": 1000.0},
         )
-        reply = build_final_reply(state, asserted_state={
-            "medium_profile": {"name": "Hydrauliköl"},
-            "operating_conditions": {"pressure": 300.0, "temperature": 80.0},
-            "machine_profile": {"material": "FKM"},
-        })
+        reply = build_final_reply(
+            state,
+            asserted_state={
+                "medium_profile": {"name": "Hydrauliköl"},
+                "operating_conditions": {"pressure": 300.0, "temperature": 80.0},
+                "machine_profile": {"material": "FKM"},
+            },
+        )
         assert THRESHOLD_ESCALATION_REPLY in reply
         assert "Deterministische Candidate-Projektion" not in reply

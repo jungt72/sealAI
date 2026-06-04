@@ -7,6 +7,7 @@ Responsibility:
     Add a first manufacturer-facing mapping layer without changing the
     manufacturer-neutral norm core or the neutral export profile.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,7 +48,9 @@ def _catalog_backed_material_family(state: GraphState) -> tuple[str | None, list
             continue
         notes.append("Manufacturer mapping is backed by the governed material catalog.")
         if record.is_demo_only:
-            notes.append("Current mapping uses demo catalog data and remains category-level only.")
+            notes.append(
+                "Current mapping uses demo catalog data and remains category-level only."
+            )
         return record.material_family, notes
     return material_family, notes
 
@@ -79,9 +82,17 @@ def _mapping_status(
     geometry_export_hint: str | None,
     sealai_request_id: str | None,
 ) -> str:
-    if not sealai_request_id and not selected_manufacturer and not mapped_material_family:
+    if (
+        not sealai_request_id
+        and not selected_manufacturer
+        and not mapped_material_family
+    ):
         return "pending"
-    if selected_manufacturer and mapped_material_family and (mapped_product_family or geometry_export_hint):
+    if (
+        selected_manufacturer
+        and mapped_material_family
+        and (mapped_product_family or geometry_export_hint)
+    ):
         return "mapped"
     if selected_manufacturer or mapped_material_family or mapped_product_family:
         return "partial"
@@ -90,7 +101,9 @@ def _mapping_status(
 
 async def manufacturer_mapping_node(state: GraphState) -> GraphState:
     """Derive a bounded manufacturer mapping from export_profile + catalog."""
-    selected_manufacturer = str(state.export_profile.selected_manufacturer or "").strip() or None
+    selected_manufacturer = (
+        str(state.export_profile.selected_manufacturer or "").strip() or None
+    )
     mapped_product_family = _mapped_product_family(state)
     mapped_material_family, catalog_notes = _catalog_backed_material_family(state)
     geometry_export_hint = _geometry_export_hint(state)
@@ -102,7 +115,9 @@ async def manufacturer_mapping_node(state: GraphState) -> GraphState:
     )
     notes = list(catalog_notes)
     if not notes:
-        notes.append("Mapping remains category-level only; no SKU or compound code is inferred.")
+        notes.append(
+            "Mapping remains category-level only; no SKU or compound code is inferred."
+        )
 
     manufacturer_mapping = ManufacturerMappingState(
         status=_mapping_status(

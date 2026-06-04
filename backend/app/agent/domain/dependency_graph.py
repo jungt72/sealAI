@@ -1,4 +1,5 @@
 """v0.4 dependency graph and stale handling for derived engineering values."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable

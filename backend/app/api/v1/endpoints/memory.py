@@ -11,7 +11,11 @@ from fastapi.responses import JSONResponse
 from qdrant_client import QdrantClient, models as qmodels
 
 from app.core.config import settings
-from app.services.auth.dependencies import RequestUser, get_current_request_user, require_tenant_id
+from app.services.auth.dependencies import (
+    RequestUser,
+    get_current_request_user,
+    require_tenant_id,
+)
 from app.services.memory.memory_core import (
     ltm_export_all,
     ltm_delete_all,
@@ -25,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 def _ltm_collection() -> str:
     """Resolve the Qdrant collection name for LTM (Long-Term-Memory)."""
-    return (settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm").strip()
+    return (
+        settings.qdrant_collection_ltm or f"{settings.qdrant_collection}-ltm"
+    ).strip()
 
 
 def _ltm_tenant_id(user: RequestUser) -> str:
@@ -59,7 +65,9 @@ async def create_memory_item(
 
     text = (payload.get("text") or "").strip()
     if not text:
-        raise HTTPException(status_code=400, detail="Field 'text' is required and must be non-empty")
+        raise HTTPException(
+            status_code=400, detail="Field 'text' is required and must be non-empty"
+        )
 
     kind = (payload.get("kind") or "note").strip()
     chat_id = (payload.get("chat_id") or None) or None
@@ -67,7 +75,9 @@ async def create_memory_item(
     point_id = uuid.uuid4().hex
     q_payload: Dict[str, Any] = {
         "user": user.user_id,  # WICHTIG: Schlüssel = 'user' (wird für Filter verwendet!)
-        "tenant_id": _ltm_tenant_id(user),  # authoritative; client value is ignored below
+        "tenant_id": _ltm_tenant_id(
+            user
+        ),  # authoritative; client value is ignored below
         "chat_id": chat_id,
         "kind": kind,
         "text": text,
@@ -95,61 +105,88 @@ async def create_memory_item(
             wait=True,
         )
 
-        logger.info(f"[LTM] create_memory_item user={user.user_id} chat_id={chat_id} id={point_id}")
+        logger.info(
+            f"[LTM] create_memory_item user={user.user_id} chat_id={chat_id} id={point_id}"
+        )
         return JSONResponse(
             {"id": point_id, "ltm_enabled": True, "success": True},
             status_code=200,
         )
 
     except Exception as exc:
-        logger.exception(f"[LTM] Fehler beim Speichern für user={user.user_id}, chat_id={chat_id}: {exc}")
+        logger.exception(
+            f"[LTM] Fehler beim Speichern für user={user.user_id}, chat_id={chat_id}: {exc}"
+        )
         raise HTTPException(status_code=500, detail="Speichern fehlgeschlagen") from exc
 
 
 # ----------------------------------------------------------------------
 # Export Memory Items
 # ----------------------------------------------------------------------
-@router.get("/export", summary="Exportiere Long-Term-Memory (Qdrant) des aktuellen Nutzers")
+@router.get(
+    "/export", summary="Exportiere Long-Term-Memory (Qdrant) des aktuellen Nutzers"
+)
 async def export_memory(
-    chat_id: Optional[str] = Query(default=None, description="Optional: nur Einträge dieses Chats exportieren"),
+    chat_id: Optional[str] = Query(
+        default=None, description="Optional: nur Einträge dieses Chats exportieren"
+    ),
     limit: int = Query(default=10000, ge=1, le=20000),
     user: RequestUser = Depends(get_current_request_user),
 ) -> JSONResponse:
     if not settings.ltm_enable:
-        return JSONResponse({"items": [], "count": 0, "ltm_enabled": False}, status_code=200)
+        return JSONResponse(
+            {"items": [], "count": 0, "ltm_enabled": False}, status_code=200
+        )
 
     try:
         items: List[Dict[str, Any]] = ltm_export_all(
-            user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id, limit=limit
+            user=user.user_id,
+            tenant_id=_ltm_tenant_id(user),
+            chat_id=chat_id,
+            limit=limit,
         )
-        logger.info(f"[LTM] export_memory user={user.user_id} chat_id={chat_id} count={len(items)}")
+        logger.info(
+            f"[LTM] export_memory user={user.user_id} chat_id={chat_id} count={len(items)}"
+        )
         return JSONResponse(
             {"items": items, "count": len(items), "ltm_enabled": True, "success": True},
             status_code=200,
         )
     except Exception as exc:
-        logger.exception(f"[LTM] Fehler beim Export für user={user.user_id}, chat_id={chat_id}: {exc}")
+        logger.exception(
+            f"[LTM] Fehler beim Export für user={user.user_id}, chat_id={chat_id}: {exc}"
+        )
         raise HTTPException(status_code=500, detail="Export fehlgeschlagen") from exc
 
 
 # ----------------------------------------------------------------------
 # Delete Memory Items
 # ----------------------------------------------------------------------
-@router.delete("", summary="Lösche Long-Term-Memory des aktuellen Nutzers (optional pro Chat)")
+@router.delete(
+    "", summary="Lösche Long-Term-Memory des aktuellen Nutzers (optional pro Chat)"
+)
 async def delete_memory(
-    chat_id: Optional[str] = Query(default=None, description="Optional: nur Einträge dieses Chats löschen"),
+    chat_id: Optional[str] = Query(
+        default=None, description="Optional: nur Einträge dieses Chats löschen"
+    ),
     user: RequestUser = Depends(get_current_request_user),
 ) -> JSONResponse:
     if not settings.ltm_enable:
         return JSONResponse({"deleted": 0, "ltm_enabled": False}, status_code=200)
 
     try:
-        deleted = ltm_delete_all(user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id)
-        logger.info(f"[LTM] delete_memory user={user.user_id} chat_id={chat_id} deleted={deleted}")
+        deleted = ltm_delete_all(
+            user=user.user_id, tenant_id=_ltm_tenant_id(user), chat_id=chat_id
+        )
+        logger.info(
+            f"[LTM] delete_memory user={user.user_id} chat_id={chat_id} deleted={deleted}"
+        )
         return JSONResponse(
             {"deleted": deleted, "ltm_enabled": True, "success": True},
             status_code=200,
         )
     except Exception as exc:
-        logger.exception(f"[LTM] Fehler beim Löschen für user={user.user_id}, chat_id={chat_id}: {exc}")
+        logger.exception(
+            f"[LTM] Fehler beim Löschen für user={user.user_id}, chat_id={chat_id}: {exc}"
+        )
         raise HTTPException(status_code=500, detail="Löschen fehlgeschlagen") from exc

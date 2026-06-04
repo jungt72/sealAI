@@ -16,7 +16,9 @@ from typing import Any, Callable, Iterable, Mapping
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.v92.models import CalculationResult
-from app.mcp.calculations.chemical_resistance import lookup as lookup_chemical_resistance
+from app.mcp.calculations.chemical_resistance import (
+    lookup as lookup_chemical_resistance,
+)
 from app.mcp.calculations.material_limits import check as check_material_limits
 
 
@@ -59,7 +61,9 @@ def output_snapshot_hash(outputs: Mapping[str, Any]) -> str:
     return stable_snapshot_hash(outputs)
 
 
-def _first_present(inputs: Mapping[str, Any], names: Iterable[str]) -> tuple[str | None, Any]:
+def _first_present(
+    inputs: Mapping[str, Any], names: Iterable[str]
+) -> tuple[str | None, Any]:
     for name in names:
         value = inputs.get(name)
         if value not in (None, ""):
@@ -77,7 +81,9 @@ def _to_positive_float(value: Any) -> float | None:
     return parsed
 
 
-def _surface_speed_from_rpm_and_diameter(request: CalculationRequest) -> CalculationResult:
+def _surface_speed_from_rpm_and_diameter(
+    request: CalculationRequest,
+) -> CalculationResult:
     diameter_key, diameter_raw = _first_present(
         request.inputs,
         ("shaft_diameter_mm", "diameter_mm", "shaft_diameter"),
@@ -116,7 +122,9 @@ def _surface_speed_from_rpm_and_diameter(request: CalculationRequest) -> Calcula
             input_snapshot_hash=input_hash,
             formula_refs=["generic_circumferential_speed_v1: pi * d_mm * rpm / 60000"],
             validity_status="input_missing",
-            limitations=["Calculation is blocked until shaft diameter and rotational speed are both known."],
+            limitations=[
+                "Calculation is blocked until shaft diameter and rotational speed are both known."
+            ],
             missing_inputs=missing,
             dependencies=dependencies,
             notes=["Missing or non-positive inputs are not estimated."],
@@ -136,7 +144,10 @@ def _surface_speed_from_rpm_and_diameter(request: CalculationRequest) -> Calcula
         formula_refs=["generic_circumferential_speed_v1: pi * d_mm * rpm / 60000"],
         output_snapshot_hash=output_snapshot_hash(outputs),
         validity_status="valid_for_screening",
-        engineering_signals=["deterministic_intermediate_value", "surface_speed_screening"],
+        engineering_signals=[
+            "deterministic_intermediate_value",
+            "surface_speed_screening",
+        ],
         limitations=[
             "Surface speed is a deterministic intermediate value, not a seal suitability or release claim."
         ],
@@ -161,10 +172,14 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
         request.inputs,
         ("temperature_c", "temperature_max_c", "operating_temperature_c"),
     )
-    _, pressure_raw = _first_present(request.inputs, ("pressure_bar", "operating_pressure_bar"))
+    _, pressure_raw = _first_present(
+        request.inputs, ("pressure_bar", "operating_pressure_bar")
+    )
     material = str(material_raw or "").strip()
     temperature_c = _to_positive_or_signed_float(temp_raw)
-    pressure_bar = _to_positive_float(pressure_raw) if pressure_raw not in (None, "") else None
+    pressure_bar = (
+        _to_positive_float(pressure_raw) if pressure_raw not in (None, "") else None
+    )
     missing = []
     if not material:
         missing.append("material")
@@ -189,7 +204,9 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
             input_snapshot_hash=input_hash,
             formula_refs=["material_limits.check"],
             validity_status="input_missing",
-            limitations=["Material-family temperature screening is blocked until material and temperature are known."],
+            limitations=[
+                "Material-family temperature screening is blocked until material and temperature are known."
+            ],
             missing_inputs=missing,
             dependencies=["material", "temperature_c", "pressure_bar"],
         )
@@ -198,7 +215,9 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
             material=material,
             temp_c=temperature_c,
             pressure_bar=pressure_bar,
-            is_dynamic=bool(request.inputs.get("is_dynamic") or request.inputs.get("dynamic")),
+            is_dynamic=bool(
+                request.inputs.get("is_dynamic") or request.inputs.get("dynamic")
+            ),
         )
     except KeyError as exc:
         outputs = {"material": material, "lookup_status": "unknown_material"}
@@ -214,7 +233,9 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
             formula_refs=["material_limits.check"],
             output_snapshot_hash=output_snapshot_hash(outputs),
             validity_status="requires_expert_review",
-            limitations=["Unknown material family cannot be screened against deterministic limits."],
+            limitations=[
+                "Unknown material family cannot be screened against deterministic limits."
+            ],
             dependencies=["material", "temperature_c", "pressure_bar"],
             notes=[str(exc)],
         )
@@ -229,7 +250,11 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
         "pressure_bar": pressure_bar,
         "pressure_ok": checked.pressure_ok,
     }
-    status = "ok" if checked.temp_ok is True and checked.pressure_ok is not False else "warning"
+    status = (
+        "ok"
+        if checked.temp_ok is True and checked.pressure_ok is not False
+        else "warning"
+    )
     validity = "valid_for_screening" if status == "ok" else "requires_expert_review"
     return CalculationResult(
         calculation_id="material.temperature_window_screening",
@@ -250,7 +275,9 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
             "pressure_ok": "bool",
         },
         formula_refs=["material_limits.check"],
-        output_snapshot_hash=output_snapshot_hash({key: value for key, value in outputs.items() if value is not None}),
+        output_snapshot_hash=output_snapshot_hash(
+            {key: value for key, value in outputs.items() if value is not None}
+        ),
         validity_status=validity,
         engineering_signals=["material_family_temperature_screening"],
         limitations=[
@@ -261,9 +288,13 @@ def _temperature_window_screening(request: CalculationRequest) -> CalculationRes
     )
 
 
-def _material_family_counterindication_check(request: CalculationRequest) -> CalculationResult:
+def _material_family_counterindication_check(
+    request: CalculationRequest,
+) -> CalculationResult:
     material_key, material_raw = _material_value(request.inputs)
-    _, medium_raw = _first_present(request.inputs, ("medium", "medium_name", "fluid", "chemical"))
+    _, medium_raw = _first_present(
+        request.inputs, ("medium", "medium_name", "fluid", "chemical")
+    )
     material = str(material_raw or "").strip()
     medium = str(medium_raw or "").strip()
     missing = []
@@ -289,7 +320,9 @@ def _material_family_counterindication_check(request: CalculationRequest) -> Cal
             input_snapshot_hash=input_hash,
             formula_refs=["chemical_resistance.lookup"],
             validity_status="input_missing",
-            limitations=["Chemical resistance screening is blocked until material family and medium are known."],
+            limitations=[
+                "Chemical resistance screening is blocked until material family and medium are known."
+            ],
             missing_inputs=missing,
             dependencies=["material", "medium"],
         )
@@ -309,7 +342,9 @@ def _material_family_counterindication_check(request: CalculationRequest) -> Cal
             formula_refs=["chemical_resistance.lookup"],
             output_snapshot_hash=output_snapshot_hash(outputs),
             validity_status="requires_expert_review",
-            limitations=["Unknown medium/material pair requires evidence or expert review."],
+            limitations=[
+                "Unknown medium/material pair requires evidence or expert review."
+            ],
             dependencies=["material", "medium"],
             notes=[str(exc)],
         )
@@ -322,7 +357,11 @@ def _material_family_counterindication_check(request: CalculationRequest) -> Cal
         "source": result.source,
     }
     status = "warning" if result.rating in {"B", "C", "X"} else "ok"
-    validity = "valid_for_screening" if result.rating in {"A", "B"} else "requires_expert_review"
+    validity = (
+        "valid_for_screening"
+        if result.rating in {"A", "B"}
+        else "requires_expert_review"
+    )
     return CalculationResult(
         calculation_id="material.chemical_resistance_screening",
         version="material_family_counterindication_check.v1",
@@ -340,7 +379,9 @@ def _material_family_counterindication_check(request: CalculationRequest) -> Cal
             "source": "text",
         },
         formula_refs=["chemical_resistance.lookup"],
-        output_snapshot_hash=output_snapshot_hash({key: value for key, value in outputs.items() if value is not None}),
+        output_snapshot_hash=output_snapshot_hash(
+            {key: value for key, value in outputs.items() if value is not None}
+        ),
         validity_status=validity,
         engineering_signals=["material_family_chemical_resistance_screening"],
         limitations=[
@@ -348,7 +389,9 @@ def _material_family_counterindication_check(request: CalculationRequest) -> Cal
         ],
         dependencies=["material", "medium"],
         notes=[result.recommendation],
-        guardrail_violations=["counterindication_rating_c"] if result.rating == "C" else [],
+        guardrail_violations=["counterindication_rating_c"]
+        if result.rating == "C"
+        else [],
     )
 
 
@@ -360,7 +403,9 @@ def _to_positive_or_signed_float(value: Any) -> float | None:
 
 
 class CalculatorRegistry:
-    def __init__(self, calculators: Iterable[RegisteredCalculator] | None = None) -> None:
+    def __init__(
+        self, calculators: Iterable[RegisteredCalculator] | None = None
+    ) -> None:
         self._calculators: dict[str, RegisteredCalculator] = {}
         for calculator in calculators or ():
             self.register(calculator)
@@ -392,7 +437,9 @@ class CalculatorRegistry:
             )
         )
 
-    def affected_calculator_ids_for_fields(self, changed_fields: Iterable[str]) -> list[str]:
+    def affected_calculator_ids_for_fields(
+        self, changed_fields: Iterable[str]
+    ) -> list[str]:
         changed = {str(field) for field in changed_fields if field}
         affected = [
             calculator.calculator_id
@@ -410,7 +457,9 @@ class CalculatorRegistry:
         return [
             MissingEngineeringField(
                 field_name=field,
-                unit="mm" if "diameter" in field else ("rpm" if "rpm" in field else None),
+                unit="mm"
+                if "diameter" in field
+                else ("rpm" if "rpm" in field else None),
                 required_for=[calculator_id],
             )
             for field in result.missing_inputs

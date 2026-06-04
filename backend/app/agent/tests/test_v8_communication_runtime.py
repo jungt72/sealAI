@@ -6,7 +6,9 @@ from app.agent.communication.communication_runtime_v8 import (
     CommunicationRuntimeV8,
     CommunicationRuntimeV8DecisionProposal,
 )
-from app.agent.communication.conversation_controller_v7 import ConversationControllerInput
+from app.agent.communication.conversation_controller_v7 import (
+    ConversationControllerInput,
+)
 from app.agent.communication.v7_contracts import AnswerMode, MutationPolicy
 from app.domain.pre_gate_classification import PreGateClassification
 

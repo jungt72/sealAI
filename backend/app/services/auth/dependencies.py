@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, WebSocket, status, Header
 
-from app.core.config import settings              # <-- korrekter Pfad!
+from app.core.config import settings  # <-- korrekter Pfad!
 from app.common.errors import error_detail
 import app.services.auth.token as auth_token
 
@@ -41,7 +41,11 @@ def _resolve_user_id(payload: dict) -> str:
     claim = (os.getenv("AUTH_USER_ID_CLAIM") or "sub").strip()
     value = payload.get(claim)
     if value is None or value == "":
-        value = payload.get("preferred_username") or payload.get("email") or payload.get("sub")
+        value = (
+            payload.get("preferred_username")
+            or payload.get("email")
+            or payload.get("sub")
+        )
         if value is None or value == "":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -51,7 +55,9 @@ def _resolve_user_id(payload: dict) -> str:
 
 
 def _resolve_username(payload: dict) -> str:
-    value = payload.get("preferred_username") or payload.get("email") or payload.get("sub")
+    value = (
+        payload.get("preferred_username") or payload.get("email") or payload.get("sub")
+    )
     return str(value) if value else "anonymous"
 
 
@@ -188,7 +194,14 @@ async def get_current_request_user(  # noqa: D401 (FastAPI-Namenskonvention)
     roles = _extract_roles(payload)
     scopes = _extract_scopes(payload)
     tenant_id = _resolve_tenant_id(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, scopes=scopes, tenant_id=tenant_id)
+    return RequestUser(
+        user_id=user_id,
+        username=username,
+        sub=sub,
+        roles=roles,
+        scopes=scopes,
+        tenant_id=tenant_id,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -233,4 +246,11 @@ async def get_current_ws_user(websocket: WebSocket) -> RequestUser:
     roles = _extract_roles(payload)
     scopes = _extract_scopes(payload)
     tenant_id = _resolve_tenant_id(payload)
-    return RequestUser(user_id=user_id, username=username, sub=sub, roles=roles, scopes=scopes, tenant_id=tenant_id)
+    return RequestUser(
+        user_id=user_id,
+        username=username,
+        sub=sub,
+        roles=roles,
+        scopes=scopes,
+        tenant_id=tenant_id,
+    )

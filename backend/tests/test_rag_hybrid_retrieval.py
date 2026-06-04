@@ -3,25 +3,43 @@ from __future__ import annotations
 import pytest
 
 
-def test_hybrid_fusion_prefers_bm25_when_vector_misses(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_fusion_prefers_bm25_when_vector_misses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.services.rag import rag_orchestrator as ro
 
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
     monkeypatch.setattr(
         ro,
         "_qdrant_search_with_retry",
-        lambda *_args, **_kwargs: ([], {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None}),
+        lambda *_args, **_kwargs: (
+            [],
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
+        ),
     )
     monkeypatch.setattr(
         ro,
         "_bm25_search",
-        lambda *_args, **_kwargs: ([
-            {
-                "text": "DIN 3760 Ra 0.4",
-                "sparse_score": 10.0,
-                "metadata": {"document_id": "doc-1", "chunk_index": 0, "tenant_id": "tenant-1"},
-            }
-        ], None),
+        lambda *_args, **_kwargs: (
+            [
+                {
+                    "text": "DIN 3760 Ra 0.4",
+                    "sparse_score": 10.0,
+                    "metadata": {
+                        "document_id": "doc-1",
+                        "chunk_index": 0,
+                        "tenant_id": "tenant-1",
+                    },
+                }
+            ],
+            None,
+        ),
     )
     monkeypatch.setattr(ro, "_fallback_external_search", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(ro, "USE_BM25", True)
@@ -52,10 +70,20 @@ def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
                 {
                     "text": "PTFE bronze",
                     "vector_score": 0.9,
-                    "metadata": {"document_id": "doc-2", "chunk_index": 1, "tenant_id": "tenant-1"},
+                    "metadata": {
+                        "document_id": "doc-2",
+                        "chunk_index": 1,
+                        "tenant_id": "tenant-1",
+                    },
                 }
             ],
-            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
         )
 
     def fake_bm25(_query, _collection, top_k=6, metadata_filters=None):
@@ -65,7 +93,11 @@ def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
                 {
                     "text": "PTFE bronze",
                     "sparse_score": 12.0,
-                    "metadata": {"document_id": "doc-2", "chunk_index": 1, "tenant_id": "tenant-1"},
+                    "metadata": {
+                        "document_id": "doc-2",
+                        "chunk_index": 1,
+                        "tenant_id": "tenant-1",
+                    },
                 }
             ],
             None,
@@ -86,13 +118,18 @@ def test_hybrid_dedup_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
         metadata_filters={"tenant_id": "tenant-1"},
     )
 
-    assert captured.get("filters") == {"tenant_id": "tenant-1", "_visibility_user_id": "tenant-1"}
+    assert captured.get("filters") == {
+        "tenant_id": "tenant-1",
+        "_visibility_user_id": "tenant-1",
+    }
     assert len(hits) == 1
     hybrid = meta.get("hybrid") or {}
     assert hybrid.get("overlap") == 1
 
 
-def test_hybrid_retrieve_applies_bm25_metadata_filters_as_and(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_retrieve_applies_bm25_metadata_filters_as_and(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.services.rag import rag_orchestrator as ro
 
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
@@ -101,7 +138,13 @@ def test_hybrid_retrieve_applies_bm25_metadata_filters_as_and(monkeypatch: pytes
         "_qdrant_search_with_retry",
         lambda *_args, **_kwargs: (
             [],
-            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
         ),
     )
     monkeypatch.setattr(
@@ -184,10 +227,20 @@ def test_hybrid_retrieve_filters_zero_scores(monkeypatch: pytest.MonkeyPatch) ->
                 {
                     "text": "irrelevant-zero",
                     "vector_score": 0.0,
-                    "metadata": {"document_id": "doc-0", "chunk_index": 0, "tenant_id": "tenant-1"},
+                    "metadata": {
+                        "document_id": "doc-0",
+                        "chunk_index": 0,
+                        "tenant_id": "tenant-1",
+                    },
                 }
             ],
-            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
         ),
     )
     monkeypatch.setattr(
@@ -198,7 +251,11 @@ def test_hybrid_retrieve_filters_zero_scores(monkeypatch: pytest.MonkeyPatch) ->
                 {
                     "text": "irrelevant-zero-bm25",
                     "sparse_score": 0.0,
-                    "metadata": {"document_id": "doc-1", "chunk_index": 0, "tenant_id": "tenant-1"},
+                    "metadata": {
+                        "document_id": "doc-1",
+                        "chunk_index": 0,
+                        "tenant_id": "tenant-1",
+                    },
                 }
             ],
             None,
@@ -230,7 +287,9 @@ def test_hybrid_retrieve_filters_zero_scores(monkeypatch: pytest.MonkeyPatch) ->
     assert meta.get("top_scores") == []
 
 
-def test_hybrid_retrieve_does_not_use_external_fallback_hits(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_retrieve_does_not_use_external_fallback_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.services.rag import rag_orchestrator as ro
 
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
@@ -239,7 +298,13 @@ def test_hybrid_retrieve_does_not_use_external_fallback_hits(monkeypatch: pytest
         "_qdrant_search_with_retry",
         lambda *_args, **_kwargs: (
             [],
-            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
         ),
     )
     monkeypatch.setattr(ro, "_bm25_search", lambda *_args, **_kwargs: ([], None))
@@ -268,7 +333,9 @@ def test_hybrid_retrieve_does_not_use_external_fallback_hits(monkeypatch: pytest
     assert meta.get("k_returned") == 0
 
 
-def test_hybrid_retrieve_applies_configured_score_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_retrieve_applies_configured_score_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.services.rag import rag_orchestrator as ro
 
     monkeypatch.setattr(ro, "_embed", lambda _texts: [[0.0]])
@@ -288,7 +355,13 @@ def test_hybrid_retrieve_applies_configured_score_threshold(monkeypatch: pytest.
                     "metadata": {"document_id": "doc-keep", "tenant_id": "tenant-1"},
                 },
             ],
-            {"attempts": 1, "timeout_s": 5.0, "elapsed_ms": 1, "retry_backoff_ms": None, "error": None},
+            {
+                "attempts": 1,
+                "timeout_s": 5.0,
+                "elapsed_ms": 1,
+                "retry_backoff_ms": None,
+                "error": None,
+            },
         ),
     )
     monkeypatch.setattr(ro, "_bm25_search", lambda *_args, **_kwargs: ([], None))

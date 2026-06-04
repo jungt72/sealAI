@@ -246,9 +246,9 @@ def test_workspace_projection_exposes_evidence_refs() -> None:
             )
         )
     )
-    check = {
-        item.calc_id: item for item in projection.cockpit_view.checks
-    }["material_medium_compatibility_precheck"]
+    check = {item.calc_id: item for item in projection.cockpit_view.checks}[
+        "material_medium_compatibility_precheck"
+    ]
 
     assert check.status == "passed"
     assert check.evidence_status == "evidence_found"
@@ -258,9 +258,7 @@ def test_workspace_projection_exposes_evidence_refs() -> None:
 
 
 def test_check_metrics_count_evidence_backed_precheck_correctly() -> None:
-    evidence_backed = _compat_check(
-        _profile(compatibility_evidence_cards=[_card()])
-    )
+    evidence_backed = _compat_check(_profile(compatibility_evidence_cards=[_card()]))
     no_evidence = _compat_check(_profile())
     metrics = build_check_metrics([evidence_backed, no_evidence])
 

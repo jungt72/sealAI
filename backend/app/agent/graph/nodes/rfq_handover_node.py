@@ -12,6 +12,7 @@ Architecture invariants:
     - Reuses existing bounded commercial handover builders.
     - Output is persisted only in RfqState.
 """
+
 from __future__ import annotations
 
 import logging
@@ -105,9 +106,17 @@ def _rfq_release_blockers(state: GraphState) -> list[str]:
     blockers.extend(list(state.matching.release_blockers))
     blockers.extend(_preselection_blocker_fields(state))
     blockers.extend(_blocking_evidence_gaps_for_release(state))
-    blockers.extend(str(item) for item in list(state.asserted.blocking_unknowns or []) if item)
-    blockers.extend(f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item)
-    blockers.extend(f"open_point:{item}" for item in list(state.governance.open_validation_points or []) if item)
+    blockers.extend(
+        str(item) for item in list(state.asserted.blocking_unknowns or []) if item
+    )
+    blockers.extend(
+        f"conflict:{item}" for item in list(state.asserted.conflict_flags or []) if item
+    )
+    blockers.extend(
+        f"open_point:{item}"
+        for item in list(state.governance.open_validation_points or [])
+        if item
+    )
     return list(dict.fromkeys(blockers))
 
 
@@ -144,7 +153,8 @@ def _recipient_refs(state: GraphState) -> list[RecipientRef]:
         recipients.append(
             RecipientRef(
                 manufacturer_name=ref.manufacturer_name,
-                qualified_for_rfq=ref.qualified_for_rfq or state.matching.status == "matched_primary_candidate",
+                qualified_for_rfq=ref.qualified_for_rfq
+                or state.matching.status == "matched_primary_candidate",
             )
         )
         seen.add(ref.manufacturer_name)
@@ -187,7 +197,9 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                     rfq_admissible=state.governance.rfq_admissible,
                     rfq_object={},
                     requirement_class=requirement_class,
-                    notes=["RFQ handover requires Class A governance with admissible technical scope."],
+                    notes=[
+                        "RFQ handover requires Class A governance with admissible technical scope."
+                    ],
                 )
             }
         )
@@ -204,7 +216,9 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                     selected_manufacturer_ref=selected,
                     recipient_refs=_recipient_refs(state),
                     requirement_class=requirement_class,
-                    notes=["RFQ handover is blocked until matching and inquiry readiness are conservatively released."],
+                    notes=[
+                        "RFQ handover is blocked until matching and inquiry readiness are conservatively released."
+                    ],
                 )
             }
         )
@@ -217,7 +231,9 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                     rfq_admissible=state.governance.rfq_admissible,
                     rfq_object={},
                     requirement_class=requirement_class,
-                    notes=["RFQ handover requires a selected manufacturer candidate from deterministic matching."],
+                    notes=[
+                        "RFQ handover requires a selected manufacturer candidate from deterministic matching."
+                    ],
                 )
             }
         )
@@ -238,12 +254,32 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
     critical_review = run_critical_review_specialist(
         CriticalReviewSpecialistInput(
             governance_summary=CriticalReviewGovernanceSummary(
-                release_status="inquiry_ready" if state.governance.rfq_admissible else "inadmissible",
-                rfq_admissibility="ready" if state.governance.rfq_admissible else "inadmissible",
-                unknowns_release_blocking=tuple(str(item) for item in list(state.asserted.blocking_unknowns or []) if item is not None),
-                unknowns_manufacturer_validation=tuple(str(item) for item in list(state.governance.open_validation_points or []) if item is not None),
-                scope_of_validity=tuple(str(item) for item in list(state.governance.validity_limits or []) if item is not None),
-                conflicts=tuple(str(item) for item in list(state.asserted.conflict_flags or []) if item is not None),
+                release_status="inquiry_ready"
+                if state.governance.rfq_admissible
+                else "inadmissible",
+                rfq_admissibility="ready"
+                if state.governance.rfq_admissible
+                else "inadmissible",
+                unknowns_release_blocking=tuple(
+                    str(item)
+                    for item in list(state.asserted.blocking_unknowns or [])
+                    if item is not None
+                ),
+                unknowns_manufacturer_validation=tuple(
+                    str(item)
+                    for item in list(state.governance.open_validation_points or [])
+                    if item is not None
+                ),
+                scope_of_validity=tuple(
+                    str(item)
+                    for item in list(state.governance.validity_limits or [])
+                    if item is not None
+                ),
+                conflicts=tuple(
+                    str(item)
+                    for item in list(state.asserted.conflict_flags or [])
+                    if item is not None
+                ),
                 review_required=False,
             ),
             recommendation_package=CriticalReviewRecommendationPackage(
@@ -255,7 +291,11 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
             ),
             matching_package=CriticalReviewMatchingPackage(
                 status=state.matching.status,
-                selected_manufacturer_ref={"manufacturer_name": selected.manufacturer_name} if selected else None,
+                selected_manufacturer_ref={
+                    "manufacturer_name": selected.manufacturer_name
+                }
+                if selected
+                else None,
             ),
             rfq_basis=CriticalReviewRfqBasis(
                 recipient_refs=tuple(ref.model_dump() for ref in recipients),
@@ -269,7 +309,8 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                     status="blocked_critical_review",
                     rfq_ready=False,
                     rfq_admissible=state.governance.rfq_admissible,
-                    critical_review_status=critical_review.critical_review_status or "failed",
+                    critical_review_status=critical_review.critical_review_status
+                    or "failed",
                     critical_review_passed=False,
                     blocking_findings=list(critical_review.blocking_findings),
                     soft_findings=list(critical_review.soft_findings),
@@ -287,7 +328,9 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
         ManufacturerRfqSpecialistInput(
             admissible_request_package=ManufacturerRfqAdmissibleRequestPackage(
                 matchability_status=state.matching.matchability_status,
-                rfq_admissibility="ready" if state.governance.rfq_admissible else "inadmissible",
+                rfq_admissibility="ready"
+                if state.governance.rfq_admissible
+                else "inadmissible",
                 requirement_class={
                     "requirement_class_id": requirement_class.class_id,
                     "description": requirement_class.description,
@@ -297,18 +340,27 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                 dimensions=_dimensions(state),
             ),
             manufacturer_capabilities=ManufacturerCapabilityPackage(
-                manufacturer_refs=tuple(ref.model_dump() for ref in state.matching.manufacturer_refs),
-                manufacturer_capabilities=tuple(
-                    capability.model_dump() for capability in state.matching.manufacturer_capabilities
+                manufacturer_refs=tuple(
+                    ref.model_dump() for ref in state.matching.manufacturer_refs
                 ),
-                selected_manufacturer_ref=selected.model_dump() if selected is not None else None,
+                manufacturer_capabilities=tuple(
+                    capability.model_dump()
+                    for capability in state.matching.manufacturer_capabilities
+                ),
+                selected_manufacturer_ref=selected.model_dump()
+                if selected is not None
+                else None,
             ),
             scope_package=ManufacturerRfqScopePackage(
                 scope_of_validity=tuple(
-                    str(item) for item in list(state.governance.validity_limits or []) if item is not None
+                    str(item)
+                    for item in list(state.governance.validity_limits or [])
+                    if item is not None
                 ),
                 open_points=tuple(
-                    str(item) for item in list(state.governance.open_validation_points or []) if item is not None
+                    str(item)
+                    for item in list(state.governance.open_validation_points or [])
+                    if item is not None
                 ),
             ),
             rfq_object=rfq_object,
@@ -341,7 +393,9 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
         rfq_admissibility="ready",
     )
 
-    payload = dict(rfq_basis.get("handover_payload") or handover.get("handover_payload") or {})
+    payload = dict(
+        rfq_basis.get("handover_payload") or handover.get("handover_payload") or {}
+    )
 
     log.debug(
         "[rfq_handover_node] rfq_ready=%s manufacturer=%s recipients=%d qualified_materials=%d",
@@ -354,10 +408,13 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
     return state.model_copy(
         update={
             "rfq": RfqState(
-                status="rfq_ready" if handover.get("is_handover_ready") else "not_ready",
+                status="rfq_ready"
+                if handover.get("is_handover_ready")
+                else "not_ready",
                 rfq_ready=bool(handover.get("is_handover_ready")),
                 rfq_admissible=state.governance.rfq_admissible,
-                critical_review_status=critical_review.critical_review_status or "passed",
+                critical_review_status=critical_review.critical_review_status
+                or "passed",
                 critical_review_passed=critical_review.critical_review_passed,
                 blocking_findings=list(critical_review.blocking_findings),
                 soft_findings=list(critical_review.soft_findings),
@@ -367,12 +424,15 @@ async def rfq_handover_node(state: GraphState) -> GraphState:
                 rfq_send_payload=dict(manufacturer_rfq.rfq_send_payload or {}),
                 selected_manufacturer_ref=selected,
                 recipient_refs=recipients,
-                qualified_material_ids=list(payload.get("qualified_material_ids") or []),
+                qualified_material_ids=list(
+                    payload.get("qualified_material_ids") or []
+                ),
                 qualified_materials=list(payload.get("qualified_materials") or []),
                 confirmed_parameters=dict(payload.get("confirmed_parameters") or {}),
                 dimensions=dict(payload.get("dimensions") or {}),
                 requirement_class=requirement_class,
-                handover_summary=str(handover.get("handover_reason") or "").strip() or None,
+                handover_summary=str(handover.get("handover_reason") or "").strip()
+                or None,
                 notes=[note for note in [handover.get("handover_reason")] if note],
             )
         }

@@ -1,4 +1,5 @@
 """Simple BM25-backed index for RAG retrieval."""
+
 from __future__ import annotations
 
 import json
@@ -9,9 +10,11 @@ from threading import RLock
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.services.rag.document import Document
+
 try:
     from langchain_community.retrievers import bm25
 except ModuleNotFoundError:
+
     class _MissingBM25Retriever:
         @classmethod
         def from_documents(cls, *_args: Any, **_kwargs: Any) -> Any:
@@ -58,7 +61,15 @@ def _resolve_bm25_dir() -> Path:
             if _is_within(upload_root, candidate) or _is_within(models_root, candidate):
                 configured_path = candidate
 
-    candidates = [p for p in [configured_path, default_dir, (models_root / _DEFAULT_BM25_SUBDIR).resolve()] if p is not None]
+    candidates = [
+        p
+        for p in [
+            configured_path,
+            default_dir,
+            (models_root / _DEFAULT_BM25_SUBDIR).resolve(),
+        ]
+        if p is not None
+    ]
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
@@ -87,7 +98,9 @@ class BM25Repository:
     """Persistent BM25 store with per-collection retrievers."""
 
     def __init__(self, data_dir: Optional[str] = None):
-        self.data_dir = _resolve_explicit_bm25_dir(data_dir) if data_dir else _resolve_bm25_dir()
+        self.data_dir = (
+            _resolve_explicit_bm25_dir(data_dir) if data_dir else _resolve_bm25_dir()
+        )
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
         self._documents: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -151,7 +164,9 @@ class BM25Repository:
         retriever = None
         if docs:
             try:
-                retriever = bm25.BM25Retriever.from_documents(docs, k=DEFAULT_BM25_TOP_K)
+                retriever = bm25.BM25Retriever.from_documents(
+                    docs, k=DEFAULT_BM25_TOP_K
+                )
             except Exception:
                 retriever = None
         with self._lock:
@@ -180,7 +195,9 @@ class BM25Repository:
         for entry in entries:
             text = str(entry.get("text") or "")
             metadata = entry.get("metadata") or {}
-            if metadata_filters and not all(metadata.get(k) == v for k, v in metadata_filters.items()):
+            if metadata_filters and not all(
+                metadata.get(k) == v for k, v in metadata_filters.items()
+            ):
                 continue
             text_tokens = self._tokenize(text)
             if not text_tokens:
@@ -198,7 +215,9 @@ class BM25Repository:
             hits.append(
                 {
                     "text": str(entry.get("text") or ""),
-                    "source": metadata.get("source") or metadata.get("document_title") or "keyword_fallback",
+                    "source": metadata.get("source")
+                    or metadata.get("document_title")
+                    or "keyword_fallback",
                     "metadata": metadata,
                     "sparse_score": float(score),
                 }
@@ -226,7 +245,12 @@ class BM25Repository:
             self._rebuild(collection)
 
     def _doc_id_from_metadata(self, metadata: Dict[str, Any], idx: int) -> str:
-        base = metadata.get("chunk_id") or metadata.get("document_id") or metadata.get("source") or "chunk"
+        base = (
+            metadata.get("chunk_id")
+            or metadata.get("document_id")
+            or metadata.get("source")
+            or "chunk"
+        )
         chunk_index = metadata.get("chunk_index")
         if chunk_index is not None:
             return f"{base}#{chunk_index}"
@@ -267,7 +291,9 @@ class BM25Repository:
             hits.append(
                 {
                     "text": doc.page_content or "",
-                    "source": metadata.get("source") or metadata.get("document_title") or "bm25",
+                    "source": metadata.get("source")
+                    or metadata.get("document_title")
+                    or "bm25",
                     "metadata": metadata,
                     "sparse_score": float(score),
                 }

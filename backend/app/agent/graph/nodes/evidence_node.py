@@ -30,6 +30,7 @@ Retrieval:
     3-tier cascade (Tier 1 hybrid, Tier 2 BM25, Tier 3 empty).
     Returns list[dict] FactCard-compatible evidence cards.
 """
+
 from __future__ import annotations
 
 import logging
@@ -48,18 +49,20 @@ _EVIDENCE_K: int = 5
 
 # Core fields and their display units for query assembly.
 _FIELD_UNIT: dict[str, str] = {
-    "pressure_bar":     "bar",
-    "temperature_c":    "°C",
+    "pressure_bar": "bar",
+    "temperature_c": "°C",
     "shaft_diameter_mm": "mm",
-    "speed_rpm":        "rpm",
+    "speed_rpm": "rpm",
 }
 
-_EVIDENCE_SENSITIVE_FIELDS: frozenset[str] = frozenset({
-    "medium_qualifiers",
-    "material",
-    "industry",
-    "compliance",
-})
+_EVIDENCE_SENSITIVE_FIELDS: frozenset[str] = frozenset(
+    {
+        "medium_qualifiers",
+        "material",
+        "industry",
+        "compliance",
+    }
+)
 
 _EVIDENCE_SENSITIVE_MEDIUM_MARKERS: tuple[str, ...] = (
     "salz",
@@ -112,13 +115,23 @@ def _build_retrieval_audit(
             "event_type": "evidence_retrieved",
             "sources_count": len(cards),
         },
-        "k_requested": metrics.get("k_requested") if isinstance(metrics, dict) else None,
-        "k_returned": metrics.get("k_returned") if isinstance(metrics, dict) else len(cards),
+        "k_requested": metrics.get("k_requested")
+        if isinstance(metrics, dict)
+        else None,
+        "k_returned": metrics.get("k_returned")
+        if isinstance(metrics, dict)
+        else len(cards),
         "threshold": metrics.get("threshold") if isinstance(metrics, dict) else None,
-        "configured_threshold": metrics.get("configured_threshold") if isinstance(metrics, dict) else None,
-        "threshold_applied": bool(metrics.get("threshold_applied")) if isinstance(metrics, dict) else False,
+        "configured_threshold": metrics.get("configured_threshold")
+        if isinstance(metrics, dict)
+        else None,
+        "threshold_applied": bool(metrics.get("threshold_applied"))
+        if isinstance(metrics, dict)
+        else False,
         "tier": metrics.get("tier") if isinstance(metrics, dict) else None,
-        "top_scores": list(metrics.get("top_scores") or [])[:3] if isinstance(metrics, dict) else [],
+        "top_scores": list(metrics.get("top_scores") or [])[:3]
+        if isinstance(metrics, dict)
+        else [],
         "top_documents": top_documents,
     }
 
@@ -156,7 +169,9 @@ def _build_evidence_query(state: GraphState) -> EvidenceQuery | None:
 
     topic = " ".join(parts) + " Dichtung"
     detected_sts_codes: list[str] = []
-    requirement_class = state.derived.requirement_class or state.governance.requirement_class
+    requirement_class = (
+        state.derived.requirement_class or state.governance.requirement_class
+    )
     if requirement_class is not None and requirement_class.class_id:
         detected_sts_codes.append(requirement_class.class_id)
 
@@ -166,14 +181,20 @@ def _build_evidence_query(state: GraphState) -> EvidenceQuery | None:
         query_intent="material_suitability",
         max_results=_EVIDENCE_K,
     )
-    log.debug("[evidence_node] built EvidenceQuery topic=%r assertions=%d", topic, len(assertions))
+    log.debug(
+        "[evidence_node] built EvidenceQuery topic=%r assertions=%d",
+        topic,
+        len(assertions),
+    )
     return query
 
 
 def _extract_source_versions(cards: list[dict]) -> dict[str, str]:
     source_versions: dict[str, str] = {}
     for card in cards:
-        metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+        metadata = (
+            card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
+        )
         source_key = (
             card.get("evidence_id")
             or card.get("id")
@@ -194,7 +215,12 @@ def _extract_source_versions(cards: list[dict]) -> dict[str, str]:
 
 def _card_id(card: dict) -> str | None:
     metadata = card.get("metadata") if isinstance(card.get("metadata"), dict) else {}
-    value = card.get("evidence_id") or card.get("id") or card.get("source_ref") or metadata.get("doc_id")
+    value = (
+        card.get("evidence_id")
+        or card.get("id")
+        or card.get("source_ref")
+        or metadata.get("doc_id")
+    )
     return str(value) if value else None
 
 
@@ -257,7 +283,9 @@ def _build_evidence_claims(state: GraphState, cards: list[dict]) -> list[SimpleC
                         claim_id=card_id,
                         field_name=field_name,
                         value=param.value,
-                        confidence="confirmed" if _has_trusted_source(card) else "estimated",
+                        confidence="confirmed"
+                        if _has_trusted_source(card)
+                        else "estimated",
                     )
                 )
                 break
@@ -276,14 +304,19 @@ def _build_evidence_classification(
         for field_name, claim in state.asserted.assertions.items()
         if _requires_source_for_field(field_name, claim.asserted_value)
     )
-    evidence_gaps = [f"missing_source_for_{field}" for field in sensitive_asserted if field not in claim_fields]
+    evidence_gaps = [
+        f"missing_source_for_{field}"
+        for field in sensitive_asserted
+        if field not in claim_fields
+    ]
     if not cards and sensitive_asserted:
         evidence_gaps.insert(0, "no_evidence_retrieved")
 
     assumption_fields = [
         field_name
         for field_name, claim in state.asserted.assertions.items()
-        if claim.confidence in {"estimated", "inferred"} and field_name not in claim_fields
+        if claim.confidence in {"estimated", "inferred"}
+        and field_name not in claim_fields
     ]
 
     unresolved_open_points = list(
@@ -298,7 +331,9 @@ def _build_evidence_classification(
         "evidence_count": len(cards),
         "trusted_sources_present": any(_has_trusted_source(card) for card in cards),
         "evidence_supported_topics": sorted(claim_fields),
-        "deterministic_findings": sorted(field for field in asserted_fields if field not in claim_fields),
+        "deterministic_findings": sorted(
+            field for field in asserted_fields if field not in claim_fields
+        ),
         "source_backed_findings": sorted(claim_fields),
         "assumption_based_findings": sorted(assumption_fields),
         "unresolved_open_points": unresolved_open_points,
@@ -341,7 +376,9 @@ async def evidence_node(state: GraphState) -> GraphState:
             tenant_id=state.tenant_id,
             return_metrics=True,
         )
-        audit = _build_retrieval_audit(query=evidence_query, cards=cards, metrics=metrics)
+        audit = _build_retrieval_audit(
+            query=evidence_query, cards=cards, metrics=metrics
+        )
         source_versions = _extract_source_versions(cards)
         evidence_claims = _build_evidence_claims(state, cards)
         asserted = (
@@ -412,7 +449,9 @@ async def evidence_node(state: GraphState) -> GraphState:
                             for field_name, claim in state.asserted.assertions.items()
                             if claim.confidence in {"estimated", "inferred"}
                         ],
-                        "unresolved_open_points": list(state.asserted.blocking_unknowns),
+                        "unresolved_open_points": list(
+                            state.asserted.blocking_unknowns
+                        ),
                         "evidence_gaps": ["retrieval_failed"],
                     }
                 ),

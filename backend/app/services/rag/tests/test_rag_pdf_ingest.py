@@ -108,7 +108,9 @@ def _capture_bm25(monkeypatch: pytest.MonkeyPatch):
     def _fake_upsert_documents(_collection, docs):
         captured["docs"] = list(docs)
 
-    monkeypatch.setattr(bm25_repo, "upsert_documents", _fake_upsert_documents, raising=False)
+    monkeypatch.setattr(
+        bm25_repo, "upsert_documents", _fake_upsert_documents, raising=False
+    )
     return captured
 
 
@@ -122,14 +124,21 @@ async def test_pdf_extracts_text_non_empty() -> None:
 
 
 @pytest.mark.anyio
-async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_pdf_chunks_include_page_number_and_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fixture_path = Path(__file__).parent / "fixtures" / "sample.pdf"
     pipeline, captured = _build_pipeline()
     bm25_captured = _capture_bm25(monkeypatch)
     monkeypatch.setattr(rag_ingest, "RAG_DOCUMENT_CONTENT_LLM_ENABLED", True)
 
     def _fake_platinum_extraction(*, text: str, filename: str):
-        return SimpleNamespace(manufacturer="SealAI", product_name=filename, operating_points=[], safety_exclusions=[])
+        return SimpleNamespace(
+            manufacturer="SealAI",
+            product_name=filename,
+            operating_points=[],
+            safety_exclusions=[],
+        )
 
     def _fake_process_document_pipeline(_llm_output, _doc_id, _additional_metadata):
         return SimpleNamespace(
@@ -146,8 +155,12 @@ async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.Mon
             quarantine_report=[],
         )
 
-    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _fake_platinum_extraction)
-    monkeypatch.setattr(rag_ingest, "process_document_pipeline", _fake_process_document_pipeline)
+    monkeypatch.setattr(
+        rag_ingest, "_extract_platinum_structured_llm", _fake_platinum_extraction
+    )
+    monkeypatch.setattr(
+        rag_ingest, "process_document_pipeline", _fake_process_document_pipeline
+    )
 
     pipeline.process_document(
         str(fixture_path),
@@ -188,7 +201,9 @@ async def test_pdf_chunks_include_page_number_and_tenant(monkeypatch: pytest.Mon
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("route_key", ["standard_or_norm", "technical_knowledge", "general_technical_doc"])
+@pytest.mark.parametrize(
+    "route_key", ["standard_or_norm", "technical_knowledge", "general_technical_doc"]
+)
 async def test_pdf_generic_routes_skip_specialized_etl(
     monkeypatch: pytest.MonkeyPatch,
     route_key: str,
@@ -200,7 +215,9 @@ async def test_pdf_generic_routes_skip_specialized_etl(
     def _unexpected_platinum(*args, **kwargs):
         raise AssertionError("specialized PDF ETL must not run for generic routes")
 
-    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _unexpected_platinum)
+    monkeypatch.setattr(
+        rag_ingest, "_extract_platinum_structured_llm", _unexpected_platinum
+    )
 
     stats = pipeline.process_document(
         str(fixture_path),
@@ -234,7 +251,12 @@ async def test_pdf_specialized_routes_keep_platinum_path(
 
     def _fake_platinum_extraction(*, text: str, filename: str):
         specialized_calls["count"] += 1
-        return SimpleNamespace(manufacturer="SealAI", product_name=filename, operating_points=[], safety_exclusions=[])
+        return SimpleNamespace(
+            manufacturer="SealAI",
+            product_name=filename,
+            operating_points=[],
+            safety_exclusions=[],
+        )
 
     def _fake_process_document_pipeline(_llm_output, _doc_id, _additional_metadata):
         return SimpleNamespace(
@@ -251,8 +273,12 @@ async def test_pdf_specialized_routes_keep_platinum_path(
             quarantine_report=[],
         )
 
-    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _fake_platinum_extraction)
-    monkeypatch.setattr(rag_ingest, "process_document_pipeline", _fake_process_document_pipeline)
+    monkeypatch.setattr(
+        rag_ingest, "_extract_platinum_structured_llm", _fake_platinum_extraction
+    )
+    monkeypatch.setattr(
+        rag_ingest, "process_document_pipeline", _fake_process_document_pipeline
+    )
 
     stats = pipeline.process_document(
         str(fixture_path),
@@ -280,9 +306,13 @@ async def test_pdf_specialized_route_uses_generic_path_when_document_llm_disable
     monkeypatch.setattr(rag_ingest, "RAG_DOCUMENT_CONTENT_LLM_ENABLED", False)
 
     def _unexpected_platinum(*args, **kwargs):
-        raise AssertionError("document-content LLM path must be disabled by default policy")
+        raise AssertionError(
+            "document-content LLM path must be disabled by default policy"
+        )
 
-    monkeypatch.setattr(rag_ingest, "_extract_platinum_structured_llm", _unexpected_platinum)
+    monkeypatch.setattr(
+        rag_ingest, "_extract_platinum_structured_llm", _unexpected_platinum
+    )
 
     stats = pipeline.process_document(
         str(fixture_path),

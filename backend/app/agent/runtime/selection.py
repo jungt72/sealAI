@@ -4,6 +4,7 @@ Selection — candidate aggregation, classification, and governed output orchest
 Canonical location for build_selection_state and supporting helpers.
 Canonical runtime selection module.
 """
+
 import re
 from typing import Any, Dict, List, Optional
 
@@ -129,8 +130,12 @@ from app.agent.state.projections_extended import (
 # Selection-specific candidate aggregation/orchestration stays here.
 
 _MATERIAL_PATTERN = re.compile(r"\b(PTFE|NBR|FKM|EPDM|SILIKON)\b", re.I)
-_GRADE_PATTERN = re.compile(r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I)
-_FILLER_PATTERN = re.compile(r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I)
+_GRADE_PATTERN = re.compile(
+    r"\b(?:grade|compound|typ|type)\s*[:\-]?\s*([a-z0-9._-]+)\b", re.I
+)
+_FILLER_PATTERN = re.compile(
+    r"\b(filled|glass[- ]filled|carbon[- ]filled|bronze[- ]filled)\b", re.I
+)
 
 
 def _pick_material_family(text: str, metadata: Dict[str, Any]) -> Optional[str]:
@@ -248,8 +253,12 @@ def _resolve_recommendation_projection(
     return candidate_projection, readiness.status, readiness.blocking_reason
 
 
-def _normalize_temperature(asserted_state: Dict[str, Any]) -> Optional[PhysicalParameter]:
-    temperature_value = (asserted_state or {}).get("operating_conditions", {}).get("temperature")
+def _normalize_temperature(
+    asserted_state: Dict[str, Any],
+) -> Optional[PhysicalParameter]:
+    temperature_value = (
+        (asserted_state or {}).get("operating_conditions", {}).get("temperature")
+    )
     if temperature_value is None:
         return None
     try:
@@ -259,7 +268,9 @@ def _normalize_temperature(asserted_state: Dict[str, Any]) -> Optional[PhysicalP
 
 
 def _normalize_pressure(asserted_state: Dict[str, Any]) -> Optional[PhysicalParameter]:
-    pressure_value = (asserted_state or {}).get("operating_conditions", {}).get("pressure")
+    pressure_value = (
+        (asserted_state or {}).get("operating_conditions", {}).get("pressure")
+    )
     if pressure_value is None:
         return None
     try:
@@ -279,7 +290,8 @@ def _classify_candidates(
     cards_by_evidence_id = {
         (card.get("evidence_id") or card.get("id")): {
             "card": card,
-            "normalized_evidence": card.get("normalized_evidence") or normalize_fact_card_evidence(card),
+            "normalized_evidence": card.get("normalized_evidence")
+            or normalize_fact_card_evidence(card),
         }
         for card in relevant_fact_cards
         if (card.get("evidence_id") or card.get("id"))
@@ -296,7 +308,11 @@ def _classify_candidates(
             card = dict(entry["card"])
             card["normalized_evidence"] = entry["normalized_evidence"]
             profile = MaterialPhysicalProfile.from_fact_card(card)
-            if profile and profile.material_id.upper() == candidate.get("material_family", "").upper():
+            if (
+                profile
+                and profile.material_id.upper()
+                == candidate.get("material_family", "").upper()
+            ):
                 supporting_profiles.append(profile)
 
         if not supporting_profiles:
@@ -311,7 +327,10 @@ def _classify_candidates(
             continue
 
         requires_temperature = True
-        requires_pressure = any(getattr(profile, "pressure_max", None) is not None for profile in supporting_profiles)
+        requires_pressure = any(
+            getattr(profile, "pressure_max", None) is not None
+            for profile in supporting_profiles
+        )
 
         if requires_temperature and temperature is None:
             candidate["viability_status"] = "blocked_missing_required_inputs"
@@ -392,7 +411,9 @@ def build_selection_state(
     asserted_state = asserted_state or {}
 
     for card in relevant_fact_cards:
-        normalized_evidence = card.get("normalized_evidence") or normalize_fact_card_evidence(card)
+        normalized_evidence = card.get(
+            "normalized_evidence"
+        ) or normalize_fact_card_evidence(card)
         family = normalized_evidence.get("material_family")
         if not family:
             continue
@@ -400,7 +421,9 @@ def build_selection_state(
         filler_hint = normalized_evidence.get("filler_hint")
         grade_name = normalized_evidence.get("grade_name")
         manufacturer_name = normalized_evidence.get("manufacturer_name")
-        kind = normalized_evidence.get("candidate_kind") or _candidate_kind(family, filler_hint, grade_name, manufacturer_name)
+        kind = normalized_evidence.get("candidate_kind") or _candidate_kind(
+            family, filler_hint, grade_name, manufacturer_name
+        )
         candidate_id = _candidate_id(family, filler_hint, grade_name, manufacturer_name)
         evidence_id = card.get("evidence_id") or card.get("id")
         if not evidence_id:
@@ -424,11 +447,15 @@ def build_selection_state(
 
         if evidence_id not in existing["evidence_refs"]:
             existing["evidence_refs"].append(evidence_id)
-        existing["_best_rank"] = min(existing["_best_rank"], card.get("retrieval_rank", 9999))
+        existing["_best_rank"] = min(
+            existing["_best_rank"], card.get("retrieval_rank", 9999)
+        )
         if evidence_id not in evidence_basis:
             evidence_basis.append(evidence_id)
 
-    ordered_candidates = sorted(candidates_by_id.values(), key=lambda candidate: candidate["candidate_id"])
+    ordered_candidates = sorted(
+        candidates_by_id.values(), key=lambda candidate: candidate["candidate_id"]
+    )
     for candidate in ordered_candidates:
         candidate.pop("_best_rank", None)
 
@@ -437,20 +464,27 @@ def build_selection_state(
         relevant_fact_cards,
         asserted_state,
     )
-    winner_candidate_id = viable_candidate_ids[0] if len(viable_candidate_ids) == 1 else None
+    winner_candidate_id = (
+        viable_candidate_ids[0] if len(viable_candidate_ids) == 1 else None
+    )
     if not ordered_candidates:
         selection_status = "blocked_no_candidates"
     elif winner_candidate_id:
         selection_status = "winner_selected"
     elif viable_candidate_ids:
         selection_status = "multiple_viable_candidates"
-    elif any(block["block_reason"] == "blocked_missing_required_inputs" for block in blocked_candidates):
+    elif any(
+        block["block_reason"] == "blocked_missing_required_inputs"
+        for block in blocked_candidates
+    ):
         selection_status = "blocked_missing_required_inputs"
     else:
         selection_status = "blocked_no_viable_candidates"
 
     governance_release_status = governance_state.get("release_status", "inadmissible")
-    governance_rfq_admissibility = governance_state.get("rfq_admissibility", "inadmissible")
+    governance_rfq_admissibility = governance_state.get(
+        "rfq_admissibility", "inadmissible"
+    )
     specificity_level = governance_state.get("specificity_level", "family_only")
     evidence_provenance_projection = project_evidence_provenance_state(
         relevant_fact_cards,
@@ -476,21 +510,24 @@ def build_selection_state(
     domain_scope_projection = project_domain_scope_status(threshold_projection)
     correction_projection = build_correction_projection(conflict_status_projection)
     effective_evidence_available = bool(
-        evidence_available and evidence_provenance_projection.get("status") != "no_evidence"
+        evidence_available
+        and evidence_provenance_projection.get("status") != "no_evidence"
     )
-    candidate_projection, readiness_status, blocking_reason = _resolve_recommendation_projection(
-        selection_status=selection_status,
-        winner_candidate_id=winner_candidate_id,
-        candidates=ordered_candidates,
-        asserted_state=asserted_state,
-        governance_state=governance_state,
-        review_state=review_state,
-        evidence_available=effective_evidence_available,
-        demo_data_present=demo_data_present,
-        conflict_status_projection=conflict_status_projection,
-        parameter_integrity_projection=parameter_integrity_projection,
-        domain_scope_projection=domain_scope_projection,
-        working_profile=working_profile,
+    candidate_projection, readiness_status, blocking_reason = (
+        _resolve_recommendation_projection(
+            selection_status=selection_status,
+            winner_candidate_id=winner_candidate_id,
+            candidates=ordered_candidates,
+            asserted_state=asserted_state,
+            governance_state=governance_state,
+            review_state=review_state,
+            evidence_available=effective_evidence_available,
+            demo_data_present=demo_data_present,
+            conflict_status_projection=conflict_status_projection,
+            parameter_integrity_projection=parameter_integrity_projection,
+            domain_scope_projection=domain_scope_projection,
+            working_profile=working_profile,
+        )
     )
     review_escalation_projection = project_review_escalation_state(
         selection_status=selection_status,
@@ -546,12 +583,22 @@ def build_selection_state(
         viable_candidate_ids=viable_candidate_ids,
         blocked_candidates=blocked_candidates,
         evidence_basis=evidence_basis,
-        evidence_status=str(evidence_provenance_projection.get("status") or "no_evidence"),
-        provenance_refs=list(evidence_provenance_projection.get("provenance_refs") or []),
+        evidence_status=str(
+            evidence_provenance_projection.get("status") or "no_evidence"
+        ),
+        provenance_refs=list(
+            evidence_provenance_projection.get("provenance_refs") or []
+        ),
         conflict_status=str(conflict_status_projection.get("status") or "no_conflict"),
-        integrity_status=str(parameter_integrity_projection.get("integrity_status") or "normalized_ok"),
-        domain_scope_status=str(domain_scope_projection.get("status") or "in_domain_scope"),
-        threshold_status=str(threshold_projection.get("threshold_status") or "threshold_free"),
+        integrity_status=str(
+            parameter_integrity_projection.get("integrity_status") or "normalized_ok"
+        ),
+        domain_scope_status=str(
+            domain_scope_projection.get("status") or "in_domain_scope"
+        ),
+        threshold_status=str(
+            threshold_projection.get("threshold_status") or "threshold_free"
+        ),
         release_status=governance_release_status,
         rfq_admissibility=governance_rfq_admissibility,
         specificity_level=specificity_level,
@@ -589,7 +636,12 @@ def build_selection_state(
         output_contract_projection=output_contract_projection,
     )
     if not projection_invariant_projection.get("invariant_ok", True):
-        recommendation_artifact, user_facing_output_projection, output_contract_projection, output_blocked = _apply_invariant_safeguards(
+        (
+            recommendation_artifact,
+            user_facing_output_projection,
+            output_contract_projection,
+            output_blocked,
+        ) = _apply_invariant_safeguards(
             recommendation_artifact=recommendation_artifact,
             user_facing_output_projection=user_facing_output_projection,
             output_contract_projection=output_contract_projection,

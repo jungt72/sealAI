@@ -104,7 +104,9 @@ def _create_schema(conn) -> None:
     )
 
 
-def _insert_concept(conn, concept_id: str, canonical_name: str, display_name: str, family: str) -> None:
+def _insert_concept(
+    conn, concept_id: str, canonical_name: str, display_name: str, family: str
+) -> None:
     conn.execute(
         sa.text(
             """
@@ -199,36 +201,250 @@ def _insert_term(
 
 
 def _seed_registry(conn) -> None:
-    _insert_concept(conn, "c-ptfe-spring", "rwdr_ptfe_lip_spring_loaded", "Spring-energized PTFE lip seal", "ptfe_virgin")
-    _insert_concept(conn, "c-ptfe-non-spring", "rwdr_ptfe_lip_non_spring", "Non-spring PTFE lip seal", "ptfe_virgin")
-    _insert_concept(conn, "c-elastomer", "rwdr_elastomer_standard", "Standard elastomer radial shaft seal", "elastomer_fkm")
-    _insert_concept(conn, "c-cassette", "rwdr_elastomer_cassette", "Cassette-type radial shaft seal", "elastomer_nbr")
-    _insert_concept(conn, "c-v-ring", "rwdr_elastomer_v_ring", "V-ring axial-acting elastomer seal", "elastomer_nbr")
-    _insert_concept(conn, "c-static-oring", "static_o_ring", "O-ring static seal", "elastomer_fkm")
+    _insert_concept(
+        conn,
+        "c-ptfe-spring",
+        "rwdr_ptfe_lip_spring_loaded",
+        "Spring-energized PTFE lip seal",
+        "ptfe_virgin",
+    )
+    _insert_concept(
+        conn,
+        "c-ptfe-non-spring",
+        "rwdr_ptfe_lip_non_spring",
+        "Non-spring PTFE lip seal",
+        "ptfe_virgin",
+    )
+    _insert_concept(
+        conn,
+        "c-elastomer",
+        "rwdr_elastomer_standard",
+        "Standard elastomer radial shaft seal",
+        "elastomer_fkm",
+    )
+    _insert_concept(
+        conn,
+        "c-cassette",
+        "rwdr_elastomer_cassette",
+        "Cassette-type radial shaft seal",
+        "elastomer_nbr",
+    )
+    _insert_concept(
+        conn,
+        "c-v-ring",
+        "rwdr_elastomer_v_ring",
+        "V-ring axial-acting elastomer seal",
+        "elastomer_nbr",
+    )
+    _insert_concept(
+        conn, "c-static-oring", "static_o_ring", "O-ring static seal", "elastomer_fkm"
+    )
 
-    _insert_term(conn, "t-simmerring", "Simmerring", "brand_name", "c-elastomer", manufacturer_id="m-freudenberg", is_trademark=True, confidence=5)
-    _insert_term(conn, "t-simmerring-ptfe", "Simmerring PTFE", "brand_name", "c-ptfe-spring", manufacturer_id="m-freudenberg", is_trademark=True, confidence=5)
-    _insert_term(conn, "t-premium-sine", "Premium Sine Seal", "brand_name", "c-elastomer", manufacturer_id="m-freudenberg", confidence=4)
-    _insert_term(conn, "t-pop", "PTFE POP Seal", "brand_name", "c-ptfe-spring", manufacturer_id="m-freudenberg", confidence=4)
-    _insert_term(conn, "t-variseal", "Turcon Variseal", "brand_name", "c-ptfe-spring", manufacturer_id="m-trelleborg", is_trademark=True, confidence=5)
-    _insert_term(conn, "t-roto-variseal", "Turcon Roto Variseal", "brand_name", "c-ptfe-spring", manufacturer_id="m-trelleborg", is_trademark=True, confidence=5)
-    _insert_term(conn, "t-variseal-m2", "Variseal M2", "series_name", "c-ptfe-spring", manufacturer_id="m-trelleborg", confidence=4)
-    _insert_term(conn, "t-skf-ptfe", "SKF PTFE seal", "generic_term", "c-ptfe-spring", manufacturer_id="m-skf", confidence=4)
-    _insert_term(conn, "t-ptfe-rwdr-de", "PTFE Radialwellendichtring", "generic_term", "c-ptfe-spring", confidence=4, source_type="expert_judgment")
-    _insert_term(conn, "t-ptfe-rwdr-abbr", "PTFE-RWDR", "abbreviation", "c-ptfe-spring", confidence=4, source_type="expert_judgment")
-    _insert_term(conn, "t-teflon", "Teflon seal", "colloquial", "c-ptfe-spring", confidence=3, source_type="expert_judgment")
-    _insert_term(conn, "t-lip-ptfe", "Lip seal PTFE", "generic_term", "c-ptfe-spring", language="en", confidence=4, source_type="expert_judgment")
-    _insert_term(conn, "t-oil-seal", "Oil seal", "generic_term", "c-elastomer", language="en", confidence=4, source_type="expert_judgment")
-    _insert_term(conn, "t-wellendichtring", "Wellendichtring", "generic_term", "c-elastomer", confidence=3, source_type="expert_judgment")
-    _insert_term(conn, "t-cassette", "Cassette seal", "series_name", "c-cassette", language="en", confidence=4)
+    _insert_term(
+        conn,
+        "t-simmerring",
+        "Simmerring",
+        "brand_name",
+        "c-elastomer",
+        manufacturer_id="m-freudenberg",
+        is_trademark=True,
+        confidence=5,
+    )
+    _insert_term(
+        conn,
+        "t-simmerring-ptfe",
+        "Simmerring PTFE",
+        "brand_name",
+        "c-ptfe-spring",
+        manufacturer_id="m-freudenberg",
+        is_trademark=True,
+        confidence=5,
+    )
+    _insert_term(
+        conn,
+        "t-premium-sine",
+        "Premium Sine Seal",
+        "brand_name",
+        "c-elastomer",
+        manufacturer_id="m-freudenberg",
+        confidence=4,
+    )
+    _insert_term(
+        conn,
+        "t-pop",
+        "PTFE POP Seal",
+        "brand_name",
+        "c-ptfe-spring",
+        manufacturer_id="m-freudenberg",
+        confidence=4,
+    )
+    _insert_term(
+        conn,
+        "t-variseal",
+        "Turcon Variseal",
+        "brand_name",
+        "c-ptfe-spring",
+        manufacturer_id="m-trelleborg",
+        is_trademark=True,
+        confidence=5,
+    )
+    _insert_term(
+        conn,
+        "t-roto-variseal",
+        "Turcon Roto Variseal",
+        "brand_name",
+        "c-ptfe-spring",
+        manufacturer_id="m-trelleborg",
+        is_trademark=True,
+        confidence=5,
+    )
+    _insert_term(
+        conn,
+        "t-variseal-m2",
+        "Variseal M2",
+        "series_name",
+        "c-ptfe-spring",
+        manufacturer_id="m-trelleborg",
+        confidence=4,
+    )
+    _insert_term(
+        conn,
+        "t-skf-ptfe",
+        "SKF PTFE seal",
+        "generic_term",
+        "c-ptfe-spring",
+        manufacturer_id="m-skf",
+        confidence=4,
+    )
+    _insert_term(
+        conn,
+        "t-ptfe-rwdr-de",
+        "PTFE Radialwellendichtring",
+        "generic_term",
+        "c-ptfe-spring",
+        confidence=4,
+        source_type="expert_judgment",
+    )
+    _insert_term(
+        conn,
+        "t-ptfe-rwdr-abbr",
+        "PTFE-RWDR",
+        "abbreviation",
+        "c-ptfe-spring",
+        confidence=4,
+        source_type="expert_judgment",
+    )
+    _insert_term(
+        conn,
+        "t-teflon",
+        "Teflon seal",
+        "colloquial",
+        "c-ptfe-spring",
+        confidence=3,
+        source_type="expert_judgment",
+    )
+    _insert_term(
+        conn,
+        "t-lip-ptfe",
+        "Lip seal PTFE",
+        "generic_term",
+        "c-ptfe-spring",
+        language="en",
+        confidence=4,
+        source_type="expert_judgment",
+    )
+    _insert_term(
+        conn,
+        "t-oil-seal",
+        "Oil seal",
+        "generic_term",
+        "c-elastomer",
+        language="en",
+        confidence=4,
+        source_type="expert_judgment",
+    )
+    _insert_term(
+        conn,
+        "t-wellendichtring",
+        "Wellendichtring",
+        "generic_term",
+        "c-elastomer",
+        confidence=3,
+        source_type="expert_judgment",
+    )
+    _insert_term(
+        conn,
+        "t-cassette",
+        "Cassette seal",
+        "series_name",
+        "c-cassette",
+        language="en",
+        confidence=4,
+    )
     _insert_term(conn, "t-v-ring", "V-Ring", "generic_term", "c-v-ring", confidence=4)
-    _insert_term(conn, "t-shaft-seal", "Shaft seal", "generic_term", "c-elastomer", language="en", confidence=3, mapping_suffix="elastomer")
-    _insert_term(conn, "t-shaft-seal", "Shaft seal", "generic_term", "c-ptfe-spring", language="en", confidence=3, mapping_suffix="ptfe")
-    _insert_term(conn, "t-dichtring", "Dichtring", "colloquial", "c-elastomer", confidence=2, mapping_suffix="rwdr")
-    _insert_term(conn, "t-dichtring", "Dichtring", "colloquial", "c-static-oring", confidence=2, mapping_suffix="static")
-    _insert_term(conn, "t-pending", "Pending Seal", "brand_name", "c-ptfe-spring", reviewer_status="pending")
-    _insert_term(conn, "t-inactive", "Inactive Seal", "brand_name", "c-ptfe-spring", is_active=False)
-    _insert_term(conn, "t-old", "Old Seal", "brand_name", "c-ptfe-non-spring", validity_from="2020-01-01", validity_to="2021-01-01")
+    _insert_term(
+        conn,
+        "t-shaft-seal",
+        "Shaft seal",
+        "generic_term",
+        "c-elastomer",
+        language="en",
+        confidence=3,
+        mapping_suffix="elastomer",
+    )
+    _insert_term(
+        conn,
+        "t-shaft-seal",
+        "Shaft seal",
+        "generic_term",
+        "c-ptfe-spring",
+        language="en",
+        confidence=3,
+        mapping_suffix="ptfe",
+    )
+    _insert_term(
+        conn,
+        "t-dichtring",
+        "Dichtring",
+        "colloquial",
+        "c-elastomer",
+        confidence=2,
+        mapping_suffix="rwdr",
+    )
+    _insert_term(
+        conn,
+        "t-dichtring",
+        "Dichtring",
+        "colloquial",
+        "c-static-oring",
+        confidence=2,
+        mapping_suffix="static",
+    )
+    _insert_term(
+        conn,
+        "t-pending",
+        "Pending Seal",
+        "brand_name",
+        "c-ptfe-spring",
+        reviewer_status="pending",
+    )
+    _insert_term(
+        conn,
+        "t-inactive",
+        "Inactive Seal",
+        "brand_name",
+        "c-ptfe-spring",
+        is_active=False,
+    )
+    _insert_term(
+        conn,
+        "t-old",
+        "Old Seal",
+        "brand_name",
+        "c-ptfe-non-spring",
+        validity_from="2020-01-01",
+        validity_to="2021-01-01",
+    )
 
 
 @pytest.mark.parametrize(
@@ -305,10 +521,20 @@ def test_lookup_unknown_terms_returns_empty(
 @pytest.mark.parametrize(
     ("query", "language", "expected_status", "expected_concept"),
     [
-        ("Simmerring PTFE", "de", NormalizationStatus.UNIQUE, "rwdr_ptfe_lip_spring_loaded"),
+        (
+            "Simmerring PTFE",
+            "de",
+            NormalizationStatus.UNIQUE,
+            "rwdr_ptfe_lip_spring_loaded",
+        ),
         ("Simmerring", "de", NormalizationStatus.UNIQUE, "rwdr_elastomer_standard"),
         ("PTFE-RWDR", "de", NormalizationStatus.UNIQUE, "rwdr_ptfe_lip_spring_loaded"),
-        ("Teflon seal", "de", NormalizationStatus.UNIQUE, "rwdr_ptfe_lip_spring_loaded"),
+        (
+            "Teflon seal",
+            "de",
+            NormalizationStatus.UNIQUE,
+            "rwdr_ptfe_lip_spring_loaded",
+        ),
         ("Oil seal", "en", NormalizationStatus.UNIQUE, "rwdr_elastomer_standard"),
         ("Shaft seal", "en", NormalizationStatus.AMBIGUOUS, None),
         ("Dichtring", "de", NormalizationStatus.AMBIGUOUS, None),
@@ -398,16 +624,26 @@ def test_as_of_filters_expired_mapping(service: TerminologyService, db) -> None:
     )
 
 
-def test_published_only_can_include_pending_mapping(service: TerminologyService, db) -> None:
-    assert service.normalize_term(db, "Pending Seal").status is NormalizationStatus.NO_MATCH
+def test_published_only_can_include_pending_mapping(
+    service: TerminologyService, db
+) -> None:
+    assert (
+        service.normalize_term(db, "Pending Seal").status
+        is NormalizationStatus.NO_MATCH
+    )
     assert (
         service.normalize_term(db, "Pending Seal", published_only=False).status
         is NormalizationStatus.UNIQUE
     )
 
 
-def test_active_only_can_include_inactive_mapping(service: TerminologyService, db) -> None:
-    assert service.normalize_term(db, "Inactive Seal").status is NormalizationStatus.NO_MATCH
+def test_active_only_can_include_inactive_mapping(
+    service: TerminologyService, db
+) -> None:
+    assert (
+        service.normalize_term(db, "Inactive Seal").status
+        is NormalizationStatus.NO_MATCH
+    )
     assert (
         service.normalize_term(db, "Inactive Seal", active_only=False).status
         is NormalizationStatus.UNIQUE
@@ -418,21 +654,35 @@ def test_lookup_audit_writes_event_for_matches(service: TerminologyService, db) 
     matches = service.lookup_term(db, "Simmerring PTFE", audit=True, actor_id="tester")
 
     assert len(matches) == 1
-    audit = db.execute(sa.text("SELECT action, actor_id FROM term_audit_log")).mappings().one()
+    audit = (
+        db.execute(sa.text("SELECT action, actor_id FROM term_audit_log"))
+        .mappings()
+        .one()
+    )
     assert audit["action"] == "lookup_term"
     assert audit["actor_id"] == "tester"
 
 
-def test_normalization_audit_writes_event_with_status(service: TerminologyService, db) -> None:
-    result = service.normalize_term(db, "Simmerring PTFE", audit=True, actor_id="tester")
+def test_normalization_audit_writes_event_with_status(
+    service: TerminologyService, db
+) -> None:
+    result = service.normalize_term(
+        db, "Simmerring PTFE", audit=True, actor_id="tester"
+    )
 
     assert result.status is NormalizationStatus.UNIQUE
-    audit = db.execute(sa.text("SELECT action, payload FROM term_audit_log")).mappings().one()
+    audit = (
+        db.execute(sa.text("SELECT action, payload FROM term_audit_log"))
+        .mappings()
+        .one()
+    )
     assert audit["action"] == "normalize_term"
     assert '"status": "unique"' in audit["payload"]
 
 
-def test_record_audit_event_rejects_missing_target(service: TerminologyService, db) -> None:
+def test_record_audit_event_rejects_missing_target(
+    service: TerminologyService, db
+) -> None:
     with pytest.raises(ValueError, match="requires mapping_id"):
         service.record_audit_event(db, action="bad_event")
 

@@ -197,7 +197,9 @@ class PreGateClassifier:
 
     @staticmethod
     def _is_generic_material_comparison(text: str) -> bool:
-        if PreGateClassifier._matches(_MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS, text):
+        if PreGateClassifier._matches(
+            _MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS, text
+        ):
             return False
         return is_material_comparison_question(text)
 
@@ -239,7 +241,9 @@ class PreGateClassifier:
     def _is_standalone_material_risk_comparison(text: str) -> bool:
         if not PreGateClassifier._mentions_multiple_materials(text):
             return False
-        if PreGateClassifier._matches(_MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS, text):
+        if PreGateClassifier._matches(
+            _MATERIAL_COMPARISON_CONCRETE_CASE_PATTERNS, text
+        ):
             return False
         if PreGateClassifier._matches(_MATERIAL_RISK_COMPARISON_CASE_PATTERNS, text):
             return False
@@ -247,7 +251,9 @@ class PreGateClassifier:
 
     @staticmethod
     def _is_standalone_material_suitability_question(text: str) -> bool:
-        if not PreGateClassifier._matches(_MATERIAL_SUITABILITY_QUESTION_PATTERNS, text):
+        if not PreGateClassifier._matches(
+            _MATERIAL_SUITABILITY_QUESTION_PATTERNS, text
+        ):
             return False
         if not PreGateClassifier._matches(_MATERIAL_TOKEN_PATTERNS, text):
             return False

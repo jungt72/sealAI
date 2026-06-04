@@ -322,5 +322,7 @@ def downgrade() -> None:
         "ix_manufacturer_profiles_account_status",
         table_name="manufacturer_profiles",
     )
-    op.drop_index("ix_manufacturer_profiles_country", table_name="manufacturer_profiles")
+    op.drop_index(
+        "ix_manufacturer_profiles_country", table_name="manufacturer_profiles"
+    )
     op.drop_table("manufacturer_profiles")

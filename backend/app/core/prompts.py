@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+
 class PromptLoader:
     def __init__(self, prompts_dir: str = None):
         if prompts_dir:
@@ -11,14 +12,14 @@ class PromptLoader:
         else:
             # Default to app/prompts relative to this file (app/core/prompts.py -> app/prompts)
             self.prompts_dir = Path(__file__).parent.parent / "prompts"
-        
+
         self.manifest_path = self.prompts_dir / "_manifest.yml"
         self._manifest = self._load_manifest()
-        
+
         self._env = Environment(
             loader=FileSystemLoader(str(self.prompts_dir)),
             undefined=StrictUndefined,
-            autoescape=False
+            autoescape=False,
         )
 
     def _load_manifest(self) -> Dict[str, Any]:
@@ -37,11 +38,7 @@ class PromptLoader:
 
         template = self._env.get_template(template_file)
         rendered_content = template.render(**kwargs)
-        
+
         content_hash = hashlib.sha256(rendered_content.encode("utf-8")).hexdigest()
 
-        return {
-            "content": rendered_content,
-            "hash": content_hash,
-            "version": version
-        }
+        return {"content": rendered_content, "hash": content_hash, "version": version}

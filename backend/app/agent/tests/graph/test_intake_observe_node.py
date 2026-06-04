@@ -20,6 +20,7 @@ Coverage:
     11. LLM unknown field_name → silently discarded
     12. Turn index propagated correctly
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -44,6 +45,7 @@ from app.agent.state.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fresh_state(**kwargs) -> GraphState:
     """Return a GraphState with all layers at defaults + optional overrides."""
     return GraphState(**kwargs)
@@ -52,6 +54,7 @@ def _fresh_state(**kwargs) -> GraphState:
 def _make_llm_response(items: list[dict]) -> MagicMock:
     """Build a minimal mock that looks like an openai streaming response."""
     import json
+
     content = json.dumps(items)
     choice = MagicMock()
     choice.message.content = content
@@ -74,11 +77,14 @@ def _mock_llm_factory(response=None, *, side_effect=None) -> MagicMock:
 # 1. Regex pass — numeric patterns
 # ---------------------------------------------------------------------------
 
+
 class TestRegexExtraction:
     @pytest.mark.asyncio
     async def test_temperature_extracted(self):
         state = _fresh_state(pending_message="PTFE-Dichtung bei 180°C")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         assert "temperature_c" in names
@@ -86,9 +92,15 @@ class TestRegexExtraction:
     @pytest.mark.asyncio
     async def test_temperature_value_correct(self):
         state = _fresh_state(pending_message="Betrieb bei 180°C")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
-        temp = next(e for e in result.observed.raw_extractions if e.field_name == "temperature_c")
+        temp = next(
+            e
+            for e in result.observed.raw_extractions
+            if e.field_name == "temperature_c"
+        )
         assert float(temp.raw_value) == pytest.approx(180.0)
 
     @pytest.mark.asyncio
@@ -98,15 +110,23 @@ class TestRegexExtraction:
             motion_hint={"label": "rotary", "confidence": "high"},
             application_hint={"label": "shaft_sealing", "confidence": "medium"},
         )
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
-        diameter = next(e for e in result.observed.raw_extractions if e.field_name == "shaft_diameter_mm")
+        diameter = next(
+            e
+            for e in result.observed.raw_extractions
+            if e.field_name == "shaft_diameter_mm"
+        )
         assert float(diameter.raw_value) == pytest.approx(40.0)
 
     @pytest.mark.asyncio
     async def test_pressure_extracted(self):
         state = _fresh_state(pending_message="Betriebsdruck 12 bar")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         assert "pressure_bar" in names
@@ -114,7 +134,9 @@ class TestRegexExtraction:
     @pytest.mark.asyncio
     async def test_speed_extracted(self):
         state = _fresh_state(pending_message="Drehzahl 1500 rpm")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         assert "speed_rpm" in names
@@ -122,7 +144,9 @@ class TestRegexExtraction:
     @pytest.mark.asyncio
     async def test_multiple_params_extracted(self):
         state = _fresh_state(pending_message="PTFE-Dichtung für 180°C Dampf bei 12 bar")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         # temperature and pressure are in the message
@@ -138,7 +162,9 @@ class TestRegexExtraction:
                 "etwas Schmutz, FDA."
             )
         )
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         values = {e.field_name: e.raw_value for e in result.observed.raw_extractions}
 
@@ -155,11 +181,16 @@ class TestRegexExtraction:
 # 2. Regex pass — material / medium tokens
 # ---------------------------------------------------------------------------
 
+
 class TestRegexMaterialMedium:
     @pytest.mark.asyncio
     async def test_ptfe_material_extracted(self):
-        state = _fresh_state(pending_message="PTFE-Dichtung für Hochtemperaturanwendung")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        state = _fresh_state(
+            pending_message="PTFE-Dichtung für Hochtemperaturanwendung"
+        )
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         assert "material" in names
@@ -167,7 +198,9 @@ class TestRegexMaterialMedium:
     @pytest.mark.asyncio
     async def test_fkm_material_extracted(self):
         state = _fresh_state(pending_message="FKM-Dichtring gesucht")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         assert "material" in names
@@ -175,7 +208,9 @@ class TestRegexMaterialMedium:
     @pytest.mark.asyncio
     async def test_wasser_medium_extracted(self):
         state = _fresh_state(pending_message="Dichtung für Wasser, 5 bar")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         names = {e.field_name for e in result.observed.raw_extractions}
         assert "medium" in names
@@ -185,15 +220,23 @@ class TestRegexMaterialMedium:
 # 3. Invariant: LLM writes ONLY to ObservedState
 # ---------------------------------------------------------------------------
 
+
 class TestArchitectureInvariant:
     @pytest.mark.asyncio
     async def test_normalized_state_unchanged(self):
         """After intake_observe_node, NormalizedState must be the default (empty)."""
         state = _fresh_state(pending_message="PTFE-Dichtung bei 180°C")
 
-        mock_resp = _make_llm_response([
-            {"field_name": "temperature_c", "raw_value": 180, "raw_unit": "°C", "confidence": 0.95}
-        ])
+        mock_resp = _make_llm_response(
+            [
+                {
+                    "field_name": "temperature_c",
+                    "raw_value": 180,
+                    "raw_unit": "°C",
+                    "confidence": 0.95,
+                }
+            ]
+        )
         with patch(
             "app.agent.graph.nodes.intake_observe_node.get_async_llm",
             _mock_llm_factory(mock_resp),
@@ -211,7 +254,9 @@ class TestArchitectureInvariant:
         state = _fresh_state(pending_message="12 bar Hydrauliköl")
         default_asserted = AssertedState()
 
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
 
         assert result.asserted == default_asserted
@@ -223,7 +268,9 @@ class TestArchitectureInvariant:
         """After intake_observe_node, GovernanceState must be the default (no class set)."""
         state = _fresh_state(pending_message="FKM, 15 bar, 120°C, Wasser")
 
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
 
         # GovernanceState was not touched — no class assigned yet, not rfq_admissible
@@ -236,7 +283,9 @@ class TestArchitectureInvariant:
     async def test_observed_state_has_extractions(self):
         """ObservedState must have extractions after the node runs."""
         state = _fresh_state(pending_message="NBR, 8 bar, 80°C")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         assert len(result.observed.raw_extractions) > 0
 
@@ -244,15 +293,20 @@ class TestArchitectureInvariant:
     async def test_extraction_source_is_llm(self):
         """All extractions produced by this node must have source='llm'."""
         state = _fresh_state(pending_message="FKM, 10 bar, 100°C")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         for e in result.observed.raw_extractions:
-            assert e.source == "llm", f"Expected source='llm', got '{e.source}' for {e.field_name}"
+            assert (
+                e.source == "llm"
+            ), f"Expected source='llm', got '{e.source}' for {e.field_name}"
 
 
 # ---------------------------------------------------------------------------
 # 4. LLM mock — extractions appear in ObservedState
 # ---------------------------------------------------------------------------
+
 
 class TestLLMExtractionMock:
     @pytest.mark.asyncio
@@ -260,9 +314,16 @@ class TestLLMExtractionMock:
         """LLM extraction result must appear in ObservedState.raw_extractions."""
         state = _fresh_state(pending_message="Das Medium ist Dampf")
 
-        mock_resp = _make_llm_response([
-            {"field_name": "medium", "raw_value": "Dampf", "raw_unit": None, "confidence": 0.80}
-        ])
+        mock_resp = _make_llm_response(
+            [
+                {
+                    "field_name": "medium",
+                    "raw_value": "Dampf",
+                    "raw_unit": None,
+                    "confidence": 0.80,
+                }
+            ]
+        )
         with patch(
             "app.agent.graph.nodes.intake_observe_node.get_async_llm",
             _mock_llm_factory(mock_resp),
@@ -278,9 +339,16 @@ class TestLLMExtractionMock:
         # 180°C is caught by regex — LLM also returns temperature_c
         state = _fresh_state(pending_message="Betrieb bei 180°C")
 
-        mock_resp = _make_llm_response([
-            {"field_name": "temperature_c", "raw_value": 180, "raw_unit": "°C", "confidence": 0.95}
-        ])
+        mock_resp = _make_llm_response(
+            [
+                {
+                    "field_name": "temperature_c",
+                    "raw_value": 180,
+                    "raw_unit": "°C",
+                    "confidence": 0.95,
+                }
+            ]
+        )
         with patch(
             "app.agent.graph.nodes.intake_observe_node.get_async_llm",
             _mock_llm_factory(mock_resp),
@@ -288,7 +356,11 @@ class TestLLMExtractionMock:
             result = await intake_observe_node(state)
 
         # Should appear exactly once (from regex, not duplicated by LLM)
-        temp_extractions = [e for e in result.observed.raw_extractions if e.field_name == "temperature_c"]
+        temp_extractions = [
+            e
+            for e in result.observed.raw_extractions
+            if e.field_name == "temperature_c"
+        ]
         assert len(temp_extractions) == 1
 
     @pytest.mark.asyncio
@@ -296,10 +368,12 @@ class TestLLMExtractionMock:
         """LLM proposing a field_name not in _ALLOWED_FIELD_NAMES must be silently dropped."""
         state = _fresh_state(pending_message="Gummiabdichtung")
 
-        mock_resp = _make_llm_response([
-            {"field_name": "manufacturer", "raw_value": "Acme", "confidence": 0.9},
-            {"field_name": "material",     "raw_value": "NBR",  "confidence": 0.85},
-        ])
+        mock_resp = _make_llm_response(
+            [
+                {"field_name": "manufacturer", "raw_value": "Acme", "confidence": 0.9},
+                {"field_name": "material", "raw_value": "NBR", "confidence": 0.85},
+            ]
+        )
         with patch(
             "app.agent.graph.nodes.intake_observe_node.get_async_llm",
             _mock_llm_factory(mock_resp),
@@ -307,13 +381,14 @@ class TestLLMExtractionMock:
             result = await intake_observe_node(state)
 
         names = {e.field_name for e in result.observed.raw_extractions}
-        assert "manufacturer" not in names   # rejected
-        assert "material" in names           # accepted
+        assert "manufacturer" not in names  # rejected
+        assert "material" in names  # accepted
 
 
 # ---------------------------------------------------------------------------
 # 5. Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     @pytest.mark.asyncio
@@ -326,7 +401,9 @@ class TestEdgeCases:
     async def test_no_params_in_message_observed_unchanged(self):
         """A message with no extractable params leaves ObservedState empty."""
         state = _fresh_state(pending_message="Guten Morgen, wie kann ich helfen?")
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         assert result.observed.raw_extractions == []
 
@@ -348,8 +425,12 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_turn_index_assigned_from_analysis_cycle(self):
         """turn_index falls back to analysis_cycle when user_turn_index is 0."""
-        state = _fresh_state(pending_message="12 bar", analysis_cycle=3, user_turn_index=0)
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        state = _fresh_state(
+            pending_message="12 bar", analysis_cycle=3, user_turn_index=0
+        )
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         # user_turn_index=0 → falsy → falls back to analysis_cycle=3
         for e in result.observed.raw_extractions:
@@ -358,8 +439,12 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_user_turn_index_takes_priority_over_analysis_cycle(self):
         """user_turn_index must be used as turn_index when non-zero."""
-        state = _fresh_state(pending_message="12 bar", analysis_cycle=0, user_turn_index=5)
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        state = _fresh_state(
+            pending_message="12 bar", analysis_cycle=0, user_turn_index=5
+        )
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
         for e in result.observed.raw_extractions:
             assert e.turn_index == 5
@@ -370,10 +455,22 @@ class TestEdgeCases:
         from app.agent.state.models import ObservedState, ObservedExtraction
         from app.agent.state.reducers import reduce_observed_to_normalized
 
-        old = ObservedExtraction(field_name="temperature_c", raw_value=80.0, raw_unit="°C",
-                                 source="llm", confidence=0.92, turn_index=0)
-        new = ObservedExtraction(field_name="temperature_c", raw_value=90.0, raw_unit="°C",
-                                 source="llm", confidence=0.92, turn_index=1)
+        old = ObservedExtraction(
+            field_name="temperature_c",
+            raw_value=80.0,
+            raw_unit="°C",
+            source="llm",
+            confidence=0.92,
+            turn_index=0,
+        )
+        new = ObservedExtraction(
+            field_name="temperature_c",
+            raw_value=90.0,
+            raw_unit="°C",
+            source="llm",
+            confidence=0.92,
+            turn_index=1,
+        )
         observed = ObservedState(raw_extractions=[old, new])
         normalized = reduce_observed_to_normalized(observed)
         assert normalized.parameters["temperature_c"].value == 90.0
@@ -383,7 +480,9 @@ class TestEdgeCases:
         """With LLM disabled, only regex extractions are present."""
         state = _fresh_state(pending_message="Das Medium ist Dampf, 12 bar")
 
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             with patch(
                 "app.agent.graph.nodes.intake_observe_node.get_async_llm",
                 _mock_llm_factory(_make_llm_response([])),
@@ -396,20 +495,29 @@ class TestEdgeCases:
     async def test_existing_extractions_preserved(self):
         """Pre-existing extractions in ObservedState must not be dropped."""
         from app.agent.state.models import ObservedExtraction
+
         prior = ObservedExtraction(
-            field_name="medium", raw_value="Wasser", source="user", confidence=1.0, turn_index=0
+            field_name="medium",
+            raw_value="Wasser",
+            source="user",
+            confidence=1.0,
+            turn_index=0,
         )
         initial_observed = ObservedState().with_extraction(prior)
         state = _fresh_state(
             observed=initial_observed,
             pending_message="12 bar, 60°C",
         )
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
 
         # Prior extraction must still be there
-        assert any(e.field_name == "medium" and e.raw_value == "Wasser"
-                   for e in result.observed.raw_extractions)
+        assert any(
+            e.field_name == "medium" and e.raw_value == "Wasser"
+            for e in result.observed.raw_extractions
+        )
 
     @pytest.mark.asyncio
     async def test_primary_medium_correction_promotes_user_override(self):
@@ -438,7 +546,9 @@ class TestEdgeCases:
         )
 
         with (
-            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", True),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", True
+            ),
             patch(
                 "app.agent.graph.nodes.intake_observe_node._llm_extract_params",
                 AsyncMock(
@@ -496,7 +606,9 @@ class TestEdgeCases:
         )
 
         with (
-            patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", True),
+            patch(
+                "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", True
+            ),
             patch(
                 "app.agent.graph.nodes.intake_observe_node._llm_extract_params",
                 AsyncMock(
@@ -514,8 +626,12 @@ class TestEdgeCases:
         ):
             result = await intake_observe_node(state)
 
-        medium_overrides = [ov for ov in result.observed.user_overrides if ov.field_name == "medium"]
-        assert medium_overrides, "medium must be promoted to UserOverride without correction keyword"
+        medium_overrides = [
+            ov for ov in result.observed.user_overrides if ov.field_name == "medium"
+        ]
+        assert (
+            medium_overrides
+        ), "medium must be promoted to UserOverride without correction keyword"
         assert medium_overrides[-1].override_value == "Salzwasser"
 
     @pytest.mark.asyncio
@@ -561,17 +677,31 @@ class TestEdgeCases:
             user_turn_index=3,
         )
 
-        with patch("app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False):
+        with patch(
+            "app.agent.graph.nodes.intake_observe_node._ENABLE_LLM_EXTRACTION", False
+        ):
             result = await intake_observe_node(state)
 
         override_fields = {ov.field_name for ov in result.observed.user_overrides}
-        assert "sealing_type" in override_fields, "sealing_type must be overridden by correction"
-        assert "shaft_diameter_mm" in override_fields, "shaft_diameter_mm must be overridden by correction"
+        assert (
+            "sealing_type" in override_fields
+        ), "sealing_type must be overridden by correction"
+        assert (
+            "shaft_diameter_mm" in override_fields
+        ), "shaft_diameter_mm must be overridden by correction"
 
-        st_ov = next(ov for ov in result.observed.user_overrides if ov.field_name == "sealing_type")
+        st_ov = next(
+            ov
+            for ov in result.observed.user_overrides
+            if ov.field_name == "sealing_type"
+        )
         assert "rwdr" in str(st_ov.override_value).lower()
 
-        dia_ov = next(ov for ov in result.observed.user_overrides if ov.field_name == "shaft_diameter_mm")
+        dia_ov = next(
+            ov
+            for ov in result.observed.user_overrides
+            if ov.field_name == "shaft_diameter_mm"
+        )
         assert float(dia_ov.override_value) == pytest.approx(40.0)
 
 
@@ -579,10 +709,14 @@ class TestEdgeCases:
 # 6. _regex_params_to_extractions unit tests (pure function)
 # ---------------------------------------------------------------------------
 
+
 class TestRegexParamsToExtractions:
     def test_temperature_mapped(self):
         exts = _regex_params_to_extractions({"temperature_c": 100.0}, turn_index=0)
-        assert any(e.field_name == "temperature_c" and float(e.raw_value) == 100.0 for e in exts)
+        assert any(
+            e.field_name == "temperature_c" and float(e.raw_value) == 100.0
+            for e in exts
+        )
 
     def test_pressure_mapped(self):
         exts = _regex_params_to_extractions({"pressure_bar": 8.0}, turn_index=0)
@@ -606,8 +740,12 @@ class TestRegexParamsToExtractions:
         assert medium_exts[0].raw_value == "Wasser"
 
     def test_confidence_less_for_confirmation_required(self):
-        exts_norm = _regex_params_to_extractions({"medium_normalized": "Wasser"}, turn_index=0)
-        exts_conf = _regex_params_to_extractions({"medium_confirmation_required": "Dampf"}, turn_index=0)
+        exts_norm = _regex_params_to_extractions(
+            {"medium_normalized": "Wasser"}, turn_index=0
+        )
+        exts_conf = _regex_params_to_extractions(
+            {"medium_confirmation_required": "Dampf"}, turn_index=0
+        )
         c_norm = next(e.confidence for e in exts_norm if e.field_name == "medium")
         c_conf = next(e.confidence for e in exts_conf if e.field_name == "medium")
         assert c_norm > c_conf
@@ -618,7 +756,10 @@ class TestRegexParamsToExtractions:
             turn_index=0,
         )
         inferred = _regex_params_to_extractions(
-            {"medium_normalized": "Spezialkraftstoff", "medium_normalization_status": "inferred"},
+            {
+                "medium_normalized": "Spezialkraftstoff",
+                "medium_normalization_status": "inferred",
+            },
             turn_index=0,
         )
         c_confirmed = next(e.confidence for e in confirmed if e.field_name == "medium")
@@ -626,7 +767,9 @@ class TestRegexParamsToExtractions:
         assert c_confirmed == 0.92
         assert c_inferred == 0.60
 
-    def test_contextual_fallback_maps_bare_mm_to_shaft_diameter_when_rotary_hint_exists(self):
+    def test_contextual_fallback_maps_bare_mm_to_shaft_diameter_when_rotary_hint_exists(
+        self,
+    ):
         state = _fresh_state(
             pending_message="40 mm",
             motion_hint={"label": "rotary", "confidence": "high"},
@@ -639,9 +782,17 @@ class TestRegexParamsToExtractions:
 # 7. _ALLOWED_FIELD_NAMES whitelist
 # ---------------------------------------------------------------------------
 
+
 class TestAllowedFieldNames:
     def test_expected_fields_present(self):
-        expected = {"medium", "pressure_bar", "temperature_c", "material", "shaft_diameter_mm", "speed_rpm"}
+        expected = {
+            "medium",
+            "pressure_bar",
+            "temperature_c",
+            "material",
+            "shaft_diameter_mm",
+            "speed_rpm",
+        }
         assert expected <= _ALLOWED_FIELD_NAMES
 
     def test_governance_fields_not_allowed(self):

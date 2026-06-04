@@ -11,12 +11,32 @@ from app.agent.domain.normalization import (
 )
 
 
-@pytest.mark.parametrize("input_name,expected", [("Viton", "STS-MAT-FKM-A1"), ("Kalrez", "STS-MAT-FFKM-A1"), ("Teflon", "STS-MAT-PTFE-A1"), ("nitril", "STS-MAT-NBR-A1"), ("Unknown", "Unknown"), (None, None)])
+@pytest.mark.parametrize(
+    "input_name,expected",
+    [
+        ("Viton", "STS-MAT-FKM-A1"),
+        ("Kalrez", "STS-MAT-FFKM-A1"),
+        ("Teflon", "STS-MAT-PTFE-A1"),
+        ("nitril", "STS-MAT-NBR-A1"),
+        ("Unknown", "Unknown"),
+        (None, None),
+    ],
+)
 def test_normalize_material(input_name, expected):
     assert normalize_material(input_name) == expected
 
 
-@pytest.mark.parametrize("input_name,expected", [("Wasser", "Wasser"), ("oil", "Öl"), ("Ethanol", "Ethanol"), ("Panolin", "Bio-Öl"), ("Unknown", "Unknown"), (None, None)])
+@pytest.mark.parametrize(
+    "input_name,expected",
+    [
+        ("Wasser", "Wasser"),
+        ("oil", "Öl"),
+        ("Ethanol", "Ethanol"),
+        ("Panolin", "Bio-Öl"),
+        ("Unknown", "Unknown"),
+        (None, None),
+    ],
+)
 def test_normalize_medium(input_name, expected):
     assert normalize_medium(input_name) == expected
 
@@ -32,7 +52,9 @@ def test_normalize_unit_value():
 
 
 def test_extract_parameters_marks_trade_name_mappings_as_confirmation_required():
-    extracted = extract_parameters("Medium ist Panolin und das Material ist Viton. 77°F und 145 psi")
+    extracted = extract_parameters(
+        "Medium ist Panolin und das Material ist Viton. 77°F und 145 psi"
+    )
     assert extracted["medium_confirmation_required"] == "Bio-Öl"
     assert extracted["material_confirmation_required"] == "FKM"
     assert extracted["temperature_c"] == pytest.approx(25, abs=1)

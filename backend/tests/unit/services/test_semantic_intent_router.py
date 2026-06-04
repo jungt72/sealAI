@@ -190,7 +190,9 @@ async def test_semantic_router_keeps_low_confidence_deterministic_route(
 
 
 @pytest.mark.parametrize("intent", ["knowledge_explain", "knowledge_compare"])
-def test_case_facts_present_routes_to_case_regardless_of_intent_label(intent: str) -> None:
+def test_case_facts_present_routes_to_case_regardless_of_intent_label(
+    intent: str,
+) -> None:
     decision = _decision_from_payload(
         {"intent": intent, "confidence": 0.95, "case_facts_present": True},
         deterministic=_deterministic(PreGateClassification.KNOWLEDGE_QUERY),
@@ -203,7 +205,11 @@ def test_case_facts_present_routes_to_case_regardless_of_intent_label(intent: st
 def test_no_case_facts_knowledge_intent_stays_knowledge() -> None:
     # AC9 guard: no facts present -> knowledge stays knowledge (no over-routing to case).
     decision = _decision_from_payload(
-        {"intent": "knowledge_explain", "confidence": 0.95, "case_facts_present": False},
+        {
+            "intent": "knowledge_explain",
+            "confidence": 0.95,
+            "case_facts_present": False,
+        },
         deterministic=_deterministic(PreGateClassification.KNOWLEDGE_QUERY),
         model="test-model",
         hard_case_facts=False,

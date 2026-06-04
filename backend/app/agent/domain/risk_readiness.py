@@ -3,6 +3,7 @@
 The LLM may explain risks in natural language, but the numeric risk score and
 readiness level are backend-owned, rule-based projection facts.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -39,10 +40,21 @@ _ALIAS_MAP: dict[str, tuple[str, ...]] = {
     "medium_name": ("medium_name", "medium"),
     "temperature_min": ("temperature_min", "temperature_min_c"),
     "temperature_max": ("temperature_max", "temperature_max_c", "temperature_c"),
-    "pressure_nominal": ("pressure_nominal", "pressure_at_seal_bar", "pressure_delta_bar"),
+    "pressure_nominal": (
+        "pressure_nominal",
+        "pressure_at_seal_bar",
+        "pressure_delta_bar",
+    ),
     "speed_rpm": ("speed_rpm", "rpm"),
     "shaft_diameter": ("shaft_diameter", "shaft_diameter_mm"),
-    "geometry": ("geometry", "geometry_context", "housing_bore", "housing_bore_mm", "installation_width", "installation_width_mm"),
+    "geometry": (
+        "geometry",
+        "geometry_context",
+        "housing_bore",
+        "housing_bore_mm",
+        "installation_width",
+        "installation_width_mm",
+    ),
     "food_contact": ("food_contact", "compliance", "industry"),
     "atex": ("atex", "compliance", "industry"),
     "contamination": ("contamination", "contamination_condition", "medium_qualifiers"),
@@ -196,11 +208,15 @@ class ReadinessEvaluationResult:
         }
 
 
-def missing_critical_fields(profile: dict[str, Any], *, engineering_path: str | None = None) -> list[str]:
+def missing_critical_fields(
+    profile: dict[str, Any], *, engineering_path: str | None = None
+) -> list[str]:
     missing = [field for field in CRITICAL_FIELDS if not _has(profile, field)]
     path = str(engineering_path or "")
     if path in {"static", "hyd_pneu"}:
-        missing = [field for field in missing if field not in {"speed_rpm", "shaft_diameter"}]
+        missing = [
+            field for field in missing if field not in {"speed_rpm", "shaft_diameter"}
+        ]
     if path == "ms_pump":
         missing = [field for field in missing if field != "geometry"]
     return missing
@@ -217,13 +233,17 @@ def evaluate_risks(
     checks = checks or []
     results: list[RiskEvaluationResult] = []
 
-    critical_missing = missing_critical_fields(profile, engineering_path=engineering_path)
+    critical_missing = missing_critical_fields(
+        profile, engineering_path=engineering_path
+    )
     unknowns_missing = list(dict.fromkeys(missing_required_fields + critical_missing))
     results.append(
         RiskEvaluationResult(
             risk_name="unknowns_risk",
             score=9 if unknowns_missing else 0,
-            drivers=["critical_inputs_missing"] if unknowns_missing else ["critical_inputs_available"],
+            drivers=["critical_inputs_missing"]
+            if unknowns_missing
+            else ["critical_inputs_available"],
             missing_inputs=unknowns_missing,
             rule_ids=["risk.unknowns.missing_critical.v0"],
             explanation_short=(
@@ -257,7 +277,19 @@ def evaluate_risks(
 
     medium_known = medium is not None and not is_medium_placeholder_value(str(medium))
     corrosive = medium_known and (
-        _contains(medium, ("salz", "salt", "seawater", "meerwasser", "chlorid", "chloride", "saeure", "acid"))
+        _contains(
+            medium,
+            (
+                "salz",
+                "salt",
+                "seawater",
+                "meerwasser",
+                "chlorid",
+                "chloride",
+                "saeure",
+                "acid",
+            ),
+        )
         or _contains(qualifiers, ("chlorid", "chloride", "salinity"))
     )
     if not medium_known:
@@ -289,18 +321,25 @@ def evaluate_risks(
             RiskEvaluationResult(
                 "corrosion_risk",
                 score,
-                drivers=["corrosive_or_saline_medium"] + (["temperature_elevated"] if score >= 3 else []),
+                drivers=["corrosive_or_saline_medium"]
+                + (["temperature_elevated"] if score >= 3 else []),
                 rule_ids=["risk.corrosion.saline_or_acidic.v0"],
                 explanation_short="Mediumhinweise deuten auf Korrosions-/Werkstoffrisiko.",
                 confidence="medium",
                 claim_id="risk_readiness.corrosion.medium_hint",
                 claim_type="context_advisory",
                 subject_field="medium_name",
-                evidence_fields=[_first_present_field(profile, "medium_name", "medium") or "medium_name"],
+                evidence_fields=[
+                    _first_present_field(profile, "medium_name", "medium")
+                    or "medium_name"
+                ],
                 allowed_user_wording=(
                     "Das bekannte Medium erzeugt einen Pruefpunkt fuer Korrosion und Werkstoffvertraeglichkeit."
                 ),
-                forbidden_user_wording=["Der Werkstoff ist freigegeben.", "Das Material ist geeignet."],
+                forbidden_user_wording=[
+                    "Der Werkstoff ist freigegeben.",
+                    "Das Material ist geeignet.",
+                ],
             )
         )
     else:
@@ -315,18 +354,28 @@ def evaluate_risks(
                 claim_id="risk_readiness.corrosion.no_hint",
                 claim_type="context_advisory",
                 subject_field="medium_name",
-                evidence_fields=[_first_present_field(profile, "medium_name", "medium") or "medium_name"],
+                evidence_fields=[
+                    _first_present_field(profile, "medium_name", "medium")
+                    or "medium_name"
+                ],
             )
         )
 
-    abrasive = _contains(qualifiers, ("abras", "partikel", "particle", "sand", "feststoff", "solids", "schmutz"))
+    abrasive = _contains(
+        qualifiers,
+        ("abras", "partikel", "particle", "sand", "feststoff", "solids", "schmutz"),
+    )
     results.append(
         RiskEvaluationResult(
             "abrasion_risk",
             3 if abrasive else 0,
             drivers=["abrasive_contamination"] if abrasive else ["no_abrasive_hint"],
             rule_ids=["risk.abrasion.contamination.v0"],
-            explanation_short=("Partikel/Feststoffe koennen Dichtkante oder Gleitflaechen belasten." if abrasive else "Kein Abrasionshinweis aus den bekannten Angaben."),
+            explanation_short=(
+                "Partikel/Feststoffe koennen Dichtkante oder Gleitflaechen belasten."
+                if abrasive
+                else "Kein Abrasionshinweis aus den bekannten Angaben."
+            ),
             confidence="medium" if abrasive else "low",
         )
     )
@@ -348,7 +397,9 @@ def evaluate_risks(
                 allowed_user_wording=(
                     "Die Temperatur ist noch offen; das Werkstofffenster ist nicht belastbar pruefbar."
                 ),
-                forbidden_user_wording=["Die Temperatur ueberschreitet das Materialfenster."],
+                forbidden_user_wording=[
+                    "Die Temperatur ueberschreitet das Materialfenster."
+                ],
             )
         )
     else:
@@ -360,7 +411,9 @@ def evaluate_risks(
             score = 2
         else:
             score = 0
-        temp_field = _first_present_field(profile, "temperature_c", "temperature_max_c", "temperature_max")
+        temp_field = _first_present_field(
+            profile, "temperature_c", "temperature_max_c", "temperature_max"
+        )
         results.append(
             RiskEvaluationResult(
                 "temperature_risk",
@@ -376,11 +429,15 @@ def evaluate_risks(
                 allowed_user_wording=(
                     f"Die angegebene Temperatur von {temp:g} C wird als Screeningwert bewertet."
                 ),
-                forbidden_user_wording=["Die Temperatur ist als finale Freigabe ausreichend."],
+                forbidden_user_wording=[
+                    "Die Temperatur ist als finale Freigabe ausreichend."
+                ],
             )
         )
 
-    pressure_field = _first_present_field(profile, "pressure_at_seal_bar", "pressure_delta_bar", "pressure_nominal")
+    pressure_field = _first_present_field(
+        profile, "pressure_at_seal_bar", "pressure_delta_bar", "pressure_nominal"
+    )
     system_pressure_field = _first_present_field(profile, "pressure_system_bar")
     ambiguous_pressure_field = _first_present_field(profile, "ambiguous_pressure_bar")
     if pressure is None and ambiguous_pressure_field is not None:
@@ -454,7 +511,9 @@ def evaluate_risks(
                 allowed_user_wording=(
                     f"Der angegebene Druck direkt an der Dichtstelle bzw. Differenzdruck von {pressure:g} bar wird als Screeningwert bewertet."
                 ),
-                forbidden_user_wording=["Der Systemdruck beweist die Dichtstellenbelastung."],
+                forbidden_user_wording=[
+                    "Der Systemdruck beweist die Dichtstellenbelastung."
+                ],
             )
         )
 
@@ -502,7 +561,11 @@ def evaluate_risks(
     # behind `pack_for_engineering_path` would silently drop the latter two
     # (behaviour change). Honest core check > contorted pack abstraction
     # (Rule of Three §3.5; owner decision 2026-06-04).
-    elif speed is None and str(engineering_path or "") in {"rwdr", "ms_pump", "unclear_rotary"}:
+    elif speed is None and str(engineering_path or "") in {
+        "rwdr",
+        "ms_pump",
+        "unclear_rotary",
+    }:
         missing_speed = list(dict.fromkeys(pv_missing or ["speed_rpm"]))
         results.append(
             RiskEvaluationResult(
@@ -523,14 +586,30 @@ def evaluate_risks(
 
     compliance = _value(profile, "food_contact")
     regulated = _contains(compliance, ("food", "lebensmittel", "pharma", "hygiene"))
-    if regulated and not _contains(compliance, ("confirmed", "yes", "true", "food_contact")):
-        results.append(RiskEvaluationResult("hygiene_risk", 2, drivers=["regulated_context_unclear"], rule_ids=["risk.hygiene.regulated_context.v0"], explanation_short="Hygiene-/Lebensmittelkontext braucht explizite Klaerung.", confidence="medium"))
+    if regulated and not _contains(
+        compliance, ("confirmed", "yes", "true", "food_contact")
+    ):
+        results.append(
+            RiskEvaluationResult(
+                "hygiene_risk",
+                2,
+                drivers=["regulated_context_unclear"],
+                rule_ids=["risk.hygiene.regulated_context.v0"],
+                explanation_short="Hygiene-/Lebensmittelkontext braucht explizite Klaerung.",
+                confidence="medium",
+            )
+        )
 
     runout_field = _first_present_field(profile, "runout_mm", "shaft_runout")
     eccentricity_field = _first_present_field(profile, "eccentricity_mm")
     measured_runout_field = runout_field or eccentricity_field
-    measured_runout = _float(profile.get(measured_runout_field)) if measured_runout_field else None
-    if pack_for_engineering_path(engineering_path) is not None and measured_runout is not None:
+    measured_runout = (
+        _float(profile.get(measured_runout_field)) if measured_runout_field else None
+    )
+    if (
+        pack_for_engineering_path(engineering_path) is not None
+        and measured_runout is not None
+    ):
         score = 3 if measured_runout >= 0.2 else 0
         results.append(
             RiskEvaluationResult(
@@ -558,7 +637,9 @@ def evaluate_risks(
 
     surface_missing = not _has(profile, "surface_finish")
     runout_missing = not _has(profile, "runout")
-    if pack_for_engineering_path(engineering_path) is not None and (surface_missing or runout_missing):
+    if pack_for_engineering_path(engineering_path) is not None and (
+        surface_missing or runout_missing
+    ):
         missing = []
         if surface_missing:
             missing.append("counterface_surface_condition")
@@ -607,24 +688,41 @@ def evaluate_readiness(
     risk_results = list(risk_results or [])
 
     has_asset_or_problem = _has(profile, "asset_type") or bool(request_type)
-    has_motion_or_location = _has(profile, "motion_type") or _has(profile, "seal_location")
-    has_medium_or_problem = _has(profile, "medium_name") or _has(profile, "contamination")
-    has_operating = _has(profile, "temperature_max") or _has(profile, "pressure_nominal") or _has(profile, "speed_rpm")
+    has_motion_or_location = _has(profile, "motion_type") or _has(
+        profile, "seal_location"
+    )
+    has_medium_or_problem = _has(profile, "medium_name") or _has(
+        profile, "contamination"
+    )
+    has_operating = (
+        _has(profile, "temperature_max")
+        or _has(profile, "pressure_nominal")
+        or _has(profile, "speed_rpm")
+    )
     has_direction = bool(engineering_path) or _has(profile, "sealing_type")
     has_temp = _has(profile, "temperature_max")
     has_pressure = _has(profile, "pressure_nominal")
-    has_speed_or_static = _has(profile, "speed_rpm") or _contains(_value(profile, "motion_type"), ("static", "linear", "statisch", "linear"))
+    has_speed_or_static = _has(profile, "speed_rpm") or _contains(
+        _value(profile, "motion_type"), ("static", "linear", "statisch", "linear")
+    )
     has_geometry_partial = _has(profile, "shaft_diameter") or _has(profile, "geometry")
 
     if not (has_asset_or_problem or has_medium_or_problem or has_motion_or_location):
         level = 0
-    elif has_asset_or_problem and not (has_motion_or_location and has_medium_or_problem):
+    elif has_asset_or_problem and not (
+        has_motion_or_location and has_medium_or_problem
+    ):
         level = 1
     elif has_asset_or_problem and has_motion_or_location and has_medium_or_problem:
         level = 2
         if has_operating and has_direction:
             level = 3
-            if has_temp and has_pressure and has_speed_or_static and has_geometry_partial:
+            if (
+                has_temp
+                and has_pressure
+                and has_speed_or_static
+                and has_geometry_partial
+            ):
                 level = 4
     else:
         level = 1
@@ -636,12 +734,24 @@ def evaluate_readiness(
         risk_score_max = max(risk_score_max, result.score)
 
     blocking_unknowns = list(dict.fromkeys(blockers))
-    critical_missing = missing_critical_fields(profile, engineering_path=engineering_path)
+    critical_missing = missing_critical_fields(
+        profile, engineering_path=engineering_path
+    )
     missing_required = list(dict.fromkeys(critical_missing))
-    has_unknown_risk = any(result.score == 9 and result.missing_inputs for result in risk_results)
-    has_critical_risk = any(result.score >= 4 for result in risk_results if result.score != 9)
+    has_unknown_risk = any(
+        result.score == 9 and result.missing_inputs for result in risk_results
+    )
+    has_critical_risk = any(
+        result.score >= 4 for result in risk_results if result.score != 9
+    )
 
-    if level >= 4 and not critical_missing and not blocking_unknowns and not has_unknown_risk and not has_critical_risk:
+    if (
+        level >= 4
+        and not critical_missing
+        and not blocking_unknowns
+        and not has_unknown_risk
+        and not has_critical_risk
+    ):
         level = 5
 
     if has_critical_risk and level > 4:

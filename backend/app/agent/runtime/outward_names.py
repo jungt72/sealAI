@@ -51,7 +51,6 @@ def build_admissibility_payload(
     }
     if include_compat_aliases:
         payload["compat_aliases"] = {
-            alias: value
-            for alias in ADMISSIBILITY_COMPAT_ALIASES
+            alias: value for alias in ADMISSIBILITY_COMPAT_ALIASES
         }
     return payload

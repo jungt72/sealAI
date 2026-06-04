@@ -48,10 +48,9 @@ _ENABLE_BINARY_GATE: bool = (
 _ENABLE_CONVERSATION_RUNTIME: bool = (
     os.environ.get("SEALAI_ENABLE_CONVERSATION_RUNTIME", "true").lower() == "true"
 )
-_FORCE_LLM_FAST_RESPONDER: bool = (
-    os.environ.get("SEALAI_FORCE_LLM_FAST_RESPONDER", "true").lower()
-    in {"1", "true", "yes", "on"}
-)
+_FORCE_LLM_FAST_RESPONDER: bool = os.environ.get(
+    "SEALAI_FORCE_LLM_FAST_RESPONDER", "true"
+).lower() in {"1", "true", "yes", "on"}
 
 
 def _knowledge_answer_composer_enabled() -> bool:
@@ -694,9 +693,11 @@ async def _resolve_runtime_dispatch_impl(
             semantic_recent_history: tuple[Any, ...] = ()
             if request.session_id:
                 try:
-                    semantic_knowledge_context = await _load_live_knowledge_session_context(
-                        current_user=current_user,
-                        session_id=request.session_id,
+                    semantic_knowledge_context = (
+                        await _load_live_knowledge_session_context(
+                            current_user=current_user,
+                            session_id=request.session_id,
+                        )
                     )
                     if semantic_knowledge_context is not None:
                         semantic_recent_history = tuple(
@@ -807,7 +808,10 @@ async def _resolve_runtime_dispatch_impl(
                 ),
             )
 
-        if pre_gate.classification is PreGateClassification.META_QUESTION and request.session_id:
+        if (
+            pre_gate.classification is PreGateClassification.META_QUESTION
+            and request.session_id
+        ):
             governed_state = await _load_existing_governed_state_for_v7(
                 request=request,
                 current_user=current_user,
@@ -980,13 +984,10 @@ async def _resolve_runtime_dispatch_impl(
                 request=request,
                 knowledge_mode=knowledge_mode,
             )
-            if (
-                _v7_answer_mode(turn_decision)
-                in {
-                    AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value,
-                    AnswerMode.ACTIVE_CASE_PROCESS_QUESTION.value,
-                }
-            ):
+            if _v7_answer_mode(turn_decision) in {
+                AnswerMode.ACTIVE_CASE_SIDE_QUESTION.value,
+                AnswerMode.ACTIVE_CASE_PROCESS_QUESTION.value,
+            }:
                 return RuntimeDispatchResolution(
                     gate_route="GOVERNED",
                     gate_reason=f"v7_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
@@ -1003,14 +1004,10 @@ async def _resolve_runtime_dispatch_impl(
                         reason="active_case_side_or_process_question_before_governed_graph",
                     ),
                 )
-            if (
-                governed_state is not None
-                and _v7_answer_mode(turn_decision)
-                in {
-                    AnswerMode.GOVERNED_INTAKE.value,
-                    AnswerMode.PENDING_SLOT_ANSWER.value,
-                }
-            ):
+            if governed_state is not None and _v7_answer_mode(turn_decision) in {
+                AnswerMode.GOVERNED_INTAKE.value,
+                AnswerMode.PENDING_SLOT_ANSWER.value,
+            }:
                 return RuntimeDispatchResolution(
                     gate_route="GOVERNED",
                     gate_reason=f"v7_{_v7_answer_mode(turn_decision)}:{pre_gate.reasoning}",
@@ -1299,9 +1296,15 @@ async def _resolve_runtime_dispatch(
         runtime_action_type=getattr(traced_resolution.runtime_action, "action", None)
         or getattr(traced_resolution.runtime_action, "action_type", None)
         or getattr(traced_resolution.runtime_action, "kind", None),
-        runtime_action_answer_mode=getattr(traced_resolution.runtime_action, "answer_mode", None),
-        runtime_action_graph_allowed=getattr(traced_resolution.runtime_action, "graph_allowed", None),
-        runtime_action_decision_source=getattr(traced_resolution.runtime_action, "decision_source", None),
+        runtime_action_answer_mode=getattr(
+            traced_resolution.runtime_action, "answer_mode", None
+        ),
+        runtime_action_graph_allowed=getattr(
+            traced_resolution.runtime_action, "graph_allowed", None
+        ),
+        runtime_action_decision_source=getattr(
+            traced_resolution.runtime_action, "decision_source", None
+        ),
         v91_policy_present=getattr(traced_resolution, "v91_policy", None) is not None,
         v92_runtime_present=True,
     )
@@ -1571,7 +1574,9 @@ def _should_passthrough_high_fidelity_knowledge_answer(knowledge_response: Any) 
     return False
 
 
-def _should_passthrough_deterministic_material_comparison(knowledge_response: Any) -> bool:
+def _should_passthrough_deterministic_material_comparison(
+    knowledge_response: Any,
+) -> bool:
     """Keep material-vs-material answers on the neutral deterministic renderer.
 
     The deterministic KnowledgeService comparison (build_material_comparison_answer

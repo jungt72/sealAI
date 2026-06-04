@@ -12,7 +12,9 @@ from app.agent.state.models import GovernedSessionState
 
 
 @pytest.mark.asyncio
-async def test_structured_clarification_interrupts_instead_of_normal_completion() -> None:
+async def test_structured_clarification_interrupts_instead_of_normal_completion() -> (
+    None
+):
     graph = build_governed_graph()
 
     raw = await graph.ainvoke(GraphState())
@@ -52,9 +54,16 @@ async def test_resume_command_routes_next_user_input_back_into_observed_state() 
 
     assert result.output_response_class != "structured_clarification"
     assert persisted.observed.raw_extractions
-    assert any(item.field_name == "medium" for item in persisted.observed.raw_extractions)
-    assert any(item.field_name == "pressure_bar" for item in persisted.observed.raw_extractions)
-    assert any(item.field_name == "temperature_c" for item in persisted.observed.raw_extractions)
+    assert any(
+        item.field_name == "medium" for item in persisted.observed.raw_extractions
+    )
+    assert any(
+        item.field_name == "pressure_bar" for item in persisted.observed.raw_extractions
+    )
+    assert any(
+        item.field_name == "temperature_c"
+        for item in persisted.observed.raw_extractions
+    )
 
 
 @pytest.mark.asyncio

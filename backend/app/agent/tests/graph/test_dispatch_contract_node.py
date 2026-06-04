@@ -46,7 +46,9 @@ def _qualified_state() -> GraphState:
             mapped_product_family="Flachdichtung",
             mapped_material_family="PTFE",
             geometry_export_hint="dn_mm=50.0",
-            mapping_notes=["Mapping remains category-level only; no SKU or compound code is inferred."],
+            mapping_notes=[
+                "Mapping remains category-level only; no SKU or compound code is inferred."
+            ],
         ),
         rfq=RfqState(
             status="rfq_ready",
@@ -57,7 +59,9 @@ def _qualified_state() -> GraphState:
             dispatch_ready=True,
             dispatch_status="envelope_ready",
             transport_channel="internal_transport_envelope",
-            dispatch_notes=["Internal transport envelope is ready for later sender/connector consumption."],
+            dispatch_notes=[
+                "Internal transport envelope is ready for later sender/connector consumption."
+            ],
         ),
     ).model_copy(
         update={
@@ -95,8 +99,12 @@ class TestDispatchContractNode:
     async def test_incomplete_case_returns_partial_with_unresolved_points(self) -> None:
         state = _qualified_state().model_copy(
             update={
-                "dispatch": DispatchState(dispatch_ready=False, dispatch_status="not_ready"),
-                "rfq": RfqState(status="not_ready", rfq_ready=False, rfq_admissible=True),
+                "dispatch": DispatchState(
+                    dispatch_ready=False, dispatch_status="not_ready"
+                ),
+                "rfq": RfqState(
+                    status="not_ready", rfq_ready=False, rfq_admissible=True
+                ),
                 "governance": _qualified_state().governance.model_copy(
                     update={
                         "gov_class": "B",

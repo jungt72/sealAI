@@ -31,7 +31,11 @@ def _select_governed_render_mode(
     if response_class != "structured_clarification" or turn_context is None:
         return "standard_governed"
 
-    facts = [str(item or "").strip() for item in turn_context.confirmed_facts_summary if str(item or "").strip()]
+    facts = [
+        str(item or "").strip()
+        for item in turn_context.confirmed_facts_summary
+        if str(item or "").strip()
+    ]
     has_medium = any(item.lower().startswith("medium:") for item in facts)
     has_motion = any(item.lower().startswith("bewegungsart:") for item in facts)
     technical_fact_count = sum(
@@ -39,11 +43,21 @@ def _select_governed_render_mode(
         for item in facts
         if any(
             marker in item.lower()
-            for marker in ("medium:", "wellendurchmesser:", "drehzahl:", "betriebsdruck:", "betriebstemperatur:")
+            for marker in (
+                "medium:",
+                "wellendurchmesser:",
+                "drehzahl:",
+                "betriebsdruck:",
+                "betriebstemperatur:",
+            )
         )
     )
 
-    if turn_context.response_mode == "single_question" and has_medium and (has_motion or technical_fact_count >= 2):
+    if (
+        turn_context.response_mode == "single_question"
+        and has_medium
+        and (has_motion or technical_fact_count >= 2)
+    ):
         return "engineering_explainer_clarification"
     return "single_question"
 
@@ -74,7 +88,9 @@ def build_conversation_phase_prompt(
     return rendered["content"]
 
 
-def build_turn_context_instruction(turn_context: TurnContextContract | None) -> str | None:
+def build_turn_context_instruction(
+    turn_context: TurnContextContract | None,
+) -> str | None:
     """Render compact communication context without prescribing wording."""
     return _build_turn_context_instruction(
         turn_context,
@@ -102,7 +118,9 @@ def _build_turn_context_instruction(
         f"- Antwortmodus: {turn_context.response_mode}",
     ]
     if include_phase_guidance and turn_context.response_mode == "open_invitation":
-        lines.append("- Der Nutzer befindet sich noch in einer offenen Orientierungsphase.")
+        lines.append(
+            "- Der Nutzer befindet sich noch in einer offenen Orientierungsphase."
+        )
     if include_phase_guidance and turn_context.conversation_phase == "rapport":
         lines.append("- Im Einstieg steht Orientierung im Vordergrund.")
     if include_phase_guidance and turn_context.conversation_phase == "exploration":
@@ -111,27 +129,37 @@ def _build_turn_context_instruction(
         lines.append(f"- Nutzer-Signal: {turn_context.user_signal_mirror}")
     if include_focus and turn_context.primary_question:
         lines.append(f"- Relevanter offener Fokus: {turn_context.primary_question}")
-    reason = str(turn_context.primary_question_reason or turn_context.supporting_reason or "").strip()
+    reason = str(
+        turn_context.primary_question_reason or turn_context.supporting_reason or ""
+    ).strip()
     if include_reason and reason:
         lines.append(f"- Fachlicher Grund fuer diesen Fokus: {reason}")
     if turn_context.confirmed_facts_summary:
-        lines.append("- Bestaetigte Fakten: " + " | ".join(turn_context.confirmed_facts_summary))
+        lines.append(
+            "- Bestaetigte Fakten: " + " | ".join(turn_context.confirmed_facts_summary)
+        )
     if turn_context.open_points_summary:
         lines.append("- Offene Punkte: " + " | ".join(turn_context.open_points_summary))
     return "\n".join(lines)
 
 
 _REFLECTION_PREFIX_BUILDERS: dict[str, Callable[[str, List[str]], str]] = {
-    "structured_clarification": lambda facts_text, _open: f"Damit ist schon klarer: {facts_text}.",
-    "governed_state_update":    lambda facts_text, open_pts: (
-        f"Damit ist die Lage schon enger: {facts_text}." if open_pts else f"Stand jetzt: {facts_text}."
+    "structured_clarification": lambda facts_text,
+    _open: f"Damit ist schon klarer: {facts_text}.",
+    "governed_state_update": lambda facts_text, open_pts: (
+        f"Damit ist die Lage schon enger: {facts_text}."
+        if open_pts
+        else f"Stand jetzt: {facts_text}."
     ),
-    "technical_preselection":   lambda facts_text, open_pts: (
-        f"Die technische Richtung ist jetzt belastbarer: {facts_text}." if open_pts
+    "technical_preselection": lambda facts_text, open_pts: (
+        f"Die technische Richtung ist jetzt belastbarer: {facts_text}."
+        if open_pts
         else f"Die technische Richtung ist jetzt enger: {facts_text}."
     ),
-    "candidate_shortlist":      lambda facts_text, _open: f"Auf dieser Grundlage steht jetzt: {facts_text}.",
-    "inquiry_ready":            lambda facts_text, _open: f"Die Anfragebasis steht jetzt auf: {facts_text}.",
+    "candidate_shortlist": lambda facts_text,
+    _open: f"Auf dieser Grundlage steht jetzt: {facts_text}.",
+    "inquiry_ready": lambda facts_text,
+    _open: f"Die Anfragebasis steht jetzt auf: {facts_text}.",
 }
 
 
@@ -140,7 +168,9 @@ def build_reflection_prefix(
     *,
     response_class: str = "conversational_answer",
 ) -> str | None:
-    response_class = normalize_outward_response_class(response_class, default="conversational_answer")
+    response_class = normalize_outward_response_class(
+        response_class, default="conversational_answer"
+    )
     if turn_context is None:
         return None
 
@@ -148,21 +178,38 @@ def build_reflection_prefix(
     if user_signal:
         return user_signal.rstrip(".!?") + "."
 
-    facts = [str(item or "").strip() for item in turn_context.confirmed_facts_summary if str(item or "").strip()]
-    open_points = [str(item or "").strip() for item in turn_context.open_points_summary if str(item or "").strip()]
+    facts = [
+        str(item or "").strip()
+        for item in turn_context.confirmed_facts_summary
+        if str(item or "").strip()
+    ]
+    open_points = [
+        str(item or "").strip()
+        for item in turn_context.open_points_summary
+        if str(item or "").strip()
+    ]
     facts_text = ", ".join(facts[:2])
 
     if facts_text:
         prefix_builder = _REFLECTION_PREFIX_BUILDERS.get(response_class)
         if prefix_builder is not None:
             return prefix_builder(facts_text, open_points)
-        if turn_context.conversation_phase in {"recommendation", "matching", "rfq_handover", "review"}:
+        if turn_context.conversation_phase in {
+            "recommendation",
+            "matching",
+            "rfq_handover",
+            "review",
+        }:
             return f"Bisher steht: {facts_text}."
         if turn_context.conversation_phase in {"narrowing", "clarification"}:
             return f"Damit wird klarer: {facts_text}."
         return f"Ich habe bisher {facts_text} verstanden."
 
-    if open_points and turn_context.conversation_phase in {"narrowing", "clarification", "recommendation"}:
+    if open_points and turn_context.conversation_phase in {
+        "narrowing",
+        "clarification",
+        "recommendation",
+    }:
         if response_class == "technical_preselection":
             return f"Die Richtung steht, jetzt pruefe ich noch {open_points[0]}."
         return f"Der naechste Hebel liegt jetzt bei {open_points[0]}."
@@ -176,14 +223,23 @@ def compose_user_facing_mouth_reply(
     *,
     response_class: str = "conversational_answer",
 ) -> str:
-    response_class = normalize_outward_response_class(response_class, default="conversational_answer")
+    response_class = normalize_outward_response_class(
+        response_class, default="conversational_answer"
+    )
     reply = str(reply_text or "").strip()
     if not reply:
         return reply
 
     if turn_context is not None and turn_context.primary_question:
         lowered_reply = reply.lower()
-        if lowered_reply.startswith(("es fehlen", "bitte geben sie", "zur weiteren bearbeitung", "bitte ergänzen")):
+        if lowered_reply.startswith(
+            (
+                "es fehlen",
+                "bitte geben sie",
+                "zur weiteren bearbeitung",
+                "bitte ergänzen",
+            )
+        ):
             reply = str(turn_context.primary_question).strip()
         if turn_context.response_mode in {"open_invitation", "single_question"}:
             question_count = len(re.findall(r"\?", reply))
@@ -257,7 +313,9 @@ def build_governed_render_prompt(
             if turn_context.open_points_summary
             else None
         )
-        reason = str(turn_context.primary_question_reason or turn_context.supporting_reason or "").strip()
+        reason = str(
+            turn_context.primary_question_reason or turn_context.supporting_reason or ""
+        ).strip()
         lines.append("")
         lines.append("STATE-DRIVEN FOKUS:")
         if turn_context.turn_goal:
@@ -269,29 +327,51 @@ def build_governed_render_prompt(
     if render_mode == "engineering_explainer_clarification":
         lines.append("")
         lines.append("RENDER-ANWEISUNG FUER DIESEN MODUS:")
-        lines.append("- Schreibe wie ein erfahrener Mensch im Werkstatt-/Projektgespraech: ruhig, direkt, ohne KI-Klang.")
+        lines.append(
+            "- Schreibe wie ein erfahrener Mensch im Werkstatt-/Projektgespraech: ruhig, direkt, ohne KI-Klang."
+        )
         lines.append("- Nutze kurze Saetze. Maximal zwei Saetze vor der Rueckfrage.")
-        lines.append("- Wenn ein Wert erkannt wurde, sag einfach: 'Ich habe ... erkannt.'")
-        lines.append("- Erklaere den Grund in Alltagssprache, zum Beispiel: 'Damit niemand am Druck vorbeiredet.'")
-        lines.append("- Vermeide Woerter wie 'Dichtungsanforderungen', 'Betriebsdruck ist entscheidend', 'beeinflusst', 'technische Interpretation', 'Parameter' und 'release-blocking'.")
-        lines.append("- Vermeide abstrakte Muster wie 'entscheidend, um ... zu bestimmen' oder 'Anforderungen an die Dichtungstechnik'.")
-        lines.append("- Keine Fachartikel-Saetze, keine verschachtelten Saetze und keine unnoetigen Fuellwoerter.")
-        lines.append("- Bereits genannte Werte nicht erneut bestaetigen lassen, ausser sie widersprechen sich oder sind klar riskant.")
+        lines.append(
+            "- Wenn ein Wert erkannt wurde, sag einfach: 'Ich habe ... erkannt.'"
+        )
+        lines.append(
+            "- Erklaere den Grund in Alltagssprache, zum Beispiel: 'Damit niemand am Druck vorbeiredet.'"
+        )
+        lines.append(
+            "- Vermeide Woerter wie 'Dichtungsanforderungen', 'Betriebsdruck ist entscheidend', 'beeinflusst', 'technische Interpretation', 'Parameter' und 'release-blocking'."
+        )
+        lines.append(
+            "- Vermeide abstrakte Muster wie 'entscheidend, um ... zu bestimmen' oder 'Anforderungen an die Dichtungstechnik'."
+        )
+        lines.append(
+            "- Keine Fachartikel-Saetze, keine verschachtelten Saetze und keine unnoetigen Fuellwoerter."
+        )
+        lines.append(
+            "- Bereits genannte Werte nicht erneut bestaetigen lassen, ausser sie widersprechen sich oder sind klar riskant."
+        )
         lines.append("- Schliesse mit genau 1 natuerlichen Rueckfrage ab.")
-        lines.append("- Keine Materialwahl, keine Freigabe, keine konkrete Loesung vorwegnehmen.")
+        lines.append(
+            "- Keine Materialwahl, keine Freigabe, keine konkrete Loesung vorwegnehmen."
+        )
     elif render_mode == "single_question":
         lines.append("")
         lines.append("RENDER-ANWEISUNG FUER DIESEN MODUS:")
         lines.append("- Halte die Antwort knapp und ruhig.")
         lines.append("- Stelle genau 1 natuerliche Rueckfrage ohne Formularstil.")
-        lines.append("- Nicht 'bitte bestaetigen' oder 'bitte nennen' schreiben, wenn der Nutzer den Wert gerade genannt hat.")
+        lines.append(
+            "- Nicht 'bitte bestaetigen' oder 'bitte nennen' schreiben, wenn der Nutzer den Wert gerade genannt hat."
+        )
     if allowed_surface_claims:
         lines.append("")
         lines.append("ERLAUBTE SICHTBARE CLAIMS:")
         if isinstance(allowed_surface_claims, list):
-            lines.extend(f"- {claim}" for claim in allowed_surface_claims if str(claim).strip())
+            lines.extend(
+                f"- {claim}" for claim in allowed_surface_claims if str(claim).strip()
+            )
         else:
-            lines.append(f"- Fokus: {' | '.join(allowed_surface_claims['allowed_focus'])}")
+            lines.append(
+                f"- Fokus: {' | '.join(allowed_surface_claims['allowed_focus'])}"
+            )
             lines.append(f"- Guard: {allowed_surface_claims['class_guard']}")
             lines.append(
                 "- Verbotene Formulierungen / Behauptungen: "
@@ -301,7 +381,9 @@ def build_governed_render_prompt(
     if requirement_class_id:
         _domain_items.append(f"- Anforderungsklasse: {requirement_class_id}")
     if material_candidates:
-        _domain_items.append("- Kandidaten-Werkstoffe: " + " | ".join(material_candidates[:4]))
+        _domain_items.append(
+            "- Kandidaten-Werkstoffe: " + " | ".join(material_candidates[:4])
+        )
     if applicable_norms:
         _domain_items.append("- Anwendbare Normen: " + " | ".join(applicable_norms[:4]))
     if evidence_summary_lines:
@@ -331,7 +413,9 @@ def guard_governed_rendered_text(
         return str(fallback_text or "").strip()
     if allowed_surface_claims is None or isinstance(allowed_surface_claims, list):
         return text
-    fallback = str(allowed_surface_claims.get("fallback_text") or fallback_text or "").strip()
+    fallback = str(
+        allowed_surface_claims.get("fallback_text") or fallback_text or ""
+    ).strip()
     if not fallback:
         fallback = text
 
@@ -354,7 +438,9 @@ def guard_governed_rendered_text(
         if (
             single_question_text
             and not _violates_no_final_certainty_rule(single_question_lowered)
-            and not _violates_no_unauthorized_rfq_rule(single_question_lowered, response_class)
+            and not _violates_no_unauthorized_rfq_rule(
+                single_question_lowered, response_class
+            )
             and not _violates_class_guard(single_question_lowered, response_class)
         ):
             return single_question_text
@@ -497,7 +583,10 @@ def _extract_first_safe_structured_question(
 
 def _is_rfq_surface_fragment(fragment: str) -> bool:
     lowered = str(fragment or "").lower()
-    return any(marker in lowered for marker in ("rfq", "anfragebasis", "versand", "bestellbereit"))
+    return any(
+        marker in lowered
+        for marker in ("rfq", "anfragebasis", "versand", "bestellbereit")
+    )
 
 
 def _violates_no_final_certainty_rule(lowered_text: str) -> bool:
@@ -511,7 +600,9 @@ def _violates_no_unauthorized_rfq_rule(lowered_text: str, response_class: str) -
 
 
 def _violates_class_guard(lowered_text: str, response_class: str) -> bool:
-    response_class = normalize_outward_response_class(response_class, default="conversational_answer")
+    response_class = normalize_outward_response_class(
+        response_class, default="conversational_answer"
+    )
     return any(
         fragment in lowered_text
         for fragment in _CLASS_GUARD_FRAGMENTS.get(response_class, ())
@@ -550,9 +641,13 @@ def compose_result_reply(
 
     parts = [fallback_text.strip()]
     if facts_prefix and turn_context.confirmed_facts_summary:
-        parts.append(f"{facts_prefix}: " + " | ".join(turn_context.confirmed_facts_summary))
+        parts.append(
+            f"{facts_prefix}: " + " | ".join(turn_context.confirmed_facts_summary)
+        )
     if open_points_prefix and turn_context.open_points_summary:
-        parts.append(f"{open_points_prefix}: " + " | ".join(turn_context.open_points_summary[:2]))
+        parts.append(
+            f"{open_points_prefix}: " + " | ".join(turn_context.open_points_summary[:2])
+        )
     reply = "\n".join(part for part in parts if part)
     return compose_user_facing_mouth_reply(
         reply,

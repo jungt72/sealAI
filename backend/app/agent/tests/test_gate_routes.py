@@ -61,7 +61,9 @@ class TestNewRouteNames:
 
     def test_uncertainty_returns_EXPLORATION(self):
         with patch("app.agent.runtime.gate._call_gate_llm") as mock_llm:
-            decision = decide_route("Ich bin unsicher, welche Richtung sinnvoll ist.", CONV)
+            decision = decide_route(
+                "Ich bin unsicher, welche Richtung sinnvoll ist.", CONV
+            )
         mock_llm.assert_not_called()
         assert decision.route == "EXPLORATION"
 
@@ -139,9 +141,9 @@ class TestNoOldRouteNames:
         for msg in ["Hallo", "Wir haben Probleme.", "Ich bin unsicher."]:
             result = classify_light_route(msg)
             if result is not None:
-                assert result.route not in self.OLD_NAMES, (
-                    f"classify_light_route('{msg}') gab alten Namen '{result.route}' zurueck"
-                )
+                assert (
+                    result.route not in self.OLD_NAMES
+                ), f"classify_light_route('{msg}') gab alten Namen '{result.route}' zurueck"
 
     def test_apply_llm_result_not_old_name(self):
         for old_name in ["CONVERSATION", "EXPLORATION", "GOVERNED"]:
@@ -162,9 +164,9 @@ class TestRouteAliases:
     def test_aliases_values_are_valid_routes(self):
         valid = {"CONVERSATION", "EXPLORATION", "GOVERNED"}
         for old_name, new_name in ROUTE_ALIASES.items():
-            assert new_name in valid, (
-                f"ROUTE_ALIASES['{old_name}'] = '{new_name}' ist kein gueltiger Route-Name"
-            )
+            assert (
+                new_name in valid
+            ), f"ROUTE_ALIASES['{old_name}'] = '{new_name}' ist kein gueltiger Route-Name"
 
     def test_aliases_covers_all_three_old_names(self):
         assert set(ROUTE_ALIASES.keys()) == {
@@ -185,6 +187,7 @@ class TestFrontdoorRouteLiteral:
     def test_new_names_are_valid_routes(self):
         # Literal-Type-Check via get_args
         import typing
+
         args = typing.get_args(FrontdoorRoute)
         assert "CONVERSATION" in args
         assert "EXPLORATION" in args
@@ -192,6 +195,7 @@ class TestFrontdoorRouteLiteral:
 
     def test_old_names_not_in_literal(self):
         import typing
+
         args = typing.get_args(FrontdoorRoute)
         assert "instant_light_reply" not in args
         assert "light_exploration" not in args
@@ -199,6 +203,7 @@ class TestFrontdoorRouteLiteral:
 
     def test_exactly_three_routes(self):
         import typing
+
         args = typing.get_args(FrontdoorRoute)
         assert len(args) == 3
 
@@ -221,7 +226,9 @@ class TestGovernedSessionNewNames:
         assert decision.reason == "governed_instant_override"
 
     def test_governed_session_light_override_returns_EXPLORATION(self):
-        llm_result = LLMGateResult(route="EXPLORATION", confidence=_GOVERNED_LIGHT_THRESHOLD)
+        llm_result = LLMGateResult(
+            route="EXPLORATION", confidence=_GOVERNED_LIGHT_THRESHOLD
+        )
         with patch("app.agent.runtime.gate._call_gate_llm", return_value=llm_result):
             decision = decide_route("Nur kurz.", GOV)
         assert decision.route == "EXPLORATION"

@@ -305,7 +305,9 @@ class KnowledgeService:
                 ]
             )
         else:
-            lines.append("Ich habe dazu kuratierte SeaLAI-Hinweise gefunden. Kurz eingeordnet:")
+            lines.append(
+                "Ich habe dazu kuratierte SeaLAI-Hinweise gefunden. Kurz eingeordnet:"
+            )
         sources: list[KnowledgeSource] = []
         evidence: list[KnowledgeEvidence] = []
         seen_sources: set[str] = set()
@@ -1360,7 +1362,9 @@ def _should_query_ptfe_factcards(user_input: str) -> bool:
     """Avoid PTFE factcards overpowering RAG for other named materials."""
 
     text = str(user_input or "")
-    if _NON_PTFE_MATERIAL_QUERY_PATTERN.search(text) and not _PTFE_QUERY_PATTERN.search(text):
+    if _NON_PTFE_MATERIAL_QUERY_PATTERN.search(text) and not _PTFE_QUERY_PATTERN.search(
+        text
+    ):
         return False
     return True
 
@@ -1433,7 +1437,11 @@ def _named_evidence_tokens(user_input: str) -> set[str]:
     medium_tokens = {token for token in _MEDIUM_EVIDENCE_TOKENS if token in text}
     if medium_tokens:
         return medium_tokens
-    material_tokens = {token for token in _MATERIAL_EVIDENCE_TOKENS if re.search(rf"\b{re.escape(token)}\b", text)}
+    material_tokens = {
+        token
+        for token in _MATERIAL_EVIDENCE_TOKENS
+        if re.search(rf"\b{re.escape(token)}\b", text)
+    }
     if "ptfe" in material_tokens and len(material_tokens) > 1:
         material_tokens.remove("ptfe")
     return material_tokens

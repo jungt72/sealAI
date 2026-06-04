@@ -26,7 +26,10 @@ from app.agent.communication.models import (
 )
 from app.agent.communication.speech_act import SpeechActClassifier
 from app.agent.communication.state_transition import StateTransitionGuard
-from app.agent.communication.trace import CommunicationTraceSink, JsonlCommunicationTraceSink
+from app.agent.communication.trace import (
+    CommunicationTraceSink,
+    JsonlCommunicationTraceSink,
+)
 
 
 def _elapsed_ms(started_at: float) -> float:
@@ -67,7 +70,8 @@ class ConversationOrchestrator:
         self.enabled = (
             enabled
             if enabled is not None
-            else os.environ.get("HUMAN_COMMUNICATION_LAYER_ENABLED", "true").lower() != "false"
+            else os.environ.get("HUMAN_COMMUNICATION_LAYER_ENABLED", "true").lower()
+            != "false"
         )
 
     async def handle(
@@ -90,7 +94,9 @@ class ConversationOrchestrator:
             tenant_id=tenant_id,
             conversation_summary=conversation_summary,
         )
-        mode = self.mode_router.route(user_message, has_case_state=case_state is not None)
+        mode = self.mode_router.route(
+            user_message, has_case_state=case_state is not None
+        )
         return await self._handle_preassembled_state(
             state=state,
             mode=mode,
@@ -113,8 +119,13 @@ class ConversationOrchestrator:
             case_id=case_id,
             deterministic_reply=fallback_text,
         )
-        mode = self.mode_router.route(user_text, has_case_state=turn_context is not None)
-        if response_class == "inquiry_ready" and mode is not ConversationMode.OUT_OF_SCOPE_OR_UNSAFE:
+        mode = self.mode_router.route(
+            user_text, has_case_state=turn_context is not None
+        )
+        if (
+            response_class == "inquiry_ready"
+            and mode is not ConversationMode.OUT_OF_SCOPE_OR_UNSAFE
+        ):
             mode = ConversationMode.RFQ_PREPARATION
         return await self._handle_preassembled_state(
             state=state,
@@ -136,7 +147,11 @@ class ConversationOrchestrator:
         latency_ms_by_stage["claims"] = _elapsed_ms(stage_started)
 
         stage_started = time.perf_counter()
-        raw_extracted = [] if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE else self.extraction_service.extract(user_message)
+        raw_extracted = (
+            []
+            if mode is ConversationMode.OUT_OF_SCOPE_OR_UNSAFE
+            else self.extraction_service.extract(user_message)
+        )
         latency_ms_by_stage["field_extraction"] = _elapsed_ms(stage_started)
 
         stage_started = time.perf_counter()
@@ -170,7 +185,9 @@ class ConversationOrchestrator:
                 contains_final_approval=False,
                 requires_human_review=True,
                 safety_flags=["deterministic_guarded_response"],
-                next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
+                next_action=state.allowed_next_actions[0]
+                if state.allowed_next_actions
+                else None,
             )
             result = HumanCommunicationResult(
                 assistant_message=direct_message,
@@ -210,7 +227,9 @@ class ConversationOrchestrator:
                 mode=mode,
                 state=state,
                 allowed_claims=allowed_claims,
-                proposed_field_updates=[item.model_dump(mode="json") for item in extracted],
+                proposed_field_updates=[
+                    item.model_dump(mode="json") for item in extracted
+                ],
             )
             latency_ms_by_stage["llm"] = _elapsed_ms(llm_started)
         except Exception as exc:  # noqa: BLE001
@@ -246,7 +265,9 @@ class ConversationOrchestrator:
                 contains_final_approval=False,
                 requires_human_review=True,
                 safety_flags=guard_result.errors,
-                next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
+                next_action=state.allowed_next_actions[0]
+                if state.allowed_next_actions
+                else None,
             )
             result = HumanCommunicationResult(
                 assistant_message=fallback,
@@ -311,7 +332,9 @@ class ConversationOrchestrator:
             contains_final_approval=False,
             requires_human_review=True,
             safety_flags=validation_errors,
-            next_action=state.allowed_next_actions[0] if state.allowed_next_actions else None,
+            next_action=state.allowed_next_actions[0]
+            if state.allowed_next_actions
+            else None,
         )
         result = HumanCommunicationResult(
             assistant_message=message,
@@ -357,7 +380,9 @@ class ConversationOrchestrator:
             cited_evidence_ref_ids_used=list(contract.cited_evidence_ref_ids),
             guard_result=guard_result,
             guard_decision=transition.decision if transition else None,
-            state_patch_size=transition.state_patch_size if transition else len(contract.proposed_field_updates),
+            state_patch_size=transition.state_patch_size
+            if transition
+            else len(contract.proposed_field_updates),
             fallback_level=transition.fallback_level if transition else 0,
             language=transition.language if transition else None,
             latency_ms_by_stage=latency_ms_by_stage or {},
@@ -382,7 +407,8 @@ class ConversationOrchestrator:
         ids = [
             claim.id
             for claim in allowed_claims
-            if getattr(claim, "type", None) in {"missing_field", "allowed_action", "limitation"}
+            if getattr(claim, "type", None)
+            in {"missing_field", "allowed_action", "limitation"}
         ]
         return ids[:6]
 
@@ -450,23 +476,38 @@ def _best_next_question(state: CaseConversationState) -> str:
         return active_question
 
     missing_keys = {str(field.key).strip().lower() for field in state.missing_fields}
-    missing_labels = {str(field.label).strip().lower() for field in state.missing_fields}
+    missing_labels = {
+        str(field.label).strip().lower() for field in state.missing_fields
+    }
     combined = missing_keys | missing_labels
 
-    if {"asset_type", "pump or aggregate type", "anlage", "anlage/baugruppe"}.intersection(combined):
+    if {
+        "asset_type",
+        "pump or aggregate type",
+        "anlage",
+        "anlage/baugruppe",
+    }.intersection(combined):
         return "In welcher Anlage oder Baugruppe sitzt die Dichtung, zum Beispiel Pumpe, Rührwerk, Getriebe, Flansch oder Hydraulik?"
     if {"seal_type", "dichtungstyp", "dichtungsprinzip"}.intersection(combined):
         return "Um welches Dichtprinzip geht es ungefähr: O-Ring, Wellendichtring, Flachdichtung, Hydraulikdichtung oder Gleitringdichtung?"
     if {"seal_location", "dichtstelle"}.intersection(combined):
         return "Wo sitzt die Dichtung genau: an einer Welle, an einem Flansch, in einem Zylinder oder an einer anderen Stelle?"
-    if {"motion_type", "statisch oder dynamisch", "static or dynamic"}.intersection(combined):
+    if {"motion_type", "statisch oder dynamisch", "static or dynamic"}.intersection(
+        combined
+    ):
         return "Ist die Dichtstelle statisch, rotierend oder linear bewegt?"
     if {"medium", "medium_name"}.intersection(combined):
         return "Welches Medium liegt direkt an der Dichtstelle an?"
-    if {"pressure_bar", "pressure_nominal", "druck", "betriebsdruck"}.intersection(combined):
+    if {"pressure_bar", "pressure_nominal", "druck", "betriebsdruck"}.intersection(
+        combined
+    ):
         return "Welcher Druck liegt an der Dichtstelle an, und ist das Dauer- oder Spitzendruck?"
-    if {"temperature_c", "temperature_max_c", "temperatur", "temperature"}.intersection(combined):
-        return "Welche Temperatur sieht die Dichtung im normalen Betrieb und als Maximum?"
+    if {"temperature_c", "temperature_max_c", "temperatur", "temperature"}.intersection(
+        combined
+    ):
+        return (
+            "Welche Temperatur sieht die Dichtung im normalen Betrieb und als Maximum?"
+        )
     if {"speed_rpm", "drehzahl"}.intersection(combined):
         return "Welche Drehzahl liegt an der Welle an?"
     if {"shaft_diameter_mm", "wellendurchmesser"}.intersection(combined):
@@ -478,7 +519,9 @@ def _best_next_question(state: CaseConversationState) -> str:
             return next_action
         return f"Was kannst du mir dazu als Nächstes sagen: {next_action}?"
     if state.missing_fields:
-        return f"Was kannst du mir als Nächstes zu {state.missing_fields[0].label} sagen?"
+        return (
+            f"Was kannst du mir als Nächstes zu {state.missing_fields[0].label} sagen?"
+        )
     return ""
 
 
@@ -487,8 +530,7 @@ def _no_release_answer(state: CaseConversationState) -> str:
         "Nein, so eine abschliessende Auslegungszusage kann SeaLAI nicht geben. "
         "SeaLAI kann den Fall strukturieren, Risiken und offene Punkte sichtbar machen "
         "und eine Anfragebasis vorbereiten. Die finale technische Pruefung bleibt beim Hersteller "
-        "oder einer verantwortlichen technischen Stelle."
-        + _format_next_question(state)
+        "oder einer verantwortlichen technischen Stelle." + _format_next_question(state)
     ).strip()
 
 
@@ -528,14 +570,19 @@ def _intent_to_start_answer(state: CaseConversationState) -> str:
 def _unmatched_confirmation_answer(state: CaseConversationState) -> str:
     next_step = _format_next_question(state)
     if next_step:
-        return ("Damit ich nichts falsch uebernehme: Worauf bezieht sich dein Ja genau?" + next_step).strip()
+        return (
+            "Damit ich nichts falsch uebernehme: Worauf bezieht sich dein Ja genau?"
+            + next_step
+        ).strip()
     return "Damit ich nichts falsch uebernehme: Worauf bezieht sich dein Ja genau?"
 
 
 def _unknown_answer(state: CaseConversationState) -> str:
     next_step = _format_next_question(state)
     if next_step:
-        return ("Alles gut, dann markieren wir das nicht als geklaert." + next_step).strip()
+        return (
+            "Alles gut, dann markieren wir das nicht als geklaert." + next_step
+        ).strip()
     return "Alles gut, dann markieren wir das nicht als geklaert. Was ist der naechste Punkt, den du sicher weisst?"
 
 

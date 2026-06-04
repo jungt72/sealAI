@@ -24,11 +24,17 @@ def build_conversation_task_state(
     return ConversationTaskState(
         active_intent=_intent_from_response_class(response_class),
         last_asked_question=question,
-        open_side_topics=_strings(getattr(governed_context, "open_points", []), limit=6),
+        open_side_topics=_strings(
+            getattr(governed_context, "open_points", []), limit=6
+        ),
         answer_depth=answer_depth,
         pause_resume_status="waiting_for_user" if question else "active",
         user_preference_notes=_strings(
-            getattr(getattr(state, "exploration_progress", None), "tentative_domain_signals", []),
+            getattr(
+                getattr(state, "exploration_progress", None),
+                "tentative_domain_signals",
+                [],
+            ),
             limit=4,
         ),
     )

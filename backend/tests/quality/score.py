@@ -51,7 +51,9 @@ def _gate_tool_hallucination(answer: str, requires_rag: bool) -> List[str]:
             "ich habe nachgeschlagen",
         )
     )
-    has_sources = ("## quellen" in lowered) or ("quelle:" in lowered) or ("dokument:" in lowered)
+    has_sources = (
+        ("## quellen" in lowered) or ("quelle:" in lowered) or ("dokument:" in lowered)
+    )
     if claims_tool and not has_sources:
         return ["G2: tool/knowledge claim without sources"]
     if requires_rag and not has_sources:
@@ -83,20 +85,34 @@ def score_answer(prompt_case: Dict[str, Any], answer: str) -> ScoreResult:
     # Simple 0–5 heuristics per category
     categories: Dict[str, int] = {}
 
-    categories["UX/Structure"] = 5 if not missing_sections else max(0, 5 - min(5, len(missing_sections)))
+    categories["UX/Structure"] = (
+        5 if not missing_sections else max(0, 5 - min(5, len(missing_sections)))
+    )
 
     completeness_markers = ("fehlende", "bitte", "benötige")
-    categories["Completeness"] = 5 if any(m in lowered for m in completeness_markers) else 3
+    categories["Completeness"] = (
+        5 if any(m in lowered for m in completeness_markers) else 3
+    )
 
     transparency_markers = ("annahmen", "unsicher", "grenze", "grenzen")
-    categories["Transparency"] = 5 if any(m in lowered for m in transparency_markers) else 3
+    categories["Transparency"] = (
+        5 if any(m in lowered for m in transparency_markers) else 3
+    )
 
     actionability_markers = ("nächste schritte", "checkliste", "1)")
-    categories["Actionability"] = 5 if any(m in lowered for m in actionability_markers) else 3
+    categories["Actionability"] = (
+        5 if any(m in lowered for m in actionability_markers) else 3
+    )
 
-    categories["Tool Usage Discipline"] = 5 if not any("Tool discipline" in g for g in gate_failures) else 2
+    categories["Tool Usage Discipline"] = (
+        5 if not any("Tool discipline" in g for g in gate_failures) else 2
+    )
 
-    categories["RAG Grounding"] = 5 if (requires_rag and ("## quellen" in lowered or "dokument:" in lowered)) else (3 if not requires_rag else 1)
+    categories["RAG Grounding"] = (
+        5
+        if (requires_rag and ("## quellen" in lowered or "dokument:" in lowered))
+        else (3 if not requires_rag else 1)
+    )
 
     categories["Safety/Compliance"] = 5 if not gate_failures else 2
 
@@ -112,10 +128,21 @@ def _load_golden(path: Path) -> List[Dict[str, Any]]:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline heuristic scorer for SealAI answers.")
-    parser.add_argument("--golden", type=Path, required=True, help="Path to golden_prompts.json")
-    parser.add_argument("--answer-file", type=Path, required=True, help="Path to a text file containing the answer")
-    parser.add_argument("--id", dest="case_id", required=True, help="Golden prompt id to score against")
+    parser = argparse.ArgumentParser(
+        description="Offline heuristic scorer for SealAI answers."
+    )
+    parser.add_argument(
+        "--golden", type=Path, required=True, help="Path to golden_prompts.json"
+    )
+    parser.add_argument(
+        "--answer-file",
+        type=Path,
+        required=True,
+        help="Path to a text file containing the answer",
+    )
+    parser.add_argument(
+        "--id", dest="case_id", required=True, help="Golden prompt id to score against"
+    )
     args = parser.parse_args(argv)
 
     golden = _load_golden(args.golden)
@@ -139,4 +166,3 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -16,9 +16,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("rag_documents", sa.Column("source_system", sa.String(), nullable=True))
-    op.add_column("rag_documents", sa.Column("source_document_id", sa.String(), nullable=True))
-    op.add_column("rag_documents", sa.Column("source_modified_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "rag_documents", sa.Column("source_system", sa.String(), nullable=True)
+    )
+    op.add_column(
+        "rag_documents", sa.Column("source_document_id", sa.String(), nullable=True)
+    )
+    op.add_column(
+        "rag_documents",
+        sa.Column("source_modified_at", sa.DateTime(timezone=True), nullable=True),
+    )
     op.create_index(
         "ix_rag_documents_source_identity",
         "rag_documents",

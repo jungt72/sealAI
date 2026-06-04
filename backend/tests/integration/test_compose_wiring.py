@@ -12,7 +12,9 @@ def _truthy(value: str | None) -> bool:
 RUN_INTEGRATION = _truthy(os.getenv("RUN_INTEGRATION"))
 
 
-@pytest.mark.skipif(not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests.")
+@pytest.mark.skipif(
+    not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests."
+)
 def test_compose_backend_health_200() -> None:
     import httpx
 
@@ -23,7 +25,9 @@ def test_compose_backend_health_200() -> None:
     assert r.json().get("service") == "sealai-agent"
 
 
-@pytest.mark.skipif(not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests.")
+@pytest.mark.skipif(
+    not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests."
+)
 def test_compose_backend_patch_unauth_401_not_500() -> None:
     import httpx
 
@@ -36,7 +40,9 @@ def test_compose_backend_patch_unauth_401_not_500() -> None:
     assert r.status_code == 401
 
 
-@pytest.mark.skipif(not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests.")
+@pytest.mark.skipif(
+    not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests."
+)
 def test_compose_nginx_routes_agent_health_200() -> None:
     import httpx
 
@@ -49,7 +55,9 @@ def test_compose_nginx_routes_agent_health_200() -> None:
     assert r.json().get("service") == "sealai-agent"
 
 
-@pytest.mark.skipif(not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests.")
+@pytest.mark.skipif(
+    not RUN_INTEGRATION, reason="Set RUN_INTEGRATION=1 to run compose wiring tests."
+)
 def test_compose_nginx_backend_forwarding_keeps_401() -> None:
     import httpx
 

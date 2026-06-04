@@ -107,7 +107,9 @@ def test_registry_finds_applicable_fake_module() -> None:
 
 def test_registry_runs_only_applicable_modules() -> None:
     registry = NormModuleRegistry([FakeNormModule(), Din3760Iso6194Module()])
-    results = registry.run_checks({"engineering_path": "fake_path", "fake_required": True})
+    results = registry.run_checks(
+        {"engineering_path": "fake_path", "fake_required": True}
+    )
     assert len(results) == 1
     assert results[0].module_id == "norm_fake_extension"
     assert results[0].status is NormCheckStatus.PASS

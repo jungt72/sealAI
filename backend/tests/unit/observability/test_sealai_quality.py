@@ -123,4 +123,7 @@ def test_evaluator_catalog_is_review_only_v92_and_contains_core_checks() -> None
         "rag_claim_level_respected",
     }.issubset(names)
     assert all(entry["auto_merge_allowed"] is False for entry in catalog)
-    assert all(entry["engine_action_policy"] == "suggest_only_human_review_required" for entry in catalog)
+    assert all(
+        entry["engine_action_policy"] == "suggest_only_human_review_required"
+        for entry in catalog
+    )

@@ -188,7 +188,9 @@ def test_nbr_material_definition_has_engineering_depth_and_hard_values() -> None
     assert "keine freigabe" in text
 
 
-def test_material_comparison_nbr_ffkm_keeps_requested_pair_and_engineering_depth() -> None:
+def test_material_comparison_nbr_ffkm_keeps_requested_pair_and_engineering_depth() -> (
+    None
+):
     response = KnowledgeService(factcard_store=_FactcardStore([])).answer(
         "bitte vergleiche NBR mit FFKM"
     )
