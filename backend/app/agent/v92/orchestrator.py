@@ -49,8 +49,9 @@ from app.domain.seal_type import (
     normalize_seal_type,
     seal_family_for_type,
 )
-# P1-1: required-field sets are domain-owned (relocated verbatim out of the core).
-from app.domain.seal_required_fields import required_fields_for as _required_fields_for
+# P1-1: required fields come from the domain pack seam (RWDR pack + shallow stubs),
+# never from a core per-type branch.
+from app.domain.seal_packs import required_fields_for as _required_fields_for
 from app.mcp.calculations.oring_groove import lookup_nut
 
 
