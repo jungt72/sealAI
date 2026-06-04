@@ -22,6 +22,7 @@ def test_source_type_contains_stable_v083_values() -> None:
         "rag_verified",
         "partner_verified",
         "manufacturer_documented",
+        "manufacturer_response",  # C10 (2026-06-04): additive — post-RFQ manufacturer feedback
         "uploaded_evidence",
         "user_stated",
         "deterministic_calculation",

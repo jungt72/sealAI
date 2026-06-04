@@ -15,6 +15,9 @@ class SourceType(str, Enum):
     rag_verified = "rag_verified"
     partner_verified = "partner_verified"
     manufacturer_documented = "manufacturer_documented"
+    # C10: post-RFQ structured manufacturer feedback (a response), distinct from a
+    # documented datasheet fact. Never authoritative / never a release basis.
+    manufacturer_response = "manufacturer_response"
     uploaded_evidence = "uploaded_evidence"
     user_stated = "user_stated"
     deterministic_calculation = "deterministic_calculation"
@@ -85,6 +88,8 @@ _SOURCE_ALIASES: dict[str, SourceType] = {
     "manufacturer": SourceType.manufacturer_documented,
     "manufacturer_documented": SourceType.manufacturer_documented,
     "manufacturer_doc": SourceType.manufacturer_documented,
+    "manufacturer_response": SourceType.manufacturer_response,
+    "manufacturer_feedback": SourceType.manufacturer_response,
     "document": SourceType.uploaded_evidence,
     "documented": SourceType.uploaded_evidence,
     "evidence": SourceType.uploaded_evidence,
