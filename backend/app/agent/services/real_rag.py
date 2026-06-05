@@ -24,7 +24,14 @@ import logging
 import time
 from typing import Any, Optional
 
+import structlog
+
 logger = logging.getLogger(__name__)
+# Stage A (W6/Rang 2): RAG tier timings + the Tier-0 backstop must be prod-visible.
+# stdlib `logger` stays dark in prod docker logs (only structlog reaches stdout);
+# the timing/violation events below use `slog` so they surface. The legacy
+# diagnostic lines keep `logger` to hold this guard-wiring patch minimal.
+slog = structlog.get_logger("agent.services.real_rag")
 
 # Minimum number of hits from Tier 1 to skip Tier 2.
 _TIER1_MIN_HITS = 2
@@ -76,6 +83,7 @@ async def retrieve_with_tenant(
     """
     from app.agent.runtime.turn_tier import (
         TierViolation,
+        current_declared_tier,
         enforce_retrieval_allowed,
     )
 
@@ -86,7 +94,18 @@ async def retrieve_with_tenant(
     # worker thread where the contextvar does not propagate, and its TierViolation
     # would in any case be swallowed by the broad Tier-1 handler and cascade into
     # the unguarded BM25 Tier-2. This is the single funnel for the cascade.
-    enforce_retrieval_allowed(retrieval_kind="rag_cascade")
+    try:
+        enforce_retrieval_allowed(retrieval_kind="rag_cascade")
+    except TierViolation:
+        # Stage A item 3: the fail-closed backstop is a routing-bug signal — it must
+        # not be silent. Log (route/tier context) and re-raise unchanged.
+        slog.warning(
+            "tier0_retrieval_blocked",
+            retrieval_kind="rag_cascade",
+            declared_tier=current_declared_tier(),
+            tenant=tenant_id,
+        )
+        raise
 
     # Phase 0C.3: tenant_id is mandatory — hard-abort instead of warn-and-proceed.
     # Returning [] is safe; the caller (graph.py) uses an empty list gracefully.
@@ -126,17 +145,23 @@ async def retrieve_with_tenant(
             tier1_hits, tier1_meta = raw or ([], {})
         else:
             tier1_hits = raw or []
-        logger.info(
-            "[real_rag] tier1_hybrid: %d hits (%.2fs) tenant=%s",
-            len(tier1_hits),
-            time.monotonic() - t_start,
-            tenant_id,
+        slog.info(
+            "rag_tier1_hybrid",
+            hits=len(tier1_hits),
+            duration_ms=int((time.monotonic() - t_start) * 1000),
+            tenant=tenant_id,
         )
     except TierViolation:
         # Fail-closed: a Tier-0 turn must never be swallowed into the BM25 cascade.
         # Re-raise past the broad handler (the entry guard above normally fires
         # first; this keeps the funnel closed even if hybrid_retrieve is reached
-        # in-context).
+        # in-context). Stage A item 3: log the backstop, never silent.
+        slog.warning(
+            "tier0_retrieval_blocked",
+            retrieval_kind="rag_cascade_hybrid",
+            declared_tier=current_declared_tier(),
+            tenant=tenant_id,
+        )
         raise
     except Exception as exc:
         tier1_error = f"{type(exc).__name__}: {exc}"
@@ -200,11 +225,11 @@ async def retrieve_with_tenant(
             ),
         )
         bm25_hits = bm25_hits or []
-        logger.info(
-            "[real_rag] tier2_bm25: %d hits (%.2fs) tenant=%s",
-            len(bm25_hits),
-            time.monotonic() - tier2_start,
-            tenant_id,
+        slog.info(
+            "rag_tier2_bm25",
+            hits=len(bm25_hits),
+            duration_ms=int((time.monotonic() - tier2_start) * 1000),
+            tenant=tenant_id,
         )
 
         if bm25_hits:
@@ -229,11 +254,11 @@ async def retrieve_with_tenant(
         )
 
     except Exception as bm25_exc:
-        logger.error(
-            "[real_rag] tier2_bm25 FAILED (%.2fs) tenant=%s error=%s — graceful degradation",
-            time.monotonic() - tier2_start,
-            tenant_id,
-            f"{type(bm25_exc).__name__}: {bm25_exc}",
+        slog.error(
+            "rag_tier2_bm25_failed",
+            duration_ms=int((time.monotonic() - tier2_start) * 1000),
+            tenant=tenant_id,
+            error=f"{type(bm25_exc).__name__}: {bm25_exc}",
         )
 
     # ─────────────────────────────────────────────────────────────────────────

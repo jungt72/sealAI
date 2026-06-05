@@ -4,6 +4,8 @@ import dataclasses
 import re
 from typing import Any, Literal
 
+import structlog
+
 from app.domain.conversation_intent import ConversationRoutingDecision
 from app.agent.state.models import GovernedSessionState
 from app.agent.communication.v7_contracts import (
@@ -40,6 +42,9 @@ from app.observability.langsmith import traceable
 from app.observability.sealai_quality import emit_quality_trace, stable_trace_hash
 
 _log = logging.getLogger(__name__)
+# Stage A item 3: the Tier-0 backstop must be prod-visible (stdlib `_log` stays
+# dark in prod docker logs; only structlog reaches stdout).
+_slog = structlog.get_logger("agent.api.dispatch")
 
 # Feature flags
 _ENABLE_BINARY_GATE: bool = (
@@ -166,7 +171,10 @@ def _knowledge_rag_retriever(
 ) -> list[dict[str, Any]]:
     """Shared RAG-backed retriever for no-case and side-question knowledge."""
 
-    from app.agent.runtime.turn_tier import TierViolation  # noqa: PLC0415
+    from app.agent.runtime.turn_tier import (  # noqa: PLC0415
+        TierViolation,
+        current_declared_tier,
+    )
     from app.services.rag.constants import RAG_SHARED_TENANT_ID  # noqa: PLC0415
     from app.services.rag.rag_orchestrator import hybrid_retrieve  # noqa: PLC0415
 
@@ -186,6 +194,13 @@ def _knowledge_rag_retriever(
         # behaviour contradiction — surface it, never silently degrade to an empty
         # knowledge result via the broad handler below. Legitimate (Tier-1 /
         # undeclared) turns never raise here, so their behaviour is unchanged.
+        # Stage A item 3: log the backstop (route/tier context), never silent.
+        _slog.warning(
+            "tier0_retrieval_blocked",
+            retrieval_kind="knowledge_rag",
+            declared_tier=current_declared_tier(),
+            tenant=effective_tenant,
+        )
         raise
     except Exception as exc:  # noqa: BLE001
         _log.warning(
