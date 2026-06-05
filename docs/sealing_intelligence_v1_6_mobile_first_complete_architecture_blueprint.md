@@ -1753,10 +1753,13 @@ Für jedes Template:
 > **`cockpit_patch`** (desktop documentation) + the **REST RFQ one-pager** on
 > demand. The previously-listed `case_understanding_patch` and `rfq_brief_patch`
 > were **stubs with no writer and no consumer** and are **removed** from the
-> envelope (here and in §28.2). The original "§6.4" reference resolves to this
-> §11 envelope definition (and the §28.2 schema) — §6.4 does not exist as a
-> heading. Reason: align the documented envelope with the implemented, tested
-> delivery path; stop carrying inert fields.
+> envelope (here and in §28.2). The "§6.4" reference points to the **off-branch**
+> V1.7 blueprint's §6.4 *Multi-Output Envelope* (`origin/feat/v1.7-blueprint`),
+> which still lists `case_understanding_patch`/`rfq_brief_patch` and is therefore
+> **unreconciled** with this removal (audit 2026-06-05 §2.4); on this V1.6 runtime
+> branch the live envelope is defined here (§11) and in the §28.2 schema. Reason:
+> align the documented envelope with the implemented, tested delivery path; stop
+> carrying inert fields.
 
 Jeder fachliche Turn erzeugt intern einen Output-Envelope:
 
