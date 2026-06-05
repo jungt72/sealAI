@@ -6,6 +6,30 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-05T13:26Z — CI now runs the executable contracts + demo branch protection (Audit #3 fix)
+
+Acting on the V1.7 deep-dive Audit #3 (`docs/audits/2026-06-05_v17_full_audit.md`, Risk #2
+"CI doesn't run the enforcers" + the demo-unprotected finding).
+
+- **CI contracts gate (new):** `.github/workflows/backend-contracts.yml` job **`backend-contracts`**
+  now runs the architecture enforcers (`backend/tests/architecture` — seal-type, single-writer,
+  SSOT) and the fast doctrine guard suite on every push + PR (merged **PR #90**,
+  demo `d7f1a2cf`). Deliberately dependency-light (enforcers are pure-AST via `--noconftest`;
+  doctrine targets import only pydantic). Acceptance: a planted `seal_type == "rwdr"` core branch
+  turns the job red. The governed-seam / full-stack tests stay out of this fast gate (they need
+  the full runtime stack) — deferred to a future image-based job.
+- **demo branch protection (was UNPROTECTED, 404):** `demo/rwdr-limited-external` now requires
+  status checks **`agent-bff-guardrails` + `backend-contracts`** (`strict:false`,
+  `enforce_admins:false`, 0 required reviews — mirrors main's posture). Set via `gh api`.
+- **main required-check update PENDING:** `backend-contracts` will be added to `main`'s required
+  checks as part of the owner-gated `demo→main` carry (the workflow must land on main first; main
+  currently requires only `agent-bff-guardrails`).
+- **Discrepancy surfaced (not actioned):** the audit's Scope-C "Branches" row claims 23 remote /
+  9 merged-deletable; live state is **96 remote branches, 40+ merged (`ahead:0` vs origin/main)**.
+  Bulk remote-branch deletion is deferred to explicit owner confirmation given the contradiction.
+
+---
+
 ## 2026-06-05T06:03Z — C10 echo prod deploy + Parked-Items-Closeout COMPLETE
 
 C10 manufacturer-response echo deployed to prod through the standard gates (the HALT in the

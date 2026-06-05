@@ -1,15 +1,13 @@
 name: Build and Push Backend
 
-# Triggered automatically when CI completes successfully on main.
-# Can also be triggered manually for release-candidate backend builds.
-# Builds and pushes the production backend image to GHCR.
+# Manual release-candidate backend builds → pushes the production backend image to
+# GHCR. Manual-dispatch only: the previous `workflow_run` auto-trigger watched a "CI"
+# workflow that was removed in abce3634, so it could never fire (audit 2026-06-05 §4
+# "Dead auto-trigger"). Removed rather than re-pointed — the auto build→deploy chain is
+# intentionally not wired here.
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -19,7 +17,7 @@ jobs:
   push:
     name: Build + Push backend image
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
 
     permissions:
       contents: read

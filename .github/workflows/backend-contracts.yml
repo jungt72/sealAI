@@ -1,0 +1,63 @@
+name: Backend Contracts
+
+# Audit #3 Risk #2: the architecture enforcers + the fast doctrine guard suite are
+# the repo's "executable contracts" (CORE_PACK_BOUNDARY.md, .claude/rules/testing.md),
+# but they only ran in the local PreToolUse hook (ops/hooks/doctrine-gate.sh) — never
+# in CI. A regression could therefore merge green. This job runs them on every push and
+# pull_request so the contracts are mechanically enforced.
+#
+# Deliberately light: the architecture enforcers are pure-stdlib AST parsers, and the
+# doctrine/seam targets import only pydantic (backend/conftest.py stubs structlog,
+# asyncpg, jinja2, jose, langchain_core, multipart at collection time). So no ML /
+# runtime stack is installed — the suite runs in seconds. Imports resolve via
+# PYTHONPATH (the `app` package is not pip-installed), matching AGENTS.md's test form.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-contracts:
+    name: backend-contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install contract-test deps (light — pinned to match backend/requirements*)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "pytest~=8.4.2" \
+            "pytest-asyncio==0.23.7" \
+            "pydantic==2.12.5" \
+            "pydantic-settings==2.13.1"
+
+      # The architecture enforcers are pure-stdlib AST parsers and import no `app`
+      # code, so they run with --noconftest: that skips backend/tests/conftest.py
+      # (a DB-fixtures conftest that imports sqlalchemy) which is otherwise loaded
+      # for the backend/tests/ subtree and would need the full runtime stack.
+      - name: Architecture enforcers (pure-AST, no conftest / no deps)
+        run: |
+          python -m pytest backend/tests/architecture --noconftest
+
+      # The fast doctrine guard suite — the exact executable contract enforced
+      # locally by ops/hooks/doctrine-gate.sh. These targets import only pydantic;
+      # backend/conftest.py stubs the rest at collection time, so no runtime stack.
+      #
+      # NOT included here: test_governed_runtime_seam.py. It imports the API layer
+      # (app.agent.api.streaming/routes), which pulls the full runtime stack
+      # (fastapi/openai/qdrant/sqlalchemy/starlette). Running it needs the heavy
+      # backend deps — deferred to a future full-stack job (e.g. against the built
+      # backend image) rather than slowing this fast required check.
+      - name: Doctrine fast suite
+        env:
+          PYTHONPATH: backend:langchain_core_stub
+        run: |
+          python -m pytest \
+            backend/app/agent/tests/test_comparative_ranking_guard.py \
+            backend/app/agent/tests/test_rwdr_comparative_leak_golden.py \
+            backend/app/agent/tests/v92/test_final_guard_knowledge_backstop.py

@@ -149,3 +149,8 @@ erpnext-stack/
 .claude/settings.local.json
 .claude/.gate-logs/
 _archive/
+
+# Legacy local backups — removed from git, must not be re-committed (audit 2026-06-05 §4).
+# Previously ignored only via local .git/info/exclude (per-clone, not shared).
+archive/
+langgraph_backup/

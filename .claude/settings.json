@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "//": "PROPOSED — review, then `mv .claude/settings.json.proposed .claude/settings.json` and restart the session to activate the hooks. Merges the existing project permissions with the governance hooks + permission gates.",
+  "//": "ACTIVE project settings — governance hooks + permission gates merged with the project permissions. Hooks hot-reload in-session; no session restart is needed (verified 2026-06-04, see .claude/rules/ops.md).",
   "permissions": {
     "defaultMode": "plan",
     "disableBypassPermissionsMode": "disable",

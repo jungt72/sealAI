@@ -74,6 +74,20 @@ async def retrieve_with_tenant(
 
     Blueprint Section 10: tenant_id is enforced in every tier.
     """
+    from app.agent.runtime.turn_tier import (
+        TierViolation,
+        enforce_retrieval_allowed,
+    )
+
+    # P1-2 TEIL B / B1+B2: Tier-0 (GREETING / META_QUESTION / BLOCKED) must never
+    # retrieve. Guard at the cascade ENTRY — this runs in the awaiting coroutine's
+    # context (the declared-tier contextvar set at turn entry). The Tier-1
+    # hybrid_retrieve guard alone is insufficient: it executes in a run_in_executor
+    # worker thread where the contextvar does not propagate, and its TierViolation
+    # would in any case be swallowed by the broad Tier-1 handler and cascade into
+    # the unguarded BM25 Tier-2. This is the single funnel for the cascade.
+    enforce_retrieval_allowed(retrieval_kind="rag_cascade")
+
     # Phase 0C.3: tenant_id is mandatory — hard-abort instead of warn-and-proceed.
     # Returning [] is safe; the caller (graph.py) uses an empty list gracefully.
     if not (tenant_id and tenant_id.strip()):
@@ -118,6 +132,12 @@ async def retrieve_with_tenant(
             time.monotonic() - t_start,
             tenant_id,
         )
+    except TierViolation:
+        # Fail-closed: a Tier-0 turn must never be swallowed into the BM25 cascade.
+        # Re-raise past the broad handler (the entry guard above normally fires
+        # first; this keeps the funnel closed even if hybrid_retrieve is reached
+        # in-context).
+        raise
     except Exception as exc:
         tier1_error = f"{type(exc).__name__}: {exc}"
         logger.warning(
