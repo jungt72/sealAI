@@ -6,6 +6,45 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-05T16:44Z — HEAD deploy closing the §7 Tier-0-retrieval-guard pre-pilot blocker
+
+Deployed `demo/rwdr-limited-external` @ `417510cc` to prod through the standard gates to
+close the **§7 Pre-Pilot-Blocker** documented in
+`docs/audits/2026-06-05_product_quality_audit.md` (the running image `ccdd4577` carried only
+1 of 3 Tier-0 enforcement points; the cascade-close and dispatch re-raise lived on HEAD,
+not in the image). Released on explicit owner go after a HALT with the deploy-risk summary.
+
+- **Deployed digest:**
+  `ghcr.io/jungt72/sealai-backend:417510cc-20260605-164136@sha256:34464e5b851e8254ce0a6d88b873a997c4cb7efe633ce7c819ce306dd43fc65e`
+- **Rollback target (prior live, read from the running daemon, never memory):**
+  `ghcr.io/jungt72/sealai-backend:ccdd4577-20260605-060228@sha256:045c2c2fc4583b1a13890437cd16006e72409ff4d1acf4313a781172adc4a933`
+  (`running healthy` at read time).
+- **Pre-deploy gate (fresh, on exactly this stand):** full backend suite
+  `pytest backend -q -rf` **EXIT=0**; sentinels `pytest-green` + `anchor-verified` rewritten
+  (16:36, <1h at deploy).
+- **Diff inventory `ccdd4577..HEAD` (what shipped):** the **only runtime-code delta** is the
+  two already-approved Tier-0 guard fixes — `real_rag.py` (+20, cascade-close B1/B2, **PR #91**
+  `538302ea`) and `dispatch.py` (+7, knowledge re-raise, **PR #96** `972db6df`). Everything else
+  is test/CI/docs: enforcer-reach (#94), reducers scanner (#98), CI contracts gate (#90),
+  client-secret untrack + secret-scan (#95), governance/docs (#92, #87, #100). L1
+  `output_guard.py` and L2 `final_guard.py` **unchanged** in the range.
+- **Env (§7d):** `SEALAI_TIER0_RETRIEVAL_GUARD` **unset** in the running container → code-default
+  *enforced* (`turn_tier.py:60` `or "1"`); **not** pinned to an off-value. No flag change made.
+- Health `healthy` (redis / qdrant / agent_runtime); nginx reloaded; **standard live pilot
+  smoke all PASS** (15/15).
+- **Negative smoke (new, mandatory — in-container `docker exec`, no user traffic, no routing-bug
+  simulation):** Tier-0 declared in the contextvar →
+  (A) `retrieve_with_tenant` raises `TierViolation` at cascade entry → cascade-close **live**;
+  (B) `_knowledge_rag_retriever` **re-raises** the `TierViolation` instead of degrading to `[]`
+  → dispatch re-raise **live**;
+  (C) undeclared tier → guard is a no-op → **no over-block** (AC8). Result **ALL_PASS** — all
+  three Tier-0 enforcement points now live.
+- **§7 Audit 2026-06-05 geschlossen.**
+- **No `main`:** the `demo→main` convergence is the owner-gated per-milestone step and was **not**
+  performed here. Branch protection unchanged.
+
+---
+
 ## 2026-06-05T13:26Z — CI now runs the executable contracts + demo branch protection (Audit #3 fix)
 
 Acting on the V1.7 deep-dive Audit #3 (`docs/audits/2026-06-05_v17_full_audit.md`, Risk #2
