@@ -3,13 +3,24 @@
 Production is gated. These rules are enforced by hooks (`ops/hooks/*.sh`) and
 permissions (`.claude/settings.json`); they are also the contract for humans.
 
-## Branch model (2026-06-04)
+## Branch model (2026-06-04; branch strategy decided 2026-06-05)
 
 `main` is the **converged truth** as of 2026-06-04 (demo→main via PR #11, tag `v1.7.0`).
-The **working model is unchanged**: integration continues on `demo/rwdr-limited-external`
-(PRs target demo; the demo→main convergence is a deliberate, owner-gated step, not the routine).
-A broader **branch-strategy decision is parked** (along with the CI-trigger/`ruff format`
-questions) — do not change branch-guard, hooks, or CI triggers as part of routine work.
+
+**Branch strategy — DECIDED (2026-06-05, Parked-Items-Closeout; was "parked").**
+Keep the current model and treat it as the standing rule, not a temporary state:
+- Integration happens on `demo/rwdr-limited-external`. **All PRs target demo.**
+  Direct pushes to `main` stay denied.
+- The `demo→main` convergence is a deliberate, **owner-gated** step, run **per
+  milestone / per day** — never the routine per-commit flow. Every merge into demo
+  gets a small `demo→main` **carry-over PR** that the owner merges.
+- This matches the existing branch-guard, hooks, and CI triggers, so **no
+  infrastructure change is needed** (that was the point of keeping it).
+
+The broader trunk-based alternative was considered and **not** adopted today; if it
+is ever revisited it must be scoped as its own arc (branch-guard, CI triggers,
+rules). The **CI-trigger / `ruff format` scope questions remain separately parked**
+— do not change branch-guard, hooks, or CI triggers as part of routine work.
 
 ## Pre-deploy gate (authoritative)
 - Run the **full backend suite** before any deploy:

@@ -185,3 +185,39 @@ in-container.
   then** delete the recovery admin `test`.
 - **(d)** Store the new password at exactly one authoritative location; remove
   stale `.env` copies (Thorsten, manual).
+
+### Cleanup completion — closeout 2026-06-05
+
+Parked-Items-Closeout session (owner-gated, lockout-safe order: rotation **before**
+recovery-user deletion). Master-realm end state verified: **only `superadmin`**
+(`3008a566-9139-41e5-8f82-559208f28307`). The sealAI-realm `jungt`
+(`7748ba15-bef4-43b4-b95a-cf80fcc476d8`) was never touched.
+
+- **(a) ✅ DONE (2026-06-04)** — see the build-config reset entry above.
+- **(b) ✅ CLARIFIED + DELETED (2026-06-05).** Read-only proof **contradicted the
+  premise**: the master-realm `jungt` (`9f0906ab-1b88-495f-93f5-55b9f622ccf6`) was
+  **not** a credential-less crashed-run row — it had a valid `password` credential
+  (`403cc445…`, created `1774452943619`) and only non-admin realm roles
+  (`offline_access`, `default-roles-master`, `uma_authorization`). Surfaced to the
+  owner (HALT, not silent action); owner decided to delete it as accidental
+  master-realm clutter. Deleted after re-confirming `id=9f0906ab… realm=master`;
+  verified absent (`get users -r master -q username=jungt → []`); sealAI-realm
+  `jungt` confirmed intact.
+- **(c) ✅ DONE (2026-06-05).** The real admin is **`superadmin`** (has the `admin`
+  role) — there is no master user `admin`. Owner rotated `superadmin`'s password in
+  the Admin Console (Temporary=OFF) and verified the login (console + `kcadm`).
+  **Only then** the recovery admin `test` (`bae9fa04…`, also `admin`) was deleted;
+  verified absent. Master realm now holds only `superadmin`.
+- **(d) ◻ OWNER ACTION (manual; CC does not touch `.env`).** Remove the stale
+  `KEYCLOAK_ADMIN_PASSWORD` from `.env*` (referenced by
+  `docker-compose.deploy.yml:167-168`, `backup_keycloak.sh`,
+  `ops/keycloak_ensure_roles.sh`); keep exactly one authoritative store (password
+  manager). The app does **not** need the master-admin password at runtime — the
+  `KEYCLOAK_ADMIN*` entries are bootstrap relics. Tracked in
+  `docs/ops/GOVERNANCE_LOG.md` as a deliberate owner-pending item.
+- **`registrationAllowed` ✅ DONE (2026-06-05).** Set **`false`** on the live
+  `sealAI` realm (B2B tool: self-registration only produces locked-out 401 users
+  with no `tenant_id`). Realm settings backed up first to
+  `~/keycloak-backups/20260605T051149Z/sealAI-realm-export.json` (rollback anchor).
+  Both seed exports updated for config-as-code consistency:
+  `keycloak/realm-export.json:30` and `keycloak/import/realm-export.json:30`.
