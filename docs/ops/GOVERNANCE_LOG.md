@@ -6,6 +6,49 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-05T18:41Z — Latency-hardening deploy (audit §5 Stages A1 + B + C)
+
+Deployed `demo/rwdr-limited-external` @ `e50c5407` to prod through the standard gates,
+on explicit owner go after a gathered deploy-risk HALT. Three latency/efficiency
+stages from `docs/audits/2026-06-05_product_quality_audit.md` §5, each its own
+reviewed PR; Stage D (composer) deferred by the owner pending the post-deploy baseline.
+
+- **Deployed digest:**
+  `ghcr.io/jungt72/sealai-backend:e50c5407-20260605-183643@sha256:18275f1197e7cf24d5c99c287ef41a1cdfa31b04a810dc36f34ec47a13bd1b44`
+- **Rollback target (prior live, read from the running daemon, never memory):**
+  `ghcr.io/jungt72/sealai-backend:417510cc-20260605-164136@sha256:34464e5b851e8254ce0a6d88b873a997c4cb7efe633ce7c819ce306dd43fc65e`
+- **Pre-deploy gate (fresh, on `e50c5407`):** full backend suite `pytest backend -q -rf`
+  **EXIT=0**; sentinels `pytest-green` + `anchor-verified` rewritten 18:30 (<1h).
+  The MANDATORY stale-evidence regression `test_cache_invalidates_on_query_mutation`
+  (`backend/app/agent/tests/graph/test_evidence_cache.py`) is collected by the gate
+  (4 tests from that file) and green.
+- **Diff inventory `417510cc..e50c5407`:** A1 (PR #102, observability — first_progress/
+  latency + RAG tier timings + Tier-0 alert to structlog), B (PR #103, prewarm +
+  semantic-router `asyncio.wait_for` 10s), C (PR #104, evidence re-retrieval cache),
+  plus the §7 GOVERNANCE_LOG doc (PR #101). **Only runtime delta = those 9 files**;
+  L1/L2 output guards, `turn_tier.py`, Guard-Repair, comparative-ranking lexicon all
+  **unchanged**. A1 + C carry `doctrine-reviewer` APPROVE; B touches no doctrine path.
+- Health `healthy` (redis / qdrant / agent_runtime); nginx reloaded; **live pilot smoke
+  all PASS (15/15)**; auto-rollback not triggered.
+- **In-container verification (deployed image, no user traffic):** A/B/C code markers
+  present; **Stage B prewarm fired + completed at startup** (`RAG prewarm
+  (embeddings/sparse/reranker/bm25) completed`) — default-on (`warmup_on_start=True`),
+  no env change needed; Stage C cache key stable for an unchanged query and changes on
+  mutation (`EvidenceState.query_hash` present); live config `semantic_router_timeout_s=10.0`.
+- **Env:** no operator change required — prewarm default-on; `SEALAI_TIER0_RETRIEVAL_GUARD`
+  unset = enforced (§7 guard intact across this delta).
+- **Authoritative perf before/after (p50/p95 per route, incl. first_progress/C8): PENDING.**
+  Per owner rule, the in-container `scripts/perf/measure_turn_timing.py` counts only as a
+  first indicator; the authoritative table is built from real owner-driven frontend turns
+  (5 governed + 5 knowledge), evaluated read-only against LangSmith `sealai-production` vs.
+  the audit baseline. This entry will be amended with that table. Target budgets:
+  governed `engineering_case_update` p50 <10s (baseline ~20s), smalltalk/side-questions
+  <2s (baseline 5.4/7.9s — Stage C cache win), first_progress <1s server-side.
+- **No `main`:** the `demo→main` convergence is the owner-gated per-milestone step, not
+  performed here. Branch protection unchanged.
+
+---
+
 ## 2026-06-05T16:44Z — HEAD deploy closing the §7 Tier-0-retrieval-guard pre-pilot blocker
 
 Deployed `demo/rwdr-limited-external` @ `417510cc` to prod through the standard gates to
