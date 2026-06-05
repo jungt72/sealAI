@@ -148,12 +148,13 @@ an L2 block now enforces.
 
 ## Parked-items closeout — 2026-06-05
 
-- **C10 manufacturer-response echo — SHIPPED to demo** (PR #84, merge `9615dd52`): wired
-  the dead projection `manufacturer_response_echo_notes()` at the single funnel
+- **C10 manufacturer-response echo — SHIPPED + DEPLOYED to prod** (PR #84, merge `9615dd52`):
+  wired the dead projection `manufacturer_response_echo_notes()` at the single funnel
   `RWDRCaseOrchestrator.build()` → `TechnicalRWDRRFQBrief.manufacturer_echo_notes` + a
   conditional brief section. `rag_supported`, never a confirmed fact, guard-scrubbed.
   Red-before-green; **doctrine-reviewer APPROVE**; backend pre-deploy gate EXIT=0;
-  **prod deploy HELD at 🛑 HALT (owner-gated)**; rollback anchor `…@sha256:6d3c3826…`.
+  **prod DEPLOYED 2026-06-05** (digest `…@sha256:045c2c2f…`; rollback `…6d3c3826…`);
+  `demo→main` carry #86 merged (`79f3ab66`, main ⊇ demo).
 - **Branch strategy — DECIDED** (keep the demo-integration model; codified in
   `.claude/rules/ops.md`); was parked. CI-trigger / `ruff format` scope stays parked.
 - **Keycloak — `registrationAllowed=false`** on realm `sealAI` (+ both seed exports);

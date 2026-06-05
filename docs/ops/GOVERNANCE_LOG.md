@@ -6,6 +6,33 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-05T06:03Z — C10 echo prod deploy + Parked-Items-Closeout COMPLETE
+
+C10 manufacturer-response echo deployed to prod through the standard gates (the HALT in the
+05:42Z entry, released on explicit owner go). Pre-deploy gate **re-run** on the deploy
+candidate `demo@ccdd4577` (`pytest backend` **EXIT=0**; sentinels not recycled — refreshed);
+rollback anchor read from the running daemon, never memory. Deploy via
+`ops/release-backend.sh` (build → GHCR push → pin `@sha256` in `.env.prod` → recreate backend
+→ health + auto-rollback → nginx reload → live smoke).
+
+- **Deployed digest:**
+  `ghcr.io/jungt72/sealai-backend:ccdd4577-20260605-060228@sha256:045c2c2fc4583b1a13890437cd16006e72409ff4d1acf4313a781172adc4a933`
+- **Rollback target (prior live, from the daemon):**
+  `ghcr.io/jungt72/sealai-backend:2d325acf-20260604-181319@sha256:6d3c38266ccf116a9632b0e7f86974a53fd1b84ca7dc885fee923106fdb64877`
+- Health `healthy` (redis / qdrant / agent_runtime); nginx reloaded; **live pilot smoke all
+  PASS**; the echo wiring (`manufacturer_echo_notes`) is confirmed present in the running image.
+- **Convergence:** `demo→main` carry **PR #86** merged as a merge-commit (`79f3ab66`; no squash;
+  demo branch intact) → **main ⊇ demo**. Deploy/Build-Push workflows **did not run** on the main
+  push (prod is digest-pinned; deployment happened via `ops/release-backend.sh`). Branch
+  protection unchanged.
+
+**Parked-Items-Closeout abgeschlossen 2026-06-05.** Open only:
+(i) Keycloak service-account wiring for the admin scripts [documented, undated];
+(ii) S5-Mode-Konsolidierung [LOW, deliberate];
+(iii) item (d) `.env` `KEYCLOAK_ADMIN_PASSWORD` placeholder [owner-manual, instructions in the runbook].
+
+---
+
 ## 2026-06-05T05:42Z — Parked-Items-Closeout (Keycloak cleanup, C10 echo wired, branch strategy decided)
 
 Closeout session taking every parked item to a documented terminal state. Three owner
