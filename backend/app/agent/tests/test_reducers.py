@@ -1154,6 +1154,10 @@ class TestNoDirectWriteToGovernance:
         "test_inquiry_confirmation.py",
         # AC14 — readiness projection test builds gov_class fixtures (A/B/C)
         "test_rfq_readiness_projection_contract.py",
+        # Audit #3 B6 — the single-writer enforcer's self-trip test constructs a
+        # GovernanceState in a synthetic source STRING to prove its own detector
+        # trips; it is not a production write site.
+        "test_single_writer_invariant.py",
     }
 
     def _collect_violations(self) -> list[Path]:
