@@ -6,6 +6,58 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-05T05:42Z — Parked-Items-Closeout (Keycloak cleanup, C10 echo wired, branch strategy decided)
+
+Closeout session taking every parked item to a documented terminal state. Three owner
+decisions: **C10 echo → wire**; **branch strategy → keep + codify**;
+**`registrationAllowed` → false**. No undocumented open item remains; the one
+deliberately-open item (d) is recorded with its reason.
+
+**Phase 1 — Keycloak cleanup (live realm, owner-gated, lockout-safe order).** Owner logged
+in interactively (recovery admin `test`); CC ran only read/cleanup `kcadm` against the
+cached token — no secrets in the transcript. Read-only status **contradicted runbook item
+(b)**: the master-realm `jungt` (`9f0906ab…`) was **not** a credential-less crashed-run row
+— it had a valid password + non-admin roles. Surfaced (**HALT, not silent action**); owner
+decided to delete it as accidental master-realm clutter. Order honored — **rotation before
+recovery-user deletion**: the real admin is **`superadmin`** (there is no `admin` user);
+owner rotated `superadmin`'s password (console, Temporary=OFF) + verified login, **then**
+the recovery admin `test` (`bae9fa04…`) was deleted. `registrationAllowed=false` on the live
+`sealAI` realm (B2B — self-registration only yields locked-out 401 users); realm backed up
+first → `~/keycloak-backups/20260605T051149Z/sealAI-realm-export.json`, and both seed exports
+updated (`keycloak/realm-export.json`, `keycloak/import/realm-export.json`). **Master-realm
+end state verified: only `superadmin`; sealAI `jungt` (`7748ba15…`) untouched.** Closeout
+recorded in `docs/ops/KEYCLOAK_TENANT_ID_MAPPER.md`.
+**Item (d) — DELIBERATELY OPEN (owner action; CC does not touch `.env*`):** remove the stale
+`KEYCLOAK_ADMIN_PASSWORD` from `.env*`, keep exactly one authoritative store (password
+manager). The app needs no master-admin password at runtime (bootstrap relic).
+
+**Phase 2 — C10 manufacturer-response echo: WIRED** (PR #84 → demo, merge `9615dd52`). The
+intake was live but the projection `manufacturer_response_echo_notes()` had no caller. Wired
+the last hop at the single funnel `RWDRCaseOrchestrator.build()`: recorded responses (raw
+envelopes) now surface as `rag_supported` notes on
+`TechnicalRWDRRFQBrief.manufacturer_echo_notes` + a conditional brief section — never a
+confirmed fact, guard-scrubbed to the neutral fallback. **Red-before-green** (2 wiring tests
+red→green + 1 invariant guard). **doctrine-reviewer: APPROVE** (four comparative-ranking
+repros still block at L1; AC8 no-over-block + AC9; no guard/lexicon/streaming/mutation
+touched; purely additive, backend-only). CI green (`agent-bff-guardrails`, `backend
+ruff-format`).
+**Prod deploy: HELD at 🛑 HALT (owner-gated).** Pre-deploy gate `pytest backend` **EXIT=0**;
+sentinels staged (`pytest-green`, `anchor-verified`); rollback anchor read from the running
+daemon: `ghcr.io/jungt72/sealai-backend:2d325acf-20260604-181319@sha256:6d3c3826…`
+(status=running health=healthy). No `release-backend.sh` run by CC.
+
+**Phase 3 — Branch strategy: DECIDED (was parked).** Keep the demo-integration model and
+codify it in `.claude/rules/ops.md`: all PRs target `demo/rwdr-limited-external`; `demo→main`
+convergence is owner-gated, per milestone/day, with a carry-over PR per demo merge; matches
+existing branch-guard/hooks/CI (no infra change). Trunk-based not adopted; the CI-trigger /
+`ruff format` scope questions remain **separately parked**.
+
+**Phase 4 — Ledger:** this entry + the journal (`docs/runtime-audit-fixmap.md`). Docs
+(Phases 1 + 3 + 4) ship in one closeout PR → demo; each demo merge gets its `demo→main`
+carry-over PR (owner-gated).
+
+---
+
 ## 2026-06-04T20:05Z — Legacy cleanup: remove red double-CI + delete dead dirs (NO prod deploy)
 
 Two owner-decided cleanups; no prod deploy; branch protection unchanged; demo→main convergence
