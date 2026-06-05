@@ -33,6 +33,8 @@ Retrieval:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 
 from langgraph.config import get_stream_writer
@@ -189,6 +191,26 @@ def _build_evidence_query(state: GraphState) -> EvidenceQuery | None:
     return query
 
 
+def _evidence_query_cache_key(query: EvidenceQuery, tenant_id: str | None) -> str:
+    """Stage C (O1): stable hash over EVERY retrieval-relevant input.
+
+    The EvidenceQuery is built deterministically from the asserted params (medium,
+    material, numeric values + units, sts codes), so hashing it + the tenant covers
+    the whole retrieval input space. Any case/query mutation changes the topic →
+    changes the key → cache miss → evidence re-fires (no stale-evidence hit).
+    """
+    payload = {
+        "tenant": tenant_id or "",
+        "topic": query.topic,
+        "sts": sorted(query.detected_sts_codes or []),
+        "intent": str(query.query_intent),
+        "lang": query.language,
+        "k": query.max_results,
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
 def _extract_source_versions(cards: list[dict]) -> dict[str, str]:
     source_versions: dict[str, str] = {}
     for card in cards:
@@ -341,6 +363,52 @@ def _build_evidence_classification(
     }
 
 
+def _evidence_result_state(
+    state: GraphState,
+    *,
+    evidence_query: EvidenceQuery,
+    cards: list[dict],
+    metrics: dict,
+    cache_key: str,
+) -> GraphState:
+    """Derive the GraphState update from a set of evidence cards (deterministic, no I/O).
+
+    Shared by the fresh-retrieval path and the cache-hit path (Stage C / O1) so the
+    evidence projection (claims / classification / asserted) always reflects THIS
+    turn's asserted state and per-claim confidence — the cache only skips the
+    expensive retrieve_evidence I/O, never the cheap re-derivation.
+    """
+    audit = _build_retrieval_audit(query=evidence_query, cards=cards, metrics=metrics)
+    source_versions = _extract_source_versions(cards)
+    evidence_claims = _build_evidence_claims(state, cards)
+    asserted = (
+        reduce_normalized_to_asserted(state.normalized, evidence=evidence_claims)
+        if state.normalized.parameters
+        else state.asserted
+    )
+    evidence_classification = _build_evidence_classification(
+        state.model_copy(update={"asserted": asserted}),
+        cards,
+        evidence_claims,
+    )
+    return state.model_copy(
+        update={
+            "rag_evidence": cards,
+            "rag_evidence_audit": audit,
+            "asserted": asserted,
+            "evidence": state.evidence.model_copy(
+                update={
+                    "evidence_results": cards,
+                    "source_versions": source_versions,
+                    "retrieval_query": evidence_query.topic,
+                    "query_hash": cache_key,
+                    **evidence_classification,
+                }
+            ),
+        }
+    )
+
+
 async def evidence_node(state: GraphState) -> GraphState:
     """Zone 4 — Retrieve structured evidence from RAG.
 
@@ -370,26 +438,38 @@ async def evidence_node(state: GraphState) -> GraphState:
         log.debug("[evidence_node] empty query — skipping retrieval")
         return state
 
+    # Stage C (O1): skip re-retrieval when the evidence query is unchanged since the
+    # last SUCCESSFUL retrieval (cycle re-runs + follow-up turns with an active case).
+    # The cached cards persist in state.evidence; repopulate the transient
+    # rag_evidence so downstream/projection see a consistent view. fail-open is
+    # preserved — a failed retrieval clears query_hash, so it is never a cache hit.
+    cache_key = _evidence_query_cache_key(evidence_query, state.tenant_id)
+    if state.evidence.query_hash and state.evidence.query_hash == cache_key:
+        cached_cards = list(state.evidence.evidence_results)
+        log.debug(
+            "[evidence_node] evidence cache hit (query unchanged) — "
+            "reusing %d cards (no retrieval I/O)",
+            len(cached_cards),
+        )
+        _emit_progress_event(
+            {"event_type": "evidence_retrieved", "sources_count": len(cached_cards)}
+        )
+        # Re-derive the cheap deterministic projection from the cached cards so the
+        # evidence summary reflects THIS turn's asserted/confidence; only the
+        # retrieve_evidence I/O (the §1.2 hot cost) is skipped.
+        return _evidence_result_state(
+            state,
+            evidence_query=evidence_query,
+            cards=cached_cards,
+            metrics={},
+            cache_key=cache_key,
+        )
+
     try:
         cards, metrics = await retrieve_evidence(
             evidence_query,
             tenant_id=state.tenant_id,
             return_metrics=True,
-        )
-        audit = _build_retrieval_audit(
-            query=evidence_query, cards=cards, metrics=metrics
-        )
-        source_versions = _extract_source_versions(cards)
-        evidence_claims = _build_evidence_claims(state, cards)
-        asserted = (
-            reduce_normalized_to_asserted(state.normalized, evidence=evidence_claims)
-            if state.normalized.parameters
-            else state.asserted
-        )
-        evidence_classification = _build_evidence_classification(
-            state.model_copy(update={"asserted": asserted}),
-            cards,
-            evidence_claims,
         )
         log.debug(
             "[evidence_node] retrieved %d evidence cards (tenant=%s)",
@@ -402,20 +482,12 @@ async def evidence_node(state: GraphState) -> GraphState:
                 "sources_count": len(cards),
             }
         )
-        return state.model_copy(
-            update={
-                "rag_evidence": cards,
-                "rag_evidence_audit": audit,
-                "asserted": asserted,
-                "evidence": state.evidence.model_copy(
-                    update={
-                        "evidence_results": cards,
-                        "source_versions": source_versions,
-                        "retrieval_query": evidence_query.topic,
-                        **evidence_classification,
-                    }
-                ),
-            }
+        return _evidence_result_state(
+            state,
+            evidence_query=evidence_query,
+            cards=cards,
+            metrics=metrics,
+            cache_key=cache_key,
         )
 
     except Exception as exc:
@@ -438,6 +510,7 @@ async def evidence_node(state: GraphState) -> GraphState:
                         "evidence_results": [],
                         "source_versions": {},
                         "retrieval_query": evidence_query.topic,
+                        "query_hash": None,
                         "evidence_present": False,
                         "evidence_count": 0,
                         "trusted_sources_present": False,

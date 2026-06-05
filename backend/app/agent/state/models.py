@@ -497,6 +497,11 @@ class EvidenceState(BaseModel):
     evidence_results: list[Any] = Field(default_factory=list)
     source_versions: dict[str, str] = Field(default_factory=dict)
     retrieval_query: str | None = None
+    # Stage C (audit O1): re-retrieval cache key. Hash of all retrieval-relevant
+    # inputs (tenant + the deterministic EvidenceQuery). Set on a SUCCESSFUL
+    # retrieval; reset to None on fail-open so a failure is never a cache hit. Any
+    # case/query mutation changes the hash → cache miss → evidence re-fires.
+    query_hash: str | None = None
     evidence_present: bool = False
     evidence_count: int = 0
     trusted_sources_present: bool = False
