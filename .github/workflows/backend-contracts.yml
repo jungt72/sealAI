@@ -36,12 +36,22 @@ jobs:
             "pydantic==2.12.5" \
             "pydantic-settings==2.13.1"
 
-      - name: Architecture enforcers + doctrine fast suite + governed runtime seam
+      # The architecture enforcers are pure-stdlib AST parsers and import no `app`
+      # code, so they run with --noconftest: that skips backend/tests/conftest.py
+      # (a DB-fixtures conftest that imports sqlalchemy) which is otherwise loaded
+      # for the backend/tests/ subtree and would need the full runtime stack.
+      - name: Architecture enforcers (pure-AST, no conftest / no deps)
+        run: |
+          python -m pytest backend/tests/architecture --noconftest
+
+      # The doctrine/seam targets live under backend/app/agent/tests/ (a different
+      # subtree — does NOT load the DB conftest) and import only pydantic;
+      # backend/conftest.py stubs the rest at collection time.
+      - name: Doctrine fast suite + governed runtime seam
         env:
           PYTHONPATH: backend:langchain_core_stub
         run: |
           python -m pytest \
-            backend/tests/architecture \
             backend/app/agent/tests/test_governed_runtime_seam.py \
             backend/app/agent/tests/test_comparative_ranking_guard.py \
             backend/app/agent/tests/test_rwdr_comparative_leak_golden.py \
