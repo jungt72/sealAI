@@ -225,9 +225,9 @@ def test_manufacturer_feedback_surfaces_in_brief_as_rag_supported() -> None:
     brief = _brief_with_manufacturer_feedback("im Werk geprüft, grenzwertig bei 120 °C")
 
     echo_notes = brief.get("manufacturer_echo_notes")
-    assert isinstance(echo_notes, list) and echo_notes, (
-        "brief must surface recorded manufacturer feedback as echo notes"
-    )
+    assert (
+        isinstance(echo_notes, list) and echo_notes
+    ), "brief must surface recorded manufacturer feedback as echo notes"
     assert echo_notes[0]["status"] == "rag_supported"
     assert "Herstellerrückmeldung" in echo_notes[0]["label"]
 

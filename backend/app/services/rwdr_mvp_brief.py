@@ -2228,9 +2228,7 @@ class RWDRCaseOrchestrator:
         # C10 echo: project recorded manufacturer responses from the RAW envelopes
         # (manufacturer_note / target_field survive there) as rag_supported notes.
         # Self-guarding: each label passes the fast-path output guard internally.
-        echo_notes = tuple(
-            manufacturer_response_echo_notes(technical_field_envelopes)
-        )
+        echo_notes = tuple(manufacturer_response_echo_notes(technical_field_envelopes))
         return TechnicalRWDRRFQBrief(
             artifact_type=RWDR_MVP_ARTIFACT_TYPE,
             artifact_title=RWDR_MVP_ARTIFACT_TITLE,
