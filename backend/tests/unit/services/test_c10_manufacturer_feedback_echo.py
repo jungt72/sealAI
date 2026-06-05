@@ -20,6 +20,7 @@ from app.domain.source_validation import source_validation_metadata
 from app.services.rwdr_mvp_brief import (
     EvidenceConfirmationIntelligence,
     _manufacturer_feedback_envelope,
+    build_rwdr_brief_from_confirmed_fields,
     manufacturer_response_echo_notes,
 )
 
@@ -193,3 +194,63 @@ def test_echo_projection_ignores_non_manufacturer_fields() -> None:
         {"field": "medium", "value": "Öl", "source_type": "deterministic_calculation"},
     ]
     assert manufacturer_response_echo_notes(fields) == []
+
+
+# --- Brief wiring: a recorded manufacturer response surfaces in the brief --------
+# RED before the C10 echo caller is wired: manufacturer_response_echo_notes() has
+# no caller, so the brief carries no "manufacturer_echo_notes" key/section even
+# though the intake (apply_manufacturer_feedback) already stores the envelope.
+
+
+def _brief_with_manufacturer_feedback(note: str) -> dict[str, object]:
+    env = _manufacturer_feedback_envelope(
+        {"field": "material", "value": "FKM", "note": note}
+    )
+    return build_rwdr_brief_from_confirmed_fields(
+        raw_inquiry="RWDR 45x62x8, Getriebe, Öl, 1500 U/min",
+        fields=[env],
+    )
+
+
+def _brief_sections_by_id(brief: dict[str, object]) -> dict[str, object]:
+    return {
+        section["id"]: section
+        for section in (brief.get("sections") or [])
+        if isinstance(section, dict) and "id" in section
+    }
+
+
+def test_manufacturer_feedback_surfaces_in_brief_as_rag_supported() -> None:
+    """RED before wiring: the brief has no manufacturer_echo_notes / section."""
+    brief = _brief_with_manufacturer_feedback("im Werk geprüft, grenzwertig bei 120 °C")
+
+    echo_notes = brief.get("manufacturer_echo_notes")
+    assert (
+        isinstance(echo_notes, list) and echo_notes
+    ), "brief must surface recorded manufacturer feedback as echo notes"
+    assert echo_notes[0]["status"] == "rag_supported"
+    assert "Herstellerrückmeldung" in echo_notes[0]["label"]
+
+    section = _brief_sections_by_id(brief).get("manufacturer_echo_notes")
+    assert section is not None, "brief sections must include manufacturer_echo_notes"
+    assert section["items"], "the echo section must carry the recorded note(s)"
+
+
+def test_manufacturer_feedback_brief_echo_never_a_confirmed_fact() -> None:
+    """Doctrine invariant: the echo never becomes a confirmed brief fact."""
+    brief = _brief_with_manufacturer_feedback("im Werk geprüft")
+    confirmed = brief.get("confirmed_case_fields") or []
+    assert not any(
+        (field.get("source_type") == "manufacturer_response") for field in confirmed
+    ), "manufacturer_response must never enter confirmed_case_fields"
+
+
+def test_manufacturer_feedback_brief_echo_scrubs_release_wording() -> None:
+    """Doctrine invariant: release/recommendation wording is scrubbed to fallback."""
+    brief = _brief_with_manufacturer_feedback(
+        "wir empfehlen FKM und geben es final frei"
+    )
+    label = brief["manufacturer_echo_notes"][0]["label"].casefold()
+    assert "empfehl" not in label
+    assert "frei" not in label
+    assert "prüfung" in label

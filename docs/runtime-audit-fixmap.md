@@ -146,6 +146,25 @@ an L2 block now enforces.
 
 ---
 
+## Parked-items closeout — 2026-06-05
+
+- **C10 manufacturer-response echo — SHIPPED to demo** (PR #84, merge `9615dd52`): wired
+  the dead projection `manufacturer_response_echo_notes()` at the single funnel
+  `RWDRCaseOrchestrator.build()` → `TechnicalRWDRRFQBrief.manufacturer_echo_notes` + a
+  conditional brief section. `rag_supported`, never a confirmed fact, guard-scrubbed.
+  Red-before-green; **doctrine-reviewer APPROVE**; backend pre-deploy gate EXIT=0;
+  **prod deploy HELD at 🛑 HALT (owner-gated)**; rollback anchor `…@sha256:6d3c3826…`.
+- **Branch strategy — DECIDED** (keep the demo-integration model; codified in
+  `.claude/rules/ops.md`); was parked. CI-trigger / `ruff format` scope stays parked.
+- **Keycloak — `registrationAllowed=false`** on realm `sealAI` (+ both seed exports);
+  master-realm cleanup: master `jungt` deleted (runbook (b) premise corrected — it had a
+  valid credential), `superadmin` rotated, recovery `test` deleted; end state only
+  `superadmin`. Item (d) (`.env` `KEYCLOAK_ADMIN_PASSWORD`) left deliberately open (owner).
+- Full detail + evidence: `docs/ops/GOVERNANCE_LOG.md` (2026-06-05T05:42Z) and
+  `docs/ops/KEYCLOAK_TENANT_ID_MAPPER.md`.
+
+---
+
 ## Standing governance digest
 
 - **Order:** doctrine (A + A.3) → C → B → D → F1/F2. C/B/D autonomous incl. deploy;
