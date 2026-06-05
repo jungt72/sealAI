@@ -468,6 +468,9 @@ class TechnicalRWDRRFQBrief:
     confirmed_case_fields: tuple[EvidenceField, ...]
     calculation_fields: tuple[EvidenceField, ...]
     open_fields: tuple[EvidenceField, ...]
+    # C10 echo: recorded manufacturer responses projected as rag_supported notes
+    # (never confirmed facts, guard-scrubbed). Empty for cases without feedback.
+    manufacturer_echo_notes: tuple[dict[str, str], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         sections = _brief_sections(
@@ -495,6 +498,9 @@ class TechnicalRWDRRFQBrief:
                 field.as_dict() for field in self.calculation_fields
             ],
             "open_fields": [field.as_dict() for field in self.open_fields],
+            "manufacturer_echo_notes": [
+                dict(note) for note in self.manufacturer_echo_notes
+            ],
             "computed_values": [dict(item) for item in self.evaluation.computed_values],
             "engineering_review_flags": list(self.evaluation.review_flags),
             "manufacturer_questions": list(self.evaluation.manufacturer_questions),
@@ -2219,6 +2225,12 @@ class RWDRCaseOrchestrator:
             knowledge_sources=knowledge_sources,
             quality_metrics=quality.quality_metrics,
         )
+        # C10 echo: project recorded manufacturer responses from the RAW envelopes
+        # (manufacturer_note / target_field survive there) as rag_supported notes.
+        # Self-guarding: each label passes the fast-path output guard internally.
+        echo_notes = tuple(
+            manufacturer_response_echo_notes(technical_field_envelopes)
+        )
         return TechnicalRWDRRFQBrief(
             artifact_type=RWDR_MVP_ARTIFACT_TYPE,
             artifact_title=RWDR_MVP_ARTIFACT_TITLE,
@@ -2234,6 +2246,7 @@ class RWDRCaseOrchestrator:
             confirmed_case_fields=confirmed_fields,
             calculation_fields=calculation_fields,
             open_fields=open_fields,
+            manufacturer_echo_notes=echo_notes,
         )
 
     def _run_modules(
@@ -4044,6 +4057,26 @@ def _brief_sections(
         },
         {"id": "disclaimer", "title": "Disclaimer", "items": [_RWDR_BRIEF_DISCLAIMER]},
     ]
+    # C10 echo section — only when recorded manufacturer responses exist. Placed
+    # right after the manufacturer questions; rag_supported, never a confirmed fact.
+    echo_notes = [dict(note) for note in brief.manufacturer_echo_notes]
+    if echo_notes:
+        insert_at = next(
+            (
+                index + 1
+                for index, section in enumerate(sections)
+                if section.get("id") == "manufacturer_questions"
+            ),
+            len(sections),
+        )
+        sections.insert(
+            insert_at,
+            {
+                "id": "manufacturer_echo_notes",
+                "title": "Herstellerrückmeldungen (rag_supported – Prüfung erforderlich)",
+                "items": echo_notes,
+            },
+        )
     return sections
 
 
