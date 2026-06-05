@@ -147,6 +147,6 @@ def test_retrieval_entrypoints_call_the_guard():
     from app.services.rag.rag_orchestrator import hybrid_retrieve
 
     for fn in (retrieve_with_tenant, hybrid_retrieve):
-        assert "enforce_retrieval_allowed" in inspect.getsource(fn), (
-            f"{fn.__name__} must call enforce_retrieval_allowed (tier-0 guard)"
-        )
+        assert "enforce_retrieval_allowed" in inspect.getsource(
+            fn
+        ), f"{fn.__name__} must call enforce_retrieval_allowed (tier-0 guard)"
