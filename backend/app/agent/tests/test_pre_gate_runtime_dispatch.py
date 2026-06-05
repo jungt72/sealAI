@@ -1229,3 +1229,41 @@ async def test_knowledge_stream_path_uses_knowledge_service_without_case_creatio
     assert '"answer_trace"' in frames[0]
     assert '"reply_source": "knowledge_service"' in frames[0]
     assert frames[1] == "data: [DONE]\n\n"
+
+
+# ── STEP 4 (audit #3, same class as Bucket 4): the knowledge RAG retriever must not
+# swallow a Tier-0 TierViolation. dispatch._knowledge_rag_retriever calls
+# hybrid_retrieve synchronously (the guard fires in-context); a broad `except`
+# previously converted the TierViolation to `return []`, silently masking a
+# tier-label-vs-behaviour contradiction. Re-raise it; real errors still degrade to [].
+# Legitimate (Tier-1 / undeclared) turns never raise, so behaviour there is unchanged.
+
+
+def test_knowledge_retriever_reraises_tier0_violation():
+    from app.agent.api.dispatch import _knowledge_rag_retriever
+    from app.agent.runtime.turn_tier import (
+        TIER_0,
+        TierViolation,
+        clear_declared_tier,
+        set_declared_tier,
+    )
+
+    set_declared_tier(TIER_0)
+    try:
+        with pytest.raises(TierViolation):
+            _knowledge_rag_retriever(query="hallo", tenant_id="sealai")
+    finally:
+        clear_declared_tier()
+
+
+def test_knowledge_retriever_still_swallows_real_errors(monkeypatch):
+    from app.agent.api.dispatch import _knowledge_rag_retriever
+    from app.agent.runtime.turn_tier import clear_declared_tier
+    from app.services.rag import rag_orchestrator
+
+    def _boom(**_kwargs):
+        raise RuntimeError("qdrant down")
+
+    monkeypatch.setattr(rag_orchestrator, "hybrid_retrieve", _boom)
+    clear_declared_tier()  # not Tier-0 → guard is a no-op; real error must degrade to []
+    assert _knowledge_rag_retriever(query="x", tenant_id="sealai") == []

@@ -115,6 +115,9 @@ keycloak-realm-backup/
 
 # local secrets (never commit)
 secrets/
+# Keycloak client-secret export — rotated + untracked (audit 2026-06-05 Risk #1).
+# The secret is injected at runtime via KEYCLOAK_CLIENT_SECRET, never committed.
+client.json
 
 # accidental Windows paths from copy/paste
 C:\Users\*
