@@ -166,6 +166,7 @@ def _knowledge_rag_retriever(
 ) -> list[dict[str, Any]]:
     """Shared RAG-backed retriever for no-case and side-question knowledge."""
 
+    from app.agent.runtime.turn_tier import TierViolation  # noqa: PLC0415
     from app.services.rag.constants import RAG_SHARED_TENANT_ID  # noqa: PLC0415
     from app.services.rag.rag_orchestrator import hybrid_retrieve  # noqa: PLC0415
 
@@ -180,6 +181,12 @@ def _knowledge_rag_retriever(
             )
             or []
         )
+    except TierViolation:
+        # Fail-closed (audit #3): a Tier-0 turn reaching retrieval is a tier-label-vs-
+        # behaviour contradiction — surface it, never silently degrade to an empty
+        # knowledge result via the broad handler below. Legitimate (Tier-1 /
+        # undeclared) turns never raise here, so their behaviour is unchanged.
+        raise
     except Exception as exc:  # noqa: BLE001
         _log.warning(
             "[runtime_dispatch] knowledge RAG lookup failed (%s: %s)",
