@@ -291,8 +291,8 @@ def init_bm25(
 
 
 def prewarm_embeddings() -> None:
-    """Lädt Embeddings + Reranker und meldet Zeiten."""
-    global _embedder, _reranker, _embedding_dim
+    """Lädt Embeddings + Reranker (+ Sparse) und meldet Zeiten."""
+    global _embedder, _reranker, _embedding_dim, _sparse_embedder
     try:
         t0 = time.perf_counter()
         from fastembed import TextEmbedding  # type: ignore
@@ -329,6 +329,27 @@ def prewarm_embeddings() -> None:
         _event(
             "reranker_failed", model=RERANK_MODEL_NAME, error=f"{type(e).__name__}: {e}"
         )
+
+    # Stage B (Rang 2): the sparse embedder is the third lazy global on the hot
+    # retrieval path and was not prewarmed — warm it too when sparse retrieval is on.
+    if USE_SPARSE_RETRIEVAL:
+        try:
+            t0 = time.perf_counter()
+            from fastembed import SparseTextEmbedding  # type: ignore
+
+            _sparse_embedder = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME)
+            next(_sparse_embedder.embed(["_warmup_"]))
+            _event(
+                "sparse_embedder_loaded",
+                model=SPARSE_MODEL_NAME,
+                ms=int((time.perf_counter() - t0) * 1000),
+            )
+        except Exception as e:
+            _event(
+                "sparse_embedder_failed",
+                model=SPARSE_MODEL_NAME,
+                error=f"{type(e).__name__}: {e}",
+            )
 
     log.info("RAG prewarm completed.")
 

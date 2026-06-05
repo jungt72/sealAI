@@ -177,7 +177,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("LangGraph governed graph warmup failed (non-fatal): %s", exc)
 
     if settings.warmup_on_start:
-        log.info("Warmup aktiviert.")
+        # Stage B (Rang 2 / W2): actually prewarm the RAG embedders + sparse +
+        # reranker + BM25 (previously this block only logged). Background task so
+        # readiness is not blocked by model loading (no deploy-health risk);
+        # non-fatal — a cold start degrades gracefully via the lazy loaders.
+        async def _prewarm_rag() -> None:
+            try:
+                from app.services.rag.rag_orchestrator import prewarm
+
+                await asyncio.to_thread(prewarm)
+                log.info("RAG prewarm (embeddings/sparse/reranker/bm25) completed")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("RAG prewarm at startup failed (non-fatal): %s", exc)
+
+        app.state.prewarm_task = asyncio.create_task(_prewarm_rag())
+        log.info("RAG prewarm scheduled (warmup_on_start) — non-blocking.")
     worker_task = None
     if settings.job_worker_enabled:
         worker_task = asyncio.create_task(start_job_worker())
