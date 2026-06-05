@@ -12,7 +12,16 @@ class Settings(BaseSettings):
     app_env: str = "development"
     frontend_origin: str = "https://sealai.net"
     enable_cors: bool = True
-    warmup_on_start: bool = False
+    # Stage B (Rang 2 / W2): prewarm the RAG embedders + reranker at startup so the
+    # first retrieval after a (re)deploy is not a cold-start outlier. Default ON so
+    # the behaviour does not depend on an env flag being live (operator may disable
+    # with WARMUP_ON_START=false). Prewarm runs as a non-blocking background task.
+    warmup_on_start: bool = True
+    # Stage B (Rang 3 / W1): cap the semantic-router LLM. ~just above the measured
+    # p95 router latency (9.48s, audit §1.1) so the unbounded tail (max 23.16s) is
+    # cut while ~95% of semantic refinements still complete; on timeout the safe
+    # deterministic pre-gate classification is used.
+    semantic_router_timeout_s: float = 10.0
     job_worker_enabled: bool = False
     job_worker_poll_sec: float = 1.5
     dev_clear_langgraph_checkpoints_on_startup: bool = False
