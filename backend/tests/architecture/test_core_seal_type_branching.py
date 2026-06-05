@@ -7,7 +7,7 @@ branches or per-type field-list dicts in the generically-named plumbing
 fails when a seal-type literal drives control flow outside a **versioned,
 documented allowlist**.
 
-What is flagged (in the scanned CORE files only):
+What is flagged (anywhere in the scanned core packages):
   1. `==` / `!=` against a seal-type/path string literal  (e.g. `x == "rwdr"`).
   2. `in` / `not in` a *collection literal* of seal-type strings
      (e.g. `x in {"rwdr", "ms_pump"}`) — a membership branch.
@@ -35,20 +35,31 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BACKEND = REPO_ROOT / "backend"
 
-# Generically-named governed-core modules that must ask the pack, never branch on
-# the seal-type string. (The classification STAGE — normalize_seal_type,
-# _engineering_path, _derive_engineering_path — produces labels and is allowed;
-# its one in-core classifier site is allowlisted below with a reason.)
-CORE_FILES: tuple[str, ...] = (
-    "backend/app/agent/state/reducers.py",
-    "backend/app/agent/domain/challenge_engine.py",
-    "backend/app/agent/domain/risk_readiness.py",
-    "backend/app/agent/domain/checks_registry.py",
-    "backend/app/agent/graph/output_contract_assembly.py",
-    "backend/app/agent/v92/calculation_projection.py",
-    "backend/app/agent/v92/orchestrator.py",
-    "backend/app/api/v1/projections/case_workspace.py",
+# Deny-by-default: scan EVERY product module under the governed-core packages, not a
+# fixed file list (audit 2026-06-05 B3 — services/, mcp/, communication/, most of
+# graph/, all of domain/ were previously unscanned). Any seal-type string-branch in
+# these packages is flagged unless it carries a documented allowlist entry below.
+# (Frontend .tsx seal-type branches are a separate finding, audit B4.)
+CORE_PACKAGES: tuple[str, ...] = (
+    "backend/app/agent",
+    "backend/app/services",
+    "backend/app/api",
+    "backend/app/mcp",
 )
+
+
+def _core_files() -> list[Path]:
+    """Every product .py under the core packages (tests / caches excluded)."""
+    files: list[Path] = []
+    for pkg in CORE_PACKAGES:
+        for path in (REPO_ROOT / pkg).rglob("*.py"):
+            if "__pycache__" in path.parts:
+                continue
+            if "tests" in path.parts or path.name.startswith("test_"):
+                continue
+            files.append(path)
+    return sorted(files)
+
 
 # Unambiguous seal-type / engineering-path / pack tokens. Deliberately excludes
 # generic words like "static"/"hydraulic" that also appear as motion/medium terms.
@@ -102,6 +113,45 @@ ALLOWLIST: dict[tuple[str, str], str] = {
         'elif raw in {"o-ring", "oring", "o_ring"}:',
     ): "Classification STAGE (C3): normalize_seal_type raw->canonical mapping "
     "(sibling of the rwdr classifier branch above).",
+    # ── Deny-by-default walk (B3, 2026-06-05): newly-scanned legitimate sites.
+    #    Each is a domain/scope/classification/norm check — NOT generically-named
+    #    plumbing that should ask the pack. One reason per entry (no bulk grant).
+    (
+        "backend/app/services/norm_modules/din_3760_iso_6194.py",
+        'if engineering_path == "rwdr":',
+    ): "Norm self-scoping: DIN 3760 / ISO 6194 IS the radial-shaft-seal norm; "
+    "applies_to() declares the norm's own applicability — not pack plumbing.",
+    (
+        "backend/app/services/norm_modules/din_3760_iso_6194.py",
+        'return seal_kind in {"rwdr", "radial_shaft_seal"} or motion_type == "rotary"',
+    ): "Norm self-scoping (same applies_to()): the DIN 3760 / ISO 6194 module "
+    "declares the seal kinds it covers; documented norm check, not dispatch.",
+    (
+        "backend/app/services/rwdr_mvp_brief.py",
+        'scope_confirmation_required = scope != "rwdr"',
+    ): "Scope guard (AGENTS.md: 'scope guard wins over all other logic'): the RWDR "
+    "MVP brief marks non-rwdr scope for confirmation — not pack-field plumbing.",
+    (
+        "backend/app/api/v1/projections/ptfe_rwdr_enrichment.py",
+        'if path == "rwdr":',
+    ): "Domain-specific projection: the PTFE-RWDR enrichment module applies only to "
+    "the rwdr path it is named for; gating on its own domain, not type dispatch.",
+    (
+        "backend/app/services/compatibility_inquiry_service.py",
+        'if word_key in {"wdr", "rwdr", "as"}:',
+    ): "Classification STAGE: keyword extraction of seal designations from user "
+    "text (sibling of normalize_seal_type) — produces a label, not a pack branch.",
+    (
+        "backend/app/agent/communication/technical_case_challenge.py",
+        'if domain != "rwdr":',
+    ): "Classification STAGE in the COMMUNICATION layer (distinct from the "
+    "P1-4-routed domain challenge_engine): rwdr-vs-generic detection selecting the "
+    "composer path; the else branch builds a generic technical-case plan.",
+    (
+        "backend/app/agent/communication/technical_case_challenge.py",
+        'if plan.detected_domain == "rwdr":',
+    ): "Communication wording keyed on the already-classified domain (with a generic "
+    "else branch) — message composition, not pack-field plumbing.",
 }
 
 
@@ -164,8 +214,8 @@ def _flagged_lines(path: Path) -> list[tuple[int, str]]:
 
 def test_core_has_no_unallowlisted_seal_type_branching() -> None:
     violations: list[str] = []
-    for relpath in CORE_FILES:
-        path = REPO_ROOT / relpath
+    for path in _core_files():
+        relpath = str(path.relative_to(REPO_ROOT))
         for lineno, code in _flagged_lines(path):
             if (relpath, code) in ALLOWLIST:
                 continue
@@ -212,8 +262,8 @@ def test_allowlist_has_no_stale_entries() -> None:
     """Every allowlist entry must still correspond to a real flagged line — so a
     routed/removed branch cannot leave a silent, meaningless allowlist behind."""
     flagged: set[tuple[str, str]] = set()
-    for relpath in CORE_FILES:
-        path = REPO_ROOT / relpath
+    for path in _core_files():
+        relpath = str(path.relative_to(REPO_ROOT))
         for _lineno, code in _flagged_lines(path):
             flagged.add((relpath, code))
 
