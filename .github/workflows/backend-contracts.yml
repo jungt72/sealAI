@@ -44,15 +44,20 @@ jobs:
         run: |
           python -m pytest backend/tests/architecture --noconftest
 
-      # The doctrine/seam targets live under backend/app/agent/tests/ (a different
-      # subtree — does NOT load the DB conftest) and import only pydantic;
-      # backend/conftest.py stubs the rest at collection time.
-      - name: Doctrine fast suite + governed runtime seam
+      # The fast doctrine guard suite — the exact executable contract enforced
+      # locally by ops/hooks/doctrine-gate.sh. These targets import only pydantic;
+      # backend/conftest.py stubs the rest at collection time, so no runtime stack.
+      #
+      # NOT included here: test_governed_runtime_seam.py. It imports the API layer
+      # (app.agent.api.streaming/routes), which pulls the full runtime stack
+      # (fastapi/openai/qdrant/sqlalchemy/starlette). Running it needs the heavy
+      # backend deps — deferred to a future full-stack job (e.g. against the built
+      # backend image) rather than slowing this fast required check.
+      - name: Doctrine fast suite
         env:
           PYTHONPATH: backend:langchain_core_stub
         run: |
           python -m pytest \
-            backend/app/agent/tests/test_governed_runtime_seam.py \
             backend/app/agent/tests/test_comparative_ranking_guard.py \
             backend/app/agent/tests/test_rwdr_comparative_leak_golden.py \
             backend/app/agent/tests/v92/test_final_guard_knowledge_backstop.py
