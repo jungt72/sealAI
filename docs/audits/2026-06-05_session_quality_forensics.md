@@ -92,30 +92,36 @@ Knowledge-Side-Route auslösen — eine Antwort-Route pro Turn (mittel, Routing)
 
 ---
 
-## Q3 — „Temperaturfenster als Arbeitsstand: bis 40 °C" (stille Annahme)
+## Q3 — „bis 40 °C": Provenienz-Verlust bei einem nutzer-eingegebenen Wert (Cockpit)
 
-**Befund `[E]`:** Der governed State führt **`temperature_c = 40.0`, confidence `confirmed`, `origin=None`**
-`[E]` Evidence-State @18:53:30; der Wert floss sogar in die **Retrieval-Query** („… 40.0 °C …", `qhash c4d8df45`)
-und in den **sichtbaren** Antworttext („Temperaturfenster als Arbeitsstand: bis 40 °C") ein. Der User hat in
-**keinem** der 7 Turns eine Temperatur genannt (Nachrichten: Begrüßung, PTFE, NBR, rwdfr, „was brauchst du",
-Bootswelle 60/5000/2bar, Salzwasser/Getriebeöl).
-- **Herkunft:** Eine `intake_observe`-Kontextzeile lautete sinngemäß „Direkteingabe wurde **als Nutzerangabe
-  übernommen** — aktualisierte Felder: temperature_c, …" `[E]` Run @18:53:30. Diese Formulierung stammt aus dem
-  **Direkteingabe-/Review-Patch-Pfad**: `[E]` `backend/app/agent/api/routes/review.py` (Zeile „… wurde als
-  Nutzerangabe übernommen"). D.h. der Wert kam über den **Cockpit-/Parameter-Patch** (`/api/langgraph/parameters/patch`
-  / Review), **nicht** aus dem Chat, und wurde dort als `confirmed` markiert.
-- **Doktrin-Kern:** Ein liability-tragender Brief-Fakt wird als `confirmed` geführt **ohne Origin-Envelope**, der
-  chat-bestätigt vs. form-direkteingabe vs. Default unterscheidet (`origin=None`). Ob der User 40 °C im Cockpit
-  selbst eintippte oder ein Default übernommen wurde, ist **aus den Traces nicht entscheidbar** `[NV]` — und genau
-  das ist der Befund: das System kann die **Provenienz nicht belegen**, präsentiert den Wert aber als quantifizierten
-  Arbeitsstand. Das verletzt das Field-Envelope-Prinzip (status/approximate/**origin** sichtbar machen).
+> **Owner-Klärung (2026-06-05, nach Erst-Analyse):** Die 40 °C waren eine **echte Nutzereingabe über das
+> Cockpit-Formular** — **kein Default, keine System-Annahme.** Damit ist dies **kein Fakten-Erfinden**; der
+> Befund ist ein **Provenienz-Verlust** auf dem Übernahmepfad. Doctrine-relevant bleibt er, weil die Herkunft
+> aus dem State **nicht beweisbar** war. (Die frühere „stille Annahme"-Einstufung ist hiermit korrigiert.)
 
-**Fehlerklasse:** **DOKTRIN** (stille Annahme / fehlende Provenienz) + Extraktion/State-Gate (Origin-Tracking).
-**Schweregrad: PILOT-BLOCKING.** **→ doctrine-review.**
-**Fix-Richtung:** (a) Direkteingabe-/Review-Pfad muss `origin` setzen (`user_direct_entry` ≠ `chat_confirmed`),
-und Defaults dürfen **nie** `confirmed` werden (mittel); (b) Brief/Antwort kennzeichnet Felder ohne chat-/
-dokument-Provenienz als „vom Nutzer im Cockpit gesetzt, zu bestätigen" (niedrig). **Vorab klären:** hatte das
-Cockpit ein 40-°C-Default? (entscheidet, ob (a) Default-Bug oder reine Provenienz-Lücke).
+**Befund `[E]`:** Der governed State führt **`temperature_c = 40.0`, confidence `confirmed`, ohne Origin-Tag**
+`[E]` Evidence-State @18:53:30; der Wert floss in die **Retrieval-Query** („… 40.0 °C …", `qhash c4d8df45`) und in
+den **sichtbaren** Antworttext („Temperaturfenster als Arbeitsstand: bis 40 °C") ein. Der Wert wurde vom Owner
+real im **Cockpit-Formular** eingegeben (nicht im Chat).
+- **Übernahmepfad:** Cockpit-Direkteingabe → Review-/Override-Endpoint `[E]` `backend/app/agent/api/routes/review.py`
+  (`_override_analysis_message`, „… wurde als Nutzerangabe übernommen") → `_run_override_analysis_turn` setzt die
+  Felder `confirmed`. Auf genau diesem Pfad geht das **Origin-Tag verloren**: der Wert wird `confirmed`, aber **ohne**
+  Envelope, der **Cockpit-Eingabe** von **Chat-Bestätigung** unterscheidet — im State nicht mehr nachvollziehbar.
+- **Doktrin-Kern:** Ein liability-tragender Brief-Fakt ist `confirmed`, aber seine **Provenienz ist aus dem State
+  nicht belegbar** (Cockpit vs. Chat nicht unterscheidbar) und im Chat **nicht als Formular-Wert kenntlich**. Das
+  verletzt das Field-Envelope-Prinzip (status + **origin** sichtbar). Der Wert ist **real und korrekt** — der
+  Mangel ist die **fehlende Herkunfts-Attribution**, nicht eine erfundene Angabe.
+
+**Fehlerklasse:** **DOKTRIN** (Provenienz-Verlust bei nutzer-eingegebenem Wert) + State-Gate (Origin-Tracking).
+**Schweregrad: doctrine-relevant, KEIN Fakten-Erfinden** (Wert ist echte Cockpit-Eingabe) → **kein Pilot-Blocker
+der Konfabulations-Klasse**, aber **Fix vor breitem Pilot** (Herkunft muss beweisbar + attribuiert sein).
+**→ doctrine-review.**
+**Fix-Richtung (Owner-Zuschnitt):** (a) Übernahmepfad taggt die Herkunft (`sheet_field_edit` / `user_override`
+gemäß Field-Envelope), nie `default`→`confirmed` (mittel); (b) **Invariante als Test:** kein Feld erreicht
+`confirmed` mit `origin ∈ {None, default}` (Property-Test über Reducer + Override-Pfad); (c) **Attribution im
+Output** („via Cockpit-Eingabe"), damit Formular-Werte im Chat als solche erkennbar sind (niedrig).
+**Teil (i) read-only verkürzt** (Owner-Klärung): nur klären, **wo** auf dem `review.py`-Pfad das Origin-Tag
+verloren geht — **keine Frontend-Untersuchung, voraussichtlich kein Frontend-PR.**
 
 ---
 
@@ -168,23 +174,25 @@ die priorisierte Einzel-Frage geben (mittel).
 | Befund | Klasse | Schweregrad | doctrine-review |
 |---|---|---|---|
 | Q1 Konfabulation „RWDFR" + PTFE-Bleed, kein Guard | Routing + Wissensbasis + **Doktrin** | **PILOT-BLOCKING** | **ja** |
-| Q3 „40 °C" als confirmed ohne Origin (stille Annahme) | **Doktrin** + State-Gate | **PILOT-BLOCKING** | **ja** |
+| Q3 „40 °C" confirmed ohne Origin-Tag — **echte Cockpit-Eingabe**, Provenienz-Verlust (kein Fakten-Erfinden) | **Doktrin** (Provenienz) + State-Gate | doctrine-relevant · Fix vor breitem Pilot | **ja** |
 | Q2a Medium erkannt, nicht extrahiert → fragt erneut | Extraktion/State-Gate | **PILOT-BLOCKING** | ja (Brief-Fakten-Gate) |
 | Q2b Doppel-Composer (Knowledge + governed) in 1 Turn | Routing/Composition | P1-hoch | nein |
 | §5 Nächste-Frage invertiert (T5 Fehlroute) | Routing + Composer | P1-hoch | nein |
 | Q4 Niveau-Gefälle Einzel vs. Vergleich | Composer/Template + Wissensbasis | P1-Backlog | nein |
 | T6 Doppel-Vollgenerierung (Composer+Repair, 14,95 s) | Composer (W3-Klasse) | P1-Backlog | ja (Repair = doktrin-nah) |
 
-**Drei Pilot-Blocker** (Q1, Q3, Q2a) — alle drei berühren die Kern-Promise „AI extrahiert, User bestätigt,
-SealingAI strukturiert": Konfabulation und stille Annahmen erzeugen **Schein-Fakten**, die fehlende Medium-
-Extraktion **verliert** eine reale Angabe.
+**Zwei Pilot-Blocker** (Q1, Q2a) **+ ein Doktrin-Provenienz-Befund** (Q3). Q1 (Konfabulation) erzeugt einen
+**Schein-Fakt**; Q2a **verliert** eine reale Angabe (Medium). **Q3 ist nach Owner-Klärung KEIN Fakten-Erfinden** —
+der 40-°C-Wert war eine echte Cockpit-Eingabe; der Befund ist der **Provenienz-Verlust** (Herkunft nicht
+beweisbar/attribuiert), doctrine-relevant, Fix vor breitem Pilot.
 
 ---
 
 ## §7 — HALT
 
-Read-only-Forensik abgeschlossen. **Keine Fixes, kein Commit, kein Deploy** ohne Owner-Go. Drei Befunde als
-**doctrine-review-relevant** markiert (Q1 Konfabulation, Q3 stille Annahme, Q2a Brief-Fakten-Gate). Empfohlene
+Read-only-Forensik abgeschlossen. **Keine Fixes, kein Commit, kein Deploy** ohne Owner-Go. Drei Befunde
+**doctrine-review-relevant** (Q1 Konfabulation, Q2a Brief-Fakten-Gate, Q3 Provenienz-Verlust — echte
+Cockpit-Eingabe, kein Fakten-Erfinden). Empfohlene
 Reihenfolge nach Wirkung/Aufwand: **Q1(a) Typo-Normalisierung** (niedrig) → **Q2a Medium-Extraktion** (mittel) →
 **Q3 Origin-Envelope** (mittel) → **Q1(b/c) FactCard-Bleed + Grounding-Guard** (mittel, doctrine) → P1-Backlog.
 Jeder Guard-/Doktrin-Fix benötigt vor Merge eine `doctrine-reviewer`-Freigabe + Zero-FP-Proof.
