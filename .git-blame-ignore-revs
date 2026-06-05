@@ -6,3 +6,6 @@
 
 # style: ruff format backend/ conftest.py (formatting only) — same addendum
 9f9fba556bee7ca62ee10ac26154b41968cfef66
+
+# style: ruff format C10 echo wiring (formatting only) — re-debt guard, 2026-06-05
+8a15bf1e7f96bc71c1cba1f94e95a3cc31779c77
