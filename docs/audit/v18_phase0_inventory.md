@@ -107,15 +107,25 @@ Alembic `path_separator`), not test failures.
 contract fixture without dropping fields` — `AssertionError: expected [ …(20) ] to deeply equal
 [ …(19) ]`. This is a **contract-fixture drift** between the frontend workspace mapping and
 `contracts/rfq_readiness_projection_v1.fixture.json` (one field count mismatch). It is unrelated
-to V1.8 and predates this audit; flagged here for the backlog (it would be caught by P0-A CI).
+to V1.8 and predates this audit; flagged here for the backlog.
 
 ## 6. CI / scripts note
 
-- `.github/workflows/` is present but **empty** — there is no CI workflow committed; the
-  Golden/REPLAY and guardrail suites are therefore not gate-enforced in CI today (TST-01).
+> **CORRECTION (post-Phase-1):** an earlier draft said `.github/workflows/` was "empty".
+> That was a **mirror artifact** — the read-only analysis mirror excluded root dotfiles
+> (`.github/`), so the sub-agent could not see the workflows. The VPS repo **does have CI**.
+
+- `.github/workflows/` on the VPS contains: `backend-contracts.yml` (architecture enforcers
+  via `--noconftest` + a light "doctrine fast suite" of pydantic-only guard tests),
+  `langgraph-v2-guardrails.yml` (v2-only code guard, frontend build + BFF smoke, ruff-format),
+  `build-and-push.yml`, `deploy.yml`, `secret-scan.yml`. CI runs on `push` + `pull_request`.
+- The backend CI is **deliberately light** (pinned `pytest`/`pydantic` only; the heavy
+  runtime suite + full golden REPLAY are explicitly deferred to a "future full-stack job" per
+  the workflow comments). So §7.11/AC5 "golden REPLAY per PR" is **partially** enforced
+  (selected goldens run; the broad suite does not). See the corrected TST-01 in the audit
+  report.
 - `scripts/check_rwdr_mvp_demo.sh` referenced in `AGENTS.md` is not present in the mirrored
-  tree; `scripts/` carries `audit_py.sh`, `audit_ts.sh`, `perf/`, `inventory.py`, etc.
-  (Re-confirm on the VPS before relying on the demo gate.)
+  tree; re-confirm on the VPS before relying on the demo gate.
 
 ## 7. What Phase 1 measures next
 

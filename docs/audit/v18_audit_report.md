@@ -108,7 +108,7 @@ Legend: ✅ erfüllt · 🟡 teilweise · ❌ fehlt · ⬜ n/a
 
 | ID | Status | Evidence | Rationale |
 |---|---|---|---|
-| TST-01 Test pyramid + REPLAY | 🟡 | 333 backend `test_*.py`; stubs `backend/conftest.py:411-604,827-875`; goldens `test_golden_conversations_v16.py`, `api/tests/test_rwdr_golden_cases.py`; `.github/workflows/` empty | Strong core-first suite that runs without the real graph/LLMs, and golden conversations exist — but they are **deterministic-code goldens, not REPLAY of recorded LLM answers**, and there is no CI. |
+| TST-01 Test pyramid + REPLAY | 🟡 | 333 backend `test_*.py`; stubs `backend/conftest.py:411-604,827-875`; goldens `test_golden_conversations_v16.py`, `api/tests/test_rwdr_golden_cases.py`; CI `.github/workflows/backend-contracts.yml`, `langgraph-v2-guardrails.yml` | Strong core-first suite that runs without the real graph/LLMs, and golden conversations exist — but they are **deterministic-code goldens, not REPLAY of recorded LLM answers**. **CORRECTION:** CI **does exist** (the earlier "empty `.github`" note was a mirror artifact — root dotfiles were excluded from the analysis mirror); it is deliberately light (architecture enforcers + a small doctrine/golden subset), with the broad suite + full REPLAY deferred to a "future full-stack job". |
 | TST-02 Turn-trace vs §7.11 | 🟡 | `v92/contracts.py:381+` (`TraceSummary`); `prompt_audit.py` (template+hash); `turn_timing.py`; but `metrics.py:352` `track_llm_call` **never called**; no `proposals[]`/`dirty_set`/`gate_decisions[]`/`envelope_hash`; no eval metrics | A real per-turn trace (route/tier/timing) + composer prompt-audit exist, but §7.11 is materially incomplete (no tokens/latency/model_ref captured, no proposals/dirty_set/gate-array/envelope_hash, no LIVE eval metrics). |
 
 **Tally:** ✅ erfüllt ×11 · 🟡 teilweise ×14 · ❌ fehlt ×5 · ⬜ n/a ×0.
@@ -239,8 +239,11 @@ files a fix touches.
 6. **SEC-04 encryption/TTL.** Decide explicitly: rely on infra-level at-rest encryption for
    `chat_messages`/snapshots (and document it) **or** add app-layer encryption + a retention
    job. Today it is plaintext with no code-visible TTL on durable transcript rows.
-7. **No CI.** `.github/workflows/` is empty, so "REPLAY green per PR" (§7.11/AC5) is unenforced.
-   Standing up CI is a prerequisite for the patch discipline (§10.2).
+7. **CI is light, not absent (corrected).** CI exists (`backend-contracts.yml` +
+   `langgraph-v2-guardrails.yml`, on push/PR) but is deliberately minimal — architecture
+   enforcers + a small doctrine/golden subset; the broad suite + full golden REPLAY are
+   deferred to a "future full-stack job". So "REPLAY green per PR" (§7.11/AC5) is only
+   partially enforced. (The earlier "empty `.github`" claim was a mirror artifact.)
 8. **Two RAG stacks.** `services/rag/*` (rich payload, `pack_affinity`, visibility) vs the
    thinner `agent/rag/setup_collections.py` (only `sts_*`/`doc_type`/`language` indexed).
    Confirm which is authoritative before adding `solution_docs` scope.
