@@ -517,6 +517,7 @@ type LegacyWorkspaceProjection = {
   challenge_intelligence?: RawChallengeIntelligence | null;
   v91_workspace?: RawV91Workspace | null;
   v92_dashboard?: Record<string, unknown> | null;
+  operating_window?: Record<string, unknown> | null;
   case_summary: {
     thread_id: string | null;
     intent_goal?: string | null;
@@ -1513,6 +1514,10 @@ export function mapWorkspaceView(
     v92Dashboard:
       projection.v92_dashboard && typeof projection.v92_dashboard === "object"
         ? projection.v92_dashboard
+        : null,
+    operatingWindow:
+      projection.operating_window && typeof projection.operating_window === "object"
+        ? projection.operating_window
         : null,
     deepDiveTabs: mapDeepDiveTabs(projection.deep_dive_tabs),
     technicalDerivations: (projection.technical_derivations || []).map((item) => ({
