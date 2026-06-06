@@ -38,6 +38,7 @@ from app.agent.communication.rfq_intent import (
     build_rfq_readiness_projection,
 )
 from app.agent.state.models import GovernedSessionState
+from app.agent.state.operating_window import project_operating_window
 from app.agent.domain.checks_registry import (
     build_check_metrics,
     build_registered_check_results,
@@ -2761,8 +2762,19 @@ def project_case_workspace_from_governed_state(
         route="engineering_case_update",
         case_id=chat_id,
     )
+    # V1.8 §5.6: deterministic Betriebsfenster from the requirement profile vs
+    # the chosen SolutionProfile. Only projected once a solution exists (no
+    # solution → nothing to compare against → omitted). Pure projection.
+    operating_window = (
+        project_operating_window(state).model_dump(mode="json")
+        if state.solution_profiles
+        else None
+    )
     return projection.model_copy(
-        update={"v92_dashboard": v92_dashboard.model_dump(mode="json")}
+        update={
+            "v92_dashboard": v92_dashboard.model_dump(mode="json"),
+            "operating_window": operating_window,
+        }
     )
 
 
