@@ -20,7 +20,7 @@ from typing import Any, Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
-from app.agent.state.models import SolutionProfile
+from app.agent.state.models import GovernedSessionState, SolutionProfile
 
 OperatingWindowFlag = Literal["ok", "clarify", "critical", "limit_unknown"]
 ComparisonDirection = Literal["req_le_limit", "req_ge_limit", "capability_required"]
@@ -217,3 +217,78 @@ RWDR_OPERATING_WINDOW_COMPARISONS: tuple[LimitComparison, ...] = (
         direction="capability_required",
     ),
 )
+
+
+# --- Projection from the governed case state (V1.8 §5.6, pure read-only) -------
+# Maps each comparison's abstract requirement_field onto the governed
+# asserted-state keys (the field names actually stored differ by aspect, e.g. the
+# operating temperature lives under temperature_max_c / temperature_c). First hit
+# wins; v_surface is injected separately from the deterministic compute result.
+_REQUIREMENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "temperature_c": ("temperature_max_c", "temperature_c"),
+    "temperature_min_c": ("temperature_min_c",),
+    "pressure_bar": (
+        "pressure_at_seal_bar",
+        "pressure_bar",
+        "pressure_differential_bar",
+    ),
+    "dry_running_required": ("dry_running_required", "dry_running"),
+}
+
+#: SolutionProfile state precedence for "the solution in operation/chosen".
+_SOLUTION_STATE_PRECEDENCE = ("installed", "selected", "offer", "candidate")
+
+
+def _select_solution(profiles: Sequence[SolutionProfile]) -> SolutionProfile | None:
+    """The most-committed solution profile (installed > selected > … > first)."""
+    for state in _SOLUTION_STATE_PRECEDENCE:
+        for profile in profiles:
+            if profile.state == state:
+                return profile
+    return profiles[0] if profiles else None
+
+
+def project_operating_window(
+    state: GovernedSessionState,
+    *,
+    compute_results: Sequence[Mapping[str, Any]] | None = None,
+) -> OperatingWindow:
+    """Deterministic Operating-Window projection for a governed case.
+
+    Reads the confirmed requirement profile (``asserted.assertions``) and the
+    deterministic circumference-speed result, picks the chosen SolutionProfile,
+    and compares them via the RWDR spec. Pure read-only — no LLM, no mutation.
+    ``compute_results`` defaults to ``state.compute_results`` when the caller
+    passes a GraphState (the persisted GovernedSessionState has none).
+    """
+    assertions = state.asserted.assertions or {}
+    req_values: dict[str, Any] = {}
+    req_status: dict[str, str] = {}
+
+    for comp in RWDR_OPERATING_WINDOW_COMPARISONS:
+        rf = comp.requirement_field
+        for key in _REQUIREMENT_ALIASES.get(rf, (rf,)):
+            claim = assertions.get(key)
+            value = getattr(claim, "asserted_value", None)
+            if claim is not None and value is not None:
+                req_values[rf] = value
+                req_status[rf] = str(getattr(claim, "status", "unknown"))
+                break
+
+    results = compute_results
+    if results is None:
+        results = getattr(state, "compute_results", None) or []
+    # Pick the computed circumference speed by the value it carries, not by a
+    # seal-type label — keeps this core projection free of per-type branching.
+    for result in results:
+        if isinstance(result, Mapping) and result.get("v_surface_m_s") is not None:
+            req_values["v_surface_m_s"] = result["v_surface_m_s"]
+            req_status["v_surface_m_s"] = "calculated"
+            break
+
+    return compute_operating_window(
+        req_values,
+        req_status,
+        _select_solution(state.solution_profiles),
+        RWDR_OPERATING_WINDOW_COMPARISONS,
+    )
