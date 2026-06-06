@@ -9,19 +9,32 @@ This file contains Claude Code-specific operating rules for the SealAI repositor
 Project-wide authority, in order:
 
 1. `AGENTS.md` — the main coding-agent contract.
-2. The current product & architecture concept files named in `AGENTS.md`
+2. The active target blueprint named in `AGENTS.md § "Active target blueprint"`:
+   `docs/sealing_intelligence_v1_8_universal_sealing_lifecycle_platform_blueprint.md`
+   (V1.8). It is the binding architecture & orchestration layer, with precedence
+   `V1.8 > V1.7 > V1.6` (V1.6 still wins on the contract level except where V1.8
+   §5/§6 differs).
+3. The current product & architecture concept files named in `AGENTS.md`
    (currently `docs/implementation/SEALAI_RWDR_MVP_PRODUCT_CONCEPT.md` and the
    architecture concept it references).
-3. `frontend/DESIGN.md` — for UI/frontend work.
-4. this `CLAUDE.md`.
+4. `frontend/DESIGN.md` — for UI/frontend work.
+5. this `CLAUDE.md`.
 
 `AGENTS.md` is the source of truth for product scope. Do not duplicate the full
 product concept here.
 
-> **Precedence:** `AGENTS.md` describes the current architecture as
-> **V10 Conversational Sealing Intelligence**, product focus **RWDR MVP**.
-> If any wording below (e.g. legacy "Phase-1" framing) conflicts with
-> `AGENTS.md`, `AGENTS.md` wins.
+> **Precedence:** `AGENTS.md` describes the current runtime as
+> **V10 Conversational Sealing Intelligence**, product focus **RWDR MVP**, with
+> **V1.8 (Universal Sealing Lifecycle Platform)** as the binding architecture &
+> orchestration layer on top of V1.6/V1.7. If any wording below (e.g. legacy
+> "Phase-1" framing) conflicts with `AGENTS.md`, `AGENTS.md` wins.
+
+> **V1.8 is audit-first.** Before any V1.8 implementation patch, run the
+> read-only deep audit in V1.8 §10.1 against the Annex A checklist
+> (evidence = `path + line`) and produce the audit report. Only patch after the
+> report is reviewed — one dimension per patch, each with tests, each checked
+> against the V1.8 §7.10 prohibition list and §11 acceptance criteria; Golden
+> REPLAY stays green after every patch.
 
 ---
 
@@ -52,10 +65,15 @@ A read-only reviewer lives at `.claude/agents/doctrine-reviewer.md`.
 At the start of any non-trivial task:
 
 1. Read `AGENTS.md`.
-2. Read the concept files `AGENTS.md` points to.
-3. Read relevant implementation files and tests.
-4. For UI/frontend work, also read `frontend/DESIGN.md`.
-5. Check repository state:
+2. Read the active target blueprint
+   `docs/sealing_intelligence_v1_8_universal_sealing_lifecycle_platform_blueprint.md`
+   (V1.8) — at minimum §7 (orchestration), §10 (implementation discipline +
+   read-only audit prompt), §11 (acceptance criteria), and Annex A (audit
+   checklist). It layers on top of V1.6/V1.7.
+3. Read the concept files `AGENTS.md` points to.
+4. Read relevant implementation files and tests.
+5. For UI/frontend work, also read `frontend/DESIGN.md`.
+6. Check repository state:
 
 ```bash
 cd /home/thorsten/sealai && git status --short

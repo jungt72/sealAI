@@ -551,6 +551,12 @@ def _contains_material_code(hit: Dict[str, Any], material_code: str) -> bool:
     return False
 
 
+# Keys a caller must never set via metadata_filters: the server owns tenant
+# scoping (V1.8 §8 / SEC-02 — retrieval filters are constructed server-side
+# only, never widened/overwritten from caller- or LLM-supplied input).
+_RESERVED_FILTER_KEYS = frozenset({"tenant_id", "tenant", "metadata.tenant_id"})
+
+
 def _normalize_metadata_filters(
     raw_filters: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -560,6 +566,10 @@ def _normalize_metadata_filters(
     for raw_key, raw_value in raw_filters.items():
         key = str(raw_key).strip()
         if not key:
+            continue
+        if key in _RESERVED_FILTER_KEYS:
+            # Drop reserved tenant keys so a caller-supplied filter cannot
+            # overwrite the server-derived tenant at the retrieval_filters merge.
             continue
         if raw_value is None:
             continue

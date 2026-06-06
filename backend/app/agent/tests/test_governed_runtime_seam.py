@@ -157,6 +157,82 @@ async def test_governed_runtime_uses_async_graph_provider_for_streaming() -> Non
 
 
 @pytest.mark.asyncio
+async def test_governed_stream_result_equals_invoke_result() -> None:
+    """V1.8 §7.8 / STR-03: the streamed final envelope must equal the non-streamed
+    invoke() result for the same governed graph output (stream≡invoke contract)."""
+    from contextlib import ExitStack
+
+    final_state = GraphState(
+        output_reply="Bitte Medium und Wellendurchmesser angeben.",
+        output_response_class="structured_clarification",
+        output_public={"reply": "Bitte Medium und Wellendurchmesser angeben."},
+        challenge=ChallengeState(status="ready"),
+    )
+
+    class FakeEquivGraph:
+        """Implements BOTH branches, returning the same final state."""
+
+        async def astream(self, graph_input, *, config, stream_mode):  # noqa: ANN001
+            yield ("updates", {"governance": {"status": "derived"}})
+            yield ("values", final_state)
+
+        async def ainvoke(self, graph_input, *, config):  # noqa: ANN001
+            return final_state
+
+    async def _run_turn(collect_progress: bool) -> GraphState:
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "app.agent.api.governed_runtime._load_live_governed_state",
+                    AsyncMock(return_value=GovernedSessionState()),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.agent.api.governed_runtime.get_governed_graph",
+                    AsyncMock(return_value=FakeEquivGraph()),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.agent.api.governed_runtime._update_governed_state_post_graph",
+                    AsyncMock(return_value=GovernedSessionState()),
+                )
+            )
+            stack.enter_context(
+                patch("app.agent.api.governed_runtime.emit_quality_trace")
+            )
+            # Force the branch purely on collect_progress (disable the
+            # langsmith-observability path that would also select streaming).
+            stack.enter_context(
+                patch(
+                    "app.agent.api.governed_runtime.langsmith_enabled",
+                    return_value=False,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.agent.api.governed_runtime.langsmith_redacted_observation_spans",
+                    return_value=False,
+                )
+            )
+            result = await run_governed_graph_turn(
+                request=SimpleNamespace(session_id="case-eq", message="Hilfe"),
+                current_user=_request_user(),
+                pre_gate_classification="DOMAIN_INQUIRY",
+                collect_progress=collect_progress,
+            )
+            return result.result_state
+
+    streamed = await _run_turn(collect_progress=True)  # astream branch
+    invoked = await _run_turn(collect_progress=False)  # ainvoke branch
+
+    assert streamed.model_dump() == invoked.model_dump()
+    assert streamed.output_reply == final_state.output_reply
+    assert streamed.output_response_class == "structured_clarification"
+
+
+@pytest.mark.asyncio
 async def test_json_governed_path_uses_governed_runtime_seam() -> None:
     result_state = GraphState(output_reply="Bitte Medium angeben.")
     persisted_state = GovernedSessionState()
