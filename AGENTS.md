@@ -330,7 +330,92 @@ calculated value, open point, review required, manufacturer review basis.
 - RWDR MVP changes preserve the product promise: unclear RWDR inquiry in,
   confirmed manufacturer-evaluable `Technical RWDR RFQ Brief` out.
 
-## Active target blueprint (V1.6)
+## Active target blueprint (V1.8)
 
-The binding target architecture is `docs/sealing_intelligence_v1_6_mobile_first_complete_architecture_blueprint.md`.
-Implement it audit-first, patch by patch (see its section 30). Never big-bang.
+The binding target architecture is now
+`docs/sealing_intelligence_v1_8_universal_sealing_lifecycle_platform_blueprint.md`
+(V1.8 — Universal Sealing Lifecycle Platform). It is the architecture &
+orchestration layer that sits **on top of** the V1.6 and V1.7 blueprints; it
+does not replace them.
+
+Precedence (V1.8 § "Verhältnis zu V1.6 und V1.7"):
+
+```text
+V1.8 > V1.7 > V1.6   on the architecture / orchestration level.
+V1.6 still wins on the contract level (Mode-Contracts, Schemas, UX rules,
+Golden Conversations) EXCEPT where V1.8 §5/§6 defines something different.
+```
+
+Predecessor blueprints stay in the repo as the lower layers V1.8 builds on:
+`docs/sealing_intelligence_v1_6_mobile_first_complete_architecture_blueprint.md`
+and `docs/architecture/BLUEPRINT_V1_7_FINAL_CLOSEOUT.md`.
+
+### Operating mode for V1.8 (do this first)
+
+V1.8 is an **audit-first** layer. Before any V1.8 implementation patch, run the
+**read-only deep audit** in V1.8 §10.1 against the Annex A checklist (every
+finding needs `path + line` evidence). Produce the audit report artifacts in
+§10.1 first; only patch after the report is reviewed, then strictly in the
+order of the patch plan — one dimension per patch, each with tests, each checked
+against the V1.8 §7.10 prohibition list and the §11 acceptance criteria. Golden
+REPLAY must stay green after every patch. Never big-bang.
+
+### V1.8 vocabulary is in-scope blueprint language (not new inventions)
+
+When the blueprint or a task uses these terms, treat them as the binding target
+model, map them to existing repo structures where equivalents already exist
+(audit-first), and do NOT invent a parallel architecture for them:
+
+- **Lifecycle** — one Case carries a lifecycle status as an event sequence:
+  `inquiring → rfq_sent → quoted → solution_selected → installed → in_operation
+  → incident → replaced/closed`. The "Begleithälfte" (Solution Companion) is the
+  same Case in later states, not a second product or pipeline.
+- **SolutionProfile** — a second Envelope bundle per Case (candidate/offer/
+  selected/installed), filled from datasheet/offer ingestion and
+  `manufacturer_response`; same status/origin mechanics as the requirement
+  profile. New origin values: `datasheet_extracted` (source doc + page, required)
+  and `outcome_observation`.
+- **Operating Window** — a 100% deterministic Code projection (NO LLM in the
+  computation) comparing requirement vs. solution limit field-by-field; missing
+  limits emit a suggested manufacturer question, never silent omission.
+- **Outcome-Records** — structured field-outcome tuples; raw outcomes are
+  tenant-scoped, global aggregation only anonymized above a minimum count.
+- **Modules, not agents** — analysis steps are `AnalysisModule`s returning typed
+  `Proposal`s; the State Gate is the single writer of case truth. No supervisor
+  LLM, no subagents, no agent-to-agent handoffs. The decomposition is the
+  deterministic Dirty Scheduler.
+- **Two state worlds** — Case truth lives in the Postgres event store; the
+  LangGraph checkpointer holds only turn-execution state (and is subject to
+  retention). Never read business data from checkpoints.
+- **Jinja2, two roles** — prompt assembly (input, StrictUndefined, untrusted
+  content only as delimited data variables) and output composition (RFQ etc.
+  deterministic from snapshot, LLM fills only length-validated text slots).
+- **New modes** (additive to V1.6 §5.3): `standard_part_fast_path`,
+  `solution_explanation`, `installation_guidance`, `operation_qna`,
+  `incident_intake`. Persona config (`end_user` · `distributor_inside_sales` ·
+  `oem_engineering`) changes tone/defaults/addressing only — never pipeline,
+  gate, or safety formula.
+
+### Hard invariants V1.8 adds to the existing safety boundaries
+
+These are review criteria for every patch (V1.8 §7.10 + §11):
+
+- A Tier-1 turn triggers at most 5 LLM calls; Tier 0 at most 1. Everything
+  computable is Code — no LLM-performed calculations (`calculated` is only
+  credible as a deterministic result).
+- No new path bypasses the State Gate. Modules never write state and own no
+  write tools; retrieval is pre-fetched and rendered into the prompt.
+- Vector-store filters are constructed server-side only, never from LLM output;
+  tenant scope stays a mandatory repository-layer parameter (IDOR/cross-tenant
+  is a P0 blocker).
+- The safety formula extends to the companion half: explanation is never
+  release; "laut Datenblatt / Herstellerangabe / Norm …" is the mandatory frame
+  for every solution statement; no suitability/approval wording about the
+  installed solution; diagnosis is a hypothesis with a check step, not certainty.
+- `positions[]` schema headroom: no module, projection, or template may hard-
+  assume exactly one position, even though multi-position build-out is P3.
+
+RWDR stays the first and only production Domain Pack for the external guided
+demo; V1.8 keeps the RWDR scope guard in force and adds the lifecycle/companion
+half as later phases (V1.8 §9: P0 → P4). Do not expand to other seal types
+without an explicit SSoT/blueprint update.
