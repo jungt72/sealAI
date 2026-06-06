@@ -8,6 +8,15 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import uuid4
 
+import structlog
+
+# Stage A item 1: persist the per-turn timing server-side. The streaming layer
+# already computes first_progress_ms/latency_ms here (the single final-frame
+# choke point) but only stamped them into the client-bound SSE trace and then
+# discarded them. Emit one structured line per turn so they survive in prod logs
+# (stdlib logging stays dark; only structlog reaches stdout).
+_slog = structlog.get_logger("agent.api.sse_contract")
+
 
 SSEEventType = Literal[
     "delta",
@@ -123,6 +132,17 @@ class SSEEventBuilder:
                 if trace.get("latency_ms") is None and latency_ms is not None:
                     trace["latency_ms"] = latency_ms
                 normalized["trace"] = trace
+                # Stage A item 1: also persist server-side (one line per turn).
+                _slog.info(
+                    "turn_timing",
+                    turn_id=self.turn_id,
+                    first_progress_ms=first_progress_ms,
+                    latency_ms=latency_ms,
+                    route=(
+                        normalized.get("policy_path")
+                        or normalized.get("response_class")
+                    ),
+                )
         if is_final:
             if self.final_emitted:
                 raise ValueError("sse_final_event_already_emitted")

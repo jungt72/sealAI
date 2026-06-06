@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -134,6 +135,16 @@ def semantic_pre_gate_candidate(
 
 
 @traceable(name="sealai.semantic_intent_router", run_type="chain")
+def _router_timeout_s() -> float:
+    """Stage B (Rang 3 / W1): cap the router LLM; deterministic fallback on timeout."""
+    try:
+        from app.core.config import settings  # noqa: PLC0415
+
+        return float(settings.semantic_router_timeout_s)
+    except Exception:  # noqa: BLE001
+        return 10.0
+
+
 async def refine_pre_gate_classification(
     *,
     message: str,
@@ -150,7 +161,13 @@ async def refine_pre_gate_classification(
             deterministic=deterministic,
             recent_history=recent_history,
         )
-        raw = await _call_structured_router(client=client, model=model, payload=payload)
+        # Stage B (Rang 3 / W1): bound the unbounded router-LLM tail. A timeout
+        # raises TimeoutError, caught by the except below → safe deterministic
+        # fallback (the audit's first_progress tail driver, §1.1/§2.5).
+        raw = await asyncio.wait_for(
+            _call_structured_router(client=client, model=model, payload=payload),
+            timeout=_router_timeout_s(),
+        )
         decision = _decision_from_payload(
             raw,
             deterministic=deterministic,

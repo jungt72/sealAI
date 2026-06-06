@@ -8,6 +8,10 @@ from langchain_core.messages import BaseMessage
 
 from app.agent.state.agent_state import AgentState
 from app.agent.state.models import GovernedSessionState, ConversationMessage
+from app.agent.state.solution import (
+    merge_solution_profiles,
+    solution_profiles_from_document_evidence,
+)
 from app.agent.graph import GraphState
 from app.agent.state.persistence import (
     get_or_create_governed_state_async,
@@ -543,9 +547,18 @@ async def _update_governed_state_post_graph(
         if content:
             new_messages.append(ConversationMessage(role=role, content=content))
 
+    # V1.8 §6.4: project datasheet/offer document evidence into candidate
+    # SolutionProfiles. Pure + idempotent (keyed by source document) — a no-op
+    # for the inquiry half (no solution documents → existing profiles unchanged).
+    merged_solution_profiles = merge_solution_profiles(
+        governed.solution_profiles,
+        solution_profiles_from_document_evidence(result_state.document_evidence),
+    )
+
     updated = governed.model_copy(
         update={
             "conversation_messages": new_messages,
+            "solution_profiles": merged_solution_profiles,
             "observed": result_state.observed,
             "normalized": result_state.normalized,
             "asserted": result_state.asserted,

@@ -123,6 +123,18 @@ FieldStatus = Literal[
     "stale",
     "invalid",
     "unknown",
+    # V1.8 §6.2 status headroom (additive — declared for SolutionProfile/outcome
+    # envelopes; existing producers/consumers are unchanged).
+    "pending_confirmation",
+    "explicitly_unknown",
+    "rejected",
+    "conflicting",
+    "not_applicable",
+    "visual_candidate",
+    "sketch_candidate",
+    "rag_supported_note",
+    "calculated",
+    "agent_inferred_review_flag",
 ]
 
 Provenance = Literal[
@@ -138,6 +150,26 @@ Provenance = Literal[
     "sheet_bulk_input",
     "structured_form_input",
     "missing",
+    # V1.8 §6.2 origin headroom (additive): datasheet/offer ingestion,
+    # field-outcome observations, and manufacturer responses for the Solution
+    # Companion half (manufacturer_response already exists as a SourceType).
+    "datasheet_extracted",
+    "outcome_observation",
+    "manufacturer_response",
+]
+
+# V1.8 §6.3 Case-Lifecycle states (declared headroom — not yet wired into
+# routing/Dirty-Scheduler; default stays "inquiring" = today's inquiry half).
+CaseLifecycleStatus = Literal[
+    "inquiring",
+    "rfq_sent",
+    "quoted",
+    "solution_selected",
+    "installed",
+    "in_operation",
+    "incident",
+    "replaced",
+    "closed",
 ]
 
 
@@ -166,6 +198,51 @@ class CaseField(BaseModel):
     confirmation_required: bool = True
     source_revision: int = 0
     updated_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# SolutionProfile — V1.8 §6.4 (Solution Companion / Begleithälfte)
+# ---------------------------------------------------------------------------
+
+#: Lifecycle of a SolutionProfile within a case (candidate→offer→selected→installed).
+SolutionState = Literal["candidate", "offer", "selected", "installed"]
+
+
+class SolutionField(BaseModel):
+    """One field of a SolutionProfile (V1.8 §6.4).
+
+    Same status/origin envelope mechanics as ``CaseField`` (it reuses the very
+    same ``FieldStatus``/``Provenance`` literals), plus the mandatory datasheet
+    source (document id + page) that §6.2 requires for ``datasheet_extracted``.
+    """
+
+    field: str
+    value: Any = None
+    status: FieldStatus = "pending_confirmation"
+    origin: Provenance = "datasheet_extracted"
+    source_doc: Optional[str] = None
+    source_page: Optional[int] = None
+    confidence: ConfidenceLevel = "requires_confirmation"
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class SolutionProfile(BaseModel):
+    """V1.8 §6.4 — the offered/chosen/installed solution as a *second* envelope
+    bundle per case (the requirement profile is the first).
+
+    Filled from ``document_analysis`` (datasheet/offer candidates =
+    ``pending_confirmation``) and ``manufacturer_response``; multiple profiles
+    per case are allowed for **technical comparison — never a ranking or
+    recommendation** (Safety-Formel: Erklärung ≠ Freigabe). Declared headroom:
+    the model + the case-state slice exist now; ingestion, the Operating-Window
+    projection, and the companion modes are wired in later patches (P2-K2+/L).
+    The State Gate remains the only writer.
+    """
+
+    solution_id: str
+    label: str = ""
+    state: SolutionState = "candidate"
+    fields: list["SolutionField"] = Field(default_factory=list)
 
 
 MediumClassificationStatus = Literal[
@@ -497,6 +574,11 @@ class EvidenceState(BaseModel):
     evidence_results: list[Any] = Field(default_factory=list)
     source_versions: dict[str, str] = Field(default_factory=dict)
     retrieval_query: str | None = None
+    # Stage C (audit O1): re-retrieval cache key. Hash of all retrieval-relevant
+    # inputs (tenant + the deterministic EvidenceQuery). Set on a SUCCESSFUL
+    # retrieval; reset to None on fail-open so a failure is never a cache hit. Any
+    # case/query mutation changes the hash → cache miss → evidence re-fires.
+    query_hash: str | None = None
     evidence_present: bool = False
     evidence_count: int = 0
     trusted_sources_present: bool = False
@@ -850,6 +932,10 @@ class CaseLifecycleState(BaseModel):
     """Stable authority slice for case lifecycle metadata."""
 
     phase: Optional[str] = None
+    # V1.8 §6.3: typed lifecycle status. Declared headroom — defaults to the
+    # inquiry half; routing/modes are not yet lifecycle-sensitive (see audit
+    # LIF-01 / patch plan P2). `phase` is retained for backward compatibility.
+    status: CaseLifecycleStatus = "inquiring"
 
 
 # ---------------------------------------------------------------------------
@@ -1261,6 +1347,9 @@ class GovernedSessionState(BaseModel):
     dispatch: DispatchState = Field(default_factory=DispatchState)
     action_readiness: ActionReadinessState = Field(default_factory=ActionReadinessState)
     case_lifecycle: CaseLifecycleState = Field(default_factory=CaseLifecycleState)
+    # V1.8 §6.4 Solution Companion: zero-or-more solution profiles per case.
+    # Default empty → the inquiry half is unchanged; populated by later patches.
+    solution_profiles: list[SolutionProfile] = Field(default_factory=list)
     sealai_norm: SealaiNormState = Field(default_factory=SealaiNormState)
     export_profile: ExportProfileState = Field(default_factory=ExportProfileState)
     manufacturer_mapping: ManufacturerMappingState = Field(
