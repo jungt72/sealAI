@@ -123,6 +123,18 @@ FieldStatus = Literal[
     "stale",
     "invalid",
     "unknown",
+    # V1.8 §6.2 status headroom (additive — declared for SolutionProfile/outcome
+    # envelopes; existing producers/consumers are unchanged).
+    "pending_confirmation",
+    "explicitly_unknown",
+    "rejected",
+    "conflicting",
+    "not_applicable",
+    "visual_candidate",
+    "sketch_candidate",
+    "rag_supported_note",
+    "calculated",
+    "agent_inferred_review_flag",
 ]
 
 Provenance = Literal[
@@ -138,6 +150,24 @@ Provenance = Literal[
     "sheet_bulk_input",
     "structured_form_input",
     "missing",
+    # V1.8 §6.2 origin headroom (additive): datasheet/offer ingestion and
+    # field-outcome observations for the Solution Companion half.
+    "datasheet_extracted",
+    "outcome_observation",
+]
+
+# V1.8 §6.3 Case-Lifecycle states (declared headroom — not yet wired into
+# routing/Dirty-Scheduler; default stays "inquiring" = today's inquiry half).
+CaseLifecycleStatus = Literal[
+    "inquiring",
+    "rfq_sent",
+    "quoted",
+    "solution_selected",
+    "installed",
+    "in_operation",
+    "incident",
+    "replaced",
+    "closed",
 ]
 
 
@@ -855,6 +885,10 @@ class CaseLifecycleState(BaseModel):
     """Stable authority slice for case lifecycle metadata."""
 
     phase: Optional[str] = None
+    # V1.8 §6.3: typed lifecycle status. Declared headroom — defaults to the
+    # inquiry half; routing/modes are not yet lifecycle-sensitive (see audit
+    # LIF-01 / patch plan P2). `phase` is retained for backward compatibility.
+    status: CaseLifecycleStatus = "inquiring"
 
 
 # ---------------------------------------------------------------------------
