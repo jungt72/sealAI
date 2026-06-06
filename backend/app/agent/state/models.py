@@ -245,6 +245,43 @@ class SolutionProfile(BaseModel):
     fields: list["SolutionField"] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Outcome-Record — V1.8 §6.5 (the third, most valuable knowledge source / moat)
+# ---------------------------------------------------------------------------
+
+#: The lifecycle event a field outcome is observed at.
+OutcomeEvent = Literal["installed", "in_operation", "incident", "replaced", "closed"]
+OutcomeConfidence = Literal["low", "medium", "high"]
+
+
+class OutcomeRecord(BaseModel):
+    """V1.8 §6.5 — a structured field-outcome tuple {requirement profile, chosen
+    solution, install date, runtime, failure pattern, suspected cause, evidence}.
+
+    The moat (§4.3): cross-manufacturer field data per application profile, which
+    no single manufacturer has. Raw outcomes are **tenant-scoped**; only
+    aggregated, anonymized values reach the global layer above a minimum count
+    (§8 governance). An outcome is an **observation**, never a release or a
+    definitive root cause — ``suspected_cause`` is a hypothesis (Safety-Formel).
+
+    Declared headroom: the model + the case-state slice exist now; tenant-scoped
+    persistence, the incident_intake Soll-Ist path, and the aggregation
+    governance are later patches. The State Gate remains the only writer.
+    """
+
+    case_id: str = ""
+    tenant_id: str = ""
+    position_id: str = "pos_1"  # §6.6 positions[] vorsorge — never hard "exactly 1"
+    solution_ref: Optional[str] = None  # which SolutionProfile.solution_id
+    event: OutcomeEvent = "incident"
+    installed_at: Optional[str] = None
+    runtime_hours_estimate: Optional[int] = None
+    outcome_pattern: Optional[str] = None  # from the pack outcome_taxonomy()
+    suspected_cause: Optional[str] = None  # hypothesis, not a verdict
+    evidence_refs: list[str] = Field(default_factory=list)
+    confidence: OutcomeConfidence = "medium"
+
+
 MediumClassificationStatus = Literal[
     "recognized",
     "family_only",
@@ -1350,6 +1387,9 @@ class GovernedSessionState(BaseModel):
     # V1.8 §6.4 Solution Companion: zero-or-more solution profiles per case.
     # Default empty → the inquiry half is unchanged; populated by later patches.
     solution_profiles: list[SolutionProfile] = Field(default_factory=list)
+    # V1.8 §6.5 Outcome-Records (the moat): zero-or-more field outcomes per case.
+    # Tenant-scoped persistence + aggregation governance are later patches.
+    outcome_records: list[OutcomeRecord] = Field(default_factory=list)
     sealai_norm: SealaiNormState = Field(default_factory=SealaiNormState)
     export_profile: ExportProfileState = Field(default_factory=ExportProfileState)
     manufacturer_mapping: ManufacturerMappingState = Field(
