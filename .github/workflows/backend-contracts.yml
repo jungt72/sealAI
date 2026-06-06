@@ -60,4 +60,5 @@ jobs:
           python -m pytest \
             backend/app/agent/tests/test_comparative_ranking_guard.py \
             backend/app/agent/tests/test_rwdr_comparative_leak_golden.py \
-            backend/app/agent/tests/v92/test_final_guard_knowledge_backstop.py
+            backend/app/agent/tests/v92/test_final_guard_knowledge_backstop.py \
+            backend/app/agent/tests/test_no_go_guard_v18.py
