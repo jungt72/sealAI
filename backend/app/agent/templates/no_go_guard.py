@@ -34,9 +34,10 @@ VISUAL_FORBIDDEN_PHRASES: tuple[str, ...] = (
     "Artikelnummer ist",
 )
 
-# Affirmative final suitability/release wording (Blueprint §31 "any final
-# suitability/release wording"). Refusals (e.g. "kann ich nicht freigeben")
-# are intentionally NOT matched by these affirmative patterns.
+# Affirmative final suitability/release wording (Blueprint §31 + V1.8 §5.4 "any
+# final suitability/release wording", incl. "können Sie bedenkenlos"). Refusals
+# (e.g. "kann ich nicht freigeben", "nicht bedenkenlos") are intentionally NOT
+# matched: each pattern keeps the release verb adjacent / guards negation.
 FINAL_RELEASE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(pattern, re.IGNORECASE | re.UNICODE)
     for pattern in (
@@ -45,6 +46,10 @@ FINAL_RELEASE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"\bder\s+optimale\s+dichtring\s+ist\b",
         r"\bdie\s+(?:beste|optimale|richtige)\s+(?:l(?:ö|oe)sung|dichtung)\s+ist\b",
         r"\bfinal\s+(?:freigegeben|geeignet|zugelassen)\b",
+        # V1.8 §5.4 literal "können Sie bedenkenlos …": affirmative assurance only.
+        # Requiring "können" BEFORE "bedenkenlos" (within 3 words) excludes the
+        # interrogative/refusal "… bedenkenlos einsetzen können" (können follows).
+        r"\bk(?:ö|oe)nnen\b(?:\s+\w+){0,3}\s+bedenkenlos\b",
     )
 )
 
