@@ -997,6 +997,10 @@ class CaseWorkspaceProjection(BaseModel):
         default_factory=V91WorkspaceProjection
     )
     v92_dashboard: Optional[Dict[str, Any]] = None
+    # V1.8 §5.6 Betriebsfenster: deterministic Operating-Window projection
+    # (requirement vs solution-limit, per field). None when no solution profile
+    # exists. Loose dict like v92_dashboard — see OperatingWindow model.
+    operating_window: Optional[Dict[str, Any]] = None
     technical_derivations: List[TechnicalDerivationItem] = Field(default_factory=list)
     cycle_info: CycleInfo = Field(default_factory=CycleInfo)
 

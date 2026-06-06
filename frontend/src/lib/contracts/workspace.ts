@@ -564,6 +564,7 @@ export type WorkspaceView = {
   challengeIntelligence?: WorkspaceChallengeIntelligence;
   v91Workspace?: WorkspaceV91Projection;
   v92Dashboard?: Record<string, unknown> | null;
+  operatingWindow?: Record<string, unknown> | null;
   technicalDerivations?: WorkspaceTechnicalDerivation[];
   deepDiveTabs: WorkspaceDeepDiveTab[];
   specificity: {

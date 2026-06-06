@@ -13,6 +13,7 @@ const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
 
 const REQUIRED_RFQ_READINESS_FRONTEND_KEYS = [
   "manufacturer_review_ready",
+  "readiness_band",
   "rfq_basis_ready",
   "known_missing_fields",
   "open_points",
@@ -45,6 +46,12 @@ describe("mapWorkspaceView", () => {
     const workspace = mapWorkspaceView("case-123", {
       request_type: "validation_check",
       engineering_path: "rwdr",
+      operating_window: {
+        rows: [{ field: "temp_max_continuous_c", flag: "ok" }],
+        has_critical: false,
+        has_clarify: false,
+        has_unknown_limit: true,
+      },
       cockpit_view: {
         request_type: "validation_check",
         engineering_path: "rwdr",
@@ -321,6 +328,12 @@ describe("mapWorkspaceView", () => {
     expect(workspace.cockpit?.checks[0]?.calcId).toBe("rwdr_circumferential_speed");
     expect(workspace.cockpit?.checks[0]?.outputKey).toBe("v_surface_m_s");
     expect(workspace.cockpit?.readiness.missingMandatoryKeys).toEqual(["geometry_context"]);
+    expect(workspace.operatingWindow).toEqual({
+      rows: [{ field: "temp_max_continuous_c", flag: "ok" }],
+      has_critical: false,
+      has_clarify: false,
+      has_unknown_limit: true,
+    });
     expect(workspace.rfq.documentUrl).toBeNull();
     expect(workspace.rfqReadinessProjection?.preview_action_available).toBe(true);
     expect(workspace.rfqReadinessProjection?.preview_service_boundary).toBe(
