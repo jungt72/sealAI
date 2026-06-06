@@ -8,6 +8,7 @@ from langchain_core.messages import BaseMessage
 
 from app.agent.state.agent_state import AgentState
 from app.agent.state.models import GovernedSessionState, ConversationMessage
+from app.agent.state.lifecycle import derive_lifecycle_status
 from app.agent.state.solution import (
     merge_solution_profiles,
     solution_profiles_from_document_evidence,
@@ -585,7 +586,11 @@ async def _update_governed_state_post_graph(
             "rfq": result_state.rfq,
             "dispatch": result_state.dispatch,
             "action_readiness": result_state.action_readiness,
-            "case_lifecycle": result_state.case_lifecycle,
+            # V1.8 §6.3: stamp the live lifecycle status (derived from the
+            # accumulated case state) at the State-Gate commit. Additive.
+            "case_lifecycle": result_state.case_lifecycle.model_copy(
+                update={"status": derive_lifecycle_status(result_state)}
+            ),
             "sealai_norm": result_state.sealai_norm,
             "export_profile": result_state.export_profile,
             "manufacturer_mapping": result_state.manufacturer_mapping,
