@@ -20,7 +20,9 @@ def test_casefield_accepts_v18_origin_and_status_headroom() -> None:
     assert f.provenance == "datasheet_extracted"
 
     out = CaseField(
-        field_name="outcome", status="rag_supported_note", provenance="outcome_observation"
+        field_name="outcome",
+        status="rag_supported_note",
+        provenance="outcome_observation",
     )
     assert out.provenance == "outcome_observation"
 
@@ -40,7 +42,14 @@ def test_lifecycle_status_defaults_to_inquiry_half() -> None:
 
 @pytest.mark.parametrize(
     "status",
-    ["rfq_sent", "solution_selected", "installed", "in_operation", "incident", "closed"],
+    [
+        "rfq_sent",
+        "solution_selected",
+        "installed",
+        "in_operation",
+        "incident",
+        "closed",
+    ],
 )
 def test_lifecycle_status_accepts_all_v18_states(status: str) -> None:
     state = CaseLifecycleState(status=status)

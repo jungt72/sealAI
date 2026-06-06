@@ -39,7 +39,9 @@ def test_search_technical_docs_keeps_tenant_filter_when_empty(monkeypatch) -> No
     assert len(calls) == 1
 
 
-def test_search_technical_docs_ignores_caller_supplied_tenant_filter(monkeypatch) -> None:
+def test_search_technical_docs_ignores_caller_supplied_tenant_filter(
+    monkeypatch,
+) -> None:
     """SEC-02: a caller-supplied tenant_id in metadata_filters must not override
     the server-derived tenant scope at the retrieval_filters merge."""
     calls: list[Dict[str, Any]] = []
@@ -74,7 +76,12 @@ def test_search_technical_docs_ignores_caller_supplied_tenant_filter(monkeypatch
 
 def test_normalize_metadata_filters_drops_reserved_tenant_keys() -> None:
     normalized = knowledge_tool._normalize_metadata_filters(
-        {"tenant_id": "x", "tenant": "y", "metadata.tenant_id": "z", "material_code": "FKM"}
+        {
+            "tenant_id": "x",
+            "tenant": "y",
+            "metadata.tenant_id": "z",
+            "material_code": "FKM",
+        }
     )
     assert normalized == {"material_code": "FKM"}
 
