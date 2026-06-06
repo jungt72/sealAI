@@ -39,6 +39,46 @@ def test_search_technical_docs_keeps_tenant_filter_when_empty(monkeypatch) -> No
     assert len(calls) == 1
 
 
+def test_search_technical_docs_ignores_caller_supplied_tenant_filter(monkeypatch) -> None:
+    """SEC-02: a caller-supplied tenant_id in metadata_filters must not override
+    the server-derived tenant scope at the retrieval_filters merge."""
+    calls: list[Dict[str, Any]] = []
+
+    def _fake_hybrid_retrieve(
+        *,
+        query: str,
+        tenant: str | None,
+        k: int,
+        metadata_filters: Dict[str, Any] | None,
+        use_rerank: bool,
+        qdrant_timeout_s: float,
+        return_metrics: bool,
+    ):
+        calls.append(dict(metadata_filters or {}))
+        return [], {"k_returned": 0}
+
+    monkeypatch.setattr(knowledge_tool, "hybrid_retrieve", _fake_hybrid_retrieve)
+
+    payload = knowledge_tool.search_technical_docs(
+        query="Kyrolon 79X",
+        tenant_id="user-tenant",
+        metadata_filters={"tenant_id": "attacker-tenant", "metadata.tenant_id": "x"},
+        k=5,
+    )
+
+    # Server tenant scope is preserved; the injected tenant key is dropped.
+    assert calls[0]["tenant_id"] == ["user-tenant", "sealai"]
+    assert "metadata.tenant_id" not in calls[0]
+    assert payload["metadata_filters"] == {}
+
+
+def test_normalize_metadata_filters_drops_reserved_tenant_keys() -> None:
+    normalized = knowledge_tool._normalize_metadata_filters(
+        {"tenant_id": "x", "tenant": "y", "metadata.tenant_id": "z", "material_code": "FKM"}
+    )
+    assert normalized == {"material_code": "FKM"}
+
+
 def test_execute_tool_call_forwards_metadata_filters(monkeypatch) -> None:
     captured: Dict[str, Any] = {}
 
