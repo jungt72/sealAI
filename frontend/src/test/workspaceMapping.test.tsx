@@ -13,6 +13,7 @@ const RFQ_READINESS_CONTRACT_FIXTURE_PATH = resolve(
 
 const REQUIRED_RFQ_READINESS_FRONTEND_KEYS = [
   "manufacturer_review_ready",
+  "readiness_band",
   "rfq_basis_ready",
   "known_missing_fields",
   "open_points",
