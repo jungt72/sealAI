@@ -6,6 +6,69 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-07T19:05Z — Wave-Q config flip: semantic intent router OFF (config-only, owner-applied)
+
+Owner-applied **config-only** prod change — CC cannot touch `.env*`. In `.env.prod`,
+`SEALAI_ENABLE_SEMANTIC_INTENT_ROUTER` was flipped **`true → false`** and the backend container
+recreated. **No image change** — digest unchanged
+`ghcr.io/jungt72/sealai-backend:ab586f30-20260606-113347@sha256:22f2f267a47ae91f09c52220948c7f3c0bc49e311ba19b0bdfeb7551ad00305b`,
+`running healthy`, `APP_ENV=production`. Not a release-script deploy: no `ops/release-backend.sh`
+run, no new pinned digest, no GHCR push.
+
+**Rationale (Wave-Q §6/§7, `docs/audit/v18_waveQ_live_diagnosis.md`):** §6.4 verdict — router-OFF
+is the smallest config delta that is route-correct, extraction-correct, zero-regression, and
+cheapest. The nano semantic *refine* router was demoting legitimate case intent
+`DOMAIN_INQUIRY → KNOWLEDGE_QUERY` on multi-word case inquiries (C2/C5/C6/**C12** — the live
+salzsäure misroute: a governed salzsäure case answered with a generic "Werkstoffvergleich PTFE vs
+POM" + a medium re-ask). Disabling the refine layer restores the correct deterministic label.
+Extraction stays `gpt-4o-mini` (the §4 bump is unjustified, §6.2). §7 anaphora/context-bridge gate
+(AN1–AN4) = **PASS**: the refine layer's only *functional* consumer is the pre-gate label; anaphora
+resolution is router-independent (`KnowledgeContextBuilder` + the governed event store); router-ON
+never improved on deterministic and harmed case continuity in 2/6 scenarios.
+
+**Backup:** owner created `.env.prod.bak-20260607-1905` before the edit. Rollback = restore that file
++ recreate backend (same image digest, no GHCR pull).
+
+**Live env confirmed (`docker exec backend env`):** `SEALAI_ENABLE_SEMANTIC_INTENT_ROUTER=false`.
+
+**Post-flip verification (read-only, in-container, LLM-free — `docker exec -i -w /app backend python`,
+19:28Z):** re-ran the C1–C13 pre-gate corpus against the live env (no in-process flag override; with
+the flag false, `refine_pre_gate_classification` short-circuits to `_unchanged(deterministic)` with
+**no LLM call**, so the effective label == the deterministic label on every turn). LangSmith disabled
+in-process; pure route functions only; no state/persistence/config touched. **Result: ALL PASS.**
+
+| group | turns | result |
+|---|---|---|
+| router off-confirmed | C1–C13 | `applied=False` every turn (`reason=not_a_semantic_router_candidate`) ✓ |
+| case-intent restored | C2, C5, C6, **C12** | `DOMAIN_INQUIRY` ✓ (the live salzsäure misroute fixed) |
+| no arm4-style demotion | C3, C7 | `DOMAIN_INQUIRY` ✓ |
+| guards unchanged | C1/C13 · C9/C10 · C11 | `GREETING` · `KNOWLEDGE_QUERY` · `DOMAIN_INQUIRY` ✓ |
+| flip-eligibility probe (LLM-free) | candidate-when-ON | `True` for exactly the six DOMAIN turns (C2/C3/C5/C6/C7/C12) — so OFF is what now protects them; `False` for C1/C4/C8/C9/C10/C11/C13 |
+
+**End-to-end UI acceptance (owner): pending** — verbatim Session-B salzsäure turn expected to enter
+governed intake.
+
+**Pre-existing, flag-independent observation (out-of-scope, not a regression):** C4 ("das Medium ist
+Salzwasser") and C8 ("Hydrauliköl HLP 46") carry a *history-blind* deterministic `KNOWLEDGE_QUERY`
+label. This is unchanged by the flip — the router can only fire on a `DOMAIN_INQUIRY` det label, so
+these were `applied=False` before the flip too (probe: candidate `False` even with the flag forced
+ON). In the live flow these are pending-slot answers routed by the active-case / slot-binder path
+(§6.2 "regex covers C5/C6/C8"), not the bare pre-gate label. Noted for a future look at the
+deterministic classifier's history-blind labeling; not in scope here.
+
+**W5 dead-config removal (this PR, §1.2):** `GENERATION_MODEL` / `GENERATION_TEMP` /
+`GENERATION_MAX_TOKENS` have **no Python consumer** (`grep` → 0 hits) yet still appear in the running
+container because they were **hardcoded** in `docker-compose.deploy.yml:57-59` (not in `.env.prod`).
+Removed here; the change is **inert until the next regular deploy** recreates the container (no
+urgency — rides the next deploy). The running `ab586f30` container still shows them until then.
+
+**Governance:** PR → `demo/rwdr-limited-external` per workflow.md (no `main`). Docs + dead-config only
+— no guard/lexicon/streaming/mutation path touched → **no `doctrine-reviewer` trigger**. The fast
+doctrine guard suite was confirmed green before commit (gate prerequisite). Evidence record committed
+alongside: `docs/audit/v18_waveQ_live_diagnosis.md`.
+
+---
+
 ## 2026-06-05T18:41Z — Latency-hardening deploy (audit §5 Stages A1 + B + C)
 
 Deployed `demo/rwdr-limited-external` @ `e50c5407` to prod through the standard gates,
