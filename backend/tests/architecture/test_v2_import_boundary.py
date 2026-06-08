@@ -63,7 +63,8 @@ def test_v2_does_not_import_app() -> None:
                 violations.append(f"{rel}: imports old-tree module {module!r}")
     assert not violations, (
         "sealai_v2 must not import app.* (V2.0 Option-B boundary, build-spec §11) — the "
-        "green-field tree stays decoupled from the retired runtime:\n  " + "\n  ".join(violations)
+        "green-field tree stays decoupled from the retired runtime:\n  "
+        + "\n  ".join(violations)
     )
 
 
@@ -79,7 +80,8 @@ def test_app_does_not_import_sealai_v2() -> None:
                 violations.append(f"{rel}: imports green-field module {module!r}")
     assert not violations, (
         "app must not import sealai_v2.* (V2.0 Option-B boundary, build-spec §11) — coexistence "
-        "stays one-way-isolated so v2 is cleanly deletable:\n  " + "\n  ".join(violations)
+        "stays one-way-isolated so v2 is cleanly deletable:\n  "
+        + "\n  ".join(violations)
     )
 
 
@@ -111,7 +113,10 @@ def test_detector_catches_synthetic_violations(tmp_path) -> None:
         encoding="utf-8",
     )
     v2_mods = _absolute_imports(v2_like)
-    assert [m for m in v2_mods if _imports_prefix(m, "app")] == ["app", "app.services.rag.rag_orchestrator"]
+    assert [m for m in v2_mods if _imports_prefix(m, "app")] == [
+        "app",
+        "app.services.rag.rag_orchestrator",
+    ]
     assert "appdirs" in v2_mods and not _imports_prefix("appdirs", "app")
 
     # app-side file reaching into sealai_v2.*
@@ -123,5 +128,10 @@ def test_detector_catches_synthetic_violations(tmp_path) -> None:
         encoding="utf-8",
     )
     app_mods = _absolute_imports(app_like)
-    assert [m for m in app_mods if _imports_prefix(m, "sealai_v2")] == ["sealai_v2.api.main", "sealai_v2"]
-    assert "sealai_v2_legacy" in app_mods and not _imports_prefix("sealai_v2_legacy", "sealai_v2")
+    assert [m for m in app_mods if _imports_prefix(m, "sealai_v2")] == [
+        "sealai_v2.api.main",
+        "sealai_v2",
+    ]
+    assert "sealai_v2_legacy" in app_mods and not _imports_prefix(
+        "sealai_v2_legacy", "sealai_v2"
+    )
