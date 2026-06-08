@@ -44,6 +44,14 @@ jobs:
         run: |
           python -m pytest backend/tests/architecture --noconftest
 
+      # V2.0 Phase-0 keystone (build-spec §11): the sealai_v2 ↔ app import boundary
+      # that keeps the green-field tree cleanly deletable during Option-B coexistence.
+      # Already covered by the architecture glob above, but named explicitly so this
+      # hard-red gate is unmistakable and survives a future change to that glob.
+      - name: V2 import-purity boundary (keystone)
+        run: |
+          python -m pytest backend/tests/architecture/test_v2_import_boundary.py --noconftest
+
       # The fast doctrine guard suite — the exact executable contract enforced
       # locally by ops/hooks/doctrine-gate.sh. These targets import only pydantic;
       # backend/conftest.py stubs the rest at collection time, so no runtime stack.
