@@ -45,14 +45,103 @@ def write_all(run_dir, manifest: dict, records: list, summaries: dict) -> None:
         encoding="utf-8",
     )
     (run_dir / "report.md").write_text(
-        _render_report(manifest, summaries, recs), encoding="utf-8"
+        _render_report(manifest, summaries, recs, adjudication=None), encoding="utf-8"
     )
     (run_dir / "human_review_worksheet.md").write_text(
         _render_worksheet(manifest, recs), encoding="utf-8"
     )
 
 
-def _render_report(manifest: dict, summaries: dict, recs: list[dict]) -> str:
+def _quota_str(q) -> str:
+    if q is None:
+        return "n/a"
+    return f"{q:.3f} ({'100%' if q == 1.0 else 'BELOW 100%'})"
+
+
+def _render_adjudication_section(adj: dict) -> list[str]:
+    L: list[str] = []
+    L.append("## Adjudication — first-pass (deep audit deferred)")
+    L.append("")
+    if adj.get("provisional_until_deep_audit"):
+        L.append(
+            "> **This M1 baseline is PROVISIONAL until the deep audit (M2/L3).** Axis 1 "
+            "(Faktische Korrektheit) and the three hard gates are HUMAN-FINAL; unadjudicated "
+            "units keep their provisional figure and are flagged `human-adjudication pending`. "
+            "Credibility (axes 2–7) is rubric/judge-final and carried unchanged."
+        )
+        L.append("")
+    if adj.get("ambiguous_lines"):
+        L.append(
+            f"> ⚠️ {len(adj['ambiguous_lines'])} worksheet line(s) had BOTH boxes ticked "
+            f"(ambiguous, ignored): {adj['ambiguous_lines']}."
+        )
+        L.append("")
+    L.append(
+        f"- Run label: **{adj['label']}** · verdicts parsed from worksheet: "
+        f"**{adj['n_verdicts_parsed']}** · {adj['timestamp']}"
+    )
+    L.append("")
+
+    for col, fs in adj["columns"].items():
+        L.append(f"### Column `{col}` — final")
+        L.append("")
+        L.append(
+            f"- **Final credibility (axes 2–7, carried):** {fs['overall_credibility']:.3f}"
+        )
+        L.append(
+            f"- **Final Schranken-quota:** {_quota_str(fs['schranken_quota_final'])} over "
+            f"{fs['n_gate_cases']} gate cases "
+            f"(adjudicated {fs['n_gates_adjudicated']}, pending {fs['n_gates_pending']})"
+        )
+        L.append(
+            f"- Human-final units: **{fs['n_units_adjudicated']} adjudicated · "
+            f"{fs['n_units_pending']} pending** "
+            f"(of {fs['n_units_human_relevant']}); {fs['n_units_rubric_final']} rubric-final"
+        )
+        L.append(
+            f"- Axis 1 disposition: pass {fs['axis1_counts']['pass']} · "
+            f"fail {fs['axis1_counts']['fail']} · pending {fs['axis1_counts']['pending']} · "
+            f"n/a {fs['axis1_counts']['n_a']}"
+        )
+        L.append(f"- Final per-case status: {fs['final_status_counts']}")
+        L.append("")
+
+    L.append("### Divergences — seeds for L3 (M2 target list)")
+    L.append("")
+    if not adj["divergences"]:
+        L.append("_None surfaced._")
+        L.append("")
+    for d in adj["divergences"]:
+        L.append(
+            f"- **{d['case']}** ({', '.join(d['columns'])}) · _{d['kind']}_ — {d['detail']}"
+        )
+        L.append(f"  - → M2: {d['m2_action']}")
+    L.append("")
+
+    L.append("### Per-case final status")
+    L.append("")
+    L.append(
+        "| Case | Column | Final | Adjudication | Axis 1 | Gate (final) | (provisional) |"
+    )
+    L.append("|---|---|---|---|---|---|---|")
+    for f in adj["final_cases"]:
+        if f["axis1_final"] == "n_a" and f["final_gate_clean"] is None:
+            adj_mark = "rubric-final"
+        else:
+            adj_mark = "⏳ pending" if f["human_pending"] else "✔ adjudicated"
+        g = f["final_gate_clean"]
+        gate = "—" if g is None else ("clean" if g else "VIOLATED")
+        L.append(
+            f"| {f['case_id']} | {f['column']} | {f['final_status']} | {adj_mark} | "
+            f"{f['axis1_final']} | {gate} | {f['provisional_status']} |"
+        )
+    L.append("")
+    return L
+
+
+def _render_report(
+    manifest: dict, summaries: dict, recs: list[dict], adjudication: dict | None = None
+) -> str:
     L: list[str] = []
     L.append(f"# M1 Eval-REPLAY — {manifest['run_label']}")
     L.append("")
@@ -78,6 +167,11 @@ def _render_report(manifest: dict, summaries: dict, recs: list[dict]) -> str:
         L.append(
             f"> ⚠️ {len(manifest['errors'])} unit(s) errored during the run — see results.json."
         )
+        L.append("")
+
+    if adjudication is not None:
+        L.extend(_render_adjudication_section(adjudication))
+        L.append("## Provisional rubric detail (axes 2–7)")
         L.append("")
 
     for col, s in summaries.items():

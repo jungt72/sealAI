@@ -44,7 +44,33 @@ def main() -> None:
     ap.add_argument(
         "--run-dir", default=None, help="output dir (default eval/runs/<label>)"
     )
+    ap.add_argument(
+        "--adjudicate",
+        action="store_true",
+        help="recompute final numbers from human_review_worksheet.md (no LLM call) and "
+        "re-render report.md; does not run the eval",
+    )
     args = ap.parse_args()
+
+    run_dir = Path(args.run_dir) if args.run_dir else (_RUNS_DIR / args.label)
+
+    if args.adjudicate:
+        from sealai_v2.eval.adjudicate import adjudicate_run
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        adj = adjudicate_run(run_dir, run_label=args.label, timestamp=timestamp)
+        print(f"\n=== M1 adjudication (recompute): {args.label} ===")
+        print(f"label: {adj['label']}  ·  verdicts parsed: {adj['n_verdicts_parsed']}")
+        for col, fs in adj["columns"].items():
+            q = fs["schranken_quota_final"]
+            print(
+                f"[{col}] final credibility(2-7)={fs['overall_credibility']:.3f}  "
+                f"Schranken-quota(final)={'n/a' if q is None else f'{q:.3f}'}  "
+                f"adjudicated {fs['n_units_adjudicated']}/{fs['n_units_human_relevant']}  "
+                f"pending {fs['n_units_pending']}"
+            )
+        print(f"\nArtifacts: {run_dir}")
+        return
 
     settings = Settings()
     columns = {k: COLUMNS[k] for k in args.columns.split(",") if k in COLUMNS}
@@ -53,7 +79,6 @@ def main() -> None:
             f"no valid columns in {args.columns!r}; choose from {list(COLUMNS)}"
         )
 
-    run_dir = Path(args.run_dir) if args.run_dir else (_RUNS_DIR / args.label)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     out = asyncio.run(
