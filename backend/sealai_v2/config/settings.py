@@ -26,9 +26,15 @@ class Settings(BaseSettings):
     helper_model: str = (
         "gpt-4.1-mini"  # soft `understand` intent — cheap, annotate-only
     )
+    # L3 verifier (M2): strong-frontier, same as L1 for the FIRST measured L3 (owner decision #1);
+    # model is config so a cross-vendor swap is a thin adapter + a config flip, no core change.
+    verifier_model: str = "gpt-5.1"
     l1_temperature: float | None = None  # None → omit (max model-family compatibility)
     judge_temperature: float | None = 0.0
     helper_temperature: float | None = 0.0
+    verifier_temperature: float | None = (
+        None  # None → omit (model-family compatibility)
+    )
 
     # --- flag defaults (production baseline = default-on; harness overrides per column) ---
     default_compliance_hint: bool = True
@@ -39,3 +45,6 @@ class Settings(BaseSettings):
     request_timeout_s: float = 180.0
     max_retries: int = 3
     understand_enabled: bool = True
+    # L3 is an always-on CORE trust layer (Prinzipien §2), NOT a feature flag. This toggle is an
+    # incident-only kill-switch (default = enforced); set False only to restore service.
+    verify_enabled: bool = True
