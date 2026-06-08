@@ -45,8 +45,20 @@ in-process; pure route functions only; no state/persistence/config touched. **Re
 | guards unchanged | C1/C13 · C9/C10 · C11 | `GREETING` · `KNOWLEDGE_QUERY` · `DOMAIN_INQUIRY` ✓ |
 | flip-eligibility probe (LLM-free) | candidate-when-ON | `True` for exactly the six DOMAIN turns (C2/C3/C5/C6/C7/C12) — so OFF is what now protects them; `False` for C1/C4/C8/C9/C10/C11/C13 |
 
-**End-to-end UI acceptance (owner): pending** — verbatim Session-B salzsäure turn expected to enter
-governed intake.
+**End-to-end acceptance (programmatic, 2026-06-08): PASS.** The verbatim Session-B salzsäure turn
+("lass uns bitte meine dichtung besprechen. was für ein material ist für salzsäure optimal") was run
+function-level through the real route + governed composer, in-container against the live env
+(`SEALAI_ENABLE_SEMANTIC_INTENT_ROUTER=false`), LangSmith off, ephemeral `InMemorySaver` checkpointer —
+**no live-state load, no post-graph persist, no prod case written** (one real composer call). Result:
+route **GOVERNED** · effective label **DOMAIN_INQUIRY** (`route_view=governed_domain_inquiry`,
+`intent=new_rfq`; `semantic_pre_gate_trace=null` — the refine layer did not fire) · ChatReply from the
+real `governed_composer`: *"Die technische Richtung ist schon enger, jetzt brauche ich noch genau einen
+belastbaren Hebel. Um welchen Dichtungstyp oder welches Dichtprinzip geht es?"* (`pending_question.target_field=sealing_type`).
+It is a governed case-intake next-question — **not** the generic "Werkstoffvergleich PTFE vs POM"
+template — and it does **not** re-ask the medium: `medium="Salzsäure"` was extracted (single-medium;
+source=llm, conf 0.6). The live C12 misroute is confirmed fixed end-to-end. Full closure summary +
+known-gaps mirror in `docs/audit/v18_waveQ_live_diagnosis.md` §8. **Human browser-UI confirmation
+remains the owner's** (this is its programmatic equivalent; the literal click is not automatable from CC).
 
 **Pre-existing, flag-independent observation (out-of-scope, not a regression):** C4 ("das Medium ist
 Salzwasser") and C8 ("Hydrauliköl HLP 46") carry a *history-blind* deterministic `KNOWLEDGE_QUERY`

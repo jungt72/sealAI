@@ -1,5 +1,16 @@
 # V1.8 Wave Q — Live Model-Config Diagnosis
 
+> **STATUS: CLOSED (2026-06-08).** Root cause = the nano semantic-*refine* router
+> demoting legitimate case intent `DOMAIN_INQUIRY → KNOWLEDGE_QUERY` (§6.1/§6.4).
+> Fix = `SEALAI_ENABLE_SEMANTIC_INTENT_ROUTER=false` (config-only, owner-applied in
+> `.env.prod`, image unchanged `ab586f30`). Live verification: post-flip C1–C13
+> corpus ALL PASS (`docs/ops/GOVERNANCE_LOG.md`, 2026-06-07T19:05Z). End-to-end
+> acceptance (programmatic, 2026-06-08): the verbatim salzsäure turn now routes
+> **GOVERNED / DOMAIN_INQUIRY** and the real governed composer asks a seal-type
+> next-question — **not** the PTFE-vs-POM template — **PASS** (§8). Deferred arcs
+> tracked in §8.1: CR4 dual-medium per-side schema (PILOT-BLOCKING, first post-G1),
+> T1/T1′ greeting truncation, C4/C8 history-blind `KNOWLEDGE_QUERY` labeling.
+
 **Date:** 2026-06-07 · **Mode:** read-only diagnosis + one ephemeral local
 experiment (no code change, no prod config change, no deploy) ·
 **Branch:** `feat/v18-wave1-g1-refactor`
@@ -530,3 +541,66 @@ leaving the flag ON. Not implemented.
 **Reproducibility:** `/tmp/an_harness.py` → `/tmp/an_out.json` (ephemeral, not committed).
 Evidence against image `ab586f30-20260606-113347`. No `.env*` read; no service/config/
 state mutated.
+
+---
+
+## 8. Closure + known gaps (actionable)
+
+**Wave Q is CLOSED (2026-06-08).** Closure summary:
+
+- **Root cause:** the nano semantic-*refine* router
+  (`backend/app/services/semantic_intent_router.py`) demoted `DOMAIN_INQUIRY →
+  KNOWLEDGE_QUERY` on multi-word case inquiries (C2/C5/C6/**C12**), producing the
+  live salzsäure misroute — a governed salzsäure case answered with the generic
+  "Werkstoffvergleich PTFE vs POM" template + a medium re-ask. §6.1 / §6.4 / §6.6.
+- **Fix:** `SEALAI_ENABLE_SEMANTIC_INTENT_ROUTER=false` (config-only; owner-applied
+  in `.env.prod`; image unchanged `ab586f30`). The deterministic `PreGateClassifier`
+  label then stands; the refine layer short-circuits to `_unchanged(deterministic)`
+  with no LLM call. §6.4 / §7 (anaphora gate AN1–AN4 = PASS).
+- **Live verification:** post-flip C1–C13 corpus, in-container, LLM-free — ALL PASS
+  (`docs/ops/GOVERNANCE_LOG.md`, 2026-06-07T19:05Z).
+- **End-to-end acceptance (programmatic, 2026-06-08): PASS.** The verbatim salzsäure
+  turn was run function-level through the real route + governed composer
+  (`build_governed_graph(InMemorySaver).ainvoke`), in-container, flag false, LangSmith
+  off, **no live-state load / no post-graph persist / no prod case written** (one real
+  composer call). Result: route **GOVERNED**, effective label **DOMAIN_INQUIRY**
+  (`route_view=governed_domain_inquiry`, `intent=new_rfq`, `semantic_pre_gate_trace=null`),
+  ChatReply from the real `governed_composer` = a governed seal-type next-question
+  (`pending_question.target_field=sealing_type`), **not** the PTFE-vs-POM template,
+  and **no** medium re-ask. The literal browser-UI click remains the owner's; this is
+  its programmatic equivalent. Logged in `GOVERNANCE_LOG.md` (2026-06-07T19:05Z entry).
+- **Report-only observation (positive, not a flip gap):** the §6.5 prediction "the
+  LLM extracts nothing for C12 → caught only by the deterministic specialist as
+  `requires_confirmation`" did **not** reproduce on the live image: LLM extraction
+  captured `medium="Salzsäure"` (source=llm, conf 0.6) with a `medium_qualifiers`
+  hint. Recorded as a **single-medium extraction observation** (it worked), distinct
+  from the CR4 dual-medium arc below.
+- **Compliance matrix:** `docs/audit/v18_final_compliance.md` does not track "Wave Q"
+  by name (only AC3 in §3.1, which lives on the Wave-1 branch `feat/v18-wave1-g1-refactor`).
+  No matrix-row change is made on this PR; any AC reconciliation rides the future
+  Wave-1 → demo merge.
+
+### 8.1 Known gaps (actionable — mirrored from the flip log, no longer buried)
+
+- **[C4/C8] history-blind `KNOWLEDGE_QUERY` labeling (deterministic classifier).**
+  C4 ("das Medium ist Salzwasser") and C8 ("Hydrauliköl HLP 46") carry a
+  *history-blind* deterministic `KNOWLEDGE_QUERY` label from
+  `PreGateClassifier.classify` (`backend/app/services/pre_gate_classifier.py:26`, no
+  history parameter). This is **flag-independent**: the refine router can only fire on
+  a `DOMAIN_INQUIRY` deterministic label, so C4/C8 were `applied=False` even with the
+  router ON (probe in the 2026-06-07 flip verification). In the live flow these are
+  pending-slot answers handled by the active-case / slot-binder path (§6.2, "regex
+  covers C5/C6/C8"), so the bare pre-gate label is not what routes them — but the
+  deterministic classifier mislabeling a context-dependent medium answer as
+  `KNOWLEDGE_QUERY` is a latent gap. **Actionable next step:** a scoped look at
+  history-aware deterministic pre-gating (or a test confirming the slot-binder path
+  fully shadows the bare label on active cases). **Owner:** open; out of Wave-Q scope.
+  Mirrored here from `docs/ops/GOVERNANCE_LOG.md` (2026-06-07T19:05Z) per the closure
+  directive.
+- **[CR4] dual-medium per-side schema (PILOT-BLOCKING).** The single-`medium` schema
+  cannot represent a per-side dual-medium answer (seawater outside / gear oil inside).
+  Ruled a code/schema arc (§6.5), scheduled as the **first post-G1 item** (§7.4
+  RE-PLAN GATE) so it lands on the reshaped seams. Not a flip failure.
+- **[T1/T1′] greeting-composer truncation.** A composer/streaming property, not a
+  routing cause (§6.7, `GENERATION_MAX_TOKENS` already excluded §3). Next small Q item:
+  capture the live greeting SSE frames / composer trace to pin the cut point.
