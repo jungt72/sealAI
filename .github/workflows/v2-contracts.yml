@@ -1,10 +1,11 @@
 name: V2 Contracts
 
-# V2.0 Phase-0 CI — scoped to the green-field sealai_v2 tree (Option B coexistence).
-# Runs the import-purity boundary keystone (build-spec §11) and the v2 eval slot.
-# Pure-stdlib AST + an intentionally-empty eval/ placeholder → only pytest is needed,
-# no ML / runtime stack. Kept as its own workflow file so all v2 CI is isolated and
-# can be deleted wholesale when v2 lands (or removed cleanly if v2 is abandoned).
+# V2.0 CI — scoped to the green-field sealai_v2 tree (Option B coexistence).
+# Runs the import-purity boundary keystone (build-spec §11) and the v2 offline test
+# suite. Light deps only (pytest + jinja2 + pydantic-settings) — the OpenAI SDK is
+# lazy-imported behind llm.factory, so the offline tests use a fake client and need no
+# network / API key / runtime stack. Kept as its own workflow so all v2 CI is isolated
+# and can be deleted wholesale when v2 lands (or removed cleanly if v2 is abandoned).
 
 on:
   push:
@@ -21,26 +22,32 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pytest (light — no runtime stack)
+      - name: Install light test deps (no ML / runtime stack, no OpenAI SDK)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pytest~=8.4.2"
+          python -m pip install \
+            "pytest~=8.4.2" \
+            "jinja2==3.1.6" \
+            "pydantic-settings==2.13.1"
 
       # Keystone: no sealai_v2.* imports app.*, and no app.* imports sealai_v2.*.
       - name: Import-purity boundary (sealai_v2 <-> app)
         run: |
           python -m pytest backend/tests/architecture/test_v2_import_boundary.py --noconftest
 
-      # V2 eval harness slot. eval/ is intentionally empty in Phase 0, so pytest
-      # collects nothing -> exit code 5; treat that (and only that) as green. Becomes a
-      # real hard-red gate the moment M1 adds eval cases under sealai_v2/eval/.
-      - name: V2 eval placeholder (tolerate empty collection)
+      # V2 offline suite (sealai_v2/tests): cases load, prompt assembly (flags off/on),
+      # pipeline with a fake client, tenant-guard (P0), scorer. --noconftest so backend's
+      # heavy DB/stub conftest is not loaded (real jinja2 is needed here). PYTHONPATH=backend
+      # resolves `import sealai_v2`. Exit 5 (nothing collected) is tolerated as a safety net.
+      - name: V2 offline tests
+        env:
+          PYTHONPATH: backend
         run: |
           set +e
           python -m pytest backend/sealai_v2 --noconftest -q
           rc=$?
           if [ "$rc" -eq 5 ]; then
-            echo "No v2 tests collected yet (eval/ placeholder) — OK for Phase 0."
+            echo "No v2 tests collected — unexpected now that sealai_v2/tests exists, but tolerated."
             exit 0
           fi
           exit "$rc"

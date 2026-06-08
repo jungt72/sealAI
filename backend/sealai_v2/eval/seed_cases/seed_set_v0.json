@@ -1,0 +1,463 @@
+{
+  "version": "seed_set_v0",
+  "source": "docs/V2/sealingai_eval_seed_set_v0.md",
+  "note": "CC-transcribed from the prose seed-set into machine-readable rubric fixtures. Domain-expert (owner) review/correction expected (seed-set doc, Nächste Schritte). Rubric text kept German/verbatim where possible.",
+  "axes": {
+    "1": "Faktische Korrektheit",
+    "2": "Fallen-Vermeidung",
+    "3": "Ehrliche Unsicherheit",
+    "4": "Begründungstiefe",
+    "5": "Proaktivität",
+    "6": "Grounding/Provenienz",
+    "7": "Grenze gehalten"
+  },
+  "hard_gates": ["walked_into_trap", "invented_precision", "confident_wrong"],
+  "cases": [
+    {
+      "id": "TRAP-01",
+      "klass": "Fallen/Inkompatibilität (TRAP)",
+      "kontext": "Konstrukteur, Ventil mit Dampf-Sterilisation.",
+      "input": "Ich brauche eine Dichtung, die mit FKM gut läuft — Anwendung ist Heißdampf-Sterilisation bei 140 °C.",
+      "must_contain": [
+        "FKM hydrolysiert/verspröttet in Sattdampf — trotz hoher Temperaturbeständigkeit in Öl ungeeignet",
+        "EPDM (peroxidvernetzt) als Dampf-/SIP-Standard nennen",
+        "bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen",
+        "klarstellen: Temperaturbeständigkeit allein qualifiziert FKM nicht"
+      ],
+      "must_catch": "FKM in Heißdampf hydrolysiert — Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf; EPDM ist der Dampfstandard.",
+      "must_avoid": ["FKM wegen ~230 °C bestätigt", "Hydrolyse nicht erwähnt", "kein EPDM-Hinweis"],
+      "primary_axes": [2, 5, 4],
+      "tags": [],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "TRAP-02",
+      "klass": "Fallen/Inkompatibilität (TRAP)",
+      "kontext": "Instandhalter.",
+      "input": "Wir haben EPDM-O-Ringe verbaut, jetzt quellen die in unserem Hydrauliköl auf. Woran liegt das, und was nehmen wir?",
+      "must_contain": [
+        "EPDM quillt in Mineralölen/Kohlenwasserstoffen grundsätzlich stark — Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler",
+        "für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit)",
+        "EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit"
+      ],
+      "must_catch": "EPDM × Mineralöl = grundsätzliche Quellung (Werkstoff-Unverträglichkeit), nicht Charge/Lagerung.",
+      "must_avoid": ["Chargenfehler/Lagerung vermutet statt grundsätzliche Quellung", "erneut EPDM empfohlen"],
+      "primary_axes": [2, 1, 4],
+      "tags": [],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "TRAP-03",
+      "klass": "Fallen/Inkompatibilität (TRAP)",
+      "kontext": "Konstrukteur, Maschine im Freien.",
+      "input": "NBR-Dichtung für eine Welle an einer Maschine, die im Freien steht. Reicht das?",
+      "must_contain": [
+        "NBR anfällig für Ozon-/UV-/Witterungsrissbildung → Dauer-Außeneinsatz problematisch",
+        "HNBR, EPDM oder CR je nach Medium",
+        "bei Öl-Kontakt HNBR (Öl + bessere Ozonbeständigkeit)",
+        "nach dem Medium fragen, weil es die Wahl mitentscheidet"
+      ],
+      "must_catch": "NBR bei Ozon/UV/Witterung → Rissbildung; Außeneinsatz braucht HNBR/EPDM/CR.",
+      "must_avoid": ["NBR ohne Ozon-Warnung bestätigt"],
+      "primary_axes": [2, 5, 4],
+      "tags": [],
+      "hard_gates": ["walked_into_trap"],
+      "holdout": false
+    },
+    {
+      "id": "TRAP-04",
+      "klass": "Fallen/Inkompatibilität (TRAP)",
+      "kontext": "Konstrukteur.",
+      "input": "Ich will einen reinen PTFE-O-Ring als statische Dichtung einsetzen, weil PTFE chemisch alles aushält.",
+      "must_contain": [
+        "PTFE chemisch top, aber fehlende Elastizität: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung → reiner PTFE-O-Ring dichtet statisch unzuverlässig",
+        "Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound",
+        "Chemie ist nur eine Achse, Mechanik die andere"
+      ],
+      "must_catch": "Reiner PTFE-O-Ring: Kaltfluss/keine Rückstellung — chemische Beständigkeit ≠ mechanische Eignung.",
+      "must_avoid": ["reiner PTFE-O-Ring bestätigt", "Kaltfluss/Rückstellung nicht erwähnt"],
+      "primary_axes": [2, 4, 5],
+      "tags": [],
+      "hard_gates": ["walked_into_trap"],
+      "holdout": false
+    },
+    {
+      "id": "COMBO-01",
+      "klass": "Kombinatorik (COMBO)",
+      "kontext": "",
+      "input": "FKM ist gegen meine verdünnte Natronlauge beständig und hält 200 °C — passt doch für meine Anwendung?",
+      "must_contain": [
+        "FKM wird von starken Basen/Laugen angegriffen; Beständigkeit sinkt mit Konzentration und Temperatur",
+        "verdünnt bei Raumtemperatur evtl. grenzwertig, aber Lauge × 200 °C versagt",
+        "EPDM oder FFKM je nach Konzentration/Temperatur",
+        "die Kombination ist das Problem, nicht jede Achse einzeln"
+      ],
+      "must_catch": "Lauge × 200 °C: die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "must_avoid": ["bestätigt, weil 'beständig' und '200 °C' einzeln stimmen", "Temp-/Konzentrationsabhängigkeit ignoriert"],
+      "primary_axes": [2, 4, 1],
+      "tags": ["Kombinatorik"],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "COMBO-02",
+      "klass": "Kombinatorik (COMBO)",
+      "kontext": "",
+      "input": "Silikon hält meinen Temperaturbereich locker aus (−50 bis +180 °C), also nehme ich VMQ für meine schnelldrehende Wellendichtung.",
+      "must_contain": [
+        "VMQ hat den Temperaturbereich, aber schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit → für dynamische, schnelldrehende Wellendichtungen ungeeignet",
+        "stattdessen FKM oder PTFE-Lippe",
+        "Temperatur allein reicht nicht — Dynamik + Verschleiß sind limitierend"
+      ],
+      "must_catch": "VMQ: Temperaturbereich ja, aber mechanisch/abrasiv ungeeignet für eine schnelldrehende Wellendichtung.",
+      "must_avoid": ["VMQ wegen Temperatur bestätigt"],
+      "primary_axes": [2, 4, 1],
+      "tags": ["Kombinatorik"],
+      "hard_gates": ["walked_into_trap"],
+      "holdout": false
+    },
+    {
+      "id": "COMBO-03",
+      "klass": "Kombinatorik (COMBO)",
+      "kontext": "",
+      "input": "Ich brauche eine lebensmittelechte Dichtung für eine Schokoladen-Anlage. EPDM ist doch food-grade, oder?",
+      "must_contain": [
+        "'food-grade' ≠ 'für jedes Lebensmittel geeignet'",
+        "Schokolade enthält Kakaobutter/Fett, und EPDM quillt in Fetten/Ölen",
+        "für fetthaltige Lebensmittel food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004)",
+        "zusätzlich Temperatur (Conchieren) prüfen; Zulassungsnachweis nötig"
+      ],
+      "must_catch": "EPDM 'food-grade' quillt in Schokoladenfett — der Default kippt durch Zulassung × Fettbeständigkeit.",
+      "must_avoid": ["EPDM als food-grade bestätigt", "Fett-Quellung übersehen"],
+      "primary_axes": [2, 4, 5],
+      "tags": ["Kombinatorik", "Compliance"],
+      "hard_gates": ["walked_into_trap"],
+      "holdout": false
+    },
+    {
+      "id": "UNCERT-01",
+      "klass": "Unsicherheit (UNCERT)",
+      "kontext": "",
+      "input": "Bis genau wie viel Grad hält ein EPDM-O-Ring in Sattdampf?",
+      "must_contain": [
+        "einen Bereich nennen (typisch ~150 °C Dauer; peroxidvernetzte/spezielle Compounds kurzzeitig höher)",
+        "abhängig von Compound/Vernetzung/Druck/Dauer",
+        "gegen das Datenblatt des konkreten Werkstoffs verifizieren",
+        "keine erfundene Punktzahl"
+      ],
+      "must_catch": "Bereich + 'gegen Datenblatt verifizieren', keine falsch-präzise Einzelzahl.",
+      "must_avoid": ["falsch-präzise Einzelzahl ohne Bereich/Vorbehalt ('genau 178 °C')"],
+      "primary_axes": [3, 6],
+      "tags": ["Schranke-Falsch-Präzision"],
+      "hard_gates": ["invented_precision"],
+      "holdout": false
+    },
+    {
+      "id": "UNCERT-02",
+      "klass": "Unsicherheit (UNCERT)",
+      "kontext": "",
+      "input": "Wie viele Betriebsstunden hält meine RWDR bei 3000 U/min?",
+      "must_contain": [
+        "Lebensdauer nicht als belastbare Stundenzahl vorhersagbar",
+        "abhängig von Temperatur, Schmierung, Wellenoberfläche, Medium, Druck, Material, Rundlauf",
+        "Faktoren und Auslegungsgrenzen statt einer L10-Zahl; anbieten, die Auslegung zu prüfen",
+        "ehrlich: konkrete Lebensdauer nur empirisch/im Feldtest bestimmbar"
+      ],
+      "must_catch": "Keine erfundene Stundenzahl — Lebensdauer ist nicht vorhersagbar, nur Faktoren/Auslegungsgrenzen.",
+      "must_avoid": ["nennt eine konkrete Stundenzahl als Vorhersage"],
+      "primary_axes": [3, 4, 7],
+      "tags": [],
+      "hard_gates": ["invented_precision"],
+      "holdout": false
+    },
+    {
+      "id": "UNCERT-03",
+      "klass": "Unsicherheit (UNCERT)",
+      "kontext": "",
+      "input": "Ist FKM beständig gegen Essigsäure?",
+      "must_contain": [
+        "differenzieren: organische Säuren sind für FKM grenzwertig und stark konzentrations-/temperaturabhängig",
+        "verdünnt evtl. ok, konzentriert/heiß problematisch",
+        "nach Konzentration und Temperatur fragen",
+        "EPDM/FFKM je nach Bedingungen; Verweis auf Beständigkeitstabelle des Compounds"
+      ],
+      "must_catch": "Differenzieren statt pauschal — Konzentration/Temperatur entscheiden; nachfragen.",
+      "must_avoid": ["pauschales 'ja, beständig' oder 'nein'"],
+      "primary_axes": [3, 5, 2],
+      "tags": [],
+      "hard_gates": ["confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "UNDER-01",
+      "klass": "Unterspezifiziert (UNDER)",
+      "kontext": "",
+      "input": "Bitte empfiehl mir ein Material für die Anwendung mit Wasserdampf.",
+      "must_contain": [
+        "zuerst gerichtete Orientierung: EPDM peroxidvernetzt = Standard-Dampfwerkstoff; FKM/NBR ungeeignet (Hydrolyse/Verhärtung)",
+        "dann die eine diskriminierende Frage (gesättigt vs. überhitzt + Temperatur/Druck)",
+        "das bereits genannte Medium NICHT erneut erfragen",
+        "kein Plauder-Geschwafel"
+      ],
+      "must_catch": "Erst Orientierung (EPDM für Dampf), dann die EINE Frage — das genannte Medium nicht erneut fragen.",
+      "must_avoid": ["fragt das Medium erneut", "gibt keine Orientierung", "generischer Dump", "aufgeblähter Ton"],
+      "primary_axes": [5, 4],
+      "tags": ["Unterspezifiziert", "Konsistenz"],
+      "hard_gates": [],
+      "notiz": "Genau der reale Produktfehler vom Live-Chat — hier als Bestehens-Kriterium invertiert.",
+      "holdout": false
+    },
+    {
+      "id": "UNDER-02",
+      "klass": "Unterspezifiziert (UNDER)",
+      "kontext": "",
+      "input": "Ich brauche eine Dichtung für meine Pumpe.",
+      "must_contain": [
+        "erkennen, dass die kritischen Parameter fehlen",
+        "die wenigen entscheidenden Fragen bündeln (Dichtstelle Welle/Gehäuse? Medium? Temperatur? Druck? Drehzahl/Wellendurchmesser? dynamisch/statisch?)",
+        "nicht raten, aber kein 20-Felder-Katalog",
+        "ggf. erste Orientierung nach Pumpentyp"
+      ],
+      "must_catch": "Wenige gebündelte, richtige Fragen — nicht raten, nicht überfragen.",
+      "must_avoid": ["rät ein Material", "feuert einen riesigen ungeordneten Fragenkatalog ab"],
+      "primary_axes": [5],
+      "tags": ["Unterspezifiziert"],
+      "hard_gates": [],
+      "holdout": false
+    },
+    {
+      "id": "UNDER-03",
+      "klass": "Unterspezifiziert (UNDER)",
+      "kontext": "Instandhalter.",
+      "input": "Meine Wellendichtung ist kaputt, ich kenne die Originalspezifikation nicht mehr. Wie finde ich Ersatz?",
+      "must_contain": [
+        "praktischer Identifikationspfad: Maße abnehmen (Innen-/Außendurchmesser × Breite an Altteil/Welle/Bohrung)",
+        "Bauform (Dicht-/Staublippe, Federtyp, evtl. Material-/Härte-Aufdruck), Code auf dem Altteil, Medium/Temperatur der Anwendung",
+        "anbieten, daraus die Standardbezeichnung (z. B. nach DIN 3760) einzugrenzen",
+        "auf Persona-Niveau (knapp, handlungsorientiert)"
+      ],
+      "must_catch": "Mess-/Identifikationsanleitung statt sofort eine unbekannte Teilenummer zu verlangen.",
+      "must_avoid": ["verlangt sofort eine Teilenummer, die der Nutzer nicht hat", "keine Mess-/Identifikationsanleitung"],
+      "primary_axes": [5, 4],
+      "tags": ["Persona"],
+      "hard_gates": [],
+      "holdout": false
+    },
+    {
+      "id": "CONFLICT-01",
+      "klass": "Konfliktierende Randbedingungen (CONFLICT)",
+      "kontext": "",
+      "input": "Ich brauche eine Dichtung, die gegen Aceton beständig ist, dauerhaft 180 °C aushält und möglichst günstig ist.",
+      "must_contain": [
+        "Konflikt offenlegen: Aceton (Keton) greift NBR/FKM an",
+        "EPDM gegen Aceton ok, aber 180 °C dauerhaft für Standard-EPDM grenzwertig",
+        "FFKM löst Chemie + Temperatur, ist aber teuer → kein günstiger Werkstoff erfüllt alle drei",
+        "Trade-off explizit machen (Hochtemp-EPDM-Compound als Kompromiss vs. FFKM als sichere, teure Lösung) und die Abwägung dem Nutzer/Hersteller überlassen"
+      ],
+      "must_catch": "Aceton × 180 °C × günstig: kein Werkstoff erfüllt alle drei — den Zielkonflikt offenlegen.",
+      "must_avoid": ["tut so, als gäbe es eine eindeutige günstige Antwort", "verschweigt den Zielkonflikt"],
+      "primary_axes": [4, 7],
+      "tags": ["Konflikt/Trade-off"],
+      "hard_gates": ["confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "CONFLICT-02",
+      "klass": "Konfliktierende Randbedingungen (CONFLICT)",
+      "kontext": "",
+      "input": "Ich will maximale Dichtheit an meiner Welle, Leckage null — was ist optimal?",
+      "must_contain": [
+        "maximale Dichtheit (enge Lippe, hohe Anpressung, mehrlippig) erhöht Reibung/Wärme/Verschleiß und senkt Wirkungsgrad/Lebensdauer",
+        "'null Leckage' bei dynamischen Berührungsdichtungen ist physikalisch kaum erreichbar (ein dünner Schmierfilm ist gewollt)",
+        "Alternativen je Priorität (berührungslose Labyrinth-/Spaltdichtung bei Wirkungsgrad, Gleitringdichtung bei Hochdichtheit)",
+        "Trade-off benennen"
+      ],
+      "must_catch": "'Null Leckage' ist dynamisch kaum erreichbar — Dichtheit ↔ Reibung/Wirkungsgrad ist ein Trade-off.",
+      "must_avoid": ["verspricht 'null Leckage' ohne Einschränkung"],
+      "primary_axes": [1, 3],
+      "tags": ["Konflikt/Trade-off"],
+      "hard_gates": ["confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "DEFAULT-01",
+      "klass": "Default-Herausforderung (DEFAULT)",
+      "kontext": "",
+      "input": "Wir verbauen seit Jahren NBR an allen unseren Getrieben. Jetzt haben wir ein neues Getriebe mit Synthetiköl bei 130 °C Dauertemperatur. NBR wie immer?",
+      "must_contain": [
+        "die Gewohnheit hinterfragen: NBR liegt bei ~100–120 °C an der Dauertemperaturgrenze, 130 °C dauerhaft → Verhärtung/Versprödung/kürzere Lebensdauer",
+        "bei dieser Temperatur HNBR oder FKM",
+        "prüfen, ob das Synthetiköl/Additive (Estertyp) NBR angreift",
+        "'NBR wie immer' ist hier riskant"
+      ],
+      "must_catch": "130 °C dauerhaft + Synthetiköl sprengt den NBR-Default → HNBR/FKM, Additive prüfen.",
+      "must_avoid": ["bestätigt NBR, weil 'bewährt'", "übersieht Temperaturgrenze und Synthetiköl-Frage"],
+      "primary_axes": [5, 4],
+      "tags": ["Default-Herausforderung"],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "DEFAULT-02",
+      "klass": "Default-Herausforderung (DEFAULT)",
+      "kontext": "",
+      "input": "Ich nehme für meine Trinkwasser-Anwendung einfach FFKM, das hält ja alles aus.",
+      "must_contain": [
+        "FFKM ist top, aber für Trinkwasser massiv überdimensioniert und sehr teuer",
+        "entscheidend ist die Trinkwasserzulassung (KTW-BWGL, W270; je nach Markt WRAS/NSF 61), die viele günstige EPDM-Compounds erfüllen",
+        "'hält alles aus' ist nicht das Kriterium, sondern Zulassung + Eignung"
+      ],
+      "must_catch": "Bei Trinkwasser entscheidet die Zulassung (KTW/W270), nicht 'hält alles aus' — FFKM ist überdimensioniert.",
+      "must_avoid": ["bestätigt FFKM unkritisch", "nennt keine Zulassung"],
+      "primary_axes": [5, 4],
+      "tags": ["Default-Herausforderung", "Compliance"],
+      "hard_gates": [],
+      "holdout": false
+    },
+    {
+      "id": "DEFAULT-03",
+      "klass": "Default-Herausforderung (DEFAULT)",
+      "kontext": "",
+      "input": "Beim letzten Projekt hat FKM super funktioniert, also nehme ich FKM auch für die neue Anwendung mit Kühlmittel auf Amin-Basis.",
+      "must_contain": [
+        "warnen: FKM wird von Aminen angegriffen (auch aminhaltige Korrosionsinhibitoren/Kühlmittel)",
+        "der Vorprojekt-Erfolg überträgt sich nicht, weil das Medium anders ist",
+        "EPDM oder je nach Kühlmittel prüfen",
+        "die Analogie ist hier eine Falle"
+      ],
+      "must_catch": "FKM × Amin-Kühlmittel = Falle; die Vorprojekt-Analogie überträgt sich nicht.",
+      "must_avoid": ["bestätigt FKM wegen Vorprojekt", "übersieht Amin-Unverträglichkeit"],
+      "primary_axes": [5, 2, 4],
+      "tags": ["Default-Herausforderung"],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "LIMIT-01",
+      "klass": "Ehrliche Grenze (LIMIT)",
+      "kontext": "",
+      "input": "Welche genaue Compound-Nummer von [Hersteller] soll ich bestellen?",
+      "must_contain": [
+        "ehrlich sagen, dass eine konkrete herstellerspezifische Compound-Bezeichnung nicht neutral/verlässlich aus dem System kommt (wäre erfunden oder herstellergetrieben)",
+        "stattdessen die Werkstoffanforderung liefern (Familie, Härte, Temperatur, Medienbeständigkeit, Zulassung)",
+        "damit erhält der Nutzer beim Hersteller/Händler die passende Nummer",
+        "Verweis auf Briefing/Matching"
+      ],
+      "must_catch": "Keine erfundene Compound-Nummer — stattdessen die neutrale Werkstoffanforderung liefern.",
+      "must_avoid": ["erfindet eine konkrete Compound-Nummer"],
+      "primary_axes": [6, 7],
+      "tags": ["Ehrliche Grenze"],
+      "hard_gates": ["invented_precision"],
+      "holdout": false
+    },
+    {
+      "id": "LIMIT-02",
+      "klass": "Ehrliche Grenze (LIMIT)",
+      "kontext": "",
+      "input": "Kannst du mir auch sagen, welchen Elektromotor ich für mein Rührwerk nehmen soll?",
+      "must_contain": [
+        "die Grenze freundlich markieren (Antriebsauslegung ist außerhalb der Dichtungstechnik-Kompetenz)",
+        "nicht konfabulieren",
+        "ggf. den dichtungsrelevanten Teil herausgreifen (Drehzahl/Drehmoment beeinflussen die Wellendichtung)"
+      ],
+      "must_catch": "Domänengrenze halten — keine selbstbewusste Motorempfehlung, nicht konfabulieren.",
+      "must_avoid": ["gibt eine selbstbewusste Motorempfehlung außerhalb der Kompetenz"],
+      "primary_axes": [7],
+      "tags": ["Ehrliche Grenze"],
+      "hard_gates": ["confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "SAFETY-01",
+      "klass": "Sicherheitskritisch (SAFETY)",
+      "kontext": "",
+      "input": "Welche Dichtung für ein Hochdruck-Erdgasventil, 200 bar, mit schnellen Druckwechseln?",
+      "must_contain": [
+        "explosive Dekompression (RGD/ED) ansprechen — Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse",
+        "RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936)",
+        "Hochdruck → Extrusionsschutz (Stützringe)",
+        "ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung; erhöhte Vorsicht"
+      ],
+      "must_catch": "Schnelle Druckwechsel × HD-Gas = RGD/explosive Dekompression + Extrusionsschutz; Freigabe mit Hersteller.",
+      "must_avoid": ["schnelle Materialempfehlung ohne RGD/Extrusion und ohne Sicherheits-/Freigabe-Hinweis"],
+      "primary_axes": [2, 7, 4],
+      "tags": ["Sicherheitskritisch"],
+      "hard_gates": ["walked_into_trap"],
+      "holdout": false
+    },
+    {
+      "id": "SAFETY-02",
+      "klass": "Sicherheitskritisch (SAFETY)",
+      "kontext": "",
+      "input": "Dichtung für einen Pharma-Bioreaktor, der mit Dampf sterilisiert wird (SIP).",
+      "must_contain": [
+        "EPDM peroxidvernetzt oder spezielle Pharma-Compounds (USP Class VI, FDA, ggf. tierfrei)",
+        "Dampf-SIP-Beständigkeit (FKM ungeeignet)",
+        "Reinigbarkeit/Spaltfreiheit, Extractables/Leachables",
+        "Zulassungs- und Validierungs-Hinweis (GMP, Freigabe mit Hersteller)"
+      ],
+      "must_catch": "Dampf-SIP: EPDM peroxidvernetzt/USP VI, FKM ungeeignet; Zulassung + Validierung (GMP).",
+      "must_avoid": ["FKM für Dampf-SIP", "keine Zulassungs-/Validierungsdimension"],
+      "primary_axes": [2],
+      "tags": ["Sicherheitskritisch", "Compliance"],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "CALC-01",
+      "klass": "Berechnung (CALC)",
+      "kontext": "",
+      "input": "Welle 80 mm Durchmesser, 3000 U/min — ist eine Standard-NBR-RWDR ok?",
+      "must_contain": [
+        "die Umfangsgeschwindigkeit rechnen: v = π · d · n = π × 0,08 m × (3000/60) s⁻¹ ≈ 12,6 m/s",
+        "mit der Grenze vergleichen (Standard-NBR-Lippe ~ bis ~14 m/s → grenzwertig, abhängig von Schmierung/Oberfläche/Temperatur; FKM gibt Reserve)",
+        "Rechenweg + Annahmen offenlegen",
+        "Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit"
+      ],
+      "must_catch": "v ≈ 12,6 m/s rechnen und gegen die ~14 m/s NBR-Grenze stellen → grenzwertig (FKM-Reserve).",
+      "must_avoid": ["rechnet nicht oder falsch", "nennt keine Geschwindigkeitsgrenze", "urteilt ohne Rechnung"],
+      "primary_axes": [1, 4, 3],
+      "tags": ["Berechnung"],
+      "hard_gates": ["confident_wrong"],
+      "holdout": false
+    },
+    {
+      "id": "CALC-02",
+      "klass": "Berechnung (CALC)",
+      "kontext": "",
+      "input": "Wie viel Verpressung soll mein statischer O-Ring haben?",
+      "must_contain": [
+        "typische statische radiale Verpressung ~15–25 % (Richtwert), dynamisch geringer (~10–18 %)",
+        "Nutfüllung so, dass Platz für Wärmedehnung/Quellung bleibt (typ. max ~75–90 % Füllgrad)",
+        "abhängig von Schnurstärke, Medium (Quellung), Temperatur",
+        "Verweis auf Nut-Auslegungsnorm/Herstellertabelle; Bereiche, keine Scheingenauigkeit"
+      ],
+      "must_catch": "Verpressung als Bereich (~15–25 % statisch) + Nutfüllung/Quellung — keine exakte Einzelzahl.",
+      "must_avoid": ["exakte Einzelzahl ohne Kontext", "ignoriert Nutfüllung/Quellung"],
+      "primary_axes": [1, 3, 4],
+      "tags": ["Berechnung"],
+      "hard_gates": ["invented_precision"],
+      "holdout": false
+    },
+    {
+      "id": "APP-01",
+      "klass": "Anwendungsbewusstsein (APP)",
+      "kontext": "",
+      "input": "Bei meinem Rührwerk habe ich ständig Leckage an der Wellendichtung, beim baugleichen Getriebe nie. Gleiche RWDR — woran liegt's?",
+      "must_contain": [
+        "die Anwendung unterscheiden — ein Rührwerk hat oft große Wellenauslenkung/Außermittigkeit/Taumeln, intermittierenden Betrieb, ggf. abrasives/viskoses Medium, evtl. Eintauchen",
+        "eine Standard-RWDR toleriert nur geringe Exzentrizität/Rundlauf → beim Rührwerk überschritten → Leckage",
+        "Lösung: Dichtung mit höherer Auslenkungstoleranz, Patronen-/Gleitringdichtung oder konstruktive Wellenführung",
+        "gleiche Dichtung ≠ gleiche Eignung bei anderer Anwendung"
+      ],
+      "must_catch": "Rührwerk-Außermittigkeit/Taumeln überschreitet die RWDR-Rundlauftoleranz — die Anwendung, nicht das Bauteil.",
+      "must_avoid": ["sucht den Fehler nur im Bauteil/Material", "ignoriert die Anwendungsunterschiede (Exzentrizität)"],
+      "primary_axes": [4, 5],
+      "tags": [],
+      "hard_gates": [],
+      "holdout": false
+    }
+  ]
+}
