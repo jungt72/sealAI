@@ -39,9 +39,10 @@ _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-gen
 # verifizieren"). This is the deterministic backstop to the verifier prompt's existing
 # "Bereich ist kein Verstoß" rule. It scopes ONLY the firing condition; it never edits the catalog.
 _PRECISION_RANGE_TRAPS = frozenset({"PREC-EINZELZAHL", "PREC-LEBENSDAUER"})
+# a numeric range: two numbers joined by a dash, ellipsis, or "bis" (German thousands "." + spaces
+# tolerated; optional "+" sign on the upper bound, e.g. "+135 bis +150").
 _RANGE_RE = re.compile(
-    r"\d[\d.\s'’]*\s*[–—-]\s*\d"  # 120–130, 15-25, 5 000–20 000 (en/em-dash or hyphen)
-    r"|\bvon\s+\d[\d.\s'’]*\s+bis\s+\d",  # von 15 bis 25
+    r"\d[\d.\s'’]*\s*(?:[–—-]|…|\.{2,3}|\bbis\b)\s*\+?\s*\d",
     re.IGNORECASE,
 )
 _VERIFY_CAVEAT_TOKENS = (
@@ -54,17 +55,18 @@ _VERIFY_CAVEAT_TOKENS = (
 )
 
 
-def is_precision_overapplication(trap_id: str, evidence: str) -> bool:
-    """True iff a RANGE-precision trap (PREC-EINZELZAHL / PREC-LEBENSDAUER) was raised on text that
-    ALREADY presents the quantity as a range AND carries a verify/Datenblatt caveat — i.e. L3
-    over-applied the "Einzelzahl OHNE Bereich" scope. Requires BOTH (a bare single value, or a
-    range without any caveat, still fires → the catch is preserved). Pure/deterministic so it is the
-    executable gate for the firing-condition fix."""
+def is_precision_overapplication(trap_id: str, evidence: str, draft: str = "") -> bool:
+    """True iff a RANGE-precision trap (PREC-EINZELZAHL / PREC-LEBENSDAUER) was raised on a quantity
+    that is ALREADY presented as a range AND carries a verify/Datenblatt caveat — i.e. L3
+    over-applied the "Einzelzahl OHNE Bereich" scope. Checks the evidence AND the draft answer (the
+    verifier sometimes quotes a sub-snippet that drops the caveat) and recognises dash, ellipsis and
+    "X bis Y" ranges. Requires BOTH range and caveat → a bare single value, or a range without a
+    caveat, still fires (the catch is preserved). Pure/deterministic — the executable gate for the fix."""
     if trap_id not in _PRECISION_RANGE_TRAPS:
         return False
-    ev = evidence or ""
-    return bool(_RANGE_RE.search(ev)) and any(
-        tok in ev.lower() for tok in _VERIFY_CAVEAT_TOKENS
+    text = f"{evidence or ''}\n{draft or ''}"
+    return bool(_RANGE_RE.search(text)) and any(
+        tok in text.lower() for tok in _VERIFY_CAVEAT_TOKENS
     )
 
 
@@ -133,9 +135,9 @@ class L3Verifier:
         res = await self._client.generate(
             system=system, user=user, model_config=self._model_config
         )
-        return self._parse(res.text)
+        return self._parse(res.text, draft=answer_text)
 
-    def _parse(self, raw: str) -> _RawVerdict:
+    def _parse(self, raw: str, draft: str = "") -> _RawVerdict:
         raw = (raw or "").strip()
         try:
             data = json.loads(_extract_json(raw))
@@ -150,7 +152,7 @@ class L3Verifier:
             if entry is None:
                 continue  # never trust an id the catalog doesn't know
             evidence = str(item.get("evidence", ""))[:400]
-            if is_precision_overapplication(entry.id, evidence):
+            if is_precision_overapplication(entry.id, evidence, draft):
                 continue  # range + verify-caveat respects 'Einzelzahl OHNE Bereich' → L3 over-applied
             gate = str(item.get("gate", ""))
             if gate not in entry.gates:
@@ -193,23 +195,37 @@ def build_correction_note(
     )
 
 
-def build_hedge(findings: tuple[VerifierFinding, ...]) -> str:
-    """Deterministic fail-closed fallback — flags the concern WITHOUT asserting a replacement fact
-    (no reviewed correction was usable). Scoped per the safety language (orientation, verify)."""
-    areas = []
-    seen: set[str] = set()
-    for f in findings:
-        if f.trap_id in seen:
-            continue
-        seen.add(f.trap_id)
-        areas.append(f.evidence.strip() or f.trap_id)
-    joined = "; ".join(areas) if areas else "der markierten Aussage"
+def build_hedge(
+    findings: tuple[VerifierFinding, ...], catalog: TrapCatalog | None = None
+) -> str:
+    """Deterministic fail-closed fallback. Output integrity: it NEVER echoes the flagged WRONG claim.
+    When a reviewed correct fact is available (L3 already holds it), the hedge STATES that correct
+    fact + the verify/no-release caveat; otherwise it flags the concern generically without asserting
+    any replacement. Scoped per the safety language (orientation, verify, keine Freigabe)."""
+    correct_facts: list[str] = []
+    if catalog is not None:
+        seen: set[str] = set()
+        for f in findings:
+            if f.trap_id in seen:
+                continue
+            entry = catalog.by_id(f.trap_id)
+            if entry is not None and entry.reviewed and entry.correct.strip():
+                seen.add(f.trap_id)
+                correct_facts.append(entry.correct.strip())
+    if correct_facts:
+        bullets = "\n".join(f"- {c}" for c in correct_facts)
+        return (
+            "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat im Entwurf eine "
+            "bekannte Falle / einen selbstbewusst-falschen Mechanismus markiert. Nach geprüftem "
+            "Stand gilt:\n" + bullets + "\nDas ist nur eine ingenieurtechnische Orientierung — "
+            "bitte gegen das Datenblatt des konkreten Werkstoffs bzw. mit dem Hersteller "
+            "verifizieren; keine Freigabe."
+        )
     return (
-        "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation hat zu folgendem Punkt einen "
-        f"möglichen Fehler/eine bekannte Falle markiert: {joined}. Ohne eine geprüfte Quelle "
-        "kann ich dazu keine belastbare Aussage treffen — bitte gegen das Datenblatt des "
-        "konkreten Werkstoffs bzw. mit dem Hersteller verifizieren. Das ist nur eine "
-        "Orientierung, keine Freigabe."
+        "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat in diesem Entwurf einen "
+        "möglichen Fehler / eine bekannte Falle markiert. Ohne eine geprüfte Quelle kann ich dazu "
+        "keine belastbare Aussage treffen — bitte gegen das Datenblatt des konkreten Werkstoffs "
+        "bzw. mit dem Hersteller verifizieren. Das ist nur eine Orientierung, keine Freigabe."
     )
 
 
@@ -259,7 +275,7 @@ async def run_verify(
 
     # No usable reviewed correction, or regeneration still tripped L3 → fail closed to a hedge.
     hedge = Answer(
-        text=build_hedge(reviewed),
+        text=build_hedge(reviewed, catalog),
         model=_HEDGE_MODEL,
         grounding_facts=draft.grounding_facts,
     )

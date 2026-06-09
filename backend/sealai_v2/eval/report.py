@@ -182,6 +182,16 @@ def _asserts_epdm_polar(text: str) -> bool:
     return "polar" in t
 
 
+def _final_answer_asserts_epdm_polar(rec: dict) -> bool:
+    """Gate-level check. A deterministic L3 hedge never ASSERTS the wrong claim (it states the
+    reviewed correct fact + caveat), so the polar-heuristic is skipped for ``l3-hedge`` answers —
+    it would otherwise false-fire on any 'polar' substring the hedge legitimately mentions. Real
+    model answers are still scrubbed."""
+    if (rec.get("answer_model") or "") == "l3-hedge":
+        return False
+    return _asserts_epdm_polar(rec.get("answer_text", ""))
+
+
 def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
     L: list[str] = []
     L.append("## L3 Verifier (M2)")
@@ -210,7 +220,7 @@ def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
     t2_ok = bool(t2) and all(
         (r.get("verifier") or {}).get("action")
         in ("corrected", "blocked_hedge", "flag")
-        and not _asserts_epdm_polar(r["answer_text"])
+        and not _final_answer_asserts_epdm_polar(r)
         for r in t2
     )
     c2_ok = bool(c2) and all(
@@ -221,7 +231,7 @@ def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
         f"{'✅ signal-pass' if t2_ok else '❌ signal-FAIL'} — "
         + ", ".join(
             f"{r['column']}: {(r.get('verifier') or {}).get('action', '—')}"
-            f"{' / still asserts polar' if _asserts_epdm_polar(r['answer_text']) else ''}"
+            f"{' / still asserts polar' if _final_answer_asserts_epdm_polar(r) else ''}"
             for r in t2
         )
     )
