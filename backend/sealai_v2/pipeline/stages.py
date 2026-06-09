@@ -9,6 +9,8 @@ import json
 
 from sealai_v2.core.contracts import (
     Answer,
+    CalcEngine,
+    CalcResult,
     Flags,
     GroundingFact,
     Intent,
@@ -71,6 +73,24 @@ async def ground(
     return await retriever.retrieve(question, tenant_id=tenant_id, k=k)
 
 
+async def compute(
+    engine: CalcEngine | None,
+    params: dict | None,
+    *,
+    grounding_facts: tuple[GroundingFact, ...] = (),
+    context: dict | None = None,
+) -> CalcResult:
+    """Stage 3 — deterministic calc layer (M4), AFTER ground (Fachkarten-property inputs available).
+    Evaluate the reviewed calc registry over the params (+ reviewed grounding facts for qualitative
+    cross-layer flags) as a topological cascade. Pure; fail-closed (NotComputed reasons, never a
+    misleading number). No engine → empty CalcResult."""
+    if engine is None:
+        return CalcResult()
+    return engine.evaluate(
+        params=params or {}, grounding_facts=grounding_facts, context=context
+    )
+
+
 async def verify(
     verifier,
     generator,
@@ -80,10 +100,11 @@ async def verify(
     *,
     flags: Flags,
     grounding_facts: tuple[GroundingFact, ...] = (),
+    computed_values: tuple = (),
 ):
-    """Stage 4 — L3 verifier (M2/M3). Independent critic pass against the trap catalog AND (M3) the
-    reviewed grounding facts; on a reviewed hard-gate violation → regenerate-once or hedge; a card
-    contradiction is FLAG-only. Returns ``(final_answer, verdict)``. Delegates to ``run_verify``."""
+    """Stage 5 — L3 verifier (M2/M3/M4). Independent critic pass against the trap catalog, the
+    reviewed grounding facts (M3) AND the computed values (M4); on a reviewed hard-gate violation →
+    regenerate-once or hedge; card/calc contradictions are FLAG-only. Returns ``(final, verdict)``."""
     from sealai_v2.core.l3_verifier import run_verify
 
     return await run_verify(
@@ -94,6 +115,7 @@ async def verify(
         draft,
         flags=flags,
         grounding_facts=grounding_facts,
+        computed_values=computed_values,
     )
 
 

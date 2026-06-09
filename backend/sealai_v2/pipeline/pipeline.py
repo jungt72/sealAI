@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
+    CalcEngine,
     Flags,
     LlmClient,
     ModelConfig,
@@ -38,6 +40,9 @@ class Pipeline:
     retriever: Retriever | None = (
         None  # None → L2 grounding off → every answer is "vorläufig"
     )
+    engine: CalcEngine | None = (
+        None  # None → M4 calc layer off → no "Berechnete Werte" block
+    )
 
     async def run(
         self,
@@ -45,6 +50,7 @@ class Pipeline:
         *,
         tenant: TenantContext,
         flags: Flags | None = None,
+        params: dict | None = None,
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
@@ -59,8 +65,13 @@ class Pipeline:
             self.retriever, question, tenant_id=scope.tenant_id
         )
         grounding_facts = retrieval.grounding_facts  # reviewed → authoritative + cited
+        # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
+        # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
+        calc = await stages.compute(
+            self.engine, params, grounding_facts=grounding_facts
+        )
         answer = await self.generator.generate(
-            question, flags=flags, grounding_facts=grounding_facts
+            question, flags=flags, grounding_facts=grounding_facts, calc=calc
         )
         draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
 
@@ -74,6 +85,7 @@ class Pipeline:
                 answer,
                 flags=flags,
                 grounding_facts=grounding_facts,
+                computed_values=calc.computed,
             )
 
         answer = await stages.cite(answer)  # stub → unchanged
@@ -90,6 +102,7 @@ class Pipeline:
             verifier=verdict,
             draft_answer=draft,
             grounding_facts=grounding_facts,
+            computed_values=calc.computed,
         )
 
 
@@ -123,6 +136,11 @@ def build_pipeline(
         InProcessRetriever() if settings.ground_enabled else None
     )
 
+    # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
+    engine: CalcEngine | None = (
+        CascadeCalcEngine() if settings.compute_enabled else None
+    )
+
     return Pipeline(
         generator=generator,
         client=client,
@@ -131,4 +149,5 @@ def build_pipeline(
         verifier=verifier,
         catalog=catalog,
         retriever=retriever,
+        engine=engine,
     )

@@ -78,6 +78,30 @@ def test_pipeline_injects_reviewed_grounding_into_l1():
     assert "unpolar" in fake.calls[-1]["system"].lower()
 
 
+def test_pipeline_computes_and_injects_values():
+    from sealai_v2.core.calc.evaluator import CascadeCalcEngine
+
+    fake = FakeLlmClient("A")
+    p = Pipeline(
+        generator=L1Generator(fake, PromptAssembler(), ModelConfig("fake-l1")),
+        client=fake,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+        engine=CascadeCalcEngine(),
+    )
+    res = asyncio.run(
+        p.run(
+            "Welle 80 mm, 3000 U/min — Standard-NBR-RWDR ok?",
+            tenant=TenantContext("t1"),
+            flags=Flags(),
+            params={"d1_mm": 80, "rpm": 3000, "seal_type": "rwdr"},
+        )
+    )
+    assert res.computed_values and res.computed_values[0].name == "v_m_s"
+    assert "Berechnete Werte" in fake.calls[-1]["system"]
+    assert "v_m_s" in fake.calls[-1]["system"]
+
+
 def test_pipeline_without_retriever_is_vorlaeufig():
     fake = FakeLlmClient("A")
     p = _pipeline(fake)  # no retriever

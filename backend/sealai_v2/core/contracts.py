@@ -50,6 +50,9 @@ class SystemPromptAssembler(Protocol):
         case_context: list[dict] | None,
         flags: "Flags",
         correction_note: str | None = None,
+        computed_values: list[dict] | None = None,
+        not_computed: list[dict] | None = None,
+        calc_notes: list[str] | None = None,
     ) -> str: ...
 
 
@@ -60,7 +63,11 @@ class VerifierPromptAssembler(Protocol):
     lists of plain dicts — rendered as delimited DATA, never as logic."""
 
     def verifier_system_prompt(
-        self, *, traps: list[dict], grounding_facts: list[dict] | None = None
+        self,
+        *,
+        traps: list[dict],
+        grounding_facts: list[dict] | None = None,
+        computed_values: list[dict] | None = None,
     ) -> str: ...
 
 
@@ -123,6 +130,59 @@ class Retriever(Protocol):
 
 
 @dataclass(frozen=True)
+class ComputedValue:
+    """One deterministically computed engineering value (M4). The number is CODE-derived from a
+    reviewed calc-def; ``estimate`` marks derived-of-derived values as estimate-with-assumptions
+    (anti-Scheinpräzision)."""
+
+    calc_id: str
+    name: str  # output name, e.g. "v"
+    value: float
+    unit: str
+    stage: int  # cascade stage (1-based) — emerges from the dependency DAG
+    derivation_depth: int  # 0=param/Fachkarte input; computed = 1 + max(input depths)
+    formula: str = ""
+    source: str = ""
+    assumptions: tuple[str, ...] = ()
+    inputs_used: tuple[str, ...] = ()
+    warnings: tuple[
+        str, ...
+    ] = ()  # e.g. swelling-induced over-fill; out-of-typical-band
+    estimate: bool = False  # derivation_depth >= 2 → estimate, not a hard number
+
+
+@dataclass(frozen=True)
+class NotComputed:
+    """A calc-def that did NOT run — fail-closed (missing input / outside validity / N/A). Never a
+    misleading number; the reason is surfaced so the answer stays honest ('nicht berechenbar')."""
+
+    calc_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class CalcResult:
+    computed: tuple[ComputedValue, ...] = ()
+    not_computed: tuple[NotComputed, ...] = ()
+    notes: tuple[
+        str, ...
+    ] = ()  # cross-cutting advisories (e.g. swelling → leave Nutfüllung reserve)
+
+
+class CalcEngine(Protocol):
+    """The deterministic calc seam (pure, I/O-free). Evaluates the reviewed calc registry over the
+    given params (+ reviewed Fachkarten property inputs) as a topological cascade to fixpoint."""
+
+    def evaluate(
+        self,
+        *,
+        params: dict,
+        grounding_facts: tuple["GroundingFact", ...] = (),
+        context: dict | None = None,
+    ) -> "CalcResult": ...
+
+
+@dataclass(frozen=True)
 class Answer:
     text: str
     model: str
@@ -154,7 +214,7 @@ class VerifierFinding:
     gate: str  # one of HARD_GATES
     review_state: str  # "reviewed" | "draft"
     evidence: str  # short quote/paraphrase of the offending claim in the draft
-    kind: str = "trap"  # "trap" (catalog) | "card" (contradicts a reviewed Fachkarte — FLAG-only)
+    kind: str = "trap"  # "trap" (catalog) | "card" (contradicts a Fachkarte) | "calc" (contradicts a computed value) — card/calc are FLAG-only
 
 
 @dataclass(frozen=True)
@@ -194,6 +254,8 @@ class PipelineResult:
     draft_answer: "Answer | None" = None
     # Reviewed L2 grounding facts injected this turn (M3); empty → the answer is "vorläufig".
     grounding_facts: tuple[GroundingFact, ...] = ()
+    # Deterministic computed values injected this turn (M4); the candidate rests on these.
+    computed_values: tuple[ComputedValue, ...] = ()
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

@@ -53,12 +53,23 @@ Wenn die ENTWURFSANTWORT einer dieser geprüften Aussagen **aktiv widerspricht**
 das KEIN Verstoß. Diese Fakten sind nur ein Prüf-Bezug — **korrigiere NICHT aus ihnen**; Korrekturen
 kommen allein aus dem Fallen-Katalog.
 {% endif %}
+{% if computed_values %}
+# Berechnete Werte (DETERMINISTISCH — Code-Ergebnis, DATEN)
+{% for c in computed_values %}
+- {{ c.name }} = {{ c.value }} {{ c.unit }}  (calc: {{ c.calc_id }})
+{% endfor %}
+Wenn die ENTWURFSANTWORT einem dieser berechneten Werte **widerspricht** (z. B. eine Zahl/Grenze
+behauptet, die der Rechnung widerspricht, oder einen Werkstoff vorschlägt, dessen Grenze der
+berechnete Wert überschreitet), markiere das als `calc_violation`. Der berechnete Wert ist die
+deterministische Wahrheit; **korrigiere NICHT selbst** — nur markieren.
+{% endif %}
 
 # Ausgabe — NUR dieses JSON, ohne Prosa davor/danach
 {
   "findings": [
     {"trap_id": "<id aus dem Katalog>", "gate": "<einer der gates dieses Eintrags>", "violated": true|false, "evidence": "<kurzes wörtliches Zitat aus dem Entwurf>"},
-    {"card_contradiction": true, "card_id": "<id einer geerdeten Fachkarte>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"}
+    {"card_contradiction": true, "card_id": "<id einer geerdeten Fachkarte>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"},
+    {"calc_violation": true, "calc": "<name oder calc_id eines berechneten Werts>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"}
   ],
   "verdict": "clean|violation"
 }

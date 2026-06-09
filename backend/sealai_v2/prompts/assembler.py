@@ -42,6 +42,9 @@ class PromptAssembler:
         case_context: list[dict] | None = None,
         flags: Flags | None = None,
         correction_note: str | None = None,
+        computed_values: list[dict] | None = None,
+        not_computed: list[dict] | None = None,
+        calc_notes: list[str] | None = None,
     ) -> str:
         flags = flags or Flags()
         gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
@@ -52,6 +55,9 @@ class PromptAssembler:
             compliance_hint=flags.compliance_hint,
             safety_critical=flags.safety_critical,
             correction_note=correction_note or "",
+            computed_values=computed_values or [],
+            not_computed=not_computed or [],
+            calc_notes=calc_notes or [],
         )
 
 
@@ -63,8 +69,14 @@ class VerifierPromptAssembler:
         self._template = _env(template_dir).get_template(_VERIFIER_TEMPLATE_NAME)
 
     def verifier_system_prompt(
-        self, *, traps: list[dict], grounding_facts: list[dict] | None = None
+        self,
+        *,
+        traps: list[dict],
+        grounding_facts: list[dict] | None = None,
+        computed_values: list[dict] | None = None,
     ) -> str:
         return self._template.render(
-            traps=traps or [], grounding_facts=grounding_facts or []
+            traps=traps or [],
+            grounding_facts=grounding_facts or [],
+            computed_values=computed_values or [],
         )

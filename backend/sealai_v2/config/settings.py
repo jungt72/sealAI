@@ -51,3 +51,6 @@ class Settings(BaseSettings):
     # L2 grounding (M3): retrieve reviewed Fachkarten into L1/L3. Default ON (core trust layer);
     # off → every answer is "vorläufig". Not a product feature flag — an incident kill-switch.
     ground_enabled: bool = True
+    # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
+    # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
+    compute_enabled: bool = True

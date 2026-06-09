@@ -126,6 +126,24 @@ hier (noch) keine geerdete, zitierte Grundlage vorliegt.
 {% endfor %}
 {% endif %}
 
+{% if computed_values or not_computed or calc_notes %}
+# Berechnete Werte (deterministisch — Code, nicht geschätzt)
+{% for c in computed_values %}
+- {{ c.name }} = {{ c.value }} {{ c.unit }}{% if c.estimate %} (Schätzwert mit Annahmen){% endif %}  [{{ c.formula }}; Stufe {{ c.stage }}]
+{%- for w in c.warnings %}
+  ⚠️ {{ w }}{% endfor %}
+{% endfor %}
+{%- for n in not_computed %}
+- {{ n.calc_id }}: {{ n.reason }}
+{% endfor %}
+{%- for note in calc_notes %}
+- Hinweis: {{ note }}
+{% endfor %}
+Stütze quantitative Aussagen auf diese **deterministisch berechneten** Werte (Wert + Einheit +
+Annahmen); erfinde keine abweichenden Zahlen und übernimm „nicht berechenbar" ehrlich statt zu raten.
+Schätzwerte (abgeleitet aus abgeleiteten Werten) als solche kennzeichnen.
+{% endif %}
+
 {% if compliance_hint %}
 # Compliance-Dimension beachten
 Diese Anwendung berührt Zulassungen. Die Eignung entscheidet nicht „hält alles aus", sondern
