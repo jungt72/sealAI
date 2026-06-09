@@ -240,6 +240,72 @@ def test_gate_polar_heuristic_ignores_hedge_answer():
     assert _final_answer_asserts_epdm_polar(real_rec) is True
 
 
+def _gate_rec(case_id, column, answer, *, grounded=False, action="pass"):
+    return {
+        "case_id": case_id,
+        "column": column,
+        "answer_text": answer,
+        "answer_model": "gpt-5.1",
+        "grounded": grounded,
+        "verifier": {
+            "action": action,
+            "findings": [],
+            "regenerated": action == "corrected",
+        },
+        "score": {"provisional_gate_clean": True},
+    }
+
+
+def _calc_ok():
+    return [
+        _gate_rec("CALC-02", c, "Bereiche, gegen Datenblatt verifizieren.")
+        for c in ("flags_off", "flags_on")
+    ]
+
+
+def test_gate_trap02_avoided_at_l1_is_pass():
+    from sealai_v2.eval.report import _render_l3_section
+
+    recs = [
+        _gate_rec(
+            "TRAP-02",
+            "flags_off",
+            "EPDM ist unpolar; NBR/FKM nehmen.",
+            grounded=True,
+            action="pass",
+        ),
+        _gate_rec(
+            "TRAP-02", "flags_on", "EPDM ist unpolar.", grounded=True, action="pass"
+        ),
+        *_calc_ok(),
+    ]
+    text = "\n".join(_render_l3_section({}, recs))
+    assert "avoided at L1 (grounded)" in text
+    assert "✅ signal-pass" in text  # outcome-defined: avoided counts as success
+    assert "Outcome signal = ✅" in text
+
+
+def test_gate_trap02_polar_final_still_fails():
+    from sealai_v2.eval.report import _render_l3_section
+
+    recs = [
+        _gate_rec(
+            "TRAP-02",
+            "flags_off",
+            "EPDM ist ein polarer Kautschuk.",
+            grounded=True,
+            action="pass",
+        ),
+        _gate_rec(
+            "TRAP-02", "flags_on", "EPDM ist unpolar.", grounded=True, action="pass"
+        ),
+        *_calc_ok(),
+    ]
+    text = "\n".join(_render_l3_section({}, recs))
+    assert "ASSERTS POLAR" in text
+    assert "❌ signal-FAIL" in text
+
+
 def test_asserts_epdm_polar_ignores_polar_media_usage():
     from sealai_v2.eval.report import _asserts_epdm_polar
 
