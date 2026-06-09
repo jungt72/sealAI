@@ -6,6 +6,39 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-09T06:18Z — V2.0 governance doctrine added to the agent-instruction docs (doc-only; PR to feat/v2)
+
+**What:** additive doctrine update teaching the agent-instruction / governance docs the **V2.0
+green-field track** (`backend/sealai_v2/`), so a session opening that tree applies the V2 build-spec
++ eval discipline instead of V1.8's retired deterministic orchestration. Derived from `docs/V2/*`
+(build-spec §11/§12, architektur-prinzipien §0/§2/§3/§4/§9, eval seed set, L1 prompt seed).
+
+**Scope decision (as implemented):** a **delineated, path-scoped self-scoping V2 section** — full
+doctrine once in `AGENTS.md § "V2.0 green-field track"`, short pointer subsections elsewhere. Every
+new block opens with an "applies to `backend/sealai_v2/` ONLY; V1 governed unchanged" line; precedence
+is scoped (V2.0 > V1.8 > V1.7 **inside the v2 tree only** — `AGENTS.md` explicitly states this is not a
+global demotion of V1.8). V2 is on the `feat/v2*` line, **not cut over** to demo/main.
+
+**Files (9, +237 / −0 — purely additive):** `AGENTS.md`, `CLAUDE.md`,
+`.claude/rules/{testing,workflow,doctrine,ops}.md`, `.claude/agents/doctrine-reviewer.md`,
+`GEMINI.md`, `.claude/commands/audit.md`. Three owner-opted-in optional pointers
+(doctrine-reviewer scope note · GEMINI pointer · audit-command V2 read). `SSOT_REGISTRY.md`
+deliberately **not** included — optional follow-up.
+
+**No V1 guard weakened.** `git diff` shows **0 deleted lines**; all V1/V1.8 governance is byte-for-byte
+untouched. The doctrine doc clarifies V2 does **not** use the V1 L1/L2 `output_guard`/`final_guard`
+(its spine = L1 honesty norms + L2 grounding + L3 verifier + L4 human + the eval hard Schranken), and
+that the `doctrine-reviewer` stays **V1-scoped**.
+
+**Doctrine-gate result:** V1 fast doctrine guard suite run before commit —
+`test_comparative_ranking_guard.py` + `test_rwdr_comparative_leak_golden.py` +
+`v92/test_final_guard_knowledge_backstop.py` → **71 passed, EXIT=0 (green)**. Committed via the normal
+hooked path (PreToolUse doctrine-gate re-runs the same suite).
+
+**Process:** doc edits moved off `feat/v2-m2` (M2 code untouched) onto branch **`docs/v2-governance`**
+(off `feat/v2` @ 006867a3); landed via **PR → `feat/v2`** (not a direct commit; **owner merges**).
+**Separate from the M2 milestone**; additive, converges with M2 at the M2 merge with no conflict.
+
 ## 2026-06-07T19:05Z — Wave-Q config flip: semantic intent router OFF (config-only, owner-applied)
 
 Owner-applied **config-only** prod change — CC cannot touch `.env*`. In `.env.prod`,

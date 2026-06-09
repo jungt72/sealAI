@@ -37,3 +37,25 @@ How changes move from audit to merge. Derived from the standing governance in
   **outside** the current scope (log + surface, do not silently action).
 - Low-blast-radius fixes (composition, routing collapse, docs) may run autonomously
   including deploy, still behind the deploy gate.
+
+## V2 build rhythm (`backend/sealai_v2/`, `feat/v2*`)
+
+> Applies to the green-field V2 tree only — not cut over to demo/main. The V1
+> per-fix protocol + branch/merge + blast-radius rules above are unchanged. Full
+> V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.
+
+- **Gate rhythm:** plan → **owner gate** → build → review; **never auto past a gate.**
+  HALT after **every milestone (M1…M6)** with an **Eval-REPLAY** + owner gate
+  (build-spec §10/§12). The milestone is reached only when the relevant eval cases
+  pass and the **Schranken-Quote is 100 %**.
+- **Build against the eval, not gut feeling.** Red-before-green here = a failing eval
+  case / unit test first, then the change.
+- **The human is the factual-correctness oracle.** Surface eval divergences as
+  owner-final candidates; **never self-tick verdicts or free-correct facts** (the
+  TRAP-02 discipline; `eval/adjudicate.py`).
+- **Branch:** work on the `feat/v2*` line; V2 does **not** target
+  `demo/rwdr-limited-external`/`main` until an explicit, owner-gated cutover.
+- **Reviewer scope:** the read-only `doctrine-reviewer` is **V1-scoped** (L1/L2
+  `output_guard`/`final_guard`) — it does not apply to V2, which has no such guards.
+  V2 doctrine review = the eval hard-gate + L3 integrity (reviewed-only correction)
+  + owner. See `.claude/rules/doctrine.md § "V2 doctrine mechanism"`.

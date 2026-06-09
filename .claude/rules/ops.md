@@ -58,6 +58,10 @@ rules). The **CI-trigger / `ruff format` scope questions remain separately parke
 
 ## Secrets & untouchables
 - `.env*` files are never read, printed, or committed (denied in permissions).
+- **V2 eval key hygiene:** V2 offline tests use a **fake LLM client (no key)**. A
+  **live eval REPLAY** (`python -m sealai_v2.eval`) sources `OPENAI_API_KEY`
+  **transiently from `~/sealai/.env` for that run only** — never persisted into the
+  agent env, never echoed to logs, never committed.
 - Never push to `main`; never `git push --force`, `git clean`, or
   `docker compose down/rm` against prod (denied).
 - `.claude/.gate-logs/` holds runtime gate logs and sentinels — gitignored, not
@@ -96,3 +100,13 @@ rules). The **CI-trigger / `ruff format` scope questions remain separately parke
   - Toggling it is an env change on the running service (`.env.prod` is operator-
     owned; never read/printed by agents) — re-enforce as soon as the incident is
     resolved.
+
+## V2.0 track is not in the prod path (yet)
+
+The green-field `backend/sealai_v2/` tree (`feat/v2*`) is **not cut over** to
+demo/main and has **no release path**: `ops/release-backend.sh`, the deploy gate, the
+pre-deploy pytest sentinel, and the rollback anchor all target the **V1** runtime
+(`backend/app/`) unchanged. There is no V2 prod deploy to log. A future cutover is a
+deliberate, owner-gated arc of its own — until then, treat everything in this file as
+V1-only. (V2 CI lives in `.github/workflows/v2-contracts.yml`; V2 doctrine:
+`AGENTS.md § "V2.0 green-field track"`.)
