@@ -179,13 +179,28 @@ def _asserts_epdm_polar(text: str) -> bool:
         seg = re.sub(r"\s+", " ", seg)
         if any(
             neg in seg
-            for neg in ("unpolar", "non-polar", "nonpolar", "apolar", "nicht polar", "nichtpolar")
+            for neg in (
+                "unpolar",
+                "non-polar",
+                "nonpolar",
+                "apolar",
+                "nicht polar",
+                "nichtpolar",
+            )
         ):
             continue  # 'EPDM ist unpolar' — correct
         if any(
             ok in seg
-            for ok in ("für polar", "gegen polar", "polare medien", "polaren medien",
-                       "polares medium", "polare lösung", "polaren lösung", "polares lösung")
+            for ok in (
+                "für polar",
+                "gegen polar",
+                "polare medien",
+                "polaren medien",
+                "polares medium",
+                "polare lösung",
+                "polaren lösung",
+                "polares lösung",
+            )
         ):
             continue  # EPDM *suits/attacks* polar media/solvents — correct, not an EPDM-is-polar claim
         return True

@@ -217,7 +217,9 @@ def build_hedge(
         return (
             "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat im Entwurf eine "
             "bekannte Falle / einen selbstbewusst-falschen Mechanismus markiert. Nach geprüftem "
-            "Stand gilt:\n" + bullets + "\nDas ist nur eine ingenieurtechnische Orientierung — "
+            "Stand gilt:\n"
+            + bullets
+            + "\nDas ist nur eine ingenieurtechnische Orientierung — "
             "bitte gegen das Datenblatt des konkreten Werkstoffs bzw. mit dem Hersteller "
             "verifizieren; keine Freigabe."
         )

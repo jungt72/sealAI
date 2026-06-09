@@ -206,7 +206,9 @@ def test_hedge_mentions_concern_without_asserting():
         (VerifierFinding("R1", "confident_wrong", "reviewed", "EPDM polar"),)
     )
     assert "Vorsicht" in h and "verifizieren" in h.lower()
-    assert "EPDM polar" not in h  # no catalog → generic hedge, never echoes the flagged claim
+    assert (
+        "EPDM polar" not in h
+    )  # no catalog → generic hedge, never echoes the flagged claim
 
 
 def test_hedge_states_reviewed_correct_fact_not_the_wrong_claim():
@@ -225,10 +227,16 @@ def test_gate_polar_heuristic_ignores_hedge_answer():
     from sealai_v2.eval.report import _final_answer_asserts_epdm_polar
 
     # a deterministic hedge never ASSERTS the wrong claim, even if it mentions the word
-    hedge_rec = {"answer_model": "l3-hedge", "answer_text": "... EPDM ist ein polarer Kautschuk ..."}
+    hedge_rec = {
+        "answer_model": "l3-hedge",
+        "answer_text": "... EPDM ist ein polarer Kautschuk ...",
+    }
     assert _final_answer_asserts_epdm_polar(hedge_rec) is False
     # a real model answer that asserts polar is still flagged
-    real_rec = {"answer_model": "gpt-5.1", "answer_text": "EPDM ist ein polarer Kautschuk."}
+    real_rec = {
+        "answer_model": "gpt-5.1",
+        "answer_text": "EPDM ist ein polarer Kautschuk.",
+    }
     assert _final_answer_asserts_epdm_polar(real_rec) is True
 
 
@@ -236,10 +244,25 @@ def test_asserts_epdm_polar_ignores_polar_media_usage():
     from sealai_v2.eval.report import _asserts_epdm_polar
 
     # correct usages → NOT flagged (measurement hygiene)
-    assert _asserts_epdm_polar("EPDM ist ein unpolarer Kautschuk und quillt in unpolaren Ölen.") is False
-    assert _asserts_epdm_polar("EPDM ist für polare Medien wie Wasser/Glykol geeignet.") is False
-    assert _asserts_epdm_polar("EPDM ist für **polare Medien** wie Wasser.") is False  # markdown-bold robust
-    assert _asserts_epdm_polar("EPDM ist gut gegen polare Lösungsmittel, quillt aber in Öl.") is False
+    assert (
+        _asserts_epdm_polar(
+            "EPDM ist ein unpolarer Kautschuk und quillt in unpolaren Ölen."
+        )
+        is False
+    )
+    assert (
+        _asserts_epdm_polar("EPDM ist für polare Medien wie Wasser/Glykol geeignet.")
+        is False
+    )
+    assert (
+        _asserts_epdm_polar("EPDM ist für **polare Medien** wie Wasser.") is False
+    )  # markdown-bold robust
+    assert (
+        _asserts_epdm_polar(
+            "EPDM ist gut gegen polare Lösungsmittel, quillt aber in Öl."
+        )
+        is False
+    )
     assert _asserts_epdm_polar("Aceton ist ein polares Lösungsmittel.") is False
     # a real assertion that EPDM itself is polar → still flagged
     assert _asserts_epdm_polar("EPDM ist ein polarer Kautschuk.") is True
@@ -296,7 +319,9 @@ def test_precision_overapplication_suppressed_when_range_and_caveat():
     )
     client = ScriptedFakeLlmClient([_prec_violation(ev)])
     raw = asyncio.run(_prec_verifier(client).verify("Frage?", "Entwurf"))
-    assert raw.findings == ()  # range + caveat → not invented precision → L3 over-applied → dropped
+    assert (
+        raw.findings == ()
+    )  # range + caveat → not invented precision → L3 over-applied → dropped
 
 
 def test_precision_still_fires_on_bare_single_value():
@@ -339,18 +364,27 @@ def test_precision_overapplication_yields_pass_no_regen():
 def test_is_precision_overapplication_predicate():
     from sealai_v2.core.l3_verifier import is_precision_overapplication as ov
 
-    assert ov("PREC-EINZELZAHL", "ca. 120–130 °C (typisch, gegen Datenblatt verifizieren)")
+    assert ov(
+        "PREC-EINZELZAHL", "ca. 120–130 °C (typisch, gegen Datenblatt verifizieren)"
+    )
     assert ov("PREC-LEBENSDAUER", "5 000–20 000 Betriebsstunden (typisch, Richtwert)")
     assert not ov("PREC-EINZELZAHL", "genau 178 °C")  # no range, no caveat
     assert not ov("PREC-EINZELZAHL", "15–25 %")  # range but no caveat
-    assert not ov("PREC-COMPOUND-NUMMER", "FKM 70 (typisch, Datenblatt 1–2)")  # not a range-trap
-    assert not ov("TRAP-FKM-DAMPF", "120–130 °C typisch Datenblatt")  # not a precision trap
+    assert not ov(
+        "PREC-COMPOUND-NUMMER", "FKM 70 (typisch, Datenblatt 1–2)"
+    )  # not a range-trap
+    assert not ov(
+        "TRAP-FKM-DAMPF", "120–130 °C typisch Datenblatt"
+    )  # not a precision trap
 
 
 def test_precision_overapplication_bis_and_ellipsis_ranges():
     from sealai_v2.core.l3_verifier import is_precision_overapplication as ov
 
-    assert ov("PREC-EINZELZAHL", "Standard liegt im Bereich +135 bis +150 °C (typisch, Datenblatt)")
+    assert ov(
+        "PREC-EINZELZAHL",
+        "Standard liegt im Bereich +135 bis +150 °C (typisch, Datenblatt)",
+    )
     assert ov("PREC-EINZELZAHL", "ca. 120…150 °C (typisch – Datenblatt verifizieren)")
     assert ov("PREC-EINZELZAHL", "5.000 bis 20.000 h (Richtwert, Datenblatt)")
 
@@ -372,7 +406,9 @@ def test_precision_draft_check_via_verify():
     # mirrors UNCERT-01 flags_off: verifier quotes a "bis"-range snippet without the caveat word,
     # but the DRAFT is a proper range + caveat answer → L3 over-applied → suppressed
     ev = "Standard-EPDM liegt eher bei +135 bis +150 °C in Dampf."
-    draft = "Typisch ca. 140–160 °C (typisch – Datenblatt des Herstellers verifizieren)."
+    draft = (
+        "Typisch ca. 140–160 °C (typisch – Datenblatt des Herstellers verifizieren)."
+    )
     client = ScriptedFakeLlmClient([_prec_violation(ev)])
     raw = asyncio.run(_prec_verifier(client).verify("Frage?", draft))
     assert raw.findings == ()

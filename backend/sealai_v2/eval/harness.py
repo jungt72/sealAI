@@ -45,7 +45,9 @@ class Record:
     verifier: VerifierVerdict | None = (
         None  # L3 verdict (M2); None if L3 disabled / errored
     )
-    draft_text: str = ""  # first-pass L1 draft (pre-L3); == answer_text when L3 didn't change it
+    draft_text: str = (
+        ""  # first-pass L1 draft (pre-L3); == answer_text when L3 didn't change it
+    )
     draft_model: str = ""
 
 
