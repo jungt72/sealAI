@@ -232,6 +232,20 @@ def test_gate_polar_heuristic_ignores_hedge_answer():
     assert _final_answer_asserts_epdm_polar(real_rec) is True
 
 
+def test_asserts_epdm_polar_ignores_polar_media_usage():
+    from sealai_v2.eval.report import _asserts_epdm_polar
+
+    # correct usages → NOT flagged (measurement hygiene)
+    assert _asserts_epdm_polar("EPDM ist ein unpolarer Kautschuk und quillt in unpolaren Ölen.") is False
+    assert _asserts_epdm_polar("EPDM ist für polare Medien wie Wasser/Glykol geeignet.") is False
+    assert _asserts_epdm_polar("EPDM ist für **polare Medien** wie Wasser.") is False  # markdown-bold robust
+    assert _asserts_epdm_polar("EPDM ist gut gegen polare Lösungsmittel, quillt aber in Öl.") is False
+    assert _asserts_epdm_polar("Aceton ist ein polares Lösungsmittel.") is False
+    # a real assertion that EPDM itself is polar → still flagged
+    assert _asserts_epdm_polar("EPDM ist ein polarer Kautschuk.") is True
+    assert _asserts_epdm_polar("Weil EPDM polar ist, quillt es in Öl.") is True
+
+
 # --- L3 precision over-application fix (PREC-EINZELZAHL / PREC-LEBENSDAUER firing condition) ---
 # A range-precision trap must NOT fire when the answer ALREADY gives the quantity as a range WITH
 # a verify/Datenblatt caveat (respect the catalog's "Einzelzahl OHNE Bereich" scope); a bare

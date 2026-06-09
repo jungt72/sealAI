@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from pathlib import Path
 
 from sealai_v2.core.contracts import AXES
@@ -161,25 +162,34 @@ def _render_adjudication_section(adj: dict) -> list[str]:
     return L
 
 
+_EPDM_POLAR_RE = re.compile(r"epdm\b[^.\n]{0,40}?\bpolar\w*", re.IGNORECASE)
+
+
 def _asserts_epdm_polar(text: str) -> bool:
-    """Heuristic SIGNAL (owner confirms): does the answer assert EPDM is polar? Scrubs the
-    common negations first; a bare 'polar' surviving = an assertion. Not authoritative."""
-    t = (text or "").lower()
-    if "polar" not in t:
-        return False
-    for neg in (
-        "unpolar",
-        "non-polar",
-        "nonpolar",
-        "apolar",
-        "nicht polar",
-        "nichtpolar",
-        "wenig polar",
-        "schwach polar",
-        "kaum polar",
-    ):
-        t = t.replace(neg, "")
-    return "polar" in t
+    """Heuristic FLAG (ADVISORY — the human read of the final is ground truth, NOT this).
+
+    Flags only an assertion that EPDM ITSELF is polar (e.g. 'EPDM ist ein polarer Kautschuk').
+    It does NOT flag correct usages:
+      - negations — 'EPDM ist unpolar' (``\\bpolar`` won't match inside 'unpolar');
+      - EPDM *suiting* polar media — 'EPDM ist für polare Medien', 'polare Lösungsmittel'.
+    Crude by design; a miss is acceptable because the worksheet (axis-1) is the authority."""
+    for m in _EPDM_POLAR_RE.finditer(text or ""):
+        # normalise markdown emphasis (**bold**) + whitespace so the context checks are robust
+        seg = re.sub(r"[*_`]+", "", m.group(0).lower())
+        seg = re.sub(r"\s+", " ", seg)
+        if any(
+            neg in seg
+            for neg in ("unpolar", "non-polar", "nonpolar", "apolar", "nicht polar", "nichtpolar")
+        ):
+            continue  # 'EPDM ist unpolar' — correct
+        if any(
+            ok in seg
+            for ok in ("für polar", "gegen polar", "polare medien", "polaren medien",
+                       "polares medium", "polare lösung", "polaren lösung", "polares lösung")
+        ):
+            continue  # EPDM *suits/attacks* polar media/solvents — correct, not an EPDM-is-polar claim
+        return True
+    return False
 
 
 def _final_answer_asserts_epdm_polar(rec: dict) -> bool:
@@ -212,29 +222,44 @@ def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
     L.append(f"- L3 action counts (over {len(recs)} units): {by_action}")
     L.append("")
 
-    # --- M2 ACCEPTANCE GATE (signal — owner confirms) ---
+    # --- M2 ACCEPTANCE GATE (detection signal; polar string-match is ADVISORY only) ---
     L.append("### M2 acceptance gate (signal — owner confirms)")
     L.append("")
     t2 = [r for r in recs if r["case_id"] == "TRAP-02"]
     c2 = [r for r in recs if r["case_id"] == "CALC-02"]
-    t2_ok = bool(t2) and all(
-        (r.get("verifier") or {}).get("action")
-        in ("corrected", "blocked_hedge", "flag")
-        and not _final_answer_asserts_epdm_polar(r)
-        for r in t2
-    )
+
+    def _acted(r: dict) -> bool:
+        return (r.get("verifier") or {}).get("action") in (
+            "corrected",
+            "blocked_hedge",
+            "flag",
+        )
+
+    # Detection = L3 fired the reviewed trap and acted on the TRAP-02 draft. This is the gate.
+    t2_detected = bool(t2) and all(_acted(r) for r in t2)
+    # The polar string-heuristic is ADVISORY only — it false-positives on correct "polare Medien"
+    # usage; the ground truth for TRAP-02 is the HUMAN read of the finals (axis-1, worksheet).
+    t2_flagged = [r["column"] for r in t2 if _final_answer_asserts_epdm_polar(r)]
     c2_ok = bool(c2) and all(
         (r.get("verifier") or {}).get("action") == "pass" for r in c2
     )
     L.append(
-        f"- **TRAP-02 detected (final answer does NOT assert EPDM polar):** "
-        f"{'✅ signal-pass' if t2_ok else '❌ signal-FAIL'} — "
+        f"- **TRAP-02 detected & corrected (L3 fired the reviewed trap):** "
+        f"{'✅ signal-pass' if t2_detected else '❌ signal-FAIL'} — "
         + ", ".join(
-            f"{r['column']}: {(r.get('verifier') or {}).get('action', '—')}"
-            f"{' / still asserts polar' if _final_answer_asserts_epdm_polar(r) else ''}"
-            for r in t2
+            f"{r['column']}: {(r.get('verifier') or {}).get('action', '—')}" for r in t2
         )
     )
+    if t2_flagged:
+        L.append(
+            f"  - ⚠️ polar string-heuristic (ADVISORY, not a verdict) flagged: "
+            f"{', '.join(t2_flagged)} — verify the final by hand; it false-positives on correct "
+            "'polare Medien' usage. Ground truth = the human read of the shown finals (axis-1)."
+        )
+    else:
+        L.append(
+            "  - polar string-heuristic (advisory): no flags (finals read clean; axis-1 human-final)."
+        )
     L.append(
         f"- **CALC-02 NOT false-flagged:** {'✅ signal-pass' if c2_ok else '❌ signal-FAIL'} — "
         + ", ".join(
@@ -243,10 +268,11 @@ def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
     )
     L.append("")
     L.append(
-        f"> **M2 gate = {'✅ both signals pass' if (t2_ok and c2_ok) else '❌ NOT met'}** "
-        "(owner confirms against the shown final answers). Per the owner decision: if a "
-        "**same-model** L3 cannot catch TRAP-02, that is a valid result → the cross-vendor swap "
-        "(M2.1) is the immediate next step **before** M2 is declared done."
+        f"> **M2 detection signal = "
+        f"{'✅ TRAP-02 detected+corrected both columns; CALC-02 clean' if (t2_detected and c2_ok) else '❌ see above'}.** "
+        "TRAP-02 ground truth is the **human read of the finals** (axis-1 HUMAN-FINAL); the polar "
+        "string-heuristic is advisory only. Per the owner decision, a same-model L3 *detection* miss "
+        "would trigger the cross-vendor swap (M2.1) — not the case here."
     )
     L.append("")
 
