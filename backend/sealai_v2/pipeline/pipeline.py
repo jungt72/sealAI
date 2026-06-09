@@ -103,6 +103,8 @@ class Pipeline:
             draft_answer=draft,
             grounding_facts=grounding_facts,
             computed_values=calc.computed,
+            not_computed=calc.not_computed,
+            calc_notes=calc.notes,
         )
 
 

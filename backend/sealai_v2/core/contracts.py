@@ -98,6 +98,9 @@ class Understanding:
 
 @dataclass(frozen=True)
 class GroundingFact:
+    # M6 follow-up (owner-tracked): for the USER-FACING surface, propagate the source Claim's PRIMARY
+    # sources (e.g. Parker O-Ring Handbook / ISO 3601-2) onto this fact and surface those in the
+    # render — the internal card_id is meaningless to a manufacturer/user. Out of pure-render M4b scope.
     text: str
     quelle: str
     card_id: str = (
@@ -183,6 +186,45 @@ class CalcEngine(Protocol):
 
 
 @dataclass(frozen=True)
+class RenderSnapshot:
+    """A frozen projection of a finished turn — the pure INPUT to artifact rendering (M4b).
+
+    Render is a TERMINAL projection: it reads this snapshot and never touches L1/L3, so it cannot
+    change the measured answer. Carries only what the artifact formats; no behaviour, no I/O. The
+    ``positions`` headroom is kept for the deferred multi-position RFQ (never hard-assume one)."""
+
+    question: str
+    answer_text: str
+    computed: tuple[ComputedValue, ...] = ()
+    not_computed: tuple[NotComputed, ...] = ()
+    calc_notes: tuple[str, ...] = ()
+    grounding_facts: tuple[GroundingFact, ...] = ()
+    grounded: bool = False
+    positions: tuple[dict, ...] = ()  # RFQ headroom (deferred); ≥0, never assume exactly one
+
+
+@dataclass(frozen=True)
+class Artifact:
+    """A deterministically rendered artifact (briefing | calc_report | …). ``body`` is the rendered
+    text; ``provenance`` lists the cited cards/sources surfaced in it (audit/UI hook)."""
+
+    kind: str  # "briefing" | "calc_report" | "rfq" (deferred)
+    title: str
+    body: str
+    provenance: tuple[str, ...] = ()
+
+
+class Renderer(Protocol):
+    """The artifact-render seam (implemented by ``render.ArtifactRenderer``). Kept a Protocol so
+    ``core`` does not import ``render`` (which does Jinja template file I/O). Jinja FORMATS only —
+    it never decides domain content (no domain logic in template conditionals)."""
+
+    def calc_report(self, snapshot: "RenderSnapshot") -> "Artifact": ...
+
+    def briefing(self, snapshot: "RenderSnapshot") -> "Artifact": ...
+
+
+@dataclass(frozen=True)
 class Answer:
     text: str
     model: str
@@ -256,6 +298,10 @@ class PipelineResult:
     grounding_facts: tuple[GroundingFact, ...] = ()
     # Deterministic computed values injected this turn (M4); the candidate rests on these.
     computed_values: tuple[ComputedValue, ...] = ()
+    # Fail-closed calc reasons + cross-cutting calc notes (M4) — carried so the M4b render projection
+    # can surface "nicht berechenbar"/advisories honestly. Not injected into L1/L3; render-only.
+    not_computed: tuple[NotComputed, ...] = ()
+    calc_notes: tuple[str, ...] = ()
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.
