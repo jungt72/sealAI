@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
@@ -29,6 +31,16 @@ COLUMNS: dict[str, Flags] = {
 }
 
 _EVAL_TENANT = TenantContext(tenant_id="eval-tenant")
+_CALC_FIXTURES_FILE = Path(__file__).resolve().parent / "calc_fixtures.json"
+
+
+def _load_calc_fixtures() -> dict[str, dict]:
+    """Per-case calc params for the measurement (M4: params come from eval fixtures, not intake)."""
+    if not _CALC_FIXTURES_FILE.exists():
+        return {}
+    return json.loads(_CALC_FIXTURES_FILE.read_text(encoding="utf-8")).get(
+        "fixtures", {}
+    )
 
 
 @dataclass
@@ -53,18 +65,28 @@ class Record:
         False  # M3: ≥1 reviewed Fachkarte injected; False → answer is "vorläufig"
     )
     n_grounding: int = 0  # number of reviewed grounding facts injected this turn
+    n_computed: int = 0  # M4: deterministically computed values injected this turn
+    computed_brief: str = ""  # "v_m_s=12.57 m/s; ..." — what the candidate rested on
 
 
 async def _run_unit(
-    pipeline, judge_cfg: ModelConfig, case: Case, column: str, flags: Flags
+    pipeline,
+    judge_cfg: ModelConfig,
+    case: Case,
+    column: str,
+    flags: Flags,
+    params: dict | None = None,
 ) -> Record:
     intent = rationale = None
     answer_text, answer_model, error = "", "", None
     draft_text, draft_model = "", ""
     grounded, n_grounding = False, 0
+    n_computed, computed_brief = 0, ""
     verifier: VerifierVerdict | None = None
     try:
-        result = await pipeline.run(case.input, tenant=_EVAL_TENANT, flags=flags)
+        result = await pipeline.run(
+            case.input, tenant=_EVAL_TENANT, flags=flags, params=params
+        )
         if result.understanding is not None:
             intent = result.understanding.intent.value
             rationale = result.understanding.rationale
@@ -73,6 +95,10 @@ async def _run_unit(
         verifier = result.verifier
         grounded = result.grounded
         n_grounding = len(result.grounding_facts)
+        n_computed = len(result.computed_values)
+        computed_brief = "; ".join(
+            f"{c.name}={c.value} {c.unit}" for c in result.computed_values
+        )
         if result.draft_answer is not None:
             draft_text = result.draft_answer.text
             draft_model = result.draft_answer.model
@@ -102,6 +128,8 @@ async def _run_unit(
         draft_model=draft_model,
         grounded=grounded,
         n_grounding=n_grounding,
+        n_computed=n_computed,
+        computed_brief=computed_brief,
     )
 
 
@@ -127,11 +155,14 @@ async def run_eval(
         model=settings.judge_model, temperature=settings.judge_temperature
     )
 
+    fixtures = _load_calc_fixtures()
     sem = asyncio.Semaphore(max(1, settings.concurrency))
 
     async def guarded(case: Case, column: str, flags: Flags) -> Record:
         async with sem:
-            return await _run_unit(pipeline, judge_cfg, case, column, flags)
+            return await _run_unit(
+                pipeline, judge_cfg, case, column, flags, params=fixtures.get(case.id)
+            )
 
     units = [(c, name, flags) for c in cases for name, flags in columns.items()]
     records: list[Record] = await asyncio.gather(
@@ -147,14 +178,25 @@ async def run_eval(
 
     l3_on = settings.verify_enabled
     l2_on = settings.ground_enabled
-    milestone = "M3" if (l3_on and l2_on) else "M2" if l3_on else "M1"
+    l4_on = settings.compute_enabled
+    milestone = (
+        "M4"
+        if (l3_on and l2_on and l4_on)
+        else "M3"
+        if (l3_on and l2_on)
+        else "M2"
+        if l3_on
+        else "M1"
+    )
     manifest = {
         "run_label": run_label,
         "git_sha": git_sha,
         "timestamp": timestamp,
         "milestone": milestone,
         "subject": (
-            "L1+L2+L3 (understand→ground→answer→verify; L2 injects reviewed Fachkarten into L1 + L3; cite stub)"
+            "L1+L2+L3+M4-calc (understand→ground→compute→answer→verify; deterministic computed values into L1 + L3; render = M4b)"
+            if (l3_on and l2_on and l4_on)
+            else "L1+L2+L3 (understand→ground→answer→verify; L2 injects reviewed Fachkarten into L1 + L3; cite stub)"
             if (l3_on and l2_on)
             else "L1+L3 (understand→answer→verify; L3 grounds against the trap catalog; ground/cite stubs)"
             if l3_on
@@ -167,6 +209,7 @@ async def run_eval(
         "verifier_model": settings.verifier_model if l3_on else None,
         "verify_enabled": l3_on,
         "ground_enabled": l2_on,
+        "compute_enabled": l4_on,
         "understand_enabled": settings.understand_enabled,
         "columns": list(columns.keys()),
         "n_cases": len(cases),

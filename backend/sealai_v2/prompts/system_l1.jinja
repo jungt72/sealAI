@@ -119,11 +119,38 @@ quantitative/normative Aussagen entsprechend als **Allgemeinwissen** und kennzei
 hier (noch) keine geerdete, zitierte Grundlage vorliegt.
 {% endif %}
 
+{%- if conversation_window %}
+# Gesprächsverlauf (bisher — Bezüge/Anaphern wie „das", „die beiden", „und bei …?" hieraus auflösen)
+{% for c in conversation_window %}
+{{ "Nutzer" if c.role == "user" else "Assistent" }}: {{ c.text }}
+{% endfor %}
+{% endif %}
+
 {% if case_context %}
 # Bereits bekannter Fallkontext (NICHT erneut erfragen)
+Diese Fakten stammen aus dem bisherigen Gespräch (erinnert, nicht verifiziert) — nutze sie, frage
+sie NICHT erneut ab; hängt eine konsequenzreiche Auslegung daran, lass den Wert kurz bestätigen.
 {% for c in case_context %}
-- {{ c.feld }}: {{ c.wert }}
+- {{ c.feld }}: {{ c.wert }} (zuvor genannt — bei Bedarf bestätigen)
 {% endfor %}
+{% endif %}
+
+{% if computed_values or not_computed or calc_notes %}
+# Berechnete Werte (deterministisch — Code, nicht geschätzt)
+{% for c in computed_values %}
+- {{ c.name }} = {{ c.value }} {{ c.unit }}{% if c.estimate %} (Schätzwert mit Annahmen){% endif %}  [{{ c.formula }}; Stufe {{ c.stage }}]
+{%- for w in c.warnings %}
+  ⚠️ {{ w }}{% endfor %}
+{% endfor %}
+{%- for n in not_computed %}
+- {{ n.calc_id }}: {{ n.reason }}
+{% endfor %}
+{%- for note in calc_notes %}
+- Hinweis: {{ note }}
+{% endfor %}
+Stütze quantitative Aussagen auf diese **deterministisch berechneten** Werte (Wert + Einheit +
+Annahmen); erfinde keine abweichenden Zahlen und übernimm „nicht berechenbar" ehrlich statt zu raten.
+Schätzwerte (abgeleitet aus abgeleiteten Werten) als solche kennzeichnen.
 {% endif %}
 
 {% if compliance_hint %}

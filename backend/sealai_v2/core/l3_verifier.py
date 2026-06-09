@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from sealai_v2.core.contracts import (
     Answer,
+    ComputedValue,
     Flags,
     GroundingFact,
     LlmClient,
@@ -129,28 +130,44 @@ class L3Verifier:
         question: str,
         answer_text: str,
         grounding_facts: tuple[GroundingFact, ...] = (),
+        computed_values: tuple[ComputedValue, ...] = (),
     ) -> _RawVerdict:
         gf_payload = [
             {"text": f.text, "card_id": f.card_id, "quelle": f.quelle}
             for f in grounding_facts
         ]
+        cv_payload = [
+            {"name": c.name, "value": c.value, "unit": c.unit, "calc_id": c.calc_id}
+            for c in computed_values
+        ]
         system = self._assembler.verifier_system_prompt(
-            traps=_trap_payload(self._catalog), grounding_facts=gf_payload
+            traps=_trap_payload(self._catalog),
+            grounding_facts=gf_payload,
+            computed_values=cv_payload,
         )
         user = (
             f"FRAGE:\n{question}\n\n"
             f'ENTWURFSANTWORT (zu prüfen):\n"""\n{answer_text}\n"""\n\n'
-            "Prüfe die Entwurfsantwort gegen den Fallen-Katalog und die geerdeten Fakten und gib "
-            "NUR das JSON zurück."
+            "Prüfe die Entwurfsantwort gegen den Fallen-Katalog, die geerdeten Fakten und die "
+            "berechneten Werte und gib NUR das JSON zurück."
         )
         res = await self._client.generate(
             system=system, user=user, model_config=self._model_config
         )
         card_ids = frozenset(f.card_id for f in grounding_facts if f.card_id)
-        return self._parse(res.text, draft=answer_text, card_ids=card_ids)
+        calc_refs = frozenset(
+            [c.name for c in computed_values] + [c.calc_id for c in computed_values]
+        )
+        return self._parse(
+            res.text, draft=answer_text, card_ids=card_ids, calc_refs=calc_refs
+        )
 
     def _parse(
-        self, raw: str, draft: str = "", card_ids: frozenset[str] = frozenset()
+        self,
+        raw: str,
+        draft: str = "",
+        card_ids: frozenset[str] = frozenset(),
+        calc_refs: frozenset[str] = frozenset(),
     ) -> _RawVerdict:
         raw = (raw or "").strip()
         try:
@@ -176,6 +193,22 @@ class L3Verifier:
                         review_state="reviewed",  # cards injected are reviewed
                         evidence=evidence,
                         kind="card",
+                    )
+                )
+                continue
+            # M4 — the draft contradicts a deterministically computed value that was injected.
+            # FLAG-only (kind="calc"): computed truth is surfaced; corrections stay reviewed-trap-only.
+            if item.get("calc_violation") is True:
+                ref = str(item.get("calc", ""))
+                if ref not in calc_refs:
+                    continue  # only a computed value shown to L3 can be contradicted
+                findings.append(
+                    VerifierFinding(
+                        trap_id=ref,
+                        gate="confident_wrong",
+                        review_state="reviewed",  # computed values are deterministic + reviewed-def
+                        evidence=evidence,
+                        kind="calc",
                     )
                 )
                 continue
@@ -281,13 +314,14 @@ async def run_verify(
     *,
     flags: Flags,
     grounding_facts: tuple[GroundingFact, ...] = (),
+    computed_values: tuple[ComputedValue, ...] = (),
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
-    M3: L3 also sees the reviewed grounding facts and may FLAG a card contradiction — but a card
-    finding never blocks/corrects (only reviewed TRAP findings do). ``generator`` is the injected L1
-    generator (duck-typed: ``await generator.generate(question, flags=..., correction_note=...)``)."""
-    raw = await verifier.verify(question, draft.text, grounding_facts)
+    M3/M4: L3 also sees the reviewed grounding facts + computed values and may FLAG a card or calc
+    contradiction — but card/calc findings never block/correct (only reviewed TRAP findings do).
+    ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(...)``)."""
+    raw = await verifier.verify(question, draft.text, grounding_facts, computed_values)
     if not raw.findings:
         return draft, VerifierVerdict(
             action=VerifierAction.PASS, parse_ok=raw.parse_ok, raw=raw.raw
@@ -308,7 +342,9 @@ async def run_verify(
         regen = await generator.generate(
             question, flags=flags, correction_note=correction
         )
-        raw2 = await verifier.verify(question, regen.text, grounding_facts)
+        raw2 = await verifier.verify(
+            question, regen.text, grounding_facts, computed_values
+        )
         if not _reviewed_traps(raw2.findings):
             return regen, VerifierVerdict(
                 action=VerifierAction.CORRECTED,

@@ -9,13 +9,19 @@ import json
 
 from sealai_v2.core.contracts import (
     Answer,
+    CalcEngine,
+    CalcResult,
+    ConversationMemory,
+    CrossSessionMemory,
     Flags,
     GroundingFact,
     Intent,
     LlmClient,
+    MemoryView,
     ModelConfig,
     RetrievalResult,
     Retriever,
+    SessionContext,
     Understanding,
 )
 
@@ -71,6 +77,24 @@ async def ground(
     return await retriever.retrieve(question, tenant_id=tenant_id, k=k)
 
 
+async def compute(
+    engine: CalcEngine | None,
+    params: dict | None,
+    *,
+    grounding_facts: tuple[GroundingFact, ...] = (),
+    context: dict | None = None,
+) -> CalcResult:
+    """Stage 3 — deterministic calc layer (M4), AFTER ground (Fachkarten-property inputs available).
+    Evaluate the reviewed calc registry over the params (+ reviewed grounding facts for qualitative
+    cross-layer flags) as a topological cascade. Pure; fail-closed (NotComputed reasons, never a
+    misleading number). No engine → empty CalcResult."""
+    if engine is None:
+        return CalcResult()
+    return engine.evaluate(
+        params=params or {}, grounding_facts=grounding_facts, context=context
+    )
+
+
 async def verify(
     verifier,
     generator,
@@ -80,10 +104,11 @@ async def verify(
     *,
     flags: Flags,
     grounding_facts: tuple[GroundingFact, ...] = (),
+    computed_values: tuple = (),
 ):
-    """Stage 4 — L3 verifier (M2/M3). Independent critic pass against the trap catalog AND (M3) the
-    reviewed grounding facts; on a reviewed hard-gate violation → regenerate-once or hedge; a card
-    contradiction is FLAG-only. Returns ``(final_answer, verdict)``. Delegates to ``run_verify``."""
+    """Stage 5 — L3 verifier (M2/M3/M4). Independent critic pass against the trap catalog, the
+    reviewed grounding facts (M3) AND the computed values (M4); on a reviewed hard-gate violation →
+    regenerate-once or hedge; card/calc contradictions are FLAG-only. Returns ``(final, verdict)``."""
     from sealai_v2.core.l3_verifier import run_verify
 
     return await run_verify(
@@ -94,9 +119,64 @@ async def verify(
         draft,
         flags=flags,
         grounding_facts=grounding_facts,
+        computed_values=computed_values,
     )
 
 
 async def cite(answer: Answer) -> Answer:
     """Stage 5 — provenance/citation. STUB: passthrough (L1 self-marks Allgemeinwissen at M1)."""
     return answer
+
+
+# --- memory (M5, build-spec §7) — recall before answering, remember after ---
+
+
+def recall(
+    memory: ConversationMemory | None,
+    cross_session: CrossSessionMemory | None,
+    *,
+    tenant_id: str,
+    session: SessionContext | None,
+    question: str,
+) -> MemoryView:
+    """Pre-answer recall: working window (L1) + structured case-state (L2) + relevance-injected
+    durable facts (L4, inert until that sub-gate). No memory OR no session → empty view → the
+    assembled prompt is byte-identical to the no-memory path (true no-op). Tenant scope is
+    mandatory at the store layer (P0)."""
+    if memory is None or session is None:
+        return MemoryView()
+    view = memory.recall(tenant_id=tenant_id, session_id=session.session_id)
+    if cross_session is not None:
+        durable = cross_session.relevant_facts(tenant_id=tenant_id, query=question)
+        if durable:
+            view = MemoryView(
+                window=view.window, case_state=view.case_state, durable=durable
+            )
+    return view
+
+
+async def remember(
+    memory: ConversationMemory | None,
+    distiller,
+    *,
+    tenant_id: str,
+    session: SessionContext | None,
+    question: str,
+    answer: str,
+) -> None:
+    """Post-answer record: append the turn (window L1 + history L3) and, if a distiller is wired,
+    merge the LLM-distilled STATED facts into the case-state (L2). No memory OR no session → no-op
+    AND no distill LLM call (keeps the single-turn eval a true, zero-cost no-op). Distilling AFTER
+    the answer means it can never perturb the turn it observed."""
+    if memory is None or session is None:
+        return
+    facts = ()
+    if distiller is not None:
+        facts = await distiller.distill(question=question, answer=answer)
+    memory.record_turn(
+        tenant_id=tenant_id,
+        session_id=session.session_id,
+        question=question,
+        answer=answer,
+        facts=facts,
+    )

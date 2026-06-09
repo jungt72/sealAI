@@ -50,6 +50,8 @@ def _record_to_dict(rec) -> dict:
         "draft_text": rec.draft_text,
         "grounded": rec.grounded,
         "n_grounding": rec.n_grounding,
+        "n_computed": rec.n_computed,
+        "computed_brief": rec.computed_brief,
         "error": rec.error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),
@@ -365,6 +367,35 @@ def _render_grounding_section(manifest: dict, recs: list[dict]) -> list[str]:
     return L
 
 
+def _render_calc_section(manifest: dict, recs: list[dict]) -> list[str]:
+    L: list[str] = []
+    L.append("## M4 Deterministic Calc")
+    L.append("")
+    L.append(
+        "> **Calc correctness is gated by OWNER-CONFIRMED unit tests, not the LLM eval** (the layer "
+        "is exhaustively unit-testable). Here the eval shows the calc layer FIRED and what the "
+        "candidate rested on; fail-closed cases show 'nicht berechenbar'. Params come from eval "
+        "fixtures (structured intake is M6); registry coverage grows via the content-track."
+    )
+    L.append("")
+    computed = [r for r in recs if r.get("n_computed")]
+    L.append(
+        f"- Units with ≥1 computed value: **{len(computed)}/{len(recs)}** (only fixture-backed cases compute)."
+    )
+    L.append("")
+    L.append("| Case | Column | #computed | computed values |")
+    L.append("|---|---|---|---|")
+    rows = [r for r in recs if r.get("n_computed")]
+    if not rows:
+        L.append("| — | — | 0 | (no fixture-backed case in this run) |")
+    for r in rows:
+        L.append(
+            f"| {r['case_id']} | {r['column']} | {r.get('n_computed', 0)} | {r.get('computed_brief', '')} |"
+        )
+    L.append("")
+    return L
+
+
 def _render_report(
     manifest: dict, summaries: dict, recs: list[dict], adjudication: dict | None = None
 ) -> str:
@@ -403,6 +434,9 @@ def _render_report(
 
     if manifest.get("ground_enabled"):
         L.extend(_render_grounding_section(manifest, recs))
+
+    if manifest.get("compute_enabled"):
+        L.extend(_render_calc_section(manifest, recs))
 
     if adjudication is not None:
         L.extend(_render_adjudication_section(adjudication))

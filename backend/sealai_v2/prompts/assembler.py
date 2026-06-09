@@ -16,6 +16,7 @@ from sealai_v2.core.contracts import Flags, GroundingFact
 _TEMPLATE_DIR = Path(__file__).resolve().parent
 _TEMPLATE_NAME = "system_l1.jinja"
 _VERIFIER_TEMPLATE_NAME = "verifier_l3.jinja"
+_DISTILL_TEMPLATE_NAME = "distill.jinja"
 
 
 def _env(template_dir: Path | None) -> Environment:
@@ -42,6 +43,10 @@ class PromptAssembler:
         case_context: list[dict] | None = None,
         flags: Flags | None = None,
         correction_note: str | None = None,
+        computed_values: list[dict] | None = None,
+        not_computed: list[dict] | None = None,
+        calc_notes: list[str] | None = None,
+        conversation_window: list[dict] | None = None,
     ) -> str:
         flags = flags or Flags()
         gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
@@ -49,9 +54,13 @@ class PromptAssembler:
             anrede=anrede,
             grounding_facts=gf,
             case_context=case_context or [],
+            conversation_window=conversation_window or [],
             compliance_hint=flags.compliance_hint,
             safety_critical=flags.safety_critical,
             correction_note=correction_note or "",
+            computed_values=computed_values or [],
+            not_computed=not_computed or [],
+            calc_notes=calc_notes or [],
         )
 
 
@@ -63,8 +72,26 @@ class VerifierPromptAssembler:
         self._template = _env(template_dir).get_template(_VERIFIER_TEMPLATE_NAME)
 
     def verifier_system_prompt(
-        self, *, traps: list[dict], grounding_facts: list[dict] | None = None
+        self,
+        *,
+        traps: list[dict],
+        grounding_facts: list[dict] | None = None,
+        computed_values: list[dict] | None = None,
     ) -> str:
         return self._template.render(
-            traps=traps or [], grounding_facts=grounding_facts or []
+            traps=traps or [],
+            grounding_facts=grounding_facts or [],
+            computed_values=computed_values or [],
         )
+
+
+class DistillPromptAssembler:
+    """Renders ``distill.jinja`` into the memory distillation system prompt (build-spec §7, M5).
+    Static instruction — no domain logic in the template; it only instructs CONSERVATIVE,
+    user-stated-only extraction (the distilled case-state never gates/routes)."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(_DISTILL_TEMPLATE_NAME)
+
+    def distill_prompt(self) -> str:
+        return self._template.render()

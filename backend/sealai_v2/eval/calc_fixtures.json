@@ -1,0 +1,7 @@
+{
+  "_comment": "M4 per-case calc params for the eval-REPLAY (measurement). Params come from eval FIXTURES, not from intake (structured intake is M6). Each entry maps an eval case id to the calc inputs (numeric → calc env) + context (e.g. seal_type → applicability). Cases without an entry feed no params → the calc layer stays empty/fail-closed for them.",
+  "fixtures": {
+    "CALC-01": {"d1_mm": 80, "rpm": 3000, "seal_type": "rwdr"},
+    "UNCERT-02": {"rpm": 3000, "seal_type": "rwdr"}
+  }
+}

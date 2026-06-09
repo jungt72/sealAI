@@ -1,6 +1,6 @@
 {
   "version": "fachkarten_seed_v0",
-  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3.",
+  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated).",
   "cards": [
     {
       "id": "FK-FKM-DAMPF",
@@ -154,6 +154,25 @@
         {"text": "VMQ bietet nur moderate Fettbeständigkeit; FKM und FFKM sind für fetthaltige Medien deutlich stärker.", "review_state": "reviewed", "provenance": ["owner:M2-review-note"]}
       ],
       "xrefs": ["FK-EPDM-MINERALOEL"]
+    },
+    {
+      "id": "FK-ORING-VERPRESSUNG",
+      "review_state": "reviewed",
+      "provenance": ["eval:CALC-02", "owner:nutauslegung"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": [],
+        "medium": [],
+        "property": ["Verpressung", "Nutfüllung", "Füllgrad", "Nutauslegung"],
+        "application": ["O-Ring"]
+      },
+      "claims": [
+        {"text": "Die typische statische radiale Verpressung eines O-Rings liegt bei ~15–25 % der Schnurstärke (Richtwert); dynamisch geringer.", "review_state": "reviewed", "sources": ["Parker O-Ring Handbook", "ISO 3601-2 (Nutauslegung)"], "provenance": ["eval:CALC-02", "owner:nutauslegung"]},
+        {"text": "Die Nutfüllung so auslegen, dass Platz für Wärmedehnung und Quellung bleibt — Füllgrad typischerweise max. ~75–90 %.", "review_state": "reviewed", "sources": ["Parker O-Ring Handbook", "ISO 3601-2 (Nutauslegung)"], "provenance": ["eval:CALC-02", "owner:nutauslegung"]},
+        {"text": "Die geeignete Verpressung hängt von Schnurstärke, Medium (Quellung) und Temperatur ab; es sind Richtwerte/Bereiche — keine Scheingenauigkeit. Gegen Nut-Auslegungsnorm bzw. Herstellertabelle verifizieren.", "review_state": "reviewed", "sources": ["Parker O-Ring Handbook", "ISO 3601-2 (Nutauslegung)"], "provenance": ["eval:CALC-02", "owner:nutauslegung"]}
+      ],
+      "xrefs": []
     }
   ]
 }

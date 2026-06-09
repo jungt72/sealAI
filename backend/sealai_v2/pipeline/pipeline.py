@@ -10,20 +10,31 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
+    CalcEngine,
+    ConversationMemory,
+    CrossSessionMemory,
     Flags,
     LlmClient,
     ModelConfig,
     PipelineResult,
     Retriever,
+    SessionContext,
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
+from sealai_v2.memory.distiller import Distiller
+from sealai_v2.memory.store import InProcessConversationMemory, InProcessCrossSessionMemory
 from sealai_v2.pipeline import stages
-from sealai_v2.prompts.assembler import PromptAssembler, VerifierPromptAssembler
+from sealai_v2.prompts.assembler import (
+    DistillPromptAssembler,
+    PromptAssembler,
+    VerifierPromptAssembler,
+)
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
 
@@ -38,6 +49,14 @@ class Pipeline:
     retriever: Retriever | None = (
         None  # None → L2 grounding off → every answer is "vorläufig"
     )
+    engine: CalcEngine | None = (
+        None  # None → M4 calc layer off → no "Berechnete Werte" block
+    )
+    # M5 memory: layers 1-3 (window/case-state/history) + the layer-4 cross-session seam +
+    # the distiller. All None → memory is fully inert (no recall, no record, no distill call).
+    memory: ConversationMemory | None = None
+    cross_session: CrossSessionMemory | None = None
+    distiller: Distiller | None = None
 
     async def run(
         self,
@@ -45,9 +64,24 @@ class Pipeline:
         *,
         tenant: TenantContext,
         flags: Flags | None = None,
+        params: dict | None = None,
+        session: SessionContext | None = None,
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
+
+        # M5 recall (before answering): inert when memory/session absent → byte-identical no-op.
+        mem = stages.recall(
+            self.memory,
+            self.cross_session,
+            tenant_id=scope.tenant_id,
+            session=session,
+            question=question,
+        )
+        case_context = [
+            {"feld": f.feld, "wert": f.wert} for f in (mem.case_state + mem.durable)
+        ]
+        conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
         understanding = None
         if self.understand_enabled:
@@ -59,8 +93,18 @@ class Pipeline:
             self.retriever, question, tenant_id=scope.tenant_id
         )
         grounding_facts = retrieval.grounding_facts  # reviewed → authoritative + cited
+        # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
+        # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
+        calc = await stages.compute(
+            self.engine, params, grounding_facts=grounding_facts
+        )
         answer = await self.generator.generate(
-            question, flags=flags, grounding_facts=grounding_facts
+            question,
+            flags=flags,
+            grounding_facts=grounding_facts,
+            calc=calc,
+            case_context=case_context or None,  # empty → None → byte-identical no-memory prompt
+            conversation_window=conversation_window or None,
         )
         draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
 
@@ -74,9 +118,22 @@ class Pipeline:
                 answer,
                 flags=flags,
                 grounding_facts=grounding_facts,
+                computed_values=calc.computed,
             )
 
         answer = await stages.cite(answer)  # stub → unchanged
+
+        # M5 remember (after answering): record the turn + distill STATED facts into case-state.
+        # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
+        # means it can never perturb the turn it observed.
+        await stages.remember(
+            self.memory,
+            self.distiller,
+            tenant_id=scope.tenant_id,
+            session=session,
+            question=question,
+            answer=answer.text,
+        )
 
         return PipelineResult(
             question=question,
@@ -90,6 +147,9 @@ class Pipeline:
             verifier=verdict,
             draft_answer=draft,
             grounding_facts=grounding_facts,
+            computed_values=calc.computed,
+            not_computed=calc.not_computed,
+            calc_notes=calc.notes,
         )
 
 
@@ -123,6 +183,30 @@ def build_pipeline(
         InProcessRetriever() if settings.ground_enabled else None
     )
 
+    # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
+    engine: CalcEngine | None = (
+        CascadeCalcEngine() if settings.compute_enabled else None
+    )
+
+    # M5 memory: in-process working window/case-state/history + the trivial cross-session seam.
+    # Wired always-on (M4a precedent: wired-in → measured) but inert without a session — the eval
+    # passes no session, so the single-turn REPLAY stays a true, zero-cost no-op. Redis/Postgres/
+    # Qdrant adapters swap in here by config behind the same Protocols (build-spec §3) — deferred.
+    memory: ConversationMemory | None = None
+    cross_session: CrossSessionMemory | None = None
+    distiller: Distiller | None = None
+    if settings.memory_enabled:
+        memory = InProcessConversationMemory(window_turns=settings.memory_window_turns)
+        cross_session = InProcessCrossSessionMemory()
+        if settings.distill_enabled:
+            distiller = Distiller(
+                client,
+                DistillPromptAssembler(),
+                ModelConfig(
+                    model=settings.helper_model, temperature=settings.helper_temperature
+                ),
+            )
+
     return Pipeline(
         generator=generator,
         client=client,
@@ -131,4 +215,8 @@ def build_pipeline(
         verifier=verifier,
         catalog=catalog,
         retriever=retriever,
+        engine=engine,
+        memory=memory,
+        cross_session=cross_session,
+        distiller=distiller,
     )
