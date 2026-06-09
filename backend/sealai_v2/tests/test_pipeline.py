@@ -54,6 +54,43 @@ def test_tenant_is_mandatory_p0():
             asyncio.run(_pipeline(fake).run("Frage?", tenant=TenantContext(bad)))
 
 
+def test_pipeline_injects_reviewed_grounding_into_l1():
+    from sealai_v2.knowledge.retrieval import InProcessRetriever
+
+    fake = FakeLlmClient("A")
+    p = Pipeline(
+        generator=L1Generator(fake, PromptAssembler(), ModelConfig("fake-l1")),
+        client=fake,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+        retriever=InProcessRetriever(),
+    )
+    res = asyncio.run(
+        p.run(
+            "EPDM-O-Ringe quellen in Hydrauliköl, woran liegt das?",
+            tenant=TenantContext("t1"),
+            flags=Flags(),
+        )
+    )
+    assert res.grounded and res.grounding_facts
+    # the reviewed card facts were rendered into the L1 system prompt (cited "Belegte Fakten")
+    assert "Belegte Fakten" in fake.calls[-1]["system"]
+    assert "unpolar" in fake.calls[-1]["system"].lower()
+
+
+def test_pipeline_without_retriever_is_vorlaeufig():
+    fake = FakeLlmClient("A")
+    p = _pipeline(fake)  # no retriever
+    res = asyncio.run(
+        p.run("EPDM in Hydrauliköl", tenant=TenantContext("t1"), flags=Flags())
+    )
+    assert res.grounded is False and res.grounding_facts == ()
+    assert (
+        "VORLÄUFIG" in fake.calls[-1]["system"]
+        or "vorläufig" in fake.calls[-1]["system"]
+    )
+
+
 def test_soft_understand_annotates_without_gating():
     fake = FakeLlmClient('{"intent": "fallarbeit", "rationale": "konkrete Situation"}')
     res = asyncio.run(

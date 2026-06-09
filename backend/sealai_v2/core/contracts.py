@@ -56,10 +56,12 @@ class SystemPromptAssembler(Protocol):
 class VerifierPromptAssembler(Protocol):
     """Structural type for the L3 verifier prompt assembler (implemented by ``prompts.assembler``).
 
-    Kept as a Protocol so ``core`` does not import ``prompts``. ``traps`` is a list of plain dicts
-    (id/trigger/wrong/correct/gates) — the catalog is rendered as delimited DATA, never as logic."""
+    Kept as a Protocol so ``core`` does not import ``prompts``. ``traps`` and ``grounding_facts`` are
+    lists of plain dicts — rendered as delimited DATA, never as logic."""
 
-    def verifier_system_prompt(self, *, traps: list[dict]) -> str: ...
+    def verifier_system_prompt(
+        self, *, traps: list[dict], grounding_facts: list[dict] | None = None
+    ) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,33 @@ class Understanding:
 class GroundingFact:
     text: str
     quelle: str
+    card_id: str = (
+        ""  # source Fachkarte id (for citation + L3 card-contradiction validation)
+    )
+
+
+@dataclass(frozen=True)
+class RetrievalResult:
+    """L2 retrieval output. ``grounding_facts`` are reviewed → AUTHORITATIVE (cited into L1/L3);
+    ``provisional`` come from draft cards → 'vorläufig', never authoritative, never corrective."""
+
+    grounding_facts: tuple[GroundingFact, ...] = ()
+    provisional: tuple[GroundingFact, ...] = ()
+
+    @property
+    def grounded(self) -> bool:
+        return bool(self.grounding_facts)
+
+
+@runtime_checkable
+class Retriever(Protocol):
+    """The L2 retrieval seam. An in-process impl serves CI/eval; a Qdrant adapter swaps in by config
+    (build-spec §3) behind this same Protocol. Tenant scope is a MANDATORY repository-layer parameter
+    (P0 — server-side filter only, never from LLM output)."""
+
+    async def retrieve(
+        self, query: str, *, tenant_id: str, k: int = 5
+    ) -> "RetrievalResult": ...
 
 
 @dataclass(frozen=True)
@@ -121,10 +150,11 @@ class VerifierFinding:
     ``review_state`` is carried from the catalog (server-side), NOT from the LLM — only a
     ``reviewed`` finding may drive a block/correction (integrity rule, build-spec §4)."""
 
-    trap_id: str
+    trap_id: str  # catalog trap id, or (kind="card") the contradicted Fachkarte id
     gate: str  # one of HARD_GATES
     review_state: str  # "reviewed" | "draft"
     evidence: str  # short quote/paraphrase of the offending claim in the draft
+    kind: str = "trap"  # "trap" (catalog) | "card" (contradicts a reviewed Fachkarte — FLAG-only)
 
 
 @dataclass(frozen=True)
@@ -162,6 +192,8 @@ class PipelineResult:
     # First-pass L1 draft (pre-L3), captured so detection-vs-suppression is assessable in the
     # eval; equals ``answer`` when L3 did not change it / was disabled.
     draft_answer: "Answer | None" = None
+    # Reviewed L2 grounding facts injected this turn (M3); empty → the answer is "vorläufig".
+    grounding_facts: tuple[GroundingFact, ...] = ()
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

@@ -49,6 +49,10 @@ class Record:
         ""  # first-pass L1 draft (pre-L3); == answer_text when L3 didn't change it
     )
     draft_model: str = ""
+    grounded: bool = (
+        False  # M3: ≥1 reviewed Fachkarte injected; False → answer is "vorläufig"
+    )
+    n_grounding: int = 0  # number of reviewed grounding facts injected this turn
 
 
 async def _run_unit(
@@ -57,6 +61,7 @@ async def _run_unit(
     intent = rationale = None
     answer_text, answer_model, error = "", "", None
     draft_text, draft_model = "", ""
+    grounded, n_grounding = False, 0
     verifier: VerifierVerdict | None = None
     try:
         result = await pipeline.run(case.input, tenant=_EVAL_TENANT, flags=flags)
@@ -66,6 +71,8 @@ async def _run_unit(
         answer_text = result.answer.text
         answer_model = result.answer.model
         verifier = result.verifier
+        grounded = result.grounded
+        n_grounding = len(result.grounding_facts)
         if result.draft_answer is not None:
             draft_text = result.draft_answer.text
             draft_model = result.draft_answer.model
@@ -93,6 +100,8 @@ async def _run_unit(
         verifier=verifier,
         draft_text=draft_text,
         draft_model=draft_model,
+        grounded=grounded,
+        n_grounding=n_grounding,
     )
 
 
@@ -137,13 +146,17 @@ async def run_eval(
     }
 
     l3_on = settings.verify_enabled
+    l2_on = settings.ground_enabled
+    milestone = "M3" if (l3_on and l2_on) else "M2" if l3_on else "M1"
     manifest = {
         "run_label": run_label,
         "git_sha": git_sha,
         "timestamp": timestamp,
-        "milestone": "M2" if l3_on else "M1",
+        "milestone": milestone,
         "subject": (
-            "L1+L3 (understand→answer→verify; L3 grounds against the trap catalog; ground/cite stubs)"
+            "L1+L2+L3 (understand→ground→answer→verify; L2 injects reviewed Fachkarten into L1 + L3; cite stub)"
+            if (l3_on and l2_on)
+            else "L1+L3 (understand→answer→verify; L3 grounds against the trap catalog; ground/cite stubs)"
             if l3_on
             else "L1-alone (understand→answer; ground/verify/cite are inert stubs)"
         ),
@@ -153,6 +166,7 @@ async def run_eval(
         "helper_model": settings.helper_model,
         "verifier_model": settings.verifier_model if l3_on else None,
         "verify_enabled": l3_on,
+        "ground_enabled": l2_on,
         "understand_enabled": settings.understand_enabled,
         "columns": list(columns.keys()),
         "n_cases": len(cases),

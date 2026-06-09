@@ -62,5 +62,9 @@ class VerifierPromptAssembler:
     def __init__(self, template_dir: Path | None = None) -> None:
         self._template = _env(template_dir).get_template(_VERIFIER_TEMPLATE_NAME)
 
-    def verifier_system_prompt(self, *, traps: list[dict]) -> str:
-        return self._template.render(traps=traps or [])
+    def verifier_system_prompt(
+        self, *, traps: list[dict], grounding_facts: list[dict] | None = None
+    ) -> str:
+        return self._template.render(
+            traps=traps or [], grounding_facts=grounding_facts or []
+        )

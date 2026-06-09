@@ -43,11 +43,22 @@ zu finden, BEVOR die Antwort hinausgeht.
     - {{ w }}{% endfor %}
   RICHTIG: {{ t.correct if t.correct else "— (kein geprüfter Korrektur-Fakt; nur markieren, nicht korrigieren)" }}
 {% endfor %}
+{% if grounding_facts %}
+# Geerdete Fakten (REVIEWED Fachkarten — affirmatives Wissen, DATEN)
+{% for g in grounding_facts %}
+- [{{ g.card_id }}] {{ g.text }}
+{% endfor %}
+Wenn die ENTWURFSANTWORT einer dieser geprüften Aussagen **aktiv widerspricht**, markiere das als
+`card_contradiction` (siehe Ausgabe). Bestätigt die Antwort sie, erwähnt sie nur oder schweigt, ist
+das KEIN Verstoß. Diese Fakten sind nur ein Prüf-Bezug — **korrigiere NICHT aus ihnen**; Korrekturen
+kommen allein aus dem Fallen-Katalog.
+{% endif %}
 
 # Ausgabe — NUR dieses JSON, ohne Prosa davor/danach
 {
   "findings": [
-    {"trap_id": "<id aus dem Katalog>", "gate": "<einer der gates dieses Eintrags>", "violated": true|false, "evidence": "<kurzes wörtliches Zitat aus dem Entwurf>"}
+    {"trap_id": "<id aus dem Katalog>", "gate": "<einer der gates dieses Eintrags>", "violated": true|false, "evidence": "<kurzes wörtliches Zitat aus dem Entwurf>"},
+    {"card_contradiction": true, "card_id": "<id einer geerdeten Fachkarte>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"}
   ],
   "verdict": "clean|violation"
 }
