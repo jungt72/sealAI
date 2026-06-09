@@ -15,20 +15,25 @@ def _write(tmp_path, cards):
     return p
 
 
-def test_seed_loads_eight_reviewed_cards():
+def test_seed_loads_nine_reviewed_cards():
     cat = load_fachkarten()
-    assert len(cat.cards) == 8
-    assert len(cat.reviewed()) == 8
+    assert len(cat.cards) == 9
+    assert len(cat.reviewed()) == 9
     # circularity guard held: every reviewed claim is owner/trap-grounded (path i) or sourced (path ii)
     for c in cat.cards:
         for cl in c.reviewed_claims():
             assert cl.owner_grounded or cl.sources, f"{c.id}: ungrounded reviewed claim"
 
 
-def test_seed_provenance_names_source_trap():
+def test_seed_provenance_is_owner_grounded():
+    # reviewed = owner-grounded: each card names a path-(i) grounding origin — owner:/eval:/trap-correct:
+    # (require a grounding prefix, NOT merely non-empty). The trap-correct:-only assertion was an
+    # over-narrow M3 artifact; FK-ORING-VERPRESSUNG is bootstrapped from the owner-confirmed CALC-02
+    # eval seed → provenance eval:CALC-02 + owner:nutauslegung (still owner-grounded path (i)).
+    grounding = ("owner", "eval:", "trap-correct:")
     cat = load_fachkarten()
     for c in cat.cards:
-        assert any(p.startswith("trap-correct:") for p in c.provenance), c.id
+        assert any(p.startswith(grounding) for p in c.provenance), c.id
 
 
 def test_foodgrade_carries_owner_vmq_nuance():
