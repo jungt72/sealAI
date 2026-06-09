@@ -53,6 +53,7 @@ class SystemPromptAssembler(Protocol):
         computed_values: list[dict] | None = None,
         not_computed: list[dict] | None = None,
         calc_notes: list[str] | None = None,
+        conversation_window: list[dict] | None = None,
     ) -> str: ...
 
 
@@ -275,6 +276,92 @@ class VerifierVerdict:
             VerifierAction.CORRECTED,
             VerifierAction.BLOCKED_HEDGE,
         )
+
+
+# --- memory (M5, build-spec §7 — Gedächtnis, 4 Schichten) ---------------------------------
+
+
+@dataclass(frozen=True)
+class SessionContext:
+    """One conversation thread. Combined with ``TenantContext`` it forms the ``(tenant, session)``
+    repository key — both mandatory (P0). Memory is per-session: absent session ⇒ memory is inert."""
+
+    session_id: str
+
+
+@dataclass(frozen=True)
+class Turn:
+    """One message in a session (layer 1 working window / layer 3 history). ``role`` is
+    ``"user"`` | ``"assistant"``; ``index`` is monotonic within the session."""
+
+    role: str
+    text: str
+    index: int = 0
+
+
+@dataclass(frozen=True)
+class RememberedFact:
+    """A distilled, structured case-state fact (layer 2) — the re-ask keystone. A REMEMBERED-CLAIM,
+    NOT a reviewed/authoritative fact: ``provenance`` stays ``distilled-from-conversation`` and the
+    prompt frames it as 'zuvor genannt — bei Bedarf bestätigen' (remembered ≠ gospel, build-spec §7).
+    ``as_of_turn`` carries staleness so a consequential decision can re-confirm."""
+
+    feld: str
+    wert: str
+    provenance: str = "distilled-from-conversation"
+    as_of_turn: int = 0
+
+
+@dataclass(frozen=True)
+class MemoryView:
+    """What ``recall`` returns for a turn: the working window (L1) + structured case-state (L2)
+    + any relevance-injected durable facts (L4, empty until that sub-gate lands). Empty everywhere
+    ⇒ the assembled prompt is byte-identical to the no-memory path (true no-op)."""
+
+    window: tuple[Turn, ...] = ()
+    case_state: tuple[RememberedFact, ...] = ()
+    durable: tuple[RememberedFact, ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.window or self.case_state or self.durable)
+
+
+@runtime_checkable
+class ConversationMemory(Protocol):
+    """Layers 1-3 seam (working window + structured case-state + history). The hot pipeline path is
+    ``recall`` (pre-answer) + ``record_turn`` (post-answer). An in-process impl serves CI/eval; a
+    Redis/Postgres adapter swaps in by config behind this same Protocol (build-spec §3, M3 lazy-
+    adapter pattern). Tenant scope is a MANDATORY repository-layer parameter (P0 — server-side only).
+    The concrete store also carries the user-control + history surface (view/edit/delete/clear/list)."""
+
+    def recall(self, *, tenant_id: str, session_id: str) -> MemoryView: ...
+
+    def record_turn(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        question: str,
+        answer: str,
+        facts: tuple["RememberedFact", ...] = (),
+    ) -> None: ...
+
+
+@runtime_checkable
+class CrossSessionMemory(Protocol):
+    """Layer-4 seam (build-spec §7.4): durable per-user/tenant facts injected on RELEVANCE — extracted
+    facts, NOT transcripts. The trivial in-process impl returns nothing; real curation + relevance +
+    Qdrant retrieval are DEFERRED to a dedicated sub-gate (highest-stakes memory surface). Tenant
+    scope mandatory (P0)."""
+
+    def relevant_facts(
+        self, *, tenant_id: str, query: str, k: int = 5
+    ) -> tuple["RememberedFact", ...]: ...
+
+    def remember_durable(
+        self, *, tenant_id: str, facts: tuple["RememberedFact", ...]
+    ) -> None: ...
 
 
 @dataclass(frozen=True)

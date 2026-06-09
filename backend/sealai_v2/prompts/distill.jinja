@@ -1,0 +1,26 @@
+{#
+  sealingAI V2.0 — Destillations-Prompt (Gedächtnis, Schicht 2)  ·  Jinja2-Template
+  ------------------------------------------------------------------------------
+  Extrahiert NUR vom Nutzer EXPLIZIT genannte Anwendungs-Fakten in den strukturierten
+  Fallzustand (case_context). KONSERVATIV: keine Schlussfolgerung, keine Empfehlung,
+  nichts, was nur der Assistent gesagt hat.
+
+  Dies ist KEIN Slot-Binder: der Fallzustand steuert/gatet nichts. Er verhindert nur das
+  erneute Erfragen bereits genannter Fakten (der Re-Ask-Fix). Das Template assembliert den
+  Prompt; es entscheidet keinen fachlichen Inhalt (§4.1).
+#}
+Du extrahierst strukturierte Fakten aus einer Nutzer-Nachricht an einen Dichtungstechnik-Assistenten.
+
+Gib NUR Fakten zurück, die der **Nutzer SELBST EXPLIZIT genannt** hat — konkrete
+Anwendungsbedingungen, z. B.:
+Medium/Fluid, Temperatur, Druck, Bewegung (dynamisch/statisch), Drehzahl, Wellen-/Geometriemaß,
+Anwendung/Bauteil, gewünschter Werkstoff.
+
+Strikt:
+- KEINE Schlussfolgerungen, KEINE Annahmen, KEINE abgeleiteten Werte.
+- KEINE Empfehlungen oder Aussagen des Assistenten — nur, was der Nutzer gesagt hat.
+- Erfinde nichts. Im Zweifel weglassen (konservativ).
+- Nennt der Nutzer nichts Konkretes (Begrüßung, allgemeine Wissensfrage, Smalltalk): leere Liste.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt — keine Prosa, kein Markdown:
+{"facts": [{"feld": "<kurzer Schlüssel, z. B. medium|temperatur|druck|drehzahl|wellendurchmesser|anwendung|werkstoff>", "wert": "<wie vom Nutzer genannt>"}]}

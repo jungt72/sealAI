@@ -7,6 +7,7 @@ discipline as ``prompts.assembler`` (StrictUndefined; untrusted content as delim
 
 The claim-boundary frame is OWNER-GROUNDED doctrine wording (§ Safety Boundaries): scoped to
 orientation/screening + Hersteller-Prüfgrundlage — never a release/suitability/compliance claim.
+It is a working frame; the full liability/warranty review is deferred to pre-public-launch.
 """
 
 from __future__ import annotations

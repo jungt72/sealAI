@@ -11,13 +11,17 @@ from sealai_v2.core.contracts import (
     Answer,
     CalcEngine,
     CalcResult,
+    ConversationMemory,
+    CrossSessionMemory,
     Flags,
     GroundingFact,
     Intent,
     LlmClient,
+    MemoryView,
     ModelConfig,
     RetrievalResult,
     Retriever,
+    SessionContext,
     Understanding,
 )
 
@@ -122,3 +126,57 @@ async def verify(
 async def cite(answer: Answer) -> Answer:
     """Stage 5 — provenance/citation. STUB: passthrough (L1 self-marks Allgemeinwissen at M1)."""
     return answer
+
+
+# --- memory (M5, build-spec §7) — recall before answering, remember after ---
+
+
+def recall(
+    memory: ConversationMemory | None,
+    cross_session: CrossSessionMemory | None,
+    *,
+    tenant_id: str,
+    session: SessionContext | None,
+    question: str,
+) -> MemoryView:
+    """Pre-answer recall: working window (L1) + structured case-state (L2) + relevance-injected
+    durable facts (L4, inert until that sub-gate). No memory OR no session → empty view → the
+    assembled prompt is byte-identical to the no-memory path (true no-op). Tenant scope is
+    mandatory at the store layer (P0)."""
+    if memory is None or session is None:
+        return MemoryView()
+    view = memory.recall(tenant_id=tenant_id, session_id=session.session_id)
+    if cross_session is not None:
+        durable = cross_session.relevant_facts(tenant_id=tenant_id, query=question)
+        if durable:
+            view = MemoryView(
+                window=view.window, case_state=view.case_state, durable=durable
+            )
+    return view
+
+
+async def remember(
+    memory: ConversationMemory | None,
+    distiller,
+    *,
+    tenant_id: str,
+    session: SessionContext | None,
+    question: str,
+    answer: str,
+) -> None:
+    """Post-answer record: append the turn (window L1 + history L3) and, if a distiller is wired,
+    merge the LLM-distilled STATED facts into the case-state (L2). No memory OR no session → no-op
+    AND no distill LLM call (keeps the single-turn eval a true, zero-cost no-op). Distilling AFTER
+    the answer means it can never perturb the turn it observed."""
+    if memory is None or session is None:
+        return
+    facts = ()
+    if distiller is not None:
+        facts = await distiller.distill(question=question, answer=answer)
+    memory.record_turn(
+        tenant_id=tenant_id,
+        session_id=session.session_id,
+        question=question,
+        answer=answer,
+        facts=facts,
+    )

@@ -59,6 +59,7 @@ class L1Generator:
         flags: Flags,
         grounding_facts: tuple[GroundingFact, ...] = (),
         case_context: list[dict] | None = None,
+        conversation_window: list[dict] | None = None,
         correction_note: str | None = None,
         calc: CalcResult | None = None,
     ) -> Answer:
@@ -67,6 +68,7 @@ class L1Generator:
             anrede="du",
             grounding_facts=list(grounding_facts),
             case_context=case_context,
+            conversation_window=conversation_window,
             flags=flags,
             correction_note=correction_note,
             computed_values=computed_values,

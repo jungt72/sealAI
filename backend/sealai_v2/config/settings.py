@@ -54,3 +54,13 @@ class Settings(BaseSettings):
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
+    # M5 memory: working window + structured case-state + history (in-process now; Redis/Postgres/
+    # Qdrant adapters deferred). Default ON; off → no recall/record (incident kill-switch). Inert
+    # without a per-turn session, so the single-turn eval stays a byte-identical no-op regardless.
+    memory_enabled: bool = True
+    # Light LLM distillation of STATED facts into the case-state (the re-ask keystone). Off → window
+    # + history only, no distill LLM call / no fact extraction. Sub-toggle under memory_enabled.
+    distill_enabled: bool = True
+    # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
+    # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
+    memory_window_turns: int = 6
