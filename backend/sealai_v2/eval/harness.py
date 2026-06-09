@@ -13,7 +13,7 @@ import dataclasses
 from dataclasses import dataclass
 
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import Flags, ModelConfig
+from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
 from sealai_v2.eval import report
 from sealai_v2.eval.cases import Case, load_cases
 from sealai_v2.eval.judge import JudgeResult, judge_answer
@@ -42,6 +42,13 @@ class Record:
     error: str | None
     judge: JudgeResult
     score: CaseScore
+    verifier: VerifierVerdict | None = (
+        None  # L3 verdict (M2); None if L3 disabled / errored
+    )
+    draft_text: str = (
+        ""  # first-pass L1 draft (pre-L3); == answer_text when L3 didn't change it
+    )
+    draft_model: str = ""
 
 
 async def _run_unit(
@@ -49,6 +56,8 @@ async def _run_unit(
 ) -> Record:
     intent = rationale = None
     answer_text, answer_model, error = "", "", None
+    draft_text, draft_model = "", ""
+    verifier: VerifierVerdict | None = None
     try:
         result = await pipeline.run(case.input, tenant=_EVAL_TENANT, flags=flags)
         if result.understanding is not None:
@@ -56,6 +65,10 @@ async def _run_unit(
             rationale = result.understanding.rationale
         answer_text = result.answer.text
         answer_model = result.answer.model
+        verifier = result.verifier
+        if result.draft_answer is not None:
+            draft_text = result.draft_answer.text
+            draft_model = result.draft_answer.model
     except Exception as exc:  # noqa: BLE001 — record the failure, keep the run going
         error = f"{type(exc).__name__}: {exc}"
 
@@ -77,6 +90,9 @@ async def _run_unit(
         error=error,
         judge=judge,
         score=score_case(case, judge),
+        verifier=verifier,
+        draft_text=draft_text,
+        draft_model=draft_model,
     )
 
 
@@ -120,16 +136,23 @@ async def run_eval(
         for name in columns
     }
 
+    l3_on = settings.verify_enabled
     manifest = {
         "run_label": run_label,
         "git_sha": git_sha,
         "timestamp": timestamp,
-        "milestone": "M1",
-        "subject": "L1-alone (understand→answer; ground/verify/cite are inert stubs)",
+        "milestone": "M2" if l3_on else "M1",
+        "subject": (
+            "L1+L3 (understand→answer→verify; L3 grounds against the trap catalog; ground/cite stubs)"
+            if l3_on
+            else "L1-alone (understand→answer; ground/verify/cite are inert stubs)"
+        ),
         "l1_model_resolved": l1_model,
         "l1_model_configured": settings.l1_model,
         "judge_model": settings.judge_model,
         "helper_model": settings.helper_model,
+        "verifier_model": settings.verifier_model if l3_on else None,
+        "verify_enabled": l3_on,
         "understand_enabled": settings.understand_enabled,
         "columns": list(columns.keys()),
         "n_cases": len(cases),

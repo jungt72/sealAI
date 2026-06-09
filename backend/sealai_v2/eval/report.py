@@ -7,9 +7,29 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from pathlib import Path
 
 from sealai_v2.core.contracts import AXES
+
+
+def _verdict_to_dict(v) -> dict | None:
+    if v is None:
+        return None
+    return {
+        "action": str(getattr(v.action, "value", v.action)),
+        "regenerated": v.regenerated,
+        "parse_ok": v.parse_ok,
+        "findings": [
+            {
+                "trap_id": f.trap_id,
+                "gate": f.gate,
+                "review_state": f.review_state,
+                "evidence": f.evidence,
+            }
+            for f in v.findings
+        ],
+    }
 
 
 def _record_to_dict(rec) -> dict:
@@ -26,9 +46,12 @@ def _record_to_dict(rec) -> dict:
         "intent_rationale": rec.intent_rationale,
         "answer_model": rec.answer_model,
         "answer_text": rec.answer_text,
+        "draft_model": rec.draft_model,
+        "draft_text": rec.draft_text,
         "error": rec.error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),
+        "verifier": _verdict_to_dict(rec.verifier),
     }
 
 
@@ -139,13 +162,188 @@ def _render_adjudication_section(adj: dict) -> list[str]:
     return L
 
 
+_EPDM_POLAR_RE = re.compile(r"epdm\b[^.\n]{0,40}?\bpolar\w*", re.IGNORECASE)
+
+
+def _asserts_epdm_polar(text: str) -> bool:
+    """Heuristic FLAG (ADVISORY — the human read of the final is ground truth, NOT this).
+
+    Flags only an assertion that EPDM ITSELF is polar (e.g. 'EPDM ist ein polarer Kautschuk').
+    It does NOT flag correct usages:
+      - negations — 'EPDM ist unpolar' (``\\bpolar`` won't match inside 'unpolar');
+      - EPDM *suiting* polar media — 'EPDM ist für polare Medien', 'polare Lösungsmittel'.
+    Crude by design; a miss is acceptable because the worksheet (axis-1) is the authority."""
+    for m in _EPDM_POLAR_RE.finditer(text or ""):
+        # normalise markdown emphasis (**bold**) + whitespace so the context checks are robust
+        seg = re.sub(r"[*_`]+", "", m.group(0).lower())
+        seg = re.sub(r"\s+", " ", seg)
+        if any(
+            neg in seg
+            for neg in (
+                "unpolar",
+                "non-polar",
+                "nonpolar",
+                "apolar",
+                "nicht polar",
+                "nichtpolar",
+            )
+        ):
+            continue  # 'EPDM ist unpolar' — correct
+        if any(
+            ok in seg
+            for ok in (
+                "für polar",
+                "gegen polar",
+                "polare medien",
+                "polaren medien",
+                "polares medium",
+                "polare lösung",
+                "polaren lösung",
+                "polares lösung",
+            )
+        ):
+            continue  # EPDM *suits/attacks* polar media/solvents — correct, not an EPDM-is-polar claim
+        return True
+    return False
+
+
+def _final_answer_asserts_epdm_polar(rec: dict) -> bool:
+    """Gate-level check. A deterministic L3 hedge never ASSERTS the wrong claim (it states the
+    reviewed correct fact + caveat), so the polar-heuristic is skipped for ``l3-hedge`` answers —
+    it would otherwise false-fire on any 'polar' substring the hedge legitimately mentions. Real
+    model answers are still scrubbed."""
+    if (rec.get("answer_model") or "") == "l3-hedge":
+        return False
+    return _asserts_epdm_polar(rec.get("answer_text", ""))
+
+
+def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
+    L: list[str] = []
+    L.append("## L3 Verifier (M2)")
+    L.append("")
+    L.append(
+        "> L3 grounds against the **trap catalog only** (the matrix arrives at M3). Its verdict is "
+        "a **signal, not an adjudication** — axis 1 + the three hard gates stay HUMAN-FINAL "
+        "(worksheet). The targeted catch below uses the **already-confirmed** facts as the key "
+        "(EPDM is non-polar; CALC-02 is a candidate rubric false-flag) — no new factual adjudication."
+    )
+    L.append("")
+
+    by_action: dict[str, int] = {}
+    for r in recs:
+        v = r.get("verifier")
+        act = (v or {}).get("action", "—")
+        by_action[act] = by_action.get(act, 0) + 1
+    L.append(f"- L3 action counts (over {len(recs)} units): {by_action}")
+    L.append("")
+
+    # --- M2 ACCEPTANCE GATE (detection signal; polar string-match is ADVISORY only) ---
+    L.append("### M2 acceptance gate (signal — owner confirms)")
+    L.append("")
+    t2 = [r for r in recs if r["case_id"] == "TRAP-02"]
+    c2 = [r for r in recs if r["case_id"] == "CALC-02"]
+
+    def _acted(r: dict) -> bool:
+        return (r.get("verifier") or {}).get("action") in (
+            "corrected",
+            "blocked_hedge",
+            "flag",
+        )
+
+    # Detection = L3 fired the reviewed trap and acted on the TRAP-02 draft. This is the gate.
+    t2_detected = bool(t2) and all(_acted(r) for r in t2)
+    # The polar string-heuristic is ADVISORY only — it false-positives on correct "polare Medien"
+    # usage; the ground truth for TRAP-02 is the HUMAN read of the finals (axis-1, worksheet).
+    t2_flagged = [r["column"] for r in t2 if _final_answer_asserts_epdm_polar(r)]
+    c2_ok = bool(c2) and all(
+        (r.get("verifier") or {}).get("action") == "pass" for r in c2
+    )
+    L.append(
+        f"- **TRAP-02 detected & corrected (L3 fired the reviewed trap):** "
+        f"{'✅ signal-pass' if t2_detected else '❌ signal-FAIL'} — "
+        + ", ".join(
+            f"{r['column']}: {(r.get('verifier') or {}).get('action', '—')}" for r in t2
+        )
+    )
+    if t2_flagged:
+        L.append(
+            f"  - ⚠️ polar string-heuristic (ADVISORY, not a verdict) flagged: "
+            f"{', '.join(t2_flagged)} — verify the final by hand; it false-positives on correct "
+            "'polare Medien' usage. Ground truth = the human read of the shown finals (axis-1)."
+        )
+    else:
+        L.append(
+            "  - polar string-heuristic (advisory): no flags (finals read clean; axis-1 human-final)."
+        )
+    L.append(
+        f"- **CALC-02 NOT false-flagged:** {'✅ signal-pass' if c2_ok else '❌ signal-FAIL'} — "
+        + ", ".join(
+            f"{r['column']}: {(r.get('verifier') or {}).get('action', '—')}" for r in c2
+        )
+    )
+    L.append("")
+    L.append(
+        f"> **M2 detection signal = "
+        f"{'✅ TRAP-02 detected+corrected both columns; CALC-02 clean' if (t2_detected and c2_ok) else '❌ see above'}.** "
+        "TRAP-02 ground truth is the **human read of the finals** (axis-1 HUMAN-FINAL); the polar "
+        "string-heuristic is advisory only. Per the owner decision, a same-model L3 *detection* miss "
+        "would trigger the cross-vendor swap (M2.1) — not the case here."
+    )
+    L.append("")
+
+    # --- false-flag candidates (precision) ---
+    fp = [
+        r
+        for r in recs
+        if (r.get("verifier") or {}).get("action")
+        in ("corrected", "blocked_hedge", "flag")
+        and r["case_id"] not in ("TRAP-02", "CALC-02")
+        and r["score"]["provisional_gate_clean"] is not False
+    ]
+    L.append("### False-flag candidates (precision — owner reviews)")
+    L.append("")
+    if not fp:
+        L.append("_None — L3 acted only on the divergence target(s)._")
+    else:
+        L.append(
+            f"L3 acted on {len(fp)} unit(s) that M1 considered clean — review for over-block:"
+        )
+        for r in fp:
+            traps = ", ".join(
+                f["trap_id"] for f in (r.get("verifier") or {}).get("findings", [])
+            )
+            L.append(
+                f"- {r['case_id']} ({r['column']}): {(r.get('verifier') or {}).get('action')} "
+                f"[{traps}]"
+            )
+    L.append("")
+
+    # --- per-case L3 detail ---
+    L.append("### Per-case L3 action")
+    L.append("")
+    L.append("| Case | Column | L3 action | regen | traps hit |")
+    L.append("|---|---|---|---|---|")
+    for r in recs:
+        v = r.get("verifier") or {}
+        traps = ", ".join(f["trap_id"] for f in v.get("findings", [])) or "—"
+        L.append(
+            f"| {r['case_id']} | {r['column']} | {v.get('action', '—')} | "
+            f"{'yes' if v.get('regenerated') else '—'} | {traps} |"
+        )
+    L.append("")
+    return L
+
+
 def _render_report(
     manifest: dict, summaries: dict, recs: list[dict], adjudication: dict | None = None
 ) -> str:
     L: list[str] = []
-    L.append(f"# M1 Eval-REPLAY — {manifest['run_label']}")
+    milestone = manifest.get("milestone", "M1")
+    L.append(f"# {milestone} Eval-REPLAY — {manifest['run_label']}")
     L.append("")
-    L.append(f"- Milestone: **{manifest['milestone']}** — {manifest['subject']}")
+    L.append(f"- Milestone: **{milestone}** — {manifest['subject']}")
+    if manifest.get("verify_enabled"):
+        L.append(f"- L3 verifier model: `{manifest.get('verifier_model')}`")
     L.append(
         f"- L1 model (resolved): `{manifest['l1_model_resolved']}` (configured `{manifest['l1_model_configured']}`)"
     )
@@ -168,6 +366,9 @@ def _render_report(
             f"> ⚠️ {len(manifest['errors'])} unit(s) errored during the run — see results.json."
         )
         L.append("")
+
+    if manifest.get("verify_enabled"):
+        L.extend(_render_l3_section(manifest, recs))
 
     if adjudication is not None:
         L.extend(_render_adjudication_section(adjudication))
@@ -239,7 +440,9 @@ def _render_worksheet(manifest: dict, recs: list[dict]) -> str:
         by_case[r["case_id"]].append(r)
 
     L: list[str] = []
-    L.append(f"# M1 Human-Review Worksheet — {manifest['run_label']}")
+    L.append(
+        f"# {manifest.get('milestone', 'M1')} Human-Review Worksheet — {manifest['run_label']}"
+    )
     L.append("")
     L.append(
         f"L1 `{manifest['l1_model_resolved']}` · judge `{manifest['judge_model']}` · "

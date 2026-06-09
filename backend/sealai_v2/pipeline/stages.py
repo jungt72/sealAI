@@ -9,6 +9,7 @@ import json
 
 from sealai_v2.core.contracts import (
     Answer,
+    Flags,
     GroundingFact,
     Intent,
     LlmClient,
@@ -62,9 +63,15 @@ async def ground(question: str) -> tuple[GroundingFact, ...]:
     return ()
 
 
-async def verify(answer: Answer) -> Answer:
-    """Stage 4 — L3 verifier. STUB (M2): returns the draft unchanged."""
-    return answer
+async def verify(
+    verifier, generator, catalog, question: str, draft: Answer, *, flags: Flags
+):
+    """Stage 4 — L3 verifier (M2). Independent critic pass against the trap catalog; on a
+    reviewed hard-gate violation → regenerate-once or hedge. Returns ``(final_answer, verdict)``.
+    Delegates the policy to ``core.l3_verifier.run_verify`` (keeps the stage thin)."""
+    from sealai_v2.core.l3_verifier import run_verify
+
+    return await run_verify(verifier, generator, catalog, question, draft, flags=flags)
 
 
 async def cite(answer: Answer) -> Answer:

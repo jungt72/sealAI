@@ -35,12 +35,14 @@ class L1Generator:
         flags: Flags,
         grounding_facts: tuple[GroundingFact, ...] = (),
         case_context: list[dict] | None = None,
+        correction_note: str | None = None,
     ) -> Answer:
         system = self._assembler.system_prompt(
             anrede="du",
             grounding_facts=list(grounding_facts),
             case_context=case_context,
             flags=flags,
+            correction_note=correction_note,
         )
         result = await self._client.generate(
             system=system, user=question, model_config=self._model_config

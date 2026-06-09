@@ -49,7 +49,17 @@ class SystemPromptAssembler(Protocol):
         grounding_facts: list["GroundingFact"] | None,
         case_context: list[dict] | None,
         flags: "Flags",
+        correction_note: str | None = None,
     ) -> str: ...
+
+
+class VerifierPromptAssembler(Protocol):
+    """Structural type for the L3 verifier prompt assembler (implemented by ``prompts.assembler``).
+
+    Kept as a Protocol so ``core`` does not import ``prompts``. ``traps`` is a list of plain dicts
+    (id/trigger/wrong/correct/gates) — the catalog is rendered as delimited DATA, never as logic."""
+
+    def verifier_system_prompt(self, *, traps: list[dict]) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -91,10 +101,54 @@ class Answer:
     finish_reason: str | None = None
 
 
+class VerifierAction(str, Enum):
+    """What L3 did to the draft (build-spec §4: flag / correct / block)."""
+
+    PASS = "pass"  # no hard-gate violation found — draft passes unchanged
+    FLAG = "flag"  # advisory only (soft issue / draft-catalog match) — draft unchanged
+    CORRECTED = (
+        "corrected"  # blocked, regenerated against a REVIEWED correction → clean
+    )
+    BLOCKED_HEDGE = (
+        "blocked_hedge"  # blocked, no clean regeneration → safe hedge substituted
+    )
+
+
+@dataclass(frozen=True)
+class VerifierFinding:
+    """One thing L3 found in the draft, tied back to a catalog entry.
+
+    ``review_state`` is carried from the catalog (server-side), NOT from the LLM — only a
+    ``reviewed`` finding may drive a block/correction (integrity rule, build-spec §4)."""
+
+    trap_id: str
+    gate: str  # one of HARD_GATES
+    review_state: str  # "reviewed" | "draft"
+    evidence: str  # short quote/paraphrase of the offending claim in the draft
+
+
+@dataclass(frozen=True)
+class VerifierVerdict:
+    """L3's verdict for one answer. ``action`` records the outcome; ``findings`` the why."""
+
+    action: VerifierAction
+    findings: tuple[VerifierFinding, ...] = ()
+    regenerated: bool = False
+    parse_ok: bool = True
+    raw: str = ""
+
+    @property
+    def blocked(self) -> bool:
+        return self.action in (
+            VerifierAction.CORRECTED,
+            VerifierAction.BLOCKED_HEDGE,
+        )
+
+
 @dataclass(frozen=True)
 class PipelineResult:
-    """The result of one pipeline turn. ``grounded/verified/cited`` are False at M1
-    (those stages are inert stubs until M2/M3)."""
+    """The result of one pipeline turn. ``grounded/cited`` are False at M2 (those stages stay
+    inert stubs until M3); ``verified`` is True once L3 has run (``verifier`` carries its verdict)."""
 
     question: str
     tenant_id: str
@@ -104,6 +158,10 @@ class PipelineResult:
     grounded: bool = False
     verified: bool = False
     cited: bool = False
+    verifier: "VerifierVerdict | None" = None
+    # First-pass L1 draft (pre-L3), captured so detection-vs-suppression is assessable in the
+    # eval; equals ``answer`` when L3 did not change it / was disabled.
+    draft_answer: "Answer | None" = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.
