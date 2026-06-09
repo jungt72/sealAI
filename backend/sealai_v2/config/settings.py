@@ -48,3 +48,6 @@ class Settings(BaseSettings):
     # L3 is an always-on CORE trust layer (Prinzipien §2), NOT a feature flag. This toggle is an
     # incident-only kill-switch (default = enforced); set False only to restore service.
     verify_enabled: bool = True
+    # L2 grounding (M3): retrieve reviewed Fachkarten into L1/L3. Default ON (core trust layer);
+    # off → every answer is "vorläufig". Not a product feature flag — an incident kill-switch.
+    ground_enabled: bool = True

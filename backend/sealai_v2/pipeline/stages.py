@@ -14,6 +14,8 @@ from sealai_v2.core.contracts import (
     Intent,
     LlmClient,
     ModelConfig,
+    RetrievalResult,
+    Retriever,
     Understanding,
 )
 
@@ -57,21 +59,42 @@ async def understand(
 # --- inert stubs (M2/M3) ---
 
 
-async def ground(question: str) -> tuple[GroundingFact, ...]:
-    """Stage 2 — L2 grounding. STUB (M3): no retrieval yet → empty grounding facts, so L1's
-    prompt takes its else-branch ("Allgemeinwissen — verifizieren")."""
-    return ()
+async def ground(
+    retriever: Retriever | None, question: str, *, tenant_id: str, k: int = 5
+) -> RetrievalResult:
+    """Stage 2 — L2 grounding (M3). Retrieve reviewed Fachkarten via the injected ``Retriever`` and
+    return them as grounding facts (+ provisional draft hits). PRE-FETCH then render into the prompt —
+    no mid-generation tool calls (build-spec §12). No retriever → empty result → L1 answers
+    "vorläufig"."""
+    if retriever is None:
+        return RetrievalResult()
+    return await retriever.retrieve(question, tenant_id=tenant_id, k=k)
 
 
 async def verify(
-    verifier, generator, catalog, question: str, draft: Answer, *, flags: Flags
+    verifier,
+    generator,
+    catalog,
+    question: str,
+    draft: Answer,
+    *,
+    flags: Flags,
+    grounding_facts: tuple[GroundingFact, ...] = (),
 ):
-    """Stage 4 — L3 verifier (M2). Independent critic pass against the trap catalog; on a
-    reviewed hard-gate violation → regenerate-once or hedge. Returns ``(final_answer, verdict)``.
-    Delegates the policy to ``core.l3_verifier.run_verify`` (keeps the stage thin)."""
+    """Stage 4 — L3 verifier (M2/M3). Independent critic pass against the trap catalog AND (M3) the
+    reviewed grounding facts; on a reviewed hard-gate violation → regenerate-once or hedge; a card
+    contradiction is FLAG-only. Returns ``(final_answer, verdict)``. Delegates to ``run_verify``."""
     from sealai_v2.core.l3_verifier import run_verify
 
-    return await run_verify(verifier, generator, catalog, question, draft, flags=flags)
+    return await run_verify(
+        verifier,
+        generator,
+        catalog,
+        question,
+        draft,
+        flags=flags,
+        grounding_facts=grounding_facts,
+    )
 
 
 async def cite(answer: Answer) -> Answer:

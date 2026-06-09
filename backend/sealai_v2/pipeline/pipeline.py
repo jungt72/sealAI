@@ -15,10 +15,12 @@ from sealai_v2.core.contracts import (
     LlmClient,
     ModelConfig,
     PipelineResult,
+    Retriever,
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier
+from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.pipeline import stages
 from sealai_v2.prompts.assembler import PromptAssembler, VerifierPromptAssembler
@@ -33,6 +35,9 @@ class Pipeline:
     understand_enabled: bool = True
     verifier: L3Verifier | None = None  # None → L3 disabled (incident kill-switch only)
     catalog: TrapCatalog | None = None
+    retriever: Retriever | None = (
+        None  # None → L2 grounding off → every answer is "vorläufig"
+    )
 
     async def run(
         self,
@@ -50,7 +55,10 @@ class Pipeline:
                 self.client, self.helper_model, question
             )
 
-        grounding_facts = await stages.ground(question)  # stub → ()
+        retrieval = await stages.ground(
+            self.retriever, question, tenant_id=scope.tenant_id
+        )
+        grounding_facts = retrieval.grounding_facts  # reviewed → authoritative + cited
         answer = await self.generator.generate(
             question, flags=flags, grounding_facts=grounding_facts
         )
@@ -65,6 +73,7 @@ class Pipeline:
                 question,
                 answer,
                 flags=flags,
+                grounding_facts=grounding_facts,
             )
 
         answer = await stages.cite(answer)  # stub → unchanged
@@ -75,11 +84,12 @@ class Pipeline:
             flags=flags,
             understanding=understanding,
             answer=answer,
-            grounded=False,
+            grounded=retrieval.grounded,
             verified=verdict is not None,
             cited=False,
             verifier=verdict,
             draft_answer=draft,
+            grounding_facts=grounding_facts,
         )
 
 
@@ -107,6 +117,12 @@ def build_pipeline(
         )
         verifier = L3Verifier(client, VerifierPromptAssembler(), verifier_cfg, catalog)
 
+    # L2 grounding: in-process Fachkarten retriever (M3). A Qdrant adapter swaps in here by config
+    # (build-spec §3) behind the same Retriever Protocol — no core change.
+    retriever: Retriever | None = (
+        InProcessRetriever() if settings.ground_enabled else None
+    )
+
     return Pipeline(
         generator=generator,
         client=client,
@@ -114,4 +130,5 @@ def build_pipeline(
         understand_enabled=settings.understand_enabled,
         verifier=verifier,
         catalog=catalog,
+        retriever=retriever,
     )

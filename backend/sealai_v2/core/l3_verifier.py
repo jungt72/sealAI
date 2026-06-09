@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from sealai_v2.core.contracts import (
     Answer,
     Flags,
+    GroundingFact,
     LlmClient,
     ModelConfig,
     VerifierAction,
@@ -123,21 +124,34 @@ class L3Verifier:
         self._model_config = model_config
         self._catalog = catalog
 
-    async def verify(self, question: str, answer_text: str) -> _RawVerdict:
+    async def verify(
+        self,
+        question: str,
+        answer_text: str,
+        grounding_facts: tuple[GroundingFact, ...] = (),
+    ) -> _RawVerdict:
+        gf_payload = [
+            {"text": f.text, "card_id": f.card_id, "quelle": f.quelle}
+            for f in grounding_facts
+        ]
         system = self._assembler.verifier_system_prompt(
-            traps=_trap_payload(self._catalog)
+            traps=_trap_payload(self._catalog), grounding_facts=gf_payload
         )
         user = (
             f"FRAGE:\n{question}\n\n"
             f'ENTWURFSANTWORT (zu prüfen):\n"""\n{answer_text}\n"""\n\n'
-            "Prüfe die Entwurfsantwort gegen den Fallen-Katalog und gib NUR das JSON zurück."
+            "Prüfe die Entwurfsantwort gegen den Fallen-Katalog und die geerdeten Fakten und gib "
+            "NUR das JSON zurück."
         )
         res = await self._client.generate(
             system=system, user=user, model_config=self._model_config
         )
-        return self._parse(res.text, draft=answer_text)
+        card_ids = frozenset(f.card_id for f in grounding_facts if f.card_id)
+        return self._parse(res.text, draft=answer_text, card_ids=card_ids)
 
-    def _parse(self, raw: str, draft: str = "") -> _RawVerdict:
+    def _parse(
+        self, raw: str, draft: str = "", card_ids: frozenset[str] = frozenset()
+    ) -> _RawVerdict:
         raw = (raw or "").strip()
         try:
             data = json.loads(_extract_json(raw))
@@ -148,10 +162,26 @@ class L3Verifier:
         for item in data.get("findings", []) or []:
             if not isinstance(item, dict) or item.get("violated") is not True:
                 continue
+            evidence = str(item.get("evidence", ""))[:400]
+            # M3 — a contradiction of a reviewed Fachkarte that was actually injected. FLAG-only:
+            # cards never drive a correction (integrity: corrections come only from reviewed traps).
+            if item.get("card_contradiction") is True:
+                cid = str(item.get("card_id", ""))
+                if cid not in card_ids:
+                    continue  # only a card shown to L3 can be contradicted (no invented ids)
+                findings.append(
+                    VerifierFinding(
+                        trap_id=cid,
+                        gate="confident_wrong",
+                        review_state="reviewed",  # cards injected are reviewed
+                        evidence=evidence,
+                        kind="card",
+                    )
+                )
+                continue
             entry = self._catalog.by_id(str(item.get("trap_id", "")))
             if entry is None:
                 continue  # never trust an id the catalog doesn't know
-            evidence = str(item.get("evidence", ""))[:400]
             if is_precision_overapplication(entry.id, evidence, draft):
                 continue  # range + verify-caveat respects 'Einzelzahl OHNE Bereich' → L3 over-applied
             gate = str(item.get("gate", ""))
@@ -164,6 +194,7 @@ class L3Verifier:
                     gate=gate,
                     review_state=entry.review_state,  # server-side, not LLM-claimed
                     evidence=evidence,
+                    kind="trap",
                 )
             )
         return _RawVerdict(findings=tuple(findings), parse_ok=True, raw=raw[:6000])
@@ -231,6 +262,16 @@ def build_hedge(
     )
 
 
+def _reviewed_traps(
+    findings: tuple[VerifierFinding, ...],
+) -> tuple[VerifierFinding, ...]:
+    """Only reviewed TRAP findings drive a block/correction. Card-contradiction findings (kind=
+    'card') and draft matches are FLAG-only — corrections come ONLY from reviewed traps (integrity)."""
+    return tuple(
+        f for f in findings if f.review_state == "reviewed" and f.kind == "trap"
+    )
+
+
 async def run_verify(
     verifier: L3Verifier,
     generator,
@@ -239,20 +280,22 @@ async def run_verify(
     draft: Answer,
     *,
     flags: Flags,
+    grounding_facts: tuple[GroundingFact, ...] = (),
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
-    ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(question,
-    flags=..., correction_note=...)``) — kept untyped here to avoid a core→core cycle."""
-    raw = await verifier.verify(question, draft.text)
+    M3: L3 also sees the reviewed grounding facts and may FLAG a card contradiction — but a card
+    finding never blocks/corrects (only reviewed TRAP findings do). ``generator`` is the injected L1
+    generator (duck-typed: ``await generator.generate(question, flags=..., correction_note=...)``)."""
+    raw = await verifier.verify(question, draft.text, grounding_facts)
     if not raw.findings:
         return draft, VerifierVerdict(
             action=VerifierAction.PASS, parse_ok=raw.parse_ok, raw=raw.raw
         )
 
-    reviewed = tuple(f for f in raw.findings if f.review_state == "reviewed")
+    reviewed = _reviewed_traps(raw.findings)
     if not reviewed:
-        # draft-only matches may FLAG, never block/correct (build-spec §8 integrity)
+        # draft-trap and/or card-contradiction matches → advisory FLAG, never block/correct
         return draft, VerifierVerdict(
             action=VerifierAction.FLAG,
             findings=raw.findings,
@@ -265,8 +308,8 @@ async def run_verify(
         regen = await generator.generate(
             question, flags=flags, correction_note=correction
         )
-        raw2 = await verifier.verify(question, regen.text)
-        if not any(f.review_state == "reviewed" for f in raw2.findings):
+        raw2 = await verifier.verify(question, regen.text, grounding_facts)
+        if not _reviewed_traps(raw2.findings):
             return regen, VerifierVerdict(
                 action=VerifierAction.CORRECTED,
                 findings=raw.findings,

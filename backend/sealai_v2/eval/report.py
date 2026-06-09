@@ -48,6 +48,8 @@ def _record_to_dict(rec) -> dict:
         "answer_text": rec.answer_text,
         "draft_model": rec.draft_model,
         "draft_text": rec.draft_text,
+        "grounded": rec.grounded,
+        "n_grounding": rec.n_grounding,
         "error": rec.error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),
@@ -334,6 +336,41 @@ def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
     return L
 
 
+def _render_grounding_section(manifest: dict, recs: list[dict]) -> list[str]:
+    L: list[str] = []
+    L.append("## L2 Grounding (M3)")
+    L.append("")
+    L.append(
+        "> **Calibration — what this validates.** M3 validates the grounding MECHANISM + injection + "
+        "vorläufig-flagging + no-M2-regression: *when the right reviewed Fachkarte is retrieved, does "
+        "grounding lift accuracy and does L3 catch more via positive evidence.* It does NOT validate "
+        "retrieval RECALL at corpus scale — the in-process keyword retriever is a measurement/CI "
+        "instrument (like the fake LLM client). Production recall + semantic retrieval (the Qdrant "
+        "adapter) is a separate, later concern + its own retrieval-quality eval."
+    )
+    L.append("")
+    grounded = [r for r in recs if r.get("grounded")]
+    L.append(
+        f"- Grounded units (≥1 reviewed Fachkarte injected): **{len(grounded)}/{len(recs)}**; "
+        "the rest answer **vorläufig** (no reviewed card retrieved — expected for non-material-compat cases)."
+    )
+    L.append("")
+    L.append("| Case | Column | Grounding | #facts | L3 card-contradiction |")
+    L.append("|---|---|---|---|---|")
+    for r in recs:
+        cards = ", ".join(
+            f["trap_id"]
+            for f in (r.get("verifier") or {}).get("findings", [])
+            if f.get("kind") == "card"
+        )
+        g = "grounded" if r.get("grounded") else "vorläufig"
+        L.append(
+            f"| {r['case_id']} | {r['column']} | {g} | {r.get('n_grounding', 0)} | {cards or '—'} |"
+        )
+    L.append("")
+    return L
+
+
 def _render_report(
     manifest: dict, summaries: dict, recs: list[dict], adjudication: dict | None = None
 ) -> str:
@@ -369,6 +406,9 @@ def _render_report(
 
     if manifest.get("verify_enabled"):
         L.extend(_render_l3_section(manifest, recs))
+
+    if manifest.get("ground_enabled"):
+        L.extend(_render_grounding_section(manifest, recs))
 
     if adjudication is not None:
         L.extend(_render_adjudication_section(adjudication))
