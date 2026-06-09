@@ -54,6 +54,7 @@ class Pipeline:
         answer = await self.generator.generate(
             question, flags=flags, grounding_facts=grounding_facts
         )
+        draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
 
         verdict: VerifierVerdict | None = None
         if self.verifier is not None and self.catalog is not None:
@@ -78,6 +79,7 @@ class Pipeline:
             verified=verdict is not None,
             cited=False,
             verifier=verdict,
+            draft_answer=draft,
         )
 
 

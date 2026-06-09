@@ -159,6 +159,9 @@ class PipelineResult:
     verified: bool = False
     cited: bool = False
     verifier: "VerifierVerdict | None" = None
+    # First-pass L1 draft (pre-L3), captured so detection-vs-suppression is assessable in the
+    # eval; equals ``answer`` when L3 did not change it / was disabled.
+    draft_answer: "Answer | None" = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

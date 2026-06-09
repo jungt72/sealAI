@@ -15,6 +15,7 @@ cross-vendor swap is a different adapter + a config flip, no change here.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from sealai_v2.core.contracts import (
@@ -30,6 +31,41 @@ from sealai_v2.core.contracts import (
 from sealai_v2.knowledge.traps import TrapCatalog
 
 _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-generated
+
+# --- precision over-application guard (firing condition only — NOT the reviewed `correct` facts) ---
+# The range-precision traps fire on a "falsch-präzise Einzelzahl OHNE Bereich". A value already
+# given as a RANGE *with* a verify/Datenblatt caveat is the correct form, not a violation — yet the
+# verifier model sometimes flags it anyway (m2-l3: TRAP-01 "ca. 120–130 °C … gegen Datenblatt
+# verifizieren"). This is the deterministic backstop to the verifier prompt's existing
+# "Bereich ist kein Verstoß" rule. It scopes ONLY the firing condition; it never edits the catalog.
+_PRECISION_RANGE_TRAPS = frozenset({"PREC-EINZELZAHL", "PREC-LEBENSDAUER"})
+_RANGE_RE = re.compile(
+    r"\d[\d.\s'’]*\s*[–—-]\s*\d"  # 120–130, 15-25, 5 000–20 000 (en/em-dash or hyphen)
+    r"|\bvon\s+\d[\d.\s'’]*\s+bis\s+\d",  # von 15 bis 25
+    re.IGNORECASE,
+)
+_VERIFY_CAVEAT_TOKENS = (
+    "verifizier",
+    "datenblatt",
+    "herstellerangabe",
+    "typisch",
+    "richtwert",
+    "orientierung",
+)
+
+
+def is_precision_overapplication(trap_id: str, evidence: str) -> bool:
+    """True iff a RANGE-precision trap (PREC-EINZELZAHL / PREC-LEBENSDAUER) was raised on text that
+    ALREADY presents the quantity as a range AND carries a verify/Datenblatt caveat — i.e. L3
+    over-applied the "Einzelzahl OHNE Bereich" scope. Requires BOTH (a bare single value, or a
+    range without any caveat, still fires → the catch is preserved). Pure/deterministic so it is the
+    executable gate for the firing-condition fix."""
+    if trap_id not in _PRECISION_RANGE_TRAPS:
+        return False
+    ev = evidence or ""
+    return bool(_RANGE_RE.search(ev)) and any(
+        tok in ev.lower() for tok in _VERIFY_CAVEAT_TOKENS
+    )
 
 
 def _extract_json(raw: str) -> str:
@@ -113,6 +149,9 @@ class L3Verifier:
             entry = self._catalog.by_id(str(item.get("trap_id", "")))
             if entry is None:
                 continue  # never trust an id the catalog doesn't know
+            evidence = str(item.get("evidence", ""))[:400]
+            if is_precision_overapplication(entry.id, evidence):
+                continue  # range + verify-caveat respects 'Einzelzahl OHNE Bereich' → L3 over-applied
             gate = str(item.get("gate", ""))
             if gate not in entry.gates:
                 # keep the finding, but pin the gate to the entry's declared gate(s)
@@ -122,7 +161,7 @@ class L3Verifier:
                     trap_id=entry.id,
                     gate=gate,
                     review_state=entry.review_state,  # server-side, not LLM-claimed
-                    evidence=str(item.get("evidence", ""))[:400],
+                    evidence=evidence,
                 )
             )
         return _RawVerdict(findings=tuple(findings), parse_ok=True, raw=raw[:6000])

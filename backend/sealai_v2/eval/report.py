@@ -45,6 +45,8 @@ def _record_to_dict(rec) -> dict:
         "intent_rationale": rec.intent_rationale,
         "answer_model": rec.answer_model,
         "answer_text": rec.answer_text,
+        "draft_model": rec.draft_model,
+        "draft_text": rec.draft_text,
         "error": rec.error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),

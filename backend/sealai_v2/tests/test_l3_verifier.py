@@ -199,3 +199,104 @@ def test_hedge_mentions_concern_without_asserting():
         (VerifierFinding("R1", "confident_wrong", "reviewed", "EPDM polar"),)
     )
     assert "Vorsicht" in h and "verifizieren" in h.lower()
+
+
+# --- L3 precision over-application fix (PREC-EINZELZAHL / PREC-LEBENSDAUER firing condition) ---
+# A range-precision trap must NOT fire when the answer ALREADY gives the quantity as a range WITH
+# a verify/Datenblatt caveat (respect the catalog's "Einzelzahl OHNE Bereich" scope); a bare
+# single value must STILL fire (catch preserved). These are the executable gate for the fix.
+
+_PREC = TrapEntry(
+    id="PREC-EINZELZAHL",
+    trigger="exakte Einzelzahl ohne Bereich",
+    wrong=("falsch-präzise Einzelzahl ohne Bereich/Vorbehalt",),
+    correct="Compound-abhängige Größen als Bereich angeben und gegen Datenblatt verifizieren.",
+    gates=("invented_precision",),
+    provenance=("eval:UNCERT-01",),
+    review_state="reviewed",
+)
+
+
+def _prec_catalog() -> TrapCatalog:
+    return TrapCatalog(entries=(_PREC,))
+
+
+def _prec_verifier(client) -> L3Verifier:
+    return L3Verifier(
+        client, VerifierPromptAssembler(), ModelConfig("fake-l3"), _prec_catalog()
+    )
+
+
+def _prec_violation(evidence: str, trap_id: str = "PREC-EINZELZAHL") -> str:
+    return json.dumps(
+        {
+            "findings": [
+                {
+                    "trap_id": trap_id,
+                    "gate": "invented_precision",
+                    "violated": True,
+                    "evidence": evidence,
+                }
+            ],
+            "verdict": "violation",
+        }
+    )
+
+
+def test_precision_overapplication_suppressed_when_range_and_caveat():
+    # the documented false-flag: TRAP-01 flags_off — a range + verify/Datenblatt caveat
+    ev = (
+        "Viele FKM-Compounds fangen schon ab ca. 120–130 °C im Dampf an abzubauen "
+        "(typisch – bitte gegen das Datenblatt des konkreten Compounds verifizieren)."
+    )
+    client = ScriptedFakeLlmClient([_prec_violation(ev)])
+    raw = asyncio.run(_prec_verifier(client).verify("Frage?", "Entwurf"))
+    assert raw.findings == ()  # range + caveat → not invented precision → L3 over-applied → dropped
+
+
+def test_precision_still_fires_on_bare_single_value():
+    ev = "~25 % Verpressung als Zielwert ansetzen."  # single value, no range
+    client = ScriptedFakeLlmClient([_prec_violation(ev)])
+    raw = asyncio.run(_prec_verifier(client).verify("Frage?", "Entwurf"))
+    assert len(raw.findings) == 1 and raw.findings[0].trap_id == "PREC-EINZELZAHL"
+
+
+def test_precision_requires_both_range_and_caveat():
+    # range but NO caveat → still fires
+    c1 = ScriptedFakeLlmClient([_prec_violation("Verpressung 15–25 %.")])
+    assert len(asyncio.run(_prec_verifier(c1).verify("F", "E")).findings) == 1
+    # caveat but NO range (a fabricated single value) → still fires
+    c2 = ScriptedFakeLlmClient(
+        [_prec_violation("genau 178 °C (gegen Datenblatt verifizieren).")]
+    )
+    assert len(asyncio.run(_prec_verifier(c2).verify("F", "E")).findings) == 1
+
+
+def test_precision_overapplication_yields_pass_no_regen():
+    ev = "Statischer O-Ring: typisch 15–25 % Verpressung (gegen Datenblatt verifizieren)."
+    client = ScriptedFakeLlmClient([_prec_violation(ev)])
+    draft = _draft(ev)
+    answer, verdict = asyncio.run(
+        run_verify(
+            _prec_verifier(client),
+            _generator(client),
+            _prec_catalog(),
+            "Frage?",
+            draft,
+            flags=Flags(),
+        )
+    )
+    assert verdict.action == VerifierAction.PASS
+    assert answer is draft  # not blocked, not regenerated
+    assert len(client.calls) == 1  # only the verify call
+
+
+def test_is_precision_overapplication_predicate():
+    from sealai_v2.core.l3_verifier import is_precision_overapplication as ov
+
+    assert ov("PREC-EINZELZAHL", "ca. 120–130 °C (typisch, gegen Datenblatt verifizieren)")
+    assert ov("PREC-LEBENSDAUER", "5 000–20 000 Betriebsstunden (typisch, Richtwert)")
+    assert not ov("PREC-EINZELZAHL", "genau 178 °C")  # no range, no caveat
+    assert not ov("PREC-EINZELZAHL", "15–25 %")  # range but no caveat
+    assert not ov("PREC-COMPOUND-NUMMER", "FKM 70 (typisch, Datenblatt 1–2)")  # not a range-trap
+    assert not ov("TRAP-FKM-DAMPF", "120–130 °C typisch Datenblatt")  # not a precision trap

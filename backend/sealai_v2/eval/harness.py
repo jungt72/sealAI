@@ -45,6 +45,8 @@ class Record:
     verifier: VerifierVerdict | None = (
         None  # L3 verdict (M2); None if L3 disabled / errored
     )
+    draft_text: str = ""  # first-pass L1 draft (pre-L3); == answer_text when L3 didn't change it
+    draft_model: str = ""
 
 
 async def _run_unit(
@@ -52,6 +54,7 @@ async def _run_unit(
 ) -> Record:
     intent = rationale = None
     answer_text, answer_model, error = "", "", None
+    draft_text, draft_model = "", ""
     verifier: VerifierVerdict | None = None
     try:
         result = await pipeline.run(case.input, tenant=_EVAL_TENANT, flags=flags)
@@ -61,6 +64,9 @@ async def _run_unit(
         answer_text = result.answer.text
         answer_model = result.answer.model
         verifier = result.verifier
+        if result.draft_answer is not None:
+            draft_text = result.draft_answer.text
+            draft_model = result.draft_answer.model
     except Exception as exc:  # noqa: BLE001 — record the failure, keep the run going
         error = f"{type(exc).__name__}: {exc}"
 
@@ -83,6 +89,8 @@ async def _run_unit(
         judge=judge,
         score=score_case(case, judge),
         verifier=verifier,
+        draft_text=draft_text,
+        draft_model=draft_model,
     )
 
 
