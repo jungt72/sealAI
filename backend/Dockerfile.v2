@@ -1,11 +1,11 @@
 # =============================================================================
-# Dockerfile.v2 — Phase-0 health-only image for the green-field sealai_v2 tree.
+# Dockerfile.v2 — the green-field sealai_v2 image (cutover Phase 1: full /api/v2 app).
 #
-# Trivial by design: a single-stage slim image that serves ONLY GET /health from
-# sealai_v2.api.main:app on port 8001. No pipeline, no ML/runtime stack, no
-# `app` code. It is built only by the off-by-default `backend-v2` compose service
-# (docker-compose.v2.yml, profile `v2`); the production backend image
-# (backend/Dockerfile) is untouched.
+# Single-stage slim image serving sealai_v2.api.main:app on port 8001: /health,
+# /api/v2/{chat,conversations,briefing,framing,health}. No `app` (V1) code — the
+# green-field boundary holds at the image level too. Built only by the
+# off-by-default `backend-v2` compose service (profile `v2`); the production
+# backend image (backend/Dockerfile) is untouched.
 #
 # Build context is ./backend (same as the production image), so `COPY sealai_v2`
 # resolves to backend/sealai_v2.
@@ -26,12 +26,17 @@ RUN apt-get update \
 # Non-root user (matches the production image's uid).
 RUN useradd -m -u 10001 -s /usr/sbin/nologin appuser
 
-# Minimal deps, pinned to the backend's versions (no requirements.txt pull-in).
+# Pinned runtime deps (kept in lockstep with backend/requirements.txt — see requirements-v2.txt).
+COPY requirements-v2.txt ./
 RUN python -m pip install --upgrade pip \
- && python -m pip install "fastapi==0.135.3" "uvicorn[standard]==0.43.0"
+ && python -m pip install -r requirements-v2.txt
 
 # Green-field package only — never the `app` tree.
 COPY sealai_v2 ./sealai_v2
+
+# Import keystone: fail the BUILD (not the first request) if a dep is missing — including the
+# lazy I/O-edge imports (openai SDK, httpx JWKS fetch).
+RUN python -c "import httpx; from openai import AsyncOpenAI; import sealai_v2.api.main"
 
 RUN chown -R appuser:appuser /app
 USER appuser

@@ -1,0 +1,12 @@
+# Runtime deps for the green-field sealai_v2 image (Dockerfile.v2) — the FULL /api/v2 app, nothing
+# from the V1 runtime. Pinned to the backend's versions (requirements.txt) where shared; PyJWT is
+# pinned to the version the offline suite runs against. The V1 image is untouched.
+fastapi==0.135.3
+uvicorn[standard]==0.43.0
+pydantic==2.12.5
+pydantic-settings==2.13.1
+Jinja2==3.1.6
+httpx==0.28.1
+openai==2.30.0
+PyJWT==2.10.1
+cryptography==46.0.6

@@ -1,18 +1,15 @@
 # =============================================================================
-# docker-compose.v2.yml — OFF-BY-DEFAULT green-field overlay (V2.0 Phase 0).
+# docker-compose.v2.yml — DEV-ONLY green-field overlay (V2.0).
 #
-# Additive coexistence scaffold. This file is NEVER part of the default `up`:
-#   - it is a separate overlay (must be passed with `-f`), AND
-#   - the single service it adds sits behind the `v2` profile.
-# Double-gated off → the production `backend` service stays the only thing running.
-#
-# Run the v2 health service alongside shared infra (base file supplies redis/qdrant):
+# Since the cutover arc, the PRODUCTION backend-v2 service lives in
+# docker-compose.deploy.yml (behind the `v2` profile) so `up -d --remove-orphans`
+# with the standard prod file set can never orphan it; staging lives in
+# ops/staging/. This overlay remains only for a local dev bring-up:
 #   docker compose -f docker-compose.yml -f docker-compose.v2.yml --profile v2 up backend-v2
 #
 # Isolation (build-spec §3/§7): backend-v2 gets its OWN port (8001), its OWN Redis
 # namespace (db 1, ≠ the live backend's db 0 / ns-0), and its OWN Qdrant collection
-# (≠ the live sealai_knowledge_v3). The Phase-0 health app uses none of these yet —
-# they encode the isolation decision now so the M5 memory layer inherits it.
+# (≠ the live sealai_knowledge_v3).
 # =============================================================================
 services:
   backend-v2:
