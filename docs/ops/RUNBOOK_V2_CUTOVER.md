@@ -42,8 +42,12 @@ Validation: V2 offline suite + import-boundary keystone + `frontend-v2 npm run v
 
 ## Phase 2 — staging validation (no prod mutation)
 
-**Owner (additive to live Keycloak — V1's `nextauth` client untouched):** create public client
-`sealai-v2` in realm `sealAI` per `frontend-v2/README.md`:
+**Owner (additive to live Keycloak — V1's `nextauth` client untouched):** ✅ **DONE 2026-06-10** —
+client `sealai-v2` created (uuid `b7a2dd0a-fd95-4e3c-af3d-f7e04997ae85`) via the owner's
+interactively-authenticated kcadm session (no credentials handled by the agent). Verified by
+read-back + example-token: public, PKCE S256, standard flow only, both redirect URIs/web origins,
+`aud=sealai-v2`, `tenant_id=sealai`, `sid`/`sub` present, lifespan 1800 s. Rollback anchor:
+`kcadm delete clients/b7a2dd0a-fd95-4e3c-af3d-f7e04997ae85 -r sealAI`. Spec was:
 - Standard Flow ON, PKCE S256 required, no client secret.
 - Redirect URIs: `https://sealingai.com/dashboard/*` AND `https://sealingai.com:8443/dashboard/*`.
 - Web Origins: `https://sealingai.com` AND `https://sealingai.com:8443` (CORS for the staging
