@@ -17,7 +17,7 @@ from pathlib import Path
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
 from sealai_v2.eval import report
-from sealai_v2.eval.cases import Case, load_cases
+from sealai_v2.eval.cases import Case, load_cases, load_edge_cases
 from sealai_v2.eval.judge import JudgeResult, judge_answer, judge_no_reask
 from sealai_v2.eval.multiturn import (
     load_multiturn_cases,
@@ -197,6 +197,27 @@ async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
     }
 
 
+async def _run_edge(
+    pipeline, judge_cfg: ModelConfig
+) -> tuple[list[Record], list[str]]:
+    """Run the Konversations-Rand (EDGE) class (M6a-B) through the EXISTING single-turn unit + judge
+    + scorer (no new runner). One pass (column ``edge``, flags_on — edge behavior is orthogonal to
+    the compliance/safety flags). Returns (records, errors); the records are folded into the canonical
+    record list so they appear in the worksheet (``edge_overreach`` is HUMAN-FINAL) and the
+    adjudication recompute, while the column filter keeps them OUT of the non-edge no-regression."""
+    cases = load_edge_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(pipeline, judge_cfg, case, "edge", COLUMNS["flags_on"])
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_multiturn)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def run_eval(
     settings: Settings,
     *,
@@ -247,6 +268,24 @@ async def run_eval(
     # safety flags, so it runs once (no per-column fan-out).
     multiturn = await _run_multiturn(pipeline, judge_cfg)
 
+    # M6a-B — Konversations-Rand (EDGE) class. Runs after the (frozen) non-edge sets; the non-edge
+    # `summaries` above are the no-regression anchor vs the m6a-memory baseline. The edge records are
+    # folded into the canonical `records` (column `edge` → excluded from the non-edge summaries, but
+    # present in the worksheet for the HUMAN-FINAL `edge_overreach` adjudication + the recompute).
+    edge_records, edge_errors = await _run_edge(pipeline, judge_cfg)
+    edge = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("edge", [r.score for r in edge_records])
+            ),
+            "n_cases": len(edge_records),
+            "errors": edge_errors,
+        }
+        if edge_records
+        else None
+    )
+    records = list(records) + edge_records
+
     l3_on = settings.verify_enabled
     l2_on = settings.ground_enabled
     l4_on = settings.compute_enabled
@@ -285,6 +324,8 @@ async def run_eval(
         "memory_enabled": settings.memory_enabled,
         "distill_enabled": settings.distill_enabled,
         "n_multiturn_cases": (len(multiturn["cases"]) if multiturn else 0),
+        "n_edge_cases": (edge["n_cases"] if edge else 0),
+        "baseline_non_edge": {"flags_off": 1.000, "flags_on": 0.991},  # m6a-memory no-regression anchor
         "columns": list(columns.keys()),
         "n_cases": len(cases),
         "concurrency": settings.concurrency,
@@ -293,8 +334,14 @@ async def run_eval(
             "3 hard gates are HUMAN-FINAL via the worksheet."
         ),
         "errors": [r.error for r in records if r.error]
-        + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])],
+        + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])]
+        + [f"edge::{e}" for e in (edge or {}).get("errors", [])],
     }
 
-    report.write_all(run_dir, manifest, records, summaries, multiturn=multiturn)
-    return {"manifest": manifest, "summaries": summaries, "multiturn": multiturn}
+    report.write_all(run_dir, manifest, records, summaries, multiturn=multiturn, edge=edge)
+    return {
+        "manifest": manifest,
+        "summaries": summaries,
+        "multiturn": multiturn,
+        "edge": edge,
+    }

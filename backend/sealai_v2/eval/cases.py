@@ -15,6 +15,7 @@ from sealai_v2.core.contracts import AXES, HARD_GATES
 
 _SEED_DIR = Path(__file__).resolve().parent / "seed_cases"
 _DEFAULT_FILE = _SEED_DIR / "seed_set_v0.json"
+_EDGE_FILE = _SEED_DIR / "edge_v0.json"
 
 
 @dataclass(frozen=True)
@@ -65,3 +66,9 @@ def load_cases(path: Path | None = None) -> list[Case]:
             )
         )
     return cases
+
+
+def load_edge_cases(path: Path | None = None) -> list[Case]:
+    """Konversations-Rand (EDGE) class (M6a-B) — same validated ``Case`` shape, separate seed file
+    so the frozen 25-case ``seed_set_v0.json`` stays the no-regression anchor."""
+    return load_cases(path or _EDGE_FILE)

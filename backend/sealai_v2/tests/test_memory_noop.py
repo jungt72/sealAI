@@ -1,11 +1,16 @@
-"""The airtight no-op proof (build-spec §7; owner gate): with EMPTY/absent memory the assembled
-system prompt is BYTE-IDENTICAL to the pre-M5 baseline.
+"""The airtight memory no-op proof (build-spec §7; owner gate): with EMPTY/absent memory the
+assembled system prompt is BYTE-IDENTICAL to the captured baseline.
 
-This is the deterministic, zero-token guarantee behind the single live confirmation REPLAY: if the
-prompt is byte-for-byte unchanged when memory is empty, the LLM draws from the same distribution as
-before, so the wired memory seam can have no systematic effect on the answer path. The golden was
-captured from the pre-M5 assembler over an 8-config matrix (flags × grounding × calc), all with
-empty memory and no ``conversation_window`` param.
+This is the deterministic, zero-token guarantee that the wired memory seam has no systematic effect
+on the answer path when memory is empty: if the prompt is byte-for-byte unchanged, the LLM draws
+from the same distribution as before. The golden is an 8-config matrix (flags × grounding × calc),
+all with empty memory and no ``conversation_window`` param.
+
+The baseline is **re-captured whenever the prompt LEGITIMATELY changes** — re-captured at **M6a-B**
+after the owner-approved additive ``# Gesprächsführung`` edge bullets (the only prompt change; diff =
+exactly those bullets). This re-baselines the snapshot; it does NOT loosen the invariant —
+``test_none_and_empty_memory_are_equivalent`` independently guards the relative no-op (None ≡ empty),
+which holds regardless of the prompt's content.
 """
 
 from __future__ import annotations
@@ -43,7 +48,7 @@ _CV = [
 ]
 
 
-def test_empty_memory_prompt_is_byte_identical_to_pre_m5_baseline():
+def test_empty_memory_prompt_is_byte_identical_to_baseline():
     matrix = json.loads(_GOLDEN.read_text(encoding="utf-8"))["matrix"]
     a = PromptAssembler()
     for cfg in matrix:
@@ -61,8 +66,8 @@ def test_empty_memory_prompt_is_byte_identical_to_pre_m5_baseline():
                 difflib.unified_diff(
                     cfg["out"].splitlines(),
                     out.splitlines(),
-                    fromfile="pre-M5 golden",
-                    tofile="post-M5 empty-memory",
+                    fromfile="baseline golden",
+                    tofile="empty-memory render",
                     lineterm="",
                 )
             )
