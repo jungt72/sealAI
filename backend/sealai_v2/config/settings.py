@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None  # falls back to OPENAI_API_KEY in llm.factory
     openai_base_url: str | None = None
 
+    # --- auth (M6c, P0): PUBLIC config, not secrets. Identity is derived ONLY from a token VERIFIED
+    # against these (validate-in-V2). Empty jwks_url → auth not configured (routes 503 fail-closed). ---
+    auth_jwks_url: str | None = None
+    auth_issuer: str | None = None
+    auth_audience: str | None = None
+    auth_tenant_claim: str = "tenant_id"
+
     # --- model tiers (build-spec §3): strong frontier for L1; cheaper for judge/helper ---
     l1_model: str = "gpt-5.1"  # decision #1: OpenAI's strongest GPT; resolved against models.list() at runtime
     judge_model: str = (
