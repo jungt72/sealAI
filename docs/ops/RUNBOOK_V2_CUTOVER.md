@@ -67,8 +67,11 @@ never resolve it). Optional hardening: firewall :8443 to the owner IP for the wi
 citations + vorläufig/candidate badges; memory view→edit→forget-one→forget-all; briefing with
 Geltungsrahmen + provenance; banner text == `/api/v2/framing`; authed
 `GET /api/v2/conversations/current/memory` → 200 (proves aud/iss/exp/tenant_id/sid/sub alignment);
-devtools: CSP present, zero violations, NO token in local/sessionStorage; `nginx -t`;
-`BASE_URL=https://sealingai.com:8443 ops/smoke-v2.sh` green; observe token-expiry UX.
+`nginx -t`; `BASE_URL=https://sealingai.com:8443 ops/smoke-v2.sh` green; observe token-expiry UX.
+*(Owner decision 2026-06-10: the devtools RUNTIME checks — no token in local/sessionStorage,
+zero CSP violations — moved to pilot tracker item 5 as a HARD pilot gate; XSS-token-theft is a
+multi-user threat model, low-impact owner-only, and the CSP header itself is machine-verified in
+smoke. They no longer block the owner-only flip.)*
 
 **Rollback dry-run (mandatory, rehearses the prod commands):**
 1. `ops/v2-flip.sh --revert --file ops/staging/conf/default.conf --container nginx-staging`
@@ -171,9 +174,44 @@ in-process (restart wipes conversations — pilot prerequisite below).
 3. SPA silent token renewal (`prompt=none` path exists in `auth/oidc.ts::authorizeUrl`, nothing
    calls it); interim: 15–30 min access-token lifespan on the `sealai-v2` client.
 4. Remove the `:8443` staging redirect URIs + Web Origins from the `sealai-v2` client.
+5. **Devtools runtime checks (HARD gate, owner decision 2026-06-10):** in a real browser session
+   against the live `/dashboard` — NO token in localStorage/sessionStorage (in-memory only) and
+   ZERO CSP violations in the console. Rationale: the XSS-token-theft threat model is multi-user;
+   the CSP *header* is already machine-verified in `ops/smoke-v2.sh`, but the runtime proof must
+   land before real users do.
 
 ## Phase 4 — V1 dashboard decommission (separate, owner-gated)
 
 After the proving period: remove dead V1 dashboard routes/components, evaluate V1 service
 teardown. Own plan, own verification, own GOVERNANCE_LOG entry. Until then V1 runs dormant as
 the rollback target — do NOT stop/tear down V1 during or right after the flip.
+
+## Appendix — GOVERNANCE_LOG draft (complete at flip time, then append to docs/ops/GOVERNANCE_LOG.md)
+
+> Fill every `⟨…⟩` AT FLIP TIME — anchors come from the daemon and `git rev-parse HEAD` in the
+> moment, never from memory or this prep (ops rule).
+
+```markdown
+### ⟨YYYY-MM-DDTHH:MMZ⟩ — V2 cutover flip: /dashboard + /api/v2 live (owner-executed)
+
+- **Change:** nginx include `snippets/v2_dashboard.conf` enabled via `ops/v2-flip.sh --apply`
+  (one line after default.conf `server_name sealingai.com;`); backend-v2 up (profile `v2`);
+  V1 untouched and running (rollback target). Runbook: docs/ops/RUNBOOK_V2_CUTOVER.md.
+- **Flip ref:** ⟨git rev-parse HEAD⟩ (worktree clean: ⟨yes⟩)
+- **backend-v2 image:** ⟨docker inspect backend-v2 --format '{{.Image}}'⟩
+- **frontend-v2 dist sha256 manifest:** ⟨sha256sum frontend-v2/dist/index.html frontend-v2/dist/assets/*⟩
+- **Rollback anchors (from the daemon at flip time):**
+  - routing: `ops/v2-flip.sh --revert` (dry-run-proven on staging 2026-06-10)
+  - V1 backend: ⟨docker inspect backend --format '{{.Config.Image}}'⟩ (status/health: ⟨…⟩)
+  - V1 frontend: ⟨docker inspect sealai-frontend-1 --format '{{.Config.Image}}'⟩
+  - keycloak: ⟨docker inspect keycloak --format '{{.Config.Image}}'⟩
+  - V1_ANCHOR (git): ⟨…⟩
+- **Pre-flip gate:** Phase 1 suites green; staging machine-side e2e + 3-leg rollback dry-run
+  green (2026-06-10); owner browser leg green (⟨date⟩); CI all-four green @ ⟨flip ref⟩;
+  Keycloak sealai-v2 client verified (b7a2dd0a-…); legal gate = first pilot (owner-only users).
+- **Flip smoke:** `BASE_URL=https://sealingai.com ops/smoke-v2.sh` → ⟨result⟩; authed leg →
+  ⟨result⟩; `ops/smoke-live-pilot-readiness.sh` → ⟨result⟩; browser login e2e → ⟨result⟩.
+- **Post-flip watch:** ⟨30–60 min, findings⟩
+- **Follow-ups:** flip commit → PR feat/v2→demo → owner carry-over demo→main (reload guard
+  covers the window); staging teardown + remove :8443 Keycloak entries; pilot tracker items 1–5.
+```
