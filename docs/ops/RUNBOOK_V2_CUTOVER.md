@@ -108,8 +108,14 @@ Rollback: `git checkout "$V1_ANCHOR^" -- docker-compose.deploy.yml && $COMPOSE u
 ```bash
 $COMPOSE --profile v2 up -d --build backend-v2
 ```
-Verify: `curl -fsS http://127.0.0.1:8001/health`; then
-`curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/api/v2/chat -H 'Content-Type: application/json' -d '{"message":"x"}'` → **401** (503 = auth env missing → STOP, fix env).
+Verify: `curl -fsS --max-time 10 http://127.0.0.1:8001/health`; then
+`curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/api/v2/chat -H 'Content-Type: application/json' -d '{"message":"x"}'` → **401** (503 = auth env missing → STOP, fix env).
+**TIMEOUT case (neither 200 nor 503 — curl exits 28/7):** network/bridge/publish issue, NOT an
+app issue — this host's firewall is known to drop host→container traffic on freshly created
+bridges (2026-06-10 staging finding). backend-v2 must be on the EXISTING `sealai_default`
+network (verify: `docker inspect backend-v2 --format '{{range $n,$c := .NetworkSettings.Networks}}{{$n}} {{end}}'`
+→ `sealai_default`; the compose config pins it). **STOP + diagnose — do NOT proceed to step 4**;
+nothing is routed yet, rollback here is just `docker stop backend-v2`.
 Rollback: `docker stop backend-v2`.
 
 **Step 3 — Keycloak client probe (read-only).**
