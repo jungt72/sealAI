@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "./api/client";
+import { fetchFraming } from "./api/framing";
 import {
   authorizeUrl,
   clearAccessToken,
@@ -14,6 +15,8 @@ import { ChatPane } from "./components/ChatPane";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { Shell } from "./components/Shell";
 import type { Briefing, ConversationMemory } from "./contracts";
+import { FALLBACK_FRAMING, type Framing } from "./framing";
+import { FramingContext } from "./framing-context";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
 const CONFIG: OidcConfig = {
@@ -26,6 +29,7 @@ const CONFIG: OidcConfig = {
 export function App() {
   const [authed, setAuthed] = useState<boolean>(() => getAccessToken() !== null);
   const [error, setError] = useState<string | null>(null);
+  const [framing, setFraming] = useState<Framing>(FALLBACK_FRAMING);
   const [memory, setMemory] = useState<ConversationMemory>({ case_state: [], history: [] });
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [lastMessage, setLastMessage] = useState<string>("");
@@ -41,7 +45,28 @@ export function App() {
   }, [api]);
 
   useEffect(() => {
+    // Single backend-owned framing source; on any failure the fallback stays (never blank).
+    let cancelled = false;
+    fetchFraming().then((f) => {
+      if (f && !cancelled) setFraming(f);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const url = new URL(window.location.href);
+    // The SPA has no sub-routes: nginx serves index.html for every /dashboard/* path (try_files),
+    // e.g. V1's post-login /dashboard/new. Normalize everything except the OIDC callback so the
+    // address bar matches what the app actually renders.
+    if (
+      url.pathname.startsWith("/dashboard") &&
+      url.pathname !== "/dashboard/" &&
+      !url.pathname.endsWith("/callback")
+    ) {
+      window.history.replaceState({}, "", "/dashboard/");
+    }
     if (url.pathname.endsWith("/callback") && url.searchParams.get("code")) {
       const code = url.searchParams.get("code") as string;
       const verifier = sessionStorage.getItem("v2_pkce_verifier") ?? "";
@@ -89,19 +114,22 @@ export function App() {
 
   if (!authed) {
     return (
-      <div className="login" data-testid="login-view">
-        <h1>
-          sealing<span className="brand-sep"> | </span>Intelligence
-        </h1>
-        <button onClick={() => void login()} data-testid="login">
-          Mit Keycloak anmelden
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </div>
+      <FramingContext.Provider value={framing}>
+        <div className="login" data-testid="login-view">
+          <h1>
+            sealing<span className="brand-sep"> | </span>Intelligence
+          </h1>
+          <button onClick={() => void login()} data-testid="login">
+            Mit Keycloak anmelden
+          </button>
+          {error && <p role="alert">{error}</p>}
+        </div>
+      </FramingContext.Provider>
     );
   }
 
   return (
+    <FramingContext.Provider value={framing}>
     <Shell
       onLogout={onUnauthenticated}
       cockpit={
@@ -126,5 +154,6 @@ export function App() {
     >
       <ChatPane onSend={send} error={error} />
     </Shell>
+    </FramingContext.Provider>
   );
 }

@@ -1,5 +1,5 @@
 import type { ConversationMemory } from "../contracts";
-import { REMEMBERED_HINT } from "../framing";
+import { useFraming } from "../framing-context";
 
 /** Cockpit content: the M5 case-state (remembered facts) + history, with the user-control surface
  * (edit / forget). Every remembered fact is framed UNVERIFIED ("zuvor genannt — bei Bedarf
@@ -15,6 +15,7 @@ export function MemoryPanel({
   onForget: (feld: string) => void;
   onForgetAll: () => void;
 }) {
+  const { remembered_hint } = useFraming();
   return (
     <section className="memory-panel" data-testid="memory-panel">
       <header className="cockpit-head">
@@ -36,7 +37,7 @@ export function MemoryPanel({
                 <span className="fact-wert">{f.wert}</span>
               </div>
               <div className="fact-hint" data-testid="remembered-hint">
-                {REMEMBERED_HINT}
+                {remembered_hint}
               </div>
               <div className="fact-actions">
                 <button onClick={() => onEdit(f.feld, f.wert)} data-testid="edit-fact">
