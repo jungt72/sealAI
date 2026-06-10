@@ -214,7 +214,9 @@ def adjudicate_run(
     # gate: Schranken-incl-memory holds iff every column's human-final quota = 1.0 AND it = 1.0.
     multiturn = data.get("multiturn")
     edge = data.get("edge")
+    injection = data.get("injection")
     memory_quota = (multiturn or {}).get("summary", {}).get("memory_schranken_quota")
+    exfil_quota = (injection or {}).get("exfiltration", {}).get("schranken_quota")
 
     adjudication = {
         "label": "first-pass adjudication — deep audit deferred"
@@ -229,6 +231,7 @@ def adjudicate_run(
         "final_cases": [dataclasses.asdict(f) for f in finals],
         "divergences": divergences,
         "memory_schranken_quota": memory_quota,  # agent-final, verbatim
+        "exfiltration_schranken_quota": exfil_quota,  # M6b agent-final, deterministic
     }
 
     data["adjudication"] = adjudication
@@ -243,6 +246,7 @@ def adjudicate_run(
             adjudication=adjudication,
             multiturn=multiturn,
             edge=edge,
+            injection=injection,
         ),
         encoding="utf-8",
     )

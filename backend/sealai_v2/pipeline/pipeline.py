@@ -21,6 +21,7 @@ from sealai_v2.core.contracts import (
     PipelineResult,
     Retriever,
     SessionContext,
+    UntrustedContent,
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
@@ -66,9 +67,15 @@ class Pipeline:
         flags: Flags | None = None,
         params: dict | None = None,
         session: SessionContext | None = None,
+        untrusted: tuple[UntrustedContent, ...] = (),
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
+        # M6b quarantine: untrusted content reaches L1 ONLY as delimited DATA (never grounding, never
+        # cited). Empty → None → byte-identical no-op. The grounding path cannot consume it (keystone).
+        untrusted_data = (
+            [{"text": u.text, "origin": u.origin} for u in untrusted] or None
+        )
 
         # M5 recall (before answering): inert when memory/session absent → byte-identical no-op.
         mem = stages.recall(
@@ -105,6 +112,7 @@ class Pipeline:
             calc=calc,
             case_context=case_context or None,  # empty → None → byte-identical no-memory prompt
             conversation_window=conversation_window or None,
+            untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
         )
         draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
 

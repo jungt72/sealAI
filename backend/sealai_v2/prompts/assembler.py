@@ -47,6 +47,7 @@ class PromptAssembler:
         not_computed: list[dict] | None = None,
         calc_notes: list[str] | None = None,
         conversation_window: list[dict] | None = None,
+        untrusted: list[dict] | None = None,
     ) -> str:
         flags = flags or Flags()
         gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
@@ -61,6 +62,7 @@ class PromptAssembler:
             computed_values=computed_values or [],
             not_computed=not_computed or [],
             calc_notes=calc_notes or [],
+            untrusted=untrusted or [],
         )
 
 
