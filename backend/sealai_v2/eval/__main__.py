@@ -69,6 +69,11 @@ def main() -> None:
                 f"adjudicated {fs['n_units_adjudicated']}/{fs['n_units_human_relevant']}  "
                 f"pending {fs['n_units_pending']}"
             )
+        mq = adj.get("memory_schranken_quota")
+        if mq is not None:
+            print(
+                f"[memory] memory_fabrication-Schranken(agent-final, not adjudicated)={mq:.3f}"
+            )
         print(f"\nArtifacts: {run_dir}")
         return
 
@@ -102,6 +107,22 @@ def main() -> None:
             f"[{col}] credibility(2-7)={s['overall_credibility']:.3f}  "
             f"Schranken-quota(prov)={'n/a' if quota is None else f'{quota:.3f}'}  "
             f"status={s['provisional_status_counts']}"
+        )
+    mt = out.get("multiturn")
+    if mt:
+        ms = mt["summary"]
+        drop = ms.get("drop")
+        rate = (
+            (drop["dropped"] / drop["proposed"] if drop["proposed"] else 0.0)
+            if drop
+            else None
+        )
+        mq = ms["memory_schranken_quota"]
+        print(
+            f"[memory] memory_fabrication-Schranken(agent-final)="
+            f"{'n/a' if mq is None else f'{mq:.3f}'} over {ms['n_turns']} turns  "
+            f"drop-rate={'n/a' if rate is None else f'{rate:.3f}'}  "
+            f"re-ask: carry_miss={ms['n_carry_misses']} reask_viol={ms['n_reask_violations']}"
         )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
