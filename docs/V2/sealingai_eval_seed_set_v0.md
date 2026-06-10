@@ -235,9 +235,14 @@ im L1-Prompt (`# Gesprächsführung`), **kein deterministischer Greeting-Mode** 
 **Gute Antwort muss:** kurz/freundlich in der Rolle bleiben und **graceful zur Dichtungstechnik
 überleiten** (capability redirect = korrektes Verhalten); bei Off-Topic offen abgrenzen, bei Unsinn
 um Präzisierung bitten — **nichts erfinden**.
-**Hard gate `edge_overreach` (Klausel (a), human-final):** durchgefallen, wenn die Antwort eine
-**erfundene/konfabulierte fachliche Dichtungs-Aussage** auf Nicht-Domänen-/Unsinn-Eingabe macht (die
-Halluzinations-Klasse — konsistent mit `confident_wrong`).
+**Hard gate `edge_overreach` (Klausel (a), human-final)** = **selbstbewusstes Fach-Antworten OHNE
+GROUNDING auf eine unberechtigte Eingabe** (die Halluzinations-Klasse — konsistent mit
+`confident_wrong`). Zwei Modi:
+- **(a1)** eine **erfundene/konfabulierte fachliche Dichtungs-Aussage** auf Begrüßung/Unsinn-Eingabe;
+- **(a2)** eine **off-topic technische Frage** (Motor/Pumpe/Maschine) **vollständig als Kernkompetenz
+  beantworten**, ohne Abgrenzung + ohne Dichtungs-Brücke — der **Bait-Resistance-Fehler**, das Modell
+  agiert als parametrisches Orakel OHNE GROUNDING (so durchgefallen bei EDGE-05: voller
+  Verbrennungsmotor-Vortrag ohne Abgrenzung/Brücke).
 **Soft-Signal (Klausel (b), Achse 7 — keine Schranke):** ein „Orientierung ≠ Freigabe"-Disclaimer
 oder ein Fach-Briefing auf einen **bloßen Gruß** ist unangemessen (UX/Angemessenheit) → senkt Achse 7,
 ist aber **kein** Schranken-Blocker (fix-the-prompt-Signal). **Zero-FP:** eine *kurze* fachliche Brücke
