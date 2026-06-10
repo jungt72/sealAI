@@ -17,19 +17,13 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from sealai_v2.core.contracts import Artifact, PipelineResult, RenderSnapshot
+from sealai_v2.core.framing import GELTUNGSRAHMEN
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
-# Owner-grounded doctrine wording. Allowed scoped vocabulary only (screening, orientation,
-# Hersteller-Prüfgrundlage); explicitly disclaims release / suitability / compliance.
-CLAIM_BOUNDARY = (
-    "**Hinweis (Geltungsrahmen):** Diese Zusammenstellung ist eine technische "
-    "**Orientierung/Screening** auf Basis der aktuell vorliegenden Angaben und Richtwerte — "
-    "**keine** verbindliche Auslegung, **keine** Freigabe und **keine** Eignungs-, Zulassungs- "
-    "oder Konformitätszusage. Sie ist eine **Hersteller-Prüfgrundlage**: die finale Werkstoff- "
-    "und Auslegungsentscheidung sowie die Freigabe trifft der Hersteller bzw. die verantwortliche "
-    "Fachperson anhand des konkreten Datenblatts."
-)
+# Owner-grounded doctrine wording — single-sourced from core.framing (byte-identical to the
+# pre-cutover literal; re-exported under the established name).
+CLAIM_BOUNDARY = GELTUNGSRAHMEN
 
 
 def _provenance(snapshot: RenderSnapshot) -> tuple[str, ...]:

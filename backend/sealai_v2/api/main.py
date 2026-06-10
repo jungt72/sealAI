@@ -8,15 +8,17 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from sealai_v2.api.routes import briefing, chat, conversations
+from sealai_v2.api.routes import briefing, chat, conversations, framing
 
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(briefing.router)
+app.include_router(framing.router)
 
 
 @app.get("/health")
+@app.get("/api/v2/health")
 async def health() -> dict[str, str]:
-    """Liveness probe."""
+    """Liveness probe — also under /api/v2/ because the nginx proxy preserves the path."""
     return {"status": "ok", "service": "sealai_v2"}
