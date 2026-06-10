@@ -46,13 +46,14 @@ class KeycloakJwtValidator:
 
         return httpx.get(self._jwks_url, timeout=5.0).json()
 
-    def _key_for_kid(self, kid: str | None):
-        """Resolve the signing key for ``kid``; refresh the JWKS ONCE on a miss (key rotation)."""
+    def _key_for_kid(self, kid: str):
+        """Resolve the signing key for ``kid`` (exact match only — a JWKS entry without kid never
+        matches); refresh the JWKS ONCE on a miss (key rotation)."""
         for allow_refresh in (True, False):
             if self._jwks is None:
                 self._jwks = self._fetch()
             for jwk in self._jwks.get("keys", []):
-                if kid is None or jwk.get("kid") == kid:
+                if jwk.get("kid") == kid:
                     return RSAAlgorithm.from_jwk(json.dumps(jwk))
             if allow_refresh:
                 self._jwks = None  # force a single refresh, then retry
@@ -67,7 +68,12 @@ class KeycloakJwtValidator:
         # BEFORE any key handling (never feed an RSA JWKS key into an HMAC verify).
         if header.get("alg") not in self._algorithms:
             raise AuthError(f"algorithm {header.get('alg')!r} not allowed (pinned {self._algorithms})")
-        key = self._key_for_kid(header.get("kid"))
+        kid = header.get("kid")
+        if not kid:
+            # Fail-closed: without a kid there is no legitimate key to verify against — never
+            # fall back to "try the first JWKS key".
+            raise AuthError("token header missing kid (rejected)")
+        key = self._key_for_kid(kid)
         try:
             claims = jwt.decode(
                 token,

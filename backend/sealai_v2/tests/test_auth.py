@@ -36,7 +36,7 @@ def _tok(priv, *, kid="k1", alg="RS256", iss=_ISS, aud=_AUD, claims=None, exp_of
     payload = {"iss": iss, "aud": aud, "sub": "user-1", "sid": "sess-1",
                "tenant_id": "tenant-A", "exp": int(time.time()) + exp_offset}
     payload.update(claims or {})
-    headers = {"kid": kid}
+    headers = {"kid": kid} if kid is not None else {}
     key = "secret" if alg.startswith("HS") else priv
     return jwt.encode(payload, key, algorithm=alg, headers=headers)
 
@@ -143,6 +143,25 @@ def test_jwks_refresh_on_unknown_kid():
     v = _validator(new, fetcher=fetcher)
     ident = v.validate(_tok(priv, kid="new"))  # unknown kid → refresh once → resolves
     assert ident.tenant_id == "tenant-A" and calls["n"] >= 2
+
+
+def test_missing_kid_is_rejected():
+    """Cutover hardening: a token with NO kid header must be rejected — never fall back to the
+    first JWKS key (a signed-by-anything token must not get a free key guess)."""
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    with pytest.raises(AuthError):
+        v.validate(_tok(priv, kid=None))
+
+
+def test_jwks_key_without_kid_never_matches():
+    """A JWKS entry lacking kid must never satisfy a token's kid — exact match only."""
+    priv = _keypair()
+    jwks = _jwks(priv.public_key(), kid="k1")
+    del jwks["keys"][0]["kid"]
+    v = _validator(jwks)
+    with pytest.raises(AuthError):
+        v.validate(_tok(priv, kid="k1"))
 
 
 def test_missing_tenant_claim_fails_closed():
