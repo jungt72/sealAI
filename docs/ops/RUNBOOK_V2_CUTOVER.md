@@ -1,0 +1,169 @@
+# RUNBOOK — V2 prod cutover (sealingai.com `/dashboard` + `/api/v2`)
+
+> **Owner-executed.** CC prepares + validates (Phase 1 code gates, Phase 2 staging); the prod
+> flip (Phase 3) is run by the owner against this runbook, low-traffic, rollback-ready.
+> **Load-bearing safety property: at every step, ONE action reverts to the current V1-serving
+> state.** V1 keeps running (dormant) through the proving period — it IS the rollback target.
+> Decisions baked in (2026-06-10): owner-only users today → legal gate moves to the FIRST PILOT;
+> FULL `/dashboard/*` takeover (V1 seo/analytics/case-detail routes are dead — no carve-outs);
+> V1 decommission is a separate later phase.
+
+## How the cutover works (one paragraph)
+
+The live nginx bind-mounts the worktree file `nginx/default.conf`. The flip is ONE include line
+(`include snippets/v2_dashboard.conf;` after `server_name sealingai.com;`), inserted/removed by
+`ops/v2-flip.sh` (in-place edit — the file is a single-file bind mount, the inode must survive;
+the script handles this and `nginx -t`-gates every reload). The snippet serves the static SPA
+(`frontend-v2/dist`, mounted at `/usr/share/nginx/v2-client`) under `/dashboard/` with strict CSP,
+and proxies `/api/v2/` to `backend-v2:8001` (variable proxy_pass — an absent backend-v2 never
+breaks nginx). V1's post-login redirect (`/login` → `/dashboard/new`) lands on the SPA via
+`try_files`; the SPA normalizes the URL and logs in via Keycloak SSO (client `sealai-v2`, PKCE,
+in-memory token) — zero V1 code changes.
+
+## Phase 1 — code gates (CC, done on `feat/v2-cutover`)
+
+- Claim-boundary single source: `backend/sealai_v2/core/framing.py` → `GET /api/v2/framing`
+  (public, `Cache-Control: max-age=300`); SPA fetches at boot, falls back to build-time constants;
+  fallback contract-pinned to `contracts/framing.v2.json` by BOTH suites. The lawyer-reviewed text
+  (pilot gate) lands in `core/framing.py` only.
+- `/dashboard/new` → SPA URL normalization (non-callback subpaths → `/dashboard/`).
+- reject-no-kid: `security/auth.py` requires a `kid` header + exact JWKS match (red-before-green).
+- `backend/Dockerfile.v2` ships the FULL /api/v2 app (pins: `backend/requirements-v2.txt`,
+  build-time import keystone); `GET /api/v2/health` alias added (the proxy preserves paths).
+- `docker-compose.deploy.yml`: nginx gains two INERT ro mounts (`./nginx/snippets`,
+  `./frontend-v2/dist`); `backend-v2` defined behind `profiles: [v2]` (orphan-proof vs
+  `up -d --remove-orphans`), auth env preset, secrets via `--env-file` interpolation only.
+- `ops/v2-flip.sh` (the switch + rollback), `ops/smoke-v2.sh` (unauthed + authed legs),
+  `ops/guard-nginx-reload.sh` wired into both release scripts (blocks a reload that would
+  silently drop live V2 routing — the branch-drift guard).
+
+Validation: V2 offline suite + import-boundary keystone + `frontend-v2 npm run verify` +
+`docker build -f backend/Dockerfile.v2 backend/` — all green before Phase 2.
+
+## Phase 2 — staging validation (no prod mutation)
+
+**Owner (additive to live Keycloak — V1's `nextauth` client untouched):** create public client
+`sealai-v2` in realm `sealAI` per `frontend-v2/README.md`:
+- Standard Flow ON, PKCE S256 required, no client secret.
+- Redirect URIs: `https://sealingai.com/dashboard/*` AND `https://sealingai.com:8443/dashboard/*`.
+- Web Origins: `https://sealingai.com` AND `https://sealingai.com:8443` (CORS for the staging
+  cross-port token POST; remove both `:8443` entries after cutover).
+- Audience mapper → tokens carry `aud=sealai-v2`; `tenant_id` claim mapper
+  (precedent: `docs/ops/KEYCLOAK_TENANT_ID_MAPPER.md`).
+- Recommended: access-token lifespan 15–30 min on this client (no silent renew in the SPA yet —
+  one-click SSO re-login until the pilot-gate renewal work).
+
+**CC:** staging stack under `ops/staging/` — `nginx-staging` on `0.0.0.0:8443:443` (real cert;
+generated copy of `default.conf` with the include applied; snippets copy with the documented
+staging-only CSP delta for the cross-port token POST; the EXACT prod `dist` artifact) +
+`backend-v2-staging` (alias `sealai-backend-v2` on the staging network ONLY — prod nginx can
+never resolve it). Optional hardening: firewall :8443 to the owner IP for the window.
+
+**E2e checklist (all green, dated):** browser login → callback → URL normalizes; chat with
+citations + vorläufig/candidate badges; memory view→edit→forget-one→forget-all; briefing with
+Geltungsrahmen + provenance; banner text == `/api/v2/framing`; authed
+`GET /api/v2/conversations/current/memory` → 200 (proves aud/iss/exp/tenant_id/sid/sub alignment);
+devtools: CSP present, zero violations, NO token in local/sessionStorage; `nginx -t`;
+`BASE_URL=https://sealingai.com:8443 ops/smoke-v2.sh` green; observe token-expiry UX.
+
+**Rollback dry-run (mandatory, rehearses the prod commands):**
+1. `ops/v2-flip.sh --revert --file ops/staging/conf/default.conf --container nginx-staging`
+   → `/dashboard/` serves the V1 response again, `/api/v2/*` 404s into the V1 catch-all
+   (== current prod behavior). Re-apply.
+2. `docker stop backend-v2-staging` → `/api/v2/*` 502, static SPA + V1 paths unaffected;
+   restart recovers ≤ ~10 s WITHOUT reload (resolver `valid=10s`).
+3. Orphan probe: `up -d --remove-orphans` with/without `--profile v2` — backend-v2 survives.
+
+**HALT** with the dated validation report → owner gate before Phase 3.
+
+## Phase 3 — the prod flip (OWNER, low-traffic window)
+
+```bash
+COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml"
+```
+
+**Step 0 — preconditions (all must hold):**
+- Pre-flip gate checklist below fully green.
+- Worktree clean, on the flip ref; record `V1_ANCHOR=$(git rev-parse HEAD)` and the live anchors
+  from the daemon (never memory): `docker inspect backend --format '{{.Config.Image}}'` etc.
+- `frontend-v2/dist` built AT the flip ref (`cd frontend-v2 && npm run verify`);
+  `test -s frontend-v2/dist/index.html`; record `sha256sum frontend-v2/dist/assets/*` (dist is
+  gitignored — a missing dir would bind-mount as an empty root-owned dir = blank SPA).
+- `docker exec nginx nginx -T | grep -cE '^\s*include snippets/v2_dashboard'` → 0, and the loaded
+  config matches the worktree file.
+
+**Step 1 — nginx recreate with the inert mounts** *(can run days early; ~2–5 s refused
+connections for ALL vhosts on the box — schedule accordingly).*
+```bash
+$COMPOSE up -d --no-deps nginx
+```
+Verify: `docker exec nginx nginx -t`; `docker inspect nginx --format '{{json .Mounts}}' | grep -c 'v2-client\|snippets'` → 2; `./ops/smoke-live-pilot-readiness.sh` green.
+Rollback: `git checkout "$V1_ANCHOR^" -- docker-compose.deploy.yml && $COMPOSE up -d --no-deps nginx` (pre-cutover compose; or simply leave — the mounts are inert).
+
+**Step 2 — backend-v2 up (unrouted).**
+```bash
+$COMPOSE --profile v2 up -d --build backend-v2
+```
+Verify: `curl -fsS http://127.0.0.1:8001/health`; then
+`curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/api/v2/chat -H 'Content-Type: application/json' -d '{"message":"x"}'` → **401** (503 = auth env missing → STOP, fix env).
+Rollback: `docker stop backend-v2`.
+
+**Step 3 — Keycloak client probe (read-only).**
+```bash
+curl -s -o /tmp/kc.html -w '%{http_code}\n' "https://sealingai.com/realms/sealAI/protocol/openid-connect/auth?client_id=sealai-v2&response_type=code&scope=openid&redirect_uri=https%3A%2F%2Fsealingai.com%2Fdashboard%2Fcallback&state=p&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"
+grep -ci invalid /tmp/kc.html   # expect 200 + 0
+```
+On failure: STOP before step 4 (nothing to roll back).
+
+**Step 4 — THE FLIP.**
+```bash
+./ops/v2-flip.sh --apply
+```
+Verify: `/dashboard` → 308; `/dashboard/` → 200 + CSP header; `/api/v2/health` → 200;
+`/api/v2/framing` → 200; V1: `/` + `/api/health` → 200.
+**Rollback (one step, dry-run-proven, valid at ANY later moment): `./ops/v2-flip.sh --revert`.**
+
+**Step 5 — final smoke + watch.**
+```bash
+BASE_URL=https://sealingai.com ./ops/smoke-v2.sh            # + TOKEN=<browser bearer> for the authed leg
+./ops/smoke-live-pilot-readiness.sh
+```
+One real browser login e2e. Watch 30–60 min: `docker logs -f backend-v2`,
+`docker logs nginx --since 10m | grep -E 'api/v2|dashboard'`.
+Rollback: step-4 revert; backend-only misbehavior → `docker stop backend-v2` (SPA fails closed,
+V1 untouched).
+
+**Step 6 — drift-proofing + governance log.**
+- Commit the one-line include on the clean tree; PR `feat/v2` → `demo/rwdr-limited-external`;
+  owner carry-over PR demo → main. Until both merges land, `ops/guard-nginx-reload.sh` (wired
+  into both release scripts) blocks a reload that would drop live V2 routing.
+- `docs/ops/GOVERNANCE_LOG.md` entry (no exceptions): backend-v2 image id, dist sha256 manifest +
+  build SHA, rollback anchors (from the daemon), gate results, smoke outcomes.
+
+**Explicitly accepted at flip time:** V1 dashboard UI paths (`/dashboard/seo`, `/dashboard/analytics`,
+`/dashboard/[caseId]`) are dead (full takeover); in-flight V1 sessions keep cookies + all
+`/api/*`/`/api/bff/*` — they lose only the V1 dashboard UI at next navigation; backend-v2 memory is
+in-process (restart wipes conversations — pilot prerequisite below).
+
+## Pre-flip gate (Phase 3 BLOCKED until all green)
+
+- [ ] Phase 1 validation green (V2 suite incl. red-before-green kid tests, keystone, npm verify, image build).
+- [ ] Staging e2e checklist green (dated report) + all 3 rollback dry-run legs done.
+- [ ] Keycloak `sealai-v2` client live (mappers + prod redirect URIs); step-3 probe green.
+- [ ] Legal: owner-only users today → lawyer review gates the FIRST PILOT, not this flip (recorded).
+- [ ] dist built at flip ref + sha256 recorded; worktree clean; anchors read from the daemon.
+- [ ] Low-traffic window scheduled; GOVERNANCE_LOG entry drafted.
+
+## Pilot-prerequisite tracker (gates the FIRST PILOT, not the flip)
+
+1. Lawyer-reviewed CLAIM_BOUNDARY + Haftungsausschluss merged into `backend/sealai_v2/core/framing.py`.
+2. Persistent memory adapters (M5-deferred) — a backend-v2 restart must not wipe conversations.
+3. SPA silent token renewal (`prompt=none` path exists in `auth/oidc.ts::authorizeUrl`, nothing
+   calls it); interim: 15–30 min access-token lifespan on the `sealai-v2` client.
+4. Remove the `:8443` staging redirect URIs + Web Origins from the `sealai-v2` client.
+
+## Phase 4 — V1 dashboard decommission (separate, owner-gated)
+
+After the proving period: remove dead V1 dashboard routes/components, evaluate V1 service
+teardown. Own plan, own verification, own GOVERNANCE_LOG entry. Until then V1 runs dormant as
+the rollback target — do NOT stop/tear down V1 during or right after the flip.
