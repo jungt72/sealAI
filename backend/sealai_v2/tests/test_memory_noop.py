@@ -7,10 +7,11 @@ from the same distribution as before. The golden is an 8-config matrix (flags ×
 all with empty memory and no ``conversation_window`` param.
 
 The baseline is **re-captured whenever the prompt LEGITIMATELY changes** — re-captured at **M6a-B**
-after the owner-approved additive ``# Gesprächsführung`` edge bullets (the only prompt change; diff =
-exactly those bullets). This re-baselines the snapshot; it does NOT loosen the invariant —
-``test_none_and_empty_memory_are_equivalent`` independently guards the relative no-op (None ≡ empty),
-which holds regardless of the prompt's content.
+after the owner-approved additive ``# Gesprächsführung`` edge bullets, and at **M8-A** after the
+owner-approved additive calc-provenance line (diff = exactly the ``Eingaben:`` origin line in the 4
+calc configs; recapture asserted additive-only). This re-baselines the snapshot; it does NOT loosen
+the invariant — ``test_none_and_empty_memory_are_equivalent`` independently guards the relative
+no-op (None ≡ empty), which holds regardless of the prompt's content.
 """
 
 from __future__ import annotations
@@ -43,6 +44,8 @@ _CV = [
         "stage": 1,
         "estimate": False,
         "assumptions": [],
+        "inputs_used": ["d1_mm", "rpm"],
+        "input_origins": ["Parameter", "Parameter"],  # M8-A payload shape
         "warnings": [],
     }
 ]

@@ -10,9 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.core.calc.binding import bind_params
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
     CalcEngine,
+    CalcResult,
     ConversationMemory,
     CrossSessionMemory,
     Flags,
@@ -103,11 +105,29 @@ class Pipeline:
             self.retriever, question, tenant_id=scope.tenant_id
         )
         grounding_facts = retrieval.grounding_facts  # reviewed → authoritative + cited
+        # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
+        # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
+        # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
+        bound = bind_params(mem.case_state + mem.durable)
+        merged_params = dict(bound.params)
+        param_origins = dict(bound.origins)
+        for key, value in (params or {}).items():
+            merged_params[key] = value
+            param_origins[key] = "Parameter (explizit übergeben)"
         # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
         # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
         calc = await stages.compute(
-            self.engine, params, grounding_facts=grounding_facts
+            self.engine,
+            merged_params or None,
+            grounding_facts=grounding_facts,
+            param_origins=param_origins or None,
         )
+        if bound.notes:  # surfaced fail-closed drops — visible to L1 + render, never silent
+            calc = CalcResult(
+                computed=calc.computed,
+                not_computed=calc.not_computed,
+                notes=calc.notes + bound.notes,
+            )
         answer = await self.generator.generate(
             question,
             flags=flags,

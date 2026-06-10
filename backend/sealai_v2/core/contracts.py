@@ -195,6 +195,10 @@ class ComputedValue:
     source: str = ""
     assumptions: tuple[str, ...] = ()
     inputs_used: tuple[str, ...] = ()
+    # M8-A provenance binding: per-input origin, parallel to ``inputs_used`` — user-stated
+    # (feld + verbatim wert), derived (cascade), or plain Parameter. Keeps the citation honest:
+    # user-entered values stay visibly user-entered (the V1 provenance-loss lesson).
+    input_origins: tuple[str, ...] = ()
     warnings: tuple[
         str, ...
     ] = ()  # e.g. swelling-induced over-fill; out-of-typical-band
@@ -229,6 +233,7 @@ class CalcEngine(Protocol):
         params: dict,
         grounding_facts: tuple["GroundingFact", ...] = (),
         context: dict | None = None,
+        param_origins: dict | None = None,
     ) -> "CalcResult": ...
 
 

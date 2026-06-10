@@ -178,6 +178,9 @@ Behauptung NICHT.
 # Berechnete Werte (deterministisch — Code, nicht geschätzt)
 {% for c in computed_values %}
 - {{ c.name }} = {{ c.value }} {{ c.unit }}{% if c.estimate %} (Schätzwert mit Annahmen){% endif %}  [{{ c.formula }}; Stufe {{ c.stage }}]
+{%- if c.input_origins %}
+  Eingaben: {% for n in c.inputs_used %}{{ n }} = {{ c.input_origins[loop.index0] }}{% if not loop.last %}; {% endif %}{% endfor %}
+{%- endif %}
 {%- for w in c.warnings %}
   ⚠️ {{ w }}{% endfor %}
 {% endfor %}

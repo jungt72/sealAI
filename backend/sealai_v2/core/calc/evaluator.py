@@ -44,8 +44,12 @@ class CascadeCalcEngine:
         params: dict,
         grounding_facts: tuple[GroundingFact, ...] = (),
         context: dict | None = None,
+        param_origins: dict | None = None,
     ) -> CalcResult:
         ctx = dict(context or {})
+        # M8-A: per-input origin (user-stated via binding / explicit Parameter); cascade outputs
+        # get a derived origin below so user-entered never silently becomes "derived" or vice versa.
+        origins: dict[str, str] = dict(param_origins or {})
         # qualitative swelling flag from reviewed grounding facts (Q1)
         if any(
             any(k in (f.text or "").lower() for k in _SWELL_KEYS)
@@ -141,12 +145,16 @@ class CascadeCalcEngine:
                         source=d.source,
                         assumptions=d.assumptions,
                         inputs_used=d.input_names,
+                        input_origins=tuple(
+                            origins.get(n, "Parameter") for n in d.input_names
+                        ),
                         warnings=tuple(warnings),
                         estimate=depth
                         >= 2,  # derived-of-derived → estimate-with-assumptions
                     )
                 )
                 env[d.output.name] = _Val(out, d.output.unit, depth)
+                origins[d.output.name] = f"abgeleitet ({d.id})"
                 done.add(d.id)
                 progressed = True
 

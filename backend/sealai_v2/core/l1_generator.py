@@ -31,6 +31,8 @@ def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list
             "stage": c.stage,
             "estimate": c.estimate,
             "assumptions": list(c.assumptions),
+            "inputs_used": list(c.inputs_used),
+            "input_origins": list(c.input_origins),  # M8-A: provenance visible to L1
             "warnings": list(c.warnings),
         }
         for c in calc.computed

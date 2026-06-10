@@ -83,15 +83,20 @@ async def compute(
     *,
     grounding_facts: tuple[GroundingFact, ...] = (),
     context: dict | None = None,
+    param_origins: dict | None = None,
 ) -> CalcResult:
     """Stage 3 — deterministic calc layer (M4), AFTER ground (Fachkarten-property inputs available).
     Evaluate the reviewed calc registry over the params (+ reviewed grounding facts for qualitative
     cross-layer flags) as a topological cascade. Pure; fail-closed (NotComputed reasons, never a
-    misleading number). No engine → empty CalcResult."""
+    misleading number). No engine → empty CalcResult. ``param_origins`` (M8-A) carries the
+    per-input provenance from the binding layer into the computed values."""
     if engine is None:
         return CalcResult()
     return engine.evaluate(
-        params=params or {}, grounding_facts=grounding_facts, context=context
+        params=params or {},
+        grounding_facts=grounding_facts,
+        context=context,
+        param_origins=param_origins,
     )
 
 
