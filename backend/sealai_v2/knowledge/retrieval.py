@@ -54,13 +54,19 @@ class InProcessRetriever:
             for claim in card.reviewed_claims():
                 reviewed.append(
                     GroundingFact(
-                        text=claim.text, quelle=_quelle(card), card_id=card.id
+                        text=claim.text,
+                        quelle=_quelle(card),
+                        card_id=card.id,
+                        sources=claim.sources,  # M6c: owner-verified primary sources for the citation
                     )
                 )
             for claim in card.draft_claims():
                 provisional.append(
                     GroundingFact(
-                        text=claim.text, quelle=_quelle(card), card_id=card.id
+                        text=claim.text,
+                        quelle=_quelle(card),
+                        card_id=card.id,
+                        sources=claim.sources,
                     )
                 )
         return RetrievalResult(

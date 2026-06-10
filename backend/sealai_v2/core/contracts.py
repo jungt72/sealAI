@@ -108,6 +108,11 @@ class GroundingFact:
     card_id: str = (
         ""  # source Fachkarte id (for citation + L3 card-contradiction validation)
     )
+    # M6c: the OWNER-VERIFIED PRIMARY sources of the source Claim (e.g. "Parker O-Ring Handbook",
+    # "ISO 3601-2") — surfaced to the USER by the API citation serializer instead of the internal
+    # card_id. L1-NEUTRAL: the assembler renders only text+quelle, so this never reaches the prompt
+    # (byte-identical) → no behavior change, no eval perturbation.
+    sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,6 +128,31 @@ class UntrustedContent:
     text: str
     origin: str = "user-pasted"  # "user-pasted" | "datasheet" | "legacy"
     provenance: str = "untrusted-unverified"
+
+
+class AuthError(RuntimeError):
+    """Raised when a token cannot be validated (P0 fail-closed). The route maps this → 401; the
+    reason string is for logs, NOT for the client (no oracle for an attacker)."""
+
+
+@dataclass(frozen=True)
+class VerifiedIdentity:
+    """The ONLY source of request identity (M6c P0). Derived from a cryptographically VERIFIED token
+    inside V2 — never from a client header/param. ``tenant_id`` is the hard isolation boundary;
+    ``session_id`` scopes the conversation (from the token's session claim — one conversation per auth
+    session at M6c; a tenant-scoped multi-conversation id is a deliberate later extension)."""
+
+    tenant_id: str
+    session_id: str
+    subject: str
+
+
+class AuthValidator(Protocol):
+    """The auth seam (M6c P0). ``validate`` returns a ``VerifiedIdentity`` or raises ``AuthError`` —
+    fail-closed. A Keycloak-JWT adapter implements it in ``security/auth.py``; a fake serves offline
+    tests. Identity comes ONLY from here, so tenant isolation is self-contained, not topology-dependent."""
+
+    def validate(self, token: str) -> VerifiedIdentity: ...
 
 
 @dataclass(frozen=True)
