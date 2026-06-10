@@ -1,0 +1,85 @@
+/* M7 layout — the reused DESIGN.md shell (header · chat column · cockpit column) in the brand tokens.
+   Refined/engineering-professional: seal-blue header, soft surfaces, restrained borders + radii. */
+
+.shell { display: flex; flex-direction: column; height: 100%; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-seal-blue); color: #fff;
+}
+.brand { font-weight: 600; letter-spacing: 0.01em; }
+.brand-sep { opacity: 0.55; }
+.logout { background: transparent; color: #fff; border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-sm); padding: var(--space-1) var(--space-3); cursor: pointer; }
+
+/* persistent claim-boundary — always visible, never dropped */
+.safety-banner {
+  background: var(--color-seal-light-blue); color: var(--color-seal-blue);
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-6); font-size: 13px; font-weight: 500;
+}
+
+.workspace { display: grid; grid-template-columns: 1fr 380px; gap: 0; flex: 1; min-height: 0; }
+.chat-col { display: flex; flex-direction: column; min-height: 0; padding: var(--space-6); }
+.cockpit-col {
+  border-left: 1px solid var(--color-border); background: var(--color-sidebar);
+  padding: var(--space-6); overflow: auto; display: flex; flex-direction: column; gap: var(--space-6);
+}
+
+.chat-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.chat-log { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+.msg-user { align-self: flex-end; background: var(--color-seal-blue); color: #fff;
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-lg); max-width: 80%; }
+
+.answer { background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); padding: var(--space-4); max-width: 85%; }
+.answer-badges { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
+.badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.badge-candidate { background: var(--color-muted); color: var(--color-muted-foreground); }
+.badge-vorlaeufig { background: var(--color-warning-bg); color: var(--color-warning-fg); }
+.answer-text { white-space: pre-wrap; line-height: 1.5; }
+
+.citations { margin-top: var(--space-3); font-size: 13px; }
+.citation { display: flex; flex-direction: column; gap: 2px; margin: var(--space-2) 0; }
+.citation-source { color: var(--color-seal-blue); font-weight: 600; font-size: 12px; }
+
+.composer { display: flex; gap: var(--space-2); margin-top: var(--space-4); }
+.composer textarea { flex: 1; resize: none; min-height: 56px; padding: var(--space-3);
+  border: 1px solid var(--color-border); border-radius: var(--radius-md); font: inherit; }
+.composer button, .cockpit-actions button, .make-briefing {
+  background: var(--color-seal-blue); color: #fff; border: none; border-radius: var(--radius-md);
+  padding: 0 var(--space-6); cursor: pointer; font-weight: 600; }
+.composer button:disabled { opacity: 0.5; cursor: default; }
+
+.error-banner { background: var(--color-warning-bg); color: var(--color-warning-fg);
+  border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
+
+.cockpit-head { display: flex; align-items: center; justify-content: space-between; }
+.cockpit-head h3 { margin: 0 0 var(--space-2); font-size: 14px; color: var(--color-seal-blue); }
+.claim-boundary-note { font-size: 12px; color: var(--color-muted-foreground);
+  border-left: 3px solid var(--color-seal-blue); padding-left: var(--space-3); margin: var(--space-2) 0; }
+.muted { color: var(--color-muted-foreground); font-size: 13px; }
+
+.fact-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.fact { background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); padding: var(--space-3); }
+.fact-kv { display: flex; justify-content: space-between; gap: var(--space-3); }
+.fact-feld { color: var(--color-muted-foreground); font-size: 12px; }
+.fact-wert { font-weight: 600; }
+.fact-hint { font-size: 11px; color: var(--color-muted-foreground); font-style: italic; margin-top: 2px; }
+.fact-actions { display: flex; gap: var(--space-3); margin-top: var(--space-2); }
+.fact-actions button, .link-danger { background: none; border: none; color: var(--color-seal-blue);
+  cursor: pointer; font-size: 12px; padding: 0; }
+.link-danger { color: #a12; }
+
+.briefing-body { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
+.briefing-provenance { font-size: 12px; color: var(--color-seal-blue); margin-top: var(--space-2); }
+
+.login { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: var(--space-4); }
+.login h1 { color: var(--color-seal-blue); }
+.login button { background: var(--color-seal-blue); color: #fff; border: none;
+  border-radius: var(--radius-md); padding: var(--space-3) var(--space-8); font-weight: 600; cursor: pointer; }

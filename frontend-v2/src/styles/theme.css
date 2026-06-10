@@ -1,0 +1,35 @@
+/* sealingAI design tokens — REUSED from the V1 frontend/src/app/globals.css @theme block (the brand
+   visual language), as plain CSS custom properties (no Tailwind utility engine needed for a minimal
+   SPA). The look is the established brand; the code is independent of V1. */
+:root {
+  --font-sans: "Google Sans Flex Variable", "Google Sans Flex", "Google Sans", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  --color-background: #fcfcfc;
+  --color-foreground: #1f1f1f;
+  --color-seal-blue: #002a5b;
+  --color-seal-light-blue: color-mix(in srgb, var(--color-seal-blue) 14%, #ffffff);
+  --color-sidebar: color-mix(in srgb, var(--color-seal-blue) 8%, #ffffff);
+  --color-surface: #ffffff;
+  --color-border: #e3e3e3;
+  --color-muted: #f5f5f7;
+  --color-muted-foreground: #444746;
+  --color-warning-bg: color-mix(in srgb, #b8860b 10%, #ffffff);
+  --color-warning-fg: #6b5200;
+
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  color: var(--color-foreground);
+  background: var(--color-background);
+  -webkit-font-smoothing: antialiased;
+}

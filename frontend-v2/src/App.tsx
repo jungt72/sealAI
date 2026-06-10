@@ -1,0 +1,130 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ApiClient } from "./api/client";
+import {
+  authorizeUrl,
+  clearAccessToken,
+  exchangeCode,
+  getAccessToken,
+  randomVerifier,
+  type OidcConfig,
+} from "./auth/oidc";
+import { BriefingPane } from "./components/BriefingPane";
+import { ChatPane } from "./components/ChatPane";
+import { MemoryPanel } from "./components/MemoryPanel";
+import { Shell } from "./components/Shell";
+import type { Briefing, ConversationMemory } from "./contracts";
+
+const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
+const CONFIG: OidcConfig = {
+  issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
+  clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
+  redirectUri: env.VITE_OIDC_REDIRECT_URI ?? `${location.origin}/dashboard/callback`,
+  scope: "openid email profile",
+};
+
+export function App() {
+  const [authed, setAuthed] = useState<boolean>(() => getAccessToken() !== null);
+  const [error, setError] = useState<string | null>(null);
+  const [memory, setMemory] = useState<ConversationMemory>({ case_state: [], history: [] });
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
+  const [lastMessage, setLastMessage] = useState<string>("");
+
+  const onUnauthenticated = useCallback(() => {
+    clearAccessToken();
+    setAuthed(false);
+  }, []);
+  const api = useMemo(() => new ApiClient(getAccessToken, onUnauthenticated), [onUnauthenticated]);
+
+  const refreshMemory = useCallback(() => {
+    api.memory().then(setMemory).catch(() => undefined);
+  }, [api]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.pathname.endsWith("/callback") && url.searchParams.get("code")) {
+      const code = url.searchParams.get("code") as string;
+      const verifier = sessionStorage.getItem("v2_pkce_verifier") ?? "";
+      exchangeCode(CONFIG, code, verifier)
+        .then(() => {
+          sessionStorage.removeItem("v2_pkce_verifier"); // PKCE verifier is one-time; token stays in memory
+          window.history.replaceState({}, "", "/dashboard");
+          setAuthed(true);
+        })
+        .catch(() => setError("Anmeldung fehlgeschlagen — bitte erneut anmelden."));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authed) refreshMemory();
+  }, [authed, refreshMemory]);
+
+  const login = useCallback(async () => {
+    const verifier = randomVerifier();
+    const state = randomVerifier();
+    sessionStorage.setItem("v2_pkce_verifier", verifier);
+    window.location.href = await authorizeUrl(CONFIG, { verifier, state });
+  }, []);
+
+  const send = useCallback(
+    async (message: string) => {
+      setError(null);
+      setLastMessage(message);
+      try {
+        return await api.chat(message);
+      } catch (e) {
+        setError("Es ist ein Fehler aufgetreten — bitte erneut versuchen.");
+        throw e;
+      } finally {
+        refreshMemory();
+      }
+    },
+    [api, refreshMemory],
+  );
+
+  const makeBriefing = useCallback(() => {
+    if (!lastMessage) return;
+    api.briefing(lastMessage).then(setBriefing).catch(() => setError("Briefing fehlgeschlagen."));
+  }, [api, lastMessage]);
+
+  if (!authed) {
+    return (
+      <div className="login" data-testid="login-view">
+        <h1>
+          sealing<span className="brand-sep"> | </span>Intelligence
+        </h1>
+        <button onClick={() => void login()} data-testid="login">
+          Mit Keycloak anmelden
+        </button>
+        {error && <p role="alert">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <Shell
+      onLogout={onUnauthenticated}
+      cockpit={
+        <>
+          <MemoryPanel
+            memory={memory}
+            onEdit={(feld, wert) => {
+              const next = window.prompt(`${feld}:`, wert);
+              if (next != null) api.editFact(feld, next).then(refreshMemory).catch(() => undefined);
+            }}
+            onForget={(feld) => api.forgetFact(feld).then(refreshMemory).catch(() => undefined)}
+            onForgetAll={() => api.forgetAll().then(refreshMemory).catch(() => undefined)}
+          />
+          <div className="cockpit-actions">
+            <button onClick={makeBriefing} disabled={!lastMessage} data-testid="make-briefing">
+              Briefing erstellen
+            </button>
+          </div>
+          <BriefingPane briefing={briefing} />
+        </>
+      }
+    >
+      <ChatPane onSend={send} error={error} />
+    </Shell>
+  );
+}
