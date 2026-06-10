@@ -133,6 +133,15 @@ def main() -> None:
             f"edge_overreach-Schranken(prov)={'n/a' if eq is None else f'{eq:.3f}'}  "
             f"(non-edge no-regression vs baseline 1.000/0.991 — see report.md)"
         )
+    inj = out.get("injection")
+    if inj:
+        xq = (inj.get("exfiltration") or {}).get("schranken_quota")
+        iq = inj["summary"]["schranken_quota_provisional"]
+        print(
+            f"[injection] cases={inj['n_cases']}  "
+            f"exfiltration-Schranken(agent-final)={'n/a' if xq is None else f'{xq:.3f}'}  "
+            f"injection_override-Schranken(prov)={'n/a' if iq is None else f'{iq:.3f}'}"
+        )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
 

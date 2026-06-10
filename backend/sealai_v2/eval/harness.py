@@ -17,7 +17,7 @@ from pathlib import Path
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
 from sealai_v2.eval import report
-from sealai_v2.eval.cases import Case, load_cases, load_edge_cases
+from sealai_v2.eval.cases import Case, load_cases, load_edge_cases, load_injection_cases
 from sealai_v2.eval.judge import JudgeResult, judge_answer, judge_no_reask
 from sealai_v2.eval.multiturn import (
     load_multiturn_cases,
@@ -25,8 +25,11 @@ from sealai_v2.eval.multiturn import (
     summarize_multiturn,
 )
 from sealai_v2.eval.scorer import CaseScore, score_case, summarize_column
+from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.llm.factory import build_llm_client, resolve_l1_model
 from sealai_v2.pipeline.pipeline import build_pipeline
+from sealai_v2.prompts.assembler import PromptAssembler
+from sealai_v2.security.leak_detect import exfiltration_leak
 from sealai_v2.security.tenant import TenantContext
 
 # Decision #2: the two flag columns measured at M1.
@@ -218,6 +221,54 @@ async def _run_edge(
     return records, errors
 
 
+async def _run_injection(
+    pipeline, judge_cfg: ModelConfig
+) -> tuple[list[Record], list[str], dict | None]:
+    """Run the Injektion/Sicherheit (INJECTION) class (M6b) through the EXISTING single-turn unit +
+    judge + scorer (no new runner) — that path yields the HUMAN-FINAL ``injection_override`` (judge
+    must_avoid → owner ticks). PLUS the DETERMINISTIC ``exfiltration`` gate (agent-final): run
+    ``leak_detect`` over each answer vs the static system-prompt + the reviewed-claim texts. Returns
+    (records, errors, exfiltration-block). Records fold into the canonical list (worksheet +
+    adjudicate); exfiltration is reported agent-final (not a worksheet tick)."""
+    cases = load_injection_cases()
+    if not cases:
+        return [], [], None
+    # reference for the deterministic leak check: the static doctrine prompt + reviewed claim texts.
+    ref_prompt = PromptAssembler().system_prompt(flags=COLUMNS["flags_on"])
+    kb_claims = [
+        c.text for card in load_fachkarten().cards for c in card.reviewed_claims()
+    ]
+    records: list[Record] = []
+    errors: list[str] = []
+    leaks: dict[str, object] = {}
+    for case in cases:
+        try:
+            rec = await _run_unit(pipeline, judge_cfg, case, "injection", COLUMNS["flags_on"])
+            records.append(rec)
+            leaks[case.id] = exfiltration_leak(
+                answer=rec.answer_text, system_prompt=ref_prompt, kb_claims=kb_claims
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_multiturn)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    exfil = {
+        "n_leaks": sum(1 for v in leaks.values() if v.leaked),
+        "schranken_quota": (
+            round(sum(1 for v in leaks.values() if not v.leaked) / len(leaks), 3)
+            if leaks
+            else None
+        ),
+        "per_case": {
+            cid: {
+                "system_prompt_leak": v.system_prompt_leak,
+                "kb_claims_leaked": v.kb_claims_leaked,
+                "leaked": v.leaked,
+            }
+            for cid, v in leaks.items()
+        },
+    }
+    return records, errors, exfil
+
+
 async def run_eval(
     settings: Settings,
     *,
@@ -286,6 +337,24 @@ async def run_eval(
     )
     records = list(records) + edge_records
 
+    # M6b — Injektion/Sicherheit class. injection_override is human-final (folds via the worksheet,
+    # so the records join the canonical list); exfiltration is agent-final deterministic (the leak
+    # sub-block). Excluded from the non-edge no-regression by column.
+    inj_records, inj_errors, inj_exfil = await _run_injection(pipeline, judge_cfg)
+    injection = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("injection", [r.score for r in inj_records])
+            ),
+            "n_cases": len(inj_records),
+            "errors": inj_errors,
+            "exfiltration": inj_exfil,
+        }
+        if inj_records
+        else None
+    )
+    records = list(records) + inj_records
+
     l3_on = settings.verify_enabled
     l2_on = settings.ground_enabled
     l4_on = settings.compute_enabled
@@ -325,6 +394,7 @@ async def run_eval(
         "distill_enabled": settings.distill_enabled,
         "n_multiturn_cases": (len(multiturn["cases"]) if multiturn else 0),
         "n_edge_cases": (edge["n_cases"] if edge else 0),
+        "n_injection_cases": (injection["n_cases"] if injection else 0),
         "baseline_non_edge": {"flags_off": 1.000, "flags_on": 0.991},  # m6a-memory no-regression anchor
         "columns": list(columns.keys()),
         "n_cases": len(cases),
@@ -335,13 +405,17 @@ async def run_eval(
         ),
         "errors": [r.error for r in records if r.error]
         + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])]
-        + [f"edge::{e}" for e in (edge or {}).get("errors", [])],
+        + [f"edge::{e}" for e in (edge or {}).get("errors", [])]
+        + [f"injection::{e}" for e in (injection or {}).get("errors", [])],
     }
 
-    report.write_all(run_dir, manifest, records, summaries, multiturn=multiturn, edge=edge)
+    report.write_all(
+        run_dir, manifest, records, summaries, multiturn=multiturn, edge=edge, injection=injection
+    )
     return {
         "manifest": manifest,
         "summaries": summaries,
         "multiturn": multiturn,
         "edge": edge,
+        "injection": injection,
     }

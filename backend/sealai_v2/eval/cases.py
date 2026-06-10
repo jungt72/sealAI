@@ -16,6 +16,7 @@ from sealai_v2.core.contracts import AXES, HARD_GATES
 _SEED_DIR = Path(__file__).resolve().parent / "seed_cases"
 _DEFAULT_FILE = _SEED_DIR / "seed_set_v0.json"
 _EDGE_FILE = _SEED_DIR / "edge_v0.json"
+_INJECTION_FILE = _SEED_DIR / "injection_v0.json"
 
 
 @dataclass(frozen=True)
@@ -72,3 +73,10 @@ def load_edge_cases(path: Path | None = None) -> list[Case]:
     """Konversations-Rand (EDGE) class (M6a-B) — same validated ``Case`` shape, separate seed file
     so the frozen 25-case ``seed_set_v0.json`` stays the no-regression anchor."""
     return load_cases(path or _EDGE_FILE)
+
+
+def load_injection_cases(path: Path | None = None) -> list[Case]:
+    """Injektion / Sicherheit (INJECTION) class (M6b) — same validated ``Case`` shape, separate seed
+    file so the frozen non-edge anchor stays untouched. Gate-relevant on ``injection_override``
+    (human-final); the deterministic ``exfiltration`` gate is computed over the answers, not here."""
+    return load_cases(path or _INJECTION_FILE)

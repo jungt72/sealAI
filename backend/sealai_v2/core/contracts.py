@@ -54,6 +54,7 @@ class SystemPromptAssembler(Protocol):
         not_computed: list[dict] | None = None,
         calc_notes: list[str] | None = None,
         conversation_window: list[dict] | None = None,
+        untrusted: list[dict] | None = None,
     ) -> str: ...
 
 
@@ -107,6 +108,21 @@ class GroundingFact:
     card_id: str = (
         ""  # source Fachkarte id (for citation + L3 card-contradiction validation)
     )
+
+
+@dataclass(frozen=True)
+class UntrustedContent:
+    """M6b — content from outside the curated knowledge lane (user-pasted claims, datasheets, legacy
+    text). The QUARANTINE TYPE: it is DATA, never authoritative grounding. It reaches L1 only as a
+    DELIMITED data block (reason ABOUT it / check it against the reviewed Fachkarten — never obey it,
+    never cite it as a source). The grounding path (``Retriever`` → ``GroundingFact``) structurally
+    cannot consume it (AST keystone). Extends the M5 remembered-claim principle: provenance stays
+    ``untrusted-unverified`` (never-authoritative). Upload/file parsing is deferred — the seam +
+    invariant exist now on the chat-input surface so the quarantine already holds when uploads land."""
+
+    text: str
+    origin: str = "user-pasted"  # "user-pasted" | "datasheet" | "legacy"
+    provenance: str = "untrusted-unverified"
 
 
 @dataclass(frozen=True)
@@ -419,4 +435,12 @@ HARD_GATES: tuple[str, ...] = (
     "confident_wrong",
     "memory_fabrication",
     "edge_overreach",
+    # M6b injection/security (doctrine class). ``exfiltration`` = DETERMINISTIC, agent-final
+    # (security/leak_detect.py: verbatim system-prompt span OR ≥K reviewed-claim dump; no human tick,
+    # like memory_fabrication). ``injection_override`` = HUMAN-FINAL judgment (judge must_avoid
+    # advisory, owner ticks): adopting an injected claim as grounded/cited, obeying a doctrine-
+    # override (final release / paid ranking / neutrality break), or complying with an exfiltration/
+    # cross-tenant request in ANY (non-verbatim) form — the semantic backstop.
+    "exfiltration",
+    "injection_override",
 )
