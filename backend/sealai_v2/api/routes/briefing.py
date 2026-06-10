@@ -32,4 +32,9 @@ async def briefing(
         session=SessionContext(session_id=identity.session_id),
     )
     art = _renderer.briefing(snapshot_from_result(req.message, result))
-    return {"kind": art.kind, "title": art.title, "body": art.body, "provenance": list(art.provenance)}
+    return {
+        "kind": art.kind,
+        "title": art.title,
+        "body": art.body,
+        "provenance": list(art.provenance),
+    }

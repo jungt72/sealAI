@@ -28,7 +28,11 @@ def test_flags_a_reasked_topic():
 
 
 def test_clean_answer_no_violation():
-    out = _judge('{"reasked": [{"topic": "medium", "violated": false}]}', "Bei 150°C verspröde…", ("medium",))
+    out = _judge(
+        '{"reasked": [{"topic": "medium", "violated": false}]}',
+        "Bei 150°C verspröde…",
+        ("medium",),
+    )
     assert out == {"medium": False}
 
 

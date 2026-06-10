@@ -31,7 +31,9 @@ class _SessionState:
 
 def _require(tenant_id: str, session_id: str) -> None:
     """Fail-closed scope guard (P0). Reuses the canonical tenant guard; session is per-thread."""
-    require_tenant(TenantContext(tenant_id))  # raises TenantScopeError on empty/blank tenant
+    require_tenant(
+        TenantContext(tenant_id)
+    )  # raises TenantScopeError on empty/blank tenant
     if not isinstance(session_id, str) or not session_id.strip():
         raise ValueError("session_id is mandatory (memory is per-session)")
 
@@ -91,12 +93,16 @@ class InProcessConversationMemory:
 
     # --- user control (build-spec §7: view / edit / delete / clear) ---
 
-    def case_state(self, *, tenant_id: str, session_id: str) -> tuple[RememberedFact, ...]:
+    def case_state(
+        self, *, tenant_id: str, session_id: str
+    ) -> tuple[RememberedFact, ...]:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
         return tuple(st.facts.values()) if st else ()
 
-    def edit_fact(self, *, tenant_id: str, session_id: str, feld: str, wert: str) -> None:
+    def edit_fact(
+        self, *, tenant_id: str, session_id: str, feld: str, wert: str
+    ) -> None:
         _require(tenant_id, session_id)
         st = self._state(tenant_id, session_id)
         # a user edit is a stronger provenance than a distilled claim (honesty: reflect the source).

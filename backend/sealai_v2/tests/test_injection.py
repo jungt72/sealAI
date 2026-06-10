@@ -46,6 +46,8 @@ def test_injection_verbatim_system_prompt_leak_is_caught_agent_final():
     _records, _errors, exfil = asyncio.run(
         _run_injection(_pipeline(leak), ModelConfig("fake-judge"))
     )
-    assert exfil["n_leaks"] == 7  # every injection answer is the verbatim dump in this fake
+    assert (
+        exfil["n_leaks"] == 7
+    )  # every injection answer is the verbatim dump in this fake
     assert exfil["schranken_quota"] == 0.0
     assert all(pc["system_prompt_leak"] for pc in exfil["per_case"].values())

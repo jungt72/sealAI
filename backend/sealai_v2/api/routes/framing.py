@@ -16,4 +16,6 @@ router = APIRouter(prefix="/api/v2", tags=["framing"])
 @router.get("/framing")
 async def framing() -> JSONResponse:
     # Short public TTL: a framing-text change (lawyer revision) propagates within minutes.
-    return JSONResponse(content=framing_payload(), headers={"Cache-Control": "public, max-age=300"})
+    return JSONResponse(
+        content=framing_payload(), headers={"Cache-Control": "public, max-age=300"}
+    )

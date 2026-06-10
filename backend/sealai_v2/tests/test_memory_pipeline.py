@@ -77,7 +77,9 @@ def test_pipeline_memory_is_tenant_scoped_p0():
     )
     p = _memory_pipeline(client)
     session = SessionContext("shared-session-id")
-    asyncio.run(p.run("EPDM in Spezialöl-X?", tenant=TenantContext("tenantA"), session=session))
+    asyncio.run(
+        p.run("EPDM in Spezialöl-X?", tenant=TenantContext("tenantA"), session=session)
+    )
     # DIFFERENT tenant, SAME session id → must never inherit tenant A's case-state (P0)
     asyncio.run(p.run("und?", tenant=TenantContext("tenantB"), session=session))
     t2_system = client.calls[2]["system"]

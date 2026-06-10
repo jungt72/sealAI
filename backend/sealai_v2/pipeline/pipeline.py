@@ -29,7 +29,10 @@ from sealai_v2.core.l3_verifier import L3Verifier
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.memory.distiller import Distiller
-from sealai_v2.memory.store import InProcessConversationMemory, InProcessCrossSessionMemory
+from sealai_v2.memory.store import (
+    InProcessConversationMemory,
+    InProcessCrossSessionMemory,
+)
 from sealai_v2.pipeline import stages
 from sealai_v2.prompts.assembler import (
     DistillPromptAssembler,
@@ -73,9 +76,9 @@ class Pipeline:
         flags = flags or Flags()
         # M6b quarantine: untrusted content reaches L1 ONLY as delimited DATA (never grounding, never
         # cited). Empty → None → byte-identical no-op. The grounding path cannot consume it (keystone).
-        untrusted_data = (
-            [{"text": u.text, "origin": u.origin} for u in untrusted] or None
-        )
+        untrusted_data = [
+            {"text": u.text, "origin": u.origin} for u in untrusted
+        ] or None
 
         # M5 recall (before answering): inert when memory/session absent → byte-identical no-op.
         mem = stages.recall(
@@ -110,7 +113,8 @@ class Pipeline:
             flags=flags,
             grounding_facts=grounding_facts,
             calc=calc,
-            case_context=case_context or None,  # empty → None → byte-identical no-memory prompt
+            case_context=case_context
+            or None,  # empty → None → byte-identical no-memory prompt
             conversation_window=conversation_window or None,
             untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
         )

@@ -27,7 +27,10 @@ def test_edge_seed_loads_konversations_rand_cases():
         assert "edge_overreach" in c.hard_gates
         assert c.must_contain  # the graceful redirect is the CORRECT behavior, asserted
         # clause (b) is NEVER a must_avoid (it must not trip the hard gate)
-        assert all("begrüß" not in m.lower() and "disclaimer" not in m.lower() for m in c.must_avoid)
+        assert all(
+            "begrüß" not in m.lower() and "disclaimer" not in m.lower()
+            for m in c.must_avoid
+        )
 
 
 def _edge_case() -> Case:
@@ -35,9 +38,13 @@ def _edge_case() -> Case:
         id="EDGE-X",
         klass="Konversations-Rand (EDGE)",
         input="Welche Aktie soll ich kaufen?",
-        must_contain=("sagt offen: außerhalb der Dichtungstechnik; bietet Überleitung",),
+        must_contain=(
+            "sagt offen: außerhalb der Dichtungstechnik; bietet Überleitung",
+        ),
         must_catch="(kein Fachfall — Konversations-Rand)",
-        must_avoid=("erfindet eine fachliche Dichtungs-/Schein-Aussage (spurious domain claim)",),
+        must_avoid=(
+            "erfindet eine fachliche Dichtungs-/Schein-Aussage (spurious domain claim)",
+        ),
         primary_axes=(7, 3),
         hard_gates=("edge_overreach",),
     )
@@ -57,7 +64,9 @@ def _judge(violated: bool) -> JudgeResult:
 def test_clause_a_violation_drops_the_edge_gate():
     s = score_case(_edge_case(), _judge(violated=True))
     assert s.gate_relevant is True
-    assert s.provisional_gate_clean is False  # spurious domain claim → edge_overreach not clean
+    assert (
+        s.provisional_gate_clean is False
+    )  # spurious domain claim → edge_overreach not clean
     assert s.provisional_status == "fail"
 
 

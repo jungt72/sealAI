@@ -85,8 +85,13 @@ def write_all(
     )
     (run_dir / "report.md").write_text(
         _render_report(
-            manifest, summaries, recs, adjudication=None, multiturn=multiturn,
-            edge=edge, injection=injection,
+            manifest,
+            summaries,
+            recs,
+            adjudication=None,
+            multiturn=multiturn,
+            edge=edge,
+            injection=injection,
         ),
         encoding="utf-8",
     )
@@ -151,9 +156,7 @@ def _render_adjudication_section(adj: dict) -> list[str]:
 
     if "memory_schranken_quota" in adj:
         mq = adj["memory_schranken_quota"]
-        col_quotas = [
-            fs["schranken_quota_final"] for fs in adj["columns"].values()
-        ]
+        col_quotas = [fs["schranken_quota_final"] for fs in adj["columns"].values()]
         human_ok = all(q == 1.0 for q in col_quotas if q is not None)
         mem_ok = mq == 1.0
         combined = (
@@ -474,7 +477,9 @@ def _render_multiturn_section(multiturn: dict) -> list[str]:
         L.append("- **Distiller drop-rate:** n/a (no distiller wired).")
 
     mq = s["memory_schranken_quota"]
-    mq_str = "n/a" if mq is None else f"{mq:.3f} ({'100%' if mq == 1.0 else 'BELOW 100%'})"
+    mq_str = (
+        "n/a" if mq is None else f"{mq:.3f} ({'100%' if mq == 1.0 else 'BELOW 100%'})"
+    )
     L.append(
         f"- **memory_fabrication Schranken-quota:** {mq_str} over {s['n_turns']} turns "
         f"({s['n_memory_violations']} violation(s)) — **AGENT-FINAL** = the verbatim deterministic "
@@ -497,21 +502,37 @@ def _render_multiturn_section(multiturn: dict) -> list[str]:
             carry = (
                 "—"
                 if not t["must_carry"]
-                else ("✓" if not t["carried_missing"] else f"MISS {t['carried_missing']}")
+                else (
+                    "✓" if not t["carried_missing"] else f"MISS {t['carried_missing']}"
+                )
             )
             reask = (
                 "—"
                 if not t["must_not_reask"]
-                else ("✓" if not t["reask_violations"] else f"RE-ASK {t['reask_violations']}")
+                else (
+                    "✓"
+                    if not t["reask_violations"]
+                    else f"RE-ASK {t['reask_violations']}"
+                )
             )
-            mem = "clean" if t["memory_clean"] else f"FABRICATED {[f['feld'] for f in t['memory_fabrication']]}"
-            state = ", ".join(f"{f['feld']}={f['wert']}" for f in t["case_state"]) or "—"
-            L.append(f"| {c['case_id']} | {t['index']} | {carry} | {reask} | {mem} | {state} |")
+            mem = (
+                "clean"
+                if t["memory_clean"]
+                else f"FABRICATED {[f['feld'] for f in t['memory_fabrication']]}"
+            )
+            state = (
+                ", ".join(f"{f['feld']}={f['wert']}" for f in t["case_state"]) or "—"
+            )
+            L.append(
+                f"| {c['case_id']} | {t['index']} | {carry} | {reask} | {mem} | {state} |"
+            )
     L.append("")
     return L
 
 
-def _render_edge_section(manifest: dict, summaries: dict, recs: list[dict], edge: dict) -> list[str]:
+def _render_edge_section(
+    manifest: dict, summaries: dict, recs: list[dict], edge: dict
+) -> list[str]:
     L: list[str] = []
     L.append("## M6a-B Konversations-Rand (EDGE) + non-edge no-regression")
     L.append("")
@@ -555,7 +576,9 @@ def _render_edge_section(manifest: dict, summaries: dict, recs: list[dict], edge
         "axis-7 signal** below, never a Schranken."
     )
     L.append("")
-    L.append("| Case | edge_overreach (a, hard) | redirect (must_contain) | axis 7 (b, soft) | intent |")
+    L.append(
+        "| Case | edge_overreach (a, hard) | redirect (must_contain) | axis 7 (b, soft) | intent |"
+    )
     L.append("|---|---|---|---|---|")
     for r in recs:
         if r["column"] != "edge":
@@ -573,7 +596,9 @@ def _render_edge_section(manifest: dict, summaries: dict, recs: list[dict], edge
     return L
 
 
-def _render_injection_section(manifest: dict, recs: list[dict], injection: dict) -> list[str]:
+def _render_injection_section(
+    manifest: dict, recs: list[dict], injection: dict
+) -> list[str]:
     L: list[str] = []
     L.append("## M6b Injektion / Sicherheit (INJECTION)")
     L.append("")
@@ -586,7 +611,9 @@ def _render_injection_section(manifest: dict, recs: list[dict], injection: dict)
     )
     L.append("")
     if injection.get("errors"):
-        L.append(f"> ⚠️ {len(injection['errors'])} injection case(s) errored: {injection['errors']}")
+        L.append(
+            f"> ⚠️ {len(injection['errors'])} injection case(s) errored: {injection['errors']}"
+        )
         L.append("")
 
     exfil = injection.get("exfiltration") or {}
@@ -604,7 +631,9 @@ def _render_injection_section(manifest: dict, recs: list[dict], injection: dict)
         "(owner ticks in the worksheet)."
     )
     L.append("")
-    L.append("| Case | injection_override (prov.) | exfiltration (det.) | sys-leak | kb-claims |")
+    L.append(
+        "| Case | injection_override (prov.) | exfiltration (det.) | sys-leak | kb-claims |"
+    )
     L.append("|---|---|---|---|---|")
     per = exfil.get("per_case", {})
     for r in recs:

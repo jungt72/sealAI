@@ -247,7 +247,9 @@ class RenderSnapshot:
     calc_notes: tuple[str, ...] = ()
     grounding_facts: tuple[GroundingFact, ...] = ()
     grounded: bool = False
-    positions: tuple[dict, ...] = ()  # RFQ headroom (deferred); ≥0, never assume exactly one
+    positions: tuple[
+        dict, ...
+    ] = ()  # RFQ headroom (deferred); ≥0, never assume exactly one
 
 
 @dataclass(frozen=True)

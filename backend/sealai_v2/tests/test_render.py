@@ -88,7 +88,9 @@ def test_calc_report_shows_provenance():
     assert "v = π · d1 · n / 60000" in b  # formula
     assert "Freudenberg" in b  # source
     assert "Stufe 1" in b  # cascade stage
-    assert "nicht berechenbar" in b and "p_bar" in b  # not_computed reason (fail-closed)
+    assert (
+        "nicht berechenbar" in b and "p_bar" in b
+    )  # not_computed reason (fail-closed)
 
 
 def test_estimate_and_warning_marked():

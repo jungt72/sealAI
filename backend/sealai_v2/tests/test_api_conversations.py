@@ -11,7 +11,10 @@ def _seed(pipeline, tenant, session, feld, wert):
     from sealai_v2.core.contracts import RememberedFact
 
     pipeline.memory.record_turn(
-        tenant_id=tenant, session_id=session, question="q", answer="a",
+        tenant_id=tenant,
+        session_id=session,
+        question="q",
+        answer="a",
         facts=(RememberedFact(feld, wert),),
     )
 
@@ -21,14 +24,26 @@ def test_view_edit_forget_roundtrip():
     _seed(pipeline, "tenant-A", "sess-A", "medium", "Hydrauliköl")
     # view
     r = client.get("/api/v2/conversations/current/memory", headers=auth("tok-A"))
-    assert {"feld": "medium", "wert": "Hydrauliköl", "provenance": "distilled-from-conversation"} in r.json()["case_state"]
+    assert {
+        "feld": "medium",
+        "wert": "Hydrauliköl",
+        "provenance": "distilled-from-conversation",
+    } in r.json()["case_state"]
     # edit
-    client.put("/api/v2/conversations/current/facts/medium", json={"wert": "Wasser"}, headers=auth("tok-A"))
-    cs = client.get("/api/v2/conversations/current/memory", headers=auth("tok-A")).json()["case_state"]
+    client.put(
+        "/api/v2/conversations/current/facts/medium",
+        json={"wert": "Wasser"},
+        headers=auth("tok-A"),
+    )
+    cs = client.get(
+        "/api/v2/conversations/current/memory", headers=auth("tok-A")
+    ).json()["case_state"]
     assert any(f["feld"] == "medium" and f["wert"] == "Wasser" for f in cs)
     # forget one
     client.delete("/api/v2/conversations/current/facts/medium", headers=auth("tok-A"))
-    cs = client.get("/api/v2/conversations/current/memory", headers=auth("tok-A")).json()["case_state"]
+    cs = client.get(
+        "/api/v2/conversations/current/memory", headers=auth("tok-A")
+    ).json()["case_state"]
     assert not any(f["feld"] == "medium" for f in cs)
 
 
@@ -38,7 +53,9 @@ def test_forget_all_clears_only_callers_tenant():
     _seed(pipeline, "tenant-B", "sess-B", "medium", "Wasser")
     client.delete("/api/v2/conversations/current", headers=auth("tok-A"))  # A clears
     assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A") == ()
-    assert pipeline.memory.case_state(tenant_id="tenant-B", session_id="sess-B")  # B untouched
+    assert pipeline.memory.case_state(
+        tenant_id="tenant-B", session_id="sess-B"
+    )  # B untouched
 
 
 def test_cross_tenant_MUTATION_isolation_via_token():
@@ -46,9 +63,17 @@ def test_cross_tenant_MUTATION_isolation_via_token():
     client, pipeline = make_client()
     _seed(pipeline, "tenant-B", "sess-B", "medium", "Wasser")
     # A edits "medium" — affects A's (empty) session, NEVER B's
-    client.put("/api/v2/conversations/current/facts/medium", json={"wert": "HACKED"}, headers=auth("tok-A"))
+    client.put(
+        "/api/v2/conversations/current/facts/medium",
+        json={"wert": "HACKED"},
+        headers=auth("tok-A"),
+    )
     b = pipeline.memory.case_state(tenant_id="tenant-B", session_id="sess-B")
-    assert any(f.feld == "medium" and f.wert == "Wasser" for f in b)  # B intact, not "HACKED"
+    assert any(
+        f.feld == "medium" and f.wert == "Wasser" for f in b
+    )  # B intact, not "HACKED"
     # A forgets "medium" — B's fact survives
     client.delete("/api/v2/conversations/current/facts/medium", headers=auth("tok-A"))
-    assert pipeline.memory.case_state(tenant_id="tenant-B", session_id="sess-B")  # still there
+    assert pipeline.memory.case_state(
+        tenant_id="tenant-B", session_id="sess-B"
+    )  # still there

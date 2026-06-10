@@ -14,7 +14,9 @@ def citation(fact: GroundingFact) -> dict:
     external primary source."""
     return {
         "text": fact.text,
-        "sources": list(fact.sources) if fact.sources else ["geprüfte Fachkarte (intern)"],
+        "sources": list(fact.sources)
+        if fact.sources
+        else ["geprüfte Fachkarte (intern)"],
     }
 
 

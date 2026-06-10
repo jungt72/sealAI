@@ -30,11 +30,19 @@ def _jwks(pub, kid="k1") -> dict:
     return {"keys": [jwk]}
 
 
-def _tok(priv, *, kid="k1", alg="RS256", iss=_ISS, aud=_AUD, claims=None, exp_offset=3600) -> str:
+def _tok(
+    priv, *, kid="k1", alg="RS256", iss=_ISS, aud=_AUD, claims=None, exp_offset=3600
+) -> str:
     import time
 
-    payload = {"iss": iss, "aud": aud, "sub": "user-1", "sid": "sess-1",
-               "tenant_id": "tenant-A", "exp": int(time.time()) + exp_offset}
+    payload = {
+        "iss": iss,
+        "aud": aud,
+        "sub": "user-1",
+        "sid": "sess-1",
+        "tenant_id": "tenant-A",
+        "exp": int(time.time()) + exp_offset,
+    }
     payload.update(claims or {})
     headers = {"kid": kid} if kid is not None else {}
     key = "secret" if alg.startswith("HS") else priv
@@ -43,7 +51,9 @@ def _tok(priv, *, kid="k1", alg="RS256", iss=_ISS, aud=_AUD, claims=None, exp_of
 
 def _validator(jwks, *, fetcher=None) -> KeycloakJwtValidator:
     return KeycloakJwtValidator(
-        jwks_url="https://kc.example/jwks", issuer=_ISS, audience=_AUD,
+        jwks_url="https://kc.example/jwks",
+        issuer=_ISS,
+        audience=_AUD,
         jwks_fetcher=fetcher or (lambda: jwks),
     )
 
@@ -53,15 +63,23 @@ def test_valid_token_yields_identity_from_token():
     v = _validator(_jwks(priv.public_key()))
     ident = v.validate(_tok(priv))
     assert isinstance(ident, VerifiedIdentity)
-    assert ident.tenant_id == "tenant-A" and ident.session_id == "sess-1" and ident.subject == "user-1"
+    assert (
+        ident.tenant_id == "tenant-A"
+        and ident.session_id == "sess-1"
+        and ident.subject == "user-1"
+    )
 
 
 def test_alg_none_is_rejected():
     priv = _keypair()
     v = _validator(_jwks(priv.public_key()))
     # an unsigned alg:none token
-    tok = jwt.encode({"iss": _ISS, "aud": _AUD, "sub": "x", "tenant_id": "tenant-A"}, key=None,
-                     algorithm="none", headers={"kid": "k1"})
+    tok = jwt.encode(
+        {"iss": _ISS, "aud": _AUD, "sub": "x", "tenant_id": "tenant-A"},
+        key=None,
+        algorithm="none",
+        headers={"kid": "k1"},
+    )
     with pytest.raises(AuthError):
         v.validate(tok)
 
@@ -86,15 +104,27 @@ def test_alg_confusion_hs256_with_public_key_is_rejected():
         return base64.urlsafe_b64encode(b).rstrip(b"=")
 
     head = _b64(json.dumps({"alg": "HS256", "kid": "k1", "typ": "JWT"}).encode())
-    body = _b64(json.dumps({"iss": _ISS, "aud": _AUD, "sub": "x", "sid": "s",
-                            "tenant_id": "tenant-A", "exp": int(time.time()) + 3600}).encode())
+    body = _b64(
+        json.dumps(
+            {
+                "iss": _ISS,
+                "aud": _AUD,
+                "sub": "x",
+                "sid": "s",
+                "tenant_id": "tenant-A",
+                "exp": int(time.time()) + 3600,
+            }
+        ).encode()
+    )
     signing_input = head + b"." + body
     sig = _b64(hmac.new(pub_pem, signing_input, hashlib.sha256).digest())
     forged = (signing_input + b"." + sig).decode()
 
     v = _validator(_jwks(priv.public_key()))
     with pytest.raises(AuthError):
-        v.validate(forged)  # alg HS256 not in pinned ["RS256"] → rejected before any key use
+        v.validate(
+            forged
+        )  # alg HS256 not in pinned ["RS256"] → rejected before any key use
 
 
 def test_expired_token_is_rejected():
@@ -172,7 +202,9 @@ def test_missing_tenant_claim_fails_closed():
 
 
 def test_fake_validator_maps_tokens_and_rejects_unknown():
-    fake = FakeAuthValidator({"tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A")})
+    fake = FakeAuthValidator(
+        {"tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A")}
+    )
     assert fake.validate("tok-A").tenant_id == "tenant-A"
     with pytest.raises(AuthError):
         fake.validate("tok-unknown")

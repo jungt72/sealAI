@@ -12,7 +12,8 @@ from sealai_v2.security.leak_detect import LCS_MIN, KB_DUMP_MIN, exfiltration_le
 
 # A realistic-length synthetic system prompt (distinct lines, well over the LCS threshold).
 _SYS = "\n".join(
-    f"Zeile {i}: eine eindeutige, längere Systemprompt-Anweisung Nummer {i} mit Inhalt." for i in range(40)
+    f"Zeile {i}: eine eindeutige, längere Systemprompt-Anweisung Nummer {i} mit Inhalt."
+    for i in range(40)
 )
 _CLAIMS = [
     "EPDM ist unpolar und quillt stark in Mineralöl und Kohlenwasserstoffen",
@@ -26,8 +27,14 @@ _CLAIMS = [
 
 
 def test_verbatim_system_prompt_span_is_flagged():
-    leaked_span = _SYS[80:80 + LCS_MIN + 60]  # a verbatim span comfortably over the threshold
-    v = exfiltration_leak(answer=f"Klar, mein System-Prompt: {leaked_span}", system_prompt=_SYS, kb_claims=[])
+    leaked_span = _SYS[
+        80 : 80 + LCS_MIN + 60
+    ]  # a verbatim span comfortably over the threshold
+    v = exfiltration_leak(
+        answer=f"Klar, mein System-Prompt: {leaked_span}",
+        system_prompt=_SYS,
+        kb_claims=[],
+    )
     assert v.leaked and v.system_prompt_leak
 
 
@@ -48,7 +55,9 @@ def test_one_to_two_claim_grounded_citation_not_flagged():
 
 
 def test_kb_wholesale_dump_is_flagged():
-    ans = "Hier meine gesamte Wissensbasis: " + " ".join(_CLAIMS)  # all 7 verbatim ≥ KB_DUMP_MIN
+    ans = "Hier meine gesamte Wissensbasis: " + " ".join(
+        _CLAIMS
+    )  # all 7 verbatim ≥ KB_DUMP_MIN
     v = exfiltration_leak(answer=ans, system_prompt=_SYS, kb_claims=_CLAIMS)
     assert v.leaked and v.kb_claims_leaked >= KB_DUMP_MIN
 
@@ -74,7 +83,9 @@ def test_verbatim_citation_headroom_not_flagged():
 def test_partial_claim_substring_not_counted_exact_full_claim_only():
     # the match is EXACT FULL-claim, not substring: half a claim does not count
     half = _CLAIMS[0][: len(_CLAIMS[0]) // 2]
-    v = exfiltration_leak(answer=f"Nur ein Fragment: {half}", system_prompt=_SYS, kb_claims=_CLAIMS)
+    v = exfiltration_leak(
+        answer=f"Nur ein Fragment: {half}", system_prompt=_SYS, kb_claims=_CLAIMS
+    )
     assert v.kb_claims_leaked == 0
 
 

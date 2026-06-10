@@ -62,11 +62,16 @@ def test_multiturn_re_ask_keystone_and_clean_memory():
         klass="Multi-Turn",
         turns=(
             TurnSpec(input="EPDM quillt in Hydrauliköl bei 150°C, warum?"),
-            TurnSpec(input="und bei noch höherer Temperatur?", must_carry=("Hydrauliköl", "150")),
+            TurnSpec(
+                input="und bei noch höherer Temperatur?",
+                must_carry=("Hydrauliköl", "150"),
+            ),
         ),
     )
     res = asyncio.run(run_multiturn_case(_mt_pipeline(client), case, tenant=_T))
-    assert res.carry_ok  # turn-2 carried medium + 150 °C → re-ask is structurally impossible
+    assert (
+        res.carry_ok
+    )  # turn-2 carried medium + 150 °C → re-ask is structurally impossible
     assert res.memory_gate_clean  # 150 traces to turn 1 → no fabrication
     assert {f.feld for f in res.turns[1].case_state} == {"medium", "temperatur"}
 
@@ -101,7 +106,9 @@ def test_multiturn_gate_catches_fabrication_if_runtime_bypassed():
     client = ScriptedFakeLlmClient(["Antwort"])
     p = _mt_pipeline(client, memory=mem, distiller=None)
     case = MultiTurnCase(
-        id="MT-FAB-01", klass="Multi-Turn", turns=(TurnSpec(input="FKM bei 150°C, und weiter?"),)
+        id="MT-FAB-01",
+        klass="Multi-Turn",
+        turns=(TurnSpec(input="FKM bei 150°C, und weiter?"),),
     )
     res = asyncio.run(run_multiturn_case(p, case, tenant=_T))
     assert not res.memory_gate_clean
@@ -123,52 +130,81 @@ def _judge_reasking(*topics: str):
     return _fn
 
 
-async def _judge_clean(answer_text: str, already_known: tuple[str, ...]) -> dict[str, bool]:
+async def _judge_clean(
+    answer_text: str, already_known: tuple[str, ...]
+) -> dict[str, bool]:
     return {t: False for t in already_known}
 
 
 def test_reask_judge_half_flags_a_reasking_answer():
     client = ScriptedFakeLlmClient(
-        ["Welche Temperatur denn genau?", '{"facts": []}']  # t1 generate (re-asks!), t1 distill
+        [
+            "Welche Temperatur denn genau?",
+            '{"facts": []}',
+        ]  # t1 generate (re-asks!), t1 distill
     )
     # seed medium so it is already known going into turn 1
     mem = InProcessConversationMemory()
     mem.record_turn(
-        tenant_id="eval-tenant", session_id="mt-MT-REASK-X",
-        question="EPDM in Hydrauliköl", answer="ok",
+        tenant_id="eval-tenant",
+        session_id="mt-MT-REASK-X",
+        question="EPDM in Hydrauliköl",
+        answer="ok",
         facts=(RememberedFact("medium", "Hydrauliköl"),),
     )
     case = MultiTurnCase(
-        id="MT-REASK-X", klass="Multi-Turn",
-        turns=(TurnSpec(input="und weiter?", must_carry=("Hydrauliköl",), must_not_reask=("medium",)),),
+        id="MT-REASK-X",
+        klass="Multi-Turn",
+        turns=(
+            TurnSpec(
+                input="und weiter?",
+                must_carry=("Hydrauliköl",),
+                must_not_reask=("medium",),
+            ),
+        ),
     )
     res = asyncio.run(
         run_multiturn_case(
-            _mt_pipeline(client, memory=mem, distiller=None), case,
-            tenant=_T, judge=_judge_reasking("medium"),
+            _mt_pipeline(client, memory=mem, distiller=None),
+            case,
+            tenant=_T,
+            judge=_judge_reasking("medium"),
         )
     )
-    assert res.turns[0].carry_ok          # deterministic half: fact IS present
-    assert not res.turns[0].reask_ok      # judge half: answer re-asked it anyway
+    assert res.turns[0].carry_ok  # deterministic half: fact IS present
+    assert not res.turns[0].reask_ok  # judge half: answer re-asked it anyway
     assert "medium" in res.turns[0].reask_violations
 
 
 def test_reask_judge_half_clean_answer_passes():
-    client = ScriptedFakeLlmClient(["Bei höherer Temperatur Versprödung.", '{"facts": []}'])
+    client = ScriptedFakeLlmClient(
+        ["Bei höherer Temperatur Versprödung.", '{"facts": []}']
+    )
     mem = InProcessConversationMemory()
     mem.record_turn(
-        tenant_id="eval-tenant", session_id="mt-MT-REASK-Y",
-        question="EPDM in Hydrauliköl", answer="ok",
+        tenant_id="eval-tenant",
+        session_id="mt-MT-REASK-Y",
+        question="EPDM in Hydrauliköl",
+        answer="ok",
         facts=(RememberedFact("medium", "Hydrauliköl"),),
     )
     case = MultiTurnCase(
-        id="MT-REASK-Y", klass="Multi-Turn",
-        turns=(TurnSpec(input="und weiter?", must_carry=("Hydrauliköl",), must_not_reask=("medium",)),),
+        id="MT-REASK-Y",
+        klass="Multi-Turn",
+        turns=(
+            TurnSpec(
+                input="und weiter?",
+                must_carry=("Hydrauliköl",),
+                must_not_reask=("medium",),
+            ),
+        ),
     )
     res = asyncio.run(
         run_multiturn_case(
-            _mt_pipeline(client, memory=mem, distiller=None), case,
-            tenant=_T, judge=_judge_clean,
+            _mt_pipeline(client, memory=mem, distiller=None),
+            case,
+            tenant=_T,
+            judge=_judge_clean,
         )
     )
     assert res.turns[0].carry_ok and res.turns[0].reask_ok
@@ -179,8 +215,15 @@ def test_reask_judge_half_clean_answer_passes():
 
 def _clean_case() -> MultiTurnCase:
     return MultiTurnCase(
-        id="MT-OK", klass="Multi-Turn",
-        turns=(TurnSpec(input="FKM bei 150°C?", must_carry=("150",), must_not_reask=("temperatur",)),),
+        id="MT-OK",
+        klass="Multi-Turn",
+        turns=(
+            TurnSpec(
+                input="FKM bei 150°C?",
+                must_carry=("150",),
+                must_not_reask=("temperatur",),
+            ),
+        ),
     )
 
 
@@ -189,7 +232,9 @@ def test_summarize_clean_memory_schranken_is_1_0():
         ["Antwort.", '{"facts": [{"feld": "temperatur", "wert": "150 °C"}]}']
     )
     res = asyncio.run(
-        run_multiturn_case(_mt_pipeline(client), _clean_case(), tenant=_T, judge=_judge_clean)
+        run_multiturn_case(
+            _mt_pipeline(client), _clean_case(), tenant=_T, judge=_judge_clean
+        )
     )
     s = summarize_multiturn([res])
     assert s.memory_schranken_quota == 1.0
@@ -201,14 +246,20 @@ def test_summarize_fabrication_drops_quota_below_1_verbatim():
     # must drop the quota. The verdict is the VERBATIM untraceable_numeric_facts() result — no tolerance.
     mem = InProcessConversationMemory()
     mem.record_turn(
-        tenant_id="eval-tenant", session_id="mt-MT-FAB-S",
-        question="FKM bei 150°C", answer="x",
+        tenant_id="eval-tenant",
+        session_id="mt-MT-FAB-S",
+        question="FKM bei 150°C",
+        answer="x",
         facts=(RememberedFact("temperatur", "1500 °C"),),
     )
     client = ScriptedFakeLlmClient(["Antwort."])
-    case = MultiTurnCase(id="MT-FAB-S", klass="Multi-Turn", turns=(TurnSpec(input="FKM bei 150°C?"),))
+    case = MultiTurnCase(
+        id="MT-FAB-S", klass="Multi-Turn", turns=(TurnSpec(input="FKM bei 150°C?"),)
+    )
     res = asyncio.run(
-        run_multiturn_case(_mt_pipeline(client, memory=mem, distiller=None), case, tenant=_T)
+        run_multiturn_case(
+            _mt_pipeline(client, memory=mem, distiller=None), case, tenant=_T
+        )
     )
     s = summarize_multiturn([res])
     assert s.memory_schranken_quota == 0.0

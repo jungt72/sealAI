@@ -35,9 +35,15 @@ class TurnSpec:
     """One turn of a multi-turn case + its per-turn assertions (build-spec §9 / owner decision (a))."""
 
     input: str
-    must_carry: tuple[str, ...] = ()  # facts that must be in case-state by now (re-ask fix; deterministic)
-    must_not_reask: tuple[str, ...] = ()  # topics the answer must NOT re-ask (judge — harness layer)
-    must_avoid: tuple[str, ...] = ()  # edge: no domain claim / no briefing dump (hard must_avoid)
+    must_carry: tuple[
+        str, ...
+    ] = ()  # facts that must be in case-state by now (re-ask fix; deterministic)
+    must_not_reask: tuple[
+        str, ...
+    ] = ()  # topics the answer must NOT re-ask (judge — harness layer)
+    must_avoid: tuple[
+        str, ...
+    ] = ()  # edge: no domain claim / no briefing dump (hard must_avoid)
     must_contain: tuple[str, ...] = ()  # expected content (e.g. capability redirect)
 
 
@@ -57,11 +63,21 @@ class TurnResult:
     input: str
     answer: str
     case_state: tuple[RememberedFact, ...]
-    carried_missing: tuple[str, ...]  # must_carry items NOT found in case-state (deterministic miss)
-    memory_fabrication: tuple[RememberedFact, ...]  # untraceable numeric facts (gate violation)
-    must_carry: tuple[str, ...] = ()  # asserted carry topics (denominator for the carry quota)
-    must_not_reask: tuple[str, ...] = ()  # asserted no-reask topics (denominator for the reask quota)
-    reask_violations: tuple[str, ...] = ()  # topics the judge says the answer re-asked anyway
+    carried_missing: tuple[
+        str, ...
+    ]  # must_carry items NOT found in case-state (deterministic miss)
+    memory_fabrication: tuple[
+        RememberedFact, ...
+    ]  # untraceable numeric facts (gate violation)
+    must_carry: tuple[
+        str, ...
+    ] = ()  # asserted carry topics (denominator for the carry quota)
+    must_not_reask: tuple[
+        str, ...
+    ] = ()  # asserted no-reask topics (denominator for the reask quota)
+    reask_violations: tuple[
+        str, ...
+    ] = ()  # topics the judge says the answer re-asked anyway
 
     @property
     def carry_ok(self) -> bool:
@@ -107,7 +123,9 @@ class MultiTurnSummary:
     n_memory_violations: int
     carry_quota: float | None  # turns fully carried / turns with a must_carry assertion
     n_carry_misses: int
-    reask_quota: float | None  # turns with no re-ask / turns with a must_not_reask assertion
+    reask_quota: (
+        float | None
+    )  # turns with no re-ask / turns with a must_not_reask assertion
     n_reask_violations: int
     drop: DistillStats | None = None
 
@@ -118,7 +136,11 @@ def _carried(item: str, case_state: tuple[RememberedFact, ...]) -> bool:
 
 
 async def run_multiturn_case(
-    pipeline, case: MultiTurnCase, *, tenant: TenantContext, judge: ReaskJudge | None = None
+    pipeline,
+    case: MultiTurnCase,
+    *,
+    tenant: TenantContext,
+    judge: ReaskJudge | None = None,
 ) -> MultiTurnResult:
     """Run an ordered turn list through one session; capture answers + the deterministic checks +
     (when a ``judge`` is wired) the re-ask judge-half.
@@ -139,7 +161,9 @@ async def run_multiturn_case(
             case_state = pipeline.memory.recall(
                 tenant_id=tenant.tenant_id, session_id=session.session_id
             ).case_state
-        carried_missing = tuple(c for c in spec.must_carry if not _carried(c, case_state))
+        carried_missing = tuple(
+            c for c in spec.must_carry if not _carried(c, case_state)
+        )
         fabricated = untraceable_numeric_facts(case_state, user_turns)
         reask_violations: tuple[str, ...] = ()
         if judge is not None and spec.must_not_reask:

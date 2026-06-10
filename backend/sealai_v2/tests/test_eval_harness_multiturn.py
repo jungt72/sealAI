@@ -32,7 +32,9 @@ def _pipeline() -> Pipeline:
         understand_enabled=False,
         memory=InProcessConversationMemory(),
         cross_session=InProcessCrossSessionMemory(),
-        distiller=Distiller(client, DistillPromptAssembler(), ModelConfig("fake-helper")),
+        distiller=Distiller(
+            client, DistillPromptAssembler(), ModelConfig("fake-helper")
+        ),
     )
 
 
@@ -44,7 +46,9 @@ _JUDGE_JSON = (
 
 
 def _edge_pipeline() -> Pipeline:
-    client = FakeLlmClient(_JUDGE_JSON)  # judge sees no must_avoid violation → edge_overreach clean
+    client = FakeLlmClient(
+        _JUDGE_JSON
+    )  # judge sees no must_avoid violation → edge_overreach clean
     return Pipeline(
         generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
         client=client,
@@ -55,7 +59,9 @@ def _edge_pipeline() -> Pipeline:
 
 def test_run_edge_runs_all_cases_gate_clean():
     # offline wiring smoke for harness._run_edge — the live REPLAY is the only other place it runs
-    records, errors = asyncio.run(_run_edge(_edge_pipeline(), ModelConfig("fake-judge")))
+    records, errors = asyncio.run(
+        _run_edge(_edge_pipeline(), ModelConfig("fake-judge"))
+    )
     assert errors == []
     assert len(records) >= 4
     assert all(r.column == "edge" for r in records)
@@ -84,12 +90,16 @@ def test_run_multiturn_records_a_failing_case_and_keeps_going():
     p = _pipeline()
     p.client = _Boom()
     p.generator = L1Generator(_Boom(), PromptAssembler(), ModelConfig("fake-l1"))
-    p.distiller = Distiller(_Boom(), DistillPromptAssembler(), ModelConfig("fake-helper"))
+    p.distiller = Distiller(
+        _Boom(), DistillPromptAssembler(), ModelConfig("fake-helper")
+    )
     mt = asyncio.run(_run_multiturn(p, ModelConfig("fake-judge")))
     assert mt is not None
     assert len(mt["errors"]) == 3  # all 3 seed cases errored, recorded
     assert mt["cases"] == []  # none completed
-    assert mt["summary"]["memory_schranken_quota"] is None  # no turns → n/a, not a crash
+    assert (
+        mt["summary"]["memory_schranken_quota"] is None
+    )  # no turns → n/a, not a crash
 
 
 def test_run_multiturn_none_when_memory_disabled():

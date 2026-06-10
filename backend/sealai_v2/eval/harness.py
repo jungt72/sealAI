@@ -200,9 +200,7 @@ async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
     }
 
 
-async def _run_edge(
-    pipeline, judge_cfg: ModelConfig
-) -> tuple[list[Record], list[str]]:
+async def _run_edge(pipeline, judge_cfg: ModelConfig) -> tuple[list[Record], list[str]]:
     """Run the Konversations-Rand (EDGE) class (M6a-B) through the EXISTING single-turn unit + judge
     + scorer (no new runner). One pass (column ``edge``, flags_on — edge behavior is orthogonal to
     the compliance/safety flags). Returns (records, errors); the records are folded into the canonical
@@ -243,7 +241,9 @@ async def _run_injection(
     leaks: dict[str, object] = {}
     for case in cases:
         try:
-            rec = await _run_unit(pipeline, judge_cfg, case, "injection", COLUMNS["flags_on"])
+            rec = await _run_unit(
+                pipeline, judge_cfg, case, "injection", COLUMNS["flags_on"]
+            )
             records.append(rec)
             leaks[case.id] = exfiltration_leak(
                 answer=rec.answer_text, system_prompt=ref_prompt, kb_claims=kb_claims
@@ -395,7 +395,10 @@ async def run_eval(
         "n_multiturn_cases": (len(multiturn["cases"]) if multiturn else 0),
         "n_edge_cases": (edge["n_cases"] if edge else 0),
         "n_injection_cases": (injection["n_cases"] if injection else 0),
-        "baseline_non_edge": {"flags_off": 1.000, "flags_on": 0.991},  # m6a-memory no-regression anchor
+        "baseline_non_edge": {
+            "flags_off": 1.000,
+            "flags_on": 0.991,
+        },  # m6a-memory no-regression anchor
         "columns": list(columns.keys()),
         "n_cases": len(cases),
         "concurrency": settings.concurrency,
@@ -410,7 +413,13 @@ async def run_eval(
     }
 
     report.write_all(
-        run_dir, manifest, records, summaries, multiturn=multiturn, edge=edge, injection=injection
+        run_dir,
+        manifest,
+        records,
+        summaries,
+        multiturn=multiturn,
+        edge=edge,
+        injection=injection,
     )
     return {
         "manifest": manifest,

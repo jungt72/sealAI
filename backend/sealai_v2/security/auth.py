@@ -67,7 +67,9 @@ class KeycloakJwtValidator:
         # PIN the algorithm: the token's alg must be one we accept — rejects alg:none + alg-confusion
         # BEFORE any key handling (never feed an RSA JWKS key into an HMAC verify).
         if header.get("alg") not in self._algorithms:
-            raise AuthError(f"algorithm {header.get('alg')!r} not allowed (pinned {self._algorithms})")
+            raise AuthError(
+                f"algorithm {header.get('alg')!r} not allowed (pinned {self._algorithms})"
+            )
         kid = header.get("kid")
         if not kid:
             # Fail-closed: without a kid there is no legitimate key to verify against — never
@@ -88,7 +90,9 @@ class KeycloakJwtValidator:
 
         tenant_id = claims.get(self._tenant_claim)
         subject = claims.get("sub")
-        session_id = claims.get("sid") or subject  # conversation scope from the verified session
+        session_id = (
+            claims.get("sid") or subject
+        )  # conversation scope from the verified session
         if not tenant_id or not session_id or not subject:
             raise AuthError("token missing required identity claims (fail-closed)")
         return VerifiedIdentity(

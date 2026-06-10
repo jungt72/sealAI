@@ -56,7 +56,10 @@ def edit_fact(
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     _memory(pipeline).edit_fact(
-        tenant_id=identity.tenant_id, session_id=identity.session_id, feld=feld, wert=body.wert
+        tenant_id=identity.tenant_id,
+        session_id=identity.session_id,
+        feld=feld,
+        wert=body.wert,
     )
     return {"status": "ok"}
 
@@ -78,5 +81,7 @@ def forget_all(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
-    _memory(pipeline).clear(tenant_id=identity.tenant_id, session_id=identity.session_id)
+    _memory(pipeline).clear(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
     return {"status": "ok"}

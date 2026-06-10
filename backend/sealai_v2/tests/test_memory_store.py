@@ -53,7 +53,9 @@ def test_tenant_and_session_mandatory_fail_closed():
 def test_record_turn_builds_bounded_window_and_full_history():
     mem = InProcessConversationMemory(window_turns=2)
     for i in range(4):
-        mem.record_turn(tenant_id="A", session_id="s1", question=f"q{i}", answer=f"a{i}")
+        mem.record_turn(
+            tenant_id="A", session_id="s1", question=f"q{i}", answer=f"a{i}"
+        )
     view = mem.recall(tenant_id="A", session_id="s1")
     # window bounded to the last 2 exchanges (4 messages); history keeps all 8
     assert len(view.window) == 4
@@ -95,7 +97,9 @@ def test_user_control_edit_delete_clear():
     mem.edit_fact(tenant_id="A", session_id="s1", feld="medium", wert="Wasser")
     state = {f.feld: f for f in mem.case_state(tenant_id="A", session_id="s1")}
     assert state["medium"].wert == "Wasser"
-    assert state["medium"].provenance == "user-edited"  # honesty: provenance reflects the edit
+    assert (
+        state["medium"].provenance == "user-edited"
+    )  # honesty: provenance reflects the edit
     mem.delete_fact(tenant_id="A", session_id="s1", feld="medium")
     assert mem.case_state(tenant_id="A", session_id="s1") == ()
     mem.clear(tenant_id="A", session_id="s1")

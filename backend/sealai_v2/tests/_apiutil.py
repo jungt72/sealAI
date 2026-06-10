@@ -44,7 +44,9 @@ def make_pipeline(answer: str = "Antwort.", *, ground: bool = True) -> Pipeline:
 def make_client(pipeline: Pipeline | None = None, identities: dict | None = None):
     pipeline = pipeline or make_pipeline()
     app.dependency_overrides.clear()
-    app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(identities or IDS)
+    app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(
+        identities or IDS
+    )
     app.dependency_overrides[deps.get_pipeline] = lambda: pipeline
     return TestClient(app), pipeline
 

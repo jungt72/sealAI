@@ -24,7 +24,10 @@ def test_numerics_extracts_normalized_floats():
 
 
 def test_clean_when_numbers_trace_to_user_turns():
-    cs = (RememberedFact("temperatur", "150 °C"), RememberedFact("medium", "Hydrauliköl"))
+    cs = (
+        RememberedFact("temperatur", "150 °C"),
+        RememberedFact("medium", "Hydrauliköl"),
+    )
     turns = ["FKM bei 150°C", "und Hydrauliköl dazu"]
     assert untraceable_numeric_facts(cs, turns) == ()
     assert memory_integrity_clean(cs, turns)

@@ -15,7 +15,9 @@ from sealai_v2.tests._fakes import FakeLlmClient
 
 
 def _distiller(text: str) -> Distiller:
-    return Distiller(FakeLlmClient(text), DistillPromptAssembler(), ModelConfig("fake-helper"))
+    return Distiller(
+        FakeLlmClient(text), DistillPromptAssembler(), ModelConfig("fake-helper")
+    )
 
 
 def test_distills_stated_facts_from_json():

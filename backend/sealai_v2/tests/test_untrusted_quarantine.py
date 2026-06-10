@@ -67,7 +67,9 @@ def test_untrusted_reaches_prompt_as_delimited_data_not_grounding():
 
 def test_no_untrusted_is_byte_identical_noop():
     a = PromptAssembler()
-    assert a.system_prompt(flags=Flags()) == a.system_prompt(flags=Flags(), untrusted=[])
+    assert a.system_prompt(flags=Flags()) == a.system_prompt(
+        flags=Flags(), untrusted=[]
+    )
 
 
 def test_untrusted_content_type_is_unverified_by_default():

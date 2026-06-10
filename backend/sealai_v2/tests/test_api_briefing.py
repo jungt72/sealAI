@@ -7,7 +7,11 @@ from sealai_v2.tests._apiutil import auth, make_client
 
 def test_briefing_renders_artifact():
     client, _ = make_client(pipeline=None)
-    r = client.post("/api/v2/briefing", json={"message": "FKM bei 150°C in Öl?"}, headers=auth("tok-A"))
+    r = client.post(
+        "/api/v2/briefing",
+        json={"message": "FKM bei 150°C in Öl?"},
+        headers=auth("tok-A"),
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["kind"] == "briefing" and isinstance(body["body"], str) and body["body"]

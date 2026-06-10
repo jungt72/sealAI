@@ -8,7 +8,9 @@ from sealai_v2.tests._apiutil import auth, make_client
 
 def test_chat_projects_the_pipeline():
     client, _ = make_client(pipeline=None)
-    r = client.post("/api/v2/chat", json={"message": "Was ist FKM?"}, headers=auth("tok-A"))
+    r = client.post(
+        "/api/v2/chat", json={"message": "Was ist FKM?"}, headers=auth("tok-A")
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["answer"] == "Antwort." and "citations" in body and "grounded" in body
