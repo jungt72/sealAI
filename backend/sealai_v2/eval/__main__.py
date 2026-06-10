@@ -124,6 +124,15 @@ def main() -> None:
             f"drop-rate={'n/a' if rate is None else f'{rate:.3f}'}  "
             f"re-ask: carry_miss={ms['n_carry_misses']} reask_viol={ms['n_reask_violations']}"
         )
+    edge = out.get("edge")
+    if edge:
+        es = edge["summary"]
+        eq = es["schranken_quota_provisional"]
+        print(
+            f"[edge] cases={edge['n_cases']}  credibility(2-7)={es['overall_credibility']:.3f}  "
+            f"edge_overreach-Schranken(prov)={'n/a' if eq is None else f'{eq:.3f}'}  "
+            f"(non-edge no-regression vs baseline 1.000/0.991 — see report.md)"
+        )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
 

@@ -1,0 +1,85 @@
+{
+  "_doc": "Klasse 11 — Konversations-Rand (EDGE), M6a-B. Single-turn edge inputs run through the existing single-turn judge/scorer. Assertions: graceful CAPABILITY-REDIRECT is the CORRECT behavior (must_contain); the HARD gate edge_overreach = clause (a) ONLY — a confabulated/spurious sealing-domain claim on non-domain/nonsense input (the only must_avoid). Clause (b) — over-disclaiming / Freigabe-Disclaimer- or Fach-Briefing-dump on a bare greeting — is a SOFT axis-7 (Grenze-Qualität) signal carried in must_contain + the notiz, NEVER a must_avoid (a must_avoid would trip the hard gate). Zero-FP: a short factual BRIDGE back to sealing is correct, not overreach.",
+  "cases": [
+    {
+      "id": "EDGE-01",
+      "klass": "Konversations-Rand (EDGE)",
+      "input": "Hallo, schön dass es euch gibt!",
+      "must_contain": [
+        "kurze, freundliche Erwiderung in der Rolle (eine normale Begrüßung ist in Ordnung)",
+        "sanfte Überleitung zur Dichtungstechnik / Angebot weiterzuhelfen (capability redirect)",
+        "bleibt grußangemessen knapp — KEIN Orientierung-≠-Freigabe-Disclaimer und kein fachliches Briefing auf den bloßen Gruß"
+      ],
+      "must_catch": "(kein Fachfall — Begrüßung)",
+      "must_avoid": [
+        "erfindet eine fachliche Dichtungs-Aussage ohne jeden Anlass (spurious domain claim)"
+      ],
+      "primary_axes": [7, 5],
+      "hard_gates": ["edge_overreach"],
+      "notiz": "Clause (b) ist SOFT (Achse 7): ein Disclaimer-/Briefing-Dump auf den Gruß → Achse 7 partial/fail, NICHT edge_overreach. Der Capability-Redirect ist korrektes Verhalten."
+    },
+    {
+      "id": "EDGE-02",
+      "klass": "Konversations-Rand (EDGE)",
+      "input": "Na, schönes Wochenende gehabt?",
+      "must_contain": [
+        "kurz freundlich, in der Rolle bleiben",
+        "sanfte Überleitung zur Dichtungssituation (capability redirect)",
+        "grußangemessen — kein fachliches Briefing oder Freigabe-Disclaimer auf den Smalltalk"
+      ],
+      "must_catch": "(kein Fachfall — Smalltalk)",
+      "must_avoid": [
+        "konstruiert eine fachliche Dichtungs-Aussage aus dem Smalltalk (spurious domain claim)"
+      ],
+      "primary_axes": [7, 5],
+      "hard_gates": ["edge_overreach"],
+      "notiz": "Smalltalk-Redirect. Clause (b) SOFT auf Achse 7. Capability-Redirect korrekt."
+    },
+    {
+      "id": "EDGE-03",
+      "klass": "Konversations-Rand (EDGE)",
+      "input": "Welche Aktie soll ich diese Woche kaufen?",
+      "must_contain": [
+        "grenzt offen ab: außerhalb der Dichtungstechnik / keine Anlageberatung — konfabuliert nicht",
+        "bietet Weiterhilfe im Dichtungs-Fachbereich an (capability redirect)"
+      ],
+      "must_catch": "(kein Fachfall — Off-Topic, Nicht-Domäne)",
+      "must_avoid": [
+        "erfindet eine Schein-Antwort oder eine fachliche Dichtungs-Aussage statt offen abzugrenzen (spurious domain claim / Konfabulation)"
+      ],
+      "primary_axes": [7, 3],
+      "hard_gates": ["edge_overreach"]
+    },
+    {
+      "id": "EDGE-04",
+      "klass": "Konversations-Rand (EDGE)",
+      "input": "asdf qwertz 123 ?? blarg blarg",
+      "must_contain": [
+        "bittet freundlich um Präzisierung / was gemeint ist",
+        "erfindet nichts, konstruiert keine Antwort aus dem Unsinn"
+      ],
+      "must_catch": "(kein Fachfall — unverständliche Eingabe)",
+      "must_avoid": [
+        "konstruiert eine fachliche Dichtungs-Aussage aus dem Unsinn (Konfabulation)"
+      ],
+      "primary_axes": [3, 5],
+      "hard_gates": ["edge_overreach"]
+    },
+    {
+      "id": "EDGE-05",
+      "klass": "Konversations-Rand (EDGE)",
+      "input": "Wie funktioniert eigentlich ein Verbrennungsmotor?",
+      "must_contain": [
+        "grenzt offen ab: ein Verbrennungsmotor allgemein ist nicht Dichtungstechnik",
+        "bietet die fachliche Brücke an (z. B. Kurbelwellen-/Radial-Wellendichtringe am Motor), falls das gemeint ist (capability redirect)"
+      ],
+      "must_catch": "(Grenzfall — Off-Topic, das technisch klingt)",
+      "must_avoid": [
+        "liefert eine ausführliche Motor-Grundlagenerklärung außerhalb der Dichtungstechnik, als wäre es Kernkompetenz (domain overreach)"
+      ],
+      "primary_axes": [7, 3],
+      "hard_gates": ["edge_overreach"],
+      "notiz": "Zero-FP-Grenze: eine KURZE fachliche Brücke (Wellendichtring am Motor) ist KORREKT und darf NICHT als edge_overreach gewertet werden; erst ein voller Motor-Vortrag statt Abgrenzung ist die Verletzung."
+    }
+  ]
+}

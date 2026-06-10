@@ -11,7 +11,7 @@ import json
 from sealai_v2.core.contracts import ModelConfig
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.eval import report
-from sealai_v2.eval.harness import _run_multiturn
+from sealai_v2.eval.harness import _run_edge, _run_multiturn
 from sealai_v2.memory.distiller import Distiller
 from sealai_v2.memory.store import (
     InProcessConversationMemory,
@@ -34,6 +34,33 @@ def _pipeline() -> Pipeline:
         cross_session=InProcessCrossSessionMemory(),
         distiller=Distiller(client, DistillPromptAssembler(), ModelConfig("fake-helper")),
     )
+
+
+_JUDGE_JSON = (
+    '{"must_contain":[{"point":"redirect","status":"met"}],"must_catch":{"named":true},'
+    '"must_avoid":[{"point":"spurious","violated":false}],'
+    '"axes":{"7":"pass","5":"pass","3":"pass"},"notes":"ok"}'
+)
+
+
+def _edge_pipeline() -> Pipeline:
+    client = FakeLlmClient(_JUDGE_JSON)  # judge sees no must_avoid violation → edge_overreach clean
+    return Pipeline(
+        generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
+        client=client,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+    )
+
+
+def test_run_edge_runs_all_cases_gate_clean():
+    # offline wiring smoke for harness._run_edge — the live REPLAY is the only other place it runs
+    records, errors = asyncio.run(_run_edge(_edge_pipeline(), ModelConfig("fake-judge")))
+    assert errors == []
+    assert len(records) >= 4
+    assert all(r.column == "edge" for r in records)
+    # no must_avoid violation → edge_overreach provisionally clean on every gate-relevant edge case
+    assert all(r.score.provisional_gate_clean is True for r in records)
 
 
 def test_run_multiturn_produces_a_wellformed_block():

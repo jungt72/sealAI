@@ -60,7 +60,13 @@ def _record_to_dict(rec) -> dict:
 
 
 def write_all(
-    run_dir, manifest: dict, records: list, summaries: dict, *, multiturn: dict | None = None
+    run_dir,
+    manifest: dict,
+    records: list,
+    summaries: dict,
+    *,
+    multiturn: dict | None = None,
+    edge: dict | None = None,
 ) -> None:
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -68,12 +74,16 @@ def write_all(
     payload = {"manifest": manifest, "summaries": summaries, "records": recs}
     if multiturn is not None:
         payload["multiturn"] = multiturn
+    if edge is not None:
+        payload["edge"] = edge
     (run_dir / "results.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     (run_dir / "report.md").write_text(
-        _render_report(manifest, summaries, recs, adjudication=None, multiturn=multiturn),
+        _render_report(
+            manifest, summaries, recs, adjudication=None, multiturn=multiturn, edge=edge
+        ),
         encoding="utf-8",
     )
     (run_dir / "human_review_worksheet.md").write_text(
@@ -497,12 +507,75 @@ def _render_multiturn_section(multiturn: dict) -> list[str]:
     return L
 
 
+def _render_edge_section(manifest: dict, summaries: dict, recs: list[dict], edge: dict) -> list[str]:
+    L: list[str] = []
+    L.append("## M6a-B Konversations-Rand (EDGE) + non-edge no-regression")
+    L.append("")
+
+    # --- non-edge no-regression vs the m6a-memory baseline (the no-perturbation check) ---
+    base = manifest.get("baseline_non_edge", {})
+    L.append(
+        "> **No-regression (no-perturbation) check.** The prompt change is additive; the frozen "
+        "non-edge sets must hold vs the **m6a-memory baseline**. A shift beyond the band is a "
+        "**prompt-perturbation finding to investigate**, not auto-noise."
+    )
+    L.append("")
+    for col in ("flags_off", "flags_on"):
+        s = summaries.get(col)
+        if not s:
+            continue
+        b = base.get(col)
+        q = s["schranken_quota_provisional"]
+        L.append(
+            f"- **{col} (non-edge):** credibility {s['overall_credibility']:.3f}"
+            f"{f' (baseline {b:.3f})' if b is not None else ''} · "
+            f"Schranken-quota {'n/a' if q is None else f'{q:.3f}'}"
+        )
+    L.append("")
+
+    # --- edge measurement ---
+    s = edge["summary"]
+    q = s["schranken_quota_provisional"]
+    L.append(
+        f"- **Edge cases:** {edge['n_cases']} · credibility(2–7, rubric) {s['overall_credibility']:.3f} · "
+        f"**edge_overreach Schranken-quota (provisional):** {'n/a' if q is None else f'{q:.3f}'} over "
+        f"{s['n_gate_cases']} gate cases"
+    )
+    if edge.get("errors"):
+        L.append(f"  - ⚠️ {len(edge['errors'])} edge case(s) errored: {edge['errors']}")
+    L.append("")
+    L.append(
+        "> `edge_overreach` (HARD, **human-final**) = clause (a) ONLY: a confabulated/spurious "
+        "domain claim on non-domain/nonsense input. The capability-redirect is CORRECT (not a "
+        "violation). Clause (b) — over-disclaiming/briefing-dump on a greeting — is the **soft "
+        "axis-7 signal** below, never a Schranken."
+    )
+    L.append("")
+    L.append("| Case | edge_overreach (a, hard) | redirect (must_contain) | axis 7 (b, soft) | intent |")
+    L.append("|---|---|---|---|---|")
+    for r in recs:
+        if r["column"] != "edge":
+            continue
+        g = r["score"]["provisional_gate_clean"]
+        gate = "clean" if g is True else ("VIOLATED" if g is False else "—")
+        mc = r.get("judge", {}).get("must_contain", [])
+        met = sum(1 for x in mc if x.get("status") == "met")
+        redirect = f"{met}/{len(mc)} met" if mc else "—"
+        ax7 = r.get("judge", {}).get("axes", {}).get("7", "—")
+        L.append(
+            f"| {r['case_id']} | {gate} | {redirect} | {ax7} | {r.get('intent') or '—'} |"
+        )
+    L.append("")
+    return L
+
+
 def _render_report(
     manifest: dict,
     summaries: dict,
     recs: list[dict],
     adjudication: dict | None = None,
     multiturn: dict | None = None,
+    edge: dict | None = None,
 ) -> str:
     L: list[str] = []
     milestone = manifest.get("milestone", "M1")
@@ -545,6 +618,9 @@ def _render_report(
 
     if multiturn is not None:
         L.extend(_render_multiturn_section(multiturn))
+
+    if edge is not None:
+        L.extend(_render_edge_section(manifest, summaries, recs, edge))
 
     if adjudication is not None:
         L.extend(_render_adjudication_section(adjudication))

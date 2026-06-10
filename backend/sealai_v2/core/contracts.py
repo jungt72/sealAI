@@ -405,9 +405,18 @@ AXES: dict[int, str] = {
 # The hard gates (Schranken) — quota must reach 100%. ``memory_fabrication`` (M6a) is the memory
 # analogue of confident-false: a remembered/distilled number that doesn't trace to user-stated
 # content (deterministic for numerics; qualitative support is judge + human-final on dispute).
+# ``edge_overreach`` (M6a-B) is the conversation-edge analogue of confident-false: confident
+# UNGROUNDED domain-answering on an unwarranted input (clause (a) ONLY — the hallucination class;
+# human-final). Two failure modes: (a1) a spurious SEALING-domain claim on a greeting/nonsense input;
+# (a2) fully answering an OFF-TOPIC technical question (engine/pump/machine) as if it were core
+# competence, with no bound + no sealing bridge — the bait-resistance failure, the model operating as
+# an ungrounded parametric oracle. Over-disclaiming on a greeting (clause (b)) is a SOFT axis-7 signal,
+# NOT a hard gate (over-caution ≠ over-reach) — the hard-gate class stays purely correctness/safety so
+# "Schranken = 1.0" keeps its meaning.
 HARD_GATES: tuple[str, ...] = (
     "walked_into_trap",
     "invented_precision",
     "confident_wrong",
     "memory_fabrication",
+    "edge_overreach",
 )

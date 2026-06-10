@@ -213,6 +213,7 @@ def adjudicate_run(
     # NOT re-adjudicated (deterministic untraceable_numeric_facts() output). It folds into the final
     # gate: Schranken-incl-memory holds iff every column's human-final quota = 1.0 AND it = 1.0.
     multiturn = data.get("multiturn")
+    edge = data.get("edge")
     memory_quota = (multiturn or {}).get("summary", {}).get("memory_schranken_quota")
 
     adjudication = {
@@ -241,6 +242,7 @@ def adjudicate_run(
             data["records"],
             adjudication=adjudication,
             multiturn=multiturn,
+            edge=edge,
         ),
         encoding="utf-8",
     )
