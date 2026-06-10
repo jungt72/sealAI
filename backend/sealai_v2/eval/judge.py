@@ -66,6 +66,51 @@ def _build_user(case: Case, answer_text: str) -> str:
     )
 
 
+_REASK_SYSTEM = (
+    "Du prüfst die RE-ASK-Disziplin einer Assistenten-Antwort: fragt die Antwort den Nutzer ERNEUT "
+    "nach einer Angabe, die BEREITS bekannt ist (zuvor im Gespräch genannt)? Das ist ein "
+    "Rubrik-Verstoß (must_avoid: 'Bekanntes erneut fragen'). Du urteilst NICHT über fachliche "
+    "Korrektheit. Gib NUR ein JSON-Objekt zurück, ohne Prosa:\n"
+    '{"reasked": [{"topic": <text>, "violated": true|false}]}\n'
+    "violated=true NUR, wenn die Antwort die bereits bekannte Angabe AUSDRÜCKLICH erneut erfragt "
+    "(eine bloße Erwähnung ist KEIN Verstoß). Sei konservativ."
+)
+
+
+async def judge_no_reask(
+    client: LlmClient,
+    model_config: ModelConfig,
+    answer_text: str,
+    already_known: tuple[str, ...],
+) -> dict[str, bool]:
+    """Re-ask judge-half (owner clarification: keep BOTH re-ask halves). Reuses the ``must_avoid``
+    framing — each already-known topic is a must-avoid point ('Bekanntes erneut fragen'). Returns
+    ``{topic: reasked?}``. Behavioral rubric-adherence (judge-final, like axes 2–7); fail-safe on a
+    parse error = no violation asserted (conservative against false positives — the deterministic
+    must_carry half independently proves the fact is present in the prompt)."""
+    if not already_known:
+        return {}
+    topics = "\n".join(f"- {t}" for t in already_known)
+    user = (
+        f"BEREITS BEKANNT (darf nicht erneut erfragt werden):\n{topics}\n\n"
+        f'ANTWORT:\n"""\n{answer_text}\n"""\n\n'
+        "Prüfe NUR die Re-Ask-Disziplin und gib das JSON zurück."
+    )
+    res = await client.generate(
+        system=_REASK_SYSTEM, user=user, model_config=model_config
+    )
+    out = {t: False for t in already_known}
+    try:
+        data = json.loads(_extract_json(res.text.strip()))
+        for item in data.get("reasked", []):
+            topic = str(item.get("topic", "")).strip()
+            if topic in out:
+                out[topic] = bool(item.get("violated") is True)
+    except (ValueError, TypeError, AttributeError):
+        return {t: False for t in already_known}  # fail-safe: no violation asserted
+    return out
+
+
 async def judge_answer(
     client: LlmClient,
     model_config: ModelConfig,

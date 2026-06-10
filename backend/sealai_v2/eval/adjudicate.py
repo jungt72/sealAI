@@ -209,6 +209,12 @@ def adjudicate_run(
     divergences = build_divergences(scores)
     ambiguous = [[v.case_id, v.column] for v in verdicts if v.ambiguous]
 
+    # The M6a memory check (memory_fabrication) is AGENT-FINAL — carried verbatim from results.json,
+    # NOT re-adjudicated (deterministic untraceable_numeric_facts() output). It folds into the final
+    # gate: Schranken-incl-memory holds iff every column's human-final quota = 1.0 AND it = 1.0.
+    multiturn = data.get("multiturn")
+    memory_quota = (multiturn or {}).get("summary", {}).get("memory_schranken_quota")
+
     adjudication = {
         "label": "first-pass adjudication — deep audit deferred"
         if deep_audit_deferred
@@ -221,6 +227,7 @@ def adjudicate_run(
         "columns": {col: dataclasses.asdict(fs) for col, fs in final_summaries.items()},
         "final_cases": [dataclasses.asdict(f) for f in finals],
         "divergences": divergences,
+        "memory_schranken_quota": memory_quota,  # agent-final, verbatim
     }
 
     data["adjudication"] = adjudication
@@ -233,6 +240,7 @@ def adjudicate_run(
             data["summaries"],
             data["records"],
             adjudication=adjudication,
+            multiturn=multiturn,
         ),
         encoding="utf-8",
     )

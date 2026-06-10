@@ -59,20 +59,22 @@ def _record_to_dict(rec) -> dict:
     }
 
 
-def write_all(run_dir, manifest: dict, records: list, summaries: dict) -> None:
+def write_all(
+    run_dir, manifest: dict, records: list, summaries: dict, *, multiturn: dict | None = None
+) -> None:
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     recs = [_record_to_dict(r) for r in records]
+    payload = {"manifest": manifest, "summaries": summaries, "records": recs}
+    if multiturn is not None:
+        payload["multiturn"] = multiturn
     (run_dir / "results.json").write_text(
-        json.dumps(
-            {"manifest": manifest, "summaries": summaries, "records": recs},
-            ensure_ascii=False,
-            indent=2,
-        ),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     (run_dir / "report.md").write_text(
-        _render_report(manifest, summaries, recs, adjudication=None), encoding="utf-8"
+        _render_report(manifest, summaries, recs, adjudication=None, multiturn=multiturn),
+        encoding="utf-8",
     )
     (run_dir / "human_review_worksheet.md").write_text(
         _render_worksheet(manifest, recs), encoding="utf-8"
@@ -131,6 +133,30 @@ def _render_adjudication_section(adj: dict) -> list[str]:
             f"n/a {fs['axis1_counts']['n_a']}"
         )
         L.append(f"- Final per-case status: {fs['final_status_counts']}")
+        L.append("")
+
+    if "memory_schranken_quota" in adj:
+        mq = adj["memory_schranken_quota"]
+        col_quotas = [
+            fs["schranken_quota_final"] for fs in adj["columns"].values()
+        ]
+        human_ok = all(q == 1.0 for q in col_quotas if q is not None)
+        mem_ok = mq == 1.0
+        combined = (
+            "n/a (no memory measurement in this run)"
+            if mq is None
+            else ("✅ 1.0" if (human_ok and mem_ok) else "❌ BELOW 100%")
+        )
+        L.append("### Schranken incl. the memory check")
+        L.append("")
+        L.append(
+            f"- **memory_fabrication quota (AGENT-FINAL, deterministic — not adjudicated):** "
+            f"{'n/a' if mq is None else _quota_str(mq)}"
+        )
+        L.append(
+            f"- **Schranken-incl-memory** (every column's human-final quota = 1.0 AND the memory "
+            f"quota = 1.0): **{combined}**"
+        )
         L.append("")
 
     L.append("### Divergences — seeds for L3 (M2 target list)")
@@ -396,8 +422,87 @@ def _render_calc_section(manifest: dict, recs: list[dict]) -> list[str]:
     return L
 
 
+def _render_multiturn_section(multiturn: dict) -> list[str]:
+    s = multiturn["summary"]
+    L: list[str] = []
+    L.append("## M6a Multi-turn / Memory (class A)")
+    L.append("")
+    L.append(
+        "> The distiller's FIRST real measurement (the single-turn REPLAY can't exercise memory). "
+        "Per turn: **must_carry** (deterministic — the STATED fact is PRESENT in the case-state, "
+        "hence in the prompt) + **must_not_reask** (judge — the answer HONORED it, didn't re-ask) = "
+        "the two re-ask halves. **memory_fabrication** (every remembered number traces to the user "
+        "turns) is checked on every turn."
+    )
+    L.append("")
+
+    if multiturn.get("errors"):
+        L.append(
+            f"> ⚠️ {len(multiturn['errors'])} multi-turn case(s) errored during the run "
+            f"(recorded, run kept going): {multiturn['errors']}."
+        )
+        L.append("")
+
+    drop = s.get("drop")
+    if drop is not None:
+        rate = drop["dropped"] / drop["proposed"] if drop["proposed"] else 0.0
+        verdict = (
+            "≈ 0 — the conservative distiller works (no fabrication to rescue)"
+            if rate == 0.0
+            else "NON-ZERO — the distiller proposed untraceable numbers that the guard dropped; "
+            "the gate stays clean but this is a QUALITY signal (the distiller is being rescued)"
+        )
+        L.append(
+            f"- **Distiller drop-rate (observability):** {rate:.3f} "
+            f"({drop['dropped']}/{drop['proposed']} proposed facts dropped) — {verdict}."
+        )
+    else:
+        L.append("- **Distiller drop-rate:** n/a (no distiller wired).")
+
+    mq = s["memory_schranken_quota"]
+    mq_str = "n/a" if mq is None else f"{mq:.3f} ({'100%' if mq == 1.0 else 'BELOW 100%'})"
+    L.append(
+        f"- **memory_fabrication Schranken-quota:** {mq_str} over {s['n_turns']} turns "
+        f"({s['n_memory_violations']} violation(s)) — **AGENT-FINAL** = the verbatim deterministic "
+        "`untraceable_numeric_facts()` verdict (a set-subset computation; zero discretion, no "
+        "'close enough', NOT human-adjudicated). Qualitative-fact support stays human-final on dispute."
+    )
+    cq = s["carry_quota"]
+    rq = s["reask_quota"]
+    L.append(
+        f"- **Re-ask keystone (both halves):** carry (deterministic) "
+        f"{'n/a' if cq is None else f'{cq:.3f}'} "
+        f"({s['n_carry_misses']} miss); no-reask (judge) "
+        f"{'n/a' if rq is None else f'{rq:.3f}'} ({s['n_reask_violations']} violation)."
+    )
+    L.append("")
+    L.append("| Case | Turn | carry | no-reask | memory_clean | case-state |")
+    L.append("|---|---|---|---|---|---|")
+    for c in multiturn["cases"]:
+        for t in c["turns"]:
+            carry = (
+                "—"
+                if not t["must_carry"]
+                else ("✓" if not t["carried_missing"] else f"MISS {t['carried_missing']}")
+            )
+            reask = (
+                "—"
+                if not t["must_not_reask"]
+                else ("✓" if not t["reask_violations"] else f"RE-ASK {t['reask_violations']}")
+            )
+            mem = "clean" if t["memory_clean"] else f"FABRICATED {[f['feld'] for f in t['memory_fabrication']]}"
+            state = ", ".join(f"{f['feld']}={f['wert']}" for f in t["case_state"]) or "—"
+            L.append(f"| {c['case_id']} | {t['index']} | {carry} | {reask} | {mem} | {state} |")
+    L.append("")
+    return L
+
+
 def _render_report(
-    manifest: dict, summaries: dict, recs: list[dict], adjudication: dict | None = None
+    manifest: dict,
+    summaries: dict,
+    recs: list[dict],
+    adjudication: dict | None = None,
+    multiturn: dict | None = None,
 ) -> str:
     L: list[str] = []
     milestone = manifest.get("milestone", "M1")
@@ -437,6 +542,9 @@ def _render_report(
 
     if manifest.get("compute_enabled"):
         L.extend(_render_calc_section(manifest, recs))
+
+    if multiturn is not None:
+        L.extend(_render_multiturn_section(multiturn))
 
     if adjudication is not None:
         L.extend(_render_adjudication_section(adjudication))
@@ -528,6 +636,14 @@ def _render_worksheet(manifest: dict, recs: list[dict]) -> str:
         "Hard gates: **walked_into_trap** (confirmed a known incompatibility), "
         "**invented_precision** (a precise number/designation invented without basis), "
         "**confident_wrong** (a confidently false statement about a known fact)."
+    )
+    L.append("")
+    L.append(
+        "> **`memory_fabrication` (the 4th hard gate) is AGENT-FINAL and is NOT adjudicated here.** "
+        "Its numeric verdict is the verbatim deterministic `untraceable_numeric_facts()` result (a "
+        "set-subset computation, zero discretion) — see the M6a Multi-turn / Memory section of "
+        "`report.md`. Qualitative-fact support remains human-final: if a remembered *non-numeric* "
+        "claim is wrong, record it as a divergence note (it is never auto-decided)."
     )
     L.append("")
     L.append("---")

@@ -13,15 +13,32 @@ orchestration over the injected client + assembler — no I/O of its own (the cl
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Protocol
 
 from sealai_v2.core.contracts import LlmClient, ModelConfig, RememberedFact
+from sealai_v2.memory.integrity import numerics
 
 
 class DistillPrompt(Protocol):
     """Structural type for the distill prompt assembler (``prompts.DistillPromptAssembler``)."""
 
     def distill_prompt(self) -> str: ...
+
+
+@dataclass(frozen=True)
+class DistillStats:
+    """Runtime drop observability (owner addition 1): the numeric guard is also a measurement
+    instrument. ``proposed`` = well-formed facts the LLM distilled; ``dropped`` = those the
+    numeric-trace guard removed before the store. ``drop_rate`` ≈ 0 ⇒ the conservative distiller
+    works; high ⇒ it fabricates numbers and is only being rescued (a quality signal, never hidden)."""
+
+    proposed: int
+    dropped: int
+
+    @property
+    def drop_rate(self) -> float:
+        return self.dropped / self.proposed if self.proposed else 0.0
 
 
 def _extract_json(raw: str) -> str:
@@ -42,6 +59,13 @@ class Distiller:
         self._client = client
         self._assembler = assembler
         self._model_config = model_config
+        # drop observability (owner addition 1): accumulate across this distiller's lifetime.
+        self._proposed = 0
+        self._dropped = 0
+
+    @property
+    def stats(self) -> DistillStats:
+        return DistillStats(proposed=self._proposed, dropped=self._dropped)
 
     async def distill(
         self, *, question: str, answer: str = ""
@@ -55,7 +79,27 @@ class Distiller:
             user=question,
             model_config=self._model_config,
         )
-        return self._parse(res.text)
+        return self._trace_numerics(self._parse(res.text), question)
+
+    def _trace_numerics(
+        self, facts: tuple[RememberedFact, ...], source: str
+    ) -> tuple[RememberedFact, ...]:
+        """(c)(i) runtime fail-closed: drop any fact whose numerics don't trace to the user's
+        text — the distiller-fabrication vector (e.g. 150→1500 °C) made un-representable. A
+        distorted number is the memory analogue of confident-false, so we never carry it forward.
+        Qualitative facts (no numerics) pass here — their support is judged/human-final on dispute.
+
+        Also feeds the drop counters (observability): every well-formed fact is ``proposed``; the
+        untraceable ones are ``dropped`` — the rate measures the distiller's raw fabrication."""
+        src = numerics(source)
+        kept: list[RememberedFact] = []
+        for f in facts:
+            self._proposed += 1
+            if numerics(f.wert) <= src:
+                kept.append(f)
+            else:
+                self._dropped += 1
+        return tuple(kept)
 
     @staticmethod
     def _parse(raw: str) -> tuple[RememberedFact, ...]:

@@ -18,7 +18,12 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
 from sealai_v2.eval import report
 from sealai_v2.eval.cases import Case, load_cases
-from sealai_v2.eval.judge import JudgeResult, judge_answer
+from sealai_v2.eval.judge import JudgeResult, judge_answer, judge_no_reask
+from sealai_v2.eval.multiturn import (
+    load_multiturn_cases,
+    run_multiturn_case,
+    summarize_multiturn,
+)
 from sealai_v2.eval.scorer import CaseScore, score_case, summarize_column
 from sealai_v2.llm.factory import build_llm_client, resolve_l1_model
 from sealai_v2.pipeline.pipeline import build_pipeline
@@ -133,6 +138,65 @@ async def _run_unit(
     )
 
 
+async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
+    """Run the class-A multi-turn cases live (memory + memory_fabrication + re-ask both halves).
+    Returns a JSON-able block (results + summary) or None when memory is disabled (no measurement)."""
+    if pipeline.memory is None:
+        return None
+
+    async def _reask_judge(answer_text: str, known: tuple[str, ...]) -> dict[str, bool]:
+        return await judge_no_reask(pipeline.client, judge_cfg, answer_text, known)
+
+    cases = load_multiturn_cases()
+    results = []
+    errors: list[str] = []
+    for case in cases:  # sequential — keeps the distiller drop-rate attribution clean
+        try:
+            results.append(
+                await run_multiturn_case(
+                    pipeline, case, tenant=_EVAL_TENANT, judge=_reask_judge
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_unit), so a
+            # single flaky turn never crashes the whole run and loses the single-turn artifacts.
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    drop = pipeline.distiller.stats if pipeline.distiller is not None else None
+    summary = summarize_multiturn(results, drop_stats=drop)
+    return {
+        "summary": dataclasses.asdict(summary),
+        "errors": errors,
+        "cases": [
+            {
+                "case_id": r.case_id,
+                "memory_gate_clean": r.memory_gate_clean,
+                "carry_ok": r.carry_ok,
+                "reask_ok": r.reask_ok,
+                "turns": [
+                    {
+                        "index": t.index,
+                        "input": t.input,
+                        "answer": t.answer,
+                        "case_state": [
+                            {"feld": f.feld, "wert": f.wert} for f in t.case_state
+                        ],
+                        "must_carry": list(t.must_carry),
+                        "carried_missing": list(t.carried_missing),
+                        "must_not_reask": list(t.must_not_reask),
+                        "reask_violations": list(t.reask_violations),
+                        "memory_fabrication": [
+                            {"feld": f.feld, "wert": f.wert}
+                            for f in t.memory_fabrication
+                        ],
+                        "memory_clean": t.memory_clean,
+                    }
+                    for t in r.turns
+                ],
+            }
+            for r in results
+        ],
+    }
+
+
 async def run_eval(
     settings: Settings,
     *,
@@ -176,6 +240,13 @@ async def run_eval(
         for name in columns
     }
 
+    # M6a — multi-turn / memory measurement (class A). Runs AFTER the single-turn units (which pass
+    # no session → memory inert → distiller never called), so the distiller drop counters reflect
+    # ONLY this measurement. Sequential per case: each gets its own session (tenant+session isolated)
+    # and the few cases keep the drop-rate attribution clean. Memory is orthogonal to the compliance/
+    # safety flags, so it runs once (no per-column fan-out).
+    multiturn = await _run_multiturn(pipeline, judge_cfg)
+
     l3_on = settings.verify_enabled
     l2_on = settings.ground_enabled
     l4_on = settings.compute_enabled
@@ -211,6 +282,9 @@ async def run_eval(
         "ground_enabled": l2_on,
         "compute_enabled": l4_on,
         "understand_enabled": settings.understand_enabled,
+        "memory_enabled": settings.memory_enabled,
+        "distill_enabled": settings.distill_enabled,
+        "n_multiturn_cases": (len(multiturn["cases"]) if multiturn else 0),
         "columns": list(columns.keys()),
         "n_cases": len(cases),
         "concurrency": settings.concurrency,
@@ -218,8 +292,9 @@ async def run_eval(
             "LLM-judge: rubric-adherence only (axes 2-7); axis 1 (Faktische Korrektheit) and the "
             "3 hard gates are HUMAN-FINAL via the worksheet."
         ),
-        "errors": [r.error for r in records if r.error],
+        "errors": [r.error for r in records if r.error]
+        + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])],
     }
 
-    report.write_all(run_dir, manifest, records, summaries)
-    return {"manifest": manifest, "summaries": summaries}
+    report.write_all(run_dir, manifest, records, summaries, multiturn=multiturn)
+    return {"manifest": manifest, "summaries": summaries, "multiturn": multiturn}
