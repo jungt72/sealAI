@@ -26,3 +26,27 @@ def test_anrede_defaults_to_du():
     p = PromptAssembler().system_prompt()
     assert "in der Du-Form" in p
     assert "in der Sie-Form" not in p
+
+
+def test_berechnungen_section_binds_fail_closed():
+    """M8-B — the compute-constraint (owner-approved spec). The advisory wording demonstrably did
+    not bind (the canonical saltwater briefing leak); the section must forbid self-computation of
+    kern-owned quantities even with visible inputs, and bind the fail-closed narrative."""
+    p = PromptAssembler().system_prompt()
+    flat = " ".join(
+        p.split()
+    )  # template line-wrapping is not the contract; the wording is
+    # kern-owned quantities are named; self-computation is forbidden EVEN with visible inputs
+    assert (
+        "Umfangsgeschwindigkeit" in flat and "PV-Wert" in flat and "Verpressung" in flat
+    )
+    assert "NIE selbst" in flat
+    assert "auch wenn Wellendurchmesser und Drehzahl im Kontext sichtbar sind" in flat
+    # injected values are referenced exactly
+    assert "exakt wie injiziert" in flat
+    # fail-closed: NO number, name the missing inputs, formula symbolic only (owner decision 6)
+    assert "keinen Zahlenwert" in flat
+    assert "fehlenden Eingaben" in flat
+    assert "symbolisch" in flat
+    # over-block guard: typical-range knowledge with caveat stays allowed (not parametric)
+    assert "keine parametrische Berechnung" in flat
