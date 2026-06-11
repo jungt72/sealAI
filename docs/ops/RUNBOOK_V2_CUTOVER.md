@@ -171,6 +171,21 @@ in-process (restart wipes conversations — pilot prerequisite below).
 
 ## Pre-flip gate (Phase 3 BLOCKED until all green)
 
+> **FLIP HELD (owner decision 2026-06-11, FIX-FIRST).** Branch (b) confirmed from the captured
+> staging session history: on the input-statement (lag) turn the kern was fail-closed by
+> construction, L1 self-computed v = 16,76 m/s and labeled it "deterministisch berechnet /
+> vom Rechenkern" (false provenance), and the leak detector missed the symbol-form assertion
+> ("v = 16,76 m/s" with the trigger word sentences back). **Blocker C** = leak-detector
+> hardening (symbol+unit self-trigger with negative-context guard, window-2 own-token gate,
+> zero-new-FP sweep) **+ B** = L1-prompt same-message-inputs rule + kern-provenance label ban
+> (branch `feat/v2-fixfirst-c-leak`). The flip stays HELD until C lands (owner-adjudicated
+> Eval-REPLAY) and this gate re-validates on the new flip ref. Turns after the lag turn were
+> legitimate kern fires.
+
+- [ ] **C landed (flip blocker):** leak-detector hardening + B prompt rule merged to the flip
+      path after the owner-adjudicated `fixfirst-c-leak` Eval-REPLAY; gate re-validated on the
+      new flip ref (CI all-four, staging rebuild + behavior re-smoke incl. the two-turn 40/8000
+      repro: lag turn shows no fabricated kern label, following turn kern fires).
 - [ ] Phase 1 validation green (V2 suite incl. red-before-green kid tests, keystone, npm verify, image build).
 - [ ] Staging e2e checklist green (dated report) + all 3 rollback dry-run legs done.
 - [ ] Keycloak `sealai-v2` client live (mappers + prod redirect URIs); step-3 probe green.
@@ -196,7 +211,23 @@ in-process (restart wipes conversations — pilot prerequisite below).
    correct, one turn late — UX, owner-only-acceptable; same classification as item 5). Proper
    fix = its own milestone with a design pass (safe same-turn deterministic extraction vs the
    owner-gated M5 distill-after-answer decision) + Eval-REPLAY. Gates the FIRST PILOT, not the
-   owner-only flip.
+   owner-only flip. *Update 2026-06-11 (branch (b)): the false-provenance leak ON the lag turn
+   (L1 self-computing + claiming the kern label) was confirmed live and is fixed flip-blocking
+   (blocker C + B, see Pre-flip gate). The lag itself — kern value one turn late — remains this
+   pilot-tracked item; the FIX-FIRST decision supersedes FLIP-FIRST for the leak only, not for
+   the lag.*
+7. **Per-turn provenance record (owner-filed 2026-06-11, the branch-(b) HALT instrument gap):**
+   the live chat path persists no per-turn provenance — `chat_response` drops
+   `computed_values`/`not_computed`/`verifier`, and the V2 runtime has no logging outside
+   `eval/`, so "did the kern emit / what were the input_origins / did the verifier act?" was
+   unanswerable server-side during the HALT. Minimal scope (route-layer only, zero core change):
+   one structured stdout JSON line per `pipeline.run` from `routes/chat.py` + `routes/briefing.py`
+   carrying surface, tenant/session ids, kern_fired, computed `{calc_id, value, unit, stage,
+   input_origins}`, `not_computed` reasons, binding notes, verifier action + finding kinds +
+   `regenerated`, answer length+hash — NO question/answer text, no finding excerpts, no secrets
+   (V1 lesson: explicitly handler-configured stdout, `routing_debug` went dark in prod). Tests:
+   three result shapes + a privacy guard asserting no user text in the record. Gates the FIRST
+   PILOT, not the flip; do not implement before its own owner gate.
 
 ## Phase 4 — V1 dashboard decommission (separate, owner-gated)
 
@@ -232,5 +263,5 @@ the rollback target — do NOT stop/tear down V1 during or right after the flip.
   ⟨result⟩; `ops/smoke-live-pilot-readiness.sh` → ⟨result⟩; browser login e2e → ⟨result⟩.
 - **Post-flip watch:** ⟨30–60 min, findings⟩
 - **Follow-ups:** flip commit → PR feat/v2→demo → owner carry-over demo→main (reload guard
-  covers the window); staging teardown + remove :8443 Keycloak entries; pilot tracker items 1–5.
+  covers the window); staging teardown + remove :8443 Keycloak entries; pilot tracker items 1–7.
 ```
