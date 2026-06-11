@@ -130,6 +130,167 @@ def test_empty_draft_no_leak():
     assert detect_parametric_leaks("", computed_values=()) == ()
 
 
+# --- M8-C hardening: live staging repro 2026-06-11 (branch (b)) — symbol-form / window-2 ----------
+#
+# The live leak: turn 2 stated the inputs ("40mm und 8000"), the kern was fail-closed by
+# construction (binding reads only prior-turn facts), L1 self-computed v = 16,76 m/s with a false
+# "deterministisch berechnet" label — and the detector missed it because the asserting line carries
+# only the SYMBOL form while "Umfangsgeschwindigkeit" sits in the lead sentence, several
+# sentences/lines back. Owner decision FIX-FIRST (flip HELD): symbol+unit self-trigger (negative-
+# context guard narrowed to the ASSERTING sentence — FN > FP) + window-2 own-token gate.
+
+_TURN2_VERBATIM = """Bei deinen Werten ergibt sich bereits eine berechnete Umfangsgeschwindigkeit:
+- d₁ = 40 mm
+- n = 8 000 1/min
+
+Formel:
+v = π · d₁ · n / 60000
+→ v = 16,76 m/s (deterministisch berechnet, vorläufiger Orientierungswert).
+
+Damit liegst du deutlich über dem Bereich klassischer NBR-RWDR in problematischem Medium wie Salzsäure. Für die weitere Auslegung heißt das:
+- NBR ist hier sowohl chemisch (HCl) als auch tribologisch (v ≈ 16,8 m/s, keine Schmierung) raus.
+- Wenn es bei berührender Wellenabdichtung bleibt, reden wir über PTFE-Hochgeschwindigkeitslippen oder eher gleich über eine Gleitringdichtung / medienfreie Welle."""
+
+
+def test_live_turn2_verbatim_fires_with_empty_kern():
+    """THE live repro (owner-captured staging answer, 2026-06-11, verbatim): kern fail-closed,
+    both symbol-form assertions must fire — specifically the '→ v = 16,76 m/s' lead-layout one."""
+    leaks = detect_parametric_leaks(_TURN2_VERBATIM, computed_values=())
+    assert leaks, "the live turn-2 answer MUST fire against an empty kern"
+    assert all(leak.calc_id == "umfangsgeschwindigkeit" for leak in leaks)
+    values = [leak.value_text for leak in leaks]
+    assert "16,76" in values, "the lead-layout '→ v = 16,76 m/s' assertion must be caught"
+    lead = next(leak for leak in leaks if leak.value_text == "16,76")
+    assert "deterministisch berechnet" in lead.excerpt  # the false-provenance line itself
+    assert len(leaks) == 2 and "16,8" in values  # the NBR-bullet 'v ≈ 16,8 m/s' fires too
+
+
+def test_live_turn2_verbatim_clean_with_real_kern():
+    """Turns 3+ shape: the same answer with the kern's 16.7552 present is referencing, not
+    recomputing — '16,76' (≈0,03 %) and '16,8' (≈0,27 %) both inside the ≤2 % band."""
+    kern = (_cv(value=16.7552),)
+    assert detect_parametric_leaks(_TURN2_VERBATIM, computed_values=kern) == ()
+
+
+def test_symbol_form_with_token_one_sentence_back_fires():
+    draft = (
+        "Die Umfangsgeschwindigkeit lässt sich aus den genannten Werten direkt bestimmen. "
+        "Damit ergibt sich v = 16,76 m/s."
+    )
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].value_text == "16,76"
+
+
+def test_symbol_form_with_token_far_back_fires():
+    """Lead-sentence layout: the token sits 3+ sentences back — only the symbol+unit
+    self-trigger can carry this (window-2 alone misses it)."""
+    draft = (
+        "Die Umfangsgeschwindigkeit ist hier die zentrale Auslegungsgröße. "
+        "Salzsäure greift NBR chemisch an. "
+        "Eine Schmierung durch das Medium ist nicht gegeben. "
+        "Damit ergibt sich v = 16,76 m/s."
+    )
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].calc_id == "umfangsgeschwindigkeit"
+
+
+def test_no_symbol_window2_anaphora_fires():
+    """No symbol form at all — 'Sie beträgt …' with the token one sentence back needs the
+    window-2 own-token gate."""
+    draft = (
+        "Die Umfangsgeschwindigkeit hängt von Wellendurchmesser und Drehzahl ab. "
+        "Sie beträgt 16,76 m/s."
+    )
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].value_text == "16,76"
+
+
+def test_foreign_velocity_in_preceding_sentence_does_not_shadow():
+    """FOLD 1 (owner): the foreign-word suppression consults ONLY the asserting sentence —
+    a foreign velocity word one sentence back must not shadow a real symbol-form leak."""
+    draft = (
+        "Die Strömungsgeschwindigkeit des Mediums ist hier nicht entscheidend. "
+        "Damit ergibt sich v = 16,76 m/s."
+    )
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].value_text == "16,76"
+
+
+def test_pv_symbol_form_without_word_token_fires():
+    draft = "Damit ergibt sich pv = 8,4 bar·m/s für diese Auslegung."
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].calc_id == "pv_wert"
+
+
+# guards for the hardening (must hold before AND after) ---------------------------------------------
+
+
+def test_foreign_velocity_in_asserting_sentence_suppresses_self_trigger():
+    """Negative-context guard: the asserting sentence itself names a DIFFERENT velocity —
+    the bare symbol form is not claimed for the kern quantity (documented residual (a))."""
+    draft = "Die Strömungsgeschwindigkeit im Spalt liegt bei v = 0,5 m/s."
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+
+
+def test_symbol_without_unit_does_not_self_trigger():
+    draft = "Aus den genannten Werten folgt v = 16,76 ohne weitere Angaben."
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+
+
+def test_token_two_sentences_back_without_symbol_does_not_fire():
+    """Documented residual: window-2 reaches exactly one sentence back; without a symbol
+    form a token further back does not gate (deliberate boundary, not an accident)."""
+    draft = (
+        "Die Umfangsgeschwindigkeit ist wichtig. "
+        "Salzsäure ist aggressiv. "
+        "Sie beträgt 16,76 m/s."
+    )
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+
+
+def test_window2_does_not_cross_newline_into_list_items():
+    """FP shape found by the zero-FP sweep (m8-calc CALC-02 draft): a 'Verpressung' list
+    header must not import its token into the NEXT list line — 'Nutfüllgrad … 75–90 %' is
+    a different quantity and knowledge, not a computation. The window is sentence flow
+    WITHIN a line; it never crosses a newline."""
+    draft = (
+        "- **Verpressung**: hängt von Einbaulage und Härte ab\n"
+        "- **Nutfüllgrad**: in der Regel maximal **~75–90 %** gefüllt, damit noch Reserve bleibt"
+    )
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+
+
+def test_window2_does_not_cross_newline_for_knowledge_ranges():
+    """Second sweep FP shape (m3-grounding/m6a CALC-02): hardness-dependent knowledge
+    ranges in list lines under a 'Verpressung' header stay clean."""
+    draft = (
+        "Radiale Verpressung (statisch) = Richtwerte nach Härte:\n"
+        "- Weiche Materialien (≈ 60–65 Shore A): eher **20–25 %**\n"
+        "- Härtere Materialien: eher **15–20 %**"
+    )
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+
+
+def test_citation_range_split_by_abbreviation_is_not_a_leak():
+    """Third sweep FP shape (m6a-b-edge CALC-02, verbatim structure): the abbreviation
+    'typ.' splits the citation sentence, orphaning the range from token AND caveat — a
+    window-granted fragment takes the caveat from its granting sentence, and 'typ.' is
+    the abbreviated caveat. A Fachkarte citation line must never fire."""
+    draft = (
+        "→ Quelle: Fachkarte FK-ORING-VERPRESSUNG "
+        "(statische radiale Verpressung typ. ~15–25 %)"
+    )
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+
+
+def test_window_granted_point_value_with_window_caveat_still_fires():
+    """Span-scoping stays locked: the window-caveat blesses only RANGE structures — a
+    point value in a window-granted fragment fires even with a caveat one sentence back."""
+    draft = "Die Verpressung als Richtwert beachten. Sie ergibt hier 18 %."
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].calc_id == "verpressung_prozent"
+
+
 # --- policy: regenerate-once with a deterministic CalcResult note → hedge on re-fire --------------
 
 
