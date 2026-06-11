@@ -159,10 +159,16 @@ def test_live_turn2_verbatim_fires_with_empty_kern():
     assert leaks, "the live turn-2 answer MUST fire against an empty kern"
     assert all(leak.calc_id == "umfangsgeschwindigkeit" for leak in leaks)
     values = [leak.value_text for leak in leaks]
-    assert "16,76" in values, "the lead-layout '→ v = 16,76 m/s' assertion must be caught"
+    assert (
+        "16,76" in values
+    ), "the lead-layout '→ v = 16,76 m/s' assertion must be caught"
     lead = next(leak for leak in leaks if leak.value_text == "16,76")
-    assert "deterministisch berechnet" in lead.excerpt  # the false-provenance line itself
-    assert len(leaks) == 2 and "16,8" in values  # the NBR-bullet 'v ≈ 16,8 m/s' fires too
+    assert (
+        "deterministisch berechnet" in lead.excerpt
+    )  # the false-provenance line itself
+    assert (
+        len(leaks) == 2 and "16,8" in values
+    )  # the NBR-bullet 'v ≈ 16,8 m/s' fires too
 
 
 def test_live_turn2_verbatim_clean_with_real_kern():
