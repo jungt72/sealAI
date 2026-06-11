@@ -50,3 +50,17 @@ def test_berechnungen_section_binds_fail_closed():
     assert "symbolisch" in flat
     # over-block guard: typical-range knowledge with caveat stays allowed (not parametric)
     assert "keine parametrische Berechnung" in flat
+
+
+def test_berechnungen_same_message_inputs_and_provenance_label_ban():
+    """FIX-FIRST B (owner decision 2026-06-11, branch (b)): the live turn-2 leak — inputs
+    stated in the CURRENT message, kern fail-closed, L1 self-computed v=16,76 m/s and labeled
+    it 'deterministisch berechnet'. The rule must (1) bind the fail-closed behavior EXPLICITLY
+    for same-message inputs and (2) restrict the kern-provenance labels to injected values."""
+    p = PromptAssembler().system_prompt()
+    flat = " ".join(p.split())
+    # (1) same-message inputs change nothing: behave exactly like the no-inputs turn
+    assert "in der aktuellen Nachricht" in flat
+    # (2) the kern-provenance labels are reserved for the injected block — never self-derived
+    assert "ausschließlich" in flat and "selbst ermittelte Zahl" in flat
+    assert "falsche Herkunftsangabe" in flat
