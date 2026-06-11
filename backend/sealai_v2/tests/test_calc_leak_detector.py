@@ -60,6 +60,26 @@ def test_verpressung_leak_fires():
     assert detect_parametric_leaks(draft, computed_values=())
 
 
+def test_point_value_with_caveat_alone_still_fires():
+    """Owner hardening (boundary review 2026-06-11): a caveat token does NOT exempt a single
+    asserted point-value — the exemption requires an actual RANGE structure AND the caveat."""
+    draft = "Die Umfangsgeschwindigkeit liegt hier bei v ≈ 10,5 m/s (typisch)."
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].calc_id == "umfangsgeschwindigkeit"
+
+
+def test_point_value_smuggled_beside_a_range_still_fires():
+    """Owner hardening, span-scoped: only the RANGE'S OWN values are exempt — an asserted
+    point-value sitting in the same sentence as a legitimate range+caveat is still a leak."""
+    draft = (
+        "Typisch sind für RWDR 8–12 m/s (Richtwert, Datenblatt verifizieren); "
+        "die Umfangsgeschwindigkeit ergibt hier v ≈ 10,47 m/s."
+    )
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].calc_id == "umfangsgeschwindigkeit"
+    assert leaks[0].value_text == "10,47"
+
+
 # --- MUST NOT FIRE (the zero-FP boundary — owner review package) -----------------------------------
 
 

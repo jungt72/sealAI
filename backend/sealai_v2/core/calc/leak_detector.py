@@ -6,13 +6,17 @@ compute — or that contradicts the kern's value. Defense-in-depth: this is the 
 behind the L1 prompt rule (prevention) and beside the TRAP-L1-PARAMETRIC-CALC catalog entry (the
 LLM critic catches paraphrases this regex core cannot).
 
-Boundary (the owner zero-FP review package, decision 4):
+Boundary (the owner zero-FP review package, decision 4; hardened per owner boundary review
+2026-06-11):
 - FIRES only with an ASSERTION signature in the sentence (=, ≈, ~, beträgt, ergibt, liegt bei,
   errechnet/resultiert) — bare mentions never fire.
 - EXEMPT: a value matching a kern-computed value (≤2 % — referencing/rounding is not recomputing);
-  a RANGE + verify-caveat (typical-knowledge statements, the ``is_precision_overapplication``
-  precedent); the symbolic formula without plugged result (v = π·d·n/60000); units/numbers outside
-  the quantity lexicon (%, m/s etc. only count in their quantity's sentence context).
+  a value that is PART OF an actual RANGE structure (two numbers / bis / –) in a sentence that
+  also carries a verify-caveat (typical-knowledge statements, the ``is_precision_overapplication``
+  precedent) — span-scoped: only the range's own values are exempt; a point-value with a caveat
+  alone, or a point-value beside someone else's range, still fires; the symbolic formula without
+  plugged result (v = π·d·n/60000); units/numbers outside the quantity lexicon (%, m/s etc. only
+  count in their quantity's sentence context).
 - German number forms: decimal comma; a dot form ("10.472") is interpreted BOTH as decimal and
   thousands and is exempt if EITHER reading matches the kern (conservative anti-FP).
 
@@ -45,9 +49,11 @@ _QUANTITIES: dict[str, tuple[tuple[str, ...], str, str | None]] = {
 _ASSERTION_RE = re.compile(
     r"[=≈~]|beträgt|ergibt|liegt bei|errechnet|resultiert", re.IGNORECASE
 )
-# range + caveat → typical-knowledge exemption (mirrors l3_verifier.is_precision_overapplication)
+# range + caveat → typical-knowledge exemption (mirrors l3_verifier.is_precision_overapplication).
+# The tail consumes the FULL upper-bound number ("8–12", "15-25,5") so the span-scoped containment
+# check sees the whole range, not just its first digit.
 _RANGE_RE = re.compile(
-    r"\d[\d.\s'’]*\s*(?:[–—-]|…|\.{2,3}|\bbis\b)\s*\+?\s*\d", re.IGNORECASE
+    r"\d[\d.\s'’]*\s*(?:[–—-]|…|\.{2,3}|\bbis\b)\s*\+?\s*\d[\d.,]*", re.IGNORECASE
 )
 _CAVEAT_RE = re.compile(
     r"typisch|richtwert|üblich|faustwert|orientier|datenblatt|verifizier|herstellerangabe",
@@ -104,21 +110,31 @@ def detect_parametric_leaks(
         low = sentence.lower()
         if not low.strip():
             continue
-        if _RANGE_RE.search(sentence) and _CAVEAT_RE.search(sentence):
-            continue  # typical-range knowledge with caveat — not parametric computation
         if not _ASSERTION_RE.search(sentence):
             continue  # bare mention without an assertion never fires
+        # typical-range knowledge with caveat is exempt SPAN-SCOPED (owner hardening 2026-06-11):
+        # only values inside an actual range structure are knowledge, not computation — a
+        # point-value with a caveat alone, or beside someone else's range, still fires.
+        range_spans = (
+            [m.span() for m in _RANGE_RE.finditer(sentence)]
+            if _CAVEAT_RE.search(sentence)
+            else []
+        )
         for calc_id, (tokens, unit_re, symbol_re) in _QUANTITIES.items():
             if not any(t in low for t in tokens):
                 continue
-            candidates = re.findall(
-                rf"({_NUM})\s*(?:{unit_re})", sentence, re.IGNORECASE
+            candidates = list(
+                re.finditer(rf"({_NUM})\s*(?:{unit_re})", sentence, re.IGNORECASE)
             )
             if symbol_re:
-                candidates += re.findall(
-                    rf"{symbol_re}\s*({_NUM})", sentence, re.IGNORECASE
+                candidates += list(
+                    re.finditer(rf"{symbol_re}\s*({_NUM})", sentence, re.IGNORECASE)
                 )
-            for num in candidates:
+            for m in candidates:
+                num = m.group(1)
+                start, end = m.span(1)
+                if any(s <= start and end <= e for s, e in range_spans):
+                    continue  # a value of the typical range itself (+ caveat) — knowledge
                 if _matches_kern(num, kern.get(calc_id, ())):
                     continue
                 findings.append(
