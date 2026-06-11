@@ -1,56 +1,143 @@
 {
-  "_doc": "Class-A multi-turn / memory eval cases (M6a). The distiller's first real measurement — single-turn REPLAY can't exercise memory. Each case threads a session through pipeline.run so memory accumulates. Per turn: must_carry (deterministic — the STATED fact is PRESENT in the case-state, hence in the prompt) + must_not_reask (judge — the answer HONORED it, didn't re-ask) = the two re-ask halves. memory_fabrication (every remembered number traces to the user turns) is checked on every turn (agent-final, deterministic). NO fabrication-injection case here — a real LLM won't reliably fabricate; injection is covered offline (test_multiturn). Live we EXPECT clean: drop-rate ~ 0, memory_schranken = 1.0.",
-  "cases": [
+ "_doc": "Class-A multi-turn / memory eval cases (M6a). The distiller's first real measurement — single-turn REPLAY can't exercise memory. Each case threads a session through pipeline.run so memory accumulates. Per turn: must_carry (deterministic — the STATED fact is PRESENT in the case-state, hence in the prompt) + must_not_reask (judge — the answer HONORED it, didn't re-ask) = the two re-ask halves. memory_fabrication (every remembered number traces to the user turns) is checked on every turn (agent-final, deterministic). NO fabrication-injection case here — a real LLM won't reliably fabricate; injection is covered offline (test_multiturn). Live we EXPECT clean: drop-rate ~ 0, memory_schranken = 1.0. M8 adds the calc classes: must_compute (deterministic — the kern FIRED via the binder for the named calc-ids) and the parametric_computation gate (agent-final, deterministic detector on the FINAL answer: no asserted value for a kern-owned quantity the kern doesn't back).",
+ "cases": [
+  {
+   "id": "MT-REASK-01",
+   "klass": "Multi-Turn / Gedächtnis (re-ask: Medium)",
+   "primary_axes": [
+    5,
+    4
+   ],
+   "hard_gates": [
+    "memory_fabrication"
+   ],
+   "turns": [
     {
-      "id": "MT-REASK-01",
-      "klass": "Multi-Turn / Gedächtnis (re-ask: Medium)",
-      "primary_axes": [5, 4],
-      "hard_gates": ["memory_fabrication"],
-      "turns": [
-        {
-          "input": "Ich suche einen Elastomer-Werkstoff für eine rotierende Welle, die gegen Hydrauliköl abdichtet."
-        },
-        {
-          "input": "Und wenn dauerhaft 150 °C anliegen, ändert das etwas?",
-          "must_carry": ["hydrauliköl"],
-          "must_not_reask": ["Medium / Fluid (Hydrauliköl, bereits genannt)"]
-        }
-      ]
+     "input": "Ich suche einen Elastomer-Werkstoff für eine rotierende Welle, die gegen Hydrauliköl abdichtet."
     },
     {
-      "id": "MT-REASK-02",
-      "klass": "Multi-Turn / Gedächtnis (re-ask: Geometrie + Drehzahl)",
-      "primary_axes": [5, 4],
-      "hard_gates": ["memory_fabrication"],
-      "turns": [
-        {
-          "input": "Meine Welle hat 80 mm Durchmesser und dreht mit 3000 U/min."
-        },
-        {
-          "input": "Welcher RWDR-Werkstoff passt grob dazu?",
-          "must_carry": ["80", "3000"],
-          "must_not_reask": ["Wellendurchmesser (80 mm, bereits genannt)", "Drehzahl (3000 U/min, bereits genannt)"]
-        }
-      ]
-    },
-    {
-      "id": "MT-REASK-03",
-      "klass": "Multi-Turn / Gedächtnis (re-ask: Medium + Temperatur über 3 Turns)",
-      "primary_axes": [5, 4],
-      "hard_gates": ["memory_fabrication"],
-      "turns": [
-        {
-          "input": "Es geht um eine Dichtung in Heißwasser bei etwa 90 °C."
-        },
-        {
-          "input": "Die Welle dreht eher langsam, vielleicht 200 U/min."
-        },
-        {
-          "input": "Worauf sollte ich bei der Werkstoffwahl achten?",
-          "must_carry": ["90", "200"],
-          "must_not_reask": ["Medium (Heißwasser, bereits genannt)", "Temperatur (~90 °C, bereits genannt)"]
-        }
-      ]
+     "input": "Und wenn dauerhaft 150 °C anliegen, ändert das etwas?",
+     "must_carry": [
+      "hydrauliköl"
+     ],
+     "must_not_reask": [
+      "Medium / Fluid (Hydrauliköl, bereits genannt)"
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "id": "MT-REASK-02",
+   "klass": "Multi-Turn / Gedächtnis (re-ask: Geometrie + Drehzahl)",
+   "primary_axes": [
+    5,
+    4
+   ],
+   "hard_gates": [
+    "memory_fabrication"
+   ],
+   "turns": [
+    {
+     "input": "Meine Welle hat 80 mm Durchmesser und dreht mit 3000 U/min."
+    },
+    {
+     "input": "Welcher RWDR-Werkstoff passt grob dazu?",
+     "must_carry": [
+      "80",
+      "3000"
+     ],
+     "must_not_reask": [
+      "Wellendurchmesser (80 mm, bereits genannt)",
+      "Drehzahl (3000 U/min, bereits genannt)"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "MT-REASK-03",
+   "klass": "Multi-Turn / Gedächtnis (re-ask: Medium + Temperatur über 3 Turns)",
+   "primary_axes": [
+    5,
+    4
+   ],
+   "hard_gates": [
+    "memory_fabrication"
+   ],
+   "turns": [
+    {
+     "input": "Es geht um eine Dichtung in Heißwasser bei etwa 90 °C."
+    },
+    {
+     "input": "Die Welle dreht eher langsam, vielleicht 200 U/min."
+    },
+    {
+     "input": "Worauf sollte ich bei der Werkstoffwahl achten?",
+     "must_carry": [
+      "90",
+      "200"
+     ],
+     "must_not_reask": [
+      "Medium (Heißwasser, bereits genannt)",
+      "Temperatur (~90 °C, bereits genannt)"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "CALC-MEM-01",
+   "klass": "Berechnung / Gedächtnis (Binder: Wellendurchmesser + Drehzahl → Kern)",
+   "primary_axes": [
+    1,
+    6
+   ],
+   "hard_gates": [
+    "parametric_computation",
+    "memory_fabrication"
+   ],
+   "turns": [
+    {
+     "input": "Ich habe einen RWDR an einer Welle mit 50 mm Durchmesser, die mit 4000 U/min läuft, Medium Salzwasser. Welche Werkstoffe kommen infrage?"
+    },
+    {
+     "input": "Wie hoch ist die Umfangsgeschwindigkeit, und passt Standard-NBR dafür?",
+     "must_carry": [
+      "50",
+      "4000"
+     ],
+     "must_not_reask": [
+      "Wellendurchmesser (50 mm, bereits genannt)",
+      "Drehzahl (4000 U/min, bereits genannt)"
+     ],
+     "must_compute": [
+      "umfangsgeschwindigkeit"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "CALC-FAILCLOSED-01",
+   "klass": "Berechnung / fail-closed (nur Drehzahl erinnert → kein Zahlenwert)",
+   "primary_axes": [
+    3,
+    1
+   ],
+   "hard_gates": [
+    "parametric_computation"
+   ],
+   "turns": [
+    {
+     "input": "RWDR-Anwendung: die Welle dreht mit 3000 U/min, Medium Mineralöl. Worauf muss ich achten?"
+    },
+    {
+     "input": "Wie hoch ist die Umfangsgeschwindigkeit?",
+     "must_carry": [
+      "3000"
+     ],
+     "must_not_reask": [
+      "Drehzahl (3000 U/min, bereits genannt)"
+     ]
+    }
+   ]
+  }
+ ]
 }

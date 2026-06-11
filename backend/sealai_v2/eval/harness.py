@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.core.calc.leak_detector import detect_parametric_leaks
 from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
 from sealai_v2.eval import report
 from sealai_v2.eval.cases import Case, load_cases, load_edge_cases, load_injection_cases
@@ -75,6 +76,7 @@ class Record:
     n_grounding: int = 0  # number of reviewed grounding facts injected this turn
     n_computed: int = 0  # M4: deterministically computed values injected this turn
     computed_brief: str = ""  # "v_m_s=12.57 m/s; ..." — what the candidate rested on
+    parametric_leaks: tuple = ()  # M8: deterministic detector hits on the FINAL answer (agent-final gate)
 
 
 async def _run_unit(
@@ -90,6 +92,7 @@ async def _run_unit(
     draft_text, draft_model = "", ""
     grounded, n_grounding = False, 0
     n_computed, computed_brief = 0, ""
+    parametric_leaks: tuple = ()
     verifier: VerifierVerdict | None = None
     try:
         result = await pipeline.run(
@@ -106,6 +109,10 @@ async def _run_unit(
         n_computed = len(result.computed_values)
         computed_brief = "; ".join(
             f"{c.name}={c.value} {c.unit}" for c in result.computed_values
+        )
+        # M8 — the parametric Schranke on the FINAL answer (deterministic, agent-final)
+        parametric_leaks = detect_parametric_leaks(
+            answer_text, computed_values=result.computed_values
         )
         if result.draft_answer is not None:
             draft_text = result.draft_answer.text
@@ -138,6 +145,7 @@ async def _run_unit(
         n_grounding=n_grounding,
         n_computed=n_computed,
         computed_brief=computed_brief,
+        parametric_leaks=parametric_leaks,
     )
 
 
@@ -174,6 +182,8 @@ async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
                 "memory_gate_clean": r.memory_gate_clean,
                 "carry_ok": r.carry_ok,
                 "reask_ok": r.reask_ok,
+                "compute_ok": r.compute_ok,
+                "parametric_clean": r.parametric_clean,
                 "turns": [
                     {
                         "index": t.index,
@@ -191,6 +201,13 @@ async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
                             for f in t.memory_fabrication
                         ],
                         "memory_clean": t.memory_clean,
+                        "computed_ids": list(t.computed_ids),
+                        "must_compute": list(t.must_compute),
+                        "compute_missing": list(t.compute_missing),
+                        "parametric_leaks": [
+                            dataclasses.asdict(leak) for leak in t.parametric_leaks
+                        ],
+                        "parametric_clean": t.parametric_clean,
                     }
                     for t in r.turns
                 ],
@@ -355,6 +372,26 @@ async def run_eval(
     )
     records = list(records) + inj_records
 
+    # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
+    # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
+    # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
+    leak_records = [r for r in records if r.parametric_leaks]
+    parametric = {
+        "n_records": len(records),
+        "n_leak_records": len(leak_records),
+        "schranken_quota": (
+            round((len(records) - len(leak_records)) / len(records), 3)
+            if records
+            else None
+        ),
+        "per_case": {
+            f"{r.case.id}/{r.column}": [
+                dataclasses.asdict(leak) for leak in r.parametric_leaks
+            ]
+            for r in leak_records
+        },
+    }
+
     l3_on = settings.verify_enabled
     l2_on = settings.ground_enabled
     l4_on = settings.compute_enabled
@@ -420,6 +457,7 @@ async def run_eval(
         multiturn=multiturn,
         edge=edge,
         injection=injection,
+        parametric=parametric,
     )
     return {
         "manifest": manifest,
@@ -427,4 +465,5 @@ async def run_eval(
         "multiturn": multiturn,
         "edge": edge,
         "injection": injection,
+        "parametric": parametric,
     }

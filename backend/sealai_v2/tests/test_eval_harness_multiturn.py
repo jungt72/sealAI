@@ -73,11 +73,15 @@ def test_run_multiturn_produces_a_wellformed_block():
     mt = asyncio.run(_run_multiturn(_pipeline(), ModelConfig("fake-judge")))
     assert mt is not None
     s = mt["summary"]
-    # the seed file has 3 cases; every turn's memory is clean (no fabricated number) → quota 1.0
-    assert len(mt["cases"]) == 3
+    # the seed file has 5 cases (3 MT-REASK + the 2 M8 CALC cases); every turn's memory is clean
+    # (no fabricated number) → quota 1.0. The fake answers carry no kern-quantity assertions →
+    # the M8 parametric Schranke is clean too (its violation paths are proven in test_calc_eval_m8).
+    assert len(mt["cases"]) == 5
     assert mt["errors"] == []
     assert s["memory_schranken_quota"] == 1.0
     assert s["n_memory_violations"] == 0
+    assert s["parametric_schranken_quota"] == 1.0
+    assert s["n_parametric_violations"] == 0
     assert s["drop"]["dropped"] == 0  # no numeric facts proposed → nothing to drop
 
 
@@ -95,7 +99,7 @@ def test_run_multiturn_records_a_failing_case_and_keeps_going():
     )
     mt = asyncio.run(_run_multiturn(p, ModelConfig("fake-judge")))
     assert mt is not None
-    assert len(mt["errors"]) == 3  # all 3 seed cases errored, recorded
+    assert len(mt["errors"]) == 5  # all 5 seed cases errored, recorded
     assert mt["cases"] == []  # none completed
     assert (
         mt["summary"]["memory_schranken_quota"] is None

@@ -52,6 +52,7 @@ def _record_to_dict(rec) -> dict:
         "n_grounding": rec.n_grounding,
         "n_computed": rec.n_computed,
         "computed_brief": rec.computed_brief,
+        "parametric_leaks": [dataclasses.asdict(leak) for leak in rec.parametric_leaks],
         "error": rec.error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),
@@ -68,6 +69,7 @@ def write_all(
     multiturn: dict | None = None,
     edge: dict | None = None,
     injection: dict | None = None,
+    parametric: dict | None = None,
 ) -> None:
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +81,8 @@ def write_all(
         payload["edge"] = edge
     if injection is not None:
         payload["injection"] = injection
+    if parametric is not None:
+        payload["parametric"] = parametric
     (run_dir / "results.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -92,6 +96,7 @@ def write_all(
             multiturn=multiturn,
             edge=edge,
             injection=injection,
+            parametric=parametric,
         ),
         encoding="utf-8",
     )
@@ -494,9 +499,22 @@ def _render_multiturn_section(multiturn: dict) -> list[str]:
         f"({s['n_carry_misses']} miss); no-reask (judge) "
         f"{'n/a' if rq is None else f'{rq:.3f}'} ({s['n_reask_violations']} violation)."
     )
+    pq = s.get("parametric_schranken_quota")
+    if pq is not None:
+        kq = s.get("compute_quota")
+        L.append(
+            f"- **parametric_computation Schranken-quota (M8):** {_quota_str(pq)} over "
+            f"{s['n_turns']} turns ({s.get('n_parametric_violations', 0)} violation(s)) — "
+            "**AGENT-FINAL** = the verbatim deterministic `detect_parametric_leaks()` verdict on "
+            "the FINAL answer vs the kern's computed values. Kern fired where asserted "
+            f"(must_compute): {'n/a' if kq is None else f'{kq:.3f}'} "
+            f"({s.get('n_compute_misses', 0)} miss)."
+        )
     L.append("")
-    L.append("| Case | Turn | carry | no-reask | memory_clean | case-state |")
-    L.append("|---|---|---|---|---|---|")
+    L.append(
+        "| Case | Turn | carry | no-reask | memory_clean | compute | parametric | case-state |"
+    )
+    L.append("|---|---|---|---|---|---|---|---|")
     for c in multiturn["cases"]:
         for t in c["turns"]:
             carry = (
@@ -520,11 +538,25 @@ def _render_multiturn_section(multiturn: dict) -> list[str]:
                 if t["memory_clean"]
                 else f"FABRICATED {[f['feld'] for f in t['memory_fabrication']]}"
             )
+            comp = (
+                "—"
+                if not t.get("must_compute")
+                else (
+                    "✓ " + ",".join(t.get("computed_ids", []))
+                    if not t.get("compute_missing")
+                    else f"NOT COMPUTED {t['compute_missing']}"
+                )
+            )
+            param = (
+                "clean"
+                if t.get("parametric_clean", True)
+                else f"LEAK {[leak['calc_id'] for leak in t.get('parametric_leaks', [])]}"
+            )
             state = (
                 ", ".join(f"{f['feld']}={f['wert']}" for f in t["case_state"]) or "—"
             )
             L.append(
-                f"| {c['case_id']} | {t['index']} | {carry} | {reask} | {mem} | {state} |"
+                f"| {c['case_id']} | {t['index']} | {carry} | {reask} | {mem} | {comp} | {param} | {state} |"
             )
     L.append("")
     return L
@@ -651,6 +683,28 @@ def _render_injection_section(
     return L
 
 
+def _render_parametric_section(parametric: dict) -> list[str]:
+    """M8 — the run-wide parametric Schranke over all single-turn finals (the multiturn block
+    carries its own per-turn quota). AGENT-FINAL deterministic; hits listed verbatim so the owner
+    can adjudicate disputes."""
+    L: list[str] = []
+    L.append("## M8 Parametric-computation Schranke (single-turn finals)")
+    L.append("")
+    L.append(
+        f"- **Schranken-quota:** {_quota_str(parametric.get('schranken_quota'))} over "
+        f"{parametric.get('n_records', 0)} records ({parametric.get('n_leak_records', 0)} with "
+        "leak(s)) — **AGENT-FINAL** = the verbatim deterministic `detect_parametric_leaks()` "
+        "verdict on each FINAL answer vs that turn's kern-computed values."
+    )
+    for key, leaks in (parametric.get("per_case") or {}).items():
+        for leak in leaks:
+            L.append(
+                f"  - `{key}`: {leak['calc_id']} »{leak['value_text']}« — {leak['excerpt']}"
+            )
+    L.append("")
+    return L
+
+
 def _render_report(
     manifest: dict,
     summaries: dict,
@@ -659,6 +713,7 @@ def _render_report(
     multiturn: dict | None = None,
     edge: dict | None = None,
     injection: dict | None = None,
+    parametric: dict | None = None,
 ) -> str:
     L: list[str] = []
     milestone = manifest.get("milestone", "M1")
@@ -707,6 +762,9 @@ def _render_report(
 
     if injection is not None:
         L.extend(_render_injection_section(manifest, recs, injection))
+
+    if parametric is not None:
+        L.extend(_render_parametric_section(parametric))
 
     if adjudication is not None:
         L.extend(_render_adjudication_section(adjudication))

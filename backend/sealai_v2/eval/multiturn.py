@@ -2,10 +2,15 @@
 and applies the deterministic memory-integrity gate per turn (build-spec §7/§9).
 
 This is the distiller's first real measurement — the single-turn REPLAY deliberately can't exercise
-memory. Two deterministic checks live here (no LLM):
+memory. Deterministic checks live here (no LLM):
   • **must_carry** — a prior STATED fact reached the case-state (and thus the prompt, by
     construction: ``pipeline.run`` builds ``case_context`` from ``memory.recall().case_state``).
   • **memory_fabrication** gate — every remembered number must trace to the user turns (c)(ii).
+  • **must_compute** (M8) — the kern FIRED for the named calc-ids this turn (the binder fed it
+    from remembered facts); the deterministic half of CALC-MEM-01.
+  • **parametric_computation** gate (M8) — the FINAL (post-L3) answer asserts no value for a
+    kern-owned quantity the kern didn't compute (``core/calc/leak_detector.py``; agent-final,
+    mirrors ``memory_fabrication``).
 The answer-level judge checks (must_not_reask / must_avoid / must_contain) layer on top in the
 harness; they are not computed here. Pure orchestration over the injected pipeline.
 """
@@ -17,6 +22,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
 from sealai_v2.core.contracts import RememberedFact, SessionContext
 from sealai_v2.memory.distiller import DistillStats
 from sealai_v2.memory.integrity import untraceable_numeric_facts
@@ -45,6 +51,9 @@ class TurnSpec:
         str, ...
     ] = ()  # edge: no domain claim / no briefing dump (hard must_avoid)
     must_contain: tuple[str, ...] = ()  # expected content (e.g. capability redirect)
+    must_compute: tuple[
+        str, ...
+    ] = ()  # M8: calc-ids the kern must have computed this turn (deterministic)
 
 
 @dataclass(frozen=True)
@@ -78,6 +87,15 @@ class TurnResult:
     reask_violations: tuple[
         str, ...
     ] = ()  # topics the judge says the answer re-asked anyway
+    # M8 — the deterministic calc halves of this turn:
+    computed_ids: tuple[str, ...] = ()  # calc-ids the kern actually computed this turn
+    must_compute: tuple[
+        str, ...
+    ] = ()  # asserted calc-ids (denominator for the compute quota)
+    compute_missing: tuple[str, ...] = ()  # asserted calc-ids the kern did NOT compute
+    parametric_leaks: tuple[
+        LeakFinding, ...
+    ] = ()  # detector hits on the FINAL answer (gate violation)
 
     @property
     def carry_ok(self) -> bool:
@@ -90,6 +108,14 @@ class TurnResult:
     @property
     def reask_ok(self) -> bool:
         return not self.reask_violations
+
+    @property
+    def compute_ok(self) -> bool:
+        return not self.compute_missing
+
+    @property
+    def parametric_clean(self) -> bool:
+        return not self.parametric_leaks
 
 
 @dataclass
@@ -109,6 +135,14 @@ class MultiTurnResult:
     def reask_ok(self) -> bool:
         return all(t.reask_ok for t in self.turns)
 
+    @property
+    def compute_ok(self) -> bool:
+        return all(t.compute_ok for t in self.turns)
+
+    @property
+    def parametric_clean(self) -> bool:
+        return all(t.parametric_clean for t in self.turns)
+
 
 @dataclass(frozen=True)
 class MultiTurnSummary:
@@ -127,6 +161,14 @@ class MultiTurnSummary:
         float | None
     )  # turns with no re-ask / turns with a must_not_reask assertion
     n_reask_violations: int
+    # M8 — parametric Schranke (AGENT-FINAL, deterministic detector verdict per turn; gate
+    # requires 1.0) + the compute half (kern fired where asserted).
+    parametric_schranken_quota: float | None = None
+    n_parametric_violations: int = 0
+    compute_quota: float | None = (
+        None  # turns fully computed / turns with a must_compute
+    )
+    n_compute_misses: int = 0
     drop: DistillStats | None = None
 
 
@@ -169,6 +211,15 @@ async def run_multiturn_case(
         if judge is not None and spec.must_not_reask:
             verdicts = await judge(res.answer.text, spec.must_not_reask)
             reask_violations = tuple(t for t, reasked in verdicts.items() if reasked)
+        # M8 — the deterministic calc halves: did the kern fire where asserted, and does the
+        # FINAL answer leak a value the kern doesn't back (agent-final detector verdict)?
+        computed_ids = tuple(c.calc_id for c in res.computed_values)
+        compute_missing = tuple(
+            cid for cid in spec.must_compute if cid not in computed_ids
+        )
+        leaks = detect_parametric_leaks(
+            res.answer.text, computed_values=res.computed_values
+        )
         results.append(
             TurnResult(
                 index=i,
@@ -180,6 +231,10 @@ async def run_multiturn_case(
                 must_carry=spec.must_carry,
                 must_not_reask=spec.must_not_reask,
                 reask_violations=reask_violations,
+                computed_ids=computed_ids,
+                must_compute=spec.must_compute,
+                compute_missing=compute_missing,
+                parametric_leaks=leaks,
             )
         )
     return MultiTurnResult(case_id=case.id, turns=results)
@@ -198,6 +253,9 @@ def summarize_multiturn(
     n_carry_misses = sum(1 for t in carry_turns if not t.carry_ok)
     reask_turns = [t for t in turns if t.must_not_reask]
     n_reask_viol = sum(1 for t in reask_turns if not t.reask_ok)
+    n_param_viol = sum(1 for t in turns if not t.parametric_clean)
+    compute_turns = [t for t in turns if t.must_compute]
+    n_compute_misses = sum(1 for t in compute_turns if not t.compute_ok)
 
     return MultiTurnSummary(
         n_cases=len(results),
@@ -212,6 +270,14 @@ def summarize_multiturn(
         if reask_turns
         else None,
         n_reask_violations=n_reask_viol,
+        parametric_schranken_quota=round((n - n_param_viol) / n, 3) if n else None,
+        n_parametric_violations=n_param_viol,
+        compute_quota=round(
+            (len(compute_turns) - n_compute_misses) / len(compute_turns), 3
+        )
+        if compute_turns
+        else None,
+        n_compute_misses=n_compute_misses,
         drop=drop_stats,
     )
 
@@ -233,6 +299,7 @@ def load_multiturn_cases(path: Path | None = None) -> list[MultiTurnCase]:
                 must_not_reask=tuple(t.get("must_not_reask", [])),
                 must_avoid=tuple(t.get("must_avoid", [])),
                 must_contain=tuple(t.get("must_contain", [])),
+                must_compute=tuple(t.get("must_compute", [])),
             )
             for t in c["turns"]
         )
