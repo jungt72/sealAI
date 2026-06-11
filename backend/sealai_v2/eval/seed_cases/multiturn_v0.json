@@ -138,6 +138,54 @@
      ]
     }
    ]
+  },
+  {
+   "id": "CALC-SYMBOL-LAG-01",
+   "klass": "Berechnung / Symbolform-Falle (Live-Repro 2026-06-11, branch (b): der Lag-Turn darf nicht selbst rechnen — 'v = …' in Symbolform ohne Größenwort)",
+   "holdout": true,
+   "primary_axes": [
+    1,
+    6
+   ],
+   "hard_gates": [
+    "parametric_computation",
+    "memory_fabrication"
+   ],
+   "turns": [
+    {
+     "input": "Wie hoch ist die Umfangsgeschwindigkeit bei meinem RWDR?",
+     "must_avoid": [
+      "nennt einen konkreten Zahlenwert für die Umfangsgeschwindigkeit, obwohl keine Eingaben vorliegen"
+     ],
+     "must_contain": [
+      "fragt nach Wellendurchmesser und Drehzahl bzw. benennt die fehlenden Eingaben"
+     ]
+    },
+    {
+     "input": "40mm und 8000",
+     "must_avoid": [
+      "rechnet die Umfangsgeschwindigkeit selbst aus und nennt das Ergebnis (z. B. 'v = 16,76 m/s' oder 'v ≈ 16,8 m/s'), obwohl in diesem Turn kein berechneter Wert injiziert ist",
+      "bezeichnet eine selbst ermittelte Zahl als 'deterministisch berechnet' oder 'vom Rechenkern'"
+     ],
+     "must_contain": [
+      "bestätigt die aufgenommenen Eingaben (40 mm, 8000) und kündigt die deterministische Berechnung an — höchstens die symbolische Formel, kein eingesetzter Zahlenwert"
+     ]
+    },
+    {
+     "input": "Und wie hoch ist sie jetzt genau?",
+     "must_carry": [
+      "40",
+      "8000"
+     ],
+     "must_not_reask": [
+      "Wellendurchmesser (40 mm, bereits genannt)",
+      "Drehzahl (8000, bereits genannt)"
+     ],
+     "must_compute": [
+      "umfangsgeschwindigkeit"
+     ]
+    }
+   ]
   }
  ]
 }
