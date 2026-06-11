@@ -182,10 +182,20 @@ in-process (restart wipes conversations — pilot prerequisite below).
 > Eval-REPLAY) and this gate re-validates on the new flip ref. Turns after the lag turn were
 > legitimate kern fires.
 
-- [ ] **C landed (flip blocker):** leak-detector hardening + B prompt rule merged to the flip
+- [x] **C landed (flip blocker):** leak-detector hardening + B prompt rule merged to the flip
       path after the owner-adjudicated `fixfirst-c-leak` Eval-REPLAY; gate re-validated on the
       new flip ref (CI all-four, staging rebuild + behavior re-smoke incl. the two-turn 40/8000
       repro: lag turn shows no fabricated kern label, following turn kern fires).
+      ✅ **RE-VALIDATED 2026-06-11 on flip ref `6322eb9c`** (runtime byte-identical to the
+      REPLAY-validated `3c598542`: `3c598542..6322eb9c` is docs + test-file-formatting only —
+      zero runtime files; in-image `leak_detector.py`/`system_l1.jinja` hash-match the worktree).
+      CI **5/5** green; flip-mechanism diff **empty** (the 2026-06-10 3-leg rollback dry-run
+      carries); dist manifest **unchanged** (`index.html ec3d3a85…`, `index-D9NA13qp.js c532057c…`,
+      `index--S9mhwd9.css 4040237c…`); live `:8443` smoke **10/10**; live 40/8000 repro **lag-turn
+      live-green** (the live (b) lag shape — no fabricated kern label, fail-closed honest, zero
+      parametric leaks). Turn-3 kern non-fire = **item-8 distiller unit-drop** (pilot-tier,
+      owner-adjudicated **NON-gating**). Anchors re-read from the daemon: **V1_ANCHOR=`ab586f30`**
+      (= `main`; 0 v2-mount markers in its `deploy.yml`). **Flip stays HELD** (Phase 3 owner-executed).
 - [ ] Phase 1 validation green (V2 suite incl. red-before-green kid tests, keystone, npm verify, image build).
 - [ ] Staging e2e checklist green (dated report) + all 3 rollback dry-run legs done.
 - [ ] Keycloak `sealai-v2` client live (mappers + prod redirect URIs); step-3 probe green.
@@ -257,8 +267,14 @@ the rollback target — do NOT stop/tear down V1 during or right after the flip.
   (one line after default.conf `server_name sealingai.com;`); backend-v2 up (profile `v2`);
   V1 untouched and running (rollback target). Runbook: docs/ops/RUNBOOK_V2_CUTOVER.md.
 - **Flip ref:** ⟨git rev-parse HEAD⟩ (worktree clean: ⟨yes⟩)
+  — gate-locked runtime ref `6322eb9c` (re-validated 2026-06-11; runtime byte-identical to the
+  REPLAY-validated `3c598542`; later docs-only commits may ride on top without re-validation).
 - **backend-v2 image:** ⟨docker inspect backend-v2 --format '{{.Image}}'⟩
 - **frontend-v2 dist sha256 manifest:** ⟨sha256sum frontend-v2/dist/index.html frontend-v2/dist/assets/*⟩
+  — gate-locked (2026-06-11, unchanged since 2026-06-10, backend-only milestone):
+  `ec3d3a850cdb92a9592ef20622e8a44bcbb1e4083b9bfe86ae799dc47fc08ebc  index.html`,
+  `c532057c209b08df85305857d489917c6cadce742dd284cf2614c9fe631ec769  assets/index-D9NA13qp.js`,
+  `4040237cc1fe9c720d36152e77eb4442ada2927713aad395b5d85930b2eb8886  assets/index--S9mhwd9.css`
 - **Rollback anchors (from the daemon at flip time):**
   - routing: `ops/v2-flip.sh --revert` (dry-run-proven on staging 2026-06-10)
   - V1 backend: ⟨docker inspect backend --format '{{.Config.Image}}'⟩ (status/health: ⟨…⟩)
