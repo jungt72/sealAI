@@ -34,6 +34,11 @@ Known boundaries (documented, covered by the catalog/LLM side):
 - a plugged formula without a stated result ("v = π·50·4000/60000") is not deterministically
   detectable here;
 - an own token >1 sentence back WITHOUT a symbol form does not gate (window-2 reach);
+- an own token on a PREVIOUS LINE (markdown header/label line) with a NO-SYMBOL value on the
+  next line does not gate — window-2 is deliberately line-bounded (the cross-line grant
+  produced the Nutfüllgrad/Shore-A knowledge-range FPs); accepted residual: every observed
+  true leak (live repro + all sweep corpora) is symbol-form or same-line, and the symbol+unit
+  self-trigger covers the header layout whenever the value line writes "v = …";
 - residual (a): a foreign velocity word in the SAME sentence as a symbol-form kern value still
   suppresses (rare mixed-velocity construction → potential miss, accepted FN side);
 - residual (b): a foreign-velocity value in symbol-form whose word sits only in the PRECEDING

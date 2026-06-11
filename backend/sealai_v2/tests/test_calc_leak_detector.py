@@ -284,11 +284,37 @@ def test_citation_range_split_by_abbreviation_is_not_a_leak():
 
 
 def test_window_granted_point_value_with_window_caveat_still_fires():
-    """Span-scoping stays locked: the window-caveat blesses only RANGE structures — a
-    point value in a window-granted fragment fires even with a caveat one sentence back."""
+    """Span-scoping stays locked THROUGH the caveat-inheritance path: token AND caveat sit in
+    the granting sentence, the window-granted fragment asserts a POINT value — the inherited
+    caveat blesses only RANGE structures, so the point value fires (safety lock, narrowing 2)."""
     draft = "Die Verpressung als Richtwert beachten. Sie ergibt hier 18 %."
     leaks = detect_parametric_leaks(draft, computed_values=())
     assert leaks and leaks[0].calc_id == "verpressung_prozent"
+    assert leaks[0].value_text == "18"
+
+
+def test_typ_abbreviation_does_not_exempt_point_values():
+    """Safety lock for narrowing 3: 'typ.' in the caveat lexicon enables only the RANGE
+    exemption — an asserted POINT value next to 'typ.' still fires against an empty kern."""
+    draft = "Die Umfangsgeschwindigkeit beträgt 16,76 m/s (typ.)"
+    leaks = detect_parametric_leaks(draft, computed_values=())
+    assert leaks and leaks[0].calc_id == "umfangsgeschwindigkeit"
+    assert leaks[0].value_text == "16,76"
+
+
+def test_token_on_header_line_with_no_symbol_value_next_line_is_a_documented_miss():
+    """ACCEPTED RESIDUAL (conscious decision, FIX-FIRST sweep 2026-06-11): a kern-quantity
+    token on a header/label LINE with a no-symbol value on the NEXT line is missed by both
+    gates — window-2 is line-bounded (cross-line grants produced the Nutfüllgrad/Shore-A
+    knowledge-range FPs) and there is no symbol form to self-trigger. Every observed true
+    leak is symbol-form or same-line; the LLM-critic trap entry covers paraphrase shapes.
+    This test PINS the boundary so a future change of it is deliberate, not accidental."""
+    draft = "**Umfangsgeschwindigkeit:**\nSie beträgt 16,76 m/s."
+    assert detect_parametric_leaks(draft, computed_values=()) == ()
+    # the same header layout WITH a symbol-form value line IS caught (self-trigger):
+    assert detect_parametric_leaks(
+        "**Umfangsgeschwindigkeit:**\nv = 16,76 m/s.", computed_values=()
+    )
 
 
 # --- policy: regenerate-once with a deterministic CalcResult note → hedge on re-fire --------------
