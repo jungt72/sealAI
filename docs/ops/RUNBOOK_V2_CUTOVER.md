@@ -190,6 +190,13 @@ in-process (restart wipes conversations — pilot prerequisite below).
    ZERO CSP violations in the console. Rationale: the XSS-token-theft threat model is multi-user;
    the CSP *header* is already machine-verified in `ops/smoke-v2.sh`, but the runtime proof must
    land before real users do.
+6. **Single-turn calc binding (owner decision 2026-06-11, FLIP-FIRST):** the kern value must
+   appear on the SAME turn the inputs are stated — currently one-turn-lag: facts bind only after
+   M5 post-answer distillation, so the kern fires from remembered facts one turn later (value
+   correct, one turn late — UX, owner-only-acceptable; same classification as item 5). Proper
+   fix = its own milestone with a design pass (safe same-turn deterministic extraction vs the
+   owner-gated M5 distill-after-answer decision) + Eval-REPLAY. Gates the FIRST PILOT, not the
+   owner-only flip.
 
 ## Phase 4 — V1 dashboard decommission (separate, owner-gated)
 
