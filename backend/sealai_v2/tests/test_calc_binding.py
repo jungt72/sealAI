@@ -14,21 +14,28 @@ from sealai_v2.core.calc.binding import bind_params
 from sealai_v2.core.contracts import RememberedFact
 
 
-def fact(feld: str, wert: str, provenance: str = "distilled-from-conversation") -> RememberedFact:
+def fact(
+    feld: str, wert: str, provenance: str = "distilled-from-conversation"
+) -> RememberedFact:
     return RememberedFact(feld=feld, wert=wert, provenance=provenance)
 
 
 def test_canonical_pair_binds_with_origins():
     """The saltwater case: d=50 mm + n=4000 U/min remembered → kern inputs present."""
-    res = bind_params((fact("wellendurchmesser", "50 mm"), fact("drehzahl", "4000 U/min")))
+    res = bind_params(
+        (fact("wellendurchmesser", "50 mm"), fact("drehzahl", "4000 U/min"))
+    )
     assert res.params == {"d1_mm": 50.0, "rpm": 4000.0}
-    assert "wellendurchmesser" in res.origins["d1_mm"] and "50 mm" in res.origins["d1_mm"]
+    assert (
+        "wellendurchmesser" in res.origins["d1_mm"] and "50 mm" in res.origins["d1_mm"]
+    )
     assert "vom Nutzer" in res.origins["d1_mm"]  # user-stated, not derived
     assert "drehzahl" in res.origins["rpm"]
 
 
 @pytest.mark.parametrize(
-    "wert", ["4000 U/min", "4000 u/min", "4000 1/min", "4000 min⁻¹", "4000 min^-1", "4000 rpm"]
+    "wert",
+    ["4000 U/min", "4000 u/min", "4000 1/min", "4000 min⁻¹", "4000 min^-1", "4000 rpm"],
 )
 def test_drehzahl_unit_spellings(wert: str):
     res = bind_params((fact("drehzahl", wert),))
@@ -36,7 +43,9 @@ def test_drehzahl_unit_spellings(wert: str):
 
 
 def test_german_decimal_comma_and_thousands_with_unit():
-    assert bind_params((fact("wellendurchmesser", "50,5 mm"),)).params == {"d1_mm": 50.5}
+    assert bind_params((fact("wellendurchmesser", "50,5 mm"),)).params == {
+        "d1_mm": 50.5
+    }
     # "4.000" is 4000 ONLY with an adjoining unit token (owner decision 2)
     assert bind_params((fact("drehzahl", "4.000 U/min"),)).params == {"rpm": 4000.0}
 
@@ -44,14 +53,17 @@ def test_german_decimal_comma_and_thousands_with_unit():
 @pytest.mark.parametrize(
     "feld,wert",
     [
-        ("wellendurchmesser", "50"),       # unitless → fail-closed (owner decision 2)
-        ("drehzahl", "4.000"),             # thousands WITHOUT unit → ambiguous → fail-closed
-        ("drehzahl", "4000"),              # unitless → fail-closed
+        ("wellendurchmesser", "50"),  # unitless → fail-closed (owner decision 2)
+        ("drehzahl", "4.000"),  # thousands WITHOUT unit → ambiguous → fail-closed
+        ("drehzahl", "4000"),  # unitless → fail-closed
         ("wellendurchmesser", "50–60 mm"),  # range → fail-closed
         ("wellendurchmesser", "50 bis 60 mm"),
-        ("wellendurchmesser", "groß"),     # no number
+        ("wellendurchmesser", "groß"),  # no number
         ("wellendurchmesser", "50 zoll"),  # unknown unit (v1: mm only)
-        ("drehzahl", "schnell, ca. 4000 U/min und mehr"),  # extra prose → not a clean value
+        (
+            "drehzahl",
+            "schnell, ca. 4000 U/min und mehr",
+        ),  # extra prose → not a clean value
     ],
 )
 def test_fail_closed_on_unbindable_values(feld: str, wert: str):
@@ -137,7 +149,11 @@ def _calc_pipeline(client):
 
 def _seed(p, tenant_id: str, session_id: str, facts):
     p.memory.record_turn(
-        tenant_id=tenant_id, session_id=session_id, question="seed", answer="", facts=facts
+        tenant_id=tenant_id,
+        session_id=session_id,
+        question="seed",
+        answer="",
+        facts=facts,
     )
 
 
@@ -153,7 +169,12 @@ def test_pipeline_binds_remembered_facts_into_compute():
 
     client = FakeLlmClient("ok")
     p = _calc_pipeline(client)
-    _seed(p, "t1", "s1", (fact("wellendurchmesser", "50 mm"), fact("drehzahl", "4000 U/min")))
+    _seed(
+        p,
+        "t1",
+        "s1",
+        (fact("wellendurchmesser", "50 mm"), fact("drehzahl", "4000 U/min")),
+    )
     res = asyncio.run(
         p.run("Passt das so?", tenant=TenantContext("t1"), session=SessionContext("s1"))
     )
@@ -174,7 +195,12 @@ def test_explicit_params_take_precedence_over_bound_facts():
     from sealai_v2.tests._fakes import FakeLlmClient
 
     p = _calc_pipeline(FakeLlmClient("ok"))
-    _seed(p, "t1", "s1", (fact("wellendurchmesser", "50 mm"), fact("drehzahl", "4000 U/min")))
+    _seed(
+        p,
+        "t1",
+        "s1",
+        (fact("wellendurchmesser", "50 mm"), fact("drehzahl", "4000 U/min")),
+    )
     res = asyncio.run(
         p.run(
             "Passt das so?",
@@ -229,4 +255,6 @@ def test_binding_fail_closed_surfaces_note_and_kern_stays_honest():
     )
     assert res.computed_values == ()
     assert any(n.calc_id == "umfangsgeschwindigkeit" for n in res.not_computed)
-    assert any("drehzahl" in n for n in res.calc_notes)  # the drop is visible, never silent
+    assert any(
+        "drehzahl" in n for n in res.calc_notes
+    )  # the drop is visible, never silent

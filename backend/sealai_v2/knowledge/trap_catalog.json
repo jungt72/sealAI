@@ -229,6 +229,24 @@
       "provenance": ["eval:SAFETY-01(must_catch)"],
       "tags": ["Sicherheitskritisch", "RGD"],
       "xrefs": []
+    },
+    {
+      "id": "TRAP-L1-PARAMETRIC-CALC",
+      "trigger": "die Antwort nennt einen konkreten Zahlenwert für eine kern-eigene Größe (Umfangsgeschwindigkeit/Gleitgeschwindigkeit, PV-Wert, Verpressung), den der deterministische Rechenkern NICHT berechnet hat oder der dem Kern-Wert widerspricht",
+      "wrong": [
+        "rechnet die Umfangsgeschwindigkeit/PV-Wert/Verpressung selbst aus und nennt das Ergebnis (z. B. 'v ≈ 10,5 m/s'), obwohl kein berechneter Wert injiziert wurde",
+        "nennt einen Zahlenwert, der vom injizierten berechneten Wert abweicht",
+        "setzt Zahlen in die Formel ein statt sie nur symbolisch zu zeigen, wenn der Kern 'nicht berechenbar' meldet"
+      ],
+      "correct": "Kern-eigene Größen berechnet ausschließlich der deterministische Rechenkern (Umfangsgeschwindigkeit v = π·d1·n/60000 [d1 in mm, n in 1/min → m/s]; PV = p·v; Verpressung = (Schnurstärke−Nuttiefe)/Schnurstärke·100) — die Antwort referenziert nur die injizierten berechneten Werte exakt. Liegt kein berechneter Wert vor ('nicht berechenbar'), nennt die Antwort KEINEN Zahlenwert, benennt die fehlenden Eingaben und zeigt die Formel höchstens symbolisch ohne eingesetzte Zahlen.",
+      "gates": ["parametric_computation"],
+      "provenance": [
+        "owner:M8-plan-approval-2026-06-10(decisions 4-6)",
+        "divergence:briefing-saltwater-d50-n4000(L1 'v ≈ 10,5 m/s' vs. Kern 'nicht berechenbar — d1_mm, rpm fehlen')",
+        "calc_seed:umfangsgeschwindigkeit/pv_wert/verpressung_prozent(reviewed)"
+      ],
+      "tags": ["Berechnung", "Determinismus", "M8"],
+      "xrefs": ["CALC-UMFANGSGESCHWINDIGKEIT"]
     }
   ],
   "draft_for_review": [

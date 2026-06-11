@@ -110,10 +110,13 @@ async def verify(
     flags: Flags,
     grounding_facts: tuple[GroundingFact, ...] = (),
     computed_values: tuple = (),
+    not_computed: tuple = (),
 ):
     """Stage 5 — L3 verifier (M2/M3/M4). Independent critic pass against the trap catalog, the
     reviewed grounding facts (M3) AND the computed values (M4); on a reviewed hard-gate violation →
-    regenerate-once or hedge; card/calc contradictions are FLAG-only. Returns ``(final, verdict)``."""
+    regenerate-once or hedge; card/calc contradictions are FLAG-only. M8-C: the kern's fail-closed
+    ``not_computed`` reasons feed the parametric-leak policy (note/hedge name the missing inputs).
+    Returns ``(final, verdict)``."""
     from sealai_v2.core.l3_verifier import run_verify
 
     return await run_verify(
@@ -125,6 +128,7 @@ async def verify(
         flags=flags,
         grounding_facts=grounding_facts,
         computed_values=computed_values,
+        not_computed=not_computed,
     )
 
 

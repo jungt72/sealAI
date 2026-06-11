@@ -18,6 +18,7 @@ import json
 import re
 from dataclasses import dataclass
 
+from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
 from sealai_v2.core.contracts import (
     Answer,
     ComputedValue,
@@ -25,6 +26,7 @@ from sealai_v2.core.contracts import (
     GroundingFact,
     LlmClient,
     ModelConfig,
+    NotComputed,
     VerifierAction,
     VerifierFinding,
     VerifierPromptAssembler,
@@ -33,6 +35,17 @@ from sealai_v2.core.contracts import (
 from sealai_v2.knowledge.traps import TrapCatalog
 
 _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-generated
+
+# M8-C — the deterministic L1-parametric-computation guard (kind="calc_leak"). The detector
+# (core/calc/leak_detector.py) fires server-side on draft AND regeneration; the same-named
+# catalog entry lets the LLM critic catch paraphrases the regex core cannot (defense-in-depth).
+PARAMETRIC_TRAP_ID = "TRAP-L1-PARAMETRIC-CALC"
+PARAMETRIC_GATE = "parametric_computation"
+_CALC_DISPLAY = {
+    "umfangsgeschwindigkeit": "Umfangsgeschwindigkeit",
+    "pv_wert": "PV-Wert",
+    "verpressung_prozent": "Verpressung",
+}
 
 # --- precision over-application guard (firing condition only — NOT the reviewed `correct` facts) ---
 # The range-precision traps fire on a "falsch-präzise Einzelzahl OHNE Bereich". A value already
@@ -295,6 +308,109 @@ def build_hedge(
     )
 
 
+def _leak_findings(leaks: tuple[LeakFinding, ...]) -> tuple[VerifierFinding, ...]:
+    """Deterministic detector hits as findings (kind="calc_leak"). ``review_state`` is "reviewed"
+    by construction: the detector compares against the kern's CalcResult, never a model claim."""
+    return tuple(
+        VerifierFinding(
+            trap_id=PARAMETRIC_TRAP_ID,
+            gate=PARAMETRIC_GATE,
+            review_state="reviewed",
+            evidence=f"{leak.calc_id}: »{leak.value_text}« — {leak.excerpt}"[:400],
+            kind="calc_leak",
+        )
+        for leak in leaks
+    )
+
+
+def _kern_truth_lines(
+    leaks: tuple[LeakFinding, ...],
+    computed_values: tuple[ComputedValue, ...],
+    not_computed: tuple[NotComputed, ...],
+) -> list[str]:
+    """One deterministic truth line per leaked quantity, built ONLY from the CalcResult — the
+    kern is a legitimate non-model truth source (integrity rule holds: never a free-generated
+    counter-claim). Computed → reference exactly; not-computed → reason names the missing inputs."""
+    computed_by_id = {c.calc_id: c for c in computed_values}
+    reasons_by_id = {n.calc_id: n.reason for n in not_computed}
+    lines: list[str] = []
+    for calc_id in dict.fromkeys(leak.calc_id for leak in leaks):  # dedup, keep order
+        display = _CALC_DISPLAY.get(calc_id, calc_id)
+        c = computed_by_id.get(calc_id)
+        if c is not None:
+            lines.append(
+                f"- {display}: deterministisch berechnet — {c.name} = {c.value} {c.unit}. "
+                "Referenziere exakt diesen Wert; rechne nichts selbst."
+            )
+        else:
+            reason = reasons_by_id.get(
+                calc_id,
+                "kein deterministisch berechneter Wert (Eingaben nicht bestätigt)",
+            )
+            lines.append(
+                f"- {display}: {reason}. Nenne dafür KEINEN Zahlenwert; benenne die "
+                "fehlenden Eingaben. Die Formel darf nur symbolisch erscheinen — "
+                "keine Zahlen einsetzen."
+            )
+    return lines
+
+
+def build_calc_leak_note(
+    leaks: tuple[LeakFinding, ...],
+    *,
+    computed_values: tuple[ComputedValue, ...] = (),
+    not_computed: tuple[NotComputed, ...] = (),
+) -> str:
+    """The correction note for a regeneration after a parametric-computation leak. Deterministic
+    from the CalcResult — unlike trap corrections it needs no catalog ``correct`` fact, because the
+    replacement truth IS the kern output (or its honest absence)."""
+    return (
+        "Die Verifikation (L3) hat in deinem Entwurf einen selbst berechneten Zahlenwert für "
+        "eine kern-eigene Größe markiert. Kern-eigene Größen berechnet ausschließlich der "
+        "deterministische Rechenkern — niemals das Sprachmodell. Korrigiere die Antwort gemäß "
+        "diesem Kern-Stand:\n"
+        + "\n".join(_kern_truth_lines(leaks, computed_values, not_computed))
+    )
+
+
+def build_calc_leak_hedge(
+    leaks: tuple[LeakFinding, ...],
+    *,
+    computed_values: tuple[ComputedValue, ...] = (),
+    not_computed: tuple[NotComputed, ...] = (),
+) -> str:
+    """Deterministic fail-closed fallback when a parametric leak persists after regeneration.
+    USER-facing. Output integrity: NEVER echoes the leaked number; states a value only when the
+    kern computed it; otherwise names the quantity + the missing inputs honestly (the Schranke:
+    no number in the fail-closed case)."""
+    computed_by_id = {c.calc_id: c for c in computed_values}
+    reasons_by_id = {n.calc_id: n.reason for n in not_computed}
+    lines: list[str] = []
+    for calc_id in dict.fromkeys(leak.calc_id for leak in leaks):
+        display = _CALC_DISPLAY.get(calc_id, calc_id)
+        c = computed_by_id.get(calc_id)
+        if c is not None:
+            lines.append(
+                f"- {display}: deterministisch berechnet — {c.name} = {c.value} {c.unit}."
+            )
+        else:
+            reason = reasons_by_id.get(
+                calc_id,
+                "kein deterministisch berechneter Wert (Eingaben nicht bestätigt)",
+            )
+            lines.append(
+                f"- {display}: {reason} — ich nenne daher bewusst keinen Zahlenwert."
+            )
+    return (
+        "⚠️ Hier ist Vorsicht geboten. Der Antwortentwurf enthielt einen selbst berechneten "
+        "Zahlenwert für eine kern-eigene Größe — solche Werte stammen hier ausschließlich aus "
+        "der deterministischen Berechnung. Aktueller Kern-Stand:\n"
+        + "\n".join(lines)
+        + "\nSobald die fehlenden Eingaben bestätigt sind, berechnet der Rechenkern den Wert "
+        "deterministisch mit zitierter Formel. Das ist nur eine Orientierung, keine Freigabe."
+    )
+
+
 def _reviewed_traps(
     findings: tuple[VerifierFinding, ...],
 ) -> tuple[VerifierFinding, ...]:
@@ -315,55 +431,87 @@ async def run_verify(
     flags: Flags,
     grounding_facts: tuple[GroundingFact, ...] = (),
     computed_values: tuple[ComputedValue, ...] = (),
+    not_computed: tuple[NotComputed, ...] = (),
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
     M3/M4: L3 also sees the reviewed grounding facts + computed values and may FLAG a card or calc
     contradiction — but card/calc findings never block/correct (only reviewed TRAP findings do).
+    M8-C: the deterministic parametric-leak detector runs server-side on the draft AND on the
+    regeneration (kind="calc_leak"); a leak BLOCKS — regenerate-once against a CalcResult-built
+    note, hedge without the number if it re-fires (owner decision 5). ``not_computed`` carries the
+    kern's fail-closed reasons so note/hedge can NAME the missing inputs.
     ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(...)``)."""
+    leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
     raw = await verifier.verify(question, draft.text, grounding_facts, computed_values)
-    if not raw.findings:
+    findings = raw.findings + _leak_findings(leaks)
+    if not findings:
         return draft, VerifierVerdict(
             action=VerifierAction.PASS, parse_ok=raw.parse_ok, raw=raw.raw
         )
 
     reviewed = _reviewed_traps(raw.findings)
-    if not reviewed:
+    if not reviewed and not leaks:
         # draft-trap and/or card-contradiction matches → advisory FLAG, never block/correct
         return draft, VerifierVerdict(
             action=VerifierAction.FLAG,
-            findings=raw.findings,
+            findings=findings,
             parse_ok=raw.parse_ok,
             raw=raw.raw,
         )
 
-    correction = build_correction_note(catalog, reviewed)
-    if correction is not None:
+    # Blocking cause: a reviewed trap and/or a deterministic calc leak → regenerate once.
+    notes: list[str] = []
+    if leaks:
+        notes.append(
+            build_calc_leak_note(
+                leaks, computed_values=computed_values, not_computed=not_computed
+            )
+        )
+    if reviewed:
+        trap_note = build_correction_note(catalog, reviewed)
+        if trap_note is not None:
+            notes.append(trap_note)
+
+    persisting_leaks = leaks
+    persisting_traps = reviewed
+    if notes:
         regen = await generator.generate(
-            question, flags=flags, correction_note=correction
+            question, flags=flags, correction_note="\n\n".join(notes)
+        )
+        persisting_leaks = detect_parametric_leaks(
+            regen.text, computed_values=computed_values
         )
         raw2 = await verifier.verify(
             question, regen.text, grounding_facts, computed_values
         )
-        if not _reviewed_traps(raw2.findings):
+        persisting_traps = _reviewed_traps(raw2.findings)
+        if not persisting_traps and not persisting_leaks:
             return regen, VerifierVerdict(
                 action=VerifierAction.CORRECTED,
-                findings=raw.findings,
+                findings=findings,
                 regenerated=True,
                 parse_ok=raw.parse_ok,
                 raw=raw.raw,
             )
 
-    # No usable reviewed correction, or regeneration still tripped L3 → fail closed to a hedge.
+    # No usable correction, or the regeneration still tripped L3 → fail closed to a hedge.
+    # A persisting leak takes hedge precedence: its hedge is the one that must not carry a number.
+    if persisting_leaks:
+        hedge_text = build_calc_leak_hedge(
+            persisting_leaks, computed_values=computed_values, not_computed=not_computed
+        )
+    else:
+        hedge_text = build_hedge(reviewed or persisting_traps, catalog)
     hedge = Answer(
-        text=build_hedge(reviewed, catalog),
+        text=hedge_text,
         model=_HEDGE_MODEL,
         grounding_facts=draft.grounding_facts,
     )
     return hedge, VerifierVerdict(
         action=VerifierAction.BLOCKED_HEDGE,
-        findings=raw.findings,
-        regenerated=correction is not None,
+        findings=findings,
+        regenerated=bool(notes),
         parse_ok=raw.parse_ok,
         raw=raw.raw,
     )

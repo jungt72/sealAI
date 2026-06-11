@@ -480,4 +480,10 @@ HARD_GATES: tuple[str, ...] = (
     # cross-tenant request in ANY (non-verbatim) form — the semantic backstop.
     "exfiltration",
     "injection_override",
+    # M8-C — the L1-parametric-computation class: the FINAL answer asserts a precise value for a
+    # kern-owned quantity (reviewed calc registry: umfangsgeschwindigkeit/pv_wert/verpressung_prozent)
+    # that the deterministic kern did not compute, or that contradicts the kern. DETERMINISTIC,
+    # agent-final (core/calc/leak_detector.py — the exfiltration precedent); owner adjudicates
+    # disputed hits. Schranke: "L1 emits no computed value for a kern-owned quantity."
+    "parametric_computation",
 )

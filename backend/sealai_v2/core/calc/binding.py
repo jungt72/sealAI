@@ -53,7 +53,9 @@ _BINDINGS: dict[str, tuple[str, re.Pattern[str]]] = {
 @dataclass(frozen=True)
 class BindingResult:
     params: dict[str, float] = field(default_factory=dict)
-    origins: dict[str, str] = field(default_factory=dict)  # input name → human-readable origin
+    origins: dict[str, str] = field(
+        default_factory=dict
+    )  # input name → human-readable origin
     notes: tuple[str, ...] = ()  # surfaced drops — fail-closed is visible, never silent
 
 

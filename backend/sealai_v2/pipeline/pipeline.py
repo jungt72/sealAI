@@ -122,7 +122,9 @@ class Pipeline:
             grounding_facts=grounding_facts,
             param_origins=param_origins or None,
         )
-        if bound.notes:  # surfaced fail-closed drops — visible to L1 + render, never silent
+        if (
+            bound.notes
+        ):  # surfaced fail-closed drops — visible to L1 + render, never silent
             calc = CalcResult(
                 computed=calc.computed,
                 not_computed=calc.not_computed,
@@ -151,6 +153,7 @@ class Pipeline:
                 flags=flags,
                 grounding_facts=grounding_facts,
                 computed_values=calc.computed,
+                not_computed=calc.not_computed,
             )
 
         answer = await stages.cite(answer)  # stub → unchanged
