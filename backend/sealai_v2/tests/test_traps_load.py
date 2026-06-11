@@ -66,6 +66,19 @@ def test_epdm_entry_encodes_the_non_polar_fact_and_divergence_provenance():
     assert "principles:§2" in e.provenance
 
 
+def test_calc_umfang_entry_is_kern_referenced_not_self_computed():
+    """M8 owner reword (boundary review 2026-06-11): the M2-era entry instructed the ANSWER to
+    compute v itself — post-M8 the kern computes; the entry must instruct kern-referencing and
+    must no longer carry the plugged worked example."""
+    e = load_traps().by_id("CALC-UMFANGSGESCHWINDIGKEIT")
+    assert e is not None and e.reviewed
+    assert "berechnen lassen" in e.correct
+    assert "nie selbst" in e.correct
+    assert "keinen Zahlenwert" in e.correct  # fail-closed half is part of the fact
+    assert "12,6" not in e.correct  # the plugged example is gone
+    assert any("owner:boundary-review-2026-06-11" in p for p in e.provenance)
+
+
 def test_validation_rejects_unknown_gate(tmp_path):
     p = tmp_path / "bad.json"
     p.write_text(

@@ -101,7 +101,7 @@ def write_all(
         encoding="utf-8",
     )
     (run_dir / "human_review_worksheet.md").write_text(
-        _render_worksheet(manifest, recs), encoding="utf-8"
+        _render_worksheet(manifest, recs, multiturn=multiturn), encoding="utf-8"
     )
 
 
@@ -826,7 +826,68 @@ def _render_report(
     return "\n".join(L)
 
 
-def _render_worksheet(manifest: dict, recs: list[dict]) -> str:
+def _render_calc_narrative_section(multiturn: dict) -> list[str]:
+    """M8 owner directive (REPLAY approval 2026-06-11): surface the CALC multi-turn narratives for
+    owner adjudication beyond the gate pass/fail — the one-turn-lag UX (facts stated in prose
+    distill AFTER the turn; the kern fires from turn 2 on) and the no-gutting check (the
+    constrained L1 still references+contextualizes the kern value resp. names+requests the missing
+    input, rather than avoiding the quantity). INFORMATIONAL: no ``**Verdict`` lines and no
+    ``## <id> — `` headings, so ``adjudicate.parse_worksheet`` never picks up phantom slots."""
+    calc_cases = [
+        c for c in multiturn.get("cases", []) if c["case_id"].startswith("CALC-")
+    ]
+    if not calc_cases:
+        return []
+    L: list[str] = []
+    L.append(
+        "## M8 Kalkulations-Narrative (owner review; informational — not quota-fed)"
+    )
+    L.append("")
+    L.append(
+        "> Das `parametric_computation`-Gate selbst ist AGENT-FINAL (deterministischer Detektor — "
+        "siehe report.md). Hier steht das NARRATIV zur Beurteilung: One-turn-lag-UX und der "
+        "No-Gutting-Check."
+    )
+    L.append("")
+    for c in calc_cases:
+        L.append(f"### {c['case_id']}")
+        L.append("")
+        for t in c["turns"]:
+            kern = (
+                ", ".join(t.get("computed_ids", [])) or "fail-closed (nichts berechnet)"
+            )
+            param = (
+                "clean"
+                if t.get("parametric_clean", True)
+                else f"LEAK {[leak['calc_id'] for leak in t.get('parametric_leaks', [])]}"
+            )
+            L.append(f"**Turn {t['index']}** — Eingabe: {t['input']}")
+            L.append(f"_Kern: {kern} · parametric: {param}_")
+            L.append("")
+            L.append("```text")
+            L.append((t.get("answer") or "(leer)").strip())
+            L.append("```")
+            L.append("")
+        if any(t.get("must_compute") for t in c["turns"]):
+            L.append(
+                "- [ ] One-turn-lag UX akzeptabel — Turn 1 (Fakten im Prosatext, noch nicht "
+                "destilliert): Kern fail-closed + KEINE L1-Zahl; ab Turn 2 feuert der Kern aus "
+                "erinnerten Fakten"
+            )
+        L.append(
+            "- [ ] Narrative OK — referenziert/kontextualisiert den Kern-Wert bzw. benennt + "
+            "erbittet die fehlende Eingabe; weicht der Größe nicht aus (kein Gutting)"
+        )
+        L.append("- Divergenz-Notiz: ")
+        L.append("")
+    L.append("---")
+    L.append("")
+    return L
+
+
+def _render_worksheet(
+    manifest: dict, recs: list[dict], multiturn: dict | None = None
+) -> str:
     by_case: dict[str, list[dict]] = {}
     order: list[str] = []
     for r in recs:
@@ -925,4 +986,6 @@ def _render_worksheet(manifest: dict, recs: list[dict]) -> str:
             L.append("")
         L.append("---")
         L.append("")
+    if multiturn is not None:
+        L.extend(_render_calc_narrative_section(multiturn))
     return "\n".join(L)

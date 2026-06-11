@@ -112,6 +112,37 @@ def test_run_multiturn_none_when_memory_disabled():
     assert asyncio.run(_run_multiturn(p, ModelConfig("fake-judge"))) is None
 
 
+def test_worksheet_calc_narrative_section_renders_and_is_parser_safe(tmp_path):
+    """M8 owner directive (REPLAY approval 2026-06-11): the worksheet surfaces the CALC multi-turn
+    NARRATIVES for owner adjudication — per-turn answers (one-turn-lag UX on CALC-MEM-01) + the
+    no-gutting check — without feeding the adjudicate.py quota recompute (no phantom verdicts)."""
+    mt = asyncio.run(_run_multiturn(_pipeline(), ModelConfig("fake-judge")))
+    manifest = {
+        "run_label": "wiring",
+        "milestone": "M8",
+        "subject": "x",
+        "l1_model_resolved": "fake",
+        "l1_model_configured": "fake",
+        "judge_model": "fake",
+        "helper_model": "fake",
+        "git_sha": "abc",
+        "timestamp": "now",
+        "columns": ["flags_on"],
+        "n_cases": 0,
+    }
+    report.write_all(tmp_path, manifest, [], {}, multiturn=mt)
+    ws = (tmp_path / "human_review_worksheet.md").read_text(encoding="utf-8")
+    assert "M8 Kalkulations-Narrative" in ws
+    assert "CALC-MEM-01" in ws and "CALC-FAILCLOSED-01" in ws
+    assert "One-turn-lag" in ws  # the must_compute case carries the lag question
+    assert "kein Gutting" in ws  # the no-gutting check is an explicit owner item
+    from sealai_v2.eval.adjudicate import parse_worksheet
+
+    assert (
+        parse_worksheet(ws) == []
+    )  # the new section adds NO machine-parsed verdict slots
+
+
 def test_write_all_renders_the_multiturn_section(tmp_path):
     mt = asyncio.run(_run_multiturn(_pipeline(), ModelConfig("fake-judge")))
     manifest = {

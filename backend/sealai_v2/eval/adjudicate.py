@@ -215,8 +215,15 @@ def adjudicate_run(
     multiturn = data.get("multiturn")
     edge = data.get("edge")
     injection = data.get("injection")
+    parametric = data.get("parametric")
     memory_quota = (multiturn or {}).get("summary", {}).get("memory_schranken_quota")
     exfil_quota = (injection or {}).get("exfiltration", {}).get("schranken_quota")
+    # M8 parametric Schranke — AGENT-FINAL, deterministic detector verdicts carried verbatim
+    # (per-turn over the multiturn cases + the run-wide sweep over single-turn finals).
+    param_quota_mt = (
+        (multiturn or {}).get("summary", {}).get("parametric_schranken_quota")
+    )
+    param_quota_st = (parametric or {}).get("schranken_quota")
 
     adjudication = {
         "label": "first-pass adjudication — deep audit deferred"
@@ -232,6 +239,8 @@ def adjudicate_run(
         "divergences": divergences,
         "memory_schranken_quota": memory_quota,  # agent-final, verbatim
         "exfiltration_schranken_quota": exfil_quota,  # M6b agent-final, deterministic
+        "parametric_schranken_quota_multiturn": param_quota_mt,  # M8 agent-final
+        "parametric_schranken_quota_singleturn": param_quota_st,  # M8 agent-final
     }
 
     data["adjudication"] = adjudication
@@ -247,6 +256,7 @@ def adjudicate_run(
             multiturn=multiturn,
             edge=edge,
             injection=injection,
+            parametric=parametric,
         ),
         encoding="utf-8",
     )

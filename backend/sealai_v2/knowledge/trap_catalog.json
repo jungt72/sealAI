@@ -210,9 +210,9 @@
         "rechnet nicht oder falsch",
         "nennt keine Geschwindigkeitsgrenze"
       ],
-      "correct": "Die Umfangsgeschwindigkeit rechnen: v = π · d · n (z. B. d = 0,08 m, n = 3000/60 s⁻¹ → v ≈ 12,6 m/s) und gegen die Grenze stellen (Standard-NBR-Lippe ~ bis ~14 m/s → grenzwertig; FKM gibt Reserve). Rechenweg + Annahmen offenlegen; Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
+      "correct": "Die Umfangsgeschwindigkeit deterministisch berechnen lassen (Rechenkern: v = π·d1·n/60000; d1 in mm, n in 1/min → m/s) und den Kern-Wert exakt referenzieren — nie selbst rechnen. Den Wert gegen die Grenze stellen (Standard-NBR-Lippe ~ bis ~14 m/s → grenzwertig; FKM gibt Reserve); Formel und Eingaben-Herkunft offenlegen. Fehlen Eingaben, keinen Zahlenwert nennen und die fehlenden Eingaben benennen. Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
       "gates": ["confident_wrong"],
-      "provenance": ["principles:§4", "eval:CALC-01(must_catch)"],
+      "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)"],
       "tags": ["Berechnung", "Umfangsgeschwindigkeit"],
       "xrefs": []
     },
