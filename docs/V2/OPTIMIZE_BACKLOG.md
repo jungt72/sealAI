@@ -23,3 +23,22 @@ leak: AGENTS.md § runtime rules) are prior art to consult, not code to carry ov
 boundary stays).
 
 **Explicitly NOT a cutover task** — the cutover ships the non-streaming chat.
+
+## 2. Grounding/citation precision — a cited Fachkarte must match the claim's subject (owner-filed 2026-06-11)
+
+Found at the M8 HALT #2 owner adjudication (run `m8-calc`, CALC-FAILCLOSED-01 Turn 0): the answer
+cites `FK-EPDM-MINERALOEL` as the source for an **NBR**-suitability sentence ("NBR typisch passend
+für Mineralöle … (Quelle: Fachkarte FK-EPDM-MINERALOEL)"). The card is on-topic for the *adjacent*
+EPDM warning (which cites it correctly), but the NBR claim is not what that card asserts — the
+citation over-reaches the card's subject.
+
+**Owner verdict (2026-06-11):** track here as a grounding/citation-precision item — **not an M8
+blocker** (M8 is compute-scoped; the claim itself is not factually wrong, the provenance label is
+imprecise).
+
+**Direction (none decided):** candidate L3/eval check that a cited card's `material`/subject matches
+the sentence's claim subject; and/or an L1 prompt note that citations attach only to the fact the
+card actually carries. Needs its own zero-FP look at multi-material sentences (a card legitimately
+grounding a contrast "EPDM quillt, NBR nicht" must not be flagged).
+
+**Not cutover/pilot-gating.**
