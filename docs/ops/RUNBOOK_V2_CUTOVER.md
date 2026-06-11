@@ -91,8 +91,16 @@ COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-com
 
 **Step 0 — preconditions (all must hold):**
 - Pre-flip gate checklist below fully green.
-- Worktree clean, on the flip ref; record `V1_ANCHOR=$(git rev-parse HEAD)` and the live anchors
+- Worktree clean, on the flip ref; record `FLIP_REF=$(git rev-parse HEAD)` and the live anchors
   from the daemon (never memory): `docker inspect backend --format '{{.Config.Image}}'` etc.
+- **`V1_ANCHOR` = the ROLLBACK TARGET, NOT the flip ref.** It is the CURRENT V1-serving prod git
+  HEAD, re-read from the daemon at flip time: the git-sha prefix of the running backend image tag
+  (`docker inspect backend --format '{{.Config.Image}}'` → `…sealai-backend:<sha>-…` →
+  `V1_ANCHOR=<sha>`; cross-check the frontend tag carries the same sha). Verify it is the
+  V1-serving ref by construction: `git show "$V1_ANCHOR":docker-compose.deploy.yml | grep -cE
+  'v2-client|snippets|backend-v2'` → **0** (the flip ref has these mounts; V1_ANCHOR must NOT).
+  At flip time the prod worktree state moves from that V1 ref to the flip ref — rollbacks
+  check out FROM `$V1_ANCHOR`.
 - `frontend-v2/dist` built AT the flip ref (`cd frontend-v2 && npm run verify`);
   `test -s frontend-v2/dist/index.html`; record `sha256sum frontend-v2/dist/assets/*` (dist is
   gitignored — a missing dir would bind-mount as an empty root-owned dir = blank SPA).
@@ -105,7 +113,10 @@ connections for ALL vhosts on the box — schedule accordingly).*
 $COMPOSE up -d --no-deps nginx
 ```
 Verify: `docker exec nginx nginx -t`; `docker inspect nginx --format '{{json .Mounts}}' | grep -c 'v2-client\|snippets'` → 2; `./ops/smoke-live-pilot-readiness.sh` green.
-Rollback: `git checkout "$V1_ANCHOR^" -- docker-compose.deploy.yml && $COMPOSE up -d --no-deps nginx` (pre-cutover compose; or simply leave — the mounts are inert).
+Rollback: `git checkout "$V1_ANCHOR" -- docker-compose.deploy.yml && $COMPOSE up -d --no-deps nginx`
+(restores the no-V2-mounts compose from the V1-serving ref — verified in step 0; afterwards
+`git checkout "$FLIP_REF" -- docker-compose.deploy.yml` returns the worktree to the flip state;
+or simply leave — the mounts are inert).
 
 **Step 2 — backend-v2 up (unrouted).**
 ```bash
@@ -205,7 +216,8 @@ the rollback target — do NOT stop/tear down V1 during or right after the flip.
   - V1 backend: ⟨docker inspect backend --format '{{.Config.Image}}'⟩ (status/health: ⟨…⟩)
   - V1 frontend: ⟨docker inspect sealai-frontend-1 --format '{{.Config.Image}}'⟩
   - keycloak: ⟨docker inspect keycloak --format '{{.Config.Image}}'⟩
-  - V1_ANCHOR (git): ⟨…⟩
+  - V1_ANCHOR (git, roll-TO — the V1-serving ref from the daemon image tag, NOT the flip ref;
+    no-V2-mounts deploy.yml verified per step 0): ⟨…⟩
 - **Pre-flip gate:** Phase 1 suites green; staging machine-side e2e + 3-leg rollback dry-run
   green (2026-06-10); owner browser leg green (⟨date⟩); CI all-four green @ ⟨flip ref⟩;
   Keycloak sealai-v2 client verified (b7a2dd0a-…); legal gate = first pilot (owner-only users).
