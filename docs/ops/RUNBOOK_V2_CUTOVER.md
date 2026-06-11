@@ -228,6 +228,16 @@ in-process (restart wipes conversations — pilot prerequisite below).
    (V1 lesson: explicitly handler-configured stdout, `routing_debug` went dark in prod). Tests:
    three result shapes + a privacy guard asserting no user text in the record. Gates the FIRST
    PILOT, not the flip; do not implement before its own owner gate.
+8. **Distiller unit-fidelity (owner-filed 2026-06-11, `fixfirst-c-leak` REPLAY finding):** the
+   distiller sometimes stores a numeric WITHOUT the unit the user provided ("8000" from a terse
+   "8000" reply in a U/min context — and the live session shows the same phrasing CAN normalize
+   to a unit-bearing wert, i.e. it is LLM-variant). The declared binding grammar then correctly
+   fail-closes (number + unit required) and the answer re-asks for a unit effectively already
+   given — honest but redundant UX, and the kern misses a turn it could have served.
+   Binding/distiller robustness work (e.g. distill-prompt unit-carry rule, or a deterministic
+   unit-adoption rule for the declared felder — design pass needed, fail-closed semantics must
+   not weaken). **Pilot-tier, distinct from item 6** (item 6 = same-turn binding lag; this item =
+   unit fidelity of what gets distilled at all). Do not implement before its own owner gate.
 
 ## Phase 4 — V1 dashboard decommission (separate, owner-gated)
 

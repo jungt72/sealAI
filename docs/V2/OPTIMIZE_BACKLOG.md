@@ -42,3 +42,20 @@ card actually carries. Needs its own zero-FP look at multi-material sentences (a
 grounding a contrast "EPDM quillt, NBR nicht" must not be flagged).
 
 **Not cutover/pilot-gating.**
+
+## 3. CALC-SYMBOL-LAG-01 turn-2 `must_compute` relax (owner decision 2026-06-11, option a)
+
+Found at the `fixfirst-c-leak` REPLAY: the holdout case's turn 2 expects `must_compute:
+umfangsgeschwindigkeit`, but with the terse, unit-less turn-1 input ("40mm und 8000" — faithful
+to the live repro phrasing) the distiller stored `drehzahl: "8000"` without a unit, the declared
+binding grammar fail-closed (number + unit required), and the turn-2 answer honestly asked to
+confirm "Ist n = 8000 min⁻¹?" instead of computing — no value, no leak, parametric gate clean.
+That cost `compute_quota` (0.5), not a Schranke.
+
+**Owner verdict (2026-06-11): the confirm-question is the DESIGNED fail-closed UX — accepted.
+Relax the case's turn-2 `must_compute` accordingly (option a); the hard expectations (no
+self-computed value, no false kern label, parametric gate clean) stay.** Do not implement now —
+fold into the next eval-seed touch. The underlying distiller unit-fidelity is tracked separately
+as pilot tracker item 8 (`docs/ops/RUNBOOK_V2_CUTOVER.md`).
+
+**Not cutover/pilot-gating** (eval-case maintenance).
