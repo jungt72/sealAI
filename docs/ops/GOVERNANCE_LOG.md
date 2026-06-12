@@ -6,6 +6,61 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-12T09:38Z — V2 pilot-ux cutover: markdown + parameter form + flags_on parity (flip recorded)
+
+**Shipped (commit `b9ea2bbc`, branch `feat/v2-pilot-ux`):** pilot-ux — markdown render +
+V2-native parameter form with **zero client-side compute**; `edit_fact` provenance +
+`FactEdit.origin` allowlist; holdout eval case `CALC-USERFORM-PROV-01`. Frontend swap
+**3 → 62 files** (react-markdown + katex). `backend-v2` recreated on `b9ea2bbc`; the nginx
+flip is the working-tree `nginx/default.conf` change recorded alongside this entry — the
+flip was already applied live (worktree IS the prod nginx config); the commit only records
+it in git, the running nginx is untouched.
+
+**Q1 — silent flags_off (root-caused + fixed):** prod had been running `flags_off` (not the
+intended `flags_on`) since the original flip — `settings.default_compliance_hint` /
+`safety_critical` were dead config (never wired). Fixed in `b9ea2bbc`: `chat.py` wires them
+through, so **prod = flags_on by construction**. Validated by the `pilot-ux-prodparity`
+REPLAY: **25/25, credibility 1.000, deterministic Schranken 1.000**.
+
+**"Byte-identical" correction (record honesty):** the cutover frontend is a **real swap**
+(3 → 62 files, new markdown + math + form UI), **not** a byte-identical reproduction; the
+prior byte-identical claim held for the old ref only. Validation basis for the new bundle =
+deterministic build + offline tests + live smoke.
+
+**P1 — dist-clobber (process finding):** `npm run build`/`verify` clobbers the live-mounted
+`frontend-v2/dist`. Process fix: build to a throwaway `--outDir`, then rsync into `dist`.
+Structural pin/track = BACKLOG.
+
+**L3 over-fire disambiguation (exonerates Q1):** the `CALC-MEM-01` answer-gutting is a
+**pre-existing, flag-independent, stochastic L3 false-positive** (~29 % on
+conversational-calc; flags_off 3/8, flags_on 1/6 — L1 states the value, L3 suppresses it).
+**NOT Q1-induced.** Fail-safe direction (suppression, never a wrong claim). Ranked **#1
+fix-first fast-follow**; validation harness: `scratch/calc_mem_gutting.py` (untracked, stays
+untracked).
+
+**Cutover verification (live):** backend healthy; value-add live (parameter form →
+7,854 m/s circumference speed); axis-1 traps answered correctly (FKM-Dampf /
+EPDM-Mineralöl / NBR-Ozon); flags_on confirmed live (Trinkwasser → KTW/W270 hint);
+markdown + citations + candidate-framing render clean; V1 rollback path intact.
+
+**Observability gap (deep audit):** V2 has **zero observability** — P0 instrumentation is
+the prerequisite for the latency workstream.
+
+**Key-rotation attempt (process finding, recovered):** a 2026-06-12 `OPENAI_API_KEY`
+rotation was **aborted** — a `read -rs` inside a pasted command block failed to capture the
+key (empty value), which `sed` wrote into `.env.prod`; the subsequent `compose up` failed at
+interpolation (missing value) **before touching any container**, so prod stayed live on the
+old key throughout. Recovered: the live key was read back from the running container env
+(`docker exec backend-v2 printenv`) into `.env.prod`; `compose config` validated.
+**Nothing rotated, no outage.** Next attempt: interactive `read` (not inside a paste block)
++ an `.env.prod` backup as step 0.
+
+**Deferred (tracked, not silently dropped):** key rotation (exposed `OPENAI_API_KEY` +
+secret batch; first attempt aborted + recovered — see above); audit perf tranche (P0/P1/P2
+free; P3/P4/P5 token-gated); L3 over-fire fix (see above, #1 fast-follow).
+
+---
+
 ## 2026-06-09T06:18Z — V2.0 governance doctrine added to the agent-instruction docs (doc-only; PR to feat/v2)
 
 **What:** additive doctrine update teaching the agent-instruction / governance docs the **V2.0
