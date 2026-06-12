@@ -10,10 +10,7 @@ import {
   randomVerifier,
   type OidcConfig,
 } from "./auth/oidc";
-import { BriefingPane } from "./components/BriefingPane";
 import { ChatPane } from "./components/ChatPane";
-import { MemoryPanel } from "./components/MemoryPanel";
-import { ParameterForm } from "./components/ParameterForm";
 import { Shell } from "./components/Shell";
 import type { Briefing, ConversationMemory } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
@@ -34,6 +31,8 @@ export function App() {
   const [memory, setMemory] = useState<ConversationMemory>({ case_state: [], history: [] });
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [lastMessage, setLastMessage] = useState<string>("");
+  // bumping the key remounts ChatPane → fresh conversation view; server-side memory is untouched
+  const [convKey, setConvKey] = useState(0);
 
   const onUnauthenticated = useCallback(() => {
     clearAccessToken();
@@ -113,10 +112,18 @@ export function App() {
     api.briefing(lastMessage).then(setBriefing).catch(() => setError("Briefing fehlgeschlagen."));
   }, [api, lastMessage]);
 
+  const newQuestion = useCallback(() => {
+    setError(null);
+    setBriefing(null);
+    setLastMessage("");
+    setConvKey((k) => k + 1);
+  }, []);
+
   if (!authed) {
     return (
       <FramingContext.Provider value={framing}>
         <div className="login" data-testid="login-view">
+          <div className="stage-glow" aria-hidden="true" />
           <h1>
             sealing<span className="brand-sep"> | </span>Intelligence
           </h1>
@@ -131,35 +138,26 @@ export function App() {
 
   return (
     <FramingContext.Provider value={framing}>
-    <Shell
-      onLogout={onUnauthenticated}
-      cockpit={
-        <>
-          <ParameterForm
-            onSubmit={(feld, wert) =>
-              api.editFact(feld, wert, "user-form").then(refreshMemory).catch(() => undefined)
-            }
-          />
-          <MemoryPanel
-            memory={memory}
-            onEdit={(feld, wert) => {
-              const next = window.prompt(`${feld}:`, wert);
-              if (next != null) api.editFact(feld, next).then(refreshMemory).catch(() => undefined);
-            }}
-            onForget={(feld) => api.forgetFact(feld).then(refreshMemory).catch(() => undefined)}
-            onForgetAll={() => api.forgetAll().then(refreshMemory).catch(() => undefined)}
-          />
-          <div className="cockpit-actions">
-            <button onClick={makeBriefing} disabled={!lastMessage} data-testid="make-briefing">
-              Briefing erstellen
-            </button>
-          </div>
-          <BriefingPane briefing={briefing} />
-        </>
-      }
-    >
-      <ChatPane onSend={send} error={error} />
-    </Shell>
+      <Shell onLogout={onUnauthenticated} onNewQuestion={newQuestion}>
+        <ChatPane
+          key={convKey}
+          onSend={send}
+          error={error}
+          memory={memory}
+          onEditFact={(feld, wert) => {
+            const next = window.prompt(`${feld}:`, wert);
+            if (next != null) api.editFact(feld, next).then(refreshMemory).catch(() => undefined);
+          }}
+          onForgetFact={(feld) => api.forgetFact(feld).then(refreshMemory).catch(() => undefined)}
+          onForgetAll={() => api.forgetAll().then(refreshMemory).catch(() => undefined)}
+          onSubmitParam={(feld, wert) =>
+            api.editFact(feld, wert, "user-form").then(refreshMemory).catch(() => undefined)
+          }
+          onMakeBriefing={makeBriefing}
+          canBriefing={Boolean(lastMessage)}
+          briefing={briefing}
+        />
+      </Shell>
     </FramingContext.Provider>
   );
 }

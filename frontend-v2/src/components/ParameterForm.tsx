@@ -33,7 +33,14 @@ export function composeWert(raw: string, unit: string): string {
  * and fail-closed framing, on the chat/briefing path. A client-side number here would re-create the
  * false-provenance calc-leak — so it is structurally absent.
  */
-export function ParameterForm({ onSubmit }: { onSubmit: (feld: string, wert: string) => void }) {
+export function ParameterForm({
+  onSubmit,
+  onSubmitted,
+}: {
+  onSubmit: (feld: string, wert: string) => void;
+  /** Pilot-ui: lets the hosting popover close itself after a submit (purely presentational). */
+  onSubmitted?: () => void;
+}) {
   const [vals, setVals] = useState<Record<string, string>>({});
 
   function submit(e: FormEvent) {
@@ -43,11 +50,12 @@ export function ParameterForm({ onSubmit }: { onSubmit: (feld: string, wert: str
       if (wert) onSubmit(f.feld, wert);
     }
     setVals({});
+    onSubmitted?.();
   }
 
   return (
     <section className="param-form" data-testid="parameter-form">
-      <header className="cockpit-head">
+      <header className="param-head">
         <h3>Parameter eingeben</h3>
       </header>
       <p className="muted">
