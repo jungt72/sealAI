@@ -13,6 +13,7 @@ import {
 import { BriefingPane } from "./components/BriefingPane";
 import { ChatPane } from "./components/ChatPane";
 import { MemoryPanel } from "./components/MemoryPanel";
+import { ParameterForm } from "./components/ParameterForm";
 import { Shell } from "./components/Shell";
 import type { Briefing, ConversationMemory } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
@@ -134,6 +135,11 @@ export function App() {
       onLogout={onUnauthenticated}
       cockpit={
         <>
+          <ParameterForm
+            onSubmit={(feld, wert) =>
+              api.editFact(feld, wert, "user-form").then(refreshMemory).catch(() => undefined)
+            }
+          />
           <MemoryPanel
             memory={memory}
             onEdit={(feld, wert) => {

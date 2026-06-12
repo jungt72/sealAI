@@ -101,13 +101,20 @@ class InProcessConversationMemory:
         return tuple(st.facts.values()) if st else ()
 
     def edit_fact(
-        self, *, tenant_id: str, session_id: str, feld: str, wert: str
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        feld: str,
+        wert: str,
+        provenance: str = "user-edited",
     ) -> None:
         _require(tenant_id, session_id)
         st = self._state(tenant_id, session_id)
-        # a user edit is a stronger provenance than a distilled claim (honesty: reflect the source).
+        # a user-supplied value is a stronger provenance than a distilled claim (honesty: reflect the
+        # source). Default = the inline MemoryPanel edit; the parameter form passes "user-form".
         st.facts[feld] = RememberedFact(
-            feld=feld, wert=wert, provenance="user-edited", as_of_turn=st.turns
+            feld=feld, wert=wert, provenance=provenance, as_of_turn=st.turns
         )
 
     def delete_fact(self, *, tenant_id: str, session_id: str, feld: str) -> None:

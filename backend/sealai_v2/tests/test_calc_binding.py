@@ -95,6 +95,13 @@ def test_user_edited_provenance_is_carried():
     assert "user-edited" in res.origins["d1_mm"] or "bestätigt" in res.origins["d1_mm"]
 
 
+def test_user_form_provenance_is_carried():
+    # a value entered via the parameter form binds, and its origin is named honestly (Formular).
+    res = bind_params((fact("wellendurchmesser", "50 mm", provenance="user-form"),))
+    assert res.params == {"d1_mm": 50.0}
+    assert "Formular" in res.origins["d1_mm"] or "user-form" in res.origins["d1_mm"]
+
+
 def test_empty_input_is_empty_result():
     res = bind_params(())
     assert res.params == {} and res.origins == {} and res.notes == ()

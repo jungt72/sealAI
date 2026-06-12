@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ChatResponse } from "../contracts";
+import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
 
 type Msg = { role: "user"; text: string } | { role: "assistant"; res: ChatResponse };
@@ -16,6 +17,7 @@ export function ChatPane({
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
 
   async function send() {
     const text = input.trim();
@@ -35,7 +37,7 @@ export function ChatPane({
 
   return (
     <div className="chat-pane" data-testid="chat-pane">
-      <div className="chat-log">
+      <div className="chat-log" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
         {msgs.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="msg-user">

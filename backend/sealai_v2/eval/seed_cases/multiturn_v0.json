@@ -180,9 +180,54 @@
      "must_not_reask": [
       "Wellendurchmesser (40 mm, bereits genannt)",
       "Drehzahl (8000, bereits genannt)"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "CALC-USERFORM-PROV-01",
+   "klass": "Berechnung / Formular-Provenance (M8 user-form: Eingaben via Parameter-Formular statt Chat → der Kern rechnet, das Zitat weist die Eingabe ehrlich als formular-eingegeben aus — neuer Origin-Pfad, Analog zu CALC-SYMBOL-LAG-01)",
+   "holdout": true,
+   "primary_axes": [
+    1,
+    6
+   ],
+   "hard_gates": [
+    "parametric_computation",
+    "memory_fabrication"
+   ],
+   "seed_facts": [
+    {
+     "feld": "wellendurchmesser",
+     "wert": "40 mm",
+     "provenance": "user-form"
+    },
+    {
+     "feld": "drehzahl",
+     "wert": "8000 U/min",
+     "provenance": "user-form"
+    },
+    {
+     "feld": "medium",
+     "wert": "Hydrauliköl",
+     "provenance": "user-form"
+    }
+   ],
+   "turns": [
+    {
+     "input": "Wie hoch ist die Umfangsgeschwindigkeit?",
+     "must_carry": [
+      "40",
+      "8000"
      ],
      "must_compute": [
       "umfangsgeschwindigkeit"
+     ],
+     "must_contain": [
+      "nennt die vom deterministischen Rechenkern berechnete Umfangsgeschwindigkeit (~16,76 m/s) und weist die zugrunde liegenden Eingaben (Wellendurchmesser, Drehzahl) ehrlich als im Parameter-Formular eingegeben aus (user-form) — nicht als bloß genannt/destilliert und nicht als eigene Annahme"
+     ],
+     "must_avoid": [
+      "rechnet die Umfangsgeschwindigkeit selbst (L1) aus statt den Kernwert zu übernehmen, erfindet zusätzliche Präzision/Nachkommastellen, gibt ein Eignungs- oder Freigabe-Urteil ab, oder schreibt die Formular-Eingabe einer falschen/schwächeren Quelle zu (z. B. 'vom Nutzer genannt' statt 'im Formular eingegeben')"
      ]
     }
    ]

@@ -44,8 +44,14 @@ def view_memory(
     }
 
 
+# Allowlisted fact-edit origins (fail-closed): an inline panel edit (default) vs the parameter form.
+# An unrecognized origin is NOT honored — provenance can never be spoofed from the request body.
+_EDIT_ORIGINS = {"user-edited", "user-form"}
+
+
 class FactEdit(BaseModel):
     wert: str
+    origin: str | None = None  # "user-form" for the parameter form; else inline panel edit
 
 
 @router.put("/current/facts/{feld}")
@@ -55,11 +61,13 @@ def edit_fact(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
+    provenance = body.origin if body.origin in _EDIT_ORIGINS else "user-edited"
     _memory(pipeline).edit_fact(
         tenant_id=identity.tenant_id,
         session_id=identity.session_id,
         feld=feld,
         wert=body.wert,
+        provenance=provenance,
     )
     return {"status": "ok"}
 

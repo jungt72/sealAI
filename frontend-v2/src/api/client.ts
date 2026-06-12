@@ -45,10 +45,10 @@ export class ApiClient {
   memory(): Promise<ConversationMemory> {
     return this.req("/conversations/current/memory");
   }
-  editFact(feld: string, wert: string): Promise<unknown> {
+  editFact(feld: string, wert: string, origin?: string): Promise<unknown> {
     return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, {
       method: "PUT",
-      body: JSON.stringify({ wert }),
+      body: JSON.stringify(origin ? { wert, origin } : { wert }),
     });
   }
   forgetFact(feld: string): Promise<unknown> {

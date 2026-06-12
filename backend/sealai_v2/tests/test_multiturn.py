@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import asyncio
 
-from sealai_v2.core.contracts import ModelConfig, RememberedFact
+from sealai_v2.core.contracts import ComputedValue, ModelConfig, RememberedFact
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.eval.multiturn import (
     MultiTurnCase,
     TurnSpec,
+    load_multiturn_cases,
     run_multiturn_case,
     summarize_multiturn,
 )
@@ -24,7 +25,7 @@ from sealai_v2.memory.store import (
 )
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import DistillPromptAssembler, PromptAssembler
-from sealai_v2.tests._fakes import ScriptedFakeLlmClient
+from sealai_v2.tests._fakes import FakeLlmClient, ScriptedFakeLlmClient
 
 _T = TenantContext("eval-tenant")
 
@@ -269,3 +270,112 @@ def test_summarize_fabrication_drops_quota_below_1_verbatim():
 def test_summarize_carries_drop_stats():
     s = summarize_multiturn([], drop_stats=DistillStats(proposed=10, dropped=1))
     assert s.drop is not None and s.drop.drop_rate == 0.1
+
+
+# --- M8 user-form provenance (CALC-USERFORM-PROV-01) ----------------------------------------------
+# The parameter form writes case-state via edit_fact(provenance="user-form") — a path NO chat-turn
+# case exercises (chat distills → distilled-from-conversation). This holdout seeds user-form facts,
+# asks the velocity, and checks: the KERN computes it (not L1) AND the input origin stays honestly
+# "user-form" (the Phase-2 binding._origin branch), never degraded. The form value is user-STATED, so
+# it must NOT trip the memory_fabrication gate (which otherwise only knows chat turns).
+
+
+def _calc_pipeline(client) -> Pipeline:
+    from sealai_v2.core.calc.evaluator import CascadeCalcEngine
+
+    return Pipeline(
+        generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
+        client=client,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+        engine=CascadeCalcEngine(),
+        memory=InProcessConversationMemory(),
+        cross_session=InProcessCrossSessionMemory(),
+        distiller=None,  # form-seeded facts; the query states no numbers → nothing to distill
+    )
+
+
+def _userform_case(provenance: str = "user-form") -> MultiTurnCase:
+    return MultiTurnCase(
+        id="CALC-USERFORM-PROV-01",
+        klass="Berechnung / Formular-Provenance",
+        seed_facts=(
+            RememberedFact("wellendurchmesser", "40 mm", provenance),
+            RememberedFact("drehzahl", "8000 U/min", provenance),
+        ),
+        turns=(
+            TurnSpec(
+                input="Wie hoch ist die Umfangsgeschwindigkeit?",
+                must_carry=("40", "8000"),
+                must_compute=("umfangsgeschwindigkeit",),
+            ),
+        ),
+        hard_gates=("parametric_computation", "memory_fabrication"),
+    )
+
+
+def _velocity(turn) -> ComputedValue | None:
+    return next(
+        (c for c in turn.computed_values if c.calc_id == "umfangsgeschwindigkeit"), None
+    )
+
+
+def test_userform_case_is_wired_into_the_seed_set():
+    # the holdout case loads from the multi-turn seed file and carries the form seed (user-form).
+    case = next(
+        c for c in load_multiturn_cases() if c.id == "CALC-USERFORM-PROV-01"
+    )
+    assert case.holdout is True
+    seed = {f.feld: f.provenance for f in case.seed_facts}
+    assert seed["wellendurchmesser"] == "user-form" and seed["drehzahl"] == "user-form"
+
+
+def test_userform_kern_computes_and_origin_is_honest():
+    # GREEN: form-seeded user-form facts → the kern computes 16,76 m/s AND the input origin stays
+    # "user-form" (honest attribution); the memory Schranke is clean (form input ≠ fabrication).
+    res = asyncio.run(run_multiturn_case(_calc_pipeline(FakeLlmClient()), _userform_case(), tenant=_T))
+    turn = res.turns[0]
+    assert turn.carry_ok and turn.compute_ok  # kern FIRED for umfangsgeschwindigkeit
+    v = _velocity(turn)
+    assert v is not None and round(v.value, 2) == 16.76  # π·40·8000/60000, kern-sourced
+    assert any("user-form" in o for o in v.input_origins)  # (b) honest form attribution carried
+    assert res.memory_gate_clean  # form input is user-stated, not a fabrication
+
+
+def test_userform_attribution_assertion_bites_on_degraded_provenance():
+    # RED-on-regression: same fact WITHOUT the user-form origin (e.g. the Phase-2 binding branch is
+    # lost → degraded to the generic "vom Nutzer genannt") — the honest-attribution assertion catches
+    # it. The kern still computes; only the provenance attribution differs.
+    res = asyncio.run(
+        run_multiturn_case(
+            _calc_pipeline(FakeLlmClient()),
+            _userform_case(provenance="distilled-from-conversation"),
+            tenant=_T,
+        )
+    )
+    v = _velocity(res.turns[0])
+    assert v is not None and round(v.value, 2) == 16.76  # kern unaffected
+    assert not any("user-form" in o for o in v.input_origins)  # attribution assertion BITES
+    assert all("genannt" in o for o in v.input_origins)  # degraded to the generic origin
+
+
+def test_userform_compute_assertion_bites_on_unitless_input():
+    # RED-on-regression: a form value missing its unit (binder fail-closed) → the kern does NOT
+    # compute → must_compute bites; no fabricated velocity slips through.
+    case = MultiTurnCase(
+        id="CALC-USERFORM-PROV-UNITLESS",
+        klass="x",
+        seed_facts=(
+            RememberedFact("wellendurchmesser", "40", "user-form"),  # no unit → fail-closed
+            RememberedFact("drehzahl", "8000", "user-form"),
+        ),
+        turns=(
+            TurnSpec(
+                input="Wie hoch ist die Umfangsgeschwindigkeit?",
+                must_compute=("umfangsgeschwindigkeit",),
+            ),
+        ),
+    )
+    res = asyncio.run(run_multiturn_case(_calc_pipeline(FakeLlmClient()), case, tenant=_T))
+    assert not res.turns[0].compute_ok  # kern fail-closed → must_compute miss (bites)
+    assert _velocity(res.turns[0]) is None

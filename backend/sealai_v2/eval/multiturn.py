@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
-from sealai_v2.core.contracts import RememberedFact, SessionContext
+from sealai_v2.core.contracts import ComputedValue, RememberedFact, SessionContext
 from sealai_v2.memory.distiller import DistillStats
 from sealai_v2.memory.integrity import untraceable_numeric_facts
 from sealai_v2.security.tenant import TenantContext
@@ -64,6 +64,12 @@ class MultiTurnCase:
     primary_axes: tuple[int, ...] = ()
     hard_gates: tuple[str, ...] = ()
     holdout: bool = False
+    # Form-path seed (M8 user-form provenance): case-state facts written BEFORE any turn, via the
+    # exact method the parameter form uses (edit_fact + explicit provenance). The only way to
+    # exercise the user-form origin in eval — chat turns distill (distilled-from-conversation),
+    # they never produce user-form. The seeded values are user-STATED content (typed in the form),
+    # so they also feed the memory-fabrication trace corpus.
+    seed_facts: tuple[RememberedFact, ...] = ()
 
 
 @dataclass
@@ -96,6 +102,9 @@ class TurnResult:
     parametric_leaks: tuple[
         LeakFinding, ...
     ] = ()  # detector hits on the FINAL answer (gate violation)
+    computed_values: tuple[
+        ComputedValue, ...
+    ] = ()  # full kern results this turn — carries input_origins (provenance attribution)
 
     @property
     def carry_ok(self) -> bool:
@@ -192,12 +201,35 @@ async def run_multiturn_case(
     must_carry + memory_fabrication checks. The re-ask keystone keeps BOTH halves: ``must_carry``
     proves the fact is PRESENT in the prompt (deterministic); ``must_not_reask`` (judge) confirms the
     answer HONORED it — the deterministic half alone does not prove the LLM won't re-ask."""
+    # Mirror prod: the multiturn suite runs under the production flag baseline (flags_on =
+    # Flags(True, True)). Local import — harness imports multiturn at module load, so a top-level
+    # import would be circular; COLUMNS is reused, never redefined.
+    from sealai_v2.eval.harness import COLUMNS
+
     session = SessionContext(session_id=f"mt-{case.id}")
+    # Form-path seed: pre-write the case-state via edit_fact (the parameter form's exact method) so a
+    # user-form provenance reaches the binder/kern before any chat turn. The seeded values are
+    # user-STATED (typed in the form), so they join the memory-fabrication trace corpus — a form-
+    # entered number is never a "fabrication" (it would otherwise false-trip the gate, which only
+    # knows chat turns).
+    seed_texts: list[str] = []
+    if case.seed_facts and pipeline.memory is not None:
+        for sf in case.seed_facts:
+            pipeline.memory.edit_fact(
+                tenant_id=tenant.tenant_id,
+                session_id=session.session_id,
+                feld=sf.feld,
+                wert=sf.wert,
+                provenance=sf.provenance,
+            )
+            seed_texts.append(sf.wert)
     user_turns: list[str] = []
     results: list[TurnResult] = []
     for i, spec in enumerate(case.turns):
         user_turns.append(spec.input)
-        res = await pipeline.run(spec.input, tenant=tenant, session=session)
+        res = await pipeline.run(
+            spec.input, tenant=tenant, session=session, flags=COLUMNS["flags_on"]
+        )
         case_state: tuple[RememberedFact, ...] = ()
         if pipeline.memory is not None:
             case_state = pipeline.memory.recall(
@@ -206,7 +238,7 @@ async def run_multiturn_case(
         carried_missing = tuple(
             c for c in spec.must_carry if not _carried(c, case_state)
         )
-        fabricated = untraceable_numeric_facts(case_state, user_turns)
+        fabricated = untraceable_numeric_facts(case_state, seed_texts + user_turns)
         reask_violations: tuple[str, ...] = ()
         if judge is not None and spec.must_not_reask:
             verdicts = await judge(res.answer.text, spec.must_not_reask)
@@ -235,6 +267,7 @@ async def run_multiturn_case(
                 must_compute=spec.must_compute,
                 compute_missing=compute_missing,
                 parametric_leaks=leaks,
+                computed_values=tuple(res.computed_values),
             )
         )
     return MultiTurnResult(case_id=case.id, turns=results)
@@ -303,6 +336,14 @@ def load_multiturn_cases(path: Path | None = None) -> list[MultiTurnCase]:
             )
             for t in c["turns"]
         )
+        seed_facts = tuple(
+            RememberedFact(
+                feld=s["feld"],
+                wert=s["wert"],
+                provenance=s.get("provenance", "user-form"),
+            )
+            for s in c.get("seed_facts", [])
+        )
         cases.append(
             MultiTurnCase(
                 id=cid,
@@ -311,6 +352,7 @@ def load_multiturn_cases(path: Path | None = None) -> list[MultiTurnCase]:
                 primary_axes=tuple(int(a) for a in c.get("primary_axes", [])),
                 hard_gates=tuple(c.get("hard_gates", [])),
                 holdout=bool(c.get("holdout", False)),
+                seed_facts=seed_facts,
             )
         )
     return cases

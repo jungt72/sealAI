@@ -38,7 +38,28 @@
 .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
 .badge-candidate { background: var(--color-muted); color: var(--color-muted-foreground); }
 .badge-vorlaeufig { background: var(--color-warning-bg); color: var(--color-warning-fg); }
-.answer-text { white-space: pre-wrap; line-height: 1.5; }
+.answer-text { line-height: 1.5; }
+
+/* markdown body — block layout from the renderer (no pre-wrap); restrained, on brand tokens */
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p { margin: var(--space-2) 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  margin: var(--space-4) 0 var(--space-2); line-height: 1.25; color: var(--color-seal-blue); }
+.markdown h1 { font-size: 1.3rem; } .markdown h2 { font-size: 1.15rem; } .markdown h3 { font-size: 1.05rem; }
+.markdown ul, .markdown ol { margin: var(--space-2) 0; padding-left: var(--space-6); }
+.markdown li { margin: 2px 0; }
+.markdown a { color: var(--color-seal-blue); text-decoration: underline; }
+.markdown code { font-family: var(--font-mono); font-size: 0.9em;
+  background: var(--color-muted); padding: 1px 5px; border-radius: var(--radius-sm); }
+.markdown pre { background: var(--color-muted); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
+.markdown pre code { background: none; padding: 0; }
+.markdown blockquote { margin: var(--space-2) 0; padding-left: var(--space-3);
+  border-left: 3px solid var(--color-border); color: var(--color-muted-foreground); }
+.markdown table { border-collapse: collapse; margin: var(--space-2) 0; }
+.markdown th, .markdown td { border: 1px solid var(--color-border); padding: var(--space-1) var(--space-3); }
+.markdown .katex-display { margin: var(--space-3) 0; overflow-x: auto; overflow-y: hidden; }
 
 .citations { margin-top: var(--space-3); font-size: 13px; }
 .citation { display: flex; flex-direction: column; gap: 2px; margin: var(--space-2) 0; }
@@ -72,6 +93,18 @@
 .fact-actions button, .link-danger { background: none; border: none; color: var(--color-seal-blue);
   cursor: pointer; font-size: 12px; padding: 0; }
 .link-danger { color: #a12; }
+
+/* parameter form — inputs only; renders no derived value (the kern owns every number) */
+.param-form form { display: flex; flex-direction: column; gap: var(--space-2); }
+.param-row { display: flex; flex-direction: column; gap: 2px; }
+.param-label { font-size: 12px; color: var(--color-muted-foreground); }
+.param-input { display: flex; align-items: center; gap: var(--space-2); }
+.param-input input { flex: 1; min-width: 0; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm); font: inherit; }
+.param-unit { font-size: 12px; color: var(--color-muted-foreground); min-width: 44px; }
+.param-form > form > button { align-self: flex-start; margin-top: var(--space-2);
+  background: var(--color-seal-blue); color: #fff; border: none; border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-6); cursor: pointer; font-weight: 600; }
 
 .briefing-body { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px;
   background: var(--color-surface); border: 1px solid var(--color-border);

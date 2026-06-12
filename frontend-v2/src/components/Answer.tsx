@@ -1,6 +1,7 @@
 import type { ChatResponse } from "../contracts";
 import { useFraming } from "../framing-context";
 import { Citations } from "./Citation";
+import { Markdown } from "./Markdown";
 
 /** An assistant answer + its honesty framing: a `vorläufig` badge when NOT grounded, a candidate
  * label (orientation, not a final decision), and primary-source citations. */
@@ -18,7 +19,9 @@ export function Answer({ res }: { res: ChatResponse }) {
           </span>
         )}
       </div>
-      <div className="answer-text">{res.answer}</div>
+      <div className="answer-text">
+        <Markdown source={res.answer} />
+      </div>
       <Citations cites={res.citations} />
     </div>
   );

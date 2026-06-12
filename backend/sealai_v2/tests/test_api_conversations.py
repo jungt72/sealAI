@@ -58,6 +58,44 @@ def test_forget_all_clears_only_callers_tenant():
     )  # B untouched
 
 
+def test_form_origin_sets_user_form_provenance():
+    # the parameter form tags inputs origin=user-form (distinct from chat-distilled / inline edit) so
+    # a form-entered value's calc citation can name the source honestly.
+    client, pipeline = make_client()
+    client.put(
+        "/api/v2/conversations/current/facts/wellendurchmesser",
+        json={"wert": "50 mm", "origin": "user-form"},
+        headers=auth("tok-A"),
+    )
+    (f,) = pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A")
+    assert f.feld == "wellendurchmesser" and f.wert == "50 mm"
+    assert f.provenance == "user-form"
+
+
+def test_edit_without_origin_defaults_to_user_edited():
+    # the inline MemoryPanel edit (no origin) keeps the existing user-edited provenance.
+    client, pipeline = make_client()
+    client.put(
+        "/api/v2/conversations/current/facts/medium",
+        json={"wert": "Wasser"},
+        headers=auth("tok-A"),
+    )
+    (f,) = pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A")
+    assert f.provenance == "user-edited"
+
+
+def test_unknown_origin_fails_closed_to_user_edited():
+    # allowlist: an unrecognized origin is NOT honored (no provenance spoofing) — falls back honestly.
+    client, pipeline = make_client()
+    client.put(
+        "/api/v2/conversations/current/facts/medium",
+        json={"wert": "Wasser", "origin": "reviewed"},
+        headers=auth("tok-A"),
+    )
+    (f,) = pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A")
+    assert f.provenance == "user-edited"
+
+
 def test_cross_tenant_MUTATION_isolation_via_token():
     # req 3: tenant A's token cannot edit OR forget tenant B's facts — the route scopes by the token.
     client, pipeline = make_client()

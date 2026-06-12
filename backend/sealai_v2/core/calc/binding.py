@@ -60,6 +60,8 @@ class BindingResult:
 
 
 def _origin(f: RememberedFact) -> str:
+    if f.provenance == "user-form":
+        return f"vom Nutzer im Formular eingegeben ({f.feld}: »{f.wert}«, user-form)"
     if f.provenance == "user-edited":
         return f"vom Nutzer bestätigt/bearbeitet ({f.feld}: »{f.wert}«, user-edited)"
     return f"vom Nutzer genannt ({f.feld}: »{f.wert}«)"
