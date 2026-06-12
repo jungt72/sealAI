@@ -10,11 +10,13 @@ export interface OidcConfig {
   clientId: string; // sealai-v2 (public)
   redirectUri: string; // https://sealingai.com/dashboard/callback
   scope?: string; // "openid email profile"
+  postLogoutRedirectUri?: string; // https://sealingai.com/dashboard/ (must be allowlisted in Keycloak)
 }
 
 // --- in-memory token store: a module-local holder, NEVER persisted to web storage ----------------
 let _accessToken: string | null = null;
 let _expiresAt = 0; // epoch ms
+let _idToken: string | null = null; // kept ONLY as the RP-initiated-logout id_token_hint
 
 export function setAccessToken(token: string, expiresInSec: number): void {
   _accessToken = token;
@@ -24,9 +26,38 @@ export function getAccessToken(): string | null {
   if (!_accessToken || Date.now() >= _expiresAt - 30_000) return null; // 30s skew → treat as stale
   return _accessToken;
 }
+export function setIdToken(token: string | null): void {
+  _idToken = token;
+}
+// no expiry check: an expired id_token is still a valid logout hint (it only names the session)
+export function getIdToken(): string | null {
+  return _idToken;
+}
 export function clearAccessToken(): void {
   _accessToken = null;
   _expiresAt = 0;
+  _idToken = null;
+}
+
+// --- display-only identity claim -------------------------------------------------------------------
+/** Greeting name from the access token's `given_name` claim (OIDC `profile` scope, Part 2).
+ * Decode-only — NO signature check (the backend verifies every API call; this is cosmetic UI text)
+ * and NO logging (neither the token nor the name may reach the console — PII). Any missing,
+ * malformed, or non-string input → null, so the caller falls back to the nameless greeting. */
+export function givenNameFromToken(token: string | null): string | null {
+  if (!token) return null;
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const name = claims.given_name;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  } catch {
+    return null; // malformed token → nameless greeting, never an error or a log line
+  }
 }
 
 // --- PKCE ----------------------------------------------------------------------------------------
@@ -89,5 +120,34 @@ export async function exchangeCode(
   if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
   const tok = (await res.json()) as TokenResponse;
   setAccessToken(tok.access_token, tok.expires_in); // in memory only
+  setIdToken(tok.id_token ?? null); // held only as the future logout id_token_hint
   return tok;
+}
+
+// --- RP-initiated logout (OIDC end-session) --------------------------------------------------------
+/** End-session URL on the realm. id_token_hint lets Keycloak log out WITHOUT a confirmation screen;
+ * absent (e.g. after a reload — tokens are memory-only), client_id still identifies the client and
+ * Keycloak shows its confirm prompt — logout still works, one extra click. The
+ * post_logout_redirect_uri must be allowlisted on the Keycloak client (owner config). */
+export function logoutUrl(cfg: OidcConfig, opts: { idToken?: string | null } = {}): string {
+  const p = new URLSearchParams({
+    client_id: cfg.clientId,
+    post_logout_redirect_uri: cfg.postLogoutRedirectUri ?? `${location.origin}/dashboard/`,
+  });
+  if (opts.idToken) p.set("id_token_hint", opts.idToken);
+  return `${cfg.issuer}/protocol/openid-connect/logout?${p.toString()}`;
+}
+
+/** The Abmelden action: build the end-session URL from the held id_token, clear ALL local tokens
+ * FIRST (the SPA is logged out even if the redirect is interrupted), then leave for Keycloak.
+ * `navigate` is injectable for tests; production uses a full-page redirect (front-channel). */
+export function rpInitiatedLogout(
+  cfg: OidcConfig,
+  navigate: (url: string) => void = (url) => {
+    window.location.href = url;
+  },
+): void {
+  const url = logoutUrl(cfg, { idToken: getIdToken() });
+  clearAccessToken(); // clears access + id token; the hint is already baked into the URL
+  navigate(url);
 }

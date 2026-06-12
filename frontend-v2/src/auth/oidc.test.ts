@@ -1,12 +1,26 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fakeJwt } from "../../tests/jwt";
 import {
   challengeFromVerifier,
   clearAccessToken,
   getAccessToken,
+  getIdToken,
+  givenNameFromToken,
+  logoutUrl,
   randomVerifier,
+  rpInitiatedLogout,
   setAccessToken,
+  setIdToken,
+  type OidcConfig,
 } from "./oidc";
+
+const CFG: OidcConfig = {
+  issuer: "https://sealingai.com/realms/sealAI",
+  clientId: "sealai-v2",
+  redirectUri: "https://sealingai.com/dashboard/callback",
+  postLogoutRedirectUri: "https://sealingai.com/dashboard/",
+};
 
 afterEach(() => {
   clearAccessToken();
@@ -34,6 +48,97 @@ describe("oidc token store (check 4: in-memory only)", () => {
     setAccessToken("t", 3600);
     clearAccessToken();
     expect(getAccessToken()).toBeNull();
+  });
+});
+
+describe("RP-initiated logout (Part 3: Abmelden must end the Keycloak SSO session)", () => {
+  it("builds the realm's end-session URL with id_token_hint + post_logout_redirect_uri + client_id", () => {
+    const url = new URL(logoutUrl(CFG, { idToken: "idtok-abc" }));
+    expect(url.origin + url.pathname).toBe(
+      "https://sealingai.com/realms/sealAI/protocol/openid-connect/logout",
+    );
+    expect(url.searchParams.get("id_token_hint")).toBe("idtok-abc");
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe("https://sealingai.com/dashboard/");
+    expect(url.searchParams.get("client_id")).toBe("sealai-v2");
+  });
+
+  it("omits id_token_hint when no id_token is held (Keycloak then asks for confirmation)", () => {
+    const url = new URL(logoutUrl(CFG, { idToken: null }));
+    expect(url.searchParams.has("id_token_hint")).toBe(false);
+    expect(url.searchParams.get("client_id")).toBe("sealai-v2"); // still identifies the client
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe("https://sealingai.com/dashboard/");
+  });
+
+  it("falls back to the app origin when no postLogoutRedirectUri is configured", () => {
+    const cfg = { ...CFG, postLogoutRedirectUri: undefined };
+    const url = new URL(logoutUrl(cfg, { idToken: null }));
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(`${location.origin}/dashboard/`);
+  });
+
+  it("holds the id_token in memory only and clears it together with the access token", () => {
+    setIdToken("idtok-xyz");
+    expect(getIdToken()).toBe("idtok-xyz");
+    const dump = JSON.stringify({ ...localStorage, ...sessionStorage });
+    expect(dump).not.toContain("idtok-xyz"); // never web storage (same XSS posture as access token)
+    clearAccessToken();
+    expect(getIdToken()).toBeNull();
+  });
+
+  it("rpInitiatedLogout clears the local tokens BEFORE navigating to the end-session URL", () => {
+    setAccessToken("acc-tok", 3600);
+    setIdToken("idtok-1");
+    let urlAtNavigate: string | null = null;
+    let accessAtNavigate: string | null = "sentinel";
+    let idAtNavigate: string | null = "sentinel";
+    rpInitiatedLogout(CFG, (url) => {
+      urlAtNavigate = url;
+      accessAtNavigate = getAccessToken(); // captured AT navigation time → proves ordering
+      idAtNavigate = getIdToken();
+    });
+    expect(accessAtNavigate).toBeNull();
+    expect(idAtNavigate).toBeNull();
+    const url = new URL(urlAtNavigate as unknown as string);
+    expect(url.pathname).toBe("/realms/sealAI/protocol/openid-connect/logout");
+    expect(url.searchParams.get("id_token_hint")).toBe("idtok-1"); // the hint survives the clear
+  });
+});
+
+describe("givenNameFromToken (Part 2: greeting from the existing session's claim)", () => {
+  it("returns the given_name claim from a token", () => {
+    expect(givenNameFromToken(fakeJwt({ given_name: "Thorsten", sub: "u1" }))).toBe("Thorsten");
+  });
+
+  it("decodes UTF-8 names correctly (umlauts)", () => {
+    expect(givenNameFromToken(fakeJwt({ given_name: "Jürgen" }))).toBe("Jürgen");
+  });
+
+  it("falls back to null when the claim is absent", () => {
+    expect(givenNameFromToken(fakeJwt({ sub: "u1", sid: "s1" }))).toBeNull();
+  });
+
+  it("falls back to null on blank or non-string given_name", () => {
+    expect(givenNameFromToken(fakeJwt({ given_name: "   " }))).toBeNull();
+    expect(givenNameFromToken(fakeJwt({ given_name: 42 }))).toBeNull();
+  });
+
+  it("falls back to null on missing or malformed tokens (never throws)", () => {
+    expect(givenNameFromToken(null)).toBeNull();
+    expect(givenNameFromToken("")).toBeNull();
+    expect(givenNameFromToken("not-a-jwt")).toBeNull();
+    expect(givenNameFromToken("a.%%%not-base64%%%.c")).toBeNull();
+    expect(givenNameFromToken(`a.${btoa("not json")}.c`)).toBeNull();
+  });
+
+  it("never logs the token or the name (no PII in the console)", () => {
+    const spies = (["log", "info", "warn", "error", "debug"] as const).map((m) =>
+      vi.spyOn(console, m),
+    );
+    givenNameFromToken(fakeJwt({ given_name: "Thorsten" }));
+    givenNameFromToken("not-a-jwt");
+    for (const spy of spies) {
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    }
   });
 });
 

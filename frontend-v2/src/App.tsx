@@ -7,7 +7,9 @@ import {
   clearAccessToken,
   exchangeCode,
   getAccessToken,
+  givenNameFromToken,
   randomVerifier,
+  rpInitiatedLogout,
   type OidcConfig,
 } from "./auth/oidc";
 import { ChatPane } from "./components/ChatPane";
@@ -22,6 +24,7 @@ const CONFIG: OidcConfig = {
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
   redirectUri: env.VITE_OIDC_REDIRECT_URI ?? `${location.origin}/dashboard/callback`,
   scope: "openid email profile",
+  postLogoutRedirectUri: env.VITE_OIDC_POST_LOGOUT_REDIRECT_URI ?? `${location.origin}/dashboard/`,
 };
 
 export function App() {
@@ -34,11 +37,20 @@ export function App() {
   // bumping the key remounts ChatPane → fresh conversation view; server-side memory is untouched
   const [convKey, setConvKey] = useState(0);
 
+  // 401/expiry path: LOCAL clear + re-login only — must NOT end the Keycloak SSO session
   const onUnauthenticated = useCallback(() => {
     clearAccessToken();
     setAuthed(false);
   }, []);
+
+  // explicit Abmelden: RP-initiated logout — clear local tokens, then end the SSO session at Keycloak
+  const logout = useCallback(() => {
+    setAuthed(false);
+    rpInitiatedLogout(CONFIG);
+  }, []);
   const api = useMemo(() => new ApiClient(getAccessToken, onUnauthenticated), [onUnauthenticated]);
+  // greeting name from the session token's given_name claim — display-only, never logged (PII)
+  const greetingName = useMemo(() => (authed ? givenNameFromToken(getAccessToken()) : null), [authed]);
 
   const refreshMemory = useCallback(() => {
     api.memory().then(setMemory).catch(() => undefined);
@@ -138,12 +150,13 @@ export function App() {
 
   return (
     <FramingContext.Provider value={framing}>
-      <Shell onLogout={onUnauthenticated} onNewQuestion={newQuestion}>
+      <Shell onLogout={logout} onNewQuestion={newQuestion}>
         <ChatPane
           key={convKey}
           onSend={send}
           error={error}
           memory={memory}
+          greetingName={greetingName}
           onEditFact={(feld, wert) => {
             const next = window.prompt(`${feld}:`, wert);
             if (next != null) api.editFact(feld, next).then(refreshMemory).catch(() => undefined);
