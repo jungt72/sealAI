@@ -36,6 +36,7 @@ from sealai_v2.memory.store import (
     InProcessCrossSessionMemory,
 )
 from sealai_v2.pipeline import stages
+from sealai_v2.pipeline.timing import TurnTimer
 from sealai_v2.prompts.assembler import (
     DistillPromptAssembler,
     PromptAssembler,
@@ -76,6 +77,7 @@ class Pipeline:
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
+        timer = TurnTimer()  # per-stage timing; pure bookkeeping, never alters results
         # M6b quarantine: untrusted content reaches L1 ONLY as delimited DATA (never grounding, never
         # cited). Empty → None → byte-identical no-op. The grounding path cannot consume it (keystone).
         untrusted_data = [
@@ -83,13 +85,14 @@ class Pipeline:
         ] or None
 
         # M5 recall (before answering): inert when memory/session absent → byte-identical no-op.
-        mem = stages.recall(
-            self.memory,
-            self.cross_session,
-            tenant_id=scope.tenant_id,
-            session=session,
-            question=question,
-        )
+        with timer.stage("recall_ms"):
+            mem = stages.recall(
+                self.memory,
+                self.cross_session,
+                tenant_id=scope.tenant_id,
+                session=session,
+                question=question,
+            )
         case_context = [
             {"feld": f.feld, "wert": f.wert} for f in (mem.case_state + mem.durable)
         ]
@@ -97,13 +100,15 @@ class Pipeline:
 
         understanding = None
         if self.understand_enabled:
-            understanding = await stages.understand(
-                self.client, self.helper_model, question
-            )
+            with timer.stage("understand_ms"):
+                understanding = await stages.understand(
+                    self.client, self.helper_model, question
+                )
 
-        retrieval = await stages.ground(
-            self.retriever, question, tenant_id=scope.tenant_id
-        )
+        with timer.stage("ground_ms"):
+            retrieval = await stages.ground(
+                self.retriever, question, tenant_id=scope.tenant_id
+            )
         grounding_facts = retrieval.grounding_facts  # reviewed → authoritative + cited
         # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
         # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
@@ -116,12 +121,13 @@ class Pipeline:
             param_origins[key] = "Parameter (explizit übergeben)"
         # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
         # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
-        calc = await stages.compute(
-            self.engine,
-            merged_params or None,
-            grounding_facts=grounding_facts,
-            param_origins=param_origins or None,
-        )
+        with timer.stage("compute_ms"):
+            calc = await stages.compute(
+                self.engine,
+                merged_params or None,
+                grounding_facts=grounding_facts,
+                param_origins=param_origins or None,
+            )
         if (
             bound.notes
         ):  # surfaced fail-closed drops — visible to L1 + render, never silent
@@ -130,46 +136,53 @@ class Pipeline:
                 not_computed=calc.not_computed,
                 notes=calc.notes + bound.notes,
             )
-        answer = await self.generator.generate(
-            question,
-            flags=flags,
-            grounding_facts=grounding_facts,
-            calc=calc,
-            case_context=case_context
-            or None,  # empty → None → byte-identical no-memory prompt
-            conversation_window=conversation_window or None,
-            untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
-        )
+        with timer.stage("generate_ms"):
+            answer = await self.generator.generate(
+                question,
+                flags=flags,
+                grounding_facts=grounding_facts,
+                calc=calc,
+                case_context=case_context
+                or None,  # empty → None → byte-identical no-memory prompt
+                conversation_window=conversation_window or None,
+                untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
+            )
         draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
 
         verdict: VerifierVerdict | None = None
         if self.verifier is not None and self.catalog is not None:
-            answer, verdict = await stages.verify(
-                self.verifier,
-                self.generator,
-                self.catalog,
-                question,
-                answer,
-                flags=flags,
-                grounding_facts=grounding_facts,
-                computed_values=calc.computed,
-                not_computed=calc.not_computed,
-            )
+            with timer.stage("verify_ms"):
+                answer, verdict = await stages.verify(
+                    self.verifier,
+                    self.generator,
+                    self.catalog,
+                    question,
+                    answer,
+                    flags=flags,
+                    grounding_facts=grounding_facts,
+                    computed_values=calc.computed,
+                    not_computed=calc.not_computed,
+                )
 
-        answer = await stages.cite(answer)  # stub → unchanged
+        with timer.stage("cite_ms"):
+            answer = await stages.cite(answer)  # stub → unchanged
 
         # M5 remember (after answering): record the turn + distill STATED facts into case-state.
         # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
-        # means it can never perturb the turn it observed.
-        await stages.remember(
-            self.memory,
-            self.distiller,
-            tenant_id=scope.tenant_id,
-            session=session,
-            question=question,
-            answer=answer.text,
-        )
+        # means it can never perturb the turn it observed. (Timed only when it actually runs, so
+        # the timing line omits ``distill_ms`` on the single-turn/no-session path.)
+        if self.memory is not None and session is not None:
+            with timer.stage("distill_ms"):
+                await stages.remember(
+                    self.memory,
+                    self.distiller,
+                    tenant_id=scope.tenant_id,
+                    session=session,
+                    question=question,
+                    answer=answer.text,
+                )
 
+        timer.emit()  # one JSON line per turn (stage durations + total + turn id; no PII)
         return PipelineResult(
             question=question,
             tenant_id=scope.tenant_id,

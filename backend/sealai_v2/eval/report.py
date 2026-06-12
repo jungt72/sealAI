@@ -53,6 +53,7 @@ def _record_to_dict(rec) -> dict:
         "n_computed": rec.n_computed,
         "computed_brief": rec.computed_brief,
         "parametric_leaks": [dataclasses.asdict(leak) for leak in rec.parametric_leaks],
+        "elapsed_ms": rec.elapsed_ms,
         "error": rec.error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.eval.harness import COLUMNS, run_eval
+from sealai_v2.pipeline.timing import configure_timing_logging
 
 _RUNS_DIR = Path(__file__).resolve().parent / "runs"
 
@@ -51,6 +52,7 @@ def main() -> None:
         "re-render report.md; does not run the eval",
     )
     args = ap.parse_args()
+    configure_timing_logging()  # per-turn timing lines → stdout during the live REPLAY
 
     run_dir = Path(args.run_dir) if args.run_dir else (_RUNS_DIR / args.label)
 

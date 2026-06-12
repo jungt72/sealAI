@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -77,6 +78,7 @@ class Record:
     n_computed: int = 0  # M4: deterministically computed values injected this turn
     computed_brief: str = ""  # "v_m_s=12.57 m/s; ..." — what the candidate rested on
     parametric_leaks: tuple = ()  # M8: deterministic detector hits on the FINAL answer (agent-final gate)
+    elapsed_ms: float = 0.0  # wall clock of pipeline.run for this unit (judge call excluded)
 
 
 async def _run_unit(
@@ -94,10 +96,13 @@ async def _run_unit(
     n_computed, computed_brief = 0, ""
     parametric_leaks: tuple = ()
     verifier: VerifierVerdict | None = None
+    elapsed_ms = 0.0
+    t0 = time.monotonic()
     try:
         result = await pipeline.run(
             case.input, tenant=_EVAL_TENANT, flags=flags, params=params
         )
+        elapsed_ms = (time.monotonic() - t0) * 1000.0
         if result.understanding is not None:
             intent = result.understanding.intent.value
             rationale = result.understanding.rationale
@@ -118,6 +123,7 @@ async def _run_unit(
             draft_text = result.draft_answer.text
             draft_model = result.draft_answer.model
     except Exception as exc:  # noqa: BLE001 — record the failure, keep the run going
+        elapsed_ms = (time.monotonic() - t0) * 1000.0
         error = f"{type(exc).__name__}: {exc}"
 
     if error is None and answer_text:
@@ -146,6 +152,7 @@ async def _run_unit(
         n_computed=n_computed,
         computed_brief=computed_brief,
         parametric_leaks=parametric_leaks,
+        elapsed_ms=round(elapsed_ms, 1),
     )
 
 
