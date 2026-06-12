@@ -82,6 +82,60 @@ describe("pilot-ui stage (fresh conversation)", () => {
   });
 });
 
+describe("P4b: live stage indicator (SSE progress — labels owned by the frontend)", () => {
+  function sendPending(over: Partial<Parameters<typeof ChatPane>[0]> = {}) {
+    const result = renderPane({
+      onSend: () => new Promise<ChatResponse>(() => {}), // turn stays in flight
+      ...over,
+    });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    return result;
+  }
+
+  function paneProps(over: Partial<Parameters<typeof ChatPane>[0]>): Parameters<typeof ChatPane>[0] {
+    return {
+      onSend: () => new Promise<ChatResponse>(() => {}),
+      error: null,
+      memory: EMPTY,
+      onEditFact: vi.fn(),
+      onForgetFact: vi.fn(),
+      onForgetAll: vi.fn(),
+      onSubmitParam: vi.fn(),
+      onMakeBriefing: vi.fn(),
+      canBriefing: false,
+      briefing: null,
+      ...over,
+    };
+  }
+
+  it("no indicator before a turn is in flight", () => {
+    renderPane({ liveStage: "generate" });
+    expect(screen.queryByTestId("stage-indicator")).toBeNull();
+  });
+
+  it("shows the pending row while busy and maps stage keys to German labels", () => {
+    const { rerender } = sendPending();
+    expect(screen.getByTestId("stage-indicator")).toBeInTheDocument();
+    rerender(<ChatPane {...paneProps({ liveStage: "ground" })} />);
+    expect(screen.getByTestId("stage-label")).toHaveTextContent("Fakten suchen");
+    rerender(<ChatPane {...paneProps({ liveStage: "generate" })} />);
+    expect(screen.getByTestId("stage-label")).toHaveTextContent("Antwort formulieren");
+    rerender(<ChatPane {...paneProps({ liveStage: "verify" })} />);
+    expect(screen.getByTestId("stage-label")).toHaveTextContent("Prüfen");
+  });
+
+  it("keeps the last mapped label on unmapped keys (recall/cite/unknown — forward-compatible)", () => {
+    const { rerender } = sendPending({ liveStage: "recall" });
+    expect(screen.getByTestId("stage-indicator")).toBeInTheDocument();
+    expect(screen.queryByTestId("stage-label")).toBeNull(); // nothing mapped yet — dots only
+    rerender(<ChatPane {...paneProps({ liveStage: "verify" })} />);
+    expect(screen.getByTestId("stage-label")).toHaveTextContent("Prüfen");
+    rerender(<ChatPane {...paneProps({ liveStage: "cite" })} />);
+    expect(screen.getByTestId("stage-label")).toHaveTextContent("Prüfen"); // retained, not cleared
+  });
+});
+
 describe("pilot-ui shell (rail + doctrine line)", () => {
   it("the doctrine line stays persistently mounted in the shell", () => {
     render(

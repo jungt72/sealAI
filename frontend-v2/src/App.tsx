@@ -36,6 +36,8 @@ export function App() {
   const [lastMessage, setLastMessage] = useState<string>("");
   // bumping the key remounts ChatPane → fresh conversation view; server-side memory is untouched
   const [convKey, setConvKey] = useState(0);
+  // P4b: latest stage-start from the /chat/stream progress frames (keys only; labels in ChatPane)
+  const [liveStage, setLiveStage] = useState<string | null>(null);
 
   // 401/expiry path: LOCAL clear + re-login only — must NOT end the Keycloak SSO session
   const onUnauthenticated = useCallback(() => {
@@ -108,11 +110,12 @@ export function App() {
       setError(null);
       setLastMessage(message);
       try {
-        return await api.chat(message);
+        return await api.chatStream(message, setLiveStage);
       } catch (e) {
         setError("Es ist ein Fehler aufgetreten — bitte erneut versuchen.");
         throw e;
       } finally {
+        setLiveStage(null);
         refreshMemory();
       }
     },
@@ -157,6 +160,7 @@ export function App() {
           error={error}
           memory={memory}
           greetingName={greetingName}
+          liveStage={liveStage}
           onEditFact={(feld, wert) => {
             const next = window.prompt(`${feld}:`, wert);
             if (next != null) api.editFact(feld, next).then(refreshMemory).catch(() => undefined);

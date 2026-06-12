@@ -20,13 +20,27 @@ function stubApi(memoryRef: { current: ConversationMemory }) {
     Promise.resolve(
       new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
     );
+  const result = { answer: "ok", model: "m", grounded: true, intent: null, citations: [] };
+  const sse = () => {
+    const enc = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(enc.encode('event: stage\ndata: {"stage":"generate","status":"start"}\n\n'));
+        c.enqueue(enc.encode(`event: result\ndata: ${JSON.stringify(result)}\n\n`));
+        c.close();
+      },
+    });
+    return Promise.resolve(
+      new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    );
+  };
   const fn = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
     if (url.endsWith("/framing")) return json({});
     if (url.endsWith("/conversations/current/memory")) return json(memoryRef.current);
-    if (url.endsWith("/chat"))
-      return json({ answer: "ok", model: "m", grounded: true, intent: null, citations: [] });
+    if (url.endsWith("/chat/stream")) return sse();
+    if (url.endsWith("/chat")) return json(result);
     return json({});
   });
   vi.stubGlobal("fetch", fn);
@@ -81,9 +95,9 @@ describe("Fix A: fact chips refresh after each chat turn (no reload)", () => {
     fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "HLP 46, 80 °C" } });
     fireEvent.click(screen.getByTestId("composer-send"));
 
-    // chips appear without any reload/remount — memory was re-fetched after /chat resolved
+    // chips appear without any reload/remount — memory was re-fetched after the turn resolved
     await waitFor(() => expect(screen.getByTestId("remembered-fact")).toHaveTextContent("Hydrauliköl"));
-    const chatIdx = calls.findIndex((u) => u.endsWith("/chat"));
+    const chatIdx = calls.findIndex((u) => u.endsWith("/chat/stream") || u.endsWith("/chat"));
     const refreshIdx = calls.findIndex((u, i) => i > chatIdx && u.endsWith("/conversations/current/memory"));
     expect(chatIdx).toBeGreaterThan(-1);
     expect(refreshIdx).toBeGreaterThan(chatIdx); // the re-fetch happens AFTER the turn completed

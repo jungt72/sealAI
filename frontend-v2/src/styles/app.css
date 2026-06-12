@@ -154,6 +154,21 @@
 .make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
 .make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
 
+/* ── live stage indicator (P4b — quiet pending row while the turn streams) ───── */
+.msg-pending { align-self: flex-start; display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
+.pending-dots { display: inline-flex; gap: 5px; }
+.pending-dots i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint);
+  animation: pending-pulse 1.2s ease-in-out infinite;
+}
+.pending-dots i:nth-child(2) { animation-delay: 0.15s; }
+.pending-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pending-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+.pending-label { font-size: 13px; color: var(--ink-soft); }
+
 /* ── answers (quiet surfaces — the content carries the weight) ──────────────── */
 .answer { max-width: 100%; line-height: 1.55; }
 .answer-badges { display: flex; gap: 6px; margin-bottom: 8px; }

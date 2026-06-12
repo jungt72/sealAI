@@ -9,6 +9,16 @@ import { MicIcon, PlusIcon, SendIcon } from "./icons";
 
 type Msg = { role: "user"; text: string } | { role: "assistant"; res: ChatResponse };
 
+/* P4b — the frontend owns the German stage labels; the backend streams keys only. Unmapped keys
+ * (recall, cite, future stages) keep the last mapped label — forward-compatible by ignoring. */
+const STAGE_LABELS: Record<string, string> = {
+  understand: "Verstehen",
+  ground: "Fakten suchen",
+  compute: "Berechnen",
+  generate: "Antwort formulieren",
+  verify: "Prüfen",
+};
+
 /** The pilot-ui main surface, two states of ONE conversation:
  *  - stage (no messages yet): centered greeting over the radial glow, the pill, fact chips under it
  *    — the clean Gemini-like landing;
@@ -28,6 +38,7 @@ export function ChatPane({
   canBriefing,
   briefing,
   greetingName,
+  liveStage,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -40,6 +51,7 @@ export function ChatPane({
   canBriefing: boolean;
   briefing: Briefing | null;
   greetingName?: string | null;
+  liveStage?: string | null;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -47,6 +59,12 @@ export function ChatPane({
   const [formOpen, setFormOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
+  // latest mapped label survives unmapped keys (recall/cite) and clears when the turn ends
+  const [stageLabel, setStageLabel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!busy) setStageLabel(null);
+    else if (liveStage && STAGE_LABELS[liveStage]) setStageLabel(STAGE_LABELS[liveStage]);
+  }, [busy, liveStage]);
 
   useEffect(() => {
     if (!formOpen) return;
@@ -167,6 +185,20 @@ export function ChatPane({
           ) : (
             <Answer key={i} res={m.res} />
           ),
+        )}
+        {busy && (
+          <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
+            <span className="pending-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            {stageLabel && (
+              <span className="pending-label" data-testid="stage-label">
+                {stageLabel}
+              </span>
+            )}
+          </div>
         )}
         {error && (
           <div className="error-banner" role="alert" data-testid="chat-error">
