@@ -7,6 +7,7 @@ intent annotates but never alters the answer path.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from sealai_v2.config.settings import Settings
@@ -98,89 +99,111 @@ class Pipeline:
         ]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
-        understanding = None
+        # P1: soft understand is annotate-only (Intent NEVER gates/routes; it feeds only the
+        # API intent field via PipelineResult.understanding) — so it runs CONCURRENT with the
+        # answer chain instead of serializing in front of L1. Awaited after the chain; a chain
+        # failure cancels it (same failure surface as the serial order, pure reordering).
+        understand_task: asyncio.Task | None = None
         if self.understand_enabled:
-            with timer.stage("understand_ms"):
-                understanding = await stages.understand(
-                    self.client, self.helper_model, question
+
+            async def _understand_timed():
+                with timer.stage("understand_ms"):
+                    return await stages.understand(
+                        self.client, self.helper_model, question
+                    )
+
+            understand_task = asyncio.create_task(_understand_timed())
+
+        try:
+            with timer.stage("ground_ms"):
+                retrieval = await stages.ground(
+                    self.retriever, question, tenant_id=scope.tenant_id
                 )
-
-        with timer.stage("ground_ms"):
-            retrieval = await stages.ground(
-                self.retriever, question, tenant_id=scope.tenant_id
-            )
-        grounding_facts = retrieval.grounding_facts  # reviewed → authoritative + cited
-        # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
-        # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
-        # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
-        bound = bind_params(mem.case_state + mem.durable)
-        merged_params = dict(bound.params)
-        param_origins = dict(bound.origins)
-        for key, value in (params or {}).items():
-            merged_params[key] = value
-            param_origins[key] = "Parameter (explizit übergeben)"
-        # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
-        # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
-        with timer.stage("compute_ms"):
-            calc = await stages.compute(
-                self.engine,
-                merged_params or None,
-                grounding_facts=grounding_facts,
-                param_origins=param_origins or None,
-            )
-        if (
-            bound.notes
-        ):  # surfaced fail-closed drops — visible to L1 + render, never silent
-            calc = CalcResult(
-                computed=calc.computed,
-                not_computed=calc.not_computed,
-                notes=calc.notes + bound.notes,
-            )
-        with timer.stage("generate_ms"):
-            answer = await self.generator.generate(
-                question,
-                flags=flags,
-                grounding_facts=grounding_facts,
-                calc=calc,
-                case_context=case_context
-                or None,  # empty → None → byte-identical no-memory prompt
-                conversation_window=conversation_window or None,
-                untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
-            )
-        draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
-
-        verdict: VerifierVerdict | None = None
-        if self.verifier is not None and self.catalog is not None:
-            with timer.stage("verify_ms"):
-                answer, verdict = await stages.verify(
-                    self.verifier,
-                    self.generator,
-                    self.catalog,
+            grounding_facts = (
+                retrieval.grounding_facts
+            )  # reviewed → authoritative + cited
+            # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
+            # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
+            # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
+            bound = bind_params(mem.case_state + mem.durable)
+            merged_params = dict(bound.params)
+            param_origins = dict(bound.origins)
+            for key, value in (params or {}).items():
+                merged_params[key] = value
+                param_origins[key] = "Parameter (explizit übergeben)"
+            # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
+            # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
+            with timer.stage("compute_ms"):
+                calc = await stages.compute(
+                    self.engine,
+                    merged_params or None,
+                    grounding_facts=grounding_facts,
+                    param_origins=param_origins or None,
+                )
+            if (
+                bound.notes
+            ):  # surfaced fail-closed drops — visible to L1 + render, never silent
+                calc = CalcResult(
+                    computed=calc.computed,
+                    not_computed=calc.not_computed,
+                    notes=calc.notes + bound.notes,
+                )
+            with timer.stage("generate_ms"):
+                answer = await self.generator.generate(
                     question,
-                    answer,
                     flags=flags,
                     grounding_facts=grounding_facts,
-                    computed_values=calc.computed,
-                    not_computed=calc.not_computed,
+                    calc=calc,
+                    case_context=case_context
+                    or None,  # empty → None → byte-identical no-memory prompt
+                    conversation_window=conversation_window or None,
+                    untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                 )
+            draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
 
-        with timer.stage("cite_ms"):
-            answer = await stages.cite(answer)  # stub → unchanged
+            verdict: VerifierVerdict | None = None
+            if self.verifier is not None and self.catalog is not None:
+                with timer.stage("verify_ms"):
+                    answer, verdict = await stages.verify(
+                        self.verifier,
+                        self.generator,
+                        self.catalog,
+                        question,
+                        answer,
+                        flags=flags,
+                        grounding_facts=grounding_facts,
+                        computed_values=calc.computed,
+                        not_computed=calc.not_computed,
+                    )
 
-        # M5 remember (after answering): record the turn + distill STATED facts into case-state.
-        # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
-        # means it can never perturb the turn it observed. (Timed only when it actually runs, so
-        # the timing line omits ``distill_ms`` on the single-turn/no-session path.)
-        if self.memory is not None and session is not None:
-            with timer.stage("distill_ms"):
-                await stages.remember(
-                    self.memory,
-                    self.distiller,
-                    tenant_id=scope.tenant_id,
-                    session=session,
-                    question=question,
-                    answer=answer.text,
-                )
+            with timer.stage("cite_ms"):
+                answer = await stages.cite(answer)  # stub → unchanged
+
+            # M5 remember (after answering): record the turn + distill STATED facts into case-state.
+            # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
+            # means it can never perturb the turn it observed. (Timed only when it actually runs, so
+            # the timing line omits ``distill_ms`` on the single-turn/no-session path.)
+            if self.memory is not None and session is not None:
+                with timer.stage("distill_ms"):
+                    await stages.remember(
+                        self.memory,
+                        self.distiller,
+                        tenant_id=scope.tenant_id,
+                        session=session,
+                        question=question,
+                        answer=answer.text,
+                    )
+        except BaseException:
+            if understand_task is not None:
+                if understand_task.done():
+                    understand_task.exception()  # consume — the chain error is primary
+                else:
+                    understand_task.cancel()
+            raise
+
+        understanding = (
+            await understand_task if understand_task is not None else None
+        )
 
         timer.emit()  # one JSON line per turn (stage durations + total + turn id; no PII)
         return PipelineResult(
