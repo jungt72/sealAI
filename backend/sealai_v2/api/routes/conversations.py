@@ -29,11 +29,16 @@ def list_conversations(
 
 
 @router.get("/current/memory")
-def view_memory(
+async def view_memory(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     mem = _memory(pipeline)
+    # P2: a background distill may still be in flight — flush first, so the chips re-fetch
+    # right after /chat already sees the fresh case-state (and the history shows the turn).
+    await pipeline.flush_memory(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
     cs = mem.case_state(tenant_id=identity.tenant_id, session_id=identity.session_id)
     hist = mem.history(tenant_id=identity.tenant_id, session_id=identity.session_id)
     return {
@@ -55,14 +60,20 @@ class FactEdit(BaseModel):
 
 
 @router.put("/current/facts/{feld}")
-def edit_fact(
+async def edit_fact(
     feld: str,
     body: FactEdit,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     provenance = body.origin if body.origin in _EDIT_ORIGINS else "user-edited"
-    _memory(pipeline).edit_fact(
+    mem = _memory(pipeline)
+    # P2 flush-then-mutate: a pending distill must land BEFORE the user's write, never after
+    # it (the user edit is the stronger, later provenance — it must win).
+    await pipeline.flush_memory(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
+    mem.edit_fact(
         tenant_id=identity.tenant_id,
         session_id=identity.session_id,
         feld=feld,
@@ -73,23 +84,32 @@ def edit_fact(
 
 
 @router.delete("/current/facts/{feld}")
-def forget_fact(
+async def forget_fact(
     feld: str,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
-    _memory(pipeline).delete_fact(
+    mem = _memory(pipeline)
+    # P2 flush-then-mutate: the pending distill lands first, then the forget — a late distill
+    # must never re-create what the user just deleted.
+    await pipeline.flush_memory(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
+    mem.delete_fact(
         tenant_id=identity.tenant_id, session_id=identity.session_id, feld=feld
     )
     return {"status": "ok"}
 
 
 @router.delete("/current")
-def forget_all(
+async def forget_all(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
-    _memory(pipeline).clear(
+    mem = _memory(pipeline)
+    # P2 flush-then-mutate: "alles vergessen" is final — flush the pending distill, THEN clear.
+    await pipeline.flush_memory(
         tenant_id=identity.tenant_id, session_id=identity.session_id
     )
+    mem.clear(tenant_id=identity.tenant_id, session_id=identity.session_id)
     return {"status": "ok"}

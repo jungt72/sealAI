@@ -66,11 +66,16 @@ def test_full_turn_emits_one_line_with_all_stage_keys_and_no_pii(monkeypatch):
             '{"facts": []}',  # distill
         ]
     )
-    res = asyncio.run(
-        _full_pipeline(client).run(
+    async def main():
+        p = _full_pipeline(client)
+        res = await p.run(
             question, tenant=TenantContext("t1"), session=SessionContext("s1")
         )
-    )
+        # P2: distill is backgrounded; the flush lands it and the turn line is emitted then.
+        await p.flush_memory(tenant_id="t1", session_id="s1")
+        return res
+
+    res = asyncio.run(main())
 
     # behavior unchanged: the answer is exactly the scripted fake response, 3 LLM calls.
     assert res.answer.text == "PII-MARKER-ANTWORT: wegen Unpolarität."
@@ -82,6 +87,7 @@ def test_full_turn_emits_one_line_with_all_stage_keys_and_no_pii(monkeypatch):
     assert payload["event"] == "v2_turn_timing"
     assert payload["turn_id"]
     assert set(payload["stages"]) == {
+        "flush_ms",
         "recall_ms",
         "ground_ms",
         "compute_ms",
@@ -91,7 +97,10 @@ def test_full_turn_emits_one_line_with_all_stage_keys_and_no_pii(monkeypatch):
         "distill_ms",
     }
     assert all(v >= 0.0 for v in payload["stages"].values())
-    assert payload["total_ms"] >= max(payload["stages"].values()) - 0.1
+    # total_ms is the USER-FACING wall clock (frozen at the response point) — it bounds the
+    # response-path stages; the backgrounded distill_ms is measured after it.
+    response_path = {k: v for k, v in payload["stages"].items() if k != "distill_ms"}
+    assert payload["total_ms"] >= max(response_path.values()) - 0.1
 
     # NO PII: neither question nor answer text reaches the line (nor tenant/session ids).
     line = json.dumps(payload, ensure_ascii=False)

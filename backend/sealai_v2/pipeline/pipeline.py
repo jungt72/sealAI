@@ -8,7 +8,8 @@ intent annotates but never alters the answer path.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.binding import bind_params
@@ -45,6 +46,8 @@ from sealai_v2.prompts.assembler import (
 )
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
+_log = logging.getLogger("sealai_v2.pipeline")
+
 
 @dataclass
 class Pipeline:
@@ -65,6 +68,11 @@ class Pipeline:
     memory: ConversationMemory | None = None
     cross_session: CrossSessionMemory | None = None
     distiller: Distiller | None = None
+    # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
+    # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
+    _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     async def run(
         self,
@@ -84,6 +92,15 @@ class Pipeline:
         untrusted_data = [
             {"text": u.text, "origin": u.origin} for u in untrusted
         ] or None
+
+        # P2 ordering guard: a previous turn's background remember (distill + record) must
+        # land before THIS turn's recall on the same session — the wait (usually 0) is the
+        # visible cost of the guard, so it is timed.
+        if self.memory is not None and session is not None:
+            with timer.stage("flush_ms"):
+                await self.flush_memory(
+                    tenant_id=scope.tenant_id, session_id=session.session_id
+                )
 
         # M5 recall (before answering): inert when memory/session absent → byte-identical no-op.
         with timer.stage("recall_ms"):
@@ -183,16 +200,30 @@ class Pipeline:
             # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
             # means it can never perturb the turn it observed. (Timed only when it actually runs, so
             # the timing line omits ``distill_ms`` on the single-turn/no-session path.)
+            # P2: with a distiller wired, the distill LLM call moves OFF the user-facing path —
+            # a background task, ordering-guarded by ``flush_memory`` (next recall / memory read /
+            # user mutation). Distiller-less remember (pure in-process record, no LLM) stays inline.
+            scheduled_background = False
             if self.memory is not None and session is not None:
-                with timer.stage("distill_ms"):
-                    await stages.remember(
-                        self.memory,
-                        self.distiller,
+                if self.distiller is not None:
+                    self._schedule_remember(
+                        timer,
                         tenant_id=scope.tenant_id,
                         session=session,
                         question=question,
-                        answer=answer.text,
+                        answer_text=answer.text,
                     )
+                    scheduled_background = True
+                else:
+                    with timer.stage("distill_ms"):
+                        await stages.remember(
+                            self.memory,
+                            self.distiller,
+                            tenant_id=scope.tenant_id,
+                            session=session,
+                            question=question,
+                            answer=answer.text,
+                        )
         except BaseException:
             if understand_task is not None:
                 if understand_task.done():
@@ -205,7 +236,12 @@ class Pipeline:
             await understand_task if understand_task is not None else None
         )
 
-        timer.emit()  # one JSON line per turn (stage durations + total + turn id; no PII)
+        # One JSON line per turn (stage durations + total + turn id; no PII). ``total_ms`` is
+        # frozen HERE — the user-facing latency; a backgrounded remember emits the line itself
+        # once its ``distill_ms`` is known (so the line stays complete and stays one per turn).
+        timer.finish()
+        if not scheduled_background:
+            timer.emit()
         return PipelineResult(
             question=question,
             tenant_id=scope.tenant_id,
@@ -222,6 +258,83 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
         )
+
+    async def flush_memory(self, *, tenant_id: str, session_id: str) -> None:
+        """P2 ordering guard: await this session's in-flight background remember so the
+        distilled case-state has landed before any subsequent recall, memory read (chips
+        re-fetch), or user mutation (edit/forget). No pending task → no-op. The background
+        wrapper is fail-safe (never raises); a task stranded on a dead/foreign event loop
+        (test topologies — prod uvicorn and the eval are single-loop) is dropped with a
+        warning instead of raising."""
+        task = self._pending_remember.get((tenant_id, session_id))
+        if task is None:
+            return
+        try:
+            await task
+        except RuntimeError as exc:  # foreign/dead loop — drop the entry, never fail a read
+            self._pending_remember.pop((tenant_id, session_id), None)
+            _log.warning(
+                "flush_memory dropped an unawaitable remember task: %s", exc
+            )
+
+    def _schedule_remember(
+        self,
+        timer: TurnTimer,
+        *,
+        tenant_id: str,
+        session: SessionContext,
+        question: str,
+        answer_text: str,
+    ) -> None:
+        key = (tenant_id, session.session_id)
+        task = asyncio.create_task(
+            self._remember_background(
+                timer,
+                tenant_id=tenant_id,
+                session=session,
+                question=question,
+                answer_text=answer_text,
+            )
+        )
+        self._pending_remember[key] = task
+
+        def _deregister(t: asyncio.Task) -> None:
+            if self._pending_remember.get(key) is t:
+                del self._pending_remember[key]
+
+        task.add_done_callback(_deregister)
+
+    async def _remember_background(
+        self,
+        timer: TurnTimer,
+        *,
+        tenant_id: str,
+        session: SessionContext,
+        question: str,
+        answer_text: str,
+    ) -> None:
+        """The deferred remember (distill LLM call + record_turn). Fail-safe: an error here is
+        logged-only — the answer already went out, so the worst case is a lost memory record
+        for this turn, never a failed request and never a guessed fact (the distiller's own
+        numeric-trace guard is untouched). Emits the turn's timing line on completion."""
+        try:
+            with timer.stage("distill_ms"):
+                await stages.remember(
+                    self.memory,
+                    self.distiller,
+                    tenant_id=tenant_id,
+                    session=session,
+                    question=question,
+                    answer=answer_text,
+                )
+        except Exception as exc:  # noqa: BLE001 — a background task must never die unhandled
+            _log.warning(
+                "background remember failed (turn memory lost): %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+        finally:
+            timer.emit()
 
 
 def build_pipeline(

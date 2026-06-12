@@ -40,7 +40,9 @@ def _memory_pipeline(client, *, with_distiller: bool = True) -> Pipeline:
 
 
 def test_re_ask_keystone_carries_prior_facts_and_window_into_turn2():
-    # per turn the script is generate→distill; calls[2] is the turn-2 GENERATE call.
+    # per turn the script is generate→distill; calls[2] is the turn-2 GENERATE call. The t1
+    # distill is backgrounded (P2) and lands via t2's flush-before-recall — order unchanged;
+    # the final flush drains t2's distill (one loop, explicit sync points).
     client = ScriptedFakeLlmClient(
         [
             "EPDM quillt in Hydrauliköl wegen Unpolarität.",  # t1 generate
@@ -51,10 +53,15 @@ def test_re_ask_keystone_carries_prior_facts_and_window_into_turn2():
     )
     p = _memory_pipeline(client)
     tenant, session = TenantContext("t1"), SessionContext("sess-1")
-    asyncio.run(
-        p.run("EPDM quillt in Hydrauliköl, warum?", tenant=tenant, session=session)
-    )
-    asyncio.run(p.run("und bei 120 °C?", tenant=tenant, session=session))
+
+    async def main():
+        await p.run(
+            "EPDM quillt in Hydrauliköl, warum?", tenant=tenant, session=session
+        )
+        await p.run("und bei 120 °C?", tenant=tenant, session=session)
+        await p.flush_memory(tenant_id="t1", session_id="sess-1")
+
+    asyncio.run(main())
 
     t2_system = client.calls[2]["system"]
     # the prior STATED fact reached the turn-2 prompt as remembered case-state (the re-ask fix)
@@ -77,24 +84,37 @@ def test_pipeline_memory_is_tenant_scoped_p0():
     )
     p = _memory_pipeline(client)
     session = SessionContext("shared-session-id")
-    asyncio.run(
-        p.run("EPDM in Spezialöl-X?", tenant=TenantContext("tenantA"), session=session)
-    )
-    # DIFFERENT tenant, SAME session id → must never inherit tenant A's case-state (P0)
-    asyncio.run(p.run("und?", tenant=TenantContext("tenantB"), session=session))
+
+    async def main():
+        await p.run(
+            "EPDM in Spezialöl-X?", tenant=TenantContext("tenantA"), session=session
+        )
+        # tenant A's background distill is keyed (tenantA, session) — flush it explicitly so
+        # the scripted order holds before tenant B's turn.
+        await p.flush_memory(tenant_id="tenantA", session_id="shared-session-id")
+        # DIFFERENT tenant, SAME session id → must never inherit tenant A's case-state (P0)
+        await p.run("und?", tenant=TenantContext("tenantB"), session=session)
+        await p.flush_memory(tenant_id="tenantB", session_id="shared-session-id")
+
+    asyncio.run(main())
     t2_system = client.calls[2]["system"]
     assert "Spezialöl-X" not in t2_system
     assert "Bereits bekannter Fallkontext" not in t2_system
 
 
 def test_session_none_is_byte_identical_noop_and_skips_distill():
-    # WITH a session → 2 LLM calls (generate + distill).
+    # WITH a session → 2 LLM calls (generate + distill; the distill is backgrounded → the
+    # explicit flush is the sync point before counting).
     client_with = ScriptedFakeLlmClient(["ANS", '{"facts": []}'])
-    asyncio.run(
-        _memory_pipeline(client_with).run(
+    p_with = _memory_pipeline(client_with)
+
+    async def main():
+        await p_with.run(
             "Frage?", tenant=TenantContext("t1"), session=SessionContext("s1")
         )
-    )
+        await p_with.flush_memory(tenant_id="t1", session_id="s1")
+
+    asyncio.run(main())
     assert len(client_with.calls) == 2
 
     # WITHOUT a session → 1 LLM call (generate only); NO distill call fires.

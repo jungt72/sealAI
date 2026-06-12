@@ -232,6 +232,11 @@ async def run_multiturn_case(
         )
         case_state: tuple[RememberedFact, ...] = ()
         if pipeline.memory is not None:
+            # P2 ordering: the background remember must land before reading the case-state
+            # back (== what the next prompt would see) — same guard the runtime applies.
+            await pipeline.flush_memory(
+                tenant_id=tenant.tenant_id, session_id=session.session_id
+            )
             case_state = pipeline.memory.recall(
                 tenant_id=tenant.tenant_id, session_id=session.session_id
             ).case_state
