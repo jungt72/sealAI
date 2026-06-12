@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from sealai_v2.config.settings import Settings
@@ -48,6 +50,29 @@ from sealai_v2.security.tenant import TenantContext, require_tenant
 
 _log = logging.getLogger("sealai_v2.pipeline")
 
+# P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
+# PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
+ProgressSink = Callable[[str, str], None]
+
+
+def _emit_progress(progress: ProgressSink | None, stage: str, status: str) -> None:
+    if progress is None:
+        return
+    try:
+        progress(stage, status)
+    except Exception:  # noqa: BLE001 — a broken sink must never alter or fail a turn
+        _log.warning("progress sink failed (ignored)", exc_info=True)
+
+
+@contextmanager
+def _staged(timer, progress: ProgressSink | None, ms_key: str, stage: str):
+    """One seam: progress start → timed body → progress end. On an exception the ``end`` is
+    deliberately NOT emitted — the route's `error` frame follows the stage's `start`."""
+    _emit_progress(progress, stage, "start")
+    with timer.stage(ms_key):
+        yield
+    _emit_progress(progress, stage, "end")
+
 
 @dataclass
 class Pipeline:
@@ -83,6 +108,7 @@ class Pipeline:
         params: dict | None = None,
         session: SessionContext | None = None,
         untrusted: tuple[UntrustedContent, ...] = (),
+        progress: ProgressSink | None = None,
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
@@ -103,7 +129,7 @@ class Pipeline:
                 )
 
         # M5 recall (before answering): inert when memory/session absent → byte-identical no-op.
-        with timer.stage("recall_ms"):
+        with _staged(timer, progress, "recall_ms", "recall"):
             mem = stages.recall(
                 self.memory,
                 self.cross_session,
@@ -124,7 +150,7 @@ class Pipeline:
         if self.understand_enabled:
 
             async def _understand_timed():
-                with timer.stage("understand_ms"):
+                with _staged(timer, progress, "understand_ms", "understand"):
                     return await stages.understand(
                         self.client, self.helper_model, question
                     )
@@ -132,7 +158,7 @@ class Pipeline:
             understand_task = asyncio.create_task(_understand_timed())
 
         try:
-            with timer.stage("ground_ms"):
+            with _staged(timer, progress, "ground_ms", "ground"):
                 retrieval = await stages.ground(
                     self.retriever, question, tenant_id=scope.tenant_id
                 )
@@ -150,7 +176,7 @@ class Pipeline:
                 param_origins[key] = "Parameter (explizit übergeben)"
             # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
             # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
-            with timer.stage("compute_ms"):
+            with _staged(timer, progress, "compute_ms", "compute"):
                 calc = await stages.compute(
                     self.engine,
                     merged_params or None,
@@ -165,7 +191,7 @@ class Pipeline:
                     not_computed=calc.not_computed,
                     notes=calc.notes + bound.notes,
                 )
-            with timer.stage("generate_ms"):
+            with _staged(timer, progress, "generate_ms", "generate"):
                 answer = await self.generator.generate(
                     question,
                     flags=flags,
@@ -176,11 +202,13 @@ class Pipeline:
                     conversation_window=conversation_window or None,
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                 )
-            draft = answer  # first-pass L1 draft, captured before L3 may correct/hedge it
+            draft = (
+                answer  # first-pass L1 draft, captured before L3 may correct/hedge it
+            )
 
             verdict: VerifierVerdict | None = None
             if self.verifier is not None and self.catalog is not None:
-                with timer.stage("verify_ms"):
+                with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = await stages.verify(
                         self.verifier,
                         self.generator,
@@ -193,7 +221,7 @@ class Pipeline:
                         not_computed=calc.not_computed,
                     )
 
-            with timer.stage("cite_ms"):
+            with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
 
             # M5 remember (after answering): record the turn + distill STATED facts into case-state.
@@ -232,9 +260,7 @@ class Pipeline:
                     understand_task.cancel()
             raise
 
-        understanding = (
-            await understand_task if understand_task is not None else None
-        )
+        understanding = await understand_task if understand_task is not None else None
 
         # One JSON line per turn (stage durations + total + turn id; no PII). ``total_ms`` is
         # frozen HERE — the user-facing latency; a backgrounded remember emits the line itself
@@ -271,11 +297,11 @@ class Pipeline:
             return
         try:
             await task
-        except RuntimeError as exc:  # foreign/dead loop — drop the entry, never fail a read
+        except (
+            RuntimeError
+        ) as exc:  # foreign/dead loop — drop the entry, never fail a read
             self._pending_remember.pop((tenant_id, session_id), None)
-            _log.warning(
-                "flush_memory dropped an unawaitable remember task: %s", exc
-            )
+            _log.warning("flush_memory dropped an unawaitable remember task: %s", exc)
 
     def _schedule_remember(
         self,

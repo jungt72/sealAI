@@ -1,23 +1,60 @@
-"""POST /api/v2/chat — a thin projection over ``pipeline.run``. Tenant + session come ONLY from the
-verified token (``current_identity``), never from the request body/headers (P0)."""
+"""POST /api/v2/chat (+ /chat/stream, P4a) — thin projections over ``pipeline.run``. Tenant +
+session come ONLY from the verified token (``current_identity``), never from the request
+body/headers (P0). Both endpoints share ``_run_pipeline`` — same body, same auth, same flags;
+only the response transport differs. The stream's doctrine: stage frames carry keys only, the
+answer is ONE complete gated payload after verify + cite (see ``api/sse.py``)."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import current_identity, get_pipeline, get_settings
 from sealai_v2.api.serializers import chat_response
+from sealai_v2.api.sse import stream_frames
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import Flags, SessionContext, VerifiedIdentity
-from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.pipeline import Pipeline, ProgressSink
 from sealai_v2.security.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v2", tags=["chat"])
 
+_log = logging.getLogger("sealai_v2.api.chat")
+
+# Fixed in-stream failure text — NEVER the exception detail (no prompt/PII leak; mirrors the
+# opaque 500 of the non-streaming endpoint).
+_STREAM_ERROR_MESSAGE = (
+    "Die Anfrage konnte nicht verarbeitet werden — bitte erneut versuchen."
+)
+
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+
+
+async def _run_pipeline(
+    req: ChatRequest,
+    identity: VerifiedIdentity,
+    pipeline: Pipeline,
+    settings: Settings,
+    progress: ProgressSink | None = None,
+):
+    # Production flag baseline from settings (tunable, not hardcoded). Eval columns stay
+    # harness-constructed; the pipeline `or Flags()` fallback (flags_off) is untouched.
+    return await pipeline.run(
+        req.message,
+        tenant=TenantContext(identity.tenant_id),
+        session=SessionContext(session_id=identity.session_id),
+        flags=Flags(
+            compliance_hint=settings.default_compliance_hint,
+            safety_critical=settings.default_safety_critical,
+        ),
+        progress=progress,
+    )
 
 
 @router.post("/chat")
@@ -27,15 +64,39 @@ async def chat(
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    # Production flag baseline from settings (tunable, not hardcoded). Eval columns stay
-    # harness-constructed; the pipeline `or Flags()` fallback (flags_off) is untouched.
-    result = await pipeline.run(
-        req.message,
-        tenant=TenantContext(identity.tenant_id),
-        session=SessionContext(session_id=identity.session_id),
-        flags=Flags(
-            compliance_hint=settings.default_compliance_hint,
-            safety_critical=settings.default_safety_critical,
-        ),
-    )
+    result = await _run_pipeline(req, identity, pipeline, settings)
     return chat_response(result)
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    req: ChatRequest,
+    identity: VerifiedIdentity = Depends(current_identity),
+    pipeline: Pipeline = Depends(get_pipeline),
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def progress(stage: str, status: str) -> None:
+        queue.put_nowait(("stage", {"stage": stage, "status": status}))
+
+    async def _run() -> None:
+        try:
+            result = await _run_pipeline(
+                req, identity, pipeline, settings, progress=progress
+            )
+            queue.put_nowait(("result", chat_response(result)))
+        except Exception:  # noqa: BLE001 — surfaced as ONE fixed-message error frame
+            _log.exception("chat/stream pipeline failed")
+            queue.put_nowait(("error", {"message": _STREAM_ERROR_MESSAGE}))
+
+    task = asyncio.create_task(_run())
+    return StreamingResponse(
+        stream_frames(queue, task),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",  # nginx: per-response unbuffered (no config edit)
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
