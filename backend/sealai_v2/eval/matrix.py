@@ -94,9 +94,11 @@ def _validate_overrides(name: str, overrides: dict) -> None:
             )
 
 
-def settings_for_cell(cell: Cell) -> Settings:
-    """Cell Settings: kwargs take highest precedence over env (a clean per-cell config flip)."""
-    return Settings(**cell.overrides)
+def settings_for_cell(cell: Cell, pins: dict | None = None) -> Settings:
+    """Cell Settings = the frozen ``pins`` (ruler + baseline) with the per-cell overrides layered on
+    top (the candidate replaces only its varied role; pins survive for every other role, incl. the
+    judge). kwargs take highest precedence over env."""
+    return Settings(**{**(pins or {}), **cell.overrides})
 
 
 def _roles_descriptor(s: Settings) -> dict:
@@ -271,6 +273,9 @@ async def run_matrix(
     rates = {
         k: v for k, v in manifest.get("rates_usd_per_mtok", {}).items() if not k.startswith("_")
     }
+    pins = {
+        k: v for k, v in manifest.get("pinned_models", {}).items() if not k.startswith("_")
+    }
     cells = cells_from_manifest(manifest, include_optional=include_optional)
     if not cells or cells[0].name != "baseline":
         raise ValueError("matrix manifest must list the 'baseline' cell first")
@@ -278,7 +283,7 @@ async def run_matrix(
     results: list[CellResult] = []
     baseline_out: dict | None = None
     for cell in cells:
-        settings = settings_for_cell(cell)
+        settings = settings_for_cell(cell, pins)
         out = await run_eval(
             settings,
             run_dir=run_root / cell.name.replace("/", "_").replace("=", "-"),
@@ -336,16 +341,19 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
     """The 'builds but does NOT execute' deliverable: the resolved per-role plan for each cell."""
     cells = cells_from_manifest(manifest, include_optional=include_optional)
     rates = manifest.get("rates_usd_per_mtok", {})
+    pins = {
+        k: v for k, v in manifest.get("pinned_models", {}).items() if not k.startswith("_")
+    }
     missing_rates = [
         k for k, v in rates.items() if not k.startswith("_") and not isinstance(v, dict)
     ]
     L = ["# Model-swap matrix — PLAN (no models called)", ""]
-    L.append(f"cells: {len(cells)} (judge fixed at baseline in every cell)")
+    L.append(f"cells: {len(cells)} (judge fixed + pinned to a dated snapshot in every cell)")
     if missing_rates:
         L.append(f"⚠ rates unset for: {missing_rates} → est cost/turn will be null until set")
     L.append("")
     for cell in cells:
-        r = _roles_descriptor(settings_for_cell(cell))
+        r = _roles_descriptor(settings_for_cell(cell, pins))
         tag = " (optional)" if cell.optional else ""
         L.append(f"## {cell.name}{tag}")
         for role in ("l1", "verifier", "helper", "judge"):

@@ -220,6 +220,45 @@ def test_settings_for_cell_applies_overrides():
     assert s.verifier_model == "gpt-5.1" and s.judge_model == "gpt-4.1-mini"  # untouched
 
 
+def test_pins_apply_and_cell_override_wins_for_its_role_only():
+    pins = {
+        "l1_model": "BASE-L1",
+        "verifier_model": "BASE-L3",
+        "helper_model": "BASE-HELP",
+        "judge_model": "PINNED-JUDGE",
+    }
+    s = matrix.settings_for_cell(matrix.Cell("L1=cand", {"l1_model": "CAND-L1"}), pins)
+    assert s.l1_model == "CAND-L1"  # cell override wins for the varied role
+    assert s.verifier_model == "BASE-L3" and s.helper_model == "BASE-HELP"  # frozen baseline
+    assert s.judge_model == "PINNED-JUDGE"  # ruler pinned, never touched by a cell
+
+
+_DATED = __import__("re").compile(r"\d{4}-\d{2}-\d{2}$|^mistral-small-\d{4}$")
+
+
+def test_manifest_pins_ruler_and_baseline_to_dated_snapshots():
+    """Governance: judge (ruler) + baseline l1/verifier/helper must be PINNED to dated snapshots —
+    a moving ruler or baseline invalidates every cross-cell / cross-run comparison."""
+    pins = matrix.load_manifest()["pinned_models"]
+    for role in ("judge_model", "l1_model", "verifier_model", "helper_model"):
+        assert role in pins, f"{role} not pinned"
+        assert _DATED.search(pins[role]), f"{role}={pins[role]!r} is not a dated snapshot"
+
+
+def test_every_eval_model_has_a_rate_key():
+    """Every model the meter could record (pins + candidate overrides) must have a rate — else
+    est_cost silently goes null. Guards against adding a model without its rate."""
+    manifest = matrix.load_manifest()
+    rate_keys = {k for k in manifest["rates_usd_per_mtok"] if not k.startswith("_")}
+    pins = {k: v for k, v in manifest["pinned_models"].items() if not k.startswith("_")}
+    models = set(pins.values())
+    for c in manifest["cells"]:
+        for key, val in c["overrides"].items():
+            if key.endswith("_model"):
+                models.add(val)
+    assert models <= rate_keys, f"models without a rate: {models - rate_keys}"
+
+
 def test_render_plan_lists_roles_and_no_call_note():
     plan = matrix.render_plan(matrix.load_manifest())
     assert "baseline" in plan and "no models called" in plan
