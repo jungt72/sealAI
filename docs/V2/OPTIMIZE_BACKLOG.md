@@ -59,3 +59,40 @@ fold into the next eval-seed touch. The underlying distiller unit-fidelity is tr
 as pilot tracker item 8 (`docs/ops/RUNBOOK_V2_CUTOVER.md`).
 
 **Not cutover/pilot-gating** (eval-case maintenance).
+
+## 4. Life-number doctrine line — calibrate the judge rubric + system_l1.jinja (owner-filed 2026-06-13)
+
+Surfaced at the M8 `m8-trust-spine` REPLAY adjudication (UNCERT-02 `flags_off`): the rubric judge
+flagged `invented_precision` on an answer that REFUSES a fixed service-life number and gives only a
+caveated order-of-magnitude orientation ("mehrtausend–zehntausend Stunden", explicitly framed
+"Orientierung, nicht garantiert, gegen Datenblatt prüfen"). Owner cleared it as an over-flag
+(GOVERNANCE_LOG 2026-06-13).
+
+**Owner verdict — the doctrine line (binding for the record):** forbid a **POINT prediction** of
+service-life hours; **ALLOW** caveated **order-of-magnitude orientation** with a manufacturer/datasheet
+pointer. Service life is **not a kernel quantity** (no kern owns it) — so this is L1-honesty + judge-
+rubric calibration, NOT a kernel/trust-spine change.
+
+**Direction (none final):** tighten the UNCERT-class judge `must_avoid` to distinguish a point
+prediction from a caveated band; add an `system_l1.jinja` note making the same distinction explicit.
+Needs a zero-FP look (a legitimate caveated band must not trip; a bare "~8.000 h" point claim must).
+
+**Not cutover/pilot-gating** (judge/prompt calibration; the M8 hard gates are clean).
+
+## 5. L3 over-fire — CALC-MEM-01 conversational-calc gutting false-positive (owner-filed 2026-06-12, re-confirmed 2026-06-13)
+
+The `CALC-MEM-01` conversational-calc answer-gutting: L1 states the kern value, **L3 suppresses it** —
+a **pre-existing, flag-independent, stochastic L3 false-positive** (~29 %; flags_off 3/8, flags_on
+1/6 at the cutover measurement). Fail-safe direction (suppression, never a wrong claim) → non-gating,
+but it guts a correct conversational compute answer. Ranked **#1 fix-first fast-follow** at the
+pilot-ux cutover (GOVERNANCE_LOG 2026-06-12); re-confirmed as a standing fast-follow at the M8
+adjudication (2026-06-13).
+
+**Repro/validation harness:** `scratch/calc_mem_gutting.py` (untracked, stays untracked).
+
+**Direction (none final):** narrow the L3 critic's conversational-calc trigger so restating an
+injected kern value (within tolerance) is never read as a violation — the M8 parametric detector
+already treats a ≤2 % restate as referencing; align the L3 prompt/critic to the same tolerance.
+Zero-FP against the parametric leak cases (a genuine self-computed leak must still be caught).
+
+**Not cutover/pilot-gating** (fail-safe direction; #1 fast-follow).

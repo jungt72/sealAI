@@ -6,6 +6,50 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-13T07:51Z — V2 M8 trust-spine completion: kernel provenance binding + proactive-compute panel (eval-validated, NOT deployed)
+
+**Delivered (branch `feat/v2-m8-kernel-provenance` @ `ce6f97a3`, 5 commits, local — no deploy):**
+the kernel's compute guarantee made real end-to-end. (1) Reliable form+chat param→kernel binding —
+distiller unit-fidelity (keep the user's unit token with the number, never invent one); the
+fail-closed binder is **unchanged**. (2) Persisted `kernel_computed` derived facts +
+dependency-invalidation on **every** channel (form / chip edit / chat re-statement / forget) — a
+**separate backend-only slice**, structurally non-client-settable (not a case-state input, not in
+the `FactEdit.origin` allowlist); recompute-and-replace, so a stale derived value can never persist
+or reach a decision. (3) `/api/v2/compute` — deterministic, no LLM, flush-then-recompute,
+self-healing read (a missed mutation channel is corrected on the next read). (4) Berechnungen panel
+— live kernel results at the chips, **zero client compute** (the kern owns numbers, the browser
+never computes). (5) Decision-integration proof — the kernel value reaches **L1 + L3 + the
+briefing**; a corrected input evicts the stale `v` from the next decision.
+
+**Eval (REPLAY `m8-trust-spine`, owner-adjudicated):** all **Schranken 1.000 both columns**
+(`flags_off` 0.950 → 1.000 after clearing UNCERT-02); the **three deterministic agent-final gates =
+1.000** (`parametric_computation` single-turn + multi-turn · `memory_fabrication` · `exfiltration`).
+The confirmation offline fakes could not give: **chat-given parameters bind and compute live on the
+real model** (CALC-MEM-01 turn-1 fired `umfangsgeschwindigkeit` from the distilled `4000 U/min`); a
+genuinely unitless input stays **fail-closed for chip-settling** (CALC-SYMBOL-LAG-01 `8000` → no
+compute, honest confirm-question). No computed value changed vs the prior `m8-calc` baseline.
+
+**Adjudication:** UNCERT-02 `flags_off` / `invented_precision` **cleared as a judge over-flag** — the
+answer refuses a fixed life-number ("lässt sich seriös nicht als fixe Stundenzahl beantworten") and
+gives only a caveated order-of-magnitude orientation, not a point prediction. **Doctrine line
+recorded:** forbid a **POINT** prediction of service-life hours; **ALLOW** caveated
+order-of-magnitude orientation with a datasheet/manufacturer pointer; **service life is not a kernel
+quantity** → the trust spine is untouched.
+
+**Honest caveat:** the adjudication is **first-pass** (per-answer axis-1 deep-audit `1/20`, deferred
+— matching the prior `m8-calc` posture). The **hard gates are the deploy-relevant validation and are
+clean**; axis-1 factual correctness stays human-final/pending.
+
+**Deploy status: NOT deployed.** The branch awaits the owner-triggered dual deploy (`backend-v2`
+recreate + frontend `dist`-swap). No prod change, no eval re-run, no token spend in this capture.
+
+**Fast-follows (durable in `docs/V2/OPTIMIZE_BACKLOG.md` #4/#5):** (a) calibrate the judge rubric +
+`system_l1.jinja` to the precise life-number line above; (b) L3 over-fire fix — the ~29 %
+CALC-MEM-01 conversational-calc gutting false-positive (`scratch/calc_mem_gutting.py`; first noted
+at the 2026-06-12 pilot-ux cutover entry below).
+
+---
+
 ## 2026-06-12T09:38Z — V2 pilot-ux cutover: markdown + parameter form + flags_on parity (flip recorded)
 
 **Shipped (commit `b9ea2bbc`, branch `feat/v2-pilot-ux`):** pilot-ux — markdown render +
