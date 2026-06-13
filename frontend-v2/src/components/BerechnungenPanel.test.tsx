@@ -1,7 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ComputeResponse } from "../contracts";
+import type { Clarification, ComputeResponse } from "../contracts";
 import { BerechnungenPanel } from "./BerechnungenPanel";
 
 afterEach(cleanup);
@@ -71,5 +71,99 @@ describe("BerechnungenPanel (the kernel channel — backend values only)", () =>
     const empty: ComputeResponse = { computed: [], not_computed: [], notes: [] };
     const { container: c2 } = render(<BerechnungenPanel compute={empty} />);
     expect(c2.firstChild).toBeNull();
+  });
+});
+
+const clar = (over: Partial<Clarification>): Clarification => ({
+  feld: "drehzahl",
+  input_name: "rpm",
+  raw_value: "5000",
+  raw_unit: "u/mon",
+  reason: "unit_unrecognized",
+  suggested_unit: "U/min",
+  known_dimension: "",
+  expected_dimension: "frequency",
+  one_click: true,
+  ...over,
+});
+
+const withClar = (c: Clarification, notes: string[] = []): ComputeResponse => ({
+  computed: [],
+  not_computed: [],
+  notes,
+  clarifications: [c],
+});
+
+describe("BerechnungenPanel — unit clarifications (one-click strictly from the backend flag)", () => {
+  it("one-click confirm for an unrecognized unit re-settles via onConfirmUnit", () => {
+    const onConfirmUnit = vi.fn();
+    render(<BerechnungenPanel compute={withClar(clar({}))} onConfirmUnit={onConfirmUnit} />);
+    expect(screen.getByTestId("kernel-clarify")).toHaveTextContent(/meintest du U\/min/i);
+    fireEvent.click(screen.getByTestId("kernel-clarify-confirm"));
+    expect(onConfirmUnit).toHaveBeenCalledWith("drehzahl", "5000 U/min");
+  });
+
+  it("one-click confirm for a MISSING unit appends the canonical to the bare number", () => {
+    const onConfirmUnit = vi.fn();
+    const c = clar({ raw_unit: "", reason: "unit_missing", one_click: true });
+    render(<BerechnungenPanel compute={withClar(c)} onConfirmUnit={onConfirmUnit} />);
+    fireEvent.click(screen.getByTestId("kernel-clarify-confirm"));
+    expect(onConfirmUnit).toHaveBeenCalledWith("drehzahl", "5000 U/min");
+  });
+
+  it("TRUST: a known-other unit (cm) shows a re-enter message and NO one-click (no silent 10× rescale)", () => {
+    const onConfirmUnit = vi.fn();
+    const c = clar({
+      feld: "wellendurchmesser",
+      input_name: "d1_mm",
+      raw_value: "50",
+      raw_unit: "cm",
+      reason: "unit_known_other",
+      suggested_unit: "mm",
+      known_dimension: "length",
+      expected_dimension: "length",
+      one_click: false,
+    });
+    render(<BerechnungenPanel compute={withClar(c)} onConfirmUnit={onConfirmUnit} />);
+    expect(screen.getByTestId("kernel-clarify")).toHaveTextContent(/bitte in mm angeben/i);
+    expect(screen.queryByTestId("kernel-clarify-confirm")).toBeNull(); // the guard, at the UI
+    expect(onConfirmUnit).not.toHaveBeenCalled();
+  });
+
+  it("a DIMENSION mismatch (grad on a length field) is named the wrong kind of quantity", () => {
+    const c = clar({
+      feld: "wellendurchmesser",
+      input_name: "d1_mm",
+      raw_value: "50",
+      raw_unit: "grad",
+      reason: "unit_known_other",
+      suggested_unit: "mm",
+      known_dimension: "angle",
+      expected_dimension: "length",
+      one_click: false,
+    });
+    render(<BerechnungenPanel compute={withClar(c)} />);
+    const el = screen.getByTestId("kernel-clarify");
+    expect(el).toHaveTextContent(/Winkel/); // it's a Winkel-Angabe…
+    expect(el).toHaveTextContent(/Längen-Angabe/); // …where a Längen-Angabe is expected
+    expect(screen.queryByTestId("kernel-clarify-confirm")).toBeNull();
+  });
+
+  it("no_value shows re-enter guidance and offers no one-click", () => {
+    const c = clar({ raw_value: "groß", raw_unit: "", reason: "no_value", one_click: false });
+    render(<BerechnungenPanel compute={withClar(c)} onConfirmUnit={vi.fn()} />);
+    expect(screen.getByTestId("kernel-clarify")).toHaveTextContent(/kein Wert erkannt/i);
+    expect(screen.queryByTestId("kernel-clarify-confirm")).toBeNull();
+  });
+
+  it("suppresses the free-text note a clarification replaces, but keeps other notes", () => {
+    const compute = withClar(clar({}), [
+      "drehzahl: Einheit »u/mon« unklar — meintest du »U/min«? (»5000 u/mon«) — nicht gebunden",
+      "Quellung: Nutfüllung-Reserve lassen",
+    ]);
+    render(<BerechnungenPanel compute={compute} onConfirmUnit={vi.fn()} />);
+    const notes = screen.queryAllByTestId("kernel-note");
+    expect(notes.every((n) => !(n.textContent ?? "").includes("u/mon"))).toBe(true);
+    expect(screen.getByText(/Quellung: Nutfüllung-Reserve lassen/)).toBeInTheDocument();
   });
 });

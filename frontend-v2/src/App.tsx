@@ -184,6 +184,11 @@ export function App() {
           onSubmitParam={(feld, wert) =>
             api.editFact(feld, wert, "user-form").then(refreshState).catch(() => undefined)
           }
+          onConfirmUnit={(feld, value) =>
+            // confirm the suggested unit → re-settle through the EXISTING edit/settle channel
+            // (no new binding path); the backend M8 recompute fires and the kern then computes.
+            api.editFact(feld, value).then(refreshState).catch(() => undefined)
+          }
           onMakeBriefing={makeBriefing}
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}

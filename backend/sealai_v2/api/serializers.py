@@ -18,6 +18,23 @@ def _not_computed(n: NotComputed) -> dict:
     return {"calc_id": n.calc_id, "reason": n.reason}
 
 
+def _clarification(c) -> dict:
+    """A fail-closed unit-recovery hint (binder kernel channel). ``one_click`` is the BACKEND-owned
+    'append the canonical is safe' policy — the UI must honor it (never append on one_click=False, or
+    the no-silent-rescale guard is bypassed at the panel)."""
+    return {
+        "feld": c.feld,
+        "input_name": c.input_name,
+        "raw_value": c.raw_value,
+        "raw_unit": c.raw_unit,
+        "reason": c.reason,
+        "suggested_unit": c.suggested_unit,
+        "known_dimension": c.known_dimension,
+        "expected_dimension": c.expected_dimension,
+        "one_click": c.one_click,
+    }
+
+
 def _computed_value(c: ComputedValue) -> dict:
     """A chat turn's in-band kern result. Same wire shape as a persisted DerivedFact (one frontend
     type); ``parent_fields`` is left empty on the in-band path (the case-state source map is not
@@ -56,6 +73,8 @@ def compute_response(comp) -> dict:
         "computed": [_derived_fact(d) for d in comp.derived],
         "not_computed": [_not_computed(n) for n in comp.calc.not_computed],
         "notes": list(comp.calc.notes),
+        # M-unit-binding: structured fail-closed unit-recovery hints (the panel's confirm surface).
+        "clarifications": [_clarification(c) for c in comp.clarifications],
     }
 
 

@@ -21,10 +21,25 @@ export interface NotComputed {
   calc_id: string;
   reason: string; // honest "nicht berechenbar" — never a number
 }
+// A fail-closed unit-recovery hint from the binder (kernel channel). The binder NEVER auto-binds;
+// `one_click` is the BACKEND-owned "appending the canonical unit is safe" decision — the panel MUST
+// honor it (no confirm button when one_click=false, or the no-silent-rescale guard is bypassed).
+export interface Clarification {
+  feld: string;
+  input_name: string;
+  raw_value: string; // the number as typed ("5000"); the full value when no number (no_value)
+  raw_unit: string; // the trailing token as typed ("u/mon"); "" when missing
+  reason: "no_value" | "unit_missing" | "unit_known_other" | "unit_unrecognized";
+  suggested_unit: string; // the field's expected canonical unit (e.g. "U/min")
+  known_dimension: string; // the TYPED unit's dimension (unit_known_other): length|frequency|angle
+  expected_dimension: string; // the FIELD's dimension; differs from known ⇒ wrong kind of quantity
+  one_click: boolean; // true ⇒ append suggested_unit to raw_value is a SAFE recovery
+}
 export interface ComputeResponse {
   computed: KernelValue[];
   not_computed: NotComputed[];
   notes: string[];
+  clarifications?: Clarification[]; // additive; absent on older payloads → treated as []
 }
 export interface ChatResponse {
   answer: string;

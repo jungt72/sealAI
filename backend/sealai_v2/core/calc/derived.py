@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sealai_v2.core.calc.binding import bind_params
+from sealai_v2.core.calc.binding import BindClarification, bind_params
 from sealai_v2.core.contracts import (
     CalcEngine,
     CalcResult,
@@ -28,10 +28,12 @@ from sealai_v2.core.contracts import (
 @dataclass(frozen=True)
 class DerivedComputation:
     """The result of one recompute: the ``kernel_computed`` facts to PERSIST + the full CalcResult
-    (computed + not_computed + notes) for the READ surface."""
+    (computed + not_computed + notes) for the READ surface, plus the binder's fail-closed
+    ``clarifications`` (structured unit-recovery hints — the panel's confirm surface)."""
 
     derived: tuple[DerivedFact, ...]
     calc: CalcResult
+    clarifications: tuple[BindClarification, ...] = ()
 
 
 def recompute_derived(
@@ -65,4 +67,6 @@ def recompute_derived(
         )
         for c in calc.computed
     )
-    return DerivedComputation(derived=derived, calc=calc)
+    return DerivedComputation(
+        derived=derived, calc=calc, clarifications=bound.clarifications
+    )

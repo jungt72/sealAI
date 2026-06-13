@@ -41,6 +41,7 @@ export function ChatPane({
   greetingName,
   liveStage,
   compute,
+  onConfirmUnit,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -55,6 +56,7 @@ export function ChatPane({
   greetingName?: string | null;
   liveStage?: string | null;
   compute?: ComputeResponse | null;
+  onConfirmUnit?: (feld: string, value: string) => void;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -160,7 +162,9 @@ export function ChatPane({
   );
 
   // the kernel channel renders right next to the input chips (both stage + chat views)
-  const kernelPanel = <BerechnungenPanel compute={compute ?? null} />;
+  const kernelPanel = (
+    <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} />
+  );
 
   if (msgs.length === 0) {
     return (

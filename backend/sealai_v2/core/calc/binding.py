@@ -99,12 +99,14 @@ class _Bind:
     input_name: str  # calc-registry input (e.g. "d1_mm")
     unit_key: str  # → _UNIT_SYNONYMS
     suggested: str  # canonical DISPLAY unit shown to the user (e.g. "U/min")
+    dimension: str  # the field's physical dimension (length|frequency|…) — drives clarify wording
+    #               (scale mismatch vs wrong-kind-of-quantity)
 
 
 # feld (lowercased) → binding. The DECLARED mapping table — extending it is an owner decision.
 _BINDINGS: dict[str, _Bind] = {
-    "wellendurchmesser": _Bind("d1_mm", "mm", "mm"),
-    "drehzahl": _Bind("rpm", "rpm", "U/min"),
+    "wellendurchmesser": _Bind("d1_mm", "mm", "mm", "length"),
+    "drehzahl": _Bind("rpm", "rpm", "U/min", "frequency"),
 }
 
 
@@ -120,7 +122,9 @@ class BindClarification:
     raw_unit: str  # the trailing token as typed ("u/mon"); "" when missing
     reason: str  # no_value | unit_missing | unit_known_other | unit_unrecognized
     suggested_unit: str  # the param's expected canonical display unit (e.g. "U/min")
-    known_dimension: str = ""  # set for unit_known_other (length|frequency|angle)
+    known_dimension: str = ""  # the TYPED unit's dimension, set for unit_known_other (length|frequency|angle)
+    expected_dimension: str = ""  # the FIELD's dimension — compare to known_dimension: equal ⇒ scale
+    #                               mismatch ("give it in mm"); differ ⇒ wrong kind of quantity
     one_click: bool = False  # True ⇒ appending suggested_unit to raw_value is a SAFE recovery
 
 
@@ -165,6 +169,7 @@ def _classify(bind: _Bind, feld: str, number: str | None, unit_tok: str, raw_wer
         reason=reason,
         suggested_unit=bind.suggested,
         known_dimension=dim,
+        expected_dimension=bind.dimension,
         one_click=reason in _ONE_CLICK_REASONS,
     )
 

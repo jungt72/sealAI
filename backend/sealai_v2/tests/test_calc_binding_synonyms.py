@@ -122,6 +122,18 @@ def test_no_number_is_no_value(wert: str):
 # --- the clarify path is for MAPPED felder only (unmapped stay silent) ---------------------
 
 
+def test_expected_dimension_distinguishes_scale_vs_dimension_mismatch():
+    # cm on a length field → SCALE mismatch (known == expected dimension)
+    cm = _clar(bind_params((fact("wellendurchmesser", "50 cm"),)), "wellendurchmesser")
+    assert cm.known_dimension == "length" and cm.expected_dimension == "length"
+    # grad on a length field → DIMENSION mismatch (wrong kind of quantity)
+    grad = _clar(bind_params((fact("wellendurchmesser", "50 grad"),)), "wellendurchmesser")
+    assert grad.known_dimension == "angle" and grad.expected_dimension == "length"
+    # cm on a drehzahl (frequency) field → DIMENSION mismatch
+    cm_n = _clar(bind_params((fact("drehzahl", "5000 cm"),)), "drehzahl")
+    assert cm_n.known_dimension == "length" and cm_n.expected_dimension == "frequency"
+
+
 def test_unmapped_felder_emit_no_clarification():
     res = bind_params((fact("medium", "Salzwasser"), fact("temperatur", "80 °C")))
     assert res.params == {} and res.notes == () and res.clarifications == ()
