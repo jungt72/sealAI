@@ -254,12 +254,20 @@ async def run_matrix(
     client_factory=None,
     include_optional: bool = False,
     smoke_limit: int | None = None,
+    quality_tolerance: float | None = None,
 ) -> dict:
     """Run every cell through ``run_eval`` and gate it vs the baseline cell. Pass ``client_factory``
-    to run OFFLINE against fakes (mocked validation; no network). The baseline cell MUST be first."""
-    tol = manifest.get("tolerance", {})
-    tol_cred = float(tol.get("credibility", 0.0))
-    tol_aq = float(tol.get("answer_quality", 0.0))
+    to run OFFLINE against fakes (mocked validation; no network). The baseline cell MUST be first.
+
+    ``quality_tolerance`` (CLI override, else the manifest's) is the SOFT no-regression slack applied
+    to BOTH credibility AND answer-quality. The SCHRANKEN are a HARD floor (==1.000) and get NO
+    tolerance — the safety gate is never softened."""
+    qtol = (
+        quality_tolerance
+        if quality_tolerance is not None
+        else float(manifest.get("quality_tolerance", 0.0))
+    )
+    tol_cred = tol_aq = qtol
     rates = {
         k: v for k, v in manifest.get("rates_usd_per_mtok", {}).items() if not k.startswith("_")
     }
@@ -318,7 +326,7 @@ async def run_matrix(
                 roles=roles,
             )
         )
-    return {"results": results, "tolerance": {"credibility": tol_cred, "answer_quality": tol_aq}}
+    return {"results": results, "quality_tolerance": qtol}
 
 
 # --- plan + report rendering --------------------------------------------------------------
@@ -349,11 +357,14 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
 
 def render_report(matrix_out: dict) -> str:
     results: list[CellResult] = matrix_out["results"]
-    tol = matrix_out["tolerance"]
+    qtol = matrix_out["quality_tolerance"]
     L = ["# Model-swap matrix — per-cell report", ""]
     L.append(
-        f"tolerance: credibility -{tol['credibility']} · answer-quality -{tol['answer_quality']}"
+        f"quality tolerance (credibility + answer-quality): -{qtol}  ·  "
+        "Schranken: HARD floor ==1.000 (no tolerance)"
     )
+    L.append("")
+    L.append(_frontier_table(results))
     L.append("")
     for r in results:
         verdict = "BASELINE" if r.passed is None else ("PASS" if r.passed else "FAIL")
@@ -424,6 +435,36 @@ def _fmt_delta(d) -> str:
     return "n/a" if d is None else f"{d:+}"
 
 
+def _frontier_table(results: list[CellResult]) -> str:
+    """The full decision frontier — EVERY cell (incl. FAILs) in one table, so the owner picks the
+    operating point. Schranken shown as the hard floor (1.000 / FAIL); quality as Δ vs baseline."""
+    rows = [
+        "## Decision frontier (all cells)",
+        "",
+        "| Cell | Verdict | Schranken | Δmust_contain | Δmust_catch | p50 ms | p95 ms | $/turn |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for r in results:
+        verdict = "BASELINE" if r.passed is None else ("PASS" if r.passed else "FAIL")
+        sv = r.schranken
+        schr = "n/a" if sv.get("not_measured") else ("1.000" if sv.get("all_one") else "FAIL")
+        if r.passed is None:
+            aq = r.answer_quality.get("overall", {})
+            dmc = f"base({aq.get('must_contain_coverage')})"
+            dkt = f"base({aq.get('must_catch_named_rate')})"
+        else:
+            m = r.answer_quality.get("metrics", {})
+            dmc = _fmt_delta(m.get("must_contain_coverage", {}).get("delta"))
+            dkt = _fmt_delta(m.get("must_catch_named_rate", {}).get("delta"))
+        cpt = r.cost.get("est_cost_per_turn_usd")
+        cost = "null" if cpt is None else f"${cpt}"
+        rows.append(
+            f"| {r.name} | {verdict} | {schr} | {dmc} | {dkt} | "
+            f"{r.latency.get('p50_ms')} | {r.latency.get('p95_ms')} | {cost} |"
+        )
+    return "\n".join(rows)
+
+
 # --- CLI ----------------------------------------------------------------------------------
 
 
@@ -435,6 +476,13 @@ def main() -> None:
     )
     ap.add_argument("--label", default="matrix", help="run subdir under eval/runs/")
     ap.add_argument("--smoke", type=int, default=None, help="first N cases per cell (live)")
+    ap.add_argument(
+        "--quality-tolerance",
+        type=float,
+        default=None,
+        help="no-regression slack (default 0 = strict) applied to credibility + answer-quality. "
+        "Schranken stay a HARD floor (==1.000) regardless.",
+    )
     ap.add_argument(
         "--execute",
         action="store_true",
@@ -472,6 +520,7 @@ def main() -> None:
             timestamp=timestamp,
             include_optional=args.include_optional,
             smoke_limit=args.smoke,
+            quality_tolerance=args.quality_tolerance,
         )
     )
     print(render_report(out))

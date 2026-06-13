@@ -1,26 +1,24 @@
 {
   "_doc": "Model-swap eval matrix. ONE role varied per cell (isolate effects). The JUDGE is held FIXED at baseline across every cell (the measuring instrument) — a cell may NOT override judge_* (the runner rejects it). 'optional' cells run only with --include-optional. RUN is owner-token-gated; the runner only BUILDS the plan unless --execute is passed.",
-  "tolerance": {
-    "credibility": 0.0,
-    "answer_quality": 0.0,
-    "_note": "no-regression tolerance vs baseline (delta >= -tol). 0.0 = strict; judge_temperature is 0.0 so judge variance is low. The owner may raise this to absorb residual judge nondeterminism."
-  },
+  "_model_ids_verified_2026-06-13": "Cell names use friendly labels; the override VALUE + rate KEY are the EXACT API model strings. Verified: Mistral Small 4 → API id 'mistral-small-2603' (the family name is NOT an API string; docs.mistral.ai model card mistral-small-4-0-26-03). gpt-5.4-mini / gpt-5.4-nano are valid OpenAI API names (nano dated snapshot 'gpt-5.4-nano-2026-03-17'; mini parallel). gpt-5.1 / gpt-4.1-mini are the existing runtime defaults. To pin OpenAI to dated snapshots for reproducibility, set the dated ids here AND in rates.",
+  "quality_tolerance": 0.0,
+  "_quality_tolerance_note": "no-regression tolerance vs baseline (delta >= -tol) applied to BOTH credibility AND answer-quality (the SOFT quality criteria). 0.0 = strict; judge_temperature is 0.0 so judge variance is low. Override at run time with --quality-tolerance. The SCHRANKEN are a HARD safety floor (==1.000) and NEVER get a tolerance.",
   "rates_usd_per_mtok": {
-    "_note": "PLACEHOLDER — the owner MUST set published USD-per-1M-token rates ({in, out}) for every cell model BEFORE the live run. Until set, the runner emits est_cost_per_turn=null + rates_missing[] (token counts are still reported, rate-agnostic). NEVER ship invented prices.",
-    "gpt-5.1": null,
-    "gpt-4.1-mini": null,
-    "gpt-5.4-mini": null,
-    "gpt-5.4-nano": null,
-    "mistral-small-4": null
+    "_note": "Owner-confirmed published USD-per-1M-token rates ({in, out}), 2026-06-13. Keys MUST equal the exact API model string the live run sends (the meter keys by model). A model whose rate is absent → est_cost=null + rates_missing[] (token counts still reported). NEVER invent prices.",
+    "gpt-5.1": {"in": 1.25, "out": 10.00},
+    "gpt-4.1-mini": {"in": 0.40, "out": 1.60},
+    "gpt-5.4-mini": {"in": 0.75, "out": 4.50},
+    "gpt-5.4-nano": {"in": 0.20, "out": 1.25},
+    "mistral-small-2603": {"in": 0.15, "out": 0.60}
   },
   "cells": [
     {"name": "baseline", "overrides": {}},
-    {"name": "L1=mistral-small-4", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-4"}},
+    {"name": "L1=mistral-small-4", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-2603"}},
     {"name": "L1=gpt-5.4-mini", "overrides": {"l1_model": "gpt-5.4-mini"}},
-    {"name": "L3=mistral-small-4", "overrides": {"verifier_provider": "mistral", "verifier_model": "mistral-small-4"}},
+    {"name": "L3=mistral-small-4", "overrides": {"verifier_provider": "mistral", "verifier_model": "mistral-small-2603"}},
     {"name": "L3=gpt-5.4-mini", "overrides": {"verifier_model": "gpt-5.4-mini"}},
     {"name": "HELPERS=gpt-5.4-nano", "overrides": {"helper_model": "gpt-5.4-nano"}},
-    {"name": "HELPERS=mistral-small-4", "optional": true, "overrides": {"helper_provider": "mistral", "helper_model": "mistral-small-4"}},
-    {"name": "ALL=mistral-small-4", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-4", "verifier_provider": "mistral", "verifier_model": "mistral-small-4", "helper_provider": "mistral", "helper_model": "mistral-small-4"}}
+    {"name": "HELPERS=mistral-small-4", "optional": true, "overrides": {"helper_provider": "mistral", "helper_model": "mistral-small-2603"}},
+    {"name": "ALL=mistral-small-4", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-2603", "verifier_provider": "mistral", "verifier_model": "mistral-small-2603", "helper_provider": "mistral", "helper_model": "mistral-small-2603"}}
   ]
 }

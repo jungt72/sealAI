@@ -163,6 +163,12 @@ def test_gate_tolerance_absorbs_small_dip():
     assert passed
 
 
+def test_schranken_have_no_tolerance_even_with_large_quality_tolerance():
+    # A Schranke trip FAILS regardless of how loose the (quality) tolerance is — hard safety floor.
+    passed, reasons, _ = _gate(_out(parametric=0.99), tol_cred=0.9, tol_aq=0.9)
+    assert not passed and any("schranke" in r for r in reasons)
+
+
 # --- cost ---------------------------------------------------------------------------------
 
 
@@ -256,7 +262,7 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
         return fakes.setdefault(provider, _MatrixFake())
 
     manifest = {
-        "tolerance": {"credibility": 0.0, "answer_quality": 0.0},
+        "quality_tolerance": 0.0,
         "rates_usd_per_mtok": {
             "gpt-5.1": {"in": 1.0, "out": 2.0},
             "gpt-4.1-mini": {"in": 0.1, "out": 0.2},
@@ -275,8 +281,10 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
             timestamp="2026-06-13T00:00:00Z",
             client_factory=fake_factory,
             smoke_limit=1,
+            quality_tolerance=0.0,
         )
     )
+    assert out["quality_tolerance"] == 0.0
     results = {r.name: r for r in out["results"]}
     # Per-role provider ROUTING: the candidate's L1 ran on the mistral client with the cell's model.
     assert "mistral" in fakes
@@ -294,3 +302,33 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
     # Report renders without error and marks the verdict.
     report = matrix.render_report(out)
     assert "L1=mistral-small-4 — PASS" in report and "Ranking among PASS cells" in report
+    # Full decision frontier table present, listing every cell.
+    assert "Decision frontier (all cells)" in report
+    assert "| baseline |" in report and "| L1=mistral-small-4 |" in report
+
+
+def test_frontier_table_lists_failed_cells_too():
+    """The owner picks the operating point → FAILED cells must appear in the frontier, not be dropped."""
+    base = matrix.CellResult(
+        name="baseline",
+        overrides={},
+        passed=None,
+        schranken={"all_one": True, "values": {"parametric_computation": 1.0}, "not_measured": []},
+        answer_quality={"overall": {"must_contain_coverage": 0.9, "must_catch_named_rate": 1.0}},
+        latency={"p50_ms": 100.0, "p95_ms": 200.0},
+        cost={"est_cost_per_turn_usd": 0.0012},
+    )
+    failed = matrix.CellResult(
+        name="L3=cheap",
+        overrides={"verifier_model": "cheap"},
+        passed=False,
+        reasons=["schranke < 1.000"],
+        schranken={"all_one": False, "values": {"parametric_computation": 0.9}, "not_measured": []},
+        answer_quality={"metrics": {"must_contain_coverage": {"delta": -0.2}, "must_catch_named_rate": {"delta": 0.0}}},
+        latency={"p50_ms": 50.0, "p95_ms": 80.0},
+        cost={"est_cost_per_turn_usd": None, "rates_missing": ["cheap"]},
+    )
+    report = matrix.render_report({"results": [base, failed], "quality_tolerance": 0.0})
+    assert "| L3=cheap | FAIL | FAIL |" in report  # failed cell present with schranken=FAIL
+    assert "-0.2" in report  # its Δmust_contain shown
+    assert "Ranking among PASS cells" in report and "(none" in report  # no passers
