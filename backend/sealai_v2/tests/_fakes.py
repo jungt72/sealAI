@@ -19,6 +19,28 @@ class FakeLlmClient:
         )
 
 
+class DistillRoutingFakeLlmClient:
+    """Routes by the system prompt: a memory-distill call (its prompt opens with "extrahierst
+    strukturierte Fakten") returns a fixed facts-JSON; any other call returns a fixed prose answer.
+    Lets ONE fake drive the full chat path (L1 answer + background distill) in a pipeline run."""
+
+    _DISTILL_MARKER = "extrahierst strukturierte Fakten"
+
+    def __init__(self, distill_json: str, answer: str = "ok") -> None:
+        self.distill_json = distill_json
+        self.answer = answer
+        self.calls: list[dict] = []
+
+    async def generate(
+        self, *, system: str, user: str, model_config: ModelConfig
+    ) -> LlmResult:
+        self.calls.append({"system": system, "user": user, "model": model_config.model})
+        text = self.distill_json if self._DISTILL_MARKER in system else self.answer
+        return LlmResult(
+            text=text, model=model_config.model, finish_reason="stop"
+        )
+
+
 class ScriptedFakeLlmClient:
     """Returns a fixed SEQUENCE of responses across successive ``generate`` calls — e.g. the
     L1 draft, then the L3 verdict, then a regeneration, then the re-verify. Records every call;

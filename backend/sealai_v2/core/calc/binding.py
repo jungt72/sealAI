@@ -56,6 +56,9 @@ class BindingResult:
     origins: dict[str, str] = field(
         default_factory=dict
     )  # input name → human-readable origin
+    sources: dict[str, str] = field(
+        default_factory=dict
+    )  # input name → source case-state feld (M8: derived-fact parent-refs)
     notes: tuple[str, ...] = ()  # surfaced drops — fail-closed is visible, never silent
 
 
@@ -71,11 +74,16 @@ def bind_params(facts: Iterable[RememberedFact]) -> BindingResult:
     """Bind remembered facts to calc inputs per the declared table. Deterministic; fail-closed."""
     params: dict[str, float] = {}
     origins: dict[str, str] = {}
+    sources: dict[str, str] = {}
     notes: list[str] = []
     seen: dict[str, str] = {}  # feld → first wert (conflict detection)
     conflicted: set[str] = set()
 
     for f in facts:
+        # M8 boundary: a kernel-computed value is an OUTPUT, never an input — never bind it back
+        # (no feedback loop, no stale-derived-feeds-cascade). It is normally not even in case-state.
+        if f.provenance == "kernel_computed":
+            continue
         feld = f.feld.strip().lower()
         binding = _BINDINGS.get(feld)
         if binding is None:
@@ -87,6 +95,7 @@ def bind_params(facts: Iterable[RememberedFact]) -> BindingResult:
                 conflicted.add(feld)
                 params.pop(input_name, None)
                 origins.pop(input_name, None)
+                sources.pop(input_name, None)
                 notes.append(
                     f"{feld}: widersprüchliche Werte (»{seen[feld]}« vs »{f.wert.strip()}«) — "
                     f"nicht gebunden (bitte bestätigen)"
@@ -103,5 +112,8 @@ def bind_params(facts: Iterable[RememberedFact]) -> BindingResult:
             continue
         params[input_name] = _to_float(m.group(1))
         origins[input_name] = _origin(f)
+        sources[input_name] = feld  # parent-ref: which case-state feld fed this input
 
-    return BindingResult(params=params, origins=origins, notes=tuple(notes))
+    return BindingResult(
+        params=params, origins=origins, sources=sources, notes=tuple(notes)
+    )

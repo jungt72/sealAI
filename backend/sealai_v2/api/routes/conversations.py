@@ -80,6 +80,10 @@ async def edit_fact(
         wert=body.wert,
         provenance=provenance,
     )
+    # M8: a settled input change → recompute + replace the derived slice (no stale kernel value)
+    pipeline.recompute_derived_for(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
     return {"status": "ok"}
 
 
@@ -97,6 +101,10 @@ async def forget_fact(
     )
     mem.delete_fact(
         tenant_id=identity.tenant_id, session_id=identity.session_id, feld=feld
+    )
+    # M8: forgetting a parent input → recompute → its derived child is evicted (no stale value)
+    pipeline.recompute_derived_for(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
     )
     return {"status": "ok"}
 

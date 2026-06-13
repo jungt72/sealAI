@@ -15,17 +15,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sealai_v2.core.contracts import MemoryView, RememberedFact, Turn
+from sealai_v2.core.contracts import DerivedFact, MemoryView, RememberedFact, Turn
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
 
 @dataclass
 class _SessionState:
     """One session's mutable state: the message log (L1 window / L3 history) + the structured
-    case-state (L2, keyed by ``feld``, last value wins) + a completed-exchange counter."""
+    case-state (L2, keyed by ``feld``, last value wins) + a completed-exchange counter + the M8
+    derived slice (kernel_computed values, keyed by ``calc_id``). The derived slice is a SEPARATE
+    channel: the input case-state (``facts``) and the kernel outputs (``derived``) never mix — the
+    binder reads only ``facts``, so a kernel value can never feed a calc input."""
 
     messages: list[Turn] = field(default_factory=list)
     facts: dict[str, RememberedFact] = field(default_factory=dict)
+    derived: dict[str, DerivedFact] = field(default_factory=dict)
     turns: int = 0
 
 
@@ -122,6 +126,24 @@ class InProcessConversationMemory:
         st = self._store.get((tenant_id, session_id))
         if st:
             st.facts.pop(feld, None)
+
+    # --- M8 derived slice (kernel_computed values — a SEPARATE, backend-only channel) ---
+
+    def set_derived(
+        self, *, tenant_id: str, session_id: str, derived: tuple[DerivedFact, ...]
+    ) -> None:
+        """Replace the whole derived slice from a fresh recompute (wholesale, never patched) — so a
+        stale kernel value can never persist. Backend-only: there is no client path that reaches it."""
+        _require(tenant_id, session_id)
+        st = self._state(tenant_id, session_id)
+        st.derived = {d.calc_id: d for d in derived}
+
+    def derived_facts(
+        self, *, tenant_id: str, session_id: str
+    ) -> tuple[DerivedFact, ...]:
+        _require(tenant_id, session_id)
+        st = self._store.get((tenant_id, session_id))
+        return tuple(st.derived.values()) if st else ()
 
     def clear(self, *, tenant_id: str, session_id: str) -> None:
         _require(tenant_id, session_id)

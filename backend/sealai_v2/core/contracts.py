@@ -223,6 +223,25 @@ class CalcResult:
     ] = ()  # cross-cutting advisories (e.g. swelling → leave Nutfüllung reserve)
 
 
+@dataclass(frozen=True)
+class DerivedFact:
+    """M8 trust-spine completion: a PERSISTED kernel-computed value (the kernel channel), projected
+    from a ``ComputedValue`` for the case-state. Provenance is ALWAYS ``kernel_computed`` (backend-
+    only — NOT a user input, NOT in the FactEdit origin allowlist, so it can never be client-set).
+    ``parent_fields`` are the case-state input felder it derived from (v ← wellendurchmesser,
+    drehzahl) — recorded for provenance, the panel's dependency display, and the eviction proof; the
+    invalidation itself is wholesale recompute-and-replace, so a stale value can never persist."""
+
+    calc_id: str
+    name: str  # output name, e.g. "v_m_s"
+    value: float
+    unit: str
+    formula: str = ""
+    parent_fields: tuple[str, ...] = ()  # case-state felder this value depends on
+    input_origins: tuple[str, ...] = ()  # per-input provenance (carried from the binding)
+    provenance: str = "kernel_computed"
+
+
 class CalcEngine(Protocol):
     """The deterministic calc seam (pure, I/O-free). Evaluates the reviewed calc registry over the
     given params (+ reviewed Fachkarten property inputs) as a topological cascade to fixpoint."""
