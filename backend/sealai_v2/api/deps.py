@@ -13,7 +13,7 @@ from fastapi import Depends, Header, HTTPException
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import AuthError, AuthValidator, VerifiedIdentity
-from sealai_v2.llm.factory import build_llm_client
+from sealai_v2.llm.factory import build_client_factory
 from sealai_v2.pipeline.pipeline import Pipeline, build_pipeline
 from sealai_v2.security.auth import KeycloakJwtValidator
 
@@ -39,7 +39,9 @@ def get_validator() -> AuthValidator:
 @lru_cache(maxsize=1)
 def get_pipeline() -> Pipeline:
     s = get_settings()
-    return build_pipeline(s, build_llm_client(s))
+    # Per-role provider factory: an all-openai default caches ONE client across roles (byte-
+    # identical to the old single-client path); a mixed cell routes each role to its provider.
+    return build_pipeline(s, client_for=build_client_factory(s))
 
 
 def current_identity(
