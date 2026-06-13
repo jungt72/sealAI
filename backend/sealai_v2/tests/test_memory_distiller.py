@@ -60,6 +60,19 @@ def test_distill_prompt_is_conservative():
     assert "empfehlung" in p  # never the assistant's recommendations
 
 
+def test_distill_prompt_instructs_unit_fidelity():
+    """M8 chat-channel binding reliability: the fail-closed binder needs number+unit, so the
+    distiller must KEEP the user's unit token with the number (»8000 U/min«, not »8000«) — while
+    never INVENTING a unit the user did not state (unitless stays unitless → fail-closed → the chip
+    surface settles it). Offline proof that the instruction is present; the real LLM behaviour is
+    validated by the post-arc eval REPLAY."""
+    p = DistillPromptAssembler().distill_prompt().lower()
+    assert "einheit" in p  # instructs keeping the unit with the number
+    assert "erfinde keine einheit" in p or "keine einheit" in p  # never fabricate a unit
+    # names a canonical bindable shape so chat-given drehzahl survives to the kern
+    assert "u/min" in p
+
+
 # --- (c)(i) runtime numeric-trace fail-closed: a distilled number must trace to the user turn ---
 
 
