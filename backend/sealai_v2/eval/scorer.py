@@ -45,6 +45,51 @@ class ColumnSummary:
     axis1_human_pending: int
 
 
+_CONTAIN_NUM = {"met": 1.0, "partial": 0.5, "unmet": 0.0}
+
+
+def aggregate_answer_quality(judges: list[JudgeResult]) -> dict:
+    """Answer-SUBSTANCE no-regression signals for the model-swap gate (owner #1 priority) — the two
+    judge-derived dimensions NOT captured by ``overall_credibility``:
+
+    - ``must_contain_coverage``: mean over judged answers of (met + 0.5·partial) / #points — did the
+      answer include the points a good answer must contain (completeness; the thing a thinner model
+      drops while axes stay 'addressed').
+    - ``must_catch_named_rate``: fraction of must_catch-relevant answers where the central insight
+      was named.
+
+    Judge is fixed at baseline across cells → these are comparable cell-to-cell. Only usable
+    (``parse_ok``) judges count; a judge with no must_contain points is skipped for coverage."""
+    coverages: list[float] = []
+    n_catch_relevant = n_catch_named = 0
+    for j in judges:
+        if not j.parse_ok:
+            continue
+        pts = [
+            _CONTAIN_NUM.get(str(item.get("status", "")).lower())
+            for item in j.must_contain
+            if isinstance(item, dict)
+        ]
+        pts = [p for p in pts if p is not None]
+        if pts:
+            coverages.append(sum(pts) / len(pts))
+        named = j.must_catch.get("named") if isinstance(j.must_catch, dict) else None
+        if isinstance(named, bool):
+            n_catch_relevant += 1
+            if named:
+                n_catch_named += 1
+    return {
+        "must_contain_coverage": (
+            round(sum(coverages) / len(coverages), 3) if coverages else None
+        ),
+        "n_must_contain_judged": len(coverages),
+        "must_catch_named_rate": (
+            round(n_catch_named / n_catch_relevant, 3) if n_catch_relevant else None
+        ),
+        "n_must_catch_judged": n_catch_relevant,
+    }
+
+
 def score_case(case: Case, judge: JudgeResult) -> CaseScore:
     axis_status: dict[int, str] = {}
     for a in case.primary_axes:

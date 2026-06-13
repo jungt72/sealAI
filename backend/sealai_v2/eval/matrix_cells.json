@@ -1,0 +1,26 @@
+{
+  "_doc": "Model-swap eval matrix. ONE role varied per cell (isolate effects). The JUDGE is held FIXED at baseline across every cell (the measuring instrument) — a cell may NOT override judge_* (the runner rejects it). 'optional' cells run only with --include-optional. RUN is owner-token-gated; the runner only BUILDS the plan unless --execute is passed.",
+  "tolerance": {
+    "credibility": 0.0,
+    "answer_quality": 0.0,
+    "_note": "no-regression tolerance vs baseline (delta >= -tol). 0.0 = strict; judge_temperature is 0.0 so judge variance is low. The owner may raise this to absorb residual judge nondeterminism."
+  },
+  "rates_usd_per_mtok": {
+    "_note": "PLACEHOLDER — the owner MUST set published USD-per-1M-token rates ({in, out}) for every cell model BEFORE the live run. Until set, the runner emits est_cost_per_turn=null + rates_missing[] (token counts are still reported, rate-agnostic). NEVER ship invented prices.",
+    "gpt-5.1": null,
+    "gpt-4.1-mini": null,
+    "gpt-5.4-mini": null,
+    "gpt-5.4-nano": null,
+    "mistral-small-4": null
+  },
+  "cells": [
+    {"name": "baseline", "overrides": {}},
+    {"name": "L1=mistral-small-4", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-4"}},
+    {"name": "L1=gpt-5.4-mini", "overrides": {"l1_model": "gpt-5.4-mini"}},
+    {"name": "L3=mistral-small-4", "overrides": {"verifier_provider": "mistral", "verifier_model": "mistral-small-4"}},
+    {"name": "L3=gpt-5.4-mini", "overrides": {"verifier_model": "gpt-5.4-mini"}},
+    {"name": "HELPERS=gpt-5.4-nano", "overrides": {"helper_model": "gpt-5.4-nano"}},
+    {"name": "HELPERS=mistral-small-4", "optional": true, "overrides": {"helper_provider": "mistral", "helper_model": "mistral-small-4"}},
+    {"name": "ALL=mistral-small-4", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-4", "verifier_provider": "mistral", "verifier_model": "mistral-small-4", "helper_provider": "mistral", "helper_model": "mistral-small-4"}}
+  ]
+}
