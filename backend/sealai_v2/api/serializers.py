@@ -5,7 +5,58 @@ of the internal card_id (which stays internal for provenance/audit). Presentatio
 
 from __future__ import annotations
 
-from sealai_v2.core.contracts import GroundingFact, PipelineResult
+from sealai_v2.core.contracts import (
+    ComputedValue,
+    DerivedFact,
+    GroundingFact,
+    NotComputed,
+    PipelineResult,
+)
+
+
+def _not_computed(n: NotComputed) -> dict:
+    return {"calc_id": n.calc_id, "reason": n.reason}
+
+
+def _computed_value(c: ComputedValue) -> dict:
+    """A chat turn's in-band kern result. Same wire shape as a persisted DerivedFact (one frontend
+    type); ``parent_fields`` is left empty on the in-band path (the case-state source map is not
+    threaded here) — the authoritative dependency view comes from /compute."""
+    return {
+        "calc_id": c.calc_id,
+        "name": c.name,
+        "value": c.value,
+        "unit": c.unit,
+        "formula": c.formula,
+        "parent_fields": [],
+        "input_origins": list(c.input_origins),
+        "provenance": "kernel_computed",
+    }
+
+
+def _derived_fact(d: DerivedFact) -> dict:
+    """A persisted kernel_computed value (the /compute read surface). Carries the parent input
+    felder it depends on (v ← wellendurchmesser, drehzahl)."""
+    return {
+        "calc_id": d.calc_id,
+        "name": d.name,
+        "value": d.value,
+        "unit": d.unit,
+        "formula": d.formula,
+        "parent_fields": list(d.parent_fields),
+        "input_origins": list(d.input_origins),
+        "provenance": d.provenance,
+    }
+
+
+def compute_response(comp) -> dict:
+    """The /compute payload (``DerivedComputation``): persisted kernel values + honest
+    'nicht berechenbar' reasons + cross-cutting notes. NO LLM content — kernel channel only."""
+    return {
+        "computed": [_derived_fact(d) for d in comp.derived],
+        "not_computed": [_not_computed(n) for n in comp.calc.not_computed],
+        "notes": list(comp.calc.notes),
+    }
 
 
 def citation(fact: GroundingFact) -> dict:
@@ -27,4 +78,8 @@ def chat_response(result: PipelineResult) -> dict:
         "grounded": result.grounded,
         "intent": (result.understanding.intent.value if result.understanding else None),
         "citations": [citation(f) for f in result.grounding_facts],
+        # M8: surface the turn's in-band kern result so the panel can update without a 2nd
+        # round-trip (the authoritative settled read is /compute). Empty when compute is off.
+        "computed": [_computed_value(c) for c in result.computed_values],
+        "not_computed": [_not_computed(n) for n in result.not_computed],
     }

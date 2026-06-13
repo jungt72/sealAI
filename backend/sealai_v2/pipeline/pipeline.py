@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.binding import bind_params
-from sealai_v2.core.calc.derived import recompute_derived
+from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
     CalcEngine,
@@ -291,15 +291,15 @@ class Pipeline:
             calc_notes=calc.notes,
         )
 
-    def recompute_derived_for(
+    def compute_for(
         self, *, tenant_id: str, session_id: str
-    ) -> tuple[DerivedFact, ...]:
-        """M8: recompute the kernel's derived values from the session's CURRENT settled inputs and
-        REPLACE the persisted slice (wholesale — a stale value can never survive). Called on every
-        input-mutation channel (background remember after distill; edit/forget routes). No engine or
-        no memory → no-op. Pure deterministic compute (no LLM); reads inputs via the recall seam."""
+    ) -> DerivedComputation:
+        """M8: recompute the kernel from the session's CURRENT settled inputs, PERSIST the derived
+        slice (wholesale replace — a stale value can never survive), and return the full result
+        (derived + not_computed + notes) for the read surface (/compute, the panel). No engine or no
+        memory → an empty result. Pure deterministic compute (no LLM); inputs via the recall seam."""
         if self.engine is None or self.memory is None:
-            return ()
+            return DerivedComputation(derived=(), calc=CalcResult())
         inputs = self.memory.recall(
             tenant_id=tenant_id, session_id=session_id
         ).case_state
@@ -307,7 +307,15 @@ class Pipeline:
         self.memory.set_derived(
             tenant_id=tenant_id, session_id=session_id, derived=comp.derived
         )
-        return comp.derived
+        return comp
+
+    def recompute_derived_for(
+        self, *, tenant_id: str, session_id: str
+    ) -> tuple[DerivedFact, ...]:
+        """The mutation-channel projection of ``compute_for``: recompute + persist, return just the
+        derived facts. Called on every input-mutation channel (background remember after distill;
+        edit/forget routes)."""
+        return self.compute_for(tenant_id=tenant_id, session_id=session_id).derived
 
     async def flush_memory(self, *, tenant_id: str, session_id: str) -> None:
         """P2 ordering guard: await this session's in-flight background remember so the
