@@ -135,6 +135,15 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
     ]);
   });
 
+  it("compute() targets GET /api/v2/compute and returns the kernel payload", async () => {
+    const payload = { computed: [], not_computed: [], notes: [] };
+    const fetchFn = mockFetch(200, payload);
+    const client = new ApiClient(() => "tok", () => undefined);
+    const res = await client.compute();
+    expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/compute");
+    expect(res).toEqual(payload);
+  });
+
   it("only ever calls the /api/v2 base (no V1 backend, no domain logic)", async () => {
     const fetchFn = mockFetch(200, { case_state: [], history: [] });
     const client = new ApiClient(() => "tok", () => undefined);

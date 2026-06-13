@@ -3,7 +3,7 @@
  * so the caller never renders stale/wrong content; any non-OK → throws (the caller shows an error
  * state and the persistent SafetyBanner stays — the framing is never dropped). */
 
-import type { Briefing, ChatResponse, ConversationMemory } from "../contracts";
+import type { Briefing, ChatResponse, ComputeResponse, ConversationMemory } from "../contracts";
 import { SseParser } from "./sse";
 
 export class ApiError extends Error {
@@ -97,6 +97,11 @@ export class ApiClient {
   }
   memory(): Promise<ConversationMemory> {
     return this.req("/conversations/current/memory");
+  }
+  /** M8 kernel channel: the deterministic compute for the current session (the Berechnungen panel's
+   * source). Backend-only numbers — the client never computes. */
+  compute(): Promise<ComputeResponse> {
+    return this.req("/compute");
   }
   editFact(feld: string, wert: string, origin?: string): Promise<unknown> {
     return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, {

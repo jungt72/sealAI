@@ -131,6 +131,20 @@
 }
 .chips-forget-all:hover { color: var(--ink); }
 
+/* ── Berechnungen (kernel channel — distinct from the editable input chips) ───── */
+.kernel-panel { margin-top: 6px; }
+.kernel-row .fact-chip {
+  flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 7px 13px; border-radius: 14px; cursor: default;
+  background: rgba(232, 240, 254, 0.6); border-color: rgba(120, 150, 200, 0.35);
+}
+.kernel-value .fact-wert { font-weight: 600; }
+.kernel-open .fact-wert { color: var(--ink-faint); font-weight: 500; }
+.kernel-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.kernel-prov { font-size: 10.5px; color: var(--ink-ghost); }
+.kernel-note { width: 100%; text-align: center; font-size: 11px; color: var(--ink-faint); margin: 2px 0 0; }
+.kernel-hint { font-style: italic; }
+
 /* ── chat view ──────────────────────────────────────────────────────────────── */
 .chat-view { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 .chat-log {

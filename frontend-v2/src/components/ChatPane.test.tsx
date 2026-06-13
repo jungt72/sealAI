@@ -80,6 +80,34 @@ describe("pilot-ui stage (fresh conversation)", () => {
     fireEvent.click(screen.getAllByTestId("forget-fact")[1]);
     expect(props.onForgetFact).toHaveBeenCalledWith("medium");
   });
+
+  it("renders the Berechnungen panel (kernel channel) next to the chips when compute has a value", () => {
+    renderPane({
+      compute: {
+        computed: [
+          {
+            calc_id: "umfangsgeschwindigkeit",
+            name: "v_m_s",
+            value: 16.7552,
+            unit: "m/s",
+            formula: "v = π·d1·n/60000",
+            parent_fields: ["wellendurchmesser", "drehzahl"],
+            input_origins: [],
+            provenance: "kernel_computed",
+          },
+        ],
+        not_computed: [],
+        notes: [],
+      },
+    });
+    expect(screen.getByTestId("berechnungen-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("kernel-value")).toHaveTextContent("16,76 m/s");
+  });
+
+  it("no Berechnungen panel on the clean stage (no compute)", () => {
+    renderPane();
+    expect(screen.queryByTestId("berechnungen-panel")).toBeNull();
+  });
 });
 
 describe("P4b: live stage indicator (SSE progress — labels owned by the frontend)", () => {

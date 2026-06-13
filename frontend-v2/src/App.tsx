@@ -14,7 +14,7 @@ import {
 } from "./auth/oidc";
 import { ChatPane } from "./components/ChatPane";
 import { Shell } from "./components/Shell";
-import type { Briefing, ConversationMemory } from "./contracts";
+import type { Briefing, ComputeResponse, ConversationMemory } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
 
@@ -32,6 +32,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [framing, setFraming] = useState<Framing>(FALLBACK_FRAMING);
   const [memory, setMemory] = useState<ConversationMemory>({ case_state: [], history: [] });
+  // M8 kernel channel: the deterministic compute for the current session (drives the Berechnungen panel)
+  const [compute, setCompute] = useState<ComputeResponse | null>(null);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [lastMessage, setLastMessage] = useState<string>("");
   // bumping the key remounts ChatPane → fresh conversation view; server-side memory is untouched
@@ -57,6 +59,18 @@ export function App() {
   const refreshMemory = useCallback(() => {
     api.memory().then(setMemory).catch(() => undefined);
   }, [api]);
+
+  // M8: the kernel channel is recomputed server-side on every input change; the panel re-reads it
+  // here (flush-then-recompute happens on the backend). Fail-quiet — a failed read never blanks the UI.
+  const refreshCompute = useCallback(() => {
+    api.compute().then(setCompute).catch(() => undefined);
+  }, [api]);
+
+  // refresh BOTH projections (chips + kernel panel) after any state change — one call site.
+  const refreshState = useCallback(() => {
+    refreshMemory();
+    refreshCompute();
+  }, [refreshMemory, refreshCompute]);
 
   useEffect(() => {
     // Single backend-owned framing source; on any failure the fallback stays (never blank).
@@ -95,8 +109,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (authed) refreshMemory();
-  }, [authed, refreshMemory]);
+    if (authed) refreshState();
+  }, [authed, refreshState]);
 
   const login = useCallback(async () => {
     const verifier = randomVerifier();
@@ -116,10 +130,10 @@ export function App() {
         throw e;
       } finally {
         setLiveStage(null);
-        refreshMemory();
+        refreshState();
       }
     },
-    [api, refreshMemory],
+    [api, refreshState],
   );
 
   const makeBriefing = useCallback(() => {
@@ -163,16 +177,17 @@ export function App() {
           liveStage={liveStage}
           onEditFact={(feld, wert) => {
             const next = window.prompt(`${feld}:`, wert);
-            if (next != null) api.editFact(feld, next).then(refreshMemory).catch(() => undefined);
+            if (next != null) api.editFact(feld, next).then(refreshState).catch(() => undefined);
           }}
-          onForgetFact={(feld) => api.forgetFact(feld).then(refreshMemory).catch(() => undefined)}
-          onForgetAll={() => api.forgetAll().then(refreshMemory).catch(() => undefined)}
+          onForgetFact={(feld) => api.forgetFact(feld).then(refreshState).catch(() => undefined)}
+          onForgetAll={() => api.forgetAll().then(refreshState).catch(() => undefined)}
           onSubmitParam={(feld, wert) =>
-            api.editFact(feld, wert, "user-form").then(refreshMemory).catch(() => undefined)
+            api.editFact(feld, wert, "user-form").then(refreshState).catch(() => undefined)
           }
           onMakeBriefing={makeBriefing}
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}
+          compute={compute}
         />
       </Shell>
     </FramingContext.Provider>

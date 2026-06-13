@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { Briefing, ChatResponse, ConversationMemory } from "../contracts";
+import type { Briefing, ChatResponse, ComputeResponse, ConversationMemory } from "../contracts";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
+import { BerechnungenPanel } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParameterForm } from "./ParameterForm";
@@ -39,6 +40,7 @@ export function ChatPane({
   briefing,
   greetingName,
   liveStage,
+  compute,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -52,6 +54,7 @@ export function ChatPane({
   briefing: Briefing | null;
   greetingName?: string | null;
   liveStage?: string | null;
+  compute?: ComputeResponse | null;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -156,6 +159,9 @@ export function ChatPane({
     <MemoryPanel memory={memory} onEdit={onEditFact} onForget={onForgetFact} onForgetAll={onForgetAll} />
   );
 
+  // the kernel channel renders right next to the input chips (both stage + chat views)
+  const kernelPanel = <BerechnungenPanel compute={compute ?? null} />;
+
   if (msgs.length === 0) {
     return (
       <div className="stage" data-testid="chat-pane">
@@ -165,6 +171,7 @@ export function ChatPane({
         </h1>
         {composer}
         {chips}
+        {kernelPanel}
         {error && (
           <div className="error-banner" role="alert" data-testid="chat-error">
             {error}
@@ -220,6 +227,7 @@ export function ChatPane({
             Briefing erstellen
           </button>
         </div>
+        {kernelPanel}
       </div>
     </div>
   );

@@ -104,6 +104,22 @@ describe("Fix A: fact chips refresh after each chat turn (no reload)", () => {
   });
 });
 
+describe("M8: the kernel compute is read on load and refreshed after a chat turn", () => {
+  it("fetches /compute on auth and again after a chat turn (panel stays in sync)", async () => {
+    const memoryRef = { current: { case_state: [], history: [] } as ConversationMemory };
+    const { calls } = stubApi(memoryRef);
+    setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
+    render(<App />);
+    await waitFor(() => expect(calls.some((u) => u.endsWith("/compute"))).toBe(true));
+    const before = calls.filter((u) => u.endsWith("/compute")).length;
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() =>
+      expect(calls.filter((u) => u.endsWith("/compute")).length).toBeGreaterThan(before),
+    );
+  });
+});
+
 describe("URL normalization (cutover 1b: nginx try_files serves the SPA for every /dashboard/*)", () => {
   it("normalizes a hard navigation to /dashboard/new (V1's post-login target) to /dashboard/", () => {
     window.history.pushState({}, "", "/dashboard/new");
