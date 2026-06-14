@@ -300,6 +300,19 @@
   color: var(--ink); background: #fff; border: 1px solid var(--hairline); border-radius: 10px; outline: none; }
 .param-select:focus { border-color: #c8d4e8; }
 
+/* ── parameter-submit confirmation (deterministic chat message — echoes settled + kern) ───────── */
+.param-confirmation { border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.85); padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-2); }
+.confirmation-head { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.confirmation-list { margin: 2px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-soft);
+  display: flex; flex-direction: column; gap: 2px; }
+.confirmation-label { color: var(--ink-faint); }
+.confirmation-wert { font-family: var(--font-mono); color: var(--ink); }
+.confirmation-open { color: var(--ink-faint); }
+.confirmation-rueckfrage { color: var(--color-warning-fg); }
+.confirmation-foot { margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); }
+
 /* ── briefing (chat-flow card) ──────────────────────────────────────────────── */
 .briefing-pane { border: 1px solid var(--hairline); border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.85); padding: var(--space-4); }

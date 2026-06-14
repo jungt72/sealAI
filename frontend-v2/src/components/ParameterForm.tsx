@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 
+import type { ParamItem } from "../contracts";
 import {
   type FieldDef,
   SITUATIONS,
@@ -16,6 +17,17 @@ export function composeWert(raw: string, unit: string): string {
   return /[a-zA-Z°⁻]/.test(v) ? v : `${v} ${unit}`;
 }
 
+/** The binder is German-convention (decimal comma; dot = thousands). A PERIOD a user types as a
+ * decimal separator ("0.5") would otherwise parse as number "0" + unit ".5 bar" → a wrong settle
+ * (0–0.5 bar is the RWDR magnitude). PREVENT it at the source: a period→comma, EXCEPT a German
+ * thousands group ("4.000") which is left as-is (the binder reads it as 4000 with the unit). Applied
+ * only to NUMBER fields, never to text (an Altteil-Code "A.12" must not be rewritten). */
+export function normalizeDecimal(raw: string): string {
+  const v = raw.trim();
+  if (/^\d{1,3}(\.\d{3})+$/.test(v)) return v; // German thousands → leave (binds as thousands)
+  return v.replace(".", ","); // a period is a decimal separator → German comma
+}
+
 /** The wert a field contributes on submit, by type. Empty / "Unbekannt" ⇒ "" ⇒ NOT submitted (the
  * param stays MISSING — no fake default). Enums store the readable German LABEL (it informs L1 and
  * shows in the chips/confirmation); booleans store "ja"/"nein"; number/text go through composeWert.
@@ -27,7 +39,10 @@ export function resolveWert(field: FieldDef, raw: string): string {
   if (field.type === "boolean") {
     return raw === "ja" || raw === "nein" ? raw : "";
   }
-  return composeWert(raw, field.unit); // number | text
+  if (field.type === "number") {
+    return composeWert(normalizeDecimal(raw), field.unit); // prevent the period-decimal 0-parse
+  }
+  return composeWert(raw, field.unit); // text (unit is "" → raw passes through untouched)
 }
 
 /**
@@ -44,7 +59,9 @@ export function ParameterForm({
   onSubmit,
   onSubmitted,
 }: {
-  onSubmit: (feld: string, wert: string) => void;
+  /** Batch submit: every non-empty field as one payload → one settle + one recompute + one
+   * deterministic confirmation (the host wires it to POST .../current/facts). */
+  onSubmit: (items: ParamItem[]) => void;
   /** Pilot-ui: lets the hosting popover close itself after a submit (purely presentational). */
   onSubmitted?: () => void;
 }) {
@@ -58,11 +75,13 @@ export function ParameterForm({
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    const items: ParamItem[] = [];
     for (const f of situationFields(active)) {
       const wert = resolveWert(f, vals[f.key] ?? "");
-      if (wert) onSubmit(f.key, wert);
+      if (wert) items.push({ feld: f.key, wert, label: f.label });
     }
     setVals({});
+    onSubmit(items);
     onSubmitted?.();
   }
 

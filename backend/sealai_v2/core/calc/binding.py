@@ -287,3 +287,19 @@ def bind_params(facts: Iterable[RememberedFact]) -> BindingResult:
         notes=tuple(notes),
         clarifications=tuple(clarifications),
     )
+
+
+def bound_display(res: BindingResult) -> dict[str, str]:
+    """feld → "value unit" for each BOUND input — the POST-BIND echo (German decimal, canonical unit).
+    The confirmation shows the value the kern actually uses, never the raw submitted string, so a
+    mis-parse (e.g. a 0-bar settle) is VISIBLE. A clarify-pending feld never bound → it is ABSENT here,
+    so the confirmation surfaces it as a Rückfrage, never as 'übernommen'."""
+    unit_by_input = {b.input_name: b.suggested for b in _BINDINGS.values()}
+    out: dict[str, str] = {}
+    for inp, feld in res.sources.items():
+        val = res.params.get(inp)
+        if val is None:
+            continue
+        num = f"{val:g}".replace(".", ",")  # German decimal; trims trailing zeros
+        out[feld] = f"{num} {unit_by_input.get(inp, '')}".strip()
+    return out

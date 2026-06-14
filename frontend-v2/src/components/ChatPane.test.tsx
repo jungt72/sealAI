@@ -1,13 +1,21 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatResponse, ConversationMemory } from "../contracts";
+import type { ChatResponse, ConfirmationResponse, ConversationMemory } from "../contracts";
 import { ChatPane } from "./ChatPane";
 import { Shell } from "./Shell";
 
 afterEach(cleanup);
 
 const EMPTY: ConversationMemory = { case_state: [], history: [] };
+const EMPTY_CONF: ConfirmationResponse = {
+  uebernommen: [],
+  rueckfragen: [],
+  computed: [],
+  not_computed: [],
+  notes: [],
+  clarifications: [],
+};
 const WITH_FACTS: ConversationMemory = {
   case_state: [
     { feld: "wellendurchmesser", wert: "50 mm", provenance: "user-form" },
@@ -30,7 +38,7 @@ function renderPane(over: Partial<Parameters<typeof ChatPane>[0]> = {}) {
     onEditFact: vi.fn(),
     onForgetFact: vi.fn(),
     onForgetAll: vi.fn(),
-    onSubmitParam: vi.fn(),
+    onSubmitParams: vi.fn(async () => EMPTY_CONF),
     onMakeBriefing: vi.fn(),
     canBriefing: false,
     briefing: null,
@@ -62,15 +70,24 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(screen.getByTestId("forget-all")).toHaveTextContent("alles vergessen");
   });
 
-  it("the '+' button opens the parameter form as a popover; submit closes it and writes via onSubmitParam", () => {
-    const { props } = renderPane();
+  it("the '+' opens the form; batch submit closes it, calls onSubmitParams, and surfaces the confirmation", async () => {
+    const conf: ConfirmationResponse = {
+      ...EMPTY_CONF,
+      uebernommen: [{ feld: "wellendurchmesser", label: "Wellendurchmesser d₁", wert: "50 mm" }],
+    };
+    const { props } = renderPane({ onSubmitParams: vi.fn(async () => conf) });
     expect(screen.queryByTestId("parameter-form")).toBeNull();
     fireEvent.click(screen.getByTestId("open-parameter-form"));
     expect(screen.getByTestId("parameter-form")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(screen.getByTestId("param-submit"));
-    expect(props.onSubmitParam).toHaveBeenCalledWith("wellendurchmesser", "50 mm");
+    // ONE batch call carrying the field + its schema label (not N per-field calls)
+    expect(props.onSubmitParams).toHaveBeenCalledWith([
+      { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
+    ]);
     expect(screen.queryByTestId("parameter-form")).toBeNull(); // popover closed after submit
+    // the deterministic confirmation lands in the conversation
+    expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
   });
 
   it("chip interactions are preserved: chip body = edit, × = forget", () => {
@@ -129,7 +146,7 @@ describe("P4b: live stage indicator (SSE progress — labels owned by the fronte
       onEditFact: vi.fn(),
       onForgetFact: vi.fn(),
       onForgetAll: vi.fn(),
-      onSubmitParam: vi.fn(),
+      onSubmitParams: vi.fn(async () => EMPTY_CONF),
       onMakeBriefing: vi.fn(),
       canBriefing: false,
       briefing: null,
