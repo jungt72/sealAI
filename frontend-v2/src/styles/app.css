@@ -132,7 +132,9 @@
 .chips-forget-all:hover { color: var(--ink); }
 
 /* ── Berechnungen (kernel channel — distinct from the editable input chips) ───── */
-.kernel-panel { margin-top: 6px; }
+.kernel-panel { margin-top: 6px; width: min(420px, 100%); }
+/* the three calc boxes as a uniform-width aligned stack (was a staggered wrap) */
+.kernel-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: 100%; }
 .kernel-row .fact-chip {
   flex-direction: column; align-items: flex-start; gap: 1px;
   padding: 7px 13px; border-radius: 14px; cursor: default;
@@ -146,7 +148,9 @@
 .kernel-hint { font-style: italic; }
 
 /* ── chat view ──────────────────────────────────────────────────────────────── */
-.chat-view { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+.chat-view { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --cockpit-w: 340px; }
+/* left column: the conversation thread (scrolls) + the docked composer */
+.chat-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 .chat-log {
   width: min(780px, 100%); flex: 1; overflow: auto;
   display: flex; flex-direction: column; gap: 20px; padding: 30px 20px 10px;
@@ -158,15 +162,44 @@
 }
 .chat-foot {
   width: min(780px, 100%); display: flex; flex-direction: column; gap: 10px;
-  padding: 6px 20px 64px;
+  padding: 6px 20px 0;
 }
 .chat-foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
+
+/* ── case-state: chips + Berechnungen + Briefing — right column ≥1024px, stacked below on narrow ── */
+.case-state {
+  width: min(780px, 100%); flex: none;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 4px 20px 64px;
+}
+.case-state-empty {
+  margin: 0; max-width: 320px; text-align: center;
+  font-size: 12.5px; color: var(--ink-faint); line-height: 1.5;
+}
 .make-briefing {
   border: 1px solid var(--hairline); background: #fff; border-radius: 999px;
   font: inherit; font-size: 12.5px; color: var(--ink-soft); padding: 6px 14px; cursor: pointer;
 }
 .make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
 .make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
+
+/* ── wide screens: case-state becomes the right column beside the chat ───────── */
+@media (min-width: 1024px) {
+  .chat-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--cockpit-w);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    column-gap: 28px;
+    width: 100%; max-width: 1180px; margin: 0 auto;
+  }
+  .chat-main { width: auto; }            /* fills the left grid track */
+  .chat-foot { padding-bottom: 64px; }   /* left-column bottom clears the doctrine line */
+  .case-state {
+    width: auto; align-self: stretch; justify-content: flex-start;
+    overflow: auto; padding: 30px 8px 64px;
+  }
+}
 
 /* ── live stage indicator (P4b — quiet pending row while the turn streams) ───── */
 .msg-pending { align-self: flex-start; display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
