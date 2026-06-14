@@ -6,6 +6,47 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-13T19:39Z — V2 model-swap routing + eval matrix (CANDIDATE, NOT run, NOT deployed) + eval-version==prod-version rule
+
+**Delivered (branch `feat/v2-model-routing` @ `1c33bab9`+, commits local — no deploy, no live model
+call):** each V2 pipeline role's backing LLM made independently configurable by **provider + model**,
+default-preserving, to enable an eval-gated model-swap evaluation (candidates: Mistral Small 4,
+gpt-5.4-mini/nano) **without performing any swap**. Model *strings* were already config
+(`Settings.l1_model`/`verifier_model`/`helper_model`/`judge_model`); the gap was **provider routing**
+(one OpenAI client shared all roles; non-openai hard-raised). Added: a cached per-provider
+`client_factory` (Mistral runs through the SAME OpenAI-compatible adapter via `base_url` +
+`MISTRAL_API_KEY`; unknown provider / missing key fail closed); per-role wiring in `build_pipeline`;
+additive `TokenUsage` capture; the eval **matrix runner** (`eval/matrix.py` + `matrix_cells.json`)
+with the owner-refined per-cell **GATE** — Schranken (`parametric_computation` · `memory_fabrication`
+· `exfiltration`) a **HARD floor ==1.000 (no tolerance)** AND live catches fire AND credibility
+no-regression AND **answer-quality no-regression** (`must_contain` coverage + `must_catch` named — the
+substance signals credibility omits); soft criteria take `--quality-tolerance` (default 0). The
+**judge is the fixed ruler** (a cell may not override `judge_*`). Secondary ranking among PASS:
+p50/p95 latency + est cost/turn; the report lists EVERY cell (incl. FAILs) as the decision frontier.
+
+**Reproducibility — ALL eval models pinned to dated snapshots** (web-verified 2026-06-13, no guessed
+dates): ruler+baseline `gpt-5.1-2025-11-13` (L1/L3), `gpt-4.1-mini-2025-04-14` (helper + **judge**);
+candidates `gpt-5.4-mini-2026-03-17`, `gpt-5.4-nano-2026-03-17`; `mistral-small-2603` (Mistral Small
+4, already dated). Override VALUES + rate KEYS are the exact API strings (the meter keys by the model
+sent). Owner-confirmed rates (USD/1M in/out): gpt-5.1 1.25/10.00 · gpt-4.1-mini 0.40/1.60 ·
+gpt-5.4-mini 0.75/4.50 · gpt-5.4-nano 0.20/1.25 · mistral-small-2603 0.15/0.60.
+
+**GOVERNANCE RULE (owner, 2026-06-13) — eval version == prod version.** The eval validates a
+**specific dated snapshot**, not a family alias. **When a pinned model wins the matrix, the PROD
+deploy MUST use that SAME dated snapshot id** — deploying the moving family alias (e.g. `gpt-5.4-mini`
+instead of `gpt-5.4-mini-2026-03-17`) breaks the chain: the Schranken-guarantee was measured on the
+snapshot, so it does not transfer to whatever the alias resolves to at deploy time. Recorded in
+`matrix_cells.json` (`_eval_version_eq_prod_version`). Applies at the future, separately-gated V2
+cutover; there is **no V2 prod path today**.
+
+**Validation (offline, no token spend):** V2 suite **371 passed**, import-boundary keystone **4
+passed**, ruff clean, manifest valid JSON. The matrix `--plan` builds the cells (judge pinned in
+every cell, all rates resolved) and prints "no models called". **No `--execute` run performed** — the
+live matrix is the separate owner token-go. Default path proven byte-identical (no-override Settings →
+current model strings).
+
+---
+
 ## 2026-06-13T07:51Z — V2 M8 trust-spine completion: kernel provenance binding + proactive-compute panel (eval-validated, NOT deployed)
 
 **Delivered (branch `feat/v2-m8-kernel-provenance` @ `ce6f97a3`, 5 commits, local — no deploy):**

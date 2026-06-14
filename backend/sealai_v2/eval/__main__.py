@@ -19,6 +19,27 @@ from sealai_v2.pipeline.timing import configure_timing_logging
 
 _RUNS_DIR = Path(__file__).resolve().parent / "runs"
 
+_ROLES = ("l1", "verifier", "helper", "judge")
+
+
+def _parse_role_overrides(model_args, provider_args) -> dict:
+    """Turn repeated ``--model role=value`` / ``--provider role=value`` into Settings kwargs
+    (``{role}_model`` / ``{role}_provider``). Unknown role → SystemExit (fail-closed, no silent
+    drop). These kwargs take highest precedence over env when constructing ``Settings``."""
+    overrides: dict[str, str] = {}
+    for kind, items in (("model", model_args or []), ("provider", provider_args or [])):
+        for item in items:
+            if "=" not in item:
+                raise SystemExit(f"--{kind} expects role=value, got {item!r}")
+            role, value = item.split("=", 1)
+            role = role.strip().lower()
+            if role not in _ROLES:
+                raise SystemExit(
+                    f"--{kind}: unknown role {role!r}; choose from {list(_ROLES)}"
+                )
+            overrides[f"{role}_{kind}"] = value.strip()
+    return overrides
+
 
 def _git_sha() -> str:
     try:
@@ -51,6 +72,20 @@ def main() -> None:
         help="recompute final numbers from human_review_worksheet.md (no LLM call) and "
         "re-render report.md; does not run the eval",
     )
+    ap.add_argument(
+        "--model",
+        action="append",
+        metavar="ROLE=MODEL",
+        help="per-role model override (role: l1|verifier|helper|judge), repeatable; "
+        "e.g. --model l1=mistral-small-4",
+    )
+    ap.add_argument(
+        "--provider",
+        action="append",
+        metavar="ROLE=PROVIDER",
+        help="per-role provider override (role: l1|verifier|helper|judge), repeatable; "
+        "e.g. --provider l1=mistral",
+    )
     args = ap.parse_args()
     configure_timing_logging()  # per-turn timing lines → stdout during the live REPLAY
 
@@ -79,7 +114,8 @@ def main() -> None:
         print(f"\nArtifacts: {run_dir}")
         return
 
-    settings = Settings()
+    overrides = _parse_role_overrides(args.model, args.provider)
+    settings = Settings(**overrides)
     columns = {k: COLUMNS[k] for k in args.columns.split(",") if k in COLUMNS}
     if not columns:
         raise SystemExit(

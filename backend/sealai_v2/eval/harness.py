@@ -26,9 +26,15 @@ from sealai_v2.eval.multiturn import (
     run_multiturn_case,
     summarize_multiturn,
 )
-from sealai_v2.eval.scorer import CaseScore, score_case, summarize_column
+from sealai_v2.eval.metering import MeteringLlmClient, TokenMeter
+from sealai_v2.eval.scorer import (
+    CaseScore,
+    aggregate_answer_quality,
+    score_case,
+    summarize_column,
+)
 from sealai_v2.knowledge.fachkarten import load_fachkarten
-from sealai_v2.llm.factory import build_llm_client, resolve_l1_model
+from sealai_v2.llm.factory import build_client_factory, resolve_l1_model
 from sealai_v2.pipeline.pipeline import build_pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.leak_detect import exfiltration_leak
@@ -42,6 +48,24 @@ COLUMNS: dict[str, Flags] = {
 
 _EVAL_TENANT = TenantContext(tenant_id="eval-tenant")
 _CALC_FIXTURES_FILE = Path(__file__).resolve().parent / "calc_fixtures.json"
+
+
+def _percentile(values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile (no numpy dep). ``pct`` in [0,100]. Empty → None."""
+    if not values:
+        return None
+    s = sorted(values)
+    k = max(0, min(len(s) - 1, int(round((pct / 100.0) * (len(s) - 1)))))
+    return round(s[k], 1)
+
+
+def _latency_summary(elapsed: list[float]) -> dict:
+    return {
+        "n": len(elapsed),
+        "p50_ms": _percentile(elapsed, 50),
+        "p95_ms": _percentile(elapsed, 95),
+        "mean_ms": round(sum(elapsed) / len(elapsed), 1) if elapsed else None,
+    }
 
 
 def _load_calc_fixtures() -> dict[str, dict]:
@@ -88,6 +112,7 @@ async def _run_unit(
     column: str,
     flags: Flags,
     params: dict | None = None,
+    judge_client=None,
 ) -> Record:
     intent = rationale = None
     answer_text, answer_model, error = "", "", None
@@ -126,10 +151,12 @@ async def _run_unit(
         elapsed_ms = (time.monotonic() - t0) * 1000.0
         error = f"{type(exc).__name__}: {exc}"
 
+    # The judge is the measuring INSTRUMENT — held at baseline across cells, so it uses its own
+    # client (``judge_client``), decoupled from the helper client. Default → pipeline.client
+    # (keeps the offline harness tests byte-identical, where no dedicated judge client is passed).
+    jc = judge_client if judge_client is not None else pipeline.client
     if error is None and answer_text:
-        judge = await judge_answer(
-            pipeline.client, judge_cfg, case, answer_text, column
-        )
+        judge = await judge_answer(jc, judge_cfg, case, answer_text, column)
     else:
         judge = JudgeResult(
             case_id=case.id, column=column, parse_ok=False, raw=f"(no answer: {error})"
@@ -156,14 +183,16 @@ async def _run_unit(
     )
 
 
-async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
+async def _run_multiturn(pipeline, judge_cfg: ModelConfig, judge_client=None) -> dict | None:
     """Run the class-A multi-turn cases live (memory + memory_fabrication + re-ask both halves).
     Returns a JSON-able block (results + summary) or None when memory is disabled (no measurement)."""
     if pipeline.memory is None:
         return None
 
+    jc = judge_client if judge_client is not None else pipeline.client
+
     async def _reask_judge(answer_text: str, known: tuple[str, ...]) -> dict[str, bool]:
-        return await judge_no_reask(pipeline.client, judge_cfg, answer_text, known)
+        return await judge_no_reask(jc, judge_cfg, answer_text, known)
 
     cases = load_multiturn_cases()
     results = []
@@ -224,7 +253,9 @@ async def _run_multiturn(pipeline, judge_cfg: ModelConfig) -> dict | None:
     }
 
 
-async def _run_edge(pipeline, judge_cfg: ModelConfig) -> tuple[list[Record], list[str]]:
+async def _run_edge(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
     """Run the Konversations-Rand (EDGE) class (M6a-B) through the EXISTING single-turn unit + judge
     + scorer (no new runner). One pass (column ``edge``, flags_on — edge behavior is orthogonal to
     the compliance/safety flags). Returns (records, errors); the records are folded into the canonical
@@ -236,7 +267,14 @@ async def _run_edge(pipeline, judge_cfg: ModelConfig) -> tuple[list[Record], lis
     for case in cases:
         try:
             records.append(
-                await _run_unit(pipeline, judge_cfg, case, "edge", COLUMNS["flags_on"])
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "edge",
+                    COLUMNS["flags_on"],
+                    judge_client=judge_client,
+                )
             )
         except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_multiturn)
             errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
@@ -244,7 +282,7 @@ async def _run_edge(pipeline, judge_cfg: ModelConfig) -> tuple[list[Record], lis
 
 
 async def _run_injection(
-    pipeline, judge_cfg: ModelConfig
+    pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str], dict | None]:
     """Run the Injektion/Sicherheit (INJECTION) class (M6b) through the EXISTING single-turn unit +
     judge + scorer (no new runner) — that path yields the HUMAN-FINAL ``injection_override`` (judge
@@ -266,7 +304,12 @@ async def _run_injection(
     for case in cases:
         try:
             rec = await _run_unit(
-                pipeline, judge_cfg, case, "injection", COLUMNS["flags_on"]
+                pipeline,
+                judge_cfg,
+                case,
+                "injection",
+                COLUMNS["flags_on"],
+                judge_client=judge_client,
             )
             records.append(rec)
             leaks[case.id] = exfiltration_leak(
@@ -302,15 +345,29 @@ async def run_eval(
     timestamp: str,
     columns: dict[str, Flags] | None = None,
     smoke_limit: int | None = None,
+    client_factory=None,
 ) -> dict:
     columns = columns or COLUMNS
     cases = load_cases()
     if smoke_limit:
         cases = cases[:smoke_limit]
 
-    client = build_llm_client(settings)
-    l1_model = await resolve_l1_model(settings)
-    pipeline = build_pipeline(settings, client, l1_model=l1_model)
+    # Per-role provider factory (cached): an all-openai cell shares ONE client across roles
+    # (byte-identical to the old single-client path). SUBJECT roles (L1/L3/helpers) are metered
+    # for the cell's est. cost/turn; the JUDGE gets its OWN unmetered client (instrument, not
+    # subject — and held at baseline across cells, decoupled from the helper provider).
+    # ``client_factory`` injected → offline/controlled mode (mocked matrix validation): use it AND
+    # skip the live models.list() resolution (no network), trusting the configured l1_model.
+    offline = client_factory is not None
+    factory = client_factory or build_client_factory(settings)
+    meter = TokenMeter()
+
+    def subject_client_for(provider: str):
+        return MeteringLlmClient(factory(provider), meter)
+
+    l1_model = settings.l1_model if offline else await resolve_l1_model(settings)
+    pipeline = build_pipeline(settings, client_for=subject_client_for, l1_model=l1_model)
+    judge_client = factory(settings.judge_provider or settings.provider)
     judge_cfg = ModelConfig(
         model=settings.judge_model, temperature=settings.judge_temperature
     )
@@ -321,7 +378,13 @@ async def run_eval(
     async def guarded(case: Case, column: str, flags: Flags) -> Record:
         async with sem:
             return await _run_unit(
-                pipeline, judge_cfg, case, column, flags, params=fixtures.get(case.id)
+                pipeline,
+                judge_cfg,
+                case,
+                column,
+                flags,
+                params=fixtures.get(case.id),
+                judge_client=judge_client,
             )
 
     units = [(c, name, flags) for c in cases for name, flags in columns.items()]
@@ -341,13 +404,15 @@ async def run_eval(
     # ONLY this measurement. Sequential per case: each gets its own session (tenant+session isolated)
     # and the few cases keep the drop-rate attribution clean. Memory is orthogonal to the compliance/
     # safety flags, so it runs once (no per-column fan-out).
-    multiturn = await _run_multiturn(pipeline, judge_cfg)
+    multiturn = await _run_multiturn(pipeline, judge_cfg, judge_client=judge_client)
 
     # M6a-B — Konversations-Rand (EDGE) class. Runs after the (frozen) non-edge sets; the non-edge
     # `summaries` above are the no-regression anchor vs the m6a-memory baseline. The edge records are
     # folded into the canonical `records` (column `edge` → excluded from the non-edge summaries, but
     # present in the worksheet for the HUMAN-FINAL `edge_overreach` adjudication + the recompute).
-    edge_records, edge_errors = await _run_edge(pipeline, judge_cfg)
+    edge_records, edge_errors = await _run_edge(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
     edge = (
         {
             "summary": dataclasses.asdict(
@@ -364,7 +429,9 @@ async def run_eval(
     # M6b — Injektion/Sicherheit class. injection_override is human-final (folds via the worksheet,
     # so the records join the canonical list); exfiltration is agent-final deterministic (the leak
     # sub-block). Excluded from the non-edge no-regression by column.
-    inj_records, inj_errors, inj_exfil = await _run_injection(pipeline, judge_cfg)
+    inj_records, inj_errors, inj_exfil = await _run_injection(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
     injection = (
         {
             "summary": dataclasses.asdict(
@@ -430,6 +497,25 @@ async def run_eval(
         "judge_model": settings.judge_model,
         "helper_model": settings.helper_model,
         "verifier_model": settings.verifier_model if l3_on else None,
+        # Per-role provider+model (model-swap cell descriptor). None provider → the global default.
+        "roles": {
+            "l1": {
+                "provider": settings.l1_provider or settings.provider,
+                "model": l1_model,
+            },
+            "verifier": {
+                "provider": settings.verifier_provider or settings.provider,
+                "model": settings.verifier_model if l3_on else None,
+            },
+            "helper": {
+                "provider": settings.helper_provider or settings.provider,
+                "model": settings.helper_model,
+            },
+            "judge": {
+                "provider": settings.judge_provider or settings.provider,
+                "model": settings.judge_model,
+            },
+        },
         "verify_enabled": l3_on,
         "ground_enabled": l2_on,
         "compute_enabled": l4_on,
@@ -456,6 +542,47 @@ async def run_eval(
         + [f"injection::{e}" for e in (injection or {}).get("errors", [])],
     }
 
+    # --- model-swap gate aggregates (latency / answer-quality / cost) -----------------------
+    # Answer-quality = the judge-derived SUBSTANCE signals NOT in credibility (owner #1 priority).
+    # Computed per canonical column + overall, over the SAME records credibility uses (edge/injection
+    # are excluded by the column filter, mirroring the no-regression `summaries`).
+    answer_quality = {
+        "by_column": {
+            name: aggregate_answer_quality(
+                [r.judge for r in records if r.column == name]
+            )
+            for name in columns
+        },
+        "overall": aggregate_answer_quality(
+            [r.judge for r in records if r.column in columns]
+        ),
+    }
+    # Latency over every single-turn-style record (single-turn + edge + injection; each = one turn).
+    latency = _latency_summary([r.elapsed_ms for r in records])
+    # Cost: RAW subject-role token counts (rate-agnostic — the matrix runner applies published rates
+    # per the cell's models). Subject = L1/L3/helpers (metered); judge excluded (instrument).
+    n_mt_turns = (multiturn or {}).get("summary", {}).get("n_turns", 0) or 0
+    n_turns = len(records) + n_mt_turns
+    token_usage = {
+        "by_model": meter.by_model,  # per-model counts → runner applies each model's published rate
+        "subject_prompt_tokens": meter.prompt_tokens,
+        "subject_completion_tokens": meter.completion_tokens,
+        "subject_total_tokens": meter.total_tokens,
+        "subject_llm_calls": meter.n_calls,
+        "calls_with_usage": meter.n_calls_with_usage,
+        "n_turns": n_turns,
+        "tokens_per_turn": (
+            round(meter.total_tokens / n_turns, 1) if n_turns else None
+        ),
+    }
+    # "Live catches fire": the L3 verifier action tally — proof the trust net is still ACTIVE under a
+    # swapped model (not silently dead). Deterministic exfiltration/parametric catches live in their
+    # own blocks (injection.exfiltration, parametric).
+    catches = {"pass": 0, "flag": 0, "corrected": 0, "blocked_hedge": 0}
+    for r in records:
+        if r.verifier is not None:
+            catches[r.verifier.action.value] = catches.get(r.verifier.action.value, 0) + 1
+
     report.write_all(
         run_dir,
         manifest,
@@ -473,4 +600,8 @@ async def run_eval(
         "edge": edge,
         "injection": injection,
         "parametric": parametric,
+        "answer_quality": answer_quality,
+        "latency": latency,
+        "token_usage": token_usage,
+        "catches": catches,
     }

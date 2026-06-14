@@ -22,10 +22,22 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    """Token counts for one LLM call (additive, model-swap cost ranking). Default zeros; populated
+    from the provider's ``resp.usage`` when present. Offline fakes leave ``usage=None`` → counts 0,
+    so the default/offline path is byte-identical."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True)
 class LlmResult:
     text: str
     model: str
     finish_reason: str | None = None
+    usage: TokenUsage | None = None
 
 
 @runtime_checkable

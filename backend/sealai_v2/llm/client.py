@@ -11,7 +11,20 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from sealai_v2.core.contracts import LlmResult, ModelConfig
+from sealai_v2.core.contracts import LlmResult, ModelConfig, TokenUsage
+
+
+def _parse_usage(resp: Any) -> TokenUsage | None:
+    """Read the provider's token usage defensively (OpenAI + OpenAI-compatible Mistral both expose
+    ``resp.usage.{prompt,completion,total}_tokens``). Absent/partial → best-effort/None, never raises."""
+    usage = getattr(resp, "usage", None)
+    if usage is None:
+        return None
+    return TokenUsage(
+        prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+        completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+        total_tokens=int(getattr(usage, "total_tokens", 0) or 0),
+    )
 
 
 class OpenAiLlmClient:
@@ -46,6 +59,7 @@ class OpenAiLlmClient:
                     text=choice.message.content or "",
                     model=getattr(resp, "model", model_config.model),
                     finish_reason=getattr(choice, "finish_reason", None),
+                    usage=_parse_usage(resp),
                 )
             except Exception as exc:  # noqa: BLE001 — param-defensive + transient retry, then re-raise
                 msg = str(exc).lower()

@@ -402,11 +402,29 @@ class Pipeline:
 
 
 def build_pipeline(
-    settings: Settings, client: LlmClient, *, l1_model: str | None = None
+    settings: Settings,
+    client: LlmClient | None = None,
+    *,
+    l1_model: str | None = None,
+    client_for: Callable[[str], LlmClient] | None = None,
 ) -> Pipeline:
-    """Wire the pipeline from settings + an injected client. The template file reads happen once
-    here (assembler construction), keeping the pure generator/verifier I/O-free. L3 is ALWAYS-ON
-    (core trust layer, not flag-gated) unless ``verify_enabled`` is turned off (incident only)."""
+    """Wire the pipeline from settings + injected client(s). Two modes, both default-preserving:
+    pass a single ``client`` (all roles share it — the test/default path, byte-identical) OR a
+    ``client_for(provider)`` factory for per-role routing (a mixed model-swap cell). The template
+    file reads happen once here (assembler construction), keeping the pure generator/verifier
+    I/O-free. L3 is ALWAYS-ON (core trust layer) unless ``verify_enabled`` is off (incident only)."""
+    if client_for is None and client is None:
+        raise RuntimeError(
+            "build_pipeline needs either a single ``client`` (all roles share it) or a "
+            "``client_for`` provider factory (per-role routing) — never neither."
+        )
+    # Single-client mode: ignore provider, return the one client (preserves the fake-client tests
+    # and the default object graph). Factory mode: each role resolves its provider's client.
+    resolve = client_for if client_for is not None else (lambda _provider: client)
+    l1_client = resolve(settings.l1_provider or settings.provider)
+    verifier_client = resolve(settings.verifier_provider or settings.provider)
+    helper_client = resolve(settings.helper_provider or settings.provider)
+
     assembler = PromptAssembler()
     l1_cfg = ModelConfig(
         model=l1_model or settings.l1_model, temperature=settings.l1_temperature
@@ -414,7 +432,7 @@ def build_pipeline(
     helper_cfg = ModelConfig(
         model=settings.helper_model, temperature=settings.helper_temperature
     )
-    generator = L1Generator(client, assembler, l1_cfg)
+    generator = L1Generator(l1_client, assembler, l1_cfg)
 
     verifier: L3Verifier | None = None
     catalog: TrapCatalog | None = None
@@ -423,7 +441,9 @@ def build_pipeline(
         verifier_cfg = ModelConfig(
             model=settings.verifier_model, temperature=settings.verifier_temperature
         )
-        verifier = L3Verifier(client, VerifierPromptAssembler(), verifier_cfg, catalog)
+        verifier = L3Verifier(
+            verifier_client, VerifierPromptAssembler(), verifier_cfg, catalog
+        )
 
     # L2 grounding: in-process Fachkarten retriever (M3). A Qdrant adapter swaps in here by config
     # (build-spec §3) behind the same Retriever Protocol — no core change.
@@ -448,7 +468,7 @@ def build_pipeline(
         cross_session = InProcessCrossSessionMemory()
         if settings.distill_enabled:
             distiller = Distiller(
-                client,
+                helper_client,
                 DistillPromptAssembler(),
                 ModelConfig(
                     model=settings.helper_model, temperature=settings.helper_temperature
@@ -457,7 +477,7 @@ def build_pipeline(
 
     return Pipeline(
         generator=generator,
-        client=client,
+        client=helper_client,  # used by the understand helper stage
         helper_model=helper_cfg,
         understand_enabled=settings.understand_enabled,
         verifier=verifier,
