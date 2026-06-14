@@ -27,7 +27,8 @@ German number conventions: decimal comma; a thousands-dot form ("4.000") counts 
 adjoining unit (so unitless "4.000" → unit_missing, never silently 4000). Origins are preserved per
 bound input so the render/citation stays honest (the V1 "provenance loss on user values" lesson).
 
-druck→p_bar and schnurstaerke/nuttiefe are PARKED (owner decision 3): v1 ships d1/rpm only.
+schnurstaerke/nuttiefe stay PARKED (owner decision 3). druck→p_bar was UNPARKED in Phase 2a
+(owner-gated): pressure feeds the PV kern, binding ONLY in bar (fail-closed on any other unit).
 Pure core: no I/O, no LLM.
 """
 
@@ -66,6 +67,9 @@ def _normalize_unit(tok: str) -> str:
 _UNIT_SYNONYMS: dict[str, frozenset[str]] = {
     "mm": frozenset({"mm", "millimeter"}),
     "rpm": frozenset({"u/min", "1/min", "min-1", "rpm", "upm"}),
+    # Phase 2a (owner-gated unpark): pressure binds ONLY in bar — EXACT, no other spelling. mbar/
+    # kPa/MPa/Pa/psi are real pressure units of a different scale → _KNOWN_UNITS (clarify, no rescale).
+    "bar": frozenset({"bar"}),
 }
 
 # Known OTHER units (NORMALIZED → dimension). Membership here means a REAL unit that is NOT the
@@ -88,10 +92,30 @@ _KNOWN_UNITS: dict[str, str] = {
     "grad": "angle",
     "°": "angle",
     "deg": "angle",
+    # pressure (Phase 2a) — real units of a DIFFERENT scale than the accepted bar: never rescaled
+    # (appending "bar" to "500 mbar"/"0.5 MPa" would be a silent ×1000/×10 wrong-bind).
+    "mbar": "pressure",
+    "kpa": "pressure",
+    "mpa": "pressure",
+    "pa": "pressure",
+    "psi": "pressure",
 }
 
 # Reasons whose one-click recovery (append the canonical to the raw number) introduces NO scale error.
 _ONE_CLICK_REASONS = frozenset({"unit_missing", "unit_unrecognized"})
+
+
+def _known_dimension(unit_tok: str) -> str:
+    """The physical dimension if ``unit_tok`` is a KNOWN (real but unaccepted) unit, else "". Tries
+    the normalized token, then its trailing letter run — so an English-decimal artifact (the German
+    number grammar reads "0.5 MPa" as number "0" + unit ".5 MPa") still resolves to the known pressure
+    unit and classifies ``unit_known_other`` (no silent one-click rescale to bar), never the
+    one-click ``unit_unrecognized``. Never affects the BIND decision — only the clarify classification."""
+    norm = _normalize_unit(unit_tok)
+    if norm in _KNOWN_UNITS:
+        return _KNOWN_UNITS[norm]
+    m = re.search(r"[a-z]+$", norm)
+    return _KNOWN_UNITS.get(m.group(), "") if m else ""
 
 
 @dataclass(frozen=True)
@@ -107,6 +131,8 @@ class _Bind:
 _BINDINGS: dict[str, _Bind] = {
     "wellendurchmesser": _Bind("d1_mm", "mm", "mm", "length"),
     "drehzahl": _Bind("rpm", "rpm", "U/min", "frequency"),
+    # Phase 2a (owner-gated): pressure feeds the PV kern; binds only in bar (fail-closed otherwise).
+    "druck": _Bind("p_bar", "bar", "bar", "pressure"),
 }
 
 
@@ -164,7 +190,7 @@ def _classify(
     elif not unit_tok:
         reason, raw_value, raw_unit, dim = "unit_missing", number, "", ""
     else:
-        dim = _KNOWN_UNITS.get(_normalize_unit(unit_tok), "")
+        dim = _known_dimension(unit_tok)
         reason = "unit_known_other" if dim else "unit_unrecognized"
         raw_value, raw_unit = number, unit_tok
     return BindClarification(
