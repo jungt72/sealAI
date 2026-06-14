@@ -250,7 +250,9 @@ class DerivedFact:
     unit: str
     formula: str = ""
     parent_fields: tuple[str, ...] = ()  # case-state felder this value depends on
-    input_origins: tuple[str, ...] = ()  # per-input provenance (carried from the binding)
+    input_origins: tuple[
+        str, ...
+    ] = ()  # per-input provenance (carried from the binding)
     provenance: str = "kernel_computed"
 
 

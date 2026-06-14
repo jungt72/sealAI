@@ -68,9 +68,13 @@ def test_understand_does_not_serialize_in_front_of_l1():
 
 def test_reordering_is_pure_l1_prompt_and_answer_byte_identical():
     fake_on = FakeLlmClient(_INTENT_JSON)  # same text serves understand AND L1 (fake)
-    asyncio.run(_pipeline(fake_on, understand=True).run("Frage?", tenant=TenantContext("t1")))
+    asyncio.run(
+        _pipeline(fake_on, understand=True).run("Frage?", tenant=TenantContext("t1"))
+    )
     fake_off = FakeLlmClient(_INTENT_JSON)
-    asyncio.run(_pipeline(fake_off, understand=False).run("Frage?", tenant=TenantContext("t1")))
+    asyncio.run(
+        _pipeline(fake_off, understand=False).run("Frage?", tenant=TenantContext("t1"))
+    )
 
     (l1_on,) = [c for c in fake_on.calls if c["model"] == "fake-l1"]
     (l1_off,) = [c for c in fake_off.calls if c["model"] == "fake-l1"]

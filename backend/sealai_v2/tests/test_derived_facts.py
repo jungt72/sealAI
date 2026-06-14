@@ -50,7 +50,10 @@ def test_recompute_derived_maps_value_with_parents_and_origins():
     assert v.provenance == "kernel_computed"
     assert abs(v.value - 16.755) < 0.01
     assert v.unit == "m/s" and v.formula  # cited formula carried for the panel
-    assert set(v.parent_fields) == {"wellendurchmesser", "drehzahl"}  # input-dependencies tagged
+    assert set(v.parent_fields) == {
+        "wellendurchmesser",
+        "drehzahl",
+    }  # input-dependencies tagged
     assert any("Formular" in o for o in v.input_origins)  # provenance honest
 
 
@@ -76,7 +79,9 @@ def test_binder_skips_kernel_computed_provenance():
     """Defensive boundary: even a kernel value that somehow appeared in case-state is never treated
     as a calc input (no feedback loop / no stale-derived-feeds-cascade)."""
     res = bind_params((_rf("drehzahl", "8000 U/min", provenance="kernel_computed"),))
-    assert res.params == {} and res.notes == ()  # silently skipped, not an input, no noise
+    assert (
+        res.params == {} and res.notes == ()
+    )  # silently skipped, not an input, no noise
 
 
 # --- store derived slice (a separate channel) ----------------------------------------------------
@@ -106,9 +111,8 @@ def test_store_derived_slice_is_separate_from_case_state_and_recall():
         f.feld != "umfangsgeschwindigkeit"
         for f in m.case_state(tenant_id="t", session_id="s")
     )
-    assert (
-        m.recall(tenant_id="t", session_id="s").case_state
-        == m.case_state(tenant_id="t", session_id="s")
+    assert m.recall(tenant_id="t", session_id="s").case_state == m.case_state(
+        tenant_id="t", session_id="s"
     )
     # clear drops derived with the inputs
     m.clear(tenant_id="t", session_id="s")
@@ -136,7 +140,9 @@ def test_recompute_persists_then_forget_evicts_then_edit_recomputes():
     m = p.memory
 
     def edit(feld, wert, prov="user-form"):
-        m.edit_fact(tenant_id="t", session_id="s", feld=feld, wert=wert, provenance=prov)
+        m.edit_fact(
+            tenant_id="t", session_id="s", feld=feld, wert=wert, provenance=prov
+        )
 
     edit("wellendurchmesser", "40 mm")
     edit("drehzahl", "8000 U/min")
@@ -177,7 +183,11 @@ def test_chat_restatement_recomputes_after_background_remember():
         distiller=Distiller(fake, DistillPromptAssembler(), ModelConfig("fake-helper")),
     )
     asyncio.run(
-        p.run("Welle 40 mm, 8000 U/min", tenant=TenantContext("t"), session=SessionContext("s"))
+        p.run(
+            "Welle 40 mm, 8000 U/min",
+            tenant=TenantContext("t"),
+            session=SessionContext("s"),
+        )
     )
     asyncio.run(p.flush_memory(tenant_id="t", session_id="s"))
     d = {x.calc_id: x for x in p.memory.derived_facts(tenant_id="t", session_id="s")}
@@ -212,16 +222,18 @@ def test_route_edit_and_forget_invalidate_derived_via_token():
         )
     d = {
         x.calc_id: x
-        for x in pipeline.memory.derived_facts(tenant_id="tenant-A", session_id="sess-A")
+        for x in pipeline.memory.derived_facts(
+            tenant_id="tenant-A", session_id="sess-A"
+        )
     }
     assert "umfangsgeschwindigkeit" in d  # form edits triggered the recompute
 
-    client.delete(
-        "/api/v2/conversations/current/facts/drehzahl", headers=auth("tok-A")
-    )
+    client.delete("/api/v2/conversations/current/facts/drehzahl", headers=auth("tok-A"))
     assert all(
         x.calc_id != "umfangsgeschwindigkeit"
-        for x in pipeline.memory.derived_facts(tenant_id="tenant-A", session_id="sess-A")
+        for x in pipeline.memory.derived_facts(
+            tenant_id="tenant-A", session_id="sess-A"
+        )
     )  # forget evicted it
 
 

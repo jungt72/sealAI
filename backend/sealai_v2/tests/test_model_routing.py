@@ -48,9 +48,14 @@ def test_default_role_models_and_temperatures_unchanged():
 def test_default_run_uses_l1_and_helper_models():
     """A default sessionless turn: understand (helper) + L1 generate + L3 verify — no distill."""
     fake = FakeLlmClient("FAKE-ANSWER")
-    asyncio.run(build_pipeline(Settings(), fake).run("Frage?", tenant=_T, flags=Flags()))
+    asyncio.run(
+        build_pipeline(Settings(), fake).run("Frage?", tenant=_T, flags=Flags())
+    )
     models = {c["model"] for c in fake.calls}
-    assert models == {"gpt-5.1", "gpt-4.1-mini"}  # L1/verify = gpt-5.1, understand = gpt-4.1-mini
+    assert models == {
+        "gpt-5.1",
+        "gpt-4.1-mini",
+    }  # L1/verify = gpt-5.1, understand = gpt-4.1-mini
 
 
 # --- single-client mode ignores provider settings (test/default path unaffected) ----------
@@ -60,7 +65,9 @@ def test_single_client_mode_ignores_provider_settings():
     # No factory → the one client backs every role regardless of *_provider (preserves the
     # FakeLlmClient tests; provider routing is a factory-mode concern only).
     fake = FakeLlmClient("x")
-    p = build_pipeline(Settings(verifier_provider="mistral", l1_provider="mistral"), fake)
+    p = build_pipeline(
+        Settings(verifier_provider="mistral", l1_provider="mistral"), fake
+    )
     assert p.generator._client is fake
     assert p.verifier._client is fake
     assert p.client is fake
@@ -98,7 +105,9 @@ def test_per_role_provider_routing_mixed_cell():
 
     asyncio.run(p.run("Frage?", tenant=_T, flags=Flags()))
     # The L3 verify call went to mistral; understand + L1 to openai.
-    assert mistral_fake.calls and all(c["model"] == "mistral-small-4" for c in mistral_fake.calls)
+    assert mistral_fake.calls and all(
+        c["model"] == "mistral-small-4" for c in mistral_fake.calls
+    )
     oai_models = {c["model"] for c in openai_fake.calls}
     assert oai_models == {"gpt-5.1", "gpt-4.1-mini"}
 
@@ -139,5 +148,7 @@ def test_client_factory_caches_one_per_provider():
     s = Settings(openai_api_key="sk-x", mistral_api_key="ms-x")
     client_for = build_client_factory(s)
     a, b = client_for("openai"), client_for("openai")
-    assert a is b  # all-openai run shares ONE client across roles (byte-identical graph)
+    assert (
+        a is b
+    )  # all-openai run shares ONE client across roles (byte-identical graph)
     assert client_for("mistral") is not a

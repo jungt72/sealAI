@@ -29,7 +29,9 @@ def test_parse_usage_present_and_absent():
         usage=SimpleNamespace(prompt_tokens=120, completion_tokens=30, total_tokens=150)
     )
     assert _parse_usage(resp) == TokenUsage(120, 30, 150)
-    assert _parse_usage(SimpleNamespace()) is None  # no usage attr → None (byte-identical default)
+    assert (
+        _parse_usage(SimpleNamespace()) is None
+    )  # no usage attr → None (byte-identical default)
 
 
 def test_metering_keys_by_model_and_ignores_none_usage():
@@ -39,7 +41,11 @@ def test_metering_keys_by_model_and_ignores_none_usage():
     meter.add("m-b", None)  # fake → counted as a call, no tokens
     assert meter.by_model["m-a"]["total_tokens"] == 30
     assert meter.by_model["m-b"]["total_tokens"] == 0
-    assert meter.total_tokens == 30 and meter.n_calls == 3 and meter.n_calls_with_usage == 2
+    assert (
+        meter.total_tokens == 30
+        and meter.n_calls == 3
+        and meter.n_calls_with_usage == 2
+    )
 
 
 # --- judge is metered-EXCLUDED and uses its own client ------------------------------------
@@ -51,7 +57,12 @@ class _RecordingFake:
 
     async def generate(self, *, system, user, model_config):
         self.calls.append({"system": system, "model": model_config.model})
-        return LlmResult(text=self.text, model=model_config.model, finish_reason="stop", usage=self.usage)
+        return LlmResult(
+            text=self.text,
+            model=model_config.model,
+            finish_reason="stop",
+            usage=self.usage,
+        )
 
 
 _JUDGE_JSON = (
@@ -106,7 +117,9 @@ def test_judge_uses_own_client_and_is_not_metered():
 # --- gate pure functions ------------------------------------------------------------------
 
 
-def _out(*, cred=1.0, mc=1.0, kt=1.0, parametric=1.0, memory=1.0, exfil=1.0, corrected=2):
+def _out(
+    *, cred=1.0, mc=1.0, kt=1.0, parametric=1.0, memory=1.0, exfil=1.0, corrected=2
+):
     return {
         "summaries": {
             "flags_off": {"overall_credibility": cred},
@@ -125,9 +138,7 @@ def _out(*, cred=1.0, mc=1.0, kt=1.0, parametric=1.0, memory=1.0, exfil=1.0, cor
 
 
 def _gate(cell, base=None, tol_cred=0.0, tol_aq=0.0):
-    return matrix.evaluate_gate(
-        base or _out(), cell, tol_cred=tol_cred, tol_aq=tol_aq
-    )
+    return matrix.evaluate_gate(base or _out(), cell, tol_cred=tol_cred, tol_aq=tol_aq)
 
 
 def test_gate_passes_when_no_regression():
@@ -154,7 +165,9 @@ def test_gate_fails_on_answer_quality_regression_even_if_credibility_holds():
 
 
 def test_gate_fails_when_l3_catches_go_silent():
-    passed, reasons, _ = _gate(_out(corrected=0))  # baseline had corrected=2, cell has 0
+    passed, reasons, _ = _gate(
+        _out(corrected=0)
+    )  # baseline had corrected=2, cell has 0
     assert not passed and any("catches" in r for r in reasons)
 
 
@@ -175,8 +188,16 @@ def test_schranken_have_no_tolerance_even_with_large_quality_tolerance():
 def test_est_cost_applies_per_model_rates():
     tu = {
         "by_model": {
-            "m-a": {"prompt_tokens": 1_000_000, "completion_tokens": 0, "total_tokens": 1_000_000},
-            "m-b": {"prompt_tokens": 0, "completion_tokens": 2_000_000, "total_tokens": 2_000_000},
+            "m-a": {
+                "prompt_tokens": 1_000_000,
+                "completion_tokens": 0,
+                "total_tokens": 1_000_000,
+            },
+            "m-b": {
+                "prompt_tokens": 0,
+                "completion_tokens": 2_000_000,
+                "total_tokens": 2_000_000,
+            },
         },
         "n_turns": 10,
         "tokens_per_turn": 300000.0,
@@ -188,8 +209,15 @@ def test_est_cost_applies_per_model_rates():
 
 
 def test_est_cost_null_when_a_rate_is_missing():
-    tu = {"by_model": {"m-a": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}, "n_turns": 1}
-    cost = matrix.est_cost(tu, rates={})  # no rate for m-a → honest null, no invented price
+    tu = {
+        "by_model": {
+            "m-a": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        },
+        "n_turns": 1,
+    }
+    cost = matrix.est_cost(
+        tu, rates={}
+    )  # no rate for m-a → honest null, no invented price
     assert cost["est_cost_per_turn_usd"] is None and cost["rates_missing"] == ["m-a"]
 
 
@@ -200,24 +228,35 @@ def test_manifest_loads_baseline_first_and_judge_fixed():
     manifest = matrix.load_manifest()
     cells = matrix.cells_from_manifest(manifest)
     assert cells[0].name == "baseline"
-    assert all("judge_model" not in c.overrides and "judge_provider" not in c.overrides for c in cells)
+    assert all(
+        "judge_model" not in c.overrides and "judge_provider" not in c.overrides
+        for c in cells
+    )
 
 
 def test_cells_reject_judge_override_and_typos():
     import pytest
 
     with pytest.raises(ValueError, match="judge"):
-        matrix.cells_from_manifest({"cells": [{"name": "x", "overrides": {"judge_model": "y"}}]})
+        matrix.cells_from_manifest(
+            {"cells": [{"name": "x", "overrides": {"judge_model": "y"}}]}
+        )
     with pytest.raises(ValueError):
-        matrix.cells_from_manifest({"cells": [{"name": "x", "overrides": {"bogus_model": "y"}}]})
+        matrix.cells_from_manifest(
+            {"cells": [{"name": "x", "overrides": {"bogus_model": "y"}}]}
+        )
 
 
 def test_settings_for_cell_applies_overrides():
     s = matrix.settings_for_cell(
-        matrix.Cell("L1=mistral", {"l1_provider": "mistral", "l1_model": "mistral-small-4"})
+        matrix.Cell(
+            "L1=mistral", {"l1_provider": "mistral", "l1_model": "mistral-small-4"}
+        )
     )
     assert s.l1_provider == "mistral" and s.l1_model == "mistral-small-4"
-    assert s.verifier_model == "gpt-5.1" and s.judge_model == "gpt-4.1-mini"  # untouched
+    assert (
+        s.verifier_model == "gpt-5.1" and s.judge_model == "gpt-4.1-mini"
+    )  # untouched
 
 
 def test_pins_apply_and_cell_override_wins_for_its_role_only():
@@ -229,7 +268,9 @@ def test_pins_apply_and_cell_override_wins_for_its_role_only():
     }
     s = matrix.settings_for_cell(matrix.Cell("L1=cand", {"l1_model": "CAND-L1"}), pins)
     assert s.l1_model == "CAND-L1"  # cell override wins for the varied role
-    assert s.verifier_model == "BASE-L3" and s.helper_model == "BASE-HELP"  # frozen baseline
+    assert (
+        s.verifier_model == "BASE-L3" and s.helper_model == "BASE-HELP"
+    )  # frozen baseline
     assert s.judge_model == "PINNED-JUDGE"  # ruler pinned, never touched by a cell
 
 
@@ -242,7 +283,9 @@ def test_manifest_pins_ruler_and_baseline_to_dated_snapshots():
     pins = matrix.load_manifest()["pinned_models"]
     for role in ("judge_model", "l1_model", "verifier_model", "helper_model"):
         assert role in pins, f"{role} not pinned"
-        assert _DATED.search(pins[role]), f"{role}={pins[role]!r} is not a dated snapshot"
+        assert _DATED.search(
+            pins[role]
+        ), f"{role}={pins[role]!r} is not a dated snapshot"
 
 
 def test_every_eval_model_has_a_rate_key():
@@ -289,7 +332,9 @@ class _MatrixFake:
         else:
             text = "Eine sachliche, vorläufige Orientierung ohne Freigabe."
         return LlmResult(
-            text=text, model=model_config.model, finish_reason="stop",
+            text=text,
+            model=model_config.model,
+            finish_reason="stop",
             usage=TokenUsage(80, 40, 120),
         )
 
@@ -309,7 +354,10 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
         },
         "cells": [
             {"name": "baseline", "overrides": {}},
-            {"name": "L1=mistral-small-4", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-4"}},
+            {
+                "name": "L1=mistral-small-4",
+                "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-4"},
+            },
         ],
     }
     out = asyncio.run(
@@ -340,7 +388,9 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
     assert cand.passed is True and cand.reasons == []
     # Report renders without error and marks the verdict.
     report = matrix.render_report(out)
-    assert "L1=mistral-small-4 — PASS" in report and "Ranking among PASS cells" in report
+    assert (
+        "L1=mistral-small-4 — PASS" in report and "Ranking among PASS cells" in report
+    )
     # Full decision frontier table present, listing every cell.
     assert "Decision frontier (all cells)" in report
     assert "| baseline |" in report and "| L1=mistral-small-4 |" in report
@@ -352,8 +402,14 @@ def test_frontier_table_lists_failed_cells_too():
         name="baseline",
         overrides={},
         passed=None,
-        schranken={"all_one": True, "values": {"parametric_computation": 1.0}, "not_measured": []},
-        answer_quality={"overall": {"must_contain_coverage": 0.9, "must_catch_named_rate": 1.0}},
+        schranken={
+            "all_one": True,
+            "values": {"parametric_computation": 1.0},
+            "not_measured": [],
+        },
+        answer_quality={
+            "overall": {"must_contain_coverage": 0.9, "must_catch_named_rate": 1.0}
+        },
         latency={"p50_ms": 100.0, "p95_ms": 200.0},
         cost={"est_cost_per_turn_usd": 0.0012},
     )
@@ -362,12 +418,23 @@ def test_frontier_table_lists_failed_cells_too():
         overrides={"verifier_model": "cheap"},
         passed=False,
         reasons=["schranke < 1.000"],
-        schranken={"all_one": False, "values": {"parametric_computation": 0.9}, "not_measured": []},
-        answer_quality={"metrics": {"must_contain_coverage": {"delta": -0.2}, "must_catch_named_rate": {"delta": 0.0}}},
+        schranken={
+            "all_one": False,
+            "values": {"parametric_computation": 0.9},
+            "not_measured": [],
+        },
+        answer_quality={
+            "metrics": {
+                "must_contain_coverage": {"delta": -0.2},
+                "must_catch_named_rate": {"delta": 0.0},
+            }
+        },
         latency={"p50_ms": 50.0, "p95_ms": 80.0},
         cost={"est_cost_per_turn_usd": None, "rates_missing": ["cheap"]},
     )
     report = matrix.render_report({"results": [base, failed], "quality_tolerance": 0.0})
-    assert "| L3=cheap | FAIL | FAIL |" in report  # failed cell present with schranken=FAIL
+    assert (
+        "| L3=cheap | FAIL | FAIL |" in report
+    )  # failed cell present with schranken=FAIL
     assert "-0.2" in report  # its Δmust_contain shown
     assert "Ranking among PASS cells" in report and "(none" in report  # no passers

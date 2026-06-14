@@ -102,7 +102,9 @@ class Record:
     n_computed: int = 0  # M4: deterministically computed values injected this turn
     computed_brief: str = ""  # "v_m_s=12.57 m/s; ..." — what the candidate rested on
     parametric_leaks: tuple = ()  # M8: deterministic detector hits on the FINAL answer (agent-final gate)
-    elapsed_ms: float = 0.0  # wall clock of pipeline.run for this unit (judge call excluded)
+    elapsed_ms: float = (
+        0.0  # wall clock of pipeline.run for this unit (judge call excluded)
+    )
 
 
 async def _run_unit(
@@ -183,7 +185,9 @@ async def _run_unit(
     )
 
 
-async def _run_multiturn(pipeline, judge_cfg: ModelConfig, judge_client=None) -> dict | None:
+async def _run_multiturn(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> dict | None:
     """Run the class-A multi-turn cases live (memory + memory_fabrication + re-ask both halves).
     Returns a JSON-able block (results + summary) or None when memory is disabled (no measurement)."""
     if pipeline.memory is None:
@@ -366,7 +370,9 @@ async def run_eval(
         return MeteringLlmClient(factory(provider), meter)
 
     l1_model = settings.l1_model if offline else await resolve_l1_model(settings)
-    pipeline = build_pipeline(settings, client_for=subject_client_for, l1_model=l1_model)
+    pipeline = build_pipeline(
+        settings, client_for=subject_client_for, l1_model=l1_model
+    )
     judge_client = factory(settings.judge_provider or settings.provider)
     judge_cfg = ModelConfig(
         model=settings.judge_model, temperature=settings.judge_temperature
@@ -581,7 +587,9 @@ async def run_eval(
     catches = {"pass": 0, "flag": 0, "corrected": 0, "blocked_hedge": 0}
     for r in records:
         if r.verifier is not None:
-            catches[r.verifier.action.value] = catches.get(r.verifier.action.value, 0) + 1
+            catches[r.verifier.action.value] = (
+                catches.get(r.verifier.action.value, 0) + 1
+            )
 
     report.write_all(
         run_dir,

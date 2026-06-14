@@ -13,12 +13,15 @@ from sealai_v2.core.contracts import RememberedFact
 
 
 def fact(feld: str, wert: str) -> RememberedFact:
-    return RememberedFact(feld=feld, wert=wert, provenance="distilled-from-conversation")
+    return RememberedFact(
+        feld=feld, wert=wert, provenance="distilled-from-conversation"
+    )
 
 
 def test_compute_surfaces_unrecognized_unit_as_one_click_clarification():
     comp = recompute_derived(
-        (fact("wellendurchmesser", "40 mm"), fact("drehzahl", "5000 u/mon")), CascadeCalcEngine()
+        (fact("wellendurchmesser", "40 mm"), fact("drehzahl", "5000 u/mon")),
+        CascadeCalcEngine(),
     )
     # v is NOT computed (rpm unbound — fail-closed), and the unit issue is a structured clarification
     assert not any(d.name == "v_m_s" for d in comp.derived)
@@ -34,14 +37,19 @@ def test_compute_surfaces_unrecognized_unit_as_one_click_clarification():
 
 def test_compute_surfaces_known_other_unit_without_one_click():
     comp = recompute_derived((fact("wellendurchmesser", "50 cm"),), CascadeCalcEngine())
-    c = next(c for c in compute_response(comp)["clarifications"] if c["feld"] == "wellendurchmesser")
+    c = next(
+        c
+        for c in compute_response(comp)["clarifications"]
+        if c["feld"] == "wellendurchmesser"
+    )
     assert c["reason"] == "unit_known_other" and c["one_click"] is False
     assert c["known_dimension"] == "length" and c["expected_dimension"] == "length"
 
 
 def test_compute_clean_inputs_emit_no_clarifications():
     comp = recompute_derived(
-        (fact("wellendurchmesser", "40 mm"), fact("drehzahl", "8000 U/min")), CascadeCalcEngine()
+        (fact("wellendurchmesser", "40 mm"), fact("drehzahl", "8000 U/min")),
+        CascadeCalcEngine(),
     )
     payload = compute_response(comp)
     assert payload["clarifications"] == []

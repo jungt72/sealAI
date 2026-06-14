@@ -23,7 +23,10 @@ logger.addHandler(logging.NullHandler())
 def configure_timing_logging() -> None:
     """Attach a plain stdout line handler (idempotent) so timing lines reach docker logs."""
     for h in logger.handlers:
-        if isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout:
+        if (
+            isinstance(h, logging.StreamHandler)
+            and getattr(h, "stream", None) is sys.stdout
+        ):
             return
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(message)s"))

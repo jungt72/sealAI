@@ -41,7 +41,9 @@ class _ChatFake:
         self.answer = answer
         self.calls: list[dict] = []
 
-    async def generate(self, *, system: str, user: str, model_config: ModelConfig) -> LlmResult:
+    async def generate(
+        self, *, system: str, user: str, model_config: ModelConfig
+    ) -> LlmResult:
         self.calls.append({"system": system, "user": user, "model": model_config.model})
         text = self.distill_json if _DISTILL_MARKER in system else self.answer
         return LlmResult(text=text, model=model_config.model, finish_reason="stop")
@@ -55,7 +57,9 @@ def _chat_pipeline(client: _ChatFake) -> Pipeline:
         understand_enabled=False,
         engine=CascadeCalcEngine(),
         memory=InProcessConversationMemory(),
-        distiller=Distiller(client, DistillPromptAssembler(), ModelConfig("fake-helper")),
+        distiller=Distiller(
+            client, DistillPromptAssembler(), ModelConfig("fake-helper")
+        ),
     )
 
 
@@ -79,13 +83,17 @@ def test_chat_channel_unit_bearing_facts_bind_and_kern_fires():
         '{"facts": [{"feld": "wellendurchmesser", "wert": "40 mm"}, '
         '{"feld": "drehzahl", "wert": "8000 U/min"}]}'
     )
-    res = asyncio.run(_two_turns(client, "Welle 40 mm, dreht mit 8000 U/min", "Passt das?"))
+    res = asyncio.run(
+        _two_turns(client, "Welle 40 mm, dreht mit 8000 U/min", "Passt das?")
+    )
     by_id = {c.calc_id: c for c in res.computed_values}
     assert "umfangsgeschwindigkeit" in by_id
     assert abs(by_id["umfangsgeschwindigkeit"].value - 16.755) < 0.01
     assert not any(n.calc_id == "umfangsgeschwindigkeit" for n in res.not_computed)
     # origin is honest: distilled-from-conversation reads as "vom Nutzer genannt"
-    assert any("vom Nutzer genannt" in o for o in by_id["umfangsgeschwindigkeit"].input_origins)
+    assert any(
+        "vom Nutzer genannt" in o for o in by_id["umfangsgeschwindigkeit"].input_origins
+    )
 
 
 def test_chat_channel_unitless_value_fails_closed_and_is_visible():

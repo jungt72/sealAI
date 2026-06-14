@@ -123,9 +123,13 @@ class BindClarification:
     reason: str  # no_value | unit_missing | unit_known_other | unit_unrecognized
     suggested_unit: str  # the param's expected canonical display unit (e.g. "U/min")
     known_dimension: str = ""  # the TYPED unit's dimension, set for unit_known_other (length|frequency|angle)
-    expected_dimension: str = ""  # the FIELD's dimension — compare to known_dimension: equal ⇒ scale
+    expected_dimension: str = (
+        ""  # the FIELD's dimension — compare to known_dimension: equal ⇒ scale
+    )
     #                               mismatch ("give it in mm"); differ ⇒ wrong kind of quantity
-    one_click: bool = False  # True ⇒ appending suggested_unit to raw_value is a SAFE recovery
+    one_click: bool = (
+        False  # True ⇒ appending suggested_unit to raw_value is a SAFE recovery
+    )
 
 
 @dataclass(frozen=True)
@@ -138,9 +142,9 @@ class BindingResult:
         default_factory=dict
     )  # input name → source case-state feld (M8: derived-fact parent-refs)
     notes: tuple[str, ...] = ()  # surfaced drops — fail-closed is visible, never silent
-    clarifications: tuple[BindClarification, ...] = (
-        ()
-    )  # structured recovery hints (mapped felder only)
+    clarifications: tuple[
+        BindClarification, ...
+    ] = ()  # structured recovery hints (mapped felder only)
 
 
 def _origin(f: RememberedFact) -> str:
@@ -151,7 +155,9 @@ def _origin(f: RememberedFact) -> str:
     return f"vom Nutzer genannt ({f.feld}: »{f.wert}«)"
 
 
-def _classify(bind: _Bind, feld: str, number: str | None, unit_tok: str, raw_wert: str) -> BindClarification:
+def _classify(
+    bind: _Bind, feld: str, number: str | None, unit_tok: str, raw_wert: str
+) -> BindClarification:
     """Classify an unbindable MAPPED value into a fail-closed recovery class. Never binds."""
     if number is None:
         reason, raw_value, raw_unit, dim = "no_value", raw_wert, "", ""

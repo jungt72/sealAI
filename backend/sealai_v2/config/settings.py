@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SEALAI_V2_", extra="ignore")
 
     # --- provider / credentials ---
-    provider: str = "openai"  # global default provider; per-role *_provider override below
+    provider: str = (
+        "openai"  # global default provider; per-role *_provider override below
+    )
     openai_api_key: str | None = None  # falls back to OPENAI_API_KEY in llm.factory
     openai_base_url: str | None = None
     # Mistral is OpenAI-API-compatible → it runs through the SAME OpenAiLlmClient adapter via
@@ -28,8 +30,12 @@ class Settings(BaseSettings):
     # mixed cell (e.g. L1=mistral, L3=openai) is a pure config flip — no call-site change. ---
     l1_provider: str | None = None
     verifier_provider: str | None = None
-    helper_provider: str | None = None  # backs BOTH understand + distill (one helper knob)
-    judge_provider: str | None = None  # eval-only; the matrix holds the judge fixed at baseline
+    helper_provider: str | None = (
+        None  # backs BOTH understand + distill (one helper knob)
+    )
+    judge_provider: str | None = (
+        None  # eval-only; the matrix holds the judge fixed at baseline
+    )
 
     # --- auth (M6c, P0): PUBLIC config, not secrets. Identity is derived ONLY from a token VERIFIED
     # against these (validate-in-V2). Empty jwks_url → auth not configured (routes 503 fail-closed). ---

@@ -56,7 +56,9 @@ _EDIT_ORIGINS = {"user-edited", "user-form"}
 
 class FactEdit(BaseModel):
     wert: str
-    origin: str | None = None  # "user-form" for the parameter form; else inline panel edit
+    origin: str | None = (
+        None  # "user-form" for the parameter form; else inline panel edit
+    )
 
 
 @router.put("/current/facts/{feld}")

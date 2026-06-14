@@ -322,9 +322,7 @@ def _velocity(turn) -> ComputedValue | None:
 
 def test_userform_case_is_wired_into_the_seed_set():
     # the holdout case loads from the multi-turn seed file and carries the form seed (user-form).
-    case = next(
-        c for c in load_multiturn_cases() if c.id == "CALC-USERFORM-PROV-01"
-    )
+    case = next(c for c in load_multiturn_cases() if c.id == "CALC-USERFORM-PROV-01")
     assert case.holdout is True
     seed = {f.feld: f.provenance for f in case.seed_facts}
     assert seed["wellendurchmesser"] == "user-form" and seed["drehzahl"] == "user-form"
@@ -333,12 +331,16 @@ def test_userform_case_is_wired_into_the_seed_set():
 def test_userform_kern_computes_and_origin_is_honest():
     # GREEN: form-seeded user-form facts → the kern computes 16,76 m/s AND the input origin stays
     # "user-form" (honest attribution); the memory Schranke is clean (form input ≠ fabrication).
-    res = asyncio.run(run_multiturn_case(_calc_pipeline(FakeLlmClient()), _userform_case(), tenant=_T))
+    res = asyncio.run(
+        run_multiturn_case(_calc_pipeline(FakeLlmClient()), _userform_case(), tenant=_T)
+    )
     turn = res.turns[0]
     assert turn.carry_ok and turn.compute_ok  # kern FIRED for umfangsgeschwindigkeit
     v = _velocity(turn)
     assert v is not None and round(v.value, 2) == 16.76  # π·40·8000/60000, kern-sourced
-    assert any("user-form" in o for o in v.input_origins)  # (b) honest form attribution carried
+    assert any(
+        "user-form" in o for o in v.input_origins
+    )  # (b) honest form attribution carried
     assert res.memory_gate_clean  # form input is user-stated, not a fabrication
 
 
@@ -355,8 +357,12 @@ def test_userform_attribution_assertion_bites_on_degraded_provenance():
     )
     v = _velocity(res.turns[0])
     assert v is not None and round(v.value, 2) == 16.76  # kern unaffected
-    assert not any("user-form" in o for o in v.input_origins)  # attribution assertion BITES
-    assert all("genannt" in o for o in v.input_origins)  # degraded to the generic origin
+    assert not any(
+        "user-form" in o for o in v.input_origins
+    )  # attribution assertion BITES
+    assert all(
+        "genannt" in o for o in v.input_origins
+    )  # degraded to the generic origin
 
 
 def test_userform_compute_assertion_bites_on_unitless_input():
@@ -366,7 +372,9 @@ def test_userform_compute_assertion_bites_on_unitless_input():
         id="CALC-USERFORM-PROV-UNITLESS",
         klass="x",
         seed_facts=(
-            RememberedFact("wellendurchmesser", "40", "user-form"),  # no unit → fail-closed
+            RememberedFact(
+                "wellendurchmesser", "40", "user-form"
+            ),  # no unit → fail-closed
             RememberedFact("drehzahl", "8000", "user-form"),
         ),
         turns=(
@@ -376,6 +384,8 @@ def test_userform_compute_assertion_bites_on_unitless_input():
             ),
         ),
     )
-    res = asyncio.run(run_multiturn_case(_calc_pipeline(FakeLlmClient()), case, tenant=_T))
+    res = asyncio.run(
+        run_multiturn_case(_calc_pipeline(FakeLlmClient()), case, tenant=_T)
+    )
     assert not res.turns[0].compute_ok  # kern fail-closed → must_compute miss (bites)
     assert _velocity(res.turns[0]) is None

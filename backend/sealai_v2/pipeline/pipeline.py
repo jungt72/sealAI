@@ -291,9 +291,7 @@ class Pipeline:
             calc_notes=calc.notes,
         )
 
-    def compute_for(
-        self, *, tenant_id: str, session_id: str
-    ) -> DerivedComputation:
+    def compute_for(self, *, tenant_id: str, session_id: str) -> DerivedComputation:
         """M8: recompute the kernel from the session's CURRENT settled inputs, PERSIST the derived
         slice (wholesale replace — a stale value can never survive), and return the full result
         (derived + not_computed + notes) for the read surface (/compute, the panel). No engine or no

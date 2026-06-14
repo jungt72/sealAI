@@ -13,7 +13,9 @@ from sealai_v2.core.calc.binding import bind_params
 from sealai_v2.core.contracts import RememberedFact
 
 
-def fact(feld: str, wert: str, provenance: str = "distilled-from-conversation") -> RememberedFact:
+def fact(
+    feld: str, wert: str, provenance: str = "distilled-from-conversation"
+) -> RememberedFact:
     return RememberedFact(feld=feld, wert=wert, provenance=provenance)
 
 
@@ -25,7 +27,17 @@ def _clar(res, feld: str):
 
 
 @pytest.mark.parametrize(
-    "wert", ["5000 U/min", "5000 u/min", "5000 1/min", "5000 min⁻¹", "5000 min^-1", "5000 rpm", "5000 UpM", "5000 Upm"]
+    "wert",
+    [
+        "5000 U/min",
+        "5000 u/min",
+        "5000 1/min",
+        "5000 min⁻¹",
+        "5000 min^-1",
+        "5000 rpm",
+        "5000 UpM",
+        "5000 Upm",
+    ],
 )
 def test_rpm_synonyms_bind(wert: str):
     res = bind_params((fact("drehzahl", wert),))
@@ -56,14 +68,17 @@ def test_typo_unit_is_unrecognized_one_click_not_bound():
     assert c.suggested_unit == "U/min" and c.one_click is True
     assert res.notes  # visible drop note
     # the suggested unit round-trips: confirming "5000 U/min" through the binder actually binds
-    assert bind_params((fact("drehzahl", f"{c.raw_value} {c.suggested_unit}"),)).params == {"rpm": 5000.0}
+    assert bind_params(
+        (fact("drehzahl", f"{c.raw_value} {c.suggested_unit}"),)
+    ).params == {"rpm": 5000.0}
 
 
 # --- unit_missing: pure number → one-click suggest (safe append) ---------------------------
 
 
 @pytest.mark.parametrize(
-    "feld,wert,inp,unit", [("drehzahl", "5000", "rpm", "U/min"), ("wellendurchmesser", "50", "d1_mm", "mm")]
+    "feld,wert,inp,unit",
+    [("drehzahl", "5000", "rpm", "U/min"), ("wellendurchmesser", "50", "d1_mm", "mm")],
 )
 def test_missing_unit_is_one_click(feld, wert, inp, unit):
     res = bind_params((fact(feld, wert),))
@@ -75,7 +90,9 @@ def test_missing_unit_is_one_click(feld, wert, inp, unit):
 
 def test_thousands_dot_without_unit_is_unit_missing_not_silently_4000():
     res = bind_params((fact("drehzahl", "4.000"),))
-    assert "rpm" not in res.params  # owner decision: thousands-dot binds ONLY with a unit
+    assert (
+        "rpm" not in res.params
+    )  # owner decision: thousands-dot binds ONLY with a unit
     assert _clar(res, "drehzahl").reason == "unit_missing"
 
 
@@ -89,23 +106,45 @@ def test_cm_is_known_other_not_silently_50mm():
     assert c.reason == "unit_known_other"
     assert c.known_dimension == "length" and c.raw_unit == "cm"
     assert c.one_click is False  # no one-click append
-    assert "cm" in res.notes[0] and "mm" in res.notes[0]  # honest "give it in mm" message
+    assert (
+        "cm" in res.notes[0] and "mm" in res.notes[0]
+    )  # honest "give it in mm" message
 
 
 def test_angular_unit_is_known_other_dimension_mismatch():
     res = bind_params((fact("wellendurchmesser", "50 grad"),))
     assert res.params == {}
     c = _clar(res, "wellendurchmesser")
-    assert c.reason == "unit_known_other" and c.known_dimension == "angle" and c.one_click is False
+    assert (
+        c.reason == "unit_known_other"
+        and c.known_dimension == "angle"
+        and c.one_click is False
+    )
 
 
-@pytest.mark.parametrize("unit,dim", [("cm", "length"), ("dm", "length"), ("m", "length"), ("zoll", "length"), ("inch", "length"), ("hz", "frequency"), ("deg", "angle"), ("°", "angle")])
+@pytest.mark.parametrize(
+    "unit,dim",
+    [
+        ("cm", "length"),
+        ("dm", "length"),
+        ("m", "length"),
+        ("zoll", "length"),
+        ("inch", "length"),
+        ("hz", "frequency"),
+        ("deg", "angle"),
+        ("°", "angle"),
+    ],
+)
 def test_known_units_registry_never_one_click(unit, dim):
     # for any param: a real-but-unaccepted unit is known_other and never one-click (no scale guess)
     res = bind_params((fact("drehzahl", f"5000 {unit}"),))
     assert "rpm" not in res.params
     c = _clar(res, "drehzahl")
-    assert c.reason == "unit_known_other" and c.known_dimension == dim and c.one_click is False
+    assert (
+        c.reason == "unit_known_other"
+        and c.known_dimension == dim
+        and c.one_click is False
+    )
 
 
 # --- no_value: no number → re-enter guidance, no one-click --------------------------------
@@ -127,7 +166,9 @@ def test_expected_dimension_distinguishes_scale_vs_dimension_mismatch():
     cm = _clar(bind_params((fact("wellendurchmesser", "50 cm"),)), "wellendurchmesser")
     assert cm.known_dimension == "length" and cm.expected_dimension == "length"
     # grad on a length field → DIMENSION mismatch (wrong kind of quantity)
-    grad = _clar(bind_params((fact("wellendurchmesser", "50 grad"),)), "wellendurchmesser")
+    grad = _clar(
+        bind_params((fact("wellendurchmesser", "50 grad"),)), "wellendurchmesser"
+    )
     assert grad.known_dimension == "angle" and grad.expected_dimension == "length"
     # cm on a drehzahl (frequency) field → DIMENSION mismatch
     cm_n = _clar(bind_params((fact("drehzahl", "5000 cm"),)), "drehzahl")
@@ -140,5 +181,7 @@ def test_unmapped_felder_emit_no_clarification():
 
 
 def test_bound_value_emits_no_clarification():
-    res = bind_params((fact("wellendurchmesser", "50 mm"), fact("drehzahl", "5000 U/min")))
+    res = bind_params(
+        (fact("wellendurchmesser", "50 mm"), fact("drehzahl", "5000 U/min"))
+    )
     assert res.params == {"d1_mm": 50.0, "rpm": 5000.0} and res.clarifications == ()

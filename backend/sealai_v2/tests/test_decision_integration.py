@@ -38,7 +38,11 @@ _CLEAN_VERDICT = json.dumps({"findings": [], "verdict": "clean"})
 
 def _seed(mem: InProcessConversationMemory, d_mm: str, n: str) -> None:
     mem.edit_fact(
-        tenant_id="t", session_id="s", feld="wellendurchmesser", wert=d_mm, provenance="user-form"
+        tenant_id="t",
+        session_id="s",
+        feld="wellendurchmesser",
+        wert=d_mm,
+        provenance="user-form",
     )
     mem.edit_fact(
         tenant_id="t", session_id="s", feld="drehzahl", wert=n, provenance="user-form"
@@ -63,10 +67,14 @@ def test_settled_inputs_reach_l1_prompt_and_l3_context_in_one_run():
         memory=InProcessConversationMemory(),
     )
     _seed(p.memory, "50 mm", "4000 U/min")  # v = π·50·4000/60000 ≈ 10.472
-    asyncio.run(p.run("Wie hoch ist v?", tenant=TenantContext("t"), session=SessionContext("s")))
+    asyncio.run(
+        p.run("Wie hoch ist v?", tenant=TenantContext("t"), session=SessionContext("s"))
+    )
 
     # L1: the kern value + its input provenance are in the assembled L1 system prompt
-    assert any("10.472" in c["system"] and "wellendurchmesser" in c["system"] for c in l1.calls)
+    assert any(
+        "10.472" in c["system"] and "wellendurchmesser" in c["system"] for c in l1.calls
+    )
     # L3: the same kern value is in the verifier's context (it verifies L1 AGAINST the kern-fact)
     assert any("10.472" in c["system"] for c in l3.calls)
 
@@ -89,7 +97,9 @@ def test_settled_inputs_reach_the_briefing():
         p.run("Brief?", tenant=TenantContext("t"), session=SessionContext("s"))
     )
     art = ArtifactRenderer().briefing(snapshot_from_result("Brief?", res))
-    assert "10.47" in art.body  # the deterministic kern value is in the suitability artifact
+    assert (
+        "10.47" in art.body
+    )  # the deterministic kern value is in the suitability artifact
 
 
 # --- a corrected input evicts the stale value from the decision + the persisted slice -------------
@@ -112,11 +122,19 @@ def test_corrected_input_evicts_stale_v_from_decision_and_persisted_slice():
 
     # correct the diameter (chip edit) → recompute persists the new value
     p.memory.edit_fact(
-        tenant_id="t", session_id="s", feld="wellendurchmesser", wert="80 mm", provenance="user-edited"
+        tenant_id="t",
+        session_id="s",
+        feld="wellendurchmesser",
+        wert="80 mm",
+        provenance="user-edited",
     )
     p.recompute_derived_for(tenant_id="t", session_id="s")
-    persisted = {x.calc_id: x for x in p.memory.derived_facts(tenant_id="t", session_id="s")}
-    assert abs(persisted["umfangsgeschwindigkeit"].value - 16.755) < 0.01  # new value persisted
+    persisted = {
+        x.calc_id: x for x in p.memory.derived_facts(tenant_id="t", session_id="s")
+    }
+    assert (
+        abs(persisted["umfangsgeschwindigkeit"].value - 16.755) < 0.01
+    )  # new value persisted
 
     l1.calls.clear()  # isolate the SECOND decision
     asyncio.run(p.run("v jetzt?", tenant=tenant, session=session))
@@ -133,8 +151,12 @@ def test_self_computed_number_contradicting_kernel_is_caught():
     DIFFERENT self-computed v is a leak (outside the ≤2 % restate tolerance)."""
     cv = (
         ComputedValue(
-            calc_id="umfangsgeschwindigkeit", name="v_m_s", value=10.472, unit="m/s",
-            stage=1, derivation_depth=1,
+            calc_id="umfangsgeschwindigkeit",
+            name="v_m_s",
+            value=10.472,
+            unit="m/s",
+            stage=1,
+            derivation_depth=1,
         ),
     )
     leaks = detect_parametric_leaks(
@@ -148,15 +170,23 @@ def test_run_verify_corrects_a_self_computed_leak_when_kernel_present():
     kern-fact, and the leaked '99,9' is gone from the final answer."""
     cv = (
         ComputedValue(
-            calc_id="umfangsgeschwindigkeit", name="v_m_s", value=10.472, unit="m/s",
-            stage=1, derivation_depth=1,
+            calc_id="umfangsgeschwindigkeit",
+            name="v_m_s",
+            value=10.472,
+            unit="m/s",
+            stage=1,
+            derivation_depth=1,
         ),
     )
     cat = load_traps()
-    draft = Answer(text="Die Umfangsgeschwindigkeit beträgt rund 99,9 m/s.", model="fake-l1")
+    draft = Answer(
+        text="Die Umfangsgeschwindigkeit beträgt rund 99,9 m/s.", model="fake-l1"
+    )
     gen = L1Generator(
-        FakeLlmClient("Die Umfangsgeschwindigkeit lasse ich deterministisch berechnen — der "
-                      "Rechenkern liefert rund 10,47 m/s."),
+        FakeLlmClient(
+            "Die Umfangsgeschwindigkeit lasse ich deterministisch berechnen — der "
+            "Rechenkern liefert rund 10,47 m/s."
+        ),
         PromptAssembler(),
         ModelConfig("fake-l1"),
     )
@@ -170,4 +200,6 @@ def test_run_verify_corrects_a_self_computed_leak_when_kernel_present():
         run_verify(l3, gen, cat, "F", draft, flags=Flags(), computed_values=cv)
     )
     assert verdict.action in (VerifierAction.CORRECTED, VerifierAction.BLOCKED_HEDGE)
-    assert "99,9" not in ans.text  # the leaked self-computed number never reaches the user
+    assert (
+        "99,9" not in ans.text
+    )  # the leaked self-computed number never reaches the user

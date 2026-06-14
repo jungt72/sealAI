@@ -51,7 +51,9 @@ def _full_pipeline(client) -> Pipeline:
         engine=CascadeCalcEngine(),
         memory=InProcessConversationMemory(),
         cross_session=InProcessCrossSessionMemory(),
-        distiller=Distiller(client, DistillPromptAssembler(), ModelConfig("fake-helper")),
+        distiller=Distiller(
+            client, DistillPromptAssembler(), ModelConfig("fake-helper")
+        ),
     )
 
 
@@ -66,6 +68,7 @@ def test_full_turn_emits_one_line_with_all_stage_keys_and_no_pii(monkeypatch):
             '{"facts": []}',  # distill
         ]
     )
+
     async def main():
         p = _full_pipeline(client)
         res = await p.run(

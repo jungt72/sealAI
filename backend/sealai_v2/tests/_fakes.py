@@ -36,9 +36,7 @@ class DistillRoutingFakeLlmClient:
     ) -> LlmResult:
         self.calls.append({"system": system, "user": user, "model": model_config.model})
         text = self.distill_json if self._DISTILL_MARKER in system else self.answer
-        return LlmResult(
-            text=text, model=model_config.model, finish_reason="stop"
-        )
+        return LlmResult(text=text, model=model_config.model, finish_reason="stop")
 
 
 class ScriptedFakeLlmClient:

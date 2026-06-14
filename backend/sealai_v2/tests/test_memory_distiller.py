@@ -68,7 +68,9 @@ def test_distill_prompt_instructs_unit_fidelity():
     validated by the post-arc eval REPLAY."""
     p = DistillPromptAssembler().distill_prompt().lower()
     assert "einheit" in p  # instructs keeping the unit with the number
-    assert "erfinde keine einheit" in p or "keine einheit" in p  # never fabricate a unit
+    assert (
+        "erfinde keine einheit" in p or "keine einheit" in p
+    )  # never fabricate a unit
     # names a canonical bindable shape so chat-given drehzahl survives to the kern
     assert "u/min" in p
 

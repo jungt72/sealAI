@@ -39,7 +39,9 @@ def _memory_pipeline(client) -> Pipeline:
         understand_enabled=False,  # helper tier is then used ONLY by the distiller
         memory=InProcessConversationMemory(),
         cross_session=InProcessCrossSessionMemory(),
-        distiller=Distiller(client, DistillPromptAssembler(), ModelConfig("fake-helper")),
+        distiller=Distiller(
+            client, DistillPromptAssembler(), ModelConfig("fake-helper")
+        ),
     )
 
 
@@ -98,7 +100,9 @@ def test_distill_lands_before_a_subsequent_same_session_recall():
     async def main():
         p = _memory_pipeline(client)
         tenant, session = TenantContext("t1"), SessionContext("s1")
-        await p.run("EPDM quillt in Hydrauliköl, warum?", tenant=tenant, session=session)
+        await p.run(
+            "EPDM quillt in Hydrauliköl, warum?", tenant=tenant, session=session
+        )
         await p.run("und bei 120 °C?", tenant=tenant, session=session)
         await p.flush_memory(tenant_id="t1", session_id="s1")
 

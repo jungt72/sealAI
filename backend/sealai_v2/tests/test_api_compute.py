@@ -86,7 +86,12 @@ def test_compute_unitless_input_fails_closed_with_note():
 def test_compute_is_tenant_scoped_via_token():
     """P0: tenant A's compute reads A's session only — B's seeded facts never leak in."""
     client, _ = make_client(_engine_pipeline())
-    _seed(client, ("wellendurchmesser", "40 mm"), ("drehzahl", "8000 U/min"), token="tok-B")
+    _seed(
+        client,
+        ("wellendurchmesser", "40 mm"),
+        ("drehzahl", "8000 U/min"),
+        token="tok-B",
+    )
     body = client.get("/api/v2/compute", headers=auth("tok-A")).json()  # A is empty
     assert body["computed"] == []
 
@@ -106,12 +111,18 @@ def test_chat_response_additively_carries_computed():
     (the authoritative settled read is still /compute, which flushes the background distill first)."""
     pipeline = _engine_pipeline()
     pipeline.memory.edit_fact(
-        tenant_id="tenant-A", session_id="sess-A", feld="wellendurchmesser",
-        wert="40 mm", provenance="user-form",
+        tenant_id="tenant-A",
+        session_id="sess-A",
+        feld="wellendurchmesser",
+        wert="40 mm",
+        provenance="user-form",
     )
     pipeline.memory.edit_fact(
-        tenant_id="tenant-A", session_id="sess-A", feld="drehzahl",
-        wert="8000 U/min", provenance="user-form",
+        tenant_id="tenant-A",
+        session_id="sess-A",
+        feld="drehzahl",
+        wert="8000 U/min",
+        provenance="user-form",
     )
     client, _ = make_client(pipeline)
     body = client.post(

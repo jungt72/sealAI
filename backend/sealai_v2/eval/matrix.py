@@ -65,7 +65,9 @@ def load_manifest(path: Path | None = None) -> dict:
     return json.loads((path or _MANIFEST).read_text(encoding="utf-8"))
 
 
-def cells_from_manifest(manifest: dict, *, include_optional: bool = False) -> list[Cell]:
+def cells_from_manifest(
+    manifest: dict, *, include_optional: bool = False
+) -> list[Cell]:
     cells: list[Cell] = []
     for c in manifest.get("cells", []):
         optional = bool(c.get("optional", False))
@@ -104,8 +106,14 @@ def settings_for_cell(cell: Cell, pins: dict | None = None) -> Settings:
 def _roles_descriptor(s: Settings) -> dict:
     return {
         "l1": {"provider": s.l1_provider or s.provider, "model": s.l1_model},
-        "verifier": {"provider": s.verifier_provider or s.provider, "model": s.verifier_model},
-        "helper": {"provider": s.helper_provider or s.provider, "model": s.helper_model},
+        "verifier": {
+            "provider": s.verifier_provider or s.provider,
+            "model": s.verifier_model,
+        },
+        "helper": {
+            "provider": s.helper_provider or s.provider,
+            "model": s.helper_model,
+        },
         "judge": {"provider": s.judge_provider or s.provider, "model": s.judge_model},
     }
 
@@ -130,8 +138,7 @@ def est_cost(token_usage: dict, rates: dict) -> dict:
             missing.append(model)
             continue
         total_usd += (
-            c["prompt_tokens"] / 1e6 * r["in"]
-            + c["completion_tokens"] / 1e6 * r["out"]
+            c["prompt_tokens"] / 1e6 * r["in"] + c["completion_tokens"] / 1e6 * r["out"]
         )
     ok = bool(by_model) and not missing
     return {
@@ -168,7 +175,10 @@ def _aq_view(baseline_out: dict, cell_out: dict, tol: float) -> dict:
         if base is None:
             metric_ok, delta = True, None  # nothing to regress against
         elif cell is None:
-            metric_ok, delta = False, None  # baseline measured, cell didn't → regression
+            metric_ok, delta = (
+                False,
+                None,
+            )  # baseline measured, cell didn't → regression
         else:
             delta = round(cell - base, 3)
             metric_ok = delta >= -tol
@@ -184,8 +194,8 @@ def _aq_view(baseline_out: dict, cell_out: dict, tol: float) -> dict:
 
 def _schranken_view(out: dict) -> dict:
     parametric = (out.get("parametric") or {}).get("schranken_quota")
-    memory = (out.get("multiturn") or {}).get("summary", {}).get(
-        "memory_schranken_quota"
+    memory = (
+        (out.get("multiturn") or {}).get("summary", {}).get("memory_schranken_quota")
     )
     exfil = ((out.get("injection") or {}).get("exfiltration") or {}).get(
         "schranken_quota"
@@ -225,7 +235,9 @@ def evaluate_gate(
 
     aq = _aq_view(baseline_out, cell_out, tol_aq)
     if not aq["ok"]:
-        reasons.append("answer-quality regression vs baseline (must_contain/must_catch)")
+        reasons.append(
+            "answer-quality regression vs baseline (must_contain/must_catch)"
+        )
 
     # Catches: if baseline's L3 net was active, the cell's must be too (not silently disabled).
     base_active = _catches_active(baseline_out)
@@ -241,7 +253,11 @@ def evaluate_gate(
         and aq["ok"]
         and catches_ok
     )
-    return passed, reasons, {"schranken": schranken, "credibility": cred, "answer_quality": aq}
+    return (
+        passed,
+        reasons,
+        {"schranken": schranken, "credibility": cred, "answer_quality": aq},
+    )
 
 
 # --- runner -------------------------------------------------------------------------------
@@ -271,10 +287,14 @@ async def run_matrix(
     )
     tol_cred = tol_aq = qtol
     rates = {
-        k: v for k, v in manifest.get("rates_usd_per_mtok", {}).items() if not k.startswith("_")
+        k: v
+        for k, v in manifest.get("rates_usd_per_mtok", {}).items()
+        if not k.startswith("_")
     }
     pins = {
-        k: v for k, v in manifest.get("pinned_models", {}).items() if not k.startswith("_")
+        k: v
+        for k, v in manifest.get("pinned_models", {}).items()
+        if not k.startswith("_")
     }
     cells = cells_from_manifest(manifest, include_optional=include_optional)
     if not cells or cells[0].name != "baseline":
@@ -342,15 +362,21 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
     cells = cells_from_manifest(manifest, include_optional=include_optional)
     rates = manifest.get("rates_usd_per_mtok", {})
     pins = {
-        k: v for k, v in manifest.get("pinned_models", {}).items() if not k.startswith("_")
+        k: v
+        for k, v in manifest.get("pinned_models", {}).items()
+        if not k.startswith("_")
     }
     missing_rates = [
         k for k, v in rates.items() if not k.startswith("_") and not isinstance(v, dict)
     ]
     L = ["# Model-swap matrix — PLAN (no models called)", ""]
-    L.append(f"cells: {len(cells)} (judge fixed + pinned to a dated snapshot in every cell)")
+    L.append(
+        f"cells: {len(cells)} (judge fixed + pinned to a dated snapshot in every cell)"
+    )
     if missing_rates:
-        L.append(f"⚠ rates unset for: {missing_rates} → est cost/turn will be null until set")
+        L.append(
+            f"⚠ rates unset for: {missing_rates} → est cost/turn will be null until set"
+        )
     L.append("")
     for cell in cells:
         r = _roles_descriptor(settings_for_cell(cell, pins))
@@ -359,7 +385,9 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
         for role in ("l1", "verifier", "helper", "judge"):
             L.append(f"  - {role}: {r[role]['provider']} / {r[role]['model']}")
         L.append("")
-    L.append("RUN is owner-token-gated. Re-run with --execute to call models (token spend).")
+    L.append(
+        "RUN is owner-token-gated. Re-run with --execute to call models (token spend)."
+    )
     return "\n".join(L)
 
 
@@ -402,7 +430,10 @@ def render_report(matrix_out: dict) -> str:
                 + ", ".join(f"{c}={cols[c]['delta']:+}" for c in cols)
             )
             m = r.answer_quality.get("metrics", {})
-            mc, kt = m.get("must_contain_coverage", {}), m.get("must_catch_named_rate", {})
+            mc, kt = (
+                m.get("must_contain_coverage", {}),
+                m.get("must_catch_named_rate", {}),
+            )
             L.append(
                 f"  answer-quality Δ: must_contain={_fmt_delta(mc.get('delta'))} "
                 f"must_catch_named={_fmt_delta(kt.get('delta'))}"
@@ -455,7 +486,11 @@ def _frontier_table(results: list[CellResult]) -> str:
     for r in results:
         verdict = "BASELINE" if r.passed is None else ("PASS" if r.passed else "FAIL")
         sv = r.schranken
-        schr = "n/a" if sv.get("not_measured") else ("1.000" if sv.get("all_one") else "FAIL")
+        schr = (
+            "n/a"
+            if sv.get("not_measured")
+            else ("1.000" if sv.get("all_one") else "FAIL")
+        )
         if r.passed is None:
             aq = r.answer_quality.get("overall", {})
             dmc = f"base({aq.get('must_contain_coverage')})"
@@ -483,7 +518,9 @@ def main() -> None:
         "--include-optional", action="store_true", help="also run the optional cells"
     )
     ap.add_argument("--label", default="matrix", help="run subdir under eval/runs/")
-    ap.add_argument("--smoke", type=int, default=None, help="first N cases per cell (live)")
+    ap.add_argument(
+        "--smoke", type=int, default=None, help="first N cases per cell (live)"
+    )
     ap.add_argument(
         "--quality-tolerance",
         type=float,
