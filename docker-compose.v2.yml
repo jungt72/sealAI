@@ -1,0 +1,49 @@
+# =============================================================================
+# docker-compose.v2.yml — DEV-ONLY green-field overlay (V2.0).
+#
+# Since the cutover arc, the PRODUCTION backend-v2 service lives in
+# docker-compose.deploy.yml (behind the `v2` profile) so `up -d --remove-orphans`
+# with the standard prod file set can never orphan it; staging lives in
+# ops/staging/. This overlay remains only for a local dev bring-up:
+#   docker compose -f docker-compose.yml -f docker-compose.v2.yml --profile v2 up backend-v2
+#
+# Isolation (build-spec §3/§7): backend-v2 gets its OWN port (8001), its OWN Redis
+# namespace (db 1, ≠ the live backend's db 0 / ns-0), and its OWN Qdrant collection
+# (≠ the live sealai_knowledge_v3).
+# =============================================================================
+services:
+  backend-v2:
+    container_name: backend-v2
+    profiles:
+      - v2
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.v2
+    user: 10001:10001
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      PYTHONUNBUFFERED: '1'
+      # OWN Redis namespace — db 1 (≠ db 0 / ns-0 used by the live backend). Unused by
+      # the Phase-0 health app; wired here so the M5 working-memory layer is isolated.
+      SEALAI_V2_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/1
+      SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
+      # OWN Qdrant collection (≠ the live sealai_knowledge_v3).
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge}
+    expose:
+      - '8001'
+    ports:
+      - 127.0.0.1:8001:8001
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1:8001/health >/dev/null
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      default:
+        aliases:
+          - sealai-backend-v2

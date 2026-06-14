@@ -419,3 +419,117 @@ RWDR stays the first and only production Domain Pack for the external guided
 demo; V1.8 keeps the RWDR scope guard in force and adds the lifecycle/companion
 half as later phases (V1.8 §9: P0 → P4). Do not expand to other seal types
 without an explicit SSoT/blueprint update.
+
+## V2.0 green-field track (`backend/sealai_v2/`)
+
+> **Scope — read this first.** This section applies to **`backend/sealai_v2/` ONLY.**
+> V2.0 is a green-field rebuild living *alongside* the live V1 runtime. It is on the
+> **`feat/v2*` branch line (Phase 0 + M1 merged; M2 = L3 verifier + trap catalog,
+> pre-measurement)**. As of 2026-06-14 the V2 source is **converged onto
+> `demo/rwdr-limited-external`** (owner-gated carry-over — see GOVERNANCE_LOG); the
+> **demo→main convergence and the V2 prod cutover remain separately owner-gated**,
+> and prod still runs V1 unchanged.
+> The V1 runtime (`backend/app/`, the frontend, and everything in the sections above)
+> stays governed **unchanged** by this contract and by V1.8 until an explicit cutover.
+> **Inside this tree only:** precedence is **V2.0 > V1.8 > V1.7**, and V1.8's
+> deterministic orchestration (V1.8 §1.5/§1.6/§5.3/§6/§7) + the G1 refactor are
+> **retired — for this tree only**. Do **not** read this as a global demotion of V1.8.
+
+**Normative V2 sources** (the doctrine below is *derived from these, not invented*):
+- `docs/V2/sealingai_v2_build_spec.md` — the executable build plan (esp. **§11** green-field
+  boundary, **§12** agent guardrails); precedence: this spec + its annexes **>** V1.8 **>** V1.7.
+- `docs/V2/sealingai_v2_architektur_prinzipien.md` — the trust model + the *why* (§0/§2/§3/§4/§9).
+- `docs/V2/sealingai_eval_seed_set_v0.md` — the **acceptance ruler** (7 axes + hard Schranken).
+- `docs/V2/sealingai_system_prompt_l1.jinja` — the validated L1 generator seed.
+
+**The audit standard for this tree is the V2 build-spec + the eval seed set — not the
+V1.8 state graph.**
+
+### Four-layer trust model + the thin pipeline
+
+Halluzination-resistance comes from four layers that carry together, not from control-determinism:
+- **L1 · Generator** — strong LLM + the L1 system prompt; covers the infinite answer space, the
+  integrated reasoning, the *why*. Must not invent precise numbers/norms or rubber-stamp a default.
+- **L2 · Grounding** — RAG over the curated knowledge layer (Fachkarten + compatibility matrix)
+  for specifics (numbers, norms, compatibility), **with provenance**. Must not become control logic.
+- **L3 · Verifier** — an independent critic pass against the **trap catalog** (+ matrix at M3).
+  Must not smooth over correct answers or invent its own source of truth.
+- **L4 · Human/Manufacturer** — orientation ≠ binding spec; final validation and release.
+
+The pipeline is **one directed chain, no routing mesh**:
+**verstehen → grounden → antworten (mit Konfidenz) → verifizieren → zitieren.** The soft
+knowledge-vs-case distinction is LLM-handled — **no deterministic intake gate, no slot-binder,
+no field-envelope state machine** (those produced the documented live bugs and are retired here).
+
+### Hard invariants (review criteria for every V2 patch)
+
+- **Eval is the instrument.** The eval seed set is the **build target *and* the regression guard**
+  of every change — **build against the eval, not gut feeling**. Hard **Schranken-Quote = 100 %**
+  (no entered material trap, no confident-false statement, no invented precision); no "done"
+  without it. Track the credibility metric over the 7 axes per milestone; hold out a
+  hidden/rotating subset (no teaching-to-the-test).
+- **The human is the factual-correctness ORACLE; the agent never self-adjudicates.** The agent
+  *runs* the eval, *surfaces divergences as candidates*, and *recomputes* final numbers **from the
+  owner's ticked `human_review_worksheet.md`** (`eval/adjudicate.py`). It **never ticks PASS/FAIL
+  itself** and **never free-corrects a factual verdict**. (This is the TRAP-02 discipline: the
+  rubric judge passed an answer calling EPDM "polar" — it is non-polar — so a confident-mechanism
+  error must be owner-final, framed as a `factual_judge_passed` candidate, deep-audit-deferred.)
+- **Trap-catalog provenance + reviewed-only correction.** The catalog is split `reviewed`
+  (owner-grounded; may correct/block) vs. `drafts` (model-proposed, unreviewed → **flag only**).
+  *No fact in `reviewed` is model-sourced.* L3's replacement fact comes **only** from a `reviewed`
+  entry; if none is usable it emits a deterministic **hedge — never an invented counter-claim**
+  (`core/l3_verifier.py::build_correction_note`/`build_hedge`). Fachkarten lifecycle: Deep Research
+  is a draft/source accelerator, **not** the truth source; owner review sets `reviewed` — that gate
+  is the safety gate *and* the moat.
+- **Green-field boundary + import-purity.** **No `sealai_v2.* ↔ app.*` imports, both directions**
+  — enforced by `backend/tests/architecture/test_v2_import_boundary.py` (the keystone) so the tree
+  stays cleanly deletable. **Do not carry over** the old orchestration; **G1 is finished.** Thin
+  adapters, **pure `core/` (no I/O)**; **Jinja2 builds prompts + renders artifacts, it never
+  decides domain content** (no domain logic in Jinja conditionals).
+- **Deterministic vs generative.** Calculations are **Code with cited formulas** (never
+  LLM-guessed); **no predicted life-number**; artifact rendering (briefing/RFQ) is deterministic
+  from grounded facts; provenance is visible to the user. The safety formula "Erklärung ≠ Freigabe"
+  is an **honesty norm + verification**, not a deterministic machine — but the claim boundaries in
+  § Safety Boundaries above still hold.
+- **Security/Tenant P0 carried over unchanged** — server-side tenant filters, the untrusted-content
+  pipeline, no secrets in logs; cross-tenant leak is a **P0 blocker** (`security/tenant.py`).
+- **HALT-gate rhythm.** plan → owner gate → build → review; **never auto past a gate.** HALT after
+  **every milestone (M1…M6)** with an **Eval-REPLAY** + owner gate. Red-before-green here = a
+  failing eval case / unit test first.
+- **Secret hygiene.** V2 **offline** tests use a **fake LLM client → no key needed**. A **live eval
+  REPLAY** sources `OPENAI_API_KEY` **transiently from `~/sealai/.env` for that run only** — never
+  into the agent env, never into logs, never committed. `.env*` stays never-read/printed/committed.
+
+### Canonical V2 entry points
+
+- Pipeline (5 stages): `backend/sealai_v2/pipeline/pipeline.py`, `pipeline/stages.py`
+- L1 generator: `backend/sealai_v2/core/l1_generator.py`
+- L3 verifier (+ correction/hedge policy): `backend/sealai_v2/core/l3_verifier.py`
+- Core contracts: `backend/sealai_v2/core/contracts.py`
+- Trap catalog: `backend/sealai_v2/knowledge/traps.py` + `knowledge/trap_catalog.json`
+- Prompt assembly (Jinja2): `backend/sealai_v2/prompts/assembler.py`,
+  `prompts/system_l1.jinja`, `prompts/verifier_l3.jinja`
+- Eval harness + adjudication: `backend/sealai_v2/eval/` (`harness.py`, `scorer.py`,
+  `judge.py`, `adjudicate.py`, `__main__.py`; runs in `eval/runs/`)
+- LLM access (provider-agnostic): `backend/sealai_v2/llm/factory.py`, `llm/client.py`
+- Security/tenant (P0): `backend/sealai_v2/security/tenant.py`
+- API: `backend/sealai_v2/api/main.py` · Config (model tiers/flags): `backend/sealai_v2/config/settings.py`
+- Import-purity keystone: `backend/tests/architecture/test_v2_import_boundary.py`
+
+### V2 test commands
+
+V2 CI is isolated in `.github/workflows/v2-contracts.yml` (+ the keystone in
+`backend-contracts.yml`). Locally:
+
+```bash
+# V2 offline suite (fake LLM client — no OPENAI_API_KEY, no runtime stack):
+PYTHONPATH=backend python -m pytest backend/sealai_v2 --noconftest -q
+
+# Import-purity keystone (both directions, build-spec §11):
+python -m pytest backend/tests/architecture/test_v2_import_boundary.py --noconftest
+
+# Live eval REPLAY (needs OPENAI_API_KEY transiently from ~/sealai/.env — see secret hygiene):
+PYTHONPATH=backend python -m sealai_v2.eval --label <run-label>
+# Owner adjudication recompute (no LLM call — folds the ticked worksheet):
+PYTHONPATH=backend python -m sealai_v2.eval --adjudicate --label <run-label>
+```

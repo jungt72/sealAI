@@ -1,0 +1,22 @@
+# Technische Orientierung (Screening){% if not grounded %} — vorläufig{% endif %}
+
+**Frage:** {{ question }}
+
+## Einschätzung
+{{ answer_text }}
+{% if computed or not_computed or calc_notes %}
+
+{% include "calc_report.jinja" %}
+{%- endif %}
+
+## Geerdete Fakten
+{% if grounding_facts %}
+{% for f in grounding_facts %}
+- {{ f.text }} [{{ f.quelle }}{% if f.card_id %}; {{ f.card_id }}{% endif %}]
+{% endfor %}
+{%- else %}
+> _Zu dieser Frage liegt (noch) keine geerdete, zitierte Fachgrundlage vor — die Aussagen sind **vorläufig** und gegen Datenblatt/Norm zu verifizieren._
+{%- endif %}
+
+---
+{{ claim_boundary }}

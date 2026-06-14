@@ -36,6 +36,17 @@ product concept here.
 > against the V1.8 §7.10 prohibition list and §11 acceptance criteria; Golden
 > REPLAY stays green after every patch.
 
+> **V2.0 green-field track (`backend/sealai_v2/`).** For work **inside
+> `backend/sealai_v2/`**, the binding doctrine + canonical entry points + test
+> commands live in **`AGENTS.md § "V2.0 green-field track"`** (single source of
+> truth — derived from `docs/V2/*`). V2 is on the `feat/v2*` line and is **not cut
+> over** to demo/main; the V1 runtime (`backend/app/`, frontend) stays governed
+> **unchanged** by V1.8 and everything else here until cutover. Inside the v2 tree
+> only: precedence is **V2.0 > V1.8 > V1.7**, the audit standard is the V2 build-spec
+> + the eval seed set, the human is the factual ORACLE (the agent never
+> self-adjudicates eval verdicts), and the `sealai_v2.* ↔ app.*` import boundary is
+> a hard CI gate. Read `docs/V2/*` first when the task touches that tree.
+
 ---
 
 ## Operating rules (`.claude/rules/`)
@@ -132,6 +143,12 @@ When working in this repo:
 - `frontend/src/{app,components,lib,hooks}/` — Next.js app (App Router).
 - `keycloak/`, `nginx/`, `paperless/` — infrastructure/auth/ingest.
 - `_archive/` — local backups (gitignored, do not touch).
+- `backend/sealai_v2/` — **V2.0 green-field tree** (`feat/v2*`; V2 source converged
+  onto demo 2026-06-14, demo→main + prod cutover still owner-gated): the
+  thin pipeline (`pipeline/`), the trust layers (`core/l1_generator.py`,
+  `core/l3_verifier.py`), grounding (`knowledge/`), `eval/`, `prompts/`, `render/`,
+  `security/tenant.py`. Governed by `AGENTS.md § "V2.0 green-field track"`. **No
+  `sealai_v2.* ↔ app.*` imports** (keystone: `backend/tests/architecture/test_v2_import_boundary.py`).
 
 ---
 
@@ -172,6 +189,16 @@ cd /home/thorsten/sealai/frontend && npm run test:all    # node + vitest
 cd /home/thorsten/sealai/frontend && npm run lint        # eslint
 cd /home/thorsten/sealai/frontend && npm run build       # next build (type-check)
 ```
+
+V2.0 (`backend/sealai_v2/` — offline = fake LLM client, no key, no runtime stack):
+
+```bash
+PYTHONPATH=backend python -m pytest backend/sealai_v2 --noconftest -q          # V2 offline suite
+python -m pytest backend/tests/architecture/test_v2_import_boundary.py --noconftest  # import-purity keystone
+```
+
+For the live eval REPLAY + owner adjudication, see `AGENTS.md § "V2.0 green-field
+track" → V2 test commands` (secret hygiene: key transient from `~/sealai/.env`).
 
 ---
 

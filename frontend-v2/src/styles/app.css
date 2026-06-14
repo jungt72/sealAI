@@ -1,0 +1,276 @@
+/* pilot-ui — the owner-approved Gemini-style stage (2026-06-12 mockup).
+   One luminous moment (the radial glow behind the pill), everything else quiet: borderless rail,
+   hairline pill, mono chips for engineering values, doctrine line fixed at the bottom. */
+
+.shell { display: flex; height: 100%; background: #fff; }
+
+/* ── borderless floating icon rail ─────────────────────────────────────────── */
+.rail {
+  width: var(--rail-w); flex: none; position: relative; z-index: 30;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 0 16px; background: transparent; border: none;
+}
+.rail-brand { width: 40px; height: 40px; display: grid; place-items: center;
+  color: var(--color-seal-blue); margin-bottom: 8px; }
+.rail-btn {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  border: none; background: transparent; color: var(--ink-soft); cursor: pointer;
+  transition: background 120ms ease;
+}
+.rail-btn:hover:not(:disabled), .rail-avatar:hover { background: var(--hover-wash); }
+.rail-btn:disabled { color: var(--ink-disabled); cursor: default; }
+.rail-spacer { flex: 1; }
+.rail-avatar {
+  width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center;
+  background: var(--color-seal-light-blue); color: var(--color-seal-blue);
+  transition: box-shadow 120ms ease;
+}
+.rail-avatar:hover { box-shadow: 0 0 0 4px var(--hover-wash); }
+.rail-menu {
+  position: absolute; left: calc(var(--rail-w) - 8px); bottom: 18px; z-index: 40;
+  background: #fff; border: 1px solid var(--hairline); border-radius: 14px;
+  box-shadow: 0 10px 32px rgba(31, 42, 68, 0.14); padding: 6px; min-width: 160px;
+}
+.rail-menu-item {
+  display: block; width: 100%; text-align: left; border: none; background: none;
+  font: inherit; font-size: 14px; color: var(--ink); padding: 9px 14px;
+  border-radius: 9px; cursor: pointer;
+}
+.rail-menu-item:hover { background: var(--hover-wash); }
+
+.main-area { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
+
+/* ── persistent doctrine line — always present, never dropped ───────────────── */
+.doctrine-line {
+  position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 20;
+  text-align: center; font-size: 12px; color: var(--ink-ghost);
+  padding: 18px 24px 12px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.96) 55%, rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+/* ── the stage (fresh conversation) ─────────────────────────────────────────── */
+.stage {
+  flex: 1; position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 30px; padding: 0 28px 72px;
+}
+.stage-glow {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse 56% 52% at 50% 56%, var(--glow), transparent 72%);
+}
+.stage > *:not(.stage-glow) { position: relative; z-index: 1; }
+.greeting {
+  font-size: 38px; font-weight: 400; color: var(--ink); margin: 0;
+  text-align: center; letter-spacing: -0.01em; line-height: 1.2;
+}
+
+/* ── the pill ───────────────────────────────────────────────────────────────── */
+.pill-wrap { position: relative; width: min(720px, 100%); }
+.stage .pill-wrap { z-index: 5; } /* popover must paint above the chip row (later sibling) */
+.pill {
+  display: flex; align-items: center; gap: 4px; min-height: 62px;
+  padding: 6px 8px 6px 10px; background: #fff;
+  border: 1px solid var(--hairline); border-radius: 999px;
+  box-shadow: 0 12px 40px rgba(122, 166, 235, 0.25), 0 2px 8px rgba(31, 42, 68, 0.05);
+}
+.pill:focus-within { border-color: #dbe2ee; }
+.pill-input {
+  flex: 1; min-width: 0; border: none; outline: none; resize: none; background: transparent;
+  font: inherit; font-size: 16px; color: var(--ink); padding: 9px 6px; max-height: 130px;
+}
+.pill-input::placeholder { color: var(--ink-ghost); }
+.pill-icon {
+  width: 42px; height: 42px; flex: none; border-radius: 50%; border: none;
+  display: grid; place-items: center; background: transparent; color: var(--ink-soft);
+  cursor: pointer; transition: background 120ms ease;
+}
+.pill-icon:hover:not(:disabled) { background: var(--hover-wash); }
+.pill-icon:disabled { color: var(--ink-disabled); cursor: default; }
+.pill-send {
+  width: 42px; height: 42px; flex: none; border-radius: 50%; border: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--color-seal-blue); color: #fff; transition: opacity 120ms ease;
+}
+.pill-send:disabled { background: transparent; color: var(--ink-disabled); cursor: default; }
+
+/* parameter-form popover anchored to the pill — upward in the chat view (pill docked bottom),
+   downward on the stage (pill mid-screen, room is below) */
+.pill-pop {
+  position: absolute; bottom: calc(100% + 14px); left: 6px; z-index: 35;
+  width: min(400px, calc(100% - 12px)); max-height: min(72vh, 560px); overflow: auto;
+  background: #fff; border: 1px solid var(--hairline); border-radius: 20px;
+  box-shadow: 0 18px 52px rgba(31, 42, 68, 0.16); padding: 18px 18px 16px;
+}
+.stage .pill-pop { bottom: auto; top: calc(100% + 14px); }
+
+/* ── fact chips (Fallkontext) ───────────────────────────────────────────────── */
+.fact-chips { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+.chips-label { width: 100%; text-align: center; font-size: 11px; color: var(--ink-ghost); }
+.chips-row { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0; padding: 0; }
+.fact-chip {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8); border: 1px solid var(--hairline);
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--ink);
+}
+.fact-chip-body {
+  border: none; background: none; cursor: pointer; font: inherit; color: inherit;
+  padding: 6px 2px 6px 13px; border-radius: 999px 0 0 999px;
+}
+.fact-chip-body:hover { background: var(--hover-wash); }
+.fact-feld { color: var(--ink-faint); margin-right: 7px; }
+.fact-wert { font-weight: 500; }
+.fact-chip-x {
+  border: none; background: none; cursor: pointer; color: var(--ink-faint);
+  font-size: 14px; line-height: 1; padding: 6px 11px 6px 7px; border-radius: 0 999px 999px 0;
+}
+.fact-chip-x:hover { background: var(--hover-wash); color: var(--ink); }
+.chips-forget-all {
+  border: none; background: none; cursor: pointer; font-size: 12px;
+  color: var(--ink-faint); text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px;
+}
+.chips-forget-all:hover { color: var(--ink); }
+
+/* ── Berechnungen (kernel channel — distinct from the editable input chips) ───── */
+.kernel-panel { margin-top: 6px; }
+.kernel-row .fact-chip {
+  flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 7px 13px; border-radius: 14px; cursor: default;
+  background: rgba(232, 240, 254, 0.6); border-color: rgba(120, 150, 200, 0.35);
+}
+.kernel-value .fact-wert { font-weight: 600; }
+.kernel-open .fact-wert { color: var(--ink-faint); font-weight: 500; }
+.kernel-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.kernel-prov { font-size: 10.5px; color: var(--ink-ghost); }
+.kernel-note { width: 100%; text-align: center; font-size: 11px; color: var(--ink-faint); margin: 2px 0 0; }
+.kernel-hint { font-style: italic; }
+
+/* ── chat view ──────────────────────────────────────────────────────────────── */
+.chat-view { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+.chat-log {
+  width: min(780px, 100%); flex: 1; overflow: auto;
+  display: flex; flex-direction: column; gap: 20px; padding: 30px 20px 10px;
+}
+.msg-user {
+  align-self: flex-end; background: var(--hover-wash); color: var(--ink);
+  padding: 11px 17px; border-radius: 20px 20px 5px 20px; max-width: 75%;
+  line-height: 1.5; white-space: pre-wrap;
+}
+.chat-foot {
+  width: min(780px, 100%); display: flex; flex-direction: column; gap: 10px;
+  padding: 6px 20px 64px;
+}
+.chat-foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
+.make-briefing {
+  border: 1px solid var(--hairline); background: #fff; border-radius: 999px;
+  font: inherit; font-size: 12.5px; color: var(--ink-soft); padding: 6px 14px; cursor: pointer;
+}
+.make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
+.make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
+
+/* ── live stage indicator (P4b — quiet pending row while the turn streams) ───── */
+.msg-pending { align-self: flex-start; display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
+.pending-dots { display: inline-flex; gap: 5px; }
+.pending-dots i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint);
+  animation: pending-pulse 1.2s ease-in-out infinite;
+}
+.pending-dots i:nth-child(2) { animation-delay: 0.15s; }
+.pending-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pending-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+.pending-label { font-size: 13px; color: var(--ink-soft); }
+
+/* ── answers (quiet surfaces — the content carries the weight) ──────────────── */
+.answer { max-width: 100%; line-height: 1.55; }
+.answer-badges { display: flex; gap: 6px; margin-bottom: 8px; }
+.badge {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+  padding: 3px 9px; border-radius: 999px; letter-spacing: 0.01em;
+}
+.badge-candidate { background: rgba(255, 255, 255, 0.7); border: 1px solid var(--hairline); color: var(--ink-faint); }
+.badge-vorlaeufig { background: var(--color-warning-bg); color: var(--color-warning-fg); }
+.answer-text { line-height: 1.55; }
+
+/* markdown body — block layout from the renderer; restrained, quiet headings */
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p { margin: var(--space-2) 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  margin: var(--space-4) 0 var(--space-2); line-height: 1.25; color: var(--ink); font-weight: 600; }
+.markdown h1 { font-size: 1.25rem; } .markdown h2 { font-size: 1.1rem; } .markdown h3 { font-size: 1rem; }
+.markdown ul, .markdown ol { margin: var(--space-2) 0; padding-left: var(--space-6); }
+.markdown li { margin: 3px 0; }
+.markdown a { color: var(--color-seal-blue); text-decoration: underline; text-underline-offset: 2px; }
+.markdown code { font-family: var(--font-mono); font-size: 0.88em;
+  background: var(--hover-wash); padding: 1px 6px; border-radius: 6px; }
+.markdown pre { background: var(--hover-wash); border: 1px solid var(--hairline);
+  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
+.markdown pre code { background: none; padding: 0; }
+.markdown blockquote { margin: var(--space-2) 0; padding-left: var(--space-3);
+  border-left: 3px solid var(--hairline); color: var(--ink-soft); }
+.markdown table { border-collapse: collapse; margin: var(--space-2) 0; }
+.markdown th, .markdown td { border: 1px solid var(--hairline); padding: var(--space-1) var(--space-3); }
+.markdown td { font-family: var(--font-mono); font-size: 0.92em; }
+.markdown th { font-weight: 600; text-align: left; }
+.markdown .katex-display { margin: var(--space-3) 0; overflow-x: auto; overflow-y: hidden; }
+
+.citations { margin-top: 10px; font-size: 13px; }
+.citations summary { cursor: pointer; color: var(--ink-faint); font-size: 12px; }
+.citations ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.citation { display: flex; flex-direction: column; gap: 2px; margin: var(--space-2) 0;
+  padding: 8px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.7); }
+.citation-text { color: var(--ink-soft); }
+.citation-source { font-family: var(--font-mono); color: var(--color-seal-blue); font-size: 11.5px; }
+
+.error-banner { background: var(--color-warning-bg); color: var(--color-warning-fg);
+  border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: var(--space-3);
+  font-size: 14px; }
+
+/* ── parameter form (popover content) — inputs only; the kern owns every number ─ */
+.param-head h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.param-form .muted { margin: 0 0 12px; }
+.param-form form { display: flex; flex-direction: column; gap: 10px; }
+.param-row { display: flex; flex-direction: column; gap: 3px; }
+.param-label { font-size: 12px; color: var(--ink-faint); }
+.param-input { display: flex; align-items: center; gap: var(--space-2); }
+.param-input input { flex: 1; min-width: 0; padding: 8px 12px; font: inherit; font-size: 14px;
+  font-family: var(--font-mono); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: 10px; outline: none; }
+.param-input input:focus { border-color: #c8d4e8; }
+.param-input input::placeholder { color: var(--ink-ghost); font-family: var(--font-sans); }
+.param-unit { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); min-width: 44px; }
+.param-form > form > button {
+  align-self: flex-start; margin-top: 4px; cursor: pointer; font: inherit; font-size: 13px;
+  font-weight: 500; color: #fff; background: var(--color-seal-blue);
+  border: none; border-radius: 999px; padding: 8px 18px;
+}
+
+/* ── briefing (chat-flow card) ──────────────────────────────────────────────── */
+.briefing-pane { border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.85); padding: var(--space-4); }
+.briefing-pane h3 { margin: 0 0 var(--space-2); font-size: 14px; font-weight: 600; color: var(--ink); }
+.claim-boundary-note { font-size: 12px; color: var(--ink-soft);
+  border-left: 3px solid var(--color-seal-blue); padding-left: var(--space-3); margin: var(--space-2) 0; }
+.briefing-body { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px;
+  background: var(--hover-wash); border: 1px solid var(--hairline);
+  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
+.briefing-provenance { font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--color-seal-blue); margin-top: var(--space-2); }
+
+.muted { color: var(--ink-soft); font-size: 13px; }
+.cockpit-head { display: flex; align-items: center; justify-content: space-between; }
+
+/* ── login (pre-auth) — same stage language ─────────────────────────────────── */
+.login { position: relative; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%; gap: var(--space-6); overflow: hidden; }
+.login > *:not(.stage-glow) { position: relative; z-index: 1; }
+.login h1 { color: var(--ink); font-size: 32px; font-weight: 400; margin: 0; }
+.login .brand-sep { color: var(--ink-ghost); }
+.brand-sep { opacity: 0.55; }
+.login button { background: var(--color-seal-blue); color: #fff; border: none;
+  border-radius: 999px; padding: 13px 34px; font: inherit; font-size: 15px;
+  font-weight: 500; cursor: pointer; box-shadow: 0 10px 30px rgba(122, 166, 235, 0.3); }

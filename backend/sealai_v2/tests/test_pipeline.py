@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from sealai_v2.core.contracts import Flags, Intent, ModelConfig
+from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.prompts.assembler import PromptAssembler
+from sealai_v2.security.tenant import TenantContext, TenantScopeError
+from sealai_v2.tests._fakes import FakeLlmClient
+
+
+def _pipeline(fake: FakeLlmClient, *, understand: bool = False) -> Pipeline:
+    gen = L1Generator(fake, PromptAssembler(), ModelConfig("fake-l1"))
+    return Pipeline(
+        generator=gen,
+        client=fake,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=understand,
+    )
+
+
+def test_answer_returns_canned_and_threads_tenant():
+    fake = FakeLlmClient("ANSWER-XYZ")
+    res = asyncio.run(
+        _pipeline(fake).run(
+            "Frage?", tenant=TenantContext("t1"), flags=Flags(False, False)
+        )
+    )
+    assert res.answer.text == "ANSWER-XYZ"
+    assert res.tenant_id == "t1"
+    assert res.grounded is False and res.verified is False and res.cited is False
+    # flags-off → the L1 call's system prompt took the grounding else-branch
+    assert "Allgemeinwissen" in fake.calls[-1]["system"]
+    assert fake.calls[-1]["user"] == "Frage?"
+
+
+def test_flags_on_reach_the_prompt():
+    fake = FakeLlmClient("A")
+    asyncio.run(
+        _pipeline(fake).run(
+            "Frage?", tenant=TenantContext("t1"), flags=Flags(True, True)
+        )
+    )
+    assert "Sicherheitskritischer Kontext" in fake.calls[-1]["system"]
+
+
+def test_tenant_is_mandatory_p0():
+    fake = FakeLlmClient("A")
+    for bad in ("", "   "):
+        with pytest.raises(TenantScopeError):
+            asyncio.run(_pipeline(fake).run("Frage?", tenant=TenantContext(bad)))
+
+
+def test_pipeline_injects_reviewed_grounding_into_l1():
+    from sealai_v2.knowledge.retrieval import InProcessRetriever
+
+    fake = FakeLlmClient("A")
+    p = Pipeline(
+        generator=L1Generator(fake, PromptAssembler(), ModelConfig("fake-l1")),
+        client=fake,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+        retriever=InProcessRetriever(),
+    )
+    res = asyncio.run(
+        p.run(
+            "EPDM-O-Ringe quellen in Hydrauliköl, woran liegt das?",
+            tenant=TenantContext("t1"),
+            flags=Flags(),
+        )
+    )
+    assert res.grounded and res.grounding_facts
+    # the reviewed card facts were rendered into the L1 system prompt (cited "Belegte Fakten")
+    assert "Belegte Fakten" in fake.calls[-1]["system"]
+    assert "unpolar" in fake.calls[-1]["system"].lower()
+
+
+def test_pipeline_computes_and_injects_values():
+    from sealai_v2.core.calc.evaluator import CascadeCalcEngine
+
+    fake = FakeLlmClient("A")
+    p = Pipeline(
+        generator=L1Generator(fake, PromptAssembler(), ModelConfig("fake-l1")),
+        client=fake,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+        engine=CascadeCalcEngine(),
+    )
+    res = asyncio.run(
+        p.run(
+            "Welle 80 mm, 3000 U/min — Standard-NBR-RWDR ok?",
+            tenant=TenantContext("t1"),
+            flags=Flags(),
+            params={"d1_mm": 80, "rpm": 3000, "seal_type": "rwdr"},
+        )
+    )
+    assert res.computed_values and res.computed_values[0].name == "v_m_s"
+    assert "Berechnete Werte" in fake.calls[-1]["system"]
+    assert "v_m_s" in fake.calls[-1]["system"]
+
+
+def test_pipeline_without_retriever_is_vorlaeufig():
+    fake = FakeLlmClient("A")
+    p = _pipeline(fake)  # no retriever
+    res = asyncio.run(
+        p.run("EPDM in Hydrauliköl", tenant=TenantContext("t1"), flags=Flags())
+    )
+    assert res.grounded is False and res.grounding_facts == ()
+    assert (
+        "VORLÄUFIG" in fake.calls[-1]["system"]
+        or "vorläufig" in fake.calls[-1]["system"]
+    )
+
+
+def test_soft_understand_annotates_without_gating():
+    fake = FakeLlmClient('{"intent": "fallarbeit", "rationale": "konkrete Situation"}')
+    res = asyncio.run(
+        _pipeline(fake, understand=True).run(
+            "Welche Dichtung?", tenant=TenantContext("t1"), flags=Flags()
+        )
+    )
+    assert res.understanding is not None
+    assert res.understanding.intent == Intent.FALLARBEIT
+    # the answer is still produced regardless of intent (no gating)
+    assert res.answer.text

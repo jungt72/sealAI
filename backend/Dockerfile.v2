@@ -1,0 +1,49 @@
+# =============================================================================
+# Dockerfile.v2 — the green-field sealai_v2 image (cutover Phase 1: full /api/v2 app).
+#
+# Single-stage slim image serving sealai_v2.api.main:app on port 8001: /health,
+# /api/v2/{chat,conversations,briefing,framing,health}. No `app` (V1) code — the
+# green-field boundary holds at the image level too. Built only by the
+# off-by-default `backend-v2` compose service (profile `v2`); the production
+# backend image (backend/Dockerfile) is untouched.
+#
+# Build context is ./backend (same as the production image), so `COPY sealai_v2`
+# resolves to backend/sealai_v2.
+# =============================================================================
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
+
+# curl: container healthcheck only.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# Non-root user (matches the production image's uid).
+RUN useradd -m -u 10001 -s /usr/sbin/nologin appuser
+
+# Pinned runtime deps (kept in lockstep with backend/requirements.txt — see requirements-v2.txt).
+COPY requirements-v2.txt ./
+RUN python -m pip install --upgrade pip \
+ && python -m pip install -r requirements-v2.txt
+
+# Green-field package only — never the `app` tree.
+COPY sealai_v2 ./sealai_v2
+
+# Import keystone: fail the BUILD (not the first request) if a dep is missing — including the
+# lazy I/O-edge imports (openai SDK, httpx JWKS fetch).
+RUN python -c "import httpx; from openai import AsyncOpenAI; import sealai_v2.api.main"
+
+RUN chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8001/health >/dev/null || exit 1
+
+CMD ["uvicorn", "sealai_v2.api.main:app", "--host", "0.0.0.0", "--port", "8001"]

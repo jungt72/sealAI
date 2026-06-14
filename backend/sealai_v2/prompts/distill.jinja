@@ -1,0 +1,33 @@
+{#
+  sealingAI V2.0 — Destillations-Prompt (Gedächtnis, Schicht 2)  ·  Jinja2-Template
+  ------------------------------------------------------------------------------
+  Extrahiert NUR vom Nutzer EXPLIZIT genannte Anwendungs-Fakten in den strukturierten
+  Fallzustand (case_context). KONSERVATIV: keine Schlussfolgerung, keine Empfehlung,
+  nichts, was nur der Assistent gesagt hat.
+
+  Dies ist KEIN Slot-Binder: der Fallzustand steuert/gatet nichts. Er verhindert nur das
+  erneute Erfragen bereits genannter Fakten (der Re-Ask-Fix). Das Template assembliert den
+  Prompt; es entscheidet keinen fachlichen Inhalt (§4.1).
+#}
+Du extrahierst strukturierte Fakten aus einer Nutzer-Nachricht an einen Dichtungstechnik-Assistenten.
+
+Gib NUR Fakten zurück, die der **Nutzer SELBST EXPLIZIT genannt** hat — konkrete
+Anwendungsbedingungen, z. B.:
+Medium/Fluid, Temperatur, Druck, Bewegung (dynamisch/statisch), Drehzahl, Wellen-/Geometriemaß,
+Anwendung/Bauteil, gewünschter Werkstoff.
+
+Strikt:
+- KEINE Schlussfolgerungen, KEINE Annahmen, KEINE abgeleiteten Werte.
+- KEINE Empfehlungen oder Aussagen des Assistenten — nur, was der Nutzer gesagt hat.
+- Erfinde nichts. Im Zweifel weglassen (konservativ).
+- Nennt der Nutzer nichts Konkretes (Begrüßung, allgemeine Wissensfrage, Smalltalk): leere Liste.
+- **Einheiten beim Zahlenwert lassen.** Hat der Nutzer zu einem Zahlenwert eine Einheit genannt,
+  schreibe sie DIREKT mit in den `wert` — genau in der Schreibweise des Nutzers (z. B. »40 mm«,
+  »8000 U/min«, »120 °C«, »10 bar«). Trenne die Einheit nicht ab und lasse sie nicht weg; eine
+  abgetrennte Zahl ohne Einheit ist downstream nicht eindeutig verwertbar.
+- **Erfinde KEINE Einheit**, die der Nutzer nicht genannt hat. Nennt er nur »8000« ohne Einheit,
+  bleibt der `wert` »8000« (nicht zu »8000 U/min« ergänzen) — fehlende Angaben werden später
+  bestätigt, nicht geraten.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt — keine Prosa, kein Markdown:
+{"facts": [{"feld": "<kurzer Schlüssel, z. B. medium|temperatur|druck|drehzahl|wellendurchmesser|anwendung|werkstoff>", "wert": "<wie vom Nutzer genannt, Zahl MIT Einheit falls genannt>"}]}

@@ -1,0 +1,50 @@
+name: V2 Contracts
+
+# V2.0 CI — scoped to the green-field sealai_v2 tree (Option B coexistence).
+# Runs the import-purity boundary keystone (build-spec §11) and the v2 offline test
+# suite. Deps come from backend/requirements-v2.txt (the exact pins the backend-v2
+# image ships — single pin source) + pytest; the offline tests use a fake LLM client
+# and need no network / API key / runtime stack. Kept as its own workflow so all v2 CI
+# is isolated and can be deleted wholesale when v2 lands (or removed if v2 is abandoned).
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  v2-contracts:
+    name: v2-contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps (image pins from requirements-v2.txt — no ML / runtime stack)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pytest~=8.4.2" -r backend/requirements-v2.txt
+
+      # Keystone: no sealai_v2.* imports app.*, and no app.* imports sealai_v2.*.
+      - name: Import-purity boundary (sealai_v2 <-> app)
+        run: |
+          python -m pytest backend/tests/architecture/test_v2_import_boundary.py --noconftest
+
+      # V2 offline suite (sealai_v2/tests): cases load, prompt assembly (flags off/on),
+      # pipeline with a fake client, tenant-guard (P0), scorer. --noconftest so backend's
+      # heavy DB/stub conftest is not loaded (real jinja2 is needed here). PYTHONPATH=backend
+      # resolves `import sealai_v2`. Exit 5 (nothing collected) is tolerated as a safety net.
+      - name: V2 offline tests
+        env:
+          PYTHONPATH: backend
+        run: |
+          set +e
+          python -m pytest backend/sealai_v2 --noconftest -q
+          rc=$?
+          if [ "$rc" -eq 5 ]; then
+            echo "No v2 tests collected — unexpected now that sealai_v2/tests exists, but tolerated."
+            exit 0
+          fi
+          exit "$rc"
