@@ -6,6 +6,43 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-14T12:25Z — V2 PROD deploy: `/dashboard` dist-swap (responsive two-column layout fix) — owner-gated
+
+**Deploy (owner-gated, this is a live prod change to `/dashboard`):** rebuilt the V2 client
+from `demo/rwdr-limited-external @ 6e48be76` (PR #130, the responsive two-column dashboard
+layout fix — `ChatPane.tsx` + `app.css`, commit `236cfb74`) and swapped the bundle into the
+live-mounted `frontend-v2/dist` (`/usr/share/nginx/v2-client`, served by the running `nginx`
+under `/dashboard/`). Static dist-swap only — nginx config + the V2 flip untouched (no reload).
+
+**Source provenance:** detached-checkout `demo @ 6e48be76` in the live worktree — verified a
+zero-tracked-file change (`236cfb74..6e48be76` empty diff: tree-identical to the carry-over
+branch, incl. `nginx/` + deps), so the checkout altered no live config and reused the existing
+`node_modules`.
+
+**SAFE build procedure (no live-dist clobber):** offline validation green
+(`check:boundary` ✅ · `tsc --noEmit` ✅ · vitest **86/86** ✅) → build to a throwaway outdir
+(`npx vite build --outDir /tmp/v2dist-build-20260614T121219Z --emptyOutDir` — **never**
+`npm run build`/`verify` against the repo dist) → verified the build CONTAINS the fix
+(`case-state` token; `@media (width>=1024px)` breakpoint present, **absent** from the prior
+live CSS) → backed up the current live dist → owner HALT/go → `rsync -a --delete` into the
+live dist.
+
+**Manifest (sha256):**
+- new: `index.html` `ee4abc0b…` · `assets/index-BC9D4KRg.js` `1bd31d6c…` · `assets/index-TDBS5kjk.css` `6226c476…`
+- rolled-from (prior live): `index.html` `c2e6dfd5…` · `assets/index-BFx_yx7W.js` `520796f6…` · `assets/index-BIqqBifS.css` `450e22ea…`
+- only the two top-level `index-*` bundles changed; fonts/katex assets stable (67 assets both).
+
+**Rollback artifact:** `/tmp/dist-backup-20260614T121338Z.tgz` (sha256 `b6963bb8…`, holds the
+prior live dist). Restore = `tar xzf` it + `rsync -a --delete` the extracted `dist/` back into
+`frontend-v2/dist/` (static; no nginx reload).
+
+**Live verification:** `https://sealingai.com/dashboard/` → 200, serves
+`index-BC9D4KRg.js`/`index-TDBS5kjk.css` (served hashes == manifest); fix present in served
+CSS (`@media (width>=1024px)`); old hashed asset URL → SPA `index.html` fallback (correct);
+V1 unaffected (`/` + `/api/agent/health` both 200). `main` untouched (`ab586f30`).
+
+---
+
 ## 2026-06-14T06:06Z — V2 source → demo convergence (owner-gated; first V2 landing on demo; prod still V1)
 
 **Decision (owner, 2026-06-14):** converge the V2.0 green-field source tree onto
