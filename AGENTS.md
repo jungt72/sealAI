@@ -425,7 +425,10 @@ without an explicit SSoT/blueprint update.
 > **Scope — read this first.** This section applies to **`backend/sealai_v2/` ONLY.**
 > V2.0 is a green-field rebuild living *alongside* the live V1 runtime. It is on the
 > **`feat/v2*` branch line (Phase 0 + M1 merged; M2 = L3 verifier + trap catalog,
-> pre-measurement)** and is **NOT cut over** to `demo/rwdr-limited-external` or `main`.
+> pre-measurement)**. As of 2026-06-14 the V2 source is **converged onto
+> `demo/rwdr-limited-external`** (owner-gated carry-over — see GOVERNANCE_LOG); the
+> **demo→main convergence and the V2 prod cutover remain separately owner-gated**,
+> and prod still runs V1 unchanged.
 > The V1 runtime (`backend/app/`, the frontend, and everything in the sections above)
 > stays governed **unchanged** by this contract and by V1.8 until an explicit cutover.
 > **Inside this tree only:** precedence is **V2.0 > V1.8 > V1.7**, and V1.8's

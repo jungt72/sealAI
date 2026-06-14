@@ -143,7 +143,8 @@ When working in this repo:
 - `frontend/src/{app,components,lib,hooks}/` — Next.js app (App Router).
 - `keycloak/`, `nginx/`, `paperless/` — infrastructure/auth/ingest.
 - `_archive/` — local backups (gitignored, do not touch).
-- `backend/sealai_v2/` — **V2.0 green-field tree** (`feat/v2*`, not cut over): the
+- `backend/sealai_v2/` — **V2.0 green-field tree** (`feat/v2*`; V2 source converged
+  onto demo 2026-06-14, demo→main + prod cutover still owner-gated): the
   thin pipeline (`pipeline/`), the trust layers (`core/l1_generator.py`,
   `core/l3_verifier.py`), grounding (`knowledge/`), `eval/`, `prompts/`, `render/`,
   `security/tenant.py`. Governed by `AGENTS.md § "V2.0 green-field track"`. **No

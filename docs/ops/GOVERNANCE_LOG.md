@@ -6,6 +6,28 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-14T06:06Z — V2 source → demo convergence (owner-gated; first V2 landing on demo; prod still V1)
+
+**Decision (owner, 2026-06-14):** converge the V2.0 green-field source tree onto
+`demo/rwdr-limited-external` via one in-policy carry-over PR
+(`feat/v2-pilot-ui-gemini → demo/rwdr-limited-external`) — the FIRST landing of
+`backend/sealai_v2/` + `frontend-v2/` on demo (neither existed there before).
+
+**Scope:** 86 commits / 222 files / +36,523 (188 V2-source). Clean — demo is an
+ancestor of pilot (0 behind); merge-tree dry-run conflict-free. Carries two newly
+integrated branches: `feat/v2-unit-binding` (live clarify fix) + `feat/v2-model-routing`
+(per-role plumbing, DEFAULT-PRESERVING, matrix eval PENDING).
+
+**Integration gate (combined @ 9a504f30):** G1 V2-offline ✅ · G2 import-keystone ✅ ·
+G3 V1 doctrine-guard ✅ · G4 broad-backend ✅ (identical to pre-merge green baseline,
+zero introduced reds) · frontend-v2 check:boundary + tsc + 86/86 vitest ✅.
+
+**Still separately owner-gated (NOT in this step):** (i) demo→main convergence;
+(ii) the V2 PROD cutover (`ops/v2-flip.sh` / nginx / `frontend-v2/dist`). Prod keeps
+running V1 unchanged — no deploy, no prod-path change in this PR.
+
+---
+
 ## 2026-06-13T19:39Z — V2 model-swap routing + eval matrix (CANDIDATE, NOT run, NOT deployed) + eval-version==prod-version rule
 
 **Delivered (branch `feat/v2-model-routing` @ `1c33bab9`+, commits local — no deploy, no live model
