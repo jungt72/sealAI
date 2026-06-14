@@ -166,6 +166,28 @@ export function ChatPane({
     <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} />
   );
 
+  const briefingButton = (
+    <button
+      className="make-briefing"
+      onClick={onMakeBriefing}
+      disabled={!canBriefing}
+      data-testid="make-briefing"
+    >
+      Briefing erstellen
+    </button>
+  );
+
+  // The case-state column (chips + kern) is empty when there are no remembered facts AND the kern has
+  // nothing to show — this mirrors the MemoryPanel/BerechnungenPanel null-returns so the reserved right
+  // column shows an honest placeholder instead of a blank box. Read-only over existing props: no data
+  // flow, settle, clarify-confirm, or recompute logic is touched.
+  const caseStateEmpty =
+    memory.case_state.length === 0 &&
+    (compute?.computed?.length ?? 0) === 0 &&
+    (compute?.not_computed?.length ?? 0) === 0 &&
+    (compute?.clarifications?.length ?? 0) === 0 &&
+    (compute?.notes?.length ?? 0) === 0;
+
   if (msgs.length === 0) {
     return (
       <div className="stage" data-testid="chat-pane">
@@ -187,52 +209,56 @@ export function ChatPane({
 
   return (
     <div className="chat-view" data-testid="chat-pane">
-      <div className="chat-log" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
-        {msgs.map((m, i) =>
-          m.role === "user" ? (
-            <div key={i} className="msg-user">
-              {m.text}
-            </div>
-          ) : (
-            <Answer key={i} res={m.res} />
-          ),
-        )}
-        {busy && (
-          <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
-            <span className="pending-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            {stageLabel && (
-              <span className="pending-label" data-testid="stage-label">
-                {stageLabel}
+      <div className="chat-main">
+        <div className="chat-log" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
+          {msgs.map((m, i) =>
+            m.role === "user" ? (
+              <div key={i} className="msg-user">
+                {m.text}
+              </div>
+            ) : (
+              <Answer key={i} res={m.res} />
+            ),
+          )}
+          {busy && (
+            <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
+              <span className="pending-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
               </span>
-            )}
-          </div>
-        )}
-        {error && (
-          <div className="error-banner" role="alert" data-testid="chat-error">
-            {error}
-          </div>
-        )}
-        <BriefingPane briefing={briefing} />
-      </div>
-      <div className="chat-foot">
-        {composer}
-        <div className="chat-foot-row">
-          {chips}
-          <button
-            className="make-briefing"
-            onClick={onMakeBriefing}
-            disabled={!canBriefing}
-            data-testid="make-briefing"
-          >
-            Briefing erstellen
-          </button>
+              {stageLabel && (
+                <span className="pending-label" data-testid="stage-label">
+                  {stageLabel}
+                </span>
+              )}
+            </div>
+          )}
+          {error && (
+            <div className="error-banner" role="alert" data-testid="chat-error">
+              {error}
+            </div>
+          )}
+          <BriefingPane briefing={briefing} />
         </div>
-        {kernelPanel}
+        <div className="chat-foot">{composer}</div>
       </div>
+      {/* case-state: right column on wide screens (≥1024px), stacked below on narrow.
+          Reserved from the first message — an honest placeholder, never a blank box, until values arrive. */}
+      <aside className="case-state" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
+        {caseStateEmpty ? (
+          <p className="case-state-empty" data-testid="case-state-empty">
+            Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
+            Rechenkern hier.
+          </p>
+        ) : (
+          <>
+            {chips}
+            {kernelPanel}
+          </>
+        )}
+        <div className="chat-foot-row">{briefingButton}</div>
+      </aside>
     </div>
   );
 }
