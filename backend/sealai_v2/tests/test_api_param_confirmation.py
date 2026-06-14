@@ -35,7 +35,9 @@ def _engine_pipeline() -> Pipeline:
 
 def _batch(client, items, token: str = "tok-A"):
     return client.post(
-        "/api/v2/conversations/current/facts", json={"items": items}, headers=auth(token)
+        "/api/v2/conversations/current/facts",
+        json={"items": items},
+        headers=auth(token),
     )
 
 
@@ -46,7 +48,11 @@ def test_batch_settle_echoes_post_bind_value_and_pv_from_half_bar():
     r = _batch(
         client,
         [
-            {"feld": "wellendurchmesser", "wert": "50 mm", "label": "Wellendurchmesser d₁"},
+            {
+                "feld": "wellendurchmesser",
+                "wert": "50 mm",
+                "label": "Wellendurchmesser d₁",
+            },
             {"feld": "drehzahl", "wert": "3000 U/min", "label": "Drehzahl n"},
             {"feld": "druck", "wert": "0,5 bar", "label": "Druck p"},
             {"feld": "medium", "wert": "Öl", "label": "Medium"},
@@ -75,12 +81,16 @@ def test_batch_clarify_pending_is_rueckfrage_not_uebernommen():
     """A clarify-triggering value (500 mbar — real pressure, wrong scale) is a Rückfrage, never
     claimed as 'übernommen', and no PV is fabricated."""
     client, _ = make_client(_engine_pipeline())
-    body = _batch(client, [{"feld": "druck", "wert": "500 mbar", "label": "Druck p"}]).json()
+    body = _batch(
+        client, [{"feld": "druck", "wert": "500 mbar", "label": "Druck p"}]
+    ).json()
     assert all(u["feld"] != "druck" for u in body["uebernommen"])  # NOT taken
     rf = {x["feld"]: x for x in body["rueckfragen"]}
     assert "druck" in rf and rf["druck"]["label"] == "Druck p"
     assert rf["druck"]["clarification"]["reason"] == "unit_known_other"
-    assert rf["druck"]["clarification"]["one_click"] is False  # no silent rescale to bar
+    assert (
+        rf["druck"]["clarification"]["one_click"] is False
+    )  # no silent rescale to bar
     by_id = {c["calc_id"]: c for c in body["computed"]}
     assert "pv_wert" not in by_id  # no fabricated PV
 

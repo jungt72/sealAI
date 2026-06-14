@@ -93,7 +93,9 @@ async def edit_fact(
 class FactBatchItem(BaseModel):
     feld: str
     wert: str
-    label: str | None = None  # display label from the form schema — echoed verbatim, never decisive
+    label: str | None = (
+        None  # display label from the form schema — echoed verbatim, never decisive
+    )
 
 
 class FactBatch(BaseModel):

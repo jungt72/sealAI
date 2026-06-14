@@ -24,7 +24,9 @@ def build_param_confirmation(
     submitted order (carries the display ``label`` from the form schema); ``settled`` is the current
     case-state after the writes; ``comp`` is the recompute (derived + not_computed + clarifications)."""
     binding = bind_params(settled)
-    bound = bound_display(binding)  # feld → post-bind "value unit" (bound kernel inputs only)
+    bound = bound_display(
+        binding
+    )  # feld → post-bind "value unit" (bound kernel inputs only)
     clar_by_feld = {c.feld: c for c in binding.clarifications}
     settled_by_feld = {f.feld: f for f in settled}
 

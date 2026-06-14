@@ -49,10 +49,14 @@ def test_druck_user_form_provenance_binds():
 # --- the scale-guard: real pressure units of a different scale NEVER rescale to bar ----------
 
 
-@pytest.mark.parametrize("wert", ["500 mbar", "10 psi", "0.5 MPa", "0,5 MPa", "100 kPa", "50 Pa"])
+@pytest.mark.parametrize(
+    "wert", ["500 mbar", "10 psi", "0.5 MPa", "0,5 MPa", "100 kPa", "50 Pa"]
+)
 def test_other_pressure_units_are_known_other_never_one_click(wert: str):
     res = bind_params((fact("druck", wert),))
-    assert "p_bar" not in res.params  # MUST NOT bind — appending/scaling "bar" is forbidden
+    assert (
+        "p_bar" not in res.params
+    )  # MUST NOT bind — appending/scaling "bar" is forbidden
     c = _clar(res, "druck")
     assert c.reason == "unit_known_other"
     assert c.known_dimension == "pressure" and c.expected_dimension == "pressure"
@@ -65,9 +69,13 @@ def test_druck_unitless_is_unit_missing_one_click_safe():
     res = bind_params((fact("druck", "5"),))
     assert "p_bar" not in res.params
     c = _clar(res, "druck")
-    assert c.reason == "unit_missing" and c.suggested_unit == "bar" and c.one_click is True
+    assert (
+        c.reason == "unit_missing" and c.suggested_unit == "bar" and c.one_click is True
+    )
     # the suggestion round-trips: "5 bar" actually binds
-    assert bind_params((fact("druck", f"{c.raw_value} {c.suggested_unit}"),)).params == {"p_bar": 5.0}
+    assert bind_params(
+        (fact("druck", f"{c.raw_value} {c.suggested_unit}"),)
+    ).params == {"p_bar": 5.0}
 
 
 def test_druck_length_unit_is_dimension_mismatch():
