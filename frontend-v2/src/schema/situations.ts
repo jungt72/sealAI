@@ -199,3 +199,9 @@ export const SITUATIONS: SituationDef[] = [RWDR_SITUATION];
 
 /** Flatten a situation's fields (renderer + submit helpers). */
 export const situationFields = (s: SituationDef): FieldDef[] => s.groups.flatMap((g) => g.fields);
+
+/** The kernel-critical fields (role:"kernel") — DERIVED, the single source for the stage compact
+ * card. A future kernel-field change (a schema entry) auto-updates the card; never a hardcoded
+ * parallel list. The compact card == this set is the Phase-3 invariant. */
+export const kernelFields = (s: SituationDef): FieldDef[] =>
+  situationFields(s).filter((f) => f.role === "kernel");

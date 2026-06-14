@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import type { ParamItem } from "../contracts";
 import {
   type FieldDef,
+  kernelFields,
   SITUATIONS,
   type SituationDef,
   situationFields,
@@ -47,23 +48,30 @@ export function resolveWert(field: FieldDef, raw: string): string {
 
 /**
  * Schema-driven parameter entry — INPUTS ONLY. The universal renderer over a domain SCHEMA
- * (`schema/situations.ts`): tab per situation → groups → fields by type. It NEVER computes or
- * displays a derived value (no formula import, no arithmetic): it writes raw inputs to case-state
- * memory (origin = user-form) via `onSubmit`, and the deterministic kern owns every calculated
- * number — with provenance and fail-closed framing — on the chat/briefing path. A client-side number
- * here would re-create the false-provenance calc-leak, so it is structurally absent.
+ * (`schema/situations.ts`). It NEVER computes or displays a derived value (no formula import, no
+ * arithmetic): it writes raw inputs to case-state memory (origin = user-form) via the batch
+ * `onSubmit`, and the deterministic kern owns every calculated number — with provenance and
+ * fail-closed framing — on the chat/briefing path.
+ *
+ * Two layouts over the SAME state + submit:
+ *  - `variant="popover"` (default): the full grouped form (the "+" popover in chat-view).
+ *  - `variant="stage"`: a COMPACT card of the kernel-critical fields (DERIVED via `kernelFields` —
+ *    never a hardcoded list) + a `<details>` expander for the rest (role:"context"), grouped A–I.
+ *    The compact/expander split maps onto the trust-spine boundary.
  *
  * Adding a situation or a field is a schema entry, never a change here.
  */
 export function ParameterForm({
   onSubmit,
   onSubmitted,
+  variant = "popover",
 }: {
   /** Batch submit: every non-empty field as one payload → one settle + one recompute + one
    * deterministic confirmation (the host wires it to POST .../current/facts). */
   onSubmit: (items: ParamItem[]) => void;
   /** Pilot-ui: lets the hosting popover close itself after a submit (purely presentational). */
   onSubmitted?: () => void;
+  variant?: "popover" | "stage";
 }) {
   const [activeId, setActiveId] = useState<string>(SITUATIONS[0]?.id ?? "");
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -85,6 +93,51 @@ export function ParameterForm({
     onSubmitted?.();
   }
 
+  const row = (f: FieldDef) => (
+    <FieldRow key={f.key} field={f} value={vals[f.key] ?? ""} onChange={(v) => set(f.key, v)} />
+  );
+
+  // ── stage: compact kernel card + expander (role:context), one shared submit ──────────────────
+  if (variant === "stage") {
+    return (
+      <section className="param-form param-stage-card" data-testid="parameter-form">
+        <header className="param-head">
+          <h3>Parameter direkt eingeben</h3>
+        </header>
+        <form onSubmit={submit}>
+          <div className="param-compact" data-testid="param-compact">
+            {kernelFields(active).map(row)}
+          </div>
+          <details className="param-expander" data-testid="param-expander">
+            <summary className="param-expander-summary">
+              weitere Parameter ergänzen (Medium, Werkstoff, Dynamik …)
+            </summary>
+            <div className="param-expander-body">
+              {active.groups.map((g) => {
+                const ctx = g.fields.filter((f) => f.role === "context");
+                if (ctx.length === 0) return null;
+                return (
+                  <fieldset key={g.id} className="param-group" data-testid={`param-group-${g.id}`}>
+                    <legend className="param-group-title">{g.title}</legend>
+                    {ctx.map(row)}
+                  </fieldset>
+                );
+              })}
+            </div>
+          </details>
+          <button type="submit" data-testid="param-submit">
+            Berechnen
+          </button>
+          <p className="muted param-stage-note">
+            Eingaben werden als Fallkontext gespeichert; berechnete Werte liefert der Rechenkern.
+            Leer / „Unbekannt" bleibt offen (keine Annahme).
+          </p>
+        </form>
+      </section>
+    );
+  }
+
+  // ── popover (default): the full grouped form ─────────────────────────────────────────────────
   return (
     <section className="param-form" data-testid="parameter-form">
       <header className="param-head">
@@ -119,25 +172,7 @@ export function ParameterForm({
         {active.groups.map((g) => (
           <fieldset key={g.id} className="param-group" data-testid={`param-group-${g.id}`}>
             <legend className="param-group-title">{g.title}</legend>
-            {g.fields.map((f) => (
-              <label key={f.key} className="param-row">
-                <span className="param-label">
-                  {f.label}
-                  {f.required && (
-                    <span className="param-required" aria-hidden="true" title="Pflichtfeld">
-                      {" *"}
-                    </span>
-                  )}
-                  {f.role === "kernel" && (
-                    <span className="param-kernel-badge" title="fließt in den Rechenkern">
-                      {" Kern"}
-                    </span>
-                  )}
-                </span>
-                <Field field={f} value={vals[f.key] ?? ""} onChange={(v) => set(f.key, v)} />
-                {f.help && <span className="param-help">{f.help}</span>}
-              </label>
-            ))}
+            {g.fields.map(row)}
           </fieldset>
         ))}
         <button type="submit" data-testid="param-submit">
@@ -145,6 +180,37 @@ export function ParameterForm({
         </button>
       </form>
     </section>
+  );
+}
+
+/** One field row: label (+ required + Kern badge) + the typed control + help. Shared by both layouts. */
+function FieldRow({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldDef;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="param-row">
+      <span className="param-label">
+        {field.label}
+        {field.required && (
+          <span className="param-required" aria-hidden="true" title="Pflichtfeld">
+            {" *"}
+          </span>
+        )}
+        {field.role === "kernel" && (
+          <span className="param-kernel-badge" title="fließt in den Rechenkern">
+            {" Kern"}
+          </span>
+        )}
+      </span>
+      <Field field={field} value={value} onChange={onChange} />
+      {field.help && <span className="param-help">{field.help}</span>}
+    </label>
   );
 }
 

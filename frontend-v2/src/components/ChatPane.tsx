@@ -119,9 +119,13 @@ export function ChatPane({
     }
   }
 
+  // The stage's primary form affordance is the fast-path card (below); the "+" popover is for
+  // INCREMENTAL edits once in chat-view. So "+" + its popover render only after the first message.
+  const inChat = msgs.length > 0;
+
   const composer = (
     <div className="pill-wrap">
-      {formOpen && (
+      {inChat && formOpen && (
         <div className="pill-pop" role="dialog" aria-label="Parameter eingeben">
           <ParameterForm
             onSubmit={submitParams}
@@ -133,16 +137,18 @@ export function ChatPane({
         </div>
       )}
       <div className="pill">
-        <button
-          className="pill-icon"
-          onClick={() => setFormOpen((o) => !o)}
-          title="Parameter eingeben"
-          aria-label="Parameter eingeben"
-          aria-expanded={formOpen}
-          data-testid="open-parameter-form"
-        >
-          <PlusIcon />
-        </button>
+        {inChat && (
+          <button
+            className="pill-icon"
+            onClick={() => setFormOpen((o) => !o)}
+            title="Parameter eingeben"
+            aria-label="Parameter eingeben"
+            aria-expanded={formOpen}
+            data-testid="open-parameter-form"
+          >
+            <PlusIcon />
+          </button>
+        )}
         <textarea
           ref={inputRef}
           className="pill-input"
@@ -218,6 +224,9 @@ export function ChatPane({
         <h1 className="greeting" data-testid="greeting">
           Welche Dichtungsfrage steht an{greetingName ? `, ${greetingName}` : ""}?
         </h1>
+        {/* form-first fast path: compact kernel card (derived role:kernel) + expander for the full A–I.
+            Submit reuses the SAME batch settle → confirmation → chat-view transition as the chat input. */}
+        <ParameterForm variant="stage" onSubmit={submitParams} />
         {composer}
         {chips}
         {kernelPanel}

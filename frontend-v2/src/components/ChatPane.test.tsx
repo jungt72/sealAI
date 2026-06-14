@@ -70,24 +70,31 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(screen.getByTestId("forget-all")).toHaveTextContent("alles vergessen");
   });
 
-  it("the '+' opens the form; batch submit closes it, calls onSubmitParams, and surfaces the confirmation", async () => {
+  it("the stage shows the fast-path card (not the '+' popover); 'Berechnen' settles + surfaces the confirmation", async () => {
     const conf: ConfirmationResponse = {
       ...EMPTY_CONF,
       uebernommen: [{ feld: "wellendurchmesser", label: "Wellendurchmesser d₁", wert: "50 mm" }],
     };
     const { props } = renderPane({ onSubmitParams: vi.fn(async () => conf) });
-    expect(screen.queryByTestId("parameter-form")).toBeNull();
-    fireEvent.click(screen.getByTestId("open-parameter-form"));
-    expect(screen.getByTestId("parameter-form")).toBeInTheDocument();
+    // the stage form IS the compact fast-path card; the "+" popover is absent on the stage
+    expect(screen.getByTestId("param-compact")).toBeInTheDocument();
+    expect(screen.queryByTestId("open-parameter-form")).toBeNull();
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(screen.getByTestId("param-submit"));
     // ONE batch call carrying the field + its schema label (not N per-field calls)
     expect(props.onSubmitParams).toHaveBeenCalledWith([
       { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
     ]);
-    expect(screen.queryByTestId("parameter-form")).toBeNull(); // popover closed after submit
-    // the deterministic confirmation lands in the conversation
+    // the deterministic confirmation lands in the conversation (→ chat-view)
     expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
+  });
+
+  it("the '+' popover is a chat-view affordance: absent on the stage, present after the first message", async () => {
+    renderPane();
+    expect(screen.queryByTestId("open-parameter-form")).toBeNull(); // stage: no "+"
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(await screen.findByTestId("open-parameter-form")).toBeTruthy(); // chat-view: "+" present
   });
 
   it("chip interactions are preserved: chip body = edit, × = forget", () => {

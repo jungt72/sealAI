@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { RWDR_SITUATION, situationFields } from "../schema/situations";
+import { kernelFields, RWDR_SITUATION, situationFields } from "../schema/situations";
 import { composeWert, ParameterForm, resolveWert } from "./ParameterForm";
 
 afterEach(cleanup);
@@ -85,5 +85,42 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     expect(composeWert("50 mm", "mm")).toBe("50 mm"); // already has a unit token → no "50 mm mm"
     expect(composeWert("", "mm")).toBe(""); // empty stays empty (not submitted)
     expect(composeWert("Hydrauliköl", "")).toBe("Hydrauliköl"); // no unit field
+  });
+});
+
+describe("ParameterForm variant='stage' (form-first landing — compact kernel + expander)", () => {
+  it("INVARIANT: the compact card renders EXACTLY the schema's role:kernel fields (derived, not hardcoded)", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    const card = screen.getByTestId("param-compact");
+    const kernel = kernelFields(RWDR_SITUATION); // SAME source the component derives from
+    for (const f of kernel) {
+      expect(within(card).getByTestId(`param-${f.key}`)).toBeTruthy();
+    }
+    // exactly the kernel set — count matches, and a context field is NOT in the compact card
+    expect(within(card).queryAllByTestId(/^param-/)).toHaveLength(kernel.length);
+    expect(within(card).queryByTestId("param-medium")).toBeNull();
+  });
+
+  it("the expander holds the role:context fields (full A–I), separate from the compact kernel card", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    const exp = screen.getByTestId("param-expander");
+    expect(within(exp).getByTestId("param-medium")).toBeTruthy(); // a context field
+    expect(within(exp).queryByTestId("param-wellendurchmesser")).toBeNull(); // kernel stays in the card
+    expect(screen.getAllByTestId("param-wellendurchmesser")).toHaveLength(1); // never duplicated
+  });
+
+  it("'Berechnen' batch-submits filled fields (kernel + context); decimal normalized; Unbekannt/empty omitted", () => {
+    const onSubmit = vi.fn();
+    render(<ParameterForm variant="stage" onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
+    fireEvent.change(screen.getByTestId("param-druck"), { target: { value: "0.5" } }); // period decimal
+    fireEvent.change(screen.getByTestId("param-medium"), { target: { value: "oel" } }); // context (in expander)
+    fireEvent.click(screen.getByTestId("param-submit"));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const items = onSubmit.mock.calls[0][0];
+    expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" });
+    expect(items).toContainEqual({ feld: "druck", wert: "0,5 bar", label: "Druck p" }); // 0.5 → 0,5
+    expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" });
+    expect(items).toHaveLength(3); // drehzahl left empty → omitted (no fake default)
   });
 });
