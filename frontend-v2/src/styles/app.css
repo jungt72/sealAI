@@ -281,6 +281,24 @@
   font-weight: 500; color: #fff; background: var(--color-seal-blue);
   border: none; border-radius: 999px; padding: 8px 18px;
 }
+/* schema-driven form: the RWDR situation has many grouped fields → scroll within the popover. */
+.param-form { max-height: min(72vh, 600px); overflow-y: auto; padding-right: 4px; }
+.param-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.param-tab { cursor: pointer; font: inherit; font-size: 12px; color: var(--ink-faint);
+  background: var(--hover-wash); border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 12px; }
+.param-tab.is-active { color: #fff; background: var(--color-seal-blue); border-color: transparent; }
+.param-group { border: none; border-top: 1px solid var(--hairline); margin: 0; padding: 12px 0 0;
+  display: flex; flex-direction: column; gap: 10px; }
+.param-group:first-of-type { border-top: none; padding-top: 0; }
+.param-group-title { padding: 0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--ink-faint); }
+.param-required { color: var(--color-warning-fg); font-weight: 600; }
+.param-kernel-badge { font-family: var(--font-mono); font-size: 10px; color: var(--color-seal-blue);
+  border: 1px solid var(--hairline); border-radius: 6px; padding: 0 4px; margin-left: 6px; }
+.param-help { font-size: 11px; color: var(--ink-ghost); }
+.param-select { flex: 1; min-width: 0; padding: 8px 12px; font: inherit; font-size: 14px;
+  color: var(--ink); background: #fff; border: 1px solid var(--hairline); border-radius: 10px; outline: none; }
+.param-select:focus { border-color: #c8d4e8; }
 
 /* ── briefing (chat-flow card) ──────────────────────────────────────────────── */
 .briefing-pane { border: 1px solid var(--hairline); border-radius: var(--radius-lg);
