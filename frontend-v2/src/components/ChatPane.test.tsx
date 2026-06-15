@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatResponse, Clarification, ConfirmationResponse, ConversationMemory } from "../contracts";
 import { ChatPane } from "./ChatPane";
@@ -286,6 +286,73 @@ describe("cockpit conditional visibility (hidden on the empty stage / pure knowl
     });
     expect(screen.getByTestId("case-state")).toBeInTheDocument(); // !caseStateEmpty → visible
     expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo");
+  });
+});
+
+describe("cockpit splitter (resizable 60/40 — ≥1024px)", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  // jsdom does not lay out → mock the workspace rect (width 1200, right edge at 1200px)
+  const mockRect = (el: HTMLElement) => {
+    el.getBoundingClientRect = () =>
+      ({ left: 0, right: 1200, top: 0, bottom: 800, width: 1200, height: 800, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  };
+
+  it("renders NO splitter when the cockpit is hidden (solo stage)", () => {
+    renderPane({ memory: EMPTY });
+    expect(screen.queryByTestId("cockpit-splitter")).toBeNull();
+  });
+
+  it("renders a proper vertical separator when the cockpit is visible", () => {
+    renderPane({ memory: WITH_FACTS });
+    const sp = screen.getByTestId("cockpit-splitter");
+    expect(sp).toHaveAttribute("role", "separator");
+    expect(sp).toHaveAttribute("aria-orientation", "vertical");
+  });
+
+  it("dragging the splitter clamps --cockpit-w to [min 360px, max 55%]", () => {
+    renderPane({ memory: WITH_FACTS });
+    const pane = screen.getByTestId("chat-pane");
+    const sp = screen.getByTestId("cockpit-splitter");
+    mockRect(pane);
+    fireEvent.pointerDown(sp, { pointerId: 1 });
+    // pull toward the cockpit (right) → desired 300px < min → clamp 360
+    fireEvent.pointerMove(sp, { pointerId: 1, clientX: 900 });
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe("360px");
+    // pull toward the chat (left) → desired 900px > 55% (660) → clamp 660
+    fireEvent.pointerMove(sp, { pointerId: 1, clientX: 300 });
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe("660px");
+    fireEvent.pointerUp(sp, { pointerId: 1 });
+  });
+
+  it("persists the chosen width and restores it on a fresh mount", () => {
+    const first = renderPane({ memory: WITH_FACTS });
+    const pane = screen.getByTestId("chat-pane");
+    mockRect(pane);
+    const sp = screen.getByTestId("cockpit-splitter");
+    fireEvent.pointerDown(sp, { pointerId: 1 });
+    fireEvent.pointerMove(sp, { pointerId: 1, clientX: 760 }); // desired 440 (in range)
+    fireEvent.pointerUp(sp, { pointerId: 1 });
+    expect(localStorage.getItem("sealai-v2:cockpit-w")).toBe("440");
+    first.unmount();
+    // a fresh ChatPane restores the persisted width on mount (before any drag)
+    renderPane({ memory: WITH_FACTS });
+    expect(screen.getByTestId("chat-pane").style.getPropertyValue("--cockpit-w")).toBe("440px");
+  });
+
+  it("double-click resets to the default (clears the inline var + storage)", () => {
+    renderPane({ memory: WITH_FACTS });
+    const pane = screen.getByTestId("chat-pane");
+    mockRect(pane);
+    const sp = screen.getByTestId("cockpit-splitter");
+    fireEvent.pointerDown(sp, { pointerId: 1 });
+    fireEvent.pointerMove(sp, { pointerId: 1, clientX: 760 });
+    fireEvent.pointerUp(sp, { pointerId: 1 });
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe("440px");
+    fireEvent.doubleClick(sp);
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe(""); // inline override cleared → CSS default 40%
+    expect(localStorage.getItem("sealai-v2:cockpit-w")).toBeNull();
   });
 });
 

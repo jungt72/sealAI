@@ -119,7 +119,9 @@ export function ParameterForm({
                 return (
                   <fieldset key={g.id} className="param-group" data-testid={`param-group-${g.id}`}>
                     <legend className="param-group-title">{g.title}</legend>
-                    {ctx.map(row)}
+                    <div className="param-group-grid" data-testid={`param-group-grid-${g.id}`}>
+                      {ctx.map(row)}
+                    </div>
                   </fieldset>
                 );
               })}

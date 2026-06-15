@@ -148,7 +148,9 @@
 .kernel-hint { font-style: italic; }
 
 /* ── workspace: persistent two-column surface (conversation | cockpit) ───────── */
-.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --cockpit-w: 440px; }
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --cockpit-w: 40%; }
+/* draggable splitter between chat and cockpit — only a grid item ≥1024px (hidden when stacked) */
+.cockpit-splitter { display: none; }
 .workspace-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 /* left column: the conversation thread (scrolls) + the docked composer */
 .chat-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
@@ -196,15 +198,28 @@
 @media (min-width: 1024px) {
   .workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--cockpit-w);
+    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w);
     grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
-    column-gap: 28px;
+    column-gap: 0;
     width: 100%; max-width: 1280px; margin: 0 auto;
   }
   /* cockpit hidden (empty stage / pure knowledge-Q&A): revert to single-column, full width —
-     the pre-cockpit feel, no 440px column reserved (specificity beats the grid rule above). */
+     the pre-cockpit feel, no cockpit column reserved (specificity beats the grid rule above). */
   .workspace.workspace--solo { display: flex; flex-direction: column; align-items: center; }
+  /* the resize handle: a thin track with a centered grab line that grows on hover/focus */
+  .cockpit-splitter {
+    display: block; align-self: stretch; width: 16px; position: relative;
+    cursor: col-resize; background: none; border: none; touch-action: none;
+  }
+  .cockpit-splitter::before {
+    content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 2px; height: 36px; border-radius: 2px; background: var(--hairline);
+    transition: background 120ms ease, height 120ms ease;
+  }
+  .cockpit-splitter:hover::before,
+  .cockpit-splitter:focus-visible::before { background: var(--ink-faint); height: 56px; }
+  .cockpit-splitter:focus-visible { outline: none; }
   .workspace-main { width: auto; }       /* fills the left grid track (stage or chat) */
   .chat-foot { padding-bottom: 64px; }   /* left-column bottom clears the doctrine line */
   .case-state {
@@ -340,6 +355,9 @@
 .param-expander[open] .param-expander-summary::before { content: "▾ "; }
 .param-expander-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px;
   max-height: 46vh; overflow-y: auto; }
+/* each group's context fields auto-fit horizontally and reflow with the cockpit width (more
+   columns when the splitter is dragged wider); the legend above stays the section label */
+.param-group-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px 12px; }
 .param-stage-note { margin: 10px 0 0; font-size: 11px; }
 @media (max-width: 1023px) {
   .param-compact { grid-template-columns: 1fr; }

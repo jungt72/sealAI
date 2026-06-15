@@ -109,6 +109,17 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(screen.getAllByTestId("param-wellendurchmesser")).toHaveLength(1); // never duplicated
   });
 
+  it("lays the expander's group fields out in an auto-fit grid (headers stay, fields inside the grid)", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    const exp = screen.getByTestId("param-expander");
+    // each rendered context group wraps its fields in a .param-group-grid container
+    expect(within(exp).getAllByTestId(/^param-group-grid-/).length).toBeGreaterThan(0);
+    // the group legends stay as section labels (fieldset → role group)
+    expect(within(exp).getAllByRole("group").length).toBeGreaterThan(0);
+    // a context field renders INSIDE the grid, not stacked loose
+    expect(within(exp).getByTestId("param-medium").closest(".param-group-grid")).not.toBeNull();
+  });
+
   it("'Berechnen' batch-submits filled fields (kernel + context); decimal normalized; Unbekannt/empty omitted", () => {
     const onSubmit = vi.fn();
     render(<ParameterForm variant="stage" onSubmit={onSubmit} />);
