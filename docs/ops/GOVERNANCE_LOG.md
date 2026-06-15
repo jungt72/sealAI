@@ -973,3 +973,82 @@ clear `frontend-v2/dist` + `tar xzf` the backup.
 
 **Follow-up queued (not in this deploy):** cockpit re-layout (persistent right column;
 plan drafted, review-only) — UI placement, no data-flow/trust-spine change.
+
+---
+
+## 2026-06-15 — V2 /dashboard dist deploy: cockpit re-layout (SAFE dist swap, owner-gated) — backfilled
+
+> **Backfill:** this prod `/dashboard` swap was not logged at deploy time; recorded here for
+> completeness (every prod deploy logged, no exceptions). All SHAs re-verified from the retained
+> rollback artifacts (`index-C0Xhdn1y.js` `8e961df4…` and backup `e8c2c92b…` confirmed by hashing
+> the held tarballs).
+
+Live `sealingai.com/dashboard` updated to carry the **persistent cockpit re-layout
+(persistent right column + calm Berechnungen visibility)** via the SAFE dist pattern. No nginx
+reload (directory bind-mount). V1 untouched.
+
+**Source → live**
+- Source: `demo/rwdr-limited-external @ 286f2868` (the V2 SoT; PR #133, branch
+  `feat/v2-cockpit-relayout @ c7dc49e1`).
+- Build: detached-checkout `286f2868` in the **MAIN worktree** `/home/thorsten/sealai`
+  → `npx vite build` to a throwaway `/tmp` outDir (never `npm run build`/`--outDir` into the
+  live dist; exact outDir path not recorded at deploy time) → worktree restored.
+- Swap: `rsync -a --delete <tmp-build>/ /home/thorsten/sealai/frontend-v2/dist/`
+  (bind `docker-compose.deploy.yml:207` → `/usr/share/nginx/v2-client:ro`).
+
+**Bundle change**
+| | live now | replaced |
+|---|---|---|
+| JS | `index-C0Xhdn1y.js` (sha256 `8e961df4…`) | `index-BQaruY8P.js` (`99765337…`) |
+| CSS | `index-NZWWGsku.css` (sha256 `ae1901b5…`) | `index-fKXCZhy0.css` (`f83aa18a…`) |
+
+**Gate (pre-deploy, offline)** — `check:boundary` ✅ · `tsc --noEmit` ✅ · vitest **109** ✅.
+
+**Verification** — only the two top-level bundles swapped (fonts/KaTeX byte-stable);
+`https://sealingai.com/dashboard/` → 200 serving `index-C0Xhdn1y.js`; V1 unaffected
+(`/dashboard` 200 + V1 `/` / `/api/agent/health` → 200). `main` untouched.
+
+**Rollback** — pre-swap live dist backed up: `/tmp/dist-backup-cockpit-20260615-141553.tgz`
+(sha256 `e8c2c92b6723f836071ec3868deb4e06e556fc3898519c1fae5d8078058033b6`). Restore: clear
+`frontend-v2/dist` + `tar xzf` the backup.
+
+---
+
+## 2026-06-15 — V2 /dashboard dist deploy: conditional cockpit visibility (SAFE dist swap, owner-gated)
+
+Live `sealingai.com/dashboard` updated to carry **conditional cockpit visibility** — the
+cockpit (parameter form + Fallkontext chips + Berechnungen + Briefing) is hidden on the empty
+stage and during pure knowledge-Q&A (chat single-column, full width) and appears only when the
+case is active (`!caseStateEmpty`) or the user opens it via the explicit "Parameter direkt
+eingeben" affordance. SAFE dist pattern; no nginx reload (directory bind-mount). V1 untouched.
+
+**Source → live**
+- Source: `demo/rwdr-limited-external @ 7770edda` (the V2 SoT; PR #134, branch
+  `feat/v2-cockpit-conditional @ a21319f6`).
+- Build: detached-checkout `7770edda` in the **MAIN worktree** `/home/thorsten/sealai`
+  → `npx vite build --outDir /tmp/v2dist-conditional-20260615-184719 --emptyOutDir`
+  (never `npm run build`/`--outDir` into the live dist) → worktree restored to
+  `feat/v2-cockpit-conditional @ a21319f6`.
+- Swap: `rsync -a --delete /tmp/v2dist-conditional-20260615-184719/ \
+  /home/thorsten/sealai/frontend-v2/dist/` (bind `docker-compose.deploy.yml:207`
+  → `/usr/share/nginx/v2-client:ro`).
+
+**Bundle change**
+| | live now | replaced |
+|---|---|---|
+| JS | `index--teyXDee.js` (sha256 `5c5002d4…`) | `index-C0Xhdn1y.js` (`8e961df4…`) |
+| CSS | `index-SGoV-7nK.css` (sha256 `a6c94360…`) | `index-NZWWGsku.css` (`ae1901b5…`) |
+
+**Gate (pre-deploy, offline)** — `check:boundary` ✅ · `tsc --noEmit` ✅ · vitest **113/113** ✅
+(red-before-green: the new/updated cockpit-visibility tests failed first against the old
+always-on cockpit, then went green).
+
+**Verification** — `diff -r /tmp-build live-dist` **empty** (live == validated build); only the
+two top-level bundles swapped (fonts/KaTeX byte-stable); served-body sha256 == `5c5002d4…` at
+the origin (HTTP 200); `index.html` references `index--teyXDee.js`/`index-SGoV-7nK.css`; old
+path → SPA `index.html` fallback (file gone), not stale; **V1 `/api/health` + `/api/agent/health`
++ `/` → 200**.
+
+**Rollback** — pre-swap live dist backed up: `/tmp/dist-backup-conditional-20260615-184719.tgz`
+(sha256 `cefa924cc0a8575255493455ddbfb4bc991643bc738215ea9d976ad95e641e3a`). Restore: clear
+`frontend-v2/dist` + `tar xzf` the backup.

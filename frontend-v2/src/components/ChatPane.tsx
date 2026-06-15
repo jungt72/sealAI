@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type {
   Briefing,
   ChatResponse,
@@ -7,6 +14,7 @@ import type {
   ConversationMemory,
   ParamItem,
 } from "../contracts";
+import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
 import { BerechnungenPanel } from "./BerechnungenPanel";
@@ -76,6 +84,15 @@ export function ChatPane({
   const [userOpenedForm, setUserOpenedForm] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
+  // resizable cockpit (≥1024px): the chosen width drives the `--cockpit-w` grid track; null = CSS
+  // default (40% → 60/40). Persisted in localStorage, restored on mount, reset on double-click.
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const dragPxRef = useRef<number | null>(null);
+  const [cockpitW, setCockpitW] = useState<string | null>(() => {
+    const px = loadCockpitPx();
+    return px != null ? `${px}px` : null;
+  });
   // latest mapped label survives unmapped keys (recall/cite) and clears when the turn ends
   const [stageLabel, setStageLabel] = useState<string | null>(null);
   useEffect(() => {
@@ -197,6 +214,57 @@ export function ChatPane({
     </button>
   );
 
+  // ── splitter drag (pointer-capture; self-contained — no window listeners) ──────────────────────
+  // The cockpit sits on the right; new width = workspace right edge − pointer x, clamped. Width is
+  // committed to localStorage on release (not per move). Double-click / Home → reset to the default.
+  function onSplitterDown(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    draggingRef.current = true;
+  }
+  function onSplitterMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!draggingRef.current) return;
+    const ws = workspaceRef.current;
+    if (!ws) return;
+    const rect = ws.getBoundingClientRect();
+    const px = clampCockpitPx(rect.right - e.clientX, rect.width);
+    dragPxRef.current = px;
+    setCockpitW(`${px}px`);
+  }
+  function onSplitterUp(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (dragPxRef.current != null) saveCockpitPx(dragPxRef.current);
+  }
+  function onSplitterReset() {
+    dragPxRef.current = null;
+    setCockpitW(null);
+    clearCockpitPx();
+  }
+  // keyboard support for the separator: ←/→ nudge (left widens the cockpit), Home resets
+  function onSplitterKey(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Home") {
+      e.preventDefault();
+      onSplitterReset();
+      return;
+    }
+    const dir = e.key === "ArrowLeft" ? 1 : e.key === "ArrowRight" ? -1 : 0;
+    if (dir === 0) return;
+    const ws = workspaceRef.current;
+    if (!ws) return;
+    e.preventDefault();
+    const rect = ws.getBoundingClientRect();
+    const current = dragPxRef.current ?? Math.round(rect.width * 0.4);
+    const px = clampCockpitPx(current + dir * 24, rect.width);
+    dragPxRef.current = px;
+    setCockpitW(`${px}px`);
+    saveCockpitPx(px);
+  }
+
+  // null → no inline override → the CSS default (40%) applies; a px string → the dragged width
+  const workspaceStyle = cockpitW ? ({ "--cockpit-w": cockpitW } as unknown as CSSProperties) : undefined;
+
   // The persistent right cockpit — IDENTICAL on the stage and in chat-view. The parameter fast-path
   // form (compact kernel card + the "weitere Parameter" expander) is now the SINGLE form entry point
   // (the chat-view "+" popover is retired); its batch submit reuses the SAME settle → confirmation →
@@ -220,7 +288,12 @@ export function ChatPane({
   );
 
   return (
-    <div className={`workspace${cockpitVisible ? "" : " workspace--solo"}`} data-testid="chat-pane">
+    <div
+      ref={workspaceRef}
+      className={`workspace${cockpitVisible ? "" : " workspace--solo"}`}
+      style={workspaceStyle}
+      data-testid="chat-pane"
+    >
       <main className="workspace-main">
         {msgs.length === 0 ? (
           // stage center: ONLY the greeting + composer over the glow — calm and centered.
@@ -279,6 +352,21 @@ export function ChatPane({
           </div>
         )}
       </main>
+      {cockpitVisible && (
+        <div
+          className="cockpit-splitter"
+          data-testid="cockpit-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Breite des Cockpits anpassen"
+          tabIndex={0}
+          onPointerDown={onSplitterDown}
+          onPointerMove={onSplitterMove}
+          onPointerUp={onSplitterUp}
+          onDoubleClick={onSplitterReset}
+          onKeyDown={onSplitterKey}
+        />
+      )}
       {cockpitVisible && cockpit}
     </div>
   );
