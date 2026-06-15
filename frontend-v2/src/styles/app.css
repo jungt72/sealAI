@@ -184,6 +184,14 @@
 .make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
 .make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
 
+/* trigger (b): the subtle "open the form" link near the composer (only while the cockpit is hidden) */
+.open-cockpit-link {
+  align-self: center; border: none; background: none; cursor: pointer; font: inherit;
+  font-size: 12.5px; color: var(--ink-faint);
+  text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px;
+}
+.open-cockpit-link:hover { color: var(--ink); }
+
 /* ── wide screens: the cockpit becomes the persistent right column (stage + chat) ── */
 @media (min-width: 1024px) {
   .workspace {
@@ -194,6 +202,9 @@
     column-gap: 28px;
     width: 100%; max-width: 1280px; margin: 0 auto;
   }
+  /* cockpit hidden (empty stage / pure knowledge-Q&A): revert to single-column, full width —
+     the pre-cockpit feel, no 440px column reserved (specificity beats the grid rule above). */
+  .workspace.workspace--solo { display: flex; flex-direction: column; align-items: center; }
   .workspace-main { width: auto; }       /* fills the left grid track (stage or chat) */
   .chat-foot { padding-bottom: 64px; }   /* left-column bottom clears the doctrine line */
   .case-state {

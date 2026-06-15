@@ -72,6 +72,8 @@ export function ChatPane({
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  // explicit "open the form" affordance (trigger b): session-sticky, moot once the case is active
+  const [userOpenedForm, setUserOpenedForm] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
   // latest mapped label survives unmapped keys (recall/cite) and clears when the turn ends
@@ -177,6 +179,24 @@ export function ChatPane({
     (compute?.clarifications?.length ?? 0) === 0 &&
     (compute?.notes?.length ?? 0) === 0;
 
+  // The cockpit is HIDDEN on the empty stage and during pure knowledge-Q&A (chat stays single-column,
+  // full width) and appears ONLY when (a) the case is active (!caseStateEmpty — auto-trigger) OR
+  // (b) the user explicitly opens the form. No narrowing for users who only ever ask a question.
+  const cockpitVisible = !caseStateEmpty || userOpenedForm;
+
+  // Trigger (b): a subtle, low-key text link near the composer — present only while the cockpit is
+  // hidden. Most users just chat; this stays unobtrusive (not a card).
+  const openFormLink = cockpitVisible ? null : (
+    <button
+      type="button"
+      className="open-cockpit-link"
+      data-testid="open-cockpit"
+      onClick={() => setUserOpenedForm(true)}
+    >
+      Parameter direkt eingeben
+    </button>
+  );
+
   // The persistent right cockpit — IDENTICAL on the stage and in chat-view. The parameter fast-path
   // form (compact kernel card + the "weitere Parameter" expander) is now the SINGLE form entry point
   // (the chat-view "+" popover is retired); its batch submit reuses the SAME settle → confirmation →
@@ -200,7 +220,7 @@ export function ChatPane({
   );
 
   return (
-    <div className="workspace" data-testid="chat-pane">
+    <div className={`workspace${cockpitVisible ? "" : " workspace--solo"}`} data-testid="chat-pane">
       <main className="workspace-main">
         {msgs.length === 0 ? (
           // stage center: ONLY the greeting + composer over the glow — calm and centered.
@@ -210,6 +230,7 @@ export function ChatPane({
               Welche Dichtungsfrage steht an{greetingName ? `, ${greetingName}` : ""}?
             </h1>
             {composer}
+            {openFormLink}
             {error && (
               <div className="error-banner" role="alert" data-testid="chat-error">
                 {error}
@@ -251,11 +272,14 @@ export function ChatPane({
               )}
               <BriefingPane briefing={briefing} />
             </div>
-            <div className="chat-foot">{composer}</div>
+            <div className="chat-foot">
+              {composer}
+              {openFormLink}
+            </div>
           </div>
         )}
       </main>
-      {cockpit}
+      {cockpitVisible && cockpit}
     </div>
   );
 }
