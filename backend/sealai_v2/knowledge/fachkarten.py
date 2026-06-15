@@ -22,7 +22,7 @@ Postgres/Qdrant are deferred runtime adapters behind the Retriever seam.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 _CATALOG_DIR = Path(__file__).resolve().parent

@@ -41,6 +41,32 @@ export interface ComputeResponse {
   notes: string[];
   clarifications?: Clarification[]; // additive; absent on older payloads → treated as []
 }
+// Phase 2b — the parameter-form batch submit + its deterministic confirmation. `wert` in
+// `uebernommen` is the POST-BIND value (kernel) or the settled value (context), never the raw
+// submitted string; a clarify-triggering field is a `rueckfragen` entry, never claimed as taken.
+export interface ParamItem {
+  feld: string;
+  wert: string;
+  label: string;
+}
+export interface ConfirmationTaken {
+  feld: string;
+  label: string;
+  wert: string;
+}
+export interface ConfirmationRueckfrage {
+  feld: string;
+  label: string;
+  clarification: Clarification;
+}
+export interface ConfirmationResponse {
+  uebernommen: ConfirmationTaken[];
+  rueckfragen: ConfirmationRueckfrage[];
+  computed: KernelValue[];
+  not_computed: NotComputed[];
+  notes: string[];
+  clarifications: Clarification[];
+}
 export interface ChatResponse {
   answer: string;
   model: string;

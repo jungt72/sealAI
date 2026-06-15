@@ -67,15 +67,27 @@ function Harness() {
             setMemory((m) => ({ ...m, case_state: m.case_state.filter((f) => f.feld !== feld) }))
           }
           onForgetAll={() => setMemory({ case_state: [], history: [] })}
-          onSubmitParam={(feld, wert) =>
+          onSubmitParams={async (items) => {
             setMemory((m) => ({
               ...m,
               case_state: [
-                ...m.case_state.filter((f) => f.feld !== feld),
-                { feld, wert, provenance: "user-form" },
+                ...m.case_state.filter((f) => !items.some((it) => it.feld === f.feld)),
+                ...items.map((it) => ({
+                  feld: it.feld,
+                  wert: it.wert,
+                  provenance: "user-form",
+                })),
               ],
-            }))
-          }
+            }));
+            return {
+              uebernommen: items.map((it) => ({ feld: it.feld, label: it.label, wert: it.wert })),
+              rueckfragen: [],
+              computed: [],
+              not_computed: [],
+              notes: [],
+              clarifications: [],
+            };
+          }}
           onMakeBriefing={() => {}}
           canBriefing={false}
           briefing={null}

@@ -181,9 +181,13 @@ export function App() {
           }}
           onForgetFact={(feld) => api.forgetFact(feld).then(refreshState).catch(() => undefined)}
           onForgetAll={() => api.forgetAll().then(refreshState).catch(() => undefined)}
-          onSubmitParam={(feld, wert) =>
-            api.editFact(feld, wert, "user-form").then(refreshState).catch(() => undefined)
-          }
+          onSubmitParams={async (items) => {
+            // batch settle + recompute server-side; refresh chips + kern panel, return the
+            // deterministic confirmation for ChatPane to surface in the conversation
+            const conf = await api.submitParams(items);
+            refreshState();
+            return conf;
+          }}
           onConfirmUnit={(feld, value) =>
             // confirm the suggested unit → re-settle through the EXISTING edit/settle channel
             // (no new binding path); the backend M8 recompute fires and the kern then computes.
