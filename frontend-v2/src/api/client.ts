@@ -3,7 +3,14 @@
  * so the caller never renders stale/wrong content; any non-OK → throws (the caller shows an error
  * state and the persistent SafetyBanner stays — the framing is never dropped). */
 
-import type { Briefing, ChatResponse, ComputeResponse, ConversationMemory } from "../contracts";
+import type {
+  Briefing,
+  ChatResponse,
+  ComputeResponse,
+  ConfirmationResponse,
+  ConversationMemory,
+  ParamItem,
+} from "../contracts";
 import { SseParser } from "./sse";
 
 export class ApiError extends Error {
@@ -107,6 +114,14 @@ export class ApiClient {
     return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, {
       method: "PUT",
       body: JSON.stringify(origin ? { wert, origin } : { wert }),
+    });
+  }
+  /** Phase 2b — the parameter-form batch settle: all fields in one POST → one settle + recompute,
+   * returns the deterministic confirmation (post-bind echo + kern result + Rückfragen). */
+  submitParams(items: ParamItem[]): Promise<ConfirmationResponse> {
+    return this.req("/conversations/current/facts", {
+      method: "POST",
+      body: JSON.stringify({ items }),
     });
   }
   forgetFact(feld: string): Promise<unknown> {

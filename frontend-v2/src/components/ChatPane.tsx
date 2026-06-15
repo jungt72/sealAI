@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import type { Briefing, ChatResponse, ComputeResponse, ConversationMemory } from "../contracts";
+import type {
+  Briefing,
+  ChatResponse,
+  ComputeResponse,
+  ConfirmationResponse,
+  ConversationMemory,
+  ParamItem,
+} from "../contracts";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
 import { BerechnungenPanel } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
 import { MemoryPanel } from "./MemoryPanel";
+import { ParamConfirmation } from "./ParamConfirmation";
 import { ParameterForm } from "./ParameterForm";
 import { MicIcon, PlusIcon, SendIcon } from "./icons";
 
-type Msg = { role: "user"; text: string } | { role: "assistant"; res: ChatResponse };
+type Msg =
+  | { role: "user"; text: string }
+  | { role: "assistant"; res: ChatResponse }
+  | { role: "confirmation"; conf: ConfirmationResponse };
 
 /* P4b — the frontend owns the German stage labels; the backend streams keys only. Unmapped keys
  * (recall, cite, future stages) keep the last mapped label — forward-compatible by ignoring. */
@@ -34,7 +45,7 @@ export function ChatPane({
   onEditFact,
   onForgetFact,
   onForgetAll,
-  onSubmitParam,
+  onSubmitParams,
   onMakeBriefing,
   canBriefing,
   briefing,
@@ -49,7 +60,7 @@ export function ChatPane({
   onEditFact: (feld: string, wert: string) => void;
   onForgetFact: (feld: string) => void;
   onForgetAll: () => void;
-  onSubmitParam: (feld: string, wert: string) => void;
+  onSubmitParams: (items: ParamItem[]) => Promise<ConfirmationResponse>;
   onMakeBriefing: () => void;
   canBriefing: boolean;
   briefing: Briefing | null;
@@ -96,12 +107,28 @@ export function ChatPane({
     }
   }
 
+  // The parameter form's batch submit: settle + recompute server-side, then append the DETERMINISTIC
+  // confirmation (post-bind echo + kern result + Rückfragen) as a chat message. No LLM, no client compute.
+  async function submitParams(items: ParamItem[]) {
+    if (items.length === 0) return;
+    try {
+      const conf = await onSubmitParams(items);
+      setMsgs((m) => [...m, { role: "confirmation", conf }]);
+    } catch {
+      // error surfaced via the `error` prop (the host sets it); append nothing (no stale content)
+    }
+  }
+
+  // The stage's primary form affordance is the fast-path card (below); the "+" popover is for
+  // INCREMENTAL edits once in chat-view. So "+" + its popover render only after the first message.
+  const inChat = msgs.length > 0;
+
   const composer = (
     <div className="pill-wrap">
-      {formOpen && (
+      {inChat && formOpen && (
         <div className="pill-pop" role="dialog" aria-label="Parameter eingeben">
           <ParameterForm
-            onSubmit={onSubmitParam}
+            onSubmit={submitParams}
             onSubmitted={() => {
               setFormOpen(false);
               inputRef.current?.focus();
@@ -110,16 +137,18 @@ export function ChatPane({
         </div>
       )}
       <div className="pill">
-        <button
-          className="pill-icon"
-          onClick={() => setFormOpen((o) => !o)}
-          title="Parameter eingeben"
-          aria-label="Parameter eingeben"
-          aria-expanded={formOpen}
-          data-testid="open-parameter-form"
-        >
-          <PlusIcon />
-        </button>
+        {inChat && (
+          <button
+            className="pill-icon"
+            onClick={() => setFormOpen((o) => !o)}
+            title="Parameter eingeben"
+            aria-label="Parameter eingeben"
+            aria-expanded={formOpen}
+            data-testid="open-parameter-form"
+          >
+            <PlusIcon />
+          </button>
+        )}
         <textarea
           ref={inputRef}
           className="pill-input"
@@ -195,6 +224,9 @@ export function ChatPane({
         <h1 className="greeting" data-testid="greeting">
           Welche Dichtungsfrage steht an{greetingName ? `, ${greetingName}` : ""}?
         </h1>
+        {/* form-first fast path: compact kernel card (derived role:kernel) + expander for the full A–I.
+            Submit reuses the SAME batch settle → confirmation → chat-view transition as the chat input. */}
+        <ParameterForm variant="stage" onSubmit={submitParams} />
         {composer}
         {chips}
         {kernelPanel}
@@ -216,6 +248,8 @@ export function ChatPane({
               <div key={i} className="msg-user">
                 {m.text}
               </div>
+            ) : m.role === "confirmation" ? (
+              <ParamConfirmation key={i} conf={m.conf} />
             ) : (
               <Answer key={i} res={m.res} />
             ),

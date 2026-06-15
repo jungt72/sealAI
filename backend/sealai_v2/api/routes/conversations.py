@@ -7,6 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from sealai_v2.api.confirmation import build_param_confirmation
 from sealai_v2.api.deps import current_identity, get_pipeline
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -87,6 +88,56 @@ async def edit_fact(
         tenant_id=identity.tenant_id, session_id=identity.session_id
     )
     return {"status": "ok"}
+
+
+class FactBatchItem(BaseModel):
+    feld: str
+    wert: str
+    label: str | None = (
+        None  # display label from the form schema — echoed verbatim, never decisive
+    )
+
+
+class FactBatch(BaseModel):
+    items: list[FactBatchItem]
+
+
+@router.post("/current/facts")
+async def submit_facts(
+    body: FactBatch,
+    identity: VerifiedIdentity = Depends(current_identity),
+    pipeline: Pipeline = Depends(get_pipeline),
+) -> dict:
+    """The parameter-form batch settle (Phase 2b): write every submitted fact (origin=user-form,
+    HARDCODED — the form is the only caller; provenance is never read from the body, so it can't be
+    spoofed), then ONE recompute over the merged inputs, then the deterministic confirmation. The
+    confirmation echoes the POST-BIND value (a residual mis-parse stays visible) and surfaces a
+    clarify-triggering value as a Rückfrage, never as 'übernommen'. Compute must be enabled (503)."""
+    mem = _memory(pipeline)
+    if pipeline.engine is None:
+        raise HTTPException(status_code=503, detail="compute not enabled")
+    # P2 flush-then-mutate: a pending distill lands before the form writes (mirror edit_fact)
+    await pipeline.flush_memory(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
+    for it in body.items:
+        mem.edit_fact(
+            tenant_id=identity.tenant_id,
+            session_id=identity.session_id,
+            feld=it.feld,
+            wert=it.wert,
+            provenance="user-form",
+        )
+    # one recompute over the merged settled inputs (persists the derived slice), then confirm
+    comp = pipeline.compute_for(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
+    settled = mem.case_state(
+        tenant_id=identity.tenant_id, session_id=identity.session_id
+    )
+    return build_param_confirmation(
+        [it.model_dump() for it in body.items], settled, comp
+    )
 
 
 @router.delete("/current/facts/{feld}")

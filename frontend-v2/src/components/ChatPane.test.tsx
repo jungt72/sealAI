@@ -1,13 +1,21 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatResponse, ConversationMemory } from "../contracts";
+import type { ChatResponse, ConfirmationResponse, ConversationMemory } from "../contracts";
 import { ChatPane } from "./ChatPane";
 import { Shell } from "./Shell";
 
 afterEach(cleanup);
 
 const EMPTY: ConversationMemory = { case_state: [], history: [] };
+const EMPTY_CONF: ConfirmationResponse = {
+  uebernommen: [],
+  rueckfragen: [],
+  computed: [],
+  not_computed: [],
+  notes: [],
+  clarifications: [],
+};
 const WITH_FACTS: ConversationMemory = {
   case_state: [
     { feld: "wellendurchmesser", wert: "50 mm", provenance: "user-form" },
@@ -30,7 +38,7 @@ function renderPane(over: Partial<Parameters<typeof ChatPane>[0]> = {}) {
     onEditFact: vi.fn(),
     onForgetFact: vi.fn(),
     onForgetAll: vi.fn(),
-    onSubmitParam: vi.fn(),
+    onSubmitParams: vi.fn(async () => EMPTY_CONF),
     onMakeBriefing: vi.fn(),
     canBriefing: false,
     briefing: null,
@@ -62,15 +70,31 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(screen.getByTestId("forget-all")).toHaveTextContent("alles vergessen");
   });
 
-  it("the '+' button opens the parameter form as a popover; submit closes it and writes via onSubmitParam", () => {
-    const { props } = renderPane();
-    expect(screen.queryByTestId("parameter-form")).toBeNull();
-    fireEvent.click(screen.getByTestId("open-parameter-form"));
-    expect(screen.getByTestId("parameter-form")).toBeInTheDocument();
+  it("the stage shows the fast-path card (not the '+' popover); 'Berechnen' settles + surfaces the confirmation", async () => {
+    const conf: ConfirmationResponse = {
+      ...EMPTY_CONF,
+      uebernommen: [{ feld: "wellendurchmesser", label: "Wellendurchmesser d₁", wert: "50 mm" }],
+    };
+    const { props } = renderPane({ onSubmitParams: vi.fn(async () => conf) });
+    // the stage form IS the compact fast-path card; the "+" popover is absent on the stage
+    expect(screen.getByTestId("param-compact")).toBeInTheDocument();
+    expect(screen.queryByTestId("open-parameter-form")).toBeNull();
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(screen.getByTestId("param-submit"));
-    expect(props.onSubmitParam).toHaveBeenCalledWith("wellendurchmesser", "50 mm");
-    expect(screen.queryByTestId("parameter-form")).toBeNull(); // popover closed after submit
+    // ONE batch call carrying the field + its schema label (not N per-field calls)
+    expect(props.onSubmitParams).toHaveBeenCalledWith([
+      { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
+    ]);
+    // the deterministic confirmation lands in the conversation (→ chat-view)
+    expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
+  });
+
+  it("the '+' popover is a chat-view affordance: absent on the stage, present after the first message", async () => {
+    renderPane();
+    expect(screen.queryByTestId("open-parameter-form")).toBeNull(); // stage: no "+"
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(await screen.findByTestId("open-parameter-form")).toBeTruthy(); // chat-view: "+" present
   });
 
   it("chip interactions are preserved: chip body = edit, × = forget", () => {
@@ -129,7 +153,7 @@ describe("P4b: live stage indicator (SSE progress — labels owned by the fronte
       onEditFact: vi.fn(),
       onForgetFact: vi.fn(),
       onForgetAll: vi.fn(),
-      onSubmitParam: vi.fn(),
+      onSubmitParams: vi.fn(async () => EMPTY_CONF),
       onMakeBriefing: vi.fn(),
       canBriefing: false,
       briefing: null,
