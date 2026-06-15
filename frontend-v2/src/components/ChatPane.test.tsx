@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatResponse, ConfirmationResponse, ConversationMemory } from "../contracts";
+import type { ChatResponse, Clarification, ConfirmationResponse, ConversationMemory } from "../contracts";
 import { ChatPane } from "./ChatPane";
 import { Shell } from "./Shell";
 
@@ -76,7 +76,9 @@ describe("pilot-ui stage (fresh conversation)", () => {
       uebernommen: [{ feld: "wellendurchmesser", label: "Wellendurchmesser d₁", wert: "50 mm" }],
     };
     const { props } = renderPane({ onSubmitParams: vi.fn(async () => conf) });
-    // the stage form IS the compact fast-path card; the "+" popover is absent on the stage
+    // an empty stage hides the cockpit; the user opens it explicitly via the affordance
+    fireEvent.click(screen.getByTestId("open-cockpit"));
+    // the cockpit form IS the compact fast-path card; the "+" popover is absent
     expect(screen.getByTestId("param-compact")).toBeInTheDocument();
     expect(screen.queryByTestId("open-parameter-form")).toBeNull();
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
@@ -92,7 +94,8 @@ describe("pilot-ui stage (fresh conversation)", () => {
   it("the '+' popover is RETIRED: no second form entry point on the stage or in chat-view", async () => {
     renderPane();
     expect(screen.queryByTestId("open-parameter-form")).toBeNull(); // stage: no "+"
-    // the persistent cockpit form is the single entry point — present on the stage
+    // the cockpit form (opened via the affordance) is the single entry point — no "+"
+    fireEvent.click(screen.getByTestId("open-cockpit"));
     expect(within(screen.getByTestId("case-state")).getByTestId("param-compact")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
     fireEvent.click(screen.getByTestId("composer-send"));
@@ -147,6 +150,9 @@ describe("pilot-ui stage (fresh conversation)", () => {
         notes: [],
       },
     });
+    // a not_computed-only kern keeps caseStateEmpty true → the cockpit is hidden until opened;
+    // once opened, it shows the calm placeholder rather than an empty Berechnungen panel
+    fireEvent.click(screen.getByTestId("open-cockpit"));
     expect(screen.getByTestId("case-state-empty")).toBeInTheDocument();
     expect(screen.queryByTestId("berechnungen-panel")).toBeNull();
   });
@@ -210,6 +216,7 @@ describe("pilot-ui stage (fresh conversation)", () => {
       uebernommen: [{ feld: "wellendurchmesser", label: "Wellendurchmesser d₁", wert: "50 mm" }],
     };
     const { props } = renderPane({ onSubmitParams: vi.fn(async () => conf) });
+    fireEvent.click(screen.getByTestId("open-cockpit")); // open the cockpit on the empty stage
     const cockpit = screen.getByTestId("case-state");
     fireEvent.change(within(cockpit).getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(within(cockpit).getByTestId("param-submit"));
@@ -220,8 +227,8 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(screen.getByTestId("chat-log")).toBeInTheDocument(); // transitioned to chat-view
   });
 
-  it("the cockpit is persistent across BOTH states (present on the stage and in chat-view)", async () => {
-    renderPane();
+  it("an active case keeps the cockpit persistent across BOTH states (stage and chat-view)", async () => {
+    renderPane({ memory: WITH_FACTS }); // a non-empty case auto-shows the cockpit
     expect(screen.getByTestId("case-state")).toBeInTheDocument(); // stage
     fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
     fireEvent.click(screen.getByTestId("composer-send"));
@@ -229,6 +236,56 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(screen.getByTestId("case-state")).toBeInTheDocument(); // chat-view — still present
     // NOTE: the ≥1024px vs <1024px stacking is a CSS @media concern — not assertable in jsdom;
     // verified visually in the harness/build, not here.
+  });
+});
+
+describe("cockpit conditional visibility (hidden on the empty stage / pure knowledge-Q&A)", () => {
+  it("empty case + form not opened → cockpit hidden, chat full-width, affordance present", () => {
+    renderPane({ memory: EMPTY });
+    expect(screen.queryByTestId("case-state")).toBeNull(); // no cockpit aside
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--solo"); // single-column, full width
+    expect(screen.getByTestId("open-cockpit")).toBeInTheDocument(); // the subtle affordance
+  });
+
+  it("clicking the affordance reveals the cockpit, and it persists for the session", async () => {
+    renderPane({ memory: EMPTY });
+    fireEvent.click(screen.getByTestId("open-cockpit"));
+    const cockpit = screen.getByTestId("case-state");
+    expect(within(cockpit).getByTestId("param-compact")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo"); // two-column now
+    expect(screen.queryByTestId("open-cockpit")).toBeNull(); // affordance gone once opened
+    // session-sticky: it survives the stage → chat-view transition
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await screen.findByTestId("chat-log");
+    expect(screen.getByTestId("case-state")).toBeInTheDocument();
+  });
+
+  it("a non-empty case_state auto-shows the cockpit without opening (auto-trigger)", () => {
+    renderPane({ memory: WITH_FACTS });
+    expect(screen.getByTestId("case-state")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo");
+    expect(screen.queryByTestId("open-cockpit")).toBeNull(); // no affordance — cockpit already up
+  });
+
+  it("a compute-only result (a clarification, case_state still empty) auto-shows the cockpit", () => {
+    const clarification: Clarification = {
+      feld: "drehzahl",
+      input_name: "drehzahl",
+      raw_value: "5000",
+      raw_unit: "",
+      reason: "unit_missing",
+      suggested_unit: "U/min",
+      known_dimension: "",
+      expected_dimension: "frequency",
+      one_click: true,
+    };
+    renderPane({
+      memory: EMPTY,
+      compute: { computed: [], not_computed: [], notes: [], clarifications: [clarification] },
+    });
+    expect(screen.getByTestId("case-state")).toBeInTheDocument(); // !caseStateEmpty → visible
+    expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo");
   });
 });
 
