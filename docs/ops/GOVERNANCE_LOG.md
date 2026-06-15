@@ -937,3 +937,39 @@ were fully removed; no sentinels were created; worktree left clean.
 
 Neither F1 nor F2 weakens a gate — both cause *over*-blocking (fail-closed in the
 safe direction). They are robustness/usability findings, not security gaps.
+
+---
+
+## 2026-06-15 — V2 /dashboard dist deploy: RWDR param-form (SAFE dist swap, owner-gated)
+
+Live `sealingai.com/dashboard` updated to carry the **RWDR parameter Fast-Path form
+(P1–P3 + V2 ruff-format)** via the SAFE dist pattern. No nginx reload (directory
+bind-mount). V1 untouched.
+
+**Source → live**
+- Source: `demo/rwdr-limited-external @ 2c557f5f` (the V2 SoT; PR #132).
+- Build: detached-checkout `2c557f5f` in the **MAIN worktree** `/home/thorsten/sealai`
+  → `npx vite build --outDir /tmp/v2dist-paramform-20260615-063434 --emptyOutDir`
+  (never `npm run build`/`--outDir` into the live dist) → worktree restored to
+  `feat/v2-param-form @ 60573083`.
+- Swap: `rsync -a --delete /tmp/v2dist-paramform-20260615-063434/ \
+  /home/thorsten/sealai/frontend-v2/dist/` (bind `docker-compose.deploy.yml:207`
+  → `/usr/share/nginx/v2-client:ro`).
+
+**Bundle change**
+| | live now | replaced |
+|---|---|---|
+| JS | `index-BQaruY8P.js` (sha256 `99765337…`) | `index-BC9D4KRg.js` (`1bd31d6c…`) |
+| CSS | `index-fKXCZhy0.css` (sha256 `f83aa18a…`) | `index-TDBS5kjk.css` (`6226c476…`) |
+
+**Verification** — `diff -r /tmp-build live-dist` **empty** (live == validated build);
+only the two top-level bundles swapped (fonts/KaTeX byte-stable); served-body sha256
+matches `99765337…`/`f83aa18a…` at the origin; `index.html` references the new hashes;
+old path → SPA `index.html` fallback (file gone), not stale; **V1 `/` → 200**.
+
+**Rollback** — pre-swap live dist backed up: `/tmp/dist-backup-20260615-063511.tgz`
+(sha256 `7d4aa9ae75aa0b8a2a0f8eaee733121227e96578d19ba46d33e4c9085bc1f861`). Restore:
+clear `frontend-v2/dist` + `tar xzf` the backup.
+
+**Follow-up queued (not in this deploy):** cockpit re-layout (persistent right column;
+plan drafted, review-only) — UI placement, no data-flow/trust-spine change.
