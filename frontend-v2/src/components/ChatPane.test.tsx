@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatResponse, ConfirmationResponse, ConversationMemory } from "../contracts";
@@ -89,12 +89,15 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
   });
 
-  it("the '+' popover is a chat-view affordance: absent on the stage, present after the first message", async () => {
+  it("the '+' popover is RETIRED: no second form entry point on the stage or in chat-view", async () => {
     renderPane();
     expect(screen.queryByTestId("open-parameter-form")).toBeNull(); // stage: no "+"
+    // the persistent cockpit form is the single entry point — present on the stage
+    expect(within(screen.getByTestId("case-state")).getByTestId("param-compact")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
     fireEvent.click(screen.getByTestId("composer-send"));
-    expect(await screen.findByTestId("open-parameter-form")).toBeTruthy(); // chat-view: "+" present
+    await screen.findByTestId("chat-log");
+    expect(screen.queryByTestId("open-parameter-form")).toBeNull(); // chat-view: still no "+"
   });
 
   it("chip interactions are preserved: chip body = edit, × = forget", () => {
@@ -131,6 +134,101 @@ describe("pilot-ui stage (fresh conversation)", () => {
   it("no Berechnungen panel on the clean stage (no compute)", () => {
     renderPane();
     expect(screen.queryByTestId("berechnungen-panel")).toBeNull();
+  });
+
+  it("a not_computed-only kern shows the calm placeholder, not an empty Berechnungen panel", () => {
+    renderPane({
+      memory: EMPTY,
+      compute: {
+        computed: [],
+        not_computed: [
+          { calc_id: "umfangsgeschwindigkeit", reason: "nicht berechenbar: Eingaben fehlen (rpm)" },
+        ],
+        notes: [],
+      },
+    });
+    expect(screen.getByTestId("case-state-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("berechnungen-panel")).toBeNull();
+  });
+
+  // ── cockpit re-layout: persistent right column, calm stage center ──────────────
+  it("stage center is calm: no form / chips / Berechnungen in the center (they live in the cockpit)", () => {
+    renderPane({
+      memory: WITH_FACTS,
+      compute: {
+        computed: [
+          {
+            calc_id: "umfangsgeschwindigkeit",
+            name: "v_m_s",
+            value: 16.7552,
+            unit: "m/s",
+            formula: "v = π·d1·n/60000",
+            parent_fields: ["wellendurchmesser", "drehzahl"],
+            input_origins: [],
+            provenance: "kernel_computed",
+          },
+        ],
+        not_computed: [],
+        notes: [],
+      },
+    });
+    const center = screen.getByTestId("stage-center");
+    expect(within(center).queryByTestId("param-compact")).toBeNull();
+    expect(within(center).queryByTestId("memory-panel")).toBeNull();
+    expect(within(center).queryByTestId("berechnungen-panel")).toBeNull();
+  });
+
+  it("the cockpit is present ON THE STAGE and holds all three: form + chips + Berechnungen", () => {
+    renderPane({
+      memory: WITH_FACTS,
+      compute: {
+        computed: [
+          {
+            calc_id: "umfangsgeschwindigkeit",
+            name: "v_m_s",
+            value: 16.7552,
+            unit: "m/s",
+            formula: "v = π·d1·n/60000",
+            parent_fields: ["wellendurchmesser", "drehzahl"],
+            input_origins: [],
+            provenance: "kernel_computed",
+          },
+        ],
+        not_computed: [],
+        notes: [],
+      },
+    });
+    const cockpit = screen.getByTestId("case-state");
+    expect(within(cockpit).getByTestId("param-compact")).toBeInTheDocument();
+    expect(within(cockpit).getByTestId("memory-panel")).toBeInTheDocument();
+    expect(within(cockpit).getByTestId("berechnungen-panel")).toBeInTheDocument();
+  });
+
+  it("Berechnen FROM THE COCKPIT settles and transitions to chat-view (data flow unchanged)", async () => {
+    const conf: ConfirmationResponse = {
+      ...EMPTY_CONF,
+      uebernommen: [{ feld: "wellendurchmesser", label: "Wellendurchmesser d₁", wert: "50 mm" }],
+    };
+    const { props } = renderPane({ onSubmitParams: vi.fn(async () => conf) });
+    const cockpit = screen.getByTestId("case-state");
+    fireEvent.change(within(cockpit).getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
+    fireEvent.click(within(cockpit).getByTestId("param-submit"));
+    expect(props.onSubmitParams).toHaveBeenCalledWith([
+      { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
+    ]);
+    expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
+    expect(screen.getByTestId("chat-log")).toBeInTheDocument(); // transitioned to chat-view
+  });
+
+  it("the cockpit is persistent across BOTH states (present on the stage and in chat-view)", async () => {
+    renderPane();
+    expect(screen.getByTestId("case-state")).toBeInTheDocument(); // stage
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await screen.findByTestId("chat-log");
+    expect(screen.getByTestId("case-state")).toBeInTheDocument(); // chat-view — still present
+    // NOTE: the ≥1024px vs <1024px stacking is a CSS @media concern — not assertable in jsdom;
+    // verified visually in the harness/build, not here.
   });
 });
 

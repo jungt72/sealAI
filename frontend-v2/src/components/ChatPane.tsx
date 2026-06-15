@@ -14,7 +14,7 @@ import { BriefingPane } from "./BriefingPane";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
 import { ParameterForm } from "./ParameterForm";
-import { MicIcon, PlusIcon, SendIcon } from "./icons";
+import { MicIcon, SendIcon } from "./icons";
 
 type Msg =
   | { role: "user"; text: string }
@@ -31,13 +31,13 @@ const STAGE_LABELS: Record<string, string> = {
   verify: "Prüfen",
 };
 
-/** The pilot-ui main surface, two states of ONE conversation:
- *  - stage (no messages yet): centered greeting over the radial glow, the pill, fact chips under it
- *    — the clean Gemini-like landing;
- *  - chat view (conversation started): the message log (markdown answers, honesty badges,
- *    citations) with the same pill + chips docked at the bottom.
- * On a failed send the assistant message is NOT appended (no stale/wrong content); the error is
- * surfaced and the persistent doctrine line (Shell) stays. */
+/** The pilot-ui main surface: a persistent two-column workspace — the conversation on the left, a
+ *  persistent cockpit (parameter fast-path form + Fallkontext chips + Berechnungen) on the right,
+ *  present from the landing. Two states of ONE conversation:
+ *  - stage (no messages yet): a calm, centered greeting + composer over the radial glow;
+ *  - chat view (conversation started): the message log with the same composer docked at the bottom.
+ *  The cockpit is IDENTICAL in both states. On a failed send the assistant message is NOT appended
+ *  (no stale/wrong content); the error is surfaced and the persistent doctrine line (Shell) stays. */
 export function ChatPane({
   onSend,
   error,
@@ -72,7 +72,6 @@ export function ChatPane({
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
   // latest mapped label survives unmapped keys (recall/cite) and clears when the turn ends
@@ -81,15 +80,6 @@ export function ChatPane({
     if (!busy) setStageLabel(null);
     else if (liveStage && STAGE_LABELS[liveStage]) setStageLabel(STAGE_LABELS[liveStage]);
   }, [busy, liveStage]);
-
-  useEffect(() => {
-    if (!formOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFormOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [formOpen]);
 
   async function send() {
     const text = input.trim();
@@ -119,36 +109,9 @@ export function ChatPane({
     }
   }
 
-  // The stage's primary form affordance is the fast-path card (below); the "+" popover is for
-  // INCREMENTAL edits once in chat-view. So "+" + its popover render only after the first message.
-  const inChat = msgs.length > 0;
-
   const composer = (
     <div className="pill-wrap">
-      {inChat && formOpen && (
-        <div className="pill-pop" role="dialog" aria-label="Parameter eingeben">
-          <ParameterForm
-            onSubmit={submitParams}
-            onSubmitted={() => {
-              setFormOpen(false);
-              inputRef.current?.focus();
-            }}
-          />
-        </div>
-      )}
       <div className="pill">
-        {inChat && (
-          <button
-            className="pill-icon"
-            onClick={() => setFormOpen((o) => !o)}
-            title="Parameter eingeben"
-            aria-label="Parameter eingeben"
-            aria-expanded={formOpen}
-            data-testid="open-parameter-form"
-          >
-            <PlusIcon />
-          </button>
-        )}
         <textarea
           ref={inputRef}
           className="pill-input"
@@ -190,10 +153,8 @@ export function ChatPane({
     <MemoryPanel memory={memory} onEdit={onEditFact} onForget={onForgetFact} onForgetAll={onForgetAll} />
   );
 
-  // the kernel channel renders right next to the input chips (both stage + chat views)
-  const kernelPanel = (
-    <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} />
-  );
+  // the kernel channel renders inside the cockpit, under the chips
+  const kernelPanel = <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} />;
 
   const briefingButton = (
     <button
@@ -206,93 +167,95 @@ export function ChatPane({
     </button>
   );
 
-  // The case-state column (chips + kern) is empty when there are no remembered facts AND the kern has
-  // nothing to show — this mirrors the MemoryPanel/BerechnungenPanel null-returns so the reserved right
-  // column shows an honest placeholder instead of a blank box. Read-only over existing props: no data
-  // flow, settle, clarify-confirm, or recompute logic is touched.
+  // The cockpit's chips+kern area is empty when there are no remembered facts AND the kern has nothing
+  // to show — an honest placeholder instead of a blank box (the parameter form above it is always shown).
+  // Mirrors the calm Berechnungen visibility: a not_computed-only kern is "empty" here (it surfaces no
+  // panel), so the placeholder shows rather than an empty box.
   const caseStateEmpty =
     memory.case_state.length === 0 &&
     (compute?.computed?.length ?? 0) === 0 &&
-    (compute?.not_computed?.length ?? 0) === 0 &&
     (compute?.clarifications?.length ?? 0) === 0 &&
     (compute?.notes?.length ?? 0) === 0;
 
-  if (msgs.length === 0) {
-    return (
-      <div className="stage" data-testid="chat-pane">
-        <div className="stage-glow" aria-hidden="true" />
-        <h1 className="greeting" data-testid="greeting">
-          Welche Dichtungsfrage steht an{greetingName ? `, ${greetingName}` : ""}?
-        </h1>
-        {/* form-first fast path: compact kernel card (derived role:kernel) + expander for the full A–I.
-            Submit reuses the SAME batch settle → confirmation → chat-view transition as the chat input. */}
-        <ParameterForm variant="stage" onSubmit={submitParams} />
-        {composer}
-        {chips}
-        {kernelPanel}
-        {error && (
-          <div className="error-banner" role="alert" data-testid="chat-error">
-            {error}
-          </div>
-        )}
-      </div>
-    );
-  }
+  // The persistent right cockpit — IDENTICAL on the stage and in chat-view. The parameter fast-path
+  // form (compact kernel card + the "weitere Parameter" expander) is now the SINGLE form entry point
+  // (the chat-view "+" popover is retired); its batch submit reuses the SAME settle → confirmation →
+  // chat-view transition as the chat input. Pure placement: no data-flow / settle / recompute change.
+  const cockpit = (
+    <aside className="case-state" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
+      <ParameterForm variant="stage" onSubmit={submitParams} />
+      {caseStateEmpty ? (
+        <p className="case-state-empty" data-testid="case-state-empty">
+          Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
+          Rechenkern hier.
+        </p>
+      ) : (
+        <>
+          {chips}
+          {kernelPanel}
+        </>
+      )}
+      <div className="chat-foot-row">{briefingButton}</div>
+    </aside>
+  );
 
   return (
-    <div className="chat-view" data-testid="chat-pane">
-      <div className="chat-main">
-        <div className="chat-log" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
-          {msgs.map((m, i) =>
-            m.role === "user" ? (
-              <div key={i} className="msg-user">
-                {m.text}
+    <div className="workspace" data-testid="chat-pane">
+      <main className="workspace-main">
+        {msgs.length === 0 ? (
+          // stage center: ONLY the greeting + composer over the glow — calm and centered.
+          <div className="stage" data-testid="stage-center">
+            <div className="stage-glow" aria-hidden="true" />
+            <h1 className="greeting" data-testid="greeting">
+              Welche Dichtungsfrage steht an{greetingName ? `, ${greetingName}` : ""}?
+            </h1>
+            {composer}
+            {error && (
+              <div className="error-banner" role="alert" data-testid="chat-error">
+                {error}
               </div>
-            ) : m.role === "confirmation" ? (
-              <ParamConfirmation key={i} conf={m.conf} />
-            ) : (
-              <Answer key={i} res={m.res} />
-            ),
-          )}
-          {busy && (
-            <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
-              <span className="pending-dots" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </span>
-              {stageLabel && (
-                <span className="pending-label" data-testid="stage-label">
-                  {stageLabel}
-                </span>
-              )}
-            </div>
-          )}
-          {error && (
-            <div className="error-banner" role="alert" data-testid="chat-error">
-              {error}
-            </div>
-          )}
-          <BriefingPane briefing={briefing} />
-        </div>
-        <div className="chat-foot">{composer}</div>
-      </div>
-      {/* case-state: right column on wide screens (≥1024px), stacked below on narrow.
-          Reserved from the first message — an honest placeholder, never a blank box, until values arrive. */}
-      <aside className="case-state" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
-        {caseStateEmpty ? (
-          <p className="case-state-empty" data-testid="case-state-empty">
-            Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
-            Rechenkern hier.
-          </p>
+            )}
+          </div>
         ) : (
-          <>
-            {chips}
-            {kernelPanel}
-          </>
+          <div className="chat-main">
+            <div className="chat-log" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
+              {msgs.map((m, i) =>
+                m.role === "user" ? (
+                  <div key={i} className="msg-user">
+                    {m.text}
+                  </div>
+                ) : m.role === "confirmation" ? (
+                  <ParamConfirmation key={i} conf={m.conf} />
+                ) : (
+                  <Answer key={i} res={m.res} />
+                ),
+              )}
+              {busy && (
+                <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
+                  <span className="pending-dots" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  {stageLabel && (
+                    <span className="pending-label" data-testid="stage-label">
+                      {stageLabel}
+                    </span>
+                  )}
+                </div>
+              )}
+              {error && (
+                <div className="error-banner" role="alert" data-testid="chat-error">
+                  {error}
+                </div>
+              )}
+              <BriefingPane briefing={briefing} />
+            </div>
+            <div className="chat-foot">{composer}</div>
+          </div>
         )}
-        <div className="chat-foot-row">{briefingButton}</div>
-      </aside>
+      </main>
+      {cockpit}
     </div>
   );
 }

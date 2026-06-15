@@ -91,6 +91,27 @@ function Harness() {
           onMakeBriefing={() => {}}
           canBriefing={false}
           briefing={null}
+          // review fixture: a kernel result so the cockpit's Berechnungen panel renders (clean on ?view=fresh)
+          compute={
+            view === "fresh"
+              ? null
+              : {
+                  computed: [
+                    {
+                      calc_id: "umfangsgeschwindigkeit",
+                      name: "v_m_s",
+                      value: 7.85,
+                      unit: "m/s",
+                      formula: "v = π·d1·n/60000",
+                      parent_fields: ["wellendurchmesser", "drehzahl"],
+                      input_origins: [],
+                      provenance: "kernel_computed",
+                    },
+                  ],
+                  not_computed: [],
+                  notes: [],
+                }
+          }
         />
       </Shell>
     </FramingContext.Provider>
