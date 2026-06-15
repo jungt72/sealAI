@@ -5,7 +5,12 @@ import { clarifyMessage } from "../lib/clarify";
  * input chips. The browser NEVER computes — like ParameterForm, there is no formula import and no
  * arithmetic here; every number comes verbatim from /api/v2/compute (or a chat turn's in-band kern
  * result). A client-side number would re-create the false-provenance calc-leak, so it is
- * structurally absent. Open points ("nicht berechenbar") are shown honestly, with NO number.
+ * structurally absent.
+ *
+ * Calm cockpit: this is a quiet RESULTS surface — only computed values render as rows; the
+ * not_computed "nicht berechenbar" open points are SUPPRESSED (the form already shows what is
+ * still missing). The panel stays absent until there is something to show — it appears once ≥1
+ * value is computed OR an actionable unit-clarification / conflict-note exists.
  *
  * Unit-recovery (clarifications): the binder owns the decision; the panel only renders it. The
  * confirm button appears STRICTLY when `one_click` is true (a SAFE canonical append) — never on
@@ -32,20 +37,14 @@ export function BerechnungenPanel({
   onConfirmUnit?: (feld: string, value: string) => void;
 }) {
   const computed = compute?.computed ?? [];
-  const notComputed = compute?.not_computed ?? [];
   const clarifications = compute?.clarifications ?? [];
   // A clarification is the structured recovery surface; drop the free-text note that duplicates it
   // (same feld). Conflict/advisory notes (no clarification for that feld) stay visible.
   const notes = (compute?.notes ?? []).filter(
     (n) => !clarifications.some((c) => n.startsWith(`${c.feld}:`)),
   );
-  if (
-    computed.length === 0 &&
-    notComputed.length === 0 &&
-    clarifications.length === 0 &&
-    notes.length === 0
-  )
-    return null;
+  // Calm visibility: a not_computed-only kern shows nothing here (open points live in the form).
+  if (computed.length === 0 && clarifications.length === 0 && notes.length === 0) return null;
 
   return (
     <section
@@ -71,17 +70,6 @@ export function BerechnungenPanel({
               deterministisch berechnet
               {c.parent_fields.length ? ` aus ${c.parent_fields.join(", ")}` : ""}
             </span>
-          </li>
-        ))}
-        {notComputed.map((n) => (
-          <li
-            key={n.calc_id}
-            className="fact-chip kernel-open"
-            data-testid="kernel-not-computed"
-          >
-            <span className="fact-feld">{label(n.calc_id)}</span>
-            <span className="fact-wert">nicht berechenbar</span>
-            <span className="kernel-meta">{n.reason}</span>
           </li>
         ))}
       </ul>

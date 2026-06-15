@@ -147,8 +147,9 @@
 .kernel-note { width: 100%; text-align: center; font-size: 11px; color: var(--ink-faint); margin: 2px 0 0; }
 .kernel-hint { font-style: italic; }
 
-/* ── chat view ──────────────────────────────────────────────────────────────── */
-.chat-view { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --cockpit-w: 340px; }
+/* ── workspace: persistent two-column surface (conversation | cockpit) ───────── */
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --cockpit-w: 440px; }
+.workspace-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 /* left column: the conversation thread (scrolls) + the docked composer */
 .chat-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 .chat-log {
@@ -183,17 +184,17 @@
 .make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
 .make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
 
-/* ── wide screens: case-state becomes the right column beside the chat ───────── */
+/* ── wide screens: the cockpit becomes the persistent right column (stage + chat) ── */
 @media (min-width: 1024px) {
-  .chat-view {
+  .workspace {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--cockpit-w);
     grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
     column-gap: 28px;
-    width: 100%; max-width: 1180px; margin: 0 auto;
+    width: 100%; max-width: 1280px; margin: 0 auto;
   }
-  .chat-main { width: auto; }            /* fills the left grid track */
+  .workspace-main { width: auto; }       /* fills the left grid track (stage or chat) */
   .chat-foot { padding-bottom: 64px; }   /* left-column bottom clears the doctrine line */
   .case-state {
     width: auto; align-self: stretch; justify-content: flex-start;

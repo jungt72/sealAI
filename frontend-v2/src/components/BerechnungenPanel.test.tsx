@@ -49,12 +49,25 @@ describe("BerechnungenPanel (the kernel channel — backend values only)", () =>
     expect(panel).toHaveTextContent(/Orientierung, keine Freigabe/i);
   });
 
-  it("renders a 'nicht berechenbar' open point with NO number (fail-closed, honest)", () => {
+  it("calm cockpit: suppresses every 'nicht berechenbar' row (panel still shows the conflict note)", () => {
     render(<BerechnungenPanel compute={OPEN} />);
-    const open = screen.getByTestId("kernel-not-computed");
-    expect(open).toHaveTextContent("Umfangsgeschwindigkeit");
-    expect(open).toHaveTextContent(/nicht berechenbar/i);
+    // the panel is visible because OPEN carries a conflict/advisory note…
+    expect(screen.getByTestId("berechnungen-panel")).toBeInTheDocument();
+    // …but the not_computed "nicht berechenbar" row is suppressed (calm = computed rows only)
+    expect(screen.queryByTestId("kernel-not-computed")).toBeNull();
+    // the honest conflict note still renders
     expect(screen.getByTestId("kernel-note")).toHaveTextContent("nicht eindeutig bindbar");
+  });
+
+  it("with v computed and a not_computed PV alongside, ONLY the v row renders (calm)", () => {
+    const mixed: ComputeResponse = {
+      computed: V.computed,
+      not_computed: [{ calc_id: "pv_wert", reason: "nicht berechenbar: Eingaben fehlen (druck)" }],
+      notes: [],
+    };
+    render(<BerechnungenPanel compute={mixed} />);
+    expect(screen.getByTestId("kernel-value")).toHaveTextContent("16,76 m/s");
+    expect(screen.queryByTestId("kernel-not-computed")).toBeNull(); // the PV open point is suppressed
   });
 
   it("TRUST: never shows a computed number when the kern reported none (no client compute)", () => {
@@ -71,6 +84,19 @@ describe("BerechnungenPanel (the kernel channel — backend values only)", () =>
     const empty: ComputeResponse = { computed: [], not_computed: [], notes: [] };
     const { container: c2 } = render(<BerechnungenPanel compute={empty} />);
     expect(c2.firstChild).toBeNull();
+  });
+
+  it("panel absent when only a not_computed row exists (nothing computed, no note/clarification)", () => {
+    const onlyOpen: ComputeResponse = {
+      computed: [],
+      not_computed: [
+        { calc_id: "umfangsgeschwindigkeit", reason: "nicht berechenbar: Eingaben fehlen (rpm)" },
+      ],
+      notes: [],
+      clarifications: [],
+    };
+    const { container } = render(<BerechnungenPanel compute={onlyOpen} />);
+    expect(container.firstChild).toBeNull(); // not_computed alone no longer surfaces the panel
   });
 });
 
