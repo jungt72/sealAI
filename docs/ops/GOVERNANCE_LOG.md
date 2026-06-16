@@ -6,6 +6,57 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-16T12:39Z — V2 /dashboard dist deploy: cockpit internal two-column (Parameter | Readout) — SAFE dist swap, owner-gated
+
+**Change:** the cockpit panel now renders **two columns side-by-side** on wide screens (was stacking).
+Layout/proportions only — NO behaviour change. **Root cause of the stacking:** the outer chat|cockpit
+divider reused the Phase-A inner-splitter localStorage key (`sealai-v2:cockpit-w`, which stored a
+narrow Parameter|Readout width) → the cockpit was pinned too narrow → its container query stayed below
+the two-column threshold. Fixes: (1) new persistence key **`sealai-v2:split-w`** (the Phase-A value is
+orphaned); the chat|cockpit split defaults to **~45/55** (cockpit gets the slightly larger half so its
+two internal columns breathe); robust grid (explicit `% ` default, no comma var-fallback); a dragged
+width still overrides + persists. (2) inner 2-pane = **two columns via container query at 680px** —
+**Parameter left ~57%** (Universal Core, type tabs, kernel card, expander, Übernehmen, helper,
+dirty-gated Vorschau) | **Readout right ~43%** (committed **Berechnungen on top**, then **Fallkontext
+chips**, then the **Briefing · RFQ-Reife** block). Stacks only when the cockpit column is genuinely
+narrow (< 680px ≈ narrow viewport).
+
+**Preserved:** claude.ai outer 3-region (collapsible nav | chat | closeable cockpit, chat-only when no
+case); dirty-gated Vorschau (v≈13,09 at d₁=50/n=5000); all R2 invariants; Universal Core above the
+tabs; type tabs; `formFields()` threading; one scroll per column; no-remount on open/close/collapse.
+
+**Source commit:** `52f2cb24` on `feat/v2-cockpit-resizable` (V1 doctrine guard suite green via the
+commit gate). `dist/` is gitignored — reproduces byte-identical from clean HEAD. `main`/`demo`
+untouched.
+
+**Pre-deploy gate (offline):** `check:boundary` ✓, `tsc --noEmit` ✓, **vitest 144/144** ✓ (two-column
+structure: Parameter-left precedes Readout-right; Readout order Berechnungen → chips → Briefing; split
+key rename).
+
+**SAFE dist swap** (no nginx reload — bind `docker-compose.deploy.yml:207` → `/usr/share/nginx/v2-client:ro`):
+- Backup pre-swap live dist → `/tmp/dist-backup-2col-20260616-123859.tgz`
+  (sha256 `fdb415100337393ada74c8bbd25c0478012cd0d95675d47415493312df302042`); old bundle
+  `index-DC1v519y.js` / `index-CRsSDnqS.css`.
+- Build: `npx vite build --outDir /tmp/v2dist-2col-20260616-123859 --emptyOutDir`.
+- Swap: `rsync -a --delete /tmp/v2dist-2col-20260616-123859/ /home/thorsten/sealai/frontend-v2/dist/`;
+  `diff -r` build↔live **empty**.
+
+**New live bundle:** `index-B7Cox0lt.js` (sha256 `32735bd10d279827b82555e0a1703ff27fd92a031dcdbe74651dda0e9e13e1a7`)
+· `index-C6wVhlb5.css` (sha256 `e598c471713290697d9e6a4149f6f4d4a1365a53523a7dd789c1864070e19316`).
+
+**Verification:** nginx container mount reflects the new bundle. HTTP smoke:
+`https://sealingai.com/dashboard/` → **200**; `…/dashboard/assets/index-B7Cox0lt.js` → **200**; V1
+unaffected — `https://sealingai.com/` → **200**, `…/api/agent/health` → **200**.
+
+**Rollback** — clear `frontend-v2/dist` + `tar xzf /tmp/dist-backup-2col-20260616-123859.tgz -C
+frontend-v2/dist`.
+
+**Note:** the responsive threshold (two-column ≥680px cockpit / stacked below) is owner-verified in the
+browser — jsdom asserts only the structural contract (Parameter-left | Readout-right, Readout stack
+order), not pixel widths / container queries.
+
+---
+
 ## 2026-06-16T11:59Z — V2 /dashboard dist deploy: claude.ai three-region layout (sidebar | chat | cockpit) — SAFE dist swap, owner-gated
 
 **Change:** replace the Phase-A focus-mode rails (solo / focus-chat / focus-cockpit, fixed-800px
