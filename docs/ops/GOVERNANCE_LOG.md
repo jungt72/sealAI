@@ -6,6 +6,58 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-16T07:02Z — V2 PROD deploy: `backend-v2` rebuild — facts route restored (cockpit „Berechnen") — owner-gated
+
+**Defect:** the live `backend-v2` container ran a **stale local image** (`sealai-backend-v2:latest`
+@ `sha256:04badaaed…`, built 2026-06-13) that predated `POST /api/v2/conversations/current/facts`.
+The cockpit form 404'd before its inputs ever reached the deterministic M8-A kernel
+(`core/calc/binding.py`) → "kernel never received real-world inputs". Pure stale-image bug — no
+code fix, no nginx/topology change. Scope: **Briefing A only**.
+
+**Forensic correction (briefing premise was wrong):** the three PIDs flagged as "verwaiste
+bare-metal-Prozesse" (892999 / 2151711 / 1056113) are **not orphans** — each is a container main
+process, verified via `/proc/PID/cgroup` → `containerd-shim`: `backend-v2` / `backend-v2-staging` /
+old-V1 `backend` respectively. No bare-metal process shadows :8001; the briefing's A-0 (kill +
+respawn-hunt) was void and **not run**.
+
+**Build (normal `build`, deps cached):**
+`docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2
+build backend-v2` — base/apt/`requirements-v2` layers CACHED; `COPY sealai_v2` (Dockerfile.v2:35)
+re-ran on current source (`feat/v2-cockpit-resizable`, tree clean bar `scratch/`); in-build
+`import sealai_v2.api.main` check (Dockerfile.v2:39) passed. Pre-flight: V2 offline suite green
+(`backend/sealai_v2` incl. `tests/test_api_param_confirmation.py`, EXIT=0).
+
+**Recreate (surgical):** `… up -d --no-deps backend-v2` — **no `--remove-orphans`**; nothing else
+moved (nginx/keycloak/qdrant/redis/postgres + all foreign projects untouched).
+
+**Image manifest (sha256):**
+- new live `sealai-backend-v2:latest` = manifest-list `c0f82636e289…` (container image
+  `sha256:c0f82636e289111eb8eb10e083ba54925ea78b18d6f2781f1e193365e3840bfe`).
+- rolled-from (preserved) = `04badaaedff5…`, tagged **`sealai-backend-v2:rollback-2026-06-16`**.
+
+**Live verification:** `backend-v2` `running healthy` on `c0f82636…`. Non-mutating GET probes —
+`/health` 200; `GET /api/v2/conversations/current/facts` **405** (was **404**) local **and** public
+(`https://sealingai.com/…`); `/current` 405. No nginx reload needed (variable `proxy_pass
+$v2_upstream` resolved the new upstream IP; public 405 is the gate). Deterministic trust-spine
+(offline, against the deployed source): `core/calc/formulas.py::umfangsgeschwindigkeit(d1_mm=40,
+rpm=3000)` = **6.2832 m/s ≈ 6.28 m/s** (`v = π·d1_mm·rpm/60000`).
+
+**Pending owner (browser end-to-end — human is the oracle):** submit d=40 mm / n=3000 U/min in
+`/dashboard` → confirm the Berechnete Werte show **v≈6.28 m/s** from the real user-form input (not a
+fixture) **and** the L1 narrative ↔ Berechnete Werte are mutually consistent (the documented
+contradiction gone).
+
+**Rollback (soft):** `docker tag sealai-backend-v2:rollback-2026-06-16 sealai-backend-v2:latest`
+→ `… up -d --no-deps --force-recreate backend-v2`. No Hetzner snapshot taken (A is reversible via
+the rollback tag; snapshot is mandatory only for the deferred Briefing B). V1 + `main` untouched.
+
+**Deferred (not done here):** Briefing B (SSoT-cleanup: remove old `backend`/`sealai-frontend-1`/
+`backend-v2-staging`/`nginx-staging`, strip legacy nginx locations, root→`/dashboard` redirect,
+image prune) and A-3 (ParameterForm/ChatPane don't-reset-on-error + chat error surface + live dist
+swap) — both separate owner-gated passes.
+
+---
+
 ## 2026-06-14T12:25Z — V2 PROD deploy: `/dashboard` dist-swap (responsive two-column layout fix) — owner-gated
 
 **Deploy (owner-gated, this is a live prod change to `/dashboard`):** rebuilt the V2 client
