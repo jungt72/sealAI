@@ -309,29 +309,34 @@ export function ChatPane({
       </header>
       <div className="cockpit-body">
         <div className="cockpit-2pane" data-testid="cockpit-2pane">
-          <div className="cockpit-pane cockpit-pane--param" data-testid="cockpit-param">
-            <ParameterForm
-              variant="stage"
-              onSubmit={submitParams}
-              onPreview={onPreview}
-              committed={committed}
-            />
+          {/* each column: a non-scrolling wrapper (carries the fade cues) + an inner scroll-area */}
+          <div className="cockpit-col scroll-wrap scroll-wrap--param">
+            <div className="cockpit-pane cockpit-pane--param scroll-area" data-testid="cockpit-param">
+              <ParameterForm
+                variant="stage"
+                onSubmit={submitParams}
+                onPreview={onPreview}
+                committed={committed}
+              />
+            </div>
           </div>
-          <div className="cockpit-pane cockpit-pane--readout" data-testid="cockpit-readout">
-            {caseStateEmpty ? (
-              <p className="case-state-empty" data-testid="case-state-empty">
-                Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
-                Rechenkern hier.
-              </p>
-            ) : (
-              <>
-                {kernelPanel}
-                {chips}
-              </>
-            )}
-            <div className="readout-briefing">
-              <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
-              {briefingButton}
+          <div className="cockpit-col scroll-wrap">
+            <div className="cockpit-pane cockpit-pane--readout scroll-area" data-testid="cockpit-readout">
+              {caseStateEmpty ? (
+                <p className="case-state-empty" data-testid="case-state-empty">
+                  Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
+                  Rechenkern hier.
+                </p>
+              ) : (
+                <>
+                  {kernelPanel}
+                  {chips}
+                </>
+              )}
+              <div className="readout-briefing">
+                <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
+                {briefingButton}
+              </div>
             </div>
           </div>
         </div>
@@ -366,38 +371,41 @@ export function ChatPane({
           </div>
         ) : (
           <div className="chat-main">
-            <div className="chat-log" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
-              {msgs.map((m, i) =>
-                m.role === "user" ? (
-                  <div key={i} className="msg-user">
-                    {m.text}
-                  </div>
-                ) : m.role === "confirmation" ? (
-                  <ParamConfirmation key={i} conf={m.conf} />
-                ) : (
-                  <Answer key={i} res={m.res} />
-                ),
-              )}
-              {busy && (
-                <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
-                  <span className="pending-dots" aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  {stageLabel && (
-                    <span className="pending-label" data-testid="stage-label">
-                      {stageLabel}
+            {/* the scroll region (fade cues on the wrapper); the composer below stays docked/sticky */}
+            <div className="scroll-wrap chat-scroll-wrap">
+              <div className="chat-log scroll-area" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
+                {msgs.map((m, i) =>
+                  m.role === "user" ? (
+                    <div key={i} className="msg-user">
+                      {m.text}
+                    </div>
+                  ) : m.role === "confirmation" ? (
+                    <ParamConfirmation key={i} conf={m.conf} />
+                  ) : (
+                    <Answer key={i} res={m.res} />
+                  ),
+                )}
+                {busy && (
+                  <div className="msg-pending" data-testid="stage-indicator" aria-live="polite">
+                    <span className="pending-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
                     </span>
-                  )}
-                </div>
-              )}
-              {error && (
-                <div className="error-banner" role="alert" data-testid="chat-error">
-                  {error}
-                </div>
-              )}
-              <BriefingPane briefing={briefing} />
+                    {stageLabel && (
+                      <span className="pending-label" data-testid="stage-label">
+                        {stageLabel}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {error && (
+                  <div className="error-banner" role="alert" data-testid="chat-error">
+                    {error}
+                  </div>
+                )}
+                <BriefingPane briefing={briefing} />
+              </div>
             </div>
             <div className="chat-foot">
               {composer}

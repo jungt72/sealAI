@@ -258,7 +258,8 @@ export function ParameterForm({
         </header>
         <form onSubmit={submit}>
           {coreSection}
-          {tabBar}
+          {/* sticky within the scrolling Parameter column — the type stays switchable while scrolling */}
+          <div className="param-tabs-sticky">{tabBar}</div>
           <div className="param-compact" data-testid="param-compact">
             {kernelFields(active).map(row)}
           </div>
@@ -281,14 +282,17 @@ export function ParameterForm({
               })}
             </div>
           </details>
-          <button type="submit" data-testid="param-submit">
-            Übernehmen
-          </button>
           <p className="muted param-stage-note">
             Eingaben ändern rechnet live eine Vorschau; „Übernehmen" speichert sie als Fallkontext.
             Leer / „Unbekannt" bleibt offen (keine Annahme).
           </p>
           {previewPanel}
+          {/* sticky at the bottom of the scrolling Parameter column — Übernehmen always reachable */}
+          <div className="param-actionbar" data-testid="param-actionbar">
+            <button type="submit" data-testid="param-submit">
+              Übernehmen
+            </button>
+          </div>
         </form>
       </section>
     );

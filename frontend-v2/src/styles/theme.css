@@ -40,7 +40,10 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+/* app-shell lock: the page itself never scrolls — only the inner regions (chat / cockpit columns) do.
+   100dvh keeps it correct under mobile browser chrome. */
+html, body, #root { height: 100dvh; margin: 0; }
+html, body { overflow: hidden; }
 body {
   font-family: var(--font-sans);
   color: var(--ink);

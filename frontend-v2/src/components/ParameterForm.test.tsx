@@ -164,6 +164,15 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(screen.getByTestId("param-wellendurchmesser")).toBeTruthy();
   });
 
+  it("sticky anchors: tabs are sticky-wrapped and Übernehmen sits in a sticky action bar", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    // the type tabs live inside the sticky-top wrapper (reachable while the form scrolls)
+    expect(screen.getByTestId("param-tab-rwdr").closest(".param-tabs-sticky")).not.toBeNull();
+    // Übernehmen lives inside the sticky-bottom action bar
+    const bar = screen.getByTestId("param-actionbar");
+    expect(within(bar).getByTestId("param-submit")).toBeInTheDocument();
+  });
+
   it("'Berechnen' batch-submits filled fields (kernel + context); decimal normalized; Unbekannt/empty omitted", () => {
     const onSubmit = vi.fn();
     render(<ParameterForm variant="stage" onSubmit={onSubmit} />);

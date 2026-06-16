@@ -417,6 +417,31 @@ describe("cockpit internals: two columns (Parameter | Readout)", () => {
     expect(chips.compareDocumentPosition(briefing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(berechnungen).toHaveTextContent("13,09 m/s"); // committed kern value in the right column
   });
+
+  it("each column is a scroll-area inside a fade-cue wrapper (independent scroll)", () => {
+    renderPane({ memory: WITH_FACTS });
+    const param = screen.getByTestId("cockpit-param");
+    const readout = screen.getByTestId("cockpit-readout");
+    expect(param).toHaveClass("scroll-area");
+    expect(readout).toHaveClass("scroll-area");
+    expect(param.closest(".scroll-wrap")).not.toBeNull();
+    expect(readout.closest(".scroll-wrap")).not.toBeNull();
+  });
+});
+
+describe("scroll model (locked shell · one scroll region per surface · fade cues)", () => {
+  it("the chat log is a scroll-area inside a fade-cue wrapper; the composer stays outside it", async () => {
+    renderPane({ memory: WITH_FACTS });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    const log = await screen.findByTestId("chat-log");
+    expect(log).toHaveClass("scroll-area");
+    const wrap = log.closest(".scroll-wrap");
+    expect(wrap).not.toBeNull();
+    // the docked composer is a sibling of the scroll region, never inside it
+    expect(wrap?.querySelector('[data-testid="composer-input"]')).toBeNull();
+    expect(screen.getByTestId("composer-input")).toBeInTheDocument();
+  });
 });
 
 describe("P4b: live stage indicator (SSE progress — labels owned by the frontend)", () => {
