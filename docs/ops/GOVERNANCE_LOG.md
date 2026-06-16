@@ -6,6 +6,64 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-16T13:17Z — V2 /dashboard dist deploy: best-practice scroll model (locked shell · autohide chrome · fade cues · sticky anchors) — SAFE dist swap, owner-gated
+
+**Change:** rework the scroll model — scroll/chrome only, **NO behaviour or layout-structure change**.
+- **App-shell lock** (`theme.css`): `html/body/#root` → `100dvh` + `overflow:hidden`; the page itself
+  never scrolls, only the inner regions do.
+- **`.scroll-area` utility** on every scroll region (chat log, each cockpit column): **thin native
+  scrollbar**, faint at rest → stronger on hover/focus (NOT `display:none` — NN/g affordance kept);
+  `overscroll-behavior:contain` (no scroll-chaining to page/neighbour); `scrollbar-gutter:stable` (no
+  layout shift). **No dependency** (owner-confirmed no-dep native route).
+- **Fade cues via PINNED OVERLAYS** (owner change — not `mask-image`, which would fade the sticky
+  tabs/action bar + the scrollbar): each region wrapped in a non-scrolling `.scroll-wrap`; pinned
+  top/bottom gradient overlays (`::before/::after`) fade content into the surface, **inset right so
+  the scrollbar is never covered**, z-index above content but below the sticky chrome. Parameter
+  column: cues **offset past** the sticky tabs (top) + action bar (bottom) → they mark only the
+  scrollable band.
+- **Chat:** one scroll region (the log); composer docked OUTSIDE it (sticky input);
+  `scroll-behavior:smooth` with the existing stick-to-bottom autoscroll.
+- **Cockpit:** Parameter / Readout each their own independent `.scroll-area` (correct input|output).
+- **Sticky anchors** (ParameterForm stage): type-tabs sticky at the top of the Parameter column; a
+  sticky bottom **action bar** keeps **Übernehmen** reachable (owner-confirmed); the dirty-gated
+  Vorschau stays in flow above the bar.
+
+**Preserved:** claude.ai 3-region shell, two-column cockpit, dirty-gated Vorschau (v≈13,09 at
+d₁=50/n=5000), R2 invariants, type tabs, Universal Core, `formFields()`, no-remount.
+
+**Source commit:** `4583c66a` on `feat/v2-cockpit-resizable` (V1 doctrine guard suite green via the
+commit gate). `dist/` is gitignored — reproduces byte-identical from clean HEAD. `main`/`demo`
+untouched.
+
+**Pre-deploy gate (offline):** `check:boundary` ✓, `tsc --noEmit` ✓, **vitest 147/147** ✓ (scroll-area
++ fade-wrap on chat log and both cockpit columns; composer outside the scroll region; sticky tabs
+wrapper + sticky Übernehmen action bar).
+
+**SAFE dist swap** (no nginx reload — bind `docker-compose.deploy.yml:207` → `/usr/share/nginx/v2-client:ro`):
+- Backup pre-swap live dist → `/tmp/dist-backup-scroll-20260616-131708.tgz`
+  (sha256 `5cfeeb0b803df636283f15f59dff2ab293a027d4a141671fda4deb6867c46468`); old bundle
+  `index-B7Cox0lt.js` / `index-C6wVhlb5.css`.
+- Build: `npx vite build --outDir /tmp/v2dist-scroll-20260616-131708 --emptyOutDir`.
+- Swap: `rsync -a --delete /tmp/v2dist-scroll-20260616-131708/ /home/thorsten/sealai/frontend-v2/dist/`;
+  `diff -r` build↔live **empty**.
+
+**New live bundle:** `index-DKHJwl3M.js` (sha256 `c2146dd9bcb97ff90e5fcbb2c996b3e1cab05b1c0ecc9b424617bd76cc64a7c9`)
+· `index-DzgBd-X1.css` (sha256 `267bd54634917b7a97fb5c7f407d78a4585b333a34f28a1792dc02ea20684ee9`).
+
+**Verification:** nginx container mount reflects the new bundle. HTTP smoke:
+`https://sealingai.com/dashboard/` → **200**; `…/dashboard/assets/index-DKHJwl3M.js` → **200**; V1
+unaffected — `https://sealingai.com/` → **200**, `…/api/agent/health` → **200**.
+
+**Rollback** — clear `frontend-v2/dist` + `tar xzf /tmp/dist-backup-scroll-20260616-131708.tgz -C
+frontend-v2/dist`.
+
+**Note:** scroll/sticky/fade rendering is owner-verified in the browser — jsdom asserts only the
+structural contract (scroll-area + fade-wrap per region, composer outside the scroller, sticky tab +
+action-bar anchors). Fade cues are always-on (truthful scroll-position-aware cues deferred as an
+optional enhancement, per the owner's accepted fallback).
+
+---
+
 ## 2026-06-16T12:39Z — V2 /dashboard dist deploy: cockpit internal two-column (Parameter | Readout) — SAFE dist swap, owner-gated
 
 **Change:** the cockpit panel now renders **two columns side-by-side** on wide screens (was stacking).
