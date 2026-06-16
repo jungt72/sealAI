@@ -6,6 +6,55 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-16T10:40Z — V2 /dashboard dist deploy: Fall-Cockpit Phase A (2-pane + Universal Core + type tabs + chat rail) — SAFE dist swap, owner-gated
+
+**Change:** the V2 case cockpit is reshaped into the briefed **2-pane** model (frontend-v2 only; no
+backend change — `typ` param deferred to Phase B). Three focus states: **solo** (no case),
+**chat-focus** (case active, form not engaged → chat wide, cockpit summary rail), **cockpit-focus**
+(form engaged → cockpit wide as **Parameter | Readout** 2-pane, chat peek rail). One surface wide at a
+time; both stay mounted (CSS collapse, no remount) so chat msgs + form values survive every toggle.
+Committed Berechnungen + chips moved into the Readout (kills the doubling/stacking); the resizable
+splitter now drives the inner Parameter|Readout boundary (`--readout-w`); the expander's nested scroll
+is removed (one scroll per pane). **Universal Core** above the tabs (Medium, Druck normal, **Druck max
+[new]**, Betriebs-/Spitzentemperatur); one-row type tabs **[RWDR][Hydraulik][Statisch]** with the
+latter two grayed/unselectable. **R2 preserved verbatim** (backend-only preview, debounced
+latest-wins, no-wipe, hydrate=inverse, stale „rechnet…"); owner refinements: Vorschau renders only
+while the form is **dirty** vs committed (no side-by-side doubling at rest); focus turns to cockpit on
+first field engagement; rail peek shows the **committed** value only.
+
+**Source commit:** `bf3f0ae3` on `feat/v2-cockpit-resizable` (V1 doctrine guard suite green via the
+commit gate). `dist/` is gitignored — a deploy artifact; the bundle reproduces byte-identical from
+this clean HEAD. `main`/`demo` untouched (V2 cutover remains separately owner-gated).
+
+**Pre-deploy gate (offline):** `check:boundary` ✓, `tsc --noEmit` ✓, **vitest 144/144** ✓ (15 new:
+dirty-gated Vorschau, focus modes, no-state-loss toggle, disabled tabs, Universal Core, inner
+splitter, v≈10,47 probe). V2 backend offline suite ✓, import-purity keystone ✓.
+
+**SAFE dist swap** (no nginx reload — directory bind `docker-compose.deploy.yml:207` →
+`/usr/share/nginx/v2-client:ro`, served by the `nginx` container):
+- Backup pre-swap live dist → `/tmp/dist-backup-phaseA-20260616-104016.tgz`
+  (sha256 `0f441ee3dbada04838ec974b844eb77c259f136664538d49de11db6d51fb09ab`); old bundle
+  `index-ClNokzJd.js` / `index-CqC9q0p5.css`.
+- Build (never into the live dist): `npx vite build --outDir /tmp/v2dist-phaseA-20260616-104016 --emptyOutDir`.
+- Swap: `rsync -a --delete /tmp/v2dist-phaseA-20260616-104016/ /home/thorsten/sealai/frontend-v2/dist/`;
+  `diff -r` build↔live **empty** (live == validated build).
+
+**New live bundle:** `index-C9lin50P.js` (sha256 `cbfe977a4f799e6a555b6a887338b6162cf320201e7a3784d20c2c11bc91262a`)
+· `index-uMFfCbz2.css` (sha256 `5653f20e84899e2d4c1fa0db70fff99561595b70a45c44d65d7053fcafeed6d6`).
+
+**Verification:** nginx container mount reflects the new bundle (`docker exec nginx cat …index.html`).
+HTTP smoke: `https://sealingai.com/dashboard/` → **200** (new index); `…/dashboard/assets/index-C9lin50P.js`
+→ **200**; V1 unaffected — `https://sealingai.com/` → **200**, `…/api/agent/health` → **200**.
+
+**Rollback** — restore the pre-swap bundle: clear `frontend-v2/dist` + `tar xzf
+/tmp/dist-backup-phaseA-20260616-104016.tgz -C frontend-v2/dist` (no rebuild/redeploy of any service).
+
+**Note:** browser visual E2E of the 2-pane / rails (≥1024px grid) is owner-verified — jsdom cannot
+assert layout. Phase B (Hydraulik/Statisch DomainPacks) + Phase C (Briefing · RFQ-Reife) follow with
+their own briefings + gates.
+
+---
+
 ## 2026-06-16T08:25Z — V2 PROD deploy: ParameterForm Modell R2 (live preview + adopt) + stage-column fix — owner-gated (dual: backend-v2 + `/dashboard` dist)
 
 **Change:** the cockpit form becomes the single editable surface (Modell R2) — hydrates from the
