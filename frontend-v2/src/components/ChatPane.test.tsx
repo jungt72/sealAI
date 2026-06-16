@@ -355,7 +355,7 @@ describe("chat|cockpit divider (resizable ~50/50 — ≥1024px)", () => {
     fireEvent.pointerDown(sp, { pointerId: 1 });
     fireEvent.pointerMove(sp, { pointerId: 1, clientX: 760 }); // desired 440 (in range)
     fireEvent.pointerUp(sp, { pointerId: 1 });
-    expect(localStorage.getItem("sealai-v2:cockpit-w")).toBe("440");
+    expect(localStorage.getItem("sealai-v2:split-w")).toBe("440");
     first.unmount();
     renderPane({ memory: WITH_FACTS });
     expect(screen.getByTestId("chat-pane").style.getPropertyValue("--cockpit-w")).toBe("440px");
@@ -371,8 +371,51 @@ describe("chat|cockpit divider (resizable ~50/50 — ≥1024px)", () => {
     fireEvent.pointerUp(sp, { pointerId: 1 });
     expect(pane.style.getPropertyValue("--cockpit-w")).toBe("440px");
     fireEvent.doubleClick(sp);
-    expect(pane.style.getPropertyValue("--cockpit-w")).toBe(""); // inline override cleared → CSS default ~50/50
-    expect(localStorage.getItem("sealai-v2:cockpit-w")).toBeNull();
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe(""); // inline override cleared → CSS default ~45/55
+    expect(localStorage.getItem("sealai-v2:split-w")).toBeNull();
+  });
+});
+
+describe("cockpit internals: two columns (Parameter | Readout)", () => {
+  const withV = (value: number): Partial<Parameters<typeof ChatPane>[0]> => ({
+    compute: {
+      computed: [
+        {
+          calc_id: "umfangsgeschwindigkeit",
+          name: "v",
+          value,
+          unit: "m/s",
+          formula: "v = π·d·n",
+          parent_fields: [],
+          input_origins: [],
+          provenance: "kernel_computed",
+        },
+      ],
+      not_computed: [],
+      notes: [],
+    },
+  });
+
+  it("the 2-pane holds Parameter (left) then Readout (right) as siblings, in that order", () => {
+    renderPane({ memory: WITH_FACTS });
+    const twoPane = screen.getByTestId("cockpit-2pane");
+    const panes = within(twoPane).getAllByTestId(/^cockpit-(param|readout)$/);
+    expect(panes.map((p) => p.getAttribute("data-testid"))).toEqual(["cockpit-param", "cockpit-readout"]);
+    // the Parameter form (Universal Core + kernel card) lives in the LEFT pane
+    expect(within(screen.getByTestId("cockpit-param")).getByTestId("param-core")).toBeInTheDocument();
+    expect(within(screen.getByTestId("cockpit-param")).getByTestId("param-compact")).toBeInTheDocument();
+  });
+
+  it("the Readout (right) stacks Berechnungen, then Fallkontext chips, then the Briefing block", () => {
+    renderPane({ memory: WITH_FACTS, ...withV(13.09) });
+    const readout = screen.getByTestId("cockpit-readout");
+    const berechnungen = within(readout).getByTestId("berechnungen-panel");
+    const chips = within(readout).getByTestId("memory-panel");
+    const briefing = within(readout).getByTestId("make-briefing");
+    // committed Berechnungen sits ABOVE the chips, which sit above the Briefing block (DOM order)
+    expect(berechnungen.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(chips.compareDocumentPosition(briefing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(berechnungen).toHaveTextContent("13,09 m/s"); // committed kern value in the right column
   });
 });
 

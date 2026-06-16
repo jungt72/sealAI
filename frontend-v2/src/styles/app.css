@@ -231,16 +231,19 @@
 .cockpit-close:hover { background: var(--hover-wash); color: var(--ink); }
 .cockpit-body { flex: 1; min-height: 0; overflow: auto; }   /* single scroll when stacked / narrow */
 
-/* the 2-pane: stacked by default (narrow panel); side-by-side when the panel is wide (container query) */
+/* the 2-pane: TWO COLUMNS (Parameter left | Readout right) when the panel is wide enough; stacked
+   (Parameter on top, Readout below) only when the cockpit column is genuinely narrow (< 680px, i.e.
+   on a narrow viewport). The threshold tracks the PANEL's own width (container query), not the
+   viewport, so the ~55% cockpit half on any wide monitor lands two-column. */
 .cockpit-2pane { display: flex; flex-direction: column; gap: 16px; padding: 22px 16px 64px; }
 .cockpit-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .cockpit-pane--readout { align-items: center; }
-@container cockpit (min-width: 600px) {
+@container cockpit (min-width: 680px) {
   .cockpit-body { overflow: hidden; }                       /* the panes own the scroll, one each */
-  .cockpit-2pane { flex-direction: row; gap: 0; padding: 0; height: 100%; }
+  .cockpit-2pane { flex-direction: row; gap: 0; padding: 0; height: 100%; align-items: stretch; }
   .cockpit-pane { overflow: auto; }
-  .cockpit-pane--param { flex: 0 0 56%; padding: 24px 18px 64px; border-right: 1px solid var(--hairline); }
-  .cockpit-pane--readout { flex: 1 1 44%; padding: 24px 14px 64px; }
+  .cockpit-pane--param { flex: 0 0 57%; padding: 24px 18px 64px; border-right: 1px solid var(--hairline); }
+  .cockpit-pane--readout { flex: 1 1 43%; padding: 24px 14px 64px; }
 }
 
 /* the second Readout block (Phase C lands the real RFQ-Reife synthesis here) */
@@ -281,10 +284,12 @@
   .workspace { width: 100%; max-width: 1400px; margin: 0 auto; flex-direction: row; align-items: stretch; }
   /* chat-only: the single chat column centers its content at a comfortable reading width. */
   .workspace--chat-only { display: flex; }
-  /* split: chat | divider | cockpit; default ~50/50, a dragged --cockpit-w overrides the cockpit track. */
+  /* split: chat | divider | cockpit. The cockpit is the artifact-equivalent and holds TWO internal
+     columns, so it gets the slightly larger half (~55%) by default — a dragged --cockpit-w (px)
+     overrides the cockpit track. */
   .workspace--split {
     display: grid; grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, 55%);
   }
   .chat-foot { padding-bottom: 64px; }
 

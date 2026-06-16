@@ -325,8 +325,8 @@ export function ChatPane({
               </p>
             ) : (
               <>
-                {chips}
                 {kernelPanel}
+                {chips}
               </>
             )}
             <div className="readout-briefing">
