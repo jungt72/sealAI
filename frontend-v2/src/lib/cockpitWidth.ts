@@ -1,5 +1,5 @@
-// Cockpit width: the resizable inner Parameter|Readout split (cockpit-focus, ≥1024px). The chosen
-// Readout width is held in the `--readout-w` CSS var (grid track); this module owns the clamp + the
+// Cockpit width: the resizable chat|cockpit divider (split view, ≥1024px). The chosen cockpit-panel
+// width is held in the `--cockpit-w` CSS var (grid track); this module owns the clamp + the
 // localStorage persistence. Pure + storage-only — NO DOM, no React. Mirrors `lib/stickToBottom.ts`.
 
 export const COCKPIT_W_KEY = "sealai-v2:cockpit-w"; // namespaced — must NOT collide with auth (no-storage invariant)

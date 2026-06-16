@@ -242,36 +242,35 @@ describe("pilot-ui stage (fresh conversation)", () => {
   });
 });
 
-describe("cockpit conditional visibility (hidden on the empty stage / pure knowledge-Q&A)", () => {
-  it("empty case + form not opened → cockpit hidden, chat full-width, affordance present", () => {
+describe("cockpit visibility (claude.ai chat-only ↔ split)", () => {
+  it("empty case + cockpit not opened → chat-only, NO right panel, affordance present", () => {
     renderPane({ memory: EMPTY });
-    expect(screen.queryByTestId("case-state")).toBeNull(); // no cockpit aside
-    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--solo"); // single-column, full width
+    expect(screen.queryByTestId("case-state")).toBeNull(); // cockpit not mounted yet (no panel)
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--chat-only");
     expect(screen.getByTestId("open-cockpit")).toBeInTheDocument(); // the subtle affordance
   });
 
-  it("clicking the affordance reveals the cockpit, and it persists for the session", async () => {
+  it("opening the form splits (chat | cockpit) and it persists for the session", async () => {
     renderPane({ memory: EMPTY });
     fireEvent.click(screen.getByTestId("open-cockpit"));
     const cockpit = screen.getByTestId("case-state");
     expect(within(cockpit).getByTestId("param-compact")).toBeInTheDocument();
-    expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo"); // two-column now
-    expect(screen.queryByTestId("open-cockpit")).toBeNull(); // affordance gone once opened
-    // session-sticky: it survives the stage → chat-view transition
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--split"); // two-column now
+    expect(screen.queryByTestId("open-cockpit")).toBeNull(); // affordance gone once open
     fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
     fireEvent.click(screen.getByTestId("composer-send"));
     await screen.findByTestId("chat-log");
     expect(screen.getByTestId("case-state")).toBeInTheDocument();
   });
 
-  it("a non-empty case_state auto-shows the cockpit without opening (auto-trigger)", () => {
+  it("a non-empty case_state auto-opens the cockpit (split)", () => {
     renderPane({ memory: WITH_FACTS });
     expect(screen.getByTestId("case-state")).toBeInTheDocument();
-    expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo");
-    expect(screen.queryByTestId("open-cockpit")).toBeNull(); // no affordance — cockpit already up
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--split");
+    expect(screen.queryByTestId("open-cockpit")).toBeNull();
   });
 
-  it("a compute-only result (a clarification, case_state still empty) auto-shows the cockpit", () => {
+  it("a compute-only result (a clarification, case_state still empty) auto-opens the cockpit", () => {
     const clarification: Clarification = {
       feld: "drehzahl",
       input_name: "drehzahl",
@@ -287,131 +286,93 @@ describe("cockpit conditional visibility (hidden on the empty stage / pure knowl
       memory: EMPTY,
       compute: { computed: [], not_computed: [], notes: [], clarifications: [clarification] },
     });
-    expect(screen.getByTestId("case-state")).toBeInTheDocument(); // !caseStateEmpty → visible
-    expect(screen.getByTestId("chat-pane")).not.toHaveClass("workspace--solo");
+    expect(screen.getByTestId("case-state")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--split");
+  });
+
+  it("the cockpit header closes back to centered chat-only (panel stays MOUNTED, hidden)", () => {
+    renderPane({ memory: WITH_FACTS });
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--split");
+    fireEvent.click(screen.getByTestId("cockpit-close"));
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--chat-only");
+    expect(screen.getByTestId("case-state")).toBeInTheDocument(); // mounted (CSS-hidden), not unmounted
+    expect(screen.getByTestId("open-cockpit")).toBeInTheDocument(); // affordance to reopen
+  });
+
+  it("reopening after a close keeps the form values (open/close = CSS only, no remount)", () => {
+    renderPane({ memory: EMPTY });
+    fireEvent.click(screen.getByTestId("open-cockpit"));
+    fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "40" } });
+    fireEvent.click(screen.getByTestId("cockpit-close")); // → chat-only
+    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--chat-only");
+    fireEvent.click(screen.getByTestId("open-cockpit")); // reopen
+    expect((screen.getByTestId("param-wellendurchmesser") as HTMLInputElement).value).toBe("40");
   });
 });
 
-describe("inner splitter (resizable Parameter|Readout — cockpit-focus, ≥1024px)", () => {
+describe("chat|cockpit divider (resizable ~50/50 — ≥1024px)", () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => localStorage.clear());
 
-  // jsdom does not lay out → mock the 2-pane rect (width 1200, right edge at 1200px)
+  // jsdom does not lay out → mock the workspace rect (width 1200, right edge at 1200px)
   const mockRect = (el: HTMLElement) => {
     el.getBoundingClientRect = () =>
       ({ left: 0, right: 1200, top: 0, bottom: 800, width: 1200, height: 800, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
   };
 
-  it("renders NO splitter when the cockpit is hidden (solo stage)", () => {
+  it("renders NO divider in chat-only (no cockpit)", () => {
     renderPane({ memory: EMPTY });
     expect(screen.queryByTestId("cockpit-splitter")).toBeNull();
   });
 
-  it("renders a proper vertical separator inside the visible cockpit", () => {
+  it("renders a proper vertical separator when split", () => {
     renderPane({ memory: WITH_FACTS });
     const sp = screen.getByTestId("cockpit-splitter");
     expect(sp).toHaveAttribute("role", "separator");
     expect(sp).toHaveAttribute("aria-orientation", "vertical");
   });
 
-  it("dragging the splitter clamps --readout-w to [min 360px, max 55%]", () => {
+  it("dragging the divider clamps --cockpit-w to [min 360px, max 55%]", () => {
     renderPane({ memory: WITH_FACTS });
-    const twoPane = screen.getByTestId("cockpit-2pane");
+    const pane = screen.getByTestId("chat-pane");
     const sp = screen.getByTestId("cockpit-splitter");
-    mockRect(twoPane);
+    mockRect(pane);
     fireEvent.pointerDown(sp, { pointerId: 1 });
-    // pull toward the Readout (right) → desired 300px < min → clamp 360
+    // pull toward the cockpit (right) → desired 300px < min → clamp 360
     fireEvent.pointerMove(sp, { pointerId: 1, clientX: 900 });
-    expect(twoPane.style.getPropertyValue("--readout-w")).toBe("360px");
-    // pull toward the Parameter pane (left) → desired 900px > 55% (660) → clamp 660
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe("360px");
+    // pull toward the chat (left) → desired 900px > 55% (660) → clamp 660
     fireEvent.pointerMove(sp, { pointerId: 1, clientX: 300 });
-    expect(twoPane.style.getPropertyValue("--readout-w")).toBe("660px");
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe("660px");
     fireEvent.pointerUp(sp, { pointerId: 1 });
   });
 
   it("persists the chosen width and restores it on a fresh mount", () => {
     const first = renderPane({ memory: WITH_FACTS });
-    const twoPane = screen.getByTestId("cockpit-2pane");
-    mockRect(twoPane);
+    const pane = screen.getByTestId("chat-pane");
+    mockRect(pane);
     const sp = screen.getByTestId("cockpit-splitter");
     fireEvent.pointerDown(sp, { pointerId: 1 });
     fireEvent.pointerMove(sp, { pointerId: 1, clientX: 760 }); // desired 440 (in range)
     fireEvent.pointerUp(sp, { pointerId: 1 });
     expect(localStorage.getItem("sealai-v2:cockpit-w")).toBe("440");
     first.unmount();
-    // a fresh ChatPane restores the persisted width on mount (before any drag)
     renderPane({ memory: WITH_FACTS });
-    expect(screen.getByTestId("cockpit-2pane").style.getPropertyValue("--readout-w")).toBe("440px");
+    expect(screen.getByTestId("chat-pane").style.getPropertyValue("--cockpit-w")).toBe("440px");
   });
 
-  it("double-click resets to the default (clears the inline var + storage)", () => {
+  it("double-click resets to the ~50/50 default (clears the inline var + storage)", () => {
     renderPane({ memory: WITH_FACTS });
-    const twoPane = screen.getByTestId("cockpit-2pane");
-    mockRect(twoPane);
+    const pane = screen.getByTestId("chat-pane");
+    mockRect(pane);
     const sp = screen.getByTestId("cockpit-splitter");
     fireEvent.pointerDown(sp, { pointerId: 1 });
     fireEvent.pointerMove(sp, { pointerId: 1, clientX: 760 });
     fireEvent.pointerUp(sp, { pointerId: 1 });
-    expect(twoPane.style.getPropertyValue("--readout-w")).toBe("440px");
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe("440px");
     fireEvent.doubleClick(sp);
-    expect(twoPane.style.getPropertyValue("--readout-w")).toBe(""); // inline override cleared → CSS default 40%
+    expect(pane.style.getPropertyValue("--cockpit-w")).toBe(""); // inline override cleared → CSS default ~50/50
     expect(localStorage.getItem("sealai-v2:cockpit-w")).toBeNull();
-  });
-});
-
-describe("cockpit focus (one surface wide, the other a peek rail — no remount)", () => {
-  const withV = (value: number): Partial<Parameters<typeof ChatPane>[0]> => ({
-    compute: {
-      computed: [
-        {
-          calc_id: "umfangsgeschwindigkeit",
-          name: "v",
-          value,
-          unit: "m/s",
-          formula: "v = π·d·n",
-          parent_fields: [],
-          input_origins: [],
-          provenance: "kernel_computed",
-        },
-      ],
-      not_computed: [],
-      notes: [],
-    },
-  });
-
-  it("a case active WITHOUT form engagement stays chat-focus (the dialog stays primary)", () => {
-    renderPane({ memory: WITH_FACTS });
-    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--focus-chat");
-  });
-
-  it("opening the form (affordance) switches to cockpit-focus", () => {
-    renderPane({ memory: EMPTY });
-    fireEvent.click(screen.getByTestId("open-cockpit"));
-    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--focus-cockpit");
-  });
-
-  it("the first field interaction switches to cockpit-focus (onEngage)", () => {
-    renderPane({ memory: WITH_FACTS }); // chat-focus, but the form is mounted in the cockpit
-    fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "40" } });
-    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--focus-cockpit");
-  });
-
-  it("toggling focus preserves the chat thread (CSS collapse, no remount)", async () => {
-    renderPane({ memory: WITH_FACTS });
-    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Meine Frage" } });
-    fireEvent.click(screen.getByTestId("composer-send"));
-    await screen.findByTestId("chat-log");
-    expect(screen.getByTestId("chat-log")).toHaveTextContent("Meine Frage");
-    fireEvent.click(screen.getByTestId("expand-cockpit")); // chat → rail
-    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--focus-cockpit");
-    fireEvent.click(screen.getByTestId("expand-chat")); // chat → wide again
-    expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--focus-chat");
-    expect(screen.getByTestId("chat-log")).toHaveTextContent("Meine Frage"); // never lost
-  });
-
-  it("the cockpit rail peek shows the COMMITTED kern value (never a preview/draft)", () => {
-    renderPane({ memory: WITH_FACTS, ...withV(10.472) });
-    expect(screen.getByTestId("expand-cockpit")).toHaveTextContent("10,47 m/s");
   });
 });
 
@@ -502,5 +463,32 @@ describe("pilot-ui shell (rail + doctrine line)", () => {
     );
     fireEvent.click(screen.getByTestId("rail-new-question"));
     expect(onNew).toHaveBeenCalled();
+  });
+
+  it("the sidebar collapses/expands and persists the choice", () => {
+    localStorage.clear();
+    const { container, unmount } = render(
+      <Shell onLogout={() => {}} onNewQuestion={() => {}}>
+        <div />
+      </Shell>,
+    );
+    const toggle = screen.getByTestId("rail-toggle");
+    // default collapsed (icon rail)
+    expect(container.querySelector(".shell")).not.toHaveClass("shell--nav-expanded");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // expand → wider with labels, persisted
+    fireEvent.click(toggle);
+    expect(container.querySelector(".shell")).toHaveClass("shell--nav-expanded");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(localStorage.getItem("sealai-v2:nav-expanded")).toBe("1");
+    unmount();
+    // the choice is restored on a fresh mount
+    const { container: c2 } = render(
+      <Shell onLogout={() => {}} onNewQuestion={() => {}}>
+        <div />
+      </Shell>,
+    );
+    expect(c2.querySelector(".shell")).toHaveClass("shell--nav-expanded");
+    localStorage.clear();
   });
 });

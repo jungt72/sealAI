@@ -32,6 +32,16 @@ export function RingIcon({ size = 26 }: IconProps) {
   );
 }
 
+/** Sidebar toggle: a panel with a left column — the standard collapse/expand glyph. */
+export function PanelLeftIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect x="3" y="4" width="14" height="12" rx="2" />
+      <path d="M8 4v12" />
+    </Svg>
+  );
+}
+
 /** Compose / new question (pencil). */
 export function ComposeIcon(p: IconProps) {
   return (

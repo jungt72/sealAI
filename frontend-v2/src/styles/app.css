@@ -4,22 +4,51 @@
 
 .shell { display: flex; height: 100%; background: #fff; }
 
-/* ── borderless floating icon rail ─────────────────────────────────────────── */
+/* ── collapsible navigation sidebar (claude.ai-style): icon rail ⟷ wider with labels ──────────── */
 .rail {
   width: var(--rail-w); flex: none; position: relative; z-index: 30;
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 14px 0 16px; background: transparent; border: none;
+  transition: width 160ms ease;
 }
-.rail-brand { width: 40px; height: 40px; display: grid; place-items: center;
-  color: var(--color-seal-blue); margin-bottom: 8px; }
+.rail-top { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; margin-bottom: 6px; }
+.rail-brand { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; gap: 10px;
+  color: var(--color-seal-blue); }
+.rail-toggle {
+  width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--ink-faint); cursor: pointer; flex: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.rail-toggle:hover { background: var(--hover-wash); color: var(--ink-soft); }
 .rail-btn {
-  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   border: none; background: transparent; color: var(--ink-soft); cursor: pointer;
   transition: background 120ms ease;
 }
 .rail-btn:hover:not(:disabled), .rail-avatar:hover { background: var(--hover-wash); }
 .rail-btn:disabled { color: var(--ink-disabled); cursor: default; }
 .rail-spacer { flex: 1; }
+/* labels hidden in the collapsed icon rail; revealed when expanded */
+.rail-label { display: none; font-size: 14px; color: inherit; white-space: nowrap; }
+
+/* expanded: a wider sidebar with left-aligned icon+label rows (drives --rail-w → the doctrine line
+   tracks it automatically). */
+.shell--nav-expanded { --rail-w: 232px; }
+.shell--nav-expanded .rail { align-items: stretch; padding: 14px 12px 16px; }
+.shell--nav-expanded .rail-top { flex-direction: row; align-items: center; justify-content: space-between; }
+.shell--nav-expanded .rail-brand { width: auto; justify-content: flex-start; font-size: 15px; font-weight: 500; }
+.shell--nav-expanded .rail-toggle { width: 34px; height: 34px; border-radius: var(--radius-sm); }
+.shell--nav-expanded .rail-btn,
+.shell--nav-expanded .rail-avatar {
+  width: 100%; height: auto; border-radius: var(--radius-md);
+  justify-content: flex-start; gap: 12px; padding: 9px 12px;
+}
+.shell--nav-expanded .rail-avatar { background: transparent; color: var(--ink-soft); box-shadow: none; }
+.shell--nav-expanded .rail-avatar:hover { background: var(--hover-wash); box-shadow: none; }
+.shell--nav-expanded .rail-label { display: inline; }
+@media (prefers-reduced-motion: reduce) {
+  .rail { transition: none; }
+}
 .rail-avatar {
   width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
   display: grid; place-items: center;
@@ -47,8 +76,9 @@
   text-align: center; font-size: 12px; color: var(--ink-ghost);
   padding: 18px 24px 12px;
   background: linear-gradient(to top, rgba(255, 255, 255, 0.96) 55%, rgba(255, 255, 255, 0));
-  pointer-events: none;
+  pointer-events: none; transition: left 160ms ease;
 }
+@media (prefers-reduced-motion: reduce) { .doctrine-line { transition: none; } }
 
 /* ── the stage (fresh conversation) ─────────────────────────────────────────── */
 .stage {
@@ -153,21 +183,22 @@
 .kernel-panel--preview .chips-label { color: var(--ink-faint); font-style: italic; }
 .kernel-panel--preview [data-testid="preview-rechnet"] { color: var(--ink-faint); }
 
-/* ── workspace: one surface wide at a time (chat ⟷ cockpit), the other a peek rail ───────────────
-   Three modes (≥1024px): solo (no cockpit), focus-chat (chat wide, cockpit summary rail),
-   focus-cockpit (cockpit wide as a Parameter|Readout 2-pane, chat peek rail). Both surfaces stay
-   mounted in every mode — the collapse is CSS only, so chat msgs + form values never reset. */
-.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --peek-w: 240px; }
-/* the inner Parameter|Readout splitter — only a grid item in focus-cockpit ≥1024px (hidden otherwise) */
-.cockpit-splitter { display: none; }
-/* rail peeks (one-click expand) — hidden until a surface is collapsed to a rail ≥1024px */
-.chat-rail-peek, .cockpit-rail-peek { display: none; }
-.workspace-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
-/* left column: the conversation thread (scrolls) + the docked composer */
+/* ── workspace: claude.ai three-region — sidebar (Shell) | chat | cockpit panel ──────────────────
+   Chat-only by default (centered ~800px, NO right panel). When the cockpit opens it appears on the
+   right and the two split ~50/50 of the post-sidebar width (the chat may drop below 800px — intended).
+   Closing returns to centered chat-only. Open/close is CSS-visibility only — the chat column and the
+   mounted ParameterForm stay mounted, so msgs + form values never reset. Below 1024px: single column,
+   cockpit stacked below chat. */
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cockpit-splitter { display: none; }            /* the chat|cockpit divider — only a grid item ≥1024 split */
+.workspace--chat-only .cockpit-panel { display: none; }   /* pure Q&A: no right panel, at every width */
+
+/* centre column: the conversation thread (scrolls) + the docked composer */
+.chat-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 .chat-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 .chat-log {
-  width: min(780px, 100%); flex: 1; overflow: auto;
-  display: flex; flex-direction: column; gap: 20px; padding: 30px 20px 10px;
+  width: min(800px, 100%); flex: 1; overflow: auto;
+  display: flex; flex-direction: column; gap: 20px; padding: 30px 24px 10px;
 }
 .msg-user {
   align-self: flex-end; background: var(--hover-wash); color: var(--ink);
@@ -175,38 +206,49 @@
   line-height: 1.5; white-space: pre-wrap;
 }
 .chat-foot {
-  width: min(780px, 100%); display: flex; flex-direction: column; gap: 10px;
-  padding: 6px 20px 0;
+  width: min(800px, 100%); display: flex; flex-direction: column; gap: 10px;
+  padding: 6px 24px 0;
 }
-.chat-foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
 
-/* ── case-state: the cockpit — a Parameter|Readout 2-pane (wide) or a summary rail (collapsed) ──── */
-.case-state {
-  width: min(780px, 100%); flex: none;
-  display: flex; flex-direction: column; align-items: stretch; gap: 10px;
-  padding: 4px 20px 64px;
+/* ── cockpit panel (the artifact-equivalent, right) ──────────────────────────────────────────────
+   A clean header (closeable) + the Parameter | Readout 2-pane. `container-type` makes the inner split
+   respond to the PANEL's own width — side-by-side when wide, stacked when narrow — independent of the
+   viewport, so it works the same in the ~50/50 split and in the <1024 stacked fallback. */
+.cockpit-panel {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  container-type: inline-size; container-name: cockpit;
 }
-/* the 2-pane: Parameter (left) | Readout (right). Stacked on narrow, side-by-side ≥1024 focus-cockpit. */
-.cockpit-2pane {
-  width: 100%; min-height: 0; --readout-w: 40%;
-  display: flex; flex-direction: column; gap: 14px;
+.cockpit-header {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--hairline);
 }
+.cockpit-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.cockpit-close {
+  width: 30px; height: 30px; border-radius: var(--radius-sm); display: grid; place-items: center;
+  border: none; background: transparent; color: var(--ink-faint); cursor: pointer;
+  font-size: 20px; line-height: 1; transition: background 120ms ease, color 120ms ease;
+}
+.cockpit-close:hover { background: var(--hover-wash); color: var(--ink); }
+.cockpit-body { flex: 1; min-height: 0; overflow: auto; }   /* single scroll when stacked / narrow */
+
+/* the 2-pane: stacked by default (narrow panel); side-by-side when the panel is wide (container query) */
+.cockpit-2pane { display: flex; flex-direction: column; gap: 16px; padding: 22px 16px 64px; }
 .cockpit-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .cockpit-pane--readout { align-items: center; }
+@container cockpit (min-width: 600px) {
+  .cockpit-body { overflow: hidden; }                       /* the panes own the scroll, one each */
+  .cockpit-2pane { flex-direction: row; gap: 0; padding: 0; height: 100%; }
+  .cockpit-pane { overflow: auto; }
+  .cockpit-pane--param { flex: 0 0 56%; padding: 24px 18px 64px; border-right: 1px solid var(--hairline); }
+  .cockpit-pane--readout { flex: 1 1 44%; padding: 24px 14px 64px; }
+}
+
 /* the second Readout block (Phase C lands the real RFQ-Reife synthesis here) */
 .readout-briefing {
   width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
   margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--hairline);
 }
 .readout-briefing-soon { margin: 0; font-size: 11.5px; color: var(--ink-ghost); }
-/* rail peek (one-click expand): a quiet vertical summary of the collapsed surface */
-.rail-peek-kicker { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--ink-ghost); }
-.rail-peek-v { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
-.rail-peek-count { font-size: 11.5px; color: var(--ink-faint); }
-.rail-peek-last { font-size: 12px; color: var(--ink-soft); line-height: 1.4;
-  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.rail-peek-expand { margin-top: auto; font-size: 16px; color: var(--ink-faint); }
 .case-state-empty {
   margin: 0; max-width: 320px; text-align: center;
   font-size: 12.5px; color: var(--ink-faint); line-height: 1.5;
@@ -218,69 +260,36 @@
 .make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
 .make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
 
-/* trigger (b): the subtle "open the form" link near the composer (only while the cockpit is hidden) */
+/* the subtle "open the form" affordance near the composer (only while the cockpit is closed) */
 .open-cockpit-link {
   align-self: center; border: none; background: none; cursor: pointer; font: inherit;
   font-size: 12.5px; color: var(--ink-faint);
   text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px;
 }
 .open-cockpit-link:hover { color: var(--ink); }
+/* below 1024 the cockpit stacks under the chat — a hairline separates them */
+@media (max-width: 1023px) {
+  .workspace--split .cockpit-panel { border-top: 1px solid var(--hairline); }
+}
+/* a calm entrance when the cockpit opens (the artifact sliding in) — restrained, reduced-motion safe */
+.cockpit-panel { animation: cockpit-in 180ms ease; }
+@keyframes cockpit-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cockpit-panel { animation: none; } }
 
-/* ── wide screens (≥1024px): one surface wide, the other a peek rail ─────────────────────────────
-   Column order is always [chat | cockpit]; the mode sets which is wide (1fr) and which is the rail
-   (--peek-w). No reflow inside a mode — both tracks are fixed for the layout's lifetime. */
+/* ── wide screens (≥1024px): chat-only centered, or chat | divider | cockpit ~50/50 when open ────── */
 @media (min-width: 1024px) {
-  .workspace { width: 100%; max-width: 1280px; margin: 0 auto; align-items: stretch; }
-  /* solo (no cockpit): single-column, full width — the pre-cockpit feel. */
-  .workspace--solo { display: flex; flex-direction: column; align-items: center; }
-  .workspace--solo .workspace-main { width: 100%; }
-  /* focus-chat: chat wide, cockpit collapsed to a summary rail on the right. */
-  .workspace--focus-chat {
-    display: grid; grid-template-columns: minmax(0, 1fr) var(--peek-w);
-    grid-template-rows: minmax(0, 1fr); column-gap: 0;
+  .workspace { width: 100%; max-width: 1400px; margin: 0 auto; flex-direction: row; align-items: stretch; }
+  /* chat-only: the single chat column centers its content at a comfortable reading width. */
+  .workspace--chat-only { display: flex; }
+  /* split: chat | divider | cockpit; default ~50/50, a dragged --cockpit-w overrides the cockpit track. */
+  .workspace--split {
+    display: grid; grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, minmax(0, 1fr));
   }
-  /* focus-cockpit: cockpit wide (2-pane), chat collapsed to a peek rail on the left. */
-  .workspace--focus-cockpit {
-    display: grid; grid-template-columns: var(--peek-w) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr); column-gap: 0;
-  }
-  .workspace--focus-chat .workspace-main,
-  .workspace--focus-cockpit .workspace-main { width: auto; }
   .chat-foot { padding-bottom: 64px; }
 
-  /* collapse the chat to its rail (focus-cockpit): hide the wide content, show the peek. */
-  .workspace--focus-cockpit .workspace-main > .stage,
-  .workspace--focus-cockpit .workspace-main > .chat-main { display: none; }
-  .workspace--focus-cockpit .chat-rail-peek { display: flex; }
-  /* collapse the cockpit to its rail (focus-chat): hide the 2-pane, show the peek. */
-  .workspace--focus-chat .cockpit-2pane { display: none; }
-  .workspace--focus-chat .cockpit-rail-peek { display: flex; }
-
-  /* the rail itself: a quiet, full-height, single-column click target with a hairline edge. */
-  .chat-rail-peek, .cockpit-rail-peek {
-    flex-direction: column; align-items: center; gap: 10px; align-self: stretch; height: 100%;
-    padding: 22px 10px; border: none; background: transparent; cursor: pointer;
-    font: inherit; text-align: center;
-  }
-  .chat-rail-peek { border-right: 1px solid var(--hairline); }
-  .cockpit-rail-peek { border-left: 1px solid var(--hairline); }
-  .chat-rail-peek:hover, .cockpit-rail-peek:hover { background: var(--hover-wash); }
-
-  /* the wide cockpit becomes the Parameter|Readout 2-pane; each pane is the SINGLE scroll surface. */
-  .workspace--focus-cockpit .case-state {
-    width: auto; align-self: stretch; min-height: 0; overflow: hidden; padding: 0;
-  }
-  .workspace--focus-cockpit .cockpit-2pane {
-    height: 100%; display: grid; gap: 0;
-    grid-template-columns: minmax(0, 1fr) auto var(--readout-w);
-    grid-template-rows: minmax(0, 1fr);
-  }
-  .workspace--focus-cockpit .cockpit-pane { overflow: auto; }
-  .workspace--focus-cockpit .cockpit-pane--param { padding: 26px 18px 64px; }
-  .workspace--focus-cockpit .cockpit-pane--readout { padding: 26px 14px 64px; }
-
-  /* the inner resize handle: a thin track with a centered grab line that grows on hover/focus. */
-  .workspace--focus-cockpit .cockpit-splitter {
+  /* the resize handle (chat|cockpit): a thin track with a centered grab line that grows on hover/focus. */
+  .workspace--split .cockpit-splitter {
     display: block; align-self: stretch; width: 16px; position: relative;
     cursor: col-resize; background: none; border: none; touch-action: none;
   }

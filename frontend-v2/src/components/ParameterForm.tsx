@@ -93,7 +93,6 @@ export function ParameterForm({
   onPreview,
   committed,
   onSubmitted,
-  onEngage,
   variant = "popover",
 }: {
   /** Adopt („Übernehmen"): the non-empty fields as one batch + the reconcile `deletes` (managed
@@ -108,9 +107,6 @@ export function ParameterForm({
   committed?: Record<string, string>;
   /** Pilot-ui: lets the hosting popover close itself after a submit (purely presentational). */
   onSubmitted?: () => void;
-  /** Fired ONCE on the first field interaction — the host turns the cockpit to the wide focus
-   * (the dialog stays primary until the user deliberately turns to parameter work). */
-  onEngage?: () => void;
   variant?: "popover" | "stage";
 }) {
   const firstEnabled = SITUATIONS.find((s) => !s.disabled) ?? SITUATIONS[0];
@@ -199,13 +195,7 @@ export function ParameterForm({
   // no committed value yet → dirty as soon as the user types. The committed panel lives in the host.
   const isDirty = items.some((it) => (committed?.[it.feld] ?? "") !== it.wert) || deletes.length > 0;
 
-  // first field interaction → tell the host (turns the cockpit to the wide focus); fire once
-  const engagedRef = useRef(false);
   function set(key: string, value: string) {
-    if (!engagedRef.current) {
-      engagedRef.current = true;
-      onEngage?.();
-    }
     setVals((s) => ({ ...s, [key]: value }));
   }
 
