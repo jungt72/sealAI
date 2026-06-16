@@ -6,6 +6,55 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-16T08:25Z — V2 PROD deploy: ParameterForm Modell R2 (live preview + adopt) + stage-column fix — owner-gated (dual: backend-v2 + `/dashboard` dist)
+
+**Change:** the cockpit form becomes the single editable surface (Modell R2) — hydrates from the
+committed case-state, shows a live backend-computed **Vorschau** on edit, adopts via „Übernehmen"
+(no wipe, empty-field DELETE reconcile). Plus the stage chat-column no longer collapses to the
+streaming „Prüfen" chip. **Fork B**: a new READ-ONLY preview endpoint was required (the existing
+`GET /compute` persists + takes no params). Two owner-gated hops in order (backend first so the
+UI's preview endpoint exists): backend-v2 recreate → live `/dashboard` dist swap.
+
+**Backend (Fork B):** `POST /api/v2/conversations/current/preview` (`api/routes/conversations.py`)
+reuses `core/calc/derived.py::recompute_derived` — the exact pure kern `compute_for` calls, **minus
+the persist** → **Vorschau == Commit** by construction. NO `edit_fact`/`compute_for`/`set_derived`/
+`flush`/distill/provenance-stamp. 4 tests assert no-mutation + equivalence + token-scoping.
+- new image `sealai-backend-v2:latest` = `sha256:45e39261e683…`; rolled-from `c0f82636e289…`
+  tagged **`sealai-backend-v2:rollback-2026-06-16-r2pre`**.
+- normal build → `up -d --no-deps backend-v2` (no `--remove-orphans`; nothing else moved).
+- live verify: `running healthy` on `45e39261…`; `GET /…/current/preview` **405** (was 404) local
+  **and** public; `/facts` 405; `/health` 200.
+
+**Frontend (`/dashboard` live dist swap):** SAFE procedure — `check:boundary` ✅ → build to a
+throwaway outDir (`npx vite build --outDir /tmp/v2dist-r2-20260616T082326Z`; **never** `npm run
+build` against the live dist) → verified the build CONTAINS R2 (`conversations/current/preview` ×1,
+`Vorschau` ×7, `Übernehmen` ×4) → backed up the live dist → owner gate → `rsync -a --delete` into
+`frontend-v2/dist` (`/usr/share/nginx/v2-client`, served by `nginx`; static, no reload).
+- new: `assets/index-ClNokzJd.js` · `assets/index-CqC9q0p5.css`.
+- rolled-from (prior live): `assets/index-D4K5ozbM.js` · `assets/index-DICZH52k.css`.
+- rollback artifact: `/tmp/dist-backup-r2-20260616T082347Z.tgz` (holds the prior live dist).
+- live verify: `https://sealingai.com/dashboard/` → 200, served hashes == new (index.html refs
+  `index-ClNokzJd.js`/`index-CqC9q0p5.css`); the new JS asset → 200; `backend-v2` + `nginx` healthy.
+
+**Offline gates (all green before deploy):** V2 offline suite (incl. 4 preview tests) ✅ · import
+keystone ✅ · `ruff format` (V2 touched files) ✅ · frontend `tsc` ✅ · `check:boundary` ✅ · vitest
+**129/129** (+6 R2: hydration, latest-wins ordering, hydrate↔resolve round-trip, no-wipe + DELETE
+reconcile, preview marker).
+
+**Commits (`feat/v2-cockpit-resizable`):** `2861cae2` (R2 code) · `3c9bb17f` (this log's prior entry).
+
+**Pending owner (browser end-to-end — human is the oracle):** d=40 / n=5000 → the Vorschau shows
+**v≈10,47 m/s** *before* „Übernehmen" **without** changing the chips/committed panel; after
+„Übernehmen" the same committed value lands in chips + Berechnungen + chat confirmation; change d →
+the preview recomputes live; empty a committed field → „Übernehmen" deletes it; a forced endpoint
+error does not clear the form; the stage column stays stable-width while streaming.
+
+**Rollback:** backend = `docker tag sealai-backend-v2:rollback-2026-06-16-r2pre
+sealai-backend-v2:latest` → `up -d --no-deps --force-recreate backend-v2`; frontend = restore the
+backup tarball into `frontend-v2/dist` (static; no reload). V1 + `main` untouched.
+
+---
+
 ## 2026-06-16T07:02Z — V2 PROD deploy: `backend-v2` rebuild — facts route restored (cockpit „Berechnen") — owner-gated
 
 **Defect:** the live `backend-v2` container ran a **stale local image** (`sealai-backend-v2:latest`
