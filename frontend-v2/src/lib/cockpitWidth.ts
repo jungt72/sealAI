@@ -1,6 +1,6 @@
-// Cockpit width: the resizable 60/40 split (≥1024px). The chosen cockpit width is held in the
-// `--cockpit-w` CSS var (grid track); this module owns the clamp + the localStorage persistence.
-// Pure + storage-only — NO DOM, no React. Mirrors the small-helper style of `lib/stickToBottom.ts`.
+// Cockpit width: the resizable inner Parameter|Readout split (cockpit-focus, ≥1024px). The chosen
+// Readout width is held in the `--readout-w` CSS var (grid track); this module owns the clamp + the
+// localStorage persistence. Pure + storage-only — NO DOM, no React. Mirrors `lib/stickToBottom.ts`.
 
 export const COCKPIT_W_KEY = "sealai-v2:cockpit-w"; // namespaced — must NOT collide with auth (no-storage invariant)
 export const COCKPIT_MIN_PX = 360; // the cockpit can't collapse below this

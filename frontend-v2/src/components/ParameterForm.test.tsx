@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComputeResponse } from "../contracts";
-import { kernelFields, RWDR_SITUATION, situationFields } from "../schema/situations";
+import { formFields, kernelFields, RWDR_SITUATION, situationFields } from "../schema/situations";
 import { composeWert, hydrateValue, ParameterForm, resolveWert } from "./ParameterForm";
 
 afterEach(cleanup);
@@ -48,7 +48,7 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     const items = onSubmit.mock.calls[0][0];
     expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" });
     expect(items).toContainEqual({ feld: "drehzahl", wert: "3000 U/min", label: "Drehzahl n" });
-    expect(items).toContainEqual({ feld: "druck", wert: "5 bar", label: "Druck p" });
+    expect(items).toContainEqual({ feld: "druck", wert: "5 bar", label: "Druck (normal)" });
     expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" }); // enum → German label
     expect(items).toHaveLength(4);
   });
@@ -80,7 +80,7 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
   });
 
   it("resolveWert: number→unit, enum→label, boolean→ja/nein, empty/Unbekannt→'' (omitted)", () => {
-    const byKey = Object.fromEntries(situationFields(RWDR_SITUATION).map((f) => [f.key, f]));
+    const byKey = Object.fromEntries(formFields(RWDR_SITUATION).map((f) => [f.key, f]));
     expect(resolveWert(byKey.wellendurchmesser, "50")).toBe("50 mm");
     expect(resolveWert(byKey.medium, "oel")).toBe("Öl");
     expect(resolveWert(byKey.medium, "")).toBe(""); // Unbekannt → omitted
@@ -90,7 +90,7 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
   });
 
   it("number path normalizes a period decimal to the German comma (0.5 → 0,5) — prevents the 0-parse", () => {
-    const byKey = Object.fromEntries(situationFields(RWDR_SITUATION).map((f) => [f.key, f]));
+    const byKey = Object.fromEntries(formFields(RWDR_SITUATION).map((f) => [f.key, f]));
     // the acute pressure case: "0.5 bar" must bind 0.5 (not the parse artifact 0)
     expect(resolveWert(byKey.druck, "0.5")).toBe("0,5 bar");
     expect(resolveWert(byKey.druck, "0,5")).toBe("0,5 bar");
@@ -121,10 +121,12 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(within(card).queryByTestId("param-medium")).toBeNull();
   });
 
-  it("the expander holds the role:context fields (full A–I), separate from the compact kernel card", () => {
+  it("the expander holds the role:context fields, separate from the compact kernel card and the Core", () => {
     render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
     const exp = screen.getByTestId("param-expander");
-    expect(within(exp).getByTestId("param-medium")).toBeTruthy(); // a context field
+    expect(within(exp).getByTestId("param-wellenwerkstoff")).toBeTruthy(); // a context field (group E)
+    expect(within(exp).queryByTestId("param-medium")).toBeNull(); // medium moved to the Universal Core
+    expect(within(screen.getByTestId("param-core")).getByTestId("param-medium")).toBeTruthy();
     expect(within(exp).queryByTestId("param-wellendurchmesser")).toBeNull(); // kernel stays in the card
     expect(screen.getAllByTestId("param-wellendurchmesser")).toHaveLength(1); // never duplicated
   });
@@ -137,7 +139,29 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     // the group legends stay as section labels (fieldset → role group)
     expect(within(exp).getAllByRole("group").length).toBeGreaterThan(0);
     // a context field renders INSIDE the grid, not stacked loose
-    expect(within(exp).getByTestId("param-medium").closest(".param-group-grid")).not.toBeNull();
+    expect(within(exp).getByTestId("param-wellenwerkstoff").closest(".param-group-grid")).not.toBeNull();
+  });
+
+  it("renders the Universal Core (Medium, Druck normal/max, Temperaturen) ABOVE the type tabs", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    const core = screen.getByTestId("param-core");
+    for (const k of ["medium", "druck", "druck_max", "betriebstemperatur", "spitzentemperatur"]) {
+      expect(within(core).getByTestId(`param-${k}`)).toBeTruthy();
+    }
+    // a type-specific field is NOT in the Core
+    expect(within(core).queryByTestId("param-wellendurchmesser")).toBeNull();
+  });
+
+  it("type tabs: RWDR active, Hydraulik/Statisch grayed and NOT selectable (no empty pack)", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    const rwdr = screen.getByTestId("param-tab-rwdr");
+    const hyd = screen.getByTestId("param-tab-hydraulik") as HTMLButtonElement;
+    expect(rwdr).toHaveAttribute("aria-selected", "true");
+    expect(hyd.disabled).toBe(true);
+    // clicking a disabled pack does NOT switch the active schema (RWDR fields stay)
+    fireEvent.click(hyd);
+    expect(screen.getByTestId("param-tab-rwdr")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("param-wellendurchmesser")).toBeTruthy();
   });
 
   it("'Berechnen' batch-submits filled fields (kernel + context); decimal normalized; Unbekannt/empty omitted", () => {
@@ -150,7 +174,7 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const items = onSubmit.mock.calls[0][0];
     expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" });
-    expect(items).toContainEqual({ feld: "druck", wert: "0,5 bar", label: "Druck p" }); // 0.5 → 0,5
+    expect(items).toContainEqual({ feld: "druck", wert: "0,5 bar", label: "Druck (normal)" }); // 0.5 → 0,5
     expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" });
     expect(items).toHaveLength(3); // drehzahl left empty → omitted (no fake default)
   });
@@ -158,7 +182,7 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
 
 describe("ParameterForm — Modell R2 (hydrate · live preview · adopt, no wipe)", () => {
   it("hydrateValue is the EXACT inverse of resolveWert — a Hydrate→Übernehmen round-trip never drifts", () => {
-    const byKey = Object.fromEntries(situationFields(RWDR_SITUATION).map((f) => [f.key, f]));
+    const byKey = Object.fromEntries(formFields(RWDR_SITUATION).map((f) => [f.key, f]));
     // number-with-unit: "40 mm" stays "40 mm" (never "40" or a doubled "40 mm mm")
     expect(resolveWert(byKey.wellendurchmesser, hydrateValue(byKey.wellendurchmesser, "40 mm"))).toBe("40 mm");
     expect(resolveWert(byKey.druck, hydrateValue(byKey.druck, "0,5 bar"))).toBe("0,5 bar");
@@ -204,6 +228,87 @@ describe("ParameterForm — Modell R2 (hydrate · live preview · adopt, no wipe
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "40" } });
     fireEvent.click(screen.getByTestId("param-submit"));
     expect((screen.getByTestId("param-wellendurchmesser") as HTMLInputElement).value).toBe("40");
+  });
+
+  it("R1: a freshly hydrated form (draft == committed) shows NO Vorschau (no side-by-side doubling)", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPreview = vi.fn(async () => makeCompute(10.472));
+      render(
+        <ParameterForm
+          variant="stage"
+          onSubmit={vi.fn()}
+          onPreview={onPreview}
+          committed={{ wellendurchmesser: "40 mm", drehzahl: "5000 U/min" }}
+        />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      // at rest the committed panel (in the host) carries the value; the form shows no Vorschau
+      expect(screen.queryByTestId("preview-panel")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("R1: editing makes the form dirty → the Vorschau appears, marked nicht übernommen", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPreview = vi.fn(async () => makeCompute(11.78));
+      render(
+        <ParameterForm
+          variant="stage"
+          onSubmit={vi.fn()}
+          onPreview={onPreview}
+          committed={{ wellendurchmesser: "40 mm", drehzahl: "5000 U/min" }}
+        />,
+      );
+      fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "45" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      const panel = screen.getByTestId("preview-panel");
+      expect(panel).toHaveTextContent("Vorschau · nicht übernommen");
+      expect(panel).toHaveTextContent("11,78");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("R1: once committed catches up to the draft (after Übernehmen) the Vorschau disappears", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPreview = vi.fn(async () => makeCompute(11.78));
+      const { rerender } = render(
+        <ParameterForm
+          variant="stage"
+          onSubmit={vi.fn()}
+          onPreview={onPreview}
+          committed={{ wellendurchmesser: "40 mm", drehzahl: "5000 U/min" }}
+        />,
+      );
+      fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "45" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(screen.getByTestId("preview-panel")).toBeTruthy(); // dirty → shown
+      // Übernehmen: the host re-commits; committed now equals the draft → clean again
+      rerender(
+        <ParameterForm
+          variant="stage"
+          onSubmit={vi.fn()}
+          onPreview={onPreview}
+          committed={{ wellendurchmesser: "45 mm", drehzahl: "5000 U/min" }}
+        />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(screen.queryByTestId("preview-panel")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a field change shows a debounced backend Vorschau, clearly marked nicht übernommen", async () => {

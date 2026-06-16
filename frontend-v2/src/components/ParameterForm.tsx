@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import type { ComputeResponse, ParamItem } from "../contracts";
 import {
+  coreFields,
   type FieldDef,
+  formFields,
   kernelFields,
   SITUATIONS,
   type SituationDef,
-  situationFields,
 } from "../schema/situations";
 import { BerechnungenPanel } from "./BerechnungenPanel";
 
@@ -65,7 +66,7 @@ export function hydrateValue(field: FieldDef, settledWert: string): string {
  * kern-owned derived quantity (the kern owns every number). */
 export function buildItems(vals: Record<string, string>, active: SituationDef): ParamItem[] {
   const items: ParamItem[] = [];
-  for (const f of situationFields(active)) {
+  for (const f of formFields(active)) {
     const wert = resolveWert(f, vals[f.key] ?? "");
     if (wert) items.push({ feld: f.key, wert, label: f.label });
   }
@@ -92,6 +93,7 @@ export function ParameterForm({
   onPreview,
   committed,
   onSubmitted,
+  onEngage,
   variant = "popover",
 }: {
   /** Adopt („Übernehmen"): the non-empty fields as one batch + the reconcile `deletes` (managed
@@ -106,11 +108,17 @@ export function ParameterForm({
   committed?: Record<string, string>;
   /** Pilot-ui: lets the hosting popover close itself after a submit (purely presentational). */
   onSubmitted?: () => void;
+  /** Fired ONCE on the first field interaction — the host turns the cockpit to the wide focus
+   * (the dialog stays primary until the user deliberately turns to parameter work). */
+  onEngage?: () => void;
   variant?: "popover" | "stage";
 }) {
-  const [activeId, setActiveId] = useState<string>(SITUATIONS[0]?.id ?? "");
+  const firstEnabled = SITUATIONS.find((s) => !s.disabled) ?? SITUATIONS[0];
+  const [activeId, setActiveId] = useState<string>(firstEnabled?.id ?? "");
   const [vals, setVals] = useState<Record<string, string>>({});
-  const active: SituationDef = SITUATIONS.find((s) => s.id === activeId) ?? SITUATIONS[0];
+  // only an ENABLED pack can be active; a disabled tab is never selectable (see the tab bar below)
+  const active: SituationDef =
+    SITUATIONS.find((s) => s.id === activeId && !s.disabled) ?? firstEnabled;
 
   // ── R2 hydration: seed the fields from the committed case-state; re-hydrate when it changes from
   // another source (e.g. a chat turn), but never clobber an in-progress edit (a field the user has
@@ -119,13 +127,13 @@ export function ParameterForm({
   const baselineRef = useRef<Record<string, string>>({});
   useEffect(() => {
     const hydrated: Record<string, string> = {};
-    for (const f of situationFields(active)) {
+    for (const f of formFields(active)) {
       const c = committed?.[f.key];
       if (c != null && c !== "") hydrated[f.key] = hydrateValue(f, c);
     }
     setVals((prev) => {
       const next: Record<string, string> = { ...hydrated };
-      for (const f of situationFields(active)) {
+      for (const f of formFields(active)) {
         const k = f.key;
         if ((prev[k] ?? "") !== (baselineRef.current[k] ?? "")) {
           if ((prev[k] ?? "") === "") delete next[k]; // user cleared it → stays cleared
@@ -180,28 +188,75 @@ export function ParameterForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsKey]);
 
+  // reconcile: a managed field that WAS committed and is now empty/absent → delete (no stale fact).
+  const present = new Set(items.map((it) => it.feld));
+  const deletes = formFields(active)
+    .map((f) => f.key)
+    .filter((k) => committed?.[k] != null && committed[k] !== "" && !present.has(k));
+  // Dirty = the draft differs from the committed case-state, compared at the RESOLVED-value level
+  // (reuse the commit comparison, NOT raw `vals`, so a decimal normalization "0.5"→"0,5 bar" never
+  // reads as a phantom edit). At rest (hydrated / just after Übernehmen) → not dirty → no Vorschau;
+  // no committed value yet → dirty as soon as the user types. The committed panel lives in the host.
+  const isDirty = items.some((it) => (committed?.[it.feld] ?? "") !== it.wert) || deletes.length > 0;
+
+  // first field interaction → tell the host (turns the cockpit to the wide focus); fire once
+  const engagedRef = useRef(false);
   function set(key: string, value: string) {
+    if (!engagedRef.current) {
+      engagedRef.current = true;
+      onEngage?.();
+    }
     setVals((s) => ({ ...s, [key]: value }));
   }
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    const present = new Set(items.map((it) => it.feld));
-    // reconcile: a managed field that WAS committed and is now empty/absent → delete (no stale fact)
-    const deletes = situationFields(active)
-      .map((f) => f.key)
-      .filter((k) => committed?.[k] != null && committed[k] !== "" && !present.has(k));
     onSubmit(items, deletes);
     onSubmitted?.();
     // NO reset — values stay (Modell R2: the form is the persistent editable surface)
   }
 
-  const previewPanel = onPreview ? (
+  // The Vorschau renders ONLY while the form is dirty (R1): at rest the committed panel alone shows
+  // (no side-by-side doubling); while editing the draft delta appears, marked „nicht übernommen".
+  const previewPanel = onPreview && isDirty ? (
     <BerechnungenPanel compute={preview} variant="preview" loading={previewLoading} />
   ) : null;
 
   const row = (f: FieldDef) => (
     <FieldRow key={f.key} field={f} value={vals[f.key] ?? ""} onChange={(v) => set(f.key, v)} />
+  );
+
+  // Universal Core — operating conditions shared across all types; rendered ABOVE the tabs.
+  const coreSection = (
+    <section className="param-core" data-testid="param-core" aria-label="Betriebsbedingungen (typübergreifend)">
+      <span className="param-core-label">Betriebsbedingungen</span>
+      <div className="param-core-grid">{coreFields().map(row)}</div>
+    </section>
+  );
+
+  // Type tabs (Domain Packs). RWDR is enabled; announced packs render grayed and are not selectable.
+  const tabBar = (
+    <div className="param-tabs" role="tablist" aria-label="Dichtungstyp">
+      {SITUATIONS.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="tab"
+          aria-selected={s.id === active.id}
+          aria-disabled={s.disabled || undefined}
+          disabled={s.disabled}
+          className={`param-tab${s.id === active.id ? " is-active" : ""}${s.disabled ? " is-soon" : ""}`}
+          onClick={() => {
+            if (!s.disabled) setActiveId(s.id);
+          }}
+          title={s.disabled ? "kommt bald" : undefined}
+          data-testid={`param-tab-${s.id}`}
+        >
+          {s.label}
+          {s.disabled && <span className="param-tab-soon"> · bald</span>}
+        </button>
+      ))}
+    </div>
   );
 
   // ── stage: compact kernel card + expander (role:context), one shared submit ──────────────────
@@ -212,6 +267,8 @@ export function ParameterForm({
           <h3>Parameter direkt eingeben</h3>
         </header>
         <form onSubmit={submit}>
+          {coreSection}
+          {tabBar}
           <div className="param-compact" data-testid="param-compact">
             {kernelFields(active).map(row)}
           </div>
@@ -254,24 +311,6 @@ export function ParameterForm({
         <h3>Parameter eingeben</h3>
       </header>
 
-      {SITUATIONS.length > 1 && (
-        <div className="param-tabs" role="tablist" aria-label="Anwendungsfall">
-          {SITUATIONS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              aria-selected={s.id === activeId}
-              className={`param-tab${s.id === activeId ? " is-active" : ""}`}
-              onClick={() => setActiveId(s.id)}
-              data-testid={`param-tab-${s.id}`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       <p className="muted">
         Eingaben werden als Fallkontext gespeichert. Berechnete Werte (z. B. Umfangsgeschwindigkeit)
         liefert ausschließlich der Rechenkern im Chat — nicht dieses Formular. Felder ohne Angabe
@@ -279,6 +318,8 @@ export function ParameterForm({
       </p>
 
       <form onSubmit={submit}>
+        {coreSection}
+        {tabBar}
         {active.groups.map((g) => (
           <fieldset key={g.id} className="param-group" data-testid={`param-group-${g.id}`}>
             <legend className="param-group-title">{g.title}</legend>

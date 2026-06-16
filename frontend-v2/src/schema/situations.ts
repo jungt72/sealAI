@@ -54,6 +54,9 @@ export interface SituationDef {
   id: string;
   label: string;
   groups: GroupDef[];
+  /** A Domain Pack that is announced but not yet built — its tab renders grayed and is not
+   * selectable (no schema/kernel yet). RWDR is the only enabled pack today. */
+  disabled?: boolean;
 }
 
 /** The calc-registry inputs a kernel field may feed (knowledge/calc_seed.json). A kernelKey outside
@@ -61,6 +64,29 @@ export interface SituationDef {
 export const KERNEL_INPUTS = ["d1_mm", "rpm", "p_bar"] as const;
 
 const o = (value: string, label: string): FieldOption => ({ value, label });
+
+/**
+ * UNIVERSAL CORE — the operating conditions that are the SAME field across every Domain Pack
+ * (Medium, Druck, Betriebs-/Spitzentemperatur). Rendered ABOVE the type tabs and shared by every
+ * situation: on a (later) type switch these values stay put, while the type-specific fields swap
+ * with the tab. A field belongs here ONLY if it is the identical field for all types (same key,
+ * unit, meaning); anything whose structure/unit/meaning changes per type (geometry, speed/motion)
+ * lives in the Domain Pack. `druck` keeps its kernel binding (→ p_bar); `druck_max` is a context
+ * fact (no kernel guess — fail-closed). The trust-spine boundary still holds field-by-field.
+ */
+export const UNIVERSAL_CORE: FieldDef[] = [
+  {
+    key: "medium", label: "Medium", unit: "", type: "enum", required: false, role: "context",
+    options: [
+      o("oel", "Öl"), o("fett", "Fett"), o("wasser", "Wasser"), o("emulsion", "Emulsion"),
+      o("kraftstoff", "Kraftstoff"), o("kuehlmittel", "Kühlmittel"), o("luft", "Luft"), o("sonstiges", "Sonstiges"),
+    ],
+  },
+  { key: "druck", label: "Druck (normal)", unit: "bar", type: "number", required: false, role: "kernel", kernelKey: "p_bar" },
+  { key: "druck_max", label: "Druck (max)", unit: "bar", type: "number", required: false, role: "context", help: "Spitzendruck" },
+  { key: "betriebstemperatur", label: "Betriebstemperatur", unit: "°C", type: "number", required: false, role: "context" },
+  { key: "spitzentemperatur", label: "Spitzentemperatur", unit: "°C", type: "number", required: false, role: "context" },
+];
 
 /** RWDR — the first and only Domain Pack. Required = only d₁ and n (build-spec / owner). Every other
  * field has "Unbekannt" as a first-class state (the renderer omits empty/Unbekannt → param MISSING,
@@ -93,7 +119,7 @@ export const RWDR_SITUATION: SituationDef = {
       id: "C",
       title: "Druck",
       fields: [
-        { key: "druck", label: "Druck p", unit: "bar", type: "number", required: false, role: "kernel", kernelKey: "p_bar" },
+        // Druck (normal/max) lives in the Universal Core above the tabs; here only the RWDR-specific direction.
         {
           key: "druckrichtung", label: "Druckrichtung", unit: "", type: "enum", required: false, role: "context",
           options: [o("oelseite", "Ölseite"), o("luftseite", "Luftseite"), o("wechselnd", "wechselnd")],
@@ -102,18 +128,10 @@ export const RWDR_SITUATION: SituationDef = {
     },
     {
       id: "D",
-      title: "Medium & Temperatur",
+      title: "Medium-Zusätze",
       fields: [
-        {
-          key: "medium", label: "Medium", unit: "", type: "enum", required: false, role: "context",
-          options: [
-            o("oel", "Öl"), o("fett", "Fett"), o("wasser", "Wasser"), o("emulsion", "Emulsion"),
-            o("kraftstoff", "Kraftstoff"), o("kuehlmittel", "Kühlmittel"), o("luft", "Luft"), o("sonstiges", "Sonstiges"),
-          ],
-        },
+        // Medium + Betriebs-/Spitzentemperatur live in the Universal Core above the tabs.
         { key: "additive", label: "Additive", unit: "", type: "text", required: false, role: "context" },
-        { key: "betriebstemperatur", label: "Betriebstemperatur", unit: "°C", type: "number", required: false, role: "context" },
-        { key: "spitzentemperatur", label: "Spitzentemperatur", unit: "°C", type: "number", required: false, role: "context" },
       ],
     },
     {
@@ -194,11 +212,35 @@ export const RWDR_SITUATION: SituationDef = {
   ],
 };
 
-/** All situations (tabs). One today; a second Domain Pack appends here. */
-export const SITUATIONS: SituationDef[] = [RWDR_SITUATION];
+/** Announced-but-unbuilt Domain Packs — their tabs render grayed (not selectable) so the type
+ * surface is honest about what's coming without offering an empty, broken pack. Phase B fills the
+ * groups + the type-aware kernel; until then they carry no fields and can never become `active`. */
+export const HYDRAULIK_SITUATION: SituationDef = {
+  id: "hydraulik",
+  label: "Hydraulik",
+  groups: [],
+  disabled: true,
+};
+export const STATISCH_SITUATION: SituationDef = {
+  id: "statisch",
+  label: "Statisch",
+  groups: [],
+  disabled: true,
+};
+
+/** All situations (type tabs), in display order. RWDR is the only enabled pack today. */
+export const SITUATIONS: SituationDef[] = [RWDR_SITUATION, HYDRAULIK_SITUATION, STATISCH_SITUATION];
 
 /** Flatten a situation's fields (renderer + submit helpers). */
 export const situationFields = (s: SituationDef): FieldDef[] => s.groups.flatMap((g) => g.fields);
+
+/** The Universal Core fields (shared across types, rendered above the tabs). */
+export const coreFields = (): FieldDef[] => UNIVERSAL_CORE;
+
+/** Every field the form manages for a situation: the Universal Core PLUS the active pack's fields.
+ * The single source for buildItems / hydration / the empty-field DELETE reconcile, so the Core
+ * obeys every R2 invariant exactly like the type-specific fields. */
+export const formFields = (s: SituationDef): FieldDef[] => [...UNIVERSAL_CORE, ...situationFields(s)];
 
 /** The kernel-critical fields (role:"kernel") — DERIVED, the single source for the stage compact
  * card. A future kernel-field change (a schema entry) auto-updates the card; never a hardcoded

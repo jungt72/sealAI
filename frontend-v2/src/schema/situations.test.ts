@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  coreFields,
   type FieldDef,
   KERNEL_INPUTS,
   RWDR_SITUATION,
   SITUATIONS,
   situationFields,
+  UNIVERSAL_CORE,
 } from "./situations";
 
 const fields = (): FieldDef[] => situationFields(RWDR_SITUATION);
@@ -34,7 +36,7 @@ describe("RWDR situation schema (the trust-spine boundary lives in the schema)",
     }
   });
 
-  it("the kernel fields are exactly the three verified bindings", () => {
+  it("the situation kernel fields are the two geometry/kinematics bindings (Druck moved to the Core)", () => {
     const kernel = fields()
       .filter((f) => f.role === "kernel")
       .map((f) => [f.key, f.kernelKey]);
@@ -42,7 +44,6 @@ describe("RWDR situation schema (the trust-spine boundary lives in the schema)",
     expect(kernel).toEqual([
       ["wellendurchmesser", "d1_mm"],
       ["drehzahl", "rpm"],
-      ["druck", "p_bar"],
     ]);
   });
 
@@ -67,6 +68,56 @@ describe("RWDR situation schema (the trust-spine boundary lives in the schema)",
     const byKey = Object.fromEntries(fields().map((f) => [f.key, f]));
     expect(byKey.wellendurchmesser.unit).toBe("mm");
     expect(byKey.drehzahl.unit).toBe("U/min");
+  });
+});
+
+describe("Universal Core (operating conditions shared across all Domain Packs)", () => {
+  const core = (): FieldDef[] => coreFields();
+
+  it("coreFields() returns the UNIVERSAL_CORE list", () => {
+    expect(core()).toBe(UNIVERSAL_CORE);
+    expect(core().map((f) => f.key)).toEqual([
+      "medium",
+      "druck",
+      "druck_max",
+      "betriebstemperatur",
+      "spitzentemperatur",
+    ]);
+  });
+
+  it("Druck (normal) keeps its kernel binding → p_bar; everything else in the Core is context", () => {
+    const byKey = Object.fromEntries(core().map((f) => [f.key, f]));
+    expect(byKey.druck.role).toBe("kernel");
+    expect(byKey.druck.kernelKey).toBe("p_bar");
+    expect(KERNEL_INPUTS).toContain(byKey.druck.kernelKey as string);
     expect(byKey.druck.unit).toBe("bar");
+    // Druck max is a fail-closed context fact (no kernel guess), Temperatures are context too
+    for (const k of ["druck_max", "betriebstemperatur", "spitzentemperatur", "medium"]) {
+      expect(byKey[k].role).toBe("context");
+      expect(byKey[k].kernelKey).toBeUndefined();
+    }
+  });
+
+  it("a Core field key never collides with a situation field key", () => {
+    const coreKeys = new Set(core().map((f) => f.key));
+    for (const f of situationFields(RWDR_SITUATION)) {
+      expect(coreKeys.has(f.key)).toBe(false);
+    }
+  });
+});
+
+describe("type tabs (Domain Packs)", () => {
+  it("RWDR is enabled and first; Hydraulik + Statisch are announced-but-disabled, in order", () => {
+    expect(SITUATIONS.map((s) => [s.id, Boolean(s.disabled)])).toEqual([
+      ["rwdr", false],
+      ["hydraulik", true],
+      ["statisch", true],
+    ]);
+  });
+
+  it("a disabled pack carries no fields (no empty/broken schema offered)", () => {
+    for (const s of SITUATIONS.filter((s) => s.disabled)) {
+      expect(situationFields(s)).toHaveLength(0);
+    }
   });
 });

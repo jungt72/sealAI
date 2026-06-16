@@ -85,16 +85,23 @@ export function ChatPane({
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  // explicit "open the form" affordance (trigger b): session-sticky, moot once the case is active
-  const [userOpenedForm, setUserOpenedForm] = useState(false);
+  // form engagement (open-form affordance OR first field interaction): session-sticky. Turns the
+  // cockpit to the WIDE focus — the dialog stays primary until the user deliberately works the form.
+  const [formEngaged, setFormEngaged] = useState(false);
+  // which surface is wide; the other collapses to a peekable rail (no remount — CSS only). Default
+  // "chat" (dialog-first); flips to "cockpit" when the form engages. The rail toggles flip it back.
+  const [focus, setFocus] = useState<"chat" | "cockpit">("chat");
+  useEffect(() => {
+    if (formEngaged) setFocus("cockpit");
+  }, [formEngaged]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
-  // resizable cockpit (≥1024px): the chosen width drives the `--cockpit-w` grid track; null = CSS
-  // default (40% → 60/40). Persisted in localStorage, restored on mount, reset on double-click.
-  const workspaceRef = useRef<HTMLDivElement>(null);
+  // resizable inner split (cockpit-focus, ≥1024px): the chosen width drives the `--readout-w` track
+  // of the Parameter|Readout 2-pane; null = CSS default (40%). Persisted, restored, reset on dbl-click.
+  const twoPaneRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const dragPxRef = useRef<number | null>(null);
-  const [cockpitW, setCockpitW] = useState<string | null>(() => {
+  const [readoutW, setReadoutW] = useState<string | null>(() => {
     const px = loadCockpitPx();
     return px != null ? `${px}px` : null;
   });
@@ -208,8 +215,10 @@ export function ChatPane({
 
   // The cockpit is HIDDEN on the empty stage and during pure knowledge-Q&A (chat stays single-column,
   // full width) and appears ONLY when (a) the case is active (!caseStateEmpty — auto-trigger) OR
-  // (b) the user explicitly opens the form. No narrowing for users who only ever ask a question.
-  const cockpitVisible = !caseStateEmpty || userOpenedForm;
+  // (b) the user engages the form. No narrowing for users who only ever ask a question. A case that
+  // becomes active WITHOUT form engagement stays chat-focus (dialog primary); engaging the form
+  // turns to cockpit-focus.
+  const cockpitVisible = !caseStateEmpty || formEngaged;
 
   // Trigger (b): a subtle, low-key text link near the composer — present only while the cockpit is
   // hidden. Most users just chat; this stays unobtrusive (not a card).
@@ -218,15 +227,15 @@ export function ChatPane({
       type="button"
       className="open-cockpit-link"
       data-testid="open-cockpit"
-      onClick={() => setUserOpenedForm(true)}
+      onClick={() => setFormEngaged(true)}
     >
       Parameter direkt eingeben
     </button>
   );
 
-  // ── splitter drag (pointer-capture; self-contained — no window listeners) ──────────────────────
-  // The cockpit sits on the right; new width = workspace right edge − pointer x, clamped. Width is
-  // committed to localStorage on release (not per move). Double-click / Home → reset to the default.
+  // ── inner splitter drag (Parameter|Readout, cockpit-focus) — pointer-capture, self-contained ──
+  // The Readout sits on the right of the 2-pane; new width = 2-pane right edge − pointer x, clamped.
+  // Committed to localStorage on release (not per move). Double-click / Home → reset to the default.
   function onSplitterDown(e: ReactPointerEvent<HTMLDivElement>) {
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -234,12 +243,12 @@ export function ChatPane({
   }
   function onSplitterMove(e: ReactPointerEvent<HTMLDivElement>) {
     if (!draggingRef.current) return;
-    const ws = workspaceRef.current;
-    if (!ws) return;
-    const rect = ws.getBoundingClientRect();
+    const pane = twoPaneRef.current;
+    if (!pane) return;
+    const rect = pane.getBoundingClientRect();
     const px = clampCockpitPx(rect.right - e.clientX, rect.width);
     dragPxRef.current = px;
-    setCockpitW(`${px}px`);
+    setReadoutW(`${px}px`);
   }
   function onSplitterUp(e: ReactPointerEvent<HTMLDivElement>) {
     if (!draggingRef.current) return;
@@ -249,10 +258,10 @@ export function ChatPane({
   }
   function onSplitterReset() {
     dragPxRef.current = null;
-    setCockpitW(null);
+    setReadoutW(null);
     clearCockpitPx();
   }
-  // keyboard support for the separator: ←/→ nudge (left widens the cockpit), Home resets
+  // keyboard support for the separator: ←/→ nudge (left widens the Readout), Home resets
   function onSplitterKey(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (e.key === "Home") {
       e.preventDefault();
@@ -261,55 +270,116 @@ export function ChatPane({
     }
     const dir = e.key === "ArrowLeft" ? 1 : e.key === "ArrowRight" ? -1 : 0;
     if (dir === 0) return;
-    const ws = workspaceRef.current;
-    if (!ws) return;
+    const pane = twoPaneRef.current;
+    if (!pane) return;
     e.preventDefault();
-    const rect = ws.getBoundingClientRect();
+    const rect = pane.getBoundingClientRect();
     const current = dragPxRef.current ?? Math.round(rect.width * 0.4);
     const px = clampCockpitPx(current + dir * 24, rect.width);
     dragPxRef.current = px;
-    setCockpitW(`${px}px`);
+    setReadoutW(`${px}px`);
     saveCockpitPx(px);
   }
 
   // null → no inline override → the CSS default (40%) applies; a px string → the dragged width
-  const workspaceStyle = cockpitW ? ({ "--cockpit-w": cockpitW } as unknown as CSSProperties) : undefined;
+  const twoPaneStyle = readoutW ? ({ "--readout-w": readoutW } as unknown as CSSProperties) : undefined;
 
-  // The persistent right cockpit — IDENTICAL on the stage and in chat-view. The parameter fast-path
-  // form (compact kernel card + the "weitere Parameter" expander) is now the SINGLE form entry point
-  // (the chat-view "+" popover is retired); its batch submit reuses the SAME settle → confirmation →
-  // chat-view transition as the chat input. Pure placement: no data-flow / settle / recompute change.
+  // Rail peeks (committed only — never a preview/draft value): the cockpit-summary-rail shows the
+  // committed kern value + fact count; the chat-rail shows the last message. Both surfaces stay
+  // MOUNTED in either focus (CSS collapse, no remount) so msgs + form vals survive every toggle.
+  const firstComputed = compute?.computed?.[0];
+  const committedV = firstComputed
+    ? `${firstComputed.value.toFixed(2).replace(".", ",")} ${firstComputed.unit}`
+    : null;
+  const factCount = memory.case_state.length;
+  const lastMsg = msgs[msgs.length - 1];
+  const lastMsgPreview = !lastMsg
+    ? "Neue Frage stellen"
+    : lastMsg.role === "user"
+      ? lastMsg.text
+      : lastMsg.role === "confirmation"
+        ? "Werte übernommen"
+        : lastMsg.res.answer;
+
+  // The right cockpit — a 2-pane in cockpit-focus (Parameter | Readout), a summary rail in chat-focus.
+  // The fast-path form is the SINGLE form entry point; its batch submit reuses the SAME settle →
+  // confirmation → chat-view transition. Pure placement: no data-flow / settle / recompute change.
   const cockpit = (
     <aside className="case-state" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
-      <ParameterForm
-        variant="stage"
-        onSubmit={submitParams}
-        onPreview={onPreview}
-        committed={committed}
-      />
-      {caseStateEmpty ? (
-        <p className="case-state-empty" data-testid="case-state-empty">
-          Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
-          Rechenkern hier.
-        </p>
-      ) : (
-        <>
-          {chips}
-          {kernelPanel}
-        </>
-      )}
-      <div className="chat-foot-row">{briefingButton}</div>
+      <button
+        type="button"
+        className="cockpit-rail-peek"
+        data-testid="expand-cockpit"
+        onClick={() => setFocus("cockpit")}
+        aria-label="Cockpit öffnen"
+      >
+        <span className="rail-peek-kicker">Cockpit</span>
+        {committedV && <span className="rail-peek-v">{committedV}</span>}
+        {factCount > 0 && <span className="rail-peek-count">{factCount} Fakten</span>}
+        <span className="rail-peek-expand" aria-hidden="true">›</span>
+      </button>
+      <div className="cockpit-2pane" data-testid="cockpit-2pane" ref={twoPaneRef} style={twoPaneStyle}>
+        <div className="cockpit-pane cockpit-pane--param" data-testid="cockpit-param">
+          <ParameterForm
+            variant="stage"
+            onSubmit={submitParams}
+            onPreview={onPreview}
+            committed={committed}
+            onEngage={() => setFormEngaged(true)}
+          />
+        </div>
+        <div
+          className="cockpit-splitter"
+          data-testid="cockpit-splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Breite der Berechnungen anpassen"
+          tabIndex={0}
+          onPointerDown={onSplitterDown}
+          onPointerMove={onSplitterMove}
+          onPointerUp={onSplitterUp}
+          onDoubleClick={onSplitterReset}
+          onKeyDown={onSplitterKey}
+        />
+        <div className="cockpit-pane cockpit-pane--readout" data-testid="cockpit-readout">
+          {caseStateEmpty ? (
+            <p className="case-state-empty" data-testid="case-state-empty">
+              Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
+              Rechenkern hier.
+            </p>
+          ) : (
+            <>
+              {chips}
+              {kernelPanel}
+            </>
+          )}
+          <div className="readout-briefing">
+            <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
+            {briefingButton}
+          </div>
+        </div>
+      </div>
     </aside>
   );
 
+  // one surface wide at a time: solo (no cockpit) · focus-chat (chat wide, cockpit rail) ·
+  // focus-cockpit (cockpit wide, chat rail). Pure CSS class — both surfaces stay mounted.
+  const workspaceMode = !cockpitVisible ? "solo" : focus === "cockpit" ? "focus-cockpit" : "focus-chat";
+
   return (
-    <div
-      ref={workspaceRef}
-      className={`workspace${cockpitVisible ? "" : " workspace--solo"}`}
-      style={workspaceStyle}
-      data-testid="chat-pane"
-    >
+    <div className={`workspace workspace--${workspaceMode}`} data-testid="chat-pane">
       <main className="workspace-main">
+        <button
+          type="button"
+          className="chat-rail-peek"
+          data-testid="expand-chat"
+          onClick={() => setFocus("chat")}
+          aria-label="Chat öffnen"
+        >
+          <span className="rail-peek-kicker">Chat</span>
+          <span className="rail-peek-last">{lastMsgPreview}</span>
+          <span className="rail-peek-expand" aria-hidden="true">›</span>
+        </button>
         {msgs.length === 0 ? (
           // stage center: ONLY the greeting + composer over the glow — calm and centered.
           <div className="stage" data-testid="stage-center">
@@ -367,21 +437,6 @@ export function ChatPane({
           </div>
         )}
       </main>
-      {cockpitVisible && (
-        <div
-          className="cockpit-splitter"
-          data-testid="cockpit-splitter"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Breite des Cockpits anpassen"
-          tabIndex={0}
-          onPointerDown={onSplitterDown}
-          onPointerMove={onSplitterMove}
-          onPointerUp={onSplitterUp}
-          onDoubleClick={onSplitterReset}
-          onKeyDown={onSplitterKey}
-        />
-      )}
       {cockpitVisible && cockpit}
     </div>
   );
