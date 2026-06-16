@@ -54,6 +54,7 @@ export function ChatPane({
   onForgetFact,
   onForgetAll,
   onSubmitParams,
+  onPreview,
   onMakeBriefing,
   canBriefing,
   briefing,
@@ -68,7 +69,11 @@ export function ChatPane({
   onEditFact: (feld: string, wert: string) => void;
   onForgetFact: (feld: string) => void;
   onForgetAll: () => void;
-  onSubmitParams: (items: ParamItem[]) => Promise<ConfirmationResponse>;
+  /** R2 adopt: the non-empty form items + the reconcile `deletes` (managed felder cleared since the
+   * last commit) → the host forgets the deletes, then settles the batch (POST /facts). */
+  onSubmitParams: (items: ParamItem[], deletes?: string[]) => Promise<ConfirmationResponse>;
+  /** R2 live preview: the read-only backend kern over the form DRAFT (null on error/empty). */
+  onPreview?: (items: ParamItem[]) => Promise<ComputeResponse | null>;
   onMakeBriefing: () => void;
   canBriefing: boolean;
   briefing: Briefing | null;
@@ -116,17 +121,22 @@ export function ChatPane({
     }
   }
 
-  // The parameter form's batch submit: settle + recompute server-side, then append the DETERMINISTIC
-  // confirmation (post-bind echo + kern result + Rückfragen) as a chat message. No LLM, no client compute.
-  async function submitParams(items: ParamItem[]) {
-    if (items.length === 0) return;
+  // R2 „Übernehmen": forget the reconciled (cleared) felder + settle the batch server-side, then
+  // append the DETERMINISTIC confirmation (post-bind echo + kern result + Rückfragen) as a chat
+  // message. No LLM, no client compute. On failure nothing is appended and the form keeps its values.
+  async function submitParams(items: ParamItem[], deletes: string[] = []) {
+    if (items.length === 0 && deletes.length === 0) return;
     try {
-      const conf = await onSubmitParams(items);
-      setMsgs((m) => [...m, { role: "confirmation", conf }]);
+      const conf = await onSubmitParams(items, deletes);
+      if (items.length > 0) setMsgs((m) => [...m, { role: "confirmation", conf }]);
     } catch {
       // error surfaced via the `error` prop (the host sets it); append nothing (no stale content)
     }
   }
+
+  // The committed case-state as feld → settled value: hydrates the form fields (the single editable
+  // surface) and is the baseline for the empty-field reconcile on „Übernehmen".
+  const committed = Object.fromEntries(memory.case_state.map((f) => [f.feld, f.wert]));
 
   const composer = (
     <div className="pill-wrap">
@@ -271,7 +281,12 @@ export function ChatPane({
   // chat-view transition as the chat input. Pure placement: no data-flow / settle / recompute change.
   const cockpit = (
     <aside className="case-state" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
-      <ParameterForm variant="stage" onSubmit={submitParams} />
+      <ParameterForm
+        variant="stage"
+        onSubmit={submitParams}
+        onPreview={onPreview}
+        committed={committed}
+      />
       {caseStateEmpty ? (
         <p className="case-state-empty" data-testid="case-state-empty">
           Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der

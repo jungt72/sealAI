@@ -32,10 +32,18 @@ const fmt = (v: number): string => v.toFixed(2).replace(".", ",");
 export function BerechnungenPanel({
   compute,
   onConfirmUnit,
+  variant = "committed",
+  loading = false,
 }: {
   compute: ComputeResponse | null;
   onConfirmUnit?: (feld: string, value: string) => void;
+  /** "committed" = the persisted Fallkontext kern (default, unchanged); "preview" = the R2 live
+   * Vorschau over the form DRAFT — same kern values, marked „nicht übernommen", read-only. */
+  variant?: "committed" | "preview";
+  /** preview only: a debounced recompute is in flight → show „rechnet…", NEVER a stale value. */
+  loading?: boolean;
 }) {
+  const isPreview = variant === "preview";
   const computed = compute?.computed ?? [];
   const clarifications = compute?.clarifications ?? [];
   // A clarification is the structured recovery surface; drop the free-text note that duplicates it
@@ -43,16 +51,38 @@ export function BerechnungenPanel({
   const notes = (compute?.notes ?? []).filter(
     (n) => !clarifications.some((c) => n.startsWith(`${c.feld}:`)),
   );
+  // Preview in-flight: show only „rechnet…" — never repaint a prior value as if it were current.
+  if (isPreview && loading) {
+    return (
+      <section
+        className="fact-chips kernel-panel kernel-panel--preview"
+        data-testid="preview-panel"
+        aria-label="Vorschau-Berechnung (nicht übernommen)"
+        aria-busy="true"
+      >
+        <span className="chips-label">Vorschau · nicht übernommen</span>
+        <p className="kernel-note" data-testid="preview-rechnet">
+          rechnet…
+        </p>
+      </section>
+    );
+  }
   // Calm visibility: a not_computed-only kern shows nothing here (open points live in the form).
   if (computed.length === 0 && clarifications.length === 0 && notes.length === 0) return null;
 
   return (
     <section
-      className="fact-chips kernel-panel"
-      data-testid="berechnungen-panel"
-      aria-label="Berechnungen vom deterministischen Rechenkern"
+      className={`fact-chips kernel-panel${isPreview ? " kernel-panel--preview" : ""}`}
+      data-testid={isPreview ? "preview-panel" : "berechnungen-panel"}
+      aria-label={
+        isPreview
+          ? "Vorschau-Berechnung (nicht übernommen)"
+          : "Berechnungen vom deterministischen Rechenkern"
+      }
     >
-      <span className="chips-label">Berechnungen · deterministischer Rechenkern</span>
+      <span className="chips-label">
+        {isPreview ? "Vorschau · nicht übernommen" : "Berechnungen · deterministischer Rechenkern"}
+      </span>
       <ul className="chips-row kernel-row">
         {computed.map((c) => (
           <li
@@ -80,7 +110,7 @@ export function BerechnungenPanel({
           data-testid="kernel-clarify"
         >
           <span>{clarifyMessage(c)}</span>
-          {c.one_click && onConfirmUnit ? (
+          {c.one_click && onConfirmUnit && !isPreview ? (
             <button
               type="button"
               className="kernel-clarify-confirm"
@@ -98,7 +128,9 @@ export function BerechnungenPanel({
         </p>
       ))}
       <span className="chips-label kernel-hint">
-        Orientierung, keine Freigabe — Werte vom Rechenkern; Eingaben bei Bedarf bestätigen.
+        {isPreview
+          ? "Vorschau — noch nicht übernommen; Übernehmen schreibt die Werte in den Fallkontext."
+          : "Orientierung, keine Freigabe — Werte vom Rechenkern; Eingaben bei Bedarf bestätigen."}
       </span>
     </section>
   );

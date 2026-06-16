@@ -9,7 +9,9 @@ from pydantic import BaseModel
 
 from sealai_v2.api.confirmation import build_param_confirmation
 from sealai_v2.api.deps import current_identity, get_pipeline
-from sealai_v2.core.contracts import VerifiedIdentity
+from sealai_v2.api.serializers import compute_response
+from sealai_v2.core.calc.derived import recompute_derived
+from sealai_v2.core.contracts import RememberedFact, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/v2/conversations", tags=["conversations"])
@@ -138,6 +140,28 @@ async def submit_facts(
     return build_param_confirmation(
         [it.model_dump() for it in body.items], settled, comp
     )
+
+
+@router.post("/current/preview")
+async def preview_facts(
+    body: FactBatch,
+    identity: VerifiedIdentity = Depends(current_identity),
+    pipeline: Pipeline = Depends(get_pipeline),
+) -> dict:
+    """R2 live preview (Modell R2): run the SAME deterministic kern as the committed path over the
+    form's DRAFT values and return the Berechnete Werte — but WRITE NOTHING. Read-only: no
+    ``edit_fact``, no ``compute_for``/``set_derived``, no ``flush_memory``, no distill, no provenance
+    stamp. Because it reuses ``recompute_derived`` (the exact pure function ``compute_for`` calls,
+    minus the persist), the preview is byte-identical to the post-``Übernehmen`` recompute for the
+    same inputs (Vorschau == Commit). ``user-form`` provenance is set only so the binder treats the
+    draft like a form fact; it is never persisted. Compute must be enabled (503)."""
+    if pipeline.engine is None:
+        raise HTTPException(status_code=503, detail="compute not enabled")
+    facts = tuple(
+        RememberedFact(feld=it.feld, wert=it.wert, provenance="user-form")
+        for it in body.items
+    )
+    return compute_response(recompute_derived(facts, pipeline.engine))
 
 
 @router.delete("/current/facts/{feld}")

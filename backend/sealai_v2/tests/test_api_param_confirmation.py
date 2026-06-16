@@ -100,3 +100,71 @@ def test_batch_settle_is_token_scoped():
     client, pipeline = make_client(_engine_pipeline())
     _batch(client, [{"feld": "wellendurchmesser", "wert": "50 mm"}], token="tok-A")
     assert pipeline.memory.case_state(tenant_id="tenant-B", session_id="sess-B") == ()
+
+
+# ── R2 live preview: POST /current/preview — read-only kernel over the form DRAFT ──────────────────
+
+
+def _preview(client, items, token: str = "tok-A"):
+    return client.post(
+        "/api/v2/conversations/current/preview",
+        json={"items": items},
+        headers=auth(token),
+    )
+
+
+def test_preview_computes_without_mutating_state():
+    """The live preview runs the deterministic kern over the form's DRAFT values and returns the
+    Berechnete Werte — but writes NOTHING: no case-state, no derived slice. d=40/n=5000 → v≈10.47."""
+    client, pipeline = make_client(_engine_pipeline())
+    assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A") == ()
+    r = _preview(
+        client,
+        [
+            {
+                "feld": "wellendurchmesser",
+                "wert": "40 mm",
+                "label": "Wellendurchmesser d₁",
+            },
+            {"feld": "drehzahl", "wert": "5000 U/min", "label": "Drehzahl n"},
+        ],
+    )
+    assert r.status_code == 200
+    by_id = {c["calc_id"]: c for c in r.json()["computed"]}
+    assert abs(by_id["umfangsgeschwindigkeit"]["value"] - 10.472) < 0.01
+    # the Schranke: a preview is read-only — case-state is byte-identical (still empty) afterwards
+    assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A") == ()
+
+
+def test_preview_equals_committed_for_identical_inputs():
+    """Vorschau == Commit (same kern, recompute_derived). The preview's computed values match the
+    committed recompute for identical inputs — the no-divergence Schranke."""
+    items = [
+        {"feld": "wellendurchmesser", "wert": "40 mm"},
+        {"feld": "drehzahl", "wert": "5000 U/min"},
+        {"feld": "druck", "wert": "0,5 bar"},
+    ]
+    pclient, _ = make_client(_engine_pipeline())
+    preview = pclient.post(
+        "/api/v2/conversations/current/preview",
+        json={"items": items},
+        headers=auth("tok-A"),
+    ).json()
+    cclient, _ = make_client(_engine_pipeline())
+    committed = _batch(cclient, items).json()
+
+    def sig(payload):
+        return sorted(
+            (c["calc_id"], round(c["value"], 6), c["unit"]) for c in payload["computed"]
+        )
+
+    assert sig(preview) == sig(committed)
+    assert preview["computed"]  # non-empty (v + pv at least)
+
+
+def test_preview_is_token_scoped_no_write():
+    """A preview under tenant A never touches tenant B (and writes nothing anywhere)."""
+    client, pipeline = make_client(_engine_pipeline())
+    _preview(client, [{"feld": "wellendurchmesser", "wert": "50 mm"}], token="tok-A")
+    assert pipeline.memory.case_state(tenant_id="tenant-B", session_id="sess-B") == ()
+    assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A") == ()

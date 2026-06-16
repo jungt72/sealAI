@@ -14,7 +14,7 @@ import {
 } from "./auth/oidc";
 import { ChatPane } from "./components/ChatPane";
 import { Shell } from "./components/Shell";
-import type { Briefing, ComputeResponse, ConversationMemory } from "./contracts";
+import type { Briefing, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
 
@@ -141,6 +141,23 @@ export function App() {
     api.briefing(lastMessage).then(setBriefing).catch(() => setError("Briefing fehlgeschlagen."));
   }, [api, lastMessage]);
 
+  // R2 live preview: the read-only backend kern over the form DRAFT (no settle, no persist). Returns
+  // null on failure (the form keeps its values; never a stale number); a working preview clears a
+  // prior transient error. The kern owns every number — the client never computes.
+  const onPreview = useCallback(
+    async (items: ParamItem[]): Promise<ComputeResponse | null> => {
+      try {
+        const res = await api.previewParams(items);
+        setError(null);
+        return res;
+      } catch {
+        setError("Vorschau konnte nicht berechnet werden — bitte erneut versuchen.");
+        return null;
+      }
+    },
+    [api],
+  );
+
   const newQuestion = useCallback(() => {
     setError(null);
     setBriefing(null);
@@ -181,13 +198,21 @@ export function App() {
           }}
           onForgetFact={(feld) => api.forgetFact(feld).then(refreshState).catch(() => undefined)}
           onForgetAll={() => api.forgetAll().then(refreshState).catch(() => undefined)}
-          onSubmitParams={async (items) => {
-            // batch settle + recompute server-side; refresh chips + kern panel, return the
-            // deterministic confirmation for ChatPane to surface in the conversation
-            const conf = await api.submitParams(items);
-            refreshState();
-            return conf;
+          onSubmitParams={async (items, deletes = []) => {
+            // R2 „Übernehmen": forget the reconciled (cleared) felder, then batch-settle + recompute
+            // server-side; refresh chips + kern panel; return the deterministic confirmation. On
+            // failure set the error + rethrow — the form keeps its values, ChatPane appends nothing.
+            try {
+              await Promise.all(deletes.map((feld) => api.forgetFact(feld)));
+              const conf = await api.submitParams(items);
+              refreshState();
+              return conf;
+            } catch (e) {
+              setError("Übernehmen fehlgeschlagen — bitte erneut versuchen.");
+              throw e;
+            }
           }}
+          onPreview={onPreview}
           onConfirmUnit={(feld, value) =>
             // confirm the suggested unit → re-settle through the EXISTING edit/settle channel
             // (no new binding path); the backend M8 recompute fires and the kern then computes.

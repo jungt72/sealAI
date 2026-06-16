@@ -124,6 +124,15 @@ export class ApiClient {
       body: JSON.stringify({ items }),
     });
   }
+  /** R2 live preview — the SAME deterministic kern as submitParams over the form's DRAFT values,
+   * but READ-ONLY (no settle, no persist, no provenance). Returns the Berechnete Werte to show as
+   * „Vorschau · nicht übernommen". Backend-only numbers — the client never computes. */
+  previewParams(items: ParamItem[]): Promise<ComputeResponse> {
+    return this.req("/conversations/current/preview", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  }
   forgetFact(feld: string): Promise<unknown> {
     return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, { method: "DELETE" });
   }

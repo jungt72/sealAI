@@ -83,10 +83,12 @@ describe("pilot-ui stage (fresh conversation)", () => {
     expect(screen.queryByTestId("open-parameter-form")).toBeNull();
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(screen.getByTestId("param-submit"));
-    // ONE batch call carrying the field + its schema label (not N per-field calls)
-    expect(props.onSubmitParams).toHaveBeenCalledWith([
-      { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
-    ]);
+    // ONE batch call carrying the field + its schema label (not N per-field calls); R2 also passes
+    // the reconcile deletes (empty here — nothing was committed yet)
+    expect(props.onSubmitParams).toHaveBeenCalledWith(
+      [{ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" }],
+      [],
+    );
     // the deterministic confirmation lands in the conversation (→ chat-view)
     expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
   });
@@ -220,9 +222,10 @@ describe("pilot-ui stage (fresh conversation)", () => {
     const cockpit = screen.getByTestId("case-state");
     fireEvent.change(within(cockpit).getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(within(cockpit).getByTestId("param-submit"));
-    expect(props.onSubmitParams).toHaveBeenCalledWith([
-      { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
-    ]);
+    expect(props.onSubmitParams).toHaveBeenCalledWith(
+      [{ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" }],
+      [],
+    );
     expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");
     expect(screen.getByTestId("chat-log")).toBeInTheDocument(); // transitioned to chat-view
   });

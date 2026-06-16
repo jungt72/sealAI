@@ -1,10 +1,30 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ComputeResponse } from "../contracts";
 import { kernelFields, RWDR_SITUATION, situationFields } from "../schema/situations";
-import { composeWert, ParameterForm, resolveWert } from "./ParameterForm";
+import { composeWert, hydrateValue, ParameterForm, resolveWert } from "./ParameterForm";
 
 afterEach(cleanup);
+
+/** A minimal /compute-shaped preview payload carrying one kern value (v). */
+const makeCompute = (value: number): ComputeResponse => ({
+  computed: [
+    {
+      calc_id: "umfangsgeschwindigkeit",
+      name: "Umfangsgeschwindigkeit",
+      value,
+      unit: "m/s",
+      formula: "v = π·d·n",
+      parent_fields: [],
+      input_origins: [],
+      provenance: "kernel_computed",
+    },
+  ],
+  not_computed: [],
+  notes: [],
+  clarifications: [],
+});
 
 describe("ParameterForm (schema-driven; inputs only — the kern owns every number)", () => {
   it("renders the schema's groups and fields (number, enum, boolean)", () => {
@@ -133,5 +153,112 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(items).toContainEqual({ feld: "druck", wert: "0,5 bar", label: "Druck p" }); // 0.5 → 0,5
     expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" });
     expect(items).toHaveLength(3); // drehzahl left empty → omitted (no fake default)
+  });
+});
+
+describe("ParameterForm — Modell R2 (hydrate · live preview · adopt, no wipe)", () => {
+  it("hydrateValue is the EXACT inverse of resolveWert — a Hydrate→Übernehmen round-trip never drifts", () => {
+    const byKey = Object.fromEntries(situationFields(RWDR_SITUATION).map((f) => [f.key, f]));
+    // number-with-unit: "40 mm" stays "40 mm" (never "40" or a doubled "40 mm mm")
+    expect(resolveWert(byKey.wellendurchmesser, hydrateValue(byKey.wellendurchmesser, "40 mm"))).toBe("40 mm");
+    expect(resolveWert(byKey.druck, hydrateValue(byKey.druck, "0,5 bar"))).toBe("0,5 bar");
+    // enum: stored German LABEL ↔ option value
+    expect(resolveWert(byKey.medium, hydrateValue(byKey.medium, "Öl"))).toBe("Öl");
+    // boolean
+    expect(resolveWert(byKey.spritzwasser, hydrateValue(byKey.spritzwasser, "ja"))).toBe("ja");
+  });
+
+  it("hydrates the fields from the committed case-state on mount (form is the editable surface)", () => {
+    render(
+      <ParameterForm
+        variant="stage"
+        onSubmit={vi.fn()}
+        committed={{ wellendurchmesser: "40 mm", drehzahl: "5000 U/min" }}
+      />,
+    );
+    expect((screen.getByTestId("param-wellendurchmesser") as HTMLInputElement).value).toBe("40");
+    expect((screen.getByTestId("param-drehzahl") as HTMLInputElement).value).toBe("5000");
+  });
+
+  it("Uebernehmen keeps the values (no wipe) and DELETES a previously-committed, now-empty field", () => {
+    const onSubmit = vi.fn();
+    render(
+      <ParameterForm
+        variant="stage"
+        onSubmit={onSubmit}
+        committed={{ wellendurchmesser: "40 mm", drehzahl: "5000 U/min" }}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("param-drehzahl"), { target: { value: "" } }); // clear a committed field
+    fireEvent.click(screen.getByTestId("param-submit"));
+    const [items, deletes] = onSubmit.mock.calls[0];
+    expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "40 mm", label: "Wellendurchmesser d₁" });
+    expect(items.some((i: { feld: string }) => i.feld === "drehzahl")).toBe(false); // emptied → not submitted
+    expect(deletes).toContain("drehzahl"); // was committed, now empty → reconcile DELETE
+    // no wipe: the value stays in the field, editable
+    expect((screen.getByTestId("param-wellendurchmesser") as HTMLInputElement).value).toBe("40");
+  });
+
+  it("does NOT reset the form on submit — values stay editable (Modell R2)", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
+    fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "40" } });
+    fireEvent.click(screen.getByTestId("param-submit"));
+    expect((screen.getByTestId("param-wellendurchmesser") as HTMLInputElement).value).toBe("40");
+  });
+
+  it("a field change shows a debounced backend Vorschau, clearly marked nicht übernommen", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPreview = vi.fn(async () => makeCompute(10.472));
+      render(<ParameterForm variant="stage" onSubmit={vi.fn()} onPreview={onPreview} />);
+      fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "40" } });
+      fireEvent.change(screen.getByTestId("param-drehzahl"), { target: { value: "5000" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(onPreview).toHaveBeenCalledTimes(1); // debounce collapsed the two changes into ONE call
+      const panel = screen.getByTestId("preview-panel");
+      expect(panel).toHaveTextContent("Vorschau · nicht übernommen");
+      expect(panel).toHaveTextContent("10,47"); // German format, kern value (10,47 m/s)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preview is LATEST-WINS: a delayed EARLIER response never overwrites a NEWER one", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveA: (v: ComputeResponse) => void = () => {};
+      let resolveB: (v: ComputeResponse) => void = () => {};
+      const onPreview = vi
+        .fn()
+        .mockImplementationOnce(() => new Promise<ComputeResponse>((r) => (resolveA = r)))
+        .mockImplementationOnce(() => new Promise<ComputeResponse>((r) => (resolveB = r)));
+      render(<ParameterForm variant="stage" onSubmit={vi.fn()} onPreview={onPreview} />);
+      // request A (d=40)
+      fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "40" } });
+      fireEvent.change(screen.getByTestId("param-drehzahl"), { target: { value: "5000" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      // request B (d=45) — the NEWER
+      fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "45" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(onPreview).toHaveBeenCalledTimes(2);
+      // resolve the NEWER (B) first, then the stale EARLIER (A) — A must be discarded
+      await act(async () => {
+        resolveB(makeCompute(11.78));
+      });
+      await act(async () => {
+        resolveA(makeCompute(10.47));
+      });
+      const panel = screen.getByTestId("preview-panel");
+      expect(panel).toHaveTextContent("11,78"); // the newer result
+      expect(panel).not.toHaveTextContent("10,47"); // the stale earlier response did not win
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

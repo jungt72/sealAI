@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
-import type { ParamItem } from "../contracts";
+import type { ComputeResponse, ParamItem } from "../contracts";
 import {
   type FieldDef,
   kernelFields,
@@ -8,6 +8,7 @@ import {
   type SituationDef,
   situationFields,
 } from "../schema/situations";
+import { BerechnungenPanel } from "./BerechnungenPanel";
 
 /** Compose the stored value for a number/text field. The kern binder is fail-closed and needs
  * number+unit, so the canonical unit is appended — UNLESS the user already typed a unit token (no
@@ -46,6 +47,31 @@ export function resolveWert(field: FieldDef, raw: string): string {
   return composeWert(raw, field.unit); // text (unit is "" → raw passes through untouched)
 }
 
+/** The exact DUAL of `resolveWert` — a committed case-state value → the raw input value, so a hydrated
+ * form round-trips with NO drift: `resolveWert(field, hydrateValue(field, w)) === w`. Enum: stored
+ * German LABEL → option value; boolean: "ja"/"nein" verbatim; number/text: strip the trailing
+ * canonical unit token (the dual of composeWert's append). An unmatched enum label → "" (Unbekannt). */
+export function hydrateValue(field: FieldDef, settledWert: string): string {
+  const v = (settledWert ?? "").trim();
+  if (!v) return "";
+  if (field.type === "enum") return field.options?.find((o) => o.label === v)?.value ?? "";
+  if (field.type === "boolean") return v === "ja" || v === "nein" ? v : "";
+  if (field.unit && v.endsWith(field.unit)) return v.slice(0, -field.unit.length).trim();
+  return v;
+}
+
+/** The non-empty raw inputs as batch items — the SINGLE source for both the live preview and the
+ * commit (so Vorschau == Commit holds at the input level too). Only raw schema felder, never a
+ * kern-owned derived quantity (the kern owns every number). */
+export function buildItems(vals: Record<string, string>, active: SituationDef): ParamItem[] {
+  const items: ParamItem[] = [];
+  for (const f of situationFields(active)) {
+    const wert = resolveWert(f, vals[f.key] ?? "");
+    if (wert) items.push({ feld: f.key, wert, label: f.label });
+  }
+  return items;
+}
+
 /**
  * Schema-driven parameter entry — INPUTS ONLY. The universal renderer over a domain SCHEMA
  * (`schema/situations.ts`). It NEVER computes or displays a derived value (no formula import, no
@@ -63,12 +89,21 @@ export function resolveWert(field: FieldDef, raw: string): string {
  */
 export function ParameterForm({
   onSubmit,
+  onPreview,
+  committed,
   onSubmitted,
   variant = "popover",
 }: {
-  /** Batch submit: every non-empty field as one payload → one settle + one recompute + one
-   * deterministic confirmation (the host wires it to POST .../current/facts). */
-  onSubmit: (items: ParamItem[]) => void;
+  /** Adopt („Übernehmen"): the non-empty fields as one batch + the reconcile `deletes` (managed
+   * felder that WERE committed and are now empty) → the host commits (POST /facts) + forgets the
+   * deletes. The form does NOT reset — values stay editable (Modell R2). */
+  onSubmit: (items: ParamItem[], deletes?: string[]) => void;
+  /** R2 live preview: the host runs the read-only backend kern over the DRAFT and resolves the
+   * Berechnete Werte (or null on error/empty). Absent → no preview surface (pre-R2 behaviour). */
+  onPreview?: (items: ParamItem[]) => Promise<ComputeResponse | null>;
+  /** The committed case-state as feld → settled value: hydrates the fields (the form is the single
+   * editable surface) and is the baseline for the empty-field reconcile on „Übernehmen". */
+  committed?: Record<string, string>;
   /** Pilot-ui: lets the hosting popover close itself after a submit (purely presentational). */
   onSubmitted?: () => void;
   variant?: "popover" | "stage";
@@ -77,21 +112,93 @@ export function ParameterForm({
   const [vals, setVals] = useState<Record<string, string>>({});
   const active: SituationDef = SITUATIONS.find((s) => s.id === activeId) ?? SITUATIONS[0];
 
+  // ── R2 hydration: seed the fields from the committed case-state; re-hydrate when it changes from
+  // another source (e.g. a chat turn), but never clobber an in-progress edit (a field the user has
+  // changed away from the last applied baseline — including an intentional clear).
+  const committedKey = useMemo(() => JSON.stringify(committed ?? {}), [committed]);
+  const baselineRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const hydrated: Record<string, string> = {};
+    for (const f of situationFields(active)) {
+      const c = committed?.[f.key];
+      if (c != null && c !== "") hydrated[f.key] = hydrateValue(f, c);
+    }
+    setVals((prev) => {
+      const next: Record<string, string> = { ...hydrated };
+      for (const f of situationFields(active)) {
+        const k = f.key;
+        if ((prev[k] ?? "") !== (baselineRef.current[k] ?? "")) {
+          if ((prev[k] ?? "") === "") delete next[k]; // user cleared it → stays cleared
+          else next[k] = prev[k]; // in-progress edit → preserved
+        }
+      }
+      return next;
+    });
+    baselineRef.current = hydrated;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [committedKey, activeId]);
+
+  // ── R2 live preview (debounced ~350 ms, latest-wins): a field change recomputes the DRAFT via the
+  // backend kern. A monotonic request id discards an out-of-order (stale) response; while the latest
+  // is in flight the panel shows „rechnet…", never a prior value as if it were current.
+  const items = useMemo(() => buildItems(vals, active), [vals, active]);
+  const itemsKey = useMemo(() => JSON.stringify(items), [items]);
+  const [preview, setPreview] = useState<ComputeResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const reqIdRef = useRef(0);
+  // keep the latest callback without making it a dep (the effect fires on item changes only, never
+  // on a parent re-render that hands a fresh callback identity).
+  const onPreviewRef = useRef(onPreview);
+  onPreviewRef.current = onPreview;
+  useEffect(() => {
+    const fn = onPreviewRef.current;
+    if (!fn) return;
+    if (items.length === 0) {
+      reqIdRef.current += 1; // invalidate any in-flight response
+      setPreview(null);
+      setPreviewLoading(false);
+      return;
+    }
+    const id = (reqIdRef.current += 1);
+    setPreviewLoading(true);
+    const t = setTimeout(() => {
+      fn(items)
+        .then((res) => {
+          if (id === reqIdRef.current) {
+            setPreview(res);
+            setPreviewLoading(false);
+          }
+        })
+        .catch(() => {
+          if (id === reqIdRef.current) {
+            setPreview(null); // never leave a stale value; the host surfaces the error
+            setPreviewLoading(false);
+          }
+        });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsKey]);
+
   function set(key: string, value: string) {
     setVals((s) => ({ ...s, [key]: value }));
   }
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    const items: ParamItem[] = [];
-    for (const f of situationFields(active)) {
-      const wert = resolveWert(f, vals[f.key] ?? "");
-      if (wert) items.push({ feld: f.key, wert, label: f.label });
-    }
-    setVals({});
-    onSubmit(items);
+    const present = new Set(items.map((it) => it.feld));
+    // reconcile: a managed field that WAS committed and is now empty/absent → delete (no stale fact)
+    const deletes = situationFields(active)
+      .map((f) => f.key)
+      .filter((k) => committed?.[k] != null && committed[k] !== "" && !present.has(k));
+    onSubmit(items, deletes);
     onSubmitted?.();
+    // NO reset — values stay (Modell R2: the form is the persistent editable surface)
   }
+
+  const previewPanel = onPreview ? (
+    <BerechnungenPanel compute={preview} variant="preview" loading={previewLoading} />
+  ) : null;
 
   const row = (f: FieldDef) => (
     <FieldRow key={f.key} field={f} value={vals[f.key] ?? ""} onChange={(v) => set(f.key, v)} />
@@ -128,12 +235,13 @@ export function ParameterForm({
             </div>
           </details>
           <button type="submit" data-testid="param-submit">
-            Berechnen
+            Übernehmen
           </button>
           <p className="muted param-stage-note">
-            Eingaben werden als Fallkontext gespeichert; berechnete Werte liefert der Rechenkern.
+            Eingaben ändern rechnet live eine Vorschau; „Übernehmen" speichert sie als Fallkontext.
             Leer / „Unbekannt" bleibt offen (keine Annahme).
           </p>
+          {previewPanel}
         </form>
       </section>
     );
@@ -180,6 +288,7 @@ export function ParameterForm({
         <button type="submit" data-testid="param-submit">
           Werte übernehmen
         </button>
+        {previewPanel}
       </form>
     </section>
   );

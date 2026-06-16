@@ -147,6 +147,12 @@
 .kernel-note { width: 100%; text-align: center; font-size: 11px; color: var(--ink-faint); margin: 2px 0 0; }
 .kernel-hint { font-style: italic; }
 
+/* R2 live preview: the same kern rows, visibly „nicht übernommen" — a quieter, dashed draft surface,
+   distinct from the committed Berechnungen panel so a preview value is never mistaken for adopted. */
+.kernel-panel--preview { border: 1px dashed var(--hairline); background: var(--hover-wash); }
+.kernel-panel--preview .chips-label { color: var(--ink-faint); font-style: italic; }
+.kernel-panel--preview [data-testid="preview-rechnet"] { color: var(--ink-faint); }
+
 /* ── workspace: persistent two-column surface (conversation | cockpit) ───────── */
 .workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; --cockpit-w: 40%; }
 /* draggable splitter between chat and cockpit — only a grid item ≥1024px (hidden when stacked) */
@@ -221,6 +227,11 @@
   .cockpit-splitter:focus-visible::before { background: var(--ink-faint); height: 56px; }
   .cockpit-splitter:focus-visible { outline: none; }
   .workspace-main { width: auto; }       /* fills the left grid track (stage or chat) */
+  /* solo (cockpit hidden — the stage / knowledge-Q&A phase): the parent is flex+center, so
+     width:auto would shrink-to-fit to the narrow streaming „Prüfen" chip and then reflow wide when
+     the answer lands. Pin full width → the chat-log keeps its stable min(780px,100%) from the first
+     frame, no reflow. */
+  .workspace.workspace--solo .workspace-main { width: 100%; }
   .chat-foot { padding-bottom: 64px; }   /* left-column bottom clears the doctrine line */
   .case-state {
     width: auto; align-self: stretch; justify-content: flex-start;
