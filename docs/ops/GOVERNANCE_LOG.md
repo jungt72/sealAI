@@ -6,6 +6,59 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-16T11:59Z — V2 /dashboard dist deploy: claude.ai three-region layout (sidebar | chat | cockpit) — SAFE dist swap, owner-gated
+
+**Change:** replace the Phase-A focus-mode rails (solo / focus-chat / focus-cockpit, fixed-800px
+two-zone) with the **claude.ai chat↔artifact three-region pattern** (frontend-v2 only; layout-only —
+NO behaviour change). LEFT: the nav sidebar (Shell) is now **collapsible** (icon rail ⟷ wider with
+labels), persisted (`lib/navSidebar.ts`), driving `--rail-w` so the doctrine line tracks it. CENTRE:
+the conversation — **chat-only centered ~800px, no right panel** by default. RIGHT: the **cockpit
+panel** (artifact-equivalent) with a clean header + close. A case becoming active OR opening
+"Parameter direkt eingeben" splits the post-sidebar width **~50/50** (chat may drop below 800px —
+intended); the header × returns to centered chat-only. Open/close + sidebar collapse are
+CSS/visibility only — the chat column and the mounted ParameterForm stay mounted (`everOpened`), so
+msgs + form values never reset. The resizable divider returns to the chat|cockpit boundary
+(`--cockpit-w`, ~50/50 default, persisted); inside the panel Parameter | Readout is a CSS **container
+query** (side-by-side when wide, stacked when narrow). Below 1024px: single column, cockpit stacked
+under chat. Calm transitions (sidebar width, cockpit entrance), reduced-motion respected.
+
+**Preserved (Phase A, verbatim):** dirty-gated Vorschau; all R2 invariants (backend-only preview,
+debounced latest-wins, no-wipe, empty=DELETE, hydrate=inverse, stale „rechnet…"); Universal Core
+above the tabs; [RWDR][Hydraulik·bald][Statisch·bald] tabs; `formFields()` threading;
+one-scroll-per-pane; v≈10,47 at d₁=40/n=5000.
+
+**Source commit:** `4aceec9a` on `feat/v2-cockpit-resizable` (V1 doctrine guard suite green via the
+commit gate). `dist/` is gitignored — reproduces byte-identical from this clean HEAD. `main`/`demo`
+untouched.
+
+**Pre-deploy gate (offline):** `check:boundary` ✓, `tsc --noEmit` ✓, **vitest 142/142** ✓ (chat-only
+vs split, close→chat-only, no-state-loss on open/close, outer `--cockpit-w` divider, sidebar
+collapse/expand+persist).
+
+**SAFE dist swap** (no nginx reload — bind `docker-compose.deploy.yml:207` →
+`/usr/share/nginx/v2-client:ro`):
+- Backup pre-swap live dist → `/tmp/dist-backup-3region-20260616-115903.tgz`
+  (sha256 `fe3b78bd6edc184719b006e771a5089b15735eb3dc06fc8adcc792531fc9d0f1`); old bundle
+  `index-C9lin50P.js` / `index-uMFfCbz2.css`.
+- Build (never into the live dist): `npx vite build --outDir /tmp/v2dist-3region-20260616-115903 --emptyOutDir`.
+- Swap: `rsync -a --delete /tmp/v2dist-3region-20260616-115903/ /home/thorsten/sealai/frontend-v2/dist/`;
+  `diff -r` build↔live **empty** (live == validated build).
+
+**New live bundle:** `index-DC1v519y.js` (sha256 `feca56831a9743a5dde4af6c81fd2bd19e2e6ff7d0c0401932d38e9b8a806903`)
+· `index-CRsSDnqS.css` (sha256 `1ff86c844c0cb0287ab8a0e2c6723e99a8f5ae78c6570dd15d1c6593daca5a1f`).
+
+**Verification:** nginx container mount reflects the new bundle. HTTP smoke:
+`https://sealingai.com/dashboard/` → **200** (new index); `…/dashboard/assets/index-DC1v519y.js` →
+**200**; V1 unaffected — `https://sealingai.com/` → **200**, `…/api/agent/health` → **200**.
+
+**Rollback** — clear `frontend-v2/dist` + `tar xzf /tmp/dist-backup-3region-20260616-115903.tgz -C
+frontend-v2/dist` (no rebuild/redeploy of any service).
+
+**Note:** browser visual E2E (≥1024px three-region, sidebar collapse, ~50/50 split, container-query
+2-pane) is owner-verified — jsdom cannot assert layout.
+
+---
+
 ## 2026-06-16T10:40Z — V2 /dashboard dist deploy: Fall-Cockpit Phase A (2-pane + Universal Core + type tabs + chat rail) — SAFE dist swap, owner-gated
 
 **Change:** the V2 case cockpit is reshaped into the briefed **2-pane** model (frontend-v2 only; no
