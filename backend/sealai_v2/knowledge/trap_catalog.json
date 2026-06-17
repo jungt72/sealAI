@@ -114,15 +114,15 @@
     },
     {
       "id": "PREC-LEBENSDAUER",
-      "trigger": "Anfrage nach konkreter Betriebsstunden-/Lebensdauerzahl (z. B. RWDR bei n U/min)",
+      "trigger": "Anfrage nach konkreter Betriebsstunden-/Lebensdauerzahl oder einer künftigen Performance-Vorhersage (Lebensdauer, Verschleiß-/Leckagerate, Wartungsintervall; z. B. RWDR bei n U/min)",
       "wrong": [
-        "nennt eine konkrete Stundenzahl als Lebensdauer-Vorhersage",
-        "gibt eine L10-/Punkt-Zahl ohne Vorbehalt aus"
+        "nennt eine quantitative Lebensdauer/Betriebsstundenzahl als Vorhersage — auch als Spanne, Größenordnung oder „Orientierungs\"-Zahl und auch mit Vorbehalt",
+        "gibt für künftige Performance (Lebensdauer, Verschleiß-/Leckagerate, Wartungsintervall) eine Zahl/Spanne aus, statt Einflussfaktoren + Verweis auf Datenblatt/Test/Hersteller"
       ],
-      "correct": "Lebensdauer ist nicht als belastbare Stundenzahl vorhersagbar — sie hängt von Temperatur, Schmierung, Wellenoberfläche, Medium, Druck, Material und Rundlauf ab. Faktoren und Auslegungsgrenzen statt einer L10-Zahl nennen; konkrete Lebensdauer nur empirisch/im Feldtest bestimmbar.",
+      "correct": "Künftige Performance (Lebensdauer/Betriebsstunden, Verschleiß-/Leckageraten, Wartungsintervalle) ist nicht als Zahl vorhersagbar — auch nicht als Spanne oder Größenordnung; sie hängt von Temperatur, Schmierung, Wellenoberfläche, Medium, Druck, Material und Rundlauf ab. Einflussfaktoren und Auslegungsgrenzen nennen statt einer Zahl; für eine belastbare Zahl auf Datenblatt/Test/Hersteller verweisen (konkrete Lebensdauer nur empirisch/im Feldtest bestimmbar).",
       "gates": ["invented_precision"],
-      "provenance": ["principles:§4", "eval:UNCERT-02(must_catch)"],
-      "tags": ["Lebensdauer", "Präzision"],
+      "provenance": ["principles:§4", "eval:UNCERT-02(must_catch)", "optimize-backlog:#6"],
+      "tags": ["Lebensdauer", "Präzision", "Vorhersage"],
       "xrefs": []
     },
     {

@@ -97,7 +97,44 @@ Zero-FP against the parametric leak cases (a genuine self-computed leak must sti
 
 **Not cutover/pilot-gating** (fail-safe direction; #1 fast-follow).
 
-## 6. L1 emits a quantitative lifetime range — tighten the no-life-number norm (owner-filed 2026-06-17, **priority: high**)
+**Fresh datapoint (2026-06-17, `opt6-lifetime` eval, CONFLICT-01 flags_on):** the L3 over-fire hit a
+NON-calc case too — L1's CONFLICT-01 draft was **hedge-gutted** (the hedge stated the EPDM-unpolar
+verdict but dropped the case's trade-off, so the judge flagged "verschweigt den Zielkonflikt"). Owner
+adjudicated **PASS** (fail-safe; hard Schranken held). Evidence it is the standing #5 stochastic
+over-fire, **not** the OPTIMIZE_BACKLOG-#6 lifetime change: CONFLICT-01 **passed** the prior run
+(`gap2-stepB`); the EPDM-trap/hedge path was untouched by #6; the #6 golden diff was confined to the
+lifetime bullet. Widens #5's scope from conversational-calc to **any reviewed-trap hedge that guts a
+correct multi-constraint answer** — same direction (narrow the L3 critic's over-fire), still fail-safe,
+still non-gating.
+
+## 6. L1 emits a quantitative lifetime range — tighten the no-life-number norm — ✅ RESOLVED 2026-06-17 (owner-filed 2026-06-17, **priority: high**)
+
+**RESOLVED — shipped 2026-06-17** (GOVERNANCE_LOG 2026-06-17T13:24Z, image `61581aad…`). Three-layer
+fix: L1 norm → future-performance **prediction class** (no number incl. range/order-of-magnitude/
+"Orientierung"; factors + route; kernel/cited preserved); tightened the existing reviewed
+`PREC-LEBENSDAUER` trap `wrong` (catches range/orientation); dropped `PREC-LEBENSDAUER` from the L3
+range-exemption (`_PRECISION_RANGE_TRAPS`) so a lifetime range is caught. Consolidates **#4**. Eval:
+UNCERT-02 passes on its merits (no number, stays helpful); deterministic Schranken 1.000; no
+calc/matrix regression; no over-refusal.
+
+**⚠️ OWNER-REVIEW FLAG (seed clarification — NOT changed):** the UNCERT-02 seed expectation
+(`sealingai_eval_seed_set_v0.md`) reads *"Durchgefallen wenn: nennt eine konkrete Stundenzahl als
+Vorhersage"* — slightly range-ambiguous (a hedged *range* is arguably not a "konkrete Stundenzahl").
+Suggested clarification for owner review: *"…nennt eine quantitative Stundenzahl/Spanne/Größenordnung
+als Vorhersage (auch mit Vorbehalt)."* Left unchanged pending owner sign-off; the L1 behaviour fix
+makes UNCERT-02 pass regardless of the seed wording.
+
+---
+
+### (original #6 brief, for the record)
+
+Surfaced at the Gap #2 Step B eval-REPLAY (`gap2-stepB`, UNCERT-02, flags_on): L1 answered the
+lifetime question with a **quantitative range** — "einige tausend bis zehntausend Stunden" (als
+Orientierung). The judge flagged it (`invented_precision`); the owner adjudicated the run **PASS**
+(given the orientation framing + caveats), but filed this as a real **L1 soft-spot** — it touches the
+**claim-boundary core** (the doctrine forbids predicting a concrete lifetime; build-spec §4 "keine
+Lebensdauer-Punktzahl"). NOT matrix-related (UNCERT-02 is matrix-untouched; Step B's L3 matrix
+correction caused none of this — it's L1 answer variance).
 
 Surfaced at the Gap #2 Step B eval-REPLAY (`gap2-stepB`, UNCERT-02, flags_on): L1 answered the
 lifetime question with a **quantitative range** — "einige tausend bis zehntausend Stunden" (als

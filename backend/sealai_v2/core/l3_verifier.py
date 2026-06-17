@@ -48,12 +48,15 @@ _CALC_DISPLAY = {
 }
 
 # --- precision over-application guard (firing condition only — NOT the reviewed `correct` facts) ---
-# The range-precision traps fire on a "falsch-präzise Einzelzahl OHNE Bereich". A value already
-# given as a RANGE *with* a verify/Datenblatt caveat is the correct form, not a violation — yet the
-# verifier model sometimes flags it anyway (m2-l3: TRAP-01 "ca. 120–130 °C … gegen Datenblatt
-# verifizieren"). This is the deterministic backstop to the verifier prompt's existing
-# "Bereich ist kein Verstoß" rule. It scopes ONLY the firing condition; it never edits the catalog.
-_PRECISION_RANGE_TRAPS = frozenset({"PREC-EINZELZAHL", "PREC-LEBENSDAUER"})
+# A compound-dependent LIMIT (temperature/pressure/Verpressung) given as a RANGE *with* a verify/
+# Datenblatt caveat is the correct form, not a violation (PREC-EINZELZAHL) — yet the verifier model
+# sometimes flags it anyway (m2-l3: TRAP-01 "ca. 120–130 °C … gegen Datenblatt verifizieren"); this
+# is the deterministic backstop to the prompt's "Bereich ist kein Verstoß" rule. It scopes ONLY the
+# firing condition; it never edits the catalog.
+# PREC-LEBENSDAUER is deliberately NOT here (OPTIMIZE_BACKLOG #6): a future-PERFORMANCE prediction
+# (lifetime/wear/leakage) gets NO number — not even a hedged range — so a lifetime range is a real
+# violation, never the "correct form"; it must NOT be exempted.
+_PRECISION_RANGE_TRAPS = frozenset({"PREC-EINZELZAHL"})
 # a numeric range: two numbers joined by a dash, ellipsis, or "bis" (German thousands "." + spaces
 # tolerated; optional "+" sign on the upper bound, e.g. "+135 bis +150").
 _RANGE_RE = re.compile(
@@ -71,9 +74,10 @@ _VERIFY_CAVEAT_TOKENS = (
 
 
 def is_precision_overapplication(trap_id: str, evidence: str, draft: str = "") -> bool:
-    """True iff a RANGE-precision trap (PREC-EINZELZAHL / PREC-LEBENSDAUER) was raised on a quantity
-    that is ALREADY presented as a range AND carries a verify/Datenblatt caveat — i.e. L3
-    over-applied the "Einzelzahl OHNE Bereich" scope. Checks the evidence AND the draft answer (the
+    """True iff a RANGE-precision trap (PREC-EINZELZAHL — a compound-dependent LIMIT, NOT a lifetime
+    prediction) was raised on a quantity that is ALREADY presented as a range AND carries a verify/
+    Datenblatt caveat — i.e. L3 over-applied the "Einzelzahl OHNE Bereich" scope. Checks the evidence
+    AND the draft answer (the
     verifier sometimes quotes a sub-snippet that drops the caveat) and recognises dash, ellipsis and
     "X bis Y" ranges. Requires BOTH range and caveat → a bare single value, or a range without a
     caveat, still fires (the catch is preserved). Pure/deterministic — the executable gate for the fix."""

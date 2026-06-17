@@ -433,7 +433,11 @@ def test_is_precision_overapplication_predicate():
     assert ov(
         "PREC-EINZELZAHL", "ca. 120–130 °C (typisch, gegen Datenblatt verifizieren)"
     )
-    assert ov("PREC-LEBENSDAUER", "5 000–20 000 Betriebsstunden (typisch, Richtwert)")
+    # OPTIMIZE_BACKLOG #6 — a lifetime/future-performance range is NOT the correct form (no
+    # quantitative prediction, not even a hedged range) → NOT exempt; L3 catches it.
+    assert not ov(
+        "PREC-LEBENSDAUER", "5 000–20 000 Betriebsstunden (typisch, Richtwert)"
+    )
     assert not ov("PREC-EINZELZAHL", "genau 178 °C")  # no range, no caveat
     assert not ov("PREC-EINZELZAHL", "15–25 %")  # range but no caveat
     assert not ov(
