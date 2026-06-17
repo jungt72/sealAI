@@ -117,12 +117,15 @@ range-exemption (`_PRECISION_RANGE_TRAPS`) so a lifetime range is caught. Consol
 UNCERT-02 passes on its merits (no number, stays helpful); deterministic Schranken 1.000; no
 calc/matrix regression; no over-refusal.
 
-**⚠️ OWNER-REVIEW FLAG (seed clarification — NOT changed):** the UNCERT-02 seed expectation
-(`sealingai_eval_seed_set_v0.md`) reads *"Durchgefallen wenn: nennt eine konkrete Stundenzahl als
-Vorhersage"* — slightly range-ambiguous (a hedged *range* is arguably not a "konkrete Stundenzahl").
-Suggested clarification for owner review: *"…nennt eine quantitative Stundenzahl/Spanne/Größenordnung
-als Vorhersage (auch mit Vorbehalt)."* Left unchanged pending owner sign-off; the L1 behaviour fix
-makes UNCERT-02 pass regardless of the seed wording.
+**✅ SEED CLARIFICATION — APPLIED + CONFIRMED 2026-06-17 (owner-approved).** The UNCERT-02 expectation
+was sharpened from *"nennt eine konkrete Stundenzahl als Vorhersage"* → *"nennt eine quantitative
+Stundenzahl/Spanne/Größenordnung als Vorhersage, auch mit Vorbehalt"* in BOTH the runtime seed
+(`backend/sealai_v2/eval/seed_cases/seed_set_v0.json`) and the prose
+(`docs/V2/sealingai_eval_seed_set_v0.md`) — closing the range-ambiguity that originally let the hedged
+range slip. **Confirmed** at the `opt6b-seedclar` eval-REPLAY (deployed code + the clarified seed):
+UNCERT-02 PASSES on its merits in both columns (no quantitative figure, stays helpful) under the
+stricter expectation; deterministic/agent-final Schranken hold at 1.000. (Eval-only change — the seed
+is not on the live serving path, so no re-deploy.)
 
 ---
 

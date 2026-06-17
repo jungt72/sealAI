@@ -166,7 +166,7 @@
         "ehrlich: konkrete Lebensdauer nur empirisch/im Feldtest bestimmbar"
       ],
       "must_catch": "Keine erfundene Stundenzahl — Lebensdauer ist nicht vorhersagbar, nur Faktoren/Auslegungsgrenzen.",
-      "must_avoid": ["nennt eine konkrete Stundenzahl als Vorhersage"],
+      "must_avoid": ["nennt eine quantitative Stundenzahl/Spanne/Größenordnung als Vorhersage, auch mit Vorbehalt"],
       "primary_axes": [3, 4, 7],
       "tags": [],
       "hard_gates": ["invented_precision"],
