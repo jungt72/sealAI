@@ -34,6 +34,7 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier
+from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.memory.distiller import Distiller
@@ -86,6 +87,9 @@ class Pipeline:
     catalog: TrapCatalog | None = None
     retriever: Retriever | None = (
         None  # None → L2 grounding off → every answer is "vorläufig"
+    )
+    matrix: object | None = (
+        None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
     engine: CalcEngine | None = (
         None  # None → M4 calc layer off → no "Berechnete Werte" block
@@ -165,11 +169,18 @@ class Pipeline:
         try:
             with _staged(timer, progress, "ground_ms", "ground"):
                 retrieval = await stages.ground(
-                    self.retriever, question, tenant_id=scope.tenant_id
+                    self.retriever,
+                    self.matrix,
+                    question,
+                    tenant_id=scope.tenant_id,
+                    case_facts=mem.case_state,
                 )
             grounding_facts = (
                 retrieval.grounding_facts
-            )  # reviewed → authoritative + cited
+            )  # reviewed Fachkarten → compute + (Step A) verify
+            # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
+            # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
+            l1_grounding = grounding_facts + retrieval.matrix_facts
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
@@ -202,7 +213,7 @@ class Pipeline:
                 answer = await self.generator.generate(
                     question,
                     flags=flags,
-                    grounding_facts=grounding_facts,
+                    grounding_facts=l1_grounding,
                     calc=calc,
                     case_context=case_context
                     or None,  # empty → None → byte-identical no-memory prompt
@@ -293,7 +304,7 @@ class Pipeline:
             cited=False,
             verifier=verdict,
             draft_answer=draft,
-            grounding_facts=grounding_facts,
+            grounding_facts=l1_grounding,  # Fachkarten + §4 matrix verdicts (the cited grounding)
             computed_values=calc.computed,
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
@@ -457,6 +468,10 @@ def build_pipeline(
     retriever: Retriever | None = (
         InProcessRetriever() if settings.ground_enabled else None
     )
+    # L2 grounding (Gap #2): the §4 Verträglichkeitsmatrix — file-backed reviewed seed behind the
+    # CompatibilityMatrix Protocol (a DB/Qdrant adapter is the deferred prod path). Under the same
+    # ground_enabled kill-switch as the retriever (both are the L2 layer).
+    matrix = InProcessCompatibilityMatrix() if settings.ground_enabled else None
 
     # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
     engine: CalcEngine | None = (
@@ -506,6 +521,7 @@ def build_pipeline(
         verifier=verifier,
         catalog=catalog,
         retriever=retriever,
+        matrix=matrix,
         engine=engine,
         memory=memory,
         cross_session=cross_session,

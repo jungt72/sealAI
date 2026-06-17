@@ -2,8 +2,9 @@
 
 THE load-bearing security invariant: untrusted content (user-pasted claims, datasheets, legacy
 text) is DATA, never authoritative grounding. Enforced STRUCTURALLY — every ``GroundingFact`` /
-``Claim`` constructor originates in the curated-catalog modules (``retrieval.py`` / ``fachkarten.py``),
-NEVER from ``UntrustedContent``. AST-based (robust vs string-grep) so it holds when uploads land.
+``Claim`` constructor originates in the curated-catalog grounding lanes (``retrieval.py`` /
+``matrix.py`` / ``fachkarten.py``), NEVER from ``UntrustedContent``. AST-based (robust vs string-grep)
+so it holds when uploads land.
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ from sealai_v2.prompts.assembler import PromptAssembler
 
 _V2 = Path(__file__).resolve().parents[1]  # backend/sealai_v2
 
-# A constructor may originate ONLY in its catalog module — both are curated, owner-gated lanes.
+# A constructor may originate ONLY in a curated, owner-gated grounding lane — never from the
+# untrusted-content path. The §4 Verträglichkeitsmatrix (knowledge/matrix.py) is such a lane.
 _ALLOWED = {
-    "GroundingFact": "knowledge/retrieval.py",
-    "Claim": "knowledge/fachkarten.py",
+    "GroundingFact": ("knowledge/retrieval.py", "knowledge/matrix.py"),
+    "Claim": ("knowledge/fachkarten.py",),
 }
 
 
@@ -41,12 +43,12 @@ def _ctor_sites(name: str) -> set[str]:
     return sites
 
 
-def test_groundingfact_constructed_only_in_retrieval():
-    assert _ctor_sites("GroundingFact") <= {_ALLOWED["GroundingFact"]}
+def test_groundingfact_constructed_only_in_grounding_lanes():
+    assert _ctor_sites("GroundingFact") <= set(_ALLOWED["GroundingFact"])
 
 
 def test_claim_constructed_only_in_fachkarten():
-    assert _ctor_sites("Claim") <= {_ALLOWED["Claim"]}
+    assert _ctor_sites("Claim") <= set(_ALLOWED["Claim"])
 
 
 def test_untrusted_reaches_prompt_as_delimited_data_not_grounding():

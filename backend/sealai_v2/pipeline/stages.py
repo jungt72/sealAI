@@ -66,15 +66,34 @@ async def understand(
 
 
 async def ground(
-    retriever: Retriever | None, question: str, *, tenant_id: str, k: int = 5
+    retriever: Retriever | None,
+    matrix,
+    question: str,
+    *,
+    tenant_id: str,
+    case_facts: tuple = (),
+    k: int = 5,
 ) -> RetrievalResult:
-    """Stage 2 — L2 grounding (M3). Retrieve reviewed Fachkarten via the injected ``Retriever`` and
-    return them as grounding facts (+ provisional draft hits). PRE-FETCH then render into the prompt —
-    no mid-generation tool calls (build-spec §12). No retriever → empty result → L1 answers
-    "vorläufig"."""
-    if retriever is None:
-        return RetrievalResult()
-    return await retriever.retrieve(question, tenant_id=tenant_id, k=k)
+    """Stage 2 — L2 grounding. Retrieve reviewed Fachkarten via the injected ``Retriever`` AND query
+    the §4 Verträglichkeitsmatrix (Gap #2) for the case-relevant compatibility verdicts. PRE-FETCH then
+    render into the prompt — no mid-generation tool calls (build-spec §12). Cards land in
+    ``grounding_facts``; matrix cells land in ``matrix_facts`` (their own channel so the L1 vs L3 wiring
+    is two separate eval-gated steps). No source → empty → L1 answers "vorläufig"."""
+    result = RetrievalResult()
+    if retriever is not None:
+        result = await retriever.retrieve(question, tenant_id=tenant_id, k=k)
+    matrix_facts = ()
+    if matrix is not None:
+        matrix_facts = matrix.query(
+            tenant_id=tenant_id, query_text=question, case_facts=case_facts
+        )
+    if not matrix_facts:
+        return result
+    return RetrievalResult(
+        grounding_facts=result.grounding_facts,
+        provisional=result.provisional,
+        matrix_facts=matrix_facts,
+    )
 
 
 async def compute(

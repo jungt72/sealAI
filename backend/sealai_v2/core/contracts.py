@@ -117,14 +117,16 @@ class GroundingFact:
     # render — the internal card_id is meaningless to a manufacturer/user. Out of pure-render M4b scope.
     text: str
     quelle: str
-    card_id: str = (
-        ""  # source Fachkarte id (for citation + L3 card-contradiction validation)
-    )
+    card_id: str = ""  # source Fachkarte id / matrix cell id (for citation + L3 contradiction validation)
     # M6c: the OWNER-VERIFIED PRIMARY sources of the source Claim (e.g. "Parker O-Ring Handbook",
     # "ISO 3601-2") — surfaced to the USER by the API citation serializer instead of the internal
     # card_id. L1-NEUTRAL: the assembler renders only text+quelle, so this never reaches the prompt
     # (byte-identical) → no behavior change, no eval perturbation.
     sources: tuple[str, ...] = ()
+    # Gap #2: provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
+    # cell). L1-neutral (assembler renders text+quelle only). L3 uses it to apply the corrective policy:
+    # a matrix contradiction CORRECTS (reviewed cell), a card contradiction only FLAGs.
+    kind: str = "card"
 
 
 @dataclass(frozen=True)
@@ -169,15 +171,20 @@ class AuthValidator(Protocol):
 
 @dataclass(frozen=True)
 class RetrievalResult:
-    """L2 retrieval output. ``grounding_facts`` are reviewed → AUTHORITATIVE (cited into L1/L3);
-    ``provisional`` come from draft cards → 'vorläufig', never authoritative, never corrective."""
+    """L2 retrieval output. ``grounding_facts`` are reviewed Fachkarten → AUTHORITATIVE (cited into
+    L1/L3); ``provisional`` come from draft cards → 'vorläufig', never authoritative, never corrective.
+    ``matrix_facts`` (Gap #2) are reviewed Verträglichkeitsmatrix cells → AUTHORITATIVE compatibility
+    verdicts with provenance; rendered as belegte Fakten for L1 and (Step B) a reviewed CORRECTION
+    source for L3 (parallel to the trap catalog), kept in their own channel so the L2/L3 wiring lands
+    in two separate eval-gated steps."""
 
     grounding_facts: tuple[GroundingFact, ...] = ()
     provisional: tuple[GroundingFact, ...] = ()
+    matrix_facts: tuple[GroundingFact, ...] = ()
 
     @property
     def grounded(self) -> bool:
-        return bool(self.grounding_facts)
+        return bool(self.grounding_facts or self.matrix_facts)
 
 
 @runtime_checkable
@@ -189,6 +196,53 @@ class Retriever(Protocol):
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
     ) -> "RetrievalResult": ...
+
+
+@dataclass(frozen=True)
+class MatrixCell:
+    """One cell of the §4 Verträglichkeitsmatrix (build-spec §4: "relational, abfragbar — Medium ×
+    Werkstoff × Bedingung → Bewertung + Quelle. Speist L2 und L3"). A reviewed, queryable compatibility
+    VERDICT with provenance — NOT a recommendation: it states "<werkstoff> × <medium>/<bedingung> →
+    <bewertung> [Quelle]", never "use X" (no selection/ranking — architektur_prinzipien §2-L2).
+
+    ``bewertung`` is the §4 "Bewertung", modelled as a controlled enum for queryability + L3
+    contradiction; ``begruendung`` carries the source's own wording (the grounded fact text). ``medium``
+    is optional ("" for mechanical-condition verdicts). ``scope`` are synonym match-tags (the
+    "abfragbar" mechanism, mirroring a Fachkarte's scope — not new content). ``provenance`` MUST name a
+    reviewed source (no model-sourced cells; enforced by the loader's circularity guard)."""
+
+    id: str
+    werkstoff: str  # one canonical material
+    medium: str  # canonical medium, or "" for mechanical-condition cells
+    bedingung: str  # qualitative condition tag, or ""
+    bewertung: str  # "vertraeglich" | "unvertraeglich" | "bedingt"
+    begruendung: (
+        str  # the grounded verdict text (faithful restatement of the reviewed source)
+    )
+    scope: dict  # {material:[...], medium:[...], bedingung:[...]} — synonym match-tags
+    provenance: tuple[
+        str, ...
+    ]  # reviewed source id(s): trap-correct:… / owner:… / eval:… / FK-…
+    sources: tuple[str, ...] = ()  # primary citations (norm/datasheet), if any
+
+    def quelle(self) -> str:
+        return f"Verträglichkeitsmatrix · {self.id} (reviewed; {', '.join(self.provenance)})"
+
+
+_MATRIX_VERDICTS = ("vertraeglich", "unvertraeglich", "bedingt")
+
+
+@runtime_checkable
+class CompatibilityMatrix(Protocol):
+    """The §4 Verträglichkeitsmatrix query seam (Gap #2). An in-process file-backed impl serves CI/eval;
+    a Postgres/Qdrant adapter swaps in by config behind this same Protocol (build-spec §3 — deferred).
+    Tenant scope is mandatory (P0 — server-side; the seed is GLOBAL reviewed knowledge, so the scope is
+    threaded but does not filter). Returns the relevant reviewed verdicts as ``GroundingFact``s
+    (``kind="matrix"``) with provenance — grounding/correction DATA, never a selection."""
+
+    def query(
+        self, *, tenant_id: str, query_text: str, case_facts: tuple = (), k: int = 6
+    ) -> tuple["GroundingFact", ...]: ...
 
 
 @dataclass(frozen=True)

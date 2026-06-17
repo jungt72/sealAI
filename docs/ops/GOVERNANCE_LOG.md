@@ -6,6 +6,63 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-17T10:45Z — V2 PROD deploy: Gap #2 Step A — §4 Verträglichkeitsmatrix → L2 grounding — owner-gated
+
+**Change (backend only, file-backed, zero API-contract change):** build the §4 relational
+compatibility matrix (Medium × Werkstoff × Bedingung → Bewertung + Quelle) as a first-class,
+queryable, provenance-bearing grounding source and wire it into **L2 grounding** (Step A of two; L3
+correction is Step B). New `backend/sealai_v2/knowledge/matrix.py` (loader + circularity guard +
+`InProcessCompatibilityMatrix` behind a new `CompatibilityMatrix` Protocol) + `knowledge/matrix_seed.json`
+(**27 atomic reviewed cells**). The ground stage queries the matrix; matching verdicts join the
+Fachkarten as belegte Fakten for L1 with `[Quelle: Verträglichkeitsmatrix · <id> (reviewed; <src>)]`
+(their own `matrix_facts` channel; `GroundingFact.kind="matrix"`). **No Postgres** — file-backed seed
+canonical for this hop (a DB/Qdrant adapter is the deferred prod path behind the Protocol; Qdrant
+semantic recall #3, multi-source cross-check #4, data expansion #5 are NOT this hop). `matrix_crosscheck`
+left `"unchecked"` (owner decision — #4's concern). Calc/applicability (Gap #3) untouched.
+
+**No-fabrication (structural):** every cell's `provenance` names a reviewed source
+(`trap-correct:`/`owner:`); the loader rejects a model-sourced cell (build-spec §8 "no LLM erdet LLM",
+tested). The 27 cells restate ONLY compatibility verdicts already in the 9 reviewed Fachkarten + the
+reviewed trap catalog — zero model-generated cells. `FK-ORING-VERPRESSUNG` excluded (geometry, not
+compatibility). Sparse by design: a medium with no reviewed verdict (e.g. Essigsäure) → no cell, the
+matrix stays silent (verified live).
+
+**Doctrine (grounding, NOT Steuerlogik — architektur_prinzipien §2-L2):** the matrix states
+compatibility VERDICTS + mechanism with sources; it does NOT select/rank/recommend. A test asserts no
+selection/ranking tokens in any cell; the eval credibility axes confirm no user-facing
+selection/suitability was introduced.
+
+**Offline gate:** full V2 suite + import-purity keystone green (incl. +3 new matrix test files; the
+untrusted-quarantine AST keystone updated to admit `knowledge/matrix.py` as a curated grounding lane —
+guard intent preserved). The assembler `golden_prompt_no_memory.json` stays byte-identical (no
+assembler/template change); a non-compatibility turn is byte-identical with/without the matrix.
+
+**Grounding delta:** 11/37 single-turn eval cases now ground via the matrix (was 0) — all 4 TRAP, all
+3 COMBO, DEFAULT-01/03, UNCERT-01, and **INJ-01** (the matrix grounds the true EPDM×Mineralöl verdict
+against the user's injected false "confirm this" claim). All 11 matrix-grounded cases PASSED.
+
+**Eval-REPLAY (self-gate 1, new image, in-process config):** deterministic/agent-final Schranken
+**1.000** (memory_fabrication, exfiltration, edge_overreach, injection_override) — no trust-spine
+regression. 3 provisional judge flags, **all on NON-matrix-grounded cases** (CALC-01 ×2 = the same
+speed-limit-as-range quibble owner-adjudicated PASS in Gap #1; UNDER-01 = a tone-only flag, no hard
+gate). **Owner adjudicated via "go"** (accepted the recommended verdicts; recorded verbatim in
+`human_review_worksheet.md`, NOT agent-self-ticked). Recompute (`--adjudicate`, no LLM): **final
+Schranken-quota = 1.000 across flags_off / flags_on / edge / injection**; memory_fabrication 1.000.
+
+**Surgical deploy (self-gate 5):** `… --profile v2 up -d --no-deps backend-v2` (no `--remove-orphans`).
+Only backend-v2 moved (backend 9d / nginx 5d / postgres 2w unchanged). New live image
+**`sealai-backend-v2:latest` = `sha256:ad9a794fafcf78ac4091cceb8ae77f2bdb7aba931c2e3d54f24dfacd9d0eeb91`**;
+`/api/v2/health` = 200; live spot-check confirms the matrix is queryable in the deployed image (27
+cells, grounds compatibility questions with provenance, silent without a source).
+
+**Reversibility (file-backed → no DB):** rollback image **`sealai-backend-v2:rollback-2026-06-17-stepA`**
+= `sha256:b217972561295…` (the live Gap #1 image). Rollback = `docker tag
+sealai-backend-v2:rollback-2026-06-17-stepA sealai-backend-v2:latest` → `… up -d --no-deps
+--force-recreate backend-v2`. No DB schema touched (the seed is in the image + git). The pre-Gap#1
+anchor `rollback-2026-06-17` (=`45e39261…`) is untouched.
+
+---
+
 ## 2026-06-17T08:48Z — V2 PROD deploy: production persistence (gap #1) — `backend-v2` durable memory (Postgres) — owner-gated
 
 **Change (backend only, zero API-contract change):** close gap #1 — V2 memory layers 1–3
