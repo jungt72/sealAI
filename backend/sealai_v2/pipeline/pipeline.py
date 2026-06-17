@@ -139,9 +139,12 @@ class Pipeline:
                 session=session,
                 question=question,
             )
-        case_context = [
-            {"feld": f.feld, "wert": f.wert} for f in (mem.case_state + mem.durable)
-        ]
+        # This-session case-state (L2) and cross-session durable facts (L4) are kept SEPARATE: the
+        # durable facts surface under their own honest "aus früheren Gesprächen — bei Bedarf
+        # bestätigen" frame and (below) do NOT feed the deterministic calc binder — a remembered
+        # cross-session value must never be treated as a current/confirmed input.
+        case_context = [{"feld": f.feld, "wert": f.wert} for f in mem.case_state]
+        durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
         # P1: soft understand is annotate-only (Intent NEVER gates/routes; it feeds only the
@@ -170,7 +173,9 @@ class Pipeline:
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
-            bound = bind_params(mem.case_state + mem.durable)
+            bound = bind_params(
+                mem.case_state
+            )  # L4 durable facts excluded — never a calc input
             merged_params = dict(bound.params)
             param_origins = dict(bound.origins)
             for key, value in (params or {}).items():
@@ -201,6 +206,8 @@ class Pipeline:
                     calc=calc,
                     case_context=case_context
                     or None,  # empty → None → byte-identical no-memory prompt
+                    durable_context=durable_context
+                    or None,  # empty → None → byte-identical no-cross-session prompt
                     conversation_window=conversation_window or None,
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                 )
@@ -253,6 +260,7 @@ class Pipeline:
                             session=session,
                             question=question,
                             answer=answer.text,
+                            cross_session=self.cross_session,
                         )
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
@@ -382,6 +390,7 @@ class Pipeline:
                     session=session,
                     question=question,
                     answer=answer_text,
+                    cross_session=self.cross_session,
                 )
             # M8: settle the derived slice from the just-distilled inputs (chat channel). Inside the
             # try so a recompute fault is caught by the same fail-safe (a lost derived slice is never
@@ -454,16 +463,32 @@ def build_pipeline(
         CascadeCalcEngine() if settings.compute_enabled else None
     )
 
-    # M5 memory: in-process working window/case-state/history + the trivial cross-session seam.
+    # M5 memory: working window/case-state/history (layers 1-3) + the cross-session seam (L4).
     # Wired always-on (M4a precedent: wired-in → measured) but inert without a session — the eval
-    # passes no session, so the single-turn REPLAY stays a true, zero-cost no-op. Redis/Postgres/
-    # Qdrant adapters swap in here by config behind the same Protocols (build-spec §3) — deferred.
+    # passes no session, so the single-turn REPLAY stays a true, zero-cost no-op. With
+    # ``database_url`` SET the durable SQLAlchemy adapters back the SAME Protocols (build-spec §3:
+    # Postgres = system-of-record) so memory survives a restart; UNSET keeps the in-process store so
+    # the offline eval/CI stay hermetic (no DB, no key). Pure config swap behind the Protocols.
     memory: ConversationMemory | None = None
     cross_session: CrossSessionMemory | None = None
     distiller: Distiller | None = None
     if settings.memory_enabled:
-        memory = InProcessConversationMemory(window_turns=settings.memory_window_turns)
-        cross_session = InProcessCrossSessionMemory()
+        if settings.database_url:
+            # Lazy import: the offline path never touches SQLAlchemy.
+            from sealai_v2.db.conversation_memory import PostgresConversationMemory
+            from sealai_v2.db.cross_session_memory import PostgresCrossSessionMemory
+            from sealai_v2.db.engine import make_engine, make_sessionmaker
+
+            session_factory = make_sessionmaker(make_engine(settings.database_url))
+            memory = PostgresConversationMemory(
+                session_factory, window_turns=settings.memory_window_turns
+            )
+            cross_session = PostgresCrossSessionMemory(session_factory)
+        else:
+            memory = InProcessConversationMemory(
+                window_turns=settings.memory_window_turns
+            )
+            cross_session = InProcessCrossSessionMemory()
         if settings.distill_enabled:
             distiller = Distiller(
                 helper_client,

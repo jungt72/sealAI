@@ -90,3 +90,9 @@ class Settings(BaseSettings):
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6
+    # Durable persistence (build-spec §3: Postgres = system-of-record). SET → memory layers 1-3 +
+    # the L4 cross-session seam are backed by the durable SQLAlchemy adapters (survive a restart);
+    # UNSET → the in-process store (offline eval/CI stay hermetic — no DB, no key). A pure config
+    # swap behind the same Protocols (M3 lazy-adapter pattern); value is never logged.
+    # Env: SEALAI_V2_DATABASE_URL (e.g. postgresql+psycopg2://…@postgres:5432/sealai_v2).
+    database_url: str | None = None

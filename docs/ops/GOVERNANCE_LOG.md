@@ -6,6 +6,68 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-17T08:48Z — V2 PROD deploy: production persistence (gap #1) — `backend-v2` durable memory (Postgres) — owner-gated
+
+**Change (backend only, zero API-contract change):** close gap #1 — V2 memory layers 1–3
+(working window / structured case-state / history) + the L4 cross-session seam now persist in a
+dedicated **`sealai_v2` Postgres database** instead of in-process dicts, so a `backend-v2` restart
+no longer loses conversations + case-state. New `backend/sealai_v2/db/` (sync SQLAlchemy `engine`/
+`models`/`PostgresConversationMemory`/`PostgresCrossSessionMemory`/`migrate.py`), config-gated by
+`SEALAI_V2_DATABASE_URL` (unset → in-process, so offline eval/CI stay hermetic) — a drop-in behind
+the existing sync memory Protocols (build-spec §3 M3 lazy-adapter). L4 surfacing wired: distilled
+facts promoted to the durable store; `relevant_facts` returns them via deterministic, tenant-scoped
+relevance, framed honestly in the L1 prompt ("aus früheren Gesprächen — bei Bedarf bestätigen",
+never current/confirmed; excluded from the calc binder). No retired V1.8 DomainPack orchestration.
+
+**Offline gate:** full V2 suite (445 incl. +13 new) + import-purity keystone green; the
+`test_memory_noop` change-detector confirms the empty-memory L1 prompt is **byte-identical**
+(eval insulation proven — eval is single-turn/no-session → memory inert).
+
+**Eval-REPLAY (self-gate 1):** two full 44-case REPLAYs on the new image (in-process config).
+Deterministic / agent-final Schranken = **1.000 in both** (`memory_fabrication`, `exfiltration`,
+`flags_off`). Provisional judge numbers moved between runs on byte-identical code (run 1: flags_on
+0.900 + edge 0.800; run 2: flags_on 0.950 [CALC-01 only] + edge 1.000) — LLM-judge non-determinism,
+not a regression; harness's own "non-edge no-regression vs baseline" held. **Owner adjudicated
+CALC-01 = PASS** (oracle; recorded in `human_review_worksheet.md`, NOT agent-self-ticked — the calc
+was correct, the speed limit was honestly given as a range vs invented precision, and the case is
+single-turn/no-memory). Recompute (`--adjudicate`, no LLM): **final Schranken-quota = 1.000 across
+flags_off / flags_on / edge / injection**; `memory_fabrication` agent-final = 1.000.
+
+**Migrations (self-gate 2):** `migrate up` (5 tables) / `down` (0) verified on a fresh non-prod
+`sealai_v2_test` DB, psql-confirmed both ways, test DB dropped — before touching prod.
+
+**Reversibility (self-gate 3):** rollback image **`sealai-backend-v2:rollback-2026-06-17`** =
+`sha256:45e39261e683…` (the pre-change live artifact); DB baseline snapshot
+`.claude/.gate-logs/db-snapshots/sealai_v2-baseline-2026-06-17.sql` (sha256
+`99052c70627cf47613e76bbfc1042585adccc17eb04e0b0d804bcfc976274180`). The V1 `sealai` DB and all
+foreign projects are out of blast radius.
+
+**Surgical deploy (self-gate 5):** `docker compose --env-file .env.prod -f docker-compose.yml -f
+docker-compose.deploy.yml --profile v2 up -d --no-deps backend-v2` (no `--remove-orphans`). Only
+`backend-v2` moved (others unchanged: `backend` 9d, `nginx` 5d, `postgres` 2w). New live image
+**`sealai-backend-v2:latest` = `sha256:b217972561295b598b286b7a97e4df0db10433aab37c475435622631b4b35039`**;
+`/api/v2/health` = 200 direct + via nginx.
+
+**Restart-survival proof (self-gate 4) + live cross-session:** wrote a conversation + case-state
+(`medium=Hydrauliköl`, `temperatur=80°C`) and a durable fact (`anwendung=RWDR Getriebe`) via the
+LIVE container's durable adapters → `docker restart backend-v2` → verified in the restarted process
+(empty in-process memory): (1) conversation + case-state **survived** (from Postgres); (2) the
+durable fact **surfaced** in a NEW session, same tenant, with the honest "aus früheren Gesprächen —
+bei Bedarf bestätigen" frame (never current/confirmed); (3) a DIFFERENT tenant surfaced **nothing**
+(P0). Proof rows cleaned up — `sealai_v2` left clean (schema-only, 0 rows).
+
+**Rollback (one step each):** `docker tag sealai-backend-v2:rollback-2026-06-17
+sealai-backend-v2:latest` → `… --profile v2 up -d --no-deps --force-recreate backend-v2` (the old
+image ignores `SEALAI_V2_DATABASE_URL` → in-process memory, byte-identical pre-change behaviour).
+For data: `DROP DATABASE sealai_v2;` (or restore `sealai_v2-baseline-2026-06-17.sql`). V1 untouched.
+
+**Stale-note reconciliation:** `ops.md`/AGENTS.md §"V2.0 track is not in the prod path" and the
+memory note "flip STILL HELD" are **stale** — `backend-v2` has been a live, nginx-routed prod
+service (`/api/v2/`) with a `rollback-<date>` deploy discipline since at least 2026-06-16. This is
+the first V2 deploy that adds a durable store; it remains owner-gated and V1-runtime-independent.
+
+---
+
 ## 2026-06-16T13:17Z — V2 /dashboard dist deploy: best-practice scroll model (locked shell · autohide chrome · fade cues · sticky anchors) — SAFE dist swap, owner-gated
 
 **Change:** rework the scroll model — scroll/chrome only, **NO behaviour or layout-structure change**.

@@ -10,3 +10,7 @@ httpx==0.28.1
 openai==2.30.0
 PyJWT==2.10.1
 cryptography==46.0.6
+# Durable persistence (build-spec §3: Postgres = system-of-record). Sync SQLAlchemy adapter behind
+# the memory Protocols; psycopg2 is the sync driver (matches the V1 pins in requirements.txt).
+SQLAlchemy==2.0.49
+psycopg2-binary==2.9.11

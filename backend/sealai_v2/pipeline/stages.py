@@ -172,11 +172,18 @@ async def remember(
     session: SessionContext | None,
     question: str,
     answer: str,
+    cross_session: CrossSessionMemory | None = None,
 ) -> None:
     """Post-answer record: append the turn (window L1 + history L3) and, if a distiller is wired,
     merge the LLM-distilled STATED facts into the case-state (L2). No memory OR no session → no-op
     AND no distill LLM call (keeps the single-turn eval a true, zero-cost no-op). Distilling AFTER
-    the answer means it can never perturb the turn it observed."""
+    the answer means it can never perturb the turn it observed.
+
+    L4 curation: the same conservatively-distilled facts are promoted to the cross-session durable
+    store (build-spec §7.4 "kuratiert merken" — the distiller is already the curated, user-stated,
+    numeric-trace-guarded set, so this is a conservative promotion). The in-process cross-session
+    impl stores but never injects (returns nothing); the durable adapter is what actually surfaces
+    them in a later session — so this is inert for the offline eval."""
     if memory is None or session is None:
         return
     facts = ()
@@ -189,3 +196,5 @@ async def remember(
         answer=answer,
         facts=facts,
     )
+    if cross_session is not None and facts:
+        cross_session.remember_durable(tenant_id=tenant_id, facts=facts)

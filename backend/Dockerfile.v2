@@ -36,7 +36,7 @@ COPY sealai_v2 ./sealai_v2
 
 # Import keystone: fail the BUILD (not the first request) if a dep is missing — including the
 # lazy I/O-edge imports (openai SDK, httpx JWKS fetch).
-RUN python -c "import httpx; from openai import AsyncOpenAI; import sealai_v2.api.main"
+RUN python -c "import httpx, psycopg2, sqlalchemy; from openai import AsyncOpenAI; import sealai_v2.api.main, sealai_v2.db.migrate"
 
 RUN chown -R appuser:appuser /app
 USER appuser
