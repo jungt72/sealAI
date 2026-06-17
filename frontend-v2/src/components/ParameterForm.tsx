@@ -242,8 +242,10 @@ export function ParameterForm({
           title={s.disabled ? "kommt bald" : undefined}
           data-testid={`param-tab-${s.id}`}
         >
-          {s.label}
-          {s.disabled && <span className="param-tab-soon"> · bald</span>}
+          <span className="param-tab-label">
+            {s.label}
+            {s.disabled && <span className="param-tab-soon"> · bald</span>}
+          </span>
         </button>
       ))}
     </div>

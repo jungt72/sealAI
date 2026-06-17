@@ -22,7 +22,7 @@ import { BriefingPane } from "./BriefingPane";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
 import { ParameterForm } from "./ParameterForm";
-import { MicIcon, SendIcon } from "./icons";
+import { PaperclipIcon, SendIcon } from "./icons";
 
 type Msg =
   | { role: "user"; text: string }
@@ -164,10 +164,10 @@ export function ChatPane({
         <button
           className="pill-icon"
           disabled
-          title="Spracheingabe — in Vorbereitung"
-          aria-label="Spracheingabe (in Vorbereitung)"
+          title="Anhang hinzufügen — in Vorbereitung"
+          aria-label="Anhang hinzufügen (in Vorbereitung)"
         >
-          <MicIcon />
+          <PaperclipIcon />
         </button>
         <button
           className="pill-send"
