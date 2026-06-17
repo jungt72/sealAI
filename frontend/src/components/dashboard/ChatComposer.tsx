@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { AudioLines, ChevronDown, Mic, Plus, SendHorizontal } from "lucide-react";
+import { ArrowUp, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatComposerProps {
@@ -22,8 +22,7 @@ export default function ChatComposer({
   isUploading,
   autoFocus,
   externalValue,
-  placeholder = "Was möchtest du wissen",
-  variant = "default",
+  placeholder = "Anschlussfrage stellen …",
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(() => ({
     lastExternalValue: externalValue ?? null,
@@ -86,7 +85,7 @@ export default function ChatComposer({
 
   const canSend = Boolean(message.trim()) && !isLoading;
   const canUpload = Boolean(onUpload) && !isLoading && !isUploading;
-  const isHero = variant === "hero";
+
   const uploadButton = (
     <button
       type="button"
@@ -95,55 +94,26 @@ export default function ChatComposer({
       onClick={() => fileInputRef.current?.click()}
       disabled={!canUpload}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center text-[#64748B] transition-colors hover:bg-white/55 hover:text-[#1F2933] disabled:cursor-not-allowed disabled:opacity-50",
-        "rounded-full",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#6B7280] transition-colors",
+        "hover:bg-[#F1F3F5] hover:text-[#1F2933] disabled:cursor-not-allowed disabled:opacity-40",
       )}
     >
-      <Plus size={22} strokeWidth={1.9} />
+      <Paperclip size={20} strokeWidth={1.9} />
     </button>
   );
-  const modeButton = (
-    <button
-      type="button"
-      title="Antwortlänge"
-      aria-label="Antwortlänge"
-      className={cn(
-        "hidden h-10 shrink-0 items-center gap-1 px-3 text-sm font-medium text-[#1F2933] transition-colors hover:bg-white/55 sm:inline-flex",
-        "rounded-full",
-      )}
-    >
-      <span>Länger</span>
-      <ChevronDown size={15} />
-    </button>
-  );
-  const micButton = (
-    <button
-      type="button"
-      title="Spracheingabe"
-      aria-label="Spracheingabe"
-      className={cn(
-        "hidden h-10 w-10 shrink-0 items-center justify-center text-[#1F2933] transition-colors hover:bg-white/55 sm:inline-flex",
-        "rounded-full",
-      )}
-    >
-      <Mic size={18} />
-    </button>
-  );
+
   const sendButton = (
     <button
       type="submit"
-      title={canSend ? "Senden" : "Sprachmodus"}
-      aria-label={canSend ? "Senden" : "Sprachmodus"}
+      title="Senden"
+      aria-label="Senden"
       disabled={!canSend}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center transition-colors",
-        "rounded-full",
-        canSend
-          ? "bg-seal-blue text-white hover:opacity-90"
-          : "cursor-not-allowed bg-white/45 text-[#94A3B8]",
+        "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#111418] text-white transition-opacity",
+        "hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30",
       )}
     >
-      {canSend ? <SendHorizontal size={18} /> : <AudioLines size={18} />}
+      <ArrowUp size={22} strokeWidth={2.1} />
     </button>
   );
 
@@ -152,8 +122,8 @@ export default function ChatComposer({
       onSubmit={handleSubmit}
       data-private
       className={cn(
-        "w-full border border-white/70 bg-white/54 shadow-[0_18px_55px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.86)] backdrop-blur-xl",
-        "rounded-full px-4 py-2.5 ring-1 ring-[#CBD5E1]/45",
+        "w-full rounded-[28px] border border-[#ECEEF1] bg-white px-3 py-2.5 pl-5",
+        "shadow-[0_10px_30px_rgba(15,23,42,0.10),0_1px_0_rgba(255,255,255,0.9)_inset]",
       )}
     >
       <div className="flex items-center gap-2">
@@ -165,7 +135,6 @@ export default function ChatComposer({
           onChange={handleFileChange}
           disabled={!canUpload}
         />
-        {uploadButton}
         <textarea
           ref={textareaRef}
           rows={1}
@@ -174,19 +143,16 @@ export default function ChatComposer({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={cn(
-            "max-h-[220px] flex-1 resize-none bg-transparent text-[#1F2933] placeholder:text-[#667085] focus:outline-none",
-            isHero
-              ? "min-h-10 overflow-hidden px-1 py-2 text-[16px] leading-6"
-              : "min-h-10 overflow-hidden px-1 py-2 text-[16px] leading-6",
+            "max-h-[220px] min-h-10 flex-1 resize-none overflow-hidden bg-transparent px-1 py-2",
+            "text-[16px] leading-6 text-[#1F2933] placeholder:text-[#8B94A3] focus:outline-none",
           )}
           disabled={isLoading}
           autoFocus={autoFocus}
         />
 
         <div className="flex shrink-0 items-center gap-1">
-          {modeButton}
-          {micButton}
-          {canSend ? sendButton : null}
+          {uploadButton}
+          {sendButton}
         </div>
       </div>
     </form>

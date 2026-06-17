@@ -143,9 +143,9 @@ export function CockpitTabs({
     <div
       role="tablist"
       aria-label="SealingAI Cockpit"
-      className="custom-scrollbar flex gap-2 overflow-x-auto bg-transparent px-4 pb-2 pt-0"
+      className="custom-scrollbar flex items-stretch overflow-x-auto bg-transparent px-4 pb-2 pt-1"
     >
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const isActive = tab.id === activeTab;
         return (
           <button
@@ -154,14 +154,19 @@ export function CockpitTabs({
             role="tab"
             aria-selected={isActive}
             onClick={() => onTabChange(tab.id)}
+            style={{
+              transform: "skewX(-18deg)",
+              marginLeft: index === 0 ? 0 : -8,
+              zIndex: isActive ? 10 : 1,
+            }}
             className={cn(
-              "h-10 shrink-0 rounded-full border px-4 text-sm font-semibold shadow-sm transition-colors",
+              "h-10 shrink-0 rounded-[5px] border px-5 text-sm font-semibold transition-colors first:rounded-l-[8px] last:rounded-r-[8px]",
               isActive
-                ? "border-seal-blue bg-seal-blue text-white shadow-[0_8px_20px_rgba(0,42,91,0.18)]"
+                ? "border-[#3F86C4] bg-seal-blue text-white shadow-[0_6px_16px_rgba(0,42,91,0.28)]"
                 : "border-[#D1D5DB] bg-white text-muted-foreground hover:bg-muted hover:text-seal-blue",
             )}
           >
-            {tab.label}
+            <span className="inline-block skew-x-[18deg]">{tab.label}</span>
           </button>
         );
       })}
