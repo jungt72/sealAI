@@ -81,11 +81,13 @@ class VerifierPromptAssembler:
         traps: list[dict],
         grounding_facts: list[dict] | None = None,
         computed_values: list[dict] | None = None,
+        matrix_facts: list[dict] | None = None,
     ) -> str:
         return self._template.render(
             traps=traps or [],
             grounding_facts=grounding_facts or [],
             computed_values=computed_values or [],
+            matrix_facts=matrix_facts or [],
         )
 
 

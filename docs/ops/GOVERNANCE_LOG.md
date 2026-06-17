@@ -6,6 +6,54 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-17T11:16Z — V2 PROD deploy: Gap #2 Step B — §4 matrix → L3 verification (corrective) — owner-gated
+
+**Change (backend only, zero API-contract change):** wire the §4 Verträglichkeitsmatrix into **L3 as a
+reviewed CORRECTION source** (Step B of two; completes Gap #2). `verifier_l3.jinja` gains a matrix DATA
+block (parallel to the Fallen-Katalog) + a `matrix_contradiction` output; `l3_verifier.py` parses
+matrix contradictions and — unlike the flag-only card contradictions — a reviewed matrix contradiction
+**BLOCKS** (regenerate-once against the cell's verdict via `build_matrix_correction_note`, else
+`build_matrix_hedge`), parallel to the reviewed-trap path. **Integrity preserved:** the replacement
+fact comes ONLY from the reviewed cell (`_reviewed_matrix`); an invented cell_id is ignored; a finding
+whose cell wasn't injected yields no correction (→ hedge). The matrix is now the second reviewed
+correction source beside the trap catalog. `pipeline.run` passes `retrieval.matrix_facts` to verify.
+
+**Offline gate:** full V2 suite + import-purity keystone green (+5 new L3 tests: contradiction→CORRECTED,
+→BLOCKED_HEDGE, consistent→PASS no over-block, invented-id ignored, correction-note integrity). The L1
+no-memory golden + existing verifier tests stay green (matrix_facts defaults to () → byte-identical L3
+prompt when absent).
+
+**Eval-REPLAY (self-gate 1, new image, in-process config):** deterministic/agent-final Schranken
+**1.000** (memory_fabrication, exfiltration, edge_overreach, injection_override) — no trust-spine
+regression. **The L3 matrix correction caused ZERO regression:** 0 matrix-driven verifier findings, 0
+matrix-grounded case flagged/over-blocked — a clean, zero-false-positive safety net (it correctly never
+fired live, because L1 already grounds from Step A and so never drafted a matrix-contradicting claim;
+the offline tests prove it corrects/hedges when one does). 3 provisional judge flags, **all on
+NON-matrix cases** (CALC-01 = the recurring speed-limit-as-range quibble; CALC-02 = a pre-existing
+M8-C calc-leak hedge; UNCERT-02 = an L1 quantitative-lifetime-range soft-spot). **Owner adjudicated all
+3 = PASS** (explicit, recorded verbatim in `human_review_worksheet.md`, NOT agent-self-ticked).
+Recompute (`--adjudicate`): **final Schranken-quota = 1.000 across flags_off / flags_on / edge /
+injection**; memory_fabrication 1.000. UNCERT-02 filed as a tracked L1 follow-up (OPTIMIZE_BACKLOG #6,
+priority high — separate from the matrix).
+
+**Surgical deploy (self-gate 5):** `… --profile v2 up -d --no-deps backend-v2` (no `--remove-orphans`).
+Only backend-v2 moved (backend 9d / nginx 5d / postgres 2w unchanged). New live image
+**`sealai-backend-v2:latest` = `sha256:085648bc6fdb7dbe8257fbc5b7b529b284159c844ed036e70b65dbb3e3166c3c`**;
+`/api/v2/health` = 200; live spot-check confirms the deployed L3 verifier prompt carries the
+Verträglichkeits-Matrix block + the `matrix_contradiction` schema.
+
+**Reversibility (file-backed → no DB):** rollback image **`sealai-backend-v2:rollback-2026-06-17-stepB`**
+= `sha256:ad9a794fafcf…` (the Step A image). Rollback = `docker tag
+sealai-backend-v2:rollback-2026-06-17-stepB sealai-backend-v2:latest` → `… up -d --no-deps
+--force-recreate backend-v2`. No DB schema touched. Earlier anchors untouched (`rollback-2026-06-17-stepA`
+= Gap #1 image `b21797256…`; `rollback-2026-06-17` = pre-Gap#1 `45e39261…`).
+
+**Gap #2 complete:** the §4 relational compatibility matrix is now a first-class grounding source (L2,
+Step A) AND a reviewed correction source (L3, Step B), 27 reviewed cells, zero fabrication, no
+Steuerlogik, no API-contract change.
+
+---
+
 ## 2026-06-17T10:45Z — V2 PROD deploy: Gap #2 Step A — §4 Verträglichkeitsmatrix → L2 grounding — owner-gated
 
 **Change (backend only, file-backed, zero API-contract change):** build the §4 relational

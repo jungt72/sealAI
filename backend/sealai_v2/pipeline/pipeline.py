@@ -239,6 +239,7 @@ class Pipeline:
                         grounding_facts=grounding_facts,
                         computed_values=calc.computed,
                         not_computed=calc.not_computed,
+                        matrix_facts=retrieval.matrix_facts,  # Gap #2 Step B: matrix = L3 correction source
                     )
 
             with _staged(timer, progress, "cite_ms", "cite"):

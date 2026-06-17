@@ -51,7 +51,19 @@ zu finden, BEVOR die Antwort hinausgeht.
 Wenn die ENTWURFSANTWORT einer dieser geprüften Aussagen **aktiv widerspricht**, markiere das als
 `card_contradiction` (siehe Ausgabe). Bestätigt die Antwort sie, erwähnt sie nur oder schweigt, ist
 das KEIN Verstoß. Diese Fakten sind nur ein Prüf-Bezug — **korrigiere NICHT aus ihnen**; Korrekturen
-kommen allein aus dem Fallen-Katalog.
+kommen aus dem Fallen-Katalog und der Verträglichkeits-Matrix (unten), nicht aus den Fachkarten.
+{% endif %}
+{% if matrix_facts %}
+# Verträglichkeits-Matrix (GEPRÜFTE Verdikte — DATEN)
+Geprüfte (reviewed) Verträglichkeits-Verdikte (Werkstoff × Medium/Bedingung → Bewertung) mit Quelle.
+{% for mx in matrix_facts %}
+- [{{ mx.cell_id }}] {{ mx.text }}
+{% endfor %}
+Wenn die ENTWURFSANTWORT einem dieser Verdikte **aktiv widerspricht** — z. B. behauptet, ein Werkstoff
+sei mit einem Medium/einer Bedingung **verträglich**, obwohl die Zeile `unvertraeglich` sagt (oder
+umgekehrt) — markiere das als `matrix_contradiction`. Anders als die Fachkarten ist die Matrix eine
+**Korrektur-Quelle**: der geprüfte Verdikt-Text ist der Korrektur-Fakt. Bestätigt die Antwort das
+Verdikt, erwähnt es nur oder schweigt, ist das KEIN Verstoß (konservativ gegen Falsch-Alarm).
 {% endif %}
 {% if computed_values %}
 # Berechnete Werte (DETERMINISTISCH — Code-Ergebnis, DATEN)
@@ -69,6 +81,7 @@ deterministische Wahrheit; **korrigiere NICHT selbst** — nur markieren.
   "findings": [
     {"trap_id": "<id aus dem Katalog>", "gate": "<einer der gates dieses Eintrags>", "violated": true|false, "evidence": "<kurzes wörtliches Zitat aus dem Entwurf>"},
     {"card_contradiction": true, "card_id": "<id einer geerdeten Fachkarte>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"},
+    {"matrix_contradiction": true, "cell_id": "<id einer Matrix-Zeile>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"},
     {"calc_violation": true, "calc": "<name oder calc_id eines berechneten Werts>", "violated": true, "evidence": "<wörtliches Zitat der widersprechenden Stelle aus dem Entwurf>"}
   ],
   "verdict": "clean|violation"

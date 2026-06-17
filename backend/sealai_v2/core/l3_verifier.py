@@ -144,6 +144,7 @@ class L3Verifier:
         answer_text: str,
         grounding_facts: tuple[GroundingFact, ...] = (),
         computed_values: tuple[ComputedValue, ...] = (),
+        matrix_facts: tuple[GroundingFact, ...] = (),
     ) -> _RawVerdict:
         gf_payload = [
             {"text": f.text, "card_id": f.card_id, "quelle": f.quelle}
@@ -153,16 +154,21 @@ class L3Verifier:
             {"name": c.name, "value": c.value, "unit": c.unit, "calc_id": c.calc_id}
             for c in computed_values
         ]
+        mx_payload = [
+            {"cell_id": f.card_id, "text": f.text, "quelle": f.quelle}
+            for f in matrix_facts
+        ]
         system = self._assembler.verifier_system_prompt(
             traps=_trap_payload(self._catalog),
             grounding_facts=gf_payload,
             computed_values=cv_payload,
+            matrix_facts=mx_payload,
         )
         user = (
             f"FRAGE:\n{question}\n\n"
             f'ENTWURFSANTWORT (zu prüfen):\n"""\n{answer_text}\n"""\n\n'
-            "Prüfe die Entwurfsantwort gegen den Fallen-Katalog, die geerdeten Fakten und die "
-            "berechneten Werte und gib NUR das JSON zurück."
+            "Prüfe die Entwurfsantwort gegen den Fallen-Katalog, die geerdeten Fakten, die "
+            "Verträglichkeits-Matrix und die berechneten Werte und gib NUR das JSON zurück."
         )
         res = await self._client.generate(
             system=system, user=user, model_config=self._model_config
@@ -171,8 +177,13 @@ class L3Verifier:
         calc_refs = frozenset(
             [c.name for c in computed_values] + [c.calc_id for c in computed_values]
         )
+        matrix_ids = frozenset(f.card_id for f in matrix_facts if f.card_id)
         return self._parse(
-            res.text, draft=answer_text, card_ids=card_ids, calc_refs=calc_refs
+            res.text,
+            draft=answer_text,
+            card_ids=card_ids,
+            calc_refs=calc_refs,
+            matrix_ids=matrix_ids,
         )
 
     def _parse(
@@ -181,6 +192,7 @@ class L3Verifier:
         draft: str = "",
         card_ids: frozenset[str] = frozenset(),
         calc_refs: frozenset[str] = frozenset(),
+        matrix_ids: frozenset[str] = frozenset(),
     ) -> _RawVerdict:
         raw = (raw or "").strip()
         try:
@@ -206,6 +218,24 @@ class L3Verifier:
                         review_state="reviewed",  # cards injected are reviewed
                         evidence=evidence,
                         kind="card",
+                    )
+                )
+                continue
+            # Gap #2 (Step B) — a contradiction of a reviewed §4 matrix verdict that was injected.
+            # CORRECTIVE (kind="matrix"): unlike cards, a matrix contradiction drives a regenerate/
+            # hedge — the replacement fact is the reviewed cell's verdict text (integrity preserved:
+            # the correction comes only from the reviewed matrix, never free-generated).
+            if item.get("matrix_contradiction") is True:
+                cid = str(item.get("cell_id", ""))
+                if cid not in matrix_ids:
+                    continue  # only a matrix cell shown to L3 can be contradicted (no invented ids)
+                findings.append(
+                    VerifierFinding(
+                        trap_id=cid,
+                        gate="confident_wrong",
+                        review_state="reviewed",  # matrix cells injected are reviewed
+                        evidence=evidence,
+                        kind="matrix",
                     )
                 )
                 continue
@@ -411,6 +441,61 @@ def build_calc_leak_hedge(
     )
 
 
+def build_matrix_correction_note(
+    matrix_facts: tuple[GroundingFact, ...], findings: tuple[VerifierFinding, ...]
+) -> str | None:
+    """The §4-matrix-grounded correction for a regeneration (Gap #2, Step B) — built ONLY from the
+    reviewed matrix cells that were flagged (integrity rule: the replacement fact is the reviewed
+    cell's verdict text, never free-generated). Returns None when no flagged cell is available."""
+    by_id = {f.card_id: f for f in matrix_facts if f.card_id}
+    seen: set[str] = set()
+    facts: list[str] = []
+    for f in findings:
+        if f.kind != "matrix" or f.trap_id in seen:
+            continue
+        cell = by_id.get(f.trap_id)
+        if cell is None or not cell.text.strip():
+            continue
+        seen.add(f.trap_id)
+        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+    if not facts:
+        return None
+    bullets = "\n".join(f"- {c}" for c in facts)
+    return (
+        "Die Verifikation (L3) hat in deinem Entwurf eine Verträglichkeits-Aussage markiert, die "
+        "einem GEPRÜFTEN Matrix-Verdikt widerspricht. Korrigiere die Antwort und stütze dich dabei "
+        "AUSSCHLIESSLICH auf diese geprüften Verträglichkeits-Fakten (keine eigene Gegenbehauptung "
+        "erfinden):\n" + bullets
+    )
+
+
+def build_matrix_hedge(
+    matrix_facts: tuple[GroundingFact, ...], findings: tuple[VerifierFinding, ...]
+) -> str:
+    """Deterministic fail-closed fallback for a persisting matrix contradiction. States the reviewed
+    verdict (L3 holds it) + the verify/no-release caveat; never echoes the draft's wrong claim."""
+    by_id = {f.card_id: f for f in matrix_facts if f.card_id}
+    seen: set[str] = set()
+    facts: list[str] = []
+    for f in findings:
+        if f.kind != "matrix" or f.trap_id in seen:
+            continue
+        cell = by_id.get(f.trap_id)
+        if cell is None or not cell.text.strip():
+            continue
+        seen.add(f.trap_id)
+        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+    bullets = "\n".join(f"- {c}" for c in facts)
+    return (
+        "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat im Entwurf eine "
+        "Verträglichkeits-Aussage markiert, die einem geprüften Verdikt widerspricht. Nach geprüftem "
+        "Stand gilt:\n"
+        + bullets
+        + "\nDas ist nur eine ingenieurtechnische Orientierung — bitte gegen das Datenblatt des "
+        "konkreten Werkstoffs bzw. mit dem Hersteller verifizieren; keine Freigabe."
+    )
+
+
 def _reviewed_traps(
     findings: tuple[VerifierFinding, ...],
 ) -> tuple[VerifierFinding, ...]:
@@ -418,6 +503,16 @@ def _reviewed_traps(
     'card') and draft matches are FLAG-only — corrections come ONLY from reviewed traps (integrity)."""
     return tuple(
         f for f in findings if f.review_state == "reviewed" and f.kind == "trap"
+    )
+
+
+def _reviewed_matrix(
+    findings: tuple[VerifierFinding, ...],
+) -> tuple[VerifierFinding, ...]:
+    """Reviewed MATRIX findings (Gap #2, Step B) — also drive a block/correction (the §4 matrix is a
+    reviewed correction source beside the trap catalog), with the reviewed cell's verdict as the fact."""
+    return tuple(
+        f for f in findings if f.review_state == "reviewed" and f.kind == "matrix"
     )
 
 
@@ -432,18 +527,23 @@ async def run_verify(
     grounding_facts: tuple[GroundingFact, ...] = (),
     computed_values: tuple[ComputedValue, ...] = (),
     not_computed: tuple[NotComputed, ...] = (),
+    matrix_facts: tuple[GroundingFact, ...] = (),
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
     M3/M4: L3 also sees the reviewed grounding facts + computed values and may FLAG a card or calc
     contradiction — but card/calc findings never block/correct (only reviewed TRAP findings do).
-    M8-C: the deterministic parametric-leak detector runs server-side on the draft AND on the
-    regeneration (kind="calc_leak"); a leak BLOCKS — regenerate-once against a CalcResult-built
-    note, hedge without the number if it re-fires (owner decision 5). ``not_computed`` carries the
+    Gap #2 (Step B): L3 also sees the reviewed §4 matrix verdicts; a reviewed MATRIX contradiction
+    BLOCKS like a reviewed trap — regenerate-once against the cell's verdict, hedge if it re-fires
+    (the matrix is a reviewed correction source beside the catalog; the replacement fact comes only
+    from the reviewed cell). M8-C: the deterministic parametric-leak detector runs server-side on the
+    draft AND on the regeneration (kind="calc_leak"); a leak BLOCKS. ``not_computed`` carries the
     kern's fail-closed reasons so note/hedge can NAME the missing inputs.
     ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(...)``)."""
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
-    raw = await verifier.verify(question, draft.text, grounding_facts, computed_values)
+    raw = await verifier.verify(
+        question, draft.text, grounding_facts, computed_values, matrix_facts
+    )
     findings = raw.findings + _leak_findings(leaks)
     if not findings:
         return draft, VerifierVerdict(
@@ -451,7 +551,8 @@ async def run_verify(
         )
 
     reviewed = _reviewed_traps(raw.findings)
-    if not reviewed and not leaks:
+    reviewed_mx = _reviewed_matrix(raw.findings)
+    if not reviewed and not reviewed_mx and not leaks:
         # draft-trap and/or card-contradiction matches → advisory FLAG, never block/correct
         return draft, VerifierVerdict(
             action=VerifierAction.FLAG,
@@ -460,7 +561,7 @@ async def run_verify(
             raw=raw.raw,
         )
 
-    # Blocking cause: a reviewed trap and/or a deterministic calc leak → regenerate once.
+    # Blocking cause: a reviewed trap, a reviewed matrix contradiction, and/or a calc leak → regen once.
     notes: list[str] = []
     if leaks:
         notes.append(
@@ -472,9 +573,14 @@ async def run_verify(
         trap_note = build_correction_note(catalog, reviewed)
         if trap_note is not None:
             notes.append(trap_note)
+    if reviewed_mx:
+        mx_note = build_matrix_correction_note(matrix_facts, reviewed_mx)
+        if mx_note is not None:
+            notes.append(mx_note)
 
     persisting_leaks = leaks
     persisting_traps = reviewed
+    persisting_mx = reviewed_mx
     if notes:
         regen = await generator.generate(
             question, flags=flags, correction_note="\n\n".join(notes)
@@ -483,10 +589,11 @@ async def run_verify(
             regen.text, computed_values=computed_values
         )
         raw2 = await verifier.verify(
-            question, regen.text, grounding_facts, computed_values
+            question, regen.text, grounding_facts, computed_values, matrix_facts
         )
         persisting_traps = _reviewed_traps(raw2.findings)
-        if not persisting_traps and not persisting_leaks:
+        persisting_mx = _reviewed_matrix(raw2.findings)
+        if not persisting_traps and not persisting_mx and not persisting_leaks:
             return regen, VerifierVerdict(
                 action=VerifierAction.CORRECTED,
                 findings=findings,
@@ -496,11 +603,13 @@ async def run_verify(
             )
 
     # No usable correction, or the regeneration still tripped L3 → fail closed to a hedge.
-    # A persisting leak takes hedge precedence: its hedge is the one that must not carry a number.
+    # Hedge precedence: a persisting leak first (its hedge must not carry a number), then matrix, then trap.
     if persisting_leaks:
         hedge_text = build_calc_leak_hedge(
             persisting_leaks, computed_values=computed_values, not_computed=not_computed
         )
+    elif persisting_mx or reviewed_mx:
+        hedge_text = build_matrix_hedge(matrix_facts, reviewed_mx or persisting_mx)
     else:
         hedge_text = build_hedge(reviewed or persisting_traps, catalog)
     hedge = Answer(

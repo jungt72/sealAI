@@ -96,3 +96,24 @@ already treats a ≤2 % restate as referencing; align the L3 prompt/critic to th
 Zero-FP against the parametric leak cases (a genuine self-computed leak must still be caught).
 
 **Not cutover/pilot-gating** (fail-safe direction; #1 fast-follow).
+
+## 6. L1 emits a quantitative lifetime range — tighten the no-life-number norm (owner-filed 2026-06-17, **priority: high**)
+
+Surfaced at the Gap #2 Step B eval-REPLAY (`gap2-stepB`, UNCERT-02, flags_on): L1 answered the
+lifetime question with a **quantitative range** — "einige tausend bis zehntausend Stunden" (als
+Orientierung). The judge flagged it (`invented_precision`); the owner adjudicated the run **PASS**
+(given the orientation framing + caveats), but filed this as a real **L1 soft-spot** — it touches the
+**claim-boundary core** (the doctrine forbids predicting a concrete lifetime; build-spec §4 "keine
+Lebensdauer-Punktzahl"). NOT matrix-related (UNCERT-02 is matrix-untouched; Step B's L3 matrix
+correction caused none of this — it's L1 answer variance).
+
+**Direction (owner, 2026-06-17):** tighten the L1 norm so it does **not** emit quantitative lifetime
+predictions (incl. ranges/orders-of-magnitude) — instead **explain the dependencies** (Temperatur,
+Schmierung, Wellenoberfläche, Medium, Druck, Material, Rundlauf) and **point to the datasheet/field
+test / the design check**, never a number. Consolidates + raises priority on **#4** (life-number
+doctrine line — judge rubric + `system_l1.jinja`) with this concrete live datapoint.
+
+**Acceptance:** UNCERT-02 (+ UNCERT-01/the life-number cases) ground the fix; eval-REPLAY Schranken
+hold (no invented precision, incl. no lifetime range); zero-FP against legitimate
+range-with-caveat quantities elsewhere (Temperatur/Verpressung ranges stay allowed). Own change +
+eval-gate; **not** part of the Gap #2 matrix arc.
