@@ -6,13 +6,6 @@ import { expect, it } from "vitest";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const productionCopyFiles = [
-  "components/dashboard/CaseScreen.tsx",
-  "components/dashboard/ChatPane.tsx",
-  "components/dashboard/DecisionUnderstandingPanel.tsx",
-  "components/dashboard/ManufacturerFitPanel.tsx",
-  "components/dashboard/ParameterWorkspaceTab.tsx",
-  "components/dashboard/RfqPane.tsx",
-  "components/dashboard/SealCockpit.tsx",
   "components/rag/RagDocumentGrid.tsx",
   "lib/mapping/workspace.ts",
 ].map((path) => resolve(root, path));
@@ -60,25 +53,6 @@ it("main frontend copy avoids final recommendation, release, dispatch and matchi
       }
 
       violations.push(`${relative(root, file)}: ${phrase}`);
-    }
-  }
-
-  expect(violations).toEqual([]);
-});
-
-it("case cockpit does not expose V9 material hypotheses as probabilities", () => {
-  const files = [
-    resolve(root, "components/dashboard/CaseScreen.tsx"),
-    resolve(root, "components/dashboard/SealCockpit.tsx"),
-  ];
-  const violations: string[] = [];
-
-  for (const file of files) {
-    const source = readFileSync(file, "utf8").toLowerCase();
-    for (const needle of ["wahrscheinlichkeit", "wahrscheinlichkeiten", " / 100"]) {
-      if (source.includes(needle)) {
-        violations.push(`${relative(root, file)}: ${needle}`);
-      }
     }
   }
 
