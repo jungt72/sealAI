@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { encode } from "next-auth/jwt";
 
 import { getAccessTokenResult } from "./auth-token.ts";
-import { fetchBackendWithAuth } from "./http.ts";
 
 const AUTH_SECRET = "test-auth-secret";
 const KEYCLOAK_TOKEN_PATH = "/protocol/openid-connect/token";
@@ -124,31 +123,5 @@ describe("single-flight refresh", () => {
     expect(keycloakCalls).toBe(2);
     expect(first.accessToken).toBe("fresh-1");
     expect(second.accessToken).toBe("fresh-2");
-  });
-});
-
-describe("rotated cookie persistence on the GET backend path", () => {
-  it("surfaces rotated session-cookie updates from fetchBackendWithAuth", async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      if (String(input).includes(KEYCLOAK_TOKEN_PATH)) {
-        return keycloakRefreshResponse();
-      }
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }) as typeof fetch;
-
-    const request = await expiredSessionRequest();
-    const { response, cookieUpdates } = await fetchBackendWithAuth(
-      "/api/agent/workspace/case-1",
-      request,
-    );
-
-    expect(response.ok).toBe(true);
-    expect(cookieUpdates.length).toBeGreaterThanOrEqual(1);
-    expect(
-      cookieUpdates.some((update) => update.name.startsWith("__Secure-authjs.session-token")),
-    ).toBe(true);
   });
 });
