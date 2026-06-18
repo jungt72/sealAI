@@ -101,12 +101,17 @@ rules). The **CI-trigger / `ruff format` scope questions remain separately parke
     owned; never read/printed by agents) — re-enforce as soon as the incident is
     resolved.
 
-## V2.0 track is not in the prod path (yet)
+## V2.0 track: live `backend-v2`, deployed under Gap #1/#2 discipline
 
-The green-field `backend/sealai_v2/` tree (`feat/v2*`) is **not cut over** to
-demo/main and has **no release path**: `ops/release-backend.sh`, the deploy gate, the
-pre-deploy pytest sentinel, and the rollback anchor all target the **V1** runtime
-(`backend/app/`) unchanged. There is no V2 prod deploy to log. A future cutover is a
-deliberate, owner-gated arc of its own — until then, treat everything in this file as
-V1-only. (V2 CI lives in `.github/workflows/v2-contracts.yml`; V2 doctrine:
-`AGENTS.md § "V2.0 green-field track"`.)
+`backend/sealai_v2/` is **de-facto live in prod** — the `sealai-backend-v2` container runs and nginx
+routes `/api/v2` → `sealai-backend-v2:8001` (Gap #1/#2 shipped there; durable `sealai_v2` Postgres,
+restart-survival proven; see the 2026-06-17 `GOVERNANCE_LOG`). It does **NOT** go through the V1 release
+path: `ops/release-backend.sh`, the deploy gate, the pre-deploy pytest sentinel, and the rollback anchor
+all still target the **V1** runtime (`backend/app/`) unchanged. A V2 change deploys with **Gap #1/#2
+discipline** instead: **eval-gate green first** → read the **rollback image from the running daemon**
+(`docker inspect sealai-backend-v2 --format '{{.Config.Image}}'`, never memory) → rebuild + recreate
+**only** `backend-v2` surgically (`up -d --no-deps backend-v2`) → **restart-survival** check (durable
+`sealai_v2` Postgres; catalog/code are file-backed in the image, no DB migration) → live `/api/v2` smoke
+→ **`GOVERNANCE_LOG` entry** (new pinned `@sha256`, rollback target, eval-gate result, smoke). The full
+**demo→main convergence and the V1→V2 cutover remain owner-gated**. (V2 CI: `.github/workflows/v2-contracts.yml`;
+V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.)

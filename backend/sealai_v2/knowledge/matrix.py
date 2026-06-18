@@ -22,7 +22,6 @@ Steuerlogik). The query returns verdict+source facts only.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +30,7 @@ from sealai_v2.core.contracts import (
     GroundingFact,
     MatrixCell,
 )
+from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
 _SEED_DIR = Path(__file__).resolve().parent
@@ -48,28 +48,7 @@ _REVIEWED_PROV_PREFIXES = (
 # a cell is retrieved when at least this many of its scope tags appear in the query — two keeps it
 # precise (one material + its medium/condition), mirroring the Fachkarten retriever (_MIN_SCOPE_HITS).
 _MIN_SCOPE_HITS = 2
-_TOKEN_RE = re.compile(r"[^0-9a-zA-ZäöüßÄÖÜ]+")
-
-
-def _query_tokens(text: str) -> set[str]:
-    return {t for t in _TOKEN_RE.split(text.lower()) if t}
-
-
-def _tag_matches(tag: str, q_tokens: set[str], q_norm: str) -> bool:
-    """Word-boundary match (NOT raw substring — German compounds make substring too greedy, e.g.
-    'heiß' ⊂ 'heißdampf'). A multi-word/hyphen phrase matches as a substring (phrases are distinctive);
-    a single word matches exactly, or — for tags ≥6 chars — as a prefix of a query token (inflection,
-    e.g. 'mineralöl' ⊂ 'mineralölen', 'schnelldrehend' ⊂ 'schnelldrehende')."""
-    tag = tag.strip().lower()
-    if not tag:
-        return False
-    if " " in tag or "-" in tag:
-        return tag in q_norm
-    if tag in q_tokens:
-        return True
-    if len(tag) >= 6:
-        return any(tok.startswith(tag) for tok in q_tokens if len(tok) >= 6)
-    return False
+# token/tag matching primitives now live in core.text_match (shared with the L3 trap topic-gate).
 
 
 @dataclass(frozen=True)
@@ -172,17 +151,17 @@ class InProcessCompatibilityMatrix:
         q_norm = " ".join(
             [query_text] + [str(getattr(f, "wert", "") or "") for f in case_facts]
         ).lower()
-        q_tokens = _query_tokens(q_norm)
+        q_tokens = query_tokens(q_norm)
         scored: list[tuple[int, MatrixCell]] = []
         for c in self._catalog.cells:
             mat_hit = any(
-                _tag_matches(t, q_tokens, q_norm) for t in c.scope.get("material", [])
+                tag_matches(t, q_tokens, q_norm) for t in c.scope.get("material", [])
             )
             ctx_hits = sum(
                 1
                 for dim in ("medium", "bedingung")
                 for t in c.scope.get(dim, [])
-                if _tag_matches(t, q_tokens, q_norm)
+                if tag_matches(t, q_tokens, q_norm)
             )
             total = (1 if mat_hit else 0) + ctx_hits
             # require the material AND at least one medium/condition tag (≥2, and material is one of them)

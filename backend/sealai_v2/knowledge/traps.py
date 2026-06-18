@@ -41,10 +41,24 @@ class TrapEntry:
     review_state: str  # "reviewed" | "draft" — stamped from the JSON block
     tags: tuple[str, ...] = ()
     xrefs: tuple[str, ...] = ()
+    # Topic-scoped correction split (OPTIMIZE_BACKLOG #5): for a material/seal-recommending reviewed
+    # trap, `correct` is partitioned into a topic-AGNOSTIC general fact (always injected by L3) and a
+    # topic-SCOPED recommendation (injected only when the question matches `applies_to`). union(general,
+    # recommendation) == correct (faithful slices). Unsplit traps leave these empty and use `correct`.
+    correct_general: str = ""
+    correct_recommendation: str = ""
+    applies_to: tuple[
+        str, ...
+    ] = ()  # medium/topic tags gating `correct_recommendation`
 
     @property
     def reviewed(self) -> bool:
         return self.review_state == "reviewed"
+
+    @property
+    def has_split(self) -> bool:
+        """True iff this trap carries a topic-scoped recommendation (→ L3 gates it on `applies_to`)."""
+        return bool(self.correct_recommendation.strip())
 
 
 @dataclass(frozen=True)
@@ -77,6 +91,9 @@ def _entry(raw: dict, review_state: str) -> TrapEntry:
         review_state=review_state,
         tags=tuple(str(t) for t in raw.get("tags", [])),
         xrefs=tuple(str(x) for x in raw.get("xrefs", [])),
+        correct_general=str(raw.get("correct_general", "")),
+        correct_recommendation=str(raw.get("correct_recommendation", "")),
+        applies_to=tuple(str(a) for a in raw.get("applies_to", [])),
     )
 
 
@@ -108,6 +125,17 @@ def load_traps(path: Path | None = None) -> TrapCatalog:
                 raise ValueError(
                     f"{e.id}: reviewed entry must have a non-empty 'correct' fact"
                 )
+            # Split discipline (OPTIMIZE_BACKLOG #5): a topic-scoped recommendation is only usable with
+            # its topic-agnostic general fact AND its applies_to topic — a split is complete or absent.
+            if e.correct_recommendation.strip():
+                if not e.correct_general.strip():
+                    raise ValueError(
+                        f"{e.id}: correct_recommendation requires a non-empty correct_general"
+                    )
+                if not e.applies_to:
+                    raise ValueError(
+                        f"{e.id}: correct_recommendation requires a non-empty applies_to"
+                    )
             entries.append(e)
     if not entries:
         raise ValueError("trap catalog is empty")

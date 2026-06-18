@@ -482,3 +482,175 @@ def test_precision_draft_check_via_verify():
     client = ScriptedFakeLlmClient([_prec_violation(ev)])
     raw = asyncio.run(_prec_verifier(client).verify("Frage?", draft))
     assert raw.findings == ()
+
+
+# --- OPTIMIZE_BACKLOG #5: topic-scoped correction ("reviewed ≠ topically appropriate") -----------
+# Built against the REAL catalog: a material-recommending reviewed trap injects its topic-AGNOSTIC
+# `correct_general` always, but its topic-SCOPED `correct_recommendation` ONLY when the question matches
+# `applies_to`. Floor is deterministic (pure builders + scripted fake client; no live LLM).
+from sealai_v2.knowledge.traps import load_traps as _load_traps  # noqa: E402
+
+_REAL = _load_traps()
+_ACETONE_Q = (
+    "Ich brauche eine Dichtung, die gegen Aceton beständig ist, dauerhaft 180 °C "
+    "aushält und möglichst günstig ist."
+)
+_OIL_Q = "Unsere EPDM-Wellendichtung quillt in unserem Hydrauliköl — woran liegt das?"
+_DEFAULT01_Q = (
+    "Wir verbauen seit Jahren NBR an allen unseren Getrieben. Jetzt haben wir ein neues "
+    "Getriebe mit Synthetiköl bei 130 °C Dauertemperatur. NBR wie immer?"
+)
+
+
+def _epdm_finding() -> VerifierFinding:
+    return VerifierFinding(
+        "TRAP-EPDM-MINERALOEL",
+        "confident_wrong",
+        "reviewed",
+        "EPDM ist ein polarer Kautschuk",
+    )
+
+
+def _real_verifier(client) -> L3Verifier:
+    return L3Verifier(client, VerifierPromptAssembler(), ModelConfig("fake-l3"), _REAL)
+
+
+def _real_generator(client) -> L1Generator:
+    return L1Generator(client, PromptAssembler(), ModelConfig("fake-l1"))
+
+
+def test_topic_scope_pure_acetone_general_only_no_oil_rec():
+    # an EPDM-MINERALOEL finding on an ACETONE question: general (polarity) injected, oil rec suppressed
+    note = build_correction_note(_REAL, (_epdm_finding(),), question=_ACETONE_Q)
+    hedge = build_hedge((_epdm_finding(),), _REAL, question=_ACETONE_Q)
+    for out in (note, hedge):
+        assert out is not None
+        assert (
+            "unpolar" in out.lower()
+        )  # the topic-agnostic correction IS present (polarity fixed)
+        # the topic-scoped material recommendation (acetone-unsuitable!) is NOT injected
+        assert "Mineralöl-Hydraulik" not in out
+        assert "NBR" not in out and "FKM" not in out
+
+
+def test_topic_scope_e2e_acetone_hedge_no_oil_recommendation():
+    # "EPDM polar" draft on the acetone question → regen note + BLOCKED_HEDGE carry no acetone-unsuitable
+    # material; polarity still corrected. (Scripted: verify→regen→verify-persists → hedge.)
+    client = ScriptedFakeLlmClient(
+        [
+            _violation("TRAP-EPDM-MINERALOEL", "confident_wrong"),
+            "Eine überarbeitete Antwort.",
+            _violation("TRAP-EPDM-MINERALOEL", "confident_wrong"),
+        ]
+    )
+    draft = Answer(
+        text="EPDM ist ein polarer Kautschuk; für Aceton bei 180 °C nimm einfach EPDM.",
+        model="fake-l1",
+    )
+    answer, verdict = asyncio.run(
+        run_verify(
+            _real_verifier(client),
+            _real_generator(client),
+            _REAL,
+            _ACETONE_Q,
+            draft,
+            flags=Flags(),
+        )
+    )
+    assert verdict.action == VerifierAction.BLOCKED_HEDGE
+    # Assert on the DETERMINISTIC user-facing hedge (the bug surface), not the assembled regen prompt:
+    # the L1 system prompt legitimately lists material names in its static trap-examples, so it is not a
+    # clean substrate. The scoped correction-NOTE content is asserted in the pure-function test above.
+    assert "unpolar" in answer.text.lower()  # polarity still corrected (general fact)
+    assert (
+        "NBR" not in answer.text and "FKM" not in answer.text
+    )  # no acetone-unsuitable material
+
+
+def test_topic_scope_home_topic_mineraloil_keeps_recommendation():
+    # NO-REGRESSION: on a mineral-oil question the oil recommendation IS injected (scopes, not strips)
+    note = build_correction_note(_REAL, (_epdm_finding(),), question=_OIL_Q)
+    hedge = build_hedge((_epdm_finding(),), _REAL, question=_OIL_Q)
+    for out in (note, hedge):
+        assert "unpolar" in out.lower()
+        assert "NBR" in out and "FKM" in out  # topic matches → recommendation present
+
+
+def test_topic_scope_home_topic_default01_nbr_dauertemp_keeps_recommendation():
+    # O3 semantic-token gate end-to-end: DEFAULT-01's real question fires NBR-DAUERTEMP's recommendation
+    nbr = VerifierFinding(
+        "TRAP-NBR-DAUERTEMP", "confident_wrong", "reviewed", "NBR wie immer"
+    )
+    note = build_correction_note(_REAL, (nbr,), question=_DEFAULT01_Q)
+    assert "HNBR" in note and "FKM" in note
+
+
+def test_recommendation_applies_unit_table():
+    from sealai_v2.core.l3_verifier import _recommendation_applies as applies
+
+    epdm = _REAL.by_id("TRAP-EPDM-MINERALOEL")
+    nbr = _REAL.by_id("TRAP-NBR-DAUERTEMP")
+    prec = _REAL.by_id("PREC-EINZELZAHL")  # unsplit → empty applies_to
+    assert applies(epdm, _ACETONE_Q, None) is False  # acetone → suppress
+    assert applies(epdm, "EPDM quillt in meinem Hydrauliköl", None) is True
+    assert applies(epdm, "EPDM in Mineralöl bei 80 °C", None) is True
+    assert (
+        applies(epdm, "Dichtung in Schmieröl", None) is False
+    )  # synonym miss (conservative)
+    assert applies(prec, "egal was", None) is False  # empty applies_to → never
+    assert applies(nbr, _DEFAULT01_Q, None) is True
+    assert (
+        applies(nbr, "Die Grenze liegt bei 130 °C", None) is False
+    )  # O3: bare '130' is not a tag
+
+
+def test_topic_scope_unsplit_trap_unchanged():
+    # an unsplit reviewed trap still injects its whole `correct` (fallback), regardless of question
+    leck = _REAL.by_id("CONF-PAUSCHAL-BESTAENDIG")  # method trap, no split
+    assert not leck.has_split
+    f = VerifierFinding(leck.id, "confident_wrong", "reviewed", "pauschal ja")
+    note = build_correction_note(_REAL, (f,), question="irgendeine Frage")
+    assert leck.correct[:30] in note  # full correct injected unchanged
+
+
+def test_recommends_topic_unsuitable_material_detector():
+    from sealai_v2.eval.report import _recommends_topic_unsuitable_material as flag
+
+    # a final that RECOMMENDS an acetone-unsuitable material → flagged
+    assert flag("Für Aceton bei 180 °C nimm NBR oder FKM.", "CONFLICT-01") is True
+    # a correct NEGATIVE statement (the material is attacked) → NOT flagged
+    assert (
+        flag("Aceton greift NBR und FKM an; nimm stattdessen EPDM/FFKM.", "CONFLICT-01")
+        is False
+    )
+    # a deterministic l3-hedge is skipped at the gate wrapper
+    from sealai_v2.eval.report import _final_answer_recommends_unsuitable as gate
+
+    assert (
+        gate(
+            {
+                "case_id": "CONFLICT-01",
+                "answer_model": "l3-hedge",
+                "answer_text": "nimm NBR",
+            }
+        )
+        is False
+    )
+    # a case not in the reviewed map → never flagged
+    assert flag("nimm NBR", "TRAP-02") is False
+    # live-eval-surfaced false positives (fix-5-l3-topic-scope REPLAY), now regression-locked:
+    # FFKM ⊅ FKM and HNBR ⊅ NBR — FFKM/HNBR are the SUITABLE recs, not the attacked materials
+    assert (
+        flag("Für Aceton FFKM nehmen; FFKM ist die sichere Wahl.", "CONFLICT-01")
+        is False
+    )
+    # a markdown-bolded negation ('**nicht** geeignet') must still guard the 'geeignet' recommend-token
+    assert (
+        flag(
+            "**Standard-Elastomere (NBR, EPDM, FKM, VMQ)** → für Aceton **nicht** geeignet.",
+            "CONFLICT-01",
+        )
+        is False
+    )
+    # a genuine misdirection ('NBR ist geeignet', no negation) is still caught
+    assert flag("Für Aceton ist NBR gut geeignet.", "CONFLICT-01") is True

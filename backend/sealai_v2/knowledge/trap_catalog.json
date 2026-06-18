@@ -11,6 +11,9 @@
         "Hydrolyse nicht erwähnt"
       ],
       "correct": "FKM hydrolysiert/verspröttet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf. EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
+      "correct_general": "FKM hydrolysiert/verspröttet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
+      "correct_recommendation": "EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
+      "applies_to": ["dampf", "sattdampf", "heißdampf", "sip", "heißwasser"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:TRAP-01(must_catch)", "eval:SAFETY-02(must_catch)"],
       "tags": ["FKM", "Dampf"],
@@ -26,6 +29,9 @@
         "erneut EPDM für eine Mineralöl-/Fett-Anwendung empfohlen"
       ],
       "correct": "EPDM ist UNPOLAR und quillt grundsätzlich stark in Mineralölen/Kohlenwasserstoffen/Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler. Für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit); EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit.",
+      "correct_general": "EPDM ist UNPOLAR und quillt grundsätzlich stark in Mineralölen/Kohlenwasserstoffen/Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler.",
+      "correct_recommendation": "Für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit); EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit.",
+      "applies_to": ["mineralöl", "hydrauliköl", "kohlenwasserstoff", "öl", "schmierfett"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:TRAP-02(must_catch)", "eval:COMBO-03(must_catch)", "divergence:m1-baseline"],
       "tags": ["EPDM", "Mineralöl", "Polarität"],
@@ -38,6 +44,9 @@
         "NBR ohne Ozon-/Witterungs-Warnung für den Außeneinsatz bestätigt"
       ],
       "correct": "NBR ist anfällig für Ozon-/UV-/Witterungsrissbildung → für Dauer-Außeneinsatz problematisch. Je nach Medium HNBR, EPDM oder CR; bei Öl-Kontakt HNBR (Öl + bessere Ozonbeständigkeit). Das Medium mitabfragen, weil es die Wahl mitentscheidet.",
+      "correct_general": "NBR ist anfällig für Ozon-/UV-/Witterungsrissbildung → für Dauer-Außeneinsatz problematisch. Das Medium mitabfragen, weil es die Wahl mitentscheidet.",
+      "correct_recommendation": "Je nach Medium HNBR, EPDM oder CR; bei Öl-Kontakt HNBR (Öl + bessere Ozonbeständigkeit).",
+      "applies_to": ["außen", "außeneinsatz", "witterung", "uv", "ozon", "freibewitterung"],
       "gates": ["walked_into_trap"],
       "provenance": ["principles:§2", "eval:TRAP-03(must_catch)"],
       "tags": ["NBR", "Ozon"],
@@ -52,6 +61,9 @@
         "chemische Beständigkeit mit mechanischer Eignung gleichgesetzt"
       ],
       "correct": "Reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung — chemische Beständigkeit ≠ mechanische Eignung. Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound.",
+      "correct_general": "Reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung — chemische Beständigkeit ≠ mechanische Eignung.",
+      "correct_recommendation": "Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound.",
+      "applies_to": ["ptfe", "o-ring", "statisch", "statikdichtung", "kaltfluss"],
       "gates": ["walked_into_trap"],
       "provenance": ["principles:§2", "eval:TRAP-04(must_catch)"],
       "tags": ["PTFE", "Kaltfluss"],
@@ -66,6 +78,9 @@
         "Temperatur-/Konzentrationsabhängigkeit der Laugenbeständigkeit ignoriert"
       ],
       "correct": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Je nach Fall EPDM oder FFKM. Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "correct_general": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "correct_recommendation": "Je nach Fall EPDM oder FFKM.",
+      "applies_to": ["amin", "amine", "lauge", "base", "keton", "ester", "kühlmittel", "inhibitor"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:COMBO-01(must_catch)", "eval:DEFAULT-03(must_catch)"],
       "tags": ["FKM", "Amin", "Lauge"],
@@ -79,6 +94,9 @@
         "die schlechten mechanischen/abrasiven Eigenschaften übersehen"
       ],
       "correct": "VMQ hat zwar den Temperaturbereich, aber schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit → für dynamische, schnelldrehende Wellendichtungen ungeeignet. Stattdessen FKM oder PTFE-Lippe. Temperatur allein qualifiziert nicht — Dynamik + Verschleiß sind limitierend.",
+      "correct_general": "VMQ hat zwar den Temperaturbereich, aber schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit → für dynamische, schnelldrehende Wellendichtungen ungeeignet. Temperatur allein qualifiziert nicht — Dynamik + Verschleiß sind limitierend.",
+      "correct_recommendation": "Stattdessen FKM oder PTFE-Lippe.",
+      "applies_to": ["dynamisch", "schnelldrehend", "wellendichtung", "abrasiv", "welle"],
       "gates": ["walked_into_trap"],
       "provenance": ["principles:§2", "eval:COMBO-02(must_catch)"],
       "tags": ["VMQ", "dynamisch"],
@@ -93,6 +111,9 @@
         "die Synthetiköl-/Additiv-Verträglichkeit nicht geprüft"
       ],
       "correct": "NBR liegt bei ~100-120 °C an der Dauertemperaturgrenze; 130 °C dauerhaft → Verhärtung/Versprödung/kürzere Lebensdauer. Bei dieser Temperatur HNBR oder FKM; zusätzlich prüfen, ob das Synthetiköl/die Additive (Estertyp) NBR angreifen. 'NBR wie immer' ist hier riskant.",
+      "correct_general": "NBR liegt bei ~100-120 °C an der Dauertemperaturgrenze; 130 °C dauerhaft → Verhärtung/Versprödung/kürzere Lebensdauer. 'NBR wie immer' ist hier riskant.",
+      "correct_recommendation": "Bei dieser Temperatur HNBR oder FKM; zusätzlich prüfen, ob das Synthetiköl/die Additive (Estertyp) NBR angreifen.",
+      "applies_to": ["dauertemperatur", "synthetiköl", "getriebe", "hohe temperatur", "dauerbetrieb"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:DEFAULT-01(must_catch)"],
       "tags": ["NBR", "Temperatur"],
@@ -107,6 +128,9 @@
         "'food-grade' mit 'für jedes Lebensmittel geeignet' gleichgesetzt"
       ],
       "correct": "'food-grade' ≠ 'für jedes Lebensmittel geeignet': Schokolade enthält Kakaobutter/Fett, und EPDM quillt in Fetten/Ölen. Für fetthaltige Lebensmittel food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004); zusätzlich Temperatur (Conchieren) und Zulassungsnachweis prüfen.",
+      "correct_general": "'food-grade' ≠ 'für jedes Lebensmittel geeignet': Schokolade enthält Kakaobutter/Fett, und EPDM quillt in Fetten/Ölen.",
+      "correct_recommendation": "Für fetthaltige Lebensmittel food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004); zusätzlich Temperatur (Conchieren) und Zulassungsnachweis prüfen.",
+      "applies_to": ["lebensmittel", "food-grade", "fett", "schokolade", "kakaobutter", "fetthaltig"],
       "gates": ["walked_into_trap"],
       "provenance": ["principles:§2", "eval:COMBO-03(must_catch)"],
       "tags": ["EPDM", "food-grade", "Fett", "Compliance"],
@@ -171,6 +195,9 @@
         "den Dichtheit-↔-Reibung/Wirkungsgrad-Trade-off verschwiegen"
       ],
       "correct": "'Null Leckage' ist bei dynamischen Berührungsdichtungen physikalisch kaum erreichbar (ein dünner Schmierfilm ist gewollt). Maximale Dichtheit erhöht Reibung/Wärme/Verschleiß und senkt Wirkungsgrad/Lebensdauer — der Trade-off ist offenzulegen; berührungslose Labyrinth-/Spaltdichtung bzw. Gleitringdichtung je nach Priorität.",
+      "correct_general": "'Null Leckage' ist bei dynamischen Berührungsdichtungen physikalisch kaum erreichbar (ein dünner Schmierfilm ist gewollt). Maximale Dichtheit erhöht Reibung/Wärme/Verschleiß und senkt Wirkungsgrad/Lebensdauer — der Trade-off ist offenzulegen;",
+      "correct_recommendation": "berührungslose Labyrinth-/Spaltdichtung bzw. Gleitringdichtung je nach Priorität.",
+      "applies_to": ["leckage", "dichtheit", "null leckage", "dynamisch", "berührungsdichtung", "welle"],
       "gates": ["confident_wrong"],
       "provenance": ["principles:§4", "eval:CONFLICT-02(must_catch)"],
       "tags": ["Leckage", "Trade-off"],
@@ -225,6 +252,9 @@
         "kein Sicherheits-/Freigabe-Hinweis"
       ],
       "correct": "Bei Hochdruck-Gas mit schnellen Druckwechseln explosive Dekompression (RGD/ED) ansprechen — das Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse. RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936), Hochdruck → Extrusionsschutz (Stützringe); ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung.",
+      "correct_general": "Bei Hochdruck-Gas mit schnellen Druckwechseln explosive Dekompression (RGD/ED) ansprechen — das Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse. ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung.",
+      "correct_recommendation": "RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936), Hochdruck → Extrusionsschutz (Stützringe);",
+      "applies_to": ["hochdruck", "gas", "erdgas", "druckwechsel", "dekompression", "rgd"],
       "gates": ["walked_into_trap"],
       "provenance": ["eval:SAFETY-01(must_catch)"],
       "tags": ["Sicherheitskritisch", "RGD"],

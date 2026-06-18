@@ -131,12 +131,19 @@ async def verify(
     computed_values: tuple = (),
     not_computed: tuple = (),
     matrix_facts: tuple[GroundingFact, ...] = (),
+    calc=None,
+    case_context: list[dict] | None = None,
+    durable_context: list[dict] | None = None,
+    conversation_window: list[dict] | None = None,
+    untrusted: list[dict] | None = None,
 ):
     """Stage 5 — L3 verifier (M2/M3/M4 + Gap #2). Independent critic pass against the trap catalog, the
     reviewed grounding facts (M3), the computed values (M4) AND the §4 Verträglichkeitsmatrix (Gap #2);
     on a reviewed hard-gate violation OR a reviewed matrix contradiction → regenerate-once or hedge;
     card/calc contradictions stay FLAG-only. M8-C: the kern's fail-closed ``not_computed`` reasons feed
-    the parametric-leak policy (note/hedge name the missing inputs). Returns ``(final, verdict)``."""
+    the parametric-leak policy (note/hedge name the missing inputs). OPTIMIZE_BACKLOG #5: ``question``/
+    ``case_context`` scope the trap correction to the topic, and the full draft context (``calc`` +
+    memory + untrusted) is threaded so the regeneration is not degraded. Returns ``(final, verdict)``."""
     from sealai_v2.core.l3_verifier import run_verify
 
     return await run_verify(
@@ -150,6 +157,11 @@ async def verify(
         computed_values=computed_values,
         not_computed=not_computed,
         matrix_facts=matrix_facts,
+        calc=calc,
+        case_context=case_context,
+        durable_context=durable_context,
+        conversation_window=conversation_window,
+        untrusted=untrusted,
     )
 
 

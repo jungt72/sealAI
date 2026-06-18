@@ -240,6 +240,12 @@ class Pipeline:
                         computed_values=calc.computed,
                         not_computed=calc.not_computed,
                         matrix_facts=retrieval.matrix_facts,  # Gap #2 Step B: matrix = L3 correction source
+                        # OPTIMIZE_BACKLOG #5: full draft context → topic-scoped correction + non-degraded regen
+                        calc=calc,
+                        case_context=case_context or None,
+                        durable_context=durable_context or None,
+                        conversation_window=conversation_window or None,
+                        untrusted=untrusted_data,
                     )
 
             with _staged(timer, progress, "cite_ms", "cite"):

@@ -56,7 +56,12 @@ and the lines that must never be crossed while changing code.
   2. **L2 grounding/provenance** — specifics carried by curated facts with sources.
   3. **L3 verifier** (`core/l3_verifier.py`) — critic pass vs. the **trap catalog**;
      a correction's replacement fact comes **only** from a `reviewed` entry, else a
-     deterministic **hedge** — L3 never invents its own source of truth.
+     deterministic **hedge** — L3 never invents its own source of truth. The integrity rule
+     guarantees **provenance** (reviewed-sourced), **not topical fit**: a reviewed trap's `correct`
+     is split into a topic-agnostic `correct_general` (always injected) + a topic-scoped
+     `correct_recommendation` (injected only when the question matches the trap's `applies_to`), so an
+     off-topic trap firing never mis-directs with a wrong-topic material recommendation
+     (OPTIMIZE_BACKLOG #5). The general assertion always carries — the catch stays intact.
   4. **L4 human/manufacturer** — final validation; and the **eval hard Schranken**
      (no entered trap, no confident-false, no invented precision → **100 %**) measure it.
 - **The hard lines extend to V2.** Never weaken a guard, catalog, or eval test to make

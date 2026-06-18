@@ -480,7 +480,12 @@ no field-envelope state machine** (those produced the documented live bugs and a
   entry; if none is usable it emits a deterministic **hedge — never an invented counter-claim**
   (`core/l3_verifier.py::build_correction_note`/`build_hedge`). Fachkarten lifecycle: Deep Research
   is a draft/source accelerator, **not** the truth source; owner review sets `reviewed` — that gate
-  is the safety gate *and* the moat.
+  is the safety gate *and* the moat. **Provenance ≠ topical fit (OPTIMIZE_BACKLOG #5):** a `reviewed`
+  trap's `correct` is split into a topic-agnostic `correct_general` (always injected) and a
+  topic-scoped `correct_recommendation` (injected ONLY when the question matches the trap's
+  `applies_to`) — so a broad-trigger trap firing off-topic corrects the flaw without mis-directing
+  with a material recommendation wrong for THIS topic. The general assertion always carries (the
+  catch is preserved); the topic gate reuses `core/text_match.py` (shared with the §4 matrix).
 - **Green-field boundary + import-purity.** **No `sealai_v2.* ↔ app.*` imports, both directions**
   — enforced by `backend/tests/architecture/test_v2_import_boundary.py` (the keystone) so the tree
   stays cleanly deletable. **Do not carry over** the old orchestration; **G1 is finished.** Thin

@@ -5,7 +5,12 @@ arrives at M3). Hard-gate violations grounded in a ``reviewed`` entry BLOCK — 
 regenerate-once against the entry's ``correct`` fact, else a fail-closed hedge. Soft / draft-only
 matches FLAG. The integrity rule is structural: a correction's replacement fact comes ONLY from a
 ``reviewed`` catalog entry — L3 never free-generates a correction (build-spec §4 "darf nicht: eine
-eigene Wahrheitsquelle erfinden").
+eigene Wahrheitsquelle erfinden"). That guarantees PROVENANCE, not topical fit: a reviewed trap's
+``correct`` is split into ``correct_general`` (always injected) + a topic-scoped
+``correct_recommendation`` (injected only when the question matches the trap's ``applies_to``), so an
+off-topic trap firing never mis-directs with a wrong-topic material recommendation (OPTIMIZE_BACKLOG
+#5). The regenerate-once also re-answers with the FULL draft context (grounding + matrix + calc +
+memory + untrusted), not a degraded one.
 
 Provider-agnostic: this module talks to the injected ``LlmClient`` Protocol only — no OpenAI, no
 network of its own (``core`` stays I/O-free, build-spec §3). The verifier model is config; a
@@ -21,6 +26,7 @@ from dataclasses import dataclass
 from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
 from sealai_v2.core.contracts import (
     Answer,
+    CalcResult,
     ComputedValue,
     Flags,
     GroundingFact,
@@ -32,7 +38,8 @@ from sealai_v2.core.contracts import (
     VerifierPromptAssembler,
     VerifierVerdict,
 )
-from sealai_v2.knowledge.traps import TrapCatalog
+from sealai_v2.core.text_match import query_tokens, tag_matches
+from sealai_v2.knowledge.traps import TrapCatalog, TrapEntry
 
 _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-generated
 
@@ -280,11 +287,49 @@ class L3Verifier:
         return _RawVerdict(findings=tuple(findings), parse_ok=True, raw=raw[:6000])
 
 
+def _recommendation_applies(
+    entry: TrapEntry, question: str, case_context: list[dict] | None = None
+) -> bool:
+    """True iff the trap's ``applies_to`` topic appears in the question (+ case-state werte). The match
+    surface mirrors the §4 matrix (question + structured case facts) and reuses the same matcher
+    (``core.text_match``). Conservative: an empty ``applies_to`` OR no match → False → the topic-scoped
+    recommendation is suppressed (general only) — so a broad-trigger trap firing OFF-topic can never
+    inject an off-topic material recommendation (OPTIMIZE_BACKLOG #5)."""
+    if not entry.applies_to:
+        return False
+    q_norm = " ".join(
+        [question] + [str(c.get("wert", "") or "") for c in (case_context or [])]
+    ).lower()
+    q_tokens = query_tokens(q_norm)
+    return any(tag_matches(t, q_tokens, q_norm) for t in entry.applies_to)
+
+
+def _scoped_fact(
+    entry: TrapEntry, question: str, case_context: list[dict] | None
+) -> str:
+    """The topic-scoped correct fact for one entry: ``correct_general`` ALWAYS (the topic-agnostic
+    assertion — keeps the polarity/property/trade-off correction), plus ``correct_recommendation`` ONLY
+    when the question matches ``applies_to``. An unsplit entry uses its whole ``correct`` (unchanged)."""
+    if not entry.has_split:
+        return entry.correct.strip()
+    parts = [entry.correct_general.strip()]
+    if _recommendation_applies(entry, question, case_context):
+        parts.append(entry.correct_recommendation.strip())
+    return " ".join(p for p in parts if p)
+
+
 def build_correction_note(
-    catalog: TrapCatalog, findings: tuple[VerifierFinding, ...]
+    catalog: TrapCatalog,
+    findings: tuple[VerifierFinding, ...],
+    *,
+    question: str = "",
+    case_context: list[dict] | None = None,
 ) -> str | None:
     """The catalog-grounded correction for a regeneration — built ONLY from ``reviewed`` entries
-    (integrity rule). Returns None when no reviewed correct-fact is available (→ caller hedges)."""
+    (integrity rule). The injected fact is TOPIC-SCOPED (OPTIMIZE_BACKLOG #5): the topic-agnostic
+    ``correct_general`` is always used; a trap's ``correct_recommendation`` is added ONLY when the
+    question matches its ``applies_to`` (else a material rec wrong for THIS topic would mis-direct).
+    Returns None when no reviewed correct-fact is available (→ caller hedges)."""
     seen: set[str] = set()
     facts: list[str] = []
     for f in findings:
@@ -294,7 +339,7 @@ def build_correction_note(
         if entry is None or not entry.reviewed or not entry.correct.strip():
             continue
         seen.add(f.trap_id)
-        facts.append(entry.correct.strip())
+        facts.append(_scoped_fact(entry, question, case_context))
     if not facts:
         return None
     bullets = "\n".join(f"- {c}" for c in facts)
@@ -307,12 +352,19 @@ def build_correction_note(
 
 
 def build_hedge(
-    findings: tuple[VerifierFinding, ...], catalog: TrapCatalog | None = None
+    findings: tuple[VerifierFinding, ...],
+    catalog: TrapCatalog | None = None,
+    *,
+    question: str = "",
+    case_context: list[dict] | None = None,
 ) -> str:
     """Deterministic fail-closed fallback. Output integrity: it NEVER echoes the flagged WRONG claim.
     When a reviewed correct fact is available (L3 already holds it), the hedge STATES that correct
     fact + the verify/no-release caveat; otherwise it flags the concern generically without asserting
-    any replacement. Scoped per the safety language (orientation, verify, keine Freigabe)."""
+    any replacement. The stated fact is TOPIC-SCOPED (OPTIMIZE_BACKLOG #5): ``correct_general`` always,
+    a trap's topic-scoped ``correct_recommendation`` only when the question matches ``applies_to`` — so
+    a deterministic hedge can never recommend a material wrong for THIS question's topic. Scoped per the
+    safety language (orientation, verify, keine Freigabe)."""
     correct_facts: list[str] = []
     if catalog is not None:
         seen: set[str] = set()
@@ -322,7 +374,7 @@ def build_hedge(
             entry = catalog.by_id(f.trap_id)
             if entry is not None and entry.reviewed and entry.correct.strip():
                 seen.add(f.trap_id)
-                correct_facts.append(entry.correct.strip())
+                correct_facts.append(_scoped_fact(entry, question, case_context))
     if correct_facts:
         bullets = "\n".join(f"- {c}" for c in correct_facts)
         return (
@@ -532,6 +584,11 @@ async def run_verify(
     computed_values: tuple[ComputedValue, ...] = (),
     not_computed: tuple[NotComputed, ...] = (),
     matrix_facts: tuple[GroundingFact, ...] = (),
+    calc: CalcResult | None = None,
+    case_context: list[dict] | None = None,
+    durable_context: list[dict] | None = None,
+    conversation_window: list[dict] | None = None,
+    untrusted: list[dict] | None = None,
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
@@ -543,6 +600,10 @@ async def run_verify(
     from the reviewed cell). M8-C: the deterministic parametric-leak detector runs server-side on the
     draft AND on the regeneration (kind="calc_leak"); a leak BLOCKS. ``not_computed`` carries the
     kern's fail-closed reasons so note/hedge can NAME the missing inputs.
+    OPTIMIZE_BACKLOG #5: the trap correction is TOPIC-SCOPED — ``question``/``case_context`` are threaded
+    into the note/hedge builders so a material recommendation is injected only when the question matches
+    the trap's topic; and the regeneration re-answers with the FULL draft context (grounding + matrix +
+    ``calc`` + memory + untrusted), not a degraded one, so it can fix the flaw without losing grounding.
     ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(...)``)."""
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
     raw = await verifier.verify(
@@ -574,7 +635,9 @@ async def run_verify(
             )
         )
     if reviewed:
-        trap_note = build_correction_note(catalog, reviewed)
+        trap_note = build_correction_note(
+            catalog, reviewed, question=question, case_context=case_context
+        )
         if trap_note is not None:
             notes.append(trap_note)
     if reviewed_mx:
@@ -587,7 +650,16 @@ async def run_verify(
     persisting_mx = reviewed_mx
     if notes:
         regen = await generator.generate(
-            question, flags=flags, correction_note="\n\n".join(notes)
+            question,
+            flags=flags,
+            grounding_facts=grounding_facts
+            + matrix_facts,  # = l1_grounding the draft used
+            calc=calc,
+            case_context=case_context,
+            durable_context=durable_context,
+            conversation_window=conversation_window,
+            untrusted=untrusted,
+            correction_note="\n\n".join(notes),
         )
         persisting_leaks = detect_parametric_leaks(
             regen.text, computed_values=computed_values
@@ -615,7 +687,12 @@ async def run_verify(
     elif persisting_mx or reviewed_mx:
         hedge_text = build_matrix_hedge(matrix_facts, reviewed_mx or persisting_mx)
     else:
-        hedge_text = build_hedge(reviewed or persisting_traps, catalog)
+        hedge_text = build_hedge(
+            reviewed or persisting_traps,
+            catalog,
+            question=question,
+            case_context=case_context,
+        )
     hedge = Answer(
         text=hedge_text,
         model=_HEDGE_MODEL,

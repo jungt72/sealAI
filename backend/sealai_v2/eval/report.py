@@ -270,6 +270,69 @@ def _final_answer_asserts_epdm_polar(rec: dict) -> bool:
     return _asserts_epdm_polar(rec.get("answer_text", ""))
 
 
+# OPTIMIZE_BACKLOG #5 — topic-misdirection detector (advisory; owner worksheet is the authority).
+# Minimal owner-reviewed map: a case's medium → the material families that medium ATTACKS (seeded from
+# already-reviewed knowledge — CONF-SCHEIN-OPTIMUM: "Aceton greift NBR/FKM an"). A final that
+# RECOMMENDS such a material for that case is a topic-misdirection candidate (the class fixed by the
+# topic-scoped correction). Crude by design — the human read of the final is ground truth, not this.
+_CASE_UNSUITABLE_MATERIALS: dict[str, tuple[str, ...]] = {
+    "CONFLICT-01": (
+        "NBR",
+        "FKM",
+    ),  # acetone (keton) attacks NBR/FKM — CONF-SCHEIN-OPTIMUM
+}
+_RECOMMEND_RE = re.compile(
+    r"empfehl|empfiehlt|\bnimm\b|\bnehmen\b|verwend|\bw[äa]hl|\bgeeignet|\bsetz",
+    re.IGNORECASE,
+)
+_RECOMMEND_NEG = (
+    "greift",
+    "angegriffen",
+    "ungeeignet",
+    "nicht geeignet",
+    "unverträglich",
+    "quillt",
+    "versagt",
+    "kein",
+    "schlecht",
+    "kritisch",
+    "scheidet",
+    "raus",
+)
+
+
+def _recommends_topic_unsuitable_material(text: str, case_id: str) -> bool:
+    """Advisory FLAG: True iff the answer RECOMMENDS a material the case's medium attacks (per the
+    owner-reviewed map). Requires a recommend-verb NEAR the material name and no attack/negation token
+    in the window, so a correct NEGATIVE mention ('Aceton greift NBR/FKM an') does NOT false-fire."""
+    mats = _CASE_UNSUITABLE_MATERIALS.get(case_id)
+    if not mats or not text:
+        return False
+    low = text.lower()
+    for mat in mats:
+        # word-boundary match so FFKM ⊅ FKM and HNBR ⊅ NBR (those are the SUITABLE recommendations)
+        for m in re.finditer(r"\b" + re.escape(mat.lower()) + r"\b", low):
+            raw = low[max(0, m.start() - 70) : m.end() + 70]
+            # normalise markdown emphasis (`**nicht** geeignet`) + whitespace so negations match
+            # (mirrors _asserts_epdm_polar hygiene) — else a bolded 'nicht' slips the guard
+            window = re.sub(r"\s+", " ", re.sub(r"[*_`]+", "", raw))
+            if _RECOMMEND_RE.search(window) and not any(
+                neg in window for neg in _RECOMMEND_NEG
+            ):
+                return True
+    return False
+
+
+def _final_answer_recommends_unsuitable(rec: dict) -> bool:
+    """Gate-level wrapper — like the polar check, a deterministic ``l3-hedge`` is skipped (the
+    topic-scoped hedge never recommends a medium-unsuitable material)."""
+    if (rec.get("answer_model") or "") == "l3-hedge":
+        return False
+    return _recommends_topic_unsuitable_material(
+        rec.get("answer_text", ""), rec.get("case_id", "")
+    )
+
+
 def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
     L: list[str] = []
     L.append("## L3 Verifier (M2)")
@@ -335,6 +398,21 @@ def _render_l3_section(manifest: dict, recs: list[dict]) -> list[str]:
         "EPDM polar still ❌. Ground truth = the **human read of the finals** (axis-1 HUMAN-FINAL); the "
         "polar string-match is hedge-aware but advisory. A polar final that L3 did NOT catch would "
         "trigger the cross-vendor swap (M2.1) — not the case here."
+    )
+    L.append("")
+
+    # --- OPTIMIZE_BACKLOG #5 — topic-misdirection advisory (final recommends a medium-unsuitable
+    # material; owner worksheet is the authority). Only cases in the reviewed map are checked. ---
+    misdir = [r for r in recs if _final_answer_recommends_unsuitable(r)]
+    L.append(
+        "- **Topic-misdirection (final recommends a medium-unsuitable material — advisory):** "
+        + (
+            "✅ none"
+            if not misdir
+            else "⚠️ "
+            + ", ".join(f"{r['case_id']}/{r.get('column', '—')}" for r in misdir)
+            + " — owner reviews"
+        )
     )
     L.append("")
 
