@@ -109,6 +109,16 @@ class Settings(BaseSettings):
     SEALAI_ENABLE_CONVERSATION_RUNTIME: bool = True
     ENABLE_LEGACY_V2_ENDPOINT: bool = False
 
+    # Manufacturer matching / capability fit-matrix stays DISABLED for the RWDR MVP
+    # (AGENTS.md scope guard: "manufacturer matching, shortlists, winner selection …
+    # must stay disabled"). The dormant capability_service / manufacturer_fit_matrix_service
+    # / problem_first_matching_service services, the `manufacturer_fit_matrix` artifact-type
+    # entry, and the latent frontend ManufacturerFitPanel are P4 groundwork — wired to a
+    # wire field the backend never emits. This flag is the single sanctioned activation gate;
+    # flipping it is an explicit P4 product decision. Default OFF; the dormancy is enforced by
+    # backend/tests/architecture/test_mfr_match_dormant.py (V1.8 Wave 0).
+    SEALAI_ENABLE_MANUFACTURER_MATCHING: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

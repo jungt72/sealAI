@@ -119,3 +119,27 @@ infra-level (document it) vs app-layer (implement). Not a code change yet.
   and leaves the P2 lifecycle criteria and Gate-1 reshape for subsequent, separately-approved
   waves.
 - ☐ Not pushed: the branch `feat/v18-first-wave` is local on the VPS; push/PR is the user's call.
+
+---
+
+## 8. Post-audit LIVE finding — manufacturer-matching containment [ACCEPTED] (V1.8 Wave 0, 2026-06-06)
+
+> **Audit-gap:** the V1.8 deep audit scanned the **dormant trio** (`capability_service` /
+> `manufacturer_fit_matrix_service` / `problem_first_matching_service`) but **missed a live
+> path**: `graph/nodes/matching_node.py` → `agent/domain/manufacturer_rfq.py` computes
+> `match_candidates` / `winner_candidate_id` / `recommendation_identity` internally (default
+> data = Dummy provider seeding "Acme"/"SealTech"). Surfaced and verified (V1–V4) during
+> Wave 0.
+
+**No-Go verdict: CONTAINED → ACCEPTED.** The winner/recommendation is internal RFQ-handover
+only; it is walled off from every user surface on three independent layers:
+1. the wire DTO `PartnerMatchingSummary` (`extra="forbid"`) does not declare the identity
+   fields → stripped at the wire (`schemas/case_workspace.py:281,978`);
+2. the backend never emits `manufacturer_fit_matrix`, so the latent frontend
+   `ManufacturerFitPanel` (unmounted) can never light up;
+3. (backstop) the L1/L2 manufacturer/recommendation/comparative-ranking guard on ChatReply.
+
+**Enforced going forward** by `tests/architecture/test_mfr_match_dormant.py` + the default-OFF
+`SEALAI_ENABLE_MANUFACTURER_MATCHING` flag. Full evidence + C2 show-me:
+`docs/audit/v18_wave0_mfr_match_report.md`. Removal of the dormant infra remains a later
+product decision (kept as P4 groundwork).
