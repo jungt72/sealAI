@@ -4,7 +4,6 @@ import { ArrowRight, Menu } from "lucide-react";
 import { TrackedLink } from "@/components/analytics/TrackedLink";
 
 const loginHref = "/dashboard";
-const startCaseHref = "/dashboard";
 
 export default function MarketingLayout({
   children,
@@ -25,40 +24,48 @@ export default function MarketingLayout({
             Mehr erfahren <ArrowRight size={13} />
           </span>
         </TrackedLink>
-        <div className="mx-auto flex h-12 max-w-[1480px] items-center justify-between px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-8">
-            <Link href="/" className="flex shrink-0 items-center" aria-label="sealingAI Startseite">
-              <Image
-                src="/images/logo/sealingai-wordmark-seal-blue.svg"
-                alt="sealingAI"
-                width={1225}
-                height={249}
-                priority
-                sizes="(max-width: 768px) 86px, 102px"
-                className="h-auto w-[86px] object-contain sm:w-[102px]"
-              />
-            </Link>
-
+        <div className="relative mx-auto flex h-12 max-w-[1480px] items-center px-4 sm:px-6">
+          {/* left: menu */}
+          <div className="flex flex-1 items-center">
             <nav className="hidden items-center gap-6 lg:flex" aria-label="Hauptnavigation">
-              <Link href="/werkstoffe" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-seal-blue">
+              <Link href="/werkstoffe" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
                 Produkt
               </Link>
-              <Link href="/medien" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-seal-blue">
+              <Link href="/medien" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
                 Lösungen
               </Link>
-              <Link href="/wissen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-seal-blue">
+              <Link href="/wissen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
                 Wissen
               </Link>
-              <Link href={loginHref} className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-seal-blue">
+              <Link href={loginHref} className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
                 Cockpit
               </Link>
-              <Link href="/anfrage/dichtung-auslegen-lassen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-seal-blue">
+              <Link href="/anfrage/dichtung-auslegen-lassen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
                 Anfrage
               </Link>
             </nav>
+            <button
+              type="button"
+              aria-label="Menü öffnen"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#17201f]/15 text-[#17201f] lg:hidden"
+            >
+              <Menu size={16} />
+            </button>
           </div>
 
-          <div className="hidden items-center gap-3 md:flex">
+          {/* center: wordmark */}
+          <Link
+            href="/"
+            aria-label="sealingAI Startseite"
+            className="absolute left-1/2 flex -translate-x-1/2 items-center"
+          >
+            <span className="text-[18px] font-semibold tracking-[-0.01em] text-[#17201f] sm:text-[20px]">
+              sealing<span className="text-[#134e5e]">AI</span>
+            </span>
+          </Link>
+
+          {/* right: login */}
+          <div className="flex flex-1 items-center justify-end">
             <TrackedLink
               href={loginHref}
               analyticsEvent="landing_cta_clicked"
@@ -68,24 +75,6 @@ export default function MarketingLayout({
               Login
               <ArrowRight size={14} />
             </TrackedLink>
-          </div>
-
-          <div className="flex items-center gap-3 md:hidden">
-            <TrackedLink
-              href={startCaseHref}
-              analyticsEvent="landing_cta_clicked"
-              analyticsPayload={{ cta: "mobile_start", location: "header" }}
-              className="text-[13px] font-semibold text-[#134e5e]"
-            >
-              Login
-            </TrackedLink>
-            <button
-              type="button"
-              aria-label="Menü öffnen"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#17201f]/15 text-[#17201f]"
-            >
-              <Menu size={16} />
-            </button>
           </div>
         </div>
       </header>
