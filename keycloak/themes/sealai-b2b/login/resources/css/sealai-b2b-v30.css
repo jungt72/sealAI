@@ -735,3 +735,30 @@ body#keycloak-bg {
   box-shadow: none !important;
   display: none !important;
 }
+
+/* v30.2: neumorphic icon buttons (password eye-toggle + reset-login) with a gap to the field */
+.pf-v5-c-input-group {
+  gap: 12px !important;
+  align-items: stretch !important;
+  background: transparent !important;
+}
+.pf-v5-c-button.pf-m-control {
+  height: 52px !important;
+  min-width: 52px !important;
+  border: none !important;
+  border-radius: 18px !important;
+  background: #e8ebf1 !important;
+  color: #6b7280 !important;
+  box-shadow: 5px 5px 12px #c5cad6, -5px -5px 12px #ffffff !important;
+  transition: box-shadow 160ms ease, color 160ms ease !important;
+}
+.pf-v5-c-button.pf-m-control:hover,
+.pf-v5-c-button.pf-m-control:focus {
+  color: #1f2933 !important;
+  box-shadow: 6px 6px 14px #c2c7d4, -6px -6px 14px #ffffff !important;
+  outline: none !important;
+}
+.pf-v5-c-button.pf-m-control:active,
+.pf-v5-c-button.pf-m-control[aria-pressed="true"] {
+  box-shadow: inset 5px 5px 11px #c2c7d4, inset -5px -5px 11px #ffffff !important;
+}
