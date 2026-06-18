@@ -441,6 +441,13 @@ without an explicit SSoT/blueprint update.
 - `docs/V2/sealingai_v2_architektur_prinzipien.md` — the trust model + the *why* (§0/§2/§3/§4/§9).
 - `docs/V2/sealingai_eval_seed_set_v0.md` — the **acceptance ruler** (7 axes + hard Schranken).
 - `docs/V2/sealingai_system_prompt_l1.jinja` — the validated L1 generator seed.
+- `docs/V2/sealingai_v2_1_produkt_konzept.md` — **V2.1 forward SoT (the WHAT):** the explicit
+  `Case`, Eingänge × Operationen, the 7 knowledge dimensions + the norms cross-layer, the
+  calibration doctrine (§3). Evolution of V2, not a rebuild.
+- `docs/V2/sealingai_v2_1_implementierungs_konzept_cc.md` — **V2.1 forward SoT (the HOW):** the
+  gated increment build (Inc 0 read-only audit → per-increment plan → build → deploy), the self-
+  gates, the four owner-HALT points. File/module refs are **targets confirmed in Inc 0**, not facts.
+  > These two are the **forward** SoT for the next phase; `build_spec.md` stays the executable V2.0 plan.
 
 **The audit standard for this tree is the V2 build-spec + the eval seed set — not the
 V1.8 state graph.**
@@ -460,6 +467,25 @@ The pipeline is **one directed chain, no routing mesh**:
 **verstehen → grounden → antworten (mit Konfidenz) → verifizieren → zitieren.** The soft
 knowledge-vs-case distinction is LLM-handled — **no deterministic intake gate, no slot-binder,
 no field-envelope state machine** (those produced the documented live bugs and are retired here).
+
+### V2.1 model (forward — `docs/V2/sealingai_v2_1_*`)
+
+V2.1 **evolves** this tree (no rebuild). It makes today's `case_context` an explicit typed **`Case`**
+(archetype × conditions × medium × geometry × seal_spec), reached through **Eingänge** (describe/
+decode/failed-part/existing-solution) and acted on by **Operationen** (recommend/diagnose/gegencheck/
+find-alternatives/explain) — *one* Case, *one* grounded knowledge base, *one* Trust-Spine applied
+uniformly (a diagnosis / equivalence / gegencheck verdict is a grounded, verified claim like a
+recommendation). Knowledge grows in **7 owner-reviewed data dimensions** (Fachkarten, matrix,
+Rechenkern [stehen] + archetypes, failure-modes, manufacturer-capabilities, designation-schemata/
+cross-reference [neu]) with a **norms cross-layer** (no 8th silo — threads Fachkarten/matrix
+provenance, the geometry/decode hooks, the archetypes' `anwendbare_regime`; **structure now, content
+later** via the norms catalogue; cite-not-recite). **Calibration:** confident-correct by default,
+*as assertive as the grounding*, the hedge a rare marked edge, safety-critical/unsure → "stop,
+confirm", **norms grounded never recited**, equivalence the sharpest edge, neutrality (no pay-to-
+rank). **Build discipline:** increment by increment; **Increment 0 is a mandatory read-only audit**;
+owner HALTs at (1) the audit, (2) each increment plan, (3) any drafted reviewed-knowledge content
+(you draft → owner reviews → only then grounded), (4) every prod deploy; the 8 hard eval Schranken
+hold **1.000** through every increment; deploy per `…implementierungs_konzept_cc.md §7`.
 
 ### Hard invariants (review criteria for every V2 patch)
 
@@ -500,7 +526,8 @@ no field-envelope state machine** (those produced the documented live bugs and a
   pipeline, no secrets in logs; cross-tenant leak is a **P0 blocker** (`security/tenant.py`).
 - **HALT-gate rhythm.** plan → owner gate → build → review; **never auto past a gate.** HALT after
   **every milestone (M1…M6)** with an **Eval-REPLAY** + owner gate. Red-before-green here = a
-  failing eval case / unit test first.
+  failing eval case / unit test first. **In V2.1**: additionally HALT at the Inc-0 audit, each
+  increment plan, any drafted reviewed-knowledge, and every prod deploy (`…cc.md §1.3`).
 - **Secret hygiene.** V2 **offline** tests use a **fake LLM client → no key needed**. A **live eval
   REPLAY** sources `OPENAI_API_KEY` **transiently from `~/sealai/.env` for that run only** — never
   into the agent env, never into logs, never committed. `.env*` stays never-read/printed/committed.

@@ -115,3 +115,10 @@ discipline** instead: **eval-gate green first** → read the **rollback image fr
 → **`GOVERNANCE_LOG` entry** (new pinned `@sha256`, rollback target, eval-gate result, smoke). The full
 **demo→main convergence and the V1→V2 cutover remain owner-gated**. (V2 CI: `.github/workflows/v2-contracts.yml`;
 V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.)
+
+**V2.1 deploys per-increment under this same Gap #1/#2 discipline** — each increment is a coherent,
+testable, deployable unit, gated by an owner plan-review *before* and an owner deploy-review *after*;
+the 8 hard eval Schranken hold **1.000** through every increment. See
+`docs/V2/sealingai_v2_1_implementierungs_konzept_cc.md §7` (deploy) + §1.3 (the four owner-HALTs).
+The public `/api/v2` nginx flip (`ops/v2-flip.sh`) stays owner-gated — these deploys only update the
+backend image.

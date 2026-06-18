@@ -46,6 +46,11 @@ product concept here.
 > + the eval seed set, the human is the factual ORACLE (the agent never
 > self-adjudicates eval verdicts), and the `sealai_v2.* ↔ app.*` import boundary is
 > a hard CI gate. Read `docs/V2/*` first when the task touches that tree.
+>
+> **V2.1 (forward):** the WHAT/HOW SoT is `docs/V2/sealingai_v2_1_produkt_konzept.md` +
+> `docs/V2/sealingai_v2_1_implementierungs_konzept_cc.md`, alongside the build-spec; **Increment 0
+> is a mandatory read-only audit** before any V2.1 code, and owner-HALTs gate audit / increment
+> plan / drafted reviewed-knowledge / prod deploy.
 
 ---
 

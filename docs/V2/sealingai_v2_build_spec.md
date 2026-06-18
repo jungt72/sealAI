@@ -1,5 +1,9 @@
 # sealingAI V2.0 — Green-Field Build-Spec (Arbeitsauftrag für Claude Code)
 
+> **Forward (V2.1):** the next-phase WHAT/HOW live in `sealingai_v2_1_produkt_konzept.md` +
+> `sealingai_v2_1_implementierungs_konzept_cc.md` — an evolution of this spec. This build-spec stays
+> the executable V2.0 plan; the V2.1 docs are the forward SoT for the increment build.
+
 > **Was das ist:** ein **ausführbarer Bauplan** für einen Neuaufbau auf der grünen Wiese.
 > CC baut dagegen, der Owner gatet an HALT-Punkten. Kein 800-Zeilen-Blueprint — Verträge,
 > Sequenz, Abnahme, Grenzen.

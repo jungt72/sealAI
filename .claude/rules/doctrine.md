@@ -68,3 +68,19 @@ and the lines that must never be crossed while changing code.
   something pass → **HALT to human**. Changing what `reviewed` catalog entries assert is
   a doctrine change (owner-grounded, never model-sourced). **The human is the
   factual-correctness oracle** — the agent never self-adjudicates eval verdicts.
+
+## V2.1 calibration (forward — `docs/V2/sealingai_v2_1_*`)
+
+> Additive to the four-layer model above — not a replacement. Tunes *how assertively* V2 claims,
+> on the same "backend owns facts, LLM narrates" base. Canonical: Produkt-Konzept §3 / §9.
+
+- **Confident-correct is the default**, *as assertive as the grounding*; the hedge is the **rare
+  marked edge**, never the fallback — the user always gets a material.
+- **Safety-critical / unsure → "stop, confirm"** (the SAFETY clause is never gated away).
+- **Norms grounded, never recited** — number/revision/value only from a reviewed source; honest
+  where the current revision is unsure.
+- **Equivalence is the sharpest edge** — "part X = part Y" only grounded, honest over the boundary
+  (nominal size + material class, not compound); L4 carries real weight.
+- **Neutrality is sacred — no pay-to-rank** (capability only).
+- **Uniform Trust-Spine:** L3 must be able to verify norm- and equivalence-claims, not only
+  material recommendations.
