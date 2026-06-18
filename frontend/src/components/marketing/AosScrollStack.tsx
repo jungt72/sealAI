@@ -140,24 +140,24 @@ export function AosScrollStack() {
       <div className="sticky top-[72px] h-[calc(100vh-72px)] overflow-hidden bg-[#ececea]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(255,255,255,0.98),rgba(236,236,234,0.45)_38%,rgba(207,210,208,0.82)_100%)]" />
 
-        <div className="absolute left-4 top-6 z-20 flex w-[min(72vw,340px)] flex-col gap-3 sm:left-8 sm:top-10">
+        <div className="absolute left-4 top-6 z-20 flex w-[min(52vw,232px)] flex-col gap-2 sm:left-8 sm:top-10">
           {layers.map((layer, index) => {
             const active = index === activeIndex;
             return (
               <div
                 key={layer.title}
-                className="flex items-center justify-between rounded-2xl bg-[#f3f4f7] px-5 py-3.5 transition-all duration-300 will-change-transform"
+                className="flex items-center justify-between rounded-[13px] bg-[#f3f4f7] px-4 py-2 transition-all duration-300 will-change-transform"
                 style={{
                   boxShadow: active
-                    ? "8px 8px 18px rgba(20,24,24,0.20), -6px -6px 15px rgba(255,255,255,0.95)"
-                    : "5px 5px 13px rgba(20,24,24,0.12), -5px -5px 12px rgba(255,255,255,0.9)",
-                  transform: active ? "translateX(12px) scale(1.025)" : "translateX(0) scale(1)",
+                    ? "5px 5px 12px rgba(20,24,24,0.15), -4px -4px 10px rgba(255,255,255,0.92)"
+                    : "3px 3px 8px rgba(20,24,24,0.10), -3px -3px 7px rgba(255,255,255,0.85)",
+                  transform: active ? "translateX(6px) scale(1.015)" : "translateX(0) scale(1)",
                 }}
               >
-                <span className={`text-[15px] font-semibold ${active ? "text-[#002a5b]" : "text-[#17201f]"}`}>
+                <span className={`text-[12px] font-semibold ${active ? "text-[#002a5b]" : "text-[#17201f]/80"}`}>
                   {layer.title}
                 </span>
-                <ChevronRight size={18} strokeWidth={2} className={active ? "text-[#002a5b]" : "text-[#17201f]/40"} />
+                <ChevronRight size={14} strokeWidth={2} className={active ? "text-[#002a5b]" : "text-[#17201f]/35"} />
               </div>
             );
           })}
