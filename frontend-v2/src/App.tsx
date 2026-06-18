@@ -124,22 +124,12 @@ export function App() {
       return;
     }
 
-    // No token: redirect straight to the Keycloak authorize endpoint (FULL flow, not prompt=none).
-    // A live SSO session → Keycloak returns a code with NO form → the dashboard appears directly.
-    // No session → Keycloak shows its login form directly — no intermediate "Mit Keycloak anmelden"
-    // button. One-shot flag prevents a redirect loop; on a second tokenless return it falls back to
-    // the manual login view.
-    if (sessionStorage.getItem("v2_silent_tried") === "1") {
-      setBootstrapping(false);
-      return;
-    }
-    sessionStorage.setItem("v2_silent_tried", "1");
-    const verifier = randomVerifier();
-    const state = randomVerifier();
-    sessionStorage.setItem("v2_pkce_verifier", verifier);
-    void authorizeUrl(CONFIG, { verifier, state }).then((u) => {
-      window.location.href = u;
-    });
+    // No token and not returning from Keycloak → show the explicit login view. The user clicks
+    // "Mit Keycloak anmelden" (login()) to start the OIDC flow. NOTE: an auto-redirect on load
+    // (silent prompt=none / full) was tried but could not be reliably verified to reach the
+    // dashboard, so we keep the proven manual-login path. A live SSO session makes the click a
+    // password-less bounce straight to the dashboard.
+    setBootstrapping(false);
   }, []);
 
   useEffect(() => {

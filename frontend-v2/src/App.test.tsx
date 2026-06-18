@@ -49,12 +49,11 @@ function stubApi(memoryRef: { current: ConversationMemory }) {
 }
 
 describe("App auth gate (check 5: unauthenticated → re-login)", () => {
-  it("with no token and no prior silent attempt, tries a one-shot silent SSO re-auth (no login view yet)", () => {
+  it("with no in-memory token, renders the login view (no auto-redirect)", () => {
     clearAccessToken();
     render(<App />);
-    expect(sessionStorage.getItem("v2_silent_tried")).toBe("1");
-    expect(screen.getByTestId("auth-bootstrap")).toBeInTheDocument();
-    expect(screen.queryByTestId("login-view")).toBeNull();
+    expect(screen.getByTestId("login-view")).toBeInTheDocument();
+    expect(screen.getByTestId("login")).toHaveTextContent(/anmelden/i);
     // no dashboard content leaks before auth
     expect(screen.queryByTestId("chat-pane")).toBeNull();
   });
