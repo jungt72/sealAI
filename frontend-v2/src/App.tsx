@@ -29,6 +29,8 @@ const CONFIG: OidcConfig = {
 
 export function App() {
   const [authed, setAuthed] = useState<boolean>(() => getAccessToken() !== null);
+  // true while we attempt a one-shot silent SSO re-auth on load (avoids flashing the login view)
+  const [bootstrapping, setBootstrapping] = useState<boolean>(() => getAccessToken() === null);
   const [error, setError] = useState<string | null>(null);
   const [framing, setFraming] = useState<Framing>(FALLBACK_FRAMING);
   const [memory, setMemory] = useState<ConversationMemory>({ case_state: [], history: [] });
@@ -85,27 +87,58 @@ export function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    // The SPA has no sub-routes: nginx serves index.html for every /dashboard/* path (try_files),
-    // e.g. V1's post-login /dashboard/new. Normalize everything except the OIDC callback so the
-    // address bar matches what the app actually renders.
-    if (
-      url.pathname.startsWith("/dashboard") &&
-      url.pathname !== "/dashboard/" &&
-      !url.pathname.endsWith("/callback")
-    ) {
+    const isCallback = url.pathname.endsWith("/callback");
+
+    // OIDC return — both the explicit login AND the silent prompt=none land on /callback.
+    if (isCallback) {
+      const code = url.searchParams.get("code");
+      if (code) {
+        const verifier = sessionStorage.getItem("v2_pkce_verifier") ?? "";
+        exchangeCode(CONFIG, code, verifier)
+          .then(() => {
+            sessionStorage.removeItem("v2_pkce_verifier"); // one-time; token stays in memory
+            sessionStorage.removeItem("v2_silent_tried"); // allow a future silent renewal
+            window.history.replaceState({}, "", "/dashboard/");
+            setAuthed(true);
+          })
+          .catch(() => setError("Anmeldung fehlgeschlagen — bitte erneut anmelden."))
+          .finally(() => setBootstrapping(false));
+        return;
+      }
+      // No code → the silent attempt found NO live SSO session (error=login_required) or was
+      // denied. Do NOT retry (would loop) — fall through to the explicit login view.
+      sessionStorage.removeItem("v2_pkce_verifier");
+      window.history.replaceState({}, "", "/dashboard/");
+      setBootstrapping(false);
+      return;
+    }
+
+    // Normalize V1-style /dashboard/* paths (nginx try_files serves index.html for all of them).
+    if (url.pathname.startsWith("/dashboard") && url.pathname !== "/dashboard/") {
       window.history.replaceState({}, "", "/dashboard/");
     }
-    if (url.pathname.endsWith("/callback") && url.searchParams.get("code")) {
-      const code = url.searchParams.get("code") as string;
-      const verifier = sessionStorage.getItem("v2_pkce_verifier") ?? "";
-      exchangeCode(CONFIG, code, verifier)
-        .then(() => {
-          sessionStorage.removeItem("v2_pkce_verifier"); // PKCE verifier is one-time; token stays in memory
-          window.history.replaceState({}, "", "/dashboard");
-          setAuthed(true);
-        })
-        .catch(() => setError("Anmeldung fehlgeschlagen — bitte erneut anmelden."));
+
+    // Already have an in-memory token (e.g. SPA-internal nav) → nothing to do.
+    if (getAccessToken()) {
+      setBootstrapping(false);
+      return;
     }
+
+    // No token: try ONE silent re-auth against the live Keycloak SSO session (prompt=none).
+    // The marketing/Next login already established that SSO session, so this returns a code with
+    // NO UI → the dashboard appears directly, no second "Mit Keycloak anmelden" click. If there is
+    // no session, Keycloak returns error=login_required and we show the login view (one-shot flag).
+    if (sessionStorage.getItem("v2_silent_tried") === "1") {
+      setBootstrapping(false);
+      return;
+    }
+    sessionStorage.setItem("v2_silent_tried", "1");
+    const verifier = randomVerifier();
+    const state = randomVerifier();
+    sessionStorage.setItem("v2_pkce_verifier", verifier);
+    void authorizeUrl(CONFIG, { verifier, state, silent: true }).then((u) => {
+      window.location.href = u;
+    });
   }, []);
 
   useEffect(() => {
@@ -166,6 +199,19 @@ export function App() {
   }, []);
 
   if (!authed) {
+    if (bootstrapping) {
+      return (
+        <FramingContext.Provider value={framing}>
+          <div className="login" data-testid="auth-bootstrap" aria-busy="true">
+            <div className="stage-glow" aria-hidden="true" />
+            <h1>
+              sealing<span className="brand-sep"> | </span>Intelligence
+            </h1>
+            <p>Anmeldung wird geprüft …</p>
+          </div>
+        </FramingContext.Provider>
+      );
+    }
     return (
       <FramingContext.Provider value={framing}>
         <div className="login" data-testid="login-view">

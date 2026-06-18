@@ -9,6 +9,7 @@ import type { ConversationMemory } from "./contracts";
 afterEach(() => {
   cleanup();
   clearAccessToken();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -48,12 +49,22 @@ function stubApi(memoryRef: { current: ConversationMemory }) {
 }
 
 describe("App auth gate (check 5: unauthenticated → re-login)", () => {
-  it("with no in-memory token, renders the login view (not the dashboard)", () => {
+  it("with no token and no prior silent attempt, tries a one-shot silent SSO re-auth (no login view yet)", () => {
     clearAccessToken();
+    render(<App />);
+    expect(sessionStorage.getItem("v2_silent_tried")).toBe("1");
+    expect(screen.getByTestId("auth-bootstrap")).toBeInTheDocument();
+    expect(screen.queryByTestId("login-view")).toBeNull();
+    // no dashboard content leaks before auth
+    expect(screen.queryByTestId("chat-pane")).toBeNull();
+  });
+
+  it("after a silent SSO miss, renders the login view (not the dashboard)", () => {
+    clearAccessToken();
+    sessionStorage.setItem("v2_silent_tried", "1"); // silent re-auth already attempted, no live session
     render(<App />);
     expect(screen.getByTestId("login-view")).toBeInTheDocument();
     expect(screen.getByTestId("login")).toHaveTextContent(/anmelden/i);
-    // no dashboard content leaks before auth
     expect(screen.queryByTestId("chat-pane")).toBeNull();
   });
 });
@@ -122,16 +133,18 @@ describe("M8: the kernel compute is read on load and refreshed after a chat turn
 
 describe("URL normalization (cutover 1b: nginx try_files serves the SPA for every /dashboard/*)", () => {
   it("normalizes a hard navigation to /dashboard/new (V1's post-login target) to /dashboard/", () => {
+    sessionStorage.setItem("v2_silent_tried", "1"); // skip the silent bounce → assert the resting view
     window.history.pushState({}, "", "/dashboard/new");
     render(<App />);
     expect(window.location.pathname).toBe("/dashboard/");
     expect(screen.getByTestId("login-view")).toBeInTheDocument();
   });
 
-  it("leaves the OIDC callback path untouched", () => {
+  it("a callback with no code (silent SSO miss) normalizes to /dashboard/ and shows the login view", () => {
     window.history.pushState({}, "", "/dashboard/callback");
     render(<App />);
-    expect(window.location.pathname).toBe("/dashboard/callback");
+    expect(window.location.pathname).toBe("/dashboard/");
+    expect(screen.getByTestId("login-view")).toBeInTheDocument();
     window.history.pushState({}, "", "/");
   });
 });
