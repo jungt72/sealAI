@@ -96,7 +96,7 @@ export default function LandingPage() {
             href={startCaseHref}
             analyticsEvent="landing_cta_clicked"
             analyticsPayload={{ cta: "hero_demo", location: "legora_style_hero" }}
-            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-[#134e5e] px-6 text-[14px] font-semibold text-white transition-all shadow-[6px_6px_13px_#b8b9be,-6px_-6px_13px_#ffffff] hover:bg-[#19616f] active:shadow-[inset_4px_4px_9px_rgba(0,0,0,0.55),inset_-4px_-4px_9px_rgba(255,255,255,0.14)] active:translate-y-px"
+            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-[#004225] px-6 text-[14px] font-semibold text-white transition-all shadow-[6px_6px_13px_#b8b9be,-6px_-6px_13px_#ffffff] hover:bg-[#005c33] active:shadow-[inset_4px_4px_9px_rgba(0,0,0,0.55),inset_-4px_-4px_9px_rgba(255,255,255,0.14)] active:translate-y-px"
           >
             Dichtungsfall starten <ArrowRight size={15} />
           </TrackedLink>
@@ -106,7 +106,7 @@ export default function LandingPage() {
       <nav className="border-b border-[#17201f]/10 bg-white" aria-label="Seitenbereiche">
         <div className="mx-auto flex max-w-[1480px] items-center justify-between overflow-x-auto px-4 py-4 text-[11px] font-semibold text-[#17201f]/42 sm:px-8">
           {sectionLinks.map(([label, href]) => (
-            <Link key={label} href={href} className="shrink-0 px-3 hover:text-[#004a2f]">
+            <Link key={label} href={href} className="shrink-0 px-3 hover:text-[#004225]">
               {label}
             </Link>
           ))}
@@ -148,7 +148,7 @@ export default function LandingPage() {
                       {Array.from({ length: 9 }).map((_, itemIndex) => (
                         <span
                           key={itemIndex}
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#004a2f] shadow-sm"
+                          className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#004225] shadow-sm"
                         >
                           {itemIndex % 3 === 0 ? <Beaker size={16} /> : itemIndex % 3 === 1 ? <Database size={16} /> : <FileCheck2 size={16} />}
                         </span>
@@ -261,7 +261,7 @@ export default function LandingPage() {
       </section>
 
       <section className="bg-white px-5 py-16 sm:px-8 lg:py-24">
-        <div className="mx-auto flex max-w-[980px] flex-col overflow-hidden border border-[#004a2f] bg-[#004a2f] text-white sm:flex-row">
+        <div className="mx-auto flex max-w-[980px] flex-col overflow-hidden border border-[#004225] bg-[#004225] text-white sm:flex-row">
           <div className="flex flex-1 flex-col justify-between p-8">
             <h2 className="max-w-sm text-2xl font-medium leading-tight">
               Klär deinen nächsten Dichtungsfall in einem geführten Workspace.
@@ -270,7 +270,7 @@ export default function LandingPage() {
               href={startCaseHref}
               analyticsEvent="landing_cta_clicked"
               analyticsPayload={{ cta: "green_demo_card", location: "bottom_card" }}
-              className="mt-10 w-fit rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-[#004a2f]"
+              className="mt-10 w-fit rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-[#004225]"
             >
               Fall starten
             </TrackedLink>

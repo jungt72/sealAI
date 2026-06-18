@@ -17,7 +17,7 @@ export default function MarketingLayout({
           href="/wissen"
           analyticsEvent="landing_cta_clicked"
           analyticsPayload={{ cta: "announcement_sealingpedia", location: "announcement_bar" }}
-          className="flex min-h-6 items-center justify-center gap-2 bg-[#004a2f] px-4 text-center text-[11px] font-medium text-white"
+          className="flex min-h-6 items-center justify-center gap-2 bg-[#004225] px-4 text-center text-[11px] font-medium text-white"
         >
           Der sealingAI Anfrage-Agent ist live
           <span className="inline-flex items-center gap-1 text-white/80">
@@ -28,19 +28,19 @@ export default function MarketingLayout({
           {/* left: menu */}
           <div className="flex flex-1 items-center">
             <nav className="hidden items-center gap-6 lg:flex" aria-label="Hauptnavigation">
-              <Link href="/werkstoffe" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
+              <Link href="/werkstoffe" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
                 Produkt
               </Link>
-              <Link href="/medien" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
+              <Link href="/medien" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
                 Lösungen
               </Link>
-              <Link href="/wissen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
+              <Link href="/wissen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
                 Wissen
               </Link>
-              <Link href={loginHref} className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
+              <Link href={loginHref} className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
                 Cockpit
               </Link>
-              <Link href="/anfrage/dichtung-auslegen-lassen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#134e5e]">
+              <Link href="/anfrage/dichtung-auslegen-lassen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
                 Anfrage
               </Link>
             </nav>
@@ -60,7 +60,7 @@ export default function MarketingLayout({
             className="absolute left-1/2 flex -translate-x-1/2 items-center"
           >
             <span className="text-[18px] font-semibold tracking-[-0.01em] text-[#17201f] sm:text-[20px]">
-              sealing<span className="text-[#134e5e]">AI</span>
+              sealing<span className="text-[#004225]">AI</span>
             </span>
           </Link>
 
@@ -70,7 +70,7 @@ export default function MarketingLayout({
               href={loginHref}
               analyticsEvent="landing_cta_clicked"
               analyticsPayload={{ cta: "header_login", location: "header" }}
-              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#134e5e] px-5 text-[13px] font-semibold text-white transition-all shadow-[4px_4px_9px_#b8b9be,-4px_-4px_9px_#ffffff] hover:bg-[#19616f] hover:shadow-[5px_5px_11px_#b0b1b8,-5px_-5px_11px_#ffffff] active:shadow-[inset_3px_3px_7px_rgba(0,0,0,0.55),inset_-3px_-3px_7px_rgba(255,255,255,0.14)] active:translate-y-px"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#004225] px-5 text-[13px] font-semibold text-white transition-all shadow-[4px_4px_9px_#b8b9be,-4px_-4px_9px_#ffffff] hover:bg-[#005c33] hover:shadow-[5px_5px_11px_#b0b1b8,-5px_-5px_11px_#ffffff] active:shadow-[inset_3px_3px_7px_rgba(0,0,0,0.55),inset_-3px_-3px_7px_rgba(255,255,255,0.14)] active:translate-y-px"
             >
               Login
               <ArrowRight size={14} />

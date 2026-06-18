@@ -3,7 +3,7 @@
   --sealai-muted: rgba(13, 17, 16, 0.58);
   --sealai-line: rgba(13, 17, 16, 0.12);
   --sealai-soft: #f7f7f6;
-  --sealai-green: #004a2f;
+  --sealai-green: #004225;
   --sealai-blue: #93a8c4;
   --sealai-night: #070a0a;
 }
@@ -198,7 +198,7 @@ body#keycloak-bg {
 .pf-v5-c-form-control:has(input:focus) {
   border-color: rgba(13, 17, 16, 0.52);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(0, 74, 47, 0.08);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.08);
 }
 
 .pf-v5-c-form-control > input {
@@ -342,7 +342,7 @@ body#keycloak-bg {
 
 .sealai-register-field input:focus {
   border-color: rgba(13, 17, 16, 0.52);
-  box-shadow: 0 0 0 3px rgba(0, 74, 47, 0.08);
+  box-shadow: 0 0 0 3px rgba(0, 66, 37, 0.08);
   outline: 0;
 }
 
@@ -801,9 +801,9 @@ input:-webkit-autofill:active {
 /* v30.5: login primary -> petrol (deep teal) to match marketing CTAs */
 .pf-v5-c-button.pf-m-primary,
 .sealai-register-primary {
-  background: #134e5e !important;
+  background: #004225 !important;
 }
 .pf-v5-c-button.pf-m-primary:hover,
 .pf-v5-c-button.pf-m-primary:focus {
-  background: #19616f !important;
+  background: #005c33 !important;
 }
