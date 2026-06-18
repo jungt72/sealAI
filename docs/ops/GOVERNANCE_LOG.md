@@ -6,6 +6,49 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-18T11:36Z — V2 PROD deploy: `backend-v2` rebuild — OPTIMIZE_BACKLOG #5 (L3 topic-scoped corrections + full-context regen) — owner-gated
+
+**Change (backend only, file-backed, zero API-contract change):** L3 trap corrections were topic-blind —
+a material-recommending reviewed trap firing off-topic (e.g. EPDM-polar on an acetone question) injected
+its whole `correct` verbatim, mis-directing with a wrong-topic material recommendation; the regen also
+re-answered from a degraded context. Fix: split 10 material/seal-recommending reviewed traps into
+`correct_general` (always injected) + `correct_recommendation` (gated on `applies_to`, faithful slices,
+owner-reviewed); topic-gate reuses the matrix matcher (promoted to `core/text_match.py`); the regeneration
+now carries the full draft context (grounding/matrix/calc/memory/untrusted). Advisory topic-misdirection
+detector in `eval/report.py`. Commit **`a0d0b8a7`** on `feat/v2-cockpit-resizable`.
+
+**Pre-deploy gate:** V2 offline suite green (`PYTHONPATH=backend pytest backend/sealai_v2 --noconftest`,
+EXIT=0) + import keystone green. Eval-REPLAY `fix-5-l3-topic-scope` (gpt-5.1, 25 cases ×2): **deterministic/
+agent-final Schranken = 1.000** (`memory_fabrication`, `exfiltration`); provisional Schranken **1.000 after
+owner adjudication** (CALC-01=PASS, SAFETY-02=PASS-for-gate — flag set shifted vs baseline = judge
+non-determinism); CONFLICT-01 no misdirection, TRAP-02/DEFAULT-01 home-topic recs intact; topic-misdirection
+detector ✅ none.
+
+**Build:** `docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2
+build backend-v2` — base/apt/`requirements-v2` layers CACHED; `COPY sealai_v2` (Dockerfile.v2) + the
+`import sealai_v2.api.main, sealai_v2.db.migrate` check rebuilt/passed.
+
+**Recreate (surgical):** `… up -d --no-deps backend-v2` — **no `--remove-orphans`**; nothing else moved
+(`backend-v2-staging` untouched).
+
+- new live `sealai-backend-v2:latest` = manifest-list **`e85c375dd9ac…`** (config `b84d25c751a3…`).
+- rolled-from (preserved, read from the running daemon — not memory) = **`61581aad3846…`**, tagged
+  **`sealai-backend-v2:rollback-2026-06-18`**.
+
+**Live verification:** `backend-v2` `running healthy` on `e85c375d…`; `/health` → `{"status":"ok","service":
+"sealai_v2"}`; clean uvicorn startup (durable `sealai_v2` Postgres reconnect — restart-survival, Gap #1
+unaffected by `--no-deps`). In-container fix proof (`docker exec backend-v2 python -c …`): 10 reviewed
+splits; EPDM `applies_to` = (mineralöl, hydrauliköl, kohlenwasserstoff, öl, schmierfett) [O4 bare `fett`
+dropped]; an acetone correction note suppresses NBR/FKM and injects "unpolar".
+
+**Routing UNCHANGED:** the public `/api/v2` nginx location stays **commented/owner-gated** (`nginx/default.conf:297`,
+`ops/v2-flip.sh`) — this deploy updated the `backend-v2` image only; the V2 cutover flip remains held.
+
+**Rollback (soft):** `docker tag sealai-backend-v2:rollback-2026-06-18 sealai-backend-v2:latest` →
+`… up -d --no-deps --force-recreate backend-v2`. Reversible via the image re-tag (no Hetzner snapshot).
+
+---
+
 ## 2026-06-17T13:24Z — V2 PROD deploy: OPTIMIZE_BACKLOG #6 — L1 norm vs quantitative lifetime predictions — owner-gated
 
 **Change (backend only, file-backed, zero API-contract change):** tighten the claim-boundary so L1
