@@ -773,3 +773,27 @@ input:-webkit-autofill:active {
   -webkit-text-fill-color: #2b333f !important;
   caret-color: #2b333f !important;
 }
+
+/* v30.4: primary login button -> brand-navy neumorphic (full 3D), matching marketing CTAs */
+.pf-v5-c-button.pf-m-primary {
+  background: #002a5b !important;
+  color: #ffffff !important;
+  box-shadow: 5px 5px 12px #c5cad6, -5px -5px 12px #ffffff !important;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+  background: #0a3a72 !important;
+  box-shadow: 6px 6px 14px #c2c7d4, -6px -6px 14px #ffffff !important;
+}
+.pf-v5-c-button.pf-m-primary:active {
+  transform: none !important;
+  box-shadow: inset 4px 4px 9px rgba(0, 0, 0, 0.55), inset -4px -4px 9px rgba(255, 255, 255, 0.14) !important;
+}
+.sealai-register-primary {
+  background: #002a5b !important;
+  color: #ffffff !important;
+  box-shadow: 5px 5px 12px #c5cad6, -5px -5px 12px #ffffff !important;
+}
+.sealai-register-primary:active {
+  box-shadow: inset 4px 4px 9px rgba(0, 0, 0, 0.55), inset -4px -4px 9px rgba(255, 255, 255, 0.14) !important;
+}
