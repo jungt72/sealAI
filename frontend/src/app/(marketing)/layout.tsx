@@ -12,7 +12,7 @@ export default function MarketingLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-white text-[#17201f]">
-      <header className="sticky top-0 z-50 w-full bg-[#e8e9e5]/92 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 w-full bg-white/95 backdrop-blur-xl">
         <TrackedLink
           href="/wissen"
           analyticsEvent="landing_cta_clicked"
@@ -28,19 +28,19 @@ export default function MarketingLayout({
           {/* left: menu */}
           <div className="flex flex-1 items-center">
             <nav className="hidden items-center gap-6 lg:flex" aria-label="Hauptnavigation">
-              <Link href="/werkstoffe" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
+              <Link href="/werkstoffe" className="text-[14px] font-normal text-[#0d1016] transition-colors hover:text-[#004225]">
                 Produkt
               </Link>
-              <Link href="/medien" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
+              <Link href="/medien" className="text-[14px] font-normal text-[#0d1016] transition-colors hover:text-[#004225]">
                 Lösungen
               </Link>
-              <Link href="/wissen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
+              <Link href="/wissen" className="text-[14px] font-normal text-[#0d1016] transition-colors hover:text-[#004225]">
                 Wissen
               </Link>
-              <Link href={loginHref} className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
+              <Link href={loginHref} className="text-[14px] font-normal text-[#0d1016] transition-colors hover:text-[#004225]">
                 Cockpit
               </Link>
-              <Link href="/anfrage/dichtung-auslegen-lassen" className="text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-[#004225]">
+              <Link href="/anfrage/dichtung-auslegen-lassen" className="text-[14px] font-normal text-[#0d1016] transition-colors hover:text-[#004225]">
                 Anfrage
               </Link>
             </nav>
@@ -59,7 +59,7 @@ export default function MarketingLayout({
             aria-label="sealingAI Startseite"
             className="absolute left-1/2 flex -translate-x-1/2 items-center"
           >
-            <span className="text-[18px] font-semibold tracking-[-0.01em] text-[#004225] sm:text-[20px]">
+            <span className="text-[15px] font-medium uppercase tracking-[0.18em] text-[#0d1016] sm:text-[16px]">
               sealingAI
             </span>
           </Link>
