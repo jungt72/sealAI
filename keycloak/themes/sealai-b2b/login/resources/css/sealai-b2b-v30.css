@@ -724,3 +724,14 @@ body#keycloak-bg {
 #kc-form-login > .pf-v5-c-form__group:first-of-type { margin-bottom: 2.75rem !important; }
 .sealai-auth-secondary { margin-top: 1.1rem !important; }
 .sealai-register-copy { margin-top: 1.75rem !important; }
+
+/* v30.1: kill PatternFly focus bottom-border pseudo-element (the blue underline) */
+.pf-v5-c-form-control::after,
+.pf-v5-c-form-control:focus::after,
+.pf-v5-c-form-control:focus-within::after,
+.pf-v5-c-form-control:has(input:focus)::after {
+  border-bottom: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  display: none !important;
+}

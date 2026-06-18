@@ -1,0 +1,12 @@
+# Theme dev-iteration override (REMOVE before final bake-in).
+# Overlays only the sealai-b2b theme from disk + disables theme caching so CSS
+# edits are live without rebuilding the keycloak image. Parent themes
+# (keycloak.v2, common) stay from the image — do NOT mount the whole themes dir.
+services:
+  keycloak:
+    volumes:
+      - ./keycloak/themes/sealai-b2b:/opt/keycloak/themes/sealai-b2b:ro
+    environment:
+      KC_SPI_THEME_CACHE_THEMES: 'false'
+      KC_SPI_THEME_CACHE_TEMPLATES: 'false'
+      KC_SPI_THEME_STATIC_MAX_AGE: '-1'
