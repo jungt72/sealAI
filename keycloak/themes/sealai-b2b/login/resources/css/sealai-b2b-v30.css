@@ -762,3 +762,14 @@ body#keycloak-bg {
 .pf-v5-c-button.pf-m-control[aria-pressed="true"] {
   box-shadow: inset 5px 5px 11px #c2c7d4, inset -5px -5px 11px #ffffff !important;
 }
+
+/* v30.3: kill Chrome's blue autofill background — keep the input transparent so the neumorphic
+   recess of the wrapper still shows through (the 100000s transition defers the autofill paint). */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  transition: background-color 100000s ease-in-out 0s !important;
+  -webkit-text-fill-color: #2b333f !important;
+  caret-color: #2b333f !important;
+}
