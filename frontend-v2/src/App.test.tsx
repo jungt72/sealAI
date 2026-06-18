@@ -49,18 +49,19 @@ function stubApi(memoryRef: { current: ConversationMemory }) {
 }
 
 describe("App auth gate (check 5: unauthenticated → re-login)", () => {
-  it("with no in-memory token, renders the login view (no auto-redirect)", () => {
+  it("with no token, redirects to Keycloak on load (no intermediate login button)", () => {
     clearAccessToken();
     render(<App />);
-    expect(screen.getByTestId("login-view")).toBeInTheDocument();
-    expect(screen.getByTestId("login")).toHaveTextContent(/anmelden/i);
+    expect(sessionStorage.getItem("v2_auth_redirect_at")).not.toBeNull();
+    expect(screen.getByTestId("auth-bootstrap")).toBeInTheDocument();
+    expect(screen.queryByTestId("login-view")).toBeNull();
     // no dashboard content leaks before auth
     expect(screen.queryByTestId("chat-pane")).toBeNull();
   });
 
-  it("after a silent SSO miss, renders the login view (not the dashboard)", () => {
+  it("within the redirect window (e.g. a failed exchange), renders the manual login view", () => {
     clearAccessToken();
-    sessionStorage.setItem("v2_silent_tried", "1"); // silent re-auth already attempted, no live session
+    sessionStorage.setItem("v2_auth_redirect_at", String(Date.now())); // just redirected → fallback to button
     render(<App />);
     expect(screen.getByTestId("login-view")).toBeInTheDocument();
     expect(screen.getByTestId("login")).toHaveTextContent(/anmelden/i);
@@ -132,7 +133,7 @@ describe("M8: the kernel compute is read on load and refreshed after a chat turn
 
 describe("URL normalization (cutover 1b: nginx try_files serves the SPA for every /dashboard/*)", () => {
   it("normalizes a hard navigation to /dashboard/new (V1's post-login target) to /dashboard/", () => {
-    sessionStorage.setItem("v2_silent_tried", "1"); // skip the silent bounce → assert the resting view
+    sessionStorage.setItem("v2_auth_redirect_at", String(Date.now())); // skip the auto-redirect → assert resting view
     window.history.pushState({}, "", "/dashboard/new");
     render(<App />);
     expect(window.location.pathname).toBe("/dashboard/");

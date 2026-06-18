@@ -97,7 +97,7 @@ export function App() {
         exchangeCode(CONFIG, code, verifier)
           .then(() => {
             sessionStorage.removeItem("v2_pkce_verifier"); // one-time; token stays in memory
-            sessionStorage.removeItem("v2_silent_tried"); // allow a future silent renewal
+            sessionStorage.removeItem("v2_auth_redirect_at"); // clear the redirect-loop window
             window.history.replaceState({}, "", "/dashboard/");
             setAuthed(true);
           })
@@ -124,12 +124,26 @@ export function App() {
       return;
     }
 
-    // No token and not returning from Keycloak → show the explicit login view. The user clicks
-    // "Mit Keycloak anmelden" (login()) to start the OIDC flow. NOTE: an auto-redirect on load
-    // (silent prompt=none / full) was tried but could not be reliably verified to reach the
-    // dashboard, so we keep the proven manual-login path. A live SSO session makes the click a
-    // password-less bounce straight to the dashboard.
-    setBootstrapping(false);
+    // No token and not returning from Keycloak → go straight to the Keycloak authorize endpoint
+    // (full flow, not prompt=none). A live SSO session returns a code with NO form → the dashboard
+    // appears directly; no session → Keycloak shows its login form directly. This removes the
+    // intermediate "Mit Keycloak anmelden" page. Loop guard = a short, SELF-EXPIRING time window
+    // (not a sticky flag, which previously got stuck and wrongly showed the button): if we return
+    // here tokenless within a few seconds of redirecting (e.g. a failed token exchange), show the
+    // manual button instead of re-redirecting. The window clears itself, so the button is only ever
+    // a transient failure fallback — never permanently stuck.
+    const lastRedirectAt = Number(sessionStorage.getItem("v2_auth_redirect_at") ?? "0");
+    if (Date.now() - lastRedirectAt < 8000) {
+      setBootstrapping(false);
+      return;
+    }
+    sessionStorage.setItem("v2_auth_redirect_at", String(Date.now()));
+    const verifier = randomVerifier();
+    const state = randomVerifier();
+    sessionStorage.setItem("v2_pkce_verifier", verifier);
+    void authorizeUrl(CONFIG, { verifier, state }).then((u) => {
+      window.location.href = u;
+    });
   }, []);
 
   useEffect(() => {
