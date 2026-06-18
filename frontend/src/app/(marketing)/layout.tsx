@@ -63,7 +63,7 @@ export default function MarketingLayout({
               href={loginHref}
               analyticsEvent="landing_cta_clicked"
               analyticsPayload={{ cta: "header_login", location: "header" }}
-              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#002a5b] px-5 text-[13px] font-semibold text-white transition-all shadow-[4px_4px_9px_#b8b9be,-4px_-4px_9px_#ffffff] hover:bg-[#0a3a72] hover:shadow-[5px_5px_11px_#b0b1b8,-5px_-5px_11px_#ffffff] active:shadow-[inset_3px_3px_7px_rgba(0,0,0,0.55),inset_-3px_-3px_7px_rgba(255,255,255,0.14)] active:translate-y-px"
+              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#134e5e] px-5 text-[13px] font-semibold text-white transition-all shadow-[4px_4px_9px_#b8b9be,-4px_-4px_9px_#ffffff] hover:bg-[#19616f] hover:shadow-[5px_5px_11px_#b0b1b8,-5px_-5px_11px_#ffffff] active:shadow-[inset_3px_3px_7px_rgba(0,0,0,0.55),inset_-3px_-3px_7px_rgba(255,255,255,0.14)] active:translate-y-px"
             >
               Login
               <ArrowRight size={14} />
@@ -75,7 +75,7 @@ export default function MarketingLayout({
               href={startCaseHref}
               analyticsEvent="landing_cta_clicked"
               analyticsPayload={{ cta: "mobile_start", location: "header" }}
-              className="text-[13px] font-semibold text-[#002a5b]"
+              className="text-[13px] font-semibold text-[#134e5e]"
             >
               Login
             </TrackedLink>

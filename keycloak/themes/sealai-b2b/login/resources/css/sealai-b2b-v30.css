@@ -797,3 +797,13 @@ input:-webkit-autofill:active {
 .sealai-register-primary:active {
   box-shadow: inset 4px 4px 9px rgba(0, 0, 0, 0.55), inset -4px -4px 9px rgba(255, 255, 255, 0.14) !important;
 }
+
+/* v30.5: login primary -> petrol (deep teal) to match marketing CTAs */
+.pf-v5-c-button.pf-m-primary,
+.sealai-register-primary {
+  background: #134e5e !important;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+  background: #19616f !important;
+}

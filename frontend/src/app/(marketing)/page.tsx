@@ -96,7 +96,7 @@ export default function LandingPage() {
             href={startCaseHref}
             analyticsEvent="landing_cta_clicked"
             analyticsPayload={{ cta: "hero_demo", location: "legora_style_hero" }}
-            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-[#002a5b] px-6 text-[14px] font-semibold text-white transition-all shadow-[6px_6px_13px_#b8b9be,-6px_-6px_13px_#ffffff] hover:bg-[#0a3a72] active:shadow-[inset_4px_4px_9px_rgba(0,0,0,0.55),inset_-4px_-4px_9px_rgba(255,255,255,0.14)] active:translate-y-px"
+            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-[#134e5e] px-6 text-[14px] font-semibold text-white transition-all shadow-[6px_6px_13px_#b8b9be,-6px_-6px_13px_#ffffff] hover:bg-[#19616f] active:shadow-[inset_4px_4px_9px_rgba(0,0,0,0.55),inset_-4px_-4px_9px_rgba(255,255,255,0.14)] active:translate-y-px"
           >
             Dichtungsfall starten <ArrowRight size={15} />
           </TrackedLink>
