@@ -59,8 +59,8 @@ export default function MarketingLayout({
             aria-label="sealingAI Startseite"
             className="absolute left-1/2 flex -translate-x-1/2 items-center"
           >
-            <span className="text-[18px] font-semibold tracking-[-0.01em] text-[#17201f] sm:text-[20px]">
-              sealing<span className="text-[#004225]">AI</span>
+            <span className="font-mono text-[16px] font-semibold tracking-[-0.04em] text-[#17201f] sm:text-[18px]">
+              sealingAI
             </span>
           </Link>
 
