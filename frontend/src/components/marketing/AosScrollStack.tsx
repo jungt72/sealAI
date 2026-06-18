@@ -146,18 +146,19 @@ export function AosScrollStack() {
             return (
               <div
                 key={layer.title}
-                className="flex items-center justify-between rounded-[13px] bg-[#f3f4f7] px-4 py-2 transition-all duration-300 will-change-transform"
+                className="flex items-center justify-between rounded-[13px] px-4 py-2 transition-all duration-300 will-change-transform"
                 style={{
+                  backgroundColor: active ? "#134e5e" : "#f3f4f7",
                   boxShadow: active
-                    ? "5px 5px 12px rgba(20,24,24,0.15), -4px -4px 10px rgba(255,255,255,0.92)"
+                    ? "5px 5px 13px rgba(11,48,55,0.30), -4px -4px 10px rgba(255,255,255,0.85)"
                     : "3px 3px 8px rgba(20,24,24,0.10), -3px -3px 7px rgba(255,255,255,0.85)",
                   transform: active ? "translateX(6px) scale(1.015)" : "translateX(0) scale(1)",
                 }}
               >
-                <span className={`text-[12px] font-semibold ${active ? "text-[#002a5b]" : "text-[#17201f]/80"}`}>
+                <span className={`text-[12px] font-semibold ${active ? "text-white" : "text-[#17201f]/80"}`}>
                   {layer.title}
                 </span>
-                <ChevronRight size={14} strokeWidth={2} className={active ? "text-[#002a5b]" : "text-[#17201f]/35"} />
+                <ChevronRight size={14} strokeWidth={2} className={active ? "text-white" : "text-[#17201f]/35"} />
               </div>
             );
           })}
