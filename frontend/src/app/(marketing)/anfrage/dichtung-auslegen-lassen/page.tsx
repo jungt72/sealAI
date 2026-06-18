@@ -4,6 +4,8 @@ import { ArrowRight, CheckCircle2, FileText, Gauge, SearchCheck, ShieldCheck } f
 import { TrackedLink } from "@/components/analytics/TrackedLink";
 import { createMetadata } from "@/lib/seo/metadata";
 
+const startRequestHref = "/dashboard";
+
 export const metadata: Metadata = createMetadata({
   title: "Dichtung Anfrage vorbereiten: Fall klären vor Herstellerkontakt",
   description:
@@ -59,7 +61,7 @@ export default function DichtungAuslegenLassenPage() {
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <TrackedLink
-                href="/dashboard/new?request_type=new_design"
+                href={startRequestHref}
                 analyticsEvent="landing_cta_clicked"
                 analyticsPayload={{ cta: "fall_jetzt_klaeren", location: "rfq_landing_hero" }}
                 className="group inline-flex items-center gap-3 rounded-full bg-seal-blue px-8 py-4 text-lg font-bold text-white shadow-xl transition-all hover:opacity-90 active:scale-95"
@@ -190,7 +192,7 @@ export default function DichtungAuslegenLassenPage() {
             </p>
           </div>
           <TrackedLink
-            href="/dashboard/new?request_type=new_design"
+            href={startRequestHref}
             analyticsEvent="landing_cta_clicked"
             analyticsPayload={{ cta: "dichtungsfall_klaeren", location: "rfq_landing_final_cta" }}
             className="inline-flex shrink-0 items-center gap-3 rounded-full bg-white px-8 py-4 text-lg font-bold text-seal-blue transition-all hover:bg-seal-light-blue active:scale-95"
