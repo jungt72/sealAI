@@ -59,17 +59,20 @@ export default function MarketingLayout({
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <Link href={loginHref} className="px-2 text-[12px] font-medium text-[#17201f]/58 transition-colors hover:text-seal-blue">
+            <Link
+              href={loginHref}
+              className="inline-flex h-11 items-center rounded-full bg-[#e8e9e5] px-5 text-[14px] font-medium text-[#17201f]/80 transition-all shadow-[5px_5px_12px_rgba(15,23,42,0.12),-4px_-4px_10px_rgba(255,255,255,0.9)] hover:text-[#004a2f] hover:shadow-[6px_6px_14px_rgba(15,23,42,0.16),-5px_-5px_12px_rgba(255,255,255,0.95)] active:shadow-[inset_3px_3px_8px_rgba(15,23,42,0.14),inset_-3px_-3px_8px_rgba(255,255,255,0.9)]"
+            >
               Login
             </Link>
             <TrackedLink
               href={startCaseHref}
               analyticsEvent="landing_cta_clicked"
               analyticsPayload={{ cta: "book_demo", location: "header" }}
-              className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#004a2f] px-3.5 text-[12px] font-semibold text-white transition-all hover:bg-seal-blue active:scale-[0.98]"
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-[#004a2f] px-6 text-[14px] font-semibold text-white transition-all shadow-[5px_5px_12px_rgba(15,23,42,0.20),-4px_-4px_10px_rgba(255,255,255,0.75)] hover:bg-[#005c3a] hover:shadow-[6px_6px_15px_rgba(15,23,42,0.26),-5px_-5px_12px_rgba(255,255,255,0.85)] active:shadow-[inset_4px_4px_9px_rgba(0,0,0,0.30),inset_-3px_-3px_8px_rgba(255,255,255,0.10)] active:translate-y-px"
             >
               Fall klären
-              <ArrowRight size={12} />
+              <ArrowRight size={15} />
             </TrackedLink>
           </div>
 
