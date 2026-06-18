@@ -124,10 +124,11 @@ export function App() {
       return;
     }
 
-    // No token: try ONE silent re-auth against the live Keycloak SSO session (prompt=none).
-    // The marketing/Next login already established that SSO session, so this returns a code with
-    // NO UI → the dashboard appears directly, no second "Mit Keycloak anmelden" click. If there is
-    // no session, Keycloak returns error=login_required and we show the login view (one-shot flag).
+    // No token: redirect straight to the Keycloak authorize endpoint (FULL flow, not prompt=none).
+    // A live SSO session → Keycloak returns a code with NO form → the dashboard appears directly.
+    // No session → Keycloak shows its login form directly — no intermediate "Mit Keycloak anmelden"
+    // button. One-shot flag prevents a redirect loop; on a second tokenless return it falls back to
+    // the manual login view.
     if (sessionStorage.getItem("v2_silent_tried") === "1") {
       setBootstrapping(false);
       return;
@@ -136,7 +137,7 @@ export function App() {
     const verifier = randomVerifier();
     const state = randomVerifier();
     sessionStorage.setItem("v2_pkce_verifier", verifier);
-    void authorizeUrl(CONFIG, { verifier, state, silent: true }).then((u) => {
+    void authorizeUrl(CONFIG, { verifier, state }).then((u) => {
       window.location.href = u;
     });
   }, []);
