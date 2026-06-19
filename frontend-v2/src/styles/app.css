@@ -598,15 +598,17 @@
    ACTIVE = light tab with navy-blue text + a dark-blue (seal-blue) outline so it reads clearly;
    soon/disabled keep the base dashed/greyed look (scoped :not so we do not flatten them). */
 .cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled) {
-  background: #f4f6fa; border-color: rgba(90, 99, 114, 0.18); color: var(--ink-soft);
+  background: #ffffff; border-color: rgba(60, 67, 80, 0.24); color: var(--ink-soft);
 }
 .cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
-  background: #ffffff; color: var(--ink);
+  background: #ffffff; color: var(--ink); border-color: rgba(60, 67, 80, 0.4);
 }
+/* active = navy-blue text + a dark-blue accent stroke on the LEFT edge only (not a full outline) */
 .cockpit-panel .param-tab.is-active {
   background: #ffffff; color: var(--color-seal-blue);
-  border-color: var(--color-seal-blue); border-width: 1.5px;
-  z-index: 3; box-shadow: 0 4px 12px rgba(0, 42, 91, 0.18);
+  border-color: rgba(60, 67, 80, 0.24);
+  border-left: 3px solid var(--color-seal-blue);
+  z-index: 3;
 }
 
 /* — submit + briefing buttons (raised; pressed on :active) ———————————————————————————————————— */
