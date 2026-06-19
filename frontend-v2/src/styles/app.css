@@ -345,7 +345,7 @@
      overrides the cockpit track. */
   .workspace--split {
     display: grid; grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, 55%);
+    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, 50%);
   }
   .chat-foot { padding-bottom: 64px; }
 
@@ -356,11 +356,11 @@
   }
   .cockpit-splitter::before {
     content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 2px; height: 36px; border-radius: 2px; background: var(--hairline);
+    width: 3px; height: 48px; border-radius: 3px; background: #aab2c0;
     transition: background 120ms ease, height 120ms ease;
   }
   .cockpit-splitter:hover::before,
-  .cockpit-splitter:focus-visible::before { background: var(--ink-faint); height: 56px; }
+  .cockpit-splitter:focus-visible::before { background: var(--ink-soft); height: 76px; }
   .cockpit-splitter:focus-visible { outline: none; }
 }
 
@@ -678,3 +678,12 @@
 .kernel-open .fact-feld { color: var(--ink-soft); }
 .cockpit-body--stack .readout-briefing { margin-top: auto; padding: 16px; border-top: none; }
 .cockpit-body--stack > [data-testid="memory-panel"] { padding: 0 16px; }
+
+
+/* ── cockpit text contrast: the muted inks are too light on the neumorphic grey ground ───────────
+   Remap --ink-faint/--ink-ghost a few steps darker (cascades to labels, units, placeholders,
+   hints, chips-labels, the empty-state line) + a crisp section title. */
+.cockpit-panel { --ink-faint: #525b69; --ink-ghost: #6f7886; }
+.cockpit-panel .param-group-title { color: var(--ink); }
+.cockpit-panel .case-state-empty { color: var(--ink-soft); }
+.cockpit-panel .cockpit-split-title { color: var(--ink-soft); }
