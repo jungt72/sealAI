@@ -686,3 +686,12 @@
 .cockpit-panel .param-group-title { color: var(--ink); }
 .cockpit-panel .case-state-empty { color: var(--ink-soft); }
 .cockpit-panel .cockpit-split-title { color: var(--ink-soft); }
+
+/* "Dichtungstyp" heading above the type tabs — parallel to the BETRIEBSBEDINGUNGEN heading,
+   marking the tab section as its own block (the tabs already carry aria-label="Dichtungstyp"). */
+.cockpit-panel .param-tabs-sticky::before {
+  content: "Dichtungstyp";
+  display: block; margin: 0 0 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink);
+}
