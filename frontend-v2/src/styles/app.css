@@ -337,7 +337,7 @@
 
 /* ── wide screens (≥1024px): chat-only centered, or chat | divider | cockpit ~50/50 when open ────── */
 @media (min-width: 1024px) {
-  .workspace { width: 100%; max-width: 1400px; margin: 0 auto; flex-direction: row; align-items: stretch; }
+  .workspace { width: 100%; flex-direction: row; align-items: stretch; }  /* full-bleed: cockpit reaches the right edge */
   /* chat-only: the single chat column centers its content at a comfortable reading width. */
   .workspace--chat-only { display: flex; }
   /* split: chat | divider | cockpit. The cockpit is the artifact-equivalent and holds TWO internal
