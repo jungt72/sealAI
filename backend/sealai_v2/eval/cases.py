@@ -17,6 +17,7 @@ _SEED_DIR = Path(__file__).resolve().parent / "seed_cases"
 _DEFAULT_FILE = _SEED_DIR / "seed_set_v0.json"
 _EDGE_FILE = _SEED_DIR / "edge_v0.json"
 _INJECTION_FILE = _SEED_DIR / "injection_v0.json"
+_ARCHETYPE_FILE = _SEED_DIR / "archetype_v0.json"
 
 
 @dataclass(frozen=True)
@@ -80,3 +81,11 @@ def load_injection_cases(path: Path | None = None) -> list[Case]:
     file so the frozen non-edge anchor stays untouched. Gate-relevant on ``injection_override``
     (human-final); the deterministic ``exfiltration`` gate is computed over the answers, not here."""
     return load_cases(path or _INJECTION_FILE)
+
+
+def load_archetype_cases(path: Path | None = None) -> list[Case]:
+    """archetype_fit class (G5, V2.1 Inc 1) — archetype-recognition cases; same validated ``Case``
+    shape, separate seed so the frozen non-edge anchor stays untouched. A CREDIBILITY/axes class
+    (no new hard gate — the 8 Schranken stay fixed): it measures whether the recognised archetype's
+    interview questions + blind spots surface in the answer."""
+    return load_cases(path or _ARCHETYPE_FILE)

@@ -45,21 +45,49 @@ def _extract_json(raw: str) -> str:
     return s[start : end + 1] if start != -1 and end > start else s
 
 
+def _understand_system(archetype_keys: tuple[str, ...] = ()) -> str:
+    """The understand system prompt. With archetype keys available (G4), it ALSO asks for a soft
+    ``archetype`` field constrained to those keys — one call, no second classifier (owner decision 3)."""
+    if not archetype_keys:
+        return _UNDERSTAND_SYSTEM
+    keys = ", ".join(archetype_keys)
+    return (
+        _UNDERSTAND_SYSTEM
+        + f' Ergänze das JSON-Objekt um ein Feld "archetype": die Maschinen-Art, AUSSCHLIESSLICH '
+        + f"einer von [{keys}] — aber NUR, wenn sie klar genannt oder eindeutig erkennbar ist; sonst "
+        + "null. Rate nicht; im Zweifel null. Auch dies ist eine WEICHE Annotation; sie steuert nichts."
+    )
+
+
 async def understand(
-    client: LlmClient, model_config: ModelConfig, question: str
+    client: LlmClient,
+    model_config: ModelConfig,
+    question: str,
+    *,
+    archetype_keys: tuple[str, ...] = (),
 ) -> Understanding:
-    """Stage 1 — soft LLM intent. Annotation only; NEVER gates or routes (build-spec §5.1)."""
+    """Stage 1 — soft LLM intent (+ G4: soft archetype). Annotation only; NEVER gates or routes
+    (build-spec §5.1). ``archetype`` is SERVER-SIDE validated against ``archetype_keys`` (a key the
+    store actually has), so an LLM-invented key can never survive."""
     res = await client.generate(
-        system=_UNDERSTAND_SYSTEM, user=question, model_config=model_config
+        system=_understand_system(archetype_keys), user=question, model_config=model_config
     )
     raw = res.text.strip()
+    archetype: str | None = None
     try:
         data = json.loads(_extract_json(raw))
         intent = Intent(str(data.get("intent", "unklar")).strip().lower())
         rationale = str(data.get("rationale", ""))[:300]
+        a = data.get("archetype")
+        if a is not None and archetype_keys:
+            a = str(a).strip().lower()
+            if a in {k.lower() for k in archetype_keys}:  # only a KNOWN key survives
+                archetype = a
     except (ValueError, KeyError, TypeError):
         intent, rationale = Intent.UNKLAR, ""
-    return Understanding(intent=intent, rationale=rationale, raw=raw[:500])
+    return Understanding(
+        intent=intent, rationale=rationale, archetype=archetype, raw=raw[:500]
+    )
 
 
 # --- inert stubs (M2/M3) ---

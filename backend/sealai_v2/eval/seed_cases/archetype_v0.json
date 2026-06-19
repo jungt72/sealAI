@@ -1,0 +1,84 @@
+{
+  "version": "archetype-v0-inc1",
+  "klass_note": "archetype_fit (V2.1 Inc 1, G5) — recognise the machine archetype and let its reviewed profile drive the interview (the discriminating questions) + surface the blind spots. CREDIBILITY/axes class; no hard gate (the 8 Schranken stay fixed). Owner is the factual oracle (axes 1 + any gate are human-final).",
+  "cases": [
+    {
+      "id": "ARCH-GETRIEBE-01",
+      "klass": "Archetyp-Erkennung (ARCHETYPE)",
+      "input": "Ich brauche eine Wellendichtung für ein Getriebe. Welche nehme ich?",
+      "must_contain": [
+        "nach dem Öl und seiner Additivierung fragen (mineralisch/synthetisch, EP/AW)",
+        "Wellendurchmesser und Drehzahl erfragen, um die Umfangsgeschwindigkeit zu bestimmen",
+        "die Wellenoberfläche (Rauheit, drallfrei, Härte) als dichtungsrelevant ansprechen"
+      ],
+      "must_catch": "ohne Betriebsbedingungen keine Werkstoff-Festlegung — Öl-Additive und Umfangsgeschwindigkeit (nicht Drehzahl allein) sind die zentralen Faktoren",
+      "must_avoid": [
+        "reflexhaft einen konkreten Werkstoff festlegen, bevor Medium/Temperatur/Geschwindigkeit geklärt sind",
+        "einen 20-Felder-Fragenkatalog abfeuern statt der wenigen entscheidenden Fragen"
+      ],
+      "primary_axes": [5, 4],
+      "hard_gates": [],
+      "tags": ["archetype", "getriebe", "interview"],
+      "kontext": "Unterspezifizierte Getriebe-Anfrage — der Archetyp soll das Interview führen.",
+      "notiz": "Profil getriebe injiziert Interview-Fragen + blinde Flecken; ein gutes Ergebnis fragt gezielt statt zu raten."
+    },
+    {
+      "id": "ARCH-GETRIEBE-02",
+      "klass": "Archetyp-Erkennung (ARCHETYPE)",
+      "input": "Getriebe-Wellendichtung, Welle 80 mm bei 3000 U/min, Synthetiköl, Dauertemperatur 120 °C. Worauf achten?",
+      "must_contain": [
+        "die Umfangsgeschwindigkeit als zentrale Auslegungsgröße benennen (nicht aus dem Bauch eine Zahl erfinden)",
+        "die Wellenoberfläche/Drallfreiheit als häufig übersehenen Leckage-Faktor ansprechen",
+        "die Additiv-/Temperaturbeständigkeit des Werkstoffs als Kriterium nennen"
+      ],
+      "must_catch": "Wellenoberfläche/Drall und Öl-Additive sind die typischen blinden Flecken beim Getriebe",
+      "must_avoid": [
+        "eine konkrete Umfangsgeschwindigkeit selbst ausrechnen und als gesicherten Wert ausgeben"
+      ],
+      "primary_axes": [5, 4],
+      "hard_gates": [],
+      "tags": ["archetype", "getriebe", "blind-spots"],
+      "kontext": "Konkretere Getriebe-Anfrage — der Archetyp soll die blinden Flecken hochholen.",
+      "notiz": "Misst Proaktivität (blinde Flecken) + Begründungstiefe; die parametrische Schranke bleibt davon unberührt (kein selbst gerechneter v)."
+    },
+    {
+      "id": "ARCH-RUEHRWERK-01",
+      "klass": "Archetyp-Erkennung (ARCHETYPE)",
+      "input": "Welche Wellendichtung empfiehlst du für mein Rührwerk?",
+      "must_contain": [
+        "nach dem Prozessmedium (Konzentration, Temperatur) fragen, weil es die Dichtung direkt berührt",
+        "Trockenlauf beim Anfahren ansprechen",
+        "die Wellenauslenkung/Taumeln als möglichen Knackpunkt nennen"
+      ],
+      "must_catch": "beim Rührwerk zählen Prozessmedium, Trockenlauf und Wellenauslenkung — nicht die Schmierung wie beim Getriebe",
+      "must_avoid": [
+        "das Rührwerk wie ein ölgeschmiertes Getriebe behandeln (Schmieröl-Annahme)",
+        "reflexhaft einen Werkstoff festlegen, bevor das Medium bekannt ist"
+      ],
+      "primary_axes": [5, 4],
+      "hard_gates": [],
+      "tags": ["archetype", "ruehrwerk", "interview"],
+      "kontext": "Unterspezifizierte Rührwerk-Anfrage — der Archetyp soll die rührwerk-typischen Sorgen führen.",
+      "notiz": "Profil ruehrwerk injiziert Medium/Trockenlauf/Auslenkung; ein gutes Ergebnis verwechselt es NICHT mit dem Getriebe."
+    },
+    {
+      "id": "ARCH-RUEHRWERK-02",
+      "klass": "Archetyp-Erkennung (ARCHETYPE)",
+      "input": "Rührwerk im Reaktor, vertikale Welle, leicht aggressives Prozessmedium, gelegentlich Vakuum. Welche Dichtung passt grundsätzlich?",
+      "must_contain": [
+        "die Medienverträglichkeit als primäres Kriterium behandeln (Prozessmedium berührt die Dichtung)",
+        "Trockenlauf/Anfahren und ggf. eine Gleitringdichtung als Bauform ansprechen",
+        "die Hygiene-/Reinigungs- oder Vakuum-Randbedingung als relevant benennen"
+      ],
+      "must_catch": "Medienverträglichkeit + Bauform (z. B. Gleitringdichtung) stehen beim Rührwerk vor der reinen Werkstoff-Temperaturfrage",
+      "must_avoid": [
+        "eine finale, verbindliche Werkstoff-/Produktfreigabe aussprechen statt Orientierung"
+      ],
+      "primary_axes": [5, 4],
+      "hard_gates": [],
+      "tags": ["archetype", "ruehrwerk", "bauform"],
+      "kontext": "Konkretere Rührwerk-Anfrage mit Medium + Vakuum — Archetyp führt Medium/Bauform/Regime.",
+      "notiz": "Misst, ob Bauform-Denken (Gleitringdichtung) + Medienprimat surface; Orientierungs-Grenze bleibt gewahrt."
+    }
+  ]
+}

@@ -19,7 +19,13 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.leak_detector import detect_parametric_leaks
 from sealai_v2.core.contracts import Flags, ModelConfig, VerifierVerdict
 from sealai_v2.eval import report
-from sealai_v2.eval.cases import Case, load_cases, load_edge_cases, load_injection_cases
+from sealai_v2.eval.cases import (
+    Case,
+    load_archetype_cases,
+    load_cases,
+    load_edge_cases,
+    load_injection_cases,
+)
 from sealai_v2.eval.judge import JudgeResult, judge_answer, judge_no_reask
 from sealai_v2.eval.multiturn import (
     load_multiturn_cases,
@@ -285,6 +291,34 @@ async def _run_edge(
     return records, errors
 
 
+async def _run_archetype(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """archetype_fit class (G5, V2.1 Inc 1) — runs the archetype-recognition cases through the EXISTING
+    single-turn unit + judge + scorer (column ``archetype``, flags_on). Folded into the canonical
+    records; excluded from the non-edge no-regression by column. A CREDIBILITY/axes class (NO new hard
+    gate — the 8 Schranken stay fixed): it measures whether the recognised archetype's interview
+    questions + blind spots surface. Owner is the factual oracle (axis 1 / any gate human-final)."""
+    cases = load_archetype_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "archetype",
+                    COLUMNS["flags_on"],
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_edge)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_injection(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str], dict | None]:
@@ -452,6 +486,25 @@ async def run_eval(
     )
     records = list(records) + inj_records
 
+    # archetype_fit (G5, V2.1 Inc 1) — runs after the frozen non-edge sets (the `summaries` above stay
+    # the no-regression anchor). Folded in under column `archetype` (excluded from the non-edge
+    # summaries by the column filter); a CREDIBILITY/axes class — NO new hard gate (the 8 stay fixed).
+    arch_records, arch_errors = await _run_archetype(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    archetype = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("archetype", [r.score for r in arch_records])
+            ),
+            "n_cases": len(arch_records),
+            "errors": arch_errors,
+        }
+        if arch_records
+        else None
+    )
+    records = list(records) + arch_records
+
     # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
     # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
     # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
@@ -531,6 +584,7 @@ async def run_eval(
         "n_multiturn_cases": (len(multiturn["cases"]) if multiturn else 0),
         "n_edge_cases": (edge["n_cases"] if edge else 0),
         "n_injection_cases": (injection["n_cases"] if injection else 0),
+        "n_archetype_cases": (archetype["n_cases"] if archetype else 0),
         "baseline_non_edge": {
             "flags_off": 1.000,
             "flags_on": 0.991,
@@ -545,7 +599,8 @@ async def run_eval(
         "errors": [r.error for r in records if r.error]
         + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])]
         + [f"edge::{e}" for e in (edge or {}).get("errors", [])]
-        + [f"injection::{e}" for e in (injection or {}).get("errors", [])],
+        + [f"injection::{e}" for e in (injection or {}).get("errors", [])]
+        + [f"archetype::{e}" for e in (archetype or {}).get("errors", [])],
     }
 
     # --- model-swap gate aggregates (latency / answer-quality / cost) -----------------------
@@ -600,6 +655,7 @@ async def run_eval(
         edge=edge,
         injection=injection,
         parametric=parametric,
+        archetype=archetype,
     )
     return {
         "manifest": manifest,
@@ -608,6 +664,7 @@ async def run_eval(
         "edge": edge,
         "injection": injection,
         "parametric": parametric,
+        "archetype": archetype,
         "answer_quality": answer_quality,
         "latency": latency,
         "token_usage": token_usage,

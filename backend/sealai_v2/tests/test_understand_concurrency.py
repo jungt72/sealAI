@@ -1,11 +1,14 @@
-"""P1 (PERF tranche 1): `understand` runs concurrent with the answer chain.
+"""P1 (PERF) + G4 (V2.1 Inc 1): `understand` runs concurrent with ground+compute, then is awaited
+BEFORE generate.
 
-`understand` is annotate-only (contracts: Intent — NEVER gates/routes); it feeds only
-`PipelineResult.understanding` → the API intent field. These tests pin (1) that it no longer
-serializes in front of L1 — the gated fake deadlocks on the old serial order, (2) that the
-reordering is pure: the L1 prompt and the answer are byte-identical with understand on/off,
-and (3) that an understand failure still fails the turn (error surface preserved).
-"""
+`understand` is annotate-only (contracts: Intent/archetype — NEVER gates/routes); it feeds
+`PipelineResult.understanding` AND (G4) the soft archetype that injects the matching profile's
+advisory context into the L1 prompt. Because the archetype must be in the prompt, understand is now
+awaited before generate (it still overlaps ground+compute — the P1 'never serialize in front of L1'
+contract is intentionally superseded by the archetype-in-prompt requirement; owner-accepted, ONE
+helper call, latency measured). These tests pin (1) understand COMPLETES before the L1 call, (2) the
+no-archetype path is pure: the L1 prompt + answer are byte-identical with understand on/off, and
+(3) an understand failure still fails the turn (error surface preserved)."""
 
 from __future__ import annotations
 
@@ -32,38 +35,21 @@ def _pipeline(client, *, understand: bool) -> Pipeline:
     )
 
 
-class _GatedUnderstandClient:
-    """The helper (`understand`) response is released only AFTER the L1 generate call has
-    happened. Serial order (understand before L1) → deadlock; concurrent → completes."""
-
-    def __init__(self) -> None:
-        self.l1_called = asyncio.Event()
-        self.calls: list[str] = []
-
-    async def generate(self, *, system: str, user: str, model_config: ModelConfig):
-        self.calls.append(model_config.model)
-        if model_config.model == "fake-helper":
-            await asyncio.wait_for(self.l1_called.wait(), timeout=2.0)
-            return LlmResult(text=_INTENT_JSON, model=model_config.model)
-        self.l1_called.set()
-        return LlmResult(text="ANTWORT", model=model_config.model)
-
-
-def test_understand_does_not_serialize_in_front_of_l1():
-    async def main():
-        client = _GatedUnderstandClient()
-        p = _pipeline(client, understand=True)
-        res = await asyncio.wait_for(
-            p.run("Frage?", tenant=TenantContext("t1")), timeout=5.0
-        )
-        return client, res
-
-    client, res = asyncio.run(main())
-    assert res.answer.text == "ANTWORT"
+def test_understand_completes_before_l1_generate():
+    """G4 ordering: understand is awaited BEFORE generate (so a recognised archetype can guide the L1
+    prompt). It still overlaps ground+compute, but the helper call now completes before the L1 call.
+    Replaces the P1 'understand does not serialize in front of L1' contract — superseded by the
+    archetype-in-prompt requirement (owner-accepted; still ONE helper call)."""
+    fake = FakeLlmClient(_INTENT_JSON)  # same text serves understand (parsed) AND L1
+    res = asyncio.run(
+        _pipeline(fake, understand=True).run("Frage?", tenant=TenantContext("t1"))
+    )
     assert res.understanding is not None
     assert res.understanding.intent == Intent.WISSENSFRAGE  # annotation still lands
-    assert client.calls.count("fake-helper") == 1
-    assert client.calls.count("fake-l1") == 1
+    helper_idx = next(i for i, c in enumerate(fake.calls) if c["model"] == "fake-helper")
+    l1_idx = next(i for i, c in enumerate(fake.calls) if c["model"] == "fake-l1")
+    assert helper_idx < l1_idx  # understand completed before the L1 generate (the new ordering)
+    assert sum(c["model"] == "fake-helper" for c in fake.calls) == 1  # exactly one helper call
 
 
 def test_reordering_is_pure_l1_prompt_and_answer_byte_identical():

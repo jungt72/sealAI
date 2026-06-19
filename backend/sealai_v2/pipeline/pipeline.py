@@ -20,6 +20,7 @@ from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
     CalcEngine,
     CalcResult,
+    Case,
     ConversationMemory,
     CrossSessionMemory,
     DerivedFact,
@@ -29,11 +30,13 @@ from sealai_v2.core.contracts import (
     PipelineResult,
     Retriever,
     SessionContext,
+    Understanding,
     UntrustedContent,
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier
+from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
@@ -83,6 +86,9 @@ class Pipeline:
     client: LlmClient
     helper_model: ModelConfig
     understand_enabled: bool = True
+    # G4: owner-reviewed archetype store (ArchetypeCatalog) — feeds the understand annotation + the L1
+    # interview. None → no archetype recognition → byte-identical no-archetype prompt.
+    archetypes: object | None = None
     verifier: L3Verifier | None = None  # None → L3 disabled (incident kill-switch only)
     catalog: TrapCatalog | None = None
     retriever: Retriever | None = (
@@ -147,7 +153,11 @@ class Pipeline:
         # durable facts surface under their own honest "aus früheren Gesprächen — bei Bedarf
         # bestätigen" frame and (below) do NOT feed the deterministic calc binder — a remembered
         # cross-session value must never be treated as a current/confirmed input.
-        case_context = [{"feld": f.feld, "wert": f.wert} for f in mem.case_state]
+        # G1 (V2.1 Inc 1): build the typed Case at the generalisation point, then project to the
+        # byte-identical list[dict] the L1 prompt + L3 topic-scope consume (owner decision 2 —
+        # Jinja unchanged, so the eval stays unperturbed). The typed slots fill in later increments.
+        case = Case.from_case_state(mem.case_state)
+        case_context = case.to_prompt_context()
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
@@ -156,12 +166,19 @@ class Pipeline:
         # answer chain instead of serializing in front of L1. Awaited after the chain; a chain
         # failure cancels it (same failure surface as the serial order, pure reordering).
         understand_task: asyncio.Task | None = None
+        understanding: Understanding | None = None
         if self.understand_enabled:
+            archetype_keys = (
+                tuple(self.archetypes.keys) if self.archetypes is not None else ()
+            )
 
             async def _understand_timed():
                 with _staged(timer, progress, "understand_ms", "understand"):
                     return await stages.understand(
-                        self.client, self.helper_model, question
+                        self.client,
+                        self.helper_model,
+                        question,
+                        archetype_keys=archetype_keys,
                     )
 
             understand_task = asyncio.create_task(_understand_timed())
@@ -209,6 +226,14 @@ class Pipeline:
                     not_computed=calc.not_computed,
                     notes=calc.notes + bound.notes,
                 )
+            # G4: await understand BEFORE generate so a recognised archetype can guide the L1 prompt.
+            # It ran CONCURRENT with ground+compute (created above); awaiting it here partially reverts
+            # the P1 hidden-latency optimisation for the archetype path (owner-accepted; latency
+            # measured). Annotate-only — the archetype NEVER gates/routes; it only injects the matching
+            # reviewed profile's interview questions + blind spots as advisory L1 context.
+            if understand_task is not None:
+                understanding = await understand_task
+            archetype_context = self._archetype_context(understanding)
             with _staged(timer, progress, "generate_ms", "generate"):
                 answer = await self.generator.generate(
                     question,
@@ -221,6 +246,7 @@ class Pipeline:
                     or None,  # empty → None → byte-identical no-cross-session prompt
                     conversation_window=conversation_window or None,
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
+                    archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
                 )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -292,7 +318,7 @@ class Pipeline:
                     understand_task.cancel()
             raise
 
-        understanding = await understand_task if understand_task is not None else None
+        # ``understanding`` was awaited before generate (G4) — already set (or None if understand off).
 
         # One JSON line per turn (stage durations + total + turn id; no PII). ``total_ms`` is
         # frozen HERE — the user-facing latency; a backgrounded remember emits the line itself
@@ -316,6 +342,24 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
         )
+
+    def _archetype_context(self, understanding: Understanding | None) -> dict | None:
+        """G4: map a recognised soft archetype to its reviewed profile's advisory L1 context
+        (interview questions + blind spots). None when there is no archetype / no store / no match —
+        so the no-archetype path stays byte-identical. Annotate-only; it never gates or routes."""
+        if understanding is None or self.archetypes is None:
+            return None
+        key = getattr(understanding, "archetype", None)
+        if not key:
+            return None
+        profile = self.archetypes.by_archetype(key)
+        if profile is None:
+            return None
+        return {
+            "archetyp": profile.key,
+            "interview_fragen": list(profile.interview_fragen),
+            "blinde_flecken": list(profile.blinde_flecken),
+        }
 
     def compute_for(self, *, tenant_id: str, session_id: str) -> DerivedComputation:
         """M8: recompute the kernel from the session's CURRENT settled inputs, PERSIST the derived
@@ -520,11 +564,17 @@ def build_pipeline(
                 ),
             )
 
+    # G4: owner-reviewed archetype store (Anwendungs-Archetypen) — feeds the understand annotation +
+    # the L1 interview. Loaded with understand (it is the understand stage's grounding); file-backed
+    # seed, canonical for this hop (a DB adapter is the deferred prod path, like the other stores).
+    archetypes = load_archetypes() if settings.understand_enabled else None
+
     return Pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
         helper_model=helper_cfg,
         understand_enabled=settings.understand_enabled,
+        archetypes=archetypes,
         verifier=verifier,
         catalog=catalog,
         retriever=retriever,

@@ -181,6 +181,14 @@ sie NICHT erneut ab; hängt eine konsequenzreiche Auslegung daran, lass den Wert
 - {{ c.feld }}: {{ c.wert }} (zuvor genannt — bei Bedarf bestätigen)
 {% endfor %}
 {% endif %}
+{%- if archetype_context %}
+
+# Erkannte Maschinen-Art: {{ archetype_context.archetyp }} (Orientierung, keine starre Vorgabe)
+Typische dichtungsrelevante Punkte für diese Maschinen-Art — nutze sie als Leitfaden für die EINE
+diskriminierende Rückfrage und um Übersehenes anzusprechen; frage NICHT alles ab, kein Fragenkatalog.
+{% for q in archetype_context.interview_fragen %}- mögliche Klärung: {{ q }}
+{% endfor %}{% for b in archetype_context.blinde_flecken %}- oft übersehen: {{ b }}
+{% endfor %}{% endif %}
 
 {% if durable_context -%}
 # Aus früheren Gesprächen (erinnert, NICHT aus diesem Gespräch, NICHT verifiziert)

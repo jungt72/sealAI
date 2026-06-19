@@ -180,6 +180,13 @@ def main() -> None:
             f"exfiltration-Schranken(agent-final)={'n/a' if xq is None else f'{xq:.3f}'}  "
             f"injection_override-Schranken(prov)={'n/a' if iq is None else f'{iq:.3f}'}"
         )
+    arch = out.get("archetype")
+    if arch:
+        asum = arch["summary"]
+        print(
+            f"[archetype] cases={arch['n_cases']}  credibility(2-7)={asum['overall_credibility']:.3f}  "
+            f"(archetype_fit — credibility/axes class, NO hard gate; non-archetype no-regression preserved)"
+        )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
 

@@ -66,6 +66,7 @@ class L1Generator:
         correction_note: str | None = None,
         calc: CalcResult | None = None,
         untrusted: list[dict] | None = None,
+        archetype_context: dict | None = None,
     ) -> Answer:
         computed_values, not_computed, calc_notes = _calc_payload(calc)
         system = self._assembler.system_prompt(
@@ -80,6 +81,7 @@ class L1Generator:
             not_computed=not_computed,
             calc_notes=calc_notes,
             untrusted=untrusted,
+            archetype_context=archetype_context,
         )
         result = await self._client.generate(
             system=system, user=question, model_config=self._model_config

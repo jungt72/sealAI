@@ -67,6 +67,7 @@ class SystemPromptAssembler(Protocol):
         calc_notes: list[str] | None = None,
         conversation_window: list[dict] | None = None,
         untrusted: list[dict] | None = None,
+        archetype_context: dict | None = None,
     ) -> str: ...
 
 
@@ -108,6 +109,11 @@ class Understanding:
     intent: Intent
     rationale: str
     raw: str | None = None
+    # G4 (V2.1 Inc 1) — soft, annotate-only machine archetype (a key in the archetype store, or None).
+    # SERVER-SIDE validated against the store keys (never an LLM-invented key). Like ``intent`` it
+    # NEVER gates/routes; it only lets the pipeline surface the matching profile's interview questions
+    # + blind spots into the L1 prompt as advisory context.
+    archetype: str | None = None
 
 
 @dataclass(frozen=True)
@@ -465,6 +471,37 @@ class MemoryView:
     @property
     def is_empty(self) -> bool:
         return not (self.window or self.case_state or self.durable)
+
+
+@dataclass(frozen=True)
+class Case:
+    """V2.1 §5.1 — the explicit, typed case object: the generalisation of the ``list[dict]``
+    ``case_context`` the pipeline builds from the memory case-state. For Inc 1 the typed slots
+    (``archetype``/``conditions``/``medium``/``geometry``/``seal_spec``) are SCAFFOLD — they fill in
+    later increments (``archetype`` via the G4 ``understand`` annotation; the rest via the
+    decode/describe adapters). The ONLY behaviour wired at Inc 1 is ``to_prompt_context()``, which is
+    BYTE-IDENTICAL to the prior ``[{"feld": f.feld, "wert": f.wert} for f in case_state]`` projection
+    (owner decision 2: byte-identical ``list[dict]`` projection, Jinja unchanged) — so L1/L3 see an
+    unchanged ``case_context`` and the eval is unperturbed. Pure type (``core`` stays I/O-free)."""
+
+    facts: tuple[RememberedFact, ...] = ()  # the source case-state facts → the prompt projection
+    archetype: str | None = None  # §5.1 — key into the archetype store (wired in G4)
+    conditions: dict | None = None  # {speed, temperature, pressure} — populated later
+    medium: dict | None = None  # {name, concentration?, temperature?} — populated later
+    geometry: dict | None = None  # {shaft_dia?, housing?, ...} — populated later
+    seal_spec: dict | None = None  # {material?, type?, form?, designation?} — populated later
+    provenance: tuple[str, ...] = ()  # per-field origin (carried as the typed slots grow)
+
+    @classmethod
+    def from_case_state(cls, case_state: tuple["RememberedFact", ...]) -> "Case":
+        """Build the Case from the memory case-state — the Inc-1 generalisation point
+        (``pipeline.py``). The typed slots stay unpopulated here; they fill in later increments."""
+        return cls(facts=tuple(case_state))
+
+    def to_prompt_context(self) -> list[dict]:
+        """The byte-identical prompt projection: ``[{"feld","wert"}]`` over the case-state facts.
+        Only ``feld``/``wert`` surface — provenance/as_of_turn never reach the prompt (unchanged)."""
+        return [{"feld": f.feld, "wert": f.wert} for f in self.facts]
 
 
 @runtime_checkable

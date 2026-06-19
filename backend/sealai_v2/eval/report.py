@@ -71,6 +71,7 @@ def write_all(
     edge: dict | None = None,
     injection: dict | None = None,
     parametric: dict | None = None,
+    archetype: dict | None = None,
 ) -> None:
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -84,6 +85,8 @@ def write_all(
         payload["injection"] = injection
     if parametric is not None:
         payload["parametric"] = parametric
+    if archetype is not None:
+        payload["archetype"] = archetype
     (run_dir / "results.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -98,6 +101,7 @@ def write_all(
             edge=edge,
             injection=injection,
             parametric=parametric,
+            archetype=archetype,
         ),
         encoding="utf-8",
     )
@@ -784,6 +788,29 @@ def _render_parametric_section(parametric: dict) -> list[str]:
     return L
 
 
+def _render_archetype_section(archetype: dict) -> list[str]:
+    """V2.1 Inc 1 (G5) — archetype_fit. A CREDIBILITY/axes class, NOT a hard gate (the 8 Schranken
+    stay fixed); axis 1 + any gate stay human-final (owner oracle)."""
+    s = archetype["summary"]
+    L = [
+        "## V2.1 Inc 1 — archetype_fit (Anwendungs-Archetypen)",
+        "",
+        f"- **Archetype-recognition cases:** {archetype['n_cases']} · credibility(2–7, rubric) "
+        f"{s['overall_credibility']:.3f} · status {s['provisional_status_counts']}.",
+        "- **Credibility/axes class — no hard gate** (the 8 Schranken stay fixed); axis 1 + any gate "
+        "are human-final. Measures whether the recognised archetype's interview questions + blind "
+        "spots surface (the no-archetype path stays byte-identical, so the non-archetype eval is "
+        "unperturbed).",
+        "",
+    ]
+    if archetype.get("errors"):
+        L.append(
+            f"> ⚠️ {len(archetype['errors'])} archetype case(s) errored: {archetype['errors']}"
+        )
+        L.append("")
+    return L
+
+
 def _render_report(
     manifest: dict,
     summaries: dict,
@@ -793,6 +820,7 @@ def _render_report(
     edge: dict | None = None,
     injection: dict | None = None,
     parametric: dict | None = None,
+    archetype: dict | None = None,
 ) -> str:
     L: list[str] = []
     milestone = manifest.get("milestone", "M1")
@@ -841,6 +869,9 @@ def _render_report(
 
     if injection is not None:
         L.extend(_render_injection_section(manifest, recs, injection))
+
+    if archetype is not None:
+        L.extend(_render_archetype_section(archetype))
 
     if parametric is not None:
         L.extend(_render_parametric_section(parametric))
