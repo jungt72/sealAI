@@ -36,15 +36,34 @@ class DerivedComputation:
     clarifications: tuple[BindClarification, ...] = ()
 
 
+# Case-state felder that carry the seal TYPE — fed to the engine as the ``seal_type`` condition
+# context (NOT a numeric calc input), so type-specific calc-defs gate correctly (RWDR-only calcs are
+# "nicht anwendbar" on a hydraulic case and vice versa). Absent ⇒ no gate (condition keys that are
+# absent pass) ⇒ byte-identical to the pre-wiring behaviour for cases without a stated type.
+_SEAL_TYPE_FELDER = ("dichtungstyp", "seal_type")
+
+
+def _seal_type(facts: Iterable[RememberedFact]) -> str | None:
+    """The stated seal type (lowercased) from a type feld, if any. Deterministic, last-wins."""
+    found: str | None = None
+    for f in facts:
+        if f.feld.strip().lower() in _SEAL_TYPE_FELDER and f.wert.strip():
+            found = f.wert.strip().lower()
+    return found
+
+
 def recompute_derived(
     input_facts: Iterable[RememberedFact], engine: CalcEngine
 ) -> DerivedComputation:
     """Bind current case-state inputs and evaluate the kernel. Returns the persistable DerivedFacts
     (one per computed value, tagged ``kernel_computed`` with parent-refs) + the full CalcResult."""
-    bound = bind_params(input_facts)
-    calc = engine.evaluate(
-        params=bound.params or {}, param_origins=bound.origins or None
-    )
+    facts = tuple(input_facts)
+    bound = bind_params(facts)
+    params: dict = dict(bound.params)
+    seal_type = _seal_type(facts)
+    if seal_type:
+        params["seal_type"] = seal_type  # string param → engine context → condition gate
+    calc = engine.evaluate(params=params or {}, param_origins=bound.origins or None)
     # surface the binder's fail-closed drops in the notes (visible, never silent) — mirrors pipeline.run
     if bound.notes:
         calc = CalcResult(

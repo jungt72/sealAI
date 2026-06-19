@@ -23,6 +23,12 @@ const label = (calcId: string): string => LABELS[calcId] ?? calcId;
  * authoritative value is the backend's — this never alters or derives a number). */
 const fmt = (v: number): string => v.toFixed(2).replace(".", ",");
 
+/** A not-computed entry that is merely "nicht anwendbar" (the calc does not apply to this seal
+ * type) is noise on the critical surface, not an open point. Shared by the panel + the cockpit
+ * "kritische Punkte" gate so both agree on what counts as critical. */
+export const isNotApplicable = (n: { reason: string }): boolean =>
+  /nicht anwendbar/i.test(n.reason);
+
 export function BerechnungenPanel({
   compute,
   onConfirmUnit,
@@ -44,7 +50,10 @@ export function BerechnungenPanel({
   const notes = (compute?.notes ?? []).filter(
     (n) => !clarifications.some((c) => n.startsWith(`${c.feld}:`)),
   );
-  const notComputed = compute?.not_computed ?? [];
+  // A type-mismatch ("nicht anwendbar" — e.g. an RWDR-only calc on a hydraulic case) is NOT an
+  // open point the user should resolve; only genuinely missing/invalid inputs of APPLICABLE calcs
+  // are critical. Filter the not-applicable ones out of the critical surface.
+  const notComputed = (compute?.not_computed ?? []).filter((n) => !isNotApplicable(n));
 
   // Preview in-flight: show only „rechnet…" — never repaint a prior value as if it were current.
   if (isPreview && loading) {

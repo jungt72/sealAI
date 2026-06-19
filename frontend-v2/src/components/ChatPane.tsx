@@ -17,7 +17,7 @@ import type {
 import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
 import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
-import { BerechnungenPanel } from "./BerechnungenPanel";
+import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
@@ -292,7 +292,7 @@ export function ChatPane({
   const computeHasCritical =
     (compute?.notes?.length ?? 0) +
       (compute?.clarifications?.length ?? 0) +
-      (compute?.not_computed?.length ?? 0) >
+      ((compute?.not_computed ?? []).filter((n) => !isNotApplicable(n)).length) >
     0;
 
   const cockpit = (

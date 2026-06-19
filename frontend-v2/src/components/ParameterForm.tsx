@@ -66,6 +66,10 @@ export function hydrateValue(field: FieldDef, settledWert: string): string {
  * kern-owned derived quantity (the kern owns every number). */
 export function buildItems(vals: Record<string, string>, active: SituationDef): ParamItem[] {
   const items: ParamItem[] = [];
+  // The active seal TYPE as a case fact (NOT a numeric input): the kern reads it as the seal_type
+  // condition context, so type-specific calc-defs gate correctly (RWDR-only calcs are "nicht
+  // anwendbar" on a hydraulic case, etc.). wert = the situation id (matches the registry conditions).
+  items.push({ feld: "dichtungstyp", wert: active.id, label: "Dichtungstyp" });
   for (const f of formFields(active)) {
     const wert = resolveWert(f, vals[f.key] ?? "");
     if (wert) items.push({ feld: f.key, wert, label: f.label });
@@ -193,7 +197,11 @@ export function ParameterForm({
   // (reuse the commit comparison, NOT raw `vals`, so a decimal normalization "0.5"→"0,5 bar" never
   // reads as a phantom edit). At rest (hydrated / just after Übernehmen) → not dirty → no Vorschau;
   // no committed value yet → dirty as soon as the user types. The committed panel lives in the host.
-  const isDirty = items.some((it) => (committed?.[it.feld] ?? "") !== it.wert) || deletes.length > 0;
+  // the synthetic "dichtungstyp" type marker is always present + never "committed" — exclude it
+  // from the dirty check so a freshly hydrated form (draft == committed) shows no phantom Vorschau.
+  const isDirty =
+    items.some((it) => it.feld !== "dichtungstyp" && (committed?.[it.feld] ?? "") !== it.wert) ||
+    deletes.length > 0;
 
   function set(key: string, value: string) {
     setVals((s) => ({ ...s, [key]: value }));

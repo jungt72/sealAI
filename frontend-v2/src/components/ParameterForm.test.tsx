@@ -50,7 +50,8 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     expect(items).toContainEqual({ feld: "drehzahl", wert: "3000 U/min", label: "Drehzahl n" });
     expect(items).toContainEqual({ feld: "druck", wert: "5 bar", label: "Druck (normal)" });
     expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" }); // enum → German label
-    expect(items).toHaveLength(4);
+    expect(items).toContainEqual({ feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" }); // active type marker
+    expect(items).toHaveLength(5);
   });
 
   it("does NOT submit empty / 'Unbekannt' fields (no fake default — the param stays missing)", () => {
@@ -60,6 +61,7 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     // medium left at "Unbekannt" (value ""), every other field untouched
     fireEvent.click(screen.getByTestId("param-submit"));
     expect(onSubmit.mock.calls[0][0]).toEqual([
+      { feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" },
       { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
     ]);
   });
@@ -73,7 +75,7 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     const felder = (onSubmit.mock.calls[0][0] as { feld: string }[]).map((it) => it.feld);
     const schemaKeys = situationFields(RWDR_SITUATION).map((f) => f.key);
     expect(felder).not.toContain("umfangsgeschwindigkeit");
-    expect(felder.every((f) => schemaKeys.includes(f))).toBe(true);
+    expect(felder.filter((f) => f !== "dichtungstyp").every((f) => schemaKeys.includes(f))).toBe(true);
     // π·50·3000/60000 ≈ 7.85 m/s must NOT be computed/rendered anywhere
     expect(container.textContent ?? "").not.toMatch(/m\/s/);
     expect(container.textContent ?? "").not.toContain("7.85");
@@ -191,7 +193,8 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" });
     expect(items).toContainEqual({ feld: "druck", wert: "0,5 bar", label: "Druck (normal)" }); // 0.5 → 0,5
     expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" });
-    expect(items).toHaveLength(3); // drehzahl left empty → omitted (no fake default)
+    expect(items).toContainEqual({ feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" }); // active type marker
+    expect(items).toHaveLength(4); // drehzahl left empty → omitted (no fake default)
   });
 });
 

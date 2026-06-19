@@ -86,7 +86,10 @@ describe("pilot-ui stage (fresh conversation)", () => {
     // ONE batch call carrying the field + its schema label (not N per-field calls); R2 also passes
     // the reconcile deletes (empty here — nothing was committed yet)
     expect(props.onSubmitParams).toHaveBeenCalledWith(
-      [{ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" }],
+      [
+        { feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" }, // active type marker (gates the kern)
+        { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
+      ],
       [],
     );
     // the deterministic confirmation lands in the conversation (→ chat-view)
@@ -223,7 +226,10 @@ describe("pilot-ui stage (fresh conversation)", () => {
     fireEvent.change(within(cockpit).getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.click(within(cockpit).getByTestId("param-submit"));
     expect(props.onSubmitParams).toHaveBeenCalledWith(
-      [{ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" }],
+      [
+        { feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" }, // active type marker (gates the kern)
+        { feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" },
+      ],
       [],
     );
     expect(await screen.findByTestId("param-confirmation")).toHaveTextContent("übernommen");

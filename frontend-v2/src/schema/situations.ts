@@ -61,7 +61,7 @@ export interface SituationDef {
 
 /** The calc-registry inputs a kernel field may feed (knowledge/calc_seed.json). A kernelKey outside
  * this set is a schema error (asserted in situations.test.ts). */
-export const KERNEL_INPUTS = ["d1_mm", "rpm", "p_bar"] as const;
+export const KERNEL_INPUTS = ["d1_mm", "rpm", "p_bar", "v_m_s"] as const;
 
 const o = (value: string, label: string): FieldOption => ({ value, label });
 
@@ -256,7 +256,7 @@ export const HYDRAULIK_SITUATION: SituationDef = {
           key: "bewegungsart", label: "Bewegungsart", unit: "", type: "enum", required: false, role: "context",
           options: [o("translatorisch", "translatorisch"), o("rotierend", "rotierend"), o("schwenkend", "schwenkend"), o("statisch", "statisch")],
         },
-        { key: "geschwindigkeit", label: "Geschwindigkeit", unit: "m/s", type: "number", required: false, role: "context", help: "Hub- bzw. Gleitgeschwindigkeit" },
+        { key: "geschwindigkeit", label: "Geschwindigkeit", unit: "m/s", type: "number", required: false, role: "kernel", kernelKey: "v_m_s", help: "Hub- bzw. Gleitgeschwindigkeit (feeds PV-Wert)" },
         { key: "hublaenge", label: "Hublaenge", unit: "mm", type: "number", required: false, role: "context" },
         { key: "frequenz", label: "Frequenz", unit: "1/min", type: "number", required: false, role: "context", help: "Doppelhuebe pro Minute" },
       ],

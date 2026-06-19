@@ -72,6 +72,69 @@ def test_recompute_derived_unitless_input_fails_closed_with_note():
     assert any("drehzahl" in n for n in comp.calc.notes)  # drop is visible
 
 
+# --- Hydraulik v1 kern: PV from pressure x sliding speed + seal_type gating ----------------------
+
+
+def test_recompute_hydraulik_pv_from_pressure_and_speed():
+    """Hydraulik v1: the user states the sliding speed (→ v_m_s) and pressure (→ p_bar); the reviewed
+    PV kern fires (PV = p x v) with no RWDR geometry. PV = 100 bar x 0,5 m/s = 50 bar*m/s."""
+    comp = recompute_derived(
+        (
+            _rf("dichtungstyp", "hydraulik"),
+            _rf("geschwindigkeit", "0,5 m/s"),
+            _rf("druck", "100 bar"),
+        ),
+        CascadeCalcEngine(),
+    )
+    by_id = {d.calc_id: d for d in comp.derived}
+    assert "pv_wert" in by_id
+    assert abs(by_id["pv_wert"].value - 50.0) < 0.01
+    assert by_id["pv_wert"].unit == "bar*m/s" or by_id["pv_wert"].unit  # cited unit carried
+    # the RWDR-only kinematics calc never fires on a hydraulic case
+    assert "umfangsgeschwindigkeit" not in by_id
+
+
+def test_seal_type_gates_cross_type_calcs():
+    """The stated seal type gates type-specific calc-defs: RWDR-only umfangsgeschwindigkeit is NOT
+    applicable to a hydraulic case, and the o-ring verpressung is not applicable to either — so they
+    surface as ``nicht anwendbar`` (a type mismatch), never a misleading number nor a false open
+    point with missing inputs."""
+    hyd = recompute_derived(
+        (
+            _rf("dichtungstyp", "hydraulik"),
+            _rf("geschwindigkeit", "0,5 m/s"),
+            _rf("druck", "100 bar"),
+        ),
+        CascadeCalcEngine(),
+    )
+    hyd_nc = {n.calc_id: n.reason for n in hyd.calc.not_computed}
+    assert "nicht anwendbar" in hyd_nc["umfangsgeschwindigkeit"]
+    assert "nicht anwendbar" in hyd_nc["verpressung_prozent"]
+
+    rwdr = recompute_derived(
+        (
+            _rf("dichtungstyp", "rwdr"),
+            _rf("wellendurchmesser", "40 mm"),
+            _rf("drehzahl", "8000 U/min"),
+        ),
+        CascadeCalcEngine(),
+    )
+    by_id = {d.calc_id: d for d in rwdr.derived}
+    assert "umfangsgeschwindigkeit" in by_id  # the right calc fires for RWDR
+    rwdr_nc = {n.calc_id: n.reason for n in rwdr.calc.not_computed}
+    assert "nicht anwendbar" in rwdr_nc["verpressung_prozent"]
+
+
+def test_no_seal_type_keeps_pre_wiring_behaviour():
+    """Absent a stated type, condition keys that are absent PASS — byte-identical to the pre-wiring
+    behaviour: a plain d1+n case still computes umfangsgeschwindigkeit."""
+    comp = recompute_derived(
+        (_rf("wellendurchmesser", "40 mm"), _rf("drehzahl", "8000 U/min")),
+        CascadeCalcEngine(),
+    )
+    assert any(d.calc_id == "umfangsgeschwindigkeit" for d in comp.derived)
+
+
 # --- binder guard (deferred from Part 1): kernel_computed is NEVER an input ----------------------
 
 

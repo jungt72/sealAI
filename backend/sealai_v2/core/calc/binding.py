@@ -70,6 +70,8 @@ _UNIT_SYNONYMS: dict[str, frozenset[str]] = {
     # Phase 2a (owner-gated unpark): pressure binds ONLY in bar — EXACT, no other spelling. mbar/
     # kPa/MPa/Pa/psi are real pressure units of a different scale → _KNOWN_UNITS (clarify, no rescale).
     "bar": frozenset({"bar"}),
+    # Hydraulik v1 (owner-gated): sliding speed binds ONLY in m/s → the PV kern's v_m_s input.
+    "m_s": frozenset({"m/s"}),
 }
 
 # Known OTHER units (NORMALIZED → dimension). Membership here means a REAL unit that is NOT the
@@ -133,6 +135,9 @@ _BINDINGS: dict[str, _Bind] = {
     "drehzahl": _Bind("rpm", "rpm", "U/min", "frequency"),
     # Phase 2a (owner-gated): pressure feeds the PV kern; binds only in bar (fail-closed otherwise).
     "druck": _Bind("p_bar", "bar", "bar", "pressure"),
+    # Hydraulik v1 (owner-gated): the translatory sliding speed feeds the PV kern directly as v_m_s
+    # (the RWDR path derives v_m_s from d1+rpm; here the user states it). Binds only in m/s.
+    "geschwindigkeit": _Bind("v_m_s", "m_s", "m/s", "velocity"),
 }
 
 
