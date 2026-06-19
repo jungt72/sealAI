@@ -15,6 +15,11 @@
   --hover-wash: #f1f3f7;     /* icon hover, user bubble */
   --glow: rgba(168, 205, 255, 0.55);
 
+  /* neumorphism (themesberg soft-UI) — the cockpit surface + its raised/inset shadows */
+  --neu-bg: #e8ebf1;         /* soft grey-blue base (shadows need a non-white ground) */
+  --neu-lo: #c5cad6;         /* dark shadow (bottom-right) */
+  --neu-hi: #ffffff;         /* light shadow (top-left) */
+
   /* brand accent (kept from V1 visual language) */
   --color-seal-blue: #002a5b;
   --color-seal-light-blue: color-mix(in srgb, var(--color-seal-blue) 14%, #ffffff);

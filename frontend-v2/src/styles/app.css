@@ -663,7 +663,7 @@
 .cockpit-form .param-tabs-sticky,
 .cockpit-form .param-actionbar { position: static; }
 
-.cockpit-split { display: flex; flex-direction: column; border-top: 1px solid var(--hairline); margin-top: 8px; }
+.cockpit-split { display: flex; flex-direction: column; margin-top: 4px; }
 .cockpit-split-col {
   flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
 }
@@ -674,9 +674,8 @@
 .cockpit-split-empty { margin: 0; font-size: 12px; color: var(--ink-ghost); line-height: 1.5; }
 @container cockpit (min-width: 620px) {
   .cockpit-split { flex-direction: row; align-items: stretch; }
-  .cockpit-split-col + .cockpit-split-col { border-left: 1px solid var(--hairline); }
 }
 .kernel-panel--critical { gap: 8px; }
 .kernel-open .fact-feld { color: var(--ink-soft); }
-.cockpit-body--stack .readout-briefing { margin-top: auto; padding: 16px; }
+.cockpit-body--stack .readout-briefing { margin-top: auto; padding: 16px; border-top: none; }
 .cockpit-body--stack > [data-testid="memory-panel"] { padding: 0 16px; }
