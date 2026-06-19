@@ -574,9 +574,15 @@
 .cockpit-panel .cockpit-close:active { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
 
 /* — operating-conditions card + inputs/selects (inset wells) ————————————————————————————————— */
+/* Betriebsbedingungen = a FLAT section (no outer well — only the input fields are recessed),
+   set off from the tabs by a soft divider + spacing, with a clear heading. */
 .cockpit-panel .param-core {
-  border: none; background: var(--neu-bg);
-  box-shadow: inset 4px 4px 8px var(--neu-lo), inset -4px -4px 8px var(--neu-hi);
+  border: none; background: transparent; box-shadow: none;
+  padding: 2px 0 16px; margin: 0 0 14px;
+  border-bottom: 1px solid rgba(90, 99, 114, 0.16);
+}
+.cockpit-panel .param-core-label {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: var(--ink); margin-bottom: 2px;
 }
 .cockpit-panel .param-input input,
 .cockpit-panel .param-select {
