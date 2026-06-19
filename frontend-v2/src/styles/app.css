@@ -649,7 +649,6 @@
 
 /* ── cockpit re-layout: one column (tabs+form on top) + a split (Berechnungen | Kritische Punkte) ─
    Solid uniform surface to the right edge; the whole body scrolls as one. */
-.cockpit-panel { background: var(--color-surface); }
 .cockpit-body--stack {
   display: flex; flex-direction: column; height: 100%; min-height: 0;
   overflow: auto; overscroll-behavior: contain;
