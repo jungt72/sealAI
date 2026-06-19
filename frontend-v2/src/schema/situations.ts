@@ -215,11 +215,84 @@ export const RWDR_SITUATION: SituationDef = {
 /** Announced-but-unbuilt Domain Packs — their tabs render grayed (not selectable) so the type
  * surface is honest about what's coming without offering an empty, broken pack. Phase B fills the
  * groups + the type-aware kernel; until then they carry no fields and can never become `active`. */
+/** HYDRAULIK — second Domain Pack, first functional cut. All fields are role:"context": they
+ * settle as case-state facts and inform L1's *vorläufige* guidance, but NONE binds to the
+ * deterministic Rechenkern — the type-aware Hydraulik kernel is Phase B, and feeding the
+ * RWDR-calibrated kernel here would risk a wrong number (fail-closed). Pressure/medium/temperature
+ * still come from the Universal Core. Geometry/labels are a sound first pass, not yet owner-final. */
 export const HYDRAULIK_SITUATION: SituationDef = {
   id: "hydraulik",
   label: "Hydraulik",
-  groups: [],
-  disabled: true,
+  groups: [
+    {
+      id: "A",
+      title: "Bauart",
+      fields: [
+        {
+          key: "dichtungsart", label: "Dichtungsart", unit: "", type: "enum", required: false, role: "context",
+          options: [o("stangendichtung", "Stangendichtung"), o("kolbendichtung", "Kolbendichtung"), o("abstreifer", "Abstreifer"), o("fuehrungsring", "Fuehrungsring"), o("stuetzring", "Stuetzring")],
+        },
+        {
+          key: "einbauart", label: "Einbauart", unit: "", type: "enum", required: false, role: "context",
+          options: [o("nut_geschlossen", "geschlossene Nut"), o("nut_geteilt", "geteilte Nut"), o("eingestochen", "eingestochen")],
+        },
+      ],
+    },
+    {
+      id: "B",
+      title: "Geometrie",
+      fields: [
+        { key: "durchmesser", label: "Durchmesser (Stange/Kolben)", unit: "mm", type: "number", required: false, role: "context", help: "Stangen- bzw. Kolbendurchmesser" },
+        { key: "nutbreite", label: "Nutbreite", unit: "mm", type: "number", required: false, role: "context" },
+        { key: "nuttiefe", label: "Nuttiefe / Radialhoehe", unit: "mm", type: "number", required: false, role: "context" },
+        { key: "spaltmass", label: "Dichtspalt", unit: "mm", type: "number", required: false, role: "context", help: "radialer Spalt" },
+      ],
+    },
+    {
+      id: "C",
+      title: "Bewegung",
+      fields: [
+        {
+          key: "bewegungsart", label: "Bewegungsart", unit: "", type: "enum", required: false, role: "context",
+          options: [o("translatorisch", "translatorisch"), o("rotierend", "rotierend"), o("schwenkend", "schwenkend"), o("statisch", "statisch")],
+        },
+        { key: "geschwindigkeit", label: "Geschwindigkeit", unit: "m/s", type: "number", required: false, role: "context", help: "Hub- bzw. Gleitgeschwindigkeit" },
+        { key: "hublaenge", label: "Hublaenge", unit: "mm", type: "number", required: false, role: "context" },
+        { key: "frequenz", label: "Frequenz", unit: "1/min", type: "number", required: false, role: "context", help: "Doppelhuebe pro Minute" },
+      ],
+    },
+    {
+      id: "D",
+      title: "Werkstoff & Gegenlaufflaeche",
+      fields: [
+        {
+          key: "werkstoffvorgabe", label: "Werkstoffvorgabe", unit: "", type: "enum", required: false, role: "context",
+          options: [o("PU", "PU"), o("NBR", "NBR"), o("HNBR", "HNBR"), o("FKM", "FKM"), o("PTFE", "PTFE"), o("POM", "POM"), o("PA", "PA"), o("offen", "offen")],
+        },
+        { key: "haerte", label: "Haerte", unit: "Shore", type: "number", required: false, role: "context", help: "Shore A / D" },
+        { key: "rauheit", label: "Gegenlauf-Rauheit", unit: "µm", type: "number", required: false, role: "context", help: "Ra oder Rz" },
+        {
+          key: "oberflaeche", label: "Gegenlauf-Oberflaeche", unit: "", type: "enum", required: false, role: "context",
+          options: [o("hartverchromt", "hartverchromt"), o("nitriert", "nitriert"), o("geschliffen", "geschliffen"), o("beschichtet", "beschichtet"), o("sonstiges", "Sonstiges")],
+        },
+      ],
+    },
+    {
+      id: "E",
+      title: "Anforderung & Umgebung",
+      fields: [
+        {
+          key: "leckageanforderung", label: "Leckageanforderung", unit: "", type: "enum", required: false, role: "context",
+          options: [o("technisch_trocken", "technisch trocken"), o("leichter_film", "leichter Schmierfilm"), o("tropfend_ok", "Tropfleckage tolerierbar")],
+        },
+        {
+          key: "verschmutzung", label: "Verschmutzung", unit: "", type: "enum", required: false, role: "context",
+          options: [o("sauber", "sauber"), o("leicht", "leicht"), o("stark", "stark")],
+        },
+        { key: "ausseneinsatz", label: "Ausseneinsatz / UV", unit: "", type: "boolean", required: false, role: "context" },
+      ],
+    },
+  ],
 };
 export const STATISCH_SITUATION: SituationDef = {
   id: "statisch",

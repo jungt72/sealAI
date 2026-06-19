@@ -107,10 +107,10 @@ describe("Universal Core (operating conditions shared across all Domain Packs)",
 });
 
 describe("type tabs (Domain Packs)", () => {
-  it("RWDR is enabled and first; Hydraulik + Statisch are announced-but-disabled, in order", () => {
+  it("RWDR + Hydraulik are enabled; Statisch is announced-but-disabled, in order", () => {
     expect(SITUATIONS.map((s) => [s.id, Boolean(s.disabled)])).toEqual([
       ["rwdr", false],
-      ["hydraulik", true],
+      ["hydraulik", false],
       ["statisch", true],
     ]);
   });

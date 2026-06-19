@@ -598,10 +598,11 @@
    ACTIVE = light tab with navy-blue text + a dark-blue (seal-blue) outline so it reads clearly;
    soon/disabled keep the base dashed/greyed look (scoped :not so we do not flatten them). */
 .cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled) {
-  background: #ffffff; border-color: rgba(60, 67, 80, 0.24); color: var(--ink-soft);
+  background: #ffffff; border-color: rgba(60, 67, 80, 0.42); color: var(--ink);
+  font-weight: 600; box-shadow: 2px 2px 5px rgba(60, 67, 80, 0.10);
 }
 .cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
-  background: #ffffff; color: var(--ink); border-color: rgba(60, 67, 80, 0.4);
+  background: #ffffff; color: var(--color-seal-blue); border-color: rgba(60, 67, 80, 0.6);
 }
 /* active = navy-blue text + a dark-blue accent stroke on the LEFT edge only (not a full outline) */
 .cockpit-panel .param-tab.is-active {

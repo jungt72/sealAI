@@ -265,25 +265,33 @@ export function ParameterForm({
           <div className="param-compact" data-testid="param-compact">
             {kernelFields(active).map(row)}
           </div>
-          <details className="param-expander" data-testid="param-expander">
-            <summary className="param-expander-summary">
-              weitere Parameter ergänzen (Medium, Werkstoff, Dynamik …)
-            </summary>
-            <div className="param-expander-body">
-              {active.groups.map((g) => {
-                const ctx = g.fields.filter((f) => f.role === "context");
-                if (ctx.length === 0) return null;
-                return (
-                  <fieldset key={g.id} className="param-group" data-testid={`param-group-${g.id}`}>
-                    <legend className="param-group-title">{g.title}</legend>
-                    <div className="param-group-grid" data-testid={`param-group-grid-${g.id}`}>
-                      {ctx.map(row)}
-                    </div>
-                  </fieldset>
-                );
-              })}
-            </div>
-          </details>
+          {(() => {
+            const groupBlocks = active.groups.map((g) => {
+              const ctx = g.fields.filter((f) => f.role === "context");
+              if (ctx.length === 0) return null;
+              return (
+                <fieldset key={g.id} className="param-group" data-testid={`param-group-${g.id}`}>
+                  <legend className="param-group-title">{g.title}</legend>
+                  <div className="param-group-grid" data-testid={`param-group-grid-${g.id}`}>
+                    {ctx.map(row)}
+                  </div>
+                </fieldset>
+              );
+            });
+            // Packs WITH kernel fields anchor the compact card and tuck context fields behind an
+            // expander. A pack WITHOUT kernel fields (e.g. Hydraulik, type-aware kernel still Phase B)
+            // has no compact anchor — render its fields inline so the tab is usable, not empty.
+            return kernelFields(active).length > 0 ? (
+              <details className="param-expander" data-testid="param-expander">
+                <summary className="param-expander-summary">
+                  weitere Parameter ergänzen (Medium, Werkstoff, Dynamik …)
+                </summary>
+                <div className="param-expander-body">{groupBlocks}</div>
+              </details>
+            ) : (
+              <div className="param-expander-body" data-testid="param-fields-inline">{groupBlocks}</div>
+            );
+          })()}
           <p className="muted param-stage-note">
             Eingaben ändern rechnet live eine Vorschau; „Übernehmen" speichert sie als Fallkontext.
             Leer / „Unbekannt" bleibt offen (keine Annahme).

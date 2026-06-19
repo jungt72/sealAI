@@ -152,16 +152,22 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     expect(within(core).queryByTestId("param-wellendurchmesser")).toBeNull();
   });
 
-  it("type tabs: RWDR active, Hydraulik/Statisch grayed and NOT selectable (no empty pack)", () => {
+  it("type tabs: RWDR active by default; Hydraulik selectable + switches schema; Statisch still grayed", () => {
     render(<ParameterForm variant="stage" onSubmit={vi.fn()} />);
     const rwdr = screen.getByTestId("param-tab-rwdr");
     const hyd = screen.getByTestId("param-tab-hydraulik") as HTMLButtonElement;
+    const stat = screen.getByTestId("param-tab-statisch") as HTMLButtonElement;
     expect(rwdr).toHaveAttribute("aria-selected", "true");
-    expect(hyd.disabled).toBe(true);
-    // clicking a disabled pack does NOT switch the active schema (RWDR fields stay)
+    expect(hyd.disabled).toBe(false);
+    expect(stat.disabled).toBe(true);
+    // selecting Hydraulik switches the active schema: RWDR-only field gone, a Hydraulik field appears
     fireEvent.click(hyd);
-    expect(screen.getByTestId("param-tab-rwdr")).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("param-wellendurchmesser")).toBeTruthy();
+    expect(screen.getByTestId("param-tab-hydraulik")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("param-wellendurchmesser")).toBeNull();
+    expect(screen.getByTestId("param-dichtungsart")).toBeTruthy();
+    // a still-disabled pack (Statisch) does NOT switch the active schema
+    fireEvent.click(stat);
+    expect(screen.getByTestId("param-tab-statisch")).not.toHaveAttribute("aria-selected", "true");
   });
 
   it("sticky anchors: tabs are sticky-wrapped and Übernehmen sits in a sticky action bar", () => {
