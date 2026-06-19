@@ -187,9 +187,6 @@ export function ChatPane({
     <MemoryPanel memory={memory} onEdit={onEditFact} onForget={onForgetFact} onForgetAll={onForgetAll} />
   );
 
-  // the kernel channel renders inside the cockpit, under the chips
-  const kernelPanel = <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} />;
-
   const briefingButton = (
     <button
       className="make-briefing"
@@ -292,6 +289,12 @@ export function ChatPane({
   // + the Parameter | Readout 2-pane (side-by-side when the panel is wide, stacked when narrow — a CSS
   // container query). The fast-path form is the SINGLE form entry point; its batch submit reuses the
   // SAME settle → confirmation path. Pure placement: no data-flow / settle / recompute change.
+  const computeHasCritical =
+    (compute?.notes?.length ?? 0) +
+      (compute?.clarifications?.length ?? 0) +
+      (compute?.not_computed?.length ?? 0) >
+    0;
+
   const cockpit = (
     <aside className="cockpit-panel" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
       <header className="cockpit-header">
@@ -307,38 +310,48 @@ export function ChatPane({
           ×
         </button>
       </header>
-      <div className="cockpit-body">
-        <div className="cockpit-2pane" data-testid="cockpit-2pane">
-          {/* each column: a non-scrolling wrapper (carries the fade cues) + an inner scroll-area */}
-          <div className="cockpit-col scroll-wrap scroll-wrap--param">
-            <div className="cockpit-pane cockpit-pane--param scroll-area" data-testid="cockpit-param">
-              <ParameterForm
-                variant="stage"
-                onSubmit={submitParams}
-                onPreview={onPreview}
-                committed={committed}
-              />
+      <div className="cockpit-body cockpit-body--stack scroll-area">
+        {/* top: tab menu + parameter form, full width */}
+        <div className="cockpit-form" data-testid="cockpit-form">
+          <ParameterForm
+            variant="stage"
+            onSubmit={submitParams}
+            onPreview={onPreview}
+            committed={committed}
+          />
+        </div>
+
+        {caseStateEmpty ? (
+          <p className="case-state-empty" data-testid="case-state-empty">
+            Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Berechnungen und
+            kritische Punkte hier.
+          </p>
+        ) : (
+          <>
+            {/* below: left = deterministic calculator results, right = critical points */}
+            <div className="cockpit-split" data-testid="cockpit-split">
+              <section className="cockpit-split-col" data-testid="cockpit-col-calc" aria-label="Berechnungen">
+                <span className="cockpit-split-title">Berechnungen</span>
+                <BerechnungenPanel compute={compute ?? null} view="results" />
+                {(compute?.computed?.length ?? 0) === 0 ? (
+                  <p className="cockpit-split-empty">Noch keine Werte vom Rechenkern.</p>
+                ) : null}
+              </section>
+              <section className="cockpit-split-col" data-testid="cockpit-col-critical" aria-label="Kritische Punkte">
+                <span className="cockpit-split-title">Kritische Punkte</span>
+                <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} view="critical" />
+                {computeHasCritical ? null : (
+                  <p className="cockpit-split-empty">Keine kritischen Punkte zu den aktuellen Eingaben.</p>
+                )}
+              </section>
             </div>
-          </div>
-          <div className="cockpit-col scroll-wrap">
-            <div className="cockpit-pane cockpit-pane--readout scroll-area" data-testid="cockpit-readout">
-              {caseStateEmpty ? (
-                <p className="case-state-empty" data-testid="case-state-empty">
-                  Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Fallkontext und der
-                  Rechenkern hier.
-                </p>
-              ) : (
-                <>
-                  {kernelPanel}
-                  {chips}
-                </>
-              )}
-              <div className="readout-briefing">
-                <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
-                {briefingButton}
-              </div>
-            </div>
-          </div>
+            {chips}
+          </>
+        )}
+
+        <div className="readout-briefing">
+          <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
+          {briefingButton}
         </div>
       </div>
     </aside>

@@ -376,7 +376,7 @@ describe("chat|cockpit divider (resizable ~50/50 — ≥1024px)", () => {
   });
 });
 
-describe("cockpit internals: two columns (Parameter | Readout)", () => {
+describe("cockpit internals: one column + split (Berechnungen | Kritische Punkte)", () => {
   const withV = (value: number): Partial<Parameters<typeof ChatPane>[0]> => ({
     compute: {
       computed: [
@@ -396,36 +396,40 @@ describe("cockpit internals: two columns (Parameter | Readout)", () => {
     },
   });
 
-  it("the 2-pane holds Parameter (left) then Readout (right) as siblings, in that order", () => {
+  it("stacks the parameter form on top, then the Berechnungen | Kritische Punkte split", () => {
     renderPane({ memory: WITH_FACTS });
-    const twoPane = screen.getByTestId("cockpit-2pane");
-    const panes = within(twoPane).getAllByTestId(/^cockpit-(param|readout)$/);
-    expect(panes.map((p) => p.getAttribute("data-testid"))).toEqual(["cockpit-param", "cockpit-readout"]);
-    // the Parameter form (Universal Core + kernel card) lives in the LEFT pane
-    expect(within(screen.getByTestId("cockpit-param")).getByTestId("param-core")).toBeInTheDocument();
-    expect(within(screen.getByTestId("cockpit-param")).getByTestId("param-compact")).toBeInTheDocument();
+    const cockpit = screen.getByTestId("case-state");
+    const form = within(cockpit).getByTestId("cockpit-form");
+    const split = within(cockpit).getByTestId("cockpit-split");
+    expect(within(form).getByTestId("param-compact")).toBeInTheDocument();
+    // the form sits ABOVE the split (DOM order)
+    expect(form.compareDocumentPosition(split) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const cols = within(split).getAllByTestId(/^cockpit-col-(calc|critical)$/);
+    expect(cols.map((c) => c.getAttribute("data-testid"))).toEqual([
+      "cockpit-col-calc",
+      "cockpit-col-critical",
+    ]);
   });
 
-  it("the Readout (right) stacks Berechnungen, then Fallkontext chips, then the Briefing block", () => {
+  it("the calc column holds the deterministic Berechnungen; chips + Briefing sit below the split", () => {
     renderPane({ memory: WITH_FACTS, ...withV(13.09) });
-    const readout = screen.getByTestId("cockpit-readout");
-    const berechnungen = within(readout).getByTestId("berechnungen-panel");
-    const chips = within(readout).getByTestId("memory-panel");
-    const briefing = within(readout).getByTestId("make-briefing");
-    // committed Berechnungen sits ABOVE the chips, which sit above the Briefing block (DOM order)
-    expect(berechnungen.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const cockpit = screen.getByTestId("case-state");
+    const berechnungen = within(screen.getByTestId("cockpit-col-calc")).getByTestId("berechnungen-panel");
+    expect(berechnungen).toHaveTextContent("13,09 m/s");
+    const split = within(cockpit).getByTestId("cockpit-split");
+    const chips = within(cockpit).getByTestId("memory-panel");
+    const briefing = within(cockpit).getByTestId("make-briefing");
+    // the split sits ABOVE the chips, which sit above the Briefing block (DOM order)
+    expect(split.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(chips.compareDocumentPosition(briefing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(berechnungen).toHaveTextContent("13,09 m/s"); // committed kern value in the right column
   });
 
-  it("each column is a scroll-area inside a fade-cue wrapper (independent scroll)", () => {
+  it("the cockpit body is a single scroll-area holding the whole column", () => {
     renderPane({ memory: WITH_FACTS });
-    const param = screen.getByTestId("cockpit-param");
-    const readout = screen.getByTestId("cockpit-readout");
-    expect(param).toHaveClass("scroll-area");
-    expect(readout).toHaveClass("scroll-area");
-    expect(param.closest(".scroll-wrap")).not.toBeNull();
-    expect(readout.closest(".scroll-wrap")).not.toBeNull();
+    const body = screen.getByTestId("case-state").querySelector(".cockpit-body");
+    expect(body).not.toBeNull();
+    expect(body).toHaveClass("scroll-area");
+    expect(body).toHaveClass("cockpit-body--stack");
   });
 });
 
