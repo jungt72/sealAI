@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -76,6 +77,10 @@ def test_calc_umfang_entry_is_kern_referenced_not_self_computed():
     assert "nie selbst" in e.correct
     assert "keinen Zahlenwert" in e.correct  # fail-closed half is part of the fact
     assert "12,6" not in e.correct  # the plugged example is gone
+    # kern-fix-01: the entry is echoed verbatim into the user-facing build_hedge; a plugged speed
+    # number (the missed "~14 m/s") then trips detect_parametric_leaks on the hedge → multi-turn
+    # parametric Schranke. The reviewed fact must carry NO asserted speed number.
+    assert not re.search(r"\d+\s*m/s", e.correct)
     assert any("owner:boundary-review-2026-06-11" in p for p in e.provenance)
 
 

@@ -237,9 +237,9 @@
         "rechnet nicht oder falsch",
         "nennt keine Geschwindigkeitsgrenze"
       ],
-      "correct": "Die Umfangsgeschwindigkeit deterministisch berechnen lassen (Rechenkern: v = π·d1·n/60000; d1 in mm, n in 1/min → m/s) und den Kern-Wert exakt referenzieren — nie selbst rechnen. Den Wert gegen die Grenze stellen (Standard-NBR-Lippe ~ bis ~14 m/s → grenzwertig; FKM gibt Reserve); Formel und Eingaben-Herkunft offenlegen. Fehlen Eingaben, keinen Zahlenwert nennen und die fehlenden Eingaben benennen. Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
+      "correct": "Die Umfangsgeschwindigkeit deterministisch berechnen lassen (Rechenkern: v = π·d1·n/60000; d1 in mm, n in 1/min → m/s) und den Kern-Wert exakt referenzieren — nie selbst rechnen. Den Wert gegen die zulässige Werkstoffgrenze stellen (Standard-NBR-Lippe enger, FKM mit mehr Reserve); Formel und Eingaben-Herkunft offenlegen. Fehlen Eingaben, keinen Zahlenwert nennen und die fehlenden Eingaben benennen. Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
       "gates": ["confident_wrong"],
-      "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)"],
+      "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)", "owner:kern-fix-01(strip plugged '~14 m/s' example — verbatim hedge-echo must be parametric-clean)"],
       "tags": ["Berechnung", "Umfangsgeschwindigkeit"],
       "xrefs": []
     },

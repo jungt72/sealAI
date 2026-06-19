@@ -6,6 +6,7 @@ import json
 from sealai_v2.core.contracts import (
     Answer,
     Flags,
+    GroundingFact,
     ModelConfig,
     VerifierAction,
     VerifierFinding,
@@ -15,6 +16,7 @@ from sealai_v2.core.l3_verifier import (
     L3Verifier,
     build_correction_note,
     build_hedge,
+    build_matrix_hedge,
     run_verify,
 )
 from sealai_v2.knowledge.traps import TrapCatalog, TrapEntry
@@ -221,6 +223,32 @@ def test_hedge_states_reviewed_correct_fact_not_the_wrong_claim():
     assert "UNPOLAR".lower() in h.lower()  # the reviewed correct fact
     assert "verifizieren" in h.lower()
     assert "EPDM ist polar" not in h  # never the wrong claim/evidence
+
+
+def test_user_facing_hedges_carry_no_l3_internals():
+    """kern-fix-01: a user-facing hedge must read as a clean orientation — never expose the internal
+    verifier ('L3' / 'Verifikation' / 'Falle … markiert'). The safety framing (Vorsicht + verifizieren
+    + keine Freigabe) stays. Covers both build_hedge branches and the matrix hedge."""
+    internals = ("L3", "Verifikation", "Falle")
+    finding = VerifierFinding("R1", "confident_wrong", "reviewed", "EPDM ist polar")
+
+    with_facts = build_hedge((finding,), _catalog())
+    generic = build_hedge((finding,))  # no catalog → generic branch
+    matrix = build_matrix_hedge(
+        (
+            GroundingFact(
+                text="EPDM ist mit Mineralöl unverträglich",
+                quelle="Matrix §4",
+                card_id="C1",
+            ),
+        ),
+        (VerifierFinding("C1", "confident_wrong", "reviewed", "x", kind="matrix"),),
+    )
+    for h in (with_facts, generic, matrix):
+        for token in internals:
+            assert token not in h, f"hedge leaks internal token {token!r}: {h!r}"
+        assert "Vorsicht" in h  # keep the user-facing safety framing
+        assert "verifizieren" in h.lower()
 
 
 def test_gate_polar_heuristic_ignores_hedge_answer():

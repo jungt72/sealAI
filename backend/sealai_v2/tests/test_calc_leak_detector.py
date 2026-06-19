@@ -467,3 +467,64 @@ def test_run_verify_clean_draft_stays_pass_single_llm_call():
     assert (
         len(client.calls) == 1
     )  # no extra calls on the clean path (REPLAY no-regression)
+
+
+def test_run_verify_trap_hedge_is_parametric_clean_even_if_correct_has_number():
+    """Backstop (kern-fix-01): the user-facing trap-hedge (build_hedge) echoes a reviewed entry's
+    `correct` VERBATIM. If that field ever carries a plugged speed number, the hedge would leak it
+    (the canonical CALC-MEM-01 Turn-0 failure). run_verify must re-scan the emitted hedge and fall
+    back to a number-free hedge — catalog-content-independent, so it holds even for a future entry
+    that re-introduces a number. Uses a SYNTHETIC numbered reviewed trap (not the production
+    catalog) so the guarantee is independent of Fix A's wording."""
+    import asyncio
+    import json
+
+    from sealai_v2.core.contracts import Answer, Flags, ModelConfig, VerifierAction
+    from sealai_v2.core.l1_generator import L1Generator
+    from sealai_v2.core.l3_verifier import L3Verifier, run_verify
+    from sealai_v2.knowledge.traps import TrapCatalog, TrapEntry
+    from sealai_v2.prompts.assembler import PromptAssembler, VerifierPromptAssembler
+    from sealai_v2.tests._fakes import ScriptedFakeLlmClient
+
+    numbered = TrapEntry(
+        id="RNUM",
+        trigger="synthetic numbered reviewed trap",
+        wrong=("falsch",),
+        correct="Die Umfangsgeschwindigkeit liegt bei ~14 m/s — grenzwertig; FKM gibt Reserve.",
+        gates=("confident_wrong",),
+        provenance=("eval:synthetic",),
+        review_state="reviewed",
+    )
+    cat = TrapCatalog(entries=(numbered,))
+    violation = json.dumps(
+        {
+            "findings": [
+                {
+                    "trap_id": "RNUM",
+                    "gate": "confident_wrong",
+                    "violated": True,
+                    "evidence": "x",
+                }
+            ],
+            "verdict": "violation",
+        }
+    )
+    # draft + regen both carry NO number → the only parametric number is the one build_hedge echoes
+    client = ScriptedFakeLlmClient(
+        [
+            violation,  # L3 verify on the draft → flags reviewed trap RNUM
+            "FKM ist hier die sichere Wahl; bitte Datenblatt prüfen.",  # regen (no number)
+            violation,  # L3 verify on the regen → persists → fall to the trap-hedge
+        ]
+    )
+    gen = L1Generator(client, PromptAssembler(), ModelConfig("fake-l1"))
+    verifier = L3Verifier(client, VerifierPromptAssembler(), ModelConfig("fake-l3"), cat)
+    draft = Answer(
+        text="Standard-NBR ist für diese Anwendung optimal.", model="fake-l1"
+    )
+    final, verdict = asyncio.run(
+        run_verify(verifier, gen, cat, "Welche Werkstoffe?", draft, flags=Flags())
+    )
+    assert verdict.action == VerifierAction.BLOCKED_HEDGE
+    assert detect_parametric_leaks(final.text, computed_values=()) == ()
+    assert "14 m/s" not in final.text  # never echo the catalog's plugged number

@@ -378,17 +378,14 @@ def build_hedge(
     if correct_facts:
         bullets = "\n".join(f"- {c}" for c in correct_facts)
         return (
-            "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat im Entwurf eine "
-            "bekannte Falle / einen selbstbewusst-falschen Mechanismus markiert. Nach geprüftem "
-            "Stand gilt:\n"
+            "⚠️ Hier ist Vorsicht geboten. Nach geprüftem Stand gilt:\n"
             + bullets
             + "\nDas ist nur eine ingenieurtechnische Orientierung — "
             "bitte gegen das Datenblatt des konkreten Werkstoffs bzw. mit dem Hersteller "
             "verifizieren; keine Freigabe."
         )
     return (
-        "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat in diesem Entwurf einen "
-        "möglichen Fehler / eine bekannte Falle markiert. Ohne eine geprüfte Quelle kann ich dazu "
+        "⚠️ Hier ist Vorsicht geboten. Zu diesem Punkt kann ich ohne eine geprüfte Quelle "
         "keine belastbare Aussage treffen — bitte gegen das Datenblatt des konkreten Werkstoffs "
         "bzw. mit dem Hersteller verifizieren. Das ist nur eine Orientierung, keine Freigabe."
     )
@@ -543,9 +540,7 @@ def build_matrix_hedge(
         facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
     bullets = "\n".join(f"- {c}" for c in facts)
     return (
-        "⚠️ Hier ist Vorsicht geboten. Die interne Verifikation (L3) hat im Entwurf eine "
-        "Verträglichkeits-Aussage markiert, die einem geprüften Verdikt widerspricht. Nach geprüftem "
-        "Stand gilt:\n"
+        "⚠️ Hier ist Vorsicht geboten. Nach geprüftem Verträglichkeits-Stand gilt:\n"
         + bullets
         + "\nDas ist nur eine ingenieurtechnische Orientierung — bitte gegen das Datenblatt des "
         "konkreten Werkstoffs bzw. mit dem Hersteller verifizieren; keine Freigabe."
@@ -693,6 +688,14 @@ async def run_verify(
             question=question,
             case_context=case_context,
         )
+    # Backstop (kern-fix-01): build_hedge / build_matrix_hedge echo a reviewed entry's text VERBATIM.
+    # If that text ever carries a plugged kern-quantity number, the emitted hedge would re-introduce
+    # the very parametric leak the Schranke forbids (the canonical CALC-MEM-01 Turn-0 failure). The
+    # draft/regen are already scanned above, but the hedge itself was not — re-scan it and fall back
+    # to the number-free generic hedge. Catalog-content-independent; build_calc_leak_hedge is already
+    # number-free by construction, so this only ever rewrites a leaking trap/matrix hedge.
+    if detect_parametric_leaks(hedge_text, computed_values=computed_values):
+        hedge_text = build_hedge((), None)
     hedge = Answer(
         text=hedge_text,
         model=_HEDGE_MODEL,
