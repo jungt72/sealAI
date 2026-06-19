@@ -594,10 +594,20 @@
   box-shadow: inset 4px 4px 7px var(--neu-lo), inset -4px -4px 7px var(--neu-hi);
 }
 
-/* — type tabs: keep the BASE segmented/skewed design (active = seal-blue filled). Only nudge the
-   colours so the skewed tabs read on the neumorphic grey ground. */
-.cockpit-panel .param-tab { background: #f4f6fa; border-color: rgba(90, 99, 114, 0.18); color: var(--ink-soft); }
-.cockpit-panel .param-tab:hover:not(.is-active):not(.is-soon):not(:disabled) { background: #fff; color: var(--ink); }
+/* — type tabs: BASE segmented/skewed design. Inactive = light grey on the neumorphic ground;
+   ACTIVE = light tab with navy-blue text + a dark-blue (seal-blue) outline so it reads clearly;
+   soon/disabled keep the base dashed/greyed look (scoped :not so we do not flatten them). */
+.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled) {
+  background: #f4f6fa; border-color: rgba(90, 99, 114, 0.18); color: var(--ink-soft);
+}
+.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
+  background: #ffffff; color: var(--ink);
+}
+.cockpit-panel .param-tab.is-active {
+  background: #ffffff; color: var(--color-seal-blue);
+  border-color: var(--color-seal-blue); border-width: 1.5px;
+  z-index: 3; box-shadow: 0 4px 12px rgba(0, 42, 91, 0.18);
+}
 
 /* — submit + briefing buttons (raised; pressed on :active) ———————————————————————————————————— */
 .cockpit-panel .param-actionbar button[type="submit"] {
