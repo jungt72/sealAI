@@ -6,6 +6,122 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-19T20:45Z — V2 PROD deploy: `backend-v2` rebuild — kern-fix-01 parametric-leak hardening (commit `ffb85440`) — VALIDIERT + owner-gated
+
+**This is the gated re-deploy that closes the `53145401` finding below.** The eval-REPLAY `kern-53145401`
+(entry beneath) left the kern **nicht validiert** on one deterministic Schranke — the multi-turn parametric
+LEAK on `CALC-MEM-01` Turn 0. The fix `kern-fix-01` ran the **full gate the two ungated deploys of today
+skipped**: commit → eval-REPLAY → owner adjudication → deploy → this log.
+
+**Change (backend only, file-backed, zero API-contract change):** parametric-leak hardening, **7 files**,
+commit **`ffb85440`** on `feat/v2-cockpit-resizable`. Root cause: the L3 trap-hedge echoed a reviewed entry's
+`correct` VERBATIM, and `CALC-UMFANGSGESCHWINDIGKEIT.correct` carried a plugged `~14 m/s` → the user-facing
+hedge re-introduced a speed number the detector then flagged (the canonical `CALC-MEM-01` Turn-0 failure;
+commit `53145401` never touched L1). Fix:
+- **A** — stripped the plugged `~14 m/s` from `CALC-UMFANGSGESCHWINDIGKEIT` (`knowledge/trap_catalog.json`;
+  kept the kern-referenced fact; mirrors the earlier `12,6` removal).
+- **B** — hedge re-scan backstop in `run_verify` (`core/l3_verifier.py`): the emitted hedge is re-scanned with
+  `detect_parametric_leaks` and falls back to a number-free hedge — catalog-content-independent.
+- **C1** — removed the L3-internals (`"interne Verifikation (L3) … Falle markiert"`) from
+  `build_hedge`/`build_matrix_hedge`.
+- **D/C2/E** — soft L1 restraint in `prompts/system_l1.jinja` (no unasked kern quantity in a qualitative turn;
+  regen anti-parrot; off-domain redirect-cap) + `golden_prompt_no_memory.json` recapture (scoped to those 3
+  sections) + 3 red-before-green tests (`test_traps_load`, `test_calc_leak_detector`, `test_l3_verifier`).
+
+**Offline gate (CC-verified):** `PYTHONPATH=backend pytest backend/sealai_v2 --noconftest` → **502 passed,
+EXIT=0**; import keystone `test_v2_import_boundary` green; red-before-green proven on A/B/C1.
+
+**Eval-REPLAY `kern-fix-01` — owner-validated + adjudicated (human = factual oracle):** **Schranken-quota(final)
+= 1.000** on all four gated axes (`flags_off`, `flags_on`, `edge`, `injection`); **`parametric` +
+`memory_fabrication` = 1.000**; **M6a Multi-Turn parametric = 1.000**, **M8 Single-Turn parametric = 1.000**;
+pending = 0. Soft-Credibility 0.991 / 0.981 (non-gating). Grounded adjudication: `CALC-MEM-01` Turn 0 = a **full
+material answer with no speed number and no L3-internals** (the degenerate baseline hedge is gone); Turn 1 =
+`v = 10,472 m/s` (deterministic, kern-computed) correct; all hard gates **CLEAN**.
+
+**Provenance (validate-then-commit):** the `human_review_worksheet.md` header shows git **`53145401`** (HEAD at
+eval time); the eval'd working tree is content-identical to commit **`ffb85440`** (validated, then committed).
+
+**Build + recreate (surgical, Gap #1/#2 — NOT the V1 release path):** `docker compose --env-file .env.prod …
+--profile v2 build backend-v2` (base/apt/`requirements-v2` cached; `COPY sealai_v2` + the `import
+sealai_v2.api.main, sealai_v2.db.migrate` check rebuilt/passed) → `… up -d --no-deps --force-recreate
+backend-v2` — nothing else moved.
+- new live `sealai-backend-v2:latest` = manifest-list **`sha256:1098527688cb…`** (config `c5fb3518ec7a…`),
+  built **`2026-06-19T20:44:44Z`**; container recreated **`2026-06-19T20:45:33Z`**.
+- **rollback rung confirmed present before the build** (so the kern image does not dangle on the `latest` flip):
+  `sealai-backend-v2:rollback-kern-53145401` = **`44f30a6409c7…`** (the `53145401` kern). Floor
+  `sealai-backend-v2:rollback-2026-06-19` = `e85c375d…` unchanged. Ladder: `latest`(ffb85440) →
+  `rollback-kern-53145401`(44f30a) → `rollback-2026-06-19`(e85c375).
+
+**Live smoke (all GREEN):** `backend-v2` `running healthy` on `1098527688cb…`; `/health` direct
+(`127.0.0.1:8001`) + public `https://sealingai.com/api/v2/health` → `{"status":"ok","service":"sealai_v2"}`.
+In-container kern one-shot (`docker exec backend-v2 python -c …`, no token/LLM): RWDR
+`umfangsgeschwindigkeit = 16.7552 m/s` (d=40, n=8000); hydraulik `pv_wert = 50.0 bar·m/s` (umfangsgeschwindigkeit
+correctly gated off, seal_type≠rwdr). Restart-survival: `docker restart backend-v2` → `running healthy` again
+(~8 s), image unchanged, kern still computes (durable `sealai_v2` Postgres, Gap #1 unaffected by `--no-deps`).
+
+**Routing UNCHANGED:** no `ops/v2-flip.sh`; the public `/api/v2` location stayed reachable throughout.
+`feat→demo→main` promotion and any nginx flip remain separately owner-gated.
+
+**Status: VALIDIERT + gegated deployed.** The two ungated `backend-v2` deploys of today (entry below) remain on
+record as the open hardening point that this gated deploy course-corrects.
+
+---
+
+## 2026-06-19T14:27Z — BACKFILL (read-only HALT audit): two unlogged `backend-v2` deploys today — Inc-1 (pruned) + KERN `53145401` (LIVE, deployed OUTSIDE the Gap #1/#2 gate) — eval-REPLAY PENDING
+
+**Honest disclosure — this is a retroactive backfill, not a gated deploy.** A read-only STEP-1 audit
+(owner-requested HALT, **no build/no rollback performed by the agent**) found that **two `backend-v2`
+prod deploys happened today with NO governance entry** (the prior top entry was 2026-06-18). Both are
+recorded here after the fact; neither went through the V1 release path, and the **kern was NOT
+eval-gated before it went live.**
+
+**Deploy 1 — `~09:37Z` (Inc-1, superseded, pruned).** Image `f0c1ef804793…` built via the standard MO
+`docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2
+up -d --build --force-recreate backend-v2`, from a **dirty working tree** = Inc-1 (`4d639b62`,
+typed Case + archetype) committed **plus uncommitted `core/calc/*` edits**. No timestamped trace
+(`HISTTIMEFORMAT` unset). Now **superseded and pruned** (`docker history f0c1ef804793` → "No such image").
+
+**Deploy 2 — `12:31:53Z` (KERN, current live).** Image **`sha256:44f30a6409c77ffd8314998ab89ab04601dea73580da6cb78b9583aa1d7fd25f`**
+(tag `latest`), container recreated `12:31:53Z` / started `12:31:54Z` — **16 s after** the kern commit
+**`53145401`** (`feat(kern): Hydraulik deterministic kernel (PV-Wert) + seal_type gating`, `12:31:37Z`) =
+commit-then-deploy. Observed **live during the read-only session** (the container flipped `f0c1ef…→44f30a…`
+mid-audit). `backend-v2` `running healthy`.
+
+**Provenance — VERIFIED byte-identical to git `53145401` (current HEAD).** All **136** `sealai_v2/**/*.py`
+in the live container hash-match `53145401`, both directions (none differ, none missing; `sealai_v2/tests/`
+included — `.dockerignore` only strips top-level `backend/tests`). Decisive: container
+`core/calc/derived.py` `be648aab…` / `binding.py` `6b8e4e12…` == `53145401`, **≠** Inc-1 `4d639b62`
+(`c10b16f9…` / `659fcd3b…`). So the live runtime is the KERN, not pure Inc-1.
+
+**Gate posture — DEPLOYED OUTSIDE THE GATE.** The only pre-deploy validation that had run covered Inc-1
+(`4d639b62`); **the kern (`53145401`) was not eval-gated before going live.** Retroactive evidence
+gathered now:
+- **Offline suite** `PYTHONPATH=backend python -m pytest backend/sealai_v2 --noconftest` → **500 passed, EXIT=0**.
+- **Import-purity keystone** `test_v2_import_boundary.py --noconftest` → **4 passed, EXIT=0**.
+- **In-container one-shot (kein Token, kein LLM)** `docker exec backend-v2 python -c …`: hydraulik
+  `pv_wert=50.0 bar·m/s` (RWDR `umfangsgeschwindigkeit` correctly gated off); rwdr
+  `umfangsgeschwindigkeit=16.755 m/s`. Kern computes correctly, live.
+- **`/api/v2` health** — public `https://sealingai.com/api/v2/health` → `{"status":"ok","service":"sealai_v2"}`;
+  upstream-from-nginx + direct `127.0.0.1:8001/health` ok; logs show `GET /api/v2/health 200`. Routing
+  served by `nginx/snippets/v2_dashboard.conf` (`location ^~ /api/v2/ → sealai-backend-v2:8001`); the
+  `default.conf:297` stub stays commented. **Routing UNCHANGED** — no `ops/v2-flip.sh`.
+- **eval-REPLAY vs `53145401` — PENDING. This is the mandatory next validation, NOT skipped, owner-run**
+  (human = factual oracle; the 8 hard Schranken must hold 1.000):
+  `PYTHONPATH=backend python -m sealai_v2.eval --label kern-53145401` → owner ticks
+  `human_review_worksheet.md` → `python -m sealai_v2.eval --adjudicate --label kern-53145401`
+  (key transient from `~/sealai/.env`, that run only).
+
+**Rollback floor (read from the daemon, not memory).** `sealai-backend-v2:rollback-2026-06-19` =
+**`e85c375dd9ac…`** (the 2026-06-18 L3-topic-scope image) — now **two deploys back**; the intermediate
+Inc-1 `f0c1ef…` is **pruned** (runtime-equivalent to the live kern anyway). Soft rollback if ever needed:
+`docker tag sealai-backend-v2:rollback-2026-06-19 sealai-backend-v2:latest` → `… up -d --no-deps
+--force-recreate backend-v2`.
+
+**Standing constraint:** **no build and no rollback** until the eval-REPLAY finding against `53145401`
+is in. `feat→demo→main` promotion and the `/api/v2` nginx flip remain separately owner-gated.
+
+---
+
 ## 2026-06-18T11:36Z — V2 PROD deploy: `backend-v2` rebuild — OPTIMIZE_BACKLOG #5 (L3 topic-scoped corrections + full-context regen) — owner-gated
 
 **Change (backend only, file-backed, zero API-contract change):** L3 trap corrections were topic-blind —
