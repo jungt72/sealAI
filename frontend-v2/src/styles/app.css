@@ -594,29 +594,10 @@
   box-shadow: inset 4px 4px 7px var(--neu-lo), inset -4px -4px 7px var(--neu-hi);
 }
 
-/* — type tabs: raised pills (no segmented skew); active = seal-blue filled ——————————————————— */
-.cockpit-panel .param-tabs { gap: 10px; padding-left: 0; }
-.cockpit-panel .param-tab {
-  transform: none; margin-left: 0; border: none; border-radius: 12px;
-  background: var(--neu-bg); color: var(--ink-faint);
-  box-shadow: 4px 4px 9px var(--neu-lo), -4px -4px 9px var(--neu-hi);
-  transition: box-shadow 140ms ease, color 140ms ease;
-}
-.cockpit-panel .param-tab:first-child,
-.cockpit-panel .param-tab:last-child { border-radius: 12px; }
-.cockpit-panel .param-tab-label { transform: none; }
-.cockpit-panel .param-tab:hover:not(.is-active):not(.is-soon):not(:disabled) {
-  color: var(--ink); box-shadow: 3px 3px 7px var(--neu-lo), -3px -3px 7px var(--neu-hi);
-}
-.cockpit-panel .param-tab.is-active {
-  color: #fff; background: var(--color-seal-blue); border-color: transparent;
-  box-shadow: 4px 4px 10px var(--neu-lo), -3px -3px 8px var(--neu-hi);
-}
-.cockpit-panel .param-tab.is-soon,
-.cockpit-panel .param-tab:disabled {
-  color: var(--ink-disabled); border: none; background: var(--neu-bg);
-  box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi);
-}
+/* — type tabs: keep the BASE segmented/skewed design (active = seal-blue filled). Only nudge the
+   colours so the skewed tabs read on the neumorphic grey ground. */
+.cockpit-panel .param-tab { background: #f4f6fa; border-color: rgba(90, 99, 114, 0.18); color: var(--ink-soft); }
+.cockpit-panel .param-tab:hover:not(.is-active):not(.is-soon):not(:disabled) { background: #fff; color: var(--ink); }
 
 /* — submit + briefing buttons (raised; pressed on :active) ———————————————————————————————————— */
 .cockpit-panel .param-actionbar button[type="submit"] {
