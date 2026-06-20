@@ -32,6 +32,20 @@ class CalcInput:
 
 
 @dataclass(frozen=True)
+class CalcLimit:
+    """A one-sided material limit on a calc value, read from ``calc_seed.json`` — the SINGLE source of
+    the threshold (never duplicated in the evaluator or L3; both READ it from here). ``applies_to`` is
+    the value name it bounds (e.g. ``v_m_s``); ``max`` is the upper limit; ``label`` is the human label
+    of the limited solution (e.g. ``Standard-NBR-Lippe``); ``source_ref`` is the provenance. Fact only —
+    NO material direction (DD-5: the direction comes from the §4 matrix, never from this limit)."""
+
+    applies_to: str
+    max: float
+    label: str = ""
+    source_ref: str = ""
+
+
+@dataclass(frozen=True)
 class CalcDef:
     id: str
     formula: str  # human-readable text, for the cited render (not executed)
@@ -47,6 +61,9 @@ class CalcDef:
     provenance: tuple[str, ...]
     version: str = ""
     typical_band: tuple[float, float] | None = None  # output band → out-of-band warning
+    limit: CalcLimit | None = (
+        None  # one-sided material limit on a value → over-limit warning (C1)
+    )
     impl: Callable[..., float] | None = field(default=None, compare=False)
 
     @property
@@ -81,6 +98,17 @@ def _calc_def(raw: dict) -> CalcDef:
         raise ValueError(f"{cid}: review_state {state!r} not in {_REVIEW_STATES}")
     out = raw.get("output") or {}
     band = raw.get("typical_band")
+    lim = raw.get("limit")
+    limit = (
+        CalcLimit(
+            applies_to=str(lim["applies_to"]),
+            max=float(lim["max"]),
+            label=str(lim.get("label", "")),
+            source_ref=str(lim.get("source_ref", "")),
+        )
+        if lim
+        else None
+    )
     d = CalcDef(
         id=cid,
         formula=str(raw.get("formula", "")),
@@ -102,6 +130,7 @@ def _calc_def(raw: dict) -> CalcDef:
         provenance=tuple(str(p) for p in raw.get("provenance", [])),
         version=str(raw.get("version", "")),
         typical_band=(float(band[0]), float(band[1])) if band else None,
+        limit=limit,
         impl=FORMULAS.get(cid),
     )
     if not d.output.name:

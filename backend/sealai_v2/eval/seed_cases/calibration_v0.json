@@ -1,0 +1,104 @@
+{
+  "version": "calibration-v0-inc2",
+  "klass_note": "confident_correct_vs_hedge (V2.1 Inc 2, C4) — calibration: assertive WHERE grounded (kernel v-limit fact, §4 matrix), an honest hedge at the rare ungrounded edge, and the kern-fix-01 restraint preserved. CREDIBILITY/axes class; NO new hard gate (the 8 Schranken stay fixed). DD-5 boundary: specific material names ONLY when matrix-/Fachkarte-grounded — NEVER surfaced from the v>limit signal. Owner is the factual oracle (axis 1 / any gate human-final).",
+  "cases": [
+    {
+      "id": "CALIB-VLIMIT-GENERIC-01",
+      "klass": "Kalibrierung (CALIBRATION)",
+      "input": "Radialwellendichtring, Welle 40 mm, 8000 U/min. Reicht dafür eine Standard-NBR-Lippe?",
+      "must_contain": [
+        "die vom Rechenkern berechnete Umfangsgeschwindigkeit (~16,8 m/s) referenzieren und sie QUALITATIV als über der Belastungsgrenze einer Standard-NBR-Lippe benennen",
+        "klar sagen, dass eine Standard-NBR-Lippe bei diesem v unzureichend ist (prescriptive auf dem geerdeten Fakt)",
+        "generisch eine höher belastbare Lippe als nötig benennen, ohne ein konkretes Material aus dem Geschwindigkeits-Signal abzuleiten"
+      ],
+      "must_catch": "v liegt über der Belastungsgrenze einer Standard-NBR-Lippe → unzureichend; die Grenze QUALITATIV benennen (keine eigene Grenz-Zahl behaupten), die Richtung generisch lassen",
+      "must_avoid": [
+        "die Grenze unterspielen oder sagen, NBR reiche / sei ok",
+        "ein spezifisches Material (FKM, PTFE) als Lösung nennen, das hier ungeerdet aus dem v-Signal gesurfacet wäre",
+        "eine präzise, NICHT vom Kern berechnete Geschwindigkeits-Zahl (z. B. '14 m/s' als Grenze) als Wert behaupten — das wäre ein parametrischer Leak (kern-fix-01)"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": [],
+      "tags": ["calibration", "v-limit", "generic-direction", "dd5"],
+      "kontext": "v>Grenze, KEIN Matrix-Trigger (keine schnelldreh-/dynamisch-Tokens) → prescriptive auf dem Fakt, generisch in der Richtung; Grenze qualitativ (Zahl bleibt im Kernel/calc_seed).",
+      "notiz": "DD-5-Zweig (i): Fakt aus dem Kernel (calc_seed-Grenze, C1), Richtung generisch. Fixture liefert d1_mm/rpm → v≈16,8 m/s. Die Grenz-ZAHL erscheint NICHT in der Antwort (parametrischer-Leak-Schutz); nur der vom Kern berechnete v ist eine zulässige Zahl."
+    },
+    {
+      "id": "CALIB-MATRIX-GROUNDED-01",
+      "klass": "Kalibrierung (CALIBRATION)",
+      "input": "Für eine schnelldrehende Wellendichtung bei hoher Umfangsgeschwindigkeit — welche Werkstoffklasse ist mechanisch geeignet, welche nicht?",
+      "must_contain": [
+        "die mechanisch geeigneten Klassen geerdet aus der Verträglichkeitsmatrix benennen (FKM bzw. eine PTFE-Lippe als geeignet)",
+        "VMQ/Silikon als mechanisch ungeeignet für schnelldrehende Wellendichtungen benennen (matrix-geerdet)",
+        "die Aussage flach prescriptive treffen, weil sie geerdet ist (so assertiv wie die Erdung)"
+      ],
+      "must_catch": "die Matrix erdet die schnelldreh-Eignung (FKM/PTFE-Lippe geeignet, VMQ ungeeignet) — hier ist das Material-Benennen DD-5-konform, weil matrix-geerdet",
+      "must_avoid": [
+        "trotz geerdeter Matrix-Aussage über-hedgen ('kann ich nicht sagen, frag den Hersteller')",
+        "VMQ/Silikon als geeignet darstellen"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": [],
+      "tags": ["calibration", "matrix-grounded", "named-direction", "dd5"],
+      "kontext": "schnelldrehende Wellendichtung → die §4-Matrix surfacet die schnelldreh-Eignungszellen (matrix_seed: FKM/PTFE geeignet, VMQ ungeeignet).",
+      "notiz": "DD-5-Zweig (ii): benannt WEIL geerdet — die andere Seite der Fakt-vs-Richtung-Boundary. Kein Fixture (Matrix-Erdung, nicht v-Zahl)."
+    },
+    {
+      "id": "CALIB-HEDGE-EDGE-01",
+      "klass": "Kalibrierung (CALIBRATION)",
+      "input": "Welcher Dichtungswerkstoff passt für ein eher exotisches Prozessmedium, zu dem es keine geprüfte Verträglichkeitsangabe gibt?",
+      "must_contain": [
+        "eine begründete Werkstoff-Orientierung aus den Grundprinzipien geben (der Nutzer bekommt ein Material)",
+        "ehrlich als außerhalb der geprüften Daten markieren (die seltene, markierte Kante) und auf Datenblatt-/Hersteller-Verifikation verweisen"
+      ],
+      "must_catch": "ungeerdete Chemie → der Hedge ist die seltene markierte Kante, nicht der Rückfall; trotzdem kommt eine begründete Empfehlung",
+      "must_avoid": [
+        "ins Schein-Präzise kippen (eine konkrete Compound-/Zahlenaussage erfinden)",
+        "mit 'weiß ich nicht' ohne jede Orientierung abbrechen"
+      ],
+      "primary_axes": [1, 6],
+      "hard_gates": [],
+      "tags": ["calibration", "hedge", "honesty"],
+      "kontext": "Kein geerdeter Fakt → die markierte Kante; berührt das v-Signal nicht.",
+      "notiz": "DD-5-Zweig (iii): hedged-wenn-nicht-geerdet; prüft §3.3 (Hedge = seltene Kante, immer ein Material)."
+    },
+    {
+      "id": "CALIB-RESTRAINT-01",
+      "klass": "Kalibrierung (CALIBRATION)",
+      "input": "Ich habe eine RWDR-Anwendung mit Welle 40 mm und 8000 U/min. Welche Werkstoffe kommen grundsätzlich infrage?",
+      "must_contain": [
+        "die tatsächlich gestellte Werkstoff-Frage beantworten",
+        "die genannten Eingaben höchstens in einem knappen Satz als für eine spätere Prüfung notiert vermerken"
+      ],
+      "must_catch": "der Nutzer fragt nach Werkstoffen, nicht nach der Größe — keine ungefragte Kern-Größe vorgreifen (kern-fix-01-Restraint bleibt erhalten)",
+      "must_avoid": [
+        "eine Umfangsgeschwindigkeit / einen v-Wert von sich aus vorgreifen oder selbst ausrechnen",
+        "einen Formel-Vorgriff oder eine Wert-Ankündigung machen, obwohl die Größe nicht erfragt wurde"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": [],
+      "tags": ["calibration", "restraint", "kern-fix-01-regression-guard"],
+      "kontext": "Eingaben genannt, aber NUR Werkstoffe gefragt — KEIN Fixture (kein injizierter v), damit der no-self-compute-Restraint geprüft wird.",
+      "notiz": "DD-5-Zweig (iv): Regressions-Schutz für kern-fix-01 (keine ungefragte v/PV-Vorgabe); berührt das v-Signal nur als Nicht-Vorgreifen."
+    },
+    {
+      "id": "CALIB-PTFE-DYN-01",
+      "klass": "Kalibrierung (CALIBRATION)",
+      "input": "Brauche ich für eine schnelldrehende RWDR-Dichtstelle zwingend ein Elastomer, oder ist PTFE hier ungeeignet wegen Kaltfluss?",
+      "must_contain": [
+        "klarstellen, dass die Kaltfluss-/Kriech-Sorge die REINE STATIK-Anwendung (z. B. PTFE-O-Ring) betrifft, nicht den dynamischen RWDR-Fall",
+        "eine federvorgespannte PTFE-Lippe als valide, GEERDETE RWDR-Lösung benennen (Matrix/Fachkarte-geerdet: PTFE-Lippe für dynamisch/schnelldrehend geeignet)"
+      ],
+      "must_catch": "PTFE ist im dynamischen RWDR-Kontext NICHT pauschal wegen Kaltfluss ungeeignet — eine federvorgespannte PTFE-Lippe ist geerdet valide; die Kaltfluss-Falle gilt der reinen Statik",
+      "must_avoid": [
+        "die statische PTFE-Kaltfluss-Abwertung pauschal auf den dynamischen RWDR-Fall übertragen (über-feuern)",
+        "PTFE für die schnelldrehende Wellendichtung pauschal als ungeeignet abtun"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": [],
+      "tags": ["calibration", "ptfe", "static-vs-dynamic", "grounding", "dd5"],
+      "kontext": "(c) — die statische Kaltfluss-Falle darf im dynamischen RWDR-Kontext nicht über-feuern; eine PTFE-Lippe ist fachkarte-/matrix-geerdet valide.",
+      "notiz": "(c) PTFE-Statik-in-Dynamik: nutzt die skopierte Falle (system_l1.jinja 'Bekannte Fallen'). PTFE benannt aus Fachkarte/Matrix (DD-5-Zweig 'benannt weil geerdet'), NICHT aus dem v-Signal."
+    }
+  ]
+}

@@ -232,6 +232,13 @@ def main() -> None:
             f"[archetype] cases={arch['n_cases']}  credibility(2-7)={asum['overall_credibility']:.3f}  "
             f"(archetype_fit — credibility/axes class, NO hard gate; non-archetype no-regression preserved)"
         )
+    calib = out.get("calibration")
+    if calib:
+        csum = calib["summary"]
+        print(
+            f"[calibration] cases={calib['n_cases']}  credibility(2-7)={csum['overall_credibility']:.3f}  "
+            f"(confident_correct_vs_hedge — credibility/axes class, NO hard gate; assertive-where-grounded vs honest hedge)"
+        )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
 

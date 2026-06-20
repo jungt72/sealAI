@@ -17,6 +17,12 @@
         "konstante Drehzahl",
         "Standard-NBR-Lippe ~ bis ~14 m/s; FKM gibt Reserve (materialabhängige Grenze — L3 prüft die vorgeschlagene Lippe gegen v)"
       ],
+      "limit": {
+        "applies_to": "v_m_s",
+        "max": 14,
+        "label": "Standard-NBR-Lippe",
+        "source_ref": "owner:eval-CALC-01"
+      },
       "source": "Umfangsgeschwindigkeit v = π·d·n — Grundformel der RWDR-Auslegung (z. B. Freudenberg Sealing Technologies, Technisches Handbuch Simmerring); NBR-Lippen-Grenze ~14 m/s owner-confirmed via eval CALC-01",
       "review_state": "reviewed",
       "provenance": ["trap-correct:CALC-UMFANGSGESCHWINDIGKEIT", "owner:eval-CALC-01"],

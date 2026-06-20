@@ -567,6 +567,130 @@ def _reviewed_matrix(
     )
 
 
+# ── C2 (V2.1 Inc 2) — deterministic velocity-over-limit verification ──────────────────────────────
+# DD-1 HYBRID: C1 (the kernel, sourced from calc_seed.json) already compares v against its material
+# limit and emits a FACT-ONLY over-limit warning into ``ComputedValue.warnings``. L3 READS that verdict
+# (so the limit NUMBER is never duplicated here, and ``core`` stays I/O-free — build-spec §3) and
+# verifies the DRAFT: an over-limit v whose draft does NOT name the consequence (non-prescriptive) is a
+# DD-2a deterministic block-trigger → regen-once. The replacement note/hedge is FACT-ONLY + QUALITATIVE
+# — NO threshold number (a non-kern m/s number would trip the parametric Schranke, kern-fix-01) and NO
+# material direction (DD-5: a specific material comes only from the §4 matrix, never this v-signal).
+_OVER_LIMIT_WARNING_MARKER = (
+    "belastungsgrenze"  # C1's evaluator over-limit marker (core/calc/evaluator.py)
+)
+_OVER_LIMIT_PRESCRIPTIVE_MARKERS = (
+    "unzureichend",
+    "über der",
+    "überschrit",
+    "höher belastbar",
+    "reicht nicht",
+    "nicht aus",
+    "grenze",
+)
+
+
+def _over_limit_computed(
+    computed_values: tuple[ComputedValue, ...],
+) -> ComputedValue | None:
+    """The computed value the kernel flagged as over its material limit (C1), or None. Reads C1's
+    verdict from ``warnings`` — never re-loads the limit (no duplication; ``core`` stays I/O-free)."""
+    for c in computed_values:
+        if any(_OVER_LIMIT_WARNING_MARKER in (w or "").lower() for w in c.warnings):
+            return c
+    return None
+
+
+def _draft_addresses_limit(draft: str) -> bool:
+    """Heuristic, deterministic: does the draft name the over-limit consequence? The C4 ``must_avoid``
+    cases are the backstop against brittleness here (DD-2: deterministic trigger, no LLM critic)."""
+    low = (draft or "").lower()
+    return any(m in low for m in _OVER_LIMIT_PRESCRIPTIVE_MARKERS)
+
+
+def detect_velocity_over_limit(
+    draft: str, *, computed_values: tuple[ComputedValue, ...] = ()
+) -> tuple[VerifierFinding, ...]:
+    """DD-2a deterministic block-trigger: the kernel flagged v over its material limit (C1) AND the
+    draft does NOT name the consequence → ONE ``calc_overlimit`` finding (drives the regen-once path).
+    Over-limit + already prescriptive → (); under-limit (no C1 over-limit warning) → ()."""
+    cv = _over_limit_computed(computed_values)
+    if cv is None or _draft_addresses_limit(draft):
+        return ()
+    return (
+        VerifierFinding(
+            trap_id=f"calc_overlimit:{cv.calc_id}",
+            gate="confident_wrong",
+            review_state="reviewed",  # the limit is a reviewed calc-def datum (calc_seed)
+            evidence=f"{cv.name}={cv.value} {cv.unit} über der Werkstoffgrenze (C1-Verdikt)",
+            kind="calc_overlimit",
+        ),
+    )
+
+
+def build_overlimit_note(
+    findings: tuple[VerifierFinding, ...],
+    computed_values: tuple[ComputedValue, ...] = (),
+) -> str | None:
+    """Fact-only correction note for an over-limit velocity (C2 → regen). QUALITATIVE: names the
+    grounded fact (the computed v is over a Standard-NBR lip's limit → that lip is insufficient → a
+    higher-rated lip is needed) WITHOUT a threshold number (parametric-leak-safe) and WITHOUT a material
+    direction (DD-5: a specific material may come only from the §4 matrix, never this signal)."""
+    if not any(f.kind == "calc_overlimit" for f in findings):
+        return None
+    cv = _over_limit_computed(computed_values)
+    vtxt = (
+        f"Die berechnete Umfangsgeschwindigkeit ({cv.value} {cv.unit}) "
+        if cv is not None
+        else "Die berechnete Umfangsgeschwindigkeit "
+    )
+    return (
+        f"{vtxt}liegt über der Belastungsgrenze einer Standard-NBR-Lippe. Benenne das prescriptive: "
+        "eine Standard-NBR-Lippe ist bei diesem v unzureichend → eine höher belastbare Lippe ist nötig. "
+        "Nenne KEINE eigene Geschwindigkeits-Grenzzahl und KEIN konkretes Material allein aus dem v — "
+        "ein konkretes Material nur, wenn die Verträglichkeits-Matrix es trägt."
+    )
+
+
+def build_overlimit_hedge(
+    findings: tuple[VerifierFinding, ...],
+    computed_values: tuple[ComputedValue, ...] = (),
+) -> str:
+    """User-facing fail-closed hedge for a PERSISTING over-limit (the regen stayed non-prescriptive).
+    Fact-only + qualitative: the grounded over-limit consequence, no threshold number, no material
+    direction. The computed v IS kern-backed (parametric-leak-safe)."""
+    cv = _over_limit_computed(computed_values)
+    vtxt = (
+        f"Die berechnete Umfangsgeschwindigkeit ({cv.value} {cv.unit}) "
+        if cv is not None
+        else "Die berechnete Umfangsgeschwindigkeit "
+    )
+    return (
+        f"{vtxt}liegt über der Belastungsgrenze einer Standard-NBR-Lippe: eine Standard-NBR-Lippe ist "
+        "dafür unzureichend — eine höher belastbare Lippe ist nötig. Das ist eine ingenieurtechnische "
+        "Orientierung — die konkrete Werkstoffwahl bitte mit dem Hersteller bestätigen; keine Freigabe."
+    )
+
+
+# ── Eingriff 2 (V2.1 Inc-2 close) — CALC-velocity-trap scope ──────────────────────────────────────
+_CALC_VELOCITY_TRAP_ID = "CALC-UMFANGSGESCHWINDIGKEIT"
+
+
+def scope_calc_velocity_trap(
+    findings: tuple[VerifierFinding, ...],
+    computed_values: tuple[ComputedValue, ...] = (),
+) -> tuple[VerifierFinding, ...]:
+    """The CALC-UMFANGSGESCHWINDIGKEIT trap is legitimate ONLY when the kern actually computed a velocity
+    verdict this turn (a ComputedValue ``umfangsgeschwindigkeit`` in ``computed_values``). A pure
+    materials-orientation turn (no d+rpm → no v computed) must NOT be flagged for 'not computing v' —
+    that OVER-FIRES on the kern-fix-01/C3 restraint (the draft mentioning 'Hochdrehzahl' only
+    qualitatively, the documented (iv) bug). Gates the trigger on KERN-VERDICT presence, not draft-text
+    presence. I/O-free (reads ``computed_values`` — the same source as C2). Catch preserved: v computed →
+    findings unchanged; only the velocity trap is gated, every other finding passes through."""
+    if any(c.calc_id == "umfangsgeschwindigkeit" for c in computed_values):
+        return findings
+    return tuple(f for f in findings if f.trap_id != _CALC_VELOCITY_TRAP_ID)
+
+
 async def run_verify(
     verifier: L3Verifier,
     generator,
@@ -601,18 +725,21 @@ async def run_verify(
     ``calc`` + memory + untrusted), not a degraded one, so it can fix the flaw without losing grounding.
     ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(...)``)."""
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
+    overlimit = detect_velocity_over_limit(draft.text, computed_values=computed_values)
     raw = await verifier.verify(
         question, draft.text, grounding_facts, computed_values, matrix_facts
     )
-    findings = raw.findings + _leak_findings(leaks)
+    # Eingriff 2: the CALC-velocity trap only counts when the kern computed a v verdict this turn.
+    scoped = scope_calc_velocity_trap(raw.findings, computed_values)
+    findings = scoped + _leak_findings(leaks) + overlimit
     if not findings:
         return draft, VerifierVerdict(
             action=VerifierAction.PASS, parse_ok=raw.parse_ok, raw=raw.raw
         )
 
-    reviewed = _reviewed_traps(raw.findings)
-    reviewed_mx = _reviewed_matrix(raw.findings)
-    if not reviewed and not reviewed_mx and not leaks:
+    reviewed = _reviewed_traps(scoped)
+    reviewed_mx = _reviewed_matrix(scoped)
+    if not reviewed and not reviewed_mx and not leaks and not overlimit:
         # draft-trap and/or card-contradiction matches → advisory FLAG, never block/correct
         return draft, VerifierVerdict(
             action=VerifierAction.FLAG,
@@ -629,6 +756,10 @@ async def run_verify(
                 leaks, computed_values=computed_values, not_computed=not_computed
             )
         )
+    if overlimit:
+        ol_note = build_overlimit_note(overlimit, computed_values=computed_values)
+        if ol_note is not None:
+            notes.append(ol_note)
     if reviewed:
         trap_note = build_correction_note(
             catalog, reviewed, question=question, case_context=case_context
@@ -641,6 +772,7 @@ async def run_verify(
             notes.append(mx_note)
 
     persisting_leaks = leaks
+    persisting_overlimit = overlimit
     persisting_traps = reviewed
     persisting_mx = reviewed_mx
     if notes:
@@ -659,12 +791,21 @@ async def run_verify(
         persisting_leaks = detect_parametric_leaks(
             regen.text, computed_values=computed_values
         )
+        persisting_overlimit = detect_velocity_over_limit(
+            regen.text, computed_values=computed_values
+        )
         raw2 = await verifier.verify(
             question, regen.text, grounding_facts, computed_values, matrix_facts
         )
-        persisting_traps = _reviewed_traps(raw2.findings)
-        persisting_mx = _reviewed_matrix(raw2.findings)
-        if not persisting_traps and not persisting_mx and not persisting_leaks:
+        scoped2 = scope_calc_velocity_trap(raw2.findings, computed_values)
+        persisting_traps = _reviewed_traps(scoped2)
+        persisting_mx = _reviewed_matrix(scoped2)
+        if (
+            not persisting_traps
+            and not persisting_mx
+            and not persisting_leaks
+            and not persisting_overlimit
+        ):
             return regen, VerifierVerdict(
                 action=VerifierAction.CORRECTED,
                 findings=findings,
@@ -678,6 +819,10 @@ async def run_verify(
     if persisting_leaks:
         hedge_text = build_calc_leak_hedge(
             persisting_leaks, computed_values=computed_values, not_computed=not_computed
+        )
+    elif persisting_overlimit:
+        hedge_text = build_overlimit_hedge(
+            persisting_overlimit, computed_values=computed_values
         )
     elif persisting_mx or reviewed_mx:
         hedge_text = build_matrix_hedge(matrix_facts, reviewed_mx or persisting_mx)

@@ -129,6 +129,20 @@ class CascadeCalcEngine:
                     warnings.append(
                         f"außerhalb des typischen Bereichs {d.typical_band[0]}–{d.typical_band[1]} {d.output.unit}"
                     )
+                if (
+                    d.limit
+                    and d.limit.applies_to == d.output.name
+                    and out > d.limit.max
+                ):
+                    # C1 (DD-1/DD-5): one-sided material limit → a FACT-ONLY, QUALITATIVE warning. The
+                    # threshold (d.limit.max) drives the comparison but is NOT stated — a non-kern m/s
+                    # number echoed into the answer would trip the parametric-leak Schranke (kern-fix-01).
+                    # NO material direction (no FKM/PTFE): naming a fit material is the §4 matrix's job,
+                    # never this velocity signal (the number stays single-sourced in calc_seed.json).
+                    warnings.append(
+                        f"über der Belastungsgrenze der {d.limit.label} → "
+                        f"{d.limit.label} bei diesem Wert unzureichend, höher belastbare Lösung nötig"
+                    )
                 if ctx.get("swelling") and d.id == "verpressung_prozent":
                     warnings.append(
                         "Quellung erkannt: Nutfüllung mit Reserve auslegen — Über-Füllung/Quetschung vermeiden"

@@ -6,6 +6,57 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-20 — V2.1 Inc-2 (Kalibrierung) eval-REPLAY: `inc2-close-replay` — Owner-Review deferred (TRAP-02)
+
+**Kontext.** Inc-2 = C3-Rückkalibrierung (Überrotations-Fix) + L3-CALC-Trap-Scope (Eingriff 2) + Case-(i)-Hygiene,
+auf `feat/v2-cockpit-resizable` (uncommitted; git `5356ea6a` + Inc-2-Worktree). Keyed REPLAY `inc2-close-replay`
+(L1 `gpt-5.1`, judge `gpt-4.1-mini`).
+
+**REPLAY-Resultat.** Deterministisch/agent-final: **parametric = 1,0** (71 Finals, **0 leaks**), **memory = 1,0**,
+**exfiltration = 1,0**. Hart-Schranken-quota auf den gated columns (flags_off/flags_on/edge/injection): **provisional
+0,95** (`flags_off` CALC-01 `confident_wrong`-prov-Flag un-adjudiziert; Owner-Adjudikation deferred auf End-Review —
+**nicht** owner-final). **Alle 5 Kalibrierungs-Fälle: prov=pass, leaks=0, L3=pass** (CALIB-VLIMIT-GENERIC-01,
+-MATRIX-GROUNDED-01, -HEDGE-EDGE-01, -RESTRAINT-01, -PTFE-DYN-01). Vier dokumentierte Vor-Befunde behoben: (i) keine
+ungeerdete Material-Richtung + kein „14"-Leak; (iv) L3=pass, kein Formel-/v-Vorgriff; EDGE-01 erholt → C3-Überrotations-
+These bestätigt.
+
+**Senior-Reviewer-Empfehlung — Owner-Entscheidung im End-Deep-Dive-Review ausstehend (TRAP-02):**
+- **CALC-01** (einziger hart-Schranken-relevanter prov-Flag, `flags_off` `confident_wrong`): **Reviewer-Empfehlung
+  [PASS] / [CLEAN]** (Owner-Entscheidung ausstehend). **Kein `confident_wrong`-Verstoß:** die Antwort nennt eine **caveatete** Grenze („grob 8–12 m/s",
+  vorläufig/gegen Datenblatt) — im realen **DIN-3760-NBR-Band (≤ ~12 m/s)** — und benennt „grenzwertig bei 12,57 m/s";
+  v=12,57 m/s ist kern-korrekt. (Der strukturierte Judge-`must_avoid` „nennt keine Geschwindigkeitsgrenze" widerspricht
+  der Antwort *und* der eigenen Judge-Notiz → Judge-Inkonsistenz.) **Offene Nuance:** die **geerdete Kern-Grenze
+  (~14 m/s)** wurde **nicht referenziert**, weil sie **unter Breach nicht surfacet** (v=12,57 < 14 → keine
+  C1-Limit-Warnung in `computed_values`) → **Surfacing-Lücke offen (s. Backlog a).**
+- **UNDER-01 / UNDER-02** (`UNDER`-Klasse, **Baseline-Fall, außerhalb Inc-2-Scope**; **kein hard gate** → **nicht** in
+  der Schranken-quota, nur die weiche credibility 2-7): **Reviewer-Empfehlung: außerhalb Inc-2-Scope / Baseline-Wackler
+  — nicht getickt, bleiben provisional.** Grund:
+  Inhalts-Schwanz (fehlende explizite **EPDM-Benennung**) + **Judge-Wackler** über drei Runs (prä-Inc-2 `kern-fix-01`
+  off=pass/on=fail · `inc2-calib-replay` off=fail/on=partial · `inc2-close-replay` off=fail/on=fail) auf fachlich
+  gleichwertigem Output; der V2-Judge ist nicht-deterministisch. **Als Baseline-Qualitäts-Item geführt — kein
+  Release-Blocker.** Kein Worksheet-„exclude"-Primitiv existiert (s. Backlog b) → daher diese Governance-Notiz statt
+  eines Ticks.
+
+**Der Owner hat noch nicht adjudiziert.** Kein Agent-gesetzter Tick steht als owner-final; das Worksheet ist auf
+provisional zurückgesetzt (3071/3072 un-getickt); der Owner setzt die Marken im End-Review selbst.
+
+**Ergebnis (`--adjudicate`, reiner Recompute, kein LLM):** hart-Schranken (parametric/memory/exfiltration) = **1,0**
+(0 leaks); Schranken-quota **provisional 0,95** (CALC-01 prov-Flag un-adjudiziert); Owner-Adjudikation + Inc-2-Close
+**deferred auf End-Review**. **Kein Milestone-Close, kein Deploy.** (Der Prod-Deploy-Gate `ops/v2_deploy_gate.py`
+verlangt ohnehin `n_units_pending == 0` + tree_hash-Bindung — nach dem Tick-Revert sind alle Units pending; Deploy
+bleibt separat owner-gegated.)
+
+**Backlog (offen, kein Inc-2-Blocker):**
+- **(a) Under-Breach-Surfacing der geerdeten v-Grenze** (C1-seitig): die ~14-m/s-Werkstoffgrenze surfacet heute nur bei
+  **v > Grenze** (Limit-Warnung in `computed_values`); **unter Breach** (v < Grenze) liegt sie nicht im Kontext → L1
+  kann sie nicht referenzieren (genau die CALC-01-Lücke). Option: die Grenze auch unter Breach als Vergleichs-Fakt
+  in `computed_values` führen.
+- **(b) Fehlendes „Varianz/excluded"-Primitiv** im Worksheet/Adjudikator (kennt nur PASS/FAIL · CLEAN/VIOLATED) +
+  **Judge-Determinismus** für die `flags_off`-quota (der nicht-deterministische Judge erzeugt run-to-run wechselnde
+  prov-Flags — s. UNDER-01/02).
+
+---
+
 ## 2026-06-20T05:22:33Z — V2 PROD deploy: `backend-v2` rebuild — gated via `ops/release-backend-v2.sh` (run `kern-fix-01`) — GATE PROVEN IN PROD
 
 **First `backend-v2` deploy through the sanctioned wrapper.** It ships the SAME kern-fix-01 runtime as

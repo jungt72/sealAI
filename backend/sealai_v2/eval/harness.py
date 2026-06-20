@@ -22,6 +22,7 @@ from sealai_v2.eval import report
 from sealai_v2.eval.cases import (
     Case,
     load_archetype_cases,
+    load_calibration_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -319,6 +320,38 @@ async def _run_archetype(
     return records, errors
 
 
+async def _run_calibration(
+    pipeline, judge_cfg: ModelConfig, judge_client=None, fixtures=None
+) -> tuple[list[Record], list[str]]:
+    """confident_correct_vs_hedge class (C4, V2.1 Inc 2) — runs the calibration cases through the
+    EXISTING single-turn unit + judge + scorer (column ``calibration``, flags_on). Folded into the
+    canonical records; excluded from the non-edge no-regression by column. A CREDIBILITY/axes class
+    (NO new hard gate — the 8 Schranken stay fixed): assertive-WHERE-grounded vs honest hedge, plus
+    the kern-fix-01 restraint guard (CALIB-RESTRAINT-01). Calc params come from the eval fixtures
+    (the v-limit case needs d1_mm/rpm); the restraint case has NO fixture by design. Owner is the
+    factual oracle (axis 1 / any gate human-final)."""
+    cases = load_calibration_cases()
+    fixtures = fixtures or {}
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "calibration",
+                    COLUMNS["flags_on"],
+                    params=fixtures.get(case.id),
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_archetype)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_injection(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str], dict | None]:
@@ -507,6 +540,26 @@ async def run_eval(
     )
     records = list(records) + arch_records
 
+    # confident_correct_vs_hedge (C4, V2.1 Inc 2) — calibration cases (assertive-where-grounded vs
+    # honest hedge; + the kern-fix-01 restraint guard). Folded under column `calibration` (excluded
+    # from the non-edge summaries by the column filter); CREDIBILITY/axes class — NO new hard gate.
+    # Appended BEFORE the parametric block so CALIB-RESTRAINT-01 is in the agent-final parametric gate.
+    calib_records, calib_errors = await _run_calibration(
+        pipeline, judge_cfg, judge_client=judge_client, fixtures=fixtures
+    )
+    calibration = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("calibration", [r.score for r in calib_records])
+            ),
+            "n_cases": len(calib_records),
+            "errors": calib_errors,
+        }
+        if calib_records
+        else None
+    )
+    records = list(records) + calib_records
+
     # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
     # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
     # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
@@ -593,6 +646,7 @@ async def run_eval(
         "n_edge_cases": (edge["n_cases"] if edge else 0),
         "n_injection_cases": (injection["n_cases"] if injection else 0),
         "n_archetype_cases": (archetype["n_cases"] if archetype else 0),
+        "n_calibration_cases": (calibration["n_cases"] if calibration else 0),
         "baseline_non_edge": {
             "flags_off": 1.000,
             "flags_on": 0.991,
@@ -608,7 +662,8 @@ async def run_eval(
         + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])]
         + [f"edge::{e}" for e in (edge or {}).get("errors", [])]
         + [f"injection::{e}" for e in (injection or {}).get("errors", [])]
-        + [f"archetype::{e}" for e in (archetype or {}).get("errors", [])],
+        + [f"archetype::{e}" for e in (archetype or {}).get("errors", [])]
+        + [f"calibration::{e}" for e in (calibration or {}).get("errors", [])],
     }
 
     # --- model-swap gate aggregates (latency / answer-quality / cost) -----------------------
@@ -673,6 +728,7 @@ async def run_eval(
         "injection": injection,
         "parametric": parametric,
         "archetype": archetype,
+        "calibration": calibration,
         "answer_quality": answer_quality,
         "latency": latency,
         "token_usage": token_usage,
