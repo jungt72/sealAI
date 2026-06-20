@@ -6,6 +6,61 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-06-20T05:22:33Z — V2 PROD deploy: `backend-v2` rebuild — gated via `ops/release-backend-v2.sh` (run `kern-fix-01`) — GATE PROVEN IN PROD
+
+**First `backend-v2` deploy through the sanctioned wrapper.** It ships the SAME kern-fix-01 runtime as
+the 2026-06-19T20:45Z entry, but this time end-to-end through the gate chain AND carrying the deploy
+teeth — so it course-corrects the two ungated deploys (backfill below) and the wrapper-less re-deploy
+of 2026-06-19T20:45Z. The `ops/deploy-ledger.jsonl` line is the machine proof the chain passed: the
+wrapper appends it ONLY after the gate (exit 0) and every smoke step are green.
+
+**What now gates a `backend-v2` deploy — 3 independent teeth (commits `185f04fb` + `3d2d2df9`):**
+- **Wrapper** `ops/release-backend-v2.sh` — THE ONLY sanctioned V2 deploy. Computes the served-runtime
+  content `tree_hash` (`ops/tree-hash.sh`: side-effect-free `git write-tree` over `Dockerfile.v2` +
+  `requirements-v2.txt` + `sealai_v2` minus `eval/`+`tests/` + the entrypoint) and **refuses (exit 2)**
+  unless `ops/v2_deploy_gate.py` finds an **adjudicated** eval-REPLAY whose `manifest.tree_hash`
+  matches AND whose deterministic Schranken (memory / exfiltration / parametric multi+single) AND every
+  gated column are all `1.0`. Then rollback rung from the daemon → build with `--build-arg
+  GATE_TREE_HASH` → recreate only `backend-v2` → smoke → ledger.
+- **Entrypoint-Marker (the teeth)** `backend/docker-entrypoint-v2.sh` — the wrapper bakes
+  `GATE_TREE_HASH` into `/etc/sealai/gate-tree-hash`; a RAW build leaves it empty and the entrypoint
+  refuses to start (healthcheck → unhealthy). Catches an ungated build OUTSIDE CC.
+- **Deny-Hook** `ops/hooks/v2-deploy-deny.sh` — PreToolUse(Bash) hook that blocks a raw
+  `up|build backend-v2` / `--profile v2` INSIDE CC and points at the wrapper (wiring in
+  `.claude/settings.json`, owner-committed separately).
+
+**The bound eval (the gate's proof):** adjudicated run `kern-fix-01` (git `53145401`, dirty=true) — the
+same human-adjudicated REPLAY recorded at 2026-06-19T20:45Z: Schranken-quota(final)=**1.000** on all
+gated axes; `parametric` + `memory_fabrication` = 1.000. `dirty=true` is bound by `tree_hash`
+`e579e5a3749eacd340d590042361600b07ef73ab`, NOT by the commit — `tree_hash` is the gate criterion
+(validate-then-commit content match), `dirty` is not.
+
+**Build + recreate (surgical, Gap #1/#2 — NOT the V1 release path):** wrapper-driven
+`docker compose … --profile v2 build --build-arg GATE_TREE_HASH=e579e5a3… backend-v2` →
+`… up -d --no-deps --force-recreate backend-v2` — nothing else moved.
+- new live `sealai-backend-v2:latest` = `sha256:5b62e47699f1…`
+- served `tree_hash` = `e579e5a3749eacd340d590042361600b07ef73ab`
+- rollback rung (read from the daemon, never memory) = `sha256:1098527688cb…` (the 2026-06-19T20:45Z
+  `ffb85440` image), tagged `sealai-backend-v2:rollback-pre-kern-fix-01-20260620-052233`.
+
+**Live smoke (all GREEN, wrapper-enforced — RED anywhere = NO ledger line):** `backend-v2`
+`running healthy`; `/health` internal (`127.0.0.1:8001`) + public
+`https://sealingai.com/api/v2/health`; kern one-shot `umfangsgeschwindigkeit = 16.755 m/s`
+(d=40, n=8000) + `pv_wert = 50.0 bar·m/s` (seal_type gating correct); restart-survival recovered
+healthy (durable `sealai_v2` Postgres, Gap #1 unaffected by `--no-deps`).
+
+**Routing UNCHANGED:** no `ops/v2-flip.sh`; public `/api/v2` reachable throughout. `feat→demo→main`
+promotion and any nginx flip remain separately owner-gated.
+
+**Machine record:** `ops/deploy-ledger.jsonl` (now version-controlled) carries the structured
+`ts/tree_hash/run_label/image_sha/git_sha/dirty/rollback_from` line for this deploy.
+
+**Status: VALIDIERT + gegated deployed — gate proven in prod.** A raw `backend-v2` deploy is now denied
+on three independent layers (wrapper / entrypoint marker / deny-hook); the morning's ungated-deploy
+failure mode cannot recur silently.
+
+---
+
 ## 2026-06-19T20:45Z — V2 PROD deploy: `backend-v2` rebuild — kern-fix-01 parametric-leak hardening (commit `ffb85440`) — VALIDIERT + owner-gated
 
 **This is the gated re-deploy that closes the `53145401` finding below.** The eval-REPLAY `kern-53145401`

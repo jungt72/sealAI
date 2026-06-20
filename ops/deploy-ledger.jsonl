@@ -1,0 +1,1 @@
+{"ts": "2026-06-20T05:22:33Z", "tree_hash": "e579e5a3749eacd340d590042361600b07ef73ab", "run_label": "kern-fix-01", "image_sha": "sha256:5b62e47699f1a8485eb69e449cf2f1d8692ec67b188ab34338beb1a63a127937", "git_sha": "53145401", "dirty": true, "rollback_from": "sha256:1098527688cbb93191b295c9a0959d95878d8b71e9147a97ba9fa19fd1f78ec2"}
