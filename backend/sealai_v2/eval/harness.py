@@ -380,6 +380,8 @@ async def run_eval(
     run_dir,
     run_label: str,
     git_sha: str,
+    tree_hash: str = "",
+    dirty: bool = False,
     timestamp: str,
     columns: dict[str, Flags] | None = None,
     smoke_limit: int | None = None,
@@ -540,6 +542,12 @@ async def run_eval(
     manifest = {
         "run_label": run_label,
         "git_sha": git_sha,
+        # eval↔deploy binding (the V2 deploy gate keys on tree_hash): the served-runtime CONTENT
+        # hash (ops/tree-hash.sh — the single source of truth) + whether that content had
+        # uncommitted changes at eval time. git_sha alone is the HEAD commit, which under
+        # validate-then-commit points at the PRE-fix commit; tree_hash binds the actual content.
+        "tree_hash": tree_hash,
+        "dirty": dirty,
         "timestamp": timestamp,
         "milestone": milestone,
         "subject": (

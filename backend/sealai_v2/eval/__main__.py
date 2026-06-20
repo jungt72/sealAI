@@ -52,6 +52,48 @@ def _git_sha() -> str:
         return "unknown"
 
 
+def _tree_binding() -> tuple[str, bool]:
+    """The eval↔deploy binding: the served-runtime CONTENT hash + a dirty flag.
+
+    ``tree_hash`` comes ONLY from ``ops/tree-hash.sh`` (the single source of truth the V2 deploy
+    gate also calls — byte-identical by construction). ``dirty`` = the served scope (same eval/+tests/
+    exclusion as the hash) has uncommitted changes at eval time — the signal that ``git_sha`` alone
+    cannot give (under validate-then-commit, HEAD is the pre-fix commit but the eval'd content is the
+    fix). Best-effort: ``("unknown", False)`` if git or the script is unavailable.
+    """
+    repo = Path(__file__).resolve().parents[3]
+    try:
+        tree_hash = subprocess.check_output(
+            ["bash", str(repo / "ops" / "tree-hash.sh")],
+            cwd=str(repo),
+            text=True,
+        ).strip()
+    except Exception:  # noqa: BLE001
+        tree_hash = "unknown"
+    try:
+        # dirty = uncommitted changes in the FULL image-input set (same scope as ops/tree-hash.sh)
+        porcelain = subprocess.check_output(
+            [
+                "git",
+                "status",
+                "--porcelain",
+                "--",
+                "backend/sealai_v2",
+                ":(exclude)backend/sealai_v2/eval",
+                ":(exclude)backend/sealai_v2/tests",
+                "backend/requirements-v2.txt",
+                "backend/Dockerfile.v2",
+                "backend/docker-entrypoint-v2.sh",
+            ],
+            cwd=str(repo),
+            text=True,
+        )
+        dirty = bool(porcelain.strip())
+    except Exception:  # noqa: BLE001
+        dirty = False
+    return tree_hash, dirty
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="sealai_v2 M1 eval-REPLAY (L1-alone)")
     ap.add_argument("--label", default="m1-baseline", help="run label / output subdir")
@@ -124,12 +166,15 @@ def main() -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    tree_hash, dirty = _tree_binding()
     out = asyncio.run(
         run_eval(
             settings,
             run_dir=run_dir,
             run_label=args.label,
             git_sha=_git_sha(),
+            tree_hash=tree_hash,
+            dirty=dirty,
             timestamp=timestamp,
             columns=columns,
             smoke_limit=args.smoke,
