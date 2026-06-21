@@ -109,6 +109,10 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/v2-deploy-deny.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/relay-deny.sh\""
           }
         ]
       }
