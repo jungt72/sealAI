@@ -89,7 +89,9 @@ def test_recompute_hydraulik_pv_from_pressure_and_speed():
     by_id = {d.calc_id: d for d in comp.derived}
     assert "pv_wert" in by_id
     assert abs(by_id["pv_wert"].value - 50.0) < 0.01
-    assert by_id["pv_wert"].unit == "bar*m/s" or by_id["pv_wert"].unit  # cited unit carried
+    assert (
+        by_id["pv_wert"].unit == "bar*m/s" or by_id["pv_wert"].unit
+    )  # cited unit carried
     # the RWDR-only kinematics calc never fires on a hydraulic case
     assert "umfangsgeschwindigkeit" not in by_id
 

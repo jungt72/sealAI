@@ -70,7 +70,9 @@ async def understand(
     (build-spec §5.1). ``archetype`` is SERVER-SIDE validated against ``archetype_keys`` (a key the
     store actually has), so an LLM-invented key can never survive."""
     res = await client.generate(
-        system=_understand_system(archetype_keys), user=question, model_config=model_config
+        system=_understand_system(archetype_keys),
+        user=question,
+        model_config=model_config,
     )
     raw = res.text.strip()
     archetype: str | None = None

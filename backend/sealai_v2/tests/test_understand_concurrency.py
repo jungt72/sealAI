@@ -46,10 +46,16 @@ def test_understand_completes_before_l1_generate():
     )
     assert res.understanding is not None
     assert res.understanding.intent == Intent.WISSENSFRAGE  # annotation still lands
-    helper_idx = next(i for i, c in enumerate(fake.calls) if c["model"] == "fake-helper")
+    helper_idx = next(
+        i for i, c in enumerate(fake.calls) if c["model"] == "fake-helper"
+    )
     l1_idx = next(i for i, c in enumerate(fake.calls) if c["model"] == "fake-l1")
-    assert helper_idx < l1_idx  # understand completed before the L1 generate (the new ordering)
-    assert sum(c["model"] == "fake-helper" for c in fake.calls) == 1  # exactly one helper call
+    assert (
+        helper_idx < l1_idx
+    )  # understand completed before the L1 generate (the new ordering)
+    assert (
+        sum(c["model"] == "fake-helper" for c in fake.calls) == 1
+    )  # exactly one helper call
 
 
 def test_reordering_is_pure_l1_prompt_and_answer_byte_identical():

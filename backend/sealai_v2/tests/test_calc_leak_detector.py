@@ -34,9 +34,9 @@ def test_canonical_leak_fires():
         "von v ≈ 10,5 m/s, was für NBR grenzwertig ist."
     )
     leaks = detect_parametric_leaks(draft, computed_values=())
-    assert leaks, (
-        "the canonical 'v ≈ 10,5 m/s' leak MUST fire when the kern computed nothing"
-    )
+    assert (
+        leaks
+    ), "the canonical 'v ≈ 10,5 m/s' leak MUST fire when the kern computed nothing"
     assert leaks[0].calc_id == "umfangsgeschwindigkeit"
 
 
@@ -159,9 +159,9 @@ def test_live_turn2_verbatim_fires_with_empty_kern():
     assert leaks, "the live turn-2 answer MUST fire against an empty kern"
     assert all(leak.calc_id == "umfangsgeschwindigkeit" for leak in leaks)
     values = [leak.value_text for leak in leaks]
-    assert "16,76" in values, (
-        "the lead-layout '→ v = 16,76 m/s' assertion must be caught"
-    )
+    assert (
+        "16,76" in values
+    ), "the lead-layout '→ v = 16,76 m/s' assertion must be caught"
     lead = next(leak for leak in leaks if leak.value_text == "16,76")
     assert (
         "deterministisch berechnet" in lead.excerpt
@@ -518,7 +518,9 @@ def test_run_verify_trap_hedge_is_parametric_clean_even_if_correct_has_number():
         ]
     )
     gen = L1Generator(client, PromptAssembler(), ModelConfig("fake-l1"))
-    verifier = L3Verifier(client, VerifierPromptAssembler(), ModelConfig("fake-l3"), cat)
+    verifier = L3Verifier(
+        client, VerifierPromptAssembler(), ModelConfig("fake-l3"), cat
+    )
     draft = Answer(
         text="Standard-NBR ist für diese Anwendung optimal.", model="fake-l1"
     )

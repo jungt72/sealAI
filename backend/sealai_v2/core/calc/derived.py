@@ -62,7 +62,9 @@ def recompute_derived(
     params: dict = dict(bound.params)
     seal_type = _seal_type(facts)
     if seal_type:
-        params["seal_type"] = seal_type  # string param → engine context → condition gate
+        params["seal_type"] = (
+            seal_type  # string param → engine context → condition gate
+        )
     calc = engine.evaluate(params=params or {}, param_origins=bound.origins or None)
     # surface the binder's fail-closed drops in the notes (visible, never silent) — mirrors pipeline.run
     if bound.notes:

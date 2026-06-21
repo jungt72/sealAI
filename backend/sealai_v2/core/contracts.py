@@ -484,13 +484,19 @@ class Case:
     (owner decision 2: byte-identical ``list[dict]`` projection, Jinja unchanged) — so L1/L3 see an
     unchanged ``case_context`` and the eval is unperturbed. Pure type (``core`` stays I/O-free)."""
 
-    facts: tuple[RememberedFact, ...] = ()  # the source case-state facts → the prompt projection
+    facts: tuple[
+        RememberedFact, ...
+    ] = ()  # the source case-state facts → the prompt projection
     archetype: str | None = None  # §5.1 — key into the archetype store (wired in G4)
     conditions: dict | None = None  # {speed, temperature, pressure} — populated later
     medium: dict | None = None  # {name, concentration?, temperature?} — populated later
     geometry: dict | None = None  # {shaft_dia?, housing?, ...} — populated later
-    seal_spec: dict | None = None  # {material?, type?, form?, designation?} — populated later
-    provenance: tuple[str, ...] = ()  # per-field origin (carried as the typed slots grow)
+    seal_spec: dict | None = (
+        None  # {material?, type?, form?, designation?} — populated later
+    )
+    provenance: tuple[
+        str, ...
+    ] = ()  # per-field origin (carried as the typed slots grow)
 
     @classmethod
     def from_case_state(cls, case_state: tuple["RememberedFact", ...]) -> "Case":

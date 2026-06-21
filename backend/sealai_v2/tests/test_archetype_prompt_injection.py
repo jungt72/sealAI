@@ -11,13 +11,18 @@ from sealai_v2.prompts.assembler import PromptAssembler
 
 _CTX = {
     "archetyp": "getriebe",
-    "interview_fragen": ["Welches Öl und welche Additivierung?", "Wellendurchmesser und Drehzahl?"],
+    "interview_fragen": [
+        "Welches Öl und welche Additivierung?",
+        "Wellendurchmesser und Drehzahl?",
+    ],
     "blinde_flecken": ["Öl-Additive werden unterschätzt"],
 }
 
 
 def test_archetype_block_present_when_context_given():
-    out = PromptAssembler().system_prompt(flags=Flags(False, False), archetype_context=_CTX)
+    out = PromptAssembler().system_prompt(
+        flags=Flags(False, False), archetype_context=_CTX
+    )
     assert "getriebe" in out
     assert "Welches Öl und welche Additivierung?" in out
     assert "Wellendurchmesser und Drehzahl?" in out

@@ -29,14 +29,17 @@ _MINIMAL = {
 
 def _write(tmp_path, profiles):
     p = tmp_path / "arch.json"
-    p.write_text(
-        json.dumps({"version": "t", "profiles": profiles}), encoding="utf-8"
-    )
+    p.write_text(json.dumps({"version": "t", "profiles": profiles}), encoding="utf-8")
     return p
 
 
 def test_draft_profile_loads(tmp_path):
-    prof = {"key": "getriebe", "review_state": "draft", "provenance": ["owner:draft"], **_MINIMAL}
+    prof = {
+        "key": "getriebe",
+        "review_state": "draft",
+        "provenance": ["owner:draft"],
+        **_MINIMAL,
+    }
     cat = load_archetypes(_write(tmp_path, [prof]))
     p = cat.by_archetype("getriebe")
     assert p is not None and p.review_state == "draft"
@@ -56,7 +59,12 @@ def test_reviewed_without_owner_or_source_is_load_error(tmp_path):
 
 
 def test_reviewed_owner_grounded_ok(tmp_path):
-    prof = {"key": "getriebe", "review_state": "reviewed", "provenance": ["owner:thorsten"], **_MINIMAL}
+    prof = {
+        "key": "getriebe",
+        "review_state": "reviewed",
+        "provenance": ["owner:thorsten"],
+        **_MINIMAL,
+    }
     cat = load_archetypes(_write(tmp_path, [prof]))
     assert cat.by_archetype("getriebe").review_state == "reviewed"
 
@@ -81,13 +89,23 @@ def test_missing_provenance_is_error(tmp_path):
 
 def test_missing_interview_fragen_is_error(tmp_path):
     bad = dict(_MINIMAL, interview_fragen=[])
-    prof = {"key": "getriebe", "review_state": "draft", "provenance": ["owner:draft"], **bad}
+    prof = {
+        "key": "getriebe",
+        "review_state": "draft",
+        "provenance": ["owner:draft"],
+        **bad,
+    }
     with pytest.raises(ValueError, match="interview_fragen"):
         load_archetypes(_write(tmp_path, [prof]))
 
 
 def test_duplicate_key_is_error(tmp_path):
-    prof = {"key": "getriebe", "review_state": "draft", "provenance": ["owner:draft"], **_MINIMAL}
+    prof = {
+        "key": "getriebe",
+        "review_state": "draft",
+        "provenance": ["owner:draft"],
+        **_MINIMAL,
+    }
     with pytest.raises(ValueError, match="duplicate"):
         load_archetypes(_write(tmp_path, [prof, dict(prof)]))
 
@@ -111,4 +129,6 @@ def test_seed_loads_starter_profiles_owner_reviewed():
         assert p.owner_grounded, f"{key} must carry owner-grounded provenance"
         assert p.interview_fragen, f"{key} must carry interview questions"
         assert p.blinde_flecken, f"{key} must carry blind spots"
-        assert p.anwendbare_regime == (), f"{key}: anwendbare_regime structural/empty at Inc 1"
+        assert (
+            p.anwendbare_regime == ()
+        ), f"{key}: anwendbare_regime structural/empty at Inc 1"

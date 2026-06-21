@@ -19,7 +19,9 @@ _KEYS = ("getriebe", "ruehrwerk")
 def _understand(text, keys=_KEYS):
     client = FakeLlmClient(text)
     return asyncio.run(
-        stages.understand(client, ModelConfig("fake-helper"), "Frage?", archetype_keys=keys)
+        stages.understand(
+            client, ModelConfig("fake-helper"), "Frage?", archetype_keys=keys
+        )
     )
 
 

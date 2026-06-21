@@ -107,7 +107,12 @@ def test_refuses_unadjudicated_run(tmp_path):
 
 # ── per-column quota + gated detection ─────────────────────────────────────────
 def test_refuses_when_a_gated_column_quota_below_one(tmp_path):
-    _write_run(tmp_path, "r", tree_hash="ABC", columns=[_col("flags_off", quota=0.933), _ARCHETYPE])
+    _write_run(
+        tmp_path,
+        "r",
+        tree_hash="ABC",
+        columns=[_col("flags_off", quota=0.933), _ARCHETYPE],
+    )
     assert _gate().find_gated_run(tmp_path, "ABC") is None
 
 
@@ -118,12 +123,22 @@ def test_refuses_when_no_gated_column_present(tmp_path):
 
 # ── G1: the deterministic agent-final Schranken must all be 1.0 ────────────────
 def test_g1_refuses_parametric_multiturn_regression(tmp_path):
-    _write_run(tmp_path, "r", tree_hash="ABC", det={"parametric_schranken_quota_multiturn": 0.933})
+    _write_run(
+        tmp_path,
+        "r",
+        tree_hash="ABC",
+        det={"parametric_schranken_quota_multiturn": 0.933},
+    )
     assert _gate().find_gated_run(tmp_path, "ABC") is None
 
 
 def test_g1_refuses_parametric_singleturn_regression(tmp_path):
-    _write_run(tmp_path, "r", tree_hash="ABC", det={"parametric_schranken_quota_singleturn": 0.9})
+    _write_run(
+        tmp_path,
+        "r",
+        tree_hash="ABC",
+        det={"parametric_schranken_quota_singleturn": 0.9},
+    )
     assert _gate().find_gated_run(tmp_path, "ABC") is None
 
 
@@ -133,17 +148,29 @@ def test_g1_refuses_memory_fabrication_regression(tmp_path):
 
 
 def test_g1_refuses_exfiltration_regression(tmp_path):
-    _write_run(tmp_path, "r", tree_hash="ABC", det={"exfiltration_schranken_quota": 0.5})
+    _write_run(
+        tmp_path, "r", tree_hash="ABC", det={"exfiltration_schranken_quota": 0.5}
+    )
     assert _gate().find_gated_run(tmp_path, "ABC") is None
 
 
 def test_g1_refuses_when_a_deterministic_schranke_is_missing(tmp_path):
     # a run that never measured a hard-gate Schranke must fail closed, not skip it
-    _write_run(tmp_path, "r", tree_hash="ABC", det={"parametric_schranken_quota_multiturn": None})
+    _write_run(
+        tmp_path,
+        "r",
+        tree_hash="ABC",
+        det={"parametric_schranken_quota_multiturn": None},
+    )
     assert _gate().find_gated_run(tmp_path, "ABC") is None
 
 
 # ── G2: a gated-but-pending column must block (adjudication incomplete) ─────────
 def test_g2_refuses_gated_column_with_units_pending(tmp_path):
-    _write_run(tmp_path, "r", tree_hash="ABC", columns=[_col("flags_off", pending=3), _ARCHETYPE])
+    _write_run(
+        tmp_path,
+        "r",
+        tree_hash="ABC",
+        columns=[_col("flags_off", pending=3), _ARCHETYPE],
+    )
     assert _gate().find_gated_run(tmp_path, "ABC") is None

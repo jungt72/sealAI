@@ -42,14 +42,22 @@ class ArchetypeProfile:
 
     key: str  # canonical archetype key, e.g. "getriebe", "ruehrwerk"
     review_state: str  # "reviewed" | "draft"
-    provenance: tuple[str, ...]  # owner-grounding origin (path i) or research origin (path ii)
-    interview_fragen: tuple[str, ...]  # what this machine forces to clarify (drives the interview)
+    provenance: tuple[
+        str, ...
+    ]  # owner-grounding origin (path i) or research origin (path ii)
+    interview_fragen: tuple[
+        str, ...
+    ]  # what this machine forces to clarify (drives the interview)
     blinde_flecken: tuple[str, ...] = ()  # what the user typically overlooks here
     typische_konstellation: dict = field(default_factory=dict)
     dichtungsrelevante_besonderheiten: tuple[str, ...] = ()
     typische_versagensmodi: tuple[str, ...] = ()  # refs into Dim. 5 (built later)
-    typische_eignungen: dict = field(default_factory=dict)  # {werkstoffe:[...], bauformen:[...]}
-    anwendbare_regime: tuple[str, ...] = ()  # STRUCTURAL at Inc 1 — content via the norms catalogue
+    typische_eignungen: dict = field(
+        default_factory=dict
+    )  # {werkstoffe:[...], bauformen:[...]}
+    anwendbare_regime: tuple[
+        str, ...
+    ] = ()  # STRUCTURAL at Inc 1 — content via the norms catalogue
     sources: tuple[str, ...] = ()  # primary citations (path ii), if any
     version: str = ""
 
@@ -111,7 +119,9 @@ def _profile(raw: dict) -> ArchetypeProfile:
         dichtungsrelevante_besonderheiten=tuple(
             str(x) for x in raw.get("dichtungsrelevante_besonderheiten", [])
         ),
-        typische_versagensmodi=tuple(str(x) for x in raw.get("typische_versagensmodi", [])),
+        typische_versagensmodi=tuple(
+            str(x) for x in raw.get("typische_versagensmodi", [])
+        ),
         typische_eignungen=dict(raw.get("typische_eignungen", {}) or {}),
         anwendbare_regime=tuple(str(x) for x in raw.get("anwendbare_regime", [])),
         sources=sources,

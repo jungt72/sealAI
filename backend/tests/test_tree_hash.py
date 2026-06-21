@@ -22,7 +22,9 @@ SCRIPT = REPO / "ops" / "tree-hash.sh"
 
 
 def _hash() -> str:
-    return subprocess.check_output(["bash", str(SCRIPT)], cwd=str(REPO), text=True).strip()
+    return subprocess.check_output(
+        ["bash", str(SCRIPT)], cwd=str(REPO), text=True
+    ).strip()
 
 
 def _status() -> str:
