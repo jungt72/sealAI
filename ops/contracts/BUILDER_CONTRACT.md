@@ -21,5 +21,13 @@ VERHALTEN BEI TRIGGER
 - Schreibe die Frage knapp/entscheidungsreif nach ops/ESCALATION.md
   (Was ist unklar? Welche Optionen? Konsequenz je Option?) und beende den Lauf.
 
+REMEDIATION (wenn du Reviewer-Befunde behebst)
+- Behebe NUR Befunde, die durch eine Code-Änderung im freigegebenen Scope lösbar sind.
+- Ist ein Befund NICHT builder-fixbar — verlangt Owner-Entscheidung, fehlende Adjudikation/
+  Eval, oder etwas außerhalb deines Scopes — dann NICHT weiterprobieren, NICHT investigieren,
+  KEINE Deploy-/Gate-Skripte aufrufen. Schreibe knapp nach ops/ESCALATION.md, WELCHER Befund
+  warum nicht builder-fixbar ist, und beende den Lauf sofort.
+- Drehe niemals Turns leer, um einen Befund zu umkreisen, den du nicht beheben kannst.
+
 SONST: rein mechanische Fragen (Pattern, Caching, Layout, Lib, Fehlertext) autonom entscheiden
 und das Increment umsetzen.
