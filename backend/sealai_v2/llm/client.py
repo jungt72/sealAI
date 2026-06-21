@@ -29,7 +29,11 @@ def _parse_usage(resp: Any) -> TokenUsage | None:
 
 class OpenAiLlmClient:
     def __init__(
-        self, async_client: Any, *, timeout_s: float = 180.0, max_retries: int = 3
+        self,
+        async_client: Any,
+        *,
+        timeout_s: float = 180.0,  # i5-ok: Transport-Timeout
+        max_retries: int = 3,
     ) -> None:
         self._client = async_client
         self._timeout_s = timeout_s
@@ -74,6 +78,6 @@ class OpenAiLlmClient:
                     continue
                 last_exc = exc
                 if attempt < self._max_retries - 1:
-                    await asyncio.sleep(min(2.0**attempt, 8.0))
+                    await asyncio.sleep(min(2.0**attempt, 8.0))  # i5-ok: Retry-Backoff
         assert last_exc is not None
         raise last_exc
