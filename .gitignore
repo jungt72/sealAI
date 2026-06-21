@@ -160,3 +160,4 @@ langgraph_backup/
 
 scratch/
 .claude/plans/
+ops/increments/
