@@ -87,7 +87,9 @@ $(cat /tmp/relay_gate.txt)"
 
   # ---- 4) REVIEWER (unabhängig, read-only) ---------------------------------
   log "Runde $i — REVIEWER"
-  diff="$(git --no-pager diff "$BASELINE")"
+  git add -A
+  diff="$(git --no-pager diff --cached "$BASELINE")"
+  git reset -q
   review_input="$(cat "$REVIEW_CONTRACT")
 
 GATE-AUSGABE (grün):

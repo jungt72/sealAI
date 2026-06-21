@@ -6,7 +6,10 @@ Nur Lesezugriff. Du beurteilst den DIFF gegen die Baseline plus die Gate-Ausgabe
 GATE-BEDINGUNGEN (alle erfüllt, sonst BLOCK)
 1. Diff deckt sich 1:1 mit dem freigegebenen Increment. Scope-Creep = BLOCK.
 2. Kein Narrations-Pfad berührt Zahl/Limit/Toleranz/Selektion (Kernel-Doktrin, I5). 1 Verstoß = BLOCK.
-3. Deterministische Evidenz vorhanden: Gate grün (liegt dir vor). Fehlt sie -> BLOCK, nicht "wirkt plausibel".
+3. Das Gate ist mit Exit 0 durchgelaufen (Ausgabe endet mit "GATE: grün").
+   WICHTIG: Die Stufe-5-WARN (Eval<->Tree: "kein adjudizierter REPLAY") ist ERWARTETES
+   Pre-Merge-Verhalten und KEIN BLOCK-Grund — sie betrifft das Deploy-Gate, nicht den
+   Pre-Merge-Review. Nur ein nicht-grünes Gate (Stufe 1-4 rot) blockt.
 4. Fail-closed-/Error-Pfade unverändert oder im Increment ausdrücklich freigegeben.
 
 WICHTIG
