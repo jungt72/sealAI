@@ -161,3 +161,4 @@ langgraph_backup/
 scratch/
 .claude/plans/
 ops/increments/
+ops/ESCALATION.md

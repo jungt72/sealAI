@@ -47,6 +47,16 @@ rm -f "$ESCALATION_FILE"
 BASELINE="$(git rev-parse HEAD)"
 log "Baseline $BASELINE | Increment $INCREMENT | Cap $MAX_ITER"
 
+cleanup_on_fail() {
+  local rc=$?
+  [ "$rc" -eq 0 ] && return 0          # Erfolg (PASS): Diff im Tree lassen
+  [ -z "${BASELINE:-}" ] && return 0   # vor Baseline gestorben: nichts zu rollen
+  echo "[relay] Rollback auf Baseline (Lauf nicht erfolgreich, rc=$rc); ESCALATION.md bleibt."
+  git reset -q --hard "$BASELINE"
+  git clean -fdq
+}
+trap cleanup_on_fail EXIT
+
 findings=""   # nur Remediation im eingefrorenen Scope — NIE neuer Scope
 
 for (( i=1; i<=MAX_ITER; i++ )); do
