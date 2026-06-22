@@ -31,3 +31,12 @@ REMEDIATION (wenn du Reviewer-Befunde behebst)
 
 SONST: rein mechanische Fragen (Pattern, Caching, Layout, Lib, Fehlertext) autonom entscheiden
 und das Increment umsetzen.
+
+## ANTI-SPIN — Feststecken ist ein Eskalationsgrund
+Wenn du nach wenigen Versuchen (~8 Turns) das geforderte fehlschlagende Testszenario nicht
+konstruieren, das Ziel nicht lokalisieren oder die Aufgabe im eingefrorenen Scope nicht lösen
+kannst: STOPpe und schreibe ops/ESCALATION.md mit dem KONKRETEN Hindernis (z.B. "Trigger nicht
+reproduzierbar", "Zielpfad nicht auffindbar", "Fix erfordert Kernel-Eingriff"). Drehe NICHT bis
+zum Turn-Cap. Wiederholtes Fehlschlagen desselben Schritts ist das Signal zu eskalieren, nicht
+weiterzuprobieren. Ein sauberer Stop mit Hindernis-Beschreibung ist Erfolg; ein Turn-Cap-Spin ist
+Verschwendung.
