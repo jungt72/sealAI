@@ -24,14 +24,17 @@ I9  Durable L4-Memory speist nie den Calc-Binder.
     pipeline.py:153-156 | [ENFORCED]
 
 A0  (Meta) Eval-REPLAY / 8 Schranken halten 1.000 durch jedes Increment.
-    ops/gate.sh:27-32 (pre-merge nur WARN) | laeuft in KEINEM CI | [UNENFORCED maschinell;
-    haelt nur durch manuelles Owner-Gating]  --> oberster Haertungs-Kandidat.
+    Eval ist live-LLM + owner-adjudiziert (API-Key .env-denied) -> strukturell NICHT CI-automatisierbar;
+    die menschliche Adjudikation IST die Doktrin. Bindung HART am Deploy: ops/v2_deploy_gate.py
+    refuset Deploy (exit 2) ohne adjudizierten, tree-hash-gebundenen Run mit schranken_quota_final==1.0.
+    | [ENFORCED AT DEPLOY (hart); gate.sh Stufe 5 pre-merge = WARN by design, relay-kompatibel]
 
 ## Benannte Durchsetzungs-Luecken (Haertungs-Reihenfolge)
-1. A0 nicht in CI / nur WARN.
-2. I5-Scanner scope-begrenzt (Jinja + Integers ungescannt).
-3. Architektur-Glob mischt V1: test_ssot_guardrails.py:13, test_single_writer_invariant.py:1,
+1. I5-Scanner scope-begrenzt (Jinja + Integers ungescannt).
+2. Architektur-Glob mischt V1: test_ssot_guardrails.py:13, test_single_writer_invariant.py:1,
    test_core_seal_type_branching.py:1 erzwingen den V1-app-Baum, nicht sealai_v2.
+(A0 nicht hier: am Deploy hart gebunden, pre-merge-WARN ist by design. Kein Build —
+ nur vor Deploy einen frischen adjudizierten Eval-Run auf HEAD erzeugen.)
 
 ## Trust-Spine heute
 Getragen von: fail-closed-Design des Kernels (I1, I2) + die ENFORCED-Invarianten + manuelles
