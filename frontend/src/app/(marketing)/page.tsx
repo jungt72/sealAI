@@ -82,7 +82,7 @@ const sectionLinks = [
 export default function LandingPage() {
   return (
     <div className="overflow-x-clip bg-white">
-      <section className="relative flex min-h-[430px] items-end justify-center overflow-hidden bg-[#eef0ef] px-5 pb-16 text-center sm:min-h-[560px]">
+      <section className="relative flex min-h-[460px] items-center overflow-hidden bg-[#eef0ef] px-6 text-left sm:min-h-[600px] sm:px-12 lg:px-20">
         <Image
           src="/images/marketing/hero-top.png"
           alt=""
@@ -91,23 +91,15 @@ export default function LandingPage() {
           sizes="100vw"
           className="object-cover"
         />
-        {/* subtle light scrim so the dark headline stays legible over the image's shadow wedge */}
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_45%,rgba(255,255,255,0.55))]" />
-        <div className="relative z-10 mx-auto max-w-2xl">
-          <p className="text-[clamp(1.9rem,5vw,3.15rem)] font-medium leading-none text-[#17201f]">
-            Dichtungsfälle klären, bevor du anfragst.
+        {/* faint left scrim keeps the dark wordmark crisp over the light image */}
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.42),transparent_52%)]" />
+        <div className="relative z-10">
+          <h1 className="font-[200] leading-none tracking-[0.12em] text-[#1a1a1a] text-[clamp(3rem,10vw,7.5rem)]">
+            SEALING
+          </h1>
+          <p className="mt-5 pl-[0.25em] font-light tracking-[0.35em] text-[#8a8a8a] text-[clamp(0.85rem,1.8vw,1.2rem)]">
+            Intelligence
           </p>
-          <p className="mt-3 text-[13px] font-medium text-[#17201f]/70 sm:text-[15px]">
-            Neutrale KI für Medien, Werkstoffe, Lücken und Herstellerübergaben
-          </p>
-          <TrackedLink
-            href={startCaseHref}
-            analyticsEvent="landing_cta_clicked"
-            analyticsPayload={{ cta: "hero_demo", location: "legora_style_hero" }}
-            className="mt-6 inline-flex h-11 items-center gap-2 rounded-full bg-[#004225] px-6 text-[14px] font-semibold text-white transition-all shadow-[6px_6px_13px_#b8b9be,-6px_-6px_13px_#ffffff] hover:bg-[#005c33] active:shadow-[inset_4px_4px_9px_rgba(0,0,0,0.55),inset_-4px_-4px_9px_rgba(255,255,255,0.14)] active:translate-y-px"
-          >
-            Dichtungsfall starten <ArrowRight size={15} />
-          </TrackedLink>
         </div>
       </section>
 
