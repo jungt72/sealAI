@@ -157,3 +157,8 @@ doctrine line — judge rubric + `system_l1.jinja`) with this concrete live data
 hold (no invented precision, incl. no lifetime range); zero-FP against legitimate
 range-with-caveat quantities elsewhere (Temperatur/Verpressung ranges stay allowed). Own change +
 eval-gate; **not** part of the Gap #2 matrix arc.
+
+## I5-Haertung: NBR-Temperaturlimit aus L1-Prompt in Fachkarte
+NBR-Temperaturlimit (~100-120 C) hartcodiert in system_l1.jinja:77 (per i5-ok als interner
+Guardrail markiert). Doktrin-rein: in eine Fachkarte verschieben, kernel-injiziert mit Provenance
+(Single-Source-of-Truth, kein Drift). Offen.
