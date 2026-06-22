@@ -82,14 +82,22 @@ const sectionLinks = [
 export default function LandingPage() {
   return (
     <div className="overflow-x-clip bg-white">
-      <section className="relative flex min-h-[430px] items-end justify-center bg-[#d8d9d6] px-5 pb-16 text-center sm:min-h-[560px]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_28%,rgba(250,250,247,0.62),rgba(214,215,212,0.9)_48%,rgba(50,54,52,0.55)_100%)]" />
-        <div className="absolute left-1/2 top-[36%] h-4 w-48 -translate-x-1/2 rounded-full bg-white/70 blur-[2px]" />
+      <section className="relative flex min-h-[430px] items-end justify-center overflow-hidden bg-[#eef0ef] px-5 pb-16 text-center sm:min-h-[560px]">
+        <Image
+          src="/images/marketing/hero-top.png"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
+        />
+        {/* subtle light scrim so the dark headline stays legible over the image's shadow wedge */}
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_45%,rgba(255,255,255,0.55))]" />
         <div className="relative z-10 mx-auto max-w-2xl">
-          <p className="text-[clamp(1.9rem,5vw,3.15rem)] font-medium leading-none text-white drop-shadow-sm">
+          <p className="text-[clamp(1.9rem,5vw,3.15rem)] font-medium leading-none text-[#17201f]">
             Dichtungsfälle klären, bevor du anfragst.
           </p>
-          <p className="mt-3 text-[13px] font-medium text-white/82 sm:text-[15px]">
+          <p className="mt-3 text-[13px] font-medium text-[#17201f]/70 sm:text-[15px]">
             Neutrale KI für Medien, Werkstoffe, Lücken und Herstellerübergaben
           </p>
           <TrackedLink
