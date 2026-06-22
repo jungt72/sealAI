@@ -1,0 +1,303 @@
+{
+  "version": "matrix_seed_v0",
+  "source": "Gap #2 bootstrap: the §4 Verträglichkeitsmatrix (Medium × Werkstoff × Bedingung → Bewertung + Quelle), seeded ONLY by restructuring compatibility verdicts already present in the 9 OWNER-REVIEWED Fachkarten + the reviewed trap catalog into atomic relational cells. Every cell's provenance names its reviewed source (trap-correct:…/owner:…); begruendung restates ONLY the compatibility VERDICT + mechanism that the reviewed source asserts. DOCTRINE (architektur_prinzipien §2-L2): a cell is a factual compatibility verdict, NOT a recommendation — no selection ('verwende/stattdessen'), no ranking ('besser/geeigneter als'), no advisory ('erwägen'); the comparison/selection is L1's job, the matrix only grounds/corrects. ZERO model-generated/inferred cells (loader circularity guard enforces this). FK-ORING-VERPRESSUNG excluded (geometry, not material×medium compatibility — keeps the #2/#3 boundary clean). Sparse by design: a medium with no reviewed verdict (e.g. Essigsäure) has no cell — the matrix stays silent rather than fabricate. Multi-source cross-check (#4), Qdrant/semantic recall (#3) and data expansion (#5) are the deferred content-track, not this hop.",
+  "cells": [
+    {
+      "id": "MX-FKM-DAMPF",
+      "werkstoff": "FKM",
+      "medium": "Heißdampf/Sattdampf",
+      "bedingung": "",
+      "bewertung": "unvertraeglich",
+      "begruendung": "FKM hydrolysiert und verspröttet in Sattdampf/Heißdampf — die hohe Temperaturbeständigkeit in Öl überträgt sich nicht auf Dampf.",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Dampf", "Heißdampf", "Sattdampf", "SIP", "Sterilisation", "Heißwasser"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-DAMPF"],
+      "sources": []
+    },
+    {
+      "id": "MX-EPDM-DAMPF",
+      "werkstoff": "EPDM (peroxidvernetzt)",
+      "medium": "Dampf/SIP",
+      "bedingung": "peroxidvernetzt",
+      "bewertung": "vertraeglich",
+      "begruendung": "EPDM (peroxidvernetzt) ist gegen Dampf-/SIP-Anwendungen beständig (der etablierte Dampf-/SIP-Standardwerkstoff).",
+      "scope": {"material": ["EPDM"], "medium": ["Dampf", "Heißdampf", "Sattdampf", "SIP", "Sterilisation"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-DAMPF"],
+      "sources": []
+    },
+    {
+      "id": "MX-FEPM-DAMPF-CHEM",
+      "werkstoff": "FEPM (AFLAS)",
+      "medium": "Dampf",
+      "bedingung": "zusätzliche Chemikalienlast",
+      "bewertung": "bedingt",
+      "begruendung": "FEPM (AFLAS) ist gegen Dampf auch bei zusätzlicher Chemikalienlast beständig; gegen Datenblatt der konkreten Chemie verifizieren.",
+      "scope": {"material": ["AFLAS", "FEPM"], "medium": ["Dampf", "Heißdampf", "SIP"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-DAMPF"],
+      "sources": []
+    },
+    {
+      "id": "MX-EPDM-MINERALOEL",
+      "werkstoff": "EPDM",
+      "medium": "Mineralöl/Kohlenwasserstoffe/Fette",
+      "bedingung": "",
+      "bewertung": "unvertraeglich",
+      "begruendung": "EPDM ist unpolar und quillt grundsätzlich stark in Mineralölen, Kohlenwasserstoffen und Fetten — Werkstoff-Unverträglichkeit, kein Chargen- oder Lagerfehler.",
+      "scope": {"material": ["EPDM"], "medium": ["Mineralöl", "Hydrauliköl", "Kohlenwasserstoffe", "Fette", "Öl"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"],
+      "sources": []
+    },
+    {
+      "id": "MX-NBR-MINERALOEL",
+      "werkstoff": "NBR",
+      "medium": "Mineralöl-Hydraulik",
+      "bedingung": "",
+      "bewertung": "vertraeglich",
+      "begruendung": "NBR ist mit Mineralöl-Hydraulik verträglich (in der Mineralöl-Hydraulik etablierter Standardwerkstoff).",
+      "scope": {"material": ["NBR"], "medium": ["Mineralöl", "Hydrauliköl", "Mineralöl-Hydraulik"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-MINERALOEL",
+      "werkstoff": "FKM",
+      "medium": "Mineralöl",
+      "bedingung": "",
+      "bewertung": "vertraeglich",
+      "begruendung": "FKM ist mit Mineralöl verträglich, mit hoher Temperatur- und Medienbeständigkeit.",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Mineralöl", "Hydrauliköl"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"],
+      "sources": []
+    },
+    {
+      "id": "MX-EPDM-GLYKOL",
+      "werkstoff": "EPDM",
+      "medium": "Glykol-/wasserbasierte Fluide (HFC/HFD-R)/Bremsflüssigkeit",
+      "bedingung": "glykol-/wasserbasiert",
+      "bewertung": "vertraeglich",
+      "begruendung": "EPDM ist mit glykol-/wasserbasierten Fluiden (HFC/HFD-R) und Bremsflüssigkeit verträglich.",
+      "scope": {"material": ["EPDM"], "medium": ["HFC", "HFD-R", "Bremsflüssigkeit", "Glykol"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"],
+      "sources": []
+    },
+    {
+      "id": "MX-NBR-OZON",
+      "werkstoff": "NBR",
+      "medium": "Ozon/UV/Witterung",
+      "bedingung": "Dauer-Außeneinsatz",
+      "bewertung": "unvertraeglich",
+      "begruendung": "NBR ist anfällig für Ozon-, UV- und Witterungsrissbildung und damit für den Dauer-Außeneinsatz problematisch.",
+      "scope": {"material": ["NBR"], "medium": ["Ozon", "UV", "Witterung"], "bedingung": ["Außeneinsatz", "im Freien", "draußen"]},
+      "provenance": ["trap-correct:TRAP-NBR-OZON"],
+      "sources": []
+    },
+    {
+      "id": "MX-HNBR-OZON",
+      "werkstoff": "HNBR",
+      "medium": "Ozon/Witterung",
+      "bedingung": "Außeneinsatz mit Öl-Kontakt",
+      "bewertung": "vertraeglich",
+      "begruendung": "HNBR ist im Außeneinsatz mit Öl-Kontakt verträglich: ölbeständig und ozon-/witterungsbeständig.",
+      "scope": {"material": ["HNBR"], "medium": ["Ozon", "UV", "Witterung"], "bedingung": ["Außeneinsatz", "im Freien"]},
+      "provenance": ["trap-correct:TRAP-NBR-OZON"],
+      "sources": []
+    },
+    {
+      "id": "MX-EPDM-OZON",
+      "werkstoff": "EPDM",
+      "medium": "Ozon/Witterung",
+      "bedingung": "Außeneinsatz ohne Öl",
+      "bewertung": "vertraeglich",
+      "begruendung": "EPDM ist im Außeneinsatz ozon-/witterungsbeständig — sofern kein Mineralöl/Fett anliegt (sonst quillt EPDM).",
+      "scope": {"material": ["EPDM"], "medium": ["Ozon", "UV", "Witterung"], "bedingung": ["Außeneinsatz", "im Freien"]},
+      "provenance": ["trap-correct:TRAP-NBR-OZON"],
+      "sources": []
+    },
+    {
+      "id": "MX-PTFE-STATISCH",
+      "werkstoff": "PTFE (rein)",
+      "medium": "",
+      "bedingung": "statische O-Ring-Dichtung / Dauerlast",
+      "bewertung": "unvertraeglich",
+      "begruendung": "Ein reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung — chemische Beständigkeit ist nicht gleich mechanische Eignung.",
+      "scope": {"material": ["PTFE"], "medium": [], "bedingung": ["statisch", "statische Dichtung", "O-Ring"]},
+      "provenance": ["trap-correct:TRAP-PTFE-KALTFLUSS"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-AMIN",
+      "werkstoff": "FKM",
+      "medium": "Amine (auch aminhaltige Kühlmittel/Inhibitoren)",
+      "bedingung": "",
+      "bewertung": "unvertraeglich",
+      "begruendung": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren) angegriffen.",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Amin", "Amine", "aminhaltig", "Kühlmittel"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-LAUGE",
+      "werkstoff": "FKM",
+      "medium": "Lauge/starke Basen (z. B. Natronlauge)",
+      "bedingung": "Beständigkeit sinkt mit Konzentration und Temperatur",
+      "bewertung": "unvertraeglich",
+      "begruendung": "FKM wird von starken Basen/Laugen angegriffen; die Beständigkeit sinkt mit Konzentration und Temperatur (Lauge bei hoher Temperatur versagt).",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Lauge", "Natronlauge", "Base", "Basen", "NaOH"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-KETON",
+      "werkstoff": "FKM",
+      "medium": "Ketone (z. B. Aceton)/Ester",
+      "bedingung": "",
+      "bewertung": "unvertraeglich",
+      "begruendung": "FKM wird von Ketonen (z. B. Aceton) und Estern angegriffen.",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Keton", "Ketone", "Aceton", "Ester"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"],
+      "sources": []
+    },
+    {
+      "id": "MX-EPDM-LAUGE",
+      "werkstoff": "EPDM",
+      "medium": "Lauge/Amine",
+      "bedingung": "",
+      "bewertung": "vertraeglich",
+      "begruendung": "EPDM ist gegen Laugen/Amine verträglich.",
+      "scope": {"material": ["EPDM"], "medium": ["Lauge", "Natronlauge", "Base", "Basen", "Amin", "Amine"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"],
+      "sources": []
+    },
+    {
+      "id": "MX-FFKM-LAUGE",
+      "werkstoff": "FFKM",
+      "medium": "Lauge/Amine",
+      "bedingung": "auch bei hoher Temperatur",
+      "bewertung": "vertraeglich",
+      "begruendung": "FFKM ist gegen Laugen/Amine chemisch beständig, auch bei hoher Temperatur.",
+      "scope": {"material": ["FFKM"], "medium": ["Lauge", "Natronlauge", "Base", "Amin", "Amine"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"],
+      "sources": []
+    },
+    {
+      "id": "MX-VMQ-DYNAMISCH",
+      "werkstoff": "VMQ (Silikon)",
+      "medium": "",
+      "bedingung": "dynamische, schnelldrehende Wellendichtung / abrasiv",
+      "bewertung": "unvertraeglich",
+      "begruendung": "VMQ hat schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit und ist für dynamische, schnelldrehende Wellendichtungen mechanisch ungeeignet — der Temperaturbereich allein qualifiziert nicht.",
+      "scope": {"material": ["VMQ", "Silikon"], "medium": [], "bedingung": ["dynamisch", "schnelldrehend", "Wellendichtung", "abrasiv"]},
+      "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-DYNAMISCH",
+      "werkstoff": "FKM",
+      "medium": "",
+      "bedingung": "dynamische, schnelldrehende Wellendichtung",
+      "bewertung": "vertraeglich",
+      "begruendung": "FKM ist für dynamische, schnelldrehende Wellendichtungen mechanisch geeignet.",
+      "scope": {"material": ["FKM", "FPM"], "medium": [], "bedingung": ["dynamisch", "schnelldrehend", "Wellendichtung"]},
+      "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"],
+      "sources": []
+    },
+    {
+      "id": "MX-PTFE-DYNAMISCH",
+      "werkstoff": "PTFE-Lippe",
+      "medium": "",
+      "bedingung": "dynamische Wellendichtung",
+      "bewertung": "vertraeglich",
+      "begruendung": "Eine PTFE-Lippe ist für dynamische, schnelldrehende Wellendichtungen mechanisch geeignet.",
+      "scope": {"material": ["PTFE"], "medium": [], "bedingung": ["dynamisch", "schnelldrehend", "Wellendichtung"]},
+      "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"],
+      "sources": []
+    },
+    {
+      "id": "MX-NBR-DAUERTEMP",
+      "werkstoff": "NBR",
+      "medium": "Öl",
+      "bedingung": "Dauertemperatur > ~120 °C",
+      "bewertung": "unvertraeglich",
+      "begruendung": "NBR liegt bei etwa 100–120 °C an der Dauertemperaturgrenze; dauerhaft darüber (z. B. 130 °C) drohen Verhärtung, Versprödung und kürzere Lebensdauer.",
+      "scope": {"material": ["NBR"], "medium": ["Öl", "Getriebeöl"], "bedingung": ["Dauertemperatur", "130", "140", "150"]},
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"],
+      "sources": []
+    },
+    {
+      "id": "MX-HNBR-DAUERTEMP",
+      "werkstoff": "HNBR",
+      "medium": "Öl",
+      "bedingung": "höhere Dauertemperatur (oberhalb der NBR-Grenze)",
+      "bewertung": "vertraeglich",
+      "begruendung": "HNBR ist im Öl auch oberhalb der NBR-Dauertemperaturgrenze (~120 °C) dauertemperaturbeständig.",
+      "scope": {"material": ["HNBR"], "medium": ["Öl", "Getriebeöl"], "bedingung": ["Dauertemperatur", "hohe Temperatur"]},
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-DAUERTEMP",
+      "werkstoff": "FKM",
+      "medium": "Öl",
+      "bedingung": "höhere Dauertemperatur (oberhalb der NBR-Grenze)",
+      "bewertung": "vertraeglich",
+      "begruendung": "FKM ist im Öl auch oberhalb der NBR-Dauertemperaturgrenze (~120 °C) dauertemperaturbeständig.",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Öl", "Getriebeöl"], "bedingung": ["Dauertemperatur", "hohe Temperatur"]},
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"],
+      "sources": []
+    },
+    {
+      "id": "MX-NBR-SYNTHETIKOEL",
+      "werkstoff": "NBR",
+      "medium": "Synthetiköl/Ester-Additive",
+      "bedingung": "",
+      "bewertung": "bedingt",
+      "begruendung": "Synthetiköle/Additive (Estertyp) können NBR zusätzlich angreifen — gegen Öl-Datenblatt verifizieren.",
+      "scope": {"material": ["NBR"], "medium": ["Synthetiköl", "Esteröl", "Bioöl"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"],
+      "sources": []
+    },
+    {
+      "id": "MX-EPDM-FETTLEBENSMITTEL",
+      "werkstoff": "EPDM",
+      "medium": "fetthaltige Lebensmittel (z. B. Schokolade/Kakaobutter)",
+      "bedingung": "",
+      "bewertung": "unvertraeglich",
+      "begruendung": "'food-grade' heißt nicht 'für jedes Lebensmittel geeignet': fetthaltige Lebensmittel (z. B. Schokolade/Kakaobutter) lassen EPDM quellen.",
+      "scope": {"material": ["EPDM"], "medium": ["Schokolade", "Kakaobutter", "Fett", "Fette", "fetthaltig", "Lebensmittel"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FOODGRADE-FETT"],
+      "sources": []
+    },
+    {
+      "id": "MX-FKM-FETTLEBENSMITTEL",
+      "werkstoff": "FKM",
+      "medium": "fetthaltige Lebensmittel",
+      "bedingung": "mit Zulassung (FDA 21 CFR / EG 1935/2004)",
+      "bewertung": "vertraeglich",
+      "begruendung": "FKM ist mit fetthaltigen Lebensmitteln verträglich, sofern food-grade mit Zulassung (FDA 21 CFR / EG 1935/2004); Temperatur und Zulassungsnachweis sind zusätzlich zu prüfen.",
+      "scope": {"material": ["FKM", "FPM"], "medium": ["Schokolade", "Kakaobutter", "Fett", "Fette", "fetthaltig", "Lebensmittel"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FOODGRADE-FETT"],
+      "sources": []
+    },
+    {
+      "id": "MX-FFKM-FETTLEBENSMITTEL",
+      "werkstoff": "FFKM",
+      "medium": "fetthaltige Lebensmittel",
+      "bedingung": "mit Zulassung",
+      "bewertung": "vertraeglich",
+      "begruendung": "FFKM ist mit fetthaltigen Lebensmitteln verträglich (stark fettbeständig), sofern mit Zulassung.",
+      "scope": {"material": ["FFKM"], "medium": ["Schokolade", "Kakaobutter", "Fett", "Fette", "fetthaltig", "Lebensmittel"], "bedingung": []},
+      "provenance": ["trap-correct:TRAP-FOODGRADE-FETT"],
+      "sources": []
+    },
+    {
+      "id": "MX-VMQ-FETT",
+      "werkstoff": "VMQ (Silikon)",
+      "medium": "Fette/fetthaltige Lebensmittel",
+      "bedingung": "",
+      "bewertung": "bedingt",
+      "begruendung": "VMQ bietet nur moderate Fettbeständigkeit; bei fetthaltigen Medien gegen Datenblatt verifizieren.",
+      "scope": {"material": ["VMQ", "Silikon"], "medium": ["Fett", "Fette", "fetthaltig", "Schokolade", "Lebensmittel"], "bedingung": []},
+      "provenance": ["owner:M2-review-note"],
+      "sources": []
+    }
+  ]
+}

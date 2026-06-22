@@ -54,9 +54,6 @@ services:
       SEALAI_ACTIVE_CASE_SIDE_ANSWER_TIMEOUT_S: ${SEALAI_ACTIVE_CASE_SIDE_ANSWER_TIMEOUT_S:-8.0}
       SEALAI_FORCE_LLM_FAST_RESPONDER: ${SEALAI_FORCE_LLM_FAST_RESPONDER:-true}
       HUMAN_COMMUNICATION_LAYER_ENABLED: ${HUMAN_COMMUNICATION_LAYER_ENABLED:-false}
-      GENERATION_MODEL: gpt-5-large
-      GENERATION_TEMP: '0.2'
-      GENERATION_MAX_TOKENS: '1024'
       SEALAI_LOG_LEVEL: ${SEALAI_LOG_LEVEL:-INFO}
       CONSULT_GRAPH_DEBUG: ${CONSULT_GRAPH_DEBUG:-0}
       CONSULT_GRAPH_DEBUG_LEVEL: ${CONSULT_GRAPH_DEBUG_LEVEL:-info}
@@ -203,6 +200,11 @@ services:
     - ./nginx/www:/var/www/certbot:ro
     - /etc/letsencrypt:/etc/letsencrypt:ro
     - ./nginx/certs/config:/etc/letsencrypt-analytics:ro
+    # V2 cutover mounts — INERT until `include snippets/v2_dashboard.conf;` exists in
+    # default.conf. Living here (not in an overlay) so every routine nginx recreate keeps
+    # them and config/mount drift is impossible (ops/v2-flip.sh is the only on/off switch).
+    - ./nginx/snippets:/etc/nginx/snippets:ro
+    - ./frontend-v2/dist:/usr/share/nginx/v2-client:ro
     healthcheck:
       test:
       - CMD-SHELL
@@ -210,5 +212,53 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+  # V2 green-field backend (cutover arc) — OFF by default behind the `v2` profile; defined HERE
+  # (not only in an overlay) so `up -d --remove-orphans` with the standard file set never treats a
+  # running backend-v2 as an orphan. Routed only after `ops/v2-flip.sh --apply` enables the nginx
+  # snippet. Secrets via --env-file interpolation only (no wholesale .env.prod injection).
+  backend-v2:
+    container_name: backend-v2
+    profiles:
+    - v2
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.v2
+    user: 10001:10001
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      PYTHONUNBUFFERED: '1'
+      # V2-owned auth (M6c validate-in-V2): JWKS fetched on the internal network (no hairpin
+      # through nginx); the issuer is the public realm URL (KC_HOSTNAME pins the `iss` claim).
+      SEALAI_V2_AUTH_JWKS_URL: ${SEALAI_V2_AUTH_JWKS_URL:-http://sealai-keycloak:8080/realms/sealAI/protocol/openid-connect/certs}
+      SEALAI_V2_AUTH_ISSUER: ${SEALAI_V2_AUTH_ISSUER:-https://sealingai.com/realms/sealAI}
+      SEALAI_V2_AUTH_AUDIENCE: ${SEALAI_V2_AUTH_AUDIENCE:-sealai-v2}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — set in .env or .env.prod}
+      # Isolation (build-spec §3/§7): own Redis db/ns + own Qdrant collection + own Postgres DB.
+      # SEALAI_V2_DATABASE_URL backs memory layers 1-3 + the L4 cross-session seam with the durable
+      # SQLAlchemy adapters (system-of-record) — a DEDICATED `sealai_v2` database in the shared
+      # postgres instance (own tables, own snapshot/restore unit; the V1 `sealai` DB is never
+      # touched). Unset → the in-process store (offline). Values are never logged.
+      SEALAI_V2_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-sealai}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set in .env or .env.prod}@postgres:5432/sealai_v2
+      SEALAI_V2_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/1
+      SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge}
+    expose:
+    - '8001'
+    ports:
+    - 127.0.0.1:8001:8001
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8001/health >/dev/null
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      default:
+        aliases:
+        - sealai-backend-v2
 volumes:
   backend-data: null

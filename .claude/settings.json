@@ -62,7 +62,9 @@
       "Bash(docker compose:*)",
       "Bash(curl:*)",
       "Bash(ops/release-backend.sh:*)",
-      "Bash(bash ops/release-backend.sh:*)"
+      "Bash(bash ops/release-backend.sh:*)",
+      "Bash(ops/release-backend-v2.sh:*)",
+      "Bash(bash ops/release-backend-v2.sh:*)"
     ],
     "deny": [
       "WebFetch",
@@ -103,6 +105,14 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/deploy-gate.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/v2-deploy-deny.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/ops/hooks/relay-deny.sh\""
           }
         ]
       }

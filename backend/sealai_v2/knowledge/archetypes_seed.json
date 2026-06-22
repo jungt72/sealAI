@@ -1,0 +1,103 @@
+{
+  "version": "v0-inc1-draft",
+  "source": "V2.1 Increment 1 starter set (Produkt-Konzept §8). CC-drafted, OWNER-REVIEWED + grounded at HALT #3 (2026-06-19). anwendbare_regime is structural/empty until the norms catalogue lands.",
+  "profiles": [
+    {
+      "key": "getriebe",
+      "review_state": "reviewed",
+      "provenance": ["owner:thorsten (HALT #3 freigegeben, 2026-06-19)"],
+      "typische_konstellation": {
+        "wellenlage": "horizontal",
+        "geschwindigkeit": "mittel bis hoch",
+        "druck_vakuum": "drucklos bis leichter Überdruck (Gehäusebelüftung)",
+        "schmierung": "ölgeschmiert (Tauch-/Spritzschmierung)",
+        "medium_charakter": "Schmieröl (mineralisch oder synthetisch), additiviert (EP/AW)"
+      },
+      "dichtungsrelevante_besonderheiten": [
+        "Medium ist additiviertes Schmieröl — EP/AW-Additive können Elastomere angreifen oder verhärten; die reine Temperaturbeständigkeit überträgt sich nicht auf die Medienbeständigkeit",
+        "Umfangsgeschwindigkeit aus Wellendurchmesser × Drehzahl ist die zentrale Auslegungsgröße (Rechenkern v) — nicht die Drehzahl allein",
+        "Wellenoberfläche (Rauheit, Drallfreiheit, Härte) bestimmt Dichtwirkung und Lippenverschleiß",
+        "Standard-RWDR tolerieren nur geringen Rundlauf/Exzentrizität"
+      ],
+      "typische_versagensmodi": [
+        "dichtlippen_verschleiss",
+        "welleneinlauf_riefenbildung",
+        "verhaertung_durch_additive_und_temperatur",
+        "leckage_durch_drall_oder_falsche_wellenoberflaeche"
+      ],
+      "typische_eignungen": {
+        "werkstoffe": [
+          "FKM (hohe Öl- und Temperaturbeständigkeit)",
+          "NBR (Standard, moderate Dauertemperatur ~100–120 °C)",
+          "HNBR/ACM (erhöhte Temperatur-/Additivbelastung)"
+        ],
+        "bauformen": [
+          "RWDR gummiummantelt (Bauform A)",
+          "RWDR mit zusätzlicher Staublippe (Bauform AS)"
+        ]
+      },
+      "anwendbare_regime": [],
+      "interview_fragen": [
+        "Welches Öl (mineralisch/synthetisch) und welche Additivierung/Spezifikation?",
+        "Wellendurchmesser und Drehzahl (für die Umfangsgeschwindigkeit)?",
+        "Dauer-Öltemperatur und Spitzentemperatur?",
+        "Wellenoberfläche: Rauheit, drallfrei geschliffen, Härte?",
+        "Eintrag von außen (Staub/Spritzwasser) — ist eine Staublippe nötig?"
+      ],
+      "blinde_flecken": [
+        "Öl-Additive werden gegenüber der reinen Temperaturbeständigkeit unterschätzt",
+        "Drall/Bearbeitungsrichtung der Welle als Leckage-Ursache übersehen",
+        "die Umfangsgeschwindigkeit (nicht die Drehzahl) ist die relevante Grenze"
+      ]
+    },
+    {
+      "key": "ruehrwerk",
+      "review_state": "reviewed",
+      "provenance": ["owner:thorsten (HALT #3 freigegeben, 2026-06-19)"],
+      "typische_konstellation": {
+        "wellenlage": "vertikal (häufig)",
+        "geschwindigkeit": "niedrig",
+        "druck_vakuum": "möglich (Reaktor: Über- oder Unterdruck)",
+        "schmierung": "keine / nur Prozessmedium",
+        "medium_charakter": "Prozessmedium, variabel — oft aggressiv, abrasiv oder viskos"
+      },
+      "dichtungsrelevante_besonderheiten": [
+        "das Prozessmedium berührt die Dichtung direkt — die Medienverträglichkeit ist primär, nicht die Schmierung",
+        "Trockenlauf beim Anfahren (kein Schmierfilm) erzeugt Reibung und Hitze an der Dichtstelle",
+        "Hygiene-/Reinigungsregime (CIP/SIP) bei Lebensmittel-/Pharma-Reaktoren",
+        "große Wellenauslenkung/Taumeln/Exzentrizität überschreitet häufig die Rundlauftoleranz einer Standard-RWDR"
+      ],
+      "typische_versagensmodi": [
+        "medienangriff_und_quellung",
+        "trockenlauf_verschleiss_beim_anfahren",
+        "leckage_durch_wellenauslenkung_oder_taumeln",
+        "abrasiver_verschleiss_durch_feststoffe"
+      ],
+      "typische_eignungen": {
+        "werkstoffe": [
+          "FKM/FFKM (chemisch aggressives Medium)",
+          "EPDM (polare Medien/Heißwasser/Dampf — NICHT in Öl/Fett)",
+          "PTFE-basierte Lösungen (breite Chemie, Trockenlauf-Toleranz)"
+        ],
+        "bauformen": [
+          "Gleitringdichtung (anspruchsvolle Medien/Druck, Trockenlauf-kritisch)",
+          "RWDR nur bei geringer Wellenauslenkung",
+          "Stopfbuchspackung (einfache, drucklose Fälle)"
+        ]
+      },
+      "anwendbare_regime": [],
+      "interview_fragen": [
+        "Welches Prozessmedium, in welcher Konzentration und Temperatur?",
+        "Druck oder Vakuum im Behälter?",
+        "Hygiene-/Reinigungsregime (CIP/SIP, Lebensmittel/Pharma)?",
+        "Anfahren trocken? Feststoffe/Abrasivität im Medium?",
+        "Wellenauslenkung/Taumeln und Drehzahl?"
+      ],
+      "blinde_flecken": [
+        "das Medium wird gegenüber reiner Schmierung unterschätzt (Rührwerk ist nicht wie ein Getriebe)",
+        "Trockenlauf beim Anfahren wird nicht bedacht",
+        "Wellenauslenkung überschreitet die RWDR-Rundlauftoleranz — das ist eine Bauform-Frage, nicht nur eine Werkstoff-Frage"
+      ]
+    }
+  ]
+}

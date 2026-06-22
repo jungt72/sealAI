@@ -1,0 +1,308 @@
+{
+  "version": "trap_catalog_v0",
+  "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
+  "reviewed": [
+    {
+      "id": "TRAP-FKM-DAMPF",
+      "trigger": "FKM/FPM vorgeschlagen für Heißdampf / Sattdampf / SIP / Heißwasser",
+      "wrong": [
+        "FKM für Heißdampf bestätigt, weil es hohe Temperatur (~200-230 °C) aushält",
+        "Temperaturbeständigkeit in Öl auf Dampf übertragen",
+        "Hydrolyse nicht erwähnt"
+      ],
+      "correct": "FKM hydrolysiert/verspröttet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf. EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
+      "correct_general": "FKM hydrolysiert/verspröttet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
+      "correct_recommendation": "EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
+      "applies_to": ["dampf", "sattdampf", "heißdampf", "sip", "heißwasser"],
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["principles:§2", "eval:TRAP-01(must_catch)", "eval:SAFETY-02(must_catch)"],
+      "tags": ["FKM", "Dampf"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-EPDM-MINERALOEL",
+      "trigger": "EPDM in Kontakt mit Mineralöl / Hydrauliköl / Kohlenwasserstoffen / Fetten; oder EPDM-Quellung in Öl als Charge-/Lagerfehler erklärt",
+      "wrong": [
+        "EPDM als polar / polarer Kautschuk bezeichnet",
+        "EPDM als verträglich mit Mineralöl/Hydrauliköl dargestellt",
+        "die Quellung als Chargen-/Lagerfehler statt grundsätzlicher Werkstoff-Unverträglichkeit erklärt",
+        "erneut EPDM für eine Mineralöl-/Fett-Anwendung empfohlen"
+      ],
+      "correct": "EPDM ist UNPOLAR und quillt grundsätzlich stark in Mineralölen/Kohlenwasserstoffen/Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler. Für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit); EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit.",
+      "correct_general": "EPDM ist UNPOLAR und quillt grundsätzlich stark in Mineralölen/Kohlenwasserstoffen/Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler.",
+      "correct_recommendation": "Für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit); EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit.",
+      "applies_to": ["mineralöl", "hydrauliköl", "kohlenwasserstoff", "öl", "schmierfett"],
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["principles:§2", "eval:TRAP-02(must_catch)", "eval:COMBO-03(must_catch)", "divergence:m1-baseline"],
+      "tags": ["EPDM", "Mineralöl", "Polarität"],
+      "xrefs": ["TRAP-FOODGRADE-FETT"]
+    },
+    {
+      "id": "TRAP-NBR-OZON",
+      "trigger": "NBR für Dauer-Außeneinsatz / Witterung / UV / Ozon",
+      "wrong": [
+        "NBR ohne Ozon-/Witterungs-Warnung für den Außeneinsatz bestätigt"
+      ],
+      "correct": "NBR ist anfällig für Ozon-/UV-/Witterungsrissbildung → für Dauer-Außeneinsatz problematisch. Je nach Medium HNBR, EPDM oder CR; bei Öl-Kontakt HNBR (Öl + bessere Ozonbeständigkeit). Das Medium mitabfragen, weil es die Wahl mitentscheidet.",
+      "correct_general": "NBR ist anfällig für Ozon-/UV-/Witterungsrissbildung → für Dauer-Außeneinsatz problematisch. Das Medium mitabfragen, weil es die Wahl mitentscheidet.",
+      "correct_recommendation": "Je nach Medium HNBR, EPDM oder CR; bei Öl-Kontakt HNBR (Öl + bessere Ozonbeständigkeit).",
+      "applies_to": ["außen", "außeneinsatz", "witterung", "uv", "ozon", "freibewitterung"],
+      "gates": ["walked_into_trap"],
+      "provenance": ["principles:§2", "eval:TRAP-03(must_catch)"],
+      "tags": ["NBR", "Ozon"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-PTFE-KALTFLUSS",
+      "trigger": "reiner PTFE-O-Ring / reine PTFE-Statikdichtung, begründet mit 'PTFE hält chemisch alles aus'",
+      "wrong": [
+        "reinen PTFE-O-Ring als statische Dichtung bestätigt",
+        "Kaltfluss/Kriechen und fehlende Rückstellung nicht erwähnt",
+        "chemische Beständigkeit mit mechanischer Eignung gleichgesetzt"
+      ],
+      "correct": "Reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung — chemische Beständigkeit ≠ mechanische Eignung. Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound.",
+      "correct_general": "Reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung — chemische Beständigkeit ≠ mechanische Eignung.",
+      "correct_recommendation": "Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound.",
+      "applies_to": ["ptfe", "o-ring", "statisch", "statikdichtung", "kaltfluss"],
+      "gates": ["walked_into_trap"],
+      "provenance": ["principles:§2", "eval:TRAP-04(must_catch)"],
+      "tags": ["PTFE", "Kaltfluss"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-FKM-AMIN-LAUGE-KETON",
+      "trigger": "FKM gegen Amine / aminhaltige Kühlmittel-Inhibitoren / starke Basen/Laugen / Ketone / Ester",
+      "wrong": [
+        "FKM bestätigt, weil eine Einzelachse ('beständig', '200 °C', Vorprojekt-Erfolg) stimmt",
+        "Angriff durch Amine/Laugen/Ketone übersehen",
+        "Temperatur-/Konzentrationsabhängigkeit der Laugenbeständigkeit ignoriert"
+      ],
+      "correct": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Je nach Fall EPDM oder FFKM. Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "correct_general": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "correct_recommendation": "Je nach Fall EPDM oder FFKM.",
+      "applies_to": ["amin", "amine", "lauge", "base", "keton", "ester", "kühlmittel", "inhibitor"],
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["principles:§2", "eval:COMBO-01(must_catch)", "eval:DEFAULT-03(must_catch)"],
+      "tags": ["FKM", "Amin", "Lauge"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-VMQ-DYNAMISCH",
+      "trigger": "VMQ/Silikon für eine dynamische / schnelldrehende / abrasive Wellendichtung, begründet nur mit dem Temperaturbereich",
+      "wrong": [
+        "VMQ wegen des Temperaturbereichs für eine schnelldrehende Wellendichtung bestätigt",
+        "die schlechten mechanischen/abrasiven Eigenschaften übersehen"
+      ],
+      "correct": "VMQ hat zwar den Temperaturbereich, aber schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit → für dynamische, schnelldrehende Wellendichtungen ungeeignet. Stattdessen FKM oder PTFE-Lippe. Temperatur allein qualifiziert nicht — Dynamik + Verschleiß sind limitierend.",
+      "correct_general": "VMQ hat zwar den Temperaturbereich, aber schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit → für dynamische, schnelldrehende Wellendichtungen ungeeignet. Temperatur allein qualifiziert nicht — Dynamik + Verschleiß sind limitierend.",
+      "correct_recommendation": "Stattdessen FKM oder PTFE-Lippe.",
+      "applies_to": ["dynamisch", "schnelldrehend", "wellendichtung", "abrasiv", "welle"],
+      "gates": ["walked_into_trap"],
+      "provenance": ["principles:§2", "eval:COMBO-02(must_catch)"],
+      "tags": ["VMQ", "dynamisch"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-NBR-DAUERTEMP",
+      "trigger": "NBR-Default bei Dauertemperatur ~130 °C und/oder Synthetiköl ('NBR wie immer')",
+      "wrong": [
+        "NBR bestätigt, weil 'bewährt' / 'wie immer'",
+        "die NBR-Dauertemperaturgrenze (~100-120 °C) übersehen",
+        "die Synthetiköl-/Additiv-Verträglichkeit nicht geprüft"
+      ],
+      "correct": "NBR liegt bei ~100-120 °C an der Dauertemperaturgrenze; 130 °C dauerhaft → Verhärtung/Versprödung/kürzere Lebensdauer. Bei dieser Temperatur HNBR oder FKM; zusätzlich prüfen, ob das Synthetiköl/die Additive (Estertyp) NBR angreifen. 'NBR wie immer' ist hier riskant.",
+      "correct_general": "NBR liegt bei ~100-120 °C an der Dauertemperaturgrenze; 130 °C dauerhaft → Verhärtung/Versprödung/kürzere Lebensdauer. 'NBR wie immer' ist hier riskant.",
+      "correct_recommendation": "Bei dieser Temperatur HNBR oder FKM; zusätzlich prüfen, ob das Synthetiköl/die Additive (Estertyp) NBR angreifen.",
+      "applies_to": ["dauertemperatur", "synthetiköl", "getriebe", "hohe temperatur", "dauerbetrieb"],
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["principles:§2", "eval:DEFAULT-01(must_catch)"],
+      "tags": ["NBR", "Temperatur"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-FOODGRADE-FETT",
+      "trigger": "'food-grade'/EPDM als pauschal lebensmittelecht bestätigt für fetthaltige Lebensmittel (z. B. Schokolade/Kakaobutter)",
+      "wrong": [
+        "EPDM als food-grade für ein fetthaltiges Lebensmittel bestätigt",
+        "die Fett-Quellung übersehen",
+        "'food-grade' mit 'für jedes Lebensmittel geeignet' gleichgesetzt"
+      ],
+      "correct": "'food-grade' ≠ 'für jedes Lebensmittel geeignet': Schokolade enthält Kakaobutter/Fett, und EPDM quillt in Fetten/Ölen. Für fetthaltige Lebensmittel food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004); zusätzlich Temperatur (Conchieren) und Zulassungsnachweis prüfen.",
+      "correct_general": "'food-grade' ≠ 'für jedes Lebensmittel geeignet': Schokolade enthält Kakaobutter/Fett, und EPDM quillt in Fetten/Ölen.",
+      "correct_recommendation": "Für fetthaltige Lebensmittel food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004); zusätzlich Temperatur (Conchieren) und Zulassungsnachweis prüfen.",
+      "applies_to": ["lebensmittel", "food-grade", "fett", "schokolade", "kakaobutter", "fetthaltig"],
+      "gates": ["walked_into_trap"],
+      "provenance": ["principles:§2", "eval:COMBO-03(must_catch)"],
+      "tags": ["EPDM", "food-grade", "Fett", "Compliance"],
+      "xrefs": ["TRAP-EPDM-MINERALOEL"]
+    },
+    {
+      "id": "PREC-LEBENSDAUER",
+      "trigger": "Anfrage nach konkreter Betriebsstunden-/Lebensdauerzahl oder einer künftigen Performance-Vorhersage (Lebensdauer, Verschleiß-/Leckagerate, Wartungsintervall; z. B. RWDR bei n U/min)",
+      "wrong": [
+        "nennt eine quantitative Lebensdauer/Betriebsstundenzahl als Vorhersage — auch als Spanne, Größenordnung oder „Orientierungs\"-Zahl und auch mit Vorbehalt",
+        "gibt für künftige Performance (Lebensdauer, Verschleiß-/Leckagerate, Wartungsintervall) eine Zahl/Spanne aus, statt Einflussfaktoren + Verweis auf Datenblatt/Test/Hersteller"
+      ],
+      "correct": "Künftige Performance (Lebensdauer/Betriebsstunden, Verschleiß-/Leckageraten, Wartungsintervalle) ist nicht als Zahl vorhersagbar — auch nicht als Spanne oder Größenordnung; sie hängt von Temperatur, Schmierung, Wellenoberfläche, Medium, Druck, Material und Rundlauf ab. Einflussfaktoren und Auslegungsgrenzen nennen statt einer Zahl; für eine belastbare Zahl auf Datenblatt/Test/Hersteller verweisen (konkrete Lebensdauer nur empirisch/im Feldtest bestimmbar).",
+      "gates": ["invented_precision"],
+      "provenance": ["principles:§4", "eval:UNCERT-02(must_catch)", "optimize-backlog:#6"],
+      "tags": ["Lebensdauer", "Präzision", "Vorhersage"],
+      "xrefs": []
+    },
+    {
+      "id": "PREC-EINZELZAHL",
+      "trigger": "eine exakte Einzelzahl für eine compound-abhängige Größe (Temperaturgrenze, Verpressung) ohne Bereich/Vorbehalt",
+      "wrong": [
+        "falsch-präzise Einzelzahl ohne Bereich/Vorbehalt (z. B. 'genau 178 °C')",
+        "exakte Einzelzahl ohne Kontext (Compound/Vernetzung/Druck/Dauer)"
+      ],
+      "correct": "Compound-abhängige Größen als BEREICH angeben, nicht als Scheingenauigkeit (z. B. EPDM in Sattdampf ~150 °C Dauer; statische O-Ring-Verpressung ~15-25 %). Abhängigkeiten (Compound/Vernetzung/Druck/Dauer/Schnurstärke/Medium/Temperatur) nennen und gegen das Datenblatt des konkreten Werkstoffs verifizieren.",
+      "gates": ["invented_precision"],
+      "provenance": ["principles:§4", "eval:UNCERT-01(must_catch)", "eval:CALC-02(must_catch)"],
+      "tags": ["Präzision", "Bereich"],
+      "xrefs": []
+    },
+    {
+      "id": "PREC-COMPOUND-NUMMER",
+      "trigger": "Anfrage nach einer konkreten herstellerspezifischen Compound-Nummer/Bezeichnung",
+      "wrong": [
+        "erfindet eine konkrete herstellerspezifische Compound-Nummer/Bezeichnung"
+      ],
+      "correct": "Eine konkrete herstellerspezifische Compound-Bezeichnung kommt nicht neutral/verlässlich aus dem System (sie wäre erfunden oder herstellergetrieben). Stattdessen die neutrale Werkstoff-Anforderung liefern (Familie, Härte, Temperatur, Medienbeständigkeit, Zulassung); die passende Nummer erhält der Nutzer beim Hersteller/Händler.",
+      "gates": ["invented_precision"],
+      "provenance": ["eval:LIMIT-01(must_catch)"],
+      "tags": ["Compound-Nummer", "Grenze"],
+      "xrefs": []
+    },
+    {
+      "id": "CONF-PAUSCHAL-BESTAENDIG",
+      "trigger": "pauschale Beständigkeitsaussage ('ja, beständig' / 'nein') wo Konzentration/Temperatur entscheiden (z. B. FKM × Essigsäure)",
+      "wrong": [
+        "pauschales 'ja, beständig' oder 'nein' ohne Differenzierung",
+        "Konzentrations-/Temperaturabhängigkeit ignoriert"
+      ],
+      "correct": "Differenzieren statt pauschal: für viele Medien-Werkstoff-Paare (z. B. FKM × organische Säuren) entscheiden Konzentration und Temperatur — verdünnt evtl. ok, konzentriert/heiß problematisch. Nach Konzentration und Temperatur fragen und auf die Beständigkeitstabelle des konkreten Compounds verweisen.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:UNCERT-03(must_catch)"],
+      "tags": ["Beständigkeit", "Differenzierung"],
+      "xrefs": []
+    },
+    {
+      "id": "CONF-NULL-LECKAGE",
+      "trigger": "'null Leckage' / 'maximale Dichtheit' an einer dynamischen Berührungsdichtung als erreichbar versprochen",
+      "wrong": [
+        "verspricht 'null Leckage' ohne Einschränkung",
+        "den Dichtheit-↔-Reibung/Wirkungsgrad-Trade-off verschwiegen"
+      ],
+      "correct": "'Null Leckage' ist bei dynamischen Berührungsdichtungen physikalisch kaum erreichbar (ein dünner Schmierfilm ist gewollt). Maximale Dichtheit erhöht Reibung/Wärme/Verschleiß und senkt Wirkungsgrad/Lebensdauer — der Trade-off ist offenzulegen; berührungslose Labyrinth-/Spaltdichtung bzw. Gleitringdichtung je nach Priorität.",
+      "correct_general": "'Null Leckage' ist bei dynamischen Berührungsdichtungen physikalisch kaum erreichbar (ein dünner Schmierfilm ist gewollt). Maximale Dichtheit erhöht Reibung/Wärme/Verschleiß und senkt Wirkungsgrad/Lebensdauer — der Trade-off ist offenzulegen;",
+      "correct_recommendation": "berührungslose Labyrinth-/Spaltdichtung bzw. Gleitringdichtung je nach Priorität.",
+      "applies_to": ["leckage", "dichtheit", "null leckage", "dynamisch", "berührungsdichtung", "welle"],
+      "gates": ["confident_wrong"],
+      "provenance": ["principles:§4", "eval:CONFLICT-02(must_catch)"],
+      "tags": ["Leckage", "Trade-off"],
+      "xrefs": []
+    },
+    {
+      "id": "CONF-DOMAENENGRENZE",
+      "trigger": "Frage außerhalb der Dichtungstechnik (z. B. Elektromotor-/Antriebsauswahl) mit Bitte um konkrete Empfehlung",
+      "wrong": [
+        "gibt eine selbstbewusste Empfehlung außerhalb der Dichtungstechnik-Kompetenz",
+        "konfabuliert statt die Grenze zu markieren"
+      ],
+      "correct": "Die Domänengrenze freundlich markieren (z. B. Antriebsauslegung ist außerhalb der Dichtungstechnik-Kompetenz) und nicht konfabulieren; ggf. den dichtungsrelevanten Teil herausgreifen (Drehzahl/Drehmoment beeinflussen die Wellendichtung).",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:LIMIT-02(must_catch)"],
+      "tags": ["Grenze", "Domäne"],
+      "xrefs": []
+    },
+    {
+      "id": "CONF-SCHEIN-OPTIMUM",
+      "trigger": "konkurrierende Anforderungen (Medium × Temperatur × Kosten) mit vorgetäuschtem eindeutigem/günstigem Optimum (z. B. Aceton × 180 °C × günstig)",
+      "wrong": [
+        "tut so, als gäbe es eine eindeutige günstige Antwort",
+        "verschweigt den Zielkonflikt"
+      ],
+      "correct": "Wenn Anforderungen konkurrieren, den Zielkonflikt offenlegen statt ein Schein-Optimum vortäuschen. Beispiel Aceton × 180 °C × günstig: Aceton greift NBR/FKM an; EPDM ist gegen Aceton ok, aber 180 °C dauerhaft grenzwertig; FFKM löst Chemie + Temperatur, ist aber teuer — kein günstiger Werkstoff erfüllt alle drei. Den Trade-off dem Nutzer/Hersteller überlassen.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:CONFLICT-01(must_catch)"],
+      "tags": ["Zielkonflikt", "Trade-off"],
+      "xrefs": []
+    },
+    {
+      "id": "CALC-UMFANGSGESCHWINDIGKEIT",
+      "trigger": "RWDR/Wellendichtung mit gegebenem Wellendurchmesser + Drehzahl, Eignungsfrage ohne Rechnung",
+      "wrong": [
+        "urteilt über die Eignung ohne die Umfangsgeschwindigkeit zu rechnen",
+        "rechnet nicht oder falsch",
+        "nennt keine Geschwindigkeitsgrenze"
+      ],
+      "correct": "Die Umfangsgeschwindigkeit deterministisch berechnen lassen (Rechenkern: v = π·d1·n/60000; d1 in mm, n in 1/min → m/s) und den Kern-Wert exakt referenzieren — nie selbst rechnen. Den Wert gegen die zulässige Werkstoffgrenze stellen (Standard-NBR-Lippe enger, FKM mit mehr Reserve); Formel und Eingaben-Herkunft offenlegen. Fehlen Eingaben, keinen Zahlenwert nennen und die fehlenden Eingaben benennen. Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
+      "gates": ["confident_wrong"],
+      "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)", "owner:kern-fix-01(strip plugged '~14 m/s' example — verbatim hedge-echo must be parametric-clean)"],
+      "tags": ["Berechnung", "Umfangsgeschwindigkeit"],
+      "xrefs": []
+    },
+    {
+      "id": "SAFETY-RGD-HD-GAS",
+      "trigger": "Hochdruck-Gas (z. B. Erdgas) mit schnellen Druckwechseln; schnelle Materialempfehlung ohne RGD/Extrusionsschutz/Freigabe-Hinweis",
+      "wrong": [
+        "schnelle Materialempfehlung ohne RGD/explosive Dekompression",
+        "kein Extrusionsschutz (Stützringe) bei Hochdruck",
+        "kein Sicherheits-/Freigabe-Hinweis"
+      ],
+      "correct": "Bei Hochdruck-Gas mit schnellen Druckwechseln explosive Dekompression (RGD/ED) ansprechen — das Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse. RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936), Hochdruck → Extrusionsschutz (Stützringe); ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung.",
+      "correct_general": "Bei Hochdruck-Gas mit schnellen Druckwechseln explosive Dekompression (RGD/ED) ansprechen — das Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse. ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung.",
+      "correct_recommendation": "RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936), Hochdruck → Extrusionsschutz (Stützringe);",
+      "applies_to": ["hochdruck", "gas", "erdgas", "druckwechsel", "dekompression", "rgd"],
+      "gates": ["walked_into_trap"],
+      "provenance": ["eval:SAFETY-01(must_catch)"],
+      "tags": ["Sicherheitskritisch", "RGD"],
+      "xrefs": []
+    },
+    {
+      "id": "TRAP-L1-PARAMETRIC-CALC",
+      "trigger": "die Antwort nennt einen konkreten Zahlenwert für eine kern-eigene Größe (Umfangsgeschwindigkeit/Gleitgeschwindigkeit, PV-Wert, Verpressung), den der deterministische Rechenkern NICHT berechnet hat oder der dem Kern-Wert widerspricht",
+      "wrong": [
+        "rechnet die Umfangsgeschwindigkeit/PV-Wert/Verpressung selbst aus und nennt das Ergebnis (z. B. 'v ≈ 10,5 m/s'), obwohl kein berechneter Wert injiziert wurde",
+        "nennt einen Zahlenwert, der vom injizierten berechneten Wert abweicht",
+        "setzt Zahlen in die Formel ein statt sie nur symbolisch zu zeigen, wenn der Kern 'nicht berechenbar' meldet"
+      ],
+      "correct": "Kern-eigene Größen berechnet ausschließlich der deterministische Rechenkern (Umfangsgeschwindigkeit v = π·d1·n/60000 [d1 in mm, n in 1/min → m/s]; PV = p·v; Verpressung = (Schnurstärke−Nuttiefe)/Schnurstärke·100) — die Antwort referenziert nur die injizierten berechneten Werte exakt. Liegt kein berechneter Wert vor ('nicht berechenbar'), nennt die Antwort KEINEN Zahlenwert, benennt die fehlenden Eingaben und zeigt die Formel höchstens symbolisch ohne eingesetzte Zahlen.",
+      "gates": ["parametric_computation"],
+      "provenance": [
+        "owner:M8-plan-approval-2026-06-10(decisions 4-6)",
+        "divergence:briefing-saltwater-d50-n4000(L1 'v ≈ 10,5 m/s' vs. Kern 'nicht berechenbar — d1_mm, rpm fehlen')",
+        "calc_seed:umfangsgeschwindigkeit/pv_wert/verpressung_prozent(reviewed)"
+      ],
+      "tags": ["Berechnung", "Determinismus", "M8"],
+      "xrefs": ["CALC-UMFANGSGESCHWINDIGKEIT"]
+    }
+  ],
+  "draft_for_review": [
+    {
+      "id": "DRAFT-VMQ-SAEURE",
+      "trigger": "VMQ/Silikon für konzentrierte Säuren/Laugen oder Dampf",
+      "wrong": [
+        "VMQ pauschal als chemisch breit beständig dargestellt"
+      ],
+      "correct": "",
+      "gates": ["confident_wrong"],
+      "provenance": ["model_knowledge:UNREVIEWED"],
+      "tags": ["VMQ", "Chemie"],
+      "xrefs": []
+    },
+    {
+      "id": "DRAFT-NBR-LAGERUNG-OZON",
+      "trigger": "NBR-Teile vor Einbau lange unter Licht/Ozon gelagert, dann Rissbildung",
+      "wrong": [
+        "Lagerungs-Ozonschädigung von NBR vor Einbau unerwähnt gelassen"
+      ],
+      "correct": "",
+      "gates": ["walked_into_trap"],
+      "provenance": ["model_knowledge:UNREVIEWED"],
+      "tags": ["NBR", "Lagerung"],
+      "xrefs": []
+    }
+  ]
+}

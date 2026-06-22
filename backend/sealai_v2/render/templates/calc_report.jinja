@@ -1,0 +1,24 @@
+# Berechnete Werte (deterministisch — Code, zitiert)
+{% for c in computed %}
+- **{{ c.name }} = {{ c.value }} {{ c.unit }}**{% if c.estimate %} (Schätzwert mit Annahmen){% endif %}
+  - Formel: {{ c.formula }} · Stufe {{ c.stage }}
+  - Quelle: {{ c.source }}
+{%- if c.input_origins %}
+  - Eingaben: {% for n in c.inputs_used %}{{ n }} = {{ c.input_origins[loop.index0] }}{% if not loop.last %}; {% endif %}{% endfor %}
+{%- endif %}
+{%- for a in c.assumptions %}
+  - Annahme: {{ a }}
+{%- endfor %}
+{%- for w in c.warnings %}
+  - ⚠️ {{ w }}
+{%- endfor %}
+{% endfor %}
+{%- if not_computed %}
+**Nicht berechenbar (fail-closed — kein Schätzwert, ehrlich offengelegt):**
+{% for n in not_computed %}
+- {{ n.calc_id }}: {{ n.reason }}
+{% endfor %}
+{%- endif %}
+{%- for note in calc_notes %}
+- Hinweis: {{ note }}
+{% endfor %}

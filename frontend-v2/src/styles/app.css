@@ -1,0 +1,698 @@
+/* pilot-ui — the owner-approved Gemini-style stage (2026-06-12 mockup).
+   One luminous moment (the radial glow behind the pill), everything else quiet: borderless rail,
+   hairline pill, mono chips for engineering values, doctrine line fixed at the bottom. */
+
+.shell { display: flex; height: 100%; background: #fff; }
+
+/* ── collapsible navigation sidebar (claude.ai-style): icon rail ⟷ wider with labels ──────────── */
+.rail {
+  width: var(--rail-w); flex: none; position: relative; z-index: 30;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 0 16px; background: transparent; border: none;
+  transition: width 160ms ease;
+}
+.rail-top { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; margin-bottom: 6px; }
+.rail-brand { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; gap: 10px;
+  color: var(--color-seal-blue); }
+.rail-toggle {
+  width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--ink-faint); cursor: pointer; flex: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.rail-toggle:hover { background: var(--hover-wash); color: var(--ink-soft); }
+.rail-btn {
+  width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--ink-soft); cursor: pointer;
+  transition: background 120ms ease;
+}
+.rail-btn:hover:not(:disabled), .rail-avatar:hover { background: var(--hover-wash); }
+.rail-btn:disabled { color: var(--ink-disabled); cursor: default; }
+.rail-spacer { flex: 1; }
+/* labels hidden in the collapsed icon rail; revealed when expanded */
+.rail-label { display: none; font-size: 14px; color: inherit; white-space: nowrap; }
+
+/* expanded: a wider sidebar with left-aligned icon+label rows (drives --rail-w → the doctrine line
+   tracks it automatically). */
+.shell--nav-expanded { --rail-w: 232px; }
+.shell--nav-expanded .rail { align-items: stretch; padding: 14px 12px 16px; }
+.shell--nav-expanded .rail-top { flex-direction: row; align-items: center; justify-content: space-between; }
+.shell--nav-expanded .rail-brand { width: auto; justify-content: flex-start; font-size: 15px; font-weight: 500; }
+.shell--nav-expanded .rail-toggle { width: 34px; height: 34px; border-radius: var(--radius-sm); }
+.shell--nav-expanded .rail-btn,
+.shell--nav-expanded .rail-avatar {
+  width: 100%; height: auto; border-radius: var(--radius-md);
+  justify-content: flex-start; gap: 12px; padding: 9px 12px;
+}
+.shell--nav-expanded .rail-avatar { background: transparent; color: var(--ink-soft); box-shadow: none; }
+.shell--nav-expanded .rail-avatar:hover { background: var(--hover-wash); box-shadow: none; }
+.shell--nav-expanded .rail-label { display: inline; }
+@media (prefers-reduced-motion: reduce) {
+  .rail { transition: none; }
+}
+.rail-avatar {
+  width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center;
+  background: var(--color-seal-light-blue); color: var(--color-seal-blue);
+  transition: box-shadow 120ms ease;
+}
+.rail-avatar:hover { box-shadow: 0 0 0 4px var(--hover-wash); }
+.rail-menu {
+  position: absolute; left: calc(var(--rail-w) - 8px); bottom: 18px; z-index: 40;
+  background: #fff; border: 1px solid var(--hairline); border-radius: 14px;
+  box-shadow: 0 10px 32px rgba(31, 42, 68, 0.14); padding: 6px; min-width: 160px;
+}
+.rail-menu-item {
+  display: block; width: 100%; text-align: left; border: none; background: none;
+  font: inherit; font-size: 14px; color: var(--ink); padding: 9px 14px;
+  border-radius: 9px; cursor: pointer;
+}
+.rail-menu-item:hover { background: var(--hover-wash); }
+
+.main-area { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
+
+/* ── persistent doctrine line — always present, never dropped ───────────────── */
+.doctrine-line {
+  position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 20;
+  text-align: center; font-size: 12px; color: var(--ink-ghost);
+  padding: 18px 24px 12px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.96) 55%, rgba(255, 255, 255, 0));
+  pointer-events: none; transition: left 160ms ease;
+}
+@media (prefers-reduced-motion: reduce) { .doctrine-line { transition: none; } }
+
+/* ── the stage (fresh conversation) ─────────────────────────────────────────── */
+.stage {
+  flex: 1; position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 30px; padding: 0 28px 72px;
+}
+.stage-glow {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse 56% 52% at 50% 56%, var(--glow), transparent 72%);
+}
+.stage > *:not(.stage-glow) { position: relative; z-index: 1; }
+.greeting {
+  font-size: 38px; font-weight: 400; color: var(--ink); margin: 0;
+  text-align: center; letter-spacing: -0.01em; line-height: 1.2;
+}
+
+/* ── the pill ───────────────────────────────────────────────────────────────── */
+.pill-wrap { position: relative; width: min(720px, 100%); }
+.stage .pill-wrap { z-index: 5; } /* popover must paint above the chip row (later sibling) */
+.pill {
+  display: flex; align-items: center; gap: 4px; min-height: 62px;
+  padding: 6px 8px 6px 18px; background: #fff;
+  border: 1px solid var(--hairline); border-radius: 28px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.10), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+.pill:focus-within { border-color: #dbe2ee; }
+.pill-input {
+  flex: 1; min-width: 0; border: none; outline: none; resize: none; background: transparent;
+  font: inherit; font-size: 16px; color: var(--ink); padding: 9px 6px; max-height: 130px;
+}
+.pill-input::placeholder { color: var(--ink-ghost); }
+.pill-icon {
+  width: 42px; height: 42px; flex: none; border-radius: 50%; border: none;
+  display: grid; place-items: center; background: transparent; color: var(--ink-soft);
+  cursor: pointer; transition: background 120ms ease;
+}
+.pill-icon:hover:not(:disabled) { background: var(--hover-wash); }
+.pill-icon:disabled { color: var(--ink-disabled); cursor: default; }
+.pill-send {
+  width: 44px; height: 44px; flex: none; border-radius: 50%; border: none;
+  display: grid; place-items: center; cursor: pointer;
+  background: #111418; color: #fff; transition: opacity 120ms ease;
+}
+.pill-send:hover:not(:disabled) { opacity: 0.9; }
+.pill-send:disabled { opacity: 0.32; cursor: default; }
+
+/* parameter-form popover anchored to the pill — upward in the chat view (pill docked bottom),
+   downward on the stage (pill mid-screen, room is below) */
+.pill-pop {
+  position: absolute; bottom: calc(100% + 14px); left: 6px; z-index: 35;
+  width: min(400px, calc(100% - 12px)); max-height: min(72vh, 560px); overflow: auto;
+  background: #fff; border: 1px solid var(--hairline); border-radius: 20px;
+  box-shadow: 0 18px 52px rgba(31, 42, 68, 0.16); padding: 18px 18px 16px;
+}
+.stage .pill-pop { bottom: auto; top: calc(100% + 14px); }
+
+/* ── fact chips (Fallkontext) ───────────────────────────────────────────────── */
+.fact-chips { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+.chips-label { width: 100%; text-align: center; font-size: 11px; color: var(--ink-ghost); }
+.chips-row { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0; padding: 0; }
+.fact-chip {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8); border: 1px solid var(--hairline);
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--ink);
+}
+.fact-chip-body {
+  border: none; background: none; cursor: pointer; font: inherit; color: inherit;
+  padding: 6px 2px 6px 13px; border-radius: 999px 0 0 999px;
+}
+.fact-chip-body:hover { background: var(--hover-wash); }
+.fact-feld { color: var(--ink-faint); margin-right: 7px; }
+.fact-wert { font-weight: 500; }
+.fact-chip-x {
+  border: none; background: none; cursor: pointer; color: var(--ink-faint);
+  font-size: 14px; line-height: 1; padding: 6px 11px 6px 7px; border-radius: 0 999px 999px 0;
+}
+.fact-chip-x:hover { background: var(--hover-wash); color: var(--ink); }
+.chips-forget-all {
+  border: none; background: none; cursor: pointer; font-size: 12px;
+  color: var(--ink-faint); text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px;
+}
+.chips-forget-all:hover { color: var(--ink); }
+
+/* ── Berechnungen (kernel channel — distinct from the editable input chips) ───── */
+.kernel-panel { margin-top: 6px; width: min(420px, 100%); }
+/* the three calc boxes as a uniform-width aligned stack (was a staggered wrap) */
+.kernel-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: 100%; }
+.kernel-row .fact-chip {
+  flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 7px 13px; border-radius: 14px; cursor: default;
+  background: rgba(232, 240, 254, 0.6); border-color: rgba(120, 150, 200, 0.35);
+}
+.kernel-value .fact-wert { font-weight: 600; }
+.kernel-open .fact-wert { color: var(--ink-faint); font-weight: 500; }
+.kernel-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.kernel-prov { font-size: 10.5px; color: var(--ink-ghost); }
+.kernel-note { width: 100%; text-align: center; font-size: 11px; color: var(--ink-faint); margin: 2px 0 0; }
+.kernel-hint { font-style: italic; }
+
+/* R2 live preview: the same kern rows, visibly „nicht übernommen" — a quieter, dashed draft surface,
+   distinct from the committed Berechnungen panel so a preview value is never mistaken for adopted. */
+.kernel-panel--preview { border: 1px dashed var(--hairline); background: var(--hover-wash); }
+.kernel-panel--preview .chips-label { color: var(--ink-faint); font-style: italic; }
+.kernel-panel--preview [data-testid="preview-rechnet"] { color: var(--ink-faint); }
+
+/* ── workspace: claude.ai three-region — sidebar (Shell) | chat | cockpit panel ──────────────────
+   Chat-only by default (centered ~800px, NO right panel). When the cockpit opens it appears on the
+   right and the two split ~50/50 of the post-sidebar width (the chat may drop below 800px — intended).
+   Closing returns to centered chat-only. Open/close is CSS-visibility only — the chat column and the
+   mounted ParameterForm stay mounted, so msgs + form values never reset. Below 1024px: single column,
+   cockpit stacked below chat. */
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cockpit-splitter { display: none; }            /* the chat|cockpit divider — only a grid item ≥1024 split */
+.workspace--chat-only .cockpit-panel { display: none; }   /* pure Q&A: no right panel, at every width */
+
+/* centre column: the conversation thread (scrolls) + the docked composer */
+.chat-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+.chat-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+.chat-scroll-wrap { width: min(800px, 100%); flex: 1; min-height: 0; }
+.chat-log {
+  height: 100%; scroll-behavior: smooth;
+  display: flex; flex-direction: column; gap: 20px; padding: 30px 24px 14px;
+}
+.msg-user {
+  align-self: flex-end; background: var(--hover-wash); color: var(--ink);
+  padding: 11px 17px; border-radius: 20px 20px 5px 20px; max-width: 75%;
+  line-height: 1.5; white-space: pre-wrap;
+}
+.chat-foot {
+  width: min(800px, 100%); display: flex; flex-direction: column; gap: 10px;
+  padding: 6px 24px 0;
+}
+
+/* ── scroll model: few regions, minimal autohide chrome, fade-cue affordance (NN/g) ───────────────
+   .scroll-area = the actual scroller (thin bar, faint at rest → stronger on hover/focus, gutter
+   stable, overscroll contained). .scroll-wrap = a NON-scrolling relative parent that paints the
+   top/bottom fade cues — pinned, never scrolls, inset so it never covers the scrollbar. */
+.scroll-area {
+  overflow: auto;
+  overscroll-behavior: contain;           /* scrolling one region never chains to page or neighbour */
+  scrollbar-gutter: stable;               /* reserve the gutter → no layout shift when the bar shows */
+  scrollbar-width: thin;                                                    /* Firefox */
+  scrollbar-color: color-mix(in srgb, var(--ink-faint) 26%, transparent) transparent;
+}
+.scroll-area:hover, .scroll-area:focus-within {
+  scrollbar-color: color-mix(in srgb, var(--ink-faint) 60%, transparent) transparent;
+}
+.scroll-area::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll-area::-webkit-scrollbar-track { background: transparent; }
+.scroll-area::-webkit-scrollbar-thumb {                                     /* faint, present at rest */
+  background: color-mix(in srgb, var(--ink-faint) 26%, transparent);
+  border-radius: 999px; border: 3px solid transparent; background-clip: padding-box;
+}
+.scroll-area:hover::-webkit-scrollbar-thumb,
+.scroll-area:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-faint) 58%, transparent); background-clip: padding-box;
+}
+@media (prefers-reduced-motion: reduce) { .chat-log { scroll-behavior: auto; } }
+
+.scroll-wrap { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.scroll-wrap > .scroll-area { flex: 1; }
+/* fade cues: content fades into the surface at the top/bottom edges (a row peeks, not a hard cut).
+   Pinned to the wrapper (never scroll); inset on the right so the scrollbar is never covered. */
+.scroll-wrap::before, .scroll-wrap::after {
+  content: ""; position: absolute; left: 0; right: 10px; height: 20px; z-index: 1; pointer-events: none;
+}
+.scroll-wrap::before { top: 0; background: linear-gradient(to bottom, var(--color-surface), transparent); }
+.scroll-wrap::after { bottom: 0; background: linear-gradient(to top, var(--color-surface), transparent); }
+/* Parameter column: offset the cues past the sticky tabs (top) + the sticky action bar (bottom) so
+   they mark only the scrollable band — never the sticky chrome or the scrollbar. */
+.scroll-wrap--param::before { top: var(--param-tabs-h, 56px); }
+.scroll-wrap--param::after { bottom: var(--param-actions-h, 60px); }
+
+/* ── cockpit panel (the artifact-equivalent, right) ──────────────────────────────────────────────
+   A clean header (closeable) + the Parameter | Readout 2-pane. `container-type` makes the inner split
+   respond to the PANEL's own width — side-by-side when wide, stacked when narrow. */
+.cockpit-panel {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  container-type: inline-size; container-name: cockpit;
+}
+.cockpit-header {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--hairline);
+}
+.cockpit-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.cockpit-close {
+  width: 30px; height: 30px; border-radius: var(--radius-sm); display: grid; place-items: center;
+  border: none; background: transparent; color: var(--ink-faint); cursor: pointer;
+  font-size: 20px; line-height: 1; transition: background 120ms ease, color 120ms ease;
+}
+.cockpit-close:hover { background: var(--hover-wash); color: var(--ink); }
+.cockpit-body { flex: 1; min-height: 0; overflow: hidden; }   /* the columns own the scroll, not this */
+
+/* the 2-pane: TWO COLUMNS (Parameter left | Readout right) when the panel is wide enough (≥680px);
+   stacked (Parameter on top, Readout below) when narrow. Each column is a .scroll-wrap (fade cues)
+   wrapping a .scroll-area pane → independent, overscroll-contained scrolling in both modes. */
+.cockpit-2pane { display: flex; flex-direction: column; gap: 0; height: 100%; min-height: 0; }
+.cockpit-col { flex: 1; min-height: 0; }
+.cockpit-pane { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+.cockpit-pane--param { padding: 12px 16px 0; }
+.cockpit-pane--readout { align-items: center; padding: 22px 14px 64px; }
+/* in the cockpit pane the form fills the column (the pane is the surface — no inner card chrome) */
+.cockpit-pane--param .param-stage-card {
+  width: 100%; max-width: none; margin: 0; border: none; background: transparent; padding: 0;
+}
+.cockpit-pane--param .param-head { display: none; }   /* the panel header already says "Cockpit" */
+@container cockpit (min-width: 680px) {
+  .cockpit-2pane { flex-direction: row; align-items: stretch; }
+  .scroll-wrap--param { flex: 0 0 57%; border-right: 1px solid var(--hairline); }
+  .cockpit-2pane > .cockpit-col:not(.scroll-wrap--param) { flex: 1 1 43%; }
+}
+
+/* sticky anchors inside the scrolling Parameter column */
+.param-tabs-sticky {
+  position: sticky; top: 0; z-index: 3; background: var(--color-surface); padding: 12px 0 8px;
+}
+.param-tabs-sticky .param-tabs { margin: 0; }
+.param-actionbar {
+  position: sticky; bottom: 0; z-index: 3; background: var(--color-surface);
+  border-top: 1px solid var(--hairline); padding: 10px 0 14px; margin-top: 6px;
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* the second Readout block (Phase C lands the real RFQ-Reife synthesis here) */
+.readout-briefing {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--hairline);
+}
+.readout-briefing-soon { margin: 0; font-size: 11.5px; color: var(--ink-ghost); }
+.case-state-empty {
+  margin: 0; max-width: 320px; text-align: center;
+  font-size: 12.5px; color: var(--ink-faint); line-height: 1.5;
+}
+.make-briefing {
+  border: 1px solid var(--hairline); background: #fff; border-radius: 999px;
+  font: inherit; font-size: 12.5px; color: var(--ink-soft); padding: 6px 14px; cursor: pointer;
+}
+.make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
+.make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
+
+/* the subtle "open the form" affordance near the composer (only while the cockpit is closed) */
+.open-cockpit-link {
+  align-self: center; border: none; background: none; cursor: pointer; font: inherit;
+  font-size: 12.5px; color: var(--ink-faint);
+  text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px;
+}
+.open-cockpit-link:hover { color: var(--ink); }
+/* below 1024 the cockpit stacks under the chat — a hairline separates them */
+@media (max-width: 1023px) {
+  .workspace--split .cockpit-panel { border-top: 1px solid var(--hairline); }
+}
+/* a calm entrance when the cockpit opens (the artifact sliding in) — restrained, reduced-motion safe */
+.cockpit-panel { animation: cockpit-in 180ms ease; }
+@keyframes cockpit-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cockpit-panel { animation: none; } }
+
+/* ── wide screens (≥1024px): chat-only centered, or chat | divider | cockpit ~50/50 when open ────── */
+@media (min-width: 1024px) {
+  .workspace { width: 100%; flex-direction: row; align-items: stretch; }  /* full-bleed: cockpit reaches the right edge */
+  /* chat-only: the single chat column centers its content at a comfortable reading width. */
+  .workspace--chat-only { display: flex; }
+  /* split: chat | divider | cockpit. The cockpit is the artifact-equivalent and holds TWO internal
+     columns, so it gets the slightly larger half (~55%) by default — a dragged --cockpit-w (px)
+     overrides the cockpit track. */
+  .workspace--split {
+    display: grid; grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, 50%);
+  }
+  .chat-foot { padding-bottom: 64px; }
+
+  /* the resize handle (chat|cockpit): a thin track with a centered grab line that grows on hover/focus. */
+  .workspace--split .cockpit-splitter {
+    display: block; align-self: stretch; width: 16px; position: relative;
+    cursor: col-resize; background: none; border: none; touch-action: none;
+  }
+  .cockpit-splitter::before {
+    content: ""; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 3px; height: 48px; border-radius: 3px; background: #aab2c0;
+    transition: background 120ms ease, height 120ms ease;
+  }
+  .cockpit-splitter:hover::before,
+  .cockpit-splitter:focus-visible::before { background: var(--ink-soft); height: 76px; }
+  .cockpit-splitter:focus-visible { outline: none; }
+}
+
+/* ── live stage indicator (P4b — quiet pending row while the turn streams) ───── */
+.msg-pending { align-self: flex-start; display: flex; align-items: center; gap: 10px; padding: 6px 2px; }
+.pending-dots { display: inline-flex; gap: 5px; }
+.pending-dots i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint);
+  animation: pending-pulse 1.2s ease-in-out infinite;
+}
+.pending-dots i:nth-child(2) { animation-delay: 0.15s; }
+.pending-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pending-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+.pending-label { font-size: 13px; color: var(--ink-soft); }
+
+/* ── answers (quiet surfaces — the content carries the weight) ──────────────── */
+.answer { max-width: 100%; line-height: 1.55; }
+.answer-badges { display: flex; gap: 6px; margin-bottom: 8px; }
+.badge {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+  padding: 3px 9px; border-radius: 999px; letter-spacing: 0.01em;
+}
+.badge-candidate { background: rgba(255, 255, 255, 0.7); border: 1px solid var(--hairline); color: var(--ink-faint); }
+.badge-vorlaeufig { background: var(--color-warning-bg); color: var(--color-warning-fg); }
+.answer-text { line-height: 1.55; }
+
+/* markdown body — block layout from the renderer; restrained, quiet headings */
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p { margin: var(--space-2) 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+  margin: var(--space-4) 0 var(--space-2); line-height: 1.25; color: var(--ink); font-weight: 600; }
+.markdown h1 { font-size: 1.25rem; } .markdown h2 { font-size: 1.1rem; } .markdown h3 { font-size: 1rem; }
+.markdown ul, .markdown ol { margin: var(--space-2) 0; padding-left: var(--space-6); }
+.markdown li { margin: 3px 0; }
+.markdown a { color: var(--color-seal-blue); text-decoration: underline; text-underline-offset: 2px; }
+.markdown code { font-family: var(--font-mono); font-size: 0.88em;
+  background: var(--hover-wash); padding: 1px 6px; border-radius: 6px; }
+.markdown pre { background: var(--hover-wash); border: 1px solid var(--hairline);
+  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
+.markdown pre code { background: none; padding: 0; }
+.markdown blockquote { margin: var(--space-2) 0; padding-left: var(--space-3);
+  border-left: 3px solid var(--hairline); color: var(--ink-soft); }
+.markdown table { border-collapse: collapse; margin: var(--space-2) 0; }
+.markdown th, .markdown td { border: 1px solid var(--hairline); padding: var(--space-1) var(--space-3); }
+.markdown td { font-family: var(--font-mono); font-size: 0.92em; }
+.markdown th { font-weight: 600; text-align: left; }
+.markdown .katex-display { margin: var(--space-3) 0; overflow-x: auto; overflow-y: hidden; }
+
+.citations { margin-top: 10px; font-size: 13px; }
+.citations summary { cursor: pointer; color: var(--ink-faint); font-size: 12px; }
+.citations ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.citation { display: flex; flex-direction: column; gap: 2px; margin: var(--space-2) 0;
+  padding: 8px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.7); }
+.citation-text { color: var(--ink-soft); }
+.citation-source { font-family: var(--font-mono); color: var(--color-seal-blue); font-size: 11.5px; }
+
+.error-banner { background: var(--color-warning-bg); color: var(--color-warning-fg);
+  border: 1px solid var(--hairline); border-radius: var(--radius-md); padding: var(--space-3);
+  font-size: 14px; }
+
+/* ── parameter form (popover content) — inputs only; the kern owns every number ─ */
+.param-head h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.param-form .muted { margin: 0 0 12px; }
+.param-form form { display: flex; flex-direction: column; gap: 10px; }
+.param-row { display: flex; flex-direction: column; gap: 3px; }
+.param-label { font-size: 12px; color: var(--ink-faint); }
+.param-input { display: flex; align-items: center; gap: var(--space-2); }
+.param-input input { flex: 1; min-width: 0; padding: 8px 12px; font: inherit; font-size: 14px;
+  font-family: var(--font-mono); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: 10px; outline: none; }
+.param-input input:focus { border-color: #c8d4e8; }
+.param-input input::placeholder { color: var(--ink-ghost); font-family: var(--font-sans); }
+.param-unit { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); min-width: 44px; }
+/* the submit button — direct child in the popover variant, inside .param-actionbar in the stage variant */
+.param-form > form > button,
+.param-form .param-actionbar button[type="submit"] {
+  align-self: flex-start; margin-top: 4px; cursor: pointer; font: inherit; font-size: 13px;
+  font-weight: 500; color: #fff; background: var(--color-seal-blue);
+  border: none; border-radius: 999px; padding: 8px 18px;
+}
+.param-form .param-actionbar button[type="submit"] { margin-top: 0; }
+/* schema-driven form: the RWDR situation has many grouped fields → scroll within the popover. */
+.param-form { max-height: min(72vh, 600px); overflow-y: auto; padding-right: 4px; }
+/* Universal Core — operating conditions shared across types, above the tabs (a quiet wash card). */
+.param-core { width: 100%; box-sizing: border-box; border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg); background: var(--hover-wash); padding: 12px 14px; margin: 0 0 12px;
+  display: flex; flex-direction: column; gap: 10px; }
+.param-core-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-faint); }
+.param-core-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; }
+
+/* type tabs — one row; the announced-but-unbuilt packs render grayed and are not selectable. */
+.param-tabs { display: flex; flex-wrap: nowrap; gap: 0; margin: 0 0 12px; padding-left: 2px; }
+.param-tab { cursor: pointer; font: inherit; font-size: 12px; color: var(--ink-faint);
+  background: var(--hover-wash); border: 1px solid var(--hairline); border-radius: 4px; padding: 8px 16px;
+  white-space: nowrap; transform: skewX(-14deg); margin-left: -1px; transition: background 120ms ease; }
+.param-tab:first-child { margin-left: 0; border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+.param-tab:last-child { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+.param-tab-label { display: inline-block; transform: skewX(14deg); }
+.param-tab.is-active { color: #fff; background: var(--color-seal-blue); border-color: transparent;
+  z-index: 2; box-shadow: 0 4px 12px rgba(0, 42, 91, 0.25); }
+.param-tab.is-soon, .param-tab:disabled { color: var(--ink-disabled); background: transparent;
+  border-style: dashed; cursor: default; }
+.param-tab-soon { font-size: 10px; }
+.param-group { border: none; border-top: 1px solid var(--hairline); margin: 0; padding: 12px 0 0;
+  display: flex; flex-direction: column; gap: 10px; }
+.param-group:first-of-type { border-top: none; padding-top: 0; }
+.param-group-title { padding: 0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--ink-faint); }
+.param-required { color: var(--color-warning-fg); font-weight: 600; }
+.param-kernel-badge { font-family: var(--font-mono); font-size: 10px; color: var(--color-seal-blue);
+  border: 1px solid var(--hairline); border-radius: 6px; padding: 0 4px; margin-left: 6px; }
+.param-help { font-size: 11px; color: var(--ink-ghost); }
+.param-select { flex: 1; min-width: 0; padding: 8px 12px; font: inherit; font-size: 14px;
+  color: var(--ink); background: #fff; border: 1px solid var(--hairline); border-radius: 10px; outline: none; }
+.param-select:focus { border-color: #c8d4e8; }
+
+/* ── parameter-submit confirmation (deterministic chat message — echoes settled + kern) ───────── */
+.param-confirmation { border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.85); padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-2); }
+.confirmation-head { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.confirmation-list { margin: 2px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-soft);
+  display: flex; flex-direction: column; gap: 2px; }
+.confirmation-label { color: var(--ink-faint); }
+.confirmation-wert { font-family: var(--font-mono); color: var(--ink); }
+.confirmation-open { color: var(--ink-faint); }
+.confirmation-rueckfrage { color: var(--color-warning-fg); }
+.confirmation-foot { margin: 4px 0 0; font-size: 11.5px; color: var(--ink-faint); }
+
+/* ── stage fast-path card (Phase 3, form-first landing) — compact kernel card + A–I expander ───── */
+.param-stage-card { max-height: none; overflow: visible; width: min(720px, 100%); margin: 0 auto;
+  border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.9); padding: 16px; }
+.param-stage-card .param-head h3 { font-size: 13px; }
+/* the kernel-critical fields sit side by side on wide screens, stack below 1024px */
+.param-compact { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.param-expander { margin-top: 12px; border-top: 1px solid var(--hairline); padding-top: 10px; }
+.param-expander-summary { cursor: pointer; font-size: 12.5px; color: var(--color-seal-blue);
+  list-style: none; }
+.param-expander-summary::-webkit-details-marker { display: none; }
+.param-expander-summary::before { content: "▸ "; }
+.param-expander[open] .param-expander-summary::before { content: "▾ "; }
+/* the expander flows within the Parameter pane's single scroll — NO nested scrollbar (one scroll/pane) */
+.param-expander-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+/* each group's context fields auto-fit horizontally and reflow with the cockpit width (more
+   columns when the splitter is dragged wider); the legend above stays the section label */
+.param-group-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px 12px; }
+.param-stage-note { margin: 10px 0 0; font-size: 11px; }
+@media (max-width: 1023px) {
+  .param-compact { grid-template-columns: 1fr; }
+}
+
+/* ── briefing (chat-flow card) ──────────────────────────────────────────────── */
+.briefing-pane { border: 1px solid var(--hairline); border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.85); padding: var(--space-4); }
+.briefing-pane h3 { margin: 0 0 var(--space-2); font-size: 14px; font-weight: 600; color: var(--ink); }
+.claim-boundary-note { font-size: 12px; color: var(--ink-soft);
+  border-left: 3px solid var(--color-seal-blue); padding-left: var(--space-3); margin: var(--space-2) 0; }
+.briefing-body { white-space: pre-wrap; font-family: var(--font-mono); font-size: 12px;
+  background: var(--hover-wash); border: 1px solid var(--hairline);
+  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
+.briefing-provenance { font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--color-seal-blue); margin-top: var(--space-2); }
+
+.muted { color: var(--ink-soft); font-size: 13px; }
+.cockpit-head { display: flex; align-items: center; justify-content: space-between; }
+
+/* ── login (pre-auth) — same stage language ─────────────────────────────────── */
+.login { position: relative; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%; gap: var(--space-6); overflow: hidden; }
+.login > *:not(.stage-glow) { position: relative; z-index: 1; }
+.login h1 { color: var(--ink); font-size: 32px; font-weight: 400; margin: 0; }
+.login .brand-sep { color: var(--ink-ghost); }
+.brand-sep { opacity: 0.55; }
+.login button { background: var(--color-seal-blue); color: #fff; border: none;
+  border-radius: 999px; padding: 13px 34px; font: inherit; font-size: 15px;
+  font-weight: 500; cursor: pointer; box-shadow: 0 10px 30px rgba(122, 166, 235, 0.3); }
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   COCKPIT — NEUMORPHISM (themesberg soft-UI)
+   Scoped to .cockpit-panel so the chat-popover variant of ParameterForm and the chat-flow chips
+   keep the flat white language. Convention: raised = dual drop shadow (lo bottom-right / hi
+   top-left); inset = the same shadows inside; the surface is always --neu-bg.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* — base surface ———————————————————————————————————————————————————————————————————————————— */
+.cockpit-panel { background: var(--neu-bg); }
+.cockpit-panel .cockpit-header { border-bottom: none; }
+.cockpit-panel .param-tabs-sticky,
+.cockpit-panel .param-actionbar { background: var(--neu-bg); }
+.cockpit-panel .param-actionbar { border-top: none; }
+@container cockpit (min-width: 680px) {
+  .cockpit-panel .scroll-wrap--param { border-right: none; }
+}
+/* scroll fade cues fade into the grey ground, not white */
+.cockpit-panel .scroll-wrap::before { background: linear-gradient(to bottom, var(--neu-bg), transparent); }
+.cockpit-panel .scroll-wrap::after { background: linear-gradient(to top, var(--neu-bg), transparent); }
+
+/* — close button (soft raised) ——————————————————————————————————————————————————————————————— */
+.cockpit-panel .cockpit-close {
+  background: var(--neu-bg);
+  box-shadow: 3px 3px 7px var(--neu-lo), -3px -3px 7px var(--neu-hi);
+}
+.cockpit-panel .cockpit-close:hover { color: var(--ink); box-shadow: 2px 2px 5px var(--neu-lo), -2px -2px 5px var(--neu-hi); }
+.cockpit-panel .cockpit-close:active { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
+
+/* — operating-conditions card + inputs/selects (inset wells) ————————————————————————————————— */
+/* Betriebsbedingungen = a FLAT section (no outer well — only the input fields are recessed),
+   set off from the tabs by a soft divider + spacing, with a clear heading. */
+.cockpit-panel .param-core {
+  border: none; background: transparent; box-shadow: none;
+  padding: 2px 0 16px; margin: 0 0 14px;
+  border-bottom: 1px solid rgba(90, 99, 114, 0.16);
+}
+.cockpit-panel .param-core-label {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: var(--ink); margin-bottom: 2px;
+}
+.cockpit-panel .param-input input,
+.cockpit-panel .param-select {
+  border: none; background: var(--neu-bg);
+  box-shadow: inset 3px 3px 6px var(--neu-lo), inset -3px -3px 6px var(--neu-hi);
+}
+.cockpit-panel .param-input input:focus,
+.cockpit-panel .param-select:focus {
+  box-shadow: inset 4px 4px 7px var(--neu-lo), inset -4px -4px 7px var(--neu-hi);
+}
+
+/* — type tabs: BASE segmented/skewed design. Inactive = light grey on the neumorphic ground;
+   ACTIVE = light tab with navy-blue text + a dark-blue (seal-blue) outline so it reads clearly;
+   soon/disabled keep the base dashed/greyed look (scoped :not so we do not flatten them). */
+.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled) {
+  background: #ffffff; border-color: rgba(60, 67, 80, 0.14); color: var(--ink-soft);
+  font-weight: 500;
+}
+.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
+  background: #ffffff; color: var(--color-seal-blue); border-color: rgba(60, 67, 80, 0.28);
+}
+/* active = navy-blue text + a dark-blue accent stroke on the LEFT edge only (not a full outline) */
+.cockpit-panel .param-tab.is-active {
+  background: #ffffff; color: var(--color-seal-blue);
+  border-color: rgba(60, 67, 80, 0.24);
+  border-left: 3px solid var(--color-seal-blue);
+  z-index: 3;
+}
+
+/* — submit + briefing buttons (raised; pressed on :active) ———————————————————————————————————— */
+.cockpit-panel .param-actionbar button[type="submit"] {
+  box-shadow: 4px 4px 10px var(--neu-lo), -3px -3px 8px var(--neu-hi);
+  transition: box-shadow 140ms ease;
+}
+.cockpit-panel .param-actionbar button[type="submit"]:hover { box-shadow: 3px 3px 8px var(--neu-lo), -2px -2px 7px var(--neu-hi); }
+.cockpit-panel .param-actionbar button[type="submit"]:active { box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.28); }
+.cockpit-panel .make-briefing {
+  border: none; background: var(--neu-bg); color: var(--ink-soft);
+  box-shadow: 3px 3px 8px var(--neu-lo), -3px -3px 8px var(--neu-hi);
+}
+.cockpit-panel .make-briefing:hover:not(:disabled) { background: var(--neu-bg); color: var(--ink); box-shadow: 2px 2px 6px var(--neu-lo), -2px -2px 6px var(--neu-hi); }
+.cockpit-panel .make-briefing:active:not(:disabled) { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
+.cockpit-panel .make-briefing:disabled { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
+
+/* — readout cards: Berechnungen + Fallkontext chips (soft raised) ———————————————————————————— */
+.cockpit-panel .kernel-panel {
+  border-radius: var(--radius-lg); padding: 12px 14px; background: var(--neu-bg);
+  box-shadow: 5px 5px 12px var(--neu-lo), -5px -5px 12px var(--neu-hi);
+}
+.cockpit-panel .kernel-panel--preview {
+  border: none; background: var(--neu-bg);
+  box-shadow: inset 3px 3px 7px var(--neu-lo), inset -3px -3px 7px var(--neu-hi);
+}
+.cockpit-panel .fact-chip-body {
+  background: var(--neu-bg);
+  box-shadow: 3px 3px 7px var(--neu-lo), -3px -3px 7px var(--neu-hi);
+}
+.cockpit-panel .fact-chip-body:hover { background: var(--neu-bg); box-shadow: 2px 2px 5px var(--neu-lo), -2px -2px 5px var(--neu-hi); }
+
+/* — soften remaining hairline separators into the surface ———————————————————————————————————— */
+.cockpit-panel .param-group,
+.cockpit-panel .param-expander,
+.cockpit-panel .readout-briefing { border-top-color: var(--neu-lo); }
+
+/* ── cockpit re-layout: one column (tabs+form on top) + a split (Berechnungen | Kritische Punkte) ─
+   Solid uniform surface to the right edge; the whole body scrolls as one. */
+.cockpit-body--stack {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+  overflow: auto; overscroll-behavior: contain;
+}
+.cockpit-form { padding: 12px 16px 4px; }
+.cockpit-form .param-stage-card {
+  width: 100%; max-width: none; margin: 0; border: none; background: transparent; padding: 0;
+}
+.cockpit-form .param-head { display: none; }
+/* in the single-scroll body the form's internal sticky anchors flow normally (no float-over-split) */
+.cockpit-form .param-tabs-sticky,
+.cockpit-form .param-actionbar { position: static; }
+
+.cockpit-split { display: flex; flex-direction: column; margin-top: 4px; }
+.cockpit-split-col {
+  flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+}
+.cockpit-split-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.cockpit-split-empty { margin: 0; font-size: 12px; color: var(--ink-ghost); line-height: 1.5; }
+@container cockpit (min-width: 620px) {
+  .cockpit-split { flex-direction: row; align-items: stretch; }
+}
+.kernel-panel--critical { gap: 8px; }
+.kernel-open .fact-feld { color: var(--ink-soft); }
+.cockpit-body--stack .readout-briefing { margin-top: auto; padding: 16px; border-top: none; }
+.cockpit-body--stack > [data-testid="memory-panel"] { padding: 0 16px; }
+
+
+/* ── cockpit text contrast: the muted inks are too light on the neumorphic grey ground ───────────
+   Remap --ink-faint/--ink-ghost a few steps darker (cascades to labels, units, placeholders,
+   hints, chips-labels, the empty-state line) + a crisp section title. */
+.cockpit-panel { --ink-faint: #525b69; --ink-ghost: #6f7886; }
+.cockpit-panel .param-group-title { color: var(--ink); }
+.cockpit-panel .case-state-empty { color: var(--ink-soft); }
+.cockpit-panel .cockpit-split-title { color: var(--ink-soft); }
+
+/* "Dichtungstyp" heading above the type tabs — parallel to the BETRIEBSBEDINGUNGEN heading,
+   marking the tab section as its own block (the tabs already carry aria-label="Dichtungstyp"). */
+.cockpit-panel .param-tabs-sticky::before {
+  content: "Dichtungstyp";
+  display: block; margin: 0 0 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink);
+}

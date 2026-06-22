@@ -14,6 +14,14 @@ Read-only is enforced two ways (audit F3): your toolset has **no `Write`/`Edit`*
 by convention** — use it to inspect and to run the guard suite, but never redirect
 or mutate repo files via Bash (`>`, `>>`, `tee`, `sed -i`, `git` writes, etc.).
 
+**Scope: V1 only.** You cover the V1 output doctrine — L1/L2 (`output_guard.py` /
+`final_guard.py`), the comparative-ranking/suitability/compliance lexicon, the
+streaming/enforcement path, CaseState mutation. You do **not** apply to the
+green-field `backend/sealai_v2/` tree: it has no L1/L2 output guards, so V2 doctrine
+review is a different mechanism — the eval hard-gate (Schranken-Quote → 100 %) + L3
+integrity (reviewed-only correction, never free-generated) + owner adjudication. See
+`AGENTS.md § "V2.0 green-field track"`.
+
 Authority order: `AGENTS.md` § Safety Boundaries (doctrine source of truth) →
 `.claude/rules/doctrine.md` (enforcement mechanics) → `docs/runtime-audit-fixmap.md`
 (what shipped and why) → the tests as executable contracts.

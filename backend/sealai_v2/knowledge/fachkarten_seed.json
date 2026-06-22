@@ -1,0 +1,178 @@
+{
+  "version": "fachkarten_seed_v0",
+  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated).",
+  "cards": [
+    {
+      "id": "FK-FKM-DAMPF",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-FKM-DAMPF"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["FKM", "FPM", "EPDM", "AFLAS", "FEPM"],
+        "medium": ["Dampf", "Heißdampf", "Sattdampf", "SIP", "Heißwasser", "Sterilisation"],
+        "property": ["Hydrolysebeständigkeit", "Temperaturbeständigkeit"],
+        "application": []
+      },
+      "claims": [
+        {"text": "FKM hydrolysiert und verspröttet in Sattdampf/Heißdampf — die hohe Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FKM-DAMPF"]},
+        {"text": "EPDM (peroxidvernetzt) ist der Standardwerkstoff für Dampf-/SIP-Anwendungen.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FKM-DAMPF"]},
+        {"text": "Bei zusätzlicher Chemikalienlast im Dampf: AFLAS/FEPM erwägen.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FKM-DAMPF"]}
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-EPDM-MINERALOEL",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["EPDM", "NBR", "FKM"],
+        "medium": ["Mineralöl", "Hydrauliköl", "Kohlenwasserstoffe", "Fette", "Öl", "HFC", "HFD-R", "Bremsflüssigkeit"],
+        "property": ["Polarität", "Quellung"],
+        "application": []
+      },
+      "claims": [
+        {"text": "EPDM ist unpolar und quillt grundsätzlich stark in Mineralölen, Kohlenwasserstoffen und Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen- oder Lagerfehler.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"]},
+        {"text": "Für Mineralöl-Hydraulik ist NBR der Standard; FKM bietet höhere Temperatur- und Medienbeständigkeit.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"]},
+        {"text": "EPDM passt zu glykol-/wasserbasierten Fluiden (HFC/HFD-R) und Bremsflüssigkeit.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL"]}
+      ],
+      "xrefs": ["FK-FOODGRADE-FETT"]
+    },
+    {
+      "id": "FK-NBR-OZON",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-NBR-OZON"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["NBR", "HNBR", "EPDM", "CR"],
+        "medium": ["Ozon", "UV", "Witterung"],
+        "property": ["Witterungsbeständigkeit", "Ozonbeständigkeit"],
+        "application": ["Außeneinsatz", "im Freien"]
+      },
+      "claims": [
+        {"text": "NBR ist anfällig für Ozon-, UV- und Witterungsrissbildung und damit für den Dauer-Außeneinsatz problematisch.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-NBR-OZON"]},
+        {"text": "Alternativen je nach Medium: HNBR, EPDM oder CR.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-NBR-OZON"]},
+        {"text": "Bei Öl-Kontakt im Außeneinsatz bietet HNBR Ölbeständigkeit mit besserer Ozonbeständigkeit.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-NBR-OZON"]}
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-PTFE-KALTFLUSS",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-PTFE-KALTFLUSS"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["PTFE", "FEP", "PFA"],
+        "medium": [],
+        "property": ["Kaltfluss", "Kriechen", "Rückstellung", "chemische Beständigkeit"],
+        "application": ["statische Dichtung", "O-Ring"]
+      },
+      "claims": [
+        {"text": "Ein reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-PTFE-KALTFLUSS"]},
+        {"text": "Chemische Beständigkeit ist nicht gleich mechanische Eignung.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-PTFE-KALTFLUSS"]},
+        {"text": "Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-PTFE-KALTFLUSS"]}
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-FKM-AMIN-LAUGE-KETON",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["FKM", "EPDM", "FFKM"],
+        "medium": ["Amine", "Lauge", "Natronlauge", "Base", "Ketone", "Aceton", "Ester", "Kühlmittel"],
+        "property": ["Medienbeständigkeit"],
+        "application": []
+      },
+      "claims": [
+        {"text": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"]},
+        {"text": "Bei Laugen sinkt die FKM-Beständigkeit mit Konzentration und Temperatur (Lauge bei hoher Temperatur versagt).", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"]},
+        {"text": "Alternativen je nach Fall: EPDM oder FFKM.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"]}
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-VMQ-DYNAMISCH",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["VMQ", "Silikon", "FKM", "PTFE"],
+        "medium": [],
+        "property": ["mechanische Eigenschaften", "Abrasion", "Reißfestigkeit", "Temperaturbereich"],
+        "application": ["dynamisch", "Wellendichtung", "schnelldrehend", "abrasiv"]
+      },
+      "claims": [
+        {"text": "VMQ hat schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit und ist daher für dynamische, schnelldrehende Wellendichtungen ungeeignet.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"]},
+        {"text": "Der Temperaturbereich allein qualifiziert VMQ nicht; Dynamik und Verschleiß sind limitierend.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"]},
+        {"text": "Stattdessen FKM oder eine PTFE-Lippe.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-VMQ-DYNAMISCH"]}
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-NBR-DAUERTEMP",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["NBR", "HNBR", "FKM"],
+        "medium": ["Synthetiköl", "Getriebeöl"],
+        "property": ["Dauertemperatur"],
+        "application": ["Getriebe"]
+      },
+      "claims": [
+        {"text": "NBR liegt bei etwa 100–120 °C an der Dauertemperaturgrenze; dauerhaft darüber (z. B. 130 °C) drohen Verhärtung, Versprödung und kürzere Lebensdauer.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"]},
+        {"text": "Bei höherer Dauertemperatur: HNBR oder FKM.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"]},
+        {"text": "Synthetiköle/Additive (Estertyp) können NBR zusätzlich angreifen.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP"]}
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-FOODGRADE-FETT",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:TRAP-FOODGRADE-FETT", "owner:M2-review-note"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": ["EPDM", "FKM", "VMQ", "FFKM"],
+        "medium": ["Schokolade", "Kakaobutter", "Fette", "Lebensmittel"],
+        "property": ["food-grade", "Zulassung", "Fettbeständigkeit"],
+        "application": []
+      },
+      "claims": [
+        {"text": "'food-grade' bedeutet nicht 'für jedes Lebensmittel geeignet': fetthaltige Lebensmittel (z. B. Schokolade/Kakaobutter) lassen EPDM quellen.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FOODGRADE-FETT"]},
+        {"text": "Für fetthaltige Lebensmittel: food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004).", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FOODGRADE-FETT"]},
+        {"text": "Temperatur (z. B. Conchieren) und Zulassungsnachweis sind zusätzlich zu prüfen.", "review_state": "reviewed", "provenance": ["trap-correct:TRAP-FOODGRADE-FETT"]},
+        {"text": "VMQ bietet nur moderate Fettbeständigkeit; FKM und FFKM sind für fetthaltige Medien deutlich stärker.", "review_state": "reviewed", "provenance": ["owner:M2-review-note"]}
+      ],
+      "xrefs": ["FK-EPDM-MINERALOEL"]
+    },
+    {
+      "id": "FK-ORING-VERPRESSUNG",
+      "review_state": "reviewed",
+      "provenance": ["eval:CALC-02", "owner:nutauslegung"],
+      "version": "fachkarten_seed_v0",
+      "matrix_crosscheck": "unchecked",
+      "scope": {
+        "material": [],
+        "medium": [],
+        "property": ["Verpressung", "Nutfüllung", "Füllgrad", "Nutauslegung"],
+        "application": ["O-Ring"]
+      },
+      "claims": [
+        {"text": "Die typische statische radiale Verpressung eines O-Rings liegt bei ~15–25 % der Schnurstärke (Richtwert); dynamisch geringer.", "review_state": "reviewed", "sources": ["Parker O-Ring Handbook", "ISO 3601-2 (Nutauslegung)"], "provenance": ["eval:CALC-02", "owner:nutauslegung"]},
+        {"text": "Die Nutfüllung so auslegen, dass Platz für Wärmedehnung und Quellung bleibt — Füllgrad typischerweise max. ~75–90 %.", "review_state": "reviewed", "sources": ["Parker O-Ring Handbook", "ISO 3601-2 (Nutauslegung)"], "provenance": ["eval:CALC-02", "owner:nutauslegung"]},
+        {"text": "Die geeignete Verpressung hängt von Schnurstärke, Medium (Quellung) und Temperatur ab; es sind Richtwerte/Bereiche — keine Scheingenauigkeit. Gegen Nut-Auslegungsnorm bzw. Herstellertabelle verifizieren.", "review_state": "reviewed", "sources": ["Parker O-Ring Handbook", "ISO 3601-2 (Nutauslegung)"], "provenance": ["eval:CALC-02", "owner:nutauslegung"]}
+      ],
+      "xrefs": []
+    }
+  ]
+}

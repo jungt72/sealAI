@@ -157,3 +157,8 @@ _archive/
 # Previously ignored only via local .git/info/exclude (per-clone, not shared).
 archive/
 langgraph_backup/
+
+scratch/
+.claude/plans/
+ops/increments/
+ops/ESCALATION.md

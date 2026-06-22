@@ -58,6 +58,10 @@ rules). The **CI-trigger / `ruff format` scope questions remain separately parke
 
 ## Secrets & untouchables
 - `.env*` files are never read, printed, or committed (denied in permissions).
+- **V2 eval key hygiene:** V2 offline tests use a **fake LLM client (no key)**. A
+  **live eval REPLAY** (`python -m sealai_v2.eval`) sources `OPENAI_API_KEY`
+  **transiently from `~/sealai/.env` for that run only** — never persisted into the
+  agent env, never echoed to logs, never committed.
 - Never push to `main`; never `git push --force`, `git clean`, or
   `docker compose down/rm` against prod (denied).
 - `.claude/.gate-logs/` holds runtime gate logs and sentinels — gitignored, not
@@ -96,3 +100,25 @@ rules). The **CI-trigger / `ruff format` scope questions remain separately parke
   - Toggling it is an env change on the running service (`.env.prod` is operator-
     owned; never read/printed by agents) — re-enforce as soon as the incident is
     resolved.
+
+## V2.0 track: live `backend-v2`, deployed under Gap #1/#2 discipline
+
+`backend/sealai_v2/` is **de-facto live in prod** — the `sealai-backend-v2` container runs and nginx
+routes `/api/v2` → `sealai-backend-v2:8001` (Gap #1/#2 shipped there; durable `sealai_v2` Postgres,
+restart-survival proven; see the 2026-06-17 `GOVERNANCE_LOG`). It does **NOT** go through the V1 release
+path: `ops/release-backend.sh`, the deploy gate, the pre-deploy pytest sentinel, and the rollback anchor
+all still target the **V1** runtime (`backend/app/`) unchanged. A V2 change deploys with **Gap #1/#2
+discipline** instead: **eval-gate green first** → read the **rollback image from the running daemon**
+(`docker inspect sealai-backend-v2 --format '{{.Config.Image}}'`, never memory) → rebuild + recreate
+**only** `backend-v2` surgically (`up -d --no-deps backend-v2`) → **restart-survival** check (durable
+`sealai_v2` Postgres; catalog/code are file-backed in the image, no DB migration) → live `/api/v2` smoke
+→ **`GOVERNANCE_LOG` entry** (new pinned `@sha256`, rollback target, eval-gate result, smoke). The full
+**demo→main convergence and the V1→V2 cutover remain owner-gated**. (V2 CI: `.github/workflows/v2-contracts.yml`;
+V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.)
+
+**V2.1 deploys per-increment under this same Gap #1/#2 discipline** — each increment is a coherent,
+testable, deployable unit, gated by an owner plan-review *before* and an owner deploy-review *after*;
+the 8 hard eval Schranken hold **1.000** through every increment. See
+`docs/V2/sealingai_v2_1_implementierungs_konzept_cc.md §7` (deploy) + §1.3 (the four owner-HALTs).
+The public `/api/v2` nginx flip (`ops/v2-flip.sh`) stays owner-gated — these deploys only update the
+backend image.

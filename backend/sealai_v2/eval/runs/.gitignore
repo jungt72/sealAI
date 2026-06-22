@@ -1,0 +1,6 @@
+# Eval run artifacts. Ad-hoc/smoke runs stay local; only committed baselines are tracked
+# (they are the REPLAY references later milestones diff against).
+*
+!.gitignore
+!m1-baseline/
+!m1-baseline/**

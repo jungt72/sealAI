@@ -145,6 +145,7 @@ compose_prod --profile frontend-container exec -T frontend wget -qO- http://127.
 
 echo ">> Reloading nginx to refresh frontend upstream"
 if docker ps --format '{{.Names}}' | grep -qx nginx; then
+  ./ops/guard-nginx-reload.sh  # refuses a reload that would silently drop live V2 routing (cutover drift guard)
   docker exec nginx nginx -s reload
 else
   echo ">> nginx container not running; skipping reload"

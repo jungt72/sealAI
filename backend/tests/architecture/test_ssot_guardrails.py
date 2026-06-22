@@ -44,8 +44,6 @@ CANONICAL_PATHS = (
     "backend/app/services/problem_first_matching_service.py",
     "backend/app/services/capability_service.py",
     "backend/app/services/terminology_service.py",
-    "frontend/src/lib/contracts/workspace.ts",
-    "frontend/src/lib/mapping/workspace.ts",
 )
 
 

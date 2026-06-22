@@ -9,6 +9,12 @@ Your job is to audit the existing codebase, understand the current architecture,
 
 This file defines the persistent operating rules for work inside this repository.
 
+> **V2.0 green-field track:** for any work inside `backend/sealai_v2/` (the V2.0
+> rebuild on the `feat/v2*` line — alongside the live V1 `backend/app/`, not cut over),
+> the binding doctrine, four-layer trust model, green-field import boundary, and
+> human-is-oracle eval discipline live in `AGENTS.md § "V2.0 green-field track"` and
+> `docs/V2/*`. Read those first; the V1 runtime stays governed unchanged.
+
 For any task-specific implementation goal, read the relevant documents explicitly referenced by the user and any applicable project documentation under `konzept/`, the relevant subtree, or adjacent task-specific instruction files.
 
 If the existing codebase already contains structures that can support the target design, extend and harden them instead of creating parallel systems.

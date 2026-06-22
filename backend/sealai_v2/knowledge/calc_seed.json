@@ -1,0 +1,73 @@
+{
+  "version": "calc_seed_v0",
+  "source": "M4a seed: 3 owner-reviewed deterministic calc-defs (Umfangsgeschwindigkeit, PV-Wert, O-Ring-Verpressung/Nutfüllung). Formulas are reviewed CODE bound by id (core/calc/formulas.py); this file is METADATA only (units/validity/conditions/source/provenance). Kontakttemperatur is DEFERRED to the content-track pending an owner-supplied model + assumptions + source (Q3). Sources name the standard references; owner is the oracle that confirms/refines them at the build gate.",
+  "calcs": [
+    {
+      "id": "umfangsgeschwindigkeit",
+      "formula": "v = π · d1 · n   (d1 [mm], n [1/min] → v [m/s];  v = π · d1 · n / 60000)",
+      "inputs": [
+        {"name": "d1_mm", "unit": "mm"},
+        {"name": "rpm", "unit": "1/min"}
+      ],
+      "output": {"name": "v_m_s", "unit": "m/s"},
+      "validity": {"d1_mm": [1, 1200], "rpm": [0, 60000]},
+      "conditions": {"seal_type": ["rwdr", "wellendichtung", "radialwellendichtring"]},
+      "assumptions": [
+        "Wellendurchmesser = Laufdurchmesser der Dichtkante",
+        "konstante Drehzahl",
+        "Standard-NBR-Lippe ~ bis ~14 m/s; FKM gibt Reserve (materialabhängige Grenze — L3 prüft die vorgeschlagene Lippe gegen v)"
+      ],
+      "limit": {
+        "applies_to": "v_m_s",
+        "max": 14,
+        "label": "Standard-NBR-Lippe",
+        "source_ref": "owner:eval-CALC-01"
+      },
+      "source": "Umfangsgeschwindigkeit v = π·d·n — Grundformel der RWDR-Auslegung (z. B. Freudenberg Sealing Technologies, Technisches Handbuch Simmerring); NBR-Lippen-Grenze ~14 m/s owner-confirmed via eval CALC-01",
+      "review_state": "reviewed",
+      "provenance": ["trap-correct:CALC-UMFANGSGESCHWINDIGKEIT", "owner:eval-CALC-01"],
+      "version": "calc_seed_v0"
+    },
+    {
+      "id": "pv_wert",
+      "formula": "PV = p · v   (p [bar], v [m/s] → PV [bar·m/s])",
+      "inputs": [
+        {"name": "p_bar", "unit": "bar"},
+        {"name": "v_m_s", "unit": "m/s"}
+      ],
+      "output": {"name": "pv_bar_m_s", "unit": "bar·m/s"},
+      "validity": {"p_bar": [0, 1000], "v_m_s": [0, 100]},
+      "conditions": {},
+      "assumptions": [
+        "Verschleiß-/Wärme-Kennwert für gleitende/berührende Dichtungen",
+        "p = Flächenpressung an der Dichtstelle",
+        "v wird, falls nicht direkt gegeben, aus der Umfangsgeschwindigkeit kaskadiert (Stufe 2)"
+      ],
+      "source": "PV-Wert = Flächenpressung × Gleitgeschwindigkeit — Standard-Auslegungskennwert gleitender Dichtungen (Tietze (Hrsg.), Handbuch Dichtungspraxis)",
+      "review_state": "reviewed",
+      "provenance": ["owner:PV-standard-kennwert"],
+      "version": "calc_seed_v0"
+    },
+    {
+      "id": "verpressung_prozent",
+      "formula": "Verpressung = (Schnurstärke − Nuttiefe) / Schnurstärke · 100   [%]",
+      "inputs": [
+        {"name": "schnurstaerke_mm", "unit": "mm"},
+        {"name": "nuttiefe_mm", "unit": "mm"}
+      ],
+      "output": {"name": "verpressung_pct", "unit": "%"},
+      "validity": {"schnurstaerke_mm": [0.5, 20], "nuttiefe_mm": [0.1, 20]},
+      "conditions": {"seal_type": ["o-ring", "oring", "o_ring"]},
+      "assumptions": [
+        "statische Dichtung: Zielbereich ~15–25 % Verpressung (dynamisch geringer)",
+        "Nutfüllung mit Reserve für Wärmedehnung/Quellung lassen (Füllgrad typ. max ~75–90 %)",
+        "Richtwerte — keine Scheingenauigkeit; gegen Nut-Auslegungsnorm/Herstellertabelle verifizieren"
+      ],
+      "typical_band": [15, 25],
+      "source": "O-Ring-Verpressung/Nutfüllung Richtwerte (~15–25 % statisch; Füllgrad ~75–90 %) — z. B. Parker O-Ring Handbook / ISO 3601-2 (Nutauslegung; ersetzt DIN 3771); owner-confirmed via eval CALC-02",
+      "review_state": "reviewed",
+      "provenance": ["eval:CALC-02", "owner:nutauslegung"],
+      "version": "calc_seed_v0"
+    }
+  ]
+}
