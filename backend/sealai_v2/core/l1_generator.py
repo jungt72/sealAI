@@ -16,6 +16,7 @@ from sealai_v2.core.contracts import (
     ModelConfig,
     SystemPromptAssembler,
 )
+from sealai_v2.core.sourcing_guard import strip_sourcing
 
 
 def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list[str]]:
@@ -87,7 +88,7 @@ class L1Generator:
             system=system, user=question, model_config=self._model_config
         )
         return Answer(
-            text=result.text,
+            text=strip_sourcing(result.text),
             model=result.model,
             grounding_facts=grounding_facts,
             finish_reason=result.finish_reason,
