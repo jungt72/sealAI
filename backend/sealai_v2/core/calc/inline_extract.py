@@ -83,3 +83,21 @@ def extract_inline(message: str) -> tuple[RememberedFact, ...]:
         )
 
     return tuple(results)
+
+
+def merge_inline(
+    case_state: tuple[RememberedFact, ...],
+    inline: tuple[RememberedFact, ...],
+) -> tuple[RememberedFact, ...]:
+    """Overlay ``inline`` facts on ``case_state``: fresh beats recalled, field by field.
+
+    Pure, no mutation.  Fields absent from ``inline`` keep their ``case_state`` value.
+    Fields in ``inline`` but absent from ``case_state`` are appended.
+    """
+    if not inline:
+        return case_state
+    inline_by_feld = {f.feld: f for f in inline}
+    result = [inline_by_feld.get(f.feld, f) for f in case_state]
+    existing_felder = {f.feld for f in case_state}
+    result.extend(f for f in inline if f.feld not in existing_felder)
+    return tuple(result)

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.binding import bind_params
+from sealai_v2.core.calc.inline_extract import extract_inline, merge_inline
 from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
@@ -202,8 +203,8 @@ class Pipeline:
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
             bound = bind_params(
-                mem.case_state
-            )  # L4 durable facts excluded — never a calc input
+                merge_inline(mem.case_state, extract_inline(question))
+            )  # L4 durable facts excluded — never a calc input; inline overlay: fresh > recalled
             merged_params = dict(bound.params)
             param_origins = dict(bound.origins)
             for key, value in (params or {}).items():
