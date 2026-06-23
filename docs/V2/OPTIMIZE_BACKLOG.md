@@ -162,3 +162,15 @@ eval-gate; **not** part of the Gap #2 matrix arc.
 NBR-Temperaturlimit (~100-120 C) hartcodiert in system_l1.jinja:77 (per i5-ok als interner
 Guardrail markiert). Doktrin-rein: in eine Fachkarte verschieben, kernel-injiziert mit Provenance
 (Single-Source-of-Truth, kein Drift). Offen.
+
+## Inc-2 Fast-Follow (a): Under-Breach-Surfacing der v-Grenze
+Die geerdete Kern-v-Grenze (~14 m/s, calc_seed.json) surfacet heute nur bei v>Grenze. Bei v<Grenze
+(CALC-01: 12,57<14) kommt keine C1-Warnung -> die Antwort war fachlich richtig, aber aus LLM-Wissen
+statt Kern-Grounding. Fix: Grenze auch unter Breach surfacen (mit Abstand), damit L1 sie geerdet
+referenziert. Lane B (Kernel-Surfacing-Verhalten). Owner-Entscheid E2-3: JA.
+
+## Inc-2 Fast-Follow: TRAP-02 EPDM-Mechanismus-Fehler
+L1 labelt EPDM als "polaren Kautschuk" (falsch; EPDM ist unpolar) — Schlussfolgerung (quillt in
+Mineraloel) korrekt, Mechanismus-Begruendung falsch. L3-Verifier + Fallen-Katalog muessen
+confident-falsche MECHANISMEN fangen, nicht nur falsche Schlussfolgerungen. Owner-PASS mit
+deferred deep-audit. Offen.
