@@ -183,6 +183,45 @@ def test_run_parametric_guard_hedges_a_parametric_leak_without_l3():
     assert answer is not draft
 
 
+def test_verify_hedges_a_part_equivalence_claim():
+    # P0.2 §9.2: an affirmative interchangeability claim is hedged to the EQUIVALENZ_GRENZE — and the
+    # guard short-circuits BEFORE the LLM verify call (it is deterministic, not LLM-judged).
+    client = ScriptedFakeLlmClient([_CLEAN])
+    draft = _draft("Ja, die beiden O-Ringe sind 1:1 austauschbar.")
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Kann ich tauschen?",
+            draft,
+            flags=Flags(),
+        )
+    )
+    assert verdict.action == VerifierAction.BLOCKED_HEDGE
+    assert answer.model == "l3-hedge"
+    assert "Hersteller" in answer.text
+    assert len(client.calls) == 0  # deterministic short-circuit, no LLM call
+
+
+def test_verify_does_not_hedge_the_negated_equivalence_form():
+    # The doctrine-correct "nicht 1:1 austauschbar" must pass through (no §9.2 false-positive).
+    client = ScriptedFakeLlmClient([_CLEAN])
+    draft = _draft("Nein, die sind nicht 1:1 austauschbar — Freigabe beim Hersteller.")
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Kann ich tauschen?",
+            draft,
+            flags=Flags(),
+        )
+    )
+    assert verdict.action == VerifierAction.PASS
+    assert answer is draft
+
+
 def test_reviewed_violation_regenerates_and_corrects():
     client = ScriptedFakeLlmClient(
         [_violation("R1", "confident_wrong"), "EPDM ist UNPOLAR — NBR nehmen.", _CLEAN]
