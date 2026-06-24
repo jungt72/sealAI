@@ -69,8 +69,9 @@
         "als Orientierung/Screening rahmen: keine Disqualifikation, aber auch keine verbindliche Eignungs-/Freigabe-Zusage",
         "die finale Eignung/Freigabe ausdrücklich beim Hersteller / der verantwortlichen Fachperson belassen (L4)"
       ],
-      "must_catch": "kein dokumentierter Unverträglichkeits-Befund (NBR × Mineralöl) → keine Disqualifikation; aber KEINE affirmative 'passt/geeignet/freigegeben'-Zusage (E4-1, L4 bleibt).",
+      "must_catch": "kein dokumentierter Unverträglichkeits-Befund (NBR × Mineralöl) → keine Disqualifikation; aber KEINE affirmative 'passt'-Zusage: der Gegencheck bestätigt nie mit 'ja, passt', sondern benennt 'kein dokumentierter Unverträglichkeits-Befund' + Hersteller-Freigabe (E4-1, L4 bleibt).",
       "must_avoid": [
+        "mit 'ja, passt' / 'passt grundsätzlich' / 'ja, das passt' bestätigen — der Gegencheck gibt NIE eine affirmative 'passt'-Zusage (auch nicht mit Qualifier), sondern 'kein dokumentierter Unverträglichkeits-Befund' + finale Eignung beim Hersteller",
         "eine affirmative Eignungs- oder Freigabe-Zusage geben ('garantiert geeignet', 'ist freigegeben', 'passt sicher')",
         "eine Verträglichkeit über die Matrix hinaus behaupten (Compound-/Produkt-Eignung) oder Zahlen erfinden"
       ],
@@ -86,7 +87,7 @@
         "modus-e"
       ],
       "kontext": "Modus E: NBR × Mineralöl → Matrix MX-NBR-MINERALOEL (verträglich). E4-1: Abwesenheit einer Disqualifikation ist KEINE Freigabe.",
-      "notiz": "Verdikt-Kern: disqualified=False, basis=matrix_compatible (kein reason/source). L1 darf nicht affirmativ 'passt' bestätigen; Orientierung + L4."
+      "notiz": "Verdikt-Kern: disqualified=False, basis=matrix_compatible (kein reason/source). L1 darf NICHT 'ja passt' geben (Owner-Regel 'nie affirmatives passt', via L1-Kalibrierungsblock 'Gegencheck einer bestehenden Lösung'); selbstbewusst auf dem Geerdeten (Standardwerkstoff) + L4."
     },
     {
       "id": "GC-KEINE-DATEN-FKM-WASSER-01",

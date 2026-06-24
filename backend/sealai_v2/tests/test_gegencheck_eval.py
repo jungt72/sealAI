@@ -58,3 +58,18 @@ def test_verdict_substrate_is_present() -> None:
     assert case.seal_spec == {"material": "FKM"}
     assert case.medium == {"name": "Heißdampf", "matched": ["Heißdampf"]}
     assert extract_medium("in Heißdampf") == "Heißdampf"
+
+
+def test_l1_prompt_carries_gegencheck_no_passt_calibration() -> None:
+    # The Modus-E calibration (option B): a compatible existing-seal check must NOT be
+    # confirmed with a bare "passt" — the L1 prompt carries the scoped instruction.
+    from sealai_v2.core.contracts import Flags
+    from sealai_v2.prompts.assembler import PromptAssembler
+
+    sys = PromptAssembler().system_prompt(
+        flags=Flags(compliance_hint=False, safety_critical=False)
+    )
+    low = sys.lower()
+    assert "kein dokumentierter" in low
+    assert "affirmative" in low and "passt" in low
+    assert "gegencheck einer bestehenden" in low
