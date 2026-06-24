@@ -604,6 +604,9 @@ class PipelineResult:
     # Modus G (Decode): structured seal-designation parse (dims/material/type) + the §9.2
     # equivalence boundary, or None when no designation. Render/serializer surface; never X=Y.
     decode: dict | None = None
+    # Modus F (Alternativen): capable manufacturers BY CAPABILITY (neutral, §3.9), or None.
+    # grounded_data=False with the owner-pending empty Dim. 6 seed. Render/serializer surface.
+    alternativen: dict | None = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

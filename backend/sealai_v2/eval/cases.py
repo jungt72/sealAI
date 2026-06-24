@@ -22,6 +22,7 @@ _CALIBRATION_FILE = _SEED_DIR / "calibration_v0.json"
 _GEGENCHECK_FILE = _SEED_DIR / "gegencheck_v0.json"
 _DIAGNOSE_FILE = _SEED_DIR / "diagnose_v0.json"
 _DECODE_FILE = _SEED_DIR / "decode_v0.json"
+_ALTERNATIVEN_FILE = _SEED_DIR / "alternativen_v0.json"
 
 
 @dataclass(frozen=True)
@@ -130,3 +131,11 @@ def load_decode_cases(path: Path | None = None) -> list[Case]:
     as nominal size + material class; compound/fit confirmed at the manufacturer; no interchange
     guarantee."""
     return load_cases(path or _DECODE_FILE)
+
+
+def load_alternativen_cases(path: Path | None = None) -> list[Case]:
+    """Alternativen (ALTERNATIVEN) class (Modus F, V2.1) - capable-manufacturer cases. CREDIBILITY/
+    axes class (NO new hard gate): measures the §3.9 neutrality discipline (capability only, never
+    pay-to-rank), no invented manufacturers, and the honest no-grounded-data stance (Dim. 6 ships
+    empty, owner-provided)."""
+    return load_cases(path or _ALTERNATIVEN_FILE)

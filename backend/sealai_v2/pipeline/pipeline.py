@@ -40,6 +40,7 @@ from sealai_v2.core.l3_verifier import L3Verifier
 from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
+from sealai_v2.knowledge.hersteller import InProcessHerstellerStore
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.memory.distiller import Distiller
@@ -100,6 +101,9 @@ class Pipeline:
         None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
     versagensmodi: object | None = None  # Dim. 5 Versagensmodi store (Modus D Diagnose)
+    hersteller: object | None = (
+        None  # Dim. 6 Hersteller-Faehigkeiten (Modus F Alternativen)
+    )
     engine: CalcEngine | None = (
         None  # None → M4 calc layer off → no "Berechnete Werte" block
     )
@@ -175,6 +179,11 @@ class Pipeline:
         # Modus G: deterministic Decode - None unless a designation (with dims) is present.
         # Result-side structured parse + the §9.2 equivalence boundary. Pure + sync, no I/O.
         decode_result = stages.decode(question)
+        # Modus F: capable manufacturers BY CAPABILITY (neutral). None unless an alternatives/
+        # manufacturer request; grounded_data=False with the owner-pending empty seed.
+        alternativen_result = stages.alternativen(
+            self.hersteller, question, tenant_id=scope.tenant_id
+        )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
@@ -361,6 +370,7 @@ class Pipeline:
             gegencheck=gegencheck_verdict,
             diagnose=diagnosis,
             decode=decode_result,
+            alternativen=alternativen_result,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -544,6 +554,7 @@ def build_pipeline(
     # ground_enabled kill-switch as the retriever (both are the L2 layer).
     matrix = InProcessCompatibilityMatrix() if settings.ground_enabled else None
     versagensmodi = InProcessVersagensmodiStore() if settings.ground_enabled else None
+    hersteller = InProcessHerstellerStore() if settings.ground_enabled else None
 
     # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
     engine: CalcEngine | None = (
@@ -601,6 +612,7 @@ def build_pipeline(
         retriever=retriever,
         matrix=matrix,
         versagensmodi=versagensmodi,
+        hersteller=hersteller,
         engine=engine,
         memory=memory,
         cross_session=cross_session,

@@ -26,6 +26,13 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.gegencheck import evaluate_gegencheck
 from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
+import re as _re
+
+_ALT_RE = _re.compile(
+    r"\b(alternativ|hersteller|lieferant|bezugsquelle|wer\s+(macht|kann|stellt|liefert|baut)|"
+    r"vergleichbar|ersatz(teil)?|wer\s+noch)\b",
+    _re.IGNORECASE,
+)
 
 _UNDERSTAND_SYSTEM = (
     "Du klassifizierst eine Nutzer-Nachricht an einen Dichtungstechnik-Assistenten GROB nach "
@@ -332,3 +339,34 @@ def decode(question: str) -> dict | None:
     if not spec or not spec.get("dims_mm"):
         return None
     return {**spec, "equivalenz_grenze": EQUIVALENZ_GRENZE}
+
+
+def alternativen(hersteller, question: str, *, tenant_id: str) -> dict | None:
+    """Stage - Alternativen/Hersteller (Modus F, Dim. 6): find capable manufacturers for the
+    seal spec BY CAPABILITY (Produkt-Konzept §3.9 - NEUTRAL, never pay-to-rank). Fires ONLY on an
+    explicit alternatives/manufacturer request (keyword gate); otherwise None. With the EMPTY
+    owner-pending seed, no match -> an honest "no grounded manufacturer data" marker + the neutral,
+    capability-based selection approach. When the owner curates Dim. 6, it returns capable makers
+    ordered by capability only. No LLM, no mutation. ``hersteller`` is the InProcessHerstellerStore."""
+    if hersteller is None or not _ALT_RE.search(question):
+        return None
+    spec = decode_designation(question) or {}
+    material = spec.get("material")
+    bauform = spec.get("type")
+    matches = hersteller.query(tenant_id=tenant_id, material=material, bauform=bauform)
+    if not matches:
+        return {
+            "grounded_data": False,
+            "neutralitaet": "Auswahl nach Fähigkeit (Werkstoff, Bauform, Größe, Zertifikate), nie nach Bezahlung.",
+            "hinweis": (
+                "Aktuell liegen keine geerdeten Hersteller-Fähigkeitsdaten vor. Grenze die nötigen "
+                "Fähigkeits-Achsen ein (Werkstoff, Bauform, Größe, geforderte Zertifikate) und "
+                "bestätige sie mit Kandidaten-Herstellern."
+            ),
+        }
+    return {
+        "grounded_data": True,
+        "hersteller": [m.hersteller for m in matches],
+        "ordered_by": "capability",
+        "neutralitaet": "nach Fähigkeit, nie nach Bezahlung",
+    }

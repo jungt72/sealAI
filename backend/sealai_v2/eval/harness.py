@@ -26,6 +26,7 @@ from sealai_v2.eval.cases import (
     load_gegencheck_cases,
     load_diagnose_cases,
     load_decode_cases,
+    load_alternativen_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -351,6 +352,32 @@ async def _run_calibration(
                 )
             )
         except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_archetype)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
+async def _run_alternativen(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """Alternativen (ALTERNATIVEN) class (Modus F, V2.1) - capable-manufacturer cases (column
+    ``alternativen``, flags_on). Measures §3.9 neutrality + no invented makers + honest no-data
+    (Dim. 6 empty). Owner is the factual oracle (axis 1 human-final)."""
+    cases = load_alternativen_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "alternativen",
+                    COLUMNS["flags_on"],
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
             errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
     return records, errors
 
@@ -707,6 +734,24 @@ async def run_eval(
     )
     records = list(records) + dc_records
 
+    # Alternativen (ALTERNATIVEN, Modus F) - neutral capable-manufacturer cases. Folded under
+    # column `alternativen`; CREDIBILITY/axes - NO new hard gate.
+    al_records, al_errors = await _run_alternativen(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    alternativen = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("alternativen", [r.score for r in al_records])
+            ),
+            "n_cases": len(al_records),
+            "errors": al_errors,
+        }
+        if al_records
+        else None
+    )
+    records = list(records) + al_records
+
     # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
     # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
     # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
@@ -879,6 +924,7 @@ async def run_eval(
         "gegencheck": gegencheck,
         "diagnose": diagnose,
         "decode": decode,
+        "alternativen": alternativen,
         "answer_quality": answer_quality,
         "latency": latency,
         "token_usage": token_usage,

@@ -107,4 +107,5 @@ def chat_response(result: PipelineResult) -> dict:
         "gegencheck": result.gegencheck,
         "diagnose": result.diagnose,
         "decode": result.decode,
+        "alternativen": result.alternativen,
     }
