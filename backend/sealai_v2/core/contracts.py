@@ -499,10 +499,31 @@ class Case:
     ] = ()  # per-field origin (carried as the typed slots grow)
 
     @classmethod
-    def from_case_state(cls, case_state: tuple["RememberedFact", ...]) -> "Case":
+    def from_case_state(
+        cls,
+        case_state: tuple["RememberedFact", ...],
+        *,
+        question: str | None = None,
+    ) -> "Case":
         """Build the Case from the memory case-state — the Inc-1 generalisation point
-        (``pipeline.py``). The typed slots stay unpopulated here; they fill in later increments."""
-        return cls(facts=tuple(case_state))
+        (``pipeline.py``). When ``question`` is given (Modus-E Inc), the pure extractors
+        populate the ``seal_spec``/``medium`` slots from the turn text; absent → slots stay
+        None (byte-identical pre-Modus-E path). ``to_prompt_context`` is UNAFFECTED either way
+        — only ``facts`` reach the prompt, so the eval stays unperturbed (owner decision 2).
+        Lazy import keeps ``contracts`` (the base module) free of any import-cycle risk."""
+        seal_spec: dict | None = None
+        medium: dict | None = None
+        if question:
+            from sealai_v2.core.medium_extract import extract_media
+            from sealai_v2.core.seal_spec_extract import extract_seal_spec
+
+            seal_spec = extract_seal_spec(question)
+            media = extract_media(question)
+            if media:
+                # name = primary (display); matched = ALL media → the stage folds the kernel
+                # over every one so a co-mentioned disqualifying medium is never dropped.
+                medium = {"name": media[0], "matched": list(media)}
+        return cls(facts=tuple(case_state), seal_spec=seal_spec, medium=medium)
 
     def to_prompt_context(self) -> list[dict]:
         """The byte-identical prompt projection: ``[{"feld","wert"}]`` over the case-state facts.
@@ -572,6 +593,11 @@ class PipelineResult:
     # can surface "nicht berechenbar"/advisories honestly. Not injected into L1/L3; render-only.
     not_computed: tuple[NotComputed, ...] = ()
     calc_notes: tuple[str, ...] = ()
+    # Modus E (Gegencheck): the deterministic binary verdict for an existing seal against the
+    # case medium, or None when the turn is not a Gegencheck situation (no existing seal
+    # material + medium). Backend owns the verdict; never affirms suitability (E4-1). A
+    # render/serializer surface only - never injected into L1/L3 (the prompt stays unchanged).
+    gegencheck: dict | None = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

@@ -101,4 +101,8 @@ def chat_response(result: PipelineResult) -> dict:
         # round-trip (the authoritative settled read is /compute). Empty when compute is off.
         "computed": [_computed_value(c) for c in result.computed_values],
         "not_computed": [_not_computed(n) for n in result.not_computed],
+        # Modus E: deterministic Gegencheck verdict (binary disqualified-or-not) or None when
+        # the turn is not a Gegencheck situation. Already a plain dict from the kernel - passed
+        # through verbatim so the SPA renders the verdict deterministically, not from L1 prose.
+        "gegencheck": result.gegencheck,
     }

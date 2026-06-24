@@ -157,8 +157,14 @@ class Pipeline:
         # G1 (V2.1 Inc 1): build the typed Case at the generalisation point, then project to the
         # byte-identical list[dict] the L1 prompt + L3 topic-scope consume (owner decision 2 —
         # Jinja unchanged, so the eval stays unperturbed). The typed slots fill in later increments.
-        case = Case.from_case_state(mem.case_state)
+        case = Case.from_case_state(mem.case_state, question=question)
         case_context = case.to_prompt_context()
+        # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
+        # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
+        # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
+        gegencheck_verdict = stages.gegencheck(
+            self.matrix, case, tenant_id=scope.tenant_id
+        )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
@@ -342,6 +348,7 @@ class Pipeline:
             computed_values=calc.computed,
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
+            gegencheck=gegencheck_verdict,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:

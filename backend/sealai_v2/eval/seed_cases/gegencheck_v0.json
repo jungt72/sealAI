@@ -1,0 +1,120 @@
+{
+  "version": "gegencheck_v0",
+  "klass_note": "Gegencheck (GEGENCHECK) — Modus E (V2.1). Eine bestehende Dichtung gegen den Fall pruefen: disqualifizieren (unvertraeglich), bedingt mit sichtbarer Bedingung, oder KEINE affirmative Freigabe (vertraeglich/keine-Daten). CREDIBILITY/axes-Klasse: KEINE neue harte Schranke — die 8 Schranken bleiben fix (Muster G5/C4). Misst die E4-1-Kalibrierung der Narration (disqualify-only, nie 'passt'), geerdet an realen Matrix-Zellen.",
+  "cases": [
+    {
+      "id": "GC-UNVERTRAEGLICH-FKM-DAMPF-01",
+      "klass": "Gegencheck (GEGENCHECK)",
+      "input": "Wir verbauen FKM-Dichtungen in einer Heißdampf-Sterilisation (SIP) bei 140 °C. Passt dieser Werkstoff?",
+      "must_contain": [
+        "klar sagen, dass die bestehende FKM-Dichtung hier NICHT passt / disqualifiziert ist (prescriptive auf dem geerdeten Matrix-Fakt)",
+        "den geerdeten Grund benennen: FKM hydrolysiert/versprödet in Heißdampf/Sattdampf (die Temperaturbeständigkeit in Öl überträgt sich nicht auf Dampf)",
+        "die Verträglichkeitsmatrix als Quelle erkennbar machen; die finale Freigabe bleibt beim Hersteller (L4)"
+      ],
+      "must_catch": "FKM × Heißdampf ist unverträglich → die bestehende Dichtung ist disqualifiziert; den Hydrolyse-Grund GEERDET benennen, nichts erfinden.",
+      "must_avoid": [
+        "sagen, FKM passe / sei hier in Ordnung / sei dampfbeständig",
+        "einen anderen, nicht-geerdeten Grund erfinden oder eine präzise, nicht aus der Matrix stammende Zahl (z. B. eine Temperatur-Grenze) als Fakt behaupten",
+        "die Unverträglichkeit zu einem bloßen 'bedingt/eventuell' verwässern"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "gegencheck",
+        "unvertraeglich",
+        "disqualified",
+        "modus-e"
+      ],
+      "kontext": "Bestehende Lösung gegenchecken (Modus E): FKM × Heißdampf → Matrix MX-FKM-DAMPF (unverträglich). Disqualifikation geerdet, Grund aus der Zelle.",
+      "notiz": "Verdikt-Kern: disqualified=True + reason (Zelltext), source=MX-FKM-DAMPF. L1 muss die Disqualifikation tragen und darf kein 'passt' geben."
+    },
+    {
+      "id": "GC-BEDINGT-NBR-SYNTHETIKOEL-01",
+      "klass": "Gegencheck (GEGENCHECK)",
+      "input": "Unsere NBR-Wellendichtringe laufen in einem Synthetiköl mit Ester-Additiven. Ist das so in Ordnung?",
+      "must_contain": [
+        "die Lage als BEDINGT verträglich kennzeichnen — nicht als glattes 'passt' und nicht als klare Disqualifikation",
+        "die konkrete Bedingung sichtbar machen: Synthetiköle/Ester-Additive können NBR zusätzlich angreifen → gegen das Öl-Datenblatt verifizieren",
+        "die Verifikation gegen das konkrete Öl-Datenblatt als nächsten Schritt benennen"
+      ],
+      "must_catch": "bedingt verträglich (Estertyp greift NBR potenziell an): die Bedingung 'gegen Öl-Datenblatt verifizieren' ist die wertvollste Info und MUSS erscheinen — kein glattes 'passt', keine glatte Disqualifikation.",
+      "must_avoid": [
+        "ein glattes 'passt / unbedenklich / kein Problem' geben (Bedingung verschluckt)",
+        "die Dichtung pauschal disqualifizieren / als unverträglich darstellen (über-negativ, nicht geerdet)",
+        "die Bedingung frei umformulieren statt sie aus der Matrix-Zelle zu tragen, oder eine erfundene Zahl behaupten"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "gegencheck",
+        "bedingt",
+        "matrix_conditional",
+        "modus-e"
+      ],
+      "kontext": "Modus E: NBR × Synthetiköl → Matrix MX-NBR-SYNTHETIKOEL (bedingt). Bedingung (Öl-Datenblatt) ist der Kernwert des Gegenchecks.",
+      "notiz": "Verdikt-Kern: disqualified=False, basis=matrix_conditional, condition=Zelltext inline. L1 muss die Bedingung surfacen, nicht zu 'passt' kollabieren."
+    },
+    {
+      "id": "GC-VERTRAEGLICH-NBR-MINERALOEL-01",
+      "klass": "Gegencheck (GEGENCHECK)",
+      "input": "Wir setzen NBR in Mineralöl-Hydraulik ein. Können Sie bestätigen, dass dieser Werkstoff passt?",
+      "must_contain": [
+        "kein dokumentierter Unverträglichkeits-Befund — NBR ist in Mineralöl-Hydraulik ein etablierter Standardwerkstoff (geerdet)",
+        "als Orientierung/Screening rahmen: keine Disqualifikation, aber auch keine verbindliche Eignungs-/Freigabe-Zusage",
+        "die finale Eignung/Freigabe ausdrücklich beim Hersteller / der verantwortlichen Fachperson belassen (L4)"
+      ],
+      "must_catch": "kein dokumentierter Unverträglichkeits-Befund (NBR × Mineralöl) → keine Disqualifikation; aber KEINE affirmative 'passt'-Zusage: der Gegencheck bestätigt nie mit 'ja, passt', sondern benennt 'kein dokumentierter Unverträglichkeits-Befund' + Hersteller-Freigabe (E4-1, L4 bleibt).",
+      "must_avoid": [
+        "mit 'ja, passt' / 'passt grundsätzlich' / 'ja, das passt' bestätigen — der Gegencheck gibt NIE eine affirmative 'passt'-Zusage (auch nicht mit Qualifier), sondern 'kein dokumentierter Unverträglichkeits-Befund' + finale Eignung beim Hersteller",
+        "eine affirmative Eignungs- oder Freigabe-Zusage geben ('garantiert geeignet', 'ist freigegeben', 'passt sicher')",
+        "eine Verträglichkeit über die Matrix hinaus behaupten (Compound-/Produkt-Eignung) oder Zahlen erfinden"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "gegencheck",
+        "vertraeglich",
+        "no-affirmation",
+        "modus-e"
+      ],
+      "kontext": "Modus E: NBR × Mineralöl → Matrix MX-NBR-MINERALOEL (verträglich). E4-1: Abwesenheit einer Disqualifikation ist KEINE Freigabe.",
+      "notiz": "Verdikt-Kern: disqualified=False, basis=matrix_compatible (kein reason/source). L1 darf NICHT 'ja passt' geben (Owner-Regel 'nie affirmatives passt', via L1-Kalibrierungsblock 'Gegencheck einer bestehenden Lösung'); selbstbewusst auf dem Geerdeten (Standardwerkstoff) + L4."
+    },
+    {
+      "id": "GC-KEINE-DATEN-FKM-WASSER-01",
+      "klass": "Gegencheck (GEGENCHECK)",
+      "input": "Wir verwenden FKM in normalem Wasser bei Raumtemperatur. Passt das?",
+      "must_contain": [
+        "ehrlich machen, dass für FKM × Wasser kein reviewter Matrix-Befund vorliegt (nicht aus der geprüften Verträglichkeitsmatrix abgedeckt)",
+        "als Orientierung rahmen und auf Datenblatt/Hersteller verweisen, statt ein Verdikt zu erfinden"
+      ],
+      "must_catch": "keine reviewte Matrix-Aussage für FKM × Wasser → ehrlich als nicht-geerdet markieren; weder Disqualifikation noch Freigabe erfinden.",
+      "must_avoid": [
+        "ein Verdikt erfinden ('FKM ist unverträglich mit Wasser' oder 'FKM passt') als sei es geerdet",
+        "eine Matrix-/Norm-Quelle zitieren, die es für diese Paarung nicht gibt"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "gegencheck",
+        "keine-daten",
+        "no_matrix_data",
+        "modus-e"
+      ],
+      "kontext": "Modus E: FKM × Wasser → keine Matrix-Zelle. 'Wasser' ist zudem keine Matrix-Medienvokabel (nur 'Heißwasser') → die Stage abstrahiert (kein Verdikt); L1 trägt die ehrliche Nicht-Erdung.",
+      "notiz": "Kein geerdetes Verdikt verfügbar → L1 muss ehrlich nicht-geerdet bleiben (vorläufig, Datenblatt), kein erfundenes Verdikt. Axe-1 human-final."
+    }
+  ]
+}

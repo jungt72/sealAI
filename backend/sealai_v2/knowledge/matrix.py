@@ -135,6 +135,13 @@ class InProcessCompatibilityMatrix:
     def __init__(self, catalog: CompatibilityMatrixCatalog | None = None) -> None:
         self._catalog = catalog or load_matrix()
 
+    @property
+    def catalog(self) -> CompatibilityMatrixCatalog:
+        """The backing reviewed catalog — exposed so a caller (the Gegencheck stage)
+        can recover the bewertung enum via ``by_id()`` that ``query()`` drops onto
+        ``GroundingFact``. Read-only accessor; no rebuild, no I/O."""
+        return self._catalog
+
     def query(
         self,
         *,

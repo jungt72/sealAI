@@ -19,6 +19,7 @@ _EDGE_FILE = _SEED_DIR / "edge_v0.json"
 _INJECTION_FILE = _SEED_DIR / "injection_v0.json"
 _ARCHETYPE_FILE = _SEED_DIR / "archetype_v0.json"
 _CALIBRATION_FILE = _SEED_DIR / "calibration_v0.json"
+_GEGENCHECK_FILE = _SEED_DIR / "gegencheck_v0.json"
 
 
 @dataclass(frozen=True)
@@ -99,3 +100,12 @@ def load_calibration_cases(path: Path | None = None) -> list[Case]:
     fact, §4 matrix) vs an honest hedge at the ungrounded edge, and guards the kern-fix-01 restraint.
     DD-5: specific material names only when matrix-/Fachkarte-grounded, never from the v>limit signal."""
     return load_cases(path or _CALIBRATION_FILE)
+
+
+def load_gegencheck_cases(path: Path | None = None) -> list[Case]:
+    """Gegencheck (GEGENCHECK) class (Modus E, V2.1) - existing-seal check cases; same validated
+    ``Case`` shape, separate seed so the frozen non-edge anchor stays untouched. A CREDIBILITY/axes
+    class (NO new hard gate - the 8 Schranken stay fixed): it measures the E4-1 calibration of the
+    narration - disqualify the incompatible (grounded reason), surface the conditional's condition,
+    and NEVER affirm suitability for the compatible / no-data case. Grounded in real matrix cells."""
+    return load_cases(path or _GEGENCHECK_FILE)
