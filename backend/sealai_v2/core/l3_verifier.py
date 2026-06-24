@@ -24,12 +24,6 @@ import re
 from dataclasses import dataclass
 
 from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
-from sealai_v2.core.equivalence_guard import (
-    EQUIVALENCE_GATE,
-    EQUIVALENCE_TRAP_ID,
-    detect_equivalence_claim,
-    equivalence_hedge_text,
-)
 from sealai_v2.core.contracts import (
     Answer,
     CalcResult,
@@ -412,29 +406,6 @@ def _leak_findings(leaks: tuple[LeakFinding, ...]) -> tuple[VerifierFinding, ...
     )
 
 
-def _equiv_findings(claims: tuple[str, ...]) -> tuple[VerifierFinding, ...]:
-    """§9.2 equivalence-claim hits as findings. ``review_state`` is "reviewed" by construction — the
-    boundary is owner-grounded doctrine (EQUIVALENZ_GRENZE), never a model claim."""
-    return tuple(
-        VerifierFinding(
-            trap_id=EQUIVALENCE_TRAP_ID,
-            gate=EQUIVALENCE_GATE,
-            review_state="reviewed",
-            evidence=f"§9.2 Aequivalenz-Behauptung: »{c}«"[:400],
-            kind="equivalence",
-        )
-        for c in claims
-    )
-
-
-def _equivalence_hedge(draft: Answer) -> Answer:
-    return Answer(
-        text=equivalence_hedge_text(),
-        model=_HEDGE_MODEL,
-        grounding_facts=draft.grounding_facts,
-    )
-
-
 def _kern_truth_lines(
     leaks: tuple[LeakFinding, ...],
     computed_values: tuple[ComputedValue, ...],
@@ -725,7 +696,6 @@ def run_parametric_guard(
     *,
     computed_values: tuple[ComputedValue, ...] = (),
     not_computed: tuple[NotComputed, ...] = (),
-    comparison_context: bool = False,
 ) -> tuple[Answer, VerifierVerdict | None]:
     """P0.3: the DETERMINISTIC parametric Schranke as a standalone, LLM-free guard.
 
@@ -733,14 +703,6 @@ def run_parametric_guard(
     verifier (the incident kill-switch) would silently drop this trust-spine guard together with the
     LLM critic. The pipeline calls this on the no-verifier path so the parametric Schranke holds
     unconditionally. Pure: no LLM, no IO. Returns ``(answer, verdict)`` — ``verdict`` is None when clean."""
-    equiv = detect_equivalence_claim(draft.text) if comparison_context else ()
-    if equiv:  # P0.2 §9.2: scoped to a part-comparison turn (see run_verify); no-verifier path
-        return _equivalence_hedge(draft), VerifierVerdict(
-            action=VerifierAction.BLOCKED_HEDGE,
-            findings=_equiv_findings(equiv),
-            parse_ok=True,
-            raw=None,
-        )
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
     if not leaks:
         return draft, None
@@ -778,7 +740,6 @@ async def run_verify(
     durable_context: list[dict] | None = None,
     conversation_window: list[dict] | None = None,
     untrusted: list[dict] | None = None,
-    comparison_context: bool = False,
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
@@ -795,19 +756,12 @@ async def run_verify(
     the trap's topic; and the regeneration re-answers with the FULL draft context (grounding + matrix +
     ``calc`` + memory + untrusted), not a degraded one, so it can fix the flaw without losing grounding.
     ``generator`` is the injected L1 generator (duck-typed: ``await generator.generate(...)``)."""
-    # P0.2 §9.2: an affirmative interchangeability claim ("Teil X = Teil Y") is the single most
-    # dangerous claim — hedge it to the owner-grounded EQUIVALENZ_GRENZE. SCOPED to a part-comparison
-    # turn (``comparison_context`` = the decode operation parsed a designation): a general application
-    # answer that merely echoes the user's "baugleich"/"1:1" premise must NOT be hedged (false-positive
-    # fix — eval v21-qdrant-gate/APP-01). Negated forms ("nicht 1:1 austauschbar") are not flagged.
-    equiv = detect_equivalence_claim(draft.text) if comparison_context else ()
-    if equiv:
-        return _equivalence_hedge(draft), VerifierVerdict(
-            action=VerifierAction.BLOCKED_HEDGE,
-            findings=_equiv_findings(equiv),
-            parse_ok=True,
-            raw=None,
-        )
+    # §9.2 (affirmative "Teil X = Teil Y" interchangeability) is the single most dangerous claim, but it
+    # is intentionally NOT guarded by a deterministic text matcher here: a regex over-fires on benign
+    # echoes and alternatives questions (eval v21-qdrant-gate*: APP-01 and ALT-NEUTRAL-EMPTY-01 were
+    # good answers wrongly hedged). §9.2 is held by the L1 prompt (gpt-5.1 — DEC-AEQUIVALENZ passes)
+    # plus the deploy-blocking DEC-AEQUIVALENZ hard gate. The planned runtime backstop is a reviewed
+    # equivalence-trap (L3 semantic, owner-reviewed — no regex false-positives), not a free-text guard.
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
     overlimit = detect_velocity_over_limit(draft.text, computed_values=computed_values)
     raw = await verifier.verify(
