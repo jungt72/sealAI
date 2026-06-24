@@ -23,6 +23,7 @@ from sealai_v2.eval.cases import (
     Case,
     load_archetype_cases,
     load_calibration_cases,
+    load_gegencheck_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -352,6 +353,36 @@ async def _run_calibration(
     return records, errors
 
 
+async def _run_gegencheck(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """Gegencheck (GEGENCHECK) class (Modus E, V2.1) - runs the existing-seal-check cases through the
+    EXISTING single-turn unit + judge + scorer (column ``gegencheck``, flags_on). Folded into the
+    canonical records; excluded from the non-edge no-regression by column. A CREDIBILITY/axes class
+    (NO new hard gate - the 8 Schranken stay fixed): measures the E4-1 calibration - disqualify the
+    incompatible with the grounded reason, surface the conditional's condition, and never affirm
+    suitability for the compatible / no-data case. Owner is the factual oracle (axis 1 human-final).
+    No calc fixtures (compatibility cases need none)."""
+    cases = load_gegencheck_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "gegencheck",
+                    COLUMNS["flags_on"],
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - record + keep going (mirrors _run_calibration)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_injection(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str], dict | None]:
@@ -560,6 +591,26 @@ async def run_eval(
     )
     records = list(records) + calib_records
 
+    # Gegencheck (GEGENCHECK, Modus E, V2.1) - existing-seal-check cases (disqualify the incompatible,
+    # surface the conditional's condition, never affirm the compatible). Folded under column
+    # `gegencheck` (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes
+    # class - NO new hard gate. Appended BEFORE the parametric block (same agent-final gate coverage).
+    gc_records, gc_errors = await _run_gegencheck(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    gegencheck = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("gegencheck", [r.score for r in gc_records])
+            ),
+            "n_cases": len(gc_records),
+            "errors": gc_errors,
+        }
+        if gc_records
+        else None
+    )
+    records = list(records) + gc_records
+
     # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
     # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
     # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
@@ -729,6 +780,7 @@ async def run_eval(
         "parametric": parametric,
         "archetype": archetype,
         "calibration": calibration,
+        "gegencheck": gegencheck,
         "answer_quality": answer_quality,
         "latency": latency,
         "token_usage": token_usage,
