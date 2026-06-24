@@ -5,7 +5,6 @@ Alle sieben Akzeptanzkriterien aus INC-3a werden als eigenstaendige Tests abgebi
 
 from __future__ import annotations
 
-import pytest
 
 from sealai_v2.core.calc.binding import bind_params
 from sealai_v2.core.calc.inline_extract import extract_inline

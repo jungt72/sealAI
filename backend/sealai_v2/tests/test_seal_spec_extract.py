@@ -5,7 +5,6 @@ All tests are deterministic, offline, no LLM.
 
 from __future__ import annotations
 
-import pytest
 
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
 

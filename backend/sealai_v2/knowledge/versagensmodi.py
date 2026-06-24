@@ -18,7 +18,7 @@ diagnosis is a grounded, verified CLAIM like a recommendation (Produkt-Konzept Â
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from sealai_v2.security.tenant import TenantContext, require_tenant
