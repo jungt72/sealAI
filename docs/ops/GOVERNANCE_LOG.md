@@ -1871,3 +1871,7 @@ Status: Inc-2 fachlich geschlossen. NICHT deployt (Deploy = separater Gate, fris
 - ledger: ops/deploy-ledger.jsonl
 
 Scope (V2.1): Operations Diagnose (D), Decode (G), Alternativen (F) now live alongside Gegencheck (E). L1 narrator pinned to `gpt-5.1` — the only model that held the §E4-1 "nie affirmatives passt" Gegencheck calibration + the §9.2 no-equivalence edge; Mistral Small 4 and gpt-5.4-mini both verified to fail it (eval `v21-gpt54mini`). L3 verifier + helper → Mistral Small 4 (independent check + cost); judge → gpt-4.1-mini. Adjudication: owner-ratified first-pass (`provisional_until_deep_audit`); deep domain audit of draft knowledge (Dim.5 Versagensmodi draft, Dim.6 Hersteller empty-by-design, Anwendungs-Archetypen) deferred to the owner's multi-LLM curation track.
+
+## 2026-06-24T16:06:17Z — V2 env-wiring fix (backend-v2 redeploy, image 017a420a)
+
+Wired SEALAI_V2_* model vars + MISTRAL_API_KEY into the backend-v2 container env (previously only reached the eval, which sources .env.prod directly; the container fell back to settings.py defaults incl. verifier=gpt-5.1 — the original burn config). Prod now matches the adjudicated config: L1=gpt-5.1, verifier+helper=mistral-small-2603 (verified in the live container). Same served tree 993c2b1f (gate unaffected); smoke GREEN.
