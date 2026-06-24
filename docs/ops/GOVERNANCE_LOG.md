@@ -1875,3 +1875,23 @@ Scope (V2.1): Operations Diagnose (D), Decode (G), Alternativen (F) now live alo
 ## 2026-06-24T16:06:17Z — V2 env-wiring fix (backend-v2 redeploy, image 017a420a)
 
 Wired SEALAI_V2_* model vars + MISTRAL_API_KEY into the backend-v2 container env (previously only reached the eval, which sources .env.prod directly; the container fell back to settings.py defaults incl. verifier=gpt-5.1 — the original burn config). Prod now matches the adjudicated config: L1=gpt-5.1, verifier+helper=mistral-small-2603 (verified in the live container). Same served tree 993c2b1f (gate unaffected); smoke GREEN.
+
+## 2026-06-24T18:48:22Z — V2 PROD deploy: `backend-v2` rebuild (HARDENING) — gated via ops/release-backend-v2.sh (run v21-hardening-gate)
+
+**Gated deploy (model-bound)** — tree_hash `1968e482e5b12aa19f2390cda1e6400b52b17fed` validated by adjudicated eval-REPLAY `v21-hardening-gate` (git `3b0a2275`, dirty=false, **L1=openai/gpt-5.1**, gate now asserts the served L1); all gated axes Schranken-quota(final)=1.000; agent-final parametric/memory/exfiltration all 1.000.
+- new live `sealai-backend-v2:latest` = `sha256:3ddee7c34d1189c4ce7c6247cd600dae21ee3f9c9bd993590b8b915642183d56`
+- rollback rung = `sha256:017a420af4f7bd7feee6df0010ddc98f6d823bc54f1140cef6abd2bc4f5d0fcb`, tagged `sealai-backend-v2:rollback-pre-v21-hardening-gate-20260624-184822`
+- smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.
+- ledger: ops/deploy-ledger.jsonl
+
+Scope — V2/V2.1 deep-dive-audit hardening (8 fixes, 25 new tests, full suite green, no eval regression — the new deterministic guards produced ZERO false-hedges across the eval):
+- **P0.1** L3 fail-CLOSED on verifier parse failure (retry-once → hedge, never PASS an unverified draft).
+- **P0.2** §9.2 deterministic equivalence guard over the L1 prose (affirmative interchangeability → owner-grounded EQUIVALENZ_GRENZE hedge; negated forms pass).
+- **P0.3** parametric Schranke decoupled from the L3 kill-switch (run_parametric_guard runs standalone).
+- **P1.4** exfiltration detector wired into the SERVE path (was eval-only).
+- **P1.5** verification status (verified / action / parse_ok / hedged / ran) surfaced in chat_response.
+- **P1.6** deploy gate binds the served L1 MODEL (eval manifest roles.l1 + gate assert; release script passes it) — closes the "model swap ships on a stale eval" gap.
+- **P1.7** deterministic Modus-F no-invented-manufacturer-names stage test.
+- **P3** hygiene: retrieval draft-vs-reviewed citation label, stale stages.py docstring, matrix 28-cell + pv_wert-gating notes.
+
+Deferred-by-design (NOT in scope, owner/infra): Dim.5/6 knowledge content (owner multi-LLM curation), Qdrant semantic retrieval (separate infra milestone), Dim.7 cross-vendor equivalence store (§9.2-risky + owner-data; the parser-only state is doctrine-correct).
