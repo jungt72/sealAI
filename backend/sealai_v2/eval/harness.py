@@ -560,7 +560,9 @@ async def run_eval(
     )
     judge_client = factory(settings.judge_provider or settings.provider)
     judge_cfg = ModelConfig(
-        model=settings.judge_model, temperature=settings.judge_temperature
+        model=settings.judge_model,
+        temperature=settings.judge_temperature,
+        cache_key="sealai-v2-judge",
     )
 
     fixtures = _load_calc_fixtures()

@@ -51,6 +51,10 @@ class OpenAiLlmClient:
             kwargs["temperature"] = model_config.temperature
         if model_config.max_output_tokens is not None:
             kwargs["max_completion_tokens"] = model_config.max_output_tokens
+        if model_config.cache_key is not None:
+            # Mistral/OpenAI prompt caching: opt-in via a stable key; the doctrine prefix then
+            # bills at 10% on cache hits. extra_body passes through regardless of SDK version.
+            kwargs["extra_body"] = {"prompt_cache_key": model_config.cache_key}
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries):
@@ -70,6 +74,9 @@ class OpenAiLlmClient:
                 # Strip/adapt unsupported params and retry immediately (model-family drift).
                 if "temperature" in msg and "temperature" in kwargs:
                     kwargs.pop("temperature", None)
+                    continue
+                if "prompt_cache_key" in msg and "extra_body" in kwargs:
+                    kwargs.pop("extra_body", None)
                     continue
                 if (
                     "max_completion_tokens" in msg or "max_tokens" in msg

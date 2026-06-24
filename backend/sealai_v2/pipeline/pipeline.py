@@ -526,10 +526,14 @@ def build_pipeline(
 
     assembler = PromptAssembler()
     l1_cfg = ModelConfig(
-        model=l1_model or settings.l1_model, temperature=settings.l1_temperature
+        model=l1_model or settings.l1_model,
+        temperature=settings.l1_temperature,
+        cache_key="sealai-v2-l1",
     )
     helper_cfg = ModelConfig(
-        model=settings.helper_model, temperature=settings.helper_temperature
+        model=settings.helper_model,
+        temperature=settings.helper_temperature,
+        cache_key="sealai-v2-helper",
     )
     generator = L1Generator(l1_client, assembler, l1_cfg)
 
@@ -538,7 +542,9 @@ def build_pipeline(
     if settings.verify_enabled:
         catalog = load_traps()
         verifier_cfg = ModelConfig(
-            model=settings.verifier_model, temperature=settings.verifier_temperature
+            model=settings.verifier_model,
+            temperature=settings.verifier_temperature,
+            cache_key="sealai-v2-verifier",
         )
         verifier = L3Verifier(
             verifier_client, VerifierPromptAssembler(), verifier_cfg, catalog

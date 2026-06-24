@@ -19,6 +19,9 @@ class ModelConfig:
     model: str
     temperature: float | None = None
     max_output_tokens: int | None = None
+    # Mistral/OpenAI prompt-cache routing hint: a STABLE per-role key so the large stable
+    # doctrine PREFIX bills at 10% on cache hits (quality-neutral). None → no caching.
+    cache_key: str | None = None
 
 
 @dataclass(frozen=True)
