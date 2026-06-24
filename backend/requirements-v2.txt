@@ -14,3 +14,9 @@ cryptography==46.0.6
 # the memory Protocols; psycopg2 is the sync driver (matches the V1 pins in requirements.txt).
 SQLAlchemy==2.0.49
 psycopg2-binary==2.9.11
+
+# L2 production retrieval (Phase-1): semantic search behind the Retriever Protocol. qdrant-client
+# talks to the running Qdrant; fastembed runs the local multilingual-e5-large dense model (no API).
+# Pinned to the V1 image versions (requirements.txt) for consistency.
+qdrant-client==1.17.1
+fastembed==0.8.0

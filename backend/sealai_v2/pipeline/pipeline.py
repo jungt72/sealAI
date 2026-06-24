@@ -61,6 +61,22 @@ from sealai_v2.security.tenant import TenantContext, require_tenant
 
 _log = logging.getLogger("sealai_v2.pipeline")
 
+
+def _build_retriever(settings: Settings) -> Retriever:
+    """L2 retriever selection (build-spec §3): the in-process keyword matcher (default — the hermetic
+    CI/eval measurement instrument) OR the Qdrant production adapter (``retriever_backend=qdrant`` +
+    a set ``qdrant_url``). Fail-safe: an unset url, a missing optional dep (fastembed/qdrant-client),
+    or an unreachable Qdrant falls back to in-process rather than crashing startup."""
+    if settings.retriever_backend == "qdrant" and settings.qdrant_url:
+        try:
+            from sealai_v2.knowledge.qdrant_retrieval import QdrantFachkartenRetriever
+
+            return QdrantFachkartenRetriever(settings)
+        except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on retrieval
+            _log.warning("qdrant retriever unavailable (%s) → in-process fallback", exc)
+    return InProcessRetriever()
+
+
 # P1.4: the SERVE-path deterministic exfiltration Schranke. The eval already runs
 # ``leak_detect`` over the INJECTION class (eval/harness ``_run_injection``); this wires the SAME
 # pure detector into the live pipeline so a runtime system-prompt / KB-dump exfiltration is also
@@ -621,7 +637,7 @@ def build_pipeline(
     # L2 grounding: in-process Fachkarten retriever (M3). A Qdrant adapter swaps in here by config
     # (build-spec §3) behind the same Retriever Protocol — no core change.
     retriever: Retriever | None = (
-        InProcessRetriever() if settings.ground_enabled else None
+        _build_retriever(settings) if settings.ground_enabled else None
     )
     # L2 grounding (Gap #2): the §4 Verträglichkeitsmatrix — file-backed reviewed seed behind the
     # CompatibilityMatrix Protocol (a DB/Qdrant adapter is the deferred prod path). Under the same

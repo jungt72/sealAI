@@ -20,7 +20,11 @@ _V2 = Path(__file__).resolve().parents[1]  # backend/sealai_v2
 # A constructor may originate ONLY in a curated, owner-gated grounding lane — never from the
 # untrusted-content path. The §4 Verträglichkeitsmatrix (knowledge/matrix.py) is such a lane.
 _ALLOWED = {
-    "GroundingFact": ("knowledge/retrieval.py", "knowledge/matrix.py"),
+    "GroundingFact": (
+        "knowledge/retrieval.py",
+        "knowledge/qdrant_retrieval.py",
+        "knowledge/matrix.py",
+    ),
     "Claim": ("knowledge/fachkarten.py",),
 }
 

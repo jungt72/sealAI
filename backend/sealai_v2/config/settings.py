@@ -96,3 +96,18 @@ class Settings(BaseSettings):
     # swap behind the same Protocols (M3 lazy-adapter pattern); value is never logged.
     # Env: SEALAI_V2_DATABASE_URL (e.g. postgresql+psycopg2://…@postgres:5432/sealai_v2).
     database_url: str | None = None
+
+    # --- L2 retrieval backend (Phase-1 Qdrant production adapter, behind the Retriever Protocol) ---
+    # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —
+    # deterministic, hermetic, no network) and the QdrantFachkartenRetriever (semantic, production).
+    # This flips between them as pure config. Default "in_process" keeps offline eval/CI byte-stable;
+    # "qdrant" requires ``qdrant_url`` set, else the factory fails safe back to in-process.
+    retriever_backend: str = "in_process"  # "in_process" | "qdrant"
+    qdrant_url: str | None = None  # e.g. http://qdrant:6333; UNSET → in-process forced (fail-safe)
+    qdrant_collection: str = "sealai_v2_fachkarten"  # OWN collection, separate from the V1 stack
+    qdrant_api_key: str | None = None  # value never logged
+    # Multilingual SOTA dense embedding via local FastEmbed (no API, nothing leaves the box; strong on
+    # German). e5 needs the "query:"/"passage:" prefix convention — handled in the adapter/ingestor.
+    # (bge-m3 is NOT available in fastembed 0.8.0 — verified; e5-large-multilingual is the SOTA pick.)
+    embed_model: str = "intfloat/multilingual-e5-large"
+    embed_cache_dir: str | None = None  # FastEmbed model cache dir; None → library default
