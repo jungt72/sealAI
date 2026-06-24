@@ -196,6 +196,7 @@ def test_verify_hedges_a_part_equivalence_claim():
             "Kann ich tauschen?",
             draft,
             flags=Flags(),
+            comparison_context=True,  # a part-comparison turn → the §9.2 guard is active
         )
     )
     assert verdict.action == VerifierAction.BLOCKED_HEDGE
@@ -216,10 +217,34 @@ def test_verify_does_not_hedge_the_negated_equivalence_form():
             "Kann ich tauschen?",
             draft,
             flags=Flags(),
+            comparison_context=True,  # guard active, but the negated form is not flagged
         )
     )
     assert verdict.action == VerifierAction.PASS
     assert answer is draft
+
+
+def test_verify_does_not_hedge_equivalence_outside_comparison_context():
+    # FALSE-POSITIVE FIX (eval v21-qdrant-gate / APP-01): an affirmative "1:1 austauschbar" in a NON-
+    # comparison turn (no designation parsed → comparison_context=False, the default) must NOT be hedged
+    # — e.g. an application answer that echoes the user's "baugleich/gleiche Teile" premise.
+    client = ScriptedFakeLlmClient([_CLEAN])
+    draft = _draft(
+        "Die RWDR sind 1:1 austauschbar — aber die Anwendung unterscheidet sich stark."
+    )
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Warum leckt der gleiche RWDR im Rührwerk, im Getriebe nicht?",
+            draft,
+            flags=Flags(),
+            # comparison_context defaults to False → the §9.2 guard does NOT run here
+        )
+    )
+    assert verdict.action == VerifierAction.PASS
+    assert answer is draft  # the good application answer ships, NOT the equivalence hedge
 
 
 def test_reviewed_violation_regenerates_and_corrects():
