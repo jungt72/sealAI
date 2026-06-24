@@ -24,6 +24,7 @@ from sealai_v2.core.contracts import (
     SessionContext,
     Understanding,
 )
+from sealai_v2.core.gegencheck import evaluate_gegencheck
 
 _UNDERSTAND_SYSTEM = (
     "Du klassifizierst eine Nutzer-Nachricht an einen Dichtungstechnik-Assistenten GROB nach "
@@ -261,3 +262,29 @@ async def remember(
     )
     if cross_session is not None and facts:
         cross_session.remember_durable(tenant_id=tenant_id, facts=facts)
+
+
+def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:
+    """Stage - deterministic Gegencheck verdict (Modus E, build-spec section 5 op "Gegenchecken").
+
+    Fires ONLY when the case carries BOTH an existing seal material AND a medium - a real
+    "wir verwenden X, passt das?" situation; any other turn returns None, so the no-Gegencheck
+    path stays byte-identical (no verdict attached). The result is the pure kernel's binary
+    disqualified-or-not dict (core.gegencheck.evaluate_gegencheck): backend owns the verdict,
+    L1 narrates the WHY via the matrix begruendung that ground already injects as matrix_facts.
+
+    Doctrine: never affirms suitability (E4-1 - only unvertraeglich disqualifies; bedingt
+    carries its grounded condition inline; everything else abstains). No I/O beyond the injected
+    matrix, no LLM, no mutation. matrix is the section-4 InProcessCompatibilityMatrix (its
+    catalog recovers the bewertung enum query drops); None (L2 kill-switch) -> None."""
+    if matrix is None or case is None:
+        return None
+    spec = case.seal_spec or {}
+    material = spec.get("material")
+    medium = (case.medium or {}).get("name")
+    if not material or not medium:
+        return None
+    catalog = getattr(matrix, "catalog", None)
+    if catalog is None:
+        return None
+    return evaluate_gegencheck(material, medium, tenant=tenant_id, catalog=catalog)
