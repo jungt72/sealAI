@@ -1,0 +1,198 @@
+{
+  "version": "versagensmodi_v0-draft",
+  "source": "CC-Recherche 2026-06-24 — Standard-Dichtungs-Versagensbilder (Parker O-Ring Handbook / Freudenberg-Simrit / Trelleborg-Niveau). ALLE Eintraege review_state=draft: PROVISORISCH, nicht autoritativ, OWNER-REVIEW ausstehend (Doktrin-Gate: CC draftet, Owner reviewt, erst dann geerdet).",
+  "modes": [
+    {
+      "id": "VM-RWDR-LIPPE-VERHAERTET",
+      "symptom": "Dichtlippe verhärtet/verspröttet, Rissbildung an der Lippe, zunehmende Leckage nach Betriebszeit",
+      "ursache": "Dauer-Betriebstemperatur über der Belastungsgrenze des Werkstoffs (z. B. Standard-NBR dauerhaft oberhalb seines üblichen Bereichs); thermische Alterung/Verhärtung der Lippe.",
+      "fix": "höher temperaturbeständigen Werkstoff wählen (Richtung FKM statt NBR); die reale Temperatur im Dichtspalt prüfen, nicht nur die Mediumtemperatur. Finale Werkstoff-/Compound-Freigabe beim Hersteller.",
+      "betrifft_archetypen": [
+        "getriebe",
+        "elektromotor"
+      ],
+      "review_state": "draft",
+      "scope": {
+        "symptom": [
+          "verhärtet",
+          "verspröttet",
+          "versproedet",
+          "spröde",
+          "sproede",
+          "hart",
+          "Riss",
+          "rissig",
+          "Rissbildung",
+          "Leckage",
+          "undicht"
+        ],
+        "material": [
+          "NBR"
+        ],
+        "medium": []
+      },
+      "provenance": [
+        "draft:CC-recherche-2026-06-24"
+      ],
+      "sources": []
+    },
+    {
+      "id": "VM-ELASTOMER-QUELLUNG",
+      "symptom": "Dichtung quillt auf, wird weich/klebrig, verliert Form und Maßhaltigkeit, Volumen-/Härteänderung",
+      "ursache": "Medien-Unverträglichkeit — der Werkstoff quillt im Medium (z. B. EPDM in Mineralöl, NBR in Ester/Keton).",
+      "fix": "medienverträglichen Werkstoff wählen (gegen die Verträglichkeitsmatrix prüfen); konkrete Medien-/Compound-Eignung beim Hersteller bestätigen.",
+      "betrifft_archetypen": [
+        "pumpe",
+        "ruehrwerk",
+        "hydraulikzylinder"
+      ],
+      "review_state": "draft",
+      "scope": {
+        "symptom": [
+          "quillt",
+          "Quellung",
+          "gequollen",
+          "weich",
+          "aufgeweicht",
+          "klebrig",
+          "aufgequollen",
+          "Volumenzunahme"
+        ],
+        "material": [],
+        "medium": [
+          "Mineralöl",
+          "Öl",
+          "Ester",
+          "Keton",
+          "Aceton"
+        ]
+      },
+      "provenance": [
+        "draft:CC-recherche-2026-06-24"
+      ],
+      "sources": []
+    },
+    {
+      "id": "VM-OZONRISSE",
+      "symptom": "feine Risse an freiliegenden Gummiflächen (Außendurchmesser, Staublippe), Versprödung bei Außeneinsatz",
+      "ursache": "Ozon-/UV-/Witterungsangriff bei einem dafür ungeeigneten Werkstoff (klassisch NBR im Freien).",
+      "fix": "ozon-/witterungsbeständigen Werkstoff wählen (Richtung EPDM, HNBR oder CR); bei Außeneinsatz Werkstoffwahl bewusst auf Witterung auslegen. Freigabe beim Hersteller.",
+      "betrifft_archetypen": [
+        "elektromotor",
+        "getriebe"
+      ],
+      "review_state": "draft",
+      "scope": {
+        "symptom": [
+          "Risse",
+          "rissig",
+          "Ozonrisse",
+          "feine Risse",
+          "Versprödung",
+          "spröde",
+          "Witterung"
+        ],
+        "material": [
+          "NBR"
+        ],
+        "medium": [
+          "Ozon",
+          "UV",
+          "Witterung"
+        ]
+      },
+      "provenance": [
+        "draft:CC-recherche-2026-06-24"
+      ],
+      "sources": []
+    },
+    {
+      "id": "VM-RWDR-WELLENVERSCHLEISS",
+      "symptom": "Leckage am Wellendichtring mit sichtbarer Riefe/Laufspur auf der Welle, Lippenverschleiß",
+      "ursache": "Trockenlauf (fehlende Schmierung) oder ungeeignete Wellenoberfläche (zu rau, zu glatt, drallbehaftet); erhöhte Reibungswärme an der Lippe.",
+      "fix": "Schmierung an der Dichtstelle sicherstellen; Wellenoberfläche in den empfohlenen Rauheits-/Drallfrei-Bereich bringen. Konkrete Werte über die Hersteller-/Norm-Vorgabe (DIN 3760/3761).",
+      "betrifft_archetypen": [
+        "getriebe",
+        "elektromotor",
+        "pumpe"
+      ],
+      "review_state": "draft",
+      "scope": {
+        "symptom": [
+          "Riefe",
+          "Laufspur",
+          "Verschleiß",
+          "Leckage",
+          "undicht",
+          "eingelaufen",
+          "Lippenverschleiß"
+        ],
+        "material": [],
+        "medium": []
+      },
+      "provenance": [
+        "draft:CC-recherche-2026-06-24"
+      ],
+      "sources": []
+    },
+    {
+      "id": "VM-ORING-DRUCKVERFORMUNGSREST",
+      "symptom": "O-Ring bleibt dauerhaft verformt (abgeflacht), federt nicht zurück, Dichtkraft lässt nach, Leckage",
+      "ursache": "Druckverformungsrest (Setzen) durch zu hohe Dauertemperatur und/oder zu hohe/zu lange Verpressung für den Werkstoff.",
+      "fix": "temperaturbeständigeren Werkstoff mit besserem Druckverformungsrest wählen; Verpressung im empfohlenen Bereich auslegen. Werte/Compound beim Hersteller.",
+      "betrifft_archetypen": [
+        "hydraulikzylinder",
+        "pumpe",
+        "flansch-statisch"
+      ],
+      "review_state": "draft",
+      "scope": {
+        "symptom": [
+          "abgeflacht",
+          "verformt",
+          "Druckverformungsrest",
+          "DVR",
+          "gesetzt",
+          "Setzen",
+          "federt nicht",
+          "Dichtkraft",
+          "Leckage"
+        ],
+        "material": [],
+        "medium": []
+      },
+      "provenance": [
+        "draft:CC-recherche-2026-06-24"
+      ],
+      "sources": []
+    },
+    {
+      "id": "VM-ORING-SPALTEXTRUSION",
+      "symptom": "O-Ring in den Dichtspalt gequetscht/ausgefranst (Knabber-/Extrusionsmarken), Materialabriss am Spalt",
+      "ursache": "Spaltextrusion durch zu hohen Druck und/oder zu großen Dichtspalt für die Werkstoffhärte.",
+      "fix": "Stützring (Back-up-Ring) einsetzen, härteren Werkstoff wählen oder den Dichtspalt verringern. Auslegung gegen Druck/Spalt beim Hersteller.",
+      "betrifft_archetypen": [
+        "hydraulikzylinder",
+        "pneumatikzylinder"
+      ],
+      "review_state": "draft",
+      "scope": {
+        "symptom": [
+          "Extrusion",
+          "Spaltextrusion",
+          "gequetscht",
+          "ausgefranst",
+          "Knabbermarken",
+          "Materialabriss",
+          "Quetschung"
+        ],
+        "material": [],
+        "medium": []
+      },
+      "provenance": [
+        "draft:CC-recherche-2026-06-24"
+      ],
+      "sources": []
+    }
+  ]
+}
