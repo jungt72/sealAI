@@ -1,0 +1,23 @@
+{
+  "_doc": "recall@k truth set v0 — DRAFT for owner review. Each query → the Fachkarte it SHOULD retrieve. Phrased NATURALLY (German), deliberately often WITHOUT the literal scope-tags, to measure SEMANTIC recall (not keyword). The owner ratifies/corrects the query→card mappings; the recall@k number is provisional until then.",
+  "cases": [
+    {"id": "RQ-01", "query": "Meine Dichtung quillt im Hydrauliköl auf und wird weich", "expected_card": "FK-EPDM-MINERALOEL", "note": "Quellung in Öl → EPDM-Unpolarität"},
+    {"id": "RQ-02", "query": "Welcher Werkstoff übersteht die Dampfsterilisation im Pharma-Bioreaktor", "expected_card": "FK-FKM-DAMPF", "note": "Dampf/SIP → peroxidvernetztes EPDM"},
+    {"id": "RQ-03", "query": "Der O-Ring im Freien bekommt nach einem Jahr feine Oberflächenrisse", "expected_card": "FK-NBR-OZON", "note": "Witterung/Ozon → NBR-Schwäche"},
+    {"id": "RQ-04", "query": "Mein PTFE-Ring verliert mit der Zeit die Vorspannung und wird undicht", "expected_card": "FK-PTFE-KALTFLUSS", "note": "Kaltfluss/Kriechen"},
+    {"id": "RQ-05", "query": "Welcher Gummi hält konzentrierte Natronlauge und Aceton aus", "expected_card": "FK-FKM-AMIN-LAUGE-KETON", "note": "Lauge/Keton-Beständigkeit"},
+    {"id": "RQ-06", "query": "Schnelldrehende Welle, die Dichtlippe verschleißt durch Abrieb", "expected_card": "FK-VMQ-DYNAMISCH", "note": "dynamisch/abrasiv"},
+    {"id": "RQ-07", "query": "Getriebeöl bei dauerhaft hoher Temperatur, welcher Werkstoff", "expected_card": "FK-NBR-DAUERTEMP", "note": "Getriebe/Dauertemperatur"},
+    {"id": "RQ-08", "query": "Dichtung mit Lebensmittelzulassung für die Schokoladenherstellung", "expected_card": "FK-FOODGRADE-FETT", "note": "food-grade/Fette"},
+    {"id": "RQ-09", "query": "Wie stark verpresse ich den O-Ring, wie lege ich die Nut aus", "expected_card": "FK-ORING-VERPRESSUNG", "note": "Verpressung/Nutauslegung"},
+    {"id": "RQ-10", "query": "FKM wird im heißen Wasserdampf spröde, gibt es eine bessere Wahl", "expected_card": "FK-FKM-DAMPF", "note": "FKM-Hydrolyse im Dampf"},
+    {"id": "RQ-11", "query": "Silikon-Wellendichtring reißt bei hoher Drehzahl", "expected_card": "FK-VMQ-DYNAMISCH", "note": "VMQ dynamisch, Reißfestigkeit"},
+    {"id": "RQ-12", "query": "Welche Dichtung verträgt dauerhafte Sonne und Wetter draußen", "expected_card": "FK-NBR-OZON", "note": "UV/Witterung"},
+    {"id": "RQ-13", "query": "Reiner PTFE-O-Ring dichtet statisch nicht zuverlässig, woran liegt das", "expected_card": "FK-PTFE-KALTFLUSS", "note": "statische O-Ring-Schwäche PTFE"},
+    {"id": "RQ-14", "query": "Werkstoff beständig gegen Amine im Kühlmittel", "expected_card": "FK-FKM-AMIN-LAUGE-KETON", "note": "Amine/Kühlmittel"},
+    {"id": "RQ-15", "query": "Dichtung für fetthaltige Lebensmittel mit Zulassung", "expected_card": "FK-FOODGRADE-FETT", "note": "Fettbeständigkeit/Zulassung"},
+    {"id": "RQ-16", "query": "Kann ich NBR in der Mineralöl-Hydraulik einsetzen", "expected_card": "FK-EPDM-MINERALOEL", "note": "Karte deckt NBR×Mineralöl-Verträglichkeit ab"},
+    {"id": "RQ-17", "query": "Welches Elastomer für Heißdampf bei 140 Grad", "expected_card": "FK-FKM-DAMPF", "note": "Heißdampf-Werkstoffwahl"},
+    {"id": "RQ-18", "query": "Dichtung altert im Getriebe bei Synthetiköl und hoher Temperatur", "expected_card": "FK-NBR-DAUERTEMP", "note": "Synthetiköl/Getriebe/Dauertemp"}
+  ]
+}
