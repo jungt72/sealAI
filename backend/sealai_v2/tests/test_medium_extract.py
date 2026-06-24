@@ -7,7 +7,7 @@ ambiguity (≥2 distinct media).
 
 from __future__ import annotations
 
-from sealai_v2.core.medium_extract import extract_medium
+from sealai_v2.core.medium_extract import extract_media, extract_medium
 
 
 def test_single_medium_recognised():
@@ -38,6 +38,30 @@ def test_no_text_is_none():
     assert extract_medium("") is None
 
 
-def test_two_distinct_media_are_ambiguous_none():
-    # Conservative fail-closed: Aceton + Mineralöl are two distinct canonicals.
-    assert extract_medium("Mischung aus Mineralöl und Aceton") is None
+def test_extract_media_collects_all_distinct():
+    # A real seal-check often names one medium with several tags, or genuinely two media.
+    # extract_media returns the full set (the stage folds the kernel over all of them).
+    assert set(extract_media("Heißdampf-Sterilisation (SIP) bei 140 C")) == {
+        "Heißdampf",
+        "Sterilisation",
+        "SIP",
+    }
+    assert set(extract_media("Synthetiköl mit Ester-Additiven")) == {
+        "Synthetiköl",
+        "Ester",
+    }
+
+
+def test_extract_media_co_mentioned_disqualifier_is_kept():
+    # The safety reason for collecting all: a disqualifying medium co-mentioned with a
+    # compatible one must NOT be silently dropped (Aceton stays alongside Mineralöl).
+    assert set(extract_media("Mischung aus Mineralöl und Aceton")) == {
+        "Mineralöl",
+        "Aceton",
+    }
+
+
+def test_extract_medium_returns_primary_or_none():
+    # The single-value convenience: primary match, or None when nothing is recognised.
+    assert extract_medium("nur in Heißdampf") == "Heißdampf"
+    assert extract_medium("Welche Dichtung fürs Getriebe?") is None

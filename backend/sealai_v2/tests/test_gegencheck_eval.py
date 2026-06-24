@@ -56,5 +56,5 @@ def test_verdict_substrate_is_present() -> None:
     # the Case fills both slots the stage needs, from a real Gegencheck question
     case = Case.from_case_state((), question="Wir verwenden FKM in Heißdampf, passt das?")
     assert case.seal_spec == {"material": "FKM"}
-    assert case.medium == {"name": "Heißdampf"}
+    assert case.medium == {"name": "Heißdampf", "matched": ["Heißdampf"]}
     assert extract_medium("in Heißdampf") == "Heißdampf"

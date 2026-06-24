@@ -514,13 +514,15 @@ class Case:
         seal_spec: dict | None = None
         medium: dict | None = None
         if question:
-            from sealai_v2.core.medium_extract import extract_medium
+            from sealai_v2.core.medium_extract import extract_media
             from sealai_v2.core.seal_spec_extract import extract_seal_spec
 
             seal_spec = extract_seal_spec(question)
-            med = extract_medium(question)
-            if med:
-                medium = {"name": med}
+            media = extract_media(question)
+            if media:
+                # name = primary (display); matched = ALL media → the stage folds the kernel
+                # over every one so a co-mentioned disqualifying medium is never dropped.
+                medium = {"name": media[0], "matched": list(media)}
         return cls(facts=tuple(case_state), seal_spec=seal_spec, medium=medium)
 
     def to_prompt_context(self) -> list[dict]:

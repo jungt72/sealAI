@@ -281,10 +281,18 @@ def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:
         return None
     spec = case.seal_spec or {}
     material = spec.get("material")
-    medium = (case.medium or {}).get("name")
-    if not material or not medium:
+    medium_slot = case.medium or {}
+    matched = medium_slot.get("matched") or (
+        [medium_slot["name"]] if medium_slot.get("name") else []
+    )
+    if not material or not matched:
         return None
     catalog = getattr(matrix, "catalog", None)
     if catalog is None:
         return None
-    return evaluate_gegencheck(material, medium, tenant=tenant_id, catalog=catalog)
+    # Join ALL matched media so the kernel query returns every relevant cell and its
+    # disqualify-lean fold runs over all of them (a co-mentioned disqualifying medium wins,
+    # and one medium named with several tags - "Heißdampf-Sterilisation (SIP)" - still fires).
+    return evaluate_gegencheck(
+        material, " ".join(matched), tenant=tenant_id, catalog=catalog
+    )

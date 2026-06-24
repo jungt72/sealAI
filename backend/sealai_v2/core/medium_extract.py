@@ -10,10 +10,14 @@ single owner of the compatibility vocabulary. Import boundary I3 forbids a runti
 ``knowledge/`` import, so the vocab is duplicated here and kept honest by an
 allowlist-drift TEST (``test_medium_matrix_drift``), exactly like the material side.
 
-"Never guess" doctrine (mirrors the material extractor): an unrecognised or
-AMBIGUOUS medium (≥2 distinct canonical media) fails CLOSED to ``None`` — the safe
-direction for a disqualify-only Gegencheck, since "no medium" abstains rather than
-risking a wrong verdict on the wrong medium.
+"Never guess" doctrine (mirrors the material extractor): an UNRECOGNISED medium
+yields nothing. But a real seal-check names ONE medium with SEVERAL vocab tags
+("Heißdampf-Sterilisation (SIP)" → three tags for one steam medium; "Synthetiköl
+mit Ester" → two for one oil), so collecting ALL matched canonical media and letting
+the disqualify-lean kernel fold over every matching cell is both correct and SAFE:
+a co-mentioned disqualifying medium (e.g. "Mineralöl + Aceton") then wins the verdict
+instead of being silently dropped. ``extract_media`` returns the full set;
+``extract_medium`` keeps the single-value convenience API (the primary match).
 """
 
 from __future__ import annotations
@@ -82,18 +86,25 @@ _MEDIUM_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-def extract_medium(message: str) -> str | None:
-    """Extract a single canonical medium from a free-text message.
+def extract_media(message: str) -> tuple[str, ...]:
+    """Extract ALL distinct canonical media from a free-text message.
 
-    Returns the canonical medium tag on success, or ``None`` when:
-    - no medium is recognised (conservative — never guesses), or
-    - more than one distinct canonical medium is found (ambiguous, fail-closed).
+    Deterministic order: longest match token first (most specific tag wins position),
+    then first-seen. Empty tuple when nothing is recognised (never guesses). Overlapping
+    tags that map to the SAME canonical collapse (Mineralöl / Mineralöl-Hydraulik → one).
+    The Gegencheck stage joins these into the kernel query so its disqualify-lean fold
+    runs over every matching matrix cell — a disqualifying medium is never dropped.
     """
     found: list[str] = []
     for pattern, canonical in _MEDIUM_PATTERNS:
         if pattern.search(message) and canonical not in found:
             found.append(canonical)
+    return tuple(found)
 
-    if len(found) != 1:
-        return None
-    return found[0]
+
+def extract_medium(message: str) -> str | None:
+    """Single-value convenience: the PRIMARY canonical medium (first of ``extract_media``),
+    or ``None`` when none is recognised. Used for the Case.medium display name; the stage
+    uses the full ``extract_media`` set for the verdict."""
+    media = extract_media(message)
+    return media[0] if media else None

@@ -19,7 +19,18 @@ def test_question_populates_seal_spec_and_medium():
         cs, question="Wir verwenden FKM in Heißdampf, passt das?"
     )
     assert case.seal_spec == {"material": "FKM"}
-    assert case.medium == {"name": "Heißdampf"}
+    assert case.medium == {"name": "Heißdampf", "matched": ["Heißdampf"]}
+
+
+def test_realistic_multi_tag_medium_is_fully_captured():
+    # "Heißdampf-Sterilisation (SIP)" is ONE steam medium named with three vocab tags —
+    # all must be captured so the verdict fires (the bug that abstained before).
+    case = Case.from_case_state(
+        (), question="FKM in Heißdampf-Sterilisation (SIP) bei 140 °C, passt das?"
+    )
+    assert case.seal_spec == {"material": "FKM"}
+    assert case.medium["name"] == "Sterilisation"  # primary = longest tag
+    assert set(case.medium["matched"]) == {"Heißdampf", "Sterilisation", "SIP"}
 
 
 def test_no_question_leaves_slots_none():
@@ -32,7 +43,7 @@ def test_no_question_leaves_slots_none():
 def test_question_without_material_leaves_seal_spec_none():
     case = Case.from_case_state((), question="Welches Medium verträgt Heißdampf?")
     assert case.seal_spec is None
-    assert case.medium == {"name": "Heißdampf"}
+    assert case.medium == {"name": "Heißdampf", "matched": ["Heißdampf"]}
 
 
 def test_to_prompt_context_byte_identical_regardless_of_slots():
