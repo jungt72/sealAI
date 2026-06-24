@@ -25,6 +25,7 @@ from sealai_v2.eval.cases import (
     load_calibration_cases,
     load_gegencheck_cases,
     load_diagnose_cases,
+    load_decode_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -354,6 +355,33 @@ async def _run_calibration(
     return records, errors
 
 
+async def _run_decode(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """Decode (DECODE) class (Modus G, V2.1) - designation-decode cases through the EXISTING
+    single-turn unit + judge + scorer (column ``decode``, flags_on). The equivalence case is
+    gate-relevant (confident_wrong) - a false "X = Y" interchange claim is a deploy-blocking
+    violation (§9.2). Owner is the factual oracle (axis 1 / any gate human-final)."""
+    cases = load_decode_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "decode",
+                    COLUMNS["flags_on"],
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - record + keep going (mirrors _run_diagnose)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_diagnose(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str]]:
@@ -660,6 +688,25 @@ async def run_eval(
     )
     records = list(records) + dg_records
 
+    # Decode (DECODE, Modus G, V2.1) - designation-decode cases. Folded under column `decode`
+    # (excluded from the non-edge summaries by the column filter); the equivalence case is
+    # gate-relevant (confident_wrong, §9.2). Appended BEFORE the parametric block.
+    dc_records, dc_errors = await _run_decode(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    decode = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("decode", [r.score for r in dc_records])
+            ),
+            "n_cases": len(dc_records),
+            "errors": dc_errors,
+        }
+        if dc_records
+        else None
+    )
+    records = list(records) + dc_records
+
     # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
     # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
     # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
@@ -831,6 +878,7 @@ async def run_eval(
         "calibration": calibration,
         "gegencheck": gegencheck,
         "diagnose": diagnose,
+        "decode": decode,
         "answer_quality": answer_quality,
         "latency": latency,
         "token_usage": token_usage,

@@ -1,0 +1,121 @@
+{
+  "version": "decode_v0",
+  "klass_note": "Decode (DECODE) — Modus G (V2.1). Bezeichnung aufschlüsseln (result-seitiger deterministischer Parse, Maße aus der Eingabe) + die §9.2-Äquivalenz-DISZIPLIN. CREDIBILITY/axes-Klasse mit EINER Ausnahme: der Äquivalenz-Fall trägt das BESTEHENDE Hard-Gate confident_wrong (keine neue Schranke), weil „Teil X = Teil Y\" die gefährlichste Behauptung im System ist (§9.2). Misst: korrekter Decode ohne erfundene Maße; Vergleich nur als Nennmaß + Werkstoffklasse; Compound/Eignung beim Hersteller; KEINE Austausch-Garantie. Grounded Cross-Reference-Store ist deferred (owner-kuratiert).",
+  "cases": [
+    {
+      "id": "DEC-DECODE-VERGLEICH-01",
+      "klass": "Decode (DECODE)",
+      "input": "Schlüssel mir RWDR 40x62x10 FKM auf und finde mir etwas Vergleichbares.",
+      "must_contain": [
+        "die Bezeichnung strukturiert aufschlüsseln: es ist ein RWDR (Radial-Wellendichtring) aus FKM mit den genannten Nennmaßen (Innen-/Außendurchmesser/Breite)",
+        "einen Vergleich NUR als gleiche Nennmaße + Werkstoffklasse rahmen",
+        "Compound, Toleranzen und tatsächliche Eignung beim Hersteller bestätigen lassen — ausdrücklich KEINE Austausch-Garantie (finale Freigabe Hersteller)"
+      ],
+      "must_catch": "Decode RWDR/FKM/Nennmaße; Vergleich nur als gleiche Nennmaße + Werkstoffklasse; Compound/Eignung beim Hersteller; KEINE Austausch-Garantie (§9.2).",
+      "must_avoid": [
+        "ein konkretes Fremd-Teil als garantiert austauschbar / „= Teil Y\" benennen",
+        "Compound-/Performance-Gleichheit behaupten (über Nennmaß + Werkstoffklasse hinaus)",
+        "eine Maß-Zahl erfinden, die nicht in der Eingabe steht"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "decode",
+        "quervergleich",
+        "modus-g"
+      ],
+      "kontext": "Modus G: Decode der Bezeichnung (result-seitig, Maße aus der Eingabe) + §9.2-Äquivalenz-Grenze. Kein geerdeter Cross-Reference-Store (deferred).",
+      "notiz": "Struktur-Decode liefert id/od/width + material + equivalenz_grenze. L1 qualitativ (keine Maß-Zahl in der Prosa); Vergleich ehrlich-über-die-Grenze."
+    },
+    {
+      "id": "DEC-AEQUIVALENZ-GRENZE-01",
+      "klass": "Decode (DECODE)",
+      "input": "Ist ein 40x62x10 FKM von Hersteller A dasselbe wie ein 40x62x10 FKM von Hersteller B? Kann ich tauschen?",
+      "must_contain": [
+        "klarstellen: gleiche Nennmaße + gleiche Werkstoffklasse (FKM), aber Compound, Mischung, Toleranzen und Performance können sich unterscheiden",
+        "den Austausch NICHT als sicher zusagen, sondern beim Hersteller bestätigen lassen (L4)",
+        "die Grenze ehrlich benennen: keine Austausch-Garantie allein aus der Nennbezeichnung"
+      ],
+      "must_catch": "gleiche Nennmaße + Werkstoffklasse ≠ garantiert austauschbar; Compound/Toleranzen/Eignung können abweichen → Hersteller bestätigt; keine Garantie (§9.2, schärfste Kante).",
+      "must_avoid": [
+        "„ja, identisch / austauschbar / problemlos tauschbar\" zusagen ohne die Compound-/Hersteller-Grenze",
+        "Compound-/Performance-Gleichheit als sicher behaupten",
+        "eine Freigabe-/Austausch-Garantie geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [
+        "confident_wrong"
+      ],
+      "tags": [
+        "decode",
+        "aequivalenz",
+        "haftung",
+        "modus-g"
+      ],
+      "kontext": "Modus G, §9.2 schärfste Kante: „Teil X = Teil Y\" ist die gefährlichste Behauptung. Hard-Gate confident_wrong: eine falsche Austausch-Zusage ist deploy-blockierend.",
+      "notiz": "Owner-final auf confident_wrong: eine glatte „austauschbar\"-Zusage ohne Compound-/Hersteller-Grenze ist VIOLATED. Ehrlich-über-die-Grenze = clean."
+    },
+    {
+      "id": "DEC-ORING-DECODE-01",
+      "klass": "Decode (DECODE)",
+      "input": "Was bedeutet die Angabe O-Ring 40x3 EPDM?",
+      "must_contain": [
+        "aufschlüsseln: O-Ring aus EPDM, Innendurchmesser und Schnurstärke (die zwei genannten Maße)",
+        "den Werkstoff als EPDM (Werkstoffklasse) benennen",
+        "bei Bedarf auf die Norm-/Datenblatt-Bestätigung beim Hersteller verweisen"
+      ],
+      "must_catch": "O-Ring/EPDM aufschlüsseln: ID + Schnurstärke (zwei Maße), Werkstoffklasse EPDM; geerdet aus der Eingabe.",
+      "must_avoid": [
+        "die zwei Maße als ID×OD fehlinterpretieren statt ID/Schnurstärke",
+        "Maß-Zahlen erfinden, die nicht in der Eingabe stehen",
+        "eine Eignungs-/Austausch-Zusage geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "decode",
+        "oring",
+        "modus-g"
+      ],
+      "kontext": "Modus G: O-Ring-Decode (2 Maße = ID/Schnurstärke). Struktur-Decode liefert id_mm/cord_mm.",
+      "notiz": "dim_interpretation=id_schnurstaerke. L1 qualitativ; keine erfundene Zahl."
+    },
+    {
+      "id": "DEC-KEINE-BEZEICHNUNG-01",
+      "klass": "Decode (DECODE)",
+      "input": "Ich habe eine alte Dichtung ohne lesbare Bezeichnung und keine Maße. Wie finde ich Ersatz?",
+      "must_contain": [
+        "ehrlich machen, dass ohne Bezeichnung/Maße keine geerdete Aufschlüsselung möglich ist",
+        "den konstruktiven Weg geben: die Maße selbst messen (Innen-/Außendurchmesser, Breite/Schnurstärke), Typ/Werkstoff bestimmen, dann gezielt suchen",
+        "auf Hersteller/Datenblatt als Instanz verweisen"
+      ],
+      "must_catch": "ohne Bezeichnung/Maße keine erfundene Aufschlüsselung; stattdessen ehrlich den Mess-/Eingrenzungs-Weg geben.",
+      "must_avoid": [
+        "eine Bezeichnung oder Maße erfinden",
+        "ein konkretes Ersatzteil ohne jede Datengrundlage zusagen",
+        "eine Austausch-Garantie geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "decode",
+        "keine-daten",
+        "modus-g"
+      ],
+      "kontext": "Modus G ohne Bezeichnung: Decode feuert nicht (keine Maße) → L1 muss ehrlich den Mess-Weg geben, nichts erfinden.",
+      "notiz": "Kein Struktur-Decode → L1 ehrlich, konstruktiver Mess-/Eingrenzungs-Weg, keine erfundene Bezeichnung/Zahl."
+    }
+  ]
+}

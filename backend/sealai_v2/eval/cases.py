@@ -21,6 +21,7 @@ _ARCHETYPE_FILE = _SEED_DIR / "archetype_v0.json"
 _CALIBRATION_FILE = _SEED_DIR / "calibration_v0.json"
 _GEGENCHECK_FILE = _SEED_DIR / "gegencheck_v0.json"
 _DIAGNOSE_FILE = _SEED_DIR / "diagnose_v0.json"
+_DECODE_FILE = _SEED_DIR / "decode_v0.json"
 
 
 @dataclass(frozen=True)
@@ -119,3 +120,13 @@ def load_diagnose_cases(path: Path | None = None) -> list[Case]:
     (the Dim. 5 seed is all-draft), manufacturer-defer (L4), no invented number, and the
     discriminating follow-up instead of an invented cause when the symptom is unclear."""
     return load_cases(path or _DIAGNOSE_FILE)
+
+
+def load_decode_cases(path: Path | None = None) -> list[Case]:
+    """Decode (DECODE) class (Modus G, V2.1) - seal-designation decode + the §9.2 equivalence
+    discipline. Mostly a CREDIBILITY/axes class, with ONE exception: the equivalence case carries
+    the EXISTING confident_wrong hard gate (no new Schranke) because "Teil X = Teil Y" is the
+    sharpest claim in the system. Measures: correct decode without invented dims; a comparison only
+    as nominal size + material class; compound/fit confirmed at the manufacturer; no interchange
+    guarantee."""
+    return load_cases(path or _DECODE_FILE)

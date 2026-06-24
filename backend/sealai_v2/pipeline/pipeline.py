@@ -172,6 +172,9 @@ class Pipeline:
         diagnosis = stages.diagnose(
             self.versagensmodi, question, tenant_id=scope.tenant_id
         )
+        # Modus G: deterministic Decode - None unless a designation (with dims) is present.
+        # Result-side structured parse + the §9.2 equivalence boundary. Pure + sync, no I/O.
+        decode_result = stages.decode(question)
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
 
@@ -357,6 +360,7 @@ class Pipeline:
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
             diagnose=diagnosis,
+            decode=decode_result,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:

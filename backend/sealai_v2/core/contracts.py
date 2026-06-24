@@ -601,6 +601,9 @@ class PipelineResult:
     # Modus D (Diagnose): deterministic symptom->ursache->fix from Dim. 5, or None when no
     # symptom recognised. provisional=True for draft modes. Render/serializer surface, never L4.
     diagnose: dict | None = None
+    # Modus G (Decode): structured seal-designation parse (dims/material/type) + the §9.2
+    # equivalence boundary, or None when no designation. Render/serializer surface; never X=Y.
+    decode: dict | None = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

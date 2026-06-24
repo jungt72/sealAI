@@ -106,4 +106,5 @@ def chat_response(result: PipelineResult) -> dict:
         # through verbatim so the SPA renders the verdict deterministically, not from L1 prose.
         "gegencheck": result.gegencheck,
         "diagnose": result.diagnose,
+        "decode": result.decode,
     }

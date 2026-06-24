@@ -25,6 +25,7 @@ from sealai_v2.core.contracts import (
     Understanding,
 )
 from sealai_v2.core.gegencheck import evaluate_gegencheck
+from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
 
 _UNDERSTAND_SYSTEM = (
     "Du klassifizierst eine Nutzer-Nachricht an einen Dichtungstechnik-Assistenten GROB nach "
@@ -318,3 +319,16 @@ def diagnose(versagensmodi, question: str, *, tenant_id: str) -> dict | None:
         "provisional": not m.reviewed,
         "betrifft_archetypen": list(m.betrifft_archetypen),
     }
+
+
+def decode(question: str) -> dict | None:
+    """Stage - deterministic Decode (Modus G): parse a seal designation -> structured spec (dims
+    echoed from the input, material, type). Fires ONLY when a dimension group is present (a real
+    designation to decode); a bare material mention is not a decode request -> None (byte-identical
+    no-Decode turn). Result-side: the parsed dims live in the structured spec, the narration stays
+    qualitative (parametric-leak-safe). Equivalence ("Teil X = Teil Y") is NOT asserted (§9.2, the
+    sharpest edge) - only the honest EQUIVALENZ_GRENZE boundary travels. Pure, no I/O, no LLM."""
+    spec = decode_designation(question)
+    if not spec or not spec.get("dims_mm"):
+        return None
+    return {**spec, "equivalenz_grenze": EQUIVALENZ_GRENZE}
