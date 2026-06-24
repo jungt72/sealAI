@@ -20,6 +20,7 @@ _INJECTION_FILE = _SEED_DIR / "injection_v0.json"
 _ARCHETYPE_FILE = _SEED_DIR / "archetype_v0.json"
 _CALIBRATION_FILE = _SEED_DIR / "calibration_v0.json"
 _GEGENCHECK_FILE = _SEED_DIR / "gegencheck_v0.json"
+_DIAGNOSE_FILE = _SEED_DIR / "diagnose_v0.json"
 
 
 @dataclass(frozen=True)
@@ -109,3 +110,12 @@ def load_gegencheck_cases(path: Path | None = None) -> list[Case]:
     narration - disqualify the incompatible (grounded reason), surface the conditional's condition,
     and NEVER affirm suitability for the compatible / no-data case. Grounded in real matrix cells."""
     return load_cases(path or _GEGENCHECK_FILE)
+
+
+def load_diagnose_cases(path: Path | None = None) -> list[Case]:
+    """Diagnose (DIAGNOSE) class (Modus D, V2.1) - symptom->ursache->fix cases; same validated Case
+    shape, separate seed. A CREDIBILITY/axes class (NO new hard gate - the 8 Schranken stay fixed):
+    measures L1's diagnostic honesty - a plausible grounded cause/fix direction, framed vorlaeufig
+    (the Dim. 5 seed is all-draft), manufacturer-defer (L4), no invented number, and the
+    discriminating follow-up instead of an invented cause when the symptom is unclear."""
+    return load_cases(path or _DIAGNOSE_FILE)

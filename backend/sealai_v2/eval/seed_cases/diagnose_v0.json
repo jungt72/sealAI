@@ -1,0 +1,122 @@
+{
+  "version": "diagnose_v0",
+  "klass_note": "Diagnose (DIAGNOSE) — Modus D (V2.1). Symptom→Ursache→Fix aus Dim.5 (Versagensmodi, derzeit all-draft → vorläufig). CREDIBILITY/axes-Klasse: KEINE neue harte Schranke (Muster G5/C4/Gegencheck). Misst L1s Diagnose-Ehrlichkeit: plausible geerdete Ursachen-/Fix-Richtung, vorläufig gerahmt, Hersteller-Vorbehalt (L4), keine erfundenen Zahlen, bei unklarem Bild die diskriminierende Rückfrage statt erfundener Ursache.",
+  "cases": [
+    {
+      "id": "DIAG-LIPPE-VERHAERTET-01",
+      "klass": "Diagnose (DIAGNOSE)",
+      "input": "Unser NBR-Wellendichtring ist nach einigen Monaten Betrieb hart und rissig geworden und leckt jetzt. Woran liegt das?",
+      "must_contain": [
+        "eine plausible, geerdete Ursachen-Richtung benennen: thermische Alterung / Dauer-Übertemperatur für NBR (Verhärtung/Versprödung der Lippe)",
+        "eine Fix-Richtung geben: höher temperaturbeständigen Werkstoff (Richtung FKM) und die reale Temperatur im Dichtspalt prüfen",
+        "die Einschätzung als vorläufig rahmen und die finale Klärung/Freigabe beim Hersteller belassen (L4)"
+      ],
+      "must_catch": "harte/rissige NBR-Lippe + Leckage → thermische Alterung/Übertemperatur als plausible Ursache; Richtung höher-temperaturbeständig; vorläufig, Hersteller bestätigt.",
+      "must_avoid": [
+        "eine präzise Temperatur-Grenze als gesicherte Zahl erfinden (kein parametrischer Leak)",
+        "eine einzige Ursache selbstbewusst-absolut behaupten ohne den vorläufig-Charakter / ohne Hersteller-Vorbehalt",
+        "eine endgültige Eignungs-/Freigabe-Zusage geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "diagnose",
+        "versagensmodus",
+        "thermal",
+        "modus-d"
+      ],
+      "kontext": "Modus D: Symptom (NBR-Lippe hart/rissig/Leckage) → Dim.5 VM-RWDR-LIPPE-VERHAERTET (draft). L1 trägt die ehrliche vorläufige Diagnose.",
+      "notiz": "Struktur-Verdikt (result-side) liefert ursache/fix/source + provisional=True (draft). L1-Narration: plausibel, gehedged, Hersteller-Vorbehalt; keine erfundene Grenz-Zahl."
+    },
+    {
+      "id": "DIAG-QUELLUNG-MEDIUM-01",
+      "klass": "Diagnose (DIAGNOSE)",
+      "input": "Unsere Dichtung quillt auf und wird weich. Sie läuft in Mineralöl. Was ist da los?",
+      "must_contain": [
+        "Medien-Unverträglichkeit als Ursache benennen: der Werkstoff quillt im Medium (z. B. EPDM in Mineralöl)",
+        "Fix: medienverträglichen Werkstoff wählen, gegen die Verträglichkeitsmatrix/das Datenblatt prüfen",
+        "vorläufig rahmen; finale Eignung beim Hersteller"
+      ],
+      "must_catch": "Quellung/Erweichung in Mineralöl → Medien-Unverträglichkeit als Ursache; Fix = medienverträglicher Werkstoff (Matrix/Datenblatt); vorläufig.",
+      "must_avoid": [
+        "Zahlen erfinden (Quellungs-Prozent o. Ä.)",
+        "einen konkreten Ersatz-Werkstoff als sicher-geeignet zusagen, der hier nicht geerdet ist",
+        "eine Freigabe-Zusage geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "diagnose",
+        "versagensmodus",
+        "medium",
+        "modus-d"
+      ],
+      "kontext": "Modus D: Quellung in Mineralöl → Dim.5 VM-ELASTOMER-QUELLUNG (draft). Medien-Unverträglichkeit, verweist zurück auf die Matrix.",
+      "notiz": "Verdikt: ursache=Medien-Unverträglichkeit, fix=medienverträglich. L1 ehrlich + Matrix-/Hersteller-Verweis."
+    },
+    {
+      "id": "DIAG-OZONRISSE-AUSSEN-01",
+      "klass": "Diagnose (DIAGNOSE)",
+      "input": "Eine NBR-Dichtung an einer Maschine im Freien zeigt feine Risse an den Außenflächen. Ursache?",
+      "must_contain": [
+        "Ozon-/UV-/Witterungsangriff auf NBR als Ursache der feinen Risse benennen",
+        "Fix: ozon-/witterungsbeständigen Werkstoff (Richtung EPDM, HNBR oder CR)",
+        "vorläufig; Hersteller-Bestätigung"
+      ],
+      "must_catch": "feine Risse an NBR im Freien → Ozon/Witterung als Ursache; Fix = ozonbeständig (EPDM/HNBR/CR); vorläufig.",
+      "must_avoid": [
+        "Zahlen erfinden",
+        "die Ursache fehlleiten (z. B. rein mechanisch) entgegen dem klaren Ozon-Bild",
+        "eine Freigabe-Zusage geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "diagnose",
+        "versagensmodus",
+        "ozon",
+        "modus-d"
+      ],
+      "kontext": "Modus D: NBR-Außenrisse → Dim.5 VM-OZONRISSE (draft). Ozon/Witterung; Richtung EPDM/HNBR/CR.",
+      "notiz": "Verdikt: ursache=Ozon/Witterung, fix=ozonbeständig. L1 ehrlich + vorläufig."
+    },
+    {
+      "id": "DIAG-KEIN-KLARES-BILD-01",
+      "klass": "Diagnose (DIAGNOSE)",
+      "input": "Meine Dichtung geht kaputt, ich weiß aber nicht wie — sie hält einfach nicht lange. Was kann ich tun?",
+      "must_contain": [
+        "ehrlich machen, dass ohne ein konkretes Schadensbild keine geerdete Einzel-Ursache benennbar ist",
+        "gezielt die diskriminierenden Beobachtungen erfragen (Schadbild: hart/rissig? quillt? Riefe auf der Welle? Medium/Temperatur?), um einzugrenzen",
+        "auf Datenblatt/Hersteller als nächste Instanz verweisen"
+      ],
+      "must_catch": "kein konkretes Schadbild → keine geerdete Einzel-Ursache erfinden; stattdessen die diskriminierende Rückfrage stellen, ehrlich.",
+      "must_avoid": [
+        "eine bestimmte Ursache selbstbewusst behaupten, obwohl das Symptom unklar ist (confident-wrong)",
+        "Zahlen erfinden",
+        "eine Freigabe-/Garantie-Zusage geben"
+      ],
+      "primary_axes": [
+        1,
+        2
+      ],
+      "hard_gates": [],
+      "tags": [
+        "diagnose",
+        "keine-daten",
+        "rueckfrage",
+        "modus-d"
+      ],
+      "kontext": "Modus D ohne klares Symptom: die Stage matcht ggf. nichts (kein Verdikt) → L1 muss ehrlich eingrenzen statt zu erfinden.",
+      "notiz": "Kein/instabiles Struktur-Verdikt → L1 ehrlich, diskriminierende Rückfrage, keine erfundene Ursache/Zahl."
+    }
+  ]
+}

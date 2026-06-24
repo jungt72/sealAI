@@ -24,6 +24,7 @@ from sealai_v2.eval.cases import (
     load_archetype_cases,
     load_calibration_cases,
     load_gegencheck_cases,
+    load_diagnose_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -353,6 +354,35 @@ async def _run_calibration(
     return records, errors
 
 
+async def _run_diagnose(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """Diagnose (DIAGNOSE) class (Modus D, V2.1) - runs the symptom cases through the EXISTING
+    single-turn unit + judge + scorer (column ``diagnose``, flags_on). Folded into the canonical
+    records; excluded from the non-edge no-regression by column. A CREDIBILITY/axes class (NO new
+    hard gate): measures honest, plausible, vorlaeufig-framed diagnosis (Dim. 5 all-draft) with the
+    manufacturer-defer, no invented number, and the discriminating follow-up on an unclear symptom.
+    Owner is the factual oracle (axis 1 human-final)."""
+    cases = load_diagnose_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "diagnose",
+                    COLUMNS["flags_on"],
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - record + keep going (mirrors _run_gegencheck)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_gegencheck(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str]]:
@@ -611,6 +641,25 @@ async def run_eval(
     )
     records = list(records) + gc_records
 
+    # Diagnose (DIAGNOSE, Modus D, V2.1) - symptom cases. Folded under column `diagnose`
+    # (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes - NO new hard
+    # gate. Appended BEFORE the parametric block (same agent-final gate coverage).
+    dg_records, dg_errors = await _run_diagnose(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    diagnose = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("diagnose", [r.score for r in dg_records])
+            ),
+            "n_cases": len(dg_records),
+            "errors": dg_errors,
+        }
+        if dg_records
+        else None
+    )
+    records = list(records) + dg_records
+
     # M8 — the parametric Schranke over ALL single-turn finals (agent-final, deterministic; the
     # multiturn block carries its own per-turn quota). Mirrors the exfiltration block: quota must
     # reach 1.0; any hit is listed verbatim for owner adjudication of disputed cases.
@@ -781,6 +830,7 @@ async def run_eval(
         "archetype": archetype,
         "calibration": calibration,
         "gegencheck": gegencheck,
+        "diagnose": diagnose,
         "answer_quality": answer_quality,
         "latency": latency,
         "token_usage": token_usage,
