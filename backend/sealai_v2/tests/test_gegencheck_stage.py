@@ -41,7 +41,8 @@ def test_realistic_multi_tag_incompatible_fires():
     # REGRESSION (the extract_medium fail-closed bug): one steam medium named with three
     # vocab tags must still disqualify, not abstain to None.
     case = Case.from_case_state(
-        (), question="Wir verbauen FKM in Heißdampf-Sterilisation (SIP) bei 140 °C. Passt das?"
+        (),
+        question="Wir verbauen FKM in Heißdampf-Sterilisation (SIP) bei 140 °C. Passt das?",
     )
     v = stages.gegencheck(_matrix(), case, tenant_id="t1")
     assert v is not None

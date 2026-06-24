@@ -80,9 +80,7 @@ _MEDIUM_SYNONYMS: dict[str, str] = {
 # deterministic and obvious.
 _MEDIUM_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b" + re.escape(token) + r"\b", re.IGNORECASE), canonical)
-    for token, canonical in sorted(
-        _MEDIUM_SYNONYMS.items(), key=lambda kv: -len(kv[0])
-    )
+    for token, canonical in sorted(_MEDIUM_SYNONYMS.items(), key=lambda kv: -len(kv[0]))
 ]
 
 

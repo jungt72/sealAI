@@ -35,7 +35,10 @@ def _run(p, q):
 
 
 def test_verdict_flows_for_incompatible_gegencheck():
-    res = _run(_pipeline(FakeLlmClient("Antwort")), "Wir verwenden FKM in Heißdampf, passt das?")
+    res = _run(
+        _pipeline(FakeLlmClient("Antwort")),
+        "Wir verwenden FKM in Heißdampf, passt das?",
+    )
     assert res.gegencheck is not None
     assert res.gegencheck["disqualified"] is True
     assert res.gegencheck["reason"] and res.gegencheck["source"]
