@@ -598,6 +598,9 @@ class PipelineResult:
     # material + medium). Backend owns the verdict; never affirms suitability (E4-1). A
     # render/serializer surface only - never injected into L1/L3 (the prompt stays unchanged).
     gegencheck: dict | None = None
+    # Modus D (Diagnose): deterministic symptom->ursache->fix from Dim. 5, or None when no
+    # symptom recognised. provisional=True for draft modes. Render/serializer surface, never L4.
+    diagnose: dict | None = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

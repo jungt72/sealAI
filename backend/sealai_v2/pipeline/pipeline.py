@@ -39,6 +39,7 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier
 from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
+from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.memory.distiller import Distiller
@@ -98,6 +99,7 @@ class Pipeline:
     matrix: object | None = (
         None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
+    versagensmodi: object | None = None  # Dim. 5 Versagensmodi store (Modus D Diagnose)
     engine: CalcEngine | None = (
         None  # None → M4 calc layer off → no "Berechnete Werte" block
     )
@@ -164,6 +166,11 @@ class Pipeline:
         # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
         gegencheck_verdict = stages.gegencheck(
             self.matrix, case, tenant_id=scope.tenant_id
+        )
+        # Modus D: deterministic Diagnose - None unless the turn reports a recognised symptom.
+        # Backend owns the grounded(draft) ursache/fix; draft -> provisional. Pure + sync, no I/O.
+        diagnosis = stages.diagnose(
+            self.versagensmodi, question, tenant_id=scope.tenant_id
         )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
@@ -349,6 +356,7 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
+            diagnose=diagnosis,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -531,6 +539,7 @@ def build_pipeline(
     # CompatibilityMatrix Protocol (a DB/Qdrant adapter is the deferred prod path). Under the same
     # ground_enabled kill-switch as the retriever (both are the L2 layer).
     matrix = InProcessCompatibilityMatrix() if settings.ground_enabled else None
+    versagensmodi = InProcessVersagensmodiStore() if settings.ground_enabled else None
 
     # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
     engine: CalcEngine | None = (
@@ -587,6 +596,7 @@ def build_pipeline(
         catalog=catalog,
         retriever=retriever,
         matrix=matrix,
+        versagensmodi=versagensmodi,
         engine=engine,
         memory=memory,
         cross_session=cross_session,

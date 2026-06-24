@@ -296,3 +296,25 @@ def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:
     return evaluate_gegencheck(
         material, " ".join(matched), tenant=tenant_id, catalog=catalog
     )
+
+
+def diagnose(versagensmodi, question: str, *, tenant_id: str) -> dict | None:
+    """Stage - deterministic Diagnose (Modus D, Dim. 5): match the reported symptom against the
+    Versagensmodi store -> the strongest symptom/ursache/fix. Fires ONLY when a symptom is recognised
+    (no match -> None -> byte-identical no-Diagnose turn). A DRAFT mode surfaces provisional=True
+    ("vorlaeufig - gegen Hersteller verifizieren"); a reviewed mode is grounded. Backend owns the
+    grounded(draft) cause/fix; never a final release (L4 stays with the manufacturer). No LLM, no
+    mutation, no invented number. versagensmodi is the InProcessVersagensmodiStore; None -> None."""
+    if versagensmodi is None:
+        return None
+    modes = versagensmodi.query(tenant_id=tenant_id, query_text=question)
+    if not modes:
+        return None
+    m = modes[0]
+    return {
+        "ursache": m.ursache,
+        "fix": m.fix,
+        "source": m.quelle(),
+        "provisional": not m.reviewed,
+        "betrifft_archetypen": list(m.betrifft_archetypen),
+    }

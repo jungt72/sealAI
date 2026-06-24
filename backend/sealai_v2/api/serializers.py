@@ -105,4 +105,5 @@ def chat_response(result: PipelineResult) -> dict:
         # the turn is not a Gegencheck situation. Already a plain dict from the kernel - passed
         # through verbatim so the SPA renders the verdict deterministically, not from L1 prose.
         "gegencheck": result.gegencheck,
+        "diagnose": result.diagnose,
     }
