@@ -90,6 +90,27 @@ def test_stage_empty_seed_reports_no_grounded_data():
     assert "Bezahlung" in v["neutralitaet"]
 
 
+def test_p17_empty_hersteller_store_invents_no_manufacturer():
+    # P1.7 — deterministic guard for Modus F's headline doctrine ("never invents firm names").
+    # STRUCTURAL guarantee at the STAGE boundary: with the empty Dim.6 store, alternativen(...)
+    # MUST report grounded_data=False AND its structured output must name ZERO manufacturers — the
+    # capability list is absent/empty, so there is no firm name for L1 to relay. (The L1-NARRATION
+    # guarantee — that the prose itself invents no firm — remains measured by the eval REPLAY; this
+    # test pins only what the backend deterministically controls: the stage's structured output.)
+    v = stages.alternativen(
+        InProcessHerstellerStore(),  # empty shipped seed
+        "Wer kann einen RWDR aus FKM noch herstellen? Nenne vergleichbare Hersteller.",
+        tenant_id="t1",
+    )
+    assert v is not None
+    assert v["grounded_data"] is False
+    # the manufacturer list is the ONLY field that may carry a firm name — it must be empty/absent
+    assert v.get("hersteller", []) == []
+    assert (
+        "ordered_by" not in v
+    )  # the capability-ranking field only exists with grounded makers
+
+
 def test_stage_none_without_alternatives_keyword():
     assert (
         stages.alternativen(InProcessHerstellerStore(), "Was kann FKM?", tenant_id="t1")

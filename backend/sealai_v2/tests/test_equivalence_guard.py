@@ -37,4 +37,6 @@ def test_does_not_flag_the_negated_doctrine_correct_form():
 def test_hedge_text_is_owner_grounded_and_does_not_self_trigger():
     h = equivalence_hedge_text()
     assert "Freigabe liegt beim Hersteller" in h
-    assert detect_equivalence_claim(h) == ()  # the hedge must not re-trigger the detector
+    assert (
+        detect_equivalence_claim(h) == ()
+    )  # the hedge must not re-trigger the detector

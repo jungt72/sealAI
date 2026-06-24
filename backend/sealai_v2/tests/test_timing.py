@@ -127,7 +127,9 @@ def test_skipped_stages_are_omitted_and_understand_is_timed(monkeypatch):
     stages = captured[0]["stages"]
     assert "understand_ms" in stages
     assert "distill_ms" not in stages  # no session → remember never ran
-    assert "verify_ms" not in stages  # no verifier wired
+    assert (
+        "verify_ms" in stages
+    )  # P0.3: the deterministic parametric guard runs even with no LLM verifier wired
 
 
 def test_eval_unit_records_elapsed_ms_and_report_serializes_it():

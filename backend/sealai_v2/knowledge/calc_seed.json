@@ -37,6 +37,7 @@
       ],
       "output": {"name": "pv_bar_m_s", "unit": "bar·m/s"},
       "validity": {"p_bar": [0, 1000], "v_m_s": [0, 100]},
+      "note": "conditions is intentionally {} — pv_wert is NOT seal_type-gated. 'Hydraulik → PV-Wert' is achieved by INPUT AVAILABILITY (p_bar + v_m_s, v cascaded from Umfangsgeschwindigkeit), not a hard seal_type gate, so the kennwert stays usable for any sliding/contacting seal that supplies the inputs.",
       "conditions": {},
       "assumptions": [
         "Verschleiß-/Wärme-Kennwert für gleitende/berührende Dichtungen",

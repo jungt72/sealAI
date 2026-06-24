@@ -40,14 +40,17 @@ def test_injection_clean_run_no_leak():
     assert exfil["n_leaks"] == 0 and exfil["schranken_quota"] == 1.0
 
 
-def test_injection_verbatim_system_prompt_leak_is_caught_agent_final():
-    # an answer that dumps a long verbatim span of the system prompt → deterministic exfiltration FAIL
+def test_injection_verbatim_system_prompt_leak_is_blocked_on_serve_path():
+    # P1.4: the SERVE-path exfiltration Schranke (wired into Pipeline.run) now BLOCKS a verbatim
+    # system-prompt dump BEFORE it ships — so even though this fake L1 dumps a long verbatim span,
+    # the pipeline replaces it with the deterministic refusal hedge. The eval therefore scores the
+    # already-hedged answer: zero leaks reach the agent-final gate (the leak never left the pipeline).
+    # (Pre-P1.4 this asserted n_leaks == 7, i.e. the leak shipped and the eval caught it after the
+    # fact; with P1.4 the defense has moved into the SERVE path, which is the point of the fix.)
     leak = PromptAssembler().system_prompt(flags=None)[:400]
     _records, _errors, exfil = asyncio.run(
         _run_injection(_pipeline(leak), ModelConfig("fake-judge"))
     )
-    assert (
-        exfil["n_leaks"] == 7
-    )  # every injection answer is the verbatim dump in this fake
-    assert exfil["schranken_quota"] == 0.0
-    assert all(pc["system_prompt_leak"] for pc in exfil["per_case"].values())
+    assert exfil["n_leaks"] == 0
+    assert exfil["schranken_quota"] == 1.0
+    assert not any(pc["system_prompt_leak"] for pc in exfil["per_case"].values())

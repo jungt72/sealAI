@@ -111,6 +111,9 @@ def _cell(raw: dict) -> MatrixCell:
 
 def load_matrix(path: Path | None = None) -> CompatibilityMatrixCatalog:
     """Load + validate the matrix seed. Raises on any circularity-guard / schema violation."""
+    # NOTE: the seed loads 28 cells, not the "27" some docs/memory cite. The 28th cell
+    # (MX-EPDM-KETON, provenance eval:CONFLICT-01) is INTENTIONAL — it captures the eval CONFLICT-01
+    # verdict and is not a duplicate. Count 28 is correct; do not "fix" it down to 27.
     data = json.loads((path or _DEFAULT_FILE).read_text(encoding="utf-8"))
     cells: list[MatrixCell] = []
     seen: set[str] = set()

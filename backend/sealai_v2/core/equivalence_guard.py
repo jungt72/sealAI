@@ -16,7 +16,9 @@ import re
 from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE
 
 EQUIVALENCE_TRAP_ID = "EQUIVALENZ-GRENZE"
-EQUIVALENCE_GATE = "confident_wrong"  # one of HARD_GATES — the §9.2 confident-wrong concern
+EQUIVALENCE_GATE = (
+    "confident_wrong"  # one of HARD_GATES — the §9.2 confident-wrong concern
+)
 
 # Affirmative part-INTERCHANGEABILITY assertions (German). Narrow by design: each phrasing asserts
 # that two parts may be swapped, which §9.2 forbids without a manufacturer release.

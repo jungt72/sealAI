@@ -1,6 +1,11 @@
-"""Pipeline stages. M1 implements `understand` (soft, annotate-only) and the L1 `answer`
-(in ``pipeline.py``); `ground`/`verify`/`cite` are inert stubs (M2/M3) so the
-verstehen→grounden→antworten→verifizieren→zitieren chain is visible but does nothing yet.
+"""Pipeline stages — the verstehen→grounden→antworten→verifizieren→zitieren chain.
+`understand` is the soft, annotate-only LLM intent (+ G4 archetype); the L1 `answer` lives in
+``pipeline.py``. The former M2/M3 stubs are now fully implemented: `ground` does L2 grounding
+(reviewed Fachkarten via the injected ``Retriever`` + the §4 Verträglichkeitsmatrix); `verify`
+runs the L3 verifier (independent critic + the deterministic hard-gate/matrix guards, regenerate-
+once or hedge); `cite` is a passthrough (provenance is surfaced by the serializer / L1's own
+Allgemeinwissen self-marking). The further deterministic operations (compute, recall/remember,
+gegencheck, diagnose, decode, alternativen) live alongside them here.
 """
 
 from __future__ import annotations
@@ -62,7 +67,7 @@ def _understand_system(archetype_keys: tuple[str, ...] = ()) -> str:
     keys = ", ".join(archetype_keys)
     return (
         _UNDERSTAND_SYSTEM
-        + f' Ergänze das JSON-Objekt um ein Feld "archetype": die Maschinen-Art, AUSSCHLIESSLICH '
+        + ' Ergänze das JSON-Objekt um ein Feld "archetype": die Maschinen-Art, AUSSCHLIESSLICH '
         + f"einer von [{keys}] — aber NUR, wenn sie klar genannt oder eindeutig erkennbar ist; sonst "
         + "null. Rate nicht; im Zweifel null. Auch dies ist eine WEICHE Annotation; sie steuert nichts."
     )

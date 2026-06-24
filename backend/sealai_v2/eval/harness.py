@@ -812,6 +812,10 @@ async def run_eval(
         "helper_model": settings.helper_model,
         "verifier_model": settings.verifier_model if l3_on else None,
         # Per-role provider+model (model-swap cell descriptor). None provider → the global default.
+        # [P1.6] ``roles.l1`` is also the eval↔deploy MODEL binding: the V2 deploy gate
+        # (ops/v2_deploy_gate.py) compares it as ``provider/model`` against the served-runtime L1, so a
+        # run adjudicated on one L1 cannot gate a deploy serving another. ``model`` is the RESOLVED L1
+        # (post resolve_l1_model — the id the eval actually ran), ``provider`` the role's effective one.
         "roles": {
             "l1": {
                 "provider": settings.l1_provider or settings.provider,

@@ -19,6 +19,7 @@ from sealai_v2.core.calc.inline_extract import extract_inline, merge_inline
 from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
+    Answer,
     CalcEngine,
     CalcResult,
     Case,
@@ -55,9 +56,23 @@ from sealai_v2.prompts.assembler import (
     PromptAssembler,
     VerifierPromptAssembler,
 )
+from sealai_v2.security.leak_detect import exfiltration_leak
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
 _log = logging.getLogger("sealai_v2.pipeline")
+
+# P1.4: the SERVE-path deterministic exfiltration Schranke. The eval already runs
+# ``leak_detect`` over the INJECTION class (eval/harness ``_run_injection``); this wires the SAME
+# pure detector into the live pipeline so a runtime system-prompt / KB-dump exfiltration is also
+# defended deterministically (not only measured offline). On a leak the verbatim answer is replaced
+# with a number-free, content-free refusal hedge BEFORE it can ship.
+_EXFIL_HEDGE_MODEL = (
+    "exfil-guard"  # sentinel: deterministic hedge, not model-generated (cf. l3-hedge)
+)
+_EXFIL_HEDGE_TEXT = (
+    "Ich kann dazu keine internen Inhalte ausgeben (z. B. System-Vorgaben oder den vollständigen "
+    "Wissensstand). Stell mir gern deine konkrete Dichtungsfrage — dann helfe ich dir fachlich weiter."
+)
 
 # P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
@@ -71,6 +86,33 @@ def _emit_progress(progress: ProgressSink | None, stage: str, status: str) -> No
         progress(stage, status)
     except Exception:  # noqa: BLE001 — a broken sink must never alter or fail a turn
         _log.warning("progress sink failed (ignored)", exc_info=True)
+
+
+def _exfil_guard(answer, *, system_prompt: str, kb_claims):
+    """P1.4 SERVE-path exfiltration Schranke. Runs the pure ``exfiltration_leak`` detector over the
+    final answer vs the system prompt that produced it + the verbatim KB claim texts. On a leak
+    (verbatim ≥160-char system-prompt span OR ≥6 verbatim KB claims) return a deterministic
+    number-free refusal hedge so the verbatim leak never ships; otherwise return ``answer``
+    unchanged (byte-identical pass-through). Pure — the only state is the returned Answer."""
+    verdict = exfiltration_leak(
+        answer=answer.text, system_prompt=system_prompt, kb_claims=list(kb_claims)
+    )
+    if not verdict.leaked:
+        return answer, verdict
+    _log.warning(
+        "exfil guard tripped (serve path): system_prompt_leak=%s kb_claims_leaked=%s — answer hedged",
+        verdict.system_prompt_leak,
+        verdict.kb_claims_leaked,
+    )
+    # Mirror the L3 deterministic-hedge shape: replace text, keep the model sentinel + grounding refs.
+    return (
+        Answer(
+            text=_EXFIL_HEDGE_TEXT,
+            model=_EXFIL_HEDGE_MODEL,
+            grounding_facts=answer.grounding_facts,
+        ),
+        verdict,
+    )
 
 
 @contextmanager
@@ -309,6 +351,22 @@ class Pipeline:
                         computed_values=calc.computed,
                         not_computed=calc.not_computed,
                     )
+
+            # P1.4: SERVE-path deterministic exfiltration Schranke. Runs AFTER the final answer is set
+            # (post verify if/else) and BEFORE cite, on the answer that would actually ship. The leak
+            # reference is the STATIC doctrine system prompt (flags only) — the SAME reference the eval
+            # uses (eval/harness ``_run_injection``) and the confidential surface we defend; it is
+            # non-empty (the rendered doctrine is ~15k chars), so the ≥160-char verbatim check is real.
+            # NOT the per-turn assembly: that legitimately embeds reviewed correction facts an L3 hedge
+            # is allowed to state verbatim (would false-fire). KB dumps are the separate kb_claims
+            # channel (Fachkarten + §4 matrix fact texts). Conservative thresholds → no false-fire on a
+            # normal grounded answer; on a real leak the verbatim dump is swapped for a number-free
+            # refusal before cite/return.
+            answer, _exfil_verdict = _exfil_guard(
+                answer,
+                system_prompt=self.generator.doctrine_system_prompt(flags=flags),
+                kb_claims=[f.text for f in l1_grounding],
+            )
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged

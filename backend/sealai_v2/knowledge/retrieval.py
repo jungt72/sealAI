@@ -21,8 +21,11 @@ from sealai_v2.knowledge.fachkarten import Fachkarte, FachkartenCatalog, load_fa
 _MIN_SCOPE_HITS = 2
 
 
-def _quelle(card: Fachkarte) -> str:
-    return f"Fachkarte {card.id} (reviewed; {', '.join(card.provenance)})"
+def _quelle(card: Fachkarte, *, reviewed: bool) -> str:
+    # Branch on the CLAIM's review state (a card mixes reviewed + draft claims): a draft claim must
+    # never be cited as "(reviewed; …)". Mirrors knowledge/versagensmodi.py::quelle().
+    tag = "reviewed" if reviewed else "draft — vorläufig, gegen Hersteller verifizieren"
+    return f"Fachkarte {card.id} ({tag}; {', '.join(card.provenance)})"
 
 
 def _score(card: Fachkarte, query_lower: str) -> int:
@@ -55,7 +58,7 @@ class InProcessRetriever:
                 reviewed.append(
                     GroundingFact(
                         text=claim.text,
-                        quelle=_quelle(card),
+                        quelle=_quelle(card, reviewed=True),
                         card_id=card.id,
                         sources=claim.sources,  # M6c: owner-verified primary sources for the citation
                     )
@@ -64,7 +67,7 @@ class InProcessRetriever:
                 provisional.append(
                     GroundingFact(
                         text=claim.text,
-                        quelle=_quelle(card),
+                        quelle=_quelle(card, reviewed=False),
                         card_id=card.id,
                         sources=claim.sources,
                     )

@@ -10,10 +10,13 @@ from __future__ import annotations
 import asyncio
 
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
+from sealai_v2.core.calc.leak_detector import LeakFinding
 from sealai_v2.core.contracts import HARD_GATES, ModelConfig
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.eval.multiturn import (
     MultiTurnCase,
+    MultiTurnResult,
+    TurnResult,
     TurnSpec,
     load_multiturn_cases,
     run_multiturn_case,
@@ -90,12 +93,13 @@ def test_calc_mem_kern_fires_via_binder_and_final_is_clean():
     assert s.compute_quota == 1.0 and s.n_compute_misses == 0
 
 
-def test_parametric_leak_in_final_answer_drops_schranke_verbatim():
-    """The canonical leak measured at the eval layer: kern computed nothing, the FINAL answer
-    asserts a v-value anyway → the deterministic gate drops the quota (agent-final, no tolerance)."""
+def test_parametric_leak_is_hedged_by_the_guard_final_stays_clean():
+    """P0.3: the deterministic parametric guard runs even on the no-L3 path, so a draft that asserts an
+    uncomputed v-value is HEDGED before it becomes the final answer — the served final carries no
+    kern-quantity and the M8 quota stays 1.0 (the guard PREVENTS the leak, not merely measures it)."""
     client = ScriptedFakeLlmClient(
         [
-            "Die Umfangsgeschwindigkeit beträgt damit etwa 10,5 m/s.",  # generate — LEAK
+            "Die Umfangsgeschwindigkeit beträgt damit etwa 10,5 m/s.",  # generate — LEAK draft
             '{"facts": []}',  # distill
         ]
     )
@@ -106,11 +110,50 @@ def test_parametric_leak_in_final_answer_drops_schranke_verbatim():
     )
     res = asyncio.run(run_multiturn_case(_calc_pipeline(client), case, tenant=_T))
     t1 = res.turns[0]
-    assert not t1.parametric_clean
-    assert t1.parametric_leaks[0].calc_id == "umfangsgeschwindigkeit"
+    assert (
+        t1.parametric_clean
+    )  # the leaking draft was hedged → the FINAL answer is clean
+    assert "10,5" not in t1.answer  # the leak did not survive into the served answer
     s = summarize_multiturn([res])
-    assert s.parametric_schranken_quota == 0.0
+    assert s.parametric_schranken_quota == 1.0
+    assert s.n_parametric_violations == 0
+
+
+def test_m8_summary_counts_a_parametric_violation():
+    """The M8 eval-layer COUNTING half (agent-final, no tolerance): a turn whose FINAL answer carries a
+    detector hit drops the quota. Constructed directly — the live guard (P0.3) now prevents a leak from
+    ever reaching a served final, so this locks the summarize/quota arithmetic independently."""
+    leaky = TurnResult(
+        index=0,
+        input="RWDR — passt NBR?",
+        answer="Die Umfangsgeschwindigkeit beträgt damit etwa 10,5 m/s.",
+        case_state=(),
+        carried_missing=(),
+        memory_fabrication=(),
+        parametric_leaks=(
+            LeakFinding(
+                calc_id="umfangsgeschwindigkeit",
+                value_text="10,5",
+                excerpt="...10,5 m/s...",
+            ),
+        ),
+    )
+    clean = TurnResult(
+        index=0,
+        input="Hallo",
+        answer="Hallo, wie kann ich helfen?",
+        case_state=(),
+        carried_missing=(),
+        memory_fabrication=(),
+    )
+    s = summarize_multiturn(
+        [
+            MultiTurnResult(case_id="LEAK", turns=[leaky]),
+            MultiTurnResult(case_id="OK", turns=[clean]),
+        ]
+    )
     assert s.n_parametric_violations == 1
+    assert s.parametric_schranken_quota == 0.5  # 1 of 2 turns clean
 
 
 def test_failclosed_no_compute_no_number_stays_clean():

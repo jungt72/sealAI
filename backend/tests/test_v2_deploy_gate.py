@@ -57,17 +57,30 @@ _ARCHETYPE = {
 }
 
 
-def _write_run(runs_dir, label, *, tree_hash, adjudicated=True, det=None, columns=None):
+def _write_run(
+    runs_dir,
+    label,
+    *,
+    tree_hash,
+    adjudicated=True,
+    det=None,
+    columns=None,
+    l1="openai/gpt-5.1",
+):
     d = runs_dir / label
     d.mkdir(parents=True)
-    data = {
-        "manifest": {
-            "run_label": label,
-            "tree_hash": tree_hash,
-            "git_sha": "x",
-            "dirty": True,
-        }
+    manifest = {
+        "run_label": label,
+        "tree_hash": tree_hash,
+        "git_sha": "x",
+        "dirty": True,
     }
+    # P1.6 — the manifest records the adjudicated L1 as the nested {provider, model} descriptor (the
+    # canonical harness shape). l1=None models a pre-binding run that never recorded its L1.
+    if l1 is not None:
+        provider, _, model = l1.partition("/")
+        manifest["roles"] = {"l1": {"provider": provider, "model": model}}
+    data = {"manifest": manifest}
     if adjudicated:
         adj = {"provisional_until_deep_audit": True}
         for k in DET_KEYS:
@@ -174,3 +187,76 @@ def test_g2_refuses_gated_column_with_units_pending(tmp_path):
         columns=[_col("flags_off", pending=3), _ARCHETYPE],
     )
     assert _gate().find_gated_run(tmp_path, "ABC") is None
+
+
+# ── P1.6: the eval↔deploy MODEL binding (served_l1) ────────────────────────────
+def test_p16_passes_when_served_l1_matches_adjudicated_l1(tmp_path):
+    # a run adjudicated on openai/gpt-5.1 gates a deploy serving openai/gpt-5.1
+    _write_run(tmp_path, "kern-fix-01", tree_hash="ABC", l1="openai/gpt-5.1")
+    m = _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.1")
+    assert m is not None and m["run_label"] == "kern-fix-01"
+    assert m["l1"] == "openai/gpt-5.1"
+
+
+def test_p16_refuses_when_served_l1_is_a_different_model(tmp_path):
+    # SAME tree_hash + same clean adjudication, but the served L1 model differs (the .env-only swap
+    # gpt-5.1 → gpt-5.4-mini): the run adjudicated gpt-5.1 must NOT gate a gpt-5.4-mini deploy.
+    _write_run(tmp_path, "kern-fix-01", tree_hash="ABC", l1="openai/gpt-5.1")
+    assert _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.4-mini") is None
+
+
+def test_p16_refuses_when_served_l1_is_a_different_provider(tmp_path):
+    # provider half of the id is binding too (openai/gpt-5.1 != mistral/gpt-5.1)
+    _write_run(tmp_path, "r", tree_hash="ABC", l1="openai/gpt-5.1")
+    assert _gate().find_gated_run(tmp_path, "ABC", "mistral/gpt-5.1") is None
+
+
+def test_p16_omitting_served_l1_keeps_legacy_behavior(tmp_path):
+    # backward-compatible: no served_l1 → today's behavior (tree_hash + adjudication only), L1 ignored
+    _write_run(tmp_path, "kern-fix-01", tree_hash="ABC", l1="openai/gpt-5.4-mini")
+    m = _gate().find_gated_run(tmp_path, "ABC")
+    assert m is not None and m["run_label"] == "kern-fix-01"
+
+
+def test_p16_fail_closed_when_run_has_no_recorded_l1(tmp_path):
+    # a pre-binding run (no manifest.roles.l1) cannot prove which L1 it scored → refused when an L1
+    # is required, but STILL accepted in legacy (no served_l1) mode.
+    _write_run(tmp_path, "legacy", tree_hash="ABC", l1=None)
+    assert _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.1") is None
+    assert _gate().find_gated_run(tmp_path, "ABC") is not None  # legacy mode unaffected
+
+
+def test_p16_fail_closed_when_roles_l1_is_partial(tmp_path):
+    # a roles.l1 missing the model (or provider) is not a usable proof → refused under a required L1
+    d = tmp_path / "partial"
+    d.mkdir()
+    adj = {"provisional_until_deep_audit": True}
+    for k in DET_KEYS:
+        adj[k] = 1.0
+    cols = [_col("flags_off"), _ARCHETYPE]
+    adj["columns"] = {c["column"]: c for c in cols}
+    data = {
+        "manifest": {
+            "run_label": "partial",
+            "tree_hash": "ABC",
+            "roles": {"l1": {"provider": "openai"}},  # no model
+        },
+        "adjudication": adj,
+    }
+    (d / "results.json").write_text(json.dumps(data), encoding="utf-8")
+    assert _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.1") is None
+
+
+def test_p16_main_warns_when_served_l1_omitted(tmp_path, capsys):
+    # the CLI prints a warning (but still runs) when no served_l1 is given
+    _write_run(tmp_path, "kern-fix-01", tree_hash="ABC")
+    rc = _gate().main([str(tmp_path), "ABC"])
+    assert rc == 0
+    assert "served_l1" in capsys.readouterr().err
+
+
+def test_p16_main_accepts_served_l1_arg(tmp_path, capsys):
+    # the CLI threads the 3rd arg through and refuses a model mismatch with exit 2
+    _write_run(tmp_path, "kern-fix-01", tree_hash="ABC", l1="openai/gpt-5.1")
+    assert _gate().main([str(tmp_path), "ABC", "openai/gpt-5.1"]) == 0
+    assert _gate().main([str(tmp_path), "ABC", "openai/gpt-5.4-mini"]) == 2

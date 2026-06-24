@@ -39,16 +39,28 @@ TREE_HASH="$(bash ops/tree-hash.sh)"
 [ -n "${TREE_HASH}" ] || die "empty tree_hash from ops/tree-hash.sh"
 echo ">> served tree_hash = ${TREE_HASH}"
 
-# ── 2. GATE: refuse unless an adjudicated eval-REPLAY validates this exact tree ─
-if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}")"; then
-  echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}" >&2
-  echo "!! run + adjudicate an eval-REPLAY for this exact served tree, then retry." >&2
+# ── 1b. served L1 id (P1.6): the SAME runtime config the container reads. tree_hash binds the CODE
+# but not the model, so an .env-only L1 swap would otherwise ship on a stale eval. The container reads
+# .env.prod (SEALAI_V2_ prefix); resolve provider/model with the settings.py defaults (provider→openai,
+# model→gpt-5.1) — pure config, no models.list() (the gate stays network-free). Read directly from
+# .env.prod (the file --env-file feeds the container) rather than the shell env. ──────────────────
+env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
+SERVED_L1_PROVIDER="$(env_prod SEALAI_V2_L1_PROVIDER)"; SERVED_L1_PROVIDER="${SERVED_L1_PROVIDER:-openai}"
+SERVED_L1_MODEL="$(env_prod SEALAI_V2_L1_MODEL)";       SERVED_L1_MODEL="${SERVED_L1_MODEL:-gpt-5.1}"
+SERVED_L1="${SERVED_L1_PROVIDER}/${SERVED_L1_MODEL}"
+[ -n "${SERVED_L1_PROVIDER}" ] && [ -n "${SERVED_L1_MODEL}" ] || die "could not resolve served L1 from .env.prod"
+echo ">> served L1 = ${SERVED_L1}"
+
+# ── 2. GATE: refuse unless an adjudicated eval-REPLAY validates this exact tree AND L1 (P1.6) ─
+if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}")"; then
+  echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH} + L1 ${SERVED_L1}" >&2
+  echo "!! run + adjudicate an eval-REPLAY for this exact served tree AND L1, then retry." >&2
   exit 2
 fi
 RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
 GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
 DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
-echo ">> gate PASS — validated by run '${RUN_LABEL}' (git ${GIT_SHA}, dirty=${DIRTY})"
+echo ">> gate PASS — validated by run '${RUN_LABEL}' (git ${GIT_SHA}, dirty=${DIRTY}, L1=${SERVED_L1})"
 
 # ── 3. rollback rung: tag the RUNNING image (from the daemon, never memory) ───
 ROLLBACK_FROM="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
@@ -105,13 +117,14 @@ for i in $(seq 1 30); do
 done
 
 # ── 6. ledger (machine-readable commit→deploy index) + GOVERNANCE_LOG paste ───
-LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA" "$DIRTY" "$ROLLBACK_FROM" <<'PY'
+LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA" "$DIRTY" "$ROLLBACK_FROM" "$SERVED_L1" <<'PY'
 import json, sys
-ts, tree_hash, run_label, image_sha, git_sha, dirty, rollback_from = sys.argv[1:8]
+ts, tree_hash, run_label, image_sha, git_sha, dirty, rollback_from, served_l1 = sys.argv[1:9]
 print(json.dumps({
     "ts": ts, "tree_hash": tree_hash, "run_label": run_label,
     "image_sha": image_sha, "git_sha": git_sha,
     "dirty": dirty == "true", "rollback_from": rollback_from,
+    "l1": served_l1,
 }))
 PY
 )"
@@ -123,8 +136,8 @@ cat <<EOF
 ================ GOVERNANCE_LOG paste-block (owner-authored prose) ================
 ## ${TS} — V2 PROD deploy: \`backend-v2\` rebuild — gated via ops/release-backend-v2.sh (run ${RUN_LABEL})
 
-**Gated deploy** — tree_hash \`${TREE_HASH}\` validated by adjudicated eval-REPLAY \`${RUN_LABEL}\`
-(git \`${GIT_SHA}\`, dirty=${DIRTY}); all gated axes Schranken-quota(final)=1.000.
+**Gated deploy** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` validated by adjudicated
+eval-REPLAY \`${RUN_LABEL}\` (git \`${GIT_SHA}\`, dirty=${DIRTY}); all gated axes Schranken-quota(final)=1.000.
 - new live \`sealai-backend-v2:latest\` = \`${IMAGE_SHA}\`
 - rollback rung (read from the daemon) = \`${ROLLBACK_FROM}\`, tagged \`${ROLLBACK_TAG}\`
 - smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.

@@ -6,6 +6,12 @@ Finds an eval run that VALIDATES the served runtime about to be deployed: its
 ``adjudication`` block (the owner folded the worksheet), and EVERY gated axis is clean
 (``schranken_quota_final == 1.0``). No such run → the deploy is refused (exit 2).
 
+[P1.6] ``tree_hash`` binds the served CODE but NOT the model config — an ``.env``-only L1 swap ships
+the same tree with a different model, so an eval scored on model A could gate a deploy serving model
+B. The OPTIONAL 3rd arg ``served_l1`` ("provider/model") closes that: when given, the validating run
+must ALSO have adjudicated that exact L1 (``manifest.roles.l1``). A run that never recorded its L1
+fails closed. Omitting it preserves the old behavior (warned, but allowed — backward-compatible).
+
 Pure stdlib, JSON-only: the gate CHECKS artifacts; it cannot run the eval (the OPENAI_API_KEY is
 .env-denied) and never imports sealai_v2, an LLM, or the network. ``provisional_until_deep_audit:
 true`` is accepted (the first-pass mode). ``dirty`` is NOT a gate criterion — ``tree_hash`` already
@@ -30,16 +36,37 @@ _DETERMINISTIC_SCHRANKEN = (
 )
 
 
-def find_gated_run(runs_dir, tree_hash: str):
+def _manifest_l1_id(manifest) -> str | None:
+    """Normalize ``manifest.roles.l1`` (the resolved L1 descriptor the eval ADJUDICATED) to a flat
+    ``"provider/model"`` id, or None when the run predates role-binding (no ``roles.l1``).
+
+    The harness records L1 as the canonical nested ``{"provider", "model"}`` descriptor (shared with
+    matrix.py); the gate compares it as a flat string against the served-runtime L1. A run with no
+    ``roles.l1`` (or a partial one) returns None → fail-closed at the call site when an L1 is required.
+    """
+    l1 = (manifest.get("roles") or {}).get("l1")
+    if not isinstance(l1, dict):
+        return None
+    provider, model = l1.get("provider"), l1.get("model")
+    if not provider or not model:
+        return None
+    return f"{provider}/{model}"
+
+
+def find_gated_run(runs_dir, tree_hash: str, served_l1: str | None = None):
     """Return a small match dict for the first run whose manifest.tree_hash == tree_hash that is
     FULLY adjudicated AND every hard gate is clean, else None.
 
     A run qualifies only when:
       • its ``adjudication`` block exists;
       • every deterministic agent-final Schranke is present and == 1.0 (``_DETERMINISTIC_SCHRANKEN``
-        — memory_fabrication, exfiltration, parametric multiturn + singleturn); and
+        — memory_fabrication, exfiltration, parametric multiturn + singleturn);
       • every GATED column (``n_gate_cases > 0``) is fully adjudicated (``n_gates_pending == 0`` and
-        ``n_units_pending == 0``) with ``schranken_quota_final == 1.0``.
+        ``n_units_pending == 0``) with ``schranken_quota_final == 1.0``; and
+      • [P1.6] when ``served_l1`` is given, the run's ADJUDICATED L1 (``manifest.roles.l1`` as
+        ``provider/model``) equals the served-runtime L1 — an eval scored on model A does NOT gate a
+        deploy serving model B (the ``.env``-only model swap). A run missing ``roles.l1`` cannot prove
+        which L1 it scored, so it FAILS CLOSED (refused) whenever ``served_l1`` is required.
     Gated is detected by ``n_gate_cases`` (NOT a non-null quota) so a gated-but-pending column — which
     may also report a null quota — blocks, while an ungated-by-design axis (archetype, n_gate_cases
     == 0) is skipped. A run with no gated column at all is not a usable proof.
@@ -55,6 +82,11 @@ def find_gated_run(runs_dir, tree_hash: str):
             continue
         adj = data.get("adjudication")
         if not isinstance(adj, dict):
+            continue
+
+        # P1.6 — the eval↔deploy MODEL binding. When the caller pins the served L1, a run scored on a
+        # different L1 (or one that never recorded its L1) must not validate this deploy → fail closed.
+        if served_l1 is not None and _manifest_l1_id(manifest) != served_l1:
             continue
 
         # G1 — every deterministic hard-gate Schranke present and clean (missing/None → fail closed).
@@ -80,20 +112,36 @@ def find_gated_run(runs_dir, tree_hash: str):
             "git_sha": manifest.get("git_sha"),
             "dirty": manifest.get("dirty"),
             "gated_axes": sorted(c.get("column") for c in gated),
+            "l1": _manifest_l1_id(manifest),
         }
     return None
 
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if len(argv) != 2:
-        print("usage: v2_deploy_gate.py <runs_dir> <tree_hash>", file=sys.stderr)
-        return 2
-    runs_dir, tree_hash = argv
-    match = find_gated_run(runs_dir, tree_hash)
-    if match is None:
+    if not 2 <= len(argv) <= 3:
         print(
-            f"DEPLOY GATE (V2): no adjudicated eval-REPLAY for tree {tree_hash} — refuse",
+            "usage: v2_deploy_gate.py <runs_dir> <tree_hash> [served_l1]",
+            file=sys.stderr,
+        )
+        return 2
+    runs_dir, tree_hash = argv[0], argv[1]
+    served_l1 = argv[2] if len(argv) == 3 else None
+    if served_l1 is None:
+        # P1.6 — without a served-L1 pin the gate binds CODE (tree_hash) but not the model, so an
+        # ``.env``-only L1 swap could ship unevaluated. Callers (release-backend-v2.sh) MUST pass it.
+        print(
+            "DEPLOY GATE (V2): WARNING — no served_l1 given; L1-model binding NOT enforced "
+            "(an .env-only model swap could ship with no fresh eval)",
+            file=sys.stderr,
+        )
+    match = find_gated_run(runs_dir, tree_hash, served_l1)
+    if match is None:
+        detail = f"tree {tree_hash}" + (
+            f" + L1 {served_l1}" if served_l1 is not None else ""
+        )
+        print(
+            f"DEPLOY GATE (V2): no adjudicated eval-REPLAY for {detail} — refuse",
             file=sys.stderr,
         )
         return 2

@@ -55,6 +55,18 @@ class L1Generator:
         self._assembler = assembler
         self._model_config = model_config
 
+    def doctrine_system_prompt(self, *, flags: Flags) -> str:
+        """P1.4: the STATIC doctrine system prompt (flags only — NO grounding, calc, memory or
+        correction_note), exposed so the SERVE-path deterministic exfiltration gate can use the
+        confidential doctrine as its leak reference. This MIRRORS the eval's reference
+        (``eval/harness`` builds ``PromptAssembler().system_prompt(flags=...)``), so the SERVE gate
+        and the eval gate score against the byte-identical doctrine surface. Using the doctrine-only
+        prompt (not the per-turn assembly) is also what AVOIDS a false-positive: the live prompt
+        legitimately embeds reviewed correction facts that a deterministic L3 hedge is allowed to
+        state verbatim. KB-claim dumps are covered by the gate's separate ``kb_claims`` channel.
+        Pure: the assembler is injected (``core`` stays I/O-free)."""
+        return self._assembler.system_prompt(flags=flags)
+
     async def generate(
         self,
         question: str,

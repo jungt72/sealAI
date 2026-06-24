@@ -11,7 +11,55 @@ from sealai_v2.core.contracts import (
     GroundingFact,
     NotComputed,
     PipelineResult,
+    VerifierAction,
+    VerifierVerdict,
 )
+
+
+def _verification(result: PipelineResult) -> dict:
+    """P1.5 — surface L3's verdict so a client can tell a CONFIDENTLY-verified answer from a
+    hedge or a silently-unverified one. Without this block the chat payload drops the verdict
+    and every answer looks equally trustworthy.
+
+    ``verified`` is the honest, conservative signal: True only when L3 actually ran, parsed its
+    own output, AND the outcome is one we stand behind — PASS / FLAG (advisory, draft unchanged)
+    / CORRECTED (regenerated against a REVIEWED correction → clean, contracts §VerifierAction).
+    A BLOCKED_HEDGE (safe hedge substituted) or a parse failure (fail-open) is NOT ``verified``;
+    a missing verdict (L3 absent/disabled) is NOT ``verified`` either.
+
+    The nested object keeps the raw signals so the SPA can render a precise badge:
+      - ``action``   : the VerifierAction value (``"pass"``/``"flag"``/…) or None if L3 absent.
+      - ``parse_ok`` : did L3's output parse (bool), or None if L3 absent.
+      - ``hedged``   : True only when the draft was blocked and a safe hedge was substituted.
+      - ``ran``      : whether L3 ran at all (the pipeline's own ``verified`` flag) — lets a
+                       client distinguish "ran but hedged/unparsed" from "never checked".
+    """
+    verdict: VerifierVerdict | None = result.verifier
+    if verdict is None:
+        return {
+            "verified": False,
+            "verification": {
+                "action": None,
+                "parse_ok": None,
+                "hedged": False,
+                "ran": bool(result.verified),
+            },
+        }
+    hedged = verdict.action is VerifierAction.BLOCKED_HEDGE
+    verified = verdict.parse_ok and verdict.action in (
+        VerifierAction.PASS,
+        VerifierAction.FLAG,
+        VerifierAction.CORRECTED,
+    )
+    return {
+        "verified": bool(verified),
+        "verification": {
+            "action": verdict.action.value,
+            "parse_ok": bool(verdict.parse_ok),
+            "hedged": hedged,
+            "ran": bool(result.verified),
+        },
+    }
 
 
 def _not_computed(n: NotComputed) -> dict:
@@ -108,4 +156,8 @@ def chat_response(result: PipelineResult) -> dict:
         "diagnose": result.diagnose,
         "decode": result.decode,
         "alternativen": result.alternativen,
+        # P1.5: surface L3's verdict (verified flag + action/parse_ok/hedged) so the client can
+        # distinguish a confidently-verified answer from a hedge or a silently-unverified one.
+        # Additive only — existing keys are untouched.
+        **_verification(result),
     }
