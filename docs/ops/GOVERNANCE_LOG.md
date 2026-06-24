@@ -1861,3 +1861,13 @@ Owner-Entscheidungen:
   deep-audit-deferred. Kein Schranken-Verstoss.
 - Uebrige 50 gate-Units: Owner-Block-Bestaetigung der provisional-clean Judge-Verdikte.
 Status: Inc-2 fachlich geschlossen. NICHT deployt (Deploy = separater Gate, frischer REPLAY auf HEAD noetig).
+
+## 2026-06-24T15:53:12Z — V2 PROD deploy: `backend-v2` rebuild — gated via ops/release-backend-v2.sh (run v21-gpt51-gate)
+
+**Gated deploy** — tree_hash `993c2b1fab1eadd669b4f5909d482f7ef6f82ccf` validated by adjudicated eval-REPLAY `v21-gpt51-gate` (git `68df787b`, dirty=false); all gated axes Schranken-quota(final)=1.000.
+- new live `sealai-backend-v2:latest` = `sha256:2f93e1d5dc96810b241db1d32574e90daa41f2eae50c58095ceb62b7586f1909`
+- rollback rung (read from the daemon) = `sha256:f81482d05ec17a4880012bd1d4bdf706d2e671b694b53f8ce03db5eee4a2cb7f`, tagged `sealai-backend-v2:rollback-pre-v21-gpt51-gate-20260624-155312`
+- smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.
+- ledger: ops/deploy-ledger.jsonl
+
+Scope (V2.1): Operations Diagnose (D), Decode (G), Alternativen (F) now live alongside Gegencheck (E). L1 narrator pinned to `gpt-5.1` — the only model that held the §E4-1 "nie affirmatives passt" Gegencheck calibration + the §9.2 no-equivalence edge; Mistral Small 4 and gpt-5.4-mini both verified to fail it (eval `v21-gpt54mini`). L3 verifier + helper → Mistral Small 4 (independent check + cost); judge → gpt-4.1-mini. Adjudication: owner-ratified first-pass (`provisional_until_deep_audit`); deep domain audit of draft knowledge (Dim.5 Versagensmodi draft, Dim.6 Hersteller empty-by-design, Anwendungs-Archetypen) deferred to the owner's multi-LLM curation track.
