@@ -691,6 +691,38 @@ def scope_calc_velocity_trap(
     return tuple(f for f in findings if f.trap_id != _CALC_VELOCITY_TRAP_ID)
 
 
+def run_parametric_guard(
+    draft: Answer,
+    *,
+    computed_values: tuple[ComputedValue, ...] = (),
+    not_computed: tuple[NotComputed, ...] = (),
+) -> tuple[Answer, VerifierVerdict | None]:
+    """P0.3: the DETERMINISTIC parametric Schranke as a standalone, LLM-free guard.
+
+    ``detect_parametric_leaks`` normally lives INSIDE ``run_verify``, so a disabled/unconfigured L3
+    verifier (the incident kill-switch) would silently drop this trust-spine guard together with the
+    LLM critic. The pipeline calls this on the no-verifier path so the parametric Schranke holds
+    unconditionally. Pure: no LLM, no IO. Returns ``(answer, verdict)`` — ``verdict`` is None when clean."""
+    leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
+    if not leaks:
+        return draft, None
+    hedge_text = build_calc_leak_hedge(
+        leaks, computed_values=computed_values, not_computed=not_computed
+    )
+    # Same backstop as run_verify: never let the hedge itself re-introduce a kern-quantity number.
+    if detect_parametric_leaks(hedge_text, computed_values=computed_values):
+        hedge_text = build_hedge((), None)
+    hedge = Answer(
+        text=hedge_text, model=_HEDGE_MODEL, grounding_facts=draft.grounding_facts
+    )
+    return hedge, VerifierVerdict(
+        action=VerifierAction.BLOCKED_HEDGE,
+        findings=_leak_findings(leaks),
+        parse_ok=True,
+        raw=None,
+    )
+
+
 async def run_verify(
     verifier: L3Verifier,
     generator,
@@ -729,17 +761,32 @@ async def run_verify(
     raw = await verifier.verify(
         question, draft.text, grounding_facts, computed_values, matrix_facts
     )
+    # P0.1 fail-closed: the LLM verdict IS the catalog/matrix trap net. If it did not parse, that net
+    # did NOT run — a no-findings PASS here would ship an UNVERIFIED draft as if clean (the §2/§9
+    # "never confidently wrong" hole). Re-run the gate once (a transient bad sample); if it still will
+    # not parse, treat verification as UNAVAILABLE and fail closed to a hedge below — never PASS.
+    if not raw.parse_ok:
+        raw = await verifier.verify(
+            question, draft.text, grounding_facts, computed_values, matrix_facts
+        )
+    verify_unavailable = not raw.parse_ok
     # Eingriff 2: the CALC-velocity trap only counts when the kern computed a v verdict this turn.
     scoped = scope_calc_velocity_trap(raw.findings, computed_values)
     findings = scoped + _leak_findings(leaks) + overlimit
-    if not findings:
+    if not findings and not verify_unavailable:
         return draft, VerifierVerdict(
             action=VerifierAction.PASS, parse_ok=raw.parse_ok, raw=raw.raw
         )
 
     reviewed = _reviewed_traps(scoped)
     reviewed_mx = _reviewed_matrix(scoped)
-    if not reviewed and not reviewed_mx and not leaks and not overlimit:
+    if (
+        not reviewed
+        and not reviewed_mx
+        and not leaks
+        and not overlimit
+        and not verify_unavailable
+    ):
         # draft-trap and/or card-contradiction matches → advisory FLAG, never block/correct
         return draft, VerifierVerdict(
             action=VerifierAction.FLAG,
@@ -826,13 +873,17 @@ async def run_verify(
         )
     elif persisting_mx or reviewed_mx:
         hedge_text = build_matrix_hedge(matrix_facts, reviewed_mx or persisting_mx)
-    else:
+    elif reviewed or persisting_traps:
         hedge_text = build_hedge(
             reviewed or persisting_traps,
             catalog,
             question=question,
             case_context=case_context,
         )
+    else:
+        # P0.1: verify_unavailable — the catalog/matrix trap net could not run for this turn → a
+        # number-free generic hedge (Orientierung, keine Freigabe), never a confident unverified answer.
+        hedge_text = build_hedge((), None)
     # Backstop (kern-fix-01): build_hedge / build_matrix_hedge echo a reviewed entry's text VERBATIM.
     # If that text ever carries a plugged kern-quantity number, the emitted hedge would re-introduce
     # the very parametric leak the Schranke forbids (the canonical CALC-MEM-01 Turn-0 failure). The

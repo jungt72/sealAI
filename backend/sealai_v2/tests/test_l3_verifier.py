@@ -120,6 +120,69 @@ def test_clean_draft_passes_unchanged():
     assert len(client.calls) == 1  # only the verify call, no regeneration
 
 
+def test_verify_unparseable_twice_fails_closed_to_hedge():
+    # P0.1: the LLM verdict IS the catalog/matrix trap net. If it does not parse (and the single retry
+    # also fails), that net never ran — the draft is UNVERIFIED, so run_verify must fail CLOSED to a
+    # hedge, never PASS the unverified draft through. (Regression for the §2/§9 fail-open.)
+    client = ScriptedFakeLlmClient(["not json at all", "still not json"])
+    draft = _draft("eine saubere Antwort ohne Zahlen")
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Frage?",
+            draft,
+            flags=Flags(),
+        )
+    )
+    assert verdict.action == VerifierAction.BLOCKED_HEDGE
+    assert verdict.parse_ok is False
+    assert answer is not draft  # the unverified draft was NOT shipped
+    assert answer.model == "l3-hedge"
+    assert len(client.calls) == 2  # verify + one retry, no regeneration
+
+
+def test_verify_unparseable_then_clean_retry_passes():
+    # P0.1: a TRANSIENT unparseable verdict recovers on the single retry → normal PASS, no over-hedging.
+    client = ScriptedFakeLlmClient(["not json at all", _CLEAN])
+    draft = _draft("eine saubere Antwort ohne Zahlen")
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Frage?",
+            draft,
+            flags=Flags(),
+        )
+    )
+    assert verdict.action == VerifierAction.PASS
+    assert answer is draft  # recovered → untouched
+    assert len(client.calls) == 2  # verify + retry, then clean
+
+
+def test_run_parametric_guard_passes_clean_draft():
+    # P0.3: no kern-quantity assertion → clean passthrough, no verdict (and no LLM at all).
+    from sealai_v2.core.l3_verifier import run_parametric_guard
+
+    draft = _draft("Eine Orientierung ohne Kern-Zahlen.")
+    answer, verdict = run_parametric_guard(draft)
+    assert answer is draft and verdict is None
+
+
+def test_run_parametric_guard_hedges_a_parametric_leak_without_l3():
+    # P0.3: the DETERMINISTIC parametric Schranke must fire even with NO LLM verifier (kill-switch /
+    # unconfigured) — a draft asserting a kern-quantity is hedged, never shipped.
+    from sealai_v2.core.l3_verifier import run_parametric_guard
+
+    draft = _draft("Die Umfangsgeschwindigkeit liegt bei 10,47 m/s.")
+    answer, verdict = run_parametric_guard(draft)
+    assert verdict is not None and verdict.action == VerifierAction.BLOCKED_HEDGE
+    assert answer.model == "l3-hedge"
+    assert answer is not draft
+
+
 def test_reviewed_violation_regenerates_and_corrects():
     client = ScriptedFakeLlmClient(
         [_violation("R1", "confident_wrong"), "EPDM ist UNPOLAR — NBR nehmen.", _CLEAN]

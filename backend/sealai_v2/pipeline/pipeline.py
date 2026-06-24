@@ -36,7 +36,7 @@ from sealai_v2.core.contracts import (
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
-from sealai_v2.core.l3_verifier import L3Verifier
+from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
@@ -298,6 +298,16 @@ class Pipeline:
                         durable_context=durable_context or None,
                         conversation_window=conversation_window or None,
                         untrusted=untrusted_data,
+                    )
+            else:
+                # P0.3: the DETERMINISTIC parametric Schranke is pure (no LLM) and must hold even when
+                # the L3 verifier is disabled (incident kill-switch) or unconfigured — it would
+                # otherwise vanish together with the LLM critic it currently lives inside.
+                with _staged(timer, progress, "verify_ms", "verify"):
+                    answer, verdict = run_parametric_guard(
+                        answer,
+                        computed_values=calc.computed,
+                        not_computed=calc.not_computed,
                     )
 
             with _staged(timer, progress, "cite_ms", "cite"):
