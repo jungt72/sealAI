@@ -253,6 +253,18 @@ services:
       SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge}
+      # Phase-1 Qdrant semantic retrieval (eval-validated by adjudicated run v21-qdrant-gate-4).
+      # Flip via .env.prod (SEALAI_V2_RETRIEVER_BACKEND=qdrant); the retriever FAIL-SAFES to the
+      # in-process keyword matcher on a missing dep / unreachable Qdrant / missing collection.
+      # SEALAI_V2_QDRANT_URL is the in-network service name; e5-large (FastEmbed, local) reads the
+      # mounted ONNX cache via SEALAI_V2_EMBED_CACHE_DIR — no network egress at request time.
+      SEALAI_V2_RETRIEVER_BACKEND: ${SEALAI_V2_RETRIEVER_BACKEND:-in_process}
+      SEALAI_V2_QDRANT_URL: ${SEALAI_V2_QDRANT_URL:-http://qdrant:6333}
+      SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-/app/models}
+    volumes:
+    # Pre-staged e5-large ONNX cache (FastEmbed) — read-only; avoids a ~2GB cold download on the
+    # health-gated recreate. uid 10001 reads via the bind mount (the cache contents are world-readable).
+    - /home/thorsten/sealai-v2-fastembed:/app/models:ro
     expose:
     - '8001'
     ports:

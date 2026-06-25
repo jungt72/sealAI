@@ -1895,3 +1895,34 @@ Scope — V2/V2.1 deep-dive-audit hardening (8 fixes, 25 new tests, full suite g
 - **P3** hygiene: retrieval draft-vs-reviewed citation label, stale stages.py docstring, matrix 28-cell + pv_wert-gating notes.
 
 Deferred-by-design (NOT in scope, owner/infra): Dim.5/6 knowledge content (owner multi-LLM curation), Qdrant semantic retrieval (separate infra milestone), Dim.7 cross-vendor equivalence store (§9.2-risky + owner-data; the parser-only state is doctrine-correct).
+
+## 2026-06-25 — V2 PROD: Qdrant semantic retrieval cutover (Phase 1) — gated deploy v21-qdrant-gate-4
+
+Phase-1 Qdrant semantic retrieval is LIVE for backend-v2, replacing the in-process keyword
+scope-tag matcher as the production retrieval path. InProcessRetriever stays the deterministic
+CI/eval instrument and the fail-safe target.
+
+- **Retrieval**: QdrantFachkartenRetriever (dense e5-large via FastEmbed, local ONNX — no API).
+  28 reviewed-claim points in collection `sealai_v2_fachkarten`. Flip via
+  `SEALAI_V2_RETRIEVER_BACKEND=qdrant`; FAIL-SAFE to InProcessRetriever on missing dep /
+  unreachable Qdrant / missing collection (verified live: QdrantFachkartenRetriever, no fallback;
+  test query "FKM Wasserdampf" -> FK-FKM-DAMPF).
+- **Deploy** (ops/release-backend-v2.sh): tree_hash `8e4b08f3` + L1 `openai/gpt-5.1` validated by
+  adjudicated eval-REPLAY `v21-qdrant-gate-4` (all 5 gated axes Schranken-quota(final)=1.000,
+  pending 0). Live image `sha256:04bb7c42`; rollback rung `sha256:3ddee7c3`. Smoke GREEN.
+- **§9.2 backstop**: the equivalence regex guard was removed (39d8cce1) as suspected net-negative,
+  but the post-removal eval v21-qdrant-gate-3 caught gpt-5.1 slipping on §9.2 (DEC-DECODE-VERGLEICH-01:
+  "1:1 austauschbar, sofern [Geometrie]" — a real must_avoid violation; passes in-process AND gate-2
+  with the guard, fails only guard-less). Guard RESTORED (Revert 830cee33). §9.2 floor = the
+  deterministic guard + the DEC-AEQUIVALENZ hard gate. Known residual: the regex over-fires on
+  alternatives questions (ALT-NEUTRAL-EMPTY-01, a NON-gated credibility false-positive). FOLLOW-UP:
+  a reviewed L3 equivalence-trap (semantic, owner-reviewed) to drop the false-positive without
+  weakening recall.
+- **Embedding consistency**: host (FastEmbed 0.7.4, ingestion+eval) and container (0.8.0, serving)
+  produce BYTE-IDENTICAL e5-large embeddings (the 0.8.0 mean-pooling warning is benign for this
+  cached ONNX model) -> the gate eval is representative of serving.
+- **e5 model**: pre-staged ONNX cache mounted read-only at /app/models -> no cold download on the
+  health-gated recreate.
+
+Deferred: Phase-2 Paperless ingestion (tag -> gpt-5.5 auto-DRAFT -> owner-review -> embed -> Qdrant).
+recall@k truth set owner-ratified (recall@3=1.000 vs keyword 0.667).
