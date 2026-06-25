@@ -1926,3 +1926,27 @@ CI/eval instrument and the fail-safe target.
 
 Deferred: Phase-2 Paperless ingestion (tag -> gpt-5.5 auto-DRAFT -> owner-review -> embed -> Qdrant).
 recall@k truth set owner-ratified (recall@3=1.000 vs keyword 0.667).
+
+## 2026-06-25 — INCIDENT + ROLLBACK: Qdrant cutover OOM'd the host → reverted to in_process
+
+The Phase-1 Qdrant cutover (entry above) was ROLLED BACK the same day. On the first real chat
+request, each backend-v2 uvicorn worker lazy-loaded its OWN copy of the e5-large ONNX model
+(~2.2 GB). The 7.6 GB host was already ~5 GB resident (V1, keycloak, qdrant, postgres, redis,
+backend-v2-staging) → RAM + 4 GB swap exhausted → swap-death (load >170) → dockerd HUNG (docker ps
+timed out) → chat requests hung (a plain "Hallo" got no answer).
+
+The deploy gate + release smoke did NOT catch it: the embedding model loads lazily on the first
+CHAT turn, not during /health or the kern-calc smoke. LESSON: gate model-loading deploys on host
+RAM-headroom x worker-count, and verify a real authenticated chat turn before declaring done.
+
+Recovery: no passwordless sudo for the deploy user, and container procs run as uid 10001 (owner
+cannot OS-kill them) → owner ran `sudo pkill -9 -f uvicorn` to free RAM (the `-f uvicorn` pattern
+self-matched the invoking shell and SIGKILLed the chain before the follow-on `docker stop`). RAM
+freed → daemon responsive → `docker stop backend-v2` + `up --force-recreate` with
+SEALAI_V2_RETRIEVER_BACKEND=in_process → backend-v2 lean (43 MiB, InProcessRetriever), load 178→7,
+all services healthy.
+
+State: in_process retrieval is LIVE again. Qdrant CODE stays merged (compose default in_process;
+.env.prod flipped to in_process, uncommitted by design). Qdrant is NOT viable on this host with
+e5-large x N workers. Sustainable paths (owner decision, none chosen): smaller local model
+(multilingual-e5-small ~0.5 GB; re-ingest + re-eval), single uvicorn worker, API embeddings, or more VPS RAM.
