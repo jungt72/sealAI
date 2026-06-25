@@ -76,7 +76,15 @@ const o = (value: string, label: string): FieldOption => ({ value, label });
  */
 export const UNIVERSAL_CORE: FieldDef[] = [
   {
-    key: "medium", label: "Medium", unit: "", type: "enum", required: false, role: "context",
+    // Phase-1 Medium-Wiring: the SPECIFIC medium is FREE-TEXT — it shows whatever the chat extracted
+    // (Hydrauliköl, Heißwasser, Salzsäure …), vocab-independent, and the user can edit it. Hydrates the
+    // backend case-state fact feld="medium".
+    key: "medium", label: "Medium", unit: "", type: "text", required: false, role: "context",
+    help: "Das konkrete Medium, z. B. Hydrauliköl, Heißwasser, Salzsäure.",
+  },
+  {
+    // The coarse bucket — auto-filled from the specific medium (feld="medium_kategorie"); lossy by design.
+    key: "medium_kategorie", label: "Kategorie", unit: "", type: "enum", required: false, role: "context",
     options: [
       o("oel", "Öl"), o("fett", "Fett"), o("wasser", "Wasser"), o("emulsion", "Emulsion"),
       o("kraftstoff", "Kraftstoff"), o("kuehlmittel", "Kühlmittel"), o("luft", "Luft"), o("sonstiges", "Sonstiges"),

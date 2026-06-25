@@ -32,7 +32,8 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     expect(screen.getByTestId("param-group-A")).toBeTruthy(); // Wellengeometrie
     expect(screen.getByText("Wellengeometrie")).toBeTruthy();
     expect(screen.getByTestId("param-wellendurchmesser")).toBeTruthy(); // number (kernel)
-    expect((screen.getByTestId("param-medium") as HTMLSelectElement).tagName).toBe("SELECT"); // enum
+    expect((screen.getByTestId("param-medium") as HTMLInputElement).tagName).toBe("INPUT"); // free-text (any medium)
+    expect((screen.getByTestId("param-medium_kategorie") as HTMLSelectElement).tagName).toBe("SELECT"); // enum
     expect((screen.getByTestId("param-spritzwasser") as HTMLSelectElement).tagName).toBe("SELECT"); // boolean
   });
 
@@ -42,16 +43,18 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.change(screen.getByTestId("param-drehzahl"), { target: { value: "3000" } });
     fireEvent.change(screen.getByTestId("param-druck"), { target: { value: "5" } });
-    fireEvent.change(screen.getByTestId("param-medium"), { target: { value: "oel" } });
+    fireEvent.change(screen.getByTestId("param-medium"), { target: { value: "Hydrauliköl" } }); // free-text
+    fireEvent.change(screen.getByTestId("param-medium_kategorie"), { target: { value: "oel" } }); // enum
     fireEvent.click(screen.getByTestId("param-submit"));
     expect(onSubmit).toHaveBeenCalledTimes(1); // ONE batch, not N per-field calls
     const items = onSubmit.mock.calls[0][0];
     expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" });
     expect(items).toContainEqual({ feld: "drehzahl", wert: "3000 U/min", label: "Drehzahl n" });
     expect(items).toContainEqual({ feld: "druck", wert: "5 bar", label: "Druck (normal)" });
-    expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" }); // enum → German label
+    expect(items).toContainEqual({ feld: "medium", wert: "Hydrauliköl", label: "Medium" }); // free-text passes through
+    expect(items).toContainEqual({ feld: "medium_kategorie", wert: "Öl", label: "Kategorie" }); // enum → German label
     expect(items).toContainEqual({ feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" }); // active type marker
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(6);
   });
 
   it("does NOT submit empty / 'Unbekannt' fields (no fake default — the param stays missing)", () => {
@@ -84,7 +87,8 @@ describe("ParameterForm (schema-driven; inputs only — the kern owns every numb
   it("resolveWert: number→unit, enum→label, boolean→ja/nein, empty/Unbekannt→'' (omitted)", () => {
     const byKey = Object.fromEntries(formFields(RWDR_SITUATION).map((f) => [f.key, f]));
     expect(resolveWert(byKey.wellendurchmesser, "50")).toBe("50 mm");
-    expect(resolveWert(byKey.medium, "oel")).toBe("Öl");
+    expect(resolveWert(byKey.medium_kategorie, "oel")).toBe("Öl"); // enum → label
+    expect(resolveWert(byKey.medium, "Salzsäure")).toBe("Salzsäure"); // free-text passes through (any medium)
     expect(resolveWert(byKey.medium, "")).toBe(""); // Unbekannt → omitted
     expect(resolveWert(byKey.spritzwasser, "ja")).toBe("ja");
     expect(resolveWert(byKey.spritzwasser, "")).toBe(""); // Unbekannt → omitted
@@ -186,13 +190,13 @@ describe("ParameterForm variant='stage' (form-first landing — compact kernel +
     render(<ParameterForm variant="stage" onSubmit={onSubmit} />);
     fireEvent.change(screen.getByTestId("param-wellendurchmesser"), { target: { value: "50" } });
     fireEvent.change(screen.getByTestId("param-druck"), { target: { value: "0.5" } }); // period decimal
-    fireEvent.change(screen.getByTestId("param-medium"), { target: { value: "oel" } }); // context (in expander)
+    fireEvent.change(screen.getByTestId("param-medium_kategorie"), { target: { value: "oel" } }); // enum (in expander)
     fireEvent.click(screen.getByTestId("param-submit"));
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const items = onSubmit.mock.calls[0][0];
     expect(items).toContainEqual({ feld: "wellendurchmesser", wert: "50 mm", label: "Wellendurchmesser d₁" });
     expect(items).toContainEqual({ feld: "druck", wert: "0,5 bar", label: "Druck (normal)" }); // 0.5 → 0,5
-    expect(items).toContainEqual({ feld: "medium", wert: "Öl", label: "Medium" });
+    expect(items).toContainEqual({ feld: "medium_kategorie", wert: "Öl", label: "Kategorie" });
     expect(items).toContainEqual({ feld: "dichtungstyp", wert: "rwdr", label: "Dichtungstyp" }); // active type marker
     expect(items).toHaveLength(4); // drehzahl left empty → omitted (no fake default)
   });
