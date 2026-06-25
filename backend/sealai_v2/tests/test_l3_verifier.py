@@ -183,13 +183,9 @@ def test_run_parametric_guard_hedges_a_parametric_leak_without_l3():
     assert answer is not draft
 
 
-def test_verify_does_not_deterministically_hedge_equivalence_claims():
-    # §9.2 DESIGN LOCK: run_verify has NO deterministic text-matcher for affirmative interchangeability
-    # ("Teil X = Teil Y"). A regex guard over-fired on benign echoes and alternatives questions (eval
-    # v21-qdrant-gate*: APP-01 and ALT-NEUTRAL-EMPTY-01 were good answers wrongly hedged), so §9.2 is
-    # held by the L1 prompt (DEC-AEQUIVALENZ passes) plus the deploy-blocking DEC-AEQUIVALENZ hard gate.
-    # An affirmative "1:1 austauschbar" draft must therefore reach the LLM verify path (here scripted
-    # clean → PASS), never be short-circuited into a regex hedge. Re-adding such a guard fails this test.
+def test_verify_hedges_a_part_equivalence_claim():
+    # P0.2 §9.2: an affirmative interchangeability claim is hedged to the EQUIVALENZ_GRENZE — and the
+    # guard short-circuits BEFORE the LLM verify call (it is deterministic, not LLM-judged).
     client = ScriptedFakeLlmClient([_CLEAN])
     draft = _draft("Ja, die beiden O-Ringe sind 1:1 austauschbar.")
     answer, verdict = asyncio.run(
@@ -200,11 +196,57 @@ def test_verify_does_not_deterministically_hedge_equivalence_claims():
             "Kann ich tauschen?",
             draft,
             flags=Flags(),
+            comparison_context=True,  # a part-comparison turn → the §9.2 guard is active
         )
     )
-    assert verdict.action == VerifierAction.PASS  # no deterministic §9.2 short-circuit
+    assert verdict.action == VerifierAction.BLOCKED_HEDGE
+    assert answer.model == "l3-hedge"
+    assert "Hersteller" in answer.text
+    assert len(client.calls) == 0  # deterministic short-circuit, no LLM call
+
+
+def test_verify_does_not_hedge_the_negated_equivalence_form():
+    # The doctrine-correct "nicht 1:1 austauschbar" must pass through (no §9.2 false-positive).
+    client = ScriptedFakeLlmClient([_CLEAN])
+    draft = _draft("Nein, die sind nicht 1:1 austauschbar — Freigabe beim Hersteller.")
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Kann ich tauschen?",
+            draft,
+            flags=Flags(),
+            comparison_context=True,  # guard active, but the negated form is not flagged
+        )
+    )
+    assert verdict.action == VerifierAction.PASS
     assert answer is draft
-    assert len(client.calls) == 1  # LLM verify ran, no regex short-circuit
+
+
+def test_verify_does_not_hedge_equivalence_outside_comparison_context():
+    # FALSE-POSITIVE FIX (eval v21-qdrant-gate / APP-01): an affirmative "1:1 austauschbar" in a NON-
+    # comparison turn (no designation parsed → comparison_context=False, the default) must NOT be hedged
+    # — e.g. an application answer that echoes the user's "baugleich/gleiche Teile" premise.
+    client = ScriptedFakeLlmClient([_CLEAN])
+    draft = _draft(
+        "Die RWDR sind 1:1 austauschbar — aber die Anwendung unterscheidet sich stark."
+    )
+    answer, verdict = asyncio.run(
+        run_verify(
+            _verifier(client),
+            _generator(client),
+            _catalog(),
+            "Warum leckt der gleiche RWDR im Rührwerk, im Getriebe nicht?",
+            draft,
+            flags=Flags(),
+            # comparison_context defaults to False → the §9.2 guard does NOT run here
+        )
+    )
+    assert verdict.action == VerifierAction.PASS
+    assert (
+        answer is draft
+    )  # the good application answer ships, NOT the equivalence hedge
 
 
 def test_reviewed_violation_regenerates_and_corrects():

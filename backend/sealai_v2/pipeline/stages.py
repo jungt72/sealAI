@@ -180,6 +180,7 @@ async def verify(
     durable_context: list[dict] | None = None,
     conversation_window: list[dict] | None = None,
     untrusted: list[dict] | None = None,
+    comparison_context: bool = False,
 ):
     """Stage 5 — L3 verifier (M2/M3/M4 + Gap #2). Independent critic pass against the trap catalog, the
     reviewed grounding facts (M3), the computed values (M4) AND the §4 Verträglichkeitsmatrix (Gap #2);
@@ -206,6 +207,7 @@ async def verify(
         durable_context=durable_context,
         conversation_window=conversation_window,
         untrusted=untrusted,
+        comparison_context=comparison_context,
     )
 
 

@@ -356,6 +356,8 @@ class Pipeline:
                         durable_context=durable_context or None,
                         conversation_window=conversation_window or None,
                         untrusted=untrusted_data,
+                        # §9.2 guard fires ONLY on a part-comparison turn (decode parsed a designation)
+                        comparison_context=bool(decode_result),
                     )
             else:
                 # P0.3: the DETERMINISTIC parametric Schranke is pure (no LLM) and must hold even when
@@ -366,6 +368,7 @@ class Pipeline:
                         answer,
                         computed_values=calc.computed,
                         not_computed=calc.not_computed,
+                        comparison_context=bool(decode_result),
                     )
 
             # P1.4: SERVE-path deterministic exfiltration Schranke. Runs AFTER the final answer is set
