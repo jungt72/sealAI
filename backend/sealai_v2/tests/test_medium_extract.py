@@ -7,7 +7,12 @@ ambiguity (≥2 distinct media).
 
 from __future__ import annotations
 
-from sealai_v2.core.medium_extract import extract_media, extract_medium
+from sealai_v2.core.medium_extract import (
+    extract_media,
+    extract_medium,
+    extract_medium_facts,
+    medium_category,
+)
 
 
 def test_single_medium_recognised():
@@ -65,3 +70,25 @@ def test_extract_medium_returns_primary_or_none():
     # The single-value convenience: primary match, or None when nothing is recognised.
     assert extract_medium("nur in Heißdampf") == "Heißdampf"
     assert extract_medium("Welche Dichtung fürs Getriebe?") is None
+
+
+def test_extract_medium_facts_specific_plus_category():
+    # Phase-1 wiring: the stated medium becomes case-state facts the form hydrates — the specific
+    # canonical under feld="medium", the coarse form category under feld="medium_kategorie".
+    facts = extract_medium_facts("Welle 40mm, Medium Hydrauliköl")
+    assert {f.feld: f.wert for f in facts} == {
+        "medium": "Hydrauliköl",
+        "medium_kategorie": "Öl",
+    }
+    assert all(f.provenance == "chat-inline" for f in facts)
+
+
+def test_extract_medium_facts_empty_when_unrecognised():
+    # Fail-closed (mirrors the extractors): nothing recognised → no facts (Phase-2 LLM covers any medium).
+    assert extract_medium_facts("Hallo, wie geht es dir?") == ()
+
+
+def test_medium_category_maps_oils_and_falls_back_to_sonstiges():
+    assert medium_category("Mineralöl") == "Öl"
+    assert medium_category("Heißdampf") == "Wasser"
+    assert medium_category("Schokolade") == "Sonstiges"  # lossy by design; Phase-2 profiles it

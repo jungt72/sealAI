@@ -31,6 +31,7 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.gegencheck import evaluate_gegencheck
 from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
+from sealai_v2.core.medium_extract import extract_medium_facts
 import re as _re
 
 _ALT_RE = _re.compile(
@@ -268,6 +269,10 @@ async def remember(
     facts = ()
     if distiller is not None:
         facts = await distiller.distill(question=question, answer=answer)
+    # Phase-1 Medium-Wiring: PREPEND the deterministic medium facts. record_turn's per-feld write is
+    # last-wins, so a distiller-emitted "medium" still WINS (provenance preserved), the medium is
+    # RELIABLY present when the distiller drops it, and the coarse "medium_kategorie" is always added.
+    facts = extract_medium_facts(question) + facts
     memory.record_turn(
         tenant_id=tenant_id,
         session_id=session.session_id,

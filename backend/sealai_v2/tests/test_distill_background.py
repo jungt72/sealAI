@@ -80,7 +80,10 @@ def test_run_returns_before_distill_completes_and_flush_lands_the_facts():
         client.release_distill.set()
         await p.flush_memory(tenant_id="t1", session_id="s1")
         facts = p.memory.case_state(tenant_id="t1", session_id="s1")
-        assert [(f.feld, f.wert) for f in facts] == [("medium", "Hydrauliköl")]
+        assert [(f.feld, f.wert) for f in facts] == [
+        ("medium", "Hydrauliköl"),
+        ("medium_kategorie", "Öl"),  # Phase-1 Medium-Wiring (deterministic, always added)
+    ]
 
     asyncio.run(main())
 
@@ -133,8 +136,13 @@ def test_memory_view_route_flushes_so_chips_are_current_after_chat():
         {
             "feld": "medium",
             "wert": "Hydrauliköl",
-            "provenance": "distilled-from-conversation",
-        }
+            "provenance": "distilled-from-conversation",  # distiller's still wins (prepend)
+        },
+        {
+            "feld": "medium_kategorie",
+            "wert": "Öl",
+            "provenance": "chat-inline",  # Phase-1 Medium-Wiring (deterministic, always added)
+        },
     ]
     assert len(data["history"]) == 2  # the turn itself landed before the read
 
