@@ -91,4 +91,6 @@ def test_extract_medium_facts_empty_when_unrecognised():
 def test_medium_category_maps_oils_and_falls_back_to_sonstiges():
     assert medium_category("Mineralöl") == "Öl"
     assert medium_category("Heißdampf") == "Wasser"
-    assert medium_category("Schokolade") == "Sonstiges"  # lossy by design; Phase-2 profiles it
+    assert (
+        medium_category("Schokolade") == "Sonstiges"
+    )  # lossy by design; Phase-2 profiles it

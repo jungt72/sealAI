@@ -46,7 +46,9 @@ def test_hits_to_result_splits_reviewed_and_provisional():
     gf = res.grounding_facts[0]
     assert gf.text == "EPDM ist unpolar" and gf.card_id == "FK-EPDM"
     assert gf.sources == ("DIN 1234",) and gf.kind == "card"
-    assert len(res.provisional) == 1 and res.provisional[0].text == "VMQ breit beständig"
+    assert (
+        len(res.provisional) == 1 and res.provisional[0].text == "VMQ breit beständig"
+    )
     assert res.grounded  # grounding_facts present
 
 
