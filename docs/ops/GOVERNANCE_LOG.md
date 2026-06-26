@@ -1995,3 +1995,44 @@ archetype) were left pending → a separate calibration increment.
 *(Note: an initial attempt to auto-tick the worksheet + author "owner-adjudiziert" notes was correctly
 blocked by the auto-mode classifier as self-ticking/impersonation; the recorded verdicts are the owner's
 explicit per-case decision, transcribed faithfully without fabricated owner-attributed notes.)*
+
+## 2026-06-26 — V2.1 build-out: retrieval verdict (item 2) + Medium-Intelligence Phase 2 + Fachkarten-Ingestion (item 3) — branch `feat/v2-medium-intel`, NOT deployed (kein Eval this round)
+
+Owner asked to "fully autonomously build" items 2 + 3 from the readiness review, **no eval**, deep-dive
+the hard parts + self-challenge. All work is committed on `feat/v2-medium-intel` and offline-green; the
+backend deploy is eval-gated, so nothing shipped to prod this round (consistent with "kein Eval").
+
+**Item 2 — semantic retrieval (Qdrant): investigated with real data → VERDICT: do NOT flip; keep
+in_process.** Self-challenge outcome, not a build: the naive "turn Qdrant on" would WORSEN the product.
+- Host: 7.6 GB, 3.6 GB available but **2.7 GB swap already used** → memory-pressured.
+- The OOM driver was e5-large (2.24 GB) in-process × workers. Tried the small-model escape: **e5-small
+  is NOT in fastembed**; `jina-embeddings-v2-base-de` (0.32 GB, German) **fails to load** (onnxruntime
+  graph-init); `paraphrase-multilingual-MiniLM-L12-v2` (0.22 GB) loads (~728 MB) but **retrieval quality
+  is POOR** — ranks the WRONG Fachkarte first ("EPDM quillt in Hydrauliköl" → top hit "EPDM = Dampf-
+  Standardwerkstoff"; in_process gets it right). For a keine-Halluzinationen spine that is MORE dangerous
+  than in_process (which fails SAFE: vocab miss → empty → honest hedge).
+- The real gap is in_process RECALL (vocab mismatch "Wasserdampf"≠"Dampf"); the SAFE fix is deterministic
+  German synonym/normalisation in the keyword retriever, NOT fuzzy semantic. Semantic is premature at
+  9 Fachkarten anyway. Revisit only when deps/RAM are fixed AND the corpus is large. No code shipped.
+
+**Item 3a — Medium Intelligence Phase 2 (commits d2adb06e backend + a7df4a3c frontend).** A helper-LLM
+stage researches ANY stated medium → properties + sealing challenges, surfaced in a right-column **MEDIUM
+panel** with a mandatory amber "vorläufig" badge. Doctrine: DISPLAY data (plain string lists, deliberately
+NOT GroundingFacts — the quarantine keystone forbids it), **L1-NEUTRAL** (never enters the L1/L3 prompt →
+golden byte-identical + eval unperturbed), gated `SEALAI_V2_MEDIUM_INTEL_ENABLED` (default OFF). Tests:
+researcher (6) + wiring (3) + frontend vitest.
+
+**Item 3b — Fachkarten-Ingestion / the Paperless path (commit 24e8e2a7) — the knowledge-growth engine for
+the #1 gap (9 cards).** `ops/ingest_fachkarte.py` (host CLI, runs against the working tree — no deploy
+needed to USE it) extracts a DRAFT Fachkarte from any document text into a git-ignored REVIEW QUEUE
+(`ops/fachkarten_drafts/`, outside the tree_hash). Doctrine: ALL-draft (vorläufig), conservative
+(doc-grounded only, fail-safe); the OWNER reviews + promotes good claims into `fachkarten_seed.json`
+(reviewed + a primary source) = the vorläufig→reviewed gate; the grown seed ships on the next eval.
+Verified end-to-end on a real EPDM datasheet (8 faithful draft claims incl. the safety-critical "NICHT
+beständig gegen Mineralöl → Quellung" negatives). Tests (8, incl. a schema round-trip through the real
+`_card` parser). REMAINING (scoped): a live Paperless-API fetch-by-tag (owner's Paperless token) — the
+CLI already works on any doc text.
+
+**To deploy 3a+3b:** merge `feat/v2-medium-intel` → main → run + adjudicate ONE eval-REPLAY (the backend
+touches sealai_v2 → tree_hash) → `ops/release-backend-v2.sh` + frontend build. The Fachkarten-Ingestion
+CLI is usable on the host right now without any deploy.
