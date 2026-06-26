@@ -36,12 +36,13 @@ _POINT_NAMESPACE = uuid.UUID(
 )  # uuid5 NAMESPACE_URL
 
 
-def _query_text(q: str) -> str:
-    return f"query: {q}"  # e5 convention (asymmetric query/passage)
+def _query_text(q: str, prefix: str = "query: ") -> str:
+    # e5 needs the "query:"/"passage:" asymmetry; OpenAI/jina/MiniLM use "" (raw text). Prefix is config.
+    return f"{prefix}{q}"
 
 
-def _passage_text(t: str) -> str:
-    return f"passage: {t}"  # e5 convention
+def _passage_text(t: str, prefix: str = "passage: ") -> str:
+    return f"{prefix}{t}"
 
 
 def _quelle(card_id: str, provenance: tuple[str, ...], *, reviewed: bool) -> str:
@@ -93,10 +94,50 @@ def claim_points(catalog: FachkartenCatalog):
                 "version": card.version,
                 "quelle": _quelle(card.id, card.provenance, reviewed=claim.reviewed),
             }
-            yield pid, _passage_text(claim.text), payload
+            yield (
+                pid,
+                claim.text,
+                payload,
+            )  # raw; the passage prefix is applied at embed time
+
+
+class OpenAiEmbedder:
+    """API embeddings (OpenAI text-embedding-3) — NO local model → NO RAM/OOM (the e5-large failure that
+    took chat down), strong on German, reuses the existing OPENAI_API_KEY. Drop-in for FastEmbed's
+    ``embed``: returns numpy arrays (the retriever/ingestor call ``.tolist()`` on each)."""
+
+    def __init__(
+        self, model: str, *, api_key: str, base_url: str | None = None
+    ) -> None:
+        from openai import OpenAI  # lazy
+
+        self._client = OpenAI(api_key=api_key, base_url=base_url)
+        self._model = model
+
+    def embed(self, texts):
+        import numpy as np  # lazy
+
+        items = list(texts)
+        if not items:
+            return []
+        resp = self._client.embeddings.create(model=self._model, input=items)
+        return [np.array(d.embedding) for d in resp.data]
 
 
 def _make_embedder(settings: "Settings"):
+    if (
+        getattr(settings, "embed_provider", "fastembed") or "fastembed"
+    ).lower() == "openai":
+        import os
+
+        key = os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "embed_provider=openai but no OPENAI_API_KEY in the environment"
+            )
+        return OpenAiEmbedder(
+            settings.embed_model, api_key=key, base_url=os.getenv("OPENAI_BASE_URL")
+        )
     from fastembed import (
         TextEmbedding,
     )  # lazy: optional dep, present only in the production image
@@ -147,7 +188,13 @@ def ingest_fachkarten(settings, *, client=None, embedder=None, catalog=None) -> 
     items = list(claim_points(catalog))
     if not items:
         return 0
-    vectors = [v.tolist() for v in embedder.embed([txt for _pid, txt, _p in items])]
+    pprefix = getattr(settings, "embed_passage_prefix", "passage: ")
+    vectors = [
+        v.tolist()
+        for v in embedder.embed(
+            [_passage_text(txt, pprefix) for _pid, txt, _p in items]
+        )
+    ]
     points = [
         PointStruct(id=pid, vector={_DENSE: vec}, payload=payload)
         for (pid, _txt, payload), vec in zip(items, vectors)
@@ -164,6 +211,7 @@ class QdrantFachkartenRetriever:
         self._collection = settings.qdrant_collection
         self._client = client or _make_client(settings)
         self._embedder = embedder or _make_embedder(settings)
+        self._qprefix = getattr(settings, "embed_query_prefix", "query: ")
 
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
@@ -178,7 +226,9 @@ class QdrantFachkartenRetriever:
     def _retrieve_sync(self, query: str, tenant_id: str, k: int) -> RetrievalResult:
         from qdrant_client.models import FieldCondition, Filter, MatchAny  # lazy
 
-        qvec = next(iter(self._embedder.embed([_query_text(query)]))).tolist()
+        qvec = next(
+            iter(self._embedder.embed([_query_text(query, self._qprefix)]))
+        ).tolist()
         tenant_filter = Filter(
             must=[
                 FieldCondition(

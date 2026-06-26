@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from sealai_v2.config.settings import Settings
 from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.qdrant_retrieval import (
     GLOBAL_TENANT,
+    OpenAiEmbedder,
     QdrantFachkartenRetriever,
     _hits_to_result,
+    _make_embedder,
     _quelle,
     claim_points,
 )
@@ -68,7 +72,9 @@ def test_claim_points_one_per_claim_with_payload():
         "quelle",
     }
     for pid, text, payload in pts:
-        assert text.startswith("passage: ")  # e5 passage prefix
+        assert text and not text.startswith(
+            ("passage: ", "query: ")
+        )  # RAW; prefix applied at embed
         assert required <= set(payload)
         assert payload["tenant_id"] == GLOBAL_TENANT
         assert payload["review_state"] in ("reviewed", "draft")
@@ -132,3 +138,24 @@ def test_quelle_byte_identical_to_in_process():
     assert _quelle(card.id, card.provenance, reviewed=False) == inproc_quelle(
         card, reviewed=False
     )
+
+
+class _S:
+    """Minimal settings stand-in for the embedder factory (no env_prefix machinery needed)."""
+
+    embed_provider = "openai"
+    embed_model = "text-embedding-3-small"
+    embed_cache_dir = None
+
+
+def test_make_embedder_selects_openai_api_path(monkeypatch):
+    """embed_provider=openai → the API embedder (NO local model → NO RAM/OOM); key from the env."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-used")
+    emb = _make_embedder(_S())  # constructs the client lazily; no network until .embed
+    assert isinstance(emb, OpenAiEmbedder)
+
+
+def test_make_embedder_openai_fails_closed_without_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        _make_embedder(_S())

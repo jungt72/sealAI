@@ -121,3 +121,10 @@ class Settings(BaseSettings):
     embed_cache_dir: str | None = (
         None  # FastEmbed model cache dir; None → library default
     )
+    # Embedding provider: "fastembed" (local ONNX — but e5-large OOM'd the 7.6 GB host) | "openai"
+    # (API text-embedding-3 — NO local model → NO RAM/OOM, strong German, reuses OPENAI_API_KEY: the
+    # RAM-safe production RAG path). For openai set embed_model="text-embedding-3-small" + prefixes "".
+    embed_provider: str = "fastembed"
+    # e5 needs the "query:"/"passage:" asymmetry; OpenAI/jina/MiniLM use "" (raw text). Per-provider.
+    embed_query_prefix: str = "query: "
+    embed_passage_prefix: str = "passage: "
