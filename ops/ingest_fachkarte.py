@@ -45,7 +45,7 @@ def _build_extractor() -> FachkarteExtractor:
 
 
 async def _run(text: str, source: str) -> int:
-    draft = await _build_extractor().extract(text, source=source)
+    draft = await _build_extractor().extract_document(text, source=source)
     if draft is None or draft.empty:
         print("no doc-grounded claims extracted — nothing written (fail-safe).")
         return 1

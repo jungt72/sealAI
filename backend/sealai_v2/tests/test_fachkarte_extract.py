@@ -96,3 +96,40 @@ def test_draft_entry_parses_as_draft_fachkarte():
     card = _card(entry)
     assert card.review_state == "draft" and len(card.draft_claims()) == 2
     assert len(card.reviewed_claims()) == 0  # nothing authoritative until owner review
+
+
+def test_chunks_splits_large_doc_at_paragraphs():
+    from sealai_v2.core.fachkarte_extract import _MAX_DOC_CHARS, _chunks
+
+    assert _chunks("kurz") == ["kurz"]
+    big = ("Absatz " + "x" * 4000 + "\n\n") * 5  # ~20k over 5 paragraphs
+    cs = _chunks(big)
+    assert len(cs) >= 2 and all(len(c) <= _MAX_DOC_CHARS for c in cs)
+
+
+class _CyclingFake:
+    """Returns a different scripted response per call — to exercise the multi-chunk merge."""
+
+    def __init__(self, texts) -> None:
+        self._texts = texts
+        self.calls = 0
+
+    async def generate(self, *, system, user, model_config, **_kw):
+        t = self._texts[self.calls % len(self._texts)]
+        self.calls += 1
+        return SimpleNamespace(text=t)
+
+
+def test_extract_document_merges_and_dedupes_chunks():
+    from sealai_v2.core.fachkarte_extract import FachkarteExtractor
+
+    a = '{"titel_vorschlag":"FFKM","scope":{"material":["FFKM"]},"claims":["claim A","shared"]}'
+    b = '{"titel_vorschlag":"X","scope":{"material":["FFKM"],"medium":["Säure"]},"claims":["claim B","shared"]}'
+    big = ("p" * 8000 + "\n\n") * 2  # forces 2 chunks (>12k)
+    x = FachkarteExtractor(
+        _CyclingFake([a, b]), FachkarteExtractPromptAssembler(), _CFG
+    )
+    draft = asyncio.run(x.extract_document(big, source="s"))
+    assert set(draft.claims) == {"claim A", "claim B", "shared"}  # union, de-duped
+    assert "Säure" in draft.scope["medium"]  # scope unioned across chunks
+    assert draft.titel == "FFKM"  # from the first chunk

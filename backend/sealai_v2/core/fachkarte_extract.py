@@ -24,8 +24,33 @@ from sealai_v2.core.contracts import LlmClient, ModelConfig
 _MAX_CLAIMS = 8
 _MAX_TAGS = 8
 _MAX_CLAIM_LEN = 300
-_MAX_DOC_CHARS = 12000  # cap the document fed to the helper (cost + context bound)
+_MAX_DOC_CHARS = (
+    12000  # cap ONE helper call (cost + "lost in the middle"); large docs are CHUNKED
+)
+_MAX_MERGED_CLAIMS = (
+    24  # a chunked doc's merged card cap (deep-research docs yield many claims)
+)
 _SCOPE_DIMS = ("material", "medium", "property", "application")
+
+
+def _chunks(text: str, size: int = _MAX_DOC_CHARS) -> list[str]:
+    """Split a long document into <=``size`` pieces at paragraph boundaries (so a claim is not cut
+    mid-sentence), hard-splitting any single oversized paragraph. Short docs → one chunk."""
+    if len(text) <= size:
+        return [text]
+    out: list[str] = []
+    cur = ""
+    for para in re.split(r"\n\s*\n", text):
+        if cur and len(cur) + len(para) + 2 > size:
+            out.append(cur)
+            cur = ""
+        cur = (cur + "\n\n" + para) if cur else para
+        while len(cur) > size:
+            out.append(cur[:size])
+            cur = cur[size:]
+    if cur.strip():
+        out.append(cur)
+    return out
 
 
 class FachkarteExtractPrompt(Protocol):
@@ -156,5 +181,43 @@ class FachkarteExtractor:
             source=source,
             scope=scope,
             claims=claims,
+            provenance=(f"paperless-draft:{source}",),
+        )
+
+    async def extract_document(
+        self, doc_text: str, *, source: str
+    ) -> FachkarteDraft | None:
+        """Thorough extraction for a FULL document: chunk it, extract each chunk, MERGE into ONE card
+        (union claims + scope, de-duped, capped). One document → one Fachkarte. Short docs → one call."""
+        text = (doc_text or "").strip()
+        if not text:
+            return None
+        chunks = _chunks(text)
+        if len(chunks) == 1:
+            return await self.extract(text, source=source)
+        drafts = [
+            d for d in [await self.extract(ch, source=source) for ch in chunks] if d
+        ]
+        if not drafts:
+            return None
+        claims: list[str] = []
+        seen: set[str] = set()
+        for d in drafts:
+            for c in d.claims:
+                if c.lower() not in seen:
+                    seen.add(c.lower())
+                    claims.append(c)
+        scope = {
+            dim: tuple(dict.fromkeys(t for d in drafts for t in d.scope.get(dim, ())))[
+                :_MAX_TAGS
+            ]
+            for dim in _SCOPE_DIMS
+        }
+        return FachkarteDraft(
+            id=f"FK-DRAFT-{_slug(drafts[0].titel)}",
+            titel=drafts[0].titel,
+            source=source,
+            scope=scope,
+            claims=tuple(claims[:_MAX_MERGED_CLAIMS]),
             provenance=(f"paperless-draft:{source}",),
         )
