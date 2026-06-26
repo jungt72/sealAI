@@ -2036,3 +2036,23 @@ CLI already works on any doc text.
 **To deploy 3a+3b:** merge `feat/v2-medium-intel` → main → run + adjudicate ONE eval-REPLAY (the backend
 touches sealai_v2 → tree_hash) → `ops/release-backend-v2.sh` + frontend build. The Fachkarten-Ingestion
 CLI is usable on the host right now without any deploy.
+
+## 2026-06-26 (addendum to the build-out above) — embeddings RAG RESOLVED via API embeddings + Paperless live-fetch
+
+Owner steer: embeddings-RAG is existential for sealingAI quality. This **supersedes** the item-2
+"keep in_process / don't flip Qdrant" verdict above — that verdict was about LOCAL embedding models.
+
+**Resolution (commit 5bf03aec):** the OOM was the LOCAL e5-large model (2.2 GB in-process), not Qdrant
+or embeddings. A pluggable embedder (`OpenAiEmbedder` + provider-branching `_make_embedder`, prefix made
+config) lets the embedding run on the **OpenAI API** (`text-embedding-3-small`) → **NO local model → NO
+RAM/OOM**, strong German, reuses OPENAI_API_KEY, ~$0. **Proven end-to-end**: re-ingested the 28 Fachkarten
+into Qdrant via the API + queried the real retriever → **150 MB RSS** (vs e5-large 2.5+ GB) + CORRECT
+ranking on the exact cases the local small-models failed. The Qdrant collection is re-ingested (1536-dim).
+Deploy (eval-gated, owner's call): .env.prod → RETRIEVER_BACKEND=qdrant, EMBED_PROVIDER=openai,
+EMBED_MODEL=text-embedding-3-small, EMBED_*_PREFIX= empty, QDRANT_URL=http://qdrant:6333; rebuild backend-v2.
+
+**Paperless live-fetch (commit b374ba26):** `ops/ingest_fachkarte.py --paperless-id <id>` pulls a doc's
+text from Paperless (URL+token from env) → DRAFT Fachkarte. Verified against the live Paperless (14 docs
+present) on "FFKM deep-research" → 8 rich draft claims (Kalrez/Chemraz/Simriz types, amines/plasma/H2-RGD,
+ISO 1629 / 21 CFR 177.2600). The 14 deep-research docs are now an immediately-ingestable knowledge source
+for the #1 gap. All on branch `feat/v2-medium-intel`, NOT deployed (eval-gated).
