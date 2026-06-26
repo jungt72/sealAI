@@ -74,7 +74,12 @@ def test_multiturn_re_ask_keystone_and_clean_memory():
         res.carry_ok
     )  # turn-2 carried medium + 150 °C → re-ask is structurally impossible
     assert res.memory_gate_clean  # 150 traces to turn 1 → no fabrication
-    assert {f.feld for f in res.turns[1].case_state} == {"medium", "temperatur"}
+    # Phase-1 Medium-Wiring also persists the coarse "medium_kategorie" deterministically.
+    assert {f.feld for f in res.turns[1].case_state} == {
+        "medium",
+        "temperatur",
+        "medium_kategorie",
+    }
 
 
 def test_multiturn_runtime_guard_drops_fabrication_before_state():

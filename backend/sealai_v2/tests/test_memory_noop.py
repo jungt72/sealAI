@@ -11,7 +11,9 @@ after the owner-approved additive ``# Gesprächsführung`` edge bullets, at **M8
 owner-approved additive calc-provenance line (diff = exactly the ``Eingaben:`` origin line in the 4
 calc configs; recapture asserted additive-only), and at **M8-B** after the owner-approved
 ``# Berechnungen`` compute-constraint tightening (recapture asserted every changed line sits inside
-that section, all 8 configs). This re-baselines the snapshot; it does NOT loosen the invariant —
+that section, all 8 configs), and at **EDGE-05-fix** after hardening the ``# Gesprächsführung``
+off-topic redirect (recapture asserted the 21 changed lines are byte-identical across all 8 configs
+and confined to the off-topic bullet). This re-baselines the snapshot; it does NOT loosen the invariant —
 ``test_none_and_empty_memory_are_equivalent`` independently guards the relative no-op (None ≡
 empty), which holds regardless of the prompt's content.
 """

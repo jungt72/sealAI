@@ -78,6 +78,7 @@ describe("Universal Core (operating conditions shared across all Domain Packs)",
     expect(core()).toBe(UNIVERSAL_CORE);
     expect(core().map((f) => f.key)).toEqual([
       "medium",
+      "medium_kategorie",
       "druck",
       "druck_max",
       "betriebstemperatur",
@@ -92,7 +93,7 @@ describe("Universal Core (operating conditions shared across all Domain Packs)",
     expect(KERNEL_INPUTS).toContain(byKey.druck.kernelKey as string);
     expect(byKey.druck.unit).toBe("bar");
     // Druck max is a fail-closed context fact (no kernel guess), Temperatures are context too
-    for (const k of ["druck_max", "betriebstemperatur", "spitzentemperatur", "medium"]) {
+    for (const k of ["druck_max", "betriebstemperatur", "spitzentemperatur", "medium", "medium_kategorie"]) {
       expect(byKey[k].role).toBe("context");
       expect(byKey[k].kernelKey).toBeUndefined();
     }
