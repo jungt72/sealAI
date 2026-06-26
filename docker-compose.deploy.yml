@@ -1,6 +1,11 @@
 services:
   backend:
     container_name: backend
+    # RETIRED 2026-06-25: V1 LangGraph agent — dead weight (411 MiB; 24h traffic = only
+    # /metrics + /health + attack-scanners, ZERO product traffic). V2.1 (backend-v2) is the
+    # product. Moved to a profile so a default `compose up` no longer starts it; re-enable with
+    # `--profile v1-legacy` if a marketing feature is ever found to need it.
+    profiles: ["v1-legacy"]
     user: 10001:10001
     depends_on:
       postgres:
@@ -114,9 +119,9 @@ services:
   frontend:
     profiles:
     - frontend-container
-    depends_on:
-      backend:
-        condition: service_healthy
+    # depends_on: backend removed 2026-06-25 (V1 backend retired → profile v1-legacy). The
+    # BACKEND_INTERNAL_URL/SEALAI_BACKEND_ORIGIN below point at the retired host but the V1 backend
+    # saw ZERO product traffic over 24h, so they are inert; left in place for an easy re-enable.
     restart: unless-stopped
     expose:
     - '3000'
@@ -186,8 +191,6 @@ services:
     image: nginx:1.29.4
     container_name: nginx
     depends_on:
-      backend:
-        condition: service_started
       keycloak:
         condition: service_started
     restart: unless-stopped
