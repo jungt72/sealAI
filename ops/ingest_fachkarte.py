@@ -69,22 +69,55 @@ async def _run(text: str, source: str) -> int:
     return 0
 
 
+def _fetch_paperless(doc_id: str) -> tuple[str, str]:
+    """Fetch a Paperless document's OCR/text ``content`` + title via the REST API (stdlib urllib, no
+    new dep). URL + token from the env: PAPERLESS_URL (use a host-reachable address when running on the
+    host — the in-stack ``paperless:8000`` is not host-resolvable) + PAPERLESS_TOKEN."""
+    import os
+    import urllib.request
+
+    base = os.environ.get("PAPERLESS_URL", "").rstrip("/")
+    token = os.environ.get("PAPERLESS_TOKEN", "")
+    if not base or not token:
+        raise SystemExit("PAPERLESS_URL / PAPERLESS_TOKEN not set in env")
+    req = urllib.request.Request(
+        f"{base}/api/documents/{doc_id}/", headers={"Authorization": f"Token {token}"}
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310 — trusted internal Paperless
+        doc = json.load(r)
+    title = (doc.get("title") or f"doc-{doc_id}")[:80]
+    return doc.get("content") or "", f"paperless#{doc_id}:{title}"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Extract a DRAFT Fachkarte for owner review."
     )
-    ap.add_argument("--file", help="document text file (omit to read stdin)")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--file", help="document text file")
+    src.add_argument(
+        "--paperless-id", help="fetch the document text from Paperless by id"
+    )
+    src.add_argument(
+        "--stdin", action="store_true", help="read the document text from stdin"
+    )
     ap.add_argument(
-        "--source", required=True, help="provenance label, e.g. 'paperless#42'"
+        "--source", help="provenance label (auto-derived for --paperless-id)"
     )
     args = ap.parse_args(argv)
-    text = (
-        Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
-    )
+    if args.paperless_id:
+        text, auto_source = _fetch_paperless(args.paperless_id)
+        source = args.source or auto_source
+    elif args.file:
+        text = Path(args.file).read_text(encoding="utf-8")
+        source = args.source or args.file
+    else:
+        text = sys.stdin.read()
+        source = args.source or "stdin"
     if not text.strip():
         print("empty document — nothing to do.", file=sys.stderr)
         return 2
-    return asyncio.run(_run(text, args.source))
+    return asyncio.run(_run(text, source))
 
 
 if __name__ == "__main__":
