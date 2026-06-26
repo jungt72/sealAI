@@ -38,6 +38,8 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
+from sealai_v2.core.medium_extract import extract_medium_facts
+from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
 from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
@@ -53,6 +55,7 @@ from sealai_v2.pipeline import stages
 from sealai_v2.pipeline.timing import TurnTimer
 from sealai_v2.prompts.assembler import (
     DistillPromptAssembler,
+    MediumResearchPromptAssembler,
     PromptAssembler,
     VerifierPromptAssembler,
 )
@@ -141,6 +144,15 @@ def _staged(timer, progress: ProgressSink | None, ms_key: str, stage: str):
     _emit_progress(progress, stage, "end")
 
 
+def _resolve_medium(question: str, case_state) -> tuple[str, str]:
+    """The medium for THIS turn (Phase 2): prefer the current message's deterministic extract, fall
+    back to the recalled case-state. Returns (medium, kategorie) — ("", "") when none is stated."""
+    facts = list(extract_medium_facts(question)) + list(case_state)
+    medium = next((f.wert for f in facts if f.feld == "medium"), "")
+    kategorie = next((f.wert for f in facts if f.feld == "medium_kategorie"), "")
+    return medium, kategorie
+
+
 @dataclass
 class Pipeline:
     generator: L1Generator
@@ -170,6 +182,12 @@ class Pipeline:
     memory: ConversationMemory | None = None
     cross_session: CrossSessionMemory | None = None
     distiller: Distiller | None = None
+    # Medium Intelligence (Phase 2): helper-LLM research of the stated medium → provisional facts +
+    # the MEDIUM tab. Default-OFF flag; L1-NEUTRAL (the facts never enter the L1 prompt), so enabling
+    # only adds the tab + an isolated helper call — the eval/golden stays byte-identical. None
+    # researcher OR flag off → fully inert.
+    medium_researcher: MediumResearcher | None = None
+    medium_intel_enabled: bool = False
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -223,6 +241,16 @@ class Pipeline:
         # Jinja unchanged, so the eval stays unperturbed). The typed slots fill in later increments.
         case = Case.from_case_state(mem.case_state, question=question)
         case_context = case.to_prompt_context()
+        # Medium Intelligence (Phase 2): research the stated medium → provisional facts + the MEDIUM
+        # tab. Gated (default-off) + fail-safe + L1-NEUTRAL (never enters the L1 prompt). Inert when
+        # off / no researcher / no medium stated.
+        medium_intelligence: MediumIntelligence | None = None
+        if self.medium_intel_enabled and self.medium_researcher is not None:
+            _medium, _kategorie = _resolve_medium(question, mem.case_state)
+            if _medium:
+                medium_intelligence = await self.medium_researcher.research(
+                    _medium, _kategorie
+                )
         # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
         # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
         # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
@@ -458,6 +486,7 @@ class Pipeline:
             diagnose=diagnosis,
             decode=decode_result,
             alternativen=alternativen_result,
+            medium_intelligence=medium_intelligence,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -623,6 +652,9 @@ def build_pipeline(
         cache_key="sealai-v2-helper",
     )
     generator = L1Generator(l1_client, assembler, l1_cfg)
+    medium_researcher = MediumResearcher(
+        helper_client, MediumResearchPromptAssembler(), helper_cfg
+    )
 
     verifier: L3Verifier | None = None
     catalog: TrapCatalog | None = None
@@ -710,4 +742,6 @@ def build_pipeline(
         memory=memory,
         cross_session=cross_session,
         distiller=distiller,
+        medium_researcher=medium_researcher,
+        medium_intel_enabled=settings.medium_intel_enabled,
     )

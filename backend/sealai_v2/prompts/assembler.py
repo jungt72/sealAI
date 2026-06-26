@@ -17,6 +17,7 @@ _TEMPLATE_DIR = Path(__file__).resolve().parent
 _TEMPLATE_NAME = "system_l1.jinja"
 _VERIFIER_TEMPLATE_NAME = "verifier_l3.jinja"
 _DISTILL_TEMPLATE_NAME = "distill.jinja"
+_MEDIUM_RESEARCH_TEMPLATE_NAME = "medium_research.jinja"
 
 
 def _env(template_dir: Path | None) -> Environment:
@@ -102,4 +103,16 @@ class DistillPromptAssembler:
         self._template = _env(template_dir).get_template(_DISTILL_TEMPLATE_NAME)
 
     def distill_prompt(self) -> str:
+        return self._template.render()
+
+
+class MediumResearchPromptAssembler:
+    """Renders ``medium_research.jinja`` into the Medium-Intelligence (Phase 2) research prompt.
+    Static doctrine instruction (vorläufig only, no fabricated numbers, honest "unsicher"); the
+    helper LLM's output enters the case as PROVISIONAL facts, never authoritative."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(_MEDIUM_RESEARCH_TEMPLATE_NAME)
+
+    def medium_research_prompt(self) -> str:
         return self._template.render()

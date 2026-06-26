@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from sealai_v2.core.medium_research import MediumIntelligence
 
 
 @dataclass(frozen=True)
@@ -610,6 +613,11 @@ class PipelineResult:
     # Modus F (Alternativen): capable manufacturers BY CAPABILITY (neutral, §3.9), or None.
     # grounded_data=False with the owner-pending empty Dim. 6 seed. Render/serializer surface.
     alternativen: dict | None = None
+    # Medium Intelligence (Phase 2): provisional helper-LLM research of the stated medium (properties +
+    # sealing challenges, "vorläufig"), or None when the feature is off / no medium stated. A
+    # render/serializer surface (the MEDIUM tab) — NEVER injected into L1/L3, so the prompt stays
+    # byte-identical and the eval is unperturbed.
+    medium_intelligence: "MediumIntelligence | None" = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

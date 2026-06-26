@@ -138,6 +138,22 @@ def citation(fact: GroundingFact) -> dict:
     }
 
 
+def _medium_intelligence(mi) -> dict | None:
+    """Medium Intelligence (Phase 2) → the MEDIUM tab payload, or None when absent/empty. 'vorläufig'
+    is intrinsic (helper-LLM knowledge, never reviewed); the SPA renders the badge accordingly."""
+    if mi is None or mi.empty:
+        return None
+    return {
+        "medium": mi.medium,
+        "kategorie": mi.kategorie,
+        "eigenschaften": list(mi.eigenschaften),
+        "herausforderungen": list(mi.herausforderungen),
+        "werkstoff_tendenz": list(mi.werkstoff_tendenz),
+        "unsicher": mi.unsicher,
+        "vorlaeufig": True,
+    }
+
+
 def chat_response(result: PipelineResult) -> dict:
     return {
         "answer": result.answer.text,
@@ -156,6 +172,9 @@ def chat_response(result: PipelineResult) -> dict:
         "diagnose": result.diagnose,
         "decode": result.decode,
         "alternativen": result.alternativen,
+        # Medium Intelligence (Phase 2): provisional researched medium properties + challenges for the
+        # MEDIUM tab, or None. Render/serializer surface only — never injected into L1/L3.
+        "medium_intelligence": _medium_intelligence(result.medium_intelligence),
         # P1.5: surface L3's verdict (verified flag + action/parse_ok/hedged) so the client can
         # distinguish a confidently-verified answer from a hedge or a silently-unverified one.
         # Additive only — existing keys are untouched.
