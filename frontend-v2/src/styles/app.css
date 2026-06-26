@@ -696,3 +696,25 @@
   font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
   color: var(--ink);
 }
+
+/* Medium Intelligence (Phase 2) — the MEDIUM panel in the right column. The data is helper-LLM
+   knowledge, so the amber "vorläufig" badge is intrinsic to the surface. */
+.medium-panel {
+  margin: 8px 16px 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--line, #e3e7ee); border-radius: 10px; background: var(--surface-1, #fbfcfe);
+}
+.medium-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.medium-panel-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.medium-panel-kat { color: var(--ink-ghost); font-weight: 400; }
+.medium-panel-badge {
+  flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #92600a; background: #fdf2dc; border: 1px solid #f0d9a8; border-radius: 999px; padding: 2px 8px;
+}
+.medium-panel-section { display: flex; flex-direction: column; gap: 4px; }
+.medium-panel-section-title {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-faint, #8a93a2);
+}
+.medium-panel-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.medium-panel-list li { font-size: 12px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.medium-panel-unsicher { margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: #92600a; }

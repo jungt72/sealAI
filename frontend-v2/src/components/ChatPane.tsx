@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -19,6 +20,7 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
+import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
 import { ParameterForm } from "./ParameterForm";
@@ -208,6 +210,17 @@ export function ChatPane({
     (compute?.clarifications?.length ?? 0) === 0 &&
     (compute?.notes?.length ?? 0) === 0;
 
+  // Medium Intelligence (Phase 2): the MEDIUM panel shows the most recent turn's researched medium
+  // (vorläufig). Null until the backend ships the field + the feature flag is enabled.
+  const latestMedium = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant" && m.res.medium_intelligence)
+        return m.res.medium_intelligence;
+    }
+    return null;
+  }, [msgs]);
+
   // claude.ai chat↔artifact: the cockpit is OPEN when the case is active OR the user opened it,
   // and NOT explicitly closed. Default / pure Q&A → chat-only (centered, no right panel). Opening
   // moves the chat left and splits ~50/50; closing returns to centered chat-only.
@@ -320,6 +333,8 @@ export function ChatPane({
             committed={committed}
           />
         </div>
+
+        {latestMedium ? <MediumPanel data={latestMedium} /> : null}
 
         {caseStateEmpty ? (
           <p className="case-state-empty" data-testid="case-state-empty">

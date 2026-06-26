@@ -67,6 +67,17 @@ export interface ConfirmationResponse {
   notes: string[];
   clarifications: Clarification[];
 }
+// Medium Intelligence (Phase 2): helper-LLM-researched medium properties + sealing challenges for the
+// MEDIUM panel. ALWAYS vorläufig (LLM knowledge, never reviewed) — the panel renders the badge.
+export interface MediumIntelligence {
+  medium: string;
+  kategorie: string;
+  eigenschaften: string[];
+  herausforderungen: string[];
+  werkstoff_tendenz: string[];
+  unsicher: boolean;
+  vorlaeufig: boolean;
+}
 export interface ChatResponse {
   answer: string;
   model: string;
@@ -75,6 +86,7 @@ export interface ChatResponse {
   citations: Citation[];
   computed?: KernelValue[]; // M8: in-band kern result (additive; panel can update without a 2nd call)
   not_computed?: NotComputed[];
+  medium_intelligence?: MediumIntelligence | null; // Phase 2: the MEDIUM panel data (vorläufig)
 }
 export interface RememberedFact {
   feld: string;
