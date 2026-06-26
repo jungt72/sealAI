@@ -18,6 +18,7 @@ _TEMPLATE_NAME = "system_l1.jinja"
 _VERIFIER_TEMPLATE_NAME = "verifier_l3.jinja"
 _DISTILL_TEMPLATE_NAME = "distill.jinja"
 _MEDIUM_RESEARCH_TEMPLATE_NAME = "medium_research.jinja"
+_FACHKARTE_EXTRACT_TEMPLATE_NAME = "fachkarte_extract.jinja"
 
 
 def _env(template_dir: Path | None) -> Environment:
@@ -115,4 +116,18 @@ class MediumResearchPromptAssembler:
         self._template = _env(template_dir).get_template(_MEDIUM_RESEARCH_TEMPLATE_NAME)
 
     def medium_research_prompt(self) -> str:
+        return self._template.render()
+
+
+class FachkarteExtractPromptAssembler:
+    """Renders ``fachkarte_extract.jinja`` into the Fachkarten-ingestion prompt (Paperless path).
+    Static doctrine: extract ONLY doc-grounded claims as a DRAFT card for owner review — never
+    authoritative, no fabrication, no added general knowledge."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(
+            _FACHKARTE_EXTRACT_TEMPLATE_NAME
+        )
+
+    def fachkarte_extract_prompt(self) -> str:
         return self._template.render()
