@@ -1950,3 +1950,48 @@ State: in_process retrieval is LIVE again. Qdrant CODE stays merged (compose def
 .env.prod flipped to in_process, uncommitted by design). Qdrant is NOT viable on this host with
 e5-large x N workers. Sustainable paths (owner decision, none chosen): smaller local model
 (multilingual-e5-small ~0.5 GB; re-ingest + re-eval), single uvicorn worker, API embeddings, or more VPS RAM.
+
+## 2026-06-26T17:59:41Z — V2 PROD deploy: `backend-v2` + `frontend-v2` — Phase-1 Medium-Wiring + EDGE-05 L1 hardening — gated via `ops/release-backend-v2.sh` (run `edge05-medium-gate`)
+
+**Gated deploy** — tree_hash `6237b31e030be8a23274f7d3a78182477f49f4f7` + L1 `openai/gpt-5.1`
+validated by adjudicated eval-REPLAY `edge05-medium-gate` (git `25ebf5da`, dirty=false); all gated
+axes Schranken-quota(final)=1.000 (flags_off/on, edge, injection, decode); memory_fabrication +
+parametric agent-final 1.000.
+
+**What shipped:**
+- **EDGE-05 fix** — the L1 off-topic redirect was hardened in `system_l1.jinja`: a hard 2–3-sentence
+  cap, the "self-license" gambit ("sehr kompakte Einordnung … dann halte ich mich wieder raus")
+  explicitly forbidden, and the *shape* of a correct short redirect given. This was the deploy
+  blocker (`edge_overreach` tripped ~50% of runs under the prior prompt, e.g. a full 4-stroke-engine
+  lecture on "Wie funktioniert ein Verbrennungsmotor?"). Spot-check 4/4 clean (each now explicitly
+  declines to explain the off-domain object, then offers only the sealing bridge); gate-eval
+  `edge_overreach` 1.000 (5/5). `golden_prompt_no_memory.json` re-baselined — the 21 changed lines
+  proven byte-identical across all 8 configs and confined to the off-topic bullet.
+- **Phase-1 Medium-Wiring** — the stated medium is now persisted DETERMINISTICALLY to the
+  case-state (`core/medium_extract.py` → `feld="medium"` specific canonical + `feld="medium_kategorie"`
+  coarse, prepended in `pipeline/stages.remember` so a distiller "medium" still wins but the medium
+  is reliable when the distiller drops it). The frontend ParameterForm now shows the SPECIFIC medium
+  as free-text + a coarse category enum (`frontend-v2/src/schema/situations.ts`). Backend `c205e5dd`,
+  frontend `99612979`. (Phase-2 Medium-Intelligence — auto-research properties/challenges, MEDIUM
+  tab — remains deferred.)
+
+**Deploy facts:**
+- new live `sealai-backend-v2:latest` = `sha256:0c115ddfcc7919fd8a5e00da4d37155ae58ba798a9d23651f40db76e173cb962`
+- rollback rung (read from the daemon) = `sha256:04bb7c4282181b0020a4b955fcd694459a5aafb139630bb2e95864098bb33d10`,
+  tagged `sealai-backend-v2:rollback-pre-edge05-medium-gate-20260626-175941`
+- smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.
+- **frontend-v2** rebuilt (`npm run build` → `dist/`, nginx-mounted at `/usr/share/nginx/v2-client`):
+  dashboard bundle `index-BtU2TRkw.js` live at `/dashboard/assets/` (HTTP 200, 576 086 bytes).
+- **merged to main** `39adb759` (`--no-ff`; disjoint from main's V1-retire infra nginx/compose — clean,
+  no conflicts) — main's tree_hash == the deployed `6237b31e`. nginx stays reboot-safe (the lone
+  `sealai-backend:8000` reference is a comment, not a live route). Deploy ledger `27d6e920`.
+
+**Adjudication (Charter A0):** the owner ruled (AskUserQuestion, 2026-06-26) the 5 advisory-judge-flagged
+axis-1 cases PASS — factually correct (notably `decode/O-Ring 40×3 EPDM`, a textbook-correct decode the
+weak advisory judge gpt-4.1-mini mis-scored). Axis-1 does not gate the deploy (only the hard-gate
+Schranken do); no hard gate was violated anywhere. Non-gated credibility classes (calibration 0.800,
+archetype) were left pending → a separate calibration increment.
+
+*(Note: an initial attempt to auto-tick the worksheet + author "owner-adjudiziert" notes was correctly
+blocked by the auto-mode classifier as self-ticking/impersonation; the recorded verdicts are the owner's
+explicit per-case decision, transcribed faithfully without fabricated owner-attributed notes.)*
