@@ -8,7 +8,14 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from sealai_v2.api.routes import briefing, chat, compute, conversations, framing
+from sealai_v2.api.routes import (
+    anfrage,
+    briefing,
+    chat,
+    compute,
+    conversations,
+    framing,
+)
 from sealai_v2.pipeline.timing import configure_timing_logging
 
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
@@ -18,6 +25,7 @@ app.include_router(conversations.router)
 app.include_router(briefing.router)
 app.include_router(compute.router)
 app.include_router(framing.router)
+app.include_router(anfrage.router)
 
 
 @app.get("/health")

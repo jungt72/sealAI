@@ -102,3 +102,24 @@ class V2HerstellerPartner(Base):
     bauformen: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     groessen: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     zertifikate: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class V2Lead(Base):
+    """A captured Anfrage/lead (owner business model: manufacturers RECEIVE the leads) — the structured
+    RFQ briefing routed to a partner. GLOBAL by partner; ``tenant_id``/``session_id`` kept for
+    provenance (which session produced it). Durable so the partner/owner can retrieve it; email
+    delivery is an optional config-gated add-on, not a hard dependency. ``status`` tracks the lead
+    lifecycle ("neu" -> ...). ``created_at`` is an ISO-8601 string set at capture (no server clock dep)."""
+
+    __tablename__ = "v2_leads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    partner_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    firmenname: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    lead_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    session_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    briefing_title: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    briefing_body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)

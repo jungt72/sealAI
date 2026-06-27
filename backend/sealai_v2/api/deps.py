@@ -55,3 +55,12 @@ def current_identity(
         return validator.validate(authorization[len("Bearer ") :])
     except AuthError:
         raise HTTPException(status_code=401, detail="invalid token") from None
+
+
+@lru_cache(maxsize=1)
+def get_lead_store():
+    """Lead store for /api/v2/anfrage — Postgres (durable, partner/owner-retrievable) when
+    ``database_url`` is set, else in-process (eval/CI). Fail-safe to in-process; never crashes."""
+    from sealai_v2.db.leads import build_lead_store
+
+    return build_lead_store(get_settings())
