@@ -226,3 +226,17 @@ def test_no_realm_access_yields_empty_roles():
     priv = _keypair()
     v = _validator(_jwks(priv.public_key()))
     assert v.validate(_tok(priv)).roles == ()
+
+
+def test_hersteller_id_claim_extracted():
+    # The manufacturer self-service surface is scoped by this claim (a Keycloak user-attribute mapper).
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    ident = v.validate(_tok(priv, claims={"hersteller_id": "acme"}))
+    assert ident.hersteller_id == "acme"
+
+
+def test_no_hersteller_id_yields_empty():
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    assert v.validate(_tok(priv)).hersteller_id == ""

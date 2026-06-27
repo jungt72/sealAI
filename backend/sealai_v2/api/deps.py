@@ -97,3 +97,16 @@ def require_admin(
     if get_settings().auth_admin_role not in identity.roles:
         raise HTTPException(status_code=403, detail="admin role required")
     return identity
+
+
+def require_manufacturer(
+    identity: VerifiedIdentity = Depends(current_identity),
+) -> VerifiedIdentity:
+    """Manufacturer SELF-SERVICE gate (P0 fail-closed). The verified token MUST carry the configured
+    manufacturer realm-role AND a non-empty hersteller_id claim (the partner record it is bound to),
+    else 403. Everything downstream is scoped to ``identity.hersteller_id`` — a manufacturer can only
+    ever see/edit their OWN record + leads. Additive role check; the tenant boundary is untouched."""
+    s = get_settings()
+    if s.auth_manufacturer_role not in identity.roles or not identity.hersteller_id:
+        raise HTTPException(status_code=403, detail="manufacturer role required")
+    return identity

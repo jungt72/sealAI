@@ -8,6 +8,7 @@ import {
   exchangeCode,
   getAccessToken,
   givenNameFromToken,
+  herstellerIdFromToken,
   randomVerifier,
   rolesFromToken,
   rpInitiatedLogout,
@@ -15,6 +16,7 @@ import {
 } from "./auth/oidc";
 import { AdminPane } from "./components/AdminPane";
 import { ChatPane } from "./components/ChatPane";
+import { PartnerSelfPane } from "./components/PartnerSelfPane";
 import { Shell } from "./components/Shell";
 import type { Briefing, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
@@ -24,6 +26,8 @@ import { downloadBriefingPdf } from "./lib/pdf";
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
 // Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
 const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
+// Realm role for the manufacturer self-service dashboard (matches auth_manufacturer_role default).
+const MANUFACTURER_ROLE = env.VITE_MANUFACTURER_ROLE ?? "manufacturer";
 const CONFIG: OidcConfig = {
   issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
@@ -69,6 +73,16 @@ export function App() {
     [authed],
   );
   const [adminView, setAdminView] = useState(false);
+  // manufacturer self-service gate — role AND a hersteller_id claim (mirrors the backend's
+  // require_manufacturer). Display-only; the backend re-enforces both on every /partner/me call.
+  const isManufacturer = useMemo(() => {
+    if (!authed) return false;
+    const tok = getAccessToken();
+    return (
+      rolesFromToken(tok).includes(MANUFACTURER_ROLE) && herstellerIdFromToken(tok) !== ""
+    );
+  }, [authed]);
+  const [selfView, setSelfView] = useState(false);
 
   const refreshMemory = useCallback(() => {
     api.memory().then(setMemory).catch(() => undefined);
@@ -251,9 +265,12 @@ export function App() {
         onLogout={logout}
         onNewQuestion={newQuestion}
         onAdmin={isAdmin ? () => setAdminView(true) : undefined}
+        onPartnerSelf={isManufacturer ? () => setSelfView(true) : undefined}
       >
         {adminView && isAdmin ? (
           <AdminPane api={api} onClose={() => setAdminView(false)} />
+        ) : selfView && isManufacturer ? (
+          <PartnerSelfPane api={api} onClose={() => setSelfView(false)} />
         ) : (
         <ChatPane
           key={convKey}

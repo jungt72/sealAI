@@ -13,6 +13,8 @@ import type {
   ConfirmationResponse,
   ConversationMemory,
   ParamItem,
+  SelfLead,
+  SelfPartnerUpdate,
 } from "../contracts";
 import { SseParser } from "./sse";
 
@@ -175,5 +177,16 @@ export class ApiClient {
   adminListLeads(partnerId?: string): Promise<{ leads: AdminLead[] }> {
     const q = partnerId ? `?partner_id=${encodeURIComponent(partnerId)}` : "";
     return this.req(`/admin/leads${q}`);
+  }
+
+  // ── Manufacturer self-service (role-gated + scoped to the token's hersteller_id, server-side) ──
+  partnerSelfGet(): Promise<AdminPartner> {
+    return this.req("/partner/me");
+  }
+  partnerSelfUpdate(body: SelfPartnerUpdate): Promise<AdminPartner> {
+    return this.req("/partner/me", { method: "PUT", body: JSON.stringify(body) });
+  }
+  partnerSelfLeads(): Promise<{ leads: SelfLead[] }> {
+    return this.req("/partner/me/leads");
   }
 }

@@ -82,6 +82,25 @@ export function rolesFromToken(token: string | null): string[] {
   }
 }
 
+/** The manufacturer-partner id from the verified token (Keycloak hersteller_id claim) — scopes the
+ * manufacturer self-service view to their OWN record. Display-gating only; the backend independently
+ * re-derives + enforces it on every /partner/me call. */
+export function herstellerIdFromToken(token: string | null): string {
+  if (!token) return "";
+  const payload = token.split(".")[1];
+  if (!payload) return "";
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const id = claims.hersteller_id;
+    return typeof id === "string" ? id : "";
+  } catch {
+    return "";
+  }
+}
+
 // --- PKCE ----------------------------------------------------------------------------------------
 function b64url(bytes: ArrayBuffer | Uint8Array): string {
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);

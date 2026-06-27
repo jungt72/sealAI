@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     # Keycloak realm role that gates the owner/admin surface (Hersteller-Partner CRUD + lead retrieval).
     # Env: SEALAI_V2_AUTH_ADMIN_ROLE. Additive gate — tenant isolation is untouched.
     auth_admin_role: str = "admin"
+    # Keycloak realm role for the manufacturer SELF-SERVICE surface (manage own partner record + leads).
+    # Env: SEALAI_V2_AUTH_MANUFACTURER_ROLE.
+    auth_manufacturer_role: str = "manufacturer"
 
     # --- L2 retrieval backend (Phase-1 Qdrant production adapter, behind the Retriever Protocol) ---
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —

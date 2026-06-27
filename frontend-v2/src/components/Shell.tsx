@@ -21,6 +21,7 @@ export function Shell({
   onLogout,
   onNewQuestion,
   onAdmin,
+  onPartnerSelf,
 }: {
   children: ReactNode;
   onLogout: () => void;
@@ -28,6 +29,9 @@ export function Shell({
   /** Owner-only: open the Hersteller-Partner dashboard. Provided only when the token carries the
    * admin role — otherwise the entry is never rendered. */
   onAdmin?: () => void;
+  /** Manufacturer-only: open the self-service profile. Provided only when the token carries the
+   * manufacturer role + a hersteller_id — otherwise never rendered. */
+  onPartnerSelf?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [navExpanded, setNavExpanded] = useState<boolean>(loadNavExpanded);
@@ -111,6 +115,19 @@ export function Shell({
                 data-testid="nav-admin"
               >
                 Hersteller verwalten
+              </button>
+            ) : null}
+            {onPartnerSelf ? (
+              <button
+                className="rail-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onPartnerSelf();
+                }}
+                data-testid="nav-partner-self"
+              >
+                Mein Hersteller-Profil
               </button>
             ) : null}
             <button className="rail-menu-item" role="menuitem" onClick={onLogout} data-testid="logout">

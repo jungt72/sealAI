@@ -102,11 +102,13 @@ class KeycloakJwtValidator:
             if isinstance(raw_roles, (list, tuple))
             else ()
         )
+        hersteller_id = claims.get("hersteller_id")
         return VerifiedIdentity(
             tenant_id=str(tenant_id),
             session_id=str(session_id),
             subject=str(subject),
             roles=roles,
+            hersteller_id=str(hersteller_id) if hersteller_id else "",
         )
 
 

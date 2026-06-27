@@ -174,6 +174,9 @@ class VerifiedIdentity:
     # Verified token roles (Keycloak realm_access.roles). Additive + default-empty so every existing
     # 3-arg construction is unchanged; used ONLY for owner/admin gating, NEVER the tenant boundary.
     roles: tuple[str, ...] = ()
+    # Verified manufacturer-partner id (Keycloak hersteller_id claim). Additive + default-empty; scopes
+    # the manufacturer SELF-SERVICE surface to their OWN partner record. Never the tenant boundary.
+    hersteller_id: str = ""
 
 
 class AuthValidator(Protocol):

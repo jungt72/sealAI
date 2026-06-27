@@ -137,6 +137,30 @@ export interface AdminLead {
   created_at: string;
   status: string;
 }
+// Manufacturer SELF-SERVICE (/api/v2/partner/me). The GET returns the full AdminPartner record; the
+// PUT body is only the manufacturer-editable subset (aktiv/plan/partner_seit stay owner-controlled).
+export type SelfPartnerUpdate = Pick<
+  AdminPartner,
+  | "firmenname"
+  | "lead_email"
+  | "website"
+  | "beschreibung"
+  | "standort"
+  | "kontakt_oeffentlich"
+  | "werkstoffe"
+  | "bauformen"
+  | "groessen"
+  | "zertifikate"
+>;
+// The manufacturer's own leads — no lead_email / tenant / session (the user's internal ids stay hidden).
+export interface SelfLead {
+  id: number;
+  firmenname: string;
+  briefing_title: string;
+  briefing_body: string;
+  created_at: string;
+  status: string;
+}
 export interface ChatResponse {
   answer: string;
   model: string;

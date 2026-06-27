@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { rolesFromToken } from "./oidc";
+import { herstellerIdFromToken, rolesFromToken } from "./oidc";
 
 // rolesFromToken only DECODES the payload (no signature check — the backend re-verifies every call);
 // a hand-built "header.payload.sig" with a base64 payload is enough to exercise the extraction.
@@ -28,5 +28,17 @@ describe("rolesFromToken", () => {
   it("returns [] for null / malformed tokens", () => {
     expect(rolesFromToken(null)).toEqual([]);
     expect(rolesFromToken("garbage")).toEqual([]);
+  });
+});
+
+describe("herstellerIdFromToken", () => {
+  it("extracts the hersteller_id claim", () => {
+    expect(herstellerIdFromToken(tokenWith({ hersteller_id: "acme" }))).toBe("acme");
+  });
+
+  it('returns "" when absent / null / malformed', () => {
+    expect(herstellerIdFromToken(tokenWith({ sub: "x" }))).toBe("");
+    expect(herstellerIdFromToken(null)).toBe("");
+    expect(herstellerIdFromToken("garbage")).toBe("");
   });
 });

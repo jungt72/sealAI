@@ -827,3 +827,8 @@ ul.alt-panel-list { padding-left: 0; gap: 6px; }
 .briefing-pdf-btn:hover, .alt-pdf-btn:hover:not(:disabled) { background: var(--surface-1, #f1f4f9); }
 .alt-pdf-btn { align-self: flex-start; margin-top: 2px; }
 .alt-pdf-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Manufacturer self-service — the read-only membership banner + the saved confirmation. */
+.self-membership { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 4px; background: var(--surface-1, #f1f4f9); border-radius: 8px; }
+.self-membership-note { font-size: 11px; color: var(--ink-ghost, #a8b0bc); }
+.self-saved { font-size: 12px; color: #2c6e49; align-self: center; }
