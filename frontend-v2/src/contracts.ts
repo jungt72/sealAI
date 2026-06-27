@@ -107,6 +107,36 @@ export interface AnfrageResponse {
   briefing: { title: string; body: string; provenance: string[] };
   hinweis: string;
 }
+// Owner/admin surface (/api/v2/admin/*, role-gated). The FULL editable partner record — incl.
+// lead_email (the routing target the owner manages); never exposed on the user-facing pool.
+export interface AdminPartner {
+  hersteller: string;
+  firmenname: string;
+  aktiv: boolean;
+  lead_email: string;
+  website: string;
+  beschreibung: string;
+  standort: string;
+  kontakt_oeffentlich: string;
+  partner_seit: string;
+  plan: string; // billing metadata — never a ranking input
+  werkstoffe: string[];
+  bauformen: string[];
+  groessen: string;
+  zertifikate: string[];
+}
+export interface AdminLead {
+  id: number;
+  partner_id: string;
+  firmenname: string;
+  lead_email: string;
+  tenant_id: string;
+  session_id: string;
+  briefing_title: string;
+  briefing_body: string;
+  created_at: string;
+  status: string;
+}
 export interface ChatResponse {
   answer: string;
   model: string;

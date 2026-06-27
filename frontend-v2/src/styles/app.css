@@ -776,3 +776,44 @@ ul.alt-panel-list { padding-left: 0; gap: 6px; }
   background: var(--surface-1, #f1f4f9); border-radius: 6px; max-height: 240px; overflow: auto;
 }
 .alt-anfrage-error { margin: 4px 0 0; font-size: 11px; color: #b4232a; }
+
+/* Owner/admin dashboard (Hersteller-Partner CRUD + leads). Role-gated; plain, dense, functional. */
+.admin-pane { display: flex; flex-direction: column; gap: 14px; max-width: 760px; margin: 0 auto; padding: 24px 20px; width: 100%; }
+.admin-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.admin-title { margin: 0; font-size: 18px; font-weight: 600; }
+.admin-close { font-size: 13px; color: var(--accent, #2f6fed); background: none; border: none; cursor: pointer; }
+.admin-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line, #e3e7ee); }
+.admin-tab { font-size: 13px; font-weight: 500; color: var(--ink-soft, #5a6372); background: none; border: none; padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+.admin-tab--active { color: var(--ink, #2a2f3a); border-bottom-color: var(--accent, #2f6fed); }
+.admin-error { margin: 0; padding: 8px 12px; font-size: 13px; color: #b4232a; background: #fdecec; border-radius: 8px; }
+.admin-body { display: flex; flex-direction: column; gap: 10px; }
+.admin-empty { font-size: 13px; color: var(--ink-soft, #5a6372); }
+.admin-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.admin-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line, #e3e7ee); border-radius: 8px; }
+.admin-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-row-name { font-size: 14px; font-weight: 600; }
+.admin-row-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft, #5a6372); background: var(--surface-1, #f1f4f9); border: 1px solid var(--line, #e3e7ee); border-radius: 999px; padding: 1px 8px; }
+.admin-row-badge--on { color: #2c6e49; background: #e7f3ec; border-color: #b8dcc6; }
+.admin-row-plan { font-size: 11px; color: var(--ink-ghost, #a8b0bc); }
+.admin-row-actions { display: flex; gap: 6px; flex: none; }
+.admin-btn { font-size: 12px; font-weight: 500; color: var(--ink, #2a2f3a); background: var(--surface-0, #fff); border: 1px solid var(--line, #e3e7ee); border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+.admin-btn:hover:not(:disabled) { background: var(--surface-1, #f1f4f9); }
+.admin-btn:disabled { opacity: 0.55; cursor: default; }
+.admin-btn--primary { color: #fff; background: var(--accent, #2f6fed); border-color: transparent; }
+.admin-btn--primary:hover:not(:disabled) { filter: brightness(0.95); background: var(--accent, #2f6fed); }
+.admin-btn--danger { color: #b4232a; border-color: #f0c4c4; }
+.admin-btn--danger:hover:not(:disabled) { background: #fdecec; }
+.admin-form { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--line, #e3e7ee); border-radius: 10px; background: var(--surface-1, #fbfcfe); }
+.admin-form-title { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.admin-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-soft, #5a6372); }
+.admin-field input, .admin-field textarea { font: inherit; font-size: 13px; color: var(--ink, #2a2f3a); padding: 7px 10px; border: 1px solid var(--line, #e3e7ee); border-radius: 7px; background: var(--surface-0, #fff); }
+.admin-field input:disabled { background: var(--surface-1, #f1f4f9); color: var(--ink-ghost, #a8b0bc); }
+.admin-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink, #2a2f3a); }
+.admin-form-actions { display: flex; gap: 8px; margin-top: 4px; }
+.admin-lead { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line, #e3e7ee); border-radius: 8px; }
+.admin-lead-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-lead-meta { font-size: 11px; color: var(--ink-ghost, #a8b0bc); }
+.admin-lead-mail { font-size: 12px; color: var(--accent, #2f6fed); }
+.admin-lead-briefing { font-size: 12px; }
+.admin-lead-briefing summary { cursor: pointer; color: var(--ink-soft, #5a6372); }
+.admin-lead-body { margin: 6px 0 0; padding: 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; background: var(--surface-1, #f1f4f9); border-radius: 6px; max-height: 320px; overflow: auto; }

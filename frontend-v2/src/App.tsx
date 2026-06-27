@@ -9,9 +9,11 @@ import {
   getAccessToken,
   givenNameFromToken,
   randomVerifier,
+  rolesFromToken,
   rpInitiatedLogout,
   type OidcConfig,
 } from "./auth/oidc";
+import { AdminPane } from "./components/AdminPane";
 import { ChatPane } from "./components/ChatPane";
 import { Shell } from "./components/Shell";
 import type { Briefing, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
@@ -19,6 +21,8 @@ import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
+// Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
+const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "sealai-admin";
 const CONFIG: OidcConfig = {
   issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
@@ -57,6 +61,13 @@ export function App() {
   const api = useMemo(() => new ApiClient(getAccessToken, onUnauthenticated), [onUnauthenticated]);
   // greeting name from the session token's given_name claim — display-only, never logged (PII)
   const greetingName = useMemo(() => (authed ? givenNameFromToken(getAccessToken()) : null), [authed]);
+  // owner/admin gate — display-only (the backend re-checks the role on every /admin call). When false
+  // the dashboard is never rendered AND never offered in the nav.
+  const isAdmin = useMemo(
+    () => (authed ? rolesFromToken(getAccessToken()).includes(ADMIN_ROLE) : false),
+    [authed],
+  );
+  const [adminView, setAdminView] = useState(false);
 
   const refreshMemory = useCallback(() => {
     api.memory().then(setMemory).catch(() => undefined);
@@ -235,7 +246,14 @@ export function App() {
 
   return (
     <FramingContext.Provider value={framing}>
-      <Shell onLogout={logout} onNewQuestion={newQuestion}>
+      <Shell
+        onLogout={logout}
+        onNewQuestion={newQuestion}
+        onAdmin={isAdmin ? () => setAdminView(true) : undefined}
+      >
+        {adminView && isAdmin ? (
+          <AdminPane api={api} onClose={() => setAdminView(false)} />
+        ) : (
         <ChatPane
           key={convKey}
           onSend={send}
@@ -275,6 +293,7 @@ export function App() {
           compute={compute}
           onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
         />
+        )}
       </Shell>
     </FramingContext.Provider>
   );

@@ -60,6 +60,28 @@ export function givenNameFromToken(token: string | null): string | null {
   }
 }
 
+/** Realm roles from the verified token (Keycloak realm_access.roles) — display-gating ONLY (show the
+ * admin UI). The BACKEND independently re-checks the role on every /admin call, so a tampered token
+ * never grants access; this only decides what the SPA bothers to render. */
+export function rolesFromToken(token: string | null): string[] {
+  if (!token) return [];
+  const payload = token.split(".")[1];
+  if (!payload) return [];
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const realm = claims.realm_access as { roles?: unknown } | undefined;
+    const roles = realm?.roles;
+    return Array.isArray(roles)
+      ? roles.filter((r): r is string => typeof r === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 // --- PKCE ----------------------------------------------------------------------------------------
 function b64url(bytes: ArrayBuffer | Uint8Array): string {
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);

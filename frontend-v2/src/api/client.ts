@@ -4,6 +4,8 @@
  * state and the persistent SafetyBanner stays — the framing is never dropped). */
 
 import type {
+  AdminLead,
+  AdminPartner,
   AnfrageResponse,
   Briefing,
   ChatResponse,
@@ -150,5 +152,28 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ partner_id: partnerId, message }),
     });
+  }
+
+  // ── Owner/admin surface (role-gated server-side; a non-admin token 403s) ──────────────────────
+  adminListHersteller(): Promise<{ hersteller: AdminPartner[] }> {
+    return this.req("/admin/hersteller");
+  }
+  adminUpsertHersteller(
+    id: string,
+    body: Omit<AdminPartner, "hersteller">,
+  ): Promise<AdminPartner> {
+    return this.req(`/admin/hersteller/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+  adminDeleteHersteller(id: string): Promise<{ deleted: string }> {
+    return this.req(`/admin/hersteller/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+  adminListLeads(partnerId?: string): Promise<{ leads: AdminLead[] }> {
+    const q = partnerId ? `?partner_id=${encodeURIComponent(partnerId)}` : "";
+    return this.req(`/admin/leads${q}`);
   }
 }

@@ -20,10 +20,14 @@ export function Shell({
   children,
   onLogout,
   onNewQuestion,
+  onAdmin,
 }: {
   children: ReactNode;
   onLogout: () => void;
   onNewQuestion: () => void;
+  /** Owner-only: open the Hersteller-Partner dashboard. Provided only when the token carries the
+   * admin role — otherwise the entry is never rendered. */
+  onAdmin?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [navExpanded, setNavExpanded] = useState<boolean>(loadNavExpanded);
@@ -96,6 +100,19 @@ export function Shell({
         </button>
         {menuOpen && (
           <div className="rail-menu" role="menu">
+            {onAdmin ? (
+              <button
+                className="rail-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onAdmin();
+                }}
+                data-testid="nav-admin"
+              >
+                Hersteller verwalten
+              </button>
+            ) : null}
             <button className="rail-menu-item" role="menuitem" onClick={onLogout} data-testid="logout">
               Abmelden
             </button>
