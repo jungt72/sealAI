@@ -32,6 +32,7 @@ from sealai_v2.core.contracts import (
 from sealai_v2.core.gegencheck import evaluate_gegencheck
 from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
 from sealai_v2.core.medium_extract import extract_medium_facts
+from sealai_v2.knowledge.hersteller_partner import rank_partners
 import re as _re
 
 _ALT_RE = _re.compile(
@@ -353,32 +354,49 @@ def decode(question: str) -> dict | None:
     return {**spec, "equivalenz_grenze": EQUIVALENZ_GRENZE}
 
 
-def alternativen(hersteller, question: str, *, tenant_id: str) -> dict | None:
-    """Stage - Alternativen/Hersteller (Modus F, Dim. 6): find capable manufacturers for the
-    seal spec BY CAPABILITY (Produkt-Konzept §3.9 - NEUTRAL, never pay-to-rank). Fires ONLY on an
-    explicit alternatives/manufacturer request (keyword gate); otherwise None. With the EMPTY
-    owner-pending seed, no match -> an honest "no grounded manufacturer data" marker + the neutral,
-    capability-based selection approach. When the owner curates Dim. 6, it returns capable makers
-    ordered by capability only. No LLM, no mutation. ``hersteller`` is the InProcessHerstellerStore."""
-    if hersteller is None or not _ALT_RE.search(question):
+def alternativen(partner_registry, question: str, *, tenant_id: str) -> dict | None:
+    """Stage - Alternativen/Hersteller (Modus F, Dim. 6, owner business model): from the PARTNER POOL,
+    the best-FIT manufacturers for the seal spec, ranked BY CAPABILITY ONLY (Produkt-Konzept §3.9 —
+    payment gates pool MEMBERSHIP, NEVER ranking; ``rank_partners`` never reads ``plan``). Transparent:
+    the list is PAYING partners (the UI labels it "Partner/Anzeige"). Fires ONLY on an explicit
+    alternatives/manufacturer request (keyword gate); otherwise None. No partner matches the spec
+    (incl. the empty registry — eval/CI) -> an honest "no partner listed" marker with ZERO firm names
+    (P1.7 — the backend never invents a manufacturer). No LLM, no mutation. ``partner_registry`` is the
+    in-process (CI) or Postgres (dashboard-editable prod) ``PartnerRegistry``."""
+    if partner_registry is None or not _ALT_RE.search(question):
         return None
     spec = decode_designation(question) or {}
     material = spec.get("material")
     bauform = spec.get("type")
-    matches = hersteller.query(tenant_id=tenant_id, material=material, bauform=bauform)
-    if not matches:
+    ranked = rank_partners(
+        partner_registry.list_active(), material=material, bauform=bauform
+    )
+    if not ranked:
         return {
             "grounded_data": False,
-            "neutralitaet": "Auswahl nach Fähigkeit (Werkstoff, Bauform, Größe, Zertifikate), nie nach Bezahlung.",
+            "partner": True,  # the directory is a partner directory — stated transparently
+            "neutralitaet": "Auswahl nach fachlicher Eignung (Werkstoff, Bauform), unabhängig von der Bezahlung.",
             "hinweis": (
-                "Aktuell liegen keine geerdeten Hersteller-Fähigkeitsdaten vor. Grenze die nötigen "
-                "Fähigkeits-Achsen ein (Werkstoff, Bauform, Größe, geforderte Zertifikate) und "
-                "bestätige sie mit Kandidaten-Herstellern."
+                "Für diese Spezifikation ist aktuell kein Partner-Hersteller gelistet. Grenze die "
+                "Fähigkeits-Achsen ein (Werkstoff, Bauform, Größe, Zertifikate) — passende Partner "
+                "erscheinen hier, sobald sie gelistet sind."
             ),
         }
     return {
         "grounded_data": True,
-        "hersteller": [m.hersteller for m in matches],
+        "partner": True,  # TRANSPARENT: these are paying partners (Anzeige), not a neutral market scan
+        "hersteller": [
+            {
+                "id": p.hersteller,
+                "firmenname": p.firmenname,
+                "beschreibung": p.beschreibung,
+                "website": p.website,
+                "standort": p.standort,
+                "werkstoffe": list(p.werkstoffe),
+                "zertifikate": list(p.zertifikate),
+            }
+            for p in ranked
+        ],
         "ordered_by": "capability",
-        "neutralitaet": "nach Fähigkeit, nie nach Bezahlung",
+        "neutralitaet": "Auswahl nach fachlicher Eignung — unabhängig von der Bezahlung. Gelistet sind Partner-Hersteller.",
     }

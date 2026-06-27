@@ -1,9 +1,7 @@
-"""Alternativen/Hersteller (Modus F, Dim. 6) — store neutrality, capability match, operation.
-
-Neutrality is sacred (§3.9): ordering is capability-then-alphabetical, never payment; a payment/
-ranking field on an entry is a load error. The shipped seed is EMPTY (owner-provided market data),
-so Modus F honestly reports "no grounded data" + the neutral selection approach until curated.
-"""
+"""Alternativen/Hersteller (Modus F, Dim. 6) — the PARTNER POOL (owner business model): payment gates
+pool MEMBERSHIP, the SELECTION ranks by capability fit (§3.9, never pay-to-rank). The capability-SEED
+neutrality keystone stays structural on hersteller.py. Empty/no-match pool → honest "no partner" with
+ZERO firm names (P1.7 — the backend invents none)."""
 
 from __future__ import annotations
 
@@ -14,12 +12,10 @@ import pytest
 from sealai_v2.api.serializers import chat_response
 from sealai_v2.core.contracts import Answer, Flags, ModelConfig, PipelineResult
 from sealai_v2.core.l1_generator import L1Generator
-from sealai_v2.knowledge.hersteller import (
-    HerstellerCatalog,
-    HerstellerFaehigkeit,
-    InProcessHerstellerStore,
-    _entry,
-    load_hersteller,
+from sealai_v2.knowledge.hersteller import _entry, load_hersteller
+from sealai_v2.knowledge.hersteller_partner import (
+    HerstellerPartner,
+    InProcessPartnerRegistry,
 )
 from sealai_v2.pipeline import stages
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -28,45 +24,31 @@ from sealai_v2.security.tenant import TenantContext
 from sealai_v2.tests._fakes import FakeLlmClient
 
 
-def _f(fid, name, werkstoffe, bauformen):
-    return HerstellerFaehigkeit(
-        id=fid,
-        hersteller=name,
-        werkstoffe=tuple(werkstoffe),
-        bauformen=tuple(bauformen),
-        groessen="",
-        zertifikate=(),
-        review_state="draft",
-        provenance=("draft:test",),
+def _partner(name, werkstoffe=(), bauformen=(), *, aktiv=True, plan=""):
+    return HerstellerPartner(
+        hersteller=name.lower().replace(" ", "-"),
+        firmenname=name,
+        aktiv=aktiv,
+        lead_email=f"leads@{name}",
+        plan=plan,
+        werkstoffe=werkstoffe,
+        bauformen=bauformen,
+        beschreibung=f"{name} – Dichtungen",
     )
 
 
-def _store(*entries):
-    return InProcessHerstellerStore(HerstellerCatalog(faehigkeiten=tuple(entries)))
+def _reg(*partners):
+    return InProcessPartnerRegistry(tuple(partners))
 
 
-def test_shipped_seed_is_empty():
+def test_shipped_capability_seed_is_empty():
     assert (
         len(load_hersteller().faehigkeiten) == 0
     )  # owner-provided, not model-generated
 
 
-def test_query_matches_by_capability_and_orders_neutral():
-    # equal capability match → ALPHABETICAL tie-break (neutral), never payment
-    store = _store(
-        _f("H1", "Zeta Seals", ["FKM", "NBR"], ["RWDR"]),
-        _f("H2", "Alpha Dicht", ["FKM"], ["RWDR"]),
-    )
-    res = store.query(tenant_id="t1", material="FKM", bauform="RWDR")
-    assert [f.hersteller for f in res] == ["Alpha Dicht", "Zeta Seals"]
-
-
-def test_capability_filters_out_nonmatch():
-    store = _store(_f("H1", "Alpha", ["EPDM"], ["O-Ring"]))
-    assert store.query(tenant_id="t1", material="FKM", bauform="RWDR") == ()
-
-
-def test_neutrality_guard_rejects_payment_field():
+def test_capability_seed_neutrality_keystone_rejects_payment_field():
+    # The §3.9 structural guard on the capability SEED lane is UNTOUCHED by the partner model.
     with pytest.raises(ValueError, match="pay-to-rank|Bezahlung"):
         _entry(
             {
@@ -79,67 +61,72 @@ def test_neutrality_guard_rejects_payment_field():
         )
 
 
-def test_stage_empty_seed_reports_no_grounded_data():
+def test_stage_empty_registry_no_data_zero_firm_names():
+    # P1.7 — empty pool (eval/CI): grounded_data=False AND zero firm names; the backend invents none.
     v = stages.alternativen(
-        InProcessHerstellerStore(),
-        "Wer kann einen RWDR aus FKM noch herstellen?",
+        InProcessPartnerRegistry(),
+        "Wer kann einen RWDR aus FKM herstellen? Nenne vergleichbare Hersteller.",
         tenant_id="t1",
     )
-    assert v is not None
-    assert v["grounded_data"] is False
-    assert "Bezahlung" in v["neutralitaet"]
-
-
-def test_p17_empty_hersteller_store_invents_no_manufacturer():
-    # P1.7 — deterministic guard for Modus F's headline doctrine ("never invents firm names").
-    # STRUCTURAL guarantee at the STAGE boundary: with the empty Dim.6 store, alternativen(...)
-    # MUST report grounded_data=False AND its structured output must name ZERO manufacturers — the
-    # capability list is absent/empty, so there is no firm name for L1 to relay. (The L1-NARRATION
-    # guarantee — that the prose itself invents no firm — remains measured by the eval REPLAY; this
-    # test pins only what the backend deterministically controls: the stage's structured output.)
-    v = stages.alternativen(
-        InProcessHerstellerStore(),  # empty shipped seed
-        "Wer kann einen RWDR aus FKM noch herstellen? Nenne vergleichbare Hersteller.",
-        tenant_id="t1",
-    )
-    assert v is not None
-    assert v["grounded_data"] is False
-    # the manufacturer list is the ONLY field that may carry a firm name — it must be empty/absent
-    assert v.get("hersteller", []) == []
-    assert (
-        "ordered_by" not in v
-    )  # the capability-ranking field only exists with grounded makers
+    assert v is not None and v["grounded_data"] is False
+    assert v.get("hersteller", []) == [] and "ordered_by" not in v
 
 
 def test_stage_none_without_alternatives_keyword():
     assert (
-        stages.alternativen(InProcessHerstellerStore(), "Was kann FKM?", tenant_id="t1")
+        stages.alternativen(_reg(_partner("A")), "Was kann FKM?", tenant_id="t1")
         is None
     )
 
 
-def test_stage_with_curated_data_returns_makers_neutral():
-    store = _store(_f("H1", "Alpha Dicht", ["FKM"], ["RWDR"]))
-    v = stages.alternativen(store, "Wer macht RWDR aus FKM?", tenant_id="t1")
-    assert v["grounded_data"] is True
-    assert v["hersteller"] == ["Alpha Dicht"]
+def test_stage_returns_partner_pool_fit_ranked_and_transparent():
+    reg = _reg(
+        _partner(
+            "Voll-Fit", werkstoffe=("FKM",), bauformen=("RWDR",), plan="basic"
+        ),  # fit 4
+        _partner(
+            "Premium-Teilfit", werkstoffe=("FKM",), plan="enterprise-xxl"
+        ),  # fit 2
+    )
+    v = stages.alternativen(reg, "Wer macht RWDR aus FKM?", tenant_id="t1")
+    assert (
+        v["grounded_data"] is True and v["partner"] is True
+    )  # transparent partner pool
+    assert [h["firmenname"] for h in v["hersteller"]] == [
+        "Voll-Fit",
+        "Premium-Teilfit",
+    ]  # fit, NOT plan
     assert v["ordered_by"] == "capability"
+    assert (
+        "lead_email" not in v["hersteller"][0]
+    )  # internal routing field NEVER exposed
 
 
-def _pipeline(client):
+def test_stage_inactive_partner_not_in_pool():
+    v = stages.alternativen(
+        _reg(
+            _partner("Inaktiv", werkstoffe=("FKM",), bauformen=("RWDR",), aktiv=False)
+        ),
+        "Wer macht RWDR aus FKM?",
+        tenant_id="t1",
+    )
+    assert v["grounded_data"] is False  # inactive → not a partner → no firm shown
+
+
+def _pipeline(client, registry):
     return Pipeline(
         generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
         client=client,
         helper_model=ModelConfig("fake-helper"),
         understand_enabled=False,
         retriever=None,
-        hersteller=InProcessHerstellerStore(),
+        partner_registry=registry,
     )
 
 
 def test_alternativen_flows_to_result_empty_honest():
     res = asyncio.run(
-        _pipeline(FakeLlmClient("Antwort")).run(
+        _pipeline(FakeLlmClient("Antwort"), InProcessPartnerRegistry()).run(
             "Wer kann das noch herstellen, RWDR aus FKM?", tenant=TenantContext("t1")
         )
     )
