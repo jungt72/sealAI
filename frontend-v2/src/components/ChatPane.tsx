@@ -20,6 +20,7 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
+import { AlternativenPanel } from "./AlternativenPanel";
 import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
@@ -221,6 +222,16 @@ export function ChatPane({
     return null;
   }, [msgs]);
 
+  // Modus F (Hersteller-Auswahl): the most recent turn's manufacturer suggestion, or null (it fires
+  // only on an explicit alternatives/manufacturer request).
+  const latestAlternativen = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant" && m.res.alternativen) return m.res.alternativen;
+    }
+    return null;
+  }, [msgs]);
+
   // claude.ai chat↔artifact: the cockpit is OPEN when the case is active OR the user opened it,
   // and NOT explicitly closed. Default / pure Q&A → chat-only (centered, no right panel). Opening
   // moves the chat left and splits ~50/50; closing returns to centered chat-only.
@@ -335,6 +346,9 @@ export function ChatPane({
         </div>
 
         {latestMedium ? <MediumPanel data={latestMedium} /> : null}
+        {latestAlternativen ? (
+          <AlternativenPanel data={latestAlternativen} />
+        ) : null}
 
         {caseStateEmpty ? (
           <p className="case-state-empty" data-testid="case-state-empty">

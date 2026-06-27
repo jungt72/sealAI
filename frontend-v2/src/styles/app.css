@@ -718,3 +718,21 @@
 .medium-panel-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
 .medium-panel-list li { font-size: 12px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
 .medium-panel-unsicher { margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: #92600a; }
+
+/* Modus F — the HERSTELLER-AUSWAHL panel. Neutral selection (by capability, never pay-to-rank);
+   honest "no grounded data" stance while the owner's Hersteller seed is empty. */
+.alt-panel {
+  margin: 8px 16px 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--line, #e3e7ee); border-radius: 10px; background: var(--surface-1, #fbfcfe);
+}
+.alt-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.alt-panel-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.alt-panel-badge {
+  flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #2c6e49; background: #e7f3ec; border: 1px solid #b8dcc6; border-radius: 999px; padding: 2px 8px;
+}
+.alt-panel-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.alt-panel-list li { font-size: 13px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.alt-panel-empty { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.alt-panel-note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-ghost, #a8b0bc); }
+.alt-panel-disclaimer { margin: 2px 0 0; font-size: 10px; line-height: 1.5; color: var(--ink-ghost, #a8b0bc); }

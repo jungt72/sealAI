@@ -78,6 +78,15 @@ export interface MediumIntelligence {
   unsicher: boolean;
   vorlaeufig: boolean;
 }
+// Modus F (Alternativen/Hersteller, Dim. 6): capable manufacturers BY CAPABILITY (neutral, §3.9), or
+// the honest "no grounded data" marker when the owner's Hersteller seed is still empty.
+export interface Alternativen {
+  grounded_data: boolean;
+  hersteller?: string[]; // capability-ordered, neutral (never pay-to-rank)
+  ordered_by?: string;
+  neutralitaet?: string;
+  hinweis?: string; // shown when grounded_data is false
+}
 export interface ChatResponse {
   answer: string;
   model: string;
@@ -87,6 +96,7 @@ export interface ChatResponse {
   computed?: KernelValue[]; // M8: in-band kern result (additive; panel can update without a 2nd call)
   not_computed?: NotComputed[];
   medium_intelligence?: MediumIntelligence | null; // Phase 2: the MEDIUM panel data (vorläufig)
+  alternativen?: Alternativen | null; // Modus F: the HERSTELLER-AUSWAHL panel data
 }
 export interface RememberedFact {
   feld: string;
