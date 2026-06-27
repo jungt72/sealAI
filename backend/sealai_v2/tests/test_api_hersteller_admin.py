@@ -14,9 +14,7 @@ from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 from sealai_v2.security.auth import FakeAuthValidator
 
 IDS = {
-    "tok-admin": VerifiedIdentity(
-        "tenant-A", "sess-A", "owner", roles=("admin",)
-    ),
+    "tok-admin": VerifiedIdentity("tenant-A", "sess-A", "owner", roles=("admin",)),
     "tok-user": VerifiedIdentity("tenant-B", "sess-B", "user-B"),  # roles=() by default
 }
 
