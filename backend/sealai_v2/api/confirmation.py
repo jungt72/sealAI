@@ -48,12 +48,20 @@ def build_param_confirmation(
                 {"feld": feld, "label": label, "clarification": clar_dicts[feld]}
             )
         elif feld in bound:
-            # bound kernel input → echo the POST-BIND value (never the raw submitted string)
+            # bound kernel input (d1/rpm, the user typed it) → echo the POST-BIND value (confirmed).
             uebernommen.append({"feld": feld, "label": label, "wert": bound[feld]})
         elif feld in settled_by_feld:
-            # context fact → echo the settled value
+            # context fact (medium, seal-TYPE pack-assumption, …) — system-EXTRACTED or a forced calc-pack
+            # default, NOT a value the user typed. Surface it TENTATIVELY so an auto-detected medium or an
+            # assumed seal type is never shown as a settled fact (honesty / "Kandidat nicht final"): the
+            # user confirms or corrects it. Kernel inputs above stay confirmed.
             uebernommen.append(
-                {"feld": feld, "label": label, "wert": settled_by_feld[feld].wert}
+                {
+                    "feld": feld,
+                    "label": f"{label} (erkannt — bitte bestätigen)",
+                    "wert": settled_by_feld[feld].wert,
+                    "tentativ": True,
+                }
             )
 
     return {
