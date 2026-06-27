@@ -357,6 +357,7 @@ export function App() {
           onDownloadPdf={(message) =>
             api.briefing(message).then(downloadBriefingPdf)
           }
+          onContribute={(payload) => api.contribute(payload)}
         />
         )}
       </Shell>

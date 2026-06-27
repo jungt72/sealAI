@@ -13,6 +13,7 @@ import type {
   ChatResponse,
   ComputeResponse,
   ConfirmationResponse,
+  ContributePayload,
   ConversationMemory,
   ParamItem,
 } from "../contracts";
@@ -22,6 +23,7 @@ import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
 import { AlternativenPanel } from "./AlternativenPanel";
+import { ContributePanel } from "./ContributePanel";
 import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
@@ -68,6 +70,7 @@ export function ChatPane({
   onConfirmUnit,
   onAnfrage,
   onDownloadPdf,
+  onContribute,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -93,6 +96,8 @@ export function ChatPane({
   /** Download the Anfrage briefing as a PDF (no send). The host fetches the briefing for the session
    * message + builds the PDF; the panel passes nothing. */
   onDownloadPdf?: (message: string) => Promise<void>;
+  /** Wissens-Beitrag: the user shares their solution + outcome to improve sealingAI (untrusted DRAFT). */
+  onContribute?: (payload: ContributePayload) => Promise<{ hinweis: string }>;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -272,6 +277,29 @@ export function ChatPane({
         : undefined,
     [onDownloadPdf, lastUserMessage],
   );
+  const lastAnswer = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant") return m.res.answer;
+    }
+    return "";
+  }, [msgs]);
+  // Wissens-Beitrag: the host builds the full payload (situation + case-state + recommendation) from the
+  // session; the panel supplies only anonym + outcome.
+  const panelOnContribute = useMemo(
+    () =>
+      onContribute
+        ? (anonym: boolean, outcome: string) =>
+            onContribute({
+              anonym,
+              situation: lastUserMessage,
+              recommendation: lastAnswer,
+              outcome,
+              case_state: memory.case_state.map((f) => ({ feld: f.feld, wert: f.wert })),
+            })
+        : undefined,
+    [onContribute, lastUserMessage, lastAnswer, memory.case_state],
+  );
 
   // claude.ai chat↔artifact: the cockpit is OPEN when the case is active OR the user opened it,
   // and NOT explicitly closed. Default / pure Q&A → chat-only (centered, no right panel). Opening
@@ -426,6 +454,9 @@ export function ChatPane({
         <div className="readout-briefing">
           <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
           {briefingButton}
+          {panelOnContribute ? (
+            <ContributePanel onContribute={panelOnContribute} />
+          ) : null}
         </div>
       </div>
     </aside>

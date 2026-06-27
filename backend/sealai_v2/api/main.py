@@ -13,6 +13,7 @@ from sealai_v2.api.routes import (
     briefing,
     chat,
     compute,
+    contribute,
     conversations,
     framing,
     hersteller,
@@ -30,6 +31,7 @@ app.include_router(framing.router)
 app.include_router(anfrage.router)
 app.include_router(hersteller.router)
 app.include_router(partner_self.router)
+app.include_router(contribute.router)
 
 
 @app.get("/health")

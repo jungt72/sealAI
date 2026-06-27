@@ -161,6 +161,28 @@ export interface SelfLead {
   created_at: string;
   status: string;
 }
+// Wissens-Beitrag: a user shares their worked-out situation + outcome to improve sealingAI. Anonymous by
+// default; lands as an untrusted DRAFT in the owner review queue, never auto-feeds a recommendation.
+export interface ContributePayload {
+  anonym: boolean;
+  situation: string;
+  recommendation: string;
+  outcome: string;
+  case_state: { feld: string; wert: string }[];
+}
+export interface AdminContribution {
+  id: number;
+  anonym: boolean;
+  tenant_ref: string;
+  subject_ref: string;
+  situation: string;
+  case_state: { feld: string; wert: string }[];
+  recommendation: string;
+  outcome: string;
+  created_at: string;
+  status: string;
+  review_note: string;
+}
 export interface ChatResponse {
   answer: string;
   model: string;

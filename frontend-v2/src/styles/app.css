@@ -832,3 +832,20 @@ ul.alt-panel-list { padding-left: 0; gap: 6px; }
 .self-membership { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 4px; background: var(--surface-1, #f1f4f9); border-radius: 8px; }
 .self-membership-note { font-size: 11px; color: var(--ink-ghost, #a8b0bc); }
 .self-saved { font-size: 12px; color: #2c6e49; align-self: center; }
+
+/* Wissens-Beitrag — der User teilt seine Lösung zum Wissensaufbau. */
+.contrib-open { font-size: 12px; font-weight: 500; color: var(--accent, #2f6fed); background: none; border: none; cursor: pointer; padding: 4px 0; text-align: left; }
+.contrib-form { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line, #e3e7ee); border-radius: 8px; background: var(--surface-1, #fbfcfe); }
+.contrib-intro { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.contrib-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink, #2a2f3a); }
+.contrib-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-soft, #5a6372); }
+.contrib-field textarea { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--line, #e3e7ee); border-radius: 7px; background: var(--surface-0, #fff); }
+.contrib-actions { display: flex; gap: 8px; }
+.contrib-submit { font-size: 12px; font-weight: 600; color: #fff; background: var(--accent, #2f6fed); border: none; border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+.contrib-submit:disabled { opacity: 0.6; cursor: default; }
+.contrib-cancel { font-size: 12px; color: var(--ink-soft, #5a6372); background: none; border: none; cursor: pointer; }
+.contrib-done { display: flex; flex-direction: column; gap: 4px; }
+.contrib-ok { font-size: 12px; color: #2c6e49; }
+.contrib-hinweis { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.contrib-error { margin: 0; font-size: 11px; color: #b4232a; }
+.contrib-outcome-row { font-size: 12px; color: var(--ink, #2a2f3a); }

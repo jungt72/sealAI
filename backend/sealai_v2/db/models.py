@@ -123,3 +123,23 @@ class V2Lead(Base):
     briefing_body: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
+
+
+class V2Contribution(Base):
+    """Wissens-Beitrag (user opts to share a worked-out situation + outcome to improve sealingAI). DRAFT in
+    the owner REVIEW QUEUE — NEVER auto-feeds the trust spine; promotion to knowledge is the review gate.
+    Anonymous → tenant_ref='anon', subject_ref='' (no identity); the structured case-state is technical."""
+
+    __tablename__ = "v2_contributions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    anonym: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tenant_ref: Mapped[str] = mapped_column(String(255), default="anon", nullable=False)
+    subject_ref: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    situation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    case_state_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    recommendation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    outcome: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
+    review_note: Mapped[str] = mapped_column(Text, default="", nullable=False)

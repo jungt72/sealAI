@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { ApiClient } from "../api/client";
-import type { AdminLead, AdminPartner } from "../contracts";
+import type { AdminContribution, AdminLead, AdminPartner } from "../contracts";
 
 const EMPTY: AdminPartner = {
   hersteller: "",
@@ -42,9 +42,10 @@ export function AdminPane({
   api: ApiClient;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"hersteller" | "leads">("hersteller");
+  const [tab, setTab] = useState<"hersteller" | "leads" | "beitraege">("hersteller");
   const [partners, setPartners] = useState<AdminPartner[]>([]);
   const [leads, setLeads] = useState<AdminLead[]>([]);
+  const [contributions, setContributions] = useState<AdminContribution[]>([]);
   const [editing, setEditing] = useState<{
     draft: AdminPartner;
     isNew: boolean;
@@ -66,11 +67,25 @@ export function AdminPane({
       .then((r) => setLeads(r.leads))
       .catch(() => setError("Laden fehlgeschlagen."));
   }, [api]);
+  const loadContributions = useCallback(() => {
+    setError(null);
+    api
+      .adminListContributions()
+      .then((r) => setContributions(r.contributions))
+      .catch(() => setError("Laden fehlgeschlagen."));
+  }, [api]);
+  const setContributionStatus = (id: number, status: string) => {
+    api
+      .adminSetContributionStatus(id, status, "")
+      .then(loadContributions)
+      .catch(() => setError("Speichern fehlgeschlagen."));
+  };
 
   useEffect(() => {
     if (tab === "hersteller") loadPartners();
-    else loadLeads();
-  }, [tab, loadPartners, loadLeads]);
+    else if (tab === "leads") loadLeads();
+    else loadContributions();
+  }, [tab, loadPartners, loadLeads, loadContributions]);
 
   const patch = (p: Partial<AdminPartner>) =>
     setEditing((e) => (e ? { ...e, draft: { ...e.draft, ...p } } : e));
@@ -167,6 +182,16 @@ export function AdminPane({
           data-testid="tab-leads"
         >
           Leads
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "beitraege"}
+          className={`admin-tab${tab === "beitraege" ? " admin-tab--active" : ""}`}
+          onClick={() => setTab("beitraege")}
+          data-testid="tab-beitraege"
+        >
+          Beiträge
         </button>
       </div>
 
@@ -333,7 +358,7 @@ export function AdminPane({
             </>
           )}
         </div>
-      ) : (
+      ) : tab === "leads" ? (
         <div className="admin-body">
           {leads.length === 0 ? (
             <p className="admin-empty">Noch keine Leads eingegangen.</p>
@@ -357,6 +382,72 @@ export function AdminPane({
                     <summary>{ld.briefing_title || "Briefing"}</summary>
                     <pre className="admin-lead-body">{ld.briefing_body}</pre>
                   </details>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="admin-body">
+          <p className="admin-empty">
+            Nutzer-Beiträge (ungeprüft). Prüfen, dann ggf. zu einer field_validated Fachkarte / einem
+            Eval-Trap promoten — fließt nie automatisch in eine Empfehlung.
+          </p>
+          {contributions.length === 0 ? (
+            <p className="admin-empty">Noch keine Beiträge eingegangen.</p>
+          ) : (
+            <ul className="admin-list">
+              {contributions.map((c) => (
+                <li
+                  key={c.id}
+                  className="admin-lead"
+                  data-testid={`contrib-${c.id}`}
+                >
+                  <div className="admin-lead-head">
+                    <span className="admin-row-name">Beitrag #{c.id}</span>
+                    <span className="admin-row-badge">
+                      {c.anonym ? "anonym" : c.subject_ref}
+                    </span>
+                    <span className="admin-lead-meta">{c.created_at}</span>
+                    <span className="admin-row-badge">{c.status}</span>
+                  </div>
+                  <div className="contrib-outcome-row">
+                    <strong>Ergebnis:</strong> {c.outcome || "—"}
+                  </div>
+                  <details className="admin-lead-briefing">
+                    <summary>Situation + Empfehlung + Case-State</summary>
+                    <pre className="admin-lead-body">
+                      {c.situation}
+                      {"\n\n"}
+                      {c.recommendation}
+                      {"\n\n"}
+                      {c.case_state.map((f) => `${f.feld}: ${f.wert}`).join("\n")}
+                    </pre>
+                  </details>
+                  <div className="admin-row-actions">
+                    <button
+                      type="button"
+                      className="admin-btn"
+                      data-testid={`contrib-reviewed-${c.id}`}
+                      onClick={() => setContributionStatus(c.id, "reviewed")}
+                    >
+                      geprüft
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--primary"
+                      onClick={() => setContributionStatus(c.id, "promoted")}
+                    >
+                      promoten
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--danger"
+                      onClick={() => setContributionStatus(c.id, "rejected")}
+                    >
+                      verwerfen
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

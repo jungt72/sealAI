@@ -110,3 +110,11 @@ def require_manufacturer(
     if s.auth_manufacturer_role not in identity.roles or not identity.hersteller_id:
         raise HTTPException(status_code=403, detail="manufacturer role required")
     return identity
+
+
+@lru_cache(maxsize=1)
+def get_contribution_store():
+    """Wissens-Beitrag store — Postgres (durable review queue) when database_url set, else in-process."""
+    from sealai_v2.db.contributions import build_contribution_store
+
+    return build_contribution_store(get_settings())

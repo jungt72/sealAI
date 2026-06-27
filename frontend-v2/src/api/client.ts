@@ -4,6 +4,7 @@
  * state and the persistent SafetyBanner stays — the framing is never dropped). */
 
 import type {
+  AdminContribution,
   AdminLead,
   AdminPartner,
   AnfrageResponse,
@@ -11,6 +12,7 @@ import type {
   ChatResponse,
   ComputeResponse,
   ConfirmationResponse,
+  ContributePayload,
   ConversationMemory,
   ParamItem,
   SelfLead,
@@ -188,5 +190,19 @@ export class ApiClient {
   }
   partnerSelfLeads(): Promise<{ leads: SelfLead[] }> {
     return this.req("/partner/me/leads");
+  }
+
+  // ── Wissens-Beitrag: a user shares their solution (→ untrusted DRAFT in the owner review queue) ──
+  contribute(body: ContributePayload): Promise<{ status: string; id: number; hinweis: string }> {
+    return this.req("/contribute", { method: "POST", body: JSON.stringify(body) });
+  }
+  adminListContributions(): Promise<{ contributions: AdminContribution[] }> {
+    return this.req("/admin/contributions");
+  }
+  adminSetContributionStatus(id: number, status: string, reviewNote: string): Promise<unknown> {
+    return this.req(`/admin/contributions/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status, review_note: reviewNote }),
+    });
   }
 }
