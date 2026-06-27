@@ -1,6 +1,11 @@
 # Dichtungsregeln + Algorithmus v3 — RWDR / DIN 3760 (Achsenmodell + Antwortstufen, `reviewed_internal`)
 
-**Status:** Draft **v3.1**, `reviewed_internal` — NICHT `expert_signed`. · **Datum:** 2026-06-27
+**Status:** Draft **v3.2**, `reviewed_internal_plus` — NICHT `expert_signed`. · **Datum:** 2026-06-27
+**v3.1→v3.2 (Fachreview-Patches, im Code + als Tests umgesetzt):** A6 Dampf>120°C → Spezialeskalation (nicht leer);
+A9 HFC≤50°C → NBR-Kandidat, aber `validation_required` (max L1); A10 HFD → fire-resistant Eskalation; B4 ≥0,5 bar →
+red; D2 Schmutz+Härte≥55+v≤4 → L2 mit AS (Härte unbekannt bleibt L1); A8 Diesel → FKM-Alternative; A5 Wasser →
+lubricity-caution; A1 Werkstoff primary/alternative getrennt; strukturell: **nie 'bare empty'** → typisiertes
+`MaterialResult` (candidate_set/empty_excluded/empty_unknown/special_escalation + primary/alt/escalation/excluded).
 **v3→v3.1 (Mini-Patch vor Code):** löst den echten Grenzwert-Widerspruch `v>10=orange` vs. Trap „9–11 m/s=L2".
 Speed-Bänder neu (green_base v≤8 / green_extended 8<v≤12 mit Prüfpunkt / orange v>12) + harte Code-Guards
 (Freitext→candidate_set_only, `derive_DIN` nur bei reviewten Achsen, Prototyp max L2). Danach: Code.
@@ -185,13 +190,9 @@ Druckgeräte · ob Welle/Gehäuse ohne Nacharbeit nutzbar. → Bei all dem: Kand
 (Hochdrehzahl, Druck, Dampf) → L1; Leckage → Failure-Mode; Lebensmittel/ATEX → L0; Freitext/unvollständig → kein
 Einzelwerkstoff. Die harten Guards (kein finaler DIN-Code, kein Einzelwerkstoff, nie freigegeben, max L2) halten
 auf ALLEN Fällen. Als Regressionsschranken fixiert (`tests/test_produktspec_real_cases.py`).
-**Offenes Finding (Domänen-Kalibrierung, NICHT autonom entschieden) — A2b:** ein staubiger Standard-AS-Fall
-(Schmutz + bekannte Wellenhärte ≥55 HRC, sonst sauber) wird derzeit auf **L1 über-blockt**, weil das green-
-Envelope *jede* Verschmutzung als „nicht grün" wertet — obwohl die **AS-Staublippe genau dafür existiert** und die
-Härte (≥55 HRC = der für Schmutz empfohlene Wert) den Verschleiß adressiert. **Frage an den Dichtungstechniker:**
-soll „Verschmutzung + Lippe=AS + Härte≥55 HRC + sonst grün" als **L2-Screening** gelten (Pro: AS ist die
-Schmutzlösung; Contra: Schmutz erhöht Verschleiß/Temperatur, mehr Defer kann gewollt sein)? Bis zur Klärung bleibt
-das konservative L1.
+**Finding A2b — GELÖST (PATCH-4, Fachreview):** „Verschmutzung + Lippe=AS + Härte≥55 HRC + v≤4 + sonst grün" gilt
+jetzt als **L2-Screening** (AS ist die Schmutzlösung, Härte adressiert den Verschleiß); Schmutz mit **unbekannter**
+Härte bleibt konservativ **L1** (Härte erst verifizieren). Im Code + als Schranke (`test_produktspec_patches.py`).
 
 ## TEIL D-Guards — ROTE SCHRANKEN, die der Code TYPMODELL-hart erzwingen MUSS
 ```

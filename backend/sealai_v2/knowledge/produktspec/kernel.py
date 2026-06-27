@@ -1,6 +1,6 @@
-"""Produktspec v3.1 engine (Konzept v3.1). Deterministic, axis-based, with the RED guards enforced by the
-type model: max level L2, no single material from free text, never a final DIN code. RWDR is the one
-reference family (Family-Kernel-Contract = the resolve_* functions). No L1/capability data."""
+"""Produktspec v3.1+ engine (Konzept v3.1 + Fachreview-Patches A6/A9/A10/B4/D2/A1/A5/A8). Deterministic,
+axis-based, RED guards (max L2, no single material from free text, never a final DIN code). Material =
+typed MaterialResult (never a bare 'empty'); primary/alternatives/escalation/excluded + reason/next_question."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from sealai_v2.knowledge.produktspec.contracts import (
     Fall,
     KandidatenSpec,
     Kritikalitaet,
+    MaterialKind,
+    MaterialResult,
     MediumSource,
     ResponseLevel,
 )
@@ -37,6 +39,20 @@ _ESKALATION = (
     "kerntechnik",
 )
 _AGGRESSIV = ("aggressiv", "chemie", "reiniger", "säure", "lauge", "lösemittel")
+_HYDROCARBON = (
+    "mineraloel",
+    "mineralöl",
+    "kw_fett",
+    "fett",
+    "kraftstoff",
+    "diesel",
+    "benzin",
+    "pao",
+    "aromat_kw",
+    "hlp",
+    "hl",
+)
+_FUEL = ("kraftstoff", "diesel", "benzin", "aromat_kw")
 
 
 def speed_ms(fall: Fall) -> float | None:
@@ -56,19 +72,27 @@ def classify_kritikalitaet(fall: Fall) -> Kritikalitaet:
     return Kritikalitaet.NORMAL
 
 
+def _contamination_managed(fall: Fall) -> bool:
+    # PATCH-4 (D2): Schmutz ist beherrschbar (→ AS), wenn Härte ≥55 HRC, v≤4 m/s, kein Leckagefall.
+    return (
+        fall.verschmutzung is True
+        and fall.welle_haerte_hrc is not None
+        and fall.welle_haerte_hrc >= 55
+        and (speed_ms(fall) or 0.0) <= 4.0
+    )
+
+
 def classify_envelope(fall: Fall) -> EnvelopeBand:
     p = fall.druck_bar if fall.druck_bar is not None else 0.0
     v = speed_ms(fall)
     medium_exakt = fall.medium_source == MediumSource.EXACT and bool(fall.medium_class)
     lube_ok = fall.schmierung_ok is True
-    clean = fall.verschmutzung is False
+    clean = (fall.verschmutzung is False) or _contamination_managed(fall)
     vented = (fall.belueftet is True) or (p == 0.0)
-    # RED — outside standard scope
-    if p > 0.5 or fall.druck_puls or fall.vakuum:
+    # RED — PATCH-3 (B4): >= 0,5 bar konservativ außer Scope.
+    if p >= 0.5 or fall.druck_puls or fall.vakuum:
         return EnvelopeBand.RED
-    if (
-        p > 0.0 and fall.axiale_sicherung_ok is not True
-    ):  # Druckdifferenz ohne bestätigte Sicherung
+    if p > 0.0 and fall.axiale_sicherung_ok is not True:
         return EnvelopeBand.RED
     # ORANGE — defer
     if v is None or v > 12.0:
@@ -80,7 +104,7 @@ def classify_envelope(fall: Fall) -> EnvelopeBand:
     # YELLOW
     if 0.05 < p <= 0.2:
         return EnvelopeBand.YELLOW
-    # GREEN (v3.1: green_extended deckt den 8–12 m/s-Standardfall mit Prüfpunkt ab)
+    # GREEN
     t = fall.temperatur_c
     if v <= 8.0 and t <= 80.0:
         return EnvelopeBand.GREEN_BASE
@@ -89,76 +113,128 @@ def classify_envelope(fall: Fall) -> EnvelopeBand:
     return EnvelopeBand.YELLOW
 
 
-def _resolve_material_candidates(fall: Fall) -> tuple[list[str], list[str]]:
+def _resolve_material(fall: Fall) -> MaterialResult:
     mc = fall.medium_class.lower()
     text = f"{fall.medium} {fall.rohtext}".lower()
-    if any(w in text for w in _AGGRESSIV) and fall.medium_source != MediumSource.EXACT:
-        return [], [
-            "N-AGGRESSIVE-UNCLASSIFIED: exaktes Medium/SDS nötig — kein Elastomer-Kandidat"
-        ]
-    if not mc and not fall.medium:
-        return [], ["Medium fehlt — kein Werkstoff ableitbar"]
+    exact = fall.medium_source == MediumSource.EXACT and bool(mc)
+    if any(w in text for w in _AGGRESSIV) and not exact:
+        return MaterialResult(
+            MaterialKind.EMPTY_UNKNOWN,
+            reason_codes=("N-AGGRESSIVE-UNCLASSIFIED",),
+            next_question=(
+                "Exaktes Medium/Konzentration/SDS — kein Elastomer-Kandidat ohne Stoff",
+            ),
+        )
+    if not exact:
+        return MaterialResult(
+            MaterialKind.EMPTY_UNKNOWN,
+            reason_codes=("Freitext/unbekannt",),
+            next_question=("Exakte Medienbezeichnung / Trade-Name / SDS erforderlich",),
+        )
     t = fall.temperatur_c
-    cands: list[tuple[str, str]] = []
-    hydrocarbon = mc in (
-        "mineraloel",
-        "mineralöl",
-        "kw_fett",
-        "fett",
-        "kraftstoff",
-        "diesel",
-        "benzin",
-        "pao",
-        "aromat_kw",
-        "hlp",
-        "hl",
-        "hfd",
-    ) or ("öl" in mc and "silikon" not in mc)
-    if hydrocarbon and t is not None:
-        if t <= 100:
-            cands.append(("NBR", "W-NBR"))
-        if t <= 150:
-            cands.append(("HNBR", "W-HNBR"))
-        if 100 < t <= 200:
-            cands.append(("FKM", "W-FKM"))
+    # PATCH-1 (A6) Dampf/Heißwasser >120°C → Spezialeskalation, NICHT leer.
+    if ("dampf" in mc or "heisswasser" in mc) and (t is None or t > 120):
+        return MaterialResult(
+            MaterialKind.SPECIAL_ESCALATION,
+            escalation=("EPDM-Sondergrade für Dampf", "PTFE/Sonderdichtung"),
+            excluded=("FKM",),
+            reason_codes=("W-STEAM-HIGH",),
+            next_question=(
+                "Dampfart, Druck, Kondensat, Geschwindigkeit, Schmierung — Herstellerprüfung",
+            ),
+        )
+    # PATCH-6 (A10) HFD → fire-resistant Spezialeskalation, NICHT leer.
+    if mc == "hfd":
+        return MaterialResult(
+            MaterialKind.SPECIAL_ESCALATION,
+            escalation=("typabhängig FKM/EPDM/PTFE",),
+            excluded=("NBR", "HNBR"),
+            reason_codes=("SPECIAL-FIRE-RESISTANT-HYDRAULIC",),
+            next_question=("HFD-Subtyp / SDS",),
+        )
+    # PATCH-2 (A9) HFC → NBR nur low-temp, sonst Defer (kein Code-Loch).
+    if mc == "hfc":
+        if t is not None and t <= 50:
+            return MaterialResult(
+                MaterialKind.CANDIDATE_SET,
+                primary=("NBR",),
+                reason_codes=("W-NBR-HFC-LOWTEMP",),
+                validation_required=True,  # additiv-/glykolabhängig → max L1
+                next_question=(
+                    "HFC: nur low-temp/spezifisch validieren (wasser-glykol, additivabhängig)",
+                ),
+            )
+        return MaterialResult(
+            MaterialKind.EMPTY_UNKNOWN,
+            reason_codes=("W-NBR-HYDRAULIC",),
+            next_question=("HFC > 50°C: exaktes Fluid / SDS",),
+        )
+    hydrocarbon = mc in _HYDROCARBON or ("öl" in mc and "silikon" not in mc)
+    if hydrocarbon:
+        if t is None:
+            return MaterialResult(
+                MaterialKind.EMPTY_UNKNOWN,
+                reason_codes=("Temperatur fehlt",),
+                next_question=("Dauertemperatur angeben",),
+            )
+        if t > 200:  # A4
+            return MaterialResult(
+                MaterialKind.SPECIAL_ESCALATION,
+                escalation=("PTFE", "Spezial-FKM/Sonderdesign"),
+                reason_codes=("SPECIAL-HIGH-TEMP",),
+                next_question=("Kein DIN-A/AS; Herstellerprüfung",),
+            )
+        primary: list[str] = []
+        alt: list[str] = []
+        if t <= 100:  # A1: NBR primary, HNBR Upgrade
+            primary.append("NBR")
+            alt.append("HNBR")
+        elif t <= 150:  # A2: Lücke NBR↔FKM
+            primary.append("HNBR")
+            alt.append("FKM")
+        if 100 < t <= 200 and "FKM" not in primary and "FKM" not in alt:
+            primary.append("FKM")
+        if mc in _FUEL and "FKM" not in primary and "FKM" not in alt:  # PATCH-5 (A8)
+            alt.append("FKM")
+        return MaterialResult(
+            MaterialKind.CANDIDATE_SET,
+            primary=tuple(primary),
+            alternatives=tuple(alt),
+            excluded=("EPDM",),
+            reason_codes=("W-NBR/HNBR/FKM",),
+        )
     if "wasser" in mc or mc in (
-        "dampf",
         "glykol_bremsfluessigkeit",
         "glykol",
         "wasser_glykol",
         "polar",
     ):
-        if t is None or t <= 120:
-            cands.append(("EPDM", "W-EPDM"))
-    if "silikon" in mc:
-        cands.append(("EPDM", "W-EPDM-SILICONE"))
-    if (t is not None and t > 200) or fall.schmierung_ok is False:
-        cands.append(("PTFE", "ESC-CHEM"))
-    prov: list[str] = []
-    excl: set[str] = set()
-    if hydrocarbon:
-        excl.add("EPDM")  # N-EPDM-HC (medium_class-basiert, NICHT Keyword „Öl")
-    if "dampf" in mc or "heisswasser" in mc:
-        excl.add("FKM")  # N-FKM-STEAM
-    if mc in ("amin", "lauge", "ammoniak"):
-        excl.add("FKM")  # N-FKM-AMINE
-    if mc == "glykol_bremsfluessigkeit":
-        excl.update({"NBR", "HNBR"})  # N-NBR-BRAKE
-    if mc == "hfd":
-        excl.update({"NBR", "HNBR"})  # W-NBR-HYDRAULIC: HFD ausschließen
-        prov.append("W-NBR-HYDRAULIC: HFD → NBR/HNBR ausgeschlossen")
-    if mc == "hfc":
-        prov.append("W-NBR-HYDRAULIC: HFC → NBR nur Low-Temp/spezifisch, sonst Defer")
-    res: list[str] = []
-    for m, rid in cands:
-        if m not in excl and m not in res:
-            res.append(m)
-            prov.append(f"{rid}:{m}")
-    if not res:
-        prov.append(
-            "Kein eindeutiger Werkstoff-Kandidat — Medienklasse/Temperatur prüfen"
+        nq = []
+        if "wasser" in mc and "glykol" not in mc:  # PATCH-7 (A5)
+            nq.append(
+                "water_lubricity_caution: Wasser ist ein schlechtes Schmiermedium für RWDR"
+            )
+        return MaterialResult(
+            MaterialKind.CANDIDATE_SET,
+            primary=("EPDM",),
+            excluded=("NBR", "HNBR", "FKM"),
+            reason_codes=("W-EPDM",),
+            next_question=tuple(nq),
         )
-    return res, prov
+    if (
+        "silikon" in mc
+    ):  # A11 — EPDM-Kandidat (kein Keyword-Ausschluss), aber bestätigen
+        return MaterialResult(
+            MaterialKind.CANDIDATE_SET,
+            primary=("EPDM",),
+            reason_codes=("W-EPDM-SILICONE",),
+            next_question=("Exaktes Silikonöl/-fett bestätigen",),
+        )
+    return MaterialResult(
+        MaterialKind.EMPTY_UNKNOWN,
+        reason_codes=("Medienklasse/Temperatur prüfen",),
+        next_question=("Exakte Medienklasse + Temperatur",),
+    )
 
 
 def _resolve_lip(fall: Fall) -> Axis:
@@ -167,7 +243,7 @@ def _resolve_lip(fall: Fall) -> Axis:
             "lip",
             "main+dust_lip",
             AxisStatus.OK,
-            ("LIP-AS: Staublippe (Fettfilm nötig)",),
+            ("LIP-AS: Staublippe (Fettfilm zwischen Lippen prüfen)",),
         )
     if fall.verschmutzung is False:
         return Axis("lip", "main_lip", AxisStatus.OK, ("LIP-A",))
@@ -180,9 +256,10 @@ def _resolve_od(fall: Fall) -> Axis:
         return Axis(
             "od", "elastomer_covered_od", AxisStatus.OK, ("OD-ELASTOMER (verifiziert)",)
         )
-    if "stahl" in m or "präzise" in m or "praezise" in m:
-        return Axis("od", "metal_od", AxisStatus.OK, ("OD-METAL",))
-    # Unknown housing is a CHECKPOINT (ask), not a hard block — a clean green case stays L2 with a Prüfpunkt.
+    if (
+        "stahl" in m or "präzise" in m or "praezise" in m
+    ):  # PATCH-8 (C4): Kandidat, nicht Pflicht
+        return Axis("od", "metal_od (Kandidat)", AxisStatus.OK, ("OD-METAL-Kandidat",))
     return Axis(
         "od",
         None,
@@ -195,9 +272,9 @@ def _resolve_pressure(band: EnvelopeBand) -> Axis:
     if band == EnvelopeBand.RED:
         return Axis(
             "pressure",
-            "retaining_geometry_required",
+            "outside_standard_scope",
             AxisStatus.GATE_BLOCKED,
-            ("F-PRESSURE: Druckdichtung/axiale Sicherung",),
+            ("G-STD-PRESSURE: Druckprofil/Haltegeometrie/Herstellerprüfung",),
         )
     return Axis("pressure", "pressureless_low", AxisStatus.OK, ())
 
@@ -214,14 +291,21 @@ def _resolve_shaft(fall: Fall) -> Axis:
                 "N-SHAFT-LEAD-PUMPING: Wellendrall → Leckage unabhängig vom Dichtungstyp",
             ),
         )
-    # Speed is already banded by the envelope (green capped at 12 m/s); the hard shaft gate is for
-    # contamination/pressure, where wear/blow-out risk makes unknown hardness unacceptable.
     if hard_unknown and (fall.verschmutzung is True or (fall.druck_bar or 0) > 0):
         return Axis(
             "shaft",
             None,
             AxisStatus.GATE_BLOCKED,
             ("S-HRC-GATE: Härte/Wellenzustand unbekannt bei Schmutz/Druck",),
+        )
+    if (
+        fall.verschmutzung is True
+    ):  # PATCH-4: Schmutz (mit ausreichender Härte) → Prüfpunkt, kein Block
+        return Axis(
+            "shaft",
+            "haerte_ok_offen",
+            AxisStatus.OPEN_VERIFICATION,
+            ("S-HRC-DIRT: Härte ≥55 HRC + AS/Fettfilm prüfen",),
         )
     if hard_unknown and v > 4:
         return Axis(
@@ -233,11 +317,28 @@ def _resolve_shaft(fall: Fall) -> Axis:
     return Axis("shaft", "ok", AxisStatus.OK, ())
 
 
-def _din_label(lip: Axis, od: Axis, pressure: Axis, mats: list[str]) -> str:
+def _din_label(lip: Axis, od: Axis, pressure: Axis, primary: tuple[str, ...]) -> str:
     return (
         "DIN-3760-orientierter Kandidatenraum: "
         f"Lippe={lip.value or 'offen'}, OD={od.value or 'offen (Gehäuse erfragen)'}, "
-        f"Druck={pressure.value or 'offen'}, Werkstoff-Kandidaten={'/'.join(mats) or '—'}"
+        f"Druck={pressure.value or 'offen'}, Werkstoff-Primär={'/'.join(primary) or '—'}"
+    )
+
+
+def _spec(level, band, krit, axes, material, din_label, defer, openv, offene, quellen):
+    return KandidatenSpec(
+        response_level=level,
+        envelope_band=band,
+        kritikalitaet=krit,
+        axes=axes,
+        material=material,
+        din_candidate_label=din_label,
+        final_design_code=None,
+        defer_gruende=tuple(defer),
+        open_verifications=tuple(openv),
+        offene_punkte=tuple(offene),
+        freigegeben=False,
+        quellen=tuple(quellen),
     )
 
 
@@ -247,8 +348,7 @@ def _escalation(krit: Kritikalitaet) -> KandidatenSpec:
         envelope_band=None,
         kritikalitaet=krit,
         axes=(),
-        material_candidate_set=(),
-        material_single=None,
+        material=MaterialResult(MaterialKind.EMPTY_UNKNOWN),
         din_candidate_label=None,
         final_design_code=None,
         defer_gruende=(
@@ -261,14 +361,13 @@ def _escalation(krit: Kritikalitaet) -> KandidatenSpec:
     )
 
 
-def _failure_mode(fall: Fall) -> KandidatenSpec:
+def _failure_mode() -> KandidatenSpec:
     return KandidatenSpec(
         response_level=ResponseLevel.L1_CANDIDATE_SPACE,
         envelope_band=None,
         kritikalitaet=Kritikalitaet.CAUTION,
         axes=(),
-        material_candidate_set=(),
-        material_single=None,
+        material=MaterialResult(MaterialKind.EMPTY_UNKNOWN),
         din_candidate_label=None,
         final_design_code=None,
         defer_gruende=(
@@ -297,97 +396,98 @@ def resolve(fall: Fall) -> KandidatenSpec:
         ApplicationMode.LEAKAGE_FAILURE,
         ApplicationMode.PREMATURE_FAILURE,
     ):
-        return _failure_mode(fall)
+        return _failure_mode()
 
     band = classify_envelope(fall)
-    mats, mat_prov = _resolve_material_candidates(fall)
+    material = _resolve_material(fall)
     lip, od = _resolve_lip(fall), _resolve_od(fall)
     pressure, shaft = _resolve_pressure(band), _resolve_shaft(fall)
+    mat_status = (
+        AxisStatus.OK
+        if material.kind is MaterialKind.CANDIDATE_SET and material.primary
+        else AxisStatus.OPEN_VERIFICATION
+        if material.kind is MaterialKind.SPECIAL_ESCALATION
+        else AxisStatus.UNKNOWN
+    )
     material_axis = Axis(
-        "material", None, AxisStatus.OK if mats else AxisStatus.UNKNOWN, tuple(mat_prov)
+        "material",
+        "/".join(material.primary) or None,
+        mat_status,
+        material.reason_codes + material.next_question,
     )
     axes = (lip, od, pressure, shaft, material_axis)
 
     material_exact = fall.medium_source == MediumSource.EXACT and bool(
         fall.medium_class
     )
-    # L2 is blocked by hard gates / conflicts / a missing core axis (lip or material) — NOT by
-    # open_verification checkpoints (OD/shaft), which a clean green case is allowed to carry.
     axes_block = (
         any(a.status in (AxisStatus.CONFLICT, AxisStatus.GATE_BLOCKED) for a in axes)
         or lip.status is AxisStatus.UNKNOWN
         or material_axis.status is AxisStatus.UNKNOWN
     )
     green = band in (EnvelopeBand.GREEN_BASE, EnvelopeBand.GREEN_EXTENDED)
-    # G1/G2: L2 only for a clean green case from an EXACT medium with resolved axes.
+    l2 = (
+        green
+        and material_exact
+        and material.kind is MaterialKind.CANDIDATE_SET
+        and material.primary
+        and not material.validation_required
+        and not axes_block
+    )
     level = (
-        ResponseLevel.L2_SCREENING_CANDIDATE
-        if (green and material_exact and mats and not axes_block)
-        else ResponseLevel.L1_CANDIDATE_SPACE
+        ResponseLevel.L2_SCREENING_CANDIDATE if l2 else ResponseLevel.L1_CANDIDATE_SPACE
     )
-    # G3: never a final DIN code; a candidate LABEL only at L2.
-    din_label = (
-        _din_label(lip, od, pressure, mats)
-        if level == ResponseLevel.L2_SCREENING_CANDIDATE
-        else None
-    )
+    din_label = _din_label(lip, od, pressure, material.primary) if l2 else None
 
-    open_verif = tuple(
+    openv = list(
         b
         for a in axes
         if a.status is AxisStatus.OPEN_VERIFICATION
         for b in a.begruendung
     )
+    openv.extend(material.next_question)
     defer = [
         b for a in axes if a.status is AxisStatus.GATE_BLOCKED for b in a.begruendung
     ]
+    if material.kind is MaterialKind.SPECIAL_ESCALATION:
+        defer.append(
+            "Sonderwerkstoff-Eskalation: "
+            + "/".join(material.escalation)
+            + " — kein DIN-A/AS, Herstellerprüfung."
+        )
+    if material.kind in (MaterialKind.EMPTY_UNKNOWN, MaterialKind.EMPTY_EXCLUDED):
+        defer.extend(material.reason_codes)
     if band in (EnvelopeBand.ORANGE, EnvelopeBand.RED):
         defer.append(
             f"Envelope {band.value}: außerhalb gesichertem Screening — Frageliste/Spezial."
         )
     if not material_exact:
-        defer.append(
-            "Medium nicht exakt (Freitext) → nur Werkstoff-Kandidatenraum, kein Einzelwerkstoff (max L1)."
-        )
-    if material_axis.status is AxisStatus.UNKNOWN:
-        defer.extend(
-            material_axis.begruendung
-        )  # „kein Werkstoff ableitbar" / N-AGGRESSIVE = Defer-Grund
+        defer.append("Medium nicht exakt (Freitext) → kein Einzelwerkstoff (max L1).")
     offene = [
         b
         for a in axes
         if a.status is AxisStatus.UNKNOWN and a.name != "material"
         for b in a.begruendung
     ]
+    if material.excluded:
+        offene.append("Ausgeschlossen: " + "/".join(material.excluded))
     offene.append(
         "Dichtungs-Außen-Ø/Breite + Form gegen DIN + Datenblatt verifizieren (nicht abgeleitet)."
     )
-    quellen = tuple(dict.fromkeys(b for a in axes for b in a.begruendung))
-
-    return KandidatenSpec(
-        response_level=level,
-        envelope_band=band,
-        kritikalitaet=krit,
-        axes=axes,
-        material_candidate_set=tuple(mats),
-        material_single=None,
-        din_candidate_label=din_label,
-        final_design_code=None,
-        defer_gruende=tuple(defer),
-        open_verifications=open_verif,
-        offene_punkte=tuple(offene),
-        freigegeben=False,
-        quellen=quellen,
+    quellen = list(dict.fromkeys(b for a in axes for b in a.begruendung))
+    return _spec(
+        level, band, krit, axes, material, din_label, defer, openv, offene, quellen
     )
 
 
 def render_texts(spec: KandidatenSpec) -> str:
-    """All user-facing strings — for the no-forbidden-words schranke."""
-    parts = [
-        spec.din_candidate_label or "",
-        spec.geltungsrahmen,
-        *spec.material_candidate_set,
-    ]
+    parts = [spec.din_candidate_label or "", spec.geltungsrahmen]
+    parts += (
+        list(spec.material.primary)
+        + list(spec.material.alternatives)
+        + list(spec.material.escalation)
+    )
+    parts += list(spec.material.next_question) + list(spec.material.reason_codes)
     for seq in (
         spec.defer_gruende,
         spec.open_verifications,

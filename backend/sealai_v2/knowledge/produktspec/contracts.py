@@ -114,14 +114,43 @@ class Axis:
     begruendung: tuple[str, ...] = ()
 
 
+class MaterialKind(str, Enum):
+    """Structural improvement (Fachreview): NEVER a bare 'empty' — the reason is typed."""
+
+    CANDIDATE_SET = "candidate_set"
+    EMPTY_EXCLUDED = "empty_because_excluded"
+    EMPTY_UNKNOWN = "empty_because_unknown"
+    SPECIAL_ESCALATION = (
+        "special_escalation"  # PTFE/FFKM/steam-grade/fire-resistant — no DIN A/AS
+    )
+    # SINGLE_CANDIDATE is intentionally absent in the prototype (G2: no single material before expert_signed).
+
+
+@dataclass(frozen=True)
+class MaterialResult:
+    """Werkstoff-Ergebnis: primary (engineering-bevorzugt) / alternatives (Upgrade-Optionen) /
+    escalation (Sonderwerkstoff-Familie) / excluded — plus reason_codes + next_question. Engineering-
+    Ranking (NBR vor HNBR) ist erlaubt + ≠ Hersteller-Ranking (§3.9 betrifft nur den Partner-Pool)."""
+
+    kind: MaterialKind
+    primary: tuple[str, ...] = ()
+    alternatives: tuple[str, ...] = ()
+    escalation: tuple[str, ...] = ()
+    excluded: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+    next_question: tuple[str, ...] = ()
+    # A candidate that is inherently additive-/concentration-dependent (e.g. HFC) → caps at L1 even on a
+    # green envelope; only specific validation (SDS/Prüfstand) lifts it (→ expert_signed).
+    validation_required: bool = False
+
+
 @dataclass(frozen=True)
 class KandidatenSpec:
     response_level: ResponseLevel
     envelope_band: EnvelopeBand | None
     kritikalitaet: Kritikalitaet
     axes: tuple[Axis, ...]
-    material_candidate_set: tuple[str, ...]
-    material_single: str | None  # ALWAYS None in the prototype (G2/G3)
+    material: MaterialResult
     din_candidate_label: str | None  # only a LABEL, never a final code
     final_design_code: str | None  # ALWAYS None (G3)
     masse: tuple = ()
@@ -132,3 +161,12 @@ class KandidatenSpec:
     freigegeben: bool = False  # structural invariant (G1)
     geltungsrahmen: str = GELTUNGSRAHMEN_SPEC
     quellen: tuple[str, ...] = field(default_factory=tuple)
+
+    # Compat + G2: material_single is ALWAYS None in the prototype; the candidate set = primary+alternatives.
+    @property
+    def material_candidate_set(self) -> tuple[str, ...]:
+        return tuple(self.material.primary) + tuple(self.material.alternatives)
+
+    @property
+    def material_single(self) -> None:
+        return None
