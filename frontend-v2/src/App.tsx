@@ -273,6 +273,7 @@ export function App() {
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}
           compute={compute}
+          onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
         />
       </Shell>
     </FramingContext.Provider>

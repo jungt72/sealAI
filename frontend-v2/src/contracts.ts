@@ -78,14 +78,34 @@ export interface MediumIntelligence {
   unsicher: boolean;
   vorlaeufig: boolean;
 }
-// Modus F (Alternativen/Hersteller, Dim. 6): capable manufacturers BY CAPABILITY (neutral, §3.9), or
-// the honest "no grounded data" marker when the owner's Hersteller seed is still empty.
+// Modus F (Hersteller-Partner pool, Dim. 6) — owner business model: payment gates pool MEMBERSHIP,
+// the SELECTION ranks BY CAPABILITY (neutral, §3.9; never pay-to-rank). A paid listing → transparently
+// labelled "Partner · Anzeige". lead_email is internal and is NEVER part of this payload.
+export interface HerstellerOption {
+  id: string;
+  firmenname: string;
+  beschreibung?: string;
+  website?: string;
+  standort?: string;
+  werkstoffe?: string[];
+  zertifikate?: string[];
+}
 export interface Alternativen {
   grounded_data: boolean;
-  hersteller?: string[]; // capability-ordered, neutral (never pay-to-rank)
+  partner?: boolean; // true → transparent paid partner pool ("Partner · Anzeige")
+  hersteller?: HerstellerOption[]; // capability-ordered, neutral (never pay-to-rank)
   ordered_by?: string;
   neutralitaet?: string;
   hinweis?: string; // shown when grounded_data is false
+}
+// The lead-gen action (POST /api/v2/anfrage): a structured RFQ briefing routed to the chosen partner.
+// The briefing preview is returned so the user transparently sees what was sent; lead_email never is.
+export interface AnfrageResponse {
+  status: string;
+  lead_id: number;
+  partner: { hersteller: string; firmenname: string };
+  briefing: { title: string; body: string; provenance: string[] };
+  hinweis: string;
 }
 export interface ChatResponse {
   answer: string;

@@ -4,6 +4,7 @@
  * state and the persistent SafetyBanner stays — the framing is never dropped). */
 
 import type {
+  AnfrageResponse,
   Briefing,
   ChatResponse,
   ComputeResponse,
@@ -141,5 +142,13 @@ export class ApiClient {
   }
   briefing(message: string): Promise<Briefing> {
     return this.req("/briefing", { method: "POST", body: JSON.stringify({ message }) });
+  }
+  /** Modus F lead-gen: route a structured RFQ briefing (rendered server-side from the session) to the
+   * chosen partner. Returns the briefing preview so the user sees what was sent; lead_email never is. */
+  anfrage(partnerId: string, message: string): Promise<AnfrageResponse> {
+    return this.req("/anfrage", {
+      method: "POST",
+      body: JSON.stringify({ partner_id: partnerId, message }),
+    });
   }
 }

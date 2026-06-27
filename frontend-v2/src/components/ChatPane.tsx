@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type {
+  AnfrageResponse,
   Briefing,
   ChatResponse,
   ComputeResponse,
@@ -65,6 +66,7 @@ export function ChatPane({
   liveStage,
   compute,
   onConfirmUnit,
+  onAnfrage,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -84,6 +86,9 @@ export function ChatPane({
   liveStage?: string | null;
   compute?: ComputeResponse | null;
   onConfirmUnit?: (feld: string, value: string) => void;
+  /** Modus F lead-gen: route a structured RFQ briefing to the chosen partner. The host supplies the
+   * session message; the panel passes only the partner id. */
+  onAnfrage?: (partnerId: string, message: string) => Promise<AnfrageResponse>;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -232,6 +237,28 @@ export function ChatPane({
     return null;
   }, [msgs]);
 
+  // The Anfrage briefing is rendered server-side from the SESSION case-state; the message it runs is
+  // the user's last substantive question (recalls the worked-out situation). The panel passes only the
+  // partner id — the host injects this message + talks to /api/v2/anfrage.
+  const lastUserMessage = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "user") return m.text;
+    }
+    return "";
+  }, [msgs]);
+  const panelOnAnfrage = useMemo(
+    () =>
+      onAnfrage
+        ? (partnerId: string) =>
+            onAnfrage(
+              partnerId,
+              lastUserMessage || "Anfrage zur besprochenen Dichtungslösung",
+            )
+        : undefined,
+    [onAnfrage, lastUserMessage],
+  );
+
   // claude.ai chat↔artifact: the cockpit is OPEN when the case is active OR the user opened it,
   // and NOT explicitly closed. Default / pure Q&A → chat-only (centered, no right panel). Opening
   // moves the chat left and splits ~50/50; closing returns to centered chat-only.
@@ -347,7 +374,7 @@ export function ChatPane({
 
         {latestMedium ? <MediumPanel data={latestMedium} /> : null}
         {latestAlternativen ? (
-          <AlternativenPanel data={latestAlternativen} />
+          <AlternativenPanel data={latestAlternativen} onAnfrage={panelOnAnfrage} />
         ) : null}
 
         {caseStateEmpty ? (

@@ -736,3 +736,43 @@
 .alt-panel-empty { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
 .alt-panel-note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-ghost, #a8b0bc); }
 .alt-panel-disclaimer { margin: 2px 0 0; font-size: 10px; line-height: 1.5; color: var(--ink-ghost, #a8b0bc); }
+
+/* Modus F partner pool — capability cards + the Anfrage (lead-gen) action. The paid listing is
+   transparently badged (alt-panel-badge--partner); the SELECTION is still purely by capability. */
+.alt-panel-badge--partner {
+  color: #8a5a00; background: #fdf3e0; border-color: #f0d9a8;
+}
+ul.alt-panel-list { padding-left: 0; gap: 6px; }
+.alt-partner {
+  list-style: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px;
+  border: 1px solid var(--line, #e3e7ee); border-radius: 8px; background: var(--surface-0, #fff);
+}
+.alt-partner-name { font-size: 13px; font-weight: 600; color: var(--ink, #2a2f3a); }
+.alt-partner-standort { font-size: 11px; color: var(--ink-ghost, #a8b0bc); }
+.alt-partner-desc { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.alt-partner-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.alt-tag {
+  font-size: 10px; font-weight: 500; color: var(--ink-soft, #5a6372);
+  background: var(--surface-1, #f1f4f9); border: 1px solid var(--line, #e3e7ee);
+  border-radius: 999px; padding: 1px 7px;
+}
+.alt-tag--cert { color: #2c6e49; background: #e7f3ec; border-color: #b8dcc6; }
+.alt-partner-web { font-size: 11px; color: var(--accent, #2f6fed); text-decoration: none; }
+.alt-partner-web:hover { text-decoration: underline; }
+.alt-partner-action { margin-top: 4px; }
+.alt-anfrage-btn {
+  font-size: 12px; font-weight: 600; color: #fff; background: var(--accent, #2f6fed);
+  border: none; border-radius: 7px; padding: 6px 12px; cursor: pointer;
+}
+.alt-anfrage-btn:hover:not(:disabled) { filter: brightness(0.95); }
+.alt-anfrage-btn:disabled { opacity: 0.6; cursor: default; }
+.alt-anfrage-done { display: flex; flex-direction: column; gap: 4px; }
+.alt-anfrage-ok { font-size: 12px; color: #2c6e49; }
+.alt-anfrage-hinweis { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
+.alt-anfrage-briefing { font-size: 11px; }
+.alt-anfrage-briefing summary { cursor: pointer; color: var(--ink-soft, #5a6372); }
+.alt-anfrage-briefing-body {
+  margin: 6px 0 0; padding: 8px; font-size: 11px; line-height: 1.5; white-space: pre-wrap;
+  background: var(--surface-1, #f1f4f9); border-radius: 6px; max-height: 240px; overflow: auto;
+}
+.alt-anfrage-error { margin: 4px 0 0; font-size: 11px; color: #b4232a; }
