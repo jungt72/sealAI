@@ -20,3 +20,4 @@ psycopg2-binary==2.9.11
 # Pinned to the V1 image versions (requirements.txt) for consistency.
 qdrant-client==1.17.1
 fastembed==0.8.0
+langsmith==0.4.46

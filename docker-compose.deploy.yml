@@ -246,6 +246,14 @@ services:
       SEALAI_V2_VERIFIER_MODEL: ${SEALAI_V2_VERIFIER_MODEL:-mistral-small-2603}
       SEALAI_V2_HELPER_MODEL: ${SEALAI_V2_HELPER_MODEL:-mistral-small-2603}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY required for the V2 Mistral roles}
+      # LangSmith observability (V2 tracing seam: wrap_openai + @traceable, fail-open/observation-only).
+      # Values from .env.prod via --env-file interpolation; default OFF so a missing config never traces.
+      # Empty endpoint -> LangSmith cloud (project sealai-production). The eval never traces (run_eval.sh
+      # unsets LANG*); a LangSmith outage never blocks a turn (background submission).
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-sealai-production}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
       # Isolation (build-spec §3/§7): own Redis db/ns + own Qdrant collection + own Postgres DB.
       # SEALAI_V2_DATABASE_URL backs memory layers 1-3 + the L4 cross-session seam with the durable
       # SQLAlchemy adapters (system-of-record) — a DEDICATED `sealai_v2` database in the shared

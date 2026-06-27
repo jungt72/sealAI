@@ -17,6 +17,7 @@ from collections.abc import Callable
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import LlmClient
 from sealai_v2.llm.client import OpenAiLlmClient
+from sealai_v2.obs.tracing import maybe_wrap_openai
 
 # Strongest-first preference for resolving L1 when the configured id is not on the account.
 _L1_PREFERENCE: tuple[str, ...] = (
@@ -62,7 +63,9 @@ def _async_openai_compatible(settings: Settings, provider: str):
     base_url, key = _resolve_provider(settings, provider)
     from openai import AsyncOpenAI  # lazy — keep the SDK at the I/O edge
 
-    return AsyncOpenAI(api_key=key, base_url=base_url)
+    # Observation-only LangSmith wrap: traces every call (prompt/answer/tokens/latency/cost) when
+    # LANGSMITH_TRACING is on; transparent passthrough otherwise (eval stays byte-identical).
+    return maybe_wrap_openai(AsyncOpenAI(api_key=key, base_url=base_url))
 
 
 def build_client_for(settings: Settings, provider: str) -> LlmClient:

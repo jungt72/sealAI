@@ -51,6 +51,7 @@ from sealai_v2.memory.store import (
     InProcessConversationMemory,
     InProcessCrossSessionMemory,
 )
+from sealai_v2.obs.tracing import traceable
 from sealai_v2.pipeline import stages
 from sealai_v2.pipeline.timing import TurnTimer
 from sealai_v2.prompts.assembler import (
@@ -173,6 +174,25 @@ def _resolve_medium(question: str, case_state) -> tuple[str, str]:
     return medium, kategorie
 
 
+def _trace_inputs(inputs: dict) -> dict:
+    """LangSmith input view of a turn — the user question + flags; drop ``self`` + heavy objects."""
+    return {
+        "question": inputs.get("question"),
+        "flags": repr(inputs.get("flags")),
+        "has_untrusted": bool(inputs.get("untrusted")),
+    }
+
+
+def _trace_outputs(result) -> dict:
+    """LangSmith output view — the final answer + grounding status, not the whole result object."""
+    answer = getattr(result, "answer", None)
+    return {
+        "answer": getattr(answer, "text", None),
+        "answer_model": getattr(answer, "model", None),
+        "grounded": getattr(result, "grounded", None),
+    }
+
+
 @dataclass
 class Pipeline:
     generator: L1Generator
@@ -214,6 +234,12 @@ class Pipeline:
         default_factory=dict, init=False, repr=False
     )
 
+    @traceable(
+        run_type="chain",
+        name="v2_turn",
+        process_inputs=_trace_inputs,
+        process_outputs=_trace_outputs,
+    )
     async def run(
         self,
         question: str,
