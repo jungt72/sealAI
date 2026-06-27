@@ -91,4 +91,16 @@ describe("AlternativenPanel", () => {
       expect(screen.getByText(/Anfrage fehlgeschlagen/)).toBeInTheDocument(),
     );
   });
+
+  it("offers the PDF download (without sending) and fires it", async () => {
+    const onDownloadPdf = vi.fn().mockResolvedValue(undefined);
+    render(<AlternativenPanel data={PARTNERS} onDownloadPdf={onDownloadPdf} />);
+    fireEvent.click(screen.getByTestId("alt-download-pdf"));
+    await waitFor(() => expect(onDownloadPdf).toHaveBeenCalled());
+  });
+
+  it("hides the PDF button when no handler is provided", () => {
+    render(<AlternativenPanel data={PARTNERS} />);
+    expect(screen.queryByTestId("alt-download-pdf")).not.toBeInTheDocument();
+  });
 });

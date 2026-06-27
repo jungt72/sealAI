@@ -23,14 +23,28 @@ type AnfrageState =
 export function AlternativenPanel({
   data,
   onAnfrage,
+  onDownloadPdf,
 }: {
   data: Alternativen;
   /** Fire the Anfrage for one partner (the host injects the session message + talks to /api/v2). */
   onAnfrage?: (partnerId: string) => Promise<AnfrageResponse>;
+  /** Download the Anfrage briefing as a PDF WITHOUT sending it (the host fetches it + builds the PDF). */
+  onDownloadPdf?: () => void | Promise<void>;
 }) {
   const partners = data.grounded_data && data.hersteller ? data.hersteller : [];
   const grounded = partners.length > 0;
   const [states, setStates] = useState<Record<string, AnfrageState>>({});
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  async function downloadPdf() {
+    if (!onDownloadPdf) return;
+    setPdfBusy(true);
+    try {
+      await onDownloadPdf();
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   async function fire(partnerId: string) {
     if (!onAnfrage) return;
@@ -151,6 +165,18 @@ export function AlternativenPanel({
             "Aktuell liegen keine geerdeten Hersteller-Fähigkeitsdaten vor."}
         </p>
       )}
+
+      {onDownloadPdf ? (
+        <button
+          type="button"
+          className="alt-pdf-btn"
+          data-testid="alt-download-pdf"
+          disabled={pdfBusy}
+          onClick={() => void downloadPdf()}
+        >
+          {pdfBusy ? "PDF wird erstellt…" : "Anfrage als PDF herunterladen"}
+        </button>
+      ) : null}
 
       {data.neutralitaet ? (
         <p className="alt-panel-note">{data.neutralitaet}</p>

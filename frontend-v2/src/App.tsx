@@ -19,6 +19,7 @@ import { Shell } from "./components/Shell";
 import type { Briefing, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
+import { downloadBriefingPdf } from "./lib/pdf";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
 // Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
@@ -292,6 +293,9 @@ export function App() {
           briefing={briefing}
           compute={compute}
           onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
+          onDownloadPdf={(message) =>
+            api.briefing(message).then(downloadBriefingPdf)
+          }
         />
         )}
       </Shell>

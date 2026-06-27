@@ -67,6 +67,7 @@ export function ChatPane({
   compute,
   onConfirmUnit,
   onAnfrage,
+  onDownloadPdf,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -89,6 +90,9 @@ export function ChatPane({
   /** Modus F lead-gen: route a structured RFQ briefing to the chosen partner. The host supplies the
    * session message; the panel passes only the partner id. */
   onAnfrage?: (partnerId: string, message: string) => Promise<AnfrageResponse>;
+  /** Download the Anfrage briefing as a PDF (no send). The host fetches the briefing for the session
+   * message + builds the PDF; the panel passes nothing. */
+  onDownloadPdf?: (message: string) => Promise<void>;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -258,6 +262,16 @@ export function ChatPane({
         : undefined,
     [onAnfrage, lastUserMessage],
   );
+  const panelOnDownloadPdf = useMemo(
+    () =>
+      onDownloadPdf
+        ? () =>
+            onDownloadPdf(
+              lastUserMessage || "Anfrage zur besprochenen Dichtungslösung",
+            )
+        : undefined,
+    [onDownloadPdf, lastUserMessage],
+  );
 
   // claude.ai chat↔artifact: the cockpit is OPEN when the case is active OR the user opened it,
   // and NOT explicitly closed. Default / pure Q&A → chat-only (centered, no right panel). Opening
@@ -374,7 +388,11 @@ export function ChatPane({
 
         {latestMedium ? <MediumPanel data={latestMedium} /> : null}
         {latestAlternativen ? (
-          <AlternativenPanel data={latestAlternativen} onAnfrage={panelOnAnfrage} />
+          <AlternativenPanel
+            data={latestAlternativen}
+            onAnfrage={panelOnAnfrage}
+            onDownloadPdf={panelOnDownloadPdf}
+          />
         ) : null}
 
         {caseStateEmpty ? (

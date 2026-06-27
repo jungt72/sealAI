@@ -817,3 +817,13 @@ ul.alt-panel-list { padding-left: 0; gap: 6px; }
 .admin-lead-briefing { font-size: 12px; }
 .admin-lead-briefing summary { cursor: pointer; color: var(--ink-soft, #5a6372); }
 .admin-lead-body { margin: 6px 0 0; padding: 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; background: var(--surface-1, #f1f4f9); border-radius: 6px; max-height: 320px; overflow: auto; }
+
+/* PDF download (the Anfrage briefing, without sending) — briefing-pane header + alternativen footer. */
+.briefing-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.briefing-pdf-btn, .alt-pdf-btn {
+  font-size: 12px; font-weight: 500; color: var(--accent, #2f6fed); background: var(--surface-0, #fff);
+  border: 1px solid var(--line, #e3e7ee); border-radius: 7px; padding: 6px 12px; cursor: pointer;
+}
+.briefing-pdf-btn:hover, .alt-pdf-btn:hover:not(:disabled) { background: var(--surface-1, #f1f4f9); }
+.alt-pdf-btn { align-self: flex-start; margin-top: 2px; }
+.alt-pdf-btn:disabled { opacity: 0.6; cursor: default; }
