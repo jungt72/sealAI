@@ -179,6 +179,20 @@ Exakte DIN-Maßreihen/Typdetails · exakte p-v-Kurven · ob ein konkreter RWDR b
 funktioniert · Beständigkeit bei additivierten/synthetischen/Misch-Medien · Lebensdauer · FDA/EU1935/ATEX/
 Druckgeräte · ob Welle/Gehäuse ohne Nacharbeit nutzbar. → Bei all dem: Kandidatenraum + Defer.
 
+## TEIL C2 — Findings aus echten Fallbeispielen (Eval gegen die v3.1-Engine, für die Fachsignatur)
+17 realistische Fälle (Getriebe/E-Motor/Pumpe/Spindel/Leckage/Lebensmittel/Dampf/Freitext) gegen die Engine:
+**16/17 verhalten sich sicher + erwartungsgemäß** — saubere, vollständig bekannte Standardfälle → L2; riskante
+(Hochdrehzahl, Druck, Dampf) → L1; Leckage → Failure-Mode; Lebensmittel/ATEX → L0; Freitext/unvollständig → kein
+Einzelwerkstoff. Die harten Guards (kein finaler DIN-Code, kein Einzelwerkstoff, nie freigegeben, max L2) halten
+auf ALLEN Fällen. Als Regressionsschranken fixiert (`tests/test_produktspec_real_cases.py`).
+**Offenes Finding (Domänen-Kalibrierung, NICHT autonom entschieden) — A2b:** ein staubiger Standard-AS-Fall
+(Schmutz + bekannte Wellenhärte ≥55 HRC, sonst sauber) wird derzeit auf **L1 über-blockt**, weil das green-
+Envelope *jede* Verschmutzung als „nicht grün" wertet — obwohl die **AS-Staublippe genau dafür existiert** und die
+Härte (≥55 HRC = der für Schmutz empfohlene Wert) den Verschleiß adressiert. **Frage an den Dichtungstechniker:**
+soll „Verschmutzung + Lippe=AS + Härte≥55 HRC + sonst grün" als **L2-Screening** gelten (Pro: AS ist die
+Schmutzlösung; Contra: Schmutz erhöht Verschleiß/Temperatur, mehr Defer kann gewollt sein)? Bis zur Klärung bleibt
+das konservative L1.
+
 ## TEIL D-Guards — ROTE SCHRANKEN, die der Code TYPMODELL-hart erzwingen MUSS
 ```
 G1 max_level = L2 ; review_state = reviewed_internal ; no final approval ; no manufacturer claim
