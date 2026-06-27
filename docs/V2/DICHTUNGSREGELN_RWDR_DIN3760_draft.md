@@ -1,164 +1,166 @@
-# Dichtungsregeln + Algorithmus — RWDR / DIN 3760 (Draft-Regelwerk zur Fach- & adversarialen Review)
+# Dichtungsregeln + Algorithmus v2 — RWDR / DIN 3760 (Constraint-/Defer-System, `reviewed_internal`)
 
-**Status:** Entwurf, **`reviewed_internal` — NICHT `expert_signed`, NICHT produktiv.** · **Datum:** 2026-06-27
-**Zweck:** das konkrete Auswahl-Regelwerk + den Algorithmus für GPT-5.5 **und** einen Dichtungstechniker
-challengebar machen. Gehört zum Konzept v2 (`KONZEPT_Produktempfehlung_Bauform_DIN.md`).
+**Status:** Draft **v2**, `reviewed_internal` — NICHT `expert_signed`, NICHT produktiv. · **Datum:** 2026-06-27
+**v1→v2:** nach harter Fachreview (GPT 5.5, Dichtungstechniker-Lens) vom „Entscheidungsbaum" zum
+**Constraint-/Defer-System** umgebaut. Leitsatz: **nicht „wir wissen den Dichtring", sondern „wir wissen,
+wann wir ihn NICHT sicher wissen".** 0,5 bar / 12 m/s bleiben als konservative Screening-Gates, aber
+Druck × Geschwindigkeit × Temperatur × Schmierung × Wellenzustand × Medium/Additive werden **gekoppelt**
+bewertet — Default bei Unsicherheit = Defer / Kandidatenraum.
 
-> **Disziplin-Hinweis (wichtig):** Ich bin kein Dichtungstechniker. Die Werte unten sind **typische
-> Referenzwerte aus Herstellerleitfäden/DIN-Sekundärquellen** (s. Quellen), die je Hersteller/Werkstoffcharge
-> variieren. Jede Regel trägt **Quelle + Konfidenz + Validierungsstatus**. NICHTS davon darf live KONKRET
-> empfehlen, bis ein Dichtungstechniker es signiert (`expert_signed`). Bis dahin: nur Kandidat + Defer.
+> **Disziplin:** Werte sind Referenzwerte aus Fachreview + Herstellerleitfäden (Quellen unten), je
+> Hersteller/Charge variabel. Jede Regel: Quelle + Konfidenz. Nichts empfiehlt live KONKRET bis
+> `expert_signed`. Die Form-OD-Korrektur (§B-Bauform) wurde unabhängig verifiziert (Pumps&Systems/SKF).
 
----
-
-## TEIL A — DER ALGORITHMUS
-
-### A.0 Eingaben (Case-State) + Input-Confidence
-Pflicht-/Optionalfelder; jede Userangabe trägt eine Confidence (`vom_typenschild | gemessen | aus_altdichtung
-| geschätzt | unbekannt`). Schwache Confidence senkt die Konkretheit + erzwingt Defer.
-`medium, temperatur_c, druck_bar, drehzahl_rpm|geschwindigkeit_ms, welle_d_mm, verschmutzung, gehaeuse,
-welle_haerte_hrc?, welle_rauheit_ra?, rohtext`.
-
-### A.1 Einheiten-Normalisierung (deterministisch, vor allen Regeln)
-- Druck → bar (MPa ×10; psi ×0,06895).
-- Geschwindigkeit → m/s. Falls nur `drehzahl_rpm` + `welle_d_mm`: **v = π · d · n / 60000** (d in mm, n in rpm).
-- Temperatur → °C.
-- **Schranke:** mehrdeutige/fehlende Einheit → nicht raten → `offene_punkte` + Defer.
-
-### A.2 Criticality-Classifier → ggf. Abbruch
-Scan `medium + rohtext + gehaeuse` auf Eskalationsbegriffe (ATEX/Ex, Lebensmittel/Pharma/FDA/EU 1935,
-Druckgerät, H₂, sCO₂, sicherheitskritisch, Kerntechnik, aggressive Chemie). Treffer → `high-risk` →
-**KEIN Spec**, Eskalation zur Fachprüfung. `medium` leer → mind. `caution` (Werkstoff nicht ableitbar).
-
-### A.3 Completeness-Gate (gegen falsche Komposition aus wahren Teilregeln)
-`required_inputs` der Familie prüfen. Fehlt ein kritischer Input → die davon abhängige Aussage wird **nicht**
-getroffen (Teil-Screening + benannte Lücke), nie geraten.
-
-### A.4 Eignungsgrenzen (Disqualify) — schlägt alles
-Feuert eine GRENZE-Regel → die Standard-Bauform/Familie ist disqualifiziert → Defer „andere Familie mit
-Hersteller prüfen". Keine Bauform-Ausgabe für die disqualifizierte Familie.
-
-### A.5 Bauform-Kandidaten — Constraint-Resolution, KEIN Ranking
-FORM-Regeln sammeln. Genau 1 eindeutiger Kandidat → Bauform. Mehrere → **Varianten + expliziter Konflikt +
-offene Entscheidung** (kein „bestes" Produkt). 0 → Defer.
-
-### A.6 Werkstoff — Medium × Temperatur, mit Negativ-Ausschlüssen
-Nur wenn Medium UND Temperatur vorliegen. WERKSTOFF-Regeln sammeln, NEGATIV-Ausschlüsse abziehen. 1 → Werkstoff;
-mehrere → Varianten + Konflikt; 0 → Defer.
-
-### A.7 Lippen — aus der Bauform (A=1, AS/BS=2 …).
-
-### A.8 Maße — KEINE Fabrikation
-Welle = `observed` (User). Dichtungs-Außen-Ø/Breite werden **nie** abgeleitet (DIN-Copyright + Pseudo-Präzision)
-→ `offene_punkte`: „gegen DIN 3760 + Herstellerdatenblatt verifizieren".
-
-### A.9 Prüfpunkte (Welle/Einbau) — als offene Verifikation, nicht als Empfehlung
-Surface/Härte-Anforderungen (s. Tabelle F) werden als **Prüfpunkte** ausgegeben („Welle sollte Ra 0,2–0,6 µm
-+ ≥ 45 HRC erfüllen — bitte prüfen"), nicht als Selektionsregel.
-
-### A.10 Reifegrad-Gating
-Ist die genutzte Bauform-/Werkstoffregel < `expert_signed` → `freigegeben = False` + Defer „reviewed_internal,
-Fachprüfung ausstehend". (Im Prototyp IMMER, da Seed = reviewed_internal.)
-
-### Pseudocode
-```
-normalize_units(fall)
-krit = classify_criticality(fall)
-if krit in {high-risk, out-of-scope}: return escalation_spec(krit)
-fehlend = required_inputs - present(fall)
-if any GRENZE.fires(fall): bauform = None; defer += "Standard-RWDR disqualifiziert → andere Familie"
-else:
-    formen = {r.bauform for r in FORM if r.fires(fall)}
-    bauform = single(formen) or (varianten+konflikt if len>1 else None)
-werkstoff = resolve_material(fall) if medium and temperatur else defer("Medium/Temp fehlt")
-masse = [observed(welle_d)]; offene += "OD/Breite gegen DIN/Datenblatt"
-pruefpunkte = shaft_requirements()           # Tabelle F
-freigegeben = False  if used_rule.reifegrad < expert_signed
-return KandidatenSpec(...)                    # mit Provenance je Feld
-```
-### Invarianten (testbar)
-grounded-only (jede Aussage hat `rule_id`) · neutral (kein Capability-Input) · no-fabrication (keine Norm-Maße)
-· defer-on-incompleteness · disqualify-precedence · no-ranking · keine verbotenen Wörter.
+## Was sich ggü. v1 geändert hat (Review akzeptiert)
+1. **Druck/Geschwindigkeit gekoppelt** (p-v), nicht isoliert; ohne validierte p-v-Kurve ab p>0,2 bar ODER
+   v>10 m/s → caution/Defer. 2. **Temperatur disqualifiziert WERKSTOFF, nicht FAMILIE.** 3. **Medium →
+   Medienklasse + oil_type + chemische Cluster + Additive**; unbekannt/Gemisch → Kandidatenraum, nie ein
+   Werkstoff. 4. **HNBR + FFKM** ergänzt; FKM/EPDM mit harten Ausschlüssen. 5. **Form-B-Flip:** rau/geteilt/
+   Leichtmetall/Wärmedehnung → **Elastomer-OD** (NICHT Metallmantel). 6. **Welle/Härte/Rauheit/Drall/Rundlauf
+   werden ab Schwellen zu Gates.** 7. **Hydrodynamik/Drehrichtung** ergänzt. 8. **Leckage/Wechsel →
+   Failure-Mode-first** (nicht Werkstofftausch). 9. **Druckdifferenz → axiale Sicherung** (Schulter/Sicherungsring).
 
 ---
 
-## TEIL B — DAS REGELWERK: FAMILIE RWDR / DIN 3760
+## TEIL A — ALGORITHMUS (Constraint/Defer)
+**A.0 Eingaben** (3 Tiers, §B): jede mit Confidence. **A.1 Einheiten** normalisieren (bar; v=π·d·n/60000;
+°C); mehrdeutig → Defer. **A.2 Criticality** → high-risk (ATEX/Food/Pharma/Druckgerät/H₂/Säure/Lauge/
+unbekanntes Gemisch …) → kein Spec. **A.3 Completeness-Gate** je Tier. **A.4 Scope-Gates (p-v-T gekoppelt)**.
+**A.5 Werkstoff** = `resolve_material(...)` (volle Signatur unten). **A.6 Bauform/OD**. **A.7 Welle/Einbau-
+Gates**. **A.8 Hydrodynamik/Drehrichtung**. **A.9 Maße** (Welle observed; OD/Breite nie fabriziert). **A.10
+Reifegrad-Gating** (reviewed_internal → freigegeben=False).
 
-**required_inputs:** `medium, temperatur_c, druck_bar, welle_d_mm`. (Ohne diese: kein konkreter Spec.)
+```
+# Werkstoff ist die gefährlichste Stelle — NIE nur (medium, temp):
+werkstoff = resolve_material(medium_class, exact_medium_or_tradename, T_continuous, T_peak,
+                             additives_known, water_content, oil_type, chemical_cluster,
+                             lubrication_state, confidence)
+if medium is mixture/unknown/additized AND no compatibility_evidence:
+    werkstoff = candidate_set_only ; freigegeben = False
 
-### Tabelle A — Eignungsgrenzen (GRENZE / Disqualify)
-| ID | Bedingung | Konsequenz | Quelle | Konfidenz |
+# Anwendungstyp steuert die Antwortform:
+if application_type in {leakage, replacement} AND shaft_condition_unknown:
+    # KEINE „besserer Werkstoff"-Empfehlung vor Fehlerursachen-Check
+    return failure_mode_investigation(shaft_lead, runout, mounting, install_direction, bearing_play, dry_start)
+
+# p-v-T gekoppelt (nicht isolierte Gates):
+if no_validated_pv_curve AND (druck_bar > 0.2 OR v > 10): result = caution/defer
+if druck_bar > 0.5: standard A/AS elastomer ausserhalb Screening-Scope → Druckdichtung/Haltegeometrie
+if pressure_differential AND axial_retention_unknown: no_pressure_candidate (Schulter/Sicherungsring NS-seitig)
+```
+**Invarianten:** grounded-only · neutral · no-fabrication · **default-to-defer-on-coupling-uncertainty** ·
+disqualify-precedence · no-ranking · Leckagefall ⇒ Fehlerursache vor Produktwechsel · keine verbotenen Wörter.
+
+---
+
+## TEIL B — REGELWERK RWDR / DIN 3760
+
+### required_inputs (3 Tiers)
+- **Tier-1 (jede Screening-Aussage):** medium_class, T_continuous, T_peak, pressure_normal, pressure_peak/pulse,
+  shaft_diameter, speed (rpm|m/s), lubrication_state, contamination_external, application_type(new/replace/leakage).
+- **Tier-2 (Bauform/OD):** housing_bore_d, housing_material, bore_tolerance, bore_roughness, split_housing, thermal_context.
+- **Tier-3 (Vertrauensstufe):** shaft_roughness, shaft_hardness, shaft_lead/drallfrei, runout, misalignment,
+  shaft_condition(groove/corrosion), install_direction.
+> Fehlt Tier-1 → nur „Teil-Screening, Kandidatenraum offen".
+
+### Tabelle A — Scope-Gates (Druck/Geschw/Temp GEKOPPELT)
+| ID | Bedingung | Konsequenz | Quelle | Konf. |
 |---|---|---|---|---|
-| G-DRUCK | `druck_bar > 0,5` | Standard-RWDR disqualifiziert (Druck) | ~7 psi ≈ 0,48 bar (ESP/Parker) | **hoch** (mehrere Quellen) |
-| G-SPEED | `geschwindigkeit_ms > 12` | Standard-RWDR (NBR) disqualifiziert (Geschw.) | 10–15 m/s NBR continuous | **mittel** (Schwelle 12 gewählt; validieren) |
-| G-TEMP-HI | `temperatur_c > 120` | Standard-NBR-RWDR ungeeignet → Werkstoff/Familie prüfen | Std-RWDR -40…120 °C | **mittel** |
-| G-TEMP-LO | `temperatur_c < -40` | Standard-RWDR ungeeignet (Kälte) | Std-RWDR ab -40 °C | **mittel** |
-| G-PV*    | `druck_bar · geschwindigkeit_ms > PV_grenz` | Druck×Geschw-Kopplung überschritten | „höhere Geschw. → kleinerer zul. Druck" | **niedrig** (PV_grenz domänen-zu-validieren) |
+| G-PV-UNVALIDATED | keine p-v-Kurve UND (p>0,2 bar ODER v>10 m/s) | nur caution/Defer | SKF: p-v gekoppelt (10 psi@5 m/s) | hoch |
+| G-STD-PRESSURE | p>0,5 bar | Standard A/AS-Elastomer **außerhalb Screening-Scope** → Druckdichtung/Haltegeometrie | ~7 psi≈0,48 bar; A+P „<0,5 bar" | hoch |
+| G-PRESS-RETAIN | Druckdifferenz UND axiale Sicherung unbekannt | kein Druckkandidat (Schulter/Sicherungsring NS-seitig) | SKF | hoch |
+| G-SPEED-NBR | Werkstoff=NBR UND v>10–12 m/s | kein Standard-NBR-A/AS | A+P/Parker NBR ≤10–12 | hoch |
+| G-SPEED-UNK | v>10 m/s UND Werkstoff unbekannt | kein finaler Werkstoff; Material/Design-Review | — | mittel |
+| G-TEMP-MAT | Temperatur disqualifiziert **Werkstoff**, nicht Familie | (→ Tabelle C) | A+P: Einzelwerte sind Maxima | hoch |
 
-> *G-PV ist bewusst als offene Frage markiert — der genaue PV-Grenzwert + die Kopplung gehören in die Fachreview.
+### Medien-Klassen-Taxonomie (Pflicht vor jeder Materialaussage)
+`oil_type`: mineral_low_additive · mineral_high_additive · synthetic_PAO · ester · bio · hypoid · ATF ·
+hydraulic_HL/HLP · hydraulic_HFA/HFB/HFC/HFD · fuel_diesel · fuel_gasoline · aromatic_fuel · unknown_oil.
+`chemical_cluster`: hot_water · steam · glycol · water_glycol · glycol_brake_fluid · solvent_polar ·
+solvent_nonpolar · ketone · amine · acid · alkali · food_contact · unknown_mixture.
+> **unknown_oil / unknown_mixture / additiviert ohne Beleg → nur Kandidatenraum, freigegeben=False.**
 
-### Tabelle B — Bauform (FORM)
-| ID | Bedingung | Konsequenz | Quelle | Konfidenz |
-|---|---|---|---|---|
-| F-A  | `verschmutzung == false` (sauber) | Form A (Elastomer-Mantel, 1 Lippe) | DIN 3760 Form A | **hoch** |
-| F-AS | `verschmutzung == true` | Form AS (Zusatz-Staublippe) | Staublippe schützt Hauptlippe vor Schmutz | **hoch** |
-| F-B  | `gehaeuse contains "metall"/"rau"` | Form B (Metall-Außenmantel) | Metallmantel für Bohrung/Retention | **mittel** (Bedingung zu grob — validieren) |
-| F-PTFE | `temperatur_c > 200` OR `trockenlauf` OR `medium aggressiv` | PTFE-Lippe (Metallgehäuse) | PTFE: Hochtemp/Trockenlauf/Chemie/Highspeed | **mittel** |
-
-### Tabelle C — Werkstoff (WERKSTOFF), Medium × Temperatur
-| ID | Bedingung | Konsequenz | Quelle | Konfidenz |
-|---|---|---|---|---|
-| W-NBR | `medium contains "öl"` AND `-30 ≤ T ≤ 100` | NBR | NBR -30…100 °C, exzellent Mineralöl | **hoch** |
-| W-FKM | (`medium contains "öl"` OR aggressiv/Kraftstoff) AND `100 < T ≤ 200` | FKM | FKM -20…200 °C, Kraftstoffe/Chemie | **hoch** |
-| W-EPDM | `medium contains "wasser"/"glykol"/"bremsflüssigkeit"` AND `T ≤ 120` | EPDM | EPDM Wasser/Dampf/Glykol, **nicht** Öl | **hoch** |
-| W-PTFE | `T > 200` OR Trockenlauf OR stark aggressiv | PTFE | PTFE Extrembereich | **mittel** |
-
-### Tabelle D — Negatives Wissen (NEGATIV / Ausschluss)
-| ID | Bedingung | Ausschluss | Quelle | Konfidenz |
-|---|---|---|---|---|
-| N-EPDM-OEL | `medium contains "mineralöl"/"öl"` | EPDM ausschließen | EPDM petroleum-inkompatibel | **hoch** (klassisch) |
-| N-NBR-OZON | `ozon/witterung im rohtext` | NBR abwerten/ausschließen | NBR ozon-anfällig | **mittel** |
-| N-NBR-POLAR | `medium contains "keton"/"ester"` | NBR ausschließen | NBR gegen polare Solventien schwach | **mittel** |
-
-### Tabelle E — Lippen
-| Bauform | Lippen |
-|---|---|
-| A, B | 1 (Hauptlippe; optional dünne Wiper-Lippe) |
-| AS, BS | 2 (Haupt- + Staublippe) |
-
-### Tabelle F — Prüfpunkte Welle/Einbau (PRUEFPUNKT, keine Selektion)
-| ID | Anforderung | Quelle | Konfidenz |
+### Tabelle C — Werkstoff (mit harten Ausschlüssen)
+| ID | Eignung | Ausschluss (wichtig!) | Konf. |
 |---|---|---|---|
-| P-RA | Wellen-Rauheit **Ra 0,2–0,6 µm** (druckbelastet 0,2–0,4) | DIN 3760/3761 | **hoch** |
-| P-HRC | Wellen-Härte **≥ 45 HRC** (höherer Druck 60–65) | Herstellerleitfäden | **hoch** |
-| P-BORE | Bohrungs-Rauheit Ra 1,6–4 µm | Herstellerleitfäden | **mittel** |
-| P-DRALL | Welle drallfrei geschliffen (Einstich/Drallfreiheit) | Leckage-Hauptursache: Oberfläche | **hoch** (qualitativ) |
+| W-NBR | Mineralöl/Fett/HLP/aliphat. KW, -30…80(100)°C; 100–120 nur caution | Glykol-Bremsfl., HFD, Heißdampf, polar, Ozon/UV, aromat./chlor. | hoch |
+| W-HNBR | NBR-Medien + höhere Temp/Ozon/Abrieb, -30…150°C | (wie NBR, enger) | mittel (A+P/Freudenberg) |
+| W-FKM | Öle/Kraftstoffe/synth./Mineralöle, -20/-25…200°C | **Heißwasser/Dampf, Amine, Laugen, polare Solventien, Glykol-Bremsfl.** | hoch |
+| W-EPDM | Wasser/Dampf/Glykol-Bremsfl./polar, ≤120°C | **JEDER Kohlenwasserstoff: Öl/Fett/Kraftstoff** | hoch |
+| W-PTFE | Spezialkandidat: Trockenlauf/Hochtemp/Chemie/Highspeed — Herstellerreview | nicht generisches DIN-A/AS | mittel |
+| W-FFKM | nur als High-Cost-High-Chemie-Kandidat | **nie Default** | mittel |
 
-### eval_traps (Familien-Tests)
-- 5 bar → KEIN Standard-RWDR-Kandidat (G-DRUCK).
-- 15 m/s → disqualifiziert (G-SPEED).
-- Mineralöl + Wasser → **nicht** EPDM (N-EPDM-OEL).
-- 220 °C → nicht NBR/FKM-Elastomer → PTFE-Pfad/Defer.
-- verschmutzt + raue Metallbohrung → AS **und** B → Varianten + Konflikt (kein Ranking).
-- Medium leer → kein Werkstoff (Defer).
+### Tabelle D — Negatives Wissen („Nie"-Regeln, schützen am meisten)
+| ID | Bedingung | Aktion |
+|---|---|---|
+| N-EPDM-HC | Mineralöl/Fett/Kraftstoff | EPDM ausschließen |
+| N-FKM-STEAM | Heißwasser/Dampf | generisches FKM ausschließen (außer Sondergrade verifiziert) |
+| N-FKM-AMINE | Amin/Lauge/Ammoniak | generisches FKM ausschließen |
+| N-NBR-BRAKE | Glykol-Bremsflüssigkeit | NBR ausschließen |
+| N-NBR-OZON | Außen/Ozon/UV exponiert | NBR caution/ausschließen (je Kritikalität) |
+| N-ELAST-DRY | Trockenlauf / Schmierung beim Anlauf unbekannt | kein Standard-Elastomer-Lippenkandidat |
+| N-DIR-LIP | bidirektional / Drehrichtung unbekannt | gerichtete Pumplippe ausschließen |
+| N-PRESS-RETAIN | Druckdifferenz, axiale Sicherung unbekannt | kein Druckkandidat |
+| N-LEAK-UNK | Wechsel/Leckage, Wellenzustand unbekannt | KEINE „besserer Werkstoff"-Empfehlung vor Fehlerursachen-Check |
+
+### Tabelle B-OD — Bauform / Außendurchmesser (KORRIGIERT)
+| ID | Bedingung | Konsequenz | Quelle | Konf. |
+|---|---|---|---|---|
+| F-A | sauber, Öl/Fett, low pressure, geeignete Bohrung | Form A (1 Lippe) | DIN 3760 | hoch |
+| F-AS | externer Staub/Spritz/Schmutz | Form AS (Staublippe) — **Fettfilm zwischen den Lippen nötig** | DIN 3760 | hoch |
+| **F-OD-ELASTOMER** | **rau/verschlissen/geteilt/Leichtmetall/Wärmedehnung/Druck/dünnflüssig** | **Elastomer-ummantelter OD** | Pumps&Systems, Anyseals (verifiziert) | hoch |
+| F-OD-METAL | präzise/starre Stahlbohrung, exakter Sitz nötig, Bohrung geeignet | Metall-OD möglich | Pumps&Systems | hoch |
+| F-OD-UNKNOWN | Gehäusematerial/Toleranz/Rauheit unbekannt | **A/B/C NICHT entscheiden** → nach Bohrung fragen | — | hoch |
+| F-PRESSURE | Druck vorhanden | Druck-RWDR/Stützring/Haltegeometrie | SKF | hoch |
+| F-PTFE | Trockenlauf/Hochtemp/Chemie/Highspeed | PTFE-Lippe (Spezial, kein generisches A/AS) | A+P | mittel |
+
+### Tabelle E — Welle/Einbau als GATES (nicht nur Prüfpunkte)
+| ID | Bedingung | Aktion | Quelle |
+|---|---|---|---|
+| S-RA | Wellen-Ra außerhalb 0,2–0,8 µm / Rz 1–5 / drallbehaftet | kein sicherer Kandidat; Oberfläche prüfen | A+P/SKF |
+| S-HRC-SPEED | v>4 m/s UND Härte unbekannt | kein sicherer Kandidat; Härte verifizieren | A+P (≥45, bei Schmutz/>4 m/s ≥55 HRC) |
+| S-HRC-DIRT | Verschmutzung UND Härte <55 HRC | caution/high-risk Verschleiß; kein finaler Kandidat | A+P |
+| S-RUNOUT | hohe v UND Rundlauf/Fluchtung unbekannt | kein konkreter Kandidat; Rundlauf/Lagerabstand erfragen | SKF |
+| S-LEAD | Drall/Helix vorhanden ODER unbekannt bei Leckagefall | Troubleshooting-Priorität; kein Produkttausch als Primärantwort | A+P |
+
+### Tabelle F — Hydrodynamik / Drehrichtung
+| ID | Bedingung | Aktion |
+|---|---|---|
+| H-DIR | gerichtete Rückförderhilfen UND Drehrichtung unbekannt | kein Kandidat / Drehrichtung erfragen |
+| H-REV | Reversier-/Bidirektionalbetrieb | unidirektionale Pumplippe ausschließen (außer verifiziert) |
+| H-LEAK | Leckage UND möglicher Wellendrall | Drall/Rundlauf/Montage vor Werkstofftausch |
+
+**Lippen:** A/B=1 (+optional Wiper), AS/BS=2. **Maße:** Welle=observed; OD/Breite nie abgeleitet → „gegen DIN/Datenblatt".
+
+### eval_traps (erweitert)
+| Trap | Erwartung |
+|---|---|
+| 0,4 bar + 11 m/s + NBR + 110 °C | kein „passt" → p-v-/Temp-Defer |
+| 0,6 bar + 1 m/s | Standard-A/AS außer Scope, aber Druckdichtung möglich |
+| 15 m/s + FKM + gute Schmierung | nicht pauschal RWDR disqualifizieren → Spezialprüfung |
+| Wasser + 90 °C + Mineralölspuren | EPDM nicht eindeutig → Medienklärung |
+| Heißwasser/Dampf + FKM | FKM ausschließen/Defer |
+| Glykol-Bremsfl. + NBR/FKM | ausschließen/Defer; EPDM nur bei passender Spez. |
+| Synthetiköl unbekannt + 120 °C | kein NBR; FKM/HNBR nur Kandidatenraum + Additivprüfung |
+| Leckage nach Wechsel, gleiche Maße | erst Welle/Drall/Montage/Rundlauf; KEINE Werkstoffempfehlung |
+| verschmutzt + v>4 m/s + Härte unbekannt | keine Kandidaten-Sicherheit; Härte prüfen |
+| raue Leichtmetallbohrung | NICHT Form B → Elastomer-OD-Konflikt/Defer |
 
 ---
 
-## TEIL C — QUELLEN & KONFIDENZ-LEGENDE
-**Konfidenz:** hoch = mehrere konsistente Quellen / klassisches Lehrbuchwissen · mittel = plausibel, Schwelle/
-Bedingung gewählt → validieren · niedrig = bewusst offen, gehört in die Fachreview.
-Alle Werte sind **Referenzwerte** (herstellerabhängig) — DIN-Normtext/-Tabellen sind NICHT reproduziert.
+## TEIL C — Was OHNE Original-DIN / Herstellerfreigabe NICHT festnagelbar ist
+Exakte DIN-3760-Maßreihen + Typdetails · exakte p-v-Kurven je Bauform/Werkstoff/Lippe · ob ein konkreter RWDR
+bei 0,6 bar / 12,5 m/s noch funktioniert (design-/temp-/schmierungs-/lebensdauerabhängig) · Materialbeständigkeit
+bei realen additivierten/synthetischen/Misch-Medien · Lebensdauerprognosen · FDA/EU1935/ATEX/Druckgeräte ·
+ob vorhandene Welle/Gehäuse ohne Nacharbeit nutzbar sind. → Bei all dem: Kandidatenraum + Defer, nie konkret.
 
-## TEIL D — BEKANNTE LÜCKEN / BITTE BESONDERS CHALLENGEN
-1. **Schwellen exakt:** 0,5 bar / 12 m/s / 100↔120 °C — Grenzen sind gewählt; sind sie konservativ genug? Herstellerabhängig?
-2. **PV-Kopplung (G-PV):** Druck×Geschwindigkeit ist real gekoppelt — der Algorithmus behandelt sie noch separat. Richtiger Grenzwert/Kurve?
-3. **Form-B-Bedingung** (`gehaeuse contains metall`) ist zu grob — wann WIRKLICH Metallmantel?
-4. **Werkstoff-Entscheidungsbaum:** Emulsionen, Additive (EP/AW), HNBR/ACM/MVQ/PTFE-Sondergrade fehlen; Medium-Detail (Konzentration/pH) ignoriert.
-5. **Drehrichtung/Hydrodynamik:** hydrodynamische Rückförderrillen (drehrichtungsabhängig) fehlen.
-6. **Dynamik fehlt:** Lebensdauer, Temperaturspitzen, Druckimpulse, Stillstand/Trockenlaufanlauf, Wellenschlag/Exzentrizität, Montagebedingungen.
-7. **Prüfpunkte vs. Disqualify:** sollten Welle-Härte/Rauheit bei klarer Unterschreitung disqualifizieren statt nur warnen?
-8. **Negatives Wissen unvollständig:** welche weiteren „nie"-Regeln sind sicherheitskritisch?
-9. **Einheiten-Randfälle:** °F, kPa, U/min vs. rad/s — vollständig abgedeckt?
+## TEIL D — Offene Fragen für Runde 3
+1. p-v(-T)-Kurve: ein generischer konservativer Schwellensatz, oder pro Werkstoff/Bauform? 2. Medienklassen-
+Mapping: wie führt der User es ein (Freitext→Klasse-Klassifikator mit Confidence?) ohne Fehlklassifikation?
+3. HNBR/FFKM-Eignungsgrenzen. 4. Leckage-Modus als eigener Pfad — reicht die Failure-Mode-Checkliste? 5. Welche
+Tier-1-Inputs sind im Chat realistisch erhebbar, ohne den User zu überfordern? 6. Reicht „candidate_set_only"
+als UX, oder braucht es eine Vertrauens-Ampel?
 
-Sources: NBR/FKM/EPDM-Auswahl + Temp/Medien — idealbelltechnology, dxtseals, waynerubber; Betriebsgrenzen/Welle —
-ESP International (Shaft Seal Handbook + Speed Guide), CV Technik, AHP Seals; Bauform/Lippen — Eclipse/Gallagher Seals.
+**Quellen (Fachreview + Verifikation):** Betriebsgrenzen/p-v + Welle — SKF, Angst+Pfister (A+P), ESP; Werkstoffe/
+Ausschlüsse — Freudenberg/Dichtomatik, Parker, idealbell/dxtseals; Form-OD (verifiziert) — Pumps&Systems
+(Metal-OD vs Rubber-OD, Alu/Wärmedehnung, Splitring), Anyseals; Bauformen — DIN 3760 / Eclipse/Gallagher.
