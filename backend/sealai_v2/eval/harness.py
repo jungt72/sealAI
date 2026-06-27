@@ -28,6 +28,7 @@ from sealai_v2.eval.cases import (
     load_decode_cases,
     load_alternativen_cases,
     load_beratungs_ux_cases,
+    load_loesungserarbeitung_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -387,6 +388,36 @@ async def _run_beratungs_ux(
     return records, errors
 
 
+async def _run_loesungserarbeitung(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """Lösungserarbeitung class (V2.1 Inc 4) — runs the depth/epistemic-boundary regression cases through
+    the EXISTING single-turn unit + judge + scorer (column ``loesungserarbeitung``, flags_on). Folded into
+    the canonical records; excluded from the non-edge no-regression by the column filter. ALL five cases
+    carry an EXISTING hard gate (invented_precision / confident_wrong) — no new Schranke. NO calc fixtures
+    by design (the cases test what L1 may ASSERT, not parametric precision). Owner is the factual oracle
+    (axis 1 / any gate human-final)."""
+    cases = load_loesungserarbeitung_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "loesungserarbeitung",
+                    COLUMNS["flags_on"],
+                    params=None,
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_beratungs_ux)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_alternativen(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str]]:
@@ -729,6 +760,26 @@ async def run_eval(
     )
     records = list(records) + bux_records
 
+    # Lösungserarbeitung (V2.1 Inc 4) — depth/epistemic-boundary regression cases (erarbeiten statt
+    # abschieben, OHNE zu erfinden). Folded under column `loesungserarbeitung` (excluded from the non-edge
+    # summaries by the column filter). ALL five cases carry an EXISTING hard gate (invented_precision /
+    # confident_wrong) — no new Schranke. Appended BEFORE the parametric block.
+    loes_records, loes_errors = await _run_loesungserarbeitung(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    loesungserarbeitung = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("loesungserarbeitung", [r.score for r in loes_records])
+            ),
+            "n_cases": len(loes_records),
+            "errors": loes_errors,
+        }
+        if loes_records
+        else None
+    )
+    records = list(records) + loes_records
+
     # Gegencheck (GEGENCHECK, Modus E, V2.1) - existing-seal-check cases (disqualify the incompatible,
     # surface the conditional's condition, never affirm the compatible). Folded under column
     # `gegencheck` (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes
@@ -897,6 +948,9 @@ async def run_eval(
         "n_archetype_cases": (archetype["n_cases"] if archetype else 0),
         "n_calibration_cases": (calibration["n_cases"] if calibration else 0),
         "n_beratungs_ux_cases": (beratungs_ux["n_cases"] if beratungs_ux else 0),
+        "n_loesungserarbeitung_cases": (
+            loesungserarbeitung["n_cases"] if loesungserarbeitung else 0
+        ),
         "baseline_non_edge": {
             "flags_off": 1.000,
             "flags_on": 0.991,
@@ -914,7 +968,11 @@ async def run_eval(
         + [f"injection::{e}" for e in (injection or {}).get("errors", [])]
         + [f"archetype::{e}" for e in (archetype or {}).get("errors", [])]
         + [f"calibration::{e}" for e in (calibration or {}).get("errors", [])]
-        + [f"beratungs_ux::{e}" for e in (beratungs_ux or {}).get("errors", [])],
+        + [f"beratungs_ux::{e}" for e in (beratungs_ux or {}).get("errors", [])]
+        + [
+            f"loesungserarbeitung::{e}"
+            for e in (loesungserarbeitung or {}).get("errors", [])
+        ],
     }
 
     # --- model-swap gate aggregates (latency / answer-quality / cost) -----------------------
@@ -981,6 +1039,7 @@ async def run_eval(
         "archetype": archetype,
         "calibration": calibration,
         "beratungs_ux": beratungs_ux,
+        "loesungserarbeitung": loesungserarbeitung,
         "gegencheck": gegencheck,
         "diagnose": diagnose,
         "decode": decode,

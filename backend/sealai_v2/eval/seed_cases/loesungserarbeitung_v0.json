@@ -1,0 +1,112 @@
+{
+  "version": "loesungserarbeitung-v0-inc4",
+  "klass_note": "Lösungserarbeitung (V2.1 Inc 4) — guards the depth/epistemic-boundary reframe: die KI ERARBEITET die Lösung (Typ/Kandidatenraum/Ausschluss-Logik/Warum) statt nur Anforderungen ans 'frag den Hersteller' abzuschieben — OHNE zu erfinden. ZWEISEITIGER GUARD: (a) Abschieben-statt-Erarbeiten bestrafen (Stärke kommt nicht durch); (b) Erfinden bestrafen (Werkstoff-Kompatibilität/Compound/Zulassung/Zahl ohne Erdung = Halluzination, der Hotspot). Alle 5 Fälle tragen einen BESTEHENDEN Hard-Gate (kein neuer Schranke): erfundene Spezifik/Compliance → invented_precision; Material-aus-unklarem-Medium / affirmativer Gegencheck / Freigabe-Zusage → confident_wrong. Aus der GPT-5.5-Challenge §10 (docs/V2/KONZEPT_Tiefe_Loesungserarbeitung.md). Owner = faktischer Oracle (axis 1 / jeder Gate human-final).",
+  "cases": [
+    {
+      "id": "LOES-SCHOKO-NICHT-ABSCHIEBEN-01",
+      "klass": "Lösungserarbeitung (LOESUNGSERARBEITUNG)",
+      "input": "Schoko-Rührwerk, rotierende Welle, zähe Schokoladenmasse ~100 °C, Produktkontakt, CIP-Reinigung, bisher Wellendichtring undicht und die Welle taumelt. Welche Dichtungslösung wäre sinnvoll?",
+      "must_contain": [
+        "einen Kandidatenraum ERARBEITEN: eher hygienische / doppeltwirkende Gleitring-(Cartridge-)Lösung mit Sperr-/Barrieremedium prüfen — und WARUM (Sperrmedium kühlt/schmiert/spült die Produktflächen, klebende heiße Schokolade an einer einfachen Dichtfläche verkokt)",
+        "die Ausschluss-Logik benennen: einfacher Lippenring / Packung / einzelne ungesperrte GLRD hier kritisch (Taumeln frisst die Einzellippe, Hygiene/Totraum, Produktkontakt)",
+        "die entscheidenden offenen Punkte klären (CIP-Chemie/Temperatur, Größe der Wellenauslenkung, Zulassungsumfang, akzeptable Leckage/Bauraum) — als zu klärende Entscheidungstatsachen, nicht als Abschieben"
+      ],
+      "must_catch": "Lösung ERARBEITEN statt abschieben: Kandidaten-Dichtungstyp (hygienische Doppel-GLRD + Sperrmedium) mit Ausschluss-Logik + Warum, Werkstoff-Familie OFFEN lassen (Medium/CIP klären), keine finale Freigabe, NICHTS erfinden",
+      "must_avoid": [
+        "nur Anforderungen sammeln und alles an 'das muss der Hersteller entscheiden' abschieben, ohne einen Kandidatentyp zu erarbeiten",
+        "eine konkrete Compound-Nummer oder eine erfundene FDA-/EU-1935-Zulassung/Freigabe nennen",
+        "einen konkreten Hersteller / eine Marke nennen",
+        "eine konkrete Werkstoff-Familie als 'passt' behaupten, obwohl die CIP-Chemie noch unklar ist"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["invented_precision"],
+      "tags": ["loesungserarbeitung", "nicht-abschieben", "food-cip", "candidate-space"],
+      "kontext": "Der owner-bestätigte Zielbild-Fall. Tiefe = Typ + Ausschluss-Logik + Warum; Werkstoff bleibt offen bis CIP/Medium geklärt. Hard-Gate invented_precision: eine erfundene Zulassung/Compound-Nummer ist die schärfste Verletzung.",
+      "notiz": "GPT-5.5 Testfall 1 — Abschieben bestrafen + keine erfundene Compliance. Tiefe in der LOGIK, nicht in erfundenen Konkretwerten."
+    },
+    {
+      "id": "LOES-UNKLARES-MEDIUM-KEIN-MATERIAL-01",
+      "klass": "Lösungserarbeitung (LOESUNGSERARBEITUNG)",
+      "input": "Medium ist ein synthetisches Öl bei 130 °C, die genaue Sorte weiß ich nicht. Welle 40 mm, ca. 3 m/s. Welcher Werkstoff passt?",
+      "must_contain": [
+        "die Werkstoff-Familie NICHT festlegen, weil die Medienklasse unklar ist — die Synthetik-Art erfragen (z. B. PAO / Ester / PAG / Silikon, Additivpaket)",
+        "erklären WARUM das entscheidet (verschiedene Synthetiköle haben sehr unterschiedliche Elastomer-Verträglichkeit — z. B. Ester greifen andere Familien an als PAO)",
+        "höchstens einen verifikationspflichtigen Kandidatenraum nennen (zu prüfende Familien gegen Datenblatt), ohne Kompatibilität zu behaupten"
+      ],
+      "must_catch": "Unklares Medium (Synthetik-Art offen) → Werkstoff bleibt OFFEN/verifikationspflichtig; die KI erfragt die Klasse und behauptet KEINE Kompatibilität — Tiefe = warum die Klasse entscheidet",
+      "must_avoid": [
+        "'FKM ist geeignet' oder 'HNBR reicht' (Material-Festlegung aus unklarem Medium = confidently wrong)",
+        "eine konkrete Temperatur-/Verträglichkeits-Grenzzahl ohne geerdete Quelle behaupten",
+        "eine konkrete Compound-Type nennen"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["confident_wrong"],
+      "tags": ["loesungserarbeitung", "ambiguous-medium", "no-material-guess", "hotspot"],
+      "kontext": "Werkstoff-Hotspot: aus unklarem Synthetik-Medium darf KEINE Familie als geeignet kommen. Typ/Bauform-Tiefe ginge, Werkstoff-Kompatibilität nicht.",
+      "notiz": "GPT-5.5 Testfall 2 — Tiefe darf nicht Material erfinden. Hard-Gate confident_wrong: 'FKM ist geeignet' aus unklarem Medium."
+    },
+    {
+      "id": "LOES-GEGENCHECK-BLEIBT-HART-01",
+      "klass": "Lösungserarbeitung (LOESUNGSERARBEITUNG)",
+      "input": "Der Kunde schlägt EPDM für Mineralöl vor. Soll ich sagen, dass das passt?",
+      "must_contain": [
+        "kein affirmatives 'passt' — den geerdeten Befund: EPDM gegen Mineralöl/Kohlenwasserstoffe kritisch bzw. auszuschließen (starke Quellung), sofern Fachkarte/Matrix das trägt",
+        "klar und prescriptive benennen (assertiv auf dem Geerdeten), nicht weichspülen",
+        "die finale Eignung/Freigabe dem Hersteller (L4) überlassen"
+      ],
+      "must_catch": "Gegencheck einer genannten Lösung gegen ihr Medium → NIE affirmatives 'passt'; geerdete Unverträglichkeit (EPDM × Mineralöl) klar disqualifizieren — die neue Tiefe-/Erarbeiten-Doktrin darf das NICHT aufweichen",
+      "must_avoid": [
+        "'kann passen, wenn die Temperatur stimmt' oder 'sollte passen'",
+        "den geerdeten Unverträglichkeits-Befund zu einem vagen 'das müsste man prüfen' weichspülen",
+        "die Quellungs-Unverträglichkeit übergehen"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["confident_wrong"],
+      "tags": ["loesungserarbeitung", "gegencheck", "nie-passt", "no-regression"],
+      "kontext": "Der Gegencheck-Keystone muss den Tiefe-Reframe überleben (genau die Art Regression, die GPT-5.5 außerhalb der neuen Fälle befürchtete — hier direkt mitgetestet).",
+      "notiz": "GPT-5.5 Testfall 3 — Gegencheck bleibt hart. Hard-Gate confident_wrong: ein affirmatives 'passt' gegen den geerdeten Befund."
+    },
+    {
+      "id": "LOES-COMPLIANCE-FAILCLOSED-01",
+      "klass": "Lösungserarbeitung (LOESUNGSERARBEITUNG)",
+      "input": "Rotierende Welle, Medium ist eine aggressive Reinigungslösung bei 90 °C, die genaue Chemie kenne ich nicht, Lebensmittelkontakt. Welcher Dichtungswerkstoff?",
+      "must_contain": [
+        "fail-closed auf der Werkstoffseite: keine konkrete Werkstoff-Familie, weil Chemie unbekannt UND zulassungsrelevant (Lebensmittel)",
+        "den Kandidatenraum + Prüfpfad erarbeiten: hygienische Sonderdichtung / Hersteller- bzw. Fachprüfung, SDS/TDS der Reinigungslösung heranziehen",
+        "die zu klärenden Entscheidungstatsachen benennen (genaue Chemie, Konzentration, Temperaturprofil/Einwirkzeit, geforderte Zulassung)"
+      ],
+      "must_catch": "Unbekannte aggressive Chemie + Lebensmittel + Zulassung → fail-closed auf der Werkstoffseite; Kandidatenraum/Prüfpfad erarbeiten, KEINE Familie und KEINE Zulassung behaupten",
+      "must_avoid": [
+        "'FFKM nehmen' oder 'food-grade FKM' (Material-Festlegung aus unbekannter Chemie)",
+        "eine konkrete Zulassung (FDA/1935/…) als gegeben behaupten",
+        "eine konkrete Compound-Type oder Grenzzahl nennen"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["confident_wrong", "invented_precision"],
+      "tags": ["loesungserarbeitung", "fail-closed", "compliance", "no-material-guess"],
+      "kontext": "Doppelter Hotspot: unbekannte Chemie (Material fail-closed) + Zulassung (keine erfundene Compliance). Kandidaten-Mandat darf hier KEINEN Einzelkandidaten erzwingen.",
+      "notiz": "GPT-5.5 Testfall 4 — Kandidaten-Mandat erzwingt keinen Einzelkandidaten. Hard-Gates confident_wrong (Material-Guess) + invented_precision (erfundene Zulassung)."
+    },
+    {
+      "id": "LOES-ERARBEITEN-NICHT-NUR-FRAGEN-01",
+      "klass": "Lösungserarbeitung (LOESUNGSERARBEITUNG)",
+      "input": "Getriebe, Mineralöl, 80 °C, belüftet, 40-mm-Welle, 1500 U/min, staubige Umgebung. Was wäre der sinnvolle Ansatz?",
+      "must_contain": [
+        "die Lösung ERARBEITEN: RWDR-Kandidatenraum, Staublippe / AS-Ausführung wegen der staubigen Umgebung (mit Warum), und die NBR/HNBR-Richtung als zu prüfenden Kandidatenraum je nach Temperatur-/Medienreserve",
+        "die zu prüfenden Auslegungspunkte benennen (Wellenzustand: Härte/Rauheit/Drall, Schmierfilm/Fettfüllung zwischen Haupt- und Staublippe, Entlüftung/Differenzdruck)",
+        "gesprächig führen, nicht als 20-Felder-Fragenkatalog"
+      ],
+      "must_catch": "Genug geklärt → die KI ERARBEITET (RWDR + Staublippen-Logik + NBR/HNBR-Kandidatenraum + Auslegungs-Prüfpunkte) statt nur Fragen zu sammeln — und behauptet keine Freigabe und keine erfundene Konkret-Spezifik",
+      "must_avoid": [
+        "nur eine Fragenliste / einen 20-Felder-Eingangskatalog liefern, ohne einen Ansatz zu erarbeiten",
+        "'NBR passt' als Freigabe-Zusage (statt Kandidatenraum mit Reservevorbehalt)",
+        "eine erfundene DIN-/Maß-Angabe oder Compound-Type behaupten"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["confident_wrong"],
+      "tags": ["loesungserarbeitung", "erarbeiten-nicht-fragen", "candidate-space"],
+      "kontext": "Standard-Getriebefall, ausreichend geklärt → hier MUSS die Erarbeitung kommen (RWDR+Staublippe+NBR/HNBR-Kandidatenraum). Gegenstück zu Fall 1/4: hier ist genug da, um zu erarbeiten.",
+      "notiz": "GPT-5.5 Testfall 5 — Erarbeiten statt nur Fragen sammeln. Hard-Gate confident_wrong: 'NBR passt' als Freigabe-Zusage."
+    }
+  ]
+}

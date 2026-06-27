@@ -246,6 +246,13 @@ def main() -> None:
             f"[beratungs_ux] cases={bux['n_cases']}  credibility(2-7)={bsum['overall_credibility']:.3f}  "
             f"(Beratungs-UX — Klären-vor-Empfehlen / Tiefe-auf-Abruf; 3 Fälle mit bestehendem Hard-Gate: walked_into_trap / confident_wrong)"
         )
+    loes = out.get("loesungserarbeitung")
+    if loes:
+        lsum = loes["summary"]
+        print(
+            f"[loesungserarbeitung] cases={loes['n_cases']}  credibility(2-7)={lsum['overall_credibility']:.3f}  "
+            f"(Lösungserarbeitung — erarbeiten statt abschieben, ohne erfinden; 5 Fälle mit Hard-Gate: invented_precision / confident_wrong)"
+        )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
 

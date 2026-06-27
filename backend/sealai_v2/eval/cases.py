@@ -24,6 +24,7 @@ _DIAGNOSE_FILE = _SEED_DIR / "diagnose_v0.json"
 _DECODE_FILE = _SEED_DIR / "decode_v0.json"
 _ALTERNATIVEN_FILE = _SEED_DIR / "alternativen_v0.json"
 _BERATUNGS_UX_FILE = _SEED_DIR / "beratungs_ux_v0.json"
+_LOESUNGSERARBEITUNG_FILE = _SEED_DIR / "loesungserarbeitung_v0.json"
 
 
 @dataclass(frozen=True)
@@ -152,3 +153,15 @@ def load_beratungs_ux_cases(path: Path | None = None) -> list[Case]:
     Gegencheck finding or needed uncertainty, AND a Wissensfrage must stay deep. Owner is the factual
     oracle (axis 1 / any gate human-final)."""
     return load_cases(path or _BERATUNGS_UX_FILE)
+
+
+def load_loesungserarbeitung_cases(path: Path | None = None) -> list[Case]:
+    """Lösungserarbeitung (LOESUNGSERARBEITUNG) class (V2.1 Inc 4) — guards the depth/epistemic-boundary
+    reframe (the AI WORKS OUT the candidate solution instead of deferring everything to the manufacturer,
+    WITHOUT inventing). Same validated ``Case`` shape, separate seed so the frozen non-edge anchor stays
+    untouched. ALL five cases carry an EXISTING hard gate (no new Schranke): invented specifics/compliance
+    → ``invented_precision``; material-from-ambiguous-medium / affirmative Gegencheck / freigabe-claim →
+    ``confident_wrong``. ZWEISEITIGER GUARD: (a) deferring-instead-of-working-out is penalised, (b)
+    inventing (material compatibility/compound/approval/number without grounding) is penalised. Owner is
+    the factual oracle (axis 1 / any gate human-final)."""
+    return load_cases(path or _LOESUNGSERARBEITUNG_FILE)
