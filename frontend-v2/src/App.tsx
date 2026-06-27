@@ -8,17 +8,28 @@ import {
   exchangeCode,
   getAccessToken,
   givenNameFromToken,
+  herstellerIdFromToken,
+  msUntilExpiry,
   randomVerifier,
+  refreshTokens,
+  rolesFromToken,
   rpInitiatedLogout,
   type OidcConfig,
 } from "./auth/oidc";
+import { AdminPane } from "./components/AdminPane";
 import { ChatPane } from "./components/ChatPane";
+import { PartnerSelfPane } from "./components/PartnerSelfPane";
 import { Shell } from "./components/Shell";
 import type { Briefing, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
+import { downloadBriefingPdf } from "./lib/pdf";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
+// Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
+const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
+// Realm role for the manufacturer self-service dashboard (matches auth_manufacturer_role default).
+const MANUFACTURER_ROLE = env.VITE_MANUFACTURER_ROLE ?? "manufacturer";
 const CONFIG: OidcConfig = {
   issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
@@ -57,6 +68,23 @@ export function App() {
   const api = useMemo(() => new ApiClient(getAccessToken, onUnauthenticated), [onUnauthenticated]);
   // greeting name from the session token's given_name claim — display-only, never logged (PII)
   const greetingName = useMemo(() => (authed ? givenNameFromToken(getAccessToken()) : null), [authed]);
+  // owner/admin gate — display-only (the backend re-checks the role on every /admin call). When false
+  // the dashboard is never rendered AND never offered in the nav.
+  const isAdmin = useMemo(
+    () => (authed ? rolesFromToken(getAccessToken()).includes(ADMIN_ROLE) : false),
+    [authed],
+  );
+  const [adminView, setAdminView] = useState(false);
+  // manufacturer self-service gate — role AND a hersteller_id claim (mirrors the backend's
+  // require_manufacturer). Display-only; the backend re-enforces both on every /partner/me call.
+  const isManufacturer = useMemo(() => {
+    if (!authed) return false;
+    const tok = getAccessToken();
+    return (
+      rolesFromToken(tok).includes(MANUFACTURER_ROLE) && herstellerIdFromToken(tok) !== ""
+    );
+  }, [authed]);
+  const [selfView, setSelfView] = useState(false);
 
   const refreshMemory = useCallback(() => {
     api.memory().then(setMemory).catch(() => undefined);
@@ -150,6 +178,48 @@ export function App() {
     if (authed) refreshState();
   }, [authed, refreshState]);
 
+  // Proactive silent token refresh (the seamless-session pattern, like large platforms): while signed
+  // in, refresh the access token WELL BEFORE it expires via the rotating refresh_token grant, so API
+  // calls never hit a 401 mid-session. Transient failures retry within the remaining access-token
+  // validity; a definitive failure (session ended / token revoked) hands off to re-auth. Memory-only
+  // tokens → on reload this does nothing; the bootstrap effect's prompt=none re-auth covers that.
+  useEffect(() => {
+    if (!authed) return;
+    let timer: number;
+    let stopped = false;
+    // refreshTokens is single-flight, so the timer + the visibility handler can both call it safely
+    // (they coalesce onto one request — mandatory under refresh-token rotation).
+    const refreshNow = () => refreshTokens(CONFIG).then(() => true).catch(() => false);
+    const tick = async () => {
+      if (stopped) return;
+      if (msUntilExpiry() > 90_000) {
+        timer = window.setTimeout(tick, 60_000); // plenty of runway → re-check in a minute
+        return;
+      }
+      const ok = await refreshNow();
+      if (stopped) return;
+      if (ok) {
+        timer = window.setTimeout(tick, 60_000);
+      } else if (msUntilExpiry() > 15_000) {
+        timer = window.setTimeout(tick, 10_000); // transient → retry inside the buffer
+      } else {
+        onUnauthenticated(); // out of runway → drop to re-auth
+      }
+    };
+    // Background tabs throttle setTimeout, so the scheduled refresh can fire late → on return-to-focus
+    // catch up immediately if the token is near/past expiry (coalesced with any in-flight refresh).
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && msUntilExpiry() < 90_000) void refreshNow();
+    };
+    timer = window.setTimeout(tick, 1_000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [authed, onUnauthenticated]);
+
   const login = useCallback(async () => {
     const verifier = randomVerifier();
     const state = randomVerifier();
@@ -235,7 +305,17 @@ export function App() {
 
   return (
     <FramingContext.Provider value={framing}>
-      <Shell onLogout={logout} onNewQuestion={newQuestion}>
+      <Shell
+        onLogout={logout}
+        onNewQuestion={newQuestion}
+        onAdmin={isAdmin ? () => setAdminView(true) : undefined}
+        onPartnerSelf={isManufacturer ? () => setSelfView(true) : undefined}
+      >
+        {adminView && isAdmin ? (
+          <AdminPane api={api} onClose={() => setAdminView(false)} />
+        ) : selfView && isManufacturer ? (
+          <PartnerSelfPane api={api} onClose={() => setSelfView(false)} />
+        ) : (
         <ChatPane
           key={convKey}
           onSend={send}
@@ -273,7 +353,13 @@ export function App() {
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}
           compute={compute}
+          onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
+          onDownloadPdf={(message) =>
+            api.briefing(message).then(downloadBriefingPdf)
+          }
+          onContribute={(payload) => api.contribute(payload)}
         />
+        )}
       </Shell>
     </FramingContext.Provider>
   );

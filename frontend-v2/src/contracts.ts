@@ -78,6 +78,111 @@ export interface MediumIntelligence {
   unsicher: boolean;
   vorlaeufig: boolean;
 }
+// Modus F (Hersteller-Partner pool, Dim. 6) — owner business model: payment gates pool MEMBERSHIP,
+// the SELECTION ranks BY CAPABILITY (neutral, §3.9; never pay-to-rank). A paid listing → transparently
+// labelled "Partner · Anzeige". lead_email is internal and is NEVER part of this payload.
+export interface HerstellerOption {
+  id: string;
+  firmenname: string;
+  beschreibung?: string;
+  website?: string;
+  standort?: string;
+  werkstoffe?: string[];
+  zertifikate?: string[];
+}
+export interface Alternativen {
+  grounded_data: boolean;
+  partner?: boolean; // true → transparent paid partner pool ("Partner · Anzeige")
+  hersteller?: HerstellerOption[]; // capability-ordered, neutral (never pay-to-rank)
+  ordered_by?: string;
+  neutralitaet?: string;
+  hinweis?: string; // shown when grounded_data is false
+}
+// The lead-gen action (POST /api/v2/anfrage): a structured RFQ briefing routed to the chosen partner.
+// The briefing preview is returned so the user transparently sees what was sent; lead_email never is.
+export interface AnfrageResponse {
+  status: string;
+  lead_id: number;
+  partner: { hersteller: string; firmenname: string };
+  briefing: { title: string; body: string; provenance: string[] };
+  hinweis: string;
+}
+// Owner/admin surface (/api/v2/admin/*, role-gated). The FULL editable partner record — incl.
+// lead_email (the routing target the owner manages); never exposed on the user-facing pool.
+export interface AdminPartner {
+  hersteller: string;
+  firmenname: string;
+  aktiv: boolean;
+  lead_email: string;
+  website: string;
+  beschreibung: string;
+  standort: string;
+  kontakt_oeffentlich: string;
+  partner_seit: string;
+  plan: string; // billing metadata — never a ranking input
+  werkstoffe: string[];
+  bauformen: string[];
+  groessen: string;
+  zertifikate: string[];
+}
+export interface AdminLead {
+  id: number;
+  partner_id: string;
+  firmenname: string;
+  lead_email: string;
+  tenant_id: string;
+  session_id: string;
+  briefing_title: string;
+  briefing_body: string;
+  created_at: string;
+  status: string;
+}
+// Manufacturer SELF-SERVICE (/api/v2/partner/me). The GET returns the full AdminPartner record; the
+// PUT body is only the manufacturer-editable subset (aktiv/plan/partner_seit stay owner-controlled).
+export type SelfPartnerUpdate = Pick<
+  AdminPartner,
+  | "firmenname"
+  | "lead_email"
+  | "website"
+  | "beschreibung"
+  | "standort"
+  | "kontakt_oeffentlich"
+  | "werkstoffe"
+  | "bauformen"
+  | "groessen"
+  | "zertifikate"
+>;
+// The manufacturer's own leads — no lead_email / tenant / session (the user's internal ids stay hidden).
+export interface SelfLead {
+  id: number;
+  firmenname: string;
+  briefing_title: string;
+  briefing_body: string;
+  created_at: string;
+  status: string;
+}
+// Wissens-Beitrag: a user shares their worked-out situation + outcome to improve sealingAI. Anonymous by
+// default; lands as an untrusted DRAFT in the owner review queue, never auto-feeds a recommendation.
+export interface ContributePayload {
+  anonym: boolean;
+  situation: string;
+  recommendation: string;
+  outcome: string;
+  case_state: { feld: string; wert: string }[];
+}
+export interface AdminContribution {
+  id: number;
+  anonym: boolean;
+  tenant_ref: string;
+  subject_ref: string;
+  situation: string;
+  case_state: { feld: string; wert: string }[];
+  recommendation: string;
+  outcome: string;
+  created_at: string;
+  status: string;
+  review_note: string;
+}
 export interface ChatResponse {
   answer: string;
   model: string;
@@ -87,6 +192,7 @@ export interface ChatResponse {
   computed?: KernelValue[]; // M8: in-band kern result (additive; panel can update without a 2nd call)
   not_computed?: NotComputed[];
   medium_intelligence?: MediumIntelligence | null; // Phase 2: the MEDIUM panel data (vorläufig)
+  alternativen?: Alternativen | null; // Modus F: the HERSTELLER-AUSWAHL panel data
 }
 export interface RememberedFact {
   feld: string;

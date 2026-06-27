@@ -27,13 +27,13 @@ def test_alternativen_fold_wired():
 
 def test_alternativen_substrate_present():
     from sealai_v2.core.contracts import PipelineResult
-    from sealai_v2.knowledge.hersteller import InProcessHerstellerStore
+    from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
     from sealai_v2.pipeline import stages
 
     assert hasattr(stages, "alternativen")
     assert "alternativen" in PipelineResult.__dataclass_fields__
-    # empty owner-pending seed → honest no-grounded-data, neutral
+    # empty partner registry → honest no-grounded-data, neutral
     v = stages.alternativen(
-        InProcessHerstellerStore(), "Wer macht FKM-RWDR? Alternativen?", tenant_id="t1"
+        InProcessPartnerRegistry(), "Wer macht FKM-RWDR? Alternativen?", tenant_id="t1"
     )
     assert v is not None and v["grounded_data"] is False

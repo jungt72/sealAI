@@ -95,8 +95,20 @@ class KeycloakJwtValidator:
         )  # conversation scope from the verified session
         if not tenant_id or not session_id or not subject:
             raise AuthError("token missing required identity claims (fail-closed)")
+        realm = claims.get("realm_access")
+        raw_roles = realm.get("roles") if isinstance(realm, dict) else None
+        roles = (
+            tuple(str(r) for r in raw_roles)
+            if isinstance(raw_roles, (list, tuple))
+            else ()
+        )
+        hersteller_id = claims.get("hersteller_id")
         return VerifiedIdentity(
-            tenant_id=str(tenant_id), session_id=str(session_id), subject=str(subject)
+            tenant_id=str(tenant_id),
+            session_id=str(session_id),
+            subject=str(subject),
+            roles=roles,
+            hersteller_id=str(hersteller_id) if hersteller_id else "",
         )
 
 

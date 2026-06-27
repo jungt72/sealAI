@@ -12,7 +12,7 @@ is a faithful drop-in (bounded window, last-value-wins case-state, separate deri
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from sealai_v2.db.engine import Base
@@ -73,3 +73,73 @@ class V2DurableFact(Base):
         String(64), default="distilled-from-conversation", nullable=False
     )
     as_of_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class V2HerstellerPartner(Base):
+    """Hersteller-PARTNER (owner business model) — GLOBAL (not tenant-scoped; manufacturers serve all
+    tenants). The dashboard-editable paid-membership + company + lead-routing + capability record.
+    NEUTRALITY: the §3.9 keystone stays on the capability SEED lane; here neutrality is at the SELECTION
+    layer (``rank_partners`` ranks by capability fit, NEVER by ``plan``/``aktiv``). ``plan`` is billing
+    metadata stored here, never a ranking input."""
+
+    __tablename__ = "v2_hersteller_partner"
+
+    hersteller: Mapped[str] = mapped_column(
+        String(255), primary_key=True
+    )  # stable company key
+    firmenname: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    aktiv: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lead_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
+    website: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    beschreibung: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    standort: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    kontakt_oeffentlich: Mapped[str] = mapped_column(
+        String(320), default="", nullable=False
+    )
+    partner_seit: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    plan: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    werkstoffe: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    bauformen: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    groessen: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    zertifikate: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class V2Lead(Base):
+    """A captured Anfrage/lead (owner business model: manufacturers RECEIVE the leads) — the structured
+    RFQ briefing routed to a partner. GLOBAL by partner; ``tenant_id``/``session_id`` kept for
+    provenance (which session produced it). Durable so the partner/owner can retrieve it; email
+    delivery is an optional config-gated add-on, not a hard dependency. ``status`` tracks the lead
+    lifecycle ("neu" -> ...). ``created_at`` is an ISO-8601 string set at capture (no server clock dep)."""
+
+    __tablename__ = "v2_leads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    partner_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    firmenname: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    lead_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    session_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    briefing_title: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    briefing_body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
+
+
+class V2Contribution(Base):
+    """Wissens-Beitrag (user opts to share a worked-out situation + outcome to improve sealingAI). DRAFT in
+    the owner REVIEW QUEUE — NEVER auto-feeds the trust spine; promotion to knowledge is the review gate.
+    Anonymous → tenant_ref='anon', subject_ref='' (no identity); the structured case-state is technical."""
+
+    __tablename__ = "v2_contributions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    anonym: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    tenant_ref: Mapped[str] = mapped_column(String(255), default="anon", nullable=False)
+    subject_ref: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    situation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    case_state_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    recommendation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    outcome: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
+    review_note: Mapped[str] = mapped_column(Text, default="", nullable=False)

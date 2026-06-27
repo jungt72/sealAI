@@ -1,9 +1,18 @@
-/* M7 auth (build-gate check 4) — OIDC Authorization-Code + PKCE against a Keycloak PUBLIC client
- * (sealai-v2). NO client secret in the browser; NOT the implicit flow. The access token is held
- * IN MEMORY ONLY (never localStorage/sessionStorage) so an XSS cannot read it from storage; on
- * reload, silent re-auth (prompt=none) against the Keycloak SSO session is preferred over a stored
- * refresh token. The token carries aud (matching the backend-v2 validator) + tenant_id + sid + sub;
- * the client never asserts identity — it only sends the Bearer (M6c no-header-trust). */
+/* M7 auth (build-gate check 4) — OIDC Authorization-Code + PKCE (S256) against a Keycloak PUBLIC
+ * client (sealai-v2). NO client secret in the browser; NOT the implicit flow.
+ *
+ * Token lifecycle (the "big-platform" pattern — short access token + seamless silent refresh):
+ *  - The access token + the refresh token are held IN MEMORY ONLY (never localStorage/sessionStorage)
+ *    so an XSS cannot read them from storage and they vanish on tab close.
+ *  - DURING a session the SPA proactively refreshes ~well before expiry via the refresh_token grant
+ *    (``refreshTokens``). The realm ROTATES refresh tokens (revokeRefreshToken + maxReuse=0): each
+ *    refresh returns a NEW one-time refresh token, so a leaked refresh token is single-use + detected.
+ *  - On RELOAD (memory is gone) the SPA silently re-auths via prompt=none against the Keycloak SSO
+ *    session cookie (httpOnly, first-party) — no token survives the reload.
+ *  - On a definitive refresh failure (session ended / token revoked) the SPA falls back to re-login.
+ *
+ * The token carries aud (matching the backend-v2 validator) + tenant_id + sid + sub + roles; the
+ * client never asserts identity — it only sends the Bearer (M6c no-header-trust). */
 
 export interface OidcConfig {
   issuer: string; // https://sealingai.com/realms/sealAI
@@ -17,6 +26,8 @@ export interface OidcConfig {
 let _accessToken: string | null = null;
 let _expiresAt = 0; // epoch ms
 let _idToken: string | null = null; // kept ONLY as the RP-initiated-logout id_token_hint
+let _refreshToken: string | null = null; // in-memory ONLY; rotated on every refresh, dropped on clear
+let _refreshInFlight: Promise<TokenResponse> | null = null; // single-flight guard (rotation-safe)
 
 export function setAccessToken(token: string, expiresInSec: number): void {
   _accessToken = token;
@@ -25,6 +36,14 @@ export function setAccessToken(token: string, expiresInSec: number): void {
 export function getAccessToken(): string | null {
   if (!_accessToken || Date.now() >= _expiresAt - 30_000) return null; // 30s skew → treat as stale
   return _accessToken;
+}
+/** Milliseconds until the access token expires (<=0 if none / already expired) — drives the proactive
+ * silent-refresh scheduler. NOT the 30s-skew view of getAccessToken; the true expiry. */
+export function msUntilExpiry(): number {
+  return _accessToken ? _expiresAt - Date.now() : 0;
+}
+export function hasRefreshToken(): boolean {
+  return _refreshToken !== null;
 }
 export function setIdToken(token: string | null): void {
   _idToken = token;
@@ -37,6 +56,7 @@ export function clearAccessToken(): void {
   _accessToken = null;
   _expiresAt = 0;
   _idToken = null;
+  _refreshToken = null;
 }
 
 // --- display-only identity claim -------------------------------------------------------------------
@@ -57,6 +77,47 @@ export function givenNameFromToken(token: string | null): string | null {
     return typeof name === "string" && name.trim() ? name.trim() : null;
   } catch {
     return null; // malformed token → nameless greeting, never an error or a log line
+  }
+}
+
+/** Realm roles from the verified token (Keycloak realm_access.roles) — display-gating ONLY (show the
+ * admin UI). The BACKEND independently re-checks the role on every /admin call, so a tampered token
+ * never grants access; this only decides what the SPA bothers to render. */
+export function rolesFromToken(token: string | null): string[] {
+  if (!token) return [];
+  const payload = token.split(".")[1];
+  if (!payload) return [];
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const realm = claims.realm_access as { roles?: unknown } | undefined;
+    const roles = realm?.roles;
+    return Array.isArray(roles)
+      ? roles.filter((r): r is string => typeof r === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The manufacturer-partner id from the verified token (Keycloak hersteller_id claim) — scopes the
+ * manufacturer self-service view to their OWN record. Display-gating only; the backend independently
+ * re-derives + enforces it on every /partner/me call. */
+export function herstellerIdFromToken(token: string | null): string {
+  if (!token) return "";
+  const payload = token.split(".")[1];
+  if (!payload) return "";
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const id = claims.hersteller_id;
+    return typeof id === "string" ? id : "";
+  } catch {
+    return "";
   }
 }
 
@@ -120,7 +181,44 @@ export async function exchangeCode(
   if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
   const tok = (await res.json()) as TokenResponse;
   setAccessToken(tok.access_token, tok.expires_in); // in memory only
+  if (tok.refresh_token) _refreshToken = tok.refresh_token; // in memory only → silent refresh
   setIdToken(tok.id_token ?? null); // held only as the future logout id_token_hint
+  return tok;
+}
+
+/** Proactive silent refresh via the refresh_token grant. SINGLE-FLIGHT: concurrent callers (the
+ * scheduler timer + the visibility/focus handler) coalesce onto ONE in-flight request. This is
+ * non-negotiable under refresh-token ROTATION (maxReuse=0) — two parallel refreshes would each present
+ * the same one-time token; Keycloak treats the second as replay and REVOKES the whole session. So all
+ * callers await the one request. On a non-OK response the (now-useless) refresh token is dropped + the
+ * call throws, so the caller falls back to prompt=none re-auth / re-login. */
+export function refreshTokens(cfg: OidcConfig): Promise<TokenResponse> {
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = _doRefresh(cfg).finally(() => {
+    _refreshInFlight = null;
+  });
+  return _refreshInFlight;
+}
+
+async function _doRefresh(cfg: OidcConfig): Promise<TokenResponse> {
+  if (!_refreshToken) throw new Error("no refresh token");
+  const res = await fetch(`${cfg.issuer}/protocol/openid-connect/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: cfg.clientId,
+      refresh_token: _refreshToken,
+    }),
+  });
+  if (!res.ok) {
+    _refreshToken = null; // rotated-away / expired / revoked → useless, never retry with it
+    throw new Error(`refresh failed: ${res.status}`);
+  }
+  const tok = (await res.json()) as TokenResponse;
+  setAccessToken(tok.access_token, tok.expires_in);
+  if (tok.refresh_token) _refreshToken = tok.refresh_token; // ROTATION: keep the new one-time token
+  if (tok.id_token) setIdToken(tok.id_token);
   return tok;
 }
 

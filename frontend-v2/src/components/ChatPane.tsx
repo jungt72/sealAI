@@ -8,10 +8,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type {
+  AnfrageResponse,
   Briefing,
   ChatResponse,
   ComputeResponse,
   ConfirmationResponse,
+  ContributePayload,
   ConversationMemory,
   ParamItem,
 } from "../contracts";
@@ -20,6 +22,8 @@ import { useStickToBottom } from "../lib/stickToBottom";
 import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
+import { AlternativenPanel } from "./AlternativenPanel";
+import { ContributePanel } from "./ContributePanel";
 import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
@@ -64,6 +68,9 @@ export function ChatPane({
   liveStage,
   compute,
   onConfirmUnit,
+  onAnfrage,
+  onDownloadPdf,
+  onContribute,
 }: {
   onSend: (message: string) => Promise<ChatResponse>;
   error: string | null;
@@ -83,6 +90,14 @@ export function ChatPane({
   liveStage?: string | null;
   compute?: ComputeResponse | null;
   onConfirmUnit?: (feld: string, value: string) => void;
+  /** Modus F lead-gen: route a structured RFQ briefing to the chosen partner. The host supplies the
+   * session message; the panel passes only the partner id. */
+  onAnfrage?: (partnerId: string, message: string) => Promise<AnfrageResponse>;
+  /** Download the Anfrage briefing as a PDF (no send). The host fetches the briefing for the session
+   * message + builds the PDF; the panel passes nothing. */
+  onDownloadPdf?: (message: string) => Promise<void>;
+  /** Wissens-Beitrag: the user shares their solution + outcome to improve sealingAI (untrusted DRAFT). */
+  onContribute?: (payload: ContributePayload) => Promise<{ hinweis: string }>;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -221,6 +236,71 @@ export function ChatPane({
     return null;
   }, [msgs]);
 
+  // Modus F (Hersteller-Auswahl): the most recent turn's manufacturer suggestion, or null (it fires
+  // only on an explicit alternatives/manufacturer request).
+  const latestAlternativen = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant" && m.res.alternativen) return m.res.alternativen;
+    }
+    return null;
+  }, [msgs]);
+
+  // The Anfrage briefing is rendered server-side from the SESSION case-state; the message it runs is
+  // the user's last substantive question (recalls the worked-out situation). The panel passes only the
+  // partner id — the host injects this message + talks to /api/v2/anfrage.
+  const lastUserMessage = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "user") return m.text;
+    }
+    return "";
+  }, [msgs]);
+  const panelOnAnfrage = useMemo(
+    () =>
+      onAnfrage
+        ? (partnerId: string) =>
+            onAnfrage(
+              partnerId,
+              lastUserMessage || "Anfrage zur besprochenen Dichtungslösung",
+            )
+        : undefined,
+    [onAnfrage, lastUserMessage],
+  );
+  const panelOnDownloadPdf = useMemo(
+    () =>
+      onDownloadPdf
+        ? () =>
+            onDownloadPdf(
+              lastUserMessage || "Anfrage zur besprochenen Dichtungslösung",
+            )
+        : undefined,
+    [onDownloadPdf, lastUserMessage],
+  );
+  const lastAnswer = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant") return m.res.answer;
+    }
+    return "";
+  }, [msgs]);
+  // Wissens-Beitrag: the host builds the full payload (situation + case-state + recommendation) from the
+  // session; the panel supplies only anonym + outcome.
+  const panelOnContribute = useMemo(
+    () =>
+      onContribute
+        ? (anonym: boolean, outcome: string) =>
+            onContribute({
+              anonym,
+              situation: lastUserMessage,
+              recommendation: lastAnswer,
+              outcome,
+              case_state: memory.case_state.map((f) => ({ feld: f.feld, wert: f.wert })),
+            })
+        : undefined,
+    [onContribute, lastUserMessage, lastAnswer, memory.case_state],
+  );
+
   // claude.ai chat↔artifact: the cockpit is OPEN when the case is active OR the user opened it,
   // and NOT explicitly closed. Default / pure Q&A → chat-only (centered, no right panel). Opening
   // moves the chat left and splits ~50/50; closing returns to centered chat-only.
@@ -335,6 +415,13 @@ export function ChatPane({
         </div>
 
         {latestMedium ? <MediumPanel data={latestMedium} /> : null}
+        {latestAlternativen ? (
+          <AlternativenPanel
+            data={latestAlternativen}
+            onAnfrage={panelOnAnfrage}
+            onDownloadPdf={panelOnDownloadPdf}
+          />
+        ) : null}
 
         {caseStateEmpty ? (
           <p className="case-state-empty" data-testid="case-state-empty">
@@ -367,6 +454,9 @@ export function ChatPane({
         <div className="readout-briefing">
           <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
           {briefingButton}
+          {panelOnContribute ? (
+            <ContributePanel onContribute={panelOnContribute} />
+          ) : null}
         </div>
       </div>
     </aside>

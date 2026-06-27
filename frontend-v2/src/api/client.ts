@@ -4,12 +4,19 @@
  * state and the persistent SafetyBanner stays — the framing is never dropped). */
 
 import type {
+  AdminContribution,
+  AdminLead,
+  AdminPartner,
+  AnfrageResponse,
   Briefing,
   ChatResponse,
   ComputeResponse,
   ConfirmationResponse,
+  ContributePayload,
   ConversationMemory,
   ParamItem,
+  SelfLead,
+  SelfPartnerUpdate,
 } from "../contracts";
 import { SseParser } from "./sse";
 
@@ -141,5 +148,61 @@ export class ApiClient {
   }
   briefing(message: string): Promise<Briefing> {
     return this.req("/briefing", { method: "POST", body: JSON.stringify({ message }) });
+  }
+  /** Modus F lead-gen: route a structured RFQ briefing (rendered server-side from the session) to the
+   * chosen partner. Returns the briefing preview so the user sees what was sent; lead_email never is. */
+  anfrage(partnerId: string, message: string): Promise<AnfrageResponse> {
+    return this.req("/anfrage", {
+      method: "POST",
+      body: JSON.stringify({ partner_id: partnerId, message }),
+    });
+  }
+
+  // ── Owner/admin surface (role-gated server-side; a non-admin token 403s) ──────────────────────
+  adminListHersteller(): Promise<{ hersteller: AdminPartner[] }> {
+    return this.req("/admin/hersteller");
+  }
+  adminUpsertHersteller(
+    id: string,
+    body: Omit<AdminPartner, "hersteller">,
+  ): Promise<AdminPartner> {
+    return this.req(`/admin/hersteller/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+  adminDeleteHersteller(id: string): Promise<{ deleted: string }> {
+    return this.req(`/admin/hersteller/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  }
+  adminListLeads(partnerId?: string): Promise<{ leads: AdminLead[] }> {
+    const q = partnerId ? `?partner_id=${encodeURIComponent(partnerId)}` : "";
+    return this.req(`/admin/leads${q}`);
+  }
+
+  // ── Manufacturer self-service (role-gated + scoped to the token's hersteller_id, server-side) ──
+  partnerSelfGet(): Promise<AdminPartner> {
+    return this.req("/partner/me");
+  }
+  partnerSelfUpdate(body: SelfPartnerUpdate): Promise<AdminPartner> {
+    return this.req("/partner/me", { method: "PUT", body: JSON.stringify(body) });
+  }
+  partnerSelfLeads(): Promise<{ leads: SelfLead[] }> {
+    return this.req("/partner/me/leads");
+  }
+
+  // ── Wissens-Beitrag: a user shares their solution (→ untrusted DRAFT in the owner review queue) ──
+  contribute(body: ContributePayload): Promise<{ status: string; id: number; hinweis: string }> {
+    return this.req("/contribute", { method: "POST", body: JSON.stringify(body) });
+  }
+  adminListContributions(): Promise<{ contributions: AdminContribution[] }> {
+    return this.req("/admin/contributions");
+  }
+  adminSetContributionStatus(id: number, status: string, reviewNote: string): Promise<unknown> {
+    return this.req(`/admin/contributions/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status, review_note: reviewNote }),
+    });
   }
 }

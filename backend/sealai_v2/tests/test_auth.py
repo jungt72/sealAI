@@ -208,3 +208,35 @@ def test_fake_validator_maps_tokens_and_rejects_unknown():
     assert fake.validate("tok-A").tenant_id == "tenant-A"
     with pytest.raises(AuthError):
         fake.validate("tok-unknown")
+
+
+def test_realm_roles_extracted_from_token():
+    # Keycloak puts realm roles under realm_access.roles — the validator carries them onto the
+    # VerifiedIdentity (used ONLY for admin gating; identity itself never depends on roles).
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    ident = v.validate(
+        _tok(priv, claims={"realm_access": {"roles": ["sealai-admin", "user"]}})
+    )
+    assert ident.roles == ("sealai-admin", "user")
+
+
+def test_no_realm_access_yields_empty_roles():
+    # A token without realm_access is a valid identity with zero roles (no admin access) — never an error.
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    assert v.validate(_tok(priv)).roles == ()
+
+
+def test_hersteller_id_claim_extracted():
+    # The manufacturer self-service surface is scoped by this claim (a Keycloak user-attribute mapper).
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    ident = v.validate(_tok(priv, claims={"hersteller_id": "acme"}))
+    assert ident.hersteller_id == "acme"
+
+
+def test_no_hersteller_id_yields_empty():
+    priv = _keypair()
+    v = _validator(_jwks(priv.public_key()))
+    assert v.validate(_tok(priv)).hersteller_id == ""

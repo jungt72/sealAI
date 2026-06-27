@@ -43,7 +43,7 @@ from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
 from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
-from sealai_v2.knowledge.hersteller import InProcessHerstellerStore
+from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.memory.distiller import Distiller
@@ -78,6 +78,26 @@ def _build_retriever(settings: Settings) -> Retriever:
         except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on retrieval
             _log.warning("qdrant retriever unavailable (%s) → in-process fallback", exc)
     return InProcessRetriever()
+
+
+def _build_partner_registry(settings: Settings):
+    """Modus F partner pool (owner business model): the Postgres adapter (dashboard-editable,
+    system-of-record) when ``database_url`` is set, else the in-process registry (eval/CI hermetic —
+    empty → honest "no partner listed" + zero firm names). Fail-safe: a missing dep / unreachable DB
+    falls back to in-process rather than crashing startup."""
+    if settings.database_url:
+        try:
+            from sealai_v2.db.engine import make_engine, make_sessionmaker
+            from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
+
+            return PostgresPartnerRegistry(
+                make_sessionmaker(make_engine(settings.database_url))
+            )
+        except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on startup
+            _log.warning(
+                "partner registry DB unavailable (%s) → in-process fallback", exc
+            )
+    return InProcessPartnerRegistry()
 
 
 # P1.4: the SERVE-path deterministic exfiltration Schranke. The eval already runs
@@ -171,8 +191,8 @@ class Pipeline:
         None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
     versagensmodi: object | None = None  # Dim. 5 Versagensmodi store (Modus D Diagnose)
-    hersteller: object | None = (
-        None  # Dim. 6 Hersteller-Faehigkeiten (Modus F Alternativen)
+    partner_registry: object | None = (
+        None  # Dim. 6 Hersteller-Partner pool (Modus F — PartnerRegistry; payment ≠ ranking)
     )
     engine: CalcEngine | None = (
         None  # None → M4 calc layer off → no "Berechnete Werte" block
@@ -268,7 +288,7 @@ class Pipeline:
         # Modus F: capable manufacturers BY CAPABILITY (neutral). None unless an alternatives/
         # manufacturer request; grounded_data=False with the owner-pending empty seed.
         alternativen_result = stages.alternativen(
-            self.hersteller, question, tenant_id=scope.tenant_id
+            self.partner_registry, question, tenant_id=scope.tenant_id
         )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
@@ -679,7 +699,7 @@ def build_pipeline(
     # ground_enabled kill-switch as the retriever (both are the L2 layer).
     matrix = InProcessCompatibilityMatrix() if settings.ground_enabled else None
     versagensmodi = InProcessVersagensmodiStore() if settings.ground_enabled else None
-    hersteller = InProcessHerstellerStore() if settings.ground_enabled else None
+    partner_registry = _build_partner_registry(settings)
 
     # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
     engine: CalcEngine | None = (
@@ -737,7 +757,7 @@ def build_pipeline(
         retriever=retriever,
         matrix=matrix,
         versagensmodi=versagensmodi,
-        hersteller=hersteller,
+        partner_registry=partner_registry,
         engine=engine,
         memory=memory,
         cross_session=cross_session,
