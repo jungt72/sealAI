@@ -9,7 +9,9 @@ import {
   getAccessToken,
   givenNameFromToken,
   herstellerIdFromToken,
+  msUntilExpiry,
   randomVerifier,
+  refreshTokens,
   rolesFromToken,
   rpInitiatedLogout,
   type OidcConfig,
@@ -175,6 +177,34 @@ export function App() {
   useEffect(() => {
     if (authed) refreshState();
   }, [authed, refreshState]);
+
+  // Proactive silent token refresh (the seamless-session pattern, like large platforms): while signed
+  // in, refresh the access token WELL BEFORE it expires via the rotating refresh_token grant, so API
+  // calls never hit a 401 mid-session. Transient failures retry within the remaining access-token
+  // validity; a definitive failure (session ended / token revoked) hands off to re-auth. Memory-only
+  // tokens → on reload this does nothing; the bootstrap effect's prompt=none re-auth covers that.
+  useEffect(() => {
+    if (!authed) return;
+    let timer: number;
+    const tick = async () => {
+      if (msUntilExpiry() > 90_000) {
+        timer = window.setTimeout(tick, 60_000); // plenty of runway → re-check in a minute
+        return;
+      }
+      try {
+        await refreshTokens(CONFIG);
+        timer = window.setTimeout(tick, 60_000);
+      } catch {
+        if (msUntilExpiry() > 15_000) {
+          timer = window.setTimeout(tick, 10_000); // transient → retry inside the buffer
+        } else {
+          onUnauthenticated(); // out of runway → drop to re-auth
+        }
+      }
+    };
+    timer = window.setTimeout(tick, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [authed, onUnauthenticated]);
 
   const login = useCallback(async () => {
     const verifier = randomVerifier();
