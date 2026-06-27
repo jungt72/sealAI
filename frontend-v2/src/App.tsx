@@ -22,7 +22,7 @@ import { FramingContext } from "./framing-context";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
 // Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
-const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "sealai-admin";
+const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
 const CONFIG: OidcConfig = {
   issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",

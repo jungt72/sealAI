@@ -15,7 +15,7 @@ from sealai_v2.security.auth import FakeAuthValidator
 
 IDS = {
     "tok-admin": VerifiedIdentity(
-        "tenant-A", "sess-A", "owner", roles=("sealai-admin",)
+        "tenant-A", "sess-A", "owner", roles=("admin",)
     ),
     "tok-user": VerifiedIdentity("tenant-B", "sess-B", "user-B"),  # roles=() by default
 }

@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     # Keycloak realm role that gates the owner/admin surface (Hersteller-Partner CRUD + lead retrieval).
     # Env: SEALAI_V2_AUTH_ADMIN_ROLE. Additive gate — tenant isolation is untouched.
-    auth_admin_role: str = "sealai-admin"
+    auth_admin_role: str = "admin"
 
     # --- L2 retrieval backend (Phase-1 Qdrant production adapter, behind the Retriever Protocol) ---
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —
