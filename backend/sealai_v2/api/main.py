@@ -15,6 +15,7 @@ from sealai_v2.api.routes import (
     compute,
     conversations,
     framing,
+    hersteller,
 )
 from sealai_v2.pipeline.timing import configure_timing_logging
 
@@ -26,6 +27,7 @@ app.include_router(briefing.router)
 app.include_router(compute.router)
 app.include_router(framing.router)
 app.include_router(anfrage.router)
+app.include_router(hersteller.router)
 
 
 @app.get("/health")

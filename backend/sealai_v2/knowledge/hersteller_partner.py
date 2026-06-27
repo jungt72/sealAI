@@ -111,6 +111,15 @@ class InProcessPartnerRegistry:
     def list_active(self) -> tuple[HerstellerPartner, ...]:
         return tuple(p for p in self._by_name.values() if p.aktiv)
 
+    def list_all(self) -> tuple[HerstellerPartner, ...]:
+        return tuple(self._by_name.values())
+
+    def upsert(self, p: HerstellerPartner) -> None:
+        self._by_name[p.hersteller] = p
+
+    def delete(self, hersteller: str) -> bool:
+        return self._by_name.pop(hersteller, None) is not None
+
 
 def select_partners(
     capability_matches: tuple[HerstellerFaehigkeit, ...],

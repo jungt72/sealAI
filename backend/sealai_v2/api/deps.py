@@ -64,3 +64,36 @@ def get_lead_store():
     from sealai_v2.db.leads import build_lead_store
 
     return build_lead_store(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_partner_registry():
+    """Hersteller-Partner registry for the admin CRUD — Postgres (dashboard-editable, durable) when
+    ``database_url`` is set, else in-process (eval/CI). Mirrors the pipeline's pool construction so
+    both surfaces back the SAME data in prod. Fail-safe to in-process; never crashes startup."""
+    s = get_settings()
+    if s.database_url:
+        try:
+            from sealai_v2.db.engine import make_engine, make_sessionmaker
+            from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
+
+            return PostgresPartnerRegistry(
+                make_sessionmaker(make_engine(s.database_url))
+            )
+        except Exception:  # noqa: BLE001 — fail safe to in-process; never crash on startup
+            pass
+    from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
+
+    return InProcessPartnerRegistry()
+
+
+def require_admin(
+    identity: VerifiedIdentity = Depends(current_identity),
+) -> VerifiedIdentity:
+    """Owner/admin gate for the Hersteller-Partner management surface (P0 fail-closed). The verified
+    token MUST carry the configured admin realm-role (``auth_admin_role``), else 403. Identity (incl.
+    roles) comes ONLY from the verified token — never a header/param. This is an ADDITIVE role check;
+    the tenant boundary is untouched."""
+    if get_settings().auth_admin_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="admin role required")
+    return identity

@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     # swap behind the same Protocols (M3 lazy-adapter pattern); value is never logged.
     # Env: SEALAI_V2_DATABASE_URL (e.g. postgresql+psycopg2://…@postgres:5432/sealai_v2).
     database_url: str | None = None
+    # Keycloak realm role that gates the owner/admin surface (Hersteller-Partner CRUD + lead retrieval).
+    # Env: SEALAI_V2_AUTH_ADMIN_ROLE. Additive gate — tenant isolation is untouched.
+    auth_admin_role: str = "sealai-admin"
 
     # --- L2 retrieval backend (Phase-1 Qdrant production adapter, behind the Retriever Protocol) ---
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —
