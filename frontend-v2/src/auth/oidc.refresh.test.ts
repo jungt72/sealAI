@@ -67,6 +67,26 @@ describe("refreshTokens (rotating silent refresh)", () => {
     expect(refreshTokenOf(f2)).toBe("rt-2"); // ROTATION: the second refresh used the new token
   });
 
+  it("coalesces concurrent refreshes into ONE request (rotation-safe single-flight)", async () => {
+    await login("rt-1");
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => {
+        calls += 1;
+        return Promise.resolve(
+          ok({ access_token: "at-2", expires_in: 1800, refresh_token: "rt-2" }),
+        );
+      }),
+    );
+    // three callers fire at once (timer + visibility + ...) → exactly one token request
+    await Promise.all([refreshTokens(CFG), refreshTokens(CFG), refreshTokens(CFG)]);
+    expect(calls).toBe(1);
+    // after it settles, a fresh call issues a NEW request (the gate reset)
+    await refreshTokens(CFG);
+    expect(calls).toBe(2);
+  });
+
   it("drops the refresh token + throws on a non-OK response (never retries a dead token)", async () => {
     await login("rt-1");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 400 })));

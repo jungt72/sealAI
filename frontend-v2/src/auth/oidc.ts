@@ -27,6 +27,7 @@ let _accessToken: string | null = null;
 let _expiresAt = 0; // epoch ms
 let _idToken: string | null = null; // kept ONLY as the RP-initiated-logout id_token_hint
 let _refreshToken: string | null = null; // in-memory ONLY; rotated on every refresh, dropped on clear
+let _refreshInFlight: Promise<TokenResponse> | null = null; // single-flight guard (rotation-safe)
 
 export function setAccessToken(token: string, expiresInSec: number): void {
   _accessToken = token;
@@ -185,12 +186,21 @@ export async function exchangeCode(
   return tok;
 }
 
-/** Proactive silent refresh via the refresh_token grant. Returns the fresh tokens (and STORES them);
- * the realm rotates the refresh token, so the new one-time refresh token is captured here. On any
- * non-OK response the (now-useless) refresh token is dropped + the call throws, so the caller falls
- * back to prompt=none re-auth / re-login. Public client → no secret, just client_id + the refresh
- * token (which is one-time + session-bound). */
-export async function refreshTokens(cfg: OidcConfig): Promise<TokenResponse> {
+/** Proactive silent refresh via the refresh_token grant. SINGLE-FLIGHT: concurrent callers (the
+ * scheduler timer + the visibility/focus handler) coalesce onto ONE in-flight request. This is
+ * non-negotiable under refresh-token ROTATION (maxReuse=0) — two parallel refreshes would each present
+ * the same one-time token; Keycloak treats the second as replay and REVOKES the whole session. So all
+ * callers await the one request. On a non-OK response the (now-useless) refresh token is dropped + the
+ * call throws, so the caller falls back to prompt=none re-auth / re-login. */
+export function refreshTokens(cfg: OidcConfig): Promise<TokenResponse> {
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = _doRefresh(cfg).finally(() => {
+    _refreshInFlight = null;
+  });
+  return _refreshInFlight;
+}
+
+async function _doRefresh(cfg: OidcConfig): Promise<TokenResponse> {
   if (!_refreshToken) throw new Error("no refresh token");
   const res = await fetch(`${cfg.issuer}/protocol/openid-connect/token`, {
     method: "POST",

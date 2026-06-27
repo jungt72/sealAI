@@ -186,24 +186,38 @@ export function App() {
   useEffect(() => {
     if (!authed) return;
     let timer: number;
+    let stopped = false;
+    // refreshTokens is single-flight, so the timer + the visibility handler can both call it safely
+    // (they coalesce onto one request — mandatory under refresh-token rotation).
+    const refreshNow = () => refreshTokens(CONFIG).then(() => true).catch(() => false);
     const tick = async () => {
+      if (stopped) return;
       if (msUntilExpiry() > 90_000) {
         timer = window.setTimeout(tick, 60_000); // plenty of runway → re-check in a minute
         return;
       }
-      try {
-        await refreshTokens(CONFIG);
+      const ok = await refreshNow();
+      if (stopped) return;
+      if (ok) {
         timer = window.setTimeout(tick, 60_000);
-      } catch {
-        if (msUntilExpiry() > 15_000) {
-          timer = window.setTimeout(tick, 10_000); // transient → retry inside the buffer
-        } else {
-          onUnauthenticated(); // out of runway → drop to re-auth
-        }
+      } else if (msUntilExpiry() > 15_000) {
+        timer = window.setTimeout(tick, 10_000); // transient → retry inside the buffer
+      } else {
+        onUnauthenticated(); // out of runway → drop to re-auth
       }
     };
+    // Background tabs throttle setTimeout, so the scheduled refresh can fire late → on return-to-focus
+    // catch up immediately if the token is near/past expiry (coalesced with any in-flight refresh).
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && msUntilExpiry() < 90_000) void refreshNow();
+    };
     timer = window.setTimeout(tick, 1_000);
-    return () => window.clearTimeout(timer);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [authed, onUnauthenticated]);
 
   const login = useCallback(async () => {
