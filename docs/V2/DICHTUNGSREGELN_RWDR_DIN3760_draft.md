@@ -1,6 +1,9 @@
 # Dichtungsregeln + Algorithmus v3 — RWDR / DIN 3760 (Achsenmodell + Antwortstufen, `reviewed_internal`)
 
-**Status:** Draft **v3**, `reviewed_internal` — NICHT `expert_signed`. · **Datum:** 2026-06-27
+**Status:** Draft **v3.1**, `reviewed_internal` — NICHT `expert_signed`. · **Datum:** 2026-06-27
+**v3→v3.1 (Mini-Patch vor Code):** löst den echten Grenzwert-Widerspruch `v>10=orange` vs. Trap „9–11 m/s=L2".
+Speed-Bänder neu (green_base v≤8 / green_extended 8<v≤12 mit Prüfpunkt / orange v>12) + harte Code-Guards
+(Freitext→candidate_set_only, `derive_DIN` nur bei reviewten Achsen, Prototyp max L2). Danach: Code.
 **v2→v3 (Konvergenz-Runde, GPT-5.5):** 5 strukturelle Korrekturen, KEIN Rewrite. (1) **Bauform-Achsenmodell**
 statt Formtabelle (DIN-Bezeichnung erst am Ende, wenn die Achskombination reviewed ist). (2) **Freitext-
 Medien-Pipeline** mit Confidence + SDS/TDS-Defer. (3) **Antwortstufen L0–L4** gegen Überblockierung (False-
@@ -41,14 +44,19 @@ selection_axes:
 final_design_code = derive_DIN(axes)   # NUR wenn alle Achsen reviewed
 ```
 
-### A.3 p-v-T als ENVELOPE-BÄNDER (nicht ein Defer-Gate)
+### A.3 p-v-T als ENVELOPE-BÄNDER (v3.1 — Widerspruch v>10 vs. 9–11 m/s aufgelöst)
 ```
-green_screening:   p≈0/drucklos/belüftet · v ≤ 8–10 m/s · T_cont ≤ 80–100°C · gute Schmierung ·
-                   keine Leckage/Schmutz · Medium bekannt        → L2 möglich
-yellow_candidate:  0,05 < p ≤ 0,2 bar  OR v 8–10 m/s  OR T nahe Materialgrenze → L1 Kandidatenraum + Prüfpunkte
-orange_defer:      p > 0,2 bar OR v > 10 m/s OR T hoch OR Schmierung unbekannt → keine konkrete Bauform, Frageliste
-red_outside_scope: p > 0,5 bar OR Druckpulse OR axiale Sicherung unbekannt → Druckdichtung/Spezial/Herstellerprüfung
+green_base:     p≈0/belüftet · v ≤ 8 m/s · T_cont ≤ 80°C · Medium exakt bekannt · gute Schmierung ·
+                keine Leckage/Schmutz                                            → L2 möglich
+green_extended: p≈0/belüftet · 8 < v ≤ 12 m/s · T_cont ≤ 100°C · Medium exakt bekannt · gute Schmierung ·
+                keine Leckage/Schmutz · Welle/Härte/Rauheit = open_verification  → L2 möglich + Prüfpunkt „v/Welle verifizieren"
+yellow:         0,05 < p ≤ 0,2 bar  OR  T nahe Materialgrenze  OR  v 10–12 m/s mit Unsicherheiten → L1 Kandidatenraum
+orange:         p > 0,2 bar  OR  v > 12 m/s  OR  Schmierung unbekannt  OR  Medium nicht exakt bekannt
+                OR Temp/Material-Kopplung unsicher                               → keine konkrete Bauform, Frageliste
+red:            p > 0,5 bar  OR  Druckpulse  OR  axiale Sicherung unbekannt bei Druckdiff.  OR  Vakuum → Spezial/Druckdichtung/Herstellerprüfung
 ```
+> Damit bleibt der saubere Standardfall (belüftet, sauberes Mineralöl, 90 °C, 9–11 m/s) **L2-fähig mit Prüfpunkt**,
+> ohne den 12-m/s-Bereich blind freizugeben.
 
 ### A.4 Freitext-Medien-Pipeline (größter LLM-Risikokanal)
 ```
@@ -171,8 +179,20 @@ Exakte DIN-Maßreihen/Typdetails · exakte p-v-Kurven · ob ein konkreter RWDR b
 funktioniert · Beständigkeit bei additivierten/synthetischen/Misch-Medien · Lebensdauer · FDA/EU1935/ATEX/
 Druckgeräte · ob Welle/Gehäuse ohne Nacharbeit nutzbar. → Bei all dem: Kandidatenraum + Defer.
 
+## TEIL D-Guards — ROTE SCHRANKEN, die der Code TYPMODELL-hart erzwingen MUSS
+```
+G1 max_level = L2 ; review_state = reviewed_internal ; no final approval ; no manufacturer claim
+G2 free-text guard:  if material.source == "llm_inferred_from_free_text":
+                        material.kind = candidate_set_only ; material.single_material = null ; level <= L1
+                     # L2 erst, wenn medium_class aus exakter Bezeichnung / TDS / SDS / reviewter Fachkarte
+G3 derive_DIN guard: final_design_code = null  (IMMER im Prototyp)
+                     erzeuge nur DIN_candidate_label = "DIN-3760-orientierter Kandidatenraum"
+                     ein echtes A/AS/B/BS NUR wenn alle Achsen review_state>=reviewed_internal
+                        UND keine Achse in {unknown, conflict, gate_blocked}  (→ erst expert_signed)
+```
+
 ## TEIL D — Konvergenz & nächster Schritt
-**Reviewer-Urteil Runde 3: Konvergenz erreicht.** v3 ist fachlich stabil genug für den nächsten Schritt —
+**Reviewer-Urteil Runde 3 + finale Bestätigung: Konvergenz erreicht, „Go" nach diesem v3.1-Patch.** Der Schritt ist —
 das ist **NICHT „Produktivlogik bauen", sondern ein Regel-Engine-Prototyp mit ROTEN Schranken**, der beweist:
 er deferiert sicher, begründet sauber (Provenance je Achse/Feld), erzeugt **keine** Form-/Materialkombination
 ohne reviewte Achsen, blockt aber saubere Standardfälle NICHT (L2). Erst danach: Fachsignatur (→ L3) +
