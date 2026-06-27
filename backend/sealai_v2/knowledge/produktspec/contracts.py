@@ -1,21 +1,20 @@
-"""Produktspec — Kandidaten-Spezifikation (Konzeptpapier v2). DETERMINISTIC + rule-based (no L1), so the
-output is grounded by construction. The prototype SCREENS + DEFERS: with reviewed_internal knowledge it
-never emits a freigegeben recommendation, only a candidate with explicit defer. Epistemics are explicit
-(size_type, reifegrad, source_type, kritikalitaet); the §3.9 neutrality + DIN-copyright + liability
-constraints are encoded as TYPES + invariants, not prose."""
+"""Produktspec v3.1 — Kandidaten-Spezifikation als Regel-Engine mit ROTEN Schranken (Konzept v3.1).
+DETERMINISTIC, achsenbasiert. Grounded by construction. Hard guards (typmodell-erzwungen):
+  G1 max_level = L2, review_state reviewed_internal (nie freigegeben).
+  G2 free-text → candidate_set_only, NIE single_material, level ≤ L1.
+  G3 final_design_code IMMER None; nur DIN_candidate_label; echtes A/AS/B nur wenn alle Achsen reviewed
+     (→ erst expert_signed, im Prototyp nie).
+Epistemik (envelope-band, response-level, axis-status, material-source, size_type) ist explizit."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
 
-# Doctrine-grounded claim boundary that travels with every spec (screening, NOT a release).
 GELTUNGSRAHMEN_SPEC = (
-    "Kandidaten-Spezifikation, keine technische Freigabe. Orientierung/Anfragebasis — vor Einsatz durch "
-    "Hersteller bzw. Fachverantwortliche final zu prüfen (Maße, Form, Werkstoff gegen DIN + Datenblatt)."
+    "Kandidaten-Spezifikation (Screening), keine technische Freigabe. Vor Einsatz durch Hersteller bzw. "
+    "Fachverantwortliche final zu prüfen (Achsen, Werkstoff, Maße gegen DIN + Datenblatt)."
 )
-
-# Liability/UI keystone (Konzept v2 §10): these words must never appear in spec output — tested.
 VERBOTENE_WOERTER = (
     "korrekt",
     "geeignet",
@@ -25,28 +24,42 @@ VERBOTENE_WOERTER = (
 )
 
 
-class Reifegrad(str, Enum):
-    DRAFT_LLM_EXTRACTED = "draft_llm_extracted"
-    REVIEWED_INTERNAL = "reviewed_internal"
-    EXPERT_SIGNED = "expert_signed"
-    FIELD_VALIDATED = "field_validated"
-    DEPRECATED = "deprecated"
+class ResponseLevel(str, Enum):
+    L0_ESCALATION = "L0_escalation"
+    L1_CANDIDATE_SPACE = "L1_candidate_space"
+    L2_SCREENING_CANDIDATE = "L2_screening_candidate"
+    # L3 expert_signed / L4 manufacturer_verified are NOT reachable in the prototype (G1).
 
 
-# Only these reifegrade may drive a CONCRETE, non-deferred recommendation (Konzept v2 §8).
-_LIVE_KONKRET = (Reifegrad.EXPERT_SIGNED, Reifegrad.FIELD_VALIDATED)
+class EnvelopeBand(str, Enum):
+    GREEN_BASE = "green_base"
+    GREEN_EXTENDED = "green_extended"
+    YELLOW = "yellow"
+    ORANGE = "orange"
+    RED = "red"
 
 
-def darf_konkret_empfehlen(r: Reifegrad) -> bool:
-    return r in _LIVE_KONKRET
+class AxisStatus(str, Enum):
+    OK = "ok"
+    OPEN_VERIFICATION = "open_verification"
+    UNKNOWN = "unknown"
+    CONFLICT = "conflict"
+    GATE_BLOCKED = "gate_blocked"
 
 
-class SourceType(str, Enum):
-    STANDARD = "standard"
-    TEXTBOOK = "textbook"
-    EXPERT_SIGNED = "expert_signed"
-    MULTI_VENDOR_COMMON = "multi_vendor_common"
-    # NB: there is intentionally NO "vendor_claim" — a vendor claim may NEVER be a neutral source (§3.9).
+class ApplicationMode(str, Enum):
+    NEW = "new"
+    PREVENTIVE_REPLACEMENT = "preventive_replacement"
+    REPLACEMENT_UNKNOWN = "replacement_unknown"
+    LEAKAGE_FAILURE = "leakage_failure"
+    PREMATURE_FAILURE = "premature_failure"
+
+
+class MediumSource(str, Enum):
+    EXACT = "exact"  # exakte Bezeichnung / TDS / SDS / reviewte Fachkarte → L2 erlaubt
+    FREE_TEXT = (
+        "free_text"  # LLM-inferred aus Freitext → candidate_set_only, level ≤ L1 (G2)
+    )
 
 
 class Kritikalitaet(str, Enum):
@@ -56,90 +69,66 @@ class Kritikalitaet(str, Enum):
     OUT_OF_SCOPE = "out-of-scope"
 
 
-class Regeltyp(str, Enum):
-    GRENZE = "grenze"  # disqualify (Eignungsgrenze)
-    FORM = "form"  # Bauform-Vorschlag
-    WERKSTOFF = "werkstoff"
-    NEGATIV = "negativ"  # explicit exclusion (negative knowledge)
-
-
 class SizeType(str, Enum):
-    OBSERVED = "observed"  # vom User / Altdichtung / Zeichnung
-    CANDIDATE = "candidate"  # aus dem Fall abgeleitet
-    VERIFIED_NORM = "verified_norm"  # gegen lizenzierte/geprüfte Quelle verifiziert
+    OBSERVED = "observed"
+    CANDIDATE = "candidate"
+    VERIFIED_NORM = "verified_norm"
     UNKNOWN = "unknown_or_unverified"
 
 
 @dataclass(frozen=True)
-class Bedingung:
-    """A structured predicate over a Fall field — rules stay DATA (reviewable), not code."""
-
-    feld: str
-    op: str  # gt | lt | ge | le | eq | contains | present | absent
-    wert: object = None
-
-
-@dataclass(frozen=True)
-class Auswahlregel:
-    """One curated selection rule. ``source_type`` may never be a vendor claim; ``reifegrad`` gates whether
-    it can drive a concrete (non-deferred) recommendation."""
-
-    id: str
-    familie: str
-    regeltyp: Regeltyp
-    bedingungen: tuple[Bedingung, ...]
-    konsequenz: str  # e.g. "bauform:AS" | "werkstoff:FKM" | "disqualify:standard-rwdr" | "exclude:werkstoff:EPDM"
-    normbezug: str
-    source_type: SourceType
-    reifegrad: Reifegrad
-    provenance: str
-    version: int = 1
-
-
-@dataclass(frozen=True)
-class MaßAngabe:
-    feld: str
-    wert: float | None
-    einheit: str
-    size_type: SizeType
-
-
-@dataclass(frozen=True)
 class Fall:
-    """The distilled situation (needs analysis). Plain optional fields; absence is meaningful (drives the
-    completeness gate + defer). ``rohtext`` is scanned for criticality keywords only."""
+    """Situation (Bedarfsanalyse). Absence is meaningful (Defer/Kandidatenraum). ``medium_source`` decides
+    whether a material may ever leave the candidate set (G2)."""
 
     medium: str = ""
+    medium_class: str = (
+        ""  # z.B. mineraloel, wasser, glykol_bremsfluessigkeit, hfc, hfd, silikonoel, …
+    )
+    medium_source: MediumSource = MediumSource.FREE_TEXT
     temperatur_c: float | None = None
     druck_bar: float | None = None
+    druck_puls: bool = False
     geschwindigkeit_ms: float | None = None
     drehzahl_rpm: float | None = None
     welle_d_mm: float | None = None
     verschmutzung: bool | None = None
+    schmierung_ok: bool | None = None
+    belueftet: bool | None = None
+    entluefter_ok: bool | None = None
+    vakuum: bool = False
+    axiale_sicherung_ok: bool | None = None
+    welle_haerte_hrc: float | None = None
+    welle_drall: bool | None = None
+    gehaeuse_material: str = ""  # stahl, alu, leichtmetall, grauguss, geteilt, …
     gehaeuse: str = ""
+    application_mode: ApplicationMode = ApplicationMode.NEW
     rohtext: str = ""
 
 
 @dataclass(frozen=True)
-class KandidatenSpec:
-    """The output. NEVER carries fabricated norm dimensions (DIN tables are copyrighted + would be pseudo-
-    precision) — the seal OD/width stay an open point to verify against DIN/datasheet. ``freigegeben`` is
-    structurally False in the prototype (reviewed_internal knowledge only defers)."""
+class Axis:
+    name: str  # lip | od | pressure | shaft | material
+    value: str | None
+    status: AxisStatus
+    begruendung: tuple[str, ...] = ()
 
-    familie: str
+
+@dataclass(frozen=True)
+class KandidatenSpec:
+    response_level: ResponseLevel
+    envelope_band: EnvelopeBand | None
     kritikalitaet: Kritikalitaet
-    bauform_din: str | None
-    werkstoff: str | None
-    lippen: int | None
-    masse: tuple[MaßAngabe, ...]
-    begruendung: tuple[str, ...]  # rule id + provenance per asserted field
-    varianten: tuple[str, ...]
-    konflikte: tuple[str, ...]
-    offene_punkte: tuple[str, ...]
-    defer_gruende: tuple[str, ...]
-    teil_screening: bool
-    freigegeben: bool
+    axes: tuple[Axis, ...]
+    material_candidate_set: tuple[str, ...]
+    material_single: str | None  # ALWAYS None in the prototype (G2/G3)
+    din_candidate_label: str | None  # only a LABEL, never a final code
+    final_design_code: str | None  # ALWAYS None (G3)
+    masse: tuple = ()
+    defer_gruende: tuple[str, ...] = ()
+    open_verifications: tuple[str, ...] = ()
+    offene_punkte: tuple[str, ...] = ()
+    failure_mode_checklist: tuple[str, ...] = ()
+    freigegeben: bool = False  # structural invariant (G1)
     geltungsrahmen: str = GELTUNGSRAHMEN_SPEC
-    quellen: tuple[str, ...] = field(
-        default_factory=tuple
-    )  # rule ids used (provenance / recall index)
+    quellen: tuple[str, ...] = field(default_factory=tuple)

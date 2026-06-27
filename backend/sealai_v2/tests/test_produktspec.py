@@ -1,142 +1,188 @@
-"""Produktspec — Kandidaten-Spezifikation (Konzept v2). Case-based Eval-Schranken: grounded by
-construction, disqualify-precedence, completeness/defer, constraint-resolution (no ranking), negative
-knowledge, criticality escalation, reifegrad-gating (nothing freigegeben), no fabricated DIN dimensions,
-no forbidden words."""
+"""Produktspec v3.1 — die ROTEN SCHRANKEN (Konzept v3.1). Beweist: sicher deferieren, nichts fabrizieren,
+saubere Standardfälle als L2 durchlassen (False-Negative-Kontrolle), Freitext nie → Einzelwerkstoff,
+nie finaler DIN-Code, max L2, Constraint-/Defer-Verhalten, Leckage = Failure-Mode-first."""
 
 from __future__ import annotations
 
 from sealai_v2.knowledge.produktspec.contracts import (
     VERBOTENE_WOERTER,
+    ApplicationMode,
+    EnvelopeBand,
     Fall,
     Kritikalitaet,
-    SizeType,
+    MediumSource,
+    ResponseLevel,
 )
-from sealai_v2.knowledge.produktspec.spec_service import kandidaten_spezifikation
+from sealai_v2.knowledge.produktspec.kernel import render_texts
+from sealai_v2.knowledge.produktspec.spec_service import kandidaten_spezifikation as K
 
 
-def _texte(spec) -> str:
-    parts = [spec.bauform_din or "", spec.werkstoff or "", spec.geltungsrahmen]
-    for seq in (
-        spec.begruendung,
-        spec.varianten,
-        spec.konflikte,
-        spec.offene_punkte,
-        spec.defer_gruende,
-    ):
-        parts.extend(seq)
-    return " ".join(parts).lower()
-
-
-def _clean_as_fkm() -> Fall:
-    return Fall(
-        medium="Öl", temperatur_c=150, druck_bar=0.3, welle_d_mm=50, verschmutzung=True
+def _clean(**over) -> Fall:
+    base = dict(
+        medium="Mineralöl",
+        medium_class="mineraloel",
+        medium_source=MediumSource.EXACT,
+        temperatur_c=90.0,
+        druck_bar=0.0,
+        geschwindigkeit_ms=11.0,
+        welle_d_mm=50.0,
+        verschmutzung=False,
+        schmierung_ok=True,
+        belueftet=True,
+        application_mode=ApplicationMode.NEW,
     )
+    base.update(over)
+    return Fall(**base)
 
 
-def test_empty_knowledge_no_bauform():
-    spec = kandidaten_spezifikation(Fall(medium="Öl"), familie="O-Ring")
-    assert spec.bauform_din is None and spec.werkstoff is None
-    assert spec.defer_gruende and not spec.freigegeben
-
-
-def test_clean_candidate_is_AS_FKM_but_deferred():
-    spec = kandidaten_spezifikation(_clean_as_fkm())
-    assert spec.bauform_din and "AS" in spec.bauform_din and spec.lippen == 2
-    assert spec.werkstoff == "FKM"
-    assert spec.freigegeben is False
-    assert any("reviewed_internal" in d for d in spec.defer_gruende)  # strong defer
-    assert spec.quellen  # provenance present
-
-
-def test_disqualify_precedence_high_pressure():
-    spec = kandidaten_spezifikation(
-        Fall(
-            medium="Öl",
-            temperatur_c=150,
-            druck_bar=5.0,
-            welle_d_mm=50,
-            verschmutzung=True,
-        )
-    )
-    assert spec.bauform_din is None  # standard RWDR disqualified → no bauform
-    assert any("disqualify" in d for d in spec.defer_gruende)
-    assert any("andere" in o.lower() for o in spec.offene_punkte)
-
-
-def test_missing_critical_input_no_material_certainty():
-    spec = kandidaten_spezifikation(
-        Fall(medium="", druck_bar=0.3, welle_d_mm=50, verschmutzung=True)
-    )
-    assert spec.werkstoff is None  # no medium → no material
-    assert spec.kritikalitaet is Kritikalitaet.CAUTION  # unknown medium
-    assert any("werkstoff" in o.lower() for o in spec.offene_punkte)
-
-
-def test_conflict_two_bauformen_no_ranking():
-    spec = kandidaten_spezifikation(
-        Fall(
-            medium="Öl",
-            temperatur_c=150,
-            druck_bar=0.3,
-            welle_d_mm=50,
-            verschmutzung=True,
-            gehaeuse="raue Metallbohrung",
-        )
-    )
-    assert spec.bauform_din is None  # ambiguous → not a single pick
+# --- False-Negative-Kontrolle: der aufgelöste Widerspruch ----------------------------------------
+def test_clean_standard_case_11ms_is_L2_with_checkpoint():
+    s = K(_clean())  # belüftet, sauberes Mineralöl exakt, 90°C, 11 m/s
+    assert s.envelope_band is EnvelopeBand.GREEN_EXTENDED
     assert (
-        len(spec.varianten) >= 2 and spec.konflikte
-    )  # variants + explicit conflict, no fake ranking
+        s.response_level is ResponseLevel.L2_SCREENING_CANDIDATE
+    )  # NICHT vorschnell Defer
+    assert s.din_candidate_label and "Kandidatenraum" in s.din_candidate_label
+    assert s.open_verifications  # mit Prüfpunkt (Welle/Gehäuse)
+    assert "NBR" in s.material_candidate_set
+    assert s.freigegeben is False
 
 
-def test_negative_knowledge_excludes_epdm():
-    spec = kandidaten_spezifikation(
-        Fall(
-            medium="Mineralöl in Wasser", temperatur_c=80, druck_bar=0.3, welle_d_mm=50
-        )
-    )
+def test_eight_ms_clean_is_green_base_L2():
+    s = K(_clean(geschwindigkeit_ms=7.0, temperatur_c=70.0))
+    assert s.envelope_band is EnvelopeBand.GREEN_BASE
+    assert s.response_level is ResponseLevel.L2_SCREENING_CANDIDATE
+
+
+def test_thirteen_ms_is_orange_L1():
+    s = K(_clean(geschwindigkeit_ms=13.0))
+    assert s.envelope_band is EnvelopeBand.ORANGE
+    assert s.response_level is ResponseLevel.L1_CANDIDATE_SPACE
+    assert s.din_candidate_label is None
+
+
+def test_pressure_over_02bar_orange_L1():
+    s = K(_clean(druck_bar=0.4, axiale_sicherung_ok=True))
     assert (
-        spec.werkstoff != "EPDM"
-    )  # EPDM excluded for mineral oil despite the water rule
-    assert spec.werkstoff == "NBR"
+        s.envelope_band is EnvelopeBand.ORANGE
+        and s.response_level is ResponseLevel.L1_CANDIDATE_SPACE
+    )
 
 
-def test_criticality_escalation_blocks_spec():
-    spec = kandidaten_spezifikation(
+def test_red_pressure_outside_scope():
+    s = K(_clean(druck_bar=0.6))
+    assert s.envelope_band is EnvelopeBand.RED
+    assert (
+        s.response_level is ResponseLevel.L1_CANDIDATE_SPACE
+        and s.din_candidate_label is None
+    )
+
+
+# --- G2: Freitext nie → Einzelwerkstoff; max L1 ---------------------------------------------------
+def test_free_text_medium_never_single_material_max_L1():
+    s = K(
         Fall(
             medium="Öl",
-            temperatur_c=150,
-            druck_bar=0.3,
-            welle_d_mm=50,
-            rohtext="Einsatz im ATEX-Bereich",
+            medium_class="",
+            medium_source=MediumSource.FREE_TEXT,
+            temperatur_c=90.0,
+            druck_bar=0.0,
+            geschwindigkeit_ms=8.0,
+            verschmutzung=False,
+            schmierung_ok=True,
+            belueftet=True,
         )
     )
-    assert spec.kritikalitaet is Kritikalitaet.HIGH_RISK
-    assert spec.bauform_din is None and spec.werkstoff is None
-    assert any("kritikalität" in d.lower() for d in spec.defer_gruende)
+    assert s.material_single is None
+    assert (
+        s.response_level is not ResponseLevel.L2_SCREENING_CANDIDATE
+    )  # Freitext → kein L2
 
 
-def test_no_forbidden_words_anywhere():
+# --- G3: nie ein finaler DIN-Code; max L2 ---------------------------------------------------------
+def test_never_final_din_code_and_max_L2():
+    for fall in (_clean(), _clean(druck_bar=0.6), _clean(geschwindigkeit_ms=13.0)):
+        s = K(fall)
+        assert s.final_design_code is None
+        assert s.material_single is None
+        assert s.response_level in (
+            ResponseLevel.L0_ESCALATION,
+            ResponseLevel.L1_CANDIDATE_SPACE,
+            ResponseLevel.L2_SCREENING_CANDIDATE,
+        )
+
+
+# --- Werkstofflogik ------------------------------------------------------------------------------
+def test_epdm_excluded_for_mineral_oil():
+    s = K(_clean(temperatur_c=80.0))
+    assert "EPDM" not in s.material_candidate_set
+    assert "NBR" in s.material_candidate_set
+
+
+def test_silicone_oil_not_excluded_by_oil_keyword():
+    s = K(_clean(medium="Silikonöl", medium_class="silikonoel"))
+    assert "EPDM" in s.material_candidate_set  # silicone is NOT a hydrocarbon
+
+
+def test_aggressive_unclassified_no_elastomer_candidate():
+    s = K(
+        Fall(
+            medium="aggressive Chemie",
+            medium_source=MediumSource.FREE_TEXT,
+            temperatur_c=60.0,
+            druck_bar=0.0,
+            verschmutzung=False,
+        )
+    )
+    assert s.material_candidate_set == ()
+    assert any("aggressive" in d.lower() or "sds" in d.lower() for d in s.defer_gruende)
+
+
+# --- Anwendungsmodi ------------------------------------------------------------------------------
+def test_leakage_is_failure_mode_first():
+    s = K(_clean(application_mode=ApplicationMode.LEAKAGE_FAILURE))
+    assert s.failure_mode_checklist and s.material_candidate_set == ()
+    assert s.din_candidate_label is None
+
+
+def test_preventive_replacement_allows_L2_screening():
+    s = K(_clean(application_mode=ApplicationMode.PREVENTIVE_REPLACEMENT))
+    assert (
+        s.response_level is ResponseLevel.L2_SCREENING_CANDIDATE
+    )  # not blocked like leakage
+
+
+# --- Welle-Gates + Drall + Kritikalität ----------------------------------------------------------
+def test_shaft_lead_gate_blocks():
+    s = K(_clean(welle_drall=True))
+    assert s.response_level is ResponseLevel.L1_CANDIDATE_SPACE
+    assert any("drall" in d.lower() for d in s.defer_gruende)
+
+
+def test_hardness_unknown_is_open_verification_in_clean_case():
+    s = K(_clean())  # v=11, hardness unknown, clean → open_verification, NICHT Gate
+    assert s.response_level is ResponseLevel.L2_SCREENING_CANDIDATE
+    assert any("härte" in o.lower() for o in s.open_verifications)
+
+
+def test_criticality_atex_L0():
+    s = K(_clean(rohtext="Einsatz im ATEX-Bereich"))
+    assert s.kritikalitaet is Kritikalitaet.HIGH_RISK
+    assert s.response_level is ResponseLevel.L0_ESCALATION
+
+
+# --- Sprache + Provenance ------------------------------------------------------------------------
+def test_no_forbidden_words():
     for fall in (
-        _clean_as_fkm(),
-        Fall(medium="", druck_bar=5.0),
-        Fall(medium="Wasser", temperatur_c=60),
+        _clean(),
+        _clean(druck_bar=0.6),
+        _clean(application_mode=ApplicationMode.LEAKAGE_FAILURE),
     ):
-        text = _texte(kandidaten_spezifikation(fall))
+        text = render_texts(K(fall))
         for w in VERBOTENE_WOERTER:
-            assert w not in text, f"verbotenes Wort '{w}' in: {text}"
+            assert w not in text, f"verbotenes Wort '{w}'"
 
 
-def test_freigegeben_always_false():
-    for fall in (
-        _clean_as_fkm(),
-        Fall(medium="Wasser", temperatur_c=60, druck_bar=0.2, welle_d_mm=40),
-    ):
-        assert kandidaten_spezifikation(fall).freigegeben is False
-
-
-def test_no_fabricated_norm_dimensions():
-    # The shaft is OBSERVED (user); the seal OD/width are NEVER fabricated (DIN-copyright + pseudo-precision).
-    spec = kandidaten_spezifikation(_clean_as_fkm())
-    assert all(m.size_type is SizeType.OBSERVED for m in spec.masse)
-    assert any("verifizieren" in o.lower() for o in spec.offene_punkte)
+def test_provenance_present_on_L2():
+    s = K(_clean())
+    assert s.quellen  # rule provenance per axis
