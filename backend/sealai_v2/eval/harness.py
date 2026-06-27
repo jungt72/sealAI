@@ -27,6 +27,7 @@ from sealai_v2.eval.cases import (
     load_diagnose_cases,
     load_decode_cases,
     load_alternativen_cases,
+    load_beratungs_ux_cases,
     load_cases,
     load_edge_cases,
     load_injection_cases,
@@ -356,6 +357,36 @@ async def _run_calibration(
     return records, errors
 
 
+async def _run_beratungs_ux(
+    pipeline, judge_cfg: ModelConfig, judge_client=None
+) -> tuple[list[Record], list[str]]:
+    """Beratungs-UX class (V2.1 Inc 3) — runs the consultative-UX regression cases through the EXISTING
+    single-turn unit + judge + scorer (column ``beratungs_ux``, flags_on). Folded into the canonical
+    records; excluded from the non-edge no-regression by the column filter. Mostly CREDIBILITY/axes;
+    three cases carry an EXISTING hard gate (walked_into_trap / confident_wrong) — no new Schranke. NO
+    calc fixtures by design (UX cases test conversation behaviour; the speed-trap is named qualitatively).
+    Owner is the factual oracle (axis 1 / any gate human-final)."""
+    cases = load_beratungs_ux_cases()
+    records: list[Record] = []
+    errors: list[str] = []
+    for case in cases:
+        try:
+            records.append(
+                await _run_unit(
+                    pipeline,
+                    judge_cfg,
+                    case,
+                    "beratungs_ux",
+                    COLUMNS["flags_on"],
+                    params=None,
+                    judge_client=judge_client,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — record + keep going (mirrors _run_calibration)
+            errors.append(f"{case.id}: {type(exc).__name__}: {exc}")
+    return records, errors
+
+
 async def _run_alternativen(
     pipeline, judge_cfg: ModelConfig, judge_client=None
 ) -> tuple[list[Record], list[str]]:
@@ -678,6 +709,26 @@ async def run_eval(
     )
     records = list(records) + calib_records
 
+    # Beratungs-UX (V2.1 Inc 3) — consultative-UX regression cases (Klären-vor-Empfehlen / Tiefe-auf-
+    # Abruf / Prioritätsleiter). Folded under column `beratungs_ux` (excluded from the non-edge
+    # summaries by the column filter). Mostly CREDIBILITY/axes; three cases carry an EXISTING hard gate
+    # (walked_into_trap / confident_wrong) — no new Schranke. Appended BEFORE the parametric block.
+    bux_records, bux_errors = await _run_beratungs_ux(
+        pipeline, judge_cfg, judge_client=judge_client
+    )
+    beratungs_ux = (
+        {
+            "summary": dataclasses.asdict(
+                summarize_column("beratungs_ux", [r.score for r in bux_records])
+            ),
+            "n_cases": len(bux_records),
+            "errors": bux_errors,
+        }
+        if bux_records
+        else None
+    )
+    records = list(records) + bux_records
+
     # Gegencheck (GEGENCHECK, Modus E, V2.1) - existing-seal-check cases (disqualify the incompatible,
     # surface the conditional's condition, never affirm the compatible). Folded under column
     # `gegencheck` (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes
@@ -845,6 +896,7 @@ async def run_eval(
         "n_injection_cases": (injection["n_cases"] if injection else 0),
         "n_archetype_cases": (archetype["n_cases"] if archetype else 0),
         "n_calibration_cases": (calibration["n_cases"] if calibration else 0),
+        "n_beratungs_ux_cases": (beratungs_ux["n_cases"] if beratungs_ux else 0),
         "baseline_non_edge": {
             "flags_off": 1.000,
             "flags_on": 0.991,
@@ -861,7 +913,8 @@ async def run_eval(
         + [f"edge::{e}" for e in (edge or {}).get("errors", [])]
         + [f"injection::{e}" for e in (injection or {}).get("errors", [])]
         + [f"archetype::{e}" for e in (archetype or {}).get("errors", [])]
-        + [f"calibration::{e}" for e in (calibration or {}).get("errors", [])],
+        + [f"calibration::{e}" for e in (calibration or {}).get("errors", [])]
+        + [f"beratungs_ux::{e}" for e in (beratungs_ux or {}).get("errors", [])],
     }
 
     # --- model-swap gate aggregates (latency / answer-quality / cost) -----------------------
@@ -927,6 +980,7 @@ async def run_eval(
         "parametric": parametric,
         "archetype": archetype,
         "calibration": calibration,
+        "beratungs_ux": beratungs_ux,
         "gegencheck": gegencheck,
         "diagnose": diagnose,
         "decode": decode,

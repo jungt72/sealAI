@@ -239,6 +239,13 @@ def main() -> None:
             f"[calibration] cases={calib['n_cases']}  credibility(2-7)={csum['overall_credibility']:.3f}  "
             f"(confident_correct_vs_hedge — credibility/axes class, NO hard gate; assertive-where-grounded vs honest hedge)"
         )
+    bux = out.get("beratungs_ux")
+    if bux:
+        bsum = bux["summary"]
+        print(
+            f"[beratungs_ux] cases={bux['n_cases']}  credibility(2-7)={bsum['overall_credibility']:.3f}  "
+            f"(Beratungs-UX — Klären-vor-Empfehlen / Tiefe-auf-Abruf; 3 Fälle mit bestehendem Hard-Gate: walked_into_trap / confident_wrong)"
+        )
     print(f"\nArtifacts: {run_dir}")
     print("→ Adjudicate factual correctness + hard gates in human_review_worksheet.md")
 

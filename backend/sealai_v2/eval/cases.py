@@ -23,6 +23,7 @@ _GEGENCHECK_FILE = _SEED_DIR / "gegencheck_v0.json"
 _DIAGNOSE_FILE = _SEED_DIR / "diagnose_v0.json"
 _DECODE_FILE = _SEED_DIR / "decode_v0.json"
 _ALTERNATIVEN_FILE = _SEED_DIR / "alternativen_v0.json"
+_BERATUNGS_UX_FILE = _SEED_DIR / "beratungs_ux_v0.json"
 
 
 @dataclass(frozen=True)
@@ -139,3 +140,15 @@ def load_alternativen_cases(path: Path | None = None) -> list[Case]:
     pay-to-rank), no invented manufacturers, and the honest no-grounded-data stance (Dim. 6 ships
     empty, owner-provided)."""
     return load_cases(path or _ALTERNATIVEN_FILE)
+
+
+def load_beratungs_ux_cases(path: Path | None = None) -> list[Case]:
+    """Beratungs-UX (BERATUNGS_UX) class (V2.1 Inc 3) — guards the consultative-UX doctrine rebalance
+    (Adressaten-Register / Klären-vor-Empfehlen / Progressive Disclosure / Form). Same validated
+    ``Case`` shape, separate seed so the frozen non-edge anchor stays untouched. Mostly a CREDIBILITY/
+    axes class; THREE cases carry an EXISTING hard gate (no new Schranke): the speed-trap-first-turn
+    case (``walked_into_trap``), the Gegencheck-affirm case and the safety-product case
+    (``confident_wrong``). ZWEISEITIGER GUARD: brevity/leading must NEVER drop a trap, safety caveat,
+    Gegencheck finding or needed uncertainty, AND a Wissensfrage must stay deep. Owner is the factual
+    oracle (axis 1 / any gate human-final)."""
+    return load_cases(path or _BERATUNGS_UX_FILE)
