@@ -2056,3 +2056,46 @@ text from Paperless (URL+token from env) → DRAFT Fachkarte. Verified against t
 present) on "FFKM deep-research" → 8 rich draft claims (Kalrez/Chemraz/Simriz types, amines/plasma/H2-RGD,
 ISO 1629 / 21 CFR 177.2600). The 14 deep-research docs are now an immediately-ingestable knowledge source
 for the #1 gap. All on branch `feat/v2-medium-intel`, NOT deployed (eval-gated).
+
+
+---
+
+## 2026-06-28 — Production-readiness push (autonomous; owner: "verdrahte alles, ultrapräzise, produktionsreife")
+
+Three waves shipped + a deferred-doctrine note. Each wave: offline-gated (`ops/gate.sh` green) + smoke +
+health (internal+public) + a rollback rung; the "keine Eval" deterministic class via `~/ungated_deploy.sh`.
+The owner gave explicit consent for the prod activations (full Wave 2 = standing OK for the session's prod
+deploys), after the auto-mode classifier correctly flagged the eval-gated RAG flip.
+
+**Wave 1 — Routing/Extraktion (deterministic, FRONTEND; commits 5754d2aa + 9403bbea).** The cockpit now
+opens the pack matching a committed seal-type (`ParameterForm` auto-select) instead of resetting to RWDR —
+the Teig-Fall symptom for in-pack types + a tab↔state desync. The medium field was already free-text and the
+honesty layer already labels an assumed type tentatively. The DEEPER routing correctness (non-pack seal-type
+detection, L1 pack-suggestion, free-text-medium reasoning) is DOCTRINE → needs a model eval → PARKED.
+
+**Wave 2 — Wissen/RAG LIVE (commit 2f8dedd5, image 9d66ccd9).** Qdrant semantic retrieval + OpenAI
+embeddings + Medium-Intelligence Phase-2 ACTIVATED. `feat/v2-medium-intel` was already fully merged to main;
+this was the runtime flip. Two infra gaps fixed in `docker-compose.deploy.yml`: the `EMBED_*` + `MEDIUM_INTEL`
+vars were NOT in the backend-v2 `environment:` allow-list (so `.env.prod` alone never reached the container —
+it kept the fastembed/e5-large OOM default), and the empty-prefix passthrough needed single-dash + quotes
+(a `query: ` default breaks YAML). The `sealai_v2_fachkarten` collection was re-ingested (28 points, openai,
+empty prefixes); a live query returns the right cards (Heißwasser/Dampf → FK-FKM-DAMPF). Fail-safe fallback
+to in_process intact; Medium-P2 L1-neutral (golden byte-identical).
+**`.env.prod` (gitignored) flags:** `SEALAI_V2_RETRIEVER_BACKEND=qdrant`,
+`SEALAI_V2_QDRANT_COLLECTION=sealai_v2_fachkarten`, `SEALAI_V2_EMBED_PROVIDER=openai`,
+`SEALAI_V2_EMBED_MODEL=text-embedding-3-small`, `SEALAI_V2_EMBED_QUERY_PREFIX=` (empty),
+`SEALAI_V2_EMBED_PASSAGE_PREFIX=` (empty), `SEALAI_V2_MEDIUM_INTEL_ENABLED=true`.
+
+**Wave 3 — Produktspec WIRED, flag OFF (commit c7d7d90e, image fbb9b620).** The deterministic
+Kandidaten-Spezifikation (`produktspec/`, 38 tests) is wired into the turn (`pipeline/produktspec_step.py`
+adapter → `Outcome.kandidaten_spec` → serializer → frontend `KandidatenSpecPanel`), mirroring
+`medium_intelligence`. A render surface only (never L1/L3 → golden byte-identical). Deployed INERT
+(`SEALAI_V2_PRODUKTSPEC_ENABLED` default false). The structural gates (G1 freigegeben=False / G2 free-text→
+candidate-set / G3 final_design_code=None) keep every output a candidate space, always "vorläufig"; the panel
+renders the backend's lawyer-reviewed Geltungsrahmen verbatim (UI language stays owner-governed).
+**ACTIVATION remains the owner governance NO-GO: expert Fachfreigabe + DIN-Lizenz + UI-Sprache** — flip
+`SEALAI_V2_PRODUKTSPEC_ENABLED=true` when cleared (no rebuild needed; recreate backend-v2).
+
+**Residual owner items:** rotate the leaked LangSmith key + the KC superadmin pw; promote the 14 Fachkarten
+drafts (`ops/fachkarten_drafts/`); authed UI spot-checks (MEDIUM panel, the Wave-1 auto-select); the parked
+L1 routing-doctrine eval; seed Musterfirmen / onboard manufacturers (Hersteller-Partner).
