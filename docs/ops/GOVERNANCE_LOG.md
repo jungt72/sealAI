@@ -2099,3 +2099,42 @@ renders the backend's lawyer-reviewed Geltungsrahmen verbatim (UI language stays
 **Residual owner items:** rotate the leaked LangSmith key + the KC superadmin pw; promote the 14 Fachkarten
 drafts (`ops/fachkarten_drafts/`); authed UI spot-checks (MEDIUM panel, the Wave-1 auto-select); the parked
 L1 routing-doctrine eval; seed Musterfirmen / onboard manufacturers (Hersteller-Partner).
+
+
+---
+
+## 2026-06-28 — Deep-dive audit + full cleanup (autonomous; owner: "vollständig bereinigt, ultrapräzise")
+
+A 92-agent adversarially-verified audit (find → whole-repo-grep-verify → synthesize) produced 38 cleanup
+actions from 83 candidates; verification REFUTED 8 — including two that would have broken prod: a
+`calc_report.jinja` delete (live via a briefing.jinja `{% include %}`) and a `Case.tags/holdout` delete
+(live test readers). Executed in 5 gate-green batches:
+
+- **Disk reclaim ~4.3 G:** backend/.venv (1.8 G, V1), frontend/.next + node_modules (1.8 G), nginx/node_modules
+  (307 M), 144 __pycache__, langgraph_backup, dist.bak, editor backups. KEPT the live ~/sealai/.venv.
+- **Bug fixes + config (commit 0c010ff8):** /briefing + /anfrage now run with the SAME safety Flags as
+  /chat (was Flags()=OFF — a real safety divergence; shared `flags_from_settings`); memory `numerics()`
+  German-thousands aware ('1.500'=1500, backs the memory_fabrication gate); llm retry no longer trips
+  `assert last_exc` when param-adaptations consume the budget; calc verpressung fails closed on
+  nuttiefe>schnurstaerke. Config hardening: Qdrant collection + embed defaults match deployed reality;
+  honest 'data leaves the box' docstrings. + 2 regression tests.
+- **Dead code (commit 0c010ff8):** knowledge/capability/ (firewall test rewritten to enforce the §3.9
+  import-ban STRUCTURALLY — AST/regex scan + spec-takes-only-a-Fall), hersteller InProcessHerstellerStore +
+  select_partners/PartnerMatch, KandidatenSpec.masse, stages.compute dead `context` param, build_llm_client,
+  3 `.ids` accessors; frontend screenshot harness, dead cockpit-2pane/pill-pop CSS, FieldDef.min/max;
+  orphaned repo-root default.conf.
+- **Full V1 retirement (commit c7f1540b — 997 files / 244,319 deletions):** the whole dead V1 LangGraph
+  backend (backend/{app,agents,prompts,alembic,scripts,…} + V1 test trees + 3 V1 architecture tests + root
+  V1 dirs + the v1-legacy compose `backend` service + the paperless-sync systemd unit). KEPT: backend/sealai_v2
+  (untouched), the V2 architecture + deploy-mechanics tests (tree_hash/eval_manifest/v2_deploy_gate/
+  v2_entrypoint), and — CAUGHT ON RE-CHECK (the audit's "unreferenced" note was WRONG) — root
+  contracts/framing.v2.json (resolved at runtime by sealai_v2/core/framing.py) + the un-prefixed
+  QDRANT_COLLECTION in .env.prod (ops/up-prod.sh input).
+- **Deploy:** backend-v2 image c50c12de (health intern+public), frontend rebuilt, smoke green; live config
+  intact (qdrant / openai / medium=on / produktspec=off / sealai_v2_fachkarten).
+
+**Residual (owner / deferred):** rotate the LIVE leaked LangSmith key (audit re-confirmed it active in the
+container); re-establish an ADJUDICATED eval replay for the new tree_hash (the gated release path refuses
+until then — the ungated deterministic path was used here per "keine Eval"); the produktspec pre-launch
+wiring gaps (audit #22-25, all behind produktspec_enabled=false); optional DRY refactors (#37) + intentional
+deferred scaffolds (#38, keep-with-note); prune .env.prod.bak (after key rotation) + the 21 NOADJ eval/runs.
