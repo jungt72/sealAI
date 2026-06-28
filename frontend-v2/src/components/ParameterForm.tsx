@@ -114,11 +114,33 @@ export function ParameterForm({
   variant?: "popover" | "stage";
 }) {
   const firstEnabled = SITUATIONS.find((s) => !s.disabled) ?? SITUATIONS[0];
-  const [activeId, setActiveId] = useState<string>(firstEnabled?.id ?? "");
+  // A seal-type the conversation already established (committed feld="dichtungstyp", stored as the pack
+  // id) OPENS its pack instead of silently resetting to the RWDR default — fixes the Teig-Fall symptom
+  // for in-pack types + keeps the active tab consistent with the committed type across remounts. Only an
+  // ENABLED pack id is adopted; anything else leaves the default (the honesty layer surfaces an assumed
+  // type tentatively). A manual tab pick wins afterwards (userPickedTypeRef).
+  const matchSituation = (val: string | undefined): string | undefined => {
+    const v = (val ?? "").trim().toLowerCase();
+    return v ? SITUATIONS.find((s) => !s.disabled && s.id === v)?.id : undefined;
+  };
+  const [activeId, setActiveId] = useState<string>(
+    matchSituation(committed?.dichtungstyp) ?? firstEnabled?.id ?? "",
+  );
+  const userPickedTypeRef = useRef(false);
   const [vals, setVals] = useState<Record<string, string>>({});
   // only an ENABLED pack can be active; a disabled tab is never selectable (see the tab bar below)
   const active: SituationDef =
     SITUATIONS.find((s) => s.id === activeId && !s.disabled) ?? firstEnabled;
+
+  // Follow a chat-established seal-type to its pack tab until the user picks one manually. Keyed on the
+  // committed dichtungstyp so a type that arrives from a chat turn opens the right pack; a manual pick
+  // (userPickedTypeRef) then pins it.
+  useEffect(() => {
+    if (userPickedTypeRef.current) return;
+    const m = matchSituation(committed?.dichtungstyp);
+    if (m && m !== activeId) setActiveId(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [committed?.dichtungstyp]);
 
   // ── R2 hydration: seed the fields from the committed case-state; re-hydrate when it changes from
   // another source (e.g. a chat turn), but never clobber an in-progress edit (a field the user has
@@ -245,7 +267,10 @@ export function ParameterForm({
           disabled={s.disabled}
           className={`param-tab${s.id === active.id ? " is-active" : ""}${s.disabled ? " is-soon" : ""}`}
           onClick={() => {
-            if (!s.disabled) setActiveId(s.id);
+            if (!s.disabled) {
+              userPickedTypeRef.current = true;
+              setActiveId(s.id);
+            }
           }}
           title={s.disabled ? "kommt bald" : undefined}
           data-testid={`param-tab-${s.id}`}

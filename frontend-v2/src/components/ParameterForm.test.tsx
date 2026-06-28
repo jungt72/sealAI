@@ -226,6 +226,17 @@ describe("ParameterForm — Modell R2 (hydrate · live preview · adopt, no wipe
     expect((screen.getByTestId("param-drehzahl") as HTMLInputElement).value).toBe("5000");
   });
 
+  it("auto-opens the pack matching a committed seal-type (Teig-Fall: a non-RWDR type no longer resets to RWDR)", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} committed={{ dichtungstyp: "hydraulik" }} />);
+    expect(screen.getByTestId("param-tab-hydraulik")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("param-tab-rwdr")).not.toHaveAttribute("aria-selected", "true");
+  });
+
+  it("a committed seal-type outside the available packs leaves the default (no false auto-switch)", () => {
+    render(<ParameterForm variant="stage" onSubmit={vi.fn()} committed={{ dichtungstyp: "stopfbuchse" }} />);
+    expect(screen.getByTestId("param-tab-rwdr")).toHaveAttribute("aria-selected", "true");
+  });
+
   it("Uebernehmen keeps the values (no wipe) and DELETES a previously-committed, now-empty field", () => {
     const onSubmit = vi.fn();
     render(
