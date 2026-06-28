@@ -1,6 +1,0 @@
-[Unit]
-Description=SealAI Paperless to RAG sync
-
-[Service]
-Type=oneshot
-ExecStart=%h/.local/bin/sealai-rag-paperless-sync
