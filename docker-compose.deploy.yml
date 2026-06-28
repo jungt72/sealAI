@@ -274,6 +274,16 @@ services:
       SEALAI_V2_RETRIEVER_BACKEND: ${SEALAI_V2_RETRIEVER_BACKEND:-in_process}
       SEALAI_V2_QDRANT_URL: ${SEALAI_V2_QDRANT_URL:-http://qdrant:6333}
       SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-/app/models}
+      # Wave 2 RAG: embedding provider. openai text-embedding-3-small (1536-dim, RAM-safe — e5-large
+      # OOM'd the 7.6 GB host) matches the ingested sealai_v2_fachkarten collection. Prefixes are EMPTY
+      # for openai; SINGLE-dash so an explicit empty value in .env.prod is PRESERVED (a `:-` would force
+      # the e5 "query:/passage:" prefix back on an empty value → query/passage embedding mismatch).
+      SEALAI_V2_EMBED_PROVIDER: ${SEALAI_V2_EMBED_PROVIDER:-fastembed}
+      SEALAI_V2_EMBED_MODEL: ${SEALAI_V2_EMBED_MODEL:-intfloat/multilingual-e5-large}
+      SEALAI_V2_EMBED_QUERY_PREFIX: "${SEALAI_V2_EMBED_QUERY_PREFIX-query: }"
+      SEALAI_V2_EMBED_PASSAGE_PREFIX: "${SEALAI_V2_EMBED_PASSAGE_PREFIX-passage: }"
+      # Medium Intelligence Phase-2: L1-NEUTRAL display data (never fed to L1/L3 → golden byte-identical).
+      SEALAI_V2_MEDIUM_INTEL_ENABLED: ${SEALAI_V2_MEDIUM_INTEL_ENABLED:-false}
     volumes:
     # Pre-staged e5-large ONNX cache (FastEmbed) — read-only; avoids a ~2GB cold download on the
     # health-gated recreate. uid 10001 reads via the bind mount (the cache contents are world-readable).
