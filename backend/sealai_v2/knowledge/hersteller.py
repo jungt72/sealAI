@@ -22,8 +22,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from sealai_v2.security.tenant import TenantContext, require_tenant
-
 _SEED_DIR = Path(__file__).resolve().parent
 _DEFAULT_FILE = _SEED_DIR / "hersteller_seed.json"
 _REVIEW_STATES = ("reviewed", "draft")
@@ -136,38 +134,3 @@ def load_hersteller(path: Path | None = None) -> HerstellerCatalog:
         version=str(data.get("version", "")),
         source=str(data.get("source", "")),
     )
-
-
-class InProcessHerstellerStore:
-    """Capability-only matching over the file-backed seed. Ordering = match-completeness, then
-    ALPHABETICAL by hersteller (a neutral, deterministic tie-break) — NEVER by payment (§3.9).
-    Empty seed → empty result → Modus F reports 'no grounded data'. P0 tenant gate."""
-
-    def __init__(self, catalog: HerstellerCatalog | None = None) -> None:
-        self._catalog = catalog or load_hersteller()
-
-    @property
-    def catalog(self) -> HerstellerCatalog:
-        return self._catalog
-
-    def query(
-        self,
-        *,
-        tenant_id: str,
-        material: str | None = None,
-        bauform: str | None = None,
-        k: int = 8,
-    ) -> tuple[HerstellerFaehigkeit, ...]:
-        require_tenant(TenantContext(tenant_id))  # P0
-        scored: list[tuple[int, str, HerstellerFaehigkeit]] = []
-        for f in self._catalog.faehigkeiten:
-            score = 0
-            if material and any(material.lower() == w.lower() for w in f.werkstoffe):
-                score += 1
-            if bauform and any(bauform.lower() == b.lower() for b in f.bauformen):
-                score += 1
-            if score > 0:
-                scored.append((score, f.hersteller.lower(), f))
-        # capability match desc, then alphabetical hersteller (neutral tie-break) — NO payment axis
-        scored.sort(key=lambda s: (-s[0], s[1]))
-        return tuple(f for _s, _n, f in scored[: max(0, k)])

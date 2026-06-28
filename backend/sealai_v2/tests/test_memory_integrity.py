@@ -23,6 +23,15 @@ def test_numerics_extracts_normalized_floats():
     assert numerics("150 °C, 3,5 bar, -40 und 80mm") == {150.0, 3.5, -40.0, 80.0}
 
 
+def test_numerics_german_thousands_not_misparsed():
+    # '1.500' is German THOUSANDS (=1500), not 1.5 — the prior float('1.500') bug could wrongly drop a
+    # traceable distilled number as a fabrication. Decimal comma + plain decimal still parse correctly.
+    assert numerics("1.500 bar") == {1500.0}
+    assert numerics("1.500.000 U/min") == {1500000.0}
+    assert numerics("1.500,5 mm") == {1500.5}
+    assert numerics("0,5 und 0.5") == {0.5}
+
+
 def test_clean_when_numbers_trace_to_user_turns():
     cs = (
         RememberedFact("temperatur", "150 °C"),

@@ -18,7 +18,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_lead_store, get_pipeline
+from sealai_v2.api.deps import (
+    current_identity,
+    flags_from_settings,
+    get_lead_store,
+    get_pipeline,
+    get_settings,
+)
+from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
 from sealai_v2.db.leads import Lead, LeadStore
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -40,6 +47,7 @@ async def anfrage(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
     leads: LeadStore = Depends(get_lead_store),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     # A lead can only be routed to a PAYING (aktiv) partner the pool actually lists; an unknown or
     # inactive id (or an unconfigured pool) yields a neutral 404 that leaks no internal state.
@@ -54,6 +62,7 @@ async def anfrage(
         req.message,
         tenant=TenantContext(identity.tenant_id),
         session=SessionContext(session_id=identity.session_id),
+        flags=flags_from_settings(settings),
     )
     art = _renderer.briefing(snapshot_from_result(req.message, result))
 

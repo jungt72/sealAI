@@ -30,7 +30,7 @@ services:
       SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
       # OWN Qdrant collection (≠ the live sealai_knowledge_v3).
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_fachkarten}
     expose:
       - '8001'
     ports:

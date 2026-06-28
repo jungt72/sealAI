@@ -13,11 +13,16 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_pipeline, get_settings
+from sealai_v2.api.deps import (
+    current_identity,
+    flags_from_settings,
+    get_pipeline,
+    get_settings,
+)
 from sealai_v2.api.serializers import chat_response
 from sealai_v2.api.sse import stream_frames
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import Flags, SessionContext, VerifiedIdentity
+from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline, ProgressSink
 from sealai_v2.security.tenant import TenantContext
 
@@ -49,10 +54,7 @@ async def _run_pipeline(
         req.message,
         tenant=TenantContext(identity.tenant_id),
         session=SessionContext(session_id=identity.session_id),
-        flags=Flags(
-            compliance_hint=settings.default_compliance_hint,
-            safety_critical=settings.default_safety_critical,
-        ),
+        flags=flags_from_settings(settings),
         progress=progress,
     )
 

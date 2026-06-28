@@ -57,7 +57,8 @@ class OpenAiLlmClient:
             kwargs["extra_body"] = {"prompt_cache_key": model_config.cache_key}
 
         last_exc: Exception | None = None
-        for attempt in range(self._max_retries):
+        attempts = 0  # counts only REAL (transient) failures — param adaptations don't consume budget
+        while attempts < self._max_retries:
             try:
                 resp = await self._client.chat.completions.create(
                     timeout=self._timeout_s, **kwargs
@@ -71,7 +72,10 @@ class OpenAiLlmClient:
                 )
             except Exception as exc:  # noqa: BLE001 — param-defensive + transient retry, then re-raise
                 msg = str(exc).lower()
-                # Strip/adapt unsupported params and retry immediately (model-family drift).
+                # ONE-TIME param adaptations (model-family drift): strip/rename + retry WITHOUT consuming
+                # the transient-retry budget. Each branch is guarded by "param in kwargs", so it fires at
+                # most once (the next identical error falls through) — bounded, no infinite loop, and the
+                # old `assert last_exc is not None` can no longer trip when params eat all attempts.
                 if "temperature" in msg and "temperature" in kwargs:
                     kwargs.pop("temperature", None)
                     continue
@@ -84,7 +88,11 @@ class OpenAiLlmClient:
                     kwargs["max_tokens"] = kwargs.pop("max_completion_tokens")
                     continue
                 last_exc = exc
-                if attempt < self._max_retries - 1:
-                    await asyncio.sleep(min(2.0**attempt, 8.0))  # i5-ok: Retry-Backoff
-        assert last_exc is not None
+                attempts += 1
+                if attempts < self._max_retries:
+                    backoff = min(2.0 ** (attempts - 1), 8.0)  # i5-ok: Retry-Backoff
+                    await asyncio.sleep(backoff)
+        assert (
+            last_exc is not None
+        )  # loop only exits here after a real failure incremented attempts
         raise last_exc

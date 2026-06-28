@@ -14,17 +14,38 @@ from collections.abc import Sequence
 
 from sealai_v2.core.contracts import RememberedFact
 
-_NUM_RE = re.compile(r"-?\d+(?:[.,]\d+)?")
+# German-locale aware: a dot is a THOUSANDS separator (groups of exactly 3 digits), a comma the decimal.
+# The first alternative captures the thousands form ('1.500' / '1.500.000' / '1.500,5'); the second a
+# plain/decimal number ('0.5' English-decimal or '1,5' German-decimal). Matching '1.500' as ONE thousands
+# token is the fix for the prior ``float('1.500') == 1.5`` mis-parse, which could wrongly drop a traceable
+# distilled number as a fabrication (this primitive backs the memory_fabrication hard gate).
+_THOUSANDS = r"-?\d{1,3}(?:\.\d{3})+(?:,\d+)?"
+_NUM_RE = re.compile(_THOUSANDS + r"|-?\d+(?:[.,]\d+)?")
+_THOUSANDS_RE = re.compile(_THOUSANDS)
+
+
+def _to_float(tok: str) -> float | None:
+    if _THOUSANDS_RE.fullmatch(tok):
+        norm = tok.replace(".", "").replace(
+            ",", "."
+        )  # thousands dots out; decimal comma -> dot
+    else:
+        norm = tok.replace(
+            ",", "."
+        )  # decimal comma -> dot; a lone dot is a decimal point
+    try:
+        return float(norm)
+    except ValueError:
+        return None
 
 
 def numerics(text: str) -> set[float]:
-    """Numeric tokens in ``text`` as floats (comma decimal normalized) — the unit of traceability."""
+    """Numeric tokens in ``text`` as floats (German thousands/decimal aware) — the unit of traceability."""
     out: set[float] = set()
     for tok in _NUM_RE.findall(text or ""):
-        try:
-            out.add(float(tok.replace(",", ".")))
-        except ValueError:
-            continue
+        v = _to_float(tok)
+        if v is not None:
+            out.add(v)
     return out
 
 

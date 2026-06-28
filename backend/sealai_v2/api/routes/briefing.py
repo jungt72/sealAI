@@ -6,7 +6,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_pipeline
+from sealai_v2.api.deps import (
+    current_identity,
+    flags_from_settings,
+    get_pipeline,
+    get_settings,
+)
+from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.render.renderer import ArtifactRenderer, snapshot_from_result
@@ -25,11 +31,13 @@ async def briefing(
     req: BriefingRequest,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     result = await pipeline.run(
         req.message,
         tenant=TenantContext(identity.tenant_id),
         session=SessionContext(session_id=identity.session_id),
+        flags=flags_from_settings(settings),
     )
     art = _renderer.briefing(snapshot_from_result(req.message, result))
     return {

@@ -12,7 +12,7 @@ from functools import lru_cache
 from fastapi import Depends, Header, HTTPException
 
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import AuthError, AuthValidator, VerifiedIdentity
+from sealai_v2.core.contracts import AuthError, AuthValidator, Flags, VerifiedIdentity
 from sealai_v2.llm.factory import build_client_factory
 from sealai_v2.pipeline.pipeline import Pipeline, build_pipeline
 from sealai_v2.security.auth import KeycloakJwtValidator
@@ -21,6 +21,17 @@ from sealai_v2.security.auth import KeycloakJwtValidator
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def flags_from_settings(settings: Settings) -> Flags:
+    """The production Flags baseline (compliance hint + safety-critical posture) from settings —
+    SHARED by every product route (chat, briefing, anfrage) so they run with an IDENTICAL safety
+    posture. A route that omits flags silently falls back to ``Flags()`` (both OFF), diverging from
+    /chat — that was a real safety bug. Eval columns stay harness-constructed."""
+    return Flags(
+        compliance_hint=settings.default_compliance_hint,
+        safety_critical=settings.default_safety_critical,
+    )
 
 
 @lru_cache(maxsize=1)

@@ -39,9 +39,6 @@ export interface FieldDef {
   options?: FieldOption[];
   /** soft hint (sub-quantity, reference). Not a validator. */
   help?: string;
-  /** soft advisory bounds — a value outside warns, never blocks (the kern owns the hard validity). */
-  min?: number;
-  max?: number;
 }
 
 export interface GroupDef {

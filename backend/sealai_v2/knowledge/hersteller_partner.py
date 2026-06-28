@@ -17,8 +17,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from sealai_v2.knowledge.hersteller import HerstellerFaehigkeit
-
 
 @dataclass(frozen=True)
 class HerstellerPartner:
@@ -80,15 +78,6 @@ def rank_partners(
     return tuple(p for _s, p in scored)
 
 
-@dataclass(frozen=True)
-class PartnerMatch:
-    """One selected partner = a neutral capability match (fit-ranked) + its partner record. The order
-    of a ``PartnerMatch`` list is the CAPABILITY fit order — payment never reorders it."""
-
-    faehigkeit: HerstellerFaehigkeit
-    partner: HerstellerPartner
-
-
 @runtime_checkable
 class PartnerRegistry(Protocol):
     """The partner-membership store seam. ``get`` resolves a company's partner record (or None);
@@ -119,21 +108,3 @@ class InProcessPartnerRegistry:
 
     def delete(self, hersteller: str) -> bool:
         return self._by_name.pop(hersteller, None) is not None
-
-
-def select_partners(
-    capability_matches: tuple[HerstellerFaehigkeit, ...],
-    registry: PartnerRegistry,
-) -> tuple[PartnerMatch, ...]:
-    """Given the NEUTRAL, fit-ranked capability matches (from the capability store) + the partner
-    registry, return the matches that are ACTIVE partners — PRESERVING the capability fit order.
-
-    Payment NEVER reorders: this only FILTERS to the paying pool, walking ``capability_matches`` in
-    their given (capability-by-fit) order. That is the structural no-pay-to-rank guarantee at the
-    selection layer (the keystone's analogue for the partner pool)."""
-    out: list[PartnerMatch] = []
-    for f in capability_matches:  # already fit-ordered by the neutral capability store
-        p = registry.get(f.hersteller)
-        if p is not None and p.aktiv:
-            out.append(PartnerMatch(faehigkeit=f, partner=p))
-    return tuple(out)

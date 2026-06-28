@@ -4,8 +4,9 @@ Behind the SAME ``Retriever`` Protocol as the in-process keyword matcher (``know
 so swapping it in is pure config (``SEALAI_V2_RETRIEVER_BACKEND=qdrant``). The in-process retriever
 stays the deterministic CI/eval MEASUREMENT instrument; THIS is the production recall path.
 
-Embedding: local FastEmbed ``multilingual-e5-large`` (dense, no API — nothing leaves the box; strong
-on German). e5 requires the ``query:``/``passage:`` prefix convention (applied here). Doctrine holds:
+Embedding: PROD = OpenAI ``text-embedding-3-small`` (dense, 1536-dim, RAM-safe — no local model; DATA
+leaves the box for the API embed call). Pluggable via ``embed_provider`` — ``fastembed`` e5-large is the
+optional OFFLINE alternative (it needs the ``query:``/``passage:`` prefix; openai uses ""). Doctrine holds:
 tenant scope is a mandatory server-side filter; **reviewed** claims → ``grounding_facts`` (authoritative),
 **draft** claims → ``provisional`` ("vorläufig"), split by the per-CLAIM ``review_state`` in the payload.
 

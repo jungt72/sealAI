@@ -98,10 +98,6 @@ class FachkartenCatalog:
                 return c
         return None
 
-    @property
-    def ids(self) -> frozenset[str]:
-        return frozenset(c.id for c in self.cards)
-
 
 def _claim(raw: dict, card_id: str) -> Claim:
     state = str(raw.get("review_state", "")).strip()

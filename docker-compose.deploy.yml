@@ -265,21 +265,20 @@ services:
       SEALAI_V2_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/1
       SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_fachkarten}
       # Phase-1 Qdrant semantic retrieval (eval-validated by adjudicated run v21-qdrant-gate-4).
       # Flip via .env.prod (SEALAI_V2_RETRIEVER_BACKEND=qdrant); the retriever FAIL-SAFES to the
       # in-process keyword matcher on a missing dep / unreachable Qdrant / missing collection.
-      # SEALAI_V2_QDRANT_URL is the in-network service name; e5-large (FastEmbed, local) reads the
-      # mounted ONNX cache via SEALAI_V2_EMBED_CACHE_DIR — no network egress at request time.
       SEALAI_V2_RETRIEVER_BACKEND: ${SEALAI_V2_RETRIEVER_BACKEND:-in_process}
       SEALAI_V2_QDRANT_URL: ${SEALAI_V2_QDRANT_URL:-http://qdrant:6333}
       SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-/app/models}
-      # Wave 2 RAG: embedding provider. openai text-embedding-3-small (1536-dim, RAM-safe — e5-large
-      # OOM'd the 7.6 GB host) matches the ingested sealai_v2_fachkarten collection. Prefixes are EMPTY
-      # for openai; SINGLE-dash so an explicit empty value in .env.prod is PRESERVED (a `:-` would force
-      # the e5 "query:/passage:" prefix back on an empty value → query/passage embedding mismatch).
-      SEALAI_V2_EMBED_PROVIDER: ${SEALAI_V2_EMBED_PROVIDER:-fastembed}
-      SEALAI_V2_EMBED_MODEL: ${SEALAI_V2_EMBED_MODEL:-intfloat/multilingual-e5-large}
+      # Wave 2 RAG: embedding provider. PROD = openai text-embedding-3-small (1536-dim, RAM-safe — the
+      # local e5-large OOM'd the 7.6 GB host; the openai API embeds with NO local model). DATA leaves the
+      # box for the embed call (it is an API). fastembed/e5-large is the optional offline alternative (its
+      # ONNX cache is the :ro mount below). Prefixes are EMPTY for openai; SINGLE-dash so an explicit
+      # empty value in .env.prod is PRESERVED (a `:-` would force the e5 "query:/passage:" prefix back).
+      SEALAI_V2_EMBED_PROVIDER: ${SEALAI_V2_EMBED_PROVIDER:-openai}
+      SEALAI_V2_EMBED_MODEL: ${SEALAI_V2_EMBED_MODEL:-text-embedding-3-small}
       SEALAI_V2_EMBED_QUERY_PREFIX: "${SEALAI_V2_EMBED_QUERY_PREFIX-query: }"
       SEALAI_V2_EMBED_PASSAGE_PREFIX: "${SEALAI_V2_EMBED_PASSAGE_PREFIX-passage: }"
       # Medium Intelligence Phase-2: L1-NEUTRAL display data (never fed to L1/L3 → golden byte-identical).

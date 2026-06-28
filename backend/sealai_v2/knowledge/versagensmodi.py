@@ -94,10 +94,6 @@ class VersagensmodiCatalog:
     def reviewed(self) -> tuple[Versagensmodus, ...]:
         return tuple(m for m in self.modes if m.reviewed)
 
-    @property
-    def ids(self) -> frozenset[str]:
-        return frozenset(m.id for m in self.modes)
-
 
 def _is_reviewed_prov(provenance: tuple[str, ...]) -> bool:
     return any(p.lower().startswith(_REVIEWED_PROV_PREFIXES) for p in provenance)

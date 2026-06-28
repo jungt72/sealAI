@@ -125,16 +125,6 @@
 .pill-send:hover:not(:disabled) { opacity: 0.9; }
 .pill-send:disabled { opacity: 0.32; cursor: default; }
 
-/* parameter-form popover anchored to the pill — upward in the chat view (pill docked bottom),
-   downward on the stage (pill mid-screen, room is below) */
-.pill-pop {
-  position: absolute; bottom: calc(100% + 14px); left: 6px; z-index: 35;
-  width: min(400px, calc(100% - 12px)); max-height: min(72vh, 560px); overflow: auto;
-  background: #fff; border: 1px solid var(--hairline); border-radius: 20px;
-  box-shadow: 0 18px 52px rgba(31, 42, 68, 0.16); padding: 18px 18px 16px;
-}
-.stage .pill-pop { bottom: auto; top: calc(100% + 14px); }
-
 /* ── fact chips (Fallkontext) ───────────────────────────────────────────────── */
 .fact-chips { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
 .chips-label { width: 100%; text-align: center; font-size: 11px; color: var(--ink-ghost); }
@@ -247,10 +237,6 @@
 }
 .scroll-wrap::before { top: 0; background: linear-gradient(to bottom, var(--color-surface), transparent); }
 .scroll-wrap::after { bottom: 0; background: linear-gradient(to top, var(--color-surface), transparent); }
-/* Parameter column: offset the cues past the sticky tabs (top) + the sticky action bar (bottom) so
-   they mark only the scrollable band — never the sticky chrome or the scrollbar. */
-.scroll-wrap--param::before { top: var(--param-tabs-h, 56px); }
-.scroll-wrap--param::after { bottom: var(--param-actions-h, 60px); }
 
 /* ── cockpit panel (the artifact-equivalent, right) ──────────────────────────────────────────────
    A clean header (closeable) + the Parameter | Readout 2-pane. `container-type` makes the inner split
@@ -272,25 +258,6 @@
 }
 .cockpit-close:hover { background: var(--hover-wash); color: var(--ink); }
 .cockpit-body { flex: 1; min-height: 0; overflow: hidden; }   /* the columns own the scroll, not this */
-
-/* the 2-pane: TWO COLUMNS (Parameter left | Readout right) when the panel is wide enough (≥680px);
-   stacked (Parameter on top, Readout below) when narrow. Each column is a .scroll-wrap (fade cues)
-   wrapping a .scroll-area pane → independent, overscroll-contained scrolling in both modes. */
-.cockpit-2pane { display: flex; flex-direction: column; gap: 0; height: 100%; min-height: 0; }
-.cockpit-col { flex: 1; min-height: 0; }
-.cockpit-pane { display: flex; flex-direction: column; gap: 10px; height: 100%; }
-.cockpit-pane--param { padding: 12px 16px 0; }
-.cockpit-pane--readout { align-items: center; padding: 22px 14px 64px; }
-/* in the cockpit pane the form fills the column (the pane is the surface — no inner card chrome) */
-.cockpit-pane--param .param-stage-card {
-  width: 100%; max-width: none; margin: 0; border: none; background: transparent; padding: 0;
-}
-.cockpit-pane--param .param-head { display: none; }   /* the panel header already says "Cockpit" */
-@container cockpit (min-width: 680px) {
-  .cockpit-2pane { flex-direction: row; align-items: stretch; }
-  .scroll-wrap--param { flex: 0 0 57%; border-right: 1px solid var(--hairline); }
-  .cockpit-2pane > .cockpit-col:not(.scroll-wrap--param) { flex: 1 1 43%; }
-}
 
 /* sticky anchors inside the scrolling Parameter column */
 .param-tabs-sticky {

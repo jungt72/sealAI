@@ -153,7 +153,6 @@ class KandidatenSpec:
     material: MaterialResult
     din_candidate_label: str | None  # only a LABEL, never a final code
     final_design_code: str | None  # ALWAYS None (G3)
-    masse: tuple = ()
     defer_gruende: tuple[str, ...] = ()
     open_verifications: tuple[str, ...] = ()
     offene_punkte: tuple[str, ...] = ()

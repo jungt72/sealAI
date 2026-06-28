@@ -147,7 +147,6 @@ async def compute(
     params: dict | None,
     *,
     grounding_facts: tuple[GroundingFact, ...] = (),
-    context: dict | None = None,
     param_origins: dict | None = None,
 ) -> CalcResult:
     """Stage 3 — deterministic calc layer (M4), AFTER ground (Fachkarten-property inputs available).
@@ -160,7 +159,6 @@ async def compute(
     return engine.evaluate(
         params=params or {},
         grounding_facts=grounding_facts,
-        context=context,
         param_origins=param_origins,
     )
 

@@ -124,17 +124,21 @@ class Settings(BaseSettings):
         "sealai_v2_fachkarten"  # OWN collection, separate from the V1 stack
     )
     qdrant_api_key: str | None = None  # value never logged
-    # Multilingual SOTA dense embedding via local FastEmbed (no API, nothing leaves the box; strong on
-    # German). e5 needs the "query:"/"passage:" prefix convention — handled in the adapter/ingestor.
-    # (bge-m3 is NOT available in fastembed 0.8.0 — verified; e5-large-multilingual is the SOTA pick.)
-    embed_model: str = "intfloat/multilingual-e5-large"
+    # Embedding model: the PROD path is the OpenAI API ("text-embedding-3-small", 1536-dim) — strong on
+    # German, reuses OPENAI_API_KEY, and crucially NO local model so NO RAM/OOM (the local e5-large model
+    # OOM'd the 7.6 GB host). DATA leaves the box for the embedding call (it IS an API) — this is NOT a
+    # no-egress path. The fastembed/e5-large option below is the OPTIONAL OFFLINE alternative (set
+    # embed_provider="fastembed" + embed_model="intfloat/multilingual-e5-large" + the e5 prefixes).
+    embed_model: str = "text-embedding-3-small"
     embed_cache_dir: str | None = (
-        None  # FastEmbed model cache dir; None → library default
+        None  # FastEmbed model cache dir (offline path only); None → library default
     )
-    # Embedding provider: "fastembed" (local ONNX — but e5-large OOM'd the 7.6 GB host) | "openai"
-    # (API text-embedding-3 — NO local model → NO RAM/OOM, strong German, reuses OPENAI_API_KEY: the
-    # RAM-safe production RAG path). For openai set embed_model="text-embedding-3-small" + prefixes "".
-    embed_provider: str = "fastembed"
-    # e5 needs the "query:"/"passage:" asymmetry; OpenAI/jina/MiniLM use "" (raw text). Per-provider.
-    embed_query_prefix: str = "query: "
-    embed_passage_prefix: str = "passage: "
+    # Embedding provider: "openai" (API text-embedding-3 — the RAM-safe PROD default) | "fastembed"
+    # (local ONNX e5-large — offline, but OOM'd this host). Defaulting to openai makes _make_embedder
+    # raise without OPENAI_API_KEY; on serve _build_retriever fail-safes to the in-process keyword
+    # retriever, and the ingestion CLI requires the key explicitly.
+    embed_provider: str = "openai"
+    # e5 needs the "query:"/"passage:" asymmetry; openai/jina/MiniLM use "" (raw text). Empty by default
+    # (the openai prod path); set the e5 prefixes only when switching to the fastembed offline option.
+    embed_query_prefix: str = ""
+    embed_passage_prefix: str = ""

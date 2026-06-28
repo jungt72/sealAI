@@ -26,6 +26,11 @@ def verpressung_prozent(*, schnurstaerke_mm: float, nuttiefe_mm: float) -> float
     """Radiale O-Ring-Verpressung: (Schnurstärke − Nuttiefe) / Schnurstärke · 100 [%]."""
     if schnurstaerke_mm <= 0:
         raise ValueError("schnurstaerke_mm must be > 0")
+    if not (0 <= nuttiefe_mm <= schnurstaerke_mm):
+        # Cross-input relation the per-input validity gate cannot catch: nuttiefe > schnurstaerke would
+        # yield a NEGATIVE (physically impossible) Verpressung. Fail closed so the evaluator emits an
+        # honest NotComputed instead of a confidently-wrong negative %.
+        raise ValueError("nuttiefe_mm must be within [0, schnurstaerke_mm]")
     return (schnurstaerke_mm - nuttiefe_mm) / schnurstaerke_mm * 100.0
 
 

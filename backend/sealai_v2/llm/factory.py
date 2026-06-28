@@ -91,11 +91,6 @@ def build_client_factory(settings: Settings) -> Callable[[str], LlmClient]:
     return client_for
 
 
-def build_llm_client(settings: Settings) -> LlmClient:
-    """Back-compat single client for the global ``provider`` (deps/eval default path)."""
-    return build_client_for(settings, settings.provider)
-
-
 async def resolve_l1_model(settings: Settings, preferred: str | None = None) -> str:
     """Pick the L1 model. For the OpenAI provider: honor an explicit choice, else rank
     ``models.list()`` by ``_L1_PREFERENCE``, else the lexicographically-last ``gpt-*``. For any

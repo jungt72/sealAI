@@ -63,10 +63,6 @@ class CompatibilityMatrixCatalog:
                 return c
         return None
 
-    @property
-    def ids(self) -> frozenset[str]:
-        return frozenset(c.id for c in self.cells)
-
 
 def _is_reviewed_prov(provenance: tuple[str, ...]) -> bool:
     return any(p.lower().startswith(_REVIEWED_PROV_PREFIXES) for p in provenance)
