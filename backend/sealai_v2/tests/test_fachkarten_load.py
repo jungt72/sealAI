@@ -140,3 +140,121 @@ def test_reviewed_card_without_reviewed_claim_is_error(tmp_path):
     ]
     with pytest.raises(ValueError):
         load_fachkarten(_write(tmp_path, bad))
+
+
+def test_claim_kind_defaults_to_family_tendency(tmp_path):
+    ok = [
+        {
+            "id": "FK-K",
+            "review_state": "draft",
+            "provenance": ["claude-research:x"],
+            "scope": {"material": ["NBR"]},
+            "claims": [
+                {
+                    "text": "NBR tendiert zu Oelbestaendigkeit",
+                    "review_state": "draft",
+                    "provenance": ["x"],
+                }
+            ],
+        }
+    ]
+    assert (
+        load_fachkarten(_write(tmp_path, ok)).by_id("FK-K").claims[0].kind
+        == "family_tendency"
+    )
+
+
+def test_claim_kind_is_carried(tmp_path):
+    ok = [
+        {
+            "id": "FK-K2",
+            "review_state": "draft",
+            "provenance": ["claude-research:x"],
+            "scope": {"material": ["FKM"]},
+            "claims": [
+                {
+                    "text": "70 Shore A (Compound XY, Datenblatt)",
+                    "review_state": "draft",
+                    "kind": "example_value",
+                    "provenance": ["x"],
+                },
+                {
+                    "text": "FKM in Glykol-Bremsfluessigkeit ungeeignet",
+                    "review_state": "draft",
+                    "kind": "safety_nogo",
+                    "provenance": ["x"],
+                },
+            ],
+        }
+    ]
+    claims = load_fachkarten(_write(tmp_path, ok)).by_id("FK-K2").claims
+    assert claims[0].kind == "example_value"
+    assert claims[1].kind == "safety_nogo"
+
+
+def test_invalid_claim_kind_is_load_error(tmp_path):
+    bad = [
+        {
+            "id": "FK-KBAD",
+            "review_state": "draft",
+            "provenance": ["claude-research:x"],
+            "scope": {"material": ["NBR"]},
+            "claims": [
+                {
+                    "text": "x",
+                    "review_state": "draft",
+                    "kind": "nonsense",
+                    "provenance": ["x"],
+                }
+            ],
+        }
+    ]
+    with pytest.raises(ValueError, match="kind"):
+        load_fachkarten(_write(tmp_path, bad))
+
+
+def test_extended_claim_kinds_load(tmp_path):
+    # the re-challenge 4→8 additions: definition / regulatory_status / qualification_required / safety_caution
+    ok = [
+        {
+            "id": "FK-K8",
+            "review_state": "draft",
+            "provenance": ["claude-research:x"],
+            "scope": {"material": ["FKM"], "medium": ["Bremsfluessigkeit"]},
+            "claims": [
+                {
+                    "text": "FKM ist nach ISO 1629 genormt",
+                    "review_state": "draft",
+                    "kind": "definition",
+                    "provenance": ["x"],
+                },
+                {
+                    "text": "EU 1935/2004 ist die Rahmenverordnung fuer Lebensmittelkontakt",
+                    "review_state": "draft",
+                    "kind": "regulatory_status",
+                    "provenance": ["x"],
+                },
+                {
+                    "text": "RGD-Eignung nur nach ISO 23936-2 / Herstellerqualifikation",
+                    "review_state": "draft",
+                    "kind": "qualification_required",
+                    "provenance": ["x"],
+                },
+                {
+                    "text": "Amine im Kuehlmittel koennen FKM angreifen",
+                    "review_state": "draft",
+                    "kind": "safety_caution",
+                    "provenance": ["x"],
+                },
+            ],
+        }
+    ]
+    kinds = [
+        cl.kind for cl in load_fachkarten(_write(tmp_path, ok)).by_id("FK-K8").claims
+    ]
+    assert kinds == [
+        "definition",
+        "regulatory_status",
+        "qualification_required",
+        "safety_caution",
+    ]

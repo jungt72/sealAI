@@ -29,6 +29,29 @@ _CATALOG_DIR = Path(__file__).resolve().parent
 _DEFAULT_FILE = _CATALOG_DIR / "fachkarten_seed.json"
 
 _REVIEW_STATES = ("reviewed", "draft")
+# claim EPISTEMICS (audit 2026-06-28; taxonomy 4→8 after the re-challenge 2026-06-28): the structural
+# answer to "a datasheet value is NOT a material-family truth". Every claim declares what KIND of
+# statement it is, so the product frames it correctly and never oversells a value as a family limit.
+# The re-challenge showed the first 4 kinds were too coarse (safety_nogo overloaded with positive
+# standards + qualification rules; regulatory/definitional statements had no home), so 4 were added:
+#   family_tendency        — a qualitative family-level tendency (the safe default for grounding)
+#   example_value          — a compound-/test-specific datasheet number; NEVER a family limit
+#   system_dependent       — depends on geometry/groove/gap/hardness/support-ring/medium/PV/pairing/processing
+#   safety_nogo            — a HARD safety exclusion ONLY ("darf nicht …"); never a positive standard or rule
+#   definition             — a classification/definitional statement (e.g. an ISO 1629 short code, what X is)
+#   regulatory_status      — a normative/legal status (norm framework; conformity is grade-/batch-specific)
+#   qualification_required — a procedural obligation: test/qualify/obtain a manufacturer-or-system release
+#   safety_caution         — a known dangerous failure mode under conditions; softer than safety_nogo
+_CLAIM_KINDS = (
+    "family_tendency",
+    "example_value",
+    "system_dependent",
+    "safety_nogo",
+    "definition",
+    "regulatory_status",
+    "qualification_required",
+    "safety_caution",
+)
 # provenance markers that establish path (i) owner-grounding (no external source needed)
 _OWNER_PROV_PREFIXES = ("owner", "trap-correct:", "trap:")
 _SCOPE_DIMS = ("material", "medium", "property", "application")
@@ -46,6 +69,7 @@ class Claim:
     provenance: tuple[
         str, ...
     ] = ()  # path (i): "trap-correct:…"/"owner:…"; path (ii): research origin
+    kind: str = "family_tendency"  # epistemics — see _CLAIM_KINDS (default = safe family-level tendency)
 
     @property
     def reviewed(self) -> bool:
@@ -105,11 +129,15 @@ def _claim(raw: dict, card_id: str) -> Claim:
         raise ValueError(
             f"{card_id}: claim review_state {state!r} not in {_REVIEW_STATES}"
         )
+    kind = str(raw.get("kind", "family_tendency")).strip() or "family_tendency"
+    if kind not in _CLAIM_KINDS:
+        raise ValueError(f"{card_id}: claim kind {kind!r} not in {_CLAIM_KINDS}")
     c = Claim(
         text=str(raw["text"]).strip(),
         review_state=state,
         sources=tuple(str(s) for s in raw.get("sources", [])),
         provenance=tuple(str(p) for p in raw.get("provenance", [])),
+        kind=kind,
     )
     if not c.text:
         raise ValueError(f"{card_id}: empty claim text")
