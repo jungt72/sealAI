@@ -40,6 +40,7 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
+from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
 from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
@@ -228,6 +229,11 @@ class Pipeline:
     # researcher OR flag off → fully inert.
     medium_researcher: MediumResearcher | None = None
     medium_intel_enabled: bool = False
+    # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN from the
+    # case. Default-OFF flag (owner governance gate: expert Fachfreigabe + DIN-Lizenz). RWDR-scoped +
+    # structurally capped (G1/G2/G3, always "vorläufig"); a render surface only — NEVER enters L1/L3, so
+    # enabling keeps the prompt + eval byte-identical. Flag off → fully inert.
+    produktspec_enabled: bool = False
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -315,6 +321,23 @@ class Pipeline:
         # manufacturer request; grounded_data=False with the owner-pending empty seed.
         alternativen_result = stages.alternativen(
             self.partner_registry, question, tenant_id=scope.tenant_id
+        )
+        # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
+        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +
+        # fail-open. A render surface only — never injected into L1/L3 (the prompt stays byte-identical).
+        seal_type = next(
+            (
+                f.wert
+                for f in mem.case_state
+                if f.feld in ("dichtungstyp", "seal_type") and f.wert
+            ),
+            "",
+        )
+        kandidaten_spec = compute_kandidaten_spec(
+            mem.case_state,
+            question,
+            enabled=self.produktspec_enabled,
+            seal_type=seal_type,
         )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
@@ -533,6 +556,7 @@ class Pipeline:
             decode=decode_result,
             alternativen=alternativen_result,
             medium_intelligence=medium_intelligence,
+            kandidaten_spec=kandidaten_spec,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -790,4 +814,5 @@ def build_pipeline(
         distiller=distiller,
         medium_researcher=medium_researcher,
         medium_intel_enabled=settings.medium_intel_enabled,
+        produktspec_enabled=settings.produktspec_enabled,
     )

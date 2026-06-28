@@ -78,6 +78,42 @@ export interface MediumIntelligence {
   unsicher: boolean;
   vorlaeufig: boolean;
 }
+// Kandidaten-Spezifikation (Produktspec v3.1) — a deterministic, STRUCTURALLY CAPPED candidate space
+// (Bauform/Werkstoff/DIN). NEVER a release: final_design_code is always null (G3), freigegeben always
+// false (G1), a free-text medium → candidate-set only (G2). Render-only; always "vorläufig".
+export interface SpecAxis {
+  name: string;
+  value: string | null;
+  status: string;
+  begruendung: string[];
+}
+export interface SpecMaterial {
+  kind: string;
+  primary: string[];
+  alternatives: string[];
+  escalation: string[];
+  excluded: string[];
+  reason_codes: string[];
+  next_question: string[];
+  validation_required: boolean;
+}
+export interface KandidatenSpec {
+  response_level: string;
+  envelope_band: string | null;
+  kritikalitaet: string;
+  axes: SpecAxis[];
+  material: SpecMaterial;
+  material_candidate_set: string[];
+  din_candidate_label: string | null;
+  final_design_code: string | null; // always null (G3)
+  defer_gruende: string[];
+  open_verifications: string[];
+  offene_punkte: string[];
+  failure_mode_checklist: string[];
+  freigegeben: boolean; // always false (G1)
+  geltungsrahmen: string;
+  quellen: string[];
+}
 // Modus F (Hersteller-Partner pool, Dim. 6) — owner business model: payment gates pool MEMBERSHIP,
 // the SELECTION ranks BY CAPABILITY (neutral, §3.9; never pay-to-rank). A paid listing → transparently
 // labelled "Partner · Anzeige". lead_email is internal and is NEVER part of this payload.
@@ -192,6 +228,7 @@ export interface ChatResponse {
   computed?: KernelValue[]; // M8: in-band kern result (additive; panel can update without a 2nd call)
   not_computed?: NotComputed[];
   medium_intelligence?: MediumIntelligence | null; // Phase 2: the MEDIUM panel data (vorläufig)
+  kandidaten_spec?: KandidatenSpec | null; // Produktspec v3.1: the PRODUKT-KANDIDAT panel (vorläufig)
   alternativen?: Alternativen | null; // Modus F: the HERSTELLER-AUSWAHL panel data
 }
 export interface RememberedFact {

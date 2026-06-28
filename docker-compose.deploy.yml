@@ -284,6 +284,9 @@ services:
       SEALAI_V2_EMBED_PASSAGE_PREFIX: "${SEALAI_V2_EMBED_PASSAGE_PREFIX-passage: }"
       # Medium Intelligence Phase-2: L1-NEUTRAL display data (never fed to L1/L3 → golden byte-identical).
       SEALAI_V2_MEDIUM_INTEL_ENABLED: ${SEALAI_V2_MEDIUM_INTEL_ENABLED:-false}
+      # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
+      # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
+      SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
     volumes:
     # Pre-staged e5-large ONNX cache (FastEmbed) — read-only; avoids a ~2GB cold download on the
     # health-gated recreate. uid 10001 reads via the bind mount (the cache contents are world-readable).

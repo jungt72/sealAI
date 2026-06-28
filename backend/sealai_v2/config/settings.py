@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # default — L1-NEUTRAL (never enters the prompt), so enabling adds only the tab + one helper call
     # per medium (cached); flip via SEALAI_V2_MEDIUM_INTEL_ENABLED when the owner wants it live.
     medium_intel_enabled: bool = False
+    # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN as a
+    # render surface. OFF by default — wired but inert until the owner lifts the governance NO-GO (expert
+    # Fachfreigabe + DIN-Lizenz). L1-NEUTRAL (never enters the prompt); flip via SEALAI_V2_PRODUKTSPEC_ENABLED.
+    produktspec_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

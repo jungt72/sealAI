@@ -24,6 +24,7 @@ import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
 import { AlternativenPanel } from "./AlternativenPanel";
 import { ContributePanel } from "./ContributePanel";
+import { KandidatenSpecPanel } from "./KandidatenSpecPanel";
 import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
@@ -236,6 +237,16 @@ export function ChatPane({
     return null;
   }, [msgs]);
 
+  // Produktspec v3.1: the PRODUKT-KANDIDAT panel shows the most recent turn's Kandidaten-Spezifikation
+  // (always vorläufig). Null until the backend ships the field + the feature flag is enabled by the owner.
+  const latestSpec = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant" && m.res.kandidaten_spec) return m.res.kandidaten_spec;
+    }
+    return null;
+  }, [msgs]);
+
   // Modus F (Hersteller-Auswahl): the most recent turn's manufacturer suggestion, or null (it fires
   // only on an explicit alternatives/manufacturer request).
   const latestAlternativen = useMemo(() => {
@@ -415,6 +426,7 @@ export function ChatPane({
         </div>
 
         {latestMedium ? <MediumPanel data={latestMedium} /> : null}
+        {latestSpec ? <KandidatenSpecPanel data={latestSpec} /> : null}
         {latestAlternativen ? (
           <AlternativenPanel
             data={latestAlternativen}

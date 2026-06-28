@@ -175,6 +175,10 @@ def chat_response(result: PipelineResult) -> dict:
         # Medium Intelligence (Phase 2): provisional researched medium properties + challenges for the
         # MEDIUM tab, or None. Render/serializer surface only — never injected into L1/L3.
         "medium_intelligence": _medium_intelligence(result.medium_intelligence),
+        # Kandidaten-Spezifikation (Produktspec v3.1): the candidate Bauform/Werkstoff/DIN render dict
+        # (structurally capped, always "vorläufig"), or None when off / non-RWDR / no basis. Already a
+        # plain dict from the pipeline adapter — passed through verbatim. Never from L1/L3.
+        "kandidaten_spec": result.kandidaten_spec,
         # P1.5: surface L3's verdict (verified flag + action/parse_ok/hedged) so the client can
         # distinguish a confidently-verified answer from a hedge or a silently-unverified one.
         # Additive only — existing keys are untouched.

@@ -624,6 +624,10 @@ class PipelineResult:
     # render/serializer surface (the MEDIUM tab) — NEVER injected into L1/L3, so the prompt stays
     # byte-identical and the eval is unperturbed.
     medium_intelligence: "MediumIntelligence | None" = None
+    # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN as a
+    # render dict, or None when off / non-RWDR / no basis. Structurally capped (G1/G2/G3, always
+    # "vorläufig"); a render/serializer surface only — NEVER injected into L1/L3 (prompt byte-identical).
+    kandidaten_spec: dict | None = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.
