@@ -2,7 +2,7 @@
    One luminous moment (the radial glow behind the pill), everything else quiet: borderless rail,
    hairline pill, mono chips for engineering values, doctrine line fixed at the bottom. */
 
-.shell { display: flex; height: 100%; background: #fff; }
+.shell { display: flex; height: 100%; background: var(--bg-stage); }
 
 /* ── collapsible navigation sidebar (claude.ai-style): icon rail ⟷ wider with labels ──────────── */
 .rail {
@@ -75,7 +75,7 @@
   position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 20;
   text-align: center; font-size: 12px; color: var(--ink-ghost);
   padding: 18px 24px 12px;
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.96) 55%, rgba(255, 255, 255, 0));
+  background: linear-gradient(to top, rgba(252, 252, 252, 0.96) 55%, rgba(252, 252, 252, 0));
   pointer-events: none; transition: left 160ms ease;
 }
 @media (prefers-reduced-motion: reduce) { .doctrine-line { transition: none; } }
@@ -204,7 +204,7 @@
 }
 .msg-user {
   align-self: flex-end; background: var(--hover-wash); color: var(--ink);
-  padding: 11px 17px; border-radius: 20px 20px 5px 20px; max-width: 75%;
+  padding: 10px 16px; border-radius: 18px; max-width: 75%;   /* Gemini: uniformly rounded, no tail */
   line-height: 1.5; white-space: pre-wrap;
 }
 .chat-foot {
@@ -258,6 +258,7 @@
 .cockpit-panel {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
   container-type: inline-size; container-name: cockpit;
+  background: var(--bg-cockpit);   /* pure white panel against the off-white stage */
 }
 .cockpit-header {
   flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -347,6 +348,8 @@
     display: grid; grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr) auto var(--cockpit-w, 50%);
   }
+  /* define the white cockpit's left edge against the off-white chat (only when side-by-side) */
+  .workspace--split .cockpit-panel { border-left: 1px solid var(--hairline); }
   .chat-foot { padding-bottom: 64px; }
 
   /* the resize handle (chat|cockpit): a thin track with a centered grab line that grows on hover/focus. */
@@ -390,28 +393,76 @@
 .badge-vorlaeufig { background: var(--color-warning-bg); color: var(--color-warning-fg); }
 .answer-text { line-height: 1.55; }
 
-/* markdown body — block layout from the renderer; restrained, quiet headings */
+/* ── Markdown body — tuned to the Gemini reference (owner screenshot, 2026-06-27) ────────────────────
+   Neutral dark-grey body (no blue tint), medium-weight (500) near-black headings with generous top
+   spacing, heavy (700) bold for inline labels (a real body↔bold contrast), hollow-circle (○) bullets,
+   1.7 line-height prose. Sans tables + framed code blocks unchanged. GFM on (Markdown.tsx). */
+.markdown { color: var(--md-ink); font-size: 1rem; line-height: 1.7; }
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
-.markdown p { margin: var(--space-2) 0; }
-.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
-  margin: var(--space-4) 0 var(--space-2); line-height: 1.25; color: var(--ink); font-weight: 600; }
-.markdown h1 { font-size: 1.25rem; } .markdown h2 { font-size: 1.1rem; } .markdown h3 { font-size: 1rem; }
-.markdown ul, .markdown ol { margin: var(--space-2) 0; padding-left: var(--space-6); }
-.markdown li { margin: 3px 0; }
-.markdown a { color: var(--color-seal-blue); text-decoration: underline; text-underline-offset: 2px; }
-.markdown code { font-family: var(--font-mono); font-size: 0.88em;
-  background: var(--hover-wash); padding: 1px 6px; border-radius: 6px; }
-.markdown pre { background: var(--hover-wash); border: 1px solid var(--hairline);
-  border-radius: var(--radius-md); padding: var(--space-3); overflow: auto; }
-.markdown pre code { background: none; padding: 0; }
-.markdown blockquote { margin: var(--space-2) 0; padding-left: var(--space-3);
+
+.markdown p { margin: 0.8em 0; }
+
+.markdown h1, .markdown h2, .markdown h3,
+.markdown h4, .markdown h5, .markdown h6 {
+  color: var(--md-heading); font-weight: 500; line-height: 1.3; letter-spacing: normal;
+}
+.markdown h1 { font-size: 1.45rem; margin: 1.6em 0 0.6em; }
+.markdown h2 { font-size: 1.3rem;  margin: 1.7em 0 0.5em; }
+.markdown h3 { font-size: 1.2rem;  margin: 1.5em 0 0.45em; }
+.markdown h4 { font-size: 1.05rem; font-weight: 600; margin: 1.3em 0 0.35em; }
+.markdown h5, .markdown h6 { font-size: 0.95rem; font-weight: 600; margin: 1.1em 0 0.3em; color: var(--md-muted); }
+
+.markdown strong { font-weight: 700; color: var(--md-heading); }
+.markdown em { font-style: italic; }
+.markdown del { color: var(--md-muted); }
+.markdown hr { border: none; border-top: 1px solid var(--hairline); margin: 1.6em 0; }
+
+.markdown ul, .markdown ol { margin: 0.7em 0; padding-left: 1.7em; }
+.markdown ul { list-style-type: circle; }   /* Gemini renders unordered bullets as hollow circles (○) */
+.markdown li { margin: 0.5em 0; }
+.markdown li > p { margin: 0.4em 0; }
+.markdown ul ul, .markdown ol ol, .markdown ul ol, .markdown ol ul { margin: 0.3em 0; }
+.markdown li::marker { color: var(--md-muted); }
+.markdown li > input[type="checkbox"] { margin: 0 0.5em 0 0; }   /* GFM task-lists */
+
+.markdown a { color: var(--color-seal-blue); text-decoration: underline;
+  text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.markdown a:hover { text-decoration-thickness: 2px; }
+
+.markdown blockquote { margin: 0.9em 0; padding: 0.15em 0 0.15em 1em;
   border-left: 3px solid var(--hairline); color: var(--ink-soft); }
-.markdown table { border-collapse: collapse; margin: var(--space-2) 0; }
-.markdown th, .markdown td { border: 1px solid var(--hairline); padding: var(--space-1) var(--space-3); }
-.markdown td { font-family: var(--font-mono); font-size: 0.92em; }
-.markdown th { font-weight: 600; text-align: left; }
-.markdown .katex-display { margin: var(--space-3) 0; overflow-x: auto; overflow-y: hidden; }
+.markdown blockquote p { margin: 0.3em 0; }
+
+/* inline code (the block <code> inside .md-code pre is excluded → keeps its own styling) */
+.markdown :not(pre) > code { font-family: var(--font-mono); font-size: 0.86em;
+  background: var(--md-code-inline-bg); color: var(--md-ink); padding: 0.12em 0.4em; border-radius: 6px; }
+
+/* tables — Gemini-style: full width, sans body, shaded header, hairline frame, subtle zebra */
+.markdown table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.95rem;
+  border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
+.markdown thead th { background: var(--md-thead-bg); }
+.markdown th, .markdown td { border: 1px solid var(--hairline); padding: 9px 14px;
+  text-align: left; vertical-align: top; }
+.markdown th { font-weight: 600; color: var(--md-heading); }
+.markdown tbody tr:nth-child(even) { background: var(--md-row-alt); }
+
+/* code blocks — Gemini-style framed widget (header: language + copy) over a light <pre>.
+   Structure produced by Markdown.tsx's CodeBlock, which replaces the bare <pre>. */
+.md-code { margin: 1em 0; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden;
+  background: var(--md-code-bg); }
+.md-code-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: var(--md-code-head-bg); border-bottom: 1px solid var(--hairline); }
+.md-code-lang { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+.md-code-copy { font: inherit; font-size: 12px; color: var(--ink-soft); background: none; border: none;
+  cursor: pointer; padding: 2px 7px; border-radius: 6px;
+  transition: background 120ms ease, color 120ms ease; }
+.md-code-copy:hover { background: var(--hover-wash); color: var(--ink); }
+.md-code pre { margin: 0; padding: 13px 14px; overflow: auto; background: var(--md-code-bg); }
+.md-code pre code { font-family: var(--font-mono); font-size: 0.86rem; line-height: 1.6;
+  color: var(--md-ink); background: none; padding: 0; }
+
+.markdown .katex-display { margin: 0.9em 0; overflow-x: auto; overflow-y: hidden; }
 
 .citations { margin-top: 10px; font-size: 13px; }
 .citations summary { cursor: pointer; color: var(--ink-faint); font-size: 12px; }
@@ -546,106 +597,53 @@
   font-weight: 500; cursor: pointer; box-shadow: 0 10px 30px rgba(122, 166, 235, 0.3); }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   COCKPIT — NEUMORPHISM (themesberg soft-UI)
-   Scoped to .cockpit-panel so the chat-popover variant of ParameterForm and the chat-flow chips
-   keep the flat white language. Convention: raised = dual drop shadow (lo bottom-right / hi
-   top-left); inset = the same shadows inside; the surface is always --neu-bg.
+   COCKPIT — FLAT WHITE (Gemini-parity; owner spec 2026-06-27: the right column = #FFFFFF)
+   Was neumorphism (themesberg soft-UI on a blue-grey --neu-bg ground). Soft-UI shadows need that
+   grey ground to read, which conflicts with a white panel — so the cockpit now reads like Gemini's
+   side canvas: a clean white surface, hairline-framed inputs + cards, a flat seal-blue submit.
+   Scoped to .cockpit-panel; most controls fall back to their flat base styles (hairline inputs,
+   white tabs-sticky/actionbar, bordered fact-chip pills, flat close/submit/briefing) — only the
+   structural refinements (flat operating-conditions section, the type-tab active stroke, the
+   Berechnungen card) are restated here on a white ground.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
-/* — base surface ———————————————————————————————————————————————————————————————————————————— */
-.cockpit-panel { background: var(--neu-bg); }
-.cockpit-panel .cockpit-header { border-bottom: none; }
+/* — surface: the white set on .cockpit-panel above; keep the sticky header/actionbar bars white —— */
 .cockpit-panel .param-tabs-sticky,
-.cockpit-panel .param-actionbar { background: var(--neu-bg); }
-.cockpit-panel .param-actionbar { border-top: none; }
-@container cockpit (min-width: 680px) {
-  .cockpit-panel .scroll-wrap--param { border-right: none; }
-}
-/* scroll fade cues fade into the grey ground, not white */
-.cockpit-panel .scroll-wrap::before { background: linear-gradient(to bottom, var(--neu-bg), transparent); }
-.cockpit-panel .scroll-wrap::after { background: linear-gradient(to top, var(--neu-bg), transparent); }
+.cockpit-panel .param-actionbar { background: var(--bg-cockpit); }
 
-/* — close button (soft raised) ——————————————————————————————————————————————————————————————— */
-.cockpit-panel .cockpit-close {
-  background: var(--neu-bg);
-  box-shadow: 3px 3px 7px var(--neu-lo), -3px -3px 7px var(--neu-hi);
-}
-.cockpit-panel .cockpit-close:hover { color: var(--ink); box-shadow: 2px 2px 5px var(--neu-lo), -2px -2px 5px var(--neu-hi); }
-.cockpit-panel .cockpit-close:active { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
-
-/* — operating-conditions card + inputs/selects (inset wells) ————————————————————————————————— */
-/* Betriebsbedingungen = a FLAT section (no outer well — only the input fields are recessed),
-   set off from the tabs by a soft divider + spacing, with a clear heading. */
+/* — operating-conditions: a flat section (only the inputs are framed), set off by a divider —————— */
 .cockpit-panel .param-core {
   border: none; background: transparent; box-shadow: none;
   padding: 2px 0 16px; margin: 0 0 14px;
-  border-bottom: 1px solid rgba(90, 99, 114, 0.16);
+  border-bottom: 1px solid var(--hairline);
 }
 .cockpit-panel .param-core-label {
   font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: var(--ink); margin-bottom: 2px;
 }
-.cockpit-panel .param-input input,
-.cockpit-panel .param-select {
-  border: none; background: var(--neu-bg);
-  box-shadow: inset 3px 3px 6px var(--neu-lo), inset -3px -3px 6px var(--neu-hi);
-}
-.cockpit-panel .param-input input:focus,
-.cockpit-panel .param-select:focus {
-  box-shadow: inset 4px 4px 7px var(--neu-lo), inset -4px -4px 7px var(--neu-hi);
-}
 
-/* — type tabs: BASE segmented/skewed design. Inactive = light grey on the neumorphic ground;
-   ACTIVE = light tab with navy-blue text + a dark-blue (seal-blue) outline so it reads clearly;
-   soon/disabled keep the base dashed/greyed look (scoped :not so we do not flatten them). */
+/* — type tabs: inactive = quiet grey pill on white; ACTIVE = white tab, navy text, seal-blue left
+     stroke (soon/disabled keep the base dashed/greyed look — scoped :not so we never flatten them) */
 .cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled) {
-  background: #ffffff; border-color: rgba(60, 67, 80, 0.14); color: var(--ink-soft);
-  font-weight: 500;
+  background: var(--hover-wash); border-color: var(--hairline); color: var(--ink-soft); font-weight: 500;
 }
 .cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
-  background: #ffffff; color: var(--color-seal-blue); border-color: rgba(60, 67, 80, 0.28);
+  background: var(--hover-wash); color: var(--color-seal-blue); border-color: rgba(60, 67, 80, 0.28);
 }
-/* active = navy-blue text + a dark-blue accent stroke on the LEFT edge only (not a full outline) */
 .cockpit-panel .param-tab.is-active {
   background: #ffffff; color: var(--color-seal-blue);
-  border-color: rgba(60, 67, 80, 0.24);
-  border-left: 3px solid var(--color-seal-blue);
-  z-index: 3;
+  border-color: var(--hairline); border-left: 3px solid var(--color-seal-blue);
+  box-shadow: none; z-index: 3;
 }
 
-/* — submit + briefing buttons (raised; pressed on :active) ———————————————————————————————————— */
-.cockpit-panel .param-actionbar button[type="submit"] {
-  box-shadow: 4px 4px 10px var(--neu-lo), -3px -3px 8px var(--neu-hi);
-  transition: box-shadow 140ms ease;
-}
-.cockpit-panel .param-actionbar button[type="submit"]:hover { box-shadow: 3px 3px 8px var(--neu-lo), -2px -2px 7px var(--neu-hi); }
-.cockpit-panel .param-actionbar button[type="submit"]:active { box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.28); }
-.cockpit-panel .make-briefing {
-  border: none; background: var(--neu-bg); color: var(--ink-soft);
-  box-shadow: 3px 3px 8px var(--neu-lo), -3px -3px 8px var(--neu-hi);
-}
-.cockpit-panel .make-briefing:hover:not(:disabled) { background: var(--neu-bg); color: var(--ink); box-shadow: 2px 2px 6px var(--neu-lo), -2px -2px 6px var(--neu-hi); }
-.cockpit-panel .make-briefing:active:not(:disabled) { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
-.cockpit-panel .make-briefing:disabled { box-shadow: inset 2px 2px 5px var(--neu-lo), inset -2px -2px 5px var(--neu-hi); }
-
-/* — readout cards: Berechnungen + Fallkontext chips (soft raised) ———————————————————————————— */
+/* — Berechnungen → a flat hairline card; the preview stays a dashed draft. (Fallkontext chips fall
+     back to their flat bordered-pill base; close/submit/make-briefing to their flat base.) ————————— */
 .cockpit-panel .kernel-panel {
-  border-radius: var(--radius-lg); padding: 12px 14px; background: var(--neu-bg);
-  box-shadow: 5px 5px 12px var(--neu-lo), -5px -5px 12px var(--neu-hi);
+  border-radius: var(--radius-lg); padding: 12px 14px;
+  background: var(--bg-cockpit); border: 1px solid var(--hairline);
 }
 .cockpit-panel .kernel-panel--preview {
-  border: none; background: var(--neu-bg);
-  box-shadow: inset 3px 3px 7px var(--neu-lo), inset -3px -3px 7px var(--neu-hi);
+  background: var(--hover-wash); border: 1px dashed var(--hairline);
 }
-.cockpit-panel .fact-chip-body {
-  background: var(--neu-bg);
-  box-shadow: 3px 3px 7px var(--neu-lo), -3px -3px 7px var(--neu-hi);
-}
-.cockpit-panel .fact-chip-body:hover { background: var(--neu-bg); box-shadow: 2px 2px 5px var(--neu-lo), -2px -2px 5px var(--neu-hi); }
-
-/* — soften remaining hairline separators into the surface ———————————————————————————————————— */
-.cockpit-panel .param-group,
-.cockpit-panel .param-expander,
-.cockpit-panel .readout-briefing { border-top-color: var(--neu-lo); }
 
 /* ── cockpit re-layout: one column (tabs+form on top) + a split (Berechnungen | Kritische Punkte) ─
    Solid uniform surface to the right edge; the whole body scrolls as one. */

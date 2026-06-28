@@ -26,6 +26,27 @@ describe("Markdown rendering (presentation port)", () => {
     expect(container.querySelectorAll("li").length).toBe(2);
   });
 
+  it("renders GFM tables (the briefing format the Gemini reference uses)", () => {
+    const { container } = render(<Markdown source={"| Stoff | Eignung |\n| --- | --- |\n| FKM | gut |"} />);
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.querySelectorAll("thead th").length).toBe(2);
+    expect(container.querySelectorAll("tbody td").length).toBe(2);
+  });
+
+  it("renders GFM strikethrough as <del>", () => {
+    const { container } = render(<Markdown source={"~~veraltet~~"} />);
+    expect(container.querySelector("del")?.textContent).toBe("veraltet");
+  });
+
+  it("wraps a fenced code block in the Gemini-style widget (language label + copy + pre)", () => {
+    const { container } = render(<Markdown source={"```python\nprint(1)\n```"} />);
+    const widget = container.querySelector(".md-code");
+    expect(widget).not.toBeNull();
+    expect(widget?.querySelector(".md-code-lang")?.textContent).toBe("python");
+    expect(widget?.querySelector("button.md-code-copy")).not.toBeNull();
+    expect(widget?.querySelector("pre code")?.textContent).toContain("print(1)");
+  });
+
   it("XSS: raw HTML from the untrusted model is inert (no live node)", () => {
     const { container } = render(
       <Markdown source={'<img src=x onerror="alert(1)"> <script>alert(2)</script>\n\n**safe**'} />,

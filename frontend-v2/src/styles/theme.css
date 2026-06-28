@@ -27,6 +27,21 @@
   --color-warning-bg: color-mix(in srgb, #b8860b 10%, #ffffff);
   --color-warning-fg: #6b5200;
 
+  /* markdown body — Gemini-style typography (near-black heading hierarchy, light code/table grounds
+     that read on both the #FCFCFC chat and the #FFFFFF cockpit) */
+  --md-ink: #2d2e31;          /* answer body text — neutral dark grey (Gemini on-surface; NO blue tint) */
+  --md-heading: #1a1a1c;      /* headings + bold — near-black neutral, the top of the hierarchy */
+  --md-muted: #5f6368;        /* list markers, h5/h6, captions — Gemini secondary grey */
+  --md-code-bg: #f6f7f9;      /* code-block <pre> area */
+  --md-code-head-bg: #eef0f3; /* code-block header bar (language + copy) */
+  --md-code-inline-bg: #f0f1f4;
+  --md-thead-bg: #f4f6f8;     /* table header row */
+  --md-row-alt: #fbfbfc;      /* table zebra — very subtle */
+
+  /* stage grounds (owner spec 2026-06-27): chat + left rail off-white, cockpit pure white */
+  --bg-stage: #fcfcfc;        /* .shell base → rail + chat column */
+  --bg-cockpit: #ffffff;      /* right cockpit column */
+
   /* legacy aliases still referenced by shared rules */
   --color-background: #ffffff;
   --color-foreground: var(--ink);
