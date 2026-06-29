@@ -468,6 +468,50 @@ class Pipeline:
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
             )
 
+            # INC-NARRATOR-CONTRACT Phase 3/5: the claim-level output guard on the rendered answer.
+            # Fail-closed coverage — on BLOCK, regenerate ONCE with a deterministic correction note, then
+            # re-score; the verdict is attached + logged (GOVERNANCE). Flag-gated + only with a contract →
+            # OFF / no-contract = no-op = byte-identical. The (re)generated answer still goes through L3.
+            guard = None
+            if self.response_contract_enabled and contract is not None:
+                from sealai_v2.core.output_guard import (
+                    correction_note as _guard_note,
+                    evaluate_render as _guard_eval,
+                    known_inputs as _guard_known,
+                )
+
+                _kv, _km = _guard_known(question)
+                _gr = _guard_eval(
+                    answer_text=answer.text, contract=contract, known_values=_kv, known_materials=_km
+                )
+                if _gr.action == "BLOCK":
+                    with _staged(timer, progress, "regenerate_ms", "regenerate"):
+                        answer = await self.generator.generate(
+                            question,
+                            flags=flags,
+                            grounding_facts=l1_grounding,
+                            calc=calc,
+                            case_context=case_context or None,
+                            durable_context=durable_context or None,
+                            conversation_window=conversation_window or None,
+                            untrusted=untrusted_data,
+                            archetype_context=archetype_context,
+                            coverage=coverage,
+                            contract=contract,
+                            correction_note=_guard_note(_gr),
+                        )
+                    _gr2 = _guard_eval(
+                        answer_text=answer.text, contract=contract, known_values=_kv, known_materials=_km
+                    )
+                    _log.info(
+                        "GOVERNANCE output_guard: regenerated (first=%s -> after=%s); first_violations=%s",
+                        _gr.action,
+                        _gr2.action,
+                        [v.kind for v in _gr.violations],
+                    )
+                    _gr = _gr2
+                guard = _gr.to_dict()
+
             verdict: VerifierVerdict | None = None
             if self.verifier is not None and self.catalog is not None:
                 with _staged(timer, progress, "verify_ms", "verify"):
@@ -589,6 +633,7 @@ class Pipeline:
             gegencheck=gegencheck_verdict,
             coverage=coverage,
             contract=contract,
+            guard=guard,
             diagnose=diagnosis,
             decode=decode_result,
             alternativen=alternativen_result,

@@ -392,3 +392,42 @@ def evaluate_render(
 
     ok = not violations
     return GuardResult(ok=ok, action="PASS" if ok else "BLOCK", violations=tuple(violations))
+
+
+def known_inputs(
+    text: str, policy: ContractPolicy = DEFAULT_POLICY
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The values + materials the USER stated in the case text — referencing them in the answer is not
+    invention (the guard's known_values / known_materials exceptions). Pure; for the pipeline wiring."""
+    low = (text or "").lower()
+    materials = tuple(
+        m for m in policy.material_vocab if re.search(rf"\b{re.escape(m.lower())}\b", low)
+    )
+    values = tuple(dict.fromkeys(_norm_num(n) for n in _ANY_NUM_RE.findall(text or "")))
+    return values, materials
+
+
+def correction_note(result: GuardResult) -> str:
+    """A terse, DETERMINISTIC German instruction for the single regeneration — names what to fix from
+    the violations, never invents content. Empty when the render already passed."""
+    if result.ok:
+        return ""
+    by = {k: [] for k in ("invented_number", "invented_material", "forbidden_phrase", "missing_required_clause")}
+    has_unmapped = False
+    for v in result.violations:
+        if v.kind in by:
+            by[v.kind].append(v.detail)
+        elif v.kind == "unmapped_sentence":
+            has_unmapped = True
+    bits: list[str] = []
+    if by["invented_number"]:
+        bits.append(f"Nenne KEINE nicht-gelieferten Zahlen (entferne: {', '.join(sorted(set(by['invented_number'])))}).")
+    if by["invented_material"]:
+        bits.append(f"Nenne KEINE nicht-freigegebenen Werkstoffe ({', '.join(sorted(set(by['invented_material'])))}).")
+    if by["forbidden_phrase"]:
+        bits.append(f"Vermeide die Autoritäts-/Freigabeformeln: {', '.join(sorted(set(by['forbidden_phrase'])))}.")
+    if by["missing_required_clause"]:
+        bits.append("Übernimm die Pflichtklauseln des Vertrags sinngemäß: " + " | ".join(by["missing_required_clause"]))
+    if has_unmapped:
+        bits.append("Bleibe strikt beim Vertragsinhalt — keine fachliche Aussage ohne deckenden Claim.")
+    return "OUTPUT-GUARD-KORREKTUR (Antwort-Vertrag verletzt): " + " ".join(bits)

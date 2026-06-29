@@ -621,6 +621,10 @@ class PipelineResult:
     # is not a material×medium suitability turn. Kernel-owned; a render/serializer surface. In Phase 1
     # it is NOT fed to L1 (byte-identical); Phase 2's renderer consumes it.
     contract: dict | None = None
+    # INC-NARRATOR-CONTRACT Phase 3/5: the claim-level output_guard verdict for this turn (PASS/BLOCK +
+    # violations), or None when the contract gate is OFF / no contract. A render/serializer surface; the
+    # ENFORCEMENT (regenerate-on-BLOCK) already happened in the pipeline before this is attached.
+    guard: dict | None = None
     # Modus D (Diagnose): deterministic symptom->ursache->fix from Dim. 5, or None when no
     # symptom recognised. provisional=True for draft modes. Render/serializer surface, never L4.
     diagnose: dict | None = None

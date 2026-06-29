@@ -173,6 +173,7 @@ def chat_response(result: PipelineResult) -> dict:
         # Render surface only — passed through verbatim; the status bounds the L1 mode, never L1 prose.
         "coverage": result.coverage,
         "contract": result.contract,
+        "guard": result.guard,
         "diagnose": result.diagnose,
         "decode": result.decode,
         "alternativen": result.alternativen,
