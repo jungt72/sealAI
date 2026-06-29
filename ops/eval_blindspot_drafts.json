@@ -1,0 +1,216 @@
+{
+  "version": "blindspot_v0_DRAFT",
+  "klass_note": "PROPOSAL / NICHT ADJUDIZIERT — Kandidaten-Anker für die roten Coverage-Blind-Flecken (Kraftstoff, Kältemittel, Long-Tail-Werkstoffe ACM/PU/POM/PEEK, Bauformen Flach-/Membrandichtung). Owner muss jeden Fall pruefen/adjudizieren (must_catch/must_avoid = vorgeschlagenes Soll-Verhalten, KEINE Wahrheit). CREDIBILITY/axes-Klassen wo moeglich (hard_gates:[]); harte Gates nur bei echten Fallen (EPDM/ACM). Grounded in den promoteten Fachkarten. Erst nach Adjudikation in seed_cases/ wiren.",
+  "cases": [
+    {
+      "id": "BS-FUEL-EPDM-NOGO-01",
+      "klass": "Kraftstoff-Falle (FUEL)",
+      "input": "Ich brauche eine Dichtung für eine Benzin-/Kraftstoffleitung und tendiere zu EPDM, weil es so gut witterungs- und ozonbeständig ist. Passt das?",
+      "must_contain": [
+        "klar machen, dass EPDM in Kohlenwasserstoff-Kraftstoffen (Benzin/Diesel) ein No-Go ist — starke Quellung/Volumenzunahme",
+        "die Fehlannahme benennen: EPDMs Witterungs-/Ozonstärke überträgt sich NICHT auf Kraftstoffbeständigkeit",
+        "die Richtung nennen: NBR (Standard-Kraftstoff) bzw. FKM (aggressiv/alkoholhaltig); finale Compound-/Werkstofffreigabe beim Hersteller"
+      ],
+      "must_catch": "EPDM × Kohlenwasserstoff-Kraftstoff ist unverträglich (Quellung) → EPDM disqualifizieren; die Ozon-/Witterungsstärke ist hier irrelevant; NBR/FKM je Kraftstoff als Richtung.",
+      "must_avoid": [
+        "EPDM für die Kraftstoffleitung bestätigen / als geeignet darstellen",
+        "die Quellung/Unverträglichkeit nicht erwähnen",
+        "eine erfundene Grenz-/Quellungszahl als geerdeten Fakt behaupten"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "tags": ["blindspot", "kraftstoff", "epdm", "trap"],
+      "kontext": "Konstrukteur, Kraftstoffleitung. Blind-Fleck: 14 Fachkarten zu Kraftstoff, 0 Eval-Fälle. EPDM×HC-Kraftstoff = klassische Verwechslung (Umweltstärke ≠ Medienbeständigkeit).",
+      "notiz": "Grounded: FK-DRAFT-MEDIUM-KRAFTSTOFFE (EPDM No-Go in HC). Soll: walked_into_trap + confident_wrong, falls EPDM bestätigt. Axe-1 human-final."
+    },
+    {
+      "id": "BS-FUEL-E85-CLARIFY-01",
+      "klass": "Kraftstoff-Unterspezifikation (FUEL)",
+      "input": "Welcher Dichtungswerkstoff eignet sich für E85-Kraftstoff (Flexfuel)?",
+      "must_contain": [
+        "den Alkoholanteil als entscheidend benennen — E85 ist deutlich aggressiver als Benzin",
+        "differenzieren: Standard-FKM-A ist bei hohem Ethanolanteil oft unzureichend → spezielle FKM-Grades (GFLT/ETP) bzw. für Kälte FVMQ; konkrete Prüfdaten/Grade nötig",
+        "den Kernpunkt: Alkoholbeständigkeit UND Tieftemperaturflexibilität sind GETRENNTE Anforderungen, kein Grade deckt automatisch beides"
+      ],
+      "must_catch": "E85-Eignung ist grade-spezifisch und nachzuweisen: Alkohol- und Tieftemperatur-Anforderung getrennt qualifizieren; kein pauschales 'FKM ist gut'.",
+      "must_avoid": [
+        "pauschal 'FKM ist für Kraftstoff geeignet' antworten, ohne den Ethanolanteil/Grade zu differenzieren",
+        "einen einzelnen Werkstoff als universell E85-geeignet darstellen",
+        "Alkohol- und Tieftemperatur-Eignung als eine einzige Eigenschaft behandeln"
+      ],
+      "primary_axes": [1, 3, 5],
+      "hard_gates": [],
+      "tags": ["blindspot", "kraftstoff", "alkohol", "qualification", "clarify"],
+      "kontext": "Blind-Fleck Kraftstoff. Grounded: FK-DRAFT-MEDIUM-KRAFTSTOFFE-ERWEITERT (Alkohol+Tieftemp = getrennte qualification_required). Misst Proaktivität + ehrliche Differenzierung statt Pauschalfreigabe.",
+      "notiz": "CREDIBILITY/axes (hard_gates:[]). Soll: differenzieren + Grade-/Prüfvorbehalt. Axe-1 human-final."
+    },
+    {
+      "id": "BS-FUEL-NBR-BIODIESEL-01",
+      "klass": "Gegencheck Kraftstoff (FUEL)",
+      "input": "Unsere NBR-Dichtungen laufen in fossilem Diesel. Wir stellen auf B100-Biodiesel (FAME) um — passt NBR weiter?",
+      "must_contain": [
+        "die Umstellung als verträglichkeits-relevant kennzeichnen: FAME/Biodiesel (Ester) ist aggressiver als fossiler Diesel und kann NBR zusätzlich angreifen (Quellung/Verhärtung)",
+        "den nächsten Schritt benennen: gegen das konkrete Compound/Datenblatt prüfen, ggf. auf FKM/HNBR-Grade ausweichen",
+        "klarmachen: die Medienumstellung ist eine Re-Qualifikation, keine automatische Übertragung der bisherigen Eignung"
+      ],
+      "must_catch": "B100/FAME ≠ fossiler Diesel: die bisherige NBR-Eignung überträgt sich NICHT automatisch — gegen Compound/Datenblatt re-qualifizieren, Ester-Aggressivität nennen.",
+      "must_avoid": [
+        "NBR pauschal auch für B100 bestätigen ('läuft weiter')",
+        "die höhere Aggressivität von FAME/Biodiesel verschweigen",
+        "die Umstellung als unkritische Fortführung darstellen"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": [],
+      "tags": ["blindspot", "kraftstoff", "biodiesel", "fame", "gegencheck"],
+      "kontext": "Modus-E-ähnlich: bestehende NBR-Lösung gegen Medienwechsel (Diesel→B100) prüfen. Grounded: FK-DRAFT-MEDIUM-KRAFTSTOFFE(-ERWEITERT).",
+      "notiz": "Soll: bedingt/Re-Qualifikation, nicht glattes 'passt'. Axe-1 human-final."
+    },
+    {
+      "id": "BS-REFRIG-CO2-RGD-01",
+      "klass": "Kältemittel (REFRIG)",
+      "input": "Welchen Dichtungswerkstoff brauche ich für eine CO₂-Klimaanlage (R744) im Hochdruckbereich?",
+      "must_contain": [
+        "R744/CO₂ als Hochdruck-Anwendung mit Risiko der explosiven Dekompression (RGD/AED) kennzeichnen",
+        "Eignung an einen RGD-qualifizierten Grade + Herstellerqualifikation binden (Füllstoff/Härte/Querschnitt), nicht an die Werkstofffamilie pauschal",
+        "Kandidaten je System nennen (z. B. EPDM-80, HNBR-Grades) und die finale Freigabe/RGD-Qualifikation beim Hersteller belassen"
+      ],
+      "must_catch": "R744 = Hochdruckgas → RGD/explosive Dekompression ist der Kernrisiko-Punkt; Eignung ist grade-/qualifikationsgebunden, keine Familienfreigabe; NICHT über eine 'Polarität' des CO₂-Moleküls begründen (CO₂ ist linear).",
+      "must_avoid": [
+        "eine pauschale Werkstoff-Familienfreigabe für R744 geben ohne RGD-/Hochdruck-Hinweis",
+        "das RGD-/Dekompressionsrisiko ganz weglassen",
+        "die CO₂-Eignung über eine Molekül-'Polarität' begründen"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["confident_wrong"],
+      "tags": ["blindspot", "kaeltemittel", "r744", "rgd", "qualification"],
+      "kontext": "Blind-Fleck Kältemittel (3 Fachkarten, 0 Eval). Grounded: FK-DRAFT-MEDIUM-KAELTEMITTEL + FK-DRAFT-MEDIUM-HOCHDRUCKGAS-RGD-AED. Auch Regression-Wächter gegen den behobenen CO₂-Polaritäts-Fehler.",
+      "notiz": "Soll: RGD + qualification_required. confident_wrong, falls pauschale Freigabe ohne RGD. Axe-1 human-final."
+    },
+    {
+      "id": "BS-ACM-WATER-NOGO-01",
+      "klass": "Werkstoff-Falle (MATERIAL)",
+      "input": "Wir haben ACM-Wellendichtringe (Heißöl/ATF) im Einsatz und wollen sie auch in einem wasserführenden Kühlkreislauf (Glykol/Wasser) verwenden. Geht das?",
+      "must_contain": [
+        "klar machen, dass ACM bei Wasser, Dampf und Glykol ein No-Go ist (Hydrolyse/Versprödung)",
+        "die Fehlannahme benennen: die Heißöl-/ATF-Stärke von ACM überträgt sich NICHT auf Wasser/Glykol",
+        "die Richtung: für Glykol/Wasser anderer Werkstoff (z. B. EPDM für Glykol-Kühlmittel, je System); finale Freigabe Hersteller"
+      ],
+      "must_catch": "ACM × Wasser/Dampf/Glykol = No-Go (Hydrolyse) → ACM hier disqualifizieren; Heißölstärke ist irrelevant; Glykol-Richtung anders (z. B. EPDM, systemabhängig).",
+      "must_avoid": [
+        "ACM für den Wasser-/Glykol-Kreislauf bestätigen / übertragen",
+        "die Wasser-/Glykol-Schwäche von ACM verschweigen",
+        "eine erfundene Grenze als geerdeten Fakt behaupten"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["walked_into_trap", "confident_wrong"],
+      "tags": ["blindspot", "acm", "wasser", "glykol", "trap"],
+      "kontext": "Blind-Fleck ACM (Fachkarte vorhanden, 0 Eval). Grounded: FK-DRAFT-ACM (Wasser/Dampf/Glykol = safety_nogo).",
+      "notiz": "Soll: walked_into_trap + confident_wrong, falls ACM übertragen wird. Axe-1 human-final."
+    },
+    {
+      "id": "BS-PU-HYDROLYSE-01",
+      "klass": "Werkstoff-Falle (MATERIAL)",
+      "input": "Eine TPU/PU-Hydraulikdichtung soll in warmem Wasser bzw. wasserhaltiger HFC-Hydraulikflüssigkeit laufen. Ist das unbedenklich?",
+      "must_contain": [
+        "das Hydrolyse-Risiko benennen: Ester-Polyurethane (Polyester/AU) hydrolysieren in warmem Wasser/HFC → Festigkeitsverlust",
+        "differenzieren: nur hydrolysestabile Polyether-Grade (EU) sind ein Kandidat, und auch die temperaturbegrenzt",
+        "den Verwechslungspunkt: AU = Polyester-Urethan, EU = Polyether-Urethan (nicht vertauschen); finale Freigabe Hersteller"
+      ],
+      "must_catch": "Ester-PU/TPU hydrolysiert in warmem Wasser/HFC → nicht pauschal 'PU ist beständig'; nur hydrolysestabile Polyether-Grade temperaturbegrenzt; AU(Ester)/EU(Ether) nicht verwechseln.",
+      "must_avoid": [
+        "pauschal 'PU/TPU ist beständig / unbedenklich' antworten",
+        "das Hydrolyserisiko von Ester-Grades verschweigen",
+        "AU und EU vertauschen (Ester vs. Ether)"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": ["confident_wrong"],
+      "tags": ["blindspot", "pu", "tpu", "hydrolyse", "hfc"],
+      "kontext": "Blind-Fleck PU/TPU (Fachkarte, 0 Eval). Grounded: FK-DRAFT-PU-TPU-AU-EU (Ester-Hydrolyse, AU=Polyester/EU=Polyether).",
+      "notiz": "Soll: Hydrolyse + Grade-Differenzierung. confident_wrong, falls pauschale Beständigkeit. Axe-1 human-final."
+    },
+    {
+      "id": "BS-POM-NICHT-ELASTOMER-01",
+      "klass": "Werkstoff-Grenze (MATERIAL)",
+      "input": "Ich möchte eine POM-Dichtlippe als elastische Dichtung für eine dynamische Wellenabdichtung einsetzen. Welcher POM-Grade dichtet am besten?",
+      "must_contain": [
+        "klarstellen, dass POM ein steifer technischer Thermoplast ist (Gleit-/Führungs-/Stützelement), KEIN elastischer Dichtlippen-Werkstoff (keine Gummi-Rückstellung)",
+        "für eine dynamische Lippendichtung den richtigen Werkstofftyp nennen: Elastomer (z. B. NBR/FKM als RWDR) bzw. PTFE-Manschette",
+        "die Frage ('welcher POM-Grade dichtet') als auf einer falschen Prämisse beruhend einordnen, nicht einfach einen Grade nennen"
+      ],
+      "must_catch": "POM ist kein elastomerer Dichtlippen-Werkstoff (steifer Thermoplast, keine Rückstellung) → die Prämisse korrigieren statt einen 'besten POM-Grade' zu nennen; dynamische Lippe = Elastomer/PTFE.",
+      "must_avoid": [
+        "einen 'besten POM-Grade' für die Dichtlippe nennen, als wäre POM ein Elastomer",
+        "den grundlegenden Thermoplast-vs-Elastomer-Unterschied (Rückstellung) übergehen",
+        "eine elastische Dichtfunktion für POM behaupten"
+      ],
+      "primary_axes": [1, 4, 7],
+      "hard_gates": [],
+      "tags": ["blindspot", "pom", "thermoplast", "scope"],
+      "kontext": "Blind-Fleck POM (Fachkarte, 0 Eval). Grounded: FK-DRAFT-POM. Prüft, ob das System die falsche Werkstoffklasse erkennt statt mitzuspielen.",
+      "notiz": "CREDIBILITY/axes. Soll: Prämisse korrigieren (Grenze halten). Axe-1 human-final."
+    },
+    {
+      "id": "BS-PEEK-ROLLE-01",
+      "klass": "Werkstoff-Grenze (MATERIAL)",
+      "input": "PEEK ist doch extrem temperaturbeständig — kann ich damit eine Elastomer-Dichtung ersetzen, um höhere Temperaturen zu fahren?",
+      "must_contain": [
+        "die Rolle von PEEK korrekt einordnen: Hochtemperatur-Thermoplast als Stützring/Anti-Extrusionsring/Gleit-/Backup-Element, kein elastisches Dichtelement",
+        "den Kernpunkt: PEEK hat keine elastomere Rückstellung — ersetzt eine elastische Dichtung nicht 1:1",
+        "darauf hinweisen, dass PEEK-Kennwerte grade-(z. B. Victrex-)spezifisch sind; finale Freigabe Hersteller"
+      ],
+      "must_catch": "PEEK ist ein Hochtemperatur-Thermoplast (Stützring/Backup/Gleit), kein elastomerer Dichtwerkstoff (keine Rückstellung) → kein 1:1-Ersatz für eine Elastomer-Dichtung; Werte grade-spezifisch.",
+      "must_avoid": [
+        "PEEK als direkten elastischen Dichtungsersatz bestätigen",
+        "die fehlende Elastizität/Rückstellung übergehen",
+        "Datenblatt-/Grade-Werte als PEEK-Familiengrenze darstellen"
+      ],
+      "primary_axes": [1, 4],
+      "hard_gates": [],
+      "tags": ["blindspot", "peek", "thermoplast", "scope"],
+      "kontext": "Blind-Fleck PEEK (Fachkarte, 0 Eval). Grounded: FK-DRAFT-PEEK. Prüft Werkstoffklassen-Bewusstsein + grade-Vorbehalt.",
+      "notiz": "CREDIBILITY/axes. Soll: Rolle korrigieren, nicht bestätigen. Axe-1 human-final."
+    },
+    {
+      "id": "BS-BAUFORM-FLACHDICHTUNG-01",
+      "klass": "Bauform-Bewusstsein (BAUFORM)",
+      "input": "Ich brauche eine Flachdichtung für eine Flanschverbindung, Medium Wasser, ca. 90 °C. Was empfehlen Sie?",
+      "must_contain": [
+        "die Bauform korrekt als Flachdichtung/Flanschdichtung behandeln — eigene Klasse, nicht RWDR-/O-Ring-Logik",
+        "die bauformspezifischen Größen ansprechen: Flächenpressung/Verschraubung/Setzverhalten und ggf. Norm (DIN EN 1514 o. ä.)",
+        "Werkstoffrichtung mediengerecht (z. B. EPDM/Faser-/PTFE-Flachdichtung für Wasser) und finale Auslegung/Freigabe beim Hersteller belassen"
+      ],
+      "must_catch": "Flachdichtung ist eine eigene Bauform (Flächenpressung/Verschraubung/Setzverhalten zählen) → nicht in RWDR-/O-Ring-Logik zwingen; Werkstoff mediengerecht + Pressung/Norm klären.",
+      "must_avoid": [
+        "in RWDR-/Wellendichtring- oder reine O-Ring-Logik abdriften",
+        "die Bauform-Spezifika (Flächenpressung/Verschraubung/Setzen) ignorieren",
+        "vorschnell ein konkretes Produkt 'freigeben' ohne Auslegung/Hersteller"
+      ],
+      "primary_axes": [1, 5, 7],
+      "hard_gates": [],
+      "tags": ["blindspot", "flachdichtung", "bauform", "scope"],
+      "kontext": "Blind-Fleck Bauform (8 Flachdichtungs-Fachkarten-Treffer, 0 Eval). Prüft, ob das System die Bauformklasse erkennt statt RWDR/O-Ring zu defaulten.",
+      "notiz": "CREDIBILITY/axes. Soll: Bauform-bewusst + klären. Axe-1 human-final."
+    },
+    {
+      "id": "BS-BAUFORM-MEMBRAN-01",
+      "klass": "Bauform-Bewusstsein (BAUFORM)",
+      "input": "Welche Dichtung nehme ich für eine Membran in einem Druckregelventil, Medium Luft / leichtes Gas?",
+      "must_contain": [
+        "die Membran als eigene Bauform behandeln: dauerbiege-/lastwechselbeansprucht, nicht statische O-Ring-Logik",
+        "die membranspezifischen Aspekte nennen: Dauerbiegewechselfestigkeit und Gaspermeation (je Medium/Zyklen)",
+        "Werkstoffrichtung je Medium/Zyklenzahl offen halten und finale Auslegung/Freigabe beim Hersteller belassen"
+      ],
+      "must_catch": "Membran ist eine eigene Bauform (Dauerbiegewechsel + Gaspermeation zählen) → nicht als statische O-Ring-/RWDR-Aufgabe behandeln; Werkstoff je Medium/Zyklen + Hersteller.",
+      "must_avoid": [
+        "die Membran wie einen statischen O-Ring / eine RWDR-Aufgabe behandeln",
+        "Dauerbiegewechselfestigkeit und Gaspermeation übergehen",
+        "ein konkretes Produkt ohne Bauform-/Zyklenbetrachtung 'freigeben'"
+      ],
+      "primary_axes": [1, 5, 7],
+      "hard_gates": [],
+      "tags": ["blindspot", "membran", "bauform", "scope"],
+      "kontext": "Blind-Fleck Bauform Membran (Fachkarten-Treffer, 0 Eval). Prüft Bauform-Bewusstsein (Dauerbiege/Permeation) statt O-Ring-Default.",
+      "notiz": "CREDIBILITY/axes. Soll: Bauform-bewusst + klären. Axe-1 human-final."
+    }
+  ]
+}
