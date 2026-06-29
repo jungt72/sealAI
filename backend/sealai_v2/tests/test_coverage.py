@@ -155,3 +155,68 @@ def test_result_carries_axes_and_summary():
     assert r.archetype is AX.NOT_APPLICABLE
     assert "chemical=grounded" in r.axis_summary()
     assert "operating=border" in r.axis_summary()
+
+
+# ── adapters: archetype axis + the coverage_for / to_dict serialization surface ──────────────────
+
+
+def test_archetype_axis_matched_profile_is_grounded():
+    from sealai_v2.core.coverage import archetype_axis
+
+    assert (
+        archetype_axis({"archetyp": "getriebe", "interview_fragen": ["x"]})
+        is AX.GROUNDED
+    )
+
+
+def test_archetype_axis_none_is_not_applicable():
+    from sealai_v2.core.coverage import archetype_axis
+
+    assert archetype_axis(None) is AX.NOT_APPLICABLE
+    assert archetype_axis({}) is AX.NOT_APPLICABLE
+
+
+def test_to_dict_is_a_render_surface():
+    d = classify_coverage(chemical=AX.BORDER).to_dict()
+    assert d["status"] == CS.PARTIAL_ENVELOPE.value
+    assert d["chemical"] == AX.BORDER.value
+    assert set(d) == {"status", "chemical", "operating", "archetype", "axes"}
+
+
+def test_coverage_for_grounded_compatible_no_archetype_is_in():
+    from sealai_v2.core.coverage import coverage_for
+
+    d = coverage_for({"disqualified": False, "basis": "matrix_compatible"}, None)
+    assert d["status"] == CS.IN_ENVELOPE.value
+
+
+def test_coverage_for_disqualified_is_in_envelope():
+    # a grounded NO is assertive (§6.2 "passt nicht (IN)")
+    from sealai_v2.core.coverage import coverage_for
+
+    d = coverage_for({"disqualified": True, "reason": "r", "source": "MX-X"}, None)
+    assert d["status"] == CS.IN_ENVELOPE.value
+
+
+def test_coverage_for_conditional_is_partial():
+    from sealai_v2.core.coverage import coverage_for
+
+    d = coverage_for(
+        {"disqualified": False, "basis": "matrix_conditional", "condition": "c"}, None
+    )
+    assert d["status"] == CS.PARTIAL_ENVELOPE.value
+
+
+def test_coverage_for_no_data_is_out():
+    from sealai_v2.core.coverage import coverage_for
+
+    d = coverage_for({"disqualified": False, "basis": "no_matrix_data"}, None)
+    assert d["status"] == CS.OUT_OF_ENVELOPE.value
+
+
+def test_coverage_for_no_pairing_but_archetype_is_in():
+    # no material×medium (chemical N/A) but a recognised archetype → grounded on the archetype
+    from sealai_v2.core.coverage import coverage_for
+
+    d = coverage_for(None, {"archetyp": "getriebe"})
+    assert d["status"] == CS.IN_ENVELOPE.value

@@ -610,6 +610,10 @@ class PipelineResult:
     # material + medium). Backend owns the verdict; never affirms suitability (E4-1). A
     # render/serializer surface only - never injected into L1/L3 (the prompt stays unchanged).
     gegencheck: dict | None = None
+    # V2.2 INC-COVERAGE-GATE (§4): the deterministic case-level coverage_status (IN/PARTIAL/ANALOG/OUT)
+    # + per-axis grounding, or None when the gate is OFF. Kernel-owned (I-COV-1); a render/serializer
+    # surface that (once coupled, §5) BOUNDS the allowed L1 mode — the LLM never sets it.
+    coverage: dict | None = None
     # Modus D (Diagnose): deterministic symptom->ursache->fix from Dim. 5, or None when no
     # symptom recognised. provisional=True for draft modes. Render/serializer surface, never L4.
     diagnose: dict | None = None

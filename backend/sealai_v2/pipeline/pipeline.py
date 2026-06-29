@@ -234,6 +234,10 @@ class Pipeline:
     # structurally capped (G1/G2/G3, always "vorläufig"); a render surface only — NEVER enters L1/L3, so
     # enabling keeps the prompt + eval byte-identical. Flag off → fully inert.
     produktspec_enabled: bool = False
+    # V2.2 INC-COVERAGE-GATE (§4): when True, compute the deterministic coverage_status this turn and
+    # attach it to the result. OFF → coverage stays None → byte-identical. (The status→mode COUPLING
+    # into L1 is a separate, also-gated sub-step; this field only governs the computation/exposure.)
+    coverage_gate_enabled: bool = False
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -530,6 +534,17 @@ class Pipeline:
 
         # ``understanding`` was awaited before generate (G4) — already set (or None if understand off).
 
+        # V2.2 INC-COVERAGE-GATE (§4): deterministic case-level coverage from the grounded evidence
+        # (chemical = the gegencheck verdict; archetype = the recognised profile). Flag-gated → None
+        # when OFF (byte-identical). Pure; the LLM never sets it (I-COV-1).
+        coverage = None
+        if self.coverage_gate_enabled:
+            from sealai_v2.core.coverage import coverage_for
+
+            coverage = coverage_for(
+                gegencheck_verdict, self._archetype_context(understanding)
+            )
+
         # One JSON line per turn (stage durations + total + turn id; no PII). ``total_ms`` is
         # frozen HERE — the user-facing latency; a backgrounded remember emits the line itself
         # once its ``distill_ms`` is known (so the line stays complete and stays one per turn).
@@ -552,6 +567,7 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
+            coverage=coverage,
             diagnose=diagnosis,
             decode=decode_result,
             alternativen=alternativen_result,
@@ -815,4 +831,5 @@ def build_pipeline(
         medium_researcher=medium_researcher,
         medium_intel_enabled=settings.medium_intel_enabled,
         produktspec_enabled=settings.produktspec_enabled,
+        coverage_gate_enabled=settings.coverage_gate_enabled,
     )

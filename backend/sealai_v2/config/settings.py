@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     # render surface. OFF by default — wired but inert until the owner lifts the governance NO-GO (expert
     # Fachfreigabe + DIN-Lizenz). L1-NEUTRAL (never enters the prompt); flip via SEALAI_V2_PRODUKTSPEC_ENABLED.
     produktspec_enabled: bool = False
+    # V2.2 INC-COVERAGE-GATE (§4): deterministic case-level coverage_status before L1. OFF by default —
+    # while OFF the gate is computed-but-not-coupled (golden byte-identical). Coupling the status to the
+    # allowed L1 mode (§5) goes productive only when the extended ruler is green (I-CAL-1); flip via
+    # SEALAI_V2_COVERAGE_GATE_ENABLED after an adjudicated eval-REPLAY.
+    coverage_gate_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

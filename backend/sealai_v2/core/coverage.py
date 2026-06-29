@@ -71,6 +71,14 @@ def chemical_axis(gegencheck_verdict: dict | None) -> AxisCoverage:
     return _GEGENCHECK_BASIS.get(basis, AxisCoverage.MISSING)
 
 
+def archetype_axis(archetype_context: dict | None) -> AxisCoverage:
+    """Map the recognised-archetype context (a matched reviewed profile, or ``None``) to coverage.
+
+    A matched reviewed profile -> GROUNDED; no archetype / no match -> NOT_APPLICABLE (an
+    unrecognised archetype must not pretend to ground the case)."""
+    return AxisCoverage.GROUNDED if archetype_context else AxisCoverage.NOT_APPLICABLE
+
+
 @dataclass(frozen=True)
 class CoverageResult:
     status: CoverageStatus
@@ -86,6 +94,17 @@ class CoverageResult:
             f"operating={self.operating.value} "
             f"archetype={self.archetype.value}"
         )
+
+    def to_dict(self) -> dict:
+        """Render/serializer surface (mirrors the gegencheck verdict dict) — the SPA + the §9 flywheel
+        consume this; it is NEVER asserted by L1/L3, only the status bounds the allowed mode (§5)."""
+        return {
+            "status": self.status.value,
+            "chemical": self.chemical.value,
+            "operating": self.operating.value,
+            "archetype": self.archetype.value,
+            "axes": self.axis_summary(),
+        }
 
 
 def classify_coverage(
@@ -129,3 +148,16 @@ def _status(
     ):
         return CoverageStatus.PARTIAL_ENVELOPE
     return CoverageStatus.IN_ENVELOPE
+
+
+def coverage_for(
+    gegencheck_verdict: dict | None, archetype_context: dict | None
+) -> dict:
+    """Build the case-level coverage dict from the pipeline's grounded evidence — the chemical axis
+    from the gegencheck verdict (``core/gegencheck.py``) and the archetype axis from the recognised
+    profile. The operating axis stays NOT_APPLICABLE in v1: geometric/structural reasoning is
+    LLM-allowed (I-COV-3), and a grounded operating-validity layer is a later sub-step. Pure."""
+    return classify_coverage(
+        chemical=chemical_axis(gegencheck_verdict),
+        archetype=archetype_axis(archetype_context),
+    ).to_dict()
