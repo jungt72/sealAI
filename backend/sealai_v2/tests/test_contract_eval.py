@@ -30,7 +30,11 @@ def test_reference_renders_all_pass_the_guard_and_statuses_match():
 def test_unsupported_claim_rate_clean_vs_leaky():
     case = CONTRACT_EVAL_CASES[0]  # grounded-disqualify
     contract = contract_for_case(case)
-    clean = {"answer": case["reference_render"], "contract": contract, "known_values": case["known_values"]}
+    clean = {
+        "answer": case["reference_render"],
+        "contract": contract,
+        "known_values": case["known_values"],
+    }
     leaky = {
         "answer": case["reference_render"] + " Dauerhaft sind 250 °C unkritisch.",
         "contract": contract,
@@ -43,9 +47,14 @@ def test_unsupported_claim_rate_clean_vs_leaky():
 
 
 def test_required_clause_miss_rate():
-    case = CONTRACT_EVAL_CASES[1]  # grounded-compatible (has the COVERED_RECOMMENDATION clause)
+    case = CONTRACT_EVAL_CASES[
+        1
+    ]  # grounded-compatible (has the COVERED_RECOMMENDATION clause)
     contract = contract_for_case(case)
-    miss = {"answer": "NBR ist gegen Mineralöl beständig.", "contract": contract}  # clause dropped
+    miss = {
+        "answer": "NBR ist gegen Mineralöl beständig.",
+        "contract": contract,
+    }  # clause dropped
     assert required_clause_miss_rate([miss])["misses"] == 1
     keep = {"answer": case["reference_render"], "contract": contract}
     assert required_clause_miss_rate([keep])["misses"] == 0
@@ -53,7 +62,11 @@ def test_required_clause_miss_rate():
 
 def test_overblock_rate_zero_on_references():
     samples = [
-        {"answer": c["reference_render"], "contract": contract_for_case(c), "known_values": c.get("known_values", [])}
+        {
+            "answer": c["reference_render"],
+            "contract": contract_for_case(c),
+            "known_values": c.get("known_values", []),
+        }
         for c in CONTRACT_EVAL_CASES
     ]
     assert overblock_rate(samples)["overblock_rate"] == 0.0

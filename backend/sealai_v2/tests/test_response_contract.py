@@ -5,7 +5,12 @@ the real gegencheck verdict dicts, real GroundingFact / CalcResult / NotComputed
 The contract is INERT (Phase 1) — these test the MEASUREMENT/assembly, not any prod behaviour.
 """
 
-from sealai_v2.core.contracts import CalcResult, ComputedValue, GroundingFact, NotComputed
+from sealai_v2.core.contracts import (
+    CalcResult,
+    ComputedValue,
+    GroundingFact,
+    NotComputed,
+)
 from sealai_v2.core.coverage import coverage_for
 from sealai_v2.core.response_contract import (
     STATUS_COVERED_CAUTION,
@@ -28,12 +33,20 @@ V_NO_MEDIUM = {"disqualified": False, "basis": "no_medium"}
 
 
 def _matrix_fact(text="FKM gegen Heißdampf: unverträglich.", cid="MX-FKM-DAMPF"):
-    return GroundingFact(text=text, quelle="Verträglichkeitsmatrix", card_id=cid, kind="matrix")
-
-
-def _card_fact(text="EPDM ist der peroxidvernetzte Dampf-/SIP-Standard.", cid="CARD-EPDM-1"):
     return GroundingFact(
-        text=text, quelle="Fachkarte EPDM", card_id=cid, sources=("Parker O-Ring Handbook",), kind="card"
+        text=text, quelle="Verträglichkeitsmatrix", card_id=cid, kind="matrix"
+    )
+
+
+def _card_fact(
+    text="EPDM ist der peroxidvernetzte Dampf-/SIP-Standard.", cid="CARD-EPDM-1"
+):
+    return GroundingFact(
+        text=text,
+        quelle="Fachkarte EPDM",
+        card_id=cid,
+        sources=("Parker O-Ring Handbook",),
+        kind="card",
     )
 
 
@@ -57,7 +70,10 @@ def test_disqualified_is_covered_recommendation_grounded_no():
 
 
 def test_compatible_is_covered_recommendation():
-    assert _contract(V_COMPATIBLE, [_matrix_fact()]).status == STATUS_COVERED_RECOMMENDATION
+    assert (
+        _contract(V_COMPATIBLE, [_matrix_fact()]).status
+        == STATUS_COVERED_RECOMMENDATION
+    )
 
 
 def test_conditional_is_covered_caution_with_caution_severity():
@@ -82,16 +98,25 @@ def test_no_medium_is_needs_clarification_with_medium_missing():
 
 
 def test_non_suitability_turn_returns_none():
-    assert build_contract(
-        coverage=None, grounding_facts=(), gegencheck_verdict=None, calc=None
-    ) is None
+    assert (
+        build_contract(
+            coverage=None, grounding_facts=(), gegencheck_verdict=None, calc=None
+        )
+        is None
+    )
 
 
 # ── forbidden phrases (always + status-conditional) ──────────────────────────────────────────────
 
 
 def test_forbidden_always_present_in_every_status():
-    for verdict in (V_DISQUALIFIED, V_COMPATIBLE, V_CONDITIONAL, V_NO_DATA, V_NO_MEDIUM):
+    for verdict in (
+        V_DISQUALIFIED,
+        V_COMPATIBLE,
+        V_CONDITIONAL,
+        V_NO_DATA,
+        V_NO_MEDIUM,
+    ):
         fp = _contract(verdict, [_matrix_fact()]).forbidden_phrases
         # the fabrication markers + the manufacturer-release guard, every status (Phase-4b tuned set)
         assert "belegter befund" in fp
@@ -130,17 +155,26 @@ def test_allowed_values_from_calc_computed():
     calc = CalcResult(
         computed=(
             ComputedValue(
-                calc_id="pv_wert", name="pv", value=3.2, unit="N/(mm·s)", stage=1, derivation_depth=1
+                calc_id="pv_wert",
+                name="pv",
+                value=3.2,
+                unit="N/(mm·s)",
+                stage=1,
+                derivation_depth=1,
             ),
         )
     )
     vals = _contract(V_COMPATIBLE, [_matrix_fact()], calc=calc).allowed_values
-    assert vals == ({"name": "pv", "value": 3.2, "unit": "N/(mm·s)", "calc_id": "pv_wert"},)
+    assert vals == (
+        {"name": "pv", "value": 3.2, "unit": "N/(mm·s)", "calc_id": "pv_wert"},
+    )
 
 
 def test_missing_input_surfaces_as_missing_field_and_clause():
     calc = CalcResult(
-        not_computed=(NotComputed("pv_wert", "nicht berechenbar: Eingaben fehlen (p_bar)"),)
+        not_computed=(
+            NotComputed("pv_wert", "nicht berechenbar: Eingaben fehlen (p_bar)"),
+        )
     )
     c = _contract(V_COMPATIBLE, [_matrix_fact()], calc=calc)
     assert "p_bar" in c.missing_fields

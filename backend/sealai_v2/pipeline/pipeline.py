@@ -482,7 +482,10 @@ class Pipeline:
 
                 _kv, _km = _guard_known(question)
                 _gr = _guard_eval(
-                    answer_text=answer.text, contract=contract, known_values=_kv, known_materials=_km
+                    answer_text=answer.text,
+                    contract=contract,
+                    known_values=_kv,
+                    known_materials=_km,
                 )
                 if _gr.action == "BLOCK":
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
@@ -501,7 +504,10 @@ class Pipeline:
                             correction_note=_guard_note(_gr),
                         )
                     _gr2 = _guard_eval(
-                        answer_text=answer.text, contract=contract, known_values=_kv, known_materials=_km
+                        answer_text=answer.text,
+                        contract=contract,
+                        known_values=_kv,
+                        known_materials=_km,
                     )
                     _log.info(
                         "GOVERNANCE output_guard: regenerated (first=%s -> after=%s); first_violations=%s",

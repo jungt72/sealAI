@@ -11,7 +11,11 @@ from sealai_v2.core.contracts import GroundingFact
 from sealai_v2.core.output_guard import evaluate_render
 from sealai_v2.core.response_contract import build_contract
 
-V_DISQ = {"disqualified": True, "reason": "FKM/Heißdampf unverträglich", "source": "MX-FKM-DAMPF"}
+V_DISQ = {
+    "disqualified": True,
+    "reason": "FKM/Heißdampf unverträglich",
+    "source": "MX-FKM-DAMPF",
+}
 V_NO_MEDIUM = {"disqualified": False, "basis": "no_medium"}
 
 _FACT = GroundingFact(
@@ -38,7 +42,10 @@ CLEAN = (
 
 
 def _kinds(answer, contract=C_DISQ, **kw):
-    return {v.kind for v in evaluate_render(answer_text=answer, contract=contract, **kw).violations}
+    return {
+        v.kind
+        for v in evaluate_render(answer_text=answer, contract=contract, **kw).violations
+    }
 
 
 def test_clean_render_passes():
@@ -47,7 +54,9 @@ def test_clean_render_passes():
 
 
 def test_invented_number_blocks():
-    r = evaluate_render(answer_text=CLEAN + " Dauerhaft sind etwa 120 °C möglich.", contract=C_DISQ)
+    r = evaluate_render(
+        answer_text=CLEAN + " Dauerhaft sind etwa 120 °C möglich.", contract=C_DISQ
+    )
     assert not r.ok and r.action == "BLOCK"
     assert "invented_number" in {v.kind for v in r.violations}
 
@@ -55,7 +64,9 @@ def test_invented_number_blocks():
 def test_user_stated_value_is_not_invented():
     a = "Bei den genannten 140 °C bleibt FKM unbeständig gegen Heißdampf."
     assert "invented_number" in _kinds(a)  # without known_values -> flagged
-    assert "invented_number" not in _kinds(a, known_values=("140",))  # echoing the user -> ok
+    assert "invented_number" not in _kinds(
+        a, known_values=("140",)
+    )  # echoing the user -> ok
 
 
 def test_invented_material_blocks():
@@ -63,7 +74,9 @@ def test_invented_material_blocks():
 
 
 def test_missing_required_clause_blocks():
-    two_sentences = "FKM ist gegen Heißdampf nicht beständig. EPDM ist der Dampf-Standard."
+    two_sentences = (
+        "FKM ist gegen Heißdampf nicht beständig. EPDM ist der Dampf-Standard."
+    )
     assert "missing_required_clause" in _kinds(two_sentences)
 
 
@@ -72,12 +85,16 @@ def test_forbidden_phrase_blocks():
 
 
 def test_foreign_technical_sentence_blocks():
-    foreign = " Für aggressive Laugen ist die Chemikalienbeständigkeit hier ausgezeichnet."
+    foreign = (
+        " Für aggressive Laugen ist die Chemikalienbeständigkeit hier ausgezeichnet."
+    )
     assert "unmapped_sentence" in _kinds(CLEAN + foreign)
 
 
 def test_linguistic_transition_passes():
-    r = evaluate_render(answer_text="Gerne gehe ich das mit dir durch. " + CLEAN, contract=C_DISQ)
+    r = evaluate_render(
+        answer_text="Gerne gehe ich das mit dir durch. " + CLEAN, contract=C_DISQ
+    )
     assert r.ok, r.to_dict()
 
 
@@ -100,7 +117,15 @@ def test_forbidden_phrase_inside_an_allowed_claim_is_not_flagged():
     # if a grounded claim legitimately contains a word that is otherwise forbidden, restating it is ok
     c = {
         "status": "COVERED_RECOMMENDATION",
-        "allowed_claims": [{"id": "X", "text": "Der typische Dauereinsatz liegt im Öl.", "severity": "info", "sources": [], "kind": "card"}],
+        "allowed_claims": [
+            {
+                "id": "X",
+                "text": "Der typische Dauereinsatz liegt im Öl.",
+                "severity": "info",
+                "sources": [],
+                "kind": "card",
+            }
+        ],
         "required_clauses": [],
         "missing_fields": [],
         "allowed_materials": [],
@@ -108,7 +133,9 @@ def test_forbidden_phrase_inside_an_allowed_claim_is_not_flagged():
         "forbidden_phrases": ["typisch", "belegt"],
         "coverage_status": "in_envelope",
     }
-    assert "forbidden_phrase" not in _kinds("Der typische Dauereinsatz liegt im Öl.", contract=c)
+    assert "forbidden_phrase" not in _kinds(
+        "Der typische Dauereinsatz liegt im Öl.", contract=c
+    )
 
 
 def test_block_action_and_to_dict_shape():

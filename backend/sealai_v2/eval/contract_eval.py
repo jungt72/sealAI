@@ -20,7 +20,12 @@ from __future__ import annotations
 
 import re
 
-from sealai_v2.core.contracts import CalcResult, ComputedValue, GroundingFact, NotComputed
+from sealai_v2.core.contracts import (
+    CalcResult,
+    ComputedValue,
+    GroundingFact,
+    NotComputed,
+)
 from sealai_v2.core.coverage import coverage_for
 from sealai_v2.core.output_guard import evaluate_render
 from sealai_v2.core.response_contract import build_contract
@@ -37,8 +42,11 @@ def known_materials(question: str) -> tuple[str, ...]:
     material (the guard's known_materials exception). Derived from the reviewed material vocabulary."""
     q = (question or "").lower()
     return tuple(
-        m for m in DEFAULT_POLICY.material_vocab if re.search(rf"\b{re.escape(m.lower())}\b", q)
+        m
+        for m in DEFAULT_POLICY.material_vocab
+        if re.search(rf"\b{re.escape(m.lower())}\b", q)
     )
+
 
 _RC = "Die finale Compound-/Werkstofffreigabe trifft der Hersteller."  # COVERED_RECOMMENDATION clause
 _CC = (
@@ -48,7 +56,12 @@ _CC = (
 
 
 def _mx(text, cid):
-    return {"text": text, "quelle": "Verträglichkeitsmatrix", "card_id": cid, "kind": "matrix"}
+    return {
+        "text": text,
+        "quelle": "Verträglichkeitsmatrix",
+        "card_id": cid,
+        "kind": "matrix",
+    }
 
 
 CONTRACT_EVAL_CASES = (
@@ -56,8 +69,17 @@ CONTRACT_EVAL_CASES = (
         "id": "grounded-disqualify",
         "category": "grounded",
         "question": "Wir setzen FKM in Heißdampf (SIP) bei 140 °C ein. Passt das?",
-        "grounding": [_mx("FKM gegen Heißdampf: unverträglich (Hydrolyse); EPDM ist der Dampf-Standard.", "MX-FKM-DAMPF")],
-        "verdict": {"disqualified": True, "reason": "FKM/Heißdampf unverträglich", "source": "MX-FKM-DAMPF"},
+        "grounding": [
+            _mx(
+                "FKM gegen Heißdampf: unverträglich (Hydrolyse); EPDM ist der Dampf-Standard.",
+                "MX-FKM-DAMPF",
+            )
+        ],
+        "verdict": {
+            "disqualified": True,
+            "reason": "FKM/Heißdampf unverträglich",
+            "source": "MX-FKM-DAMPF",
+        },
         "known_values": ["140"],
         "expect_status": "COVERED_RECOMMENDATION",
         "reference_render": (
@@ -69,16 +91,24 @@ CONTRACT_EVAL_CASES = (
         "id": "grounded-compatible",
         "category": "grounded",
         "question": "Passt NBR gegen Mineralöl?",
-        "grounding": [_mx("NBR ist gegen Mineralöl beständig (Standardpaarung).", "MX-NBR-OEL")],
+        "grounding": [
+            _mx("NBR ist gegen Mineralöl beständig (Standardpaarung).", "MX-NBR-OEL")
+        ],
         "verdict": {"disqualified": False, "basis": "matrix_compatible"},
         "expect_status": "COVERED_RECOMMENDATION",
-        "reference_render": "NBR ist gegen Mineralöl beständig — das ist die Standardpaarung. " + _RC,
+        "reference_render": "NBR ist gegen Mineralöl beständig — das ist die Standardpaarung. "
+        + _RC,
     },
     {
         "id": "conditional",
         "category": "edge",
         "question": "Passt NBR gegen Synthetiköl?",
-        "grounding": [_mx("NBR gegen Synthetiköl: bedingt — abhängig vom Estergehalt; vor Einsatz prüfen.", "MX-NBR-SYN")],
+        "grounding": [
+            _mx(
+                "NBR gegen Synthetiköl: bedingt — abhängig vom Estergehalt; vor Einsatz prüfen.",
+                "MX-NBR-SYN",
+            )
+        ],
         "verdict": {"disqualified": False, "basis": "matrix_conditional"},
         "expect_status": "COVERED_CAUTION",
         "reference_render": (
@@ -114,8 +144,17 @@ CONTRACT_EVAL_CASES = (
         "id": "wrong-assumption",
         "category": "wrong_assumption",
         "question": "FKM hält Heißdampf doch problemlos aus, oder?",
-        "grounding": [_mx("FKM gegen Heißdampf: unverträglich (Hydrolyse); EPDM ist der Dampf-Standard.", "MX-FKM-DAMPF")],
-        "verdict": {"disqualified": True, "reason": "FKM/Heißdampf unverträglich", "source": "MX-FKM-DAMPF"},
+        "grounding": [
+            _mx(
+                "FKM gegen Heißdampf: unverträglich (Hydrolyse); EPDM ist der Dampf-Standard.",
+                "MX-FKM-DAMPF",
+            )
+        ],
+        "verdict": {
+            "disqualified": True,
+            "reason": "FKM/Heißdampf unverträglich",
+            "source": "MX-FKM-DAMPF",
+        },
         "expect_status": "COVERED_RECOMMENDATION",
         "reference_render": (
             "Nein — FKM hält Heißdampf nicht aus; es hydrolysiert und verspröttet. EPDM ist hier der "
@@ -126,8 +165,17 @@ CONTRACT_EVAL_CASES = (
         "id": "safety-no-go",
         "category": "safety",
         "question": "Können wir NBR im Freien gegen Ozon/UV einsetzen?",
-        "grounding": [_mx("NBR gegen Ozon/UV: Rissbildung — ungeeignet; EPDM ist witterungsbeständig.", "MX-NBR-OZON")],
-        "verdict": {"disqualified": True, "reason": "NBR/Ozon Rissbildung", "source": "MX-NBR-OZON"},
+        "grounding": [
+            _mx(
+                "NBR gegen Ozon/UV: Rissbildung — ungeeignet; EPDM ist witterungsbeständig.",
+                "MX-NBR-OZON",
+            )
+        ],
+        "verdict": {
+            "disqualified": True,
+            "reason": "NBR/Ozon Rissbildung",
+            "source": "MX-NBR-OZON",
+        },
         "expect_status": "COVERED_RECOMMENDATION",
         "reference_render": (
             "NBR ist gegen Ozon und UV nicht beständig — es kommt zur Rissbildung. EPDM ist hier "
@@ -138,24 +186,47 @@ CONTRACT_EVAL_CASES = (
         "id": "missing-temperature",
         "category": "missing_input",
         "question": "Welche Flächenpressung verträgt NBR in Mineralöl?",
-        "grounding": [_mx("NBR ist gegen Mineralöl beständig (Standardpaarung).", "MX-NBR-OEL")],
+        "grounding": [
+            _mx("NBR ist gegen Mineralöl beständig (Standardpaarung).", "MX-NBR-OEL")
+        ],
         "verdict": {"disqualified": False, "basis": "matrix_compatible"},
-        "calc": CalcResult(not_computed=(NotComputed("pv_wert", "nicht berechenbar: Eingaben fehlen (Temperatur)"),)),
+        "calc": CalcResult(
+            not_computed=(
+                NotComputed(
+                    "pv_wert", "nicht berechenbar: Eingaben fehlen (Temperatur)"
+                ),
+            )
+        ),
         "expect_status": "COVERED_RECOMMENDATION",
         "reference_render": (
-            "NBR ist gegen Mineralöl beständig. Für die belastbare Auslegung fehlt noch: Temperatur. " + _RC
+            "NBR ist gegen Mineralöl beständig. Für die belastbare Auslegung fehlt noch: Temperatur. "
+            + _RC
         ),
     },
     {
         "id": "computed-value",
         "category": "grounded",
         "question": "Wie viel Verpressung sollte die NBR-Dichtung in Mineralöl haben?",
-        "grounding": [_mx("NBR ist gegen Mineralöl beständig (Standardpaarung).", "MX-NBR-OEL")],
+        "grounding": [
+            _mx("NBR ist gegen Mineralöl beständig (Standardpaarung).", "MX-NBR-OEL")
+        ],
         "verdict": {"disqualified": False, "basis": "matrix_compatible"},
-        "calc": CalcResult(computed=(ComputedValue(calc_id="verpressung", name="verpressung", value=0.3, unit="mm", stage=1, derivation_depth=1),)),
+        "calc": CalcResult(
+            computed=(
+                ComputedValue(
+                    calc_id="verpressung",
+                    name="verpressung",
+                    value=0.3,
+                    unit="mm",
+                    stage=1,
+                    derivation_depth=1,
+                ),
+            )
+        ),
         "expect_status": "COVERED_RECOMMENDATION",
         "reference_render": (
-            "NBR ist gegen Mineralöl beständig. Die berechnete Verpressung liegt bei 0.3 mm. " + _RC
+            "NBR ist gegen Mineralöl beständig. Die berechnete Verpressung liegt bei 0.3 mm. "
+            + _RC
         ),
     },
 )
@@ -190,7 +261,11 @@ def _score(case: dict, answer: str) -> dict:
         known_values=tuple(case.get("known_values", ()) or ()),
         known_materials=known_materials(case["question"]),
     )
-    return {"id": case["id"], "action": g.action, "violations": [v.to_dict() for v in g.violations]}
+    return {
+        "id": case["id"],
+        "action": g.action,
+        "violations": [v.to_dict() for v in g.violations],
+    }
 
 
 def seed_overblock_report() -> dict:
@@ -199,7 +274,9 @@ def seed_overblock_report() -> dict:
     for case in CONTRACT_EVAL_CASES:
         contract = contract_for_case(case)
         if contract.get("status") != case["expect_status"]:
-            status_mismatch.append((case["id"], contract.get("status"), case["expect_status"]))
+            status_mismatch.append(
+                (case["id"], contract.get("status"), case["expect_status"])
+            )
         samples.append(_sample(case, contract, case["reference_render"]))
     return {
         "overblock": overblock_rate(samples),

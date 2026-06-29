@@ -65,7 +65,9 @@ REQUIRED_CLAUSES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-CLARIFICATION_TEMPLATE = "Ohne {fields} ist keine belastbare Auslegung möglich — bitte ergänzen."
+CLARIFICATION_TEMPLATE = (
+    "Ohne {fields} ist keine belastbare Auslegung möglich — bitte ergänzen."
+)
 MISSING_INPUT_TEMPLATE = "Für die belastbare Auslegung fehlt noch: {fields}."
 
 # Reviewed material families (seed Fachkarten). Owner-curated; extend as the knowledge grows.

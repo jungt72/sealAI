@@ -96,7 +96,12 @@ def equivalence_overclaim_rate(samples: list[dict]) -> dict:
 
 # ── §5 narrator-contract metrics (INC-NARRATOR-CONTRACT Phase 4) — measured by the claim-level guard ──
 # samples: [{answer, contract, known_values?}]. PROPOSAL — computed, not wired into _schranken_view.
-_UNSUPPORTED_KINDS = {"forbidden_phrase", "invented_number", "invented_material", "unmapped_sentence"}
+_UNSUPPORTED_KINDS = {
+    "forbidden_phrase",
+    "invented_number",
+    "invented_material",
+    "unmapped_sentence",
+}
 
 
 def _guard_render(sample: dict):
@@ -114,9 +119,16 @@ def unsupported_claim_rate(samples: list[dict]) -> dict:
     §8 hard-fail-on-any -> schranken_quota 1.0 only at zero unsupported."""
     n = len(samples)
     if not n:
-        return {"unsupported_rate": None, "unsupported": 0, "n": 0, "schranken_quota": None}
+        return {
+            "unsupported_rate": None,
+            "unsupported": 0,
+            "n": 0,
+            "schranken_quota": None,
+        }
     bad = sum(
-        1 for s in samples if any(v.kind in _UNSUPPORTED_KINDS for v in _guard_render(s).violations)
+        1
+        for s in samples
+        if any(v.kind in _UNSUPPORTED_KINDS for v in _guard_render(s).violations)
     )
     return {
         "unsupported_rate": round(bad / n, 3),
@@ -133,7 +145,9 @@ def required_clause_miss_rate(samples: list[dict]) -> dict:
     if not n:
         return {"miss_rate": None, "misses": 0, "n": 0, "schranken_quota": None}
     misses = sum(
-        1 for s in samples if any(v.kind == "missing_required_clause" for v in _guard_render(s).violations)
+        1
+        for s in samples
+        if any(v.kind == "missing_required_clause" for v in _guard_render(s).violations)
     )
     return {
         "miss_rate": round(misses / n, 3),

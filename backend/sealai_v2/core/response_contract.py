@@ -63,7 +63,9 @@ class AllowedClaim:
     id: str  # card_id — source Fachkarte id / matrix cell id (the provenance ref)
     text: str  # the grounded claim text (the content L1 may rephrase, never exceed)
     severity: str  # "disqualify" | "caution" | "info"
-    sources: tuple[str, ...] = ()  # owner-verified primary sources (Parker handbook, ISO ...)
+    sources: tuple[
+        str, ...
+    ] = ()  # owner-verified primary sources (Parker handbook, ISO ...)
     kind: str = "card"  # provenance lane: "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix)
 
     def to_dict(self) -> dict:
@@ -210,7 +212,9 @@ def build_contract(
     if not gegencheck_verdict:
         return None
     coverage_status = (coverage or {}).get("status", "out_of_envelope")
-    basis = gegencheck_verdict.get("basis")  # None when disqualified ({"disqualified", "reason", ...})
+    basis = gegencheck_verdict.get(
+        "basis"
+    )  # None when disqualified ({"disqualified", "reason", ...})
     disqualified = bool(gegencheck_verdict.get("disqualified"))
 
     missing = _missing_fields(calc)

@@ -28,16 +28,16 @@ from dataclasses import dataclass
 from sealai_v2.core.response_contract_policy import DEFAULT_POLICY, ContractPolicy
 
 # ── tunables (Phase-4 measures overblock/miss-rate and the owner sets these) ─────────────────────
-_REQUIRED_CLAUSE_THRESH = 0.6  # share of a clause's DISTINCTIVE (content-noun) stems that must appear
+_REQUIRED_CLAUSE_THRESH = (
+    0.6  # share of a clause's DISTINCTIVE (content-noun) stems that must appear
+)
 _COVER_THRESH = 0.34  # share of a technical sentence's significant words drawn from the contract vocab
 #                       (low + material-anchored: prefilters are the primary leak defense, so the
 #                       sentence-coverage check only needs to catch genuinely foreign-SUBJECT sentences)
 
 # Physical-unit tokens — the invented-number prefilter is scoped to NUMBER+UNIT (the leak class:
 # invented temperatures/pressures/limits); bare counts ("2 Lippen") are intentionally not policed.
-_UNIT = (
-    r"°\s*C|bar|MPa|kPa|N/mm²|N/mm2|N/mm|MPa·m/s|m/s|mm/s|µm|mm|cm|%|Shore\s*[AD]|°"
-)
+_UNIT = r"°\s*C|bar|MPa|kPa|N/mm²|N/mm2|N/mm|MPa·m/s|m/s|mm/s|µm|mm|cm|%|Shore\s*[AD]|°"
 _NUM = r"\d+(?:[.,]\d+)?"
 _NUM_UNIT_RE = re.compile(
     rf"({_NUM})(?:\s*(?:bis|–|-|\.\.\.|…|‑)\s*({_NUM}))?\s*(?:{_UNIT})", re.IGNORECASE
@@ -309,7 +309,8 @@ def _clause_satisfied(clause: str, answer_words: set[str]) -> bool:
     for cw in distinct:
         cs = _stem(cw)
         if any(
-            cs == _stem(aw) or (len(aw) >= 6 and (aw in cw or cw in aw)) for aw in answer_words
+            cs == _stem(aw) or (len(aw) >= 6 and (aw in cw or cw in aw))
+            for aw in answer_words
         ):
             hits += 1
     return hits / len(distinct) >= _REQUIRED_CLAUSE_THRESH
@@ -355,9 +356,14 @@ def evaluate_render(
     # ── prefilter 3: invented material (vocab material not in allowed_materials / user-stated) ──
     # known_materials = the materials the USER named (the case-state) — referencing them (to disqualify,
     # defer, or discuss) is not inventing a material, exactly as known_values are for numbers.
-    allowed_low = {a.lower() for a in allowed_materials} | {m.lower() for m in known_materials}
+    allowed_low = {a.lower() for a in allowed_materials} | {
+        m.lower() for m in known_materials
+    }
     for mat in sorted(policy.material_vocab, key=len, reverse=True):
-        if re.search(rf"\b{re.escape(mat.lower())}\b", low) and mat.lower() not in allowed_low:
+        if (
+            re.search(rf"\b{re.escape(mat.lower())}\b", low)
+            and mat.lower() not in allowed_low
+        ):
             violations.append(Violation("invented_material", mat))
 
     # ── prefilter 4: a required clause is missing (paraphrase-tolerant distinctive-noun match) ──
@@ -373,7 +379,9 @@ def evaluate_render(
         | _BASE_WHITELIST
     )
     vocab_stems = {_stem(w) for w in contract_vocab}
-    anchor_low = {a.lower() for a in allowed_materials} | {m.lower() for m in known_materials}
+    anchor_low = {a.lower() for a in allowed_materials} | {
+        m.lower() for m in known_materials
+    }
     for sent in _sentences(text):
         if not _is_technical(sent, policy.material_vocab):
             continue  # (5) purely linguistic / non-technical transition
@@ -387,11 +395,17 @@ def evaluate_render(
         if not ssig:
             continue
         drawn = sum(1 for w in ssig if _stem(w) in vocab_stems) / len(ssig)
-        if drawn < _COVER_THRESH:  # foreign-SUBJECT technical sentence (no anchor, low overlap) -> fail-closed
-            violations.append(Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent))
+        if (
+            drawn < _COVER_THRESH
+        ):  # foreign-SUBJECT technical sentence (no anchor, low overlap) -> fail-closed
+            violations.append(
+                Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent)
+            )
 
     ok = not violations
-    return GuardResult(ok=ok, action="PASS" if ok else "BLOCK", violations=tuple(violations))
+    return GuardResult(
+        ok=ok, action="PASS" if ok else "BLOCK", violations=tuple(violations)
+    )
 
 
 def known_inputs(
@@ -401,7 +415,9 @@ def known_inputs(
     invention (the guard's known_values / known_materials exceptions). Pure; for the pipeline wiring."""
     low = (text or "").lower()
     materials = tuple(
-        m for m in policy.material_vocab if re.search(rf"\b{re.escape(m.lower())}\b", low)
+        m
+        for m in policy.material_vocab
+        if re.search(rf"\b{re.escape(m.lower())}\b", low)
     )
     values = tuple(dict.fromkeys(_norm_num(n) for n in _ANY_NUM_RE.findall(text or "")))
     return values, materials
@@ -412,7 +428,15 @@ def correction_note(result: GuardResult) -> str:
     the violations, never invents content. Empty when the render already passed."""
     if result.ok:
         return ""
-    by = {k: [] for k in ("invented_number", "invented_material", "forbidden_phrase", "missing_required_clause")}
+    by = {
+        k: []
+        for k in (
+            "invented_number",
+            "invented_material",
+            "forbidden_phrase",
+            "missing_required_clause",
+        )
+    }
     has_unmapped = False
     for v in result.violations:
         if v.kind in by:
@@ -421,13 +445,24 @@ def correction_note(result: GuardResult) -> str:
             has_unmapped = True
     bits: list[str] = []
     if by["invented_number"]:
-        bits.append(f"Nenne KEINE nicht-gelieferten Zahlen (entferne: {', '.join(sorted(set(by['invented_number'])))}).")
+        bits.append(
+            f"Nenne KEINE nicht-gelieferten Zahlen (entferne: {', '.join(sorted(set(by['invented_number'])))})."
+        )
     if by["invented_material"]:
-        bits.append(f"Nenne KEINE nicht-freigegebenen Werkstoffe ({', '.join(sorted(set(by['invented_material'])))}).")
+        bits.append(
+            f"Nenne KEINE nicht-freigegebenen Werkstoffe ({', '.join(sorted(set(by['invented_material'])))})."
+        )
     if by["forbidden_phrase"]:
-        bits.append(f"Vermeide die Autoritäts-/Freigabeformeln: {', '.join(sorted(set(by['forbidden_phrase'])))}.")
+        bits.append(
+            f"Vermeide die Autoritäts-/Freigabeformeln: {', '.join(sorted(set(by['forbidden_phrase'])))}."
+        )
     if by["missing_required_clause"]:
-        bits.append("Übernimm die Pflichtklauseln des Vertrags sinngemäß: " + " | ".join(by["missing_required_clause"]))
+        bits.append(
+            "Übernimm die Pflichtklauseln des Vertrags sinngemäß: "
+            + " | ".join(by["missing_required_clause"])
+        )
     if has_unmapped:
-        bits.append("Bleibe strikt beim Vertragsinhalt — keine fachliche Aussage ohne deckenden Claim.")
+        bits.append(
+            "Bleibe strikt beim Vertragsinhalt — keine fachliche Aussage ohne deckenden Claim."
+        )
     return "OUTPUT-GUARD-KORREKTUR (Antwort-Vertrag verletzt): " + " ".join(bits)

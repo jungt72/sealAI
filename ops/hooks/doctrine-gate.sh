@@ -60,12 +60,9 @@ cd "${PROJECT_DIR}" 2>/dev/null || deny "cannot enter project dir ${PROJECT_DIR}
 PY="${PROJECT_DIR}/.venv/bin/python"
 [ -x "${PY}" ] || deny "venv python missing (${PY}) — cannot run guard suite"
 
-# Fast doctrine guard suite (the executable contract for the output doctrine).
-if "${PY}" -m pytest \
-      backend/app/agent/tests/test_comparative_ranking_guard.py \
-      backend/app/agent/tests/test_rwdr_comparative_leak_golden.py \
-      backend/app/agent/tests/v92/test_final_guard_knowledge_backstop.py \
-      -q > "${LAST}" 2>&1; then
+# V2 doctrine guard suite (executable contract for the output doctrine; V1 retired 2026-06-25 -> the
+# guards now live in the green-field sealai_v2 tree, offline/fake-LLM).
+if "${PY}" -m pytest backend/sealai_v2 --noconftest -q > "${LAST}" 2>&1; then
   log "PASS — guard suite green; commit/push allowed to proceed to normal permissions"
   exit 0
 fi
