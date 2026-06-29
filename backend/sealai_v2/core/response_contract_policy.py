@@ -19,46 +19,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Always forbidden — fabricated authority / provenance (the probe leak class). Lowercased; matched
-# case-insensitively by the guard (Phase 3).
+# Always forbidden — FABRICATED-AUTHORITY phrases + false-release words. Tuned (Phase 4b) to specific
+# fabrication markers, NOT common dual-use words: bare "belegt"/"typisch"/"bewährt" are dropped because a
+# calibrated narrator uses them honestly ("belegt ist nur …", "typische Bauform") — the actual leak is an
+# invented NUMBER (caught by the number prefilter) or the multi-word "belegter Befund" fabrication. The
+# final material/Compound release is ALWAYS the manufacturer's → "freigegeben"/"garantiert" claim it falsely.
 FORBIDDEN_ALWAYS: tuple[str, ...] = (
-    "belegt",
     "belegter befund",
     "richtwert",
     "richtwerte",
     "fachliteratur",
-    "typisch",
-    "typischerweise",
-    "bewährt",
     "erfahrungsgemäß",
     "faustregel",
     "allgemein bekannt",
     "in der praxis üblich",
+    "freigegeben",
+    "garantiert",
 )
 
-# Status-conditional bans. The final Compound/Werkstoff release is ALWAYS the manufacturer's, so
-# "freigegeben"/"garantiert" are forbidden in every status; "geeignet"/"empfohlen"/"passt" are only
-# allowed where the grounded status warrants a recommendation.
+# Status-conditional bans: NONE (Phase 4b). The suitability words ("geeignet"/"passt"/…) were too blunt —
+# they fired on generic legitimate use ("geeignete metallische Werkstoffe") in OUT/NEEDS_CLARIFICATION. The
+# mode is enforced STRUCTURALLY instead: the required_clauses ("keine Freigabe" / "ohne Medium keine
+# Auslegung") must be present, an ungrounded material is caught by the invented-material prefilter, and the
+# renderer prompt caps the mode. Kept as an owner-extensible hook (empty by default).
 FORBIDDEN_BY_STATUS: dict[str, tuple[str, ...]] = {
-    "OUT_OF_SCOPE": (
-        "geeignet",
-        "empfohlen",
-        "empfehle",
-        "passt",
-        "freigegeben",
-        "unbedenklich",
-        "kein problem",
-    ),
-    "NEEDS_CLARIFICATION": (
-        "geeignet",
-        "empfohlen",
-        "empfehle",
-        "passt",
-        "freigegeben",
-        "unbedenklich",
-    ),
-    "COVERED_CAUTION": ("freigegeben", "garantiert", "in jedem fall", "unbedenklich"),
-    "COVERED_RECOMMENDATION": ("freigegeben", "garantiert", "in jedem fall"),
+    "OUT_OF_SCOPE": (),
+    "NEEDS_CLARIFICATION": (),
+    "COVERED_CAUTION": (),
+    "COVERED_RECOMMENDATION": (),
 }
 
 # Verbatim clauses that MUST appear, per status.

@@ -18,15 +18,27 @@ PURE harness: no model, no I/O of its own — the token spend lives entirely in 
 
 from __future__ import annotations
 
+import re
+
 from sealai_v2.core.contracts import CalcResult, ComputedValue, GroundingFact, NotComputed
 from sealai_v2.core.coverage import coverage_for
 from sealai_v2.core.output_guard import evaluate_render
 from sealai_v2.core.response_contract import build_contract
+from sealai_v2.core.response_contract_policy import DEFAULT_POLICY
 from sealai_v2.eval.calibration import (
     overblock_rate,
     required_clause_miss_rate,
     unsupported_claim_rate,
 )
+
+
+def known_materials(question: str) -> tuple[str, ...]:
+    """The materials the USER named in the question — referencing them in the answer is not inventing a
+    material (the guard's known_materials exception). Derived from the reviewed material vocabulary."""
+    q = (question or "").lower()
+    return tuple(
+        m for m in DEFAULT_POLICY.material_vocab if re.search(rf"\b{re.escape(m.lower())}\b", q)
+    )
 
 _RC = "Die finale Compound-/Werkstofffreigabe trifft der Hersteller."  # COVERED_RECOMMENDATION clause
 _CC = (
@@ -161,10 +173,22 @@ def contract_for_case(case: dict) -> dict:
     return rc.to_dict() if rc is not None else {}
 
 
+def _sample(case: dict, contract: dict, answer: str) -> dict:
+    return {
+        "answer": answer,
+        "contract": contract,
+        "known_values": case.get("known_values", []),
+        "known_materials": list(known_materials(case["question"])),
+    }
+
+
 def _score(case: dict, answer: str) -> dict:
     contract = contract_for_case(case)
     g = evaluate_render(
-        answer_text=answer, contract=contract, known_values=tuple(case.get("known_values", ()) or ())
+        answer_text=answer,
+        contract=contract,
+        known_values=tuple(case.get("known_values", ()) or ()),
+        known_materials=known_materials(case["question"]),
     )
     return {"id": case["id"], "action": g.action, "violations": [v.to_dict() for v in g.violations]}
 
@@ -176,13 +200,7 @@ def seed_overblock_report() -> dict:
         contract = contract_for_case(case)
         if contract.get("status") != case["expect_status"]:
             status_mismatch.append((case["id"], contract.get("status"), case["expect_status"]))
-        samples.append(
-            {
-                "answer": case["reference_render"],
-                "contract": contract,
-                "known_values": case.get("known_values", []),
-            }
-        )
+        samples.append(_sample(case, contract, case["reference_render"]))
     return {
         "overblock": overblock_rate(samples),
         "status_mismatch": status_mismatch,
@@ -197,9 +215,7 @@ def evaluate_model_over_cases(render_fn) -> dict:
     for case in CONTRACT_EVAL_CASES:
         contract = contract_for_case(case)
         answer = render_fn(question=case["question"], contract=contract)
-        samples.append(
-            {"answer": answer, "contract": contract, "known_values": case.get("known_values", [])}
-        )
+        samples.append(_sample(case, contract, answer))
         per.append(_score(case, answer))
     return {
         "unsupported": unsupported_claim_rate(samples),

@@ -93,17 +93,19 @@ def test_non_suitability_turn_returns_none():
 def test_forbidden_always_present_in_every_status():
     for verdict in (V_DISQUALIFIED, V_COMPATIBLE, V_CONDITIONAL, V_NO_DATA, V_NO_MEDIUM):
         fp = _contract(verdict, [_matrix_fact()]).forbidden_phrases
-        # the exact probe-leak markers, every status
-        assert "belegt" in fp
+        # the fabrication markers + the manufacturer-release guard, every status (Phase-4b tuned set)
+        assert "belegter befund" in fp
         assert "richtwert" in fp
         assert "fachliteratur" in fp
-        # the manufacturer-release guard, every status
-        assert "freigegeben" in fp
+        assert "freigegeben" in fp and "garantiert" in fp
 
 
-def test_geeignet_forbidden_out_of_scope_but_allowed_in_recommendation():
-    assert "geeignet" in _contract(V_NO_DATA, []).forbidden_phrases  # OUT_OF_SCOPE
-    assert "geeignet" not in _contract(V_COMPATIBLE, [_matrix_fact()]).forbidden_phrases  # RECOMMENDATION
+def test_common_dual_use_words_are_not_blanket_forbidden():
+    # Phase 4b: bare "belegt"/"typisch" are dropped (a calibrated narrator uses them honestly); the
+    # actual leak is an invented number (number prefilter) or the multi-word "belegter Befund".
+    fp = _contract(V_COMPATIBLE, [_matrix_fact()]).forbidden_phrases
+    assert "belegt" not in fp
+    assert "typisch" not in fp
 
 
 # ── allowed_materials (only what the grounding names) ────────────────────────────────────────────

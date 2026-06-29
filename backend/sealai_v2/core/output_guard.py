@@ -28,8 +28,10 @@ from dataclasses import dataclass
 from sealai_v2.core.response_contract_policy import DEFAULT_POLICY, ContractPolicy
 
 # ── tunables (Phase-4 measures overblock/miss-rate and the owner sets these) ─────────────────────
-_REQUIRED_CLAUSE_THRESH = 0.6  # share of a clause's significant words that must appear
-_COVER_THRESH = 0.5  # share of a technical sentence's significant words drawn from the contract vocab
+_REQUIRED_CLAUSE_THRESH = 0.6  # share of a clause's DISTINCTIVE (content-noun) stems that must appear
+_COVER_THRESH = 0.34  # share of a technical sentence's significant words drawn from the contract vocab
+#                       (low + material-anchored: prefilters are the primary leak defense, so the
+#                       sentence-coverage check only needs to catch genuinely foreign-SUBJECT sentences)
 
 # Physical-unit tokens — the invented-number prefilter is scoped to NUMBER+UNIT (the leak class:
 # invented temperatures/pressures/limits); bare counts ("2 Lippen") are intentionally not policed.
@@ -72,20 +74,27 @@ _SUITABILITY = (
 _UNCERTAINTY = tuple(
     re.compile(p, re.IGNORECASE)
     for p in (
-        r"\bkann ich (?:dir )?nicht\b",
-        r"\bohne .{0,40}\b(?:keine|nicht)\b",
+        r"\bkann ich (?:dir |dann )?(?:nur|nicht|keine|erst|noch nicht)\b",
+        r"\bsolange .{0,50}\bnicht\b",
+        r"\blässt sich .{0,40}\b(?:nicht|kaum|erst)\b",
+        r"\bohne .{0,60}\b(?:keine|nicht|lässt|kann|erst|bräuchte|brauche)\b",
         r"\bbeim hersteller\b",
         r"\bvom hersteller\b",
-        r"\bhersteller\b.{0,30}\b(?:frei|bestätig|absicher|prüf)",
+        r"\bhersteller.{0,30}(?:frei|bestätig|absicher|prüf|entscheid|treff|wähl|ausw)",
+        r"\bherstellerfreigabe\b",
+        r"\bquelle\s*:",  # a provenance/citation note, not an asserted claim
         r"\bdatenblatt\b",
         r"\bnicht berechenbar\b",
         r"\bkeine (?:werkstoff)?freigabe\b",
         r"\bvorläufig\b",
-        r"\bnicht (?:abschließend|belastbar|gesichert)\b",
+        r"\b(?:nicht|nicht abschließend|noch nicht) (?:abschließend|belastbar|gesichert|möglich|seriös)\b",
         r"\babsichern\b",
-        r"\bprüf(?:en|pfad|stand)\b",
+        r"\bprüf(?:en|pfad|stand|ung)\b",
         r"\bliegt mir .{0,30}\bnicht vor\b",
-        r"\bbenötige ich\b|\bbräuchte ich\b|\bbitte .{0,30}\b(?:ergänz|nenn|angab)",
+        r"\b(?:nicht|nicht pauschal|kein) belegt(?:er|es)?\b|\bbelegt ist\b",
+        r"\bbenötige ich\b|\bbräuchte ich\b|\bbrauche ich\b|\bbitte .{0,30}\b(?:ergänz|nenn|angab|sag|schreib)",
+        r"\bwenn du (?:magst|willst|möchtest)\b|\bschreib(?:e)? (?:mir|kurz|gern)\b|\bsag mir\b",
+        r"\bnur (?:auf )?risiken? (?:hinweisen|nennen)\b|\bkann ich (?:dir )?nur\b",
     )
 )
 
@@ -288,12 +297,31 @@ def _matches_uncertainty(sent: str) -> bool:
     return any(p.search(sent) for p in _UNCERTAINTY)
 
 
+def _clause_satisfied(clause: str, answer_words: set[str]) -> bool:
+    """A required clause counts as present if MOST of its DISTINCTIVE content nouns (len>=7) appear —
+    paraphrase-tolerant: a clause noun matches by stem OR by bidirectional substring, so "Freigabe" in
+    the answer covers the clause's "Werkstofffreigabe" and "...trifft der Hersteller" ==
+    "...muss der Werkstoffhersteller treffen". A faithful restatement is not flagged as a dropped clause."""
+    distinct = {w for w in _sig_words(clause) if len(w) >= 7} or _sig_words(clause)
+    if not distinct:
+        return True
+    hits = 0
+    for cw in distinct:
+        cs = _stem(cw)
+        if any(
+            cs == _stem(aw) or (len(aw) >= 6 and (aw in cw or cw in aw)) for aw in answer_words
+        ):
+            hits += 1
+    return hits / len(distinct) >= _REQUIRED_CLAUSE_THRESH
+
+
 def evaluate_render(
     *,
     answer_text: str,
     contract: dict,
     policy: ContractPolicy = DEFAULT_POLICY,
     known_values: tuple = (),
+    known_materials: tuple = (),
 ) -> GuardResult:
     """Enforce the answer-contract against the rendered text. Fail-closed: any violation -> BLOCK. PURE."""
     violations: list[Violation] = []
@@ -324,19 +352,18 @@ def evaluate_render(
                     Violation("invented_number", _norm_num(g), m.group(0).strip())
                 )
 
-    # ── prefilter 3: invented material (vocab material not in allowed_materials) ──
-    allowed_low = {a.lower() for a in allowed_materials}
+    # ── prefilter 3: invented material (vocab material not in allowed_materials / user-stated) ──
+    # known_materials = the materials the USER named (the case-state) — referencing them (to disqualify,
+    # defer, or discuss) is not inventing a material, exactly as known_values are for numbers.
+    allowed_low = {a.lower() for a in allowed_materials} | {m.lower() for m in known_materials}
     for mat in sorted(policy.material_vocab, key=len, reverse=True):
         if re.search(rf"\b{re.escape(mat.lower())}\b", low) and mat.lower() not in allowed_low:
             violations.append(Violation("invented_material", mat))
 
-    # ── prefilter 4: a required clause is missing (significant-word coverage) ──
+    # ── prefilter 4: a required clause is missing (paraphrase-tolerant distinctive-noun match) ──
+    answer_words = _sig_words(text)
     for clause in required_clauses:
-        csig = _sig_words(clause)
-        if not csig:
-            continue
-        present = len(csig & _sig_words(text)) / len(csig)
-        if present < _REQUIRED_CLAUSE_THRESH:
+        if not _clause_satisfied(clause, answer_words):
             violations.append(Violation("missing_required_clause", clause))
 
     # ── coverage: every TECHNICAL sentence must map to claim / clause / question / uncertainty ──
@@ -346,16 +373,21 @@ def evaluate_render(
         | _BASE_WHITELIST
     )
     vocab_stems = {_stem(w) for w in contract_vocab}
+    anchor_low = {a.lower() for a in allowed_materials} | {m.lower() for m in known_materials}
     for sent in _sentences(text):
         if not _is_technical(sent, policy.material_vocab):
             continue  # (5) purely linguistic / non-technical transition
+        low_s = sent.lower()
+        if any(re.search(rf"\b{re.escape(m)}\b", low_s) for m in anchor_low):
+            continue  # (1) anchored to a contract/known material — elaboration is allowed; invented
+            #             numbers/materials/authority inside it are caught by the prefilters above
         if sent.rstrip().endswith("?") or _matches_uncertainty(sent):
             continue  # (3) clarification question / (4) uncertainty-deferral
         ssig = _sig_words(sent)
         if not ssig:
             continue
         drawn = sum(1 for w in ssig if _stem(w) in vocab_stems) / len(ssig)
-        if drawn < _COVER_THRESH:  # technical content not drawn from the contract -> foreign -> fail-closed
+        if drawn < _COVER_THRESH:  # foreign-SUBJECT technical sentence (no anchor, low overlap) -> fail-closed
             violations.append(Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent))
 
     ok = not violations

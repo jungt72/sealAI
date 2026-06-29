@@ -104,6 +104,7 @@ def _guard_render(sample: dict):
         answer_text=sample.get("answer", ""),
         contract=sample.get("contract", {}),
         known_values=tuple(sample.get("known_values", ()) or ()),
+        known_materials=tuple(sample.get("known_materials", ()) or ()),
     )
 
 
