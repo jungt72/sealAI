@@ -185,6 +185,25 @@ _STOP = {
     "gerne",
     "bitte",
     "danke",
+    "nein",
+    "ja",
+    "hält",
+    "halten",
+    "bleibt",
+    "bleiben",
+    "liegt",
+    "liegen",
+    "zeigt",
+    "zeigen",
+    "gilt",
+    "kommt",
+    "kommen",
+    "so",
+    "es",
+    "da",
+    "zur",
+    "genannten",
+    "deinen",
 }
 
 
@@ -215,6 +234,12 @@ class GuardResult:
 def _sig_words(text: str) -> set[str]:
     toks = re.findall(r"[a-zäöüß][a-zäöüß\-]{2,}", (text or "").lower())
     return {t for t in toks if t not in _STOP}
+
+
+def _stem(w: str) -> str:
+    """Crude German stem — a 6-char prefix folds morphological variation (hydrolyse/hydrolysiert,
+    beständig/beständiger) so a legitimate restatement is not falsely flagged as foreign content."""
+    return w[:6] if len(w) >= 6 else w
 
 
 def _norm_num(s: str) -> str:
@@ -249,10 +274,12 @@ def _sentences(text: str) -> list[str]:
 
 
 def _is_technical(sent: str, vocab_materials: tuple) -> bool:
+    # A sentence carries claim-bearing technical content if it names a material or a suitability term.
+    # NUMBERS are intentionally NOT a technical-trigger here: invented numbers are caught decisively by
+    # the number+unit prefilter, and a sentence whose only "technical" token is a covered number (an
+    # echoed user value / a computed value) must not be flagged as an unmapped claim.
     low = sent.lower()
     if any(re.search(rf"\b{re.escape(m.lower())}\b", low) for m in vocab_materials):
-        return True
-    if _NUM_UNIT_RE.search(sent):
         return True
     return any(k in low for k in _SUITABILITY)
 
@@ -318,6 +345,7 @@ def evaluate_render(
         | {a.lower() for a in allowed_materials}
         | _BASE_WHITELIST
     )
+    vocab_stems = {_stem(w) for w in contract_vocab}
     for sent in _sentences(text):
         if not _is_technical(sent, policy.material_vocab):
             continue  # (5) purely linguistic / non-technical transition
@@ -326,7 +354,7 @@ def evaluate_render(
         ssig = _sig_words(sent)
         if not ssig:
             continue
-        drawn = len(ssig & contract_vocab) / len(ssig)
+        drawn = sum(1 for w in ssig if _stem(w) in vocab_stems) / len(ssig)
         if drawn < _COVER_THRESH:  # technical content not drawn from the contract -> foreign -> fail-closed
             violations.append(Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent))
 
