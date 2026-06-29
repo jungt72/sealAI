@@ -382,7 +382,7 @@ describe("chat|cockpit divider (resizable ~50/50 — ≥1024px)", () => {
   });
 });
 
-describe("cockpit internals: one column + split (Berechnungen | Kritische Punkte)", () => {
+describe("cockpit internals: parameter/readout matrix", () => {
   const withV = (value: number): Partial<Parameters<typeof ChatPane>[0]> => ({
     compute: {
       computed: [
@@ -402,40 +402,38 @@ describe("cockpit internals: one column + split (Berechnungen | Kritische Punkte
     },
   });
 
-  it("stacks the parameter form on top, then the Berechnungen | Kritische Punkte split", () => {
+  it("places the parameter form in the left column and the readout in the right column", () => {
     renderPane({ memory: WITH_FACTS });
     const cockpit = screen.getByTestId("case-state");
-    const form = within(cockpit).getByTestId("cockpit-form");
-    const split = within(cockpit).getByTestId("cockpit-split");
+    const paramCol = within(cockpit).getByTestId("cockpit-param-column");
+    const readoutCol = within(cockpit).getByTestId("cockpit-readout-column");
+    const form = within(paramCol).getByTestId("cockpit-form");
     expect(within(form).getByTestId("param-compact")).toBeInTheDocument();
-    // the form sits ABOVE the split (DOM order)
-    expect(form.compareDocumentPosition(split) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const cols = within(split).getAllByTestId(/^cockpit-col-(calc|critical)$/);
-    expect(cols.map((c) => c.getAttribute("data-testid"))).toEqual([
-      "cockpit-col-calc",
-      "cockpit-col-critical",
-    ]);
+    expect(within(readoutCol).getByTestId("cockpit-calculation-readout")).toBeInTheDocument();
+    expect(within(readoutCol).getByTestId("cockpit-medium-readout")).toBeInTheDocument();
+    // DOM order mirrors the visual matrix: parameter column first, readout column second.
+    expect(paramCol.compareDocumentPosition(readoutCol) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("the calc column holds the deterministic Berechnungen; chips + Briefing sit below the split", () => {
+  it("the readout column holds Berechnungen first and Medium below; chips stay with parameters", () => {
     renderPane({ memory: WITH_FACTS, ...withV(13.09) });
     const cockpit = screen.getByTestId("case-state");
-    const berechnungen = within(screen.getByTestId("cockpit-col-calc")).getByTestId("berechnungen-panel");
+    const paramCol = within(cockpit).getByTestId("cockpit-param-column");
+    const calc = within(cockpit).getByTestId("cockpit-calculation-readout");
+    const medium = within(cockpit).getByTestId("cockpit-medium-readout");
+    const berechnungen = within(calc).getByTestId("berechnungen-panel");
     expect(berechnungen).toHaveTextContent("13,09 m/s");
-    const split = within(cockpit).getByTestId("cockpit-split");
-    const chips = within(cockpit).getByTestId("memory-panel");
-    const briefing = within(cockpit).getByTestId("make-briefing");
-    // the split sits ABOVE the chips, which sit above the Briefing block (DOM order)
-    expect(split.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(chips.compareDocumentPosition(briefing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(medium).getByText("Hydrauliköl")).toBeInTheDocument();
+    expect(within(paramCol).getByTestId("memory-panel")).toBeInTheDocument();
+    expect(calc.compareDocumentPosition(medium) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("the cockpit body is a single scroll-area holding the whole column", () => {
+  it("the cockpit body is a single scroll-area holding the two-column matrix", () => {
     renderPane({ memory: WITH_FACTS });
     const body = screen.getByTestId("case-state").querySelector(".cockpit-body");
     expect(body).not.toBeNull();
     expect(body).toHaveClass("scroll-area");
-    expect(body).toHaveClass("cockpit-body--stack");
+    expect(body).toHaveClass("cockpit-body--matrix");
   });
 });
 

@@ -564,123 +564,163 @@
   font-weight: 500; cursor: pointer; box-shadow: 0 10px 30px rgba(122, 166, 235, 0.3); }
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
-   COCKPIT — FLAT WHITE (Gemini-parity; owner spec 2026-06-27: the right column = #FFFFFF)
-   Was neumorphism (themesberg soft-UI on a blue-grey --neu-bg ground). Soft-UI shadows need that
-   grey ground to read, which conflicts with a white panel — so the cockpit now reads like Gemini's
-   side canvas: a clean white surface, hairline-framed inputs + cards, a flat seal-blue submit.
-   Scoped to .cockpit-panel; most controls fall back to their flat base styles (hairline inputs,
-   white tabs-sticky/actionbar, bordered fact-chip pills, flat close/submit/briefing) — only the
-   structural refinements (flat operating-conditions section, the type-tab active stroke, the
-   Berechnungen card) are restated here on a white ground.
-   ════════════════════════════════════════════════════════════════════════════════════════════ */
-
-/* — surface: the white set on .cockpit-panel above; keep the sticky header/actionbar bars white —— */
+   COCKPIT — technical two-column matrix: Parameter left, readout right.
+   Pure placement over existing data flow; white surface, hairlines, rows, no shadowed surfaces. */
+.cockpit-panel { --ink-faint: #525b69; --ink-ghost: #6f7886; }
 .cockpit-panel .param-tabs-sticky,
 .cockpit-panel .param-actionbar { background: var(--bg-cockpit); }
 
-/* — operating-conditions: a flat section (only the inputs are framed), set off by a divider —————— */
-.cockpit-panel .param-core {
-  border: none; background: transparent; box-shadow: none;
-  padding: 2px 0 16px; margin: 0 0 14px;
-  border-bottom: 1px solid var(--hairline);
+.cockpit-body--matrix {
+  display: grid; grid-template-columns: minmax(270px, 1fr) minmax(270px, 1fr);
+  height: 100%; min-height: 0; overflow: auto; overscroll-behavior: contain;
 }
-.cockpit-panel .param-core-label {
-  font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: var(--ink); margin-bottom: 2px;
+.cockpit-param-column,
+.cockpit-readout-column {
+  min-width: 0; display: flex; flex-direction: column; gap: 18px;
+  padding: 16px 18px 20px;
 }
-
-/* — type tabs: inactive = quiet grey pill on white; ACTIVE = white tab, navy text, seal-blue left
-     stroke (soon/disabled keep the base dashed/greyed look — scoped :not so we never flatten them) */
-.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled) {
-  background: var(--hover-wash); border-color: var(--hairline); color: var(--ink-soft); font-weight: 500;
+.cockpit-readout-column { border-left: 1px solid var(--hairline); }
+.cockpit-section-title,
+.cockpit-subsection-title {
+  display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  line-height: 1.2; text-transform: uppercase; color: var(--ink);
 }
-.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
-  background: var(--hover-wash); color: var(--color-seal-blue); border-color: rgba(60, 67, 80, 0.28);
-}
-.cockpit-panel .param-tab.is-active {
-  background: #ffffff; color: var(--color-seal-blue);
-  border-color: var(--hairline); border-left: 3px solid var(--color-seal-blue);
-  box-shadow: none; z-index: 3;
-}
-
-/* — Berechnungen → a flat hairline card; the preview stays a dashed draft. (Fallkontext chips fall
-     back to their flat bordered-pill base; close/submit/make-briefing to their flat base.) ————————— */
-.cockpit-panel .kernel-panel {
-  border-radius: var(--radius-lg); padding: 12px 14px;
-  background: var(--bg-cockpit); border: 1px solid var(--hairline);
-}
-.cockpit-panel .kernel-panel--preview {
-  background: var(--hover-wash); border: 1px dashed var(--hairline);
-}
-
-/* ── cockpit re-layout: one column (tabs+form on top) + a split (Berechnungen | Kritische Punkte) ─
-   Solid uniform surface to the right edge; the whole body scrolls as one. */
-.cockpit-body--stack {
-  display: flex; flex-direction: column; height: 100%; min-height: 0;
-  overflow: auto; overscroll-behavior: contain;
-}
-.cockpit-form { padding: 12px 16px 4px; }
+.cockpit-subsection-title { margin-top: 14px; color: var(--ink-soft); }
+.cockpit-form { padding: 0; }
 .cockpit-form .param-stage-card {
   width: 100%; max-width: none; margin: 0; border: none; background: transparent; padding: 0;
 }
 .cockpit-form .param-head { display: none; }
-/* in the single-scroll body the form's internal sticky anchors flow normally (no float-over-split) */
-.cockpit-form .param-tabs-sticky,
-.cockpit-form .param-actionbar { position: static; }
 
-.cockpit-split { display: flex; flex-direction: column; margin-top: 4px; }
-.cockpit-split-col {
-  flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+@container cockpit (max-width: 540px) {
+  .cockpit-body--matrix { grid-template-columns: 1fr; }
+  .cockpit-readout-column { border-left: none; border-top: 1px solid var(--hairline); }
 }
-.cockpit-split-title {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--ink-faint);
+
+/* Parameter surface: segmented type selector, compact input rows, orange commit action. */
+.cockpit-panel .param-core {
+  border: none; border-bottom: 1px solid var(--hairline); border-radius: 0;
+  background: transparent; box-shadow: none; padding: 0 0 16px; margin: 0 0 14px;
 }
-.cockpit-split-empty { margin: 0; font-size: 12px; color: var(--ink-ghost); line-height: 1.5; }
-@container cockpit (min-width: 620px) {
-  .cockpit-split { flex-direction: row; align-items: stretch; }
+.cockpit-panel .param-core-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink);
 }
-.kernel-panel--critical { gap: 8px; }
-.kernel-open .fact-feld { color: var(--ink-soft); }
-.cockpit-body--stack .readout-briefing { margin-top: auto; padding: 16px; border-top: none; }
-.cockpit-body--stack > [data-testid="memory-panel"] { padding: 0 16px; }
-
-
-/* ── cockpit text contrast: the muted inks are too light on the neumorphic grey ground ───────────
-   Remap --ink-faint/--ink-ghost a few steps darker (cascades to labels, units, placeholders,
-   hints, chips-labels, the empty-state line) + a crisp section title. */
-.cockpit-panel { --ink-faint: #525b69; --ink-ghost: #6f7886; }
-.cockpit-panel .param-group-title { color: var(--ink); }
-.cockpit-panel .case-state-empty { color: var(--ink-soft); }
-.cockpit-panel .cockpit-split-title { color: var(--ink-soft); }
-
-/* "Dichtungstyp" heading above the type tabs — parallel to the BETRIEBSBEDINGUNGEN heading,
-   marking the tab section as its own block (the tabs already carry aria-label="Dichtungstyp"). */
 .cockpit-panel .param-tabs-sticky::before {
   content: "Dichtungstyp";
   display: block; margin: 0 0 10px;
-  font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--ink);
 }
+.cockpit-panel .param-tabs { overflow-x: auto; padding: 0; }
+.cockpit-panel .param-tab {
+  transform: none; border-radius: 0; box-shadow: none; background: #fff;
+  color: var(--ink-soft); font-weight: 500;
+}
+.cockpit-panel .param-tab-label { transform: none; }
+.cockpit-panel .param-tab:first-child,
+.cockpit-panel .param-tab:last-child { border-radius: 0; }
+.cockpit-panel .param-tab:not(.is-active):not(.is-soon):not(:disabled):hover {
+  color: var(--color-seal-blue); background: #f7f9fc;
+}
+.cockpit-panel .param-tab.is-active {
+  color: var(--color-seal-blue); background: #fff; border-color: var(--hairline);
+  border-bottom: 2px solid var(--color-seal-blue); box-shadow: none; z-index: 2;
+}
+.cockpit-panel .param-input input,
+.cockpit-panel .param-select { border-radius: 6px; }
+.cockpit-panel .param-compact,
+.cockpit-panel .param-core-grid,
+.cockpit-panel .param-group-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.cockpit-panel .param-group { border-top-color: var(--hairline); }
+.cockpit-panel .param-group-title { color: var(--ink); }
+.cockpit-panel .param-kernel-badge { border-radius: 3px; }
+.cockpit-panel .param-actionbar {
+  border-top: 1px solid var(--hairline); padding: 12px 0 0; margin-top: 10px;
+}
+.cockpit-panel .param-actionbar button[type="submit"] {
+  border-radius: 6px; background: #e85d04; padding: 8px 18px;
+}
+.cockpit-panel .param-actionbar button[type="submit"]:hover { background: #c94f02; }
+
+/* Readout surface: values as rows, not nested boxes. */
+.cockpit-readout-block {
+  display: flex; flex-direction: column; gap: 10px; padding-bottom: 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.cockpit-readout-block:last-of-type { border-bottom: none; }
+.cockpit-readout-empty { margin: 0; font-size: 12px; color: var(--ink-ghost); line-height: 1.5; }
+.cockpit-panel .kernel-panel {
+  width: 100%; margin: 0; padding: 0; border: none; border-radius: 0; background: transparent;
+}
+.cockpit-panel .kernel-panel--preview {
+  padding: 10px 0; border-top: 1px dashed var(--hairline); border-bottom: 1px dashed var(--hairline);
+  background: transparent;
+}
+.cockpit-panel .kernel-row { gap: 0; }
+.cockpit-panel .kernel-row .fact-chip {
+  border: none; border-top: 1px solid var(--hairline); border-radius: 0; background: transparent;
+  padding: 9px 0;
+}
+.cockpit-panel .kernel-row .fact-chip:last-child { border-bottom: 1px solid var(--hairline); }
+.cockpit-panel .kernel-note {
+  width: 100%; margin: 0; padding: 8px 0; text-align: left; border-top: 1px solid var(--hairline);
+}
+.cockpit-panel .kernel-open .fact-feld { color: var(--ink-soft); }
+
+.cockpit-panel [data-testid="memory-panel"] {
+  align-items: stretch; justify-content: flex-start; gap: 8px; padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+.cockpit-panel [data-testid="memory-panel"] .chips-label { text-align: left; }
+.cockpit-panel [data-testid="memory-panel"] .chips-row {
+  width: 100%; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0;
+}
+.cockpit-panel [data-testid="memory-panel"] .fact-chip {
+  display: flex; border: none; border-bottom: 1px solid var(--hairline);
+  border-radius: 0; background: transparent;
+}
+.cockpit-panel [data-testid="memory-panel"] .fact-chip-body {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; border-radius: 0; padding: 8px 0;
+}
+.cockpit-panel [data-testid="memory-panel"] .fact-chip-x {
+  border-radius: 0; padding: 8px 0 8px 10px;
+}
+.cockpit-panel [data-testid="memory-panel"] .chips-forget-all {
+  align-self: flex-start; padding-left: 0;
+}
+
+.cockpit-medium-facts { margin: 0; display: flex; flex-direction: column; gap: 0; }
+.cockpit-medium-fact {
+  display: grid; grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
+  gap: 12px; padding: 8px 0; border-top: 1px solid var(--hairline);
+}
+.cockpit-medium-fact:last-child { border-bottom: 1px solid var(--hairline); }
+.cockpit-medium-fact dt { font-size: 12px; color: var(--ink-faint); }
+.cockpit-medium-fact dd { margin: 0; font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); }
 
 /* Medium Intelligence (Phase 2) — the MEDIUM panel in the right column. The data is helper-LLM
    knowledge, so the amber "vorläufig" badge is intrinsic to the surface. */
 .medium-panel {
-  margin: 8px 16px 0; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
-  border: 1px solid var(--line, #e3e7ee); border-radius: 10px; background: var(--surface-1, #fbfcfe);
+  margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px;
+  border: none; border-radius: 0; background: transparent;
 }
 .medium-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .medium-panel-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
 .medium-panel-kat { color: var(--ink-ghost); font-weight: 400; }
 .medium-panel-badge {
   flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  color: #92600a; background: #fdf2dc; border: 1px solid #f0d9a8; border-radius: 999px; padding: 2px 8px;
+  color: #92600a; background: #fdf2dc; border: 1px solid #f0d9a8; border-radius: 4px; padding: 2px 7px;
 }
 .medium-panel-section { display: flex; flex-direction: column; gap: 4px; }
 .medium-panel-section-title {
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--ink-faint, #8a93a2);
 }
-.medium-panel-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.medium-panel-list { margin: 0; padding: 8px 0 0 18px; display: flex; flex-direction: column; gap: 3px;
+  border-top: 1px solid var(--hairline); }
 .medium-panel-list li { font-size: 12px; line-height: 1.5; color: var(--ink-soft, #5a6372); }
 .medium-panel-unsicher { margin: 2px 0 0; font-size: 11px; line-height: 1.5; color: #92600a; }
 
