@@ -75,6 +75,7 @@ class SystemPromptAssembler(Protocol):
         untrusted: list[dict] | None = None,
         archetype_context: dict | None = None,
         coverage: dict | None = None,
+        contract: dict | None = None,
     ) -> str: ...
 
 

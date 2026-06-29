@@ -81,6 +81,7 @@ class L1Generator:
         untrusted: list[dict] | None = None,
         archetype_context: dict | None = None,
         coverage: dict | None = None,
+        contract: dict | None = None,
     ) -> Answer:
         computed_values, not_computed, calc_notes = _calc_payload(calc)
         system = self._assembler.system_prompt(
@@ -97,6 +98,7 @@ class L1Generator:
             untrusted=untrusted,
             archetype_context=archetype_context,
             coverage=coverage,
+            contract=contract,
         )
         result = await self._client.generate(
             system=system, user=question, model_config=self._model_config

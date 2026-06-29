@@ -431,9 +431,9 @@ class Pipeline:
                 from sealai_v2.core.coverage import coverage_for
 
                 coverage = coverage_for(gegencheck_verdict, archetype_context)
-            # INC-NARRATOR-CONTRACT Phase 1: assemble the deterministic answer-contract from the SAME
-            # grounded evidence, BEFORE generate (so Phase 2's renderer can consume it). INERT here —
-            # NOT passed to generate, only attached to the result → the L1 prompt is byte-identical.
+            # INC-NARRATOR-CONTRACT: assemble the deterministic answer-contract from the SAME grounded
+            # evidence, BEFORE generate. Phase 2 — when the flag is ON it is PASSED to generate (renderer
+            # mode); OFF → contract is None → not passed → the L1 prompt is byte-identical.
             contract = None
             if self.response_contract_enabled:
                 from sealai_v2.core.coverage import coverage_for
@@ -462,6 +462,7 @@ class Pipeline:
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                     archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
                     coverage=coverage,  # None → byte-identical no-coverage-gate prompt
+                    contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
                 )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
