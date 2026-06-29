@@ -169,6 +169,9 @@ services:
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
       # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
       SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
+      # INC-NARRATOR-CONTRACT: L1 renders the kernel answer-contract + claim-level guard (regenerate-on-BLOCK).
+      # Activated 2026-06-29 via eval-REPLAY narrator-contract-replay (tree 98edd308, L1 gpt-5.1).
+      SEALAI_V2_RESPONSE_CONTRACT_ENABLED: ${SEALAI_V2_RESPONSE_CONTRACT_ENABLED:-false}
     volumes:
     # Pre-staged e5-large ONNX cache (FastEmbed) — read-only; avoids a ~2GB cold download on the
     # health-gated recreate. uid 10001 reads via the bind mount (the cache contents are world-readable).
