@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
 from sealai_v2.core.equivalence_guard import (
@@ -586,6 +586,57 @@ def _reviewed_traps(
     )
 
 
+_CAVEAT_ADDRESSED_THRESH = (
+    0.5  # stemmed share of a trap's correct_general the DRAFT must itself state
+)
+
+
+def _stem6(w: str) -> str:
+    return w[:6] if len(w) >= 6 else w
+
+
+def _caveat_addressed(entry: TrapEntry, draft_text: str) -> bool:
+    """True iff the DRAFT itself already states the trap's correct caveat (correct_general) — i.e. it
+    EXPLAINED the limitation rather than recommending the wrong thing. Stemmed significant-token overlap
+    (German inflection/compounds: elastisch~elastische, kriechen~kriechverformung). The safety net for an
+    explanatory answer (e.g. a wissensfrage) that a topic-triggered judge over-flags as walked_into_trap."""
+    cg = (entry.correct_general or "").strip()
+    if not cg:
+        return False
+    cg_stems = {_stem6(t) for t in query_tokens(cg) if len(t) >= 4}
+    if not cg_stems:
+        return False
+    draft_stems = {_stem6(t) for t in query_tokens(draft_text)}
+    return (
+        sum(1 for s in cg_stems if s in draft_stems) / len(cg_stems)
+        >= _CAVEAT_ADDRESSED_THRESH
+    )
+
+
+def _demote_caveat_addressed_traps(
+    findings: tuple[VerifierFinding, ...], catalog: TrapCatalog | None, draft_text: str
+) -> tuple[VerifierFinding, ...]:
+    """A reviewed walked_into_trap finding whose caveat the DRAFT already states is demoted to FLAG-only
+    (review_state='draft') — the answer ADDRESSED the limitation, so a destructive hedge must not replace
+    a correct, richer answer. Only walked_into_trap (the explain-vs-recommend gate) is affected;
+    confident_wrong / invented_precision / matrix / calc findings pass through unchanged."""
+    if catalog is None:
+        return findings
+    out = []
+    for f in findings:
+        if (
+            f.kind == "trap"
+            and f.gate == "walked_into_trap"
+            and f.review_state == "reviewed"
+        ):
+            entry = catalog.by_id(f.trap_id)
+            if entry is not None and _caveat_addressed(entry, draft_text):
+                out.append(replace(f, review_state="draft"))
+                continue
+        out.append(f)
+    return tuple(out)
+
+
 def _reviewed_matrix(
     findings: tuple[VerifierFinding, ...],
 ) -> tuple[VerifierFinding, ...]:
@@ -826,6 +877,10 @@ async def run_verify(
     verify_unavailable = not raw.parse_ok
     # Eingriff 2: the CALC-velocity trap only counts when the kern computed a v verdict this turn.
     scoped = scope_calc_velocity_trap(raw.findings, computed_values)
+    # INC-L3-OPT: a walked_into_trap whose caveat the DRAFT itself states is an EXPLANATION, not a
+    # trap-walk -> demote to FLAG so the destructive hedge cannot replace a correct, richer answer
+    # (the PTFE-wissensfrage over-correction, LangSmith-traced 2026-06-29). Blocking otherwise.
+    scoped = _demote_caveat_addressed_traps(scoped, catalog, draft.text)
     findings = scoped + _leak_findings(leaks) + overlimit
     if not findings and not verify_unavailable:
         return draft, VerifierVerdict(
