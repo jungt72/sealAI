@@ -615,6 +615,11 @@ class PipelineResult:
     # + per-axis grounding, or None when the gate is OFF. Kernel-owned (I-COV-1); a render/serializer
     # surface that (once coupled, §5) BOUNDS the allowed L1 mode — the LLM never sets it.
     coverage: dict | None = None
+    # INC-NARRATOR-CONTRACT (Phase 1): the deterministic answer-contract (status + allowed_claims +
+    # required/forbidden + allowed materials/values), or None when the contract gate is OFF / the turn
+    # is not a material×medium suitability turn. Kernel-owned; a render/serializer surface. In Phase 1
+    # it is NOT fed to L1 (byte-identical); Phase 2's renderer consumes it.
+    contract: dict | None = None
     # Modus D (Diagnose): deterministic symptom->ursache->fix from Dim. 5, or None when no
     # symptom recognised. provisional=True for draft modes. Render/serializer surface, never L4.
     diagnose: dict | None = None

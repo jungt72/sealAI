@@ -238,6 +238,9 @@ class Pipeline:
     # attach it to the result. OFF → coverage stays None → byte-identical. (The status→mode COUPLING
     # into L1 is a separate, also-gated sub-step; this field only governs the computation/exposure.)
     coverage_gate_enabled: bool = False
+    # INC-NARRATOR-CONTRACT Phase 1: assemble + attach the deterministic answer-contract (INERT — not
+    # fed to L1 in Phase 1, so byte-identical). Governs computation/exposure only.
+    response_contract_enabled: bool = False
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -428,6 +431,23 @@ class Pipeline:
                 from sealai_v2.core.coverage import coverage_for
 
                 coverage = coverage_for(gegencheck_verdict, archetype_context)
+            # INC-NARRATOR-CONTRACT Phase 1: assemble the deterministic answer-contract from the SAME
+            # grounded evidence, BEFORE generate (so Phase 2's renderer can consume it). INERT here —
+            # NOT passed to generate, only attached to the result → the L1 prompt is byte-identical.
+            contract = None
+            if self.response_contract_enabled:
+                from sealai_v2.core.coverage import coverage_for
+                from sealai_v2.core.response_contract import build_contract
+
+                _rc = build_contract(
+                    coverage=coverage
+                    if coverage is not None
+                    else coverage_for(gegencheck_verdict, archetype_context),
+                    grounding_facts=l1_grounding,
+                    gegencheck_verdict=gegencheck_verdict,
+                    calc=calc,
+                )
+                contract = _rc.to_dict() if _rc is not None else None
             with _staged(timer, progress, "generate_ms", "generate"):
                 answer = await self.generator.generate(
                     question,
@@ -567,6 +587,7 @@ class Pipeline:
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
             coverage=coverage,
+            contract=contract,
             diagnose=diagnosis,
             decode=decode_result,
             alternativen=alternativen_result,
@@ -831,4 +852,5 @@ def build_pipeline(
         medium_intel_enabled=settings.medium_intel_enabled,
         produktspec_enabled=settings.produktspec_enabled,
         coverage_gate_enabled=settings.coverage_gate_enabled,
+        response_contract_enabled=settings.response_contract_enabled,
     )

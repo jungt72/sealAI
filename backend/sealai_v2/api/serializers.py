@@ -172,6 +172,7 @@ def chat_response(result: PipelineResult) -> dict:
         # V2.2 INC-COVERAGE-GATE: deterministic coverage_status + per-axis grounding, or None when off.
         # Render surface only — passed through verbatim; the status bounds the L1 mode, never L1 prose.
         "coverage": result.coverage,
+        "contract": result.contract,
         "diagnose": result.diagnose,
         "decode": result.decode,
         "alternativen": result.alternativen,

@@ -100,6 +100,11 @@ class Settings(BaseSettings):
     # allowed L1 mode (§5) goes productive only when the extended ruler is green (I-CAL-1); flip via
     # SEALAI_V2_COVERAGE_GATE_ENABLED after an adjudicated eval-REPLAY.
     coverage_gate_enabled: bool = False
+    # INC-NARRATOR-CONTRACT Phase 1: when ON, the kernel assembles the deterministic answer-contract
+    # (status + allowed_claims + required/forbidden + allowed materials/values) and attaches it to the
+    # result. INERT — the L1 prompt is NOT changed (byte-identical); the renderer that consumes the
+    # contract is the next, also-gated phase. Flip via SEALAI_V2_RESPONSE_CONTRACT_ENABLED.
+    response_contract_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6
