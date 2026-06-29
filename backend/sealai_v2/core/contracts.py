@@ -74,6 +74,7 @@ class SystemPromptAssembler(Protocol):
         conversation_window: list[dict] | None = None,
         untrusted: list[dict] | None = None,
         archetype_context: dict | None = None,
+        coverage: dict | None = None,
     ) -> str: ...
 
 

@@ -419,6 +419,15 @@ class Pipeline:
             if understand_task is not None:
                 understanding = await understand_task
             archetype_context = self._archetype_context(understanding)
+            # V2.2 INC-COVERAGE-GATE (§4/§5): deterministic case-level coverage from the grounded
+            # evidence (chemical = gegencheck verdict; archetype = profile), computed BEFORE generate
+            # so it can hard-cap the allowed L1 mode. Flag-gated → None when OFF (byte-identical). The
+            # LLM consumes the status; it never sets it (I-COV-1).
+            coverage = None
+            if self.coverage_gate_enabled:
+                from sealai_v2.core.coverage import coverage_for
+
+                coverage = coverage_for(gegencheck_verdict, archetype_context)
             with _staged(timer, progress, "generate_ms", "generate"):
                 answer = await self.generator.generate(
                     question,
@@ -432,6 +441,7 @@ class Pipeline:
                     conversation_window=conversation_window or None,
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                     archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
+                    coverage=coverage,  # None → byte-identical no-coverage-gate prompt
                 )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -533,17 +543,6 @@ class Pipeline:
             raise
 
         # ``understanding`` was awaited before generate (G4) — already set (or None if understand off).
-
-        # V2.2 INC-COVERAGE-GATE (§4): deterministic case-level coverage from the grounded evidence
-        # (chemical = the gegencheck verdict; archetype = the recognised profile). Flag-gated → None
-        # when OFF (byte-identical). Pure; the LLM never sets it (I-COV-1).
-        coverage = None
-        if self.coverage_gate_enabled:
-            from sealai_v2.core.coverage import coverage_for
-
-            coverage = coverage_for(
-                gegencheck_verdict, self._archetype_context(understanding)
-            )
 
         # One JSON line per turn (stage durations + total + turn id; no PII). ``total_ms`` is
         # frozen HERE — the user-facing latency; a backgrounded remember emits the line itself

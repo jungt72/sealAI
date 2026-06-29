@@ -52,6 +52,7 @@ class PromptAssembler:
         conversation_window: list[dict] | None = None,
         untrusted: list[dict] | None = None,
         archetype_context: dict | None = None,
+        coverage: dict | None = None,
     ) -> str:
         flags = flags or Flags()
         gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
@@ -69,6 +70,7 @@ class PromptAssembler:
             calc_notes=calc_notes or [],
             untrusted=untrusted or [],
             archetype_context=archetype_context or None,
+            coverage=coverage or None,
         )
 
 
