@@ -54,6 +54,7 @@ class PromptAssembler:
         archetype_context: dict | None = None,
         coverage: dict | None = None,
         contract: dict | None = None,
+        baseline_hardening: bool = False,
     ) -> str:
         flags = flags or Flags()
         gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
@@ -73,6 +74,7 @@ class PromptAssembler:
             archetype_context=archetype_context or None,
             coverage=coverage or None,
             contract=contract or None,
+            baseline_hardening=baseline_hardening,
         )
 
 

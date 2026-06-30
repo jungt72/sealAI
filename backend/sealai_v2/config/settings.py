@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     # result. INERT — the L1 prompt is NOT changed (byte-identical); the renderer that consumes the
     # contract is the next, also-gated phase. Flip via SEALAI_V2_RESPONSE_CONTRACT_ENABLED.
     response_contract_enabled: bool = False
+    # INC-BASELINE-HARDENING (V2.2): two Free-Narrator baseline fixes the narrator-contract-replay
+    # surfaced (NOT touched by the narrator contract — these are non-Gegencheck turns): (1) derive the
+    # RWDR shaft Ø (Welle = d1) from a bare designation so the Umfangsgeschwindigkeit kern fires, plus
+    # name the speed-trap as a qualitative Pflichtbefund; (2) forbid a material-FAMILY lock-in from an
+    # UNCLEAR medium class (ask the class first). OFF by default → byte-identical (no extra binding, no
+    # extra prompt block); flip via SEALAI_V2_BASELINE_HARDENING_ENABLED after an adjudicated eval-REPLAY.
+    baseline_hardening_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

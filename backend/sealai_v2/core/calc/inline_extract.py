@@ -25,6 +25,7 @@ from sealai_v2.core.calc.binding import (
     _normalize_unit,
 )
 from sealai_v2.core.contracts import RememberedFact
+from sealai_v2.core.decode_extract import decode_designation
 
 # <Zahl> (mindestens ein Whitespace) <Einheit-Token>
 # Lookbehind (?<!\d): Zahl beginnt nicht mitten in einer Ziffernfolge.
@@ -101,3 +102,35 @@ def merge_inline(
     existing_felder = {f.feld for f in case_state}
     result.extend(f for f in inline if f.feld not in existing_felder)
     return tuple(result)
+
+
+def extract_rwdr_shaft(message: str) -> tuple[RememberedFact, ...]:
+    """INC-BASELINE-HARDENING — derive the RWDR shaft diameter (Welle = d1) from a bare designation.
+
+    For an RWDR-style designation "d x D x b" the seal INNER diameter equals the shaft diameter
+    (the lip runs ON the shaft), so the first dim IS d1. ``decode_designation`` already labels this
+    layout ``id_od_breite`` — and ONLY for a 3-number group that is NOT an O-Ring (the O-Ring
+    id/cord layout is excluded there), so the shaft reading is unambiguous. Emit a single
+    ``wellendurchmesser`` fact in mm so the deterministic calc binding can compute the
+    Umfangsgeschwindigkeit even when the user never wrote the shaft diameter with an explicit unit
+    (the gap the narrator-contract-replay surfaced on BUX-SPEED-TRAP-FIRSTTURN-01).
+
+    Conservative + fail-closed: fires ONLY on the unambiguous ``id_od_breite`` interpretation; any
+    other layout (``uneindeutig``, O-Ring id/cord, no dims) -> nothing. provenance = ``chat-inline``
+    (same channel as the unit-bearing inline extractor; ``merge_inline`` lets a typed shaft diameter
+    win over this derived one, and both win over a recalled case-state value). Pure: no I/O, no LLM.
+    """
+    spec = decode_designation(message)
+    if not spec or spec.get("dim_interpretation") != "id_od_breite":
+        return ()
+    id_mm = spec.get("id_mm")
+    if id_mm is None:
+        return ()
+    num = f"{id_mm:g}".replace(
+        ".", ","
+    )  # German decimal; trims trailing zeros (40.0 -> "40")
+    return (
+        RememberedFact(
+            feld="wellendurchmesser", wert=f"{num} mm", provenance="chat-inline"
+        ),
+    )
