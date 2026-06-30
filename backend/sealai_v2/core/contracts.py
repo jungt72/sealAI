@@ -74,6 +74,8 @@ class SystemPromptAssembler(Protocol):
         conversation_window: list[dict] | None = None,
         untrusted: list[dict] | None = None,
         archetype_context: dict | None = None,
+        coverage: dict | None = None,
+        contract: dict | None = None,
     ) -> str: ...
 
 
@@ -610,6 +612,19 @@ class PipelineResult:
     # material + medium). Backend owns the verdict; never affirms suitability (E4-1). A
     # render/serializer surface only - never injected into L1/L3 (the prompt stays unchanged).
     gegencheck: dict | None = None
+    # V2.2 INC-COVERAGE-GATE (§4): the deterministic case-level coverage_status (IN/PARTIAL/ANALOG/OUT)
+    # + per-axis grounding, or None when the gate is OFF. Kernel-owned (I-COV-1); a render/serializer
+    # surface that (once coupled, §5) BOUNDS the allowed L1 mode — the LLM never sets it.
+    coverage: dict | None = None
+    # INC-NARRATOR-CONTRACT (Phase 1): the deterministic answer-contract (status + allowed_claims +
+    # required/forbidden + allowed materials/values), or None when the contract gate is OFF / the turn
+    # is not a material×medium suitability turn. Kernel-owned; a render/serializer surface. In Phase 1
+    # it is NOT fed to L1 (byte-identical); Phase 2's renderer consumes it.
+    contract: dict | None = None
+    # INC-NARRATOR-CONTRACT Phase 3/5: the claim-level output_guard verdict for this turn (PASS/BLOCK +
+    # violations), or None when the contract gate is OFF / no contract. A render/serializer surface; the
+    # ENFORCEMENT (regenerate-on-BLOCK) already happened in the pipeline before this is attached.
+    guard: dict | None = None
     # Modus D (Diagnose): deterministic symptom->ursache->fix from Dim. 5, or None when no
     # symptom recognised. provisional=True for draft modes. Render/serializer surface, never L4.
     diagnose: dict | None = None

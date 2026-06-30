@@ -15,7 +15,11 @@ from dataclasses import dataclass, field
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.binding import bind_params
-from sealai_v2.core.calc.inline_extract import extract_inline, merge_inline
+from sealai_v2.core.calc.inline_extract import (
+    extract_inline,
+    extract_rwdr_shaft,
+    merge_inline,
+)
 from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.contracts import (
@@ -234,6 +238,17 @@ class Pipeline:
     # structurally capped (G1/G2/G3, always "vorläufig"); a render surface only — NEVER enters L1/L3, so
     # enabling keeps the prompt + eval byte-identical. Flag off → fully inert.
     produktspec_enabled: bool = False
+    # V2.2 INC-COVERAGE-GATE (§4): when True, compute the deterministic coverage_status this turn and
+    # attach it to the result. OFF → coverage stays None → byte-identical. (The status→mode COUPLING
+    # into L1 is a separate, also-gated sub-step; this field only governs the computation/exposure.)
+    coverage_gate_enabled: bool = False
+    # INC-NARRATOR-CONTRACT Phase 1: assemble + attach the deterministic answer-contract (INERT — not
+    # fed to L1 in Phase 1, so byte-identical). Governs computation/exposure only.
+    response_contract_enabled: bool = False
+    # INC-BASELINE-HARDENING (V2.2): flag-gated Free-Narrator baseline fixes (RWDR shaft-Ø derivation
+    # for the Umfangsgeschwindigkeit kern + the speed-trap / unclear-medium prompt discipline). OFF ->
+    # no extra binding + no extra prompt block -> byte-identical. Governs the derivation + prompt block.
+    baseline_hardening_enabled: bool = False
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -382,8 +397,15 @@ class Pipeline:
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
+            inline_facts = extract_inline(question)
+            if self.baseline_hardening_enabled:
+                # INC-BASELINE-HARDENING: Welle = d1 bei RWDR — derive the shaft Ø from a bare
+                # designation ("RWDR 40x62x8") so the Umfangsgeschwindigkeit kern can fire even
+                # without an explicit "40 mm". A TYPED shaft Ø still wins over the derived one
+                # (overlay order: typed inline > derived); OFF -> byte-identical no-op.
+                inline_facts = merge_inline(extract_rwdr_shaft(question), inline_facts)
             bound = bind_params(
-                merge_inline(mem.case_state, extract_inline(question))
+                merge_inline(mem.case_state, inline_facts)
             )  # L4 durable facts excluded — never a calc input; inline overlay: fresh > recalled
             merged_params = dict(bound.params)
             param_origins = dict(bound.origins)
@@ -415,6 +437,32 @@ class Pipeline:
             if understand_task is not None:
                 understanding = await understand_task
             archetype_context = self._archetype_context(understanding)
+            # V2.2 INC-COVERAGE-GATE (§4/§5): deterministic case-level coverage from the grounded
+            # evidence (chemical = gegencheck verdict; archetype = profile), computed BEFORE generate
+            # so it can hard-cap the allowed L1 mode. Flag-gated → None when OFF (byte-identical). The
+            # LLM consumes the status; it never sets it (I-COV-1).
+            coverage = None
+            if self.coverage_gate_enabled:
+                from sealai_v2.core.coverage import coverage_for
+
+                coverage = coverage_for(gegencheck_verdict, archetype_context)
+            # INC-NARRATOR-CONTRACT: assemble the deterministic answer-contract from the SAME grounded
+            # evidence, BEFORE generate. Phase 2 — when the flag is ON it is PASSED to generate (renderer
+            # mode); OFF → contract is None → not passed → the L1 prompt is byte-identical.
+            contract = None
+            if self.response_contract_enabled:
+                from sealai_v2.core.coverage import coverage_for
+                from sealai_v2.core.response_contract import build_contract
+
+                _rc = build_contract(
+                    coverage=coverage
+                    if coverage is not None
+                    else coverage_for(gegencheck_verdict, archetype_context),
+                    grounding_facts=l1_grounding,
+                    gegencheck_verdict=gegencheck_verdict,
+                    calc=calc,
+                )
+                contract = _rc.to_dict() if _rc is not None else None
             with _staged(timer, progress, "generate_ms", "generate"):
                 answer = await self.generator.generate(
                     question,
@@ -428,10 +476,64 @@ class Pipeline:
                     conversation_window=conversation_window or None,
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                     archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
+                    coverage=coverage,  # None → byte-identical no-coverage-gate prompt
+                    contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
+                    baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
                 )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
             )
+
+            # INC-NARRATOR-CONTRACT Phase 3/5: the claim-level output guard on the rendered answer.
+            # Fail-closed coverage — on BLOCK, regenerate ONCE with a deterministic correction note, then
+            # re-score; the verdict is attached + logged (GOVERNANCE). Flag-gated + only with a contract →
+            # OFF / no-contract = no-op = byte-identical. The (re)generated answer still goes through L3.
+            guard = None
+            if self.response_contract_enabled and contract is not None:
+                from sealai_v2.core.output_guard import (
+                    correction_note as _guard_note,
+                    evaluate_render as _guard_eval,
+                    known_inputs as _guard_known,
+                )
+
+                _kv, _km = _guard_known(question)
+                _gr = _guard_eval(
+                    answer_text=answer.text,
+                    contract=contract,
+                    known_values=_kv,
+                    known_materials=_km,
+                )
+                if _gr.action == "BLOCK":
+                    with _staged(timer, progress, "regenerate_ms", "regenerate"):
+                        answer = await self.generator.generate(
+                            question,
+                            flags=flags,
+                            grounding_facts=l1_grounding,
+                            calc=calc,
+                            case_context=case_context or None,
+                            durable_context=durable_context or None,
+                            conversation_window=conversation_window or None,
+                            untrusted=untrusted_data,
+                            archetype_context=archetype_context,
+                            coverage=coverage,
+                            contract=contract,
+                            baseline_hardening=self.baseline_hardening_enabled,
+                            correction_note=_guard_note(_gr),
+                        )
+                    _gr2 = _guard_eval(
+                        answer_text=answer.text,
+                        contract=contract,
+                        known_values=_kv,
+                        known_materials=_km,
+                    )
+                    _log.info(
+                        "GOVERNANCE output_guard: regenerated (first=%s -> after=%s); first_violations=%s",
+                        _gr.action,
+                        _gr2.action,
+                        [v.kind for v in _gr.violations],
+                    )
+                    _gr = _gr2
+                guard = _gr.to_dict()
 
             verdict: VerifierVerdict | None = None
             if self.verifier is not None and self.catalog is not None:
@@ -552,6 +654,9 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
+            coverage=coverage,
+            contract=contract,
+            guard=guard,
             diagnose=diagnosis,
             decode=decode_result,
             alternativen=alternativen_result,
@@ -815,4 +920,7 @@ def build_pipeline(
         medium_researcher=medium_researcher,
         medium_intel_enabled=settings.medium_intel_enabled,
         produktspec_enabled=settings.produktspec_enabled,
+        coverage_gate_enabled=settings.coverage_gate_enabled,
+        response_contract_enabled=settings.response_contract_enabled,
+        baseline_hardening_enabled=settings.baseline_hardening_enabled,
     )

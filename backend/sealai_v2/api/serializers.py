@@ -169,6 +169,11 @@ def chat_response(result: PipelineResult) -> dict:
         # the turn is not a Gegencheck situation. Already a plain dict from the kernel - passed
         # through verbatim so the SPA renders the verdict deterministically, not from L1 prose.
         "gegencheck": result.gegencheck,
+        # V2.2 INC-COVERAGE-GATE: deterministic coverage_status + per-axis grounding, or None when off.
+        # Render surface only — passed through verbatim; the status bounds the L1 mode, never L1 prose.
+        "coverage": result.coverage,
+        "contract": result.contract,
+        "guard": result.guard,
         "diagnose": result.diagnose,
         "decode": result.decode,
         "alternativen": result.alternativen,

@@ -24,6 +24,11 @@ _ALLOWED = {
         "knowledge/retrieval.py",
         "knowledge/qdrant_retrieval.py",
         "knowledge/matrix.py",
+        # Offline eval-fixture builder (INC-NARRATOR-CONTRACT Phase 4): constructs GroundingFacts ONLY
+        # from the static, in-repo CONTRACT_EVAL_CASES (curated, owner-authored scenarios) — never from
+        # runtime/user content, and never invoked by the prod request path (only the offline measurement
+        # harness). The quarantine invariant (no untrusted content -> grounding in PROD) is preserved.
+        "eval/contract_eval.py",
     ),
     "Claim": ("knowledge/fachkarten.py",),
 }

@@ -398,6 +398,18 @@ export function ChatPane({
       (compute?.clarifications?.length ?? 0) +
       ((compute?.not_computed ?? []).filter((n) => !isNotApplicable(n)).length) >
     0;
+  const mediumReadoutRows = [
+    { key: "medium", label: "Medium" },
+    { key: "medium_kategorie", label: "Kategorie" },
+    { key: "druck", label: "Druck normal" },
+    { key: "druck_max", label: "Druck max." },
+    { key: "betriebstemperatur", label: "Betriebstemperatur" },
+    { key: "spitzentemperatur", label: "Spitzentemperatur" },
+    { key: "additive", label: "Additive" },
+  ].flatMap(({ key, label }) => {
+    const value = committed[key];
+    return value ? [{ key, label, value }] : [];
+  });
 
   const cockpit = (
     <aside className="cockpit-panel" data-testid="case-state" aria-label="Fallkontext und Berechnungen">
@@ -414,62 +426,73 @@ export function ChatPane({
           ×
         </button>
       </header>
-      <div className="cockpit-body cockpit-body--stack scroll-area">
-        {/* top: tab menu + parameter form, full width */}
-        <div className="cockpit-form" data-testid="cockpit-form">
-          <ParameterForm
-            variant="stage"
-            onSubmit={submitParams}
-            onPreview={onPreview}
-            committed={committed}
-          />
-        </div>
+      <div className="cockpit-body cockpit-body--matrix scroll-area">
+        <section className="cockpit-param-column" data-testid="cockpit-param-column" aria-label="Parameter">
+          <span className="cockpit-section-title">Parameter</span>
+          <div className="cockpit-form" data-testid="cockpit-form">
+            <ParameterForm
+              variant="stage"
+              onSubmit={submitParams}
+              onPreview={onPreview}
+              committed={committed}
+            />
+          </div>
+          {chips}
+        </section>
 
-        {latestMedium ? <MediumPanel data={latestMedium} /> : null}
-        {latestSpec ? <KandidatenSpecPanel data={latestSpec} /> : null}
-        {latestAlternativen ? (
-          <AlternativenPanel
-            data={latestAlternativen}
-            onAnfrage={panelOnAnfrage}
-            onDownloadPdf={panelOnDownloadPdf}
-          />
-        ) : null}
-
-        {caseStateEmpty ? (
-          <p className="case-state-empty" data-testid="case-state-empty">
-            Noch keine bestätigten Eingaben — sobald Werte vorliegen, erscheinen Berechnungen und
-            kritische Punkte hier.
-          </p>
-        ) : (
-          <>
-            {/* below: left = deterministic calculator results, right = critical points */}
-            <div className="cockpit-split" data-testid="cockpit-split">
-              <section className="cockpit-split-col" data-testid="cockpit-col-calc" aria-label="Berechnungen">
-                <span className="cockpit-split-title">Berechnungen</span>
-                <BerechnungenPanel compute={compute ?? null} view="results" />
-                {(compute?.computed?.length ?? 0) === 0 ? (
-                  <p className="cockpit-split-empty">Noch keine Werte vom Rechenkern.</p>
-                ) : null}
-              </section>
-              <section className="cockpit-split-col" data-testid="cockpit-col-critical" aria-label="Kritische Punkte">
-                <span className="cockpit-split-title">Kritische Punkte</span>
-                <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} view="critical" />
-                {computeHasCritical ? null : (
-                  <p className="cockpit-split-empty">Keine kritischen Punkte zu den aktuellen Eingaben.</p>
-                )}
-              </section>
+        <section className="cockpit-readout-column" data-testid="cockpit-readout-column" aria-label="Auswertung">
+          <section className="cockpit-readout-block" data-testid="cockpit-calculation-readout" aria-label="Berechnungen">
+            <span className="cockpit-section-title">Berechnungen</span>
+            <BerechnungenPanel compute={compute ?? null} view="results" />
+            {(compute?.computed?.length ?? 0) === 0 ? (
+              <p className="cockpit-readout-empty" data-testid="case-state-empty">
+                Noch keine Werte vom Rechenkern.
+              </p>
+            ) : null}
+            <div className="cockpit-critical-readout" data-testid="cockpit-critical-readout">
+              <span className="cockpit-subsection-title">Kritische Punkte</span>
+              <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} view="critical" />
+              {computeHasCritical ? null : (
+                <p className="cockpit-readout-empty">Keine kritischen Punkte zu den aktuellen Eingaben.</p>
+              )}
             </div>
-            {chips}
-          </>
-        )}
+          </section>
 
-        <div className="readout-briefing">
-          <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
-          {briefingButton}
-          {panelOnContribute ? (
-            <ContributePanel onContribute={panelOnContribute} />
+          <section className="cockpit-readout-block" data-testid="cockpit-medium-readout" aria-label="Medium">
+            <span className="cockpit-section-title">Medium</span>
+            {latestMedium ? (
+              <MediumPanel data={latestMedium} />
+            ) : mediumReadoutRows.length > 0 ? (
+              <dl className="cockpit-medium-facts">
+                {mediumReadoutRows.map((row) => (
+                  <div key={row.key} className="cockpit-medium-fact">
+                    <dt>{row.label}</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="cockpit-readout-empty">Noch keine Mediumdaten im Fallkontext.</p>
+            )}
+          </section>
+
+          {latestSpec ? <KandidatenSpecPanel data={latestSpec} /> : null}
+          {latestAlternativen ? (
+            <AlternativenPanel
+              data={latestAlternativen}
+              onAnfrage={panelOnAnfrage}
+              onDownloadPdf={panelOnDownloadPdf}
+            />
           ) : null}
-        </div>
+
+          <div className="readout-briefing">
+            <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
+            {briefingButton}
+            {panelOnContribute ? (
+              <ContributePanel onContribute={panelOnContribute} />
+            ) : null}
+          </div>
+        </section>
       </div>
     </aside>
   );
