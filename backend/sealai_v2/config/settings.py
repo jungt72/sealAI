@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     # UNCLEAR medium class (ask the class first). OFF by default → byte-identical (no extra binding, no
     # extra prompt block); flip via SEALAI_V2_BASELINE_HARDENING_ENABLED after an adjudicated eval-REPLAY.
     baseline_hardening_enabled: bool = False
+    # Material-Parameter-Tabelle: render grounded material parameters (operating limits, Shore, …)
+    # as a table for material-info / comparison turns. Numbers live in the kernel store (no L1
+    # invention); OFF -> byte-identical. Flip via SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED.
+    material_param_table_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

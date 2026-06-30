@@ -393,6 +393,21 @@ Behauptung NICHT.
 {% endfor %}
 {% endif %}
 
+{%- if material_params %}
+# Werkstoff-Kennwerte (Kernel-Daten — bei Material-Info/Vergleich als Tabelle rendern; KEINE Zahl erfinden)
+Wenn du Informationen ZU EINEM WERKSTOFF gibst oder Werkstoffe VERGLEICHST, stelle die folgenden Kennwerte
+als **Markdown-Tabelle** dar (Spalte „Parameter" + je eine Spalte pro Werkstoff). Übernimm die Werte
+**wörtlich** aus den Daten unten; erfinde KEINE Zahlen, ergänze KEINE Parameter. Einen nicht gelieferten
+Parameter trage als **„—"** ein. Unter der Tabelle die Fußzeile: „Vorläufige Richtwerte — compound-/
+temperaturabhängig; gegen Datenblatt bzw. Hersteller verifizieren, keine Freigabe."
+{%- for mp in material_params %}
+- **{{ mp.material }}** ({{ "geprüft" if mp.review_state == "reviewed" else "vorläufig" }}):
+{%- for p in mp.params %}
+  - {{ p.label }}: {{ p.value }}
+{%- endfor %}
+{%- endfor %}
+{%- endif %}
+
 {% if computed_values or not_computed or calc_notes %}
 # Berechnete Werte (deterministisch — Code, nicht geschätzt)
 {% for c in computed_values %}

@@ -55,6 +55,7 @@ class PromptAssembler:
         coverage: dict | None = None,
         contract: dict | None = None,
         baseline_hardening: bool = False,
+        material_params: list | None = None,
     ) -> str:
         flags = flags or Flags()
         gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
@@ -75,6 +76,7 @@ class PromptAssembler:
             coverage=coverage or None,
             contract=contract or None,
             baseline_hardening=baseline_hardening,
+            material_params=material_params or None,
         )
 
 

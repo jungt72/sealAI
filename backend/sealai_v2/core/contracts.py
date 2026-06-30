@@ -76,6 +76,7 @@ class SystemPromptAssembler(Protocol):
         archetype_context: dict | None = None,
         coverage: dict | None = None,
         contract: dict | None = None,
+        material_params: list | None = None,
     ) -> str: ...
 
 
