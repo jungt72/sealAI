@@ -587,7 +587,7 @@ def _reviewed_traps(
 
 
 _CAVEAT_ADDRESSED_THRESH = (
-    0.5  # stemmed share of a trap's correct_general the DRAFT must itself state
+    0.5  # i5-ok: detection threshold; stemmed share of correct_general in the draft
 )
 
 
