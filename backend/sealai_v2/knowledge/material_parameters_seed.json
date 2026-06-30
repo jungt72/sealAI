@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "doc": "Structured material-parameter store (V2.2). The KERNEL owns the numbers; L1 only renders them as a table. Each material carries review_state ('reviewed' = owner-grounded | 'draft' = vorläufige Richtwerte, gegen Datenblatt verifizieren). Curate values via the owner's multi-LLM challenge; until reviewed they render with the vorläufig marker. A missing parameter is NOT invented — it renders as '—'."
+  },
+  "PTFE": {
+    "review_state": "draft",
+    "hinweis": "vorläufige Richtwerte (Allgemeinwissen) — stark compound-/füllstoffabhängig; gegen Datenblatt des konkreten Compounds bzw. Hersteller verifizieren",
+    "params": [
+      {"label": "Einsatztemperatur", "value": "ca. −200 °C bis +260 °C (kurzzeitig etwas höher)"},
+      {"label": "Shore-Härte", "value": "ca. Shore D 50–65 (kein Elastomer — kein Shore A)"},
+      {"label": "Dichte", "value": "ca. 2,1–2,2 g/cm³"},
+      {"label": "Chemische Beständigkeit", "value": "nahezu universell (Säuren, Laugen, Lösemittel, Öle, Kraftstoffe); NICHT: geschmolzene Alkalimetalle, elementares Fluor"},
+      {"label": "Wasseraufnahme", "value": "nahezu 0 %"},
+      {"label": "Mechanik", "value": "weich, niedriger E-Modul, ausgeprägter Kaltfluss/Kriechen, keine elastische Rückstellung"},
+      {"label": "Reibung", "value": "sehr niedrig (Antihaft); gute Gleit-/Notlaufeigenschaften"},
+      {"label": "Alterung", "value": "oxidations- und UV-stabil, kaum Versprödung"},
+      {"label": "Elektrik", "value": "sehr guter Isolator"},
+      {"label": "Typische Dichtungsformen", "value": "Statik-Flachdichtung (ummantelt/eingelagert), federvorgespannte Lippe, Gleitelement, PTFE-ummantelter O-Ring (Elastomerkern)"}
+    ]
+  }
+}

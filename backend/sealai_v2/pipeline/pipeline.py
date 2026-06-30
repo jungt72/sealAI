@@ -249,6 +249,7 @@ class Pipeline:
     # for the Umfangsgeschwindigkeit kern + the speed-trap / unclear-medium prompt discipline). OFF ->
     # no extra binding + no extra prompt block -> byte-identical. Governs the derivation + prompt block.
     baseline_hardening_enabled: bool = False
+    material_param_table_enabled: bool = False
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -463,6 +464,16 @@ class Pipeline:
                     calc=calc,
                 )
                 contract = _rc.to_dict() if _rc is not None else None
+            # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
+            # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
+            # None when OFF (byte-identical).
+            material_params = None
+            if self.material_param_table_enabled:
+                from sealai_v2.knowledge.material_parameters import (
+                    material_parameters_for,
+                )
+
+                material_params = material_parameters_for(question) or None
             with _staged(timer, progress, "generate_ms", "generate"):
                 answer = await self.generator.generate(
                     question,
@@ -479,6 +490,7 @@ class Pipeline:
                     coverage=coverage,  # None → byte-identical no-coverage-gate prompt
                     contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
                     baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
+                    material_params=material_params,  # None → byte-identical no-table
                 )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -923,4 +935,5 @@ def build_pipeline(
         coverage_gate_enabled=settings.coverage_gate_enabled,
         response_contract_enabled=settings.response_contract_enabled,
         baseline_hardening_enabled=settings.baseline_hardening_enabled,
+        material_param_table_enabled=settings.material_param_table_enabled,
     )

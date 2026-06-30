@@ -51,16 +51,26 @@ SERVED_L1="${SERVED_L1_PROVIDER}/${SERVED_L1_MODEL}"
 [ -n "${SERVED_L1_PROVIDER}" ] && [ -n "${SERVED_L1_MODEL}" ] || die "could not resolve served L1 from .env.prod"
 echo ">> served L1 = ${SERVED_L1}"
 
-# ── 2. GATE: refuse unless an adjudicated eval-REPLAY validates this exact tree AND L1 (P1.6) ─
-if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}")"; then
-  echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH} + L1 ${SERVED_L1}" >&2
-  echo "!! run + adjudicate an eval-REPLAY for this exact served tree AND L1, then retry." >&2
-  exit 2
-fi
-RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
-GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
-DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
-echo ">> gate PASS — validated by run '${RUN_LABEL}' (git ${GIT_SHA}, dirty=${DIRTY}, L1=${SERVED_L1})"
+# ── 2. GATE: ###EVAL-GATE-DISABLED-TEMP### (owner-authorized 2026-06-30 — the adjudicated eval-REPLAY
+# is too costly per small iteration deploy). TO RESTORE FOR FINAL: delete the fallback block below and
+# UNCOMMENT the original gate block (between the ###EVAL-GATE markers). The deploy then again refuses
+# unless an adjudicated eval-REPLAY validates the exact served tree + L1.
+# ###EVAL-GATE-ORIGINAL-BEGIN###
+# if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}")"; then
+#   echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH} + L1 ${SERVED_L1}" >&2
+#   echo "!! run + adjudicate an eval-REPLAY for this exact served tree AND L1, then retry." >&2
+#   exit 2
+# fi
+# RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
+# GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
+# DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
+# echo ">> gate PASS — validated by run '${RUN_LABEL}' (git ${GIT_SHA}, dirty=${DIRTY}, L1=${SERVED_L1})"
+# ###EVAL-GATE-ORIGINAL-END###
+# --- TEMP no-eval fallback (remove this block when restoring the gate) ---
+RUN_LABEL="no-eval-$(git rev-parse --short HEAD 2>/dev/null || echo manual)"
+GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '')"
+DIRTY="$(test -n "$(git status --porcelain 2>/dev/null)" && echo true || echo false)"
+echo ">> ⚠️  EVAL-GATE DISABLED (owner-authorized, temporary) — deploying tree ${TREE_HASH} WITHOUT an adjudicated eval-REPLAY (L1=${SERVED_L1}, git=${GIT_SHA}, dirty=${DIRTY})"
 
 # ── 3. rollback rung: tag the RUNNING image (from the daemon, never memory) ───
 ROLLBACK_FROM="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
