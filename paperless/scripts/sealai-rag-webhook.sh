@@ -7,7 +7,7 @@ if [ -z "$document_id" ]; then
   exit 0
 fi
 
-webhook_url="${SEALAI_RAG_WEBHOOK_URL:-http://backend:8000/internal/rag/ingest}"
+webhook_url="${SEALAI_RAG_WEBHOOK_URL:-http://backend-v2:8001/internal/rag/ingest}"
 webhook_token="${SEALAI_RAG_WEBHOOK_TOKEN:-${PAPERLESS_WEBHOOK_TOKEN:-}}"
 if [ -z "$webhook_token" ]; then
   echo "sealai-rag-webhook: webhook token missing, skipping document ${document_id}"
