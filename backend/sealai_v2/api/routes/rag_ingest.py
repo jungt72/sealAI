@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import replace
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -58,7 +59,12 @@ def _build_extractor(settings: Settings) -> FachkarteExtractor:
 
 
 def _check_webhook_token(presented: str) -> None:
-    expected = os.environ.get("PAPERLESS_WEBHOOK_TOKEN", "")
+    # Same precedence the webhook SCRIPT itself uses (paperless/scripts/sealai-rag-webhook.sh):
+    # SEALAI_RAG_WEBHOOK_TOKEN first, else PAPERLESS_WEBHOOK_TOKEN — so this side never drifts out
+    # of sync with whichever name the script's env actually carries the shared secret under.
+    expected = os.environ.get("SEALAI_RAG_WEBHOOK_TOKEN") or os.environ.get(
+        "PAPERLESS_WEBHOOK_TOKEN", ""
+    )
     if not expected or presented != expected:
         raise HTTPException(status_code=401, detail="invalid webhook token")
 
@@ -94,6 +100,11 @@ async def ingest(
         return {"ingested": False, "reason": "extraction_failed"}
     if draft is None or draft.empty:
         return {"ingested": False, "reason": "no doc-grounded claims extracted"}
+
+    # Stable id: the LLM's own titel_vorschlag can vary across runs of the SAME document, which
+    # would otherwise slug into a DIFFERENT card id each time -> duplicate cards instead of a
+    # clean idempotent overwrite. The Paperless document_id is the one thing guaranteed stable.
+    draft = replace(draft, id=f"FK-DRAFT-DOC-{req.document_id}")
 
     try:
         card = _card(draft.to_seed_entry())

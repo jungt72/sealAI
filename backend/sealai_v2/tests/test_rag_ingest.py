@@ -238,5 +238,44 @@ def test_successful_ingestion_lands_exactly_one_draft_card(monkeypatch):
     card = catalog.cards[0]
     assert card.review_state == "draft"
     assert all(c.review_state == "draft" for c in card.claims)
-    assert card.id.startswith("FK-DRAFT-")
+    assert (
+        card.id == "FK-DRAFT-DOC-5"
+    )  # stable on document_id, not the LLM-generated title
     assert card.provenance == ("paperless-draft:paperless#5:PTFE_Research",)
+
+
+def test_card_id_is_stable_across_differently_phrased_titles_same_document(monkeypatch):
+    """Regression: a live run showed the LLM can phrase titel_vorschlag differently across two
+    extractions of the SAME document -> a different slug -> a DUPLICATE card instead of a clean
+    idempotent overwrite. The card id must depend on document_id, never on the LLM titel."""
+    captured = []
+    fetch = (
+        "PTFE ist chemisch sehr bestaendig.",
+        "paperless#5:PTFE_Research",
+        ("rag:enabled",),
+    )
+    for titel in ("PTFE Grundlagen", "PTFE - chemische Bestaendigkeit (Uebersicht)"):
+        client = _client(
+            monkeypatch,
+            fetch_result=fetch,
+            llm_responses=[
+                json.dumps(
+                    {
+                        "titel_vorschlag": titel,
+                        "scope": {"material": ["PTFE"]},
+                        "claims": ["PTFE ist chemisch sehr bestaendig."],
+                    }
+                )
+            ],
+            ingested_catalogs=captured,
+        )
+        r = client.post(
+            "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+        )
+        assert r.status_code == 200 and r.json()["ingested"] is True
+
+    assert len(captured) == 2
+    ids = {c.cards[0].id for c in captured}
+    assert ids == {
+        "FK-DRAFT-DOC-5"
+    }  # same id both times despite the differently-phrased title
