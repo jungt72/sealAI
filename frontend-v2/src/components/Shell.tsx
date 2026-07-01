@@ -4,9 +4,9 @@ import { SafetyBanner } from "./SafetyBanner";
 import {
   ComposeIcon,
   HistoryIcon,
+  LogoIcon,
   PanelLeftIcon,
   PersonIcon,
-  RingIcon,
   SearchIcon,
   SettingsIcon,
 } from "./icons";
@@ -47,7 +47,7 @@ export function Shell({
       <nav className="rail" aria-label="Navigation">
         <div className="rail-top">
           <div className="rail-brand" title="sealing | Intelligence">
-            <RingIcon />
+            <LogoIcon />
             <span className="rail-label">
               sealing<span className="brand-sep"> | </span>Intelligence
             </span>
