@@ -15,8 +15,9 @@ kernel-formulated. For a *bedingt* verdict the condition text travels INLINE
 (``condition``), because that condition ("works under condition X — verify") is
 the single most valuable Gegencheck output and must not be lost behind a bare
 citation; it is its OWN field (not ``reason``), so the conditional category is
-never confused with a disqualification reason. Feeds the (later) Gegencheck
-operation route; this increment is NOT wired.
+never confused with a disqualification reason. IS wired (ungated, every turn):
+called from ``pipeline/stages.py::gegencheck`` -> ``pipeline.py`` (Modus E), the
+verdict reaches ``PipelineResult.gegencheck`` and the ``/api/v2/chat`` response.
 """
 
 from __future__ import annotations
