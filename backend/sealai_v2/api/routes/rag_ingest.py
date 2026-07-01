@@ -1,17 +1,21 @@
 """POST /internal/rag/ingest — Paperless post-consume webhook target
 (``paperless/scripts/sealai-rag-webhook.sh``).
 
-Auto-ingests a NEWLY consumed document tagged ``rag:enabled`` as a DRAFT Fachkarte
+Auto-ingests a NEWLY consumed document tagged ``sealai:ingest`` as a DRAFT Fachkarte
 (``core/fachkarte_extract.py``) directly into the live Qdrant index — so new knowledge uploaded via
 Paperless becomes available (as ``review_state=draft``, rendered "vorläufig") WITHOUT a manual
 ``ops/ingest_fachkarte.py`` run. Untagged / non-knowledge documents (invoices, unrelated paperwork)
-are a no-op — gated on the SAME ``rag:enabled`` tag convention the existing 14 source documents use.
+are a no-op — a document simply never gets ``sealai:ingest`` if it should stay out of sealingAI's
+knowledge (build-spec §3 tag taxonomy: ``sealai:ingest`` gate, ``sealai:status-draft`` /
+``sealai:status-reviewed`` review state, ``sealai:source-*`` provenance kind).
 
 DOCTRINE (unchanged from the manual CLI path): this endpoint can only ever ADD DRAFT claims — never
 ``reviewed`` (never gains L3 block/correct authority, always rendered "vorläufig" by L1). Promotion
 draft->reviewed stays a SEPARATE, deliberate step (the periodic challenge process), never automatic.
-Idempotent: the card id is derived from the document title, so re-consuming the same document
-overwrites its own Qdrant points rather than duplicating them (``ingest_fachkarten``, uuid5 keys).
+Idempotent: the card id is derived from the Paperless document id, so re-consuming the same document
+overwrites its own Qdrant points rather than duplicating them (``ingest_fachkarten``, uuid5 keys). On
+success, the document is auto-tagged ``sealai:status-draft`` in Paperless so its review state is
+visible at a glance (best-effort — a tagging failure never undoes a successful ingestion).
 
 Auth: a static shared-secret header (``X-SeaLAI-Webhook-Token`` == ``PAPERLESS_WEBHOOK_TOKEN`` env) —
 Paperless is a server, not a user, so this is NOT the tenant JWT flow. Fail-closed if the expected
@@ -33,7 +37,9 @@ from sealai_v2.core.fachkarte_extract import FachkarteExtractor
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, _card
 from sealai_v2.knowledge.paperless_client import (
     PaperlessConfigError,
+    add_tag_to_document,
     fetch_document_text_and_tags,
+    find_tag_id,
 )
 from sealai_v2.knowledge.qdrant_retrieval import ingest_fachkarten
 from sealai_v2.llm.factory import build_client_factory
@@ -42,7 +48,8 @@ from sealai_v2.prompts.assembler import FachkarteExtractPromptAssembler
 router = APIRouter(prefix="/internal/rag", tags=["rag-ingest"])
 _log = logging.getLogger("sealai_v2.api.rag_ingest")
 
-_RAG_TAG = "rag:enabled"
+_RAG_TAG = "sealai:ingest"
+_STATUS_DRAFT_TAG = "sealai:status-draft"
 
 
 class IngestRequest(BaseModel):
@@ -125,6 +132,17 @@ async def ingest(
         n_points,
         source,
     )
+    try:
+        tag_id = find_tag_id(_STATUS_DRAFT_TAG)
+        if tag_id is not None:
+            add_tag_to_document(req.document_id, tag_id)
+    except Exception:  # noqa: BLE001 — the Qdrant ingestion already succeeded; a Paperless tagging
+        # hiccup must never turn that into a reported failure or mask the real result.
+        _log.exception(
+            "rag_ingest: failed to tag document %s as %s",
+            req.document_id,
+            _STATUS_DRAFT_TAG,
+        )
     return {
         "ingested": True,
         "card_id": card.id,

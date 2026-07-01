@@ -24,8 +24,20 @@ def _client(
     fetch_error=None,
     llm_responses=None,
     ingested_catalogs=None,
+    find_tag_id_result=15,
+    tag_calls=None,
+    add_tag_error=None,
 ):
     monkeypatch.setenv("PAPERLESS_WEBHOOK_TOKEN", _TOKEN)
+    monkeypatch.setattr(rag_ingest, "find_tag_id", lambda name: find_tag_id_result)
+
+    def _fake_add_tag(doc_id, tag_id):
+        if add_tag_error is not None:
+            raise add_tag_error
+        if tag_calls is not None:
+            tag_calls.append((doc_id, tag_id))
+
+    monkeypatch.setattr(rag_ingest, "add_tag_to_document", _fake_add_tag)
 
     def _fake_fetch(doc_id):
         if fetch_error is not None:
@@ -86,12 +98,12 @@ def test_untagged_document_is_a_noop(monkeypatch):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["ingested"] is False and "rag:enabled" in body["reason"]
+    assert body["ingested"] is False and "sealai:ingest" in body["reason"]
 
 
 def test_empty_document_is_a_noop(monkeypatch):
     client = _client(
-        monkeypatch, fetch_result=("   ", "paperless#5:Doc", ("rag:enabled",))
+        monkeypatch, fetch_result=("   ", "paperless#5:Doc", ("sealai:ingest",))
     )
     r = client.post(
         "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
@@ -108,7 +120,7 @@ def test_no_claims_extracted_is_a_noop(monkeypatch):
         fetch_result=(
             "PTFE ist ein Fluorpolymer.",
             "paperless#5:PTFE",
-            ("rag:enabled",),
+            ("sealai:ingest",),
         ),
         llm_responses=[
             json.dumps({"claims": [], "scope": {}, "titel_vorschlag": "PTFE"})
@@ -152,7 +164,7 @@ def test_llm_extraction_error_fails_safe_not_500(monkeypatch):
         fetch_result=(
             "PTFE ist chemisch sehr beständig.",
             "paperless#5:PTFE",
-            ("rag:enabled",),
+            ("sealai:ingest",),
         ),
         llm_responses=[],  # exhausted script -> ScriptedFakeLlmClient raises on the extractor's call
     )
@@ -172,7 +184,7 @@ def test_qdrant_upsert_error_fails_safe_not_500(monkeypatch):
         fetch_result=(
             "PTFE ist chemisch sehr beständig. PTFE zeigt ausgeprägten Kaltfluss.",
             "paperless#5:PTFE_Research",
-            ("rag:enabled",),
+            ("sealai:ingest",),
         ),
         llm_responses=[
             json.dumps(
@@ -206,7 +218,7 @@ def test_successful_ingestion_lands_exactly_one_draft_card(monkeypatch):
         fetch_result=(
             "PTFE ist chemisch sehr beständig. PTFE zeigt ausgeprägten Kaltfluss.",
             "paperless#5:PTFE_Research",
-            ("rag:enabled", "sealai:rag"),
+            ("sealai:ingest",),
         ),
         llm_responses=[
             json.dumps(
@@ -252,7 +264,7 @@ def test_card_id_is_stable_across_differently_phrased_titles_same_document(monke
     fetch = (
         "PTFE ist chemisch sehr bestaendig.",
         "paperless#5:PTFE_Research",
-        ("rag:enabled",),
+        ("sealai:ingest",),
     )
     for titel in ("PTFE Grundlagen", "PTFE - chemische Bestaendigkeit (Uebersicht)"):
         client = _client(
@@ -279,3 +291,68 @@ def test_card_id_is_stable_across_differently_phrased_titles_same_document(monke
     assert ids == {
         "FK-DRAFT-DOC-5"
     }  # same id both times despite the differently-phrased title
+
+
+# ---------------------------------------------------------------------------
+# sealai:status-draft auto-tagging (workflow visibility: which knowledge is ingested vs reviewed)
+# ---------------------------------------------------------------------------
+
+
+def test_successful_ingestion_auto_tags_the_document_status_draft(monkeypatch):
+    tag_calls = []
+    client = _client(
+        monkeypatch,
+        fetch_result=(
+            "PTFE ist chemisch sehr bestaendig.",
+            "paperless#5:PTFE_Research",
+            ("sealai:ingest",),
+        ),
+        llm_responses=[
+            json.dumps(
+                {
+                    "titel_vorschlag": "PTFE",
+                    "scope": {"material": ["PTFE"]},
+                    "claims": ["PTFE ist chemisch sehr bestaendig."],
+                }
+            )
+        ],
+        find_tag_id_result=15,
+        tag_calls=tag_calls,
+    )
+    r = client.post(
+        "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+    )
+    assert r.status_code == 200 and r.json()["ingested"] is True
+    assert tag_calls == [
+        ("5", 15)
+    ]  # the document was tagged sealai:status-draft (id 15 here)
+
+
+def test_tagging_failure_never_undoes_a_successful_ingestion(monkeypatch):
+    client = _client(
+        monkeypatch,
+        fetch_result=(
+            "PTFE ist chemisch sehr bestaendig.",
+            "paperless#5:PTFE_Research",
+            ("sealai:ingest",),
+        ),
+        llm_responses=[
+            json.dumps(
+                {
+                    "titel_vorschlag": "PTFE",
+                    "scope": {"material": ["PTFE"]},
+                    "claims": ["PTFE ist chemisch sehr bestaendig."],
+                }
+            )
+        ],
+        add_tag_error=RuntimeError("paperless unreachable"),
+    )
+    r = client.post(
+        "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert (
+        body["ingested"] is True
+    )  # the Qdrant ingestion already succeeded — tagging is best-effort
+    assert body["card_id"] == "FK-DRAFT-DOC-5"
