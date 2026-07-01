@@ -18,6 +18,7 @@ from sealai_v2.api.routes import (
     framing,
     hersteller,
     partner_self,
+    rag_ingest,
 )
 from sealai_v2.pipeline.timing import configure_timing_logging
 
@@ -32,6 +33,7 @@ app.include_router(anfrage.router)
 app.include_router(hersteller.router)
 app.include_router(partner_self.router)
 app.include_router(contribute.router)
+app.include_router(rag_ingest.router)
 
 
 @app.get("/health")

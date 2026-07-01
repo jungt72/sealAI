@@ -70,23 +70,14 @@ async def _run(text: str, source: str) -> int:
 
 
 def _fetch_paperless(doc_id: str) -> tuple[str, str]:
-    """Fetch a Paperless document's OCR/text ``content`` + title via the REST API (stdlib urllib, no
-    new dep). URL + token from the env: PAPERLESS_URL (use a host-reachable address when running on the
-    host — the in-stack ``paperless:8000`` is not host-resolvable) + PAPERLESS_TOKEN."""
-    import os
-    import urllib.request
+    """Fetch a Paperless document's OCR/text ``content`` + title (shared client — the SAME fetch
+    the auto-ingestion webhook route uses, api/routes/rag_ingest.py). URL + token from the env: use
+    a host-reachable PAPERLESS_URL when running on the host (the in-stack ``paperless:8000`` is not
+    host-resolvable) + PAPERLESS_TOKEN."""
+    from sealai_v2.knowledge.paperless_client import fetch_document_text_and_tags
 
-    base = os.environ.get("PAPERLESS_URL", "").rstrip("/")
-    token = os.environ.get("PAPERLESS_TOKEN", "")
-    if not base or not token:
-        raise SystemExit("PAPERLESS_URL / PAPERLESS_TOKEN not set in env")
-    req = urllib.request.Request(
-        f"{base}/api/documents/{doc_id}/", headers={"Authorization": f"Token {token}"}
-    )
-    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310 — trusted internal Paperless
-        doc = json.load(r)
-    title = (doc.get("title") or f"doc-{doc_id}")[:80]
-    return doc.get("content") or "", f"paperless#{doc_id}:{title}"
+    text, source, _tags = fetch_document_text_and_tags(doc_id)
+    return text, source
 
 
 def main(argv=None) -> int:
