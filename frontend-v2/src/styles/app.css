@@ -228,6 +228,11 @@
 }
 @media (prefers-reduced-motion: reduce) { .chat-log { scroll-behavior: auto; } }
 
+/* the chat log has no auto-follow (chatScroll.ts) — a visible bar would be a stale, unmoving
+   distraction, so it is hidden here; the jump button below is the only scroll affordance. */
+.chat-log.scroll-area { scrollbar-width: none; scrollbar-gutter: auto; }
+.chat-log.scroll-area::-webkit-scrollbar { display: none; }
+
 .scroll-wrap { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .scroll-wrap > .scroll-area { flex: 1; }
 /* fade cues: content fades into the surface at the top/bottom edges (a row peeks, not a hard cut).
@@ -237,6 +242,20 @@
 }
 .scroll-wrap::before { top: 0; background: linear-gradient(to bottom, var(--color-surface), transparent); }
 .scroll-wrap::after { bottom: 0; background: linear-gradient(to top, var(--color-surface), transparent); }
+
+/* jump-to-latest: the ONE scroll affordance left once the native bar is hidden — a small floating
+   circle, bottom-centred over the log, above the fade cue. Shown only once the user has scrolled
+   away from the bottom (chatScroll.ts); a click is the only way back down besides manual scrolling. */
+.chat-jump-button {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: var(--color-surface); color: var(--ink);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.10), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+.chat-jump-button:hover { background: var(--hover-wash); transform: translateX(-50%) translateY(-1px); }
+.chat-jump-button svg { width: 18px; height: 18px; }
 
 /* ── cockpit panel (the artifact-equivalent, right) ──────────────────────────────────────────────
    A clean header (closeable) + the Parameter | Readout 2-pane. `container-type` makes the inner split

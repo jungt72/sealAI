@@ -124,6 +124,15 @@ export function SendIcon(p: IconProps) {
   );
 }
 
+/** Jump-to-latest (chat scroll): a plain downward arrow — the mirror of SendIcon's upward one. */
+export function ArrowDownIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M10 4.5v11M5.5 11 10 15.5 14.5 11" />
+    </Svg>
+  );
+}
+
 /** Attachment (paperclip) — the composer attach affordance. */
 export function PaperclipIcon({ size = 20 }: IconProps) {
   return (

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -18,7 +19,7 @@ import type {
   ParamItem,
 } from "../contracts";
 import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
-import { useStickToBottom } from "../lib/stickToBottom";
+import { useChatScroll } from "../lib/chatScroll";
 import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
@@ -29,7 +30,7 @@ import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
 import { ParameterForm } from "./ParameterForm";
-import { PaperclipIcon, SendIcon } from "./icons";
+import { ArrowDownIcon, PaperclipIcon, SendIcon } from "./icons";
 
 type Msg =
   | { role: "user"; text: string }
@@ -111,7 +112,18 @@ export function ChatPane({
   const [userClosed, setUserClosed] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { ref: logRef, onScroll } = useStickToBottom<HTMLDivElement>(msgs.length);
+  const { ref: logRef, onScroll, showJumpButton, scrollToBottom, scrollElementToTop } =
+    useChatScroll<HTMLDivElement>(msgs.length);
+  // No auto-follow (see chatScroll.ts). The ONE programmatic scroll: right after the user submits,
+  // their new message goes to the top of the log - full reading room below for the answer, and the
+  // user reads/scrolls at their own pace from there on (the jump button covers the rest).
+  const [scrollToTopIndex, setScrollToTopIndex] = useState<number | null>(null);
+  const scrollTargetRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (scrollToTopIndex === null) return;
+    scrollElementToTop(scrollTargetRef.current);
+    setScrollToTopIndex(null);
+  }, [scrollToTopIndex, scrollElementToTop]);
   // resizable chat|cockpit divider (split, ≥1024px): the chosen width drives the `--cockpit-w` track;
   // null = CSS default (~50/50). Persisted in localStorage, restored on mount, reset on double-click.
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -132,6 +144,7 @@ export function ChatPane({
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
+    setScrollToTopIndex(msgs.length); // the index this new user message is about to occupy
     setMsgs((m) => [...m, { role: "user", text }]);
     setBusy(true);
     try {
@@ -529,7 +542,11 @@ export function ChatPane({
               <div className="chat-log scroll-area" data-testid="chat-log" ref={logRef} onScroll={onScroll}>
                 {msgs.map((m, i) =>
                   m.role === "user" ? (
-                    <div key={i} className="msg-user">
+                    <div
+                      key={i}
+                      className="msg-user"
+                      ref={i === scrollToTopIndex ? scrollTargetRef : undefined}
+                    >
                       {m.text}
                     </div>
                   ) : m.role === "confirmation" ? (
@@ -559,6 +576,17 @@ export function ChatPane({
                 )}
                 <BriefingPane briefing={briefing} />
               </div>
+              {showJumpButton && (
+                <button
+                  type="button"
+                  className="chat-jump-button"
+                  onClick={scrollToBottom}
+                  aria-label="Zum Ende des Gesprächs springen"
+                  data-testid="chat-jump-button"
+                >
+                  <ArrowDownIcon />
+                </button>
+              )}
             </div>
             <div className="chat-foot">
               {composer}

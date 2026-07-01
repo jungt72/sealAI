@@ -1,6 +1,6 @@
 // Cockpit width: the resizable chat|cockpit divider (split view, ≥1024px). The chosen cockpit-panel
 // width is held in the `--cockpit-w` CSS var (grid track); this module owns the clamp + the
-// localStorage persistence. Pure + storage-only — NO DOM, no React. Mirrors `lib/stickToBottom.ts`.
+// localStorage persistence. Pure + storage-only — NO DOM, no React. Mirrors `lib/chatScroll.ts`.
 
 // NOTE: a fresh key for the chat|cockpit divider — the Phase-A inner splitter persisted a (narrow)
 // Parameter|Readout width under "sealai-v2:cockpit-w"; reusing it would pin the cockpit too narrow

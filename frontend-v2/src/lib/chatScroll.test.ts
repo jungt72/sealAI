@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { isNearBottom } from "./stickToBottom";
+import { isNearBottom } from "./chatScroll";
 
-describe("isNearBottom (auto-scroll decision)", () => {
+describe("isNearBottom (jump-button visibility decision)", () => {
   it("true when scrolled to the bottom", () => {
     expect(isNearBottom({ scrollHeight: 100, scrollTop: 50, clientHeight: 50 })).toBe(true);
   });
