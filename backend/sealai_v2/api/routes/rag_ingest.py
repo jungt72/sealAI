@@ -86,7 +86,12 @@ async def ingest(
 
     settings = Settings()
     extractor = _build_extractor(settings)
-    draft = await extractor.extract_document(text, source=source)
+    try:
+        draft = await extractor.extract_document(text, source=source)
+    except Exception:  # noqa: BLE001 — an LLM hiccup (rate limit/timeout/network) must never
+        # 500 the webhook; Paperless does not retry, so a crash here silently drops the document.
+        _log.exception("rag_ingest: extraction failed for %s", source)
+        return {"ingested": False, "reason": "extraction_failed"}
     if draft is None or draft.empty:
         return {"ingested": False, "reason": "no doc-grounded claims extracted"}
 
@@ -97,7 +102,11 @@ async def ingest(
         return {"ingested": False, "reason": f"invalid draft: {exc}"}
 
     catalog = FachkartenCatalog(cards=(card,))
-    n_points = ingest_fachkarten(settings, catalog=catalog)
+    try:
+        n_points = ingest_fachkarten(settings, catalog=catalog)
+    except Exception:  # noqa: BLE001 — a Qdrant/embedder hiccup must never 500 the webhook either
+        _log.exception("rag_ingest: qdrant upsert failed for card %s", card.id)
+        return {"ingested": False, "reason": "qdrant_upsert_failed", "card_id": card.id}
     _log.info(
         "rag_ingest: card=%s claims=%d points=%d source=%s",
         card.id,

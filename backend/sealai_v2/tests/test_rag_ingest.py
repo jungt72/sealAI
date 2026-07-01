@@ -144,6 +144,61 @@ def test_network_error_fails_safe_not_500(monkeypatch):
     }
 
 
+def test_llm_extraction_error_fails_safe_not_500(monkeypatch):
+    """Regression: a live run hit this exact gap (Mistral 429 rate-limit propagated as an unhandled
+    exception -> 500, silently dropping the document since Paperless never retries the webhook)."""
+    client = _client(
+        monkeypatch,
+        fetch_result=(
+            "PTFE ist chemisch sehr beständig.",
+            "paperless#5:PTFE",
+            ("rag:enabled",),
+        ),
+        llm_responses=[],  # exhausted script -> ScriptedFakeLlmClient raises on the extractor's call
+    )
+    r = client.post(
+        "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+    )
+    assert r.status_code == 200
+    assert r.json() == {"ingested": False, "reason": "extraction_failed"}
+
+
+def test_qdrant_upsert_error_fails_safe_not_500(monkeypatch):
+    def _boom(settings, *, catalog=None, **_kw):
+        raise RuntimeError("qdrant unreachable")
+
+    client = _client(
+        monkeypatch,
+        fetch_result=(
+            "PTFE ist chemisch sehr beständig. PTFE zeigt ausgeprägten Kaltfluss.",
+            "paperless#5:PTFE_Research",
+            ("rag:enabled",),
+        ),
+        llm_responses=[
+            json.dumps(
+                {
+                    "titel_vorschlag": "PTFE Grundlagen",
+                    "scope": {"material": ["PTFE"]},
+                    "claims": [
+                        "PTFE ist chemisch sehr beständig.",
+                        "PTFE zeigt ausgeprägten Kaltfluss.",
+                    ],
+                }
+            )
+        ],
+    )
+    import sealai_v2.api.routes.rag_ingest as rag_ingest
+
+    monkeypatch.setattr(rag_ingest, "ingest_fachkarten", _boom)
+    r = client.post(
+        "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ingested"] is False and body["reason"] == "qdrant_upsert_failed"
+    assert body["card_id"].startswith("FK-DRAFT-")
+
+
 def test_successful_ingestion_lands_exactly_one_draft_card(monkeypatch):
     captured = []
     client = _client(
