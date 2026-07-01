@@ -15,7 +15,8 @@ I4  Fremdtext = Daten, nie Grounding (Untrusted-Quarantaene).
 I5  Kein Narrations-Pfad erfindet eine Engineering-Zahl.  [Code-Anker: REVIEW_CONTRACT.md:8]
     test_i5_narration_no_numbers.py (statisch) + core/calc/leak_detector.py:145 (Laufzeit, in L3+Eval) | [PARTIAL: statisch float-only/5-Dateien/kein-Jinja]
 I6  L3 korrigiert nur aus reviewed-Eintraegen; erfindet keine Wahrheit.
-    core/l3_verifier.py (sonst deterministischer Hedge) | [ENFORCED, Code, kein AST-Test]
+    core/l3_verifier.py (sonst deterministischer Hedge) | tests/test_l3_i6_no_addition.py
+    (16 Tests: alle Note/Hedge-Builder + alle 4 run_verify-Rueckgabepfade) | [ENFORCED, Code+Test]
 I7  Zirkularitaets-Guard auf Wissens-Stores (kein LLM erdet LLM).
     knowledge/calc_registry.py:138-153 | knowledge/matrix.py:93-98 | [ENFORCED]
 I8  Tenant-Scope P0, server-seitig fail-closed.
@@ -30,9 +31,11 @@ A0  (Meta) Eval-REPLAY / 8 Schranken halten 1.000 durch jedes Increment.
     | [ENFORCED AT DEPLOY (hart); gate.sh Stufe 5 pre-merge = WARN by design, relay-kompatibel]
 
 ## Benannte Durchsetzungs-Luecken (Haertungs-Reihenfolge)
-1. I5-Scanner scope-begrenzt (Jinja + Integers ungescannt).
-2. Architektur-Glob mischt V1: test_ssot_guardrails.py:13, test_single_writer_invariant.py:1,
-   test_core_seal_type_branching.py:1 erzwingen den V1-app-Baum, nicht sealai_v2.
+1. I5-Scanner scope-begrenzt (Jinja + Integers im I5a-AST-Scan ungescannt; der RUNTIME
+   L3-Leak-Scanner ist int-faehig, siehe test_l3_i6_no_addition.py).
+2. ~~Architektur-Glob mischt V1~~ — GESCHLOSSEN (V1-Retirement-Commit c7f1540b entfernte
+   test_ssot_guardrails.py / test_single_writer_invariant.py / test_core_seal_type_branching.py;
+   backend/tests/architecture/ enthaelt nur noch die 2 echten V2-Tests).
 (A0 nicht hier: am Deploy hart gebunden, pre-merge-WARN ist by design. Kein Build —
  nur vor Deploy einen frischen adjudizierten Eval-Run auf HEAD erzeugen.)
 

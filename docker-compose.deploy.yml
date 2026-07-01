@@ -169,6 +169,12 @@ services:
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
       # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
       SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
+      # V2.2 INC-COVERAGE-GATE: deterministic case-level coverage_status, wired but OFF by default —
+      # goes productive only when the extended eval ruler is green (I-CAL-1). Byte-identical when unset.
+      SEALAI_V2_COVERAGE_GATE_ENABLED: ${SEALAI_V2_COVERAGE_GATE_ENABLED:-false}
+      # INC-BASELINE-HARDENING: RWDR shaft-Ø derivation + speed-trap/unclear-medium prompt discipline,
+      # wired but OFF by default. Byte-identical when unset.
+      SEALAI_V2_BASELINE_HARDENING_ENABLED: ${SEALAI_V2_BASELINE_HARDENING_ENABLED:-false}
       # INC-NARRATOR-CONTRACT: L1 renders the kernel answer-contract + claim-level guard (regenerate-on-BLOCK).
       # Activated 2026-06-29 via eval-REPLAY narrator-contract-replay (tree 98edd308, L1 gpt-5.1).
       SEALAI_V2_RESPONSE_CONTRACT_ENABLED: ${SEALAI_V2_RESPONSE_CONTRACT_ENABLED:-false}

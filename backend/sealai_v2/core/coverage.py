@@ -12,9 +12,11 @@ A grounded ``unvertraeglich`` (disqualified) is GROUNDED evidence — a grounded
 "passt nicht (IN)"). ``bedingt`` -> BORDER -> PARTIAL_ENVELOPE (the SS4.3 "PARTIAL baut auf
 matrix_conditional auf, kollabiert es nicht").
 
-This module is PURE and, for now, UNWIRED: importing it changes no prod behaviour. Wiring it into the
-pipeline (after ``compute``, before ``generate``) and coupling it to the L1 mode is a later, flag-gated
-sub-step; the assertivity doctrine goes productive only when the extended eval ruler is green (I-CAL-1).
+This module is PURE. It IS wired (flag-gated, default OFF): ``pipeline.py`` computes ``coverage_for(...)``
+when ``coverage_gate_enabled`` is set, and ``system_l1.jinja`` couples ``coverage.status`` to the allowed
+L1 mode when a status is present and no response-contract is active. The flag stays OFF in prod today —
+the assertivity doctrine goes productive only when the extended eval ruler is green (I-CAL-1); see
+docs/V2/sealingai_v2_invarianten_charter.md for the gating rationale.
 """
 
 from __future__ import annotations
