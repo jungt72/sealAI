@@ -80,8 +80,23 @@ def add_tag_to_document(doc_id: str | int, tag_id: int) -> None:
     current = doc.get("tags") or []
     if tag_id in current:
         return
+    _patch_tags(doc_id, current + [tag_id])
+
+
+def remove_tag_from_document(doc_id: str | int, tag_id: int) -> None:
+    """Remove ``tag_id`` from a document's tag set (idempotent — a no-op if already absent). Used to
+    clear a stale ``sealai:status-failed`` once a later attempt succeeds, so the status tags never
+    lie (failed + draft both present would read as "broken AND indexed" — ambiguous)."""
+    doc = fetch_document(doc_id)
+    current = doc.get("tags") or []
+    if tag_id not in current:
+        return
+    _patch_tags(doc_id, [t for t in current if t != tag_id])
+
+
+def _patch_tags(doc_id: str | int, tag_ids: list[int]) -> None:
     base, token = _base_and_token()
-    body = json.dumps({"tags": current + [tag_id]}).encode("utf-8")
+    body = json.dumps({"tags": tag_ids}).encode("utf-8")
     req = urllib.request.Request(
         f"{base}/api/documents/{doc_id}/",
         data=body,
