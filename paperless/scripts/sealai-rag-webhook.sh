@@ -14,8 +14,6 @@ if [ -z "$webhook_token" ]; then
   exit 0
 fi
 
-log_path="${SEALAI_RAG_WEBHOOK_LOG:-/tmp/sealai-rag-webhook.log}"
-
 (
   python - "$webhook_url" "$webhook_token" "$document_id" <<'PY'
 import json
@@ -46,6 +44,13 @@ except Exception as exc:
     print(f"sealai-rag-webhook: document={document_id} error={type(exc).__name__}: {exc}")
     raise
 PY
-) >> "$log_path" 2>&1 &
+# Incident 2026-07-01: a leftover root-owned /tmp/sealai-rag-webhook.log (created by an earlier
+# manual docker-exec test run as root) made the real consumer process (a different, non-root
+# user) fail this redirect with 'Permission denied' -- which aborted the WHOLE backgrounded
+# compound command, so the webhook was silently never sent. /dev/null is always writable
+# regardless of which user runs this, so that class of failure cannot recur. Paperless itself
+# already captures this script's own stdout/stderr (docker logs paperless); the actual
+# ingestion result is logged authoritatively on the backend-v2 side.
+) >/dev/null 2>&1 &
 
 exit 0
