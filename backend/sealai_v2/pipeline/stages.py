@@ -43,6 +43,15 @@ _ALT_RE = _re.compile(
     _re.IGNORECASE,
 )
 
+
+def is_alternativen_request(question: str) -> bool:
+    """Cheap, public mirror of `alternativen`'s own keyword gate (L6, P0-C review fix). Lets a
+    caller (pipeline.py) skip the expensive verdict-fallback computation (gegencheck_from_case_state
+    — a real matrix query) on turns that were never going to trigger Modus F in the first place; the
+    original in-function gate stays too (defense-in-depth — a caller mistake here fails safe, not
+    silently open)."""
+    return bool(_ALT_RE.search(question))
+
 _UNDERSTAND_SYSTEM = (
     "Du klassifizierst eine Nutzer-Nachricht an einen Dichtungstechnik-Assistenten GROB nach "
     'Absicht. Antworte NUR mit einem JSON-Objekt {"intent": <label>, "rationale": <kurz>}. '

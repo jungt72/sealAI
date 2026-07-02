@@ -105,6 +105,28 @@ class TestCaseStateMedium:
         assert stages._case_state_medium((_fact("werkstoffvorgabe", "FKM"),)) == []
 
 
+class TestIsAlternativenRequest:
+    """stages.is_alternativen_request — the public mirror of alternativen's own keyword gate
+    (P0-C review fix: lets pipeline.py skip the case-state verdict fallback's matrix query on
+    turns that were never going to trigger Modus F). Must agree with `alternativen` exactly."""
+
+    def test_true_on_a_manufacturer_question(self):
+        assert stages.is_alternativen_request("Welcher Hersteller kann das liefern?") is True
+
+    def test_false_on_an_unrelated_question(self):
+        assert stages.is_alternativen_request("Was ist der Unterschied FKM vs. EPDM?") is False
+
+    def test_agrees_with_alternativen_itself_on_the_keyword_gate(self):
+        # regression: this helper must never drift from _ALT_RE inside alternativen()
+        reg = _reg(_partner("A", werkstoffe=("FKM",)))
+        for q in ("Welcher Hersteller kann das liefern?", "Was kann FKM?"):
+            gated_by_helper = stages.is_alternativen_request(q)
+            fires_in_alternativen = (
+                stages.alternativen(reg, q, _VERDICT, tenant_id="t1") is not None
+            )
+            assert gated_by_helper == fires_in_alternativen
+
+
 class TestGegencheckFromCaseState:
     """stages.gegencheck_from_case_state — the L6 fallback itself: a REAL verdict re-derived
     from persisted case-state, not just a boolean "something was said once" flag."""
