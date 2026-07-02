@@ -6,13 +6,21 @@
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* stage grays (mockup tokens) */
-  --ink: #3c4350;            /* greeting / body text */
-  --ink-soft: #5a6372;       /* rail icons, secondary text */
-  --ink-faint: #8a93a3;      /* chip felder, badge text */
+  --sai-bg: #fdfcfc;
+  --sai-text: #1f1f1f;
+  --sai-text-muted: #444746;
+  --sai-text-subtle: #6b7280;
+  --sai-user-bubble: #f2f0f0;
+  --sai-surface: #ffffff;
+  --sai-border-soft: rgba(31, 31, 31, 0.08);
+
+  --ink: var(--sai-text);    /* greeting / body text */
+  --ink-soft: var(--sai-text-muted);       /* rail icons, secondary text */
+  --ink-faint: var(--sai-text-subtle);      /* chip felder, badge text */
   --ink-ghost: #a8b0bc;      /* doctrine line, hints */
   --ink-disabled: #c3cad4;   /* disabled icons */
-  --hairline: #e9ecf2;       /* pill / card borders */
-  --hover-wash: #f1f3f7;     /* icon hover, user bubble */
+  --hairline: var(--sai-border-soft);       /* pill / card borders */
+  --hover-wash: var(--sai-user-bubble);     /* icon hover, user bubble */
   --glow: rgba(168, 205, 255, 0.55);
 
   /* neumorphism (themesberg soft-UI) — the cockpit surface + its raised/inset shadows */
@@ -23,15 +31,15 @@
   /* brand accent (kept from V1 visual language) */
   --color-seal-blue: #002a5b;
   --color-seal-light-blue: color-mix(in srgb, var(--color-seal-blue) 14%, #ffffff);
-  --color-surface: #ffffff;
+  --color-surface: var(--sai-surface);
   --color-warning-bg: color-mix(in srgb, #b8860b 10%, #ffffff);
   --color-warning-fg: #6b5200;
 
   /* markdown body — Gemini-style typography (near-black heading hierarchy, light code/table grounds
      that read on both the #FCFCFC chat and the #FFFFFF cockpit) */
-  --md-ink: #181a1f;          /* answer + user body text — high-contrast anthracite */
-  --md-heading: #101114;      /* headings + bold — near-black neutral, the top of the hierarchy */
-  --md-muted: #59606a;        /* list markers, h5/h6, captions — Gemini secondary grey */
+  --md-ink: var(--sai-text);          /* answer + user body text — high-contrast anthracite */
+  --md-heading: var(--sai-text);      /* headings + bold — near-black neutral, the top of the hierarchy */
+  --md-muted: var(--sai-text-subtle);        /* list markers, h5/h6, captions — Gemini secondary grey */
   --md-code-bg: #f6f7f9;      /* code-block <pre> area */
   --md-code-head-bg: #eef0f3; /* code-block header bar (language + copy) */
   --md-code-inline-bg: #f0f1f4;
@@ -39,11 +47,11 @@
   --md-row-alt: #fbfbfc;      /* table zebra — very subtle */
 
   /* stage grounds (owner spec 2026-06-27): chat + left rail off-white, cockpit pure white */
-  --bg-stage: #fcfcfc;        /* .shell base → rail + chat column */
-  --bg-cockpit: #ffffff;      /* right cockpit column */
+  --bg-stage: var(--sai-bg);        /* .shell base → rail + chat column */
+  --bg-cockpit: var(--sai-surface);      /* right cockpit column */
 
   /* legacy aliases still referenced by shared rules */
-  --color-background: #ffffff;
+  --color-background: var(--sai-bg);
   --color-foreground: var(--ink);
   --color-border: var(--hairline);
   --color-muted: var(--hover-wash);
