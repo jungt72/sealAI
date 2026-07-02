@@ -3,12 +3,74 @@ import { useFraming } from "../framing-context";
 import { Citations } from "./Citation";
 import { Markdown } from "./Markdown";
 
+/** Modus E (Gegencheck): a DISQUALIFY-ONLY verdict (owner doctrine E4-1) — never render an
+ * affirmative "passt/geeignet" for a non-disqualifying basis. Only the two attention-worthy states
+ * surface (hard incompatibility / bedingt); "matrix_compatible"/"no_matrix_data"/"no_medium" stay
+ * silent, because the absence of a documented incompatibility is not itself a suitability claim.
+ * Rendered OUTSIDE the collapsed answer-meta details (unlike the other badges below): a
+ * disqualifying or conditional verdict must not require a click to see (audit L5, "was das System
+ * nicht weiß, sagt es zuerst"). Text is the grounded matrix cell content verbatim — never invented. */
+function GegencheckNote({ gegencheck }: { gegencheck: ChatResponse["gegencheck"] }) {
+  if (!gegencheck) return null;
+  if (gegencheck.disqualified) {
+    return (
+      <div className="gegencheck-note" data-testid="gegencheck-disqualified">
+        <span className="gegencheck-label">Gegencheck: Unverträglichkeit</span>
+        <p className="gegencheck-text">{gegencheck.reason}</p>
+        {gegencheck.source && <p className="gegencheck-source">{gegencheck.source}</p>}
+      </div>
+    );
+  }
+  if (gegencheck.basis === "matrix_conditional") {
+    return (
+      <div className="gegencheck-note" data-testid="gegencheck-conditional">
+        <span className="gegencheck-label">Gegencheck: bedingt</span>
+        <p className="gegencheck-text">{gegencheck.condition}</p>
+        {gegencheck.source && <p className="gegencheck-source">{gegencheck.source}</p>}
+      </div>
+    );
+  }
+  return null; // matrix_compatible / no_matrix_data / no_medium — E4-1: never an affirmative badge
+}
+
+/** L3 trust status (audit L3 "Unsicherheit ist ein Zustand, kein Textbaustein"): lets the user tell
+ * a confidently-checked answer from one the safety check adjusted, or one that was never confidently
+ * checked at all — instead of every answer looking equally trustworthy. `verified` already folds
+ * PASS/FLAG/CORRECTED into one honest signal (see api/serializers.py::_verification); `hedged` takes
+ * priority since it means THIS answer's draft was blocked and replaced. */
+function VerificationBadge({ res }: { res: ChatResponse }) {
+  if (res.verification?.hedged) {
+    return (
+      <span className="badge badge-hedged" data-testid="verification-hedged">
+        Antwort durch interne Prüfung angepasst
+      </span>
+    );
+  }
+  if (res.verified) {
+    return (
+      <span className="badge badge-verified" data-testid="verification-verified">
+        geprüft
+      </span>
+    );
+  }
+  if (res.verification && (res.verification.ran === false || res.verification.parse_ok === false)) {
+    return (
+      <span className="badge badge-unverified" data-testid="verification-unverified">
+        nicht geprüft
+      </span>
+    );
+  }
+  return null; // no verification block on this payload at all (older/hand-built response)
+}
+
 /** An assistant answer + its honesty framing: a `vorläufig` badge when NOT grounded, a candidate
- * label (orientation, not a final decision), and primary-source citations. */
+ * label (orientation, not a final decision), the L3 trust status, primary-source citations, and —
+ * outside the collapsed meta — a Gegencheck note when Modus E found an incompatibility or condition. */
 export function Answer({ res }: { res: ChatResponse }) {
   const { candidate, vorlaeufig } = useFraming();
   return (
     <div className="answer" data-testid="answer">
+      <GegencheckNote gegencheck={res.gegencheck} />
       <details className="answer-meta">
         <summary>Technische Vorbewertung</summary>
         <span className="badge badge-candidate" data-testid="candidate-label">
@@ -19,6 +81,7 @@ export function Answer({ res }: { res: ChatResponse }) {
             {vorlaeufig}
           </span>
         )}
+        <VerificationBadge res={res} />
       </details>
       <div className="answer-text">
         <Markdown source={res.answer} />
