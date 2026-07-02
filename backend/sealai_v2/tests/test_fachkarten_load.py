@@ -16,23 +16,33 @@ def _write(tmp_path, cards):
 
 
 def test_seed_loads_nine_reviewed_cards():
+    # Updated 2026-06-28 (8-kind taxonomy + 38-card provisional promotion, GPT-5.5 round 4: 522/522
+    # claims clean -> GO): the seed grew from 9 owner-grounded reviewed cards to 47 (9 reviewed + 38
+    # draft/provisional) — the REVIEWED count is the invariant that must hold, not the total.
     cat = load_fachkarten()
-    assert len(cat.cards) == 9
     assert len(cat.reviewed()) == 9
+    assert len(cat.cards) == 47
     # circularity guard held: every reviewed claim is owner/trap-grounded (path i) or sourced (path ii)
+    # — checked across ALL cards (a draft card's reviewed_claims() is always empty by construction, so
+    # this is equivalent to iterating cat.reviewed(), just doesn't assume which cards are reviewed).
     for c in cat.cards:
         for cl in c.reviewed_claims():
             assert cl.owner_grounded or cl.sources, f"{c.id}: ungrounded reviewed claim"
 
 
 def test_seed_provenance_is_owner_grounded():
-    # reviewed = owner-grounded: each card names a path-(i) grounding origin — owner:/eval:/trap-correct:
-    # (require a grounding prefix, NOT merely non-empty). The trap-correct:-only assertion was an
-    # over-narrow M3 artifact; FK-ORING-VERPRESSUNG is bootstrapped from the owner-confirmed CALC-02
-    # eval seed → provenance eval:CALC-02 + owner:nutauslegung (still owner-grounded path (i)).
+    # reviewed = owner-grounded: each REVIEWED card names a path-(i) grounding origin —
+    # owner:/eval:/trap-correct: (require a grounding prefix, NOT merely non-empty). The
+    # trap-correct:-only assertion was an over-narrow M3 artifact; FK-ORING-VERPRESSUNG is
+    # bootstrapped from the owner-confirmed CALC-02 eval seed → provenance eval:CALC-02 +
+    # owner:nutauslegung (still owner-grounded path (i)).
+    # Scoped to cat.reviewed() (not cat.cards): the 38 draft/provisional cards (2026-06-28 promotion)
+    # are LLM-researched (provenance "claude-research:...") by design — draft claims carry no source
+    # requirement (fachkarten.py's circularity guard only fires for review_state="reviewed"), so this
+    # owner-grounding invariant was always meant for reviewed cards only.
     grounding = ("owner", "eval:", "trap-correct:")
     cat = load_fachkarten()
-    for c in cat.cards:
+    for c in cat.reviewed():
         assert any(p.startswith(grounding) for p in c.provenance), c.id
 
 
