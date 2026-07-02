@@ -289,7 +289,7 @@ export function ParameterForm({
     return (
       <section className="param-form param-stage-card" data-testid="parameter-form">
         <header className="param-head">
-          <h3>Parameter direkt eingeben</h3>
+          <h3>Parameter eingeben</h3>
         </header>
         <form onSubmit={submit}>
           {coreSection}

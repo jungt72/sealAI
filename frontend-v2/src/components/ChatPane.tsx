@@ -348,10 +348,10 @@ export function ChatPane({
     if (cockpitVisible) setEverOpened(true);
   }, [cockpitVisible]);
 
-  // A subtle, low-key affordance near the composer — present only while the cockpit is closed.
-  const openFormLink = cockpitVisible ? null : (
-    <button type="button" className="open-cockpit-link" data-testid="open-cockpit" onClick={openCockpit}>
-      Parameter direkt eingeben
+  // High-level parameter action in the workspace chrome — present only while the cockpit is closed.
+  const openFormCta = cockpitVisible ? null : (
+    <button type="button" className="open-cockpit-cta" data-testid="open-cockpit" onClick={openCockpit}>
+      Parameter eingeben
     </button>
   );
 
@@ -523,6 +523,7 @@ export function ChatPane({
       style={workspaceStyle}
       data-testid="chat-pane"
     >
+      {openFormCta}
       <div className="chat-col">
         {msgs.length === 0 ? (
           // stage center: ONLY the greeting + composer over the glow — calm and centered.
@@ -532,7 +533,6 @@ export function ChatPane({
               Welche Dichtungsfrage steht an{greetingName ? `, ${greetingName}` : ""}?
             </h1>
             {composer}
-            {openFormLink}
             {error && (
               <div className="error-banner" role="alert" data-testid="chat-error">
                 {error}
@@ -595,7 +595,6 @@ export function ChatPane({
             </div>
             <div className="chat-foot">
               {composer}
-              {openFormLink}
             </div>
           </div>
         )}

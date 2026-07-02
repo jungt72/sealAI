@@ -253,7 +253,7 @@ describe("cockpit visibility (claude.ai chat-only ↔ split)", () => {
     renderPane({ memory: EMPTY });
     expect(screen.queryByTestId("case-state")).toBeNull(); // cockpit not mounted yet (no panel)
     expect(screen.getByTestId("chat-pane")).toHaveClass("workspace--chat-only");
-    expect(screen.getByTestId("open-cockpit")).toBeInTheDocument(); // the subtle affordance
+    expect(screen.getByTestId("open-cockpit")).toBeInTheDocument(); // the parameter-entry CTA
   });
 
   it("opening the form splits (chat | cockpit) and it persists for the session", async () => {

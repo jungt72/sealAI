@@ -180,7 +180,7 @@
    Closing returns to centered chat-only. Open/close is CSS-visibility only — the chat column and the
    mounted ParameterForm stay mounted, so msgs + form values never reset. Below 1024px: single column,
    cockpit stacked below chat. */
-.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.workspace { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .cockpit-splitter { display: none; }            /* the chat|cockpit divider — only a grid item ≥1024 split */
 .workspace--chat-only .cockpit-panel { display: none; }   /* pure Q&A: no right panel, at every width */
 
@@ -312,13 +312,18 @@
 .make-briefing:hover:not(:disabled) { background: var(--hover-wash); }
 .make-briefing:disabled { color: var(--ink-disabled); cursor: default; }
 
-/* the subtle "open the form" affordance near the composer (only while the cockpit is closed) */
-.open-cockpit-link {
-  align-self: center; border: none; background: none; cursor: pointer; font: inherit;
-  font-size: 12.5px; color: var(--ink-faint);
-  text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px;
+/* parameter entry CTA — lifted into the dashboard chrome, away from the Gemini-style composer */
+.open-cockpit-cta {
+  position: absolute; top: 24px; right: 28px; z-index: 12;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 40px; padding: 0 18px; border: none; border-radius: 999px;
+  background: #f47b20; color: #fff; box-shadow: 0 10px 24px rgba(168, 82, 18, 0.22);
+  font: inherit; font-size: 14px; font-weight: 600; letter-spacing: 0;
+  cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
-.open-cockpit-link:hover { color: var(--ink); }
+.open-cockpit-cta:hover { background: #e86f16; box-shadow: 0 12px 28px rgba(168, 82, 18, 0.28); }
+.open-cockpit-cta:active { transform: translateY(1px); }
+.open-cockpit-cta:focus-visible { outline: 2px solid rgba(244, 123, 32, 0.35); outline-offset: 3px; }
 /* below 1024 the cockpit stacks under the chat — a hairline separates them */
 @media (max-width: 1023px) {
   .workspace--split .cockpit-panel { border-top: 1px solid var(--hairline); }
@@ -342,7 +347,7 @@
   }
   /* define the white cockpit's left edge against the off-white chat (only when side-by-side) */
   .workspace--split .cockpit-panel { border-left: 1px solid var(--hairline); }
-  .chat-foot { padding-bottom: 64px; }
+  .chat-foot { padding-bottom: 48px; }
 
   /* the resize handle (chat|cockpit): a thin track with a centered grab line that grows on hover/focus. */
   .workspace--split .cockpit-splitter {
@@ -462,6 +467,11 @@
 
 @media (max-width: 720px) {
   .chat-log { gap: 18px; padding: 24px 16px 12px; }
+  .open-cockpit-cta {
+    top: 18px; right: 16px; min-height: 38px; padding: 0 15px;
+    font-size: 13px;
+  }
+  .chat-foot { padding: 6px 16px 44px; }
   .msg-user {
     max-width: min(86%, 560px);
     padding: 10px 15px;
