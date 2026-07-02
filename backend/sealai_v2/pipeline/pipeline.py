@@ -334,9 +334,26 @@ class Pipeline:
         # Result-side structured parse + the §9.2 equivalence boundary. Pure + sync, no I/O.
         decode_result = stages.decode(question)
         # Modus F: capable manufacturers BY CAPABILITY (neutral). None unless an alternatives/
-        # manufacturer request; grounded_data=False with the owner-pending empty seed.
+        # manufacturer request; grounded_data=False with the owner-pending empty seed, or (L6,
+        # P0-C) grounded_data=False "assessment needed first" when no Gegencheck verdict exists yet.
+        # The verdict precondition honours a THIS-turn verdict first; failing that, it falls back
+        # to a verdict re-derived from the session's PERSISTED case-state (stages.
+        # gegencheck_from_case_state) — so an assessment made in an EARLIER turn still gates a
+        # manufacturer question in a LATER turn that doesn't restate material/medium (Akzeptanz-
+        # kriterium 2/4). gegencheck_verdict itself (Modus E narration) is UNCHANGED by this.
+        # (P0-C review fix) The fallback is a REAL matrix query — only worth computing when THIS
+        # turn was even asking about manufacturers; `is_alternativen_request` mirrors alternativen's
+        # own keyword gate so unrelated turns (most of them) never pay for it.
+        alternativen_verdict = None
+        if self.partner_registry is not None and stages.is_alternativen_request(question):
+            alternativen_verdict = gegencheck_verdict or stages.gegencheck_from_case_state(
+                self.matrix, mem.case_state, tenant_id=scope.tenant_id
+            )
         alternativen_result = stages.alternativen(
-            self.partner_registry, question, tenant_id=scope.tenant_id
+            self.partner_registry,
+            question,
+            alternativen_verdict,
+            tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
         # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +
