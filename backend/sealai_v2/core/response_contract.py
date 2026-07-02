@@ -36,6 +36,10 @@ STATUS_OUT_OF_SCOPE = "OUT_OF_SCOPE"
 STATUS_NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
 STATUS_COVERED_CAUTION = "COVERED_CAUTION"
 STATUS_COVERED_RECOMMENDATION = "COVERED_RECOMMENDATION"
+# P0-B (owner Leitbild-Audit 2026-07-02): sentinel status for build_guard_contract()'s output — NEVER
+# reaches the L1 prompt/renderer (see build_guard_contract's docstring for why); used only as a
+# policy.forbidden_by_status lookup key (defaults to (), like every other status, Phase 4b).
+STATUS_GENERAL = "GENERAL"
 
 # coverage_status (core/coverage.py) -> contract status. A grounded NO (disqualified -> coverage IN)
 # maps to COVERED_RECOMMENDATION: the MODE is assertive-because-grounded; the CONTENT is a negative
@@ -232,4 +236,51 @@ def build_contract(
         allowed_values=_allowed_values(calc),
         forbidden_phrases=_forbidden_phrases(status, policy),
         coverage_status=coverage_status,
+    )
+
+
+def build_guard_contract(
+    *,
+    grounding_facts: tuple[GroundingFact, ...],
+    calc: CalcResult | None,
+    policy: ContractPolicy = DEFAULT_POLICY,
+) -> ResponseContract | None:
+    """P0-B (owner Leitbild-Audit 2026-07-02, Audit-Finding L1-Scope-Leak/P0-2): a GUARD-ONLY contract
+    for turns with no gegencheck_verdict — general knowledge questions, or fallarbeit before material
+    and medium are both established. build_contract()'s Gegencheck-shaped contract stays exactly as
+    it was (v1 scope unchanged); this is an ADDITIVE, separate path.
+
+    Critical difference from build_contract(): this contract is NEVER passed to
+    ``generator.generate(contract=...)``. The L1 'Renderer-Modus' full takeover
+    (``system_l1.jinja``'s ``{%- if contract %}`` block — "Du bist Renderer, nicht Autor ...
+    nichts Fachliches hinzufügen") is reserved for the material x medium suitability path it was
+    designed for. Forcing it onto a knowledge question ("was ist FKM?") would gut the SAME prompt's
+    own instruction for Wissensfragen just a few lines above ("Hier wird Kompetenz vermittelt — gib
+    das volle Bild, nicht die Kurzfassung") — a real product-quality regression, not just an
+    overblock nuisance. (A naive "just widen build_contract()'s gate" fix was considered and
+    rejected for exactly this reason.)
+
+    Consumed ONLY by ``output_guard.evaluate_render(..., check_sentence_coverage=False)`` — the
+    sentence-coverage check (5) assumes L1 was INSTRUCTED to render only the contract's content,
+    which never happens on this path; the other checks (forbidden_phrase, invented_number,
+    invented_material) are genuinely turn-agnostic safety nets and stay active. ``required_clauses``
+    is deliberately EMPTY: no renderer instruction ever told L1 to include any clause, so checking
+    for their presence would be a guaranteed, meaningless BLOCK on every turn.
+
+    Returns None when there is neither grounding nor a computed value — with zero evidence, the
+    invented-material/-number prefilters would fire on ANY material/number mention however
+    legitimate (general engineering knowledge), indistinguishable from noise with zero signal to
+    check against. PURE."""
+    if not (grounding_facts or (calc is not None and calc.computed)):
+        return None
+    claims = _allowed_claims(grounding_facts, disqualified=False, basis=None)
+    return ResponseContract(
+        status=STATUS_GENERAL,
+        allowed_claims=claims,
+        required_clauses=(),
+        missing_fields=(),
+        allowed_materials=_allowed_materials(claims, policy.material_vocab),
+        allowed_values=_allowed_values(calc),
+        forbidden_phrases=_forbidden_phrases(STATUS_GENERAL, policy),
+        coverage_status="n/a",
     )

@@ -323,8 +323,18 @@ def evaluate_render(
     policy: ContractPolicy = DEFAULT_POLICY,
     known_values: tuple = (),
     known_materials: tuple = (),
+    check_sentence_coverage: bool = True,
 ) -> GuardResult:
-    """Enforce the answer-contract against the rendered text. Fail-closed: any violation -> BLOCK. PURE."""
+    """Enforce the answer-contract against the rendered text. Fail-closed: any violation -> BLOCK. PURE.
+
+    ``check_sentence_coverage`` (P0-B, default True — unchanged behaviour for every existing caller):
+    the sentence-coverage check (5, below) assumes L1 was INSTRUCTED to render only the contract's
+    content (the Renderer-Modus prompt block) — false for a guard-only contract
+    (``response_contract.build_guard_contract``), where L1 was never told to stay inside the contract
+    at all. Pass False there: the 4 prefilters (forbidden_phrase / invented_number / invented_material
+    / missing_required_clause — the last a no-op on an empty required_clauses) stay active as
+    turn-agnostic safety nets; only the strict "every technical sentence must map to a claim" check is
+    skipped."""
     violations: list[Violation] = []
     text = answer_text or ""
     low = text.lower()
@@ -373,34 +383,35 @@ def evaluate_render(
             violations.append(Violation("missing_required_clause", clause))
 
     # ── coverage: every TECHNICAL sentence must map to claim / clause / question / uncertainty ──
-    contract_vocab = (
-        _sig_words(claim_blob_low)
-        | {a.lower() for a in allowed_materials}
-        | _BASE_WHITELIST
-    )
-    vocab_stems = {_stem(w) for w in contract_vocab}
-    anchor_low = {a.lower() for a in allowed_materials} | {
-        m.lower() for m in known_materials
-    }
-    for sent in _sentences(text):
-        if not _is_technical(sent, policy.material_vocab):
-            continue  # (5) purely linguistic / non-technical transition
-        low_s = sent.lower()
-        if any(re.search(rf"\b{re.escape(m)}\b", low_s) for m in anchor_low):
-            continue  # (1) anchored to a contract/known material — elaboration is allowed; invented
-            #             numbers/materials/authority inside it are caught by the prefilters above
-        if sent.rstrip().endswith("?") or _matches_uncertainty(sent):
-            continue  # (3) clarification question / (4) uncertainty-deferral
-        ssig = _sig_words(sent)
-        if not ssig:
-            continue
-        drawn = sum(1 for w in ssig if _stem(w) in vocab_stems) / len(ssig)
-        if (
-            drawn < _COVER_THRESH
-        ):  # foreign-SUBJECT technical sentence (no anchor, low overlap) -> fail-closed
-            violations.append(
-                Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent)
-            )
+    if check_sentence_coverage:
+        contract_vocab = (
+            _sig_words(claim_blob_low)
+            | {a.lower() for a in allowed_materials}
+            | _BASE_WHITELIST
+        )
+        vocab_stems = {_stem(w) for w in contract_vocab}
+        anchor_low = {a.lower() for a in allowed_materials} | {
+            m.lower() for m in known_materials
+        }
+        for sent in _sentences(text):
+            if not _is_technical(sent, policy.material_vocab):
+                continue  # (5) purely linguistic / non-technical transition
+            low_s = sent.lower()
+            if any(re.search(rf"\b{re.escape(m)}\b", low_s) for m in anchor_low):
+                continue  # (1) anchored to a contract/known material — elaboration is allowed; invented
+                #             numbers/materials/authority inside it are caught by the prefilters above
+            if sent.rstrip().endswith("?") or _matches_uncertainty(sent):
+                continue  # (3) clarification question / (4) uncertainty-deferral
+            ssig = _sig_words(sent)
+            if not ssig:
+                continue
+            drawn = sum(1 for w in ssig if _stem(w) in vocab_stems) / len(ssig)
+            if (
+                drawn < _COVER_THRESH
+            ):  # foreign-SUBJECT technical sentence (no anchor, low overlap) -> fail-closed
+                violations.append(
+                    Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent)
+                )
 
     ok = not violations
     return GuardResult(
