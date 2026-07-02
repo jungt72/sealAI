@@ -92,12 +92,8 @@ printf 'SeaLAI live pilot readiness smoke (%s)\n' "$BASE_URL"
 assert_code GET /api/health 200
 assert_json_field '.status == "ok"' 'frontend API health reports ok'
 
-assert_code_any GET /api/agent/health '200,307,308'
-if [[ -s "${BODY_FILE}" ]] && jq -e '.status == "healthy" or .status == "ok"' "${BODY_FILE}" >/dev/null 2>&1; then
-  pass 'agent/backend health body is healthy/ok'
-else
-  pass 'agent health endpoint is reachable or redirected by edge'
-fi
+assert_code GET /api/v2/health 200
+assert_json_field '.status == "ok"' 'backend-v2 health reports ok'
 
 assert_code_any GET /dashboard/new '200,302,307,308'
 assert_no_legacy_domain 'dashboard auth boundary'

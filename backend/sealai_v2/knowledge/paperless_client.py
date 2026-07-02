@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.parse
 import urllib.request
 
 
@@ -57,3 +58,53 @@ def fetch_document_text_and_tags(doc_id: str | int) -> tuple[str, str, tuple[str
     title = (doc.get("title") or f"doc-{doc_id}")[:80]
     tags = fetch_tag_names(doc.get("tags") or [])
     return doc.get("content") or "", f"paperless#{doc_id}:{title}", tags
+
+
+def find_tag_id(name: str) -> int | None:
+    """The Paperless tag id for an EXISTING tag name (exact match), or None. Read-only lookup — never
+    creates a tag (tag creation/taxonomy is an owner decision, not something the ingestion path does)."""
+    base, token = _base_and_token()
+    req = urllib.request.Request(
+        f"{base}/api/tags/?name__iexact={urllib.parse.quote(name)}",
+        headers={"Authorization": f"Token {token}"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+        results = json.load(r).get("results") or []
+    return int(results[0]["id"]) if results else None
+
+
+def add_tag_to_document(doc_id: str | int, tag_id: int) -> None:
+    """Add ``tag_id`` to a document's tag set (idempotent — a no-op if already present). Paperless's
+    document PATCH replaces the WHOLE tags list, so this fetches the current set first and appends."""
+    doc = fetch_document(doc_id)
+    current = doc.get("tags") or []
+    if tag_id in current:
+        return
+    _patch_tags(doc_id, current + [tag_id])
+
+
+def remove_tag_from_document(doc_id: str | int, tag_id: int) -> None:
+    """Remove ``tag_id`` from a document's tag set (idempotent — a no-op if already absent). Used to
+    clear a stale ``sealai:status-failed`` once a later attempt succeeds, so the status tags never
+    lie (failed + draft both present would read as "broken AND indexed" — ambiguous)."""
+    doc = fetch_document(doc_id)
+    current = doc.get("tags") or []
+    if tag_id not in current:
+        return
+    _patch_tags(doc_id, [t for t in current if t != tag_id])
+
+
+def _patch_tags(doc_id: str | int, tag_ids: list[int]) -> None:
+    base, token = _base_and_token()
+    body = json.dumps({"tags": tag_ids}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base}/api/documents/{doc_id}/",
+        data=body,
+        headers={
+            "Authorization": f"Token {token}",
+            "Content-Type": "application/json",
+        },
+        method="PATCH",
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:  # noqa: S310
+        r.read()
