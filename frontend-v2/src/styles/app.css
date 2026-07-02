@@ -96,18 +96,18 @@
 }
 
 /* ── the pill ───────────────────────────────────────────────────────────────── */
-.pill-wrap { position: relative; width: min(720px, 100%); }
+.pill-wrap { position: relative; width: min(var(--sai-content-max-width), 100%); }
 .stage .pill-wrap { z-index: 5; } /* popover must paint above the chip row (later sibling) */
 .pill {
-  display: flex; align-items: center; gap: 4px; min-height: 62px;
-  padding: 6px 8px 6px 20px; background: var(--sai-surface);
-  border: 1px solid var(--sai-border-soft); border-radius: 999px;
-  box-shadow: 0 8px 22px rgba(31, 31, 31, 0.055), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  display: flex; align-items: center; gap: 4px; min-height: 64px;
+  padding: 8px 10px 8px 20px; background: var(--sai-surface);
+  border: 1px solid rgba(5, 5, 5, 0.08); border-radius: 30px;
+  box-shadow: 0 8px 18px rgba(5, 5, 5, 0.045), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
 }
-.pill:focus-within { border-color: rgba(31, 31, 31, 0.16); box-shadow: 0 10px 26px rgba(31, 31, 31, 0.07); }
+.pill:focus-within { border-color: rgba(5, 5, 5, 0.16); box-shadow: 0 10px 22px rgba(5, 5, 5, 0.06); }
 .pill-input {
   flex: 1; min-width: 0; border: none; outline: none; resize: none; background: transparent;
-  font: inherit; font-size: 17px; line-height: 24px; color: var(--sai-text); padding: 9px 6px; max-height: 130px;
+  font: inherit; font-size: 16px; line-height: 28px; color: var(--sai-text); padding: 8px 8px; max-height: 140px;
 }
 .pill-input::placeholder { color: var(--sai-text-subtle); }
 .pill-icon {
@@ -187,7 +187,7 @@
 /* centre column: the conversation thread (scrolls) + the docked composer */
 .chat-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; }
 .chat-main { width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
-.chat-scroll-wrap { width: min(724px, 100%); flex: 1; min-height: 0; }
+.chat-scroll-wrap { width: min(var(--sai-content-max-width), 100%); flex: 1; min-height: 0; }
 .chat-log {
   height: 100%; scroll-behavior: smooth;
   display: flex; flex-direction: column; gap: 24px; padding: 32px 16px 16px;
@@ -197,14 +197,14 @@
 .chat-log-spacer { flex: none; pointer-events: none; }
 .msg-user {
   align-self: flex-end; background: var(--sai-user-bubble); color: var(--sai-text);
-  padding: 20px 28px; border-radius: 40px; max-width: min(75%, 680px);   /* Gemini: uniformly rounded, no tail */
-  font-size: 17px;
+  padding: 14px 18px; border-radius: 28px; max-width: min(78%, var(--sai-content-max-width));   /* uniformly rounded, no tail */
+  font-size: 16px;
   font-weight: 400;
-  line-height: 24px; letter-spacing: normal; white-space: pre-wrap;
+  line-height: 26px; letter-spacing: -0.1px; white-space: pre-wrap;
   text-rendering: optimizeLegibility;
 }
 .chat-foot {
-  width: min(724px, 100%); display: flex; flex-direction: column; gap: 10px;
+  width: min(var(--sai-content-max-width), 100%); display: flex; flex-direction: column; gap: 10px;
   padding: 6px 24px 0;
 }
 
@@ -380,55 +380,75 @@
 .pending-label { font-size: 13px; color: var(--ink-soft); }
 
 /* ── answers (quiet surfaces — the content carries the weight) ──────────────── */
-.answer { align-self: flex-start; width: min(707px, 100%); max-width: 100%; line-height: 24px; }
-.answer-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.answer { align-self: flex-start; width: min(var(--sai-content-max-width), 100%); max-width: 100%; line-height: 28px; }
+.answer-meta {
+  margin: 0 0 8px;
+  color: var(--sai-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.answer-meta summary {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--sai-text-muted);
+  list-style: none;
+}
+.answer-meta summary::-webkit-details-marker { display: none; }
+.answer-meta summary::before {
+  content: "▸";
+  margin-right: 6px;
+  color: var(--sai-text-muted);
+  font-size: 10px;
+}
+.answer-meta[open] summary::before { content: "▾"; }
 .badge {
   font-family: var(--font-sans); font-size: 12px; line-height: 18px; font-weight: 400;
-  padding: 2px 0; border-radius: 0; letter-spacing: normal;
+  display: inline-flex; margin: 6px 12px 0 0; padding: 0; border-radius: 0; letter-spacing: -0.1px;
 }
 .badge-candidate { background: transparent; border: 0; color: var(--sai-text-subtle); }
 .badge-vorlaeufig { background: transparent; border: 0; color: var(--color-warning-fg); }
-.answer-text { max-width: min(707px, 100%); line-height: 24px; background: transparent; border: 0; box-shadow: none; }
+.answer-text { max-width: min(var(--sai-content-max-width), 100%); line-height: 28px; background: transparent; border: 0; box-shadow: none; }
 
-/* ── Markdown body — tuned to the Gemini reference (owner screenshot, 2026-06-27) ────────────────────
-   Neutral dark-grey body (no blue tint), medium-weight (500) near-black headings with generous top
-   spacing, heavy (700) bold for inline labels (a real body↔bold contrast), hollow-circle (○) bullets,
-   1.7 line-height prose. Sans tables + framed code blocks unchanged. GFM on (Markdown.tsx). */
+/* ── Markdown body — tuned to the Grok computed-style reference ─────────────────────────────────────
+   Near-black 16px prose, generous 26-28px line-height, narrow 40rem reading width, and no heavy
+   answer card. Sans tables + framed code blocks unchanged. GFM on (Markdown.tsx). */
 .markdown {
-  max-width: 707px;
-  color: var(--md-ink); font-size: 17px;
-  font-weight: 400; line-height: 24px; letter-spacing: normal;
+  max-width: var(--sai-content-max-width);
+  font-family: var(--font-sans);
+  color: var(--md-ink); font-size: 16px;
+  font-weight: 400; line-height: 28px; letter-spacing: -0.1px;
   background: transparent; border: 0; box-shadow: none;
   text-rendering: optimizeLegibility;
 }
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
 
-.markdown p { margin: 0; }
-.markdown p + p { margin-top: 16px; }
+.markdown p { margin: 0 0 16px; font-size: 16px; line-height: 26px; color: var(--sai-text); }
+.markdown p + p { margin-top: 8px; }
 
 .markdown h1, .markdown h2, .markdown h3,
 .markdown h4, .markdown h5, .markdown h6 {
-  color: var(--md-heading); letter-spacing: normal;
+  color: var(--md-heading); letter-spacing: -0.1px;
 }
-.markdown h1 { font-size: 28px; line-height: 32px; font-weight: 450; margin: 28px 0 8px; }
-.markdown h2 { font-size: 24px; line-height: 28px; font-weight: 450; margin: 24px 0 8px; }
-.markdown h3 { font-size: 20px; line-height: 24px; font-weight: 500; margin: 24px 0 6px; }
-.markdown h4 { font-size: 18px; line-height: 24px; font-weight: 540; margin: 20px 0 6px; }
-.markdown h5, .markdown h6 { font-size: 17px; line-height: 24px; font-weight: 540; margin: 18px 0 4px; color: var(--md-muted); }
+.markdown h1 { font-size: 26px; line-height: 34px; font-weight: 560; margin: 24px 0 12px; }
+.markdown h2 { font-size: 22px; line-height: 30px; font-weight: 560; margin: 20px 0 12px; }
+.markdown h3 { font-size: 19px; line-height: 29px; font-weight: 550; margin: 12px 0 12px; letter-spacing: 0; }
+.markdown h4 { font-size: 17px; line-height: 27px; font-weight: 560; margin: 16px 0 10px; }
+.markdown h5, .markdown h6 { font-size: 16px; line-height: 26px; font-weight: 560; margin: 14px 0 8px; color: var(--md-muted); }
 
-.markdown strong { font-weight: 560; color: var(--md-heading); }
+.markdown strong { font-weight: 600; color: var(--sai-text); }
 .markdown em { font-style: italic; }
 .markdown del { color: var(--md-muted); }
 .markdown hr { border: none; border-top: 1px solid var(--sai-border-soft); margin: 24px 0; }
 
-.markdown ul, .markdown ol { margin: 0; padding-left: 4px; }
-.markdown ul { list-style-type: circle; }   /* Gemini renders unordered bullets as hollow circles (○) */
-.markdown li { margin: 0; padding-left: 36px; font-size: 17px; line-height: 24px; }
-.markdown li + li { margin-top: 12px; }
-.markdown li > p { margin: 0; }
-.markdown ul ul, .markdown ol ol, .markdown ul ol, .markdown ol ul { margin: 12px 0 0; }
-.markdown li::marker { color: var(--sai-text); font-size: 17px; }
+.markdown ul, .markdown ol { margin: 4px 0 16px; padding-left: 19px; }
+.markdown ul { list-style-type: circle; }
+.markdown li { margin: 8px 0 8px 4px; padding-left: 4px; font-size: 16px; line-height: 28px; color: var(--sai-text); }
+.markdown li + li { margin-top: 8px; }
+.markdown li > p { margin: 0; line-height: 28px; }
+.markdown ul ul, .markdown ol ol, .markdown ul ol, .markdown ol ul { margin: 6px 0 0; }
+.markdown li::marker { color: var(--sai-text-muted); font-size: 16px; }
 .markdown li > input[type="checkbox"] { margin: 0 0.5em 0 0; }   /* GFM task-lists */
 
 .markdown a { color: var(--color-seal-blue); text-decoration: underline;
@@ -443,14 +463,14 @@
 .markdown :not(pre) > code { font-family: var(--font-mono); font-size: 0.86em;
   background: var(--md-code-inline-bg); color: var(--md-ink); padding: 0.12em 0.4em; border-radius: 6px; }
 
-/* tables — Gemini-style: full width, sans body, shaded header, hairline frame, subtle zebra */
-.markdown table { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 17px;
+/* tables — technical but calm: full width, sans body, subtle dividers, mobile horizontal scroll */
+.markdown table { width: 100%; border-collapse: collapse; margin: 20px 0 28px; font-size: 15.5px;
   line-height: 24px; border: 0; overflow-x: auto; display: block; }
 .markdown thead th { background: transparent; }
-.markdown th, .markdown td { border: 0; border-bottom: 1px solid var(--sai-border-soft);
+.markdown th, .markdown td { border: 0;
   text-align: left; vertical-align: top; }
-.markdown th { font-weight: 500; color: var(--md-heading); padding: 12px 12px 16px; }
-.markdown td { padding: 16px 12px; }
+.markdown th { font-weight: 560; color: var(--md-heading); padding: 12px 12px 14px; border-bottom: 1px solid rgba(5, 5, 5, 0.10); }
+.markdown td { padding: 14px 12px; border-bottom: 1px solid rgba(5, 5, 5, 0.07); }
 .markdown tbody tr:nth-child(even) { background: transparent; }
 
 /* code blocks — Gemini-style framed widget (header: language + copy) over a light <pre>.
@@ -480,21 +500,20 @@
   .chat-foot { padding: 6px 16px 44px; }
   .msg-user {
     max-width: min(86%, 560px);
-    padding: 16px 22px;
-    font-size: 17px;
-    line-height: 24px;
+    padding: 14px 18px;
+    font-size: 16px;
+    line-height: 26px;
   }
-  .answer-badges { margin-bottom: 8px; }
   .markdown {
     font-size: 16px;
-    line-height: 23px;
+    line-height: 28px;
   }
-  .markdown p { margin: 0; }
-  .markdown p + p { margin-top: 15px; }
-  .markdown ul, .markdown ol { padding-left: 4px; }
-  .markdown li { font-size: 16px; line-height: 23px; padding-left: 30px; }
-  .markdown table { font-size: 16px; line-height: 23px; }
-  .pill-input { font-size: 16px; line-height: 23px; }
+  .markdown p { margin: 0 0 16px; line-height: 26px; }
+  .markdown p + p { margin-top: 8px; }
+  .markdown ul, .markdown ol { padding-left: 19px; }
+  .markdown li { font-size: 16px; line-height: 28px; margin: 8px 0 8px 4px; padding-left: 4px; }
+  .markdown table { font-size: 15.5px; line-height: 24px; }
+  .pill-input { font-size: 16px; line-height: 28px; }
 }
 
 .citations { margin-top: 10px; font-size: 13px; }

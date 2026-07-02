@@ -1,18 +1,20 @@
-/* sealingAI design tokens — pilot-ui (Gemini-style stage, owner-approved mockup 2026-06-12).
-   IBM Plex Sans carries the UI voice, IBM Plex Mono carries engineering values; the V1 seal-blue
-   survives as the single accent (brandmark, send, links). Quiet grays do the rest. */
+/* sealingAI design tokens — pilot-ui.
+   A Grok-like Inter stack carries the UI voice, IBM Plex Mono carries engineering values; the V1
+   seal-blue survives as the single accent (brandmark, send, links). Quiet grays do the rest. */
 :root {
-  --font-sans: "IBM Plex Sans", "Helvetica Neue", "Segoe UI", sans-serif;
+  --font-sans: "Inter Variable", Inter, Roboto, "Open Sans", Arial, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* stage grays (mockup tokens) */
-  --sai-bg: #fdfcfc;
-  --sai-text: #1f1f1f;
-  --sai-text-muted: #444746;
-  --sai-text-subtle: #6b7280;
-  --sai-user-bubble: #f2f0f0;
+  --sai-bg: #fcfcfc;
+  --sai-text: #050505;
+  --sai-text-soft: #333333;
+  --sai-text-muted: #636363;
+  --sai-text-subtle: #6b6b6b;
+  --sai-user-bubble: #f3f3f3;
   --sai-surface: #ffffff;
-  --sai-border-soft: rgba(31, 31, 31, 0.08);
+  --sai-border-soft: rgba(5, 5, 5, 0.06);
+  --sai-content-max-width: 40rem;
 
   --ink: var(--sai-text);    /* greeting / body text */
   --ink-soft: var(--sai-text-muted);       /* rail icons, secondary text */
@@ -35,11 +37,11 @@
   --color-warning-bg: color-mix(in srgb, #b8860b 10%, #ffffff);
   --color-warning-fg: #6b5200;
 
-  /* markdown body — Gemini-style typography (near-black heading hierarchy, light code/table grounds
+  /* markdown body — Grok-style typography (near-black heading hierarchy, light code/table grounds
      that read on both the #FCFCFC chat and the #FFFFFF cockpit) */
   --md-ink: var(--sai-text);          /* answer + user body text — high-contrast anthracite */
   --md-heading: var(--sai-text);      /* headings + bold — near-black neutral, the top of the hierarchy */
-  --md-muted: var(--sai-text-subtle);        /* list markers, h5/h6, captions — Gemini secondary grey */
+  --md-muted: var(--sai-text-subtle);        /* list markers, h5/h6, captions — secondary grey */
   --md-code-bg: #f6f7f9;      /* code-block <pre> area */
   --md-code-head-bg: #eef0f3; /* code-block header bar (language + copy) */
   --md-code-inline-bg: #f0f1f4;

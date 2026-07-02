@@ -9,7 +9,8 @@ export function Answer({ res }: { res: ChatResponse }) {
   const { candidate, vorlaeufig } = useFraming();
   return (
     <div className="answer" data-testid="answer">
-      <div className="answer-badges">
+      <details className="answer-meta">
+        <summary>Technische Vorbewertung</summary>
         <span className="badge badge-candidate" data-testid="candidate-label">
           {candidate}
         </span>
@@ -18,7 +19,7 @@ export function Answer({ res }: { res: ChatResponse }) {
             {vorlaeufig}
           </span>
         )}
-      </div>
+      </details>
       <div className="answer-text">
         <Markdown source={res.answer} />
       </div>
