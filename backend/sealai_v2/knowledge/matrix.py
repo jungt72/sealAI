@@ -48,6 +48,44 @@ _REVIEWED_PROV_PREFIXES = (
 # a cell is retrieved when at least this many of its scope tags appear in the query — two keeps it
 # precise (one material + its medium/condition), mirroring the Fachkarten retriever (_MIN_SCOPE_HITS).
 _MIN_SCOPE_HITS = 2
+
+# P2-D (owner Leitbild-Audit 2026-07-02, Quellenhierarchie/Konfliktlogik §4.3): a minimal, REAL source
+# hierarchy over provenance authority — used ONLY to break ties when query() finds multiple cells with
+# the SAME scope-hit score (previously an arbitrary alphabetical cell.id tie-break, see git history).
+# Never overrides the PRIMARY relevance ranking (scope-hit count) — a more specifically matching cell
+# always wins regardless of its provenance tier; this only decides between EQUALLY relevant cells.
+#   eval:          — an explicitly adjudicated conflict resolution (e.g. MX-EPDM-KETON/eval:CONFLICT-01
+#                    exists precisely to record a resolved contradiction) — the most deliberate,
+#                    conflict-aware authority available today.
+#   owner:         — the domain owner asserting directly.
+#   trap-correct:/trap: — a reviewed correction against a KNOWN failure pattern (the trap catalog).
+#   fk-/fachkarte: — cross-referenced from another already-reviewed Fachkarte (indirect: authority
+#                    inherited from elsewhere, not asserted at this cell).
+# Anything else scores 0 — the loader's circularity guard means this should not occur in practice
+# (every cell has ≥1 of the above OR a primary source), but the ranking degrades safely either way.
+_PROVENANCE_RANK = {
+    "eval:": 3,
+    "owner:": 2,
+    "trap-correct:": 1,
+    "trap:": 1,
+    "fk-": 0,
+    "fachkarte:": 0,
+}
+
+
+def _provenance_authority(cell: MatrixCell) -> int:
+    """The HIGHEST authority tier among a cell's provenance entries (a cell may carry several) — the
+    tie-break signal for query(). A cell with a named primary `source` (norm/datasheet) but no
+    _PROVENANCE_RANK prefix match still ranks 0, same as an unranked prefix — sources alone are not
+    yet classified by type (Datenblatt vs. Norm vs. Literatur); that finer distinction is future work,
+    not built here (P2-D scope is the tie-break mechanism, not a new source-type taxonomy)."""
+    best = 0
+    for p in cell.provenance:
+        pl = p.lower()
+        for prefix, rank in _PROVENANCE_RANK.items():
+            if pl.startswith(prefix) and rank > best:
+                best = rank
+    return best
 # token/tag matching primitives now live in core.text_match (shared with the L3 trap topic-gate).
 
 
@@ -174,8 +212,9 @@ class InProcessCompatibilityMatrix:
             if mat_hit and total >= _MIN_SCOPE_HITS:
                 scored.append((total, c))
         scored.sort(
-            key=lambda sc: (-sc[0], sc[1].id)
-        )  # strongest first, deterministic tie-break
+            key=lambda sc: (-sc[0], -_provenance_authority(sc[1]), sc[1].id)
+        )  # strongest scope match first (unchanged); ties broken by provenance authority (P2-D), THEN
+        # id — still fully deterministic, but the tie-break is no longer arbitrary alphabetical luck
         return tuple(
             GroundingFact(
                 text=c.begruendung,

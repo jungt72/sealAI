@@ -13,9 +13,12 @@ from sealai_v2.core.contracts import (
     _MATRIX_VERDICTS,
     CompatibilityMatrix,
     GroundingFact,
+    MatrixCell,
 )
 from sealai_v2.knowledge.matrix import (
+    CompatibilityMatrixCatalog,
     InProcessCompatibilityMatrix,
+    _provenance_authority,
     load_matrix,
 )
 from sealai_v2.security.tenant import TenantScopeError
@@ -23,6 +26,19 @@ from sealai_v2.security.tenant import TenantScopeError
 
 def _matrix() -> InProcessCompatibilityMatrix:
     return InProcessCompatibilityMatrix(load_matrix())
+
+
+def _cell(cid, *, provenance=("owner:x",), material="FKM", medium="Testmedium"):
+    return MatrixCell(
+        id=cid,
+        werkstoff=material,
+        medium=medium,
+        bedingung="",
+        bewertung="vertraeglich",
+        begruendung=f"{material} ist vertraeglich mit {medium}.",
+        scope={"material": [material], "medium": [medium], "bedingung": []},
+        provenance=provenance,
+    )
 
 
 # --- loader + no-fabrication circularity guard -------------------------------------------------
@@ -206,3 +222,69 @@ def test_matrix_grounding_facts_carry_provenance_and_no_selection():
         assert "Verträglichkeitsmatrix" in f.quelle and "reviewed" in f.quelle
         low = f.text.lower()
         assert not any(tok in low for tok in _STEUERLOGIK_TOKENS)
+
+
+# --- P2-D: provenance-authority tie-break (Quellenhierarchie/Konfliktlogik §4.3) ----------------
+
+
+@pytest.mark.parametrize(
+    "provenance,expected",
+    [
+        (("eval:CONFLICT-01",), 3),
+        (("owner:x",), 2),
+        (("trap-correct:TRAP-X",), 1),
+        (("trap:TRAP-X",), 1),
+        (("fk-EPDM-1",), 0),
+        (("fachkarte:FK-1",), 0),
+        ((), 0),
+        (("model:guess",), 0),  # no reviewed prefix — degrades safely, not a loader-valid cell anyway
+    ],
+)
+def test_provenance_authority_ranks_each_prefix(provenance, expected):
+    assert _provenance_authority(_cell("MX-T", provenance=provenance)) == expected
+
+
+def test_provenance_authority_takes_the_max_across_multiple_entries():
+    c = _cell("MX-T", provenance=("fk-EPDM-1", "owner:x"))
+    assert _provenance_authority(c) == 2  # owner: (2) beats fk- (0)
+
+
+def test_tie_break_prefers_higher_provenance_authority_at_equal_relevance():
+    # two cells, IDENTICAL scope (same score) — MX-A would win the OLD alphabetical tie-break, but
+    # MX-Z (eval: — an adjudicated conflict resolution) must win under the new provenance tie-break.
+    low = _cell("MX-A", provenance=("fk-OTHER",), material="FKM", medium="Testmedium")
+    high = _cell("MX-Z", provenance=("eval:CONFLICT-01",), material="FKM", medium="Testmedium")
+    cat = CompatibilityMatrixCatalog(cells=(low, high))
+    facts = InProcessCompatibilityMatrix(cat).query(
+        tenant_id="t1", query_text="FKM Testmedium"
+    )
+    assert [f.card_id for f in facts] == ["MX-Z", "MX-A"]
+
+
+def test_relevance_still_beats_provenance_authority():
+    # a cell with MORE scope hits always wins, regardless of provenance tier — the tie-break only
+    # decides between EQUALLY relevant cells, it never overrides the primary relevance ranking.
+    weaker_but_high_authority = _cell(
+        "MX-A", provenance=("eval:CONFLICT-01",), material="FKM", medium="Testmedium"
+    )
+    stronger_but_low_authority = MatrixCell(
+        id="MX-Z",
+        werkstoff="FKM",
+        medium="Testmedium",
+        bedingung="Hochdruck",
+        bewertung="bedingt",
+        begruendung="FKM ist bedingt vertraeglich mit Testmedium bei Hochdruck.",
+        scope={
+            "material": ["FKM"],
+            "medium": ["Testmedium"],
+            "bedingung": ["Hochdruck"],
+        },
+        provenance=("fk-OTHER",),
+    )
+    cat = CompatibilityMatrixCatalog(
+        cells=(weaker_but_high_authority, stronger_but_low_authority)
+    )
+    facts = InProcessCompatibilityMatrix(cat).query(
+        tenant_id="t1", query_text="FKM Testmedium Hochdruck"
+    )
+    assert facts[0].card_id == "MX-Z"  # 3 scope hits beats 2, despite lower authority

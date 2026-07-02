@@ -8,7 +8,7 @@ import asyncio
 import pytest
 
 from sealai_v2.knowledge.fachkarten import Claim, Fachkarte, FachkartenCatalog
-from sealai_v2.knowledge.retrieval import InProcessRetriever
+from sealai_v2.knowledge.retrieval import InProcessRetriever, _card_severity
 
 
 def _r() -> InProcessRetriever:
@@ -100,3 +100,98 @@ def test_quelle_labels_reviewed_vs_draft_distinctly():
     # draft citation says draft/vorläufig and is NOT the old hardcoded "reviewed"
     assert "draft" in draft_q and "vorläufig" in draft_q
     assert "reviewed" not in draft_q
+
+
+# --- P2-D: claim-severity tie-break (Quellenhierarchie/Konfliktlogik §4.3) -----------------------
+
+
+def _card(cid, kind, *, material="fkm", medium="testmedium"):
+    return Fachkarte(
+        id=cid,
+        scope={"material": [material], "medium": [medium]},
+        claims=(
+            Claim(
+                text=f"{material} claim of kind {kind}.",
+                review_state="reviewed",
+                provenance=("owner:x",),
+                kind=kind,
+            ),
+        ),
+        review_state="reviewed",
+        provenance=("owner:x",),
+    )
+
+
+@pytest.mark.parametrize(
+    "kind,expected",
+    [
+        ("safety_nogo", 4),
+        ("safety_caution", 3),
+        ("qualification_required", 3),
+        ("regulatory_status", 2),
+        ("system_dependent", 1),
+        ("definition", 1),
+        ("example_value", 1),
+        ("family_tendency", 0),
+    ],
+)
+def test_card_severity_ranks_each_kind(kind, expected):
+    assert _card_severity(_card("FK-T", kind)) == expected
+
+
+def test_card_severity_takes_the_max_across_multiple_claims():
+    card = Fachkarte(
+        id="FK-T",
+        scope={"material": ["fkm"]},
+        claims=(
+            Claim(
+                text="a", review_state="reviewed", provenance=("owner:x",),
+                kind="family_tendency",
+            ),
+            Claim(
+                text="b", review_state="draft", provenance=("cc:x",),
+                kind="safety_nogo",
+            ),
+        ),
+        review_state="reviewed",
+        provenance=("owner:x",),
+    )
+    assert _card_severity(card) == 4  # the draft safety_nogo still counts (see docstring)
+
+
+def test_tie_break_prefers_higher_claim_severity_at_equal_relevance():
+    # FK-A ("family_tendency") would win the OLD alphabetical tie-break, but FK-Z (safety_nogo) must
+    # win under the new severity tie-break — a safety-critical card must not lose a coin-flip-by-name.
+    low = _card("FK-A", "family_tendency")
+    high = _card("FK-Z", "safety_nogo")
+    catalog = FachkartenCatalog(cards=(low, high))
+    res = asyncio.run(
+        InProcessRetriever(catalog).retrieve("fkm testmedium", tenant_id="t", k=1)
+    )
+    # k=1 makes the tie decisive: only ONE card can make the cut, and it must be the safety-relevant one
+    assert {f.card_id for f in res.grounding_facts} == {"FK-Z"}
+
+
+def test_relevance_still_beats_claim_severity():
+    # a card with MORE scope hits always wins, regardless of claim severity — the tie-break only
+    # decides between EQUALLY relevant cards, it never overrides the primary relevance ranking.
+    weaker_but_severe = _card("FK-A", "safety_nogo")
+    stronger_but_mild = Fachkarte(
+        id="FK-Z",
+        scope={"material": ["fkm"], "medium": ["testmedium"], "property": ["hitzebestaendig"]},
+        claims=(
+            Claim(
+                text="fkm claim", review_state="reviewed", provenance=("owner:x",),
+                kind="family_tendency",
+            ),
+        ),
+        review_state="reviewed",
+        provenance=("owner:x",),
+    )
+    catalog = FachkartenCatalog(cards=(weaker_but_severe, stronger_but_mild))
+    res = asyncio.run(
+        InProcessRetriever(catalog).retrieve(
+            "fkm testmedium hitzebestaendig", tenant_id="t", k=1
+        )
+    )
+    assert {f.card_id for f in res.grounding_facts} == {"FK-Z"}  # 3 hits beats 2

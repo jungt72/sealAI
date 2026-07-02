@@ -121,7 +121,6 @@ class FachkarteDraft:
             "review_state": "draft",
             "provenance": prov,
             "version": "paperless-draft-v0",
-            "matrix_crosscheck": "unchecked",
             "titel": self.titel,
             "scope": {dim: list(self.scope.get(dim, ())) for dim in _SCOPE_DIMS},
             "claims": [

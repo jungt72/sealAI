@@ -88,7 +88,6 @@ class Fachkarte:
     review_state: str  # "reviewed" (≥1 reviewed claim) | "draft" (all draft)
     provenance: tuple[str, ...]  # card-level origin (names the source trap / owner)
     version: str = ""
-    matrix_crosscheck: str = "unchecked"  # "unchecked" | "agree" | "conflict"
     tags: tuple[str, ...] = ()
     xrefs: tuple[str, ...] = ()
 
@@ -170,7 +169,6 @@ def _card(raw: dict) -> Fachkarte:
         review_state=state,
         provenance=tuple(str(p) for p in raw["provenance"]),
         version=str(raw.get("version", "")),
-        matrix_crosscheck=str(raw.get("matrix_crosscheck", "unchecked")),
         tags=tuple(str(t) for t in raw.get("tags", [])),
         xrefs=tuple(str(x) for x in raw.get("xrefs", [])),
     )

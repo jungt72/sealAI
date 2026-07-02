@@ -20,6 +20,33 @@ from sealai_v2.knowledge.fachkarten import Fachkarte, FachkartenCatalog, load_fa
 # pulling every card. Deliberately simple; semantic recall is the deferred Qdrant adapter's job.
 _MIN_SCOPE_HITS = 2
 
+# P2-D (owner Leitbild-Audit 2026-07-02, Quellenhierarchie/Konfliktlogik §4.3): a claim-epistemics-
+# based tie-break — used ONLY when two cards tie on scope-hit score (previously an arbitrary
+# alphabetical card.id tie-break, see git history). A card carrying safety-relevant claims must not
+# lose a coin-flip-by-name against a card that only states a generic family tendency, right at the
+# top-k cutoff where a tie decides whether a card is retrieved AT ALL. Never overrides the PRIMARY
+# relevance ranking (scope-hit count) — a more specifically matching card always wins regardless of
+# severity; this only decides between EQUALLY relevant cards. Mirrors the kind taxonomy's own
+# severity ordering (fachkarten.py's docstring): hard safety exclusions first, generic tendencies last.
+_KIND_SEVERITY = {
+    "safety_nogo": 4,
+    "safety_caution": 3,
+    "qualification_required": 3,
+    "regulatory_status": 2,
+    "system_dependent": 1,
+    "definition": 1,
+    "example_value": 1,
+    "family_tendency": 0,
+}
+
+
+def _card_severity(card: Fachkarte) -> int:
+    """The HIGHEST claim severity on the card — checked across ALL claims (reviewed AND draft), not
+    just reviewed_claims(): a draft safety_nogo is still a real signal this card matters, even though
+    the draft channel is not yet authoritative for grounding (see the audit's dead-provisional-channel
+    finding) — the card-level retrieval decision (does it make the top-k at all) is upstream of that."""
+    return max((_KIND_SEVERITY.get(c.kind, 0) for c in card.claims), default=0)
+
 
 def _quelle(card: Fachkarte, *, reviewed: bool) -> str:
     # Branch on the CLAIM's review state (a card mixes reviewed + draft claims): a draft claim must
@@ -49,8 +76,10 @@ class InProcessRetriever:
             for c in self._catalog.cards
             if (s := _score(c, q)) >= _MIN_SCOPE_HITS
         ]
-        # strongest first; id tie-break keeps the order deterministic for the eval REPLAY
-        scored.sort(key=lambda sc: (-sc[0], sc[1].id))
+        # strongest scope match first (unchanged); ties broken by claim severity (P2-D), THEN id —
+        # still fully deterministic, but a safety-relevant card no longer loses an arbitrary
+        # alphabetical tie against a purely generic one right at the top-k cutoff.
+        scored.sort(key=lambda sc: (-sc[0], -_card_severity(sc[1]), sc[1].id))
         reviewed: list[GroundingFact] = []
         provisional: list[GroundingFact] = []
         for _s, card in scored[: max(0, k)]:
