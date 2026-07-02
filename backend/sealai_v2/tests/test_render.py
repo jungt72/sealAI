@@ -199,3 +199,36 @@ def test_renderer_is_io_free():
     r = ArtifactRenderer()
     assert r.calc_report(_snapshot()).body
     assert r.briefing(_snapshot()).body
+
+
+# --- P3: Wissensstand-Referenz carried through the render seam (metadata, not rendered text) ---
+
+
+def test_snapshot_from_result_carries_wissensstand():
+    res = PipelineResult(
+        question="q",
+        tenant_id="t",
+        flags=Flags(),
+        understanding=None,
+        answer=Answer(text="ans", model="m"),
+        wissensstand="fk:v1|mx:v2",
+    )
+    assert snapshot_from_result("q", res).wissensstand == "fk:v1|mx:v2"
+
+
+def test_calc_report_artifact_carries_wissensstand():
+    s = RenderSnapshot(question="q", answer_text="a", wissensstand="fk:v1")
+    assert ArtifactRenderer().calc_report(s).wissensstand == "fk:v1"
+
+
+def test_briefing_artifact_carries_wissensstand():
+    s = RenderSnapshot(question="q", answer_text="a", wissensstand="fk:v1|trap:v3")
+    assert ArtifactRenderer().briefing(s).wissensstand == "fk:v1|trap:v3"
+
+
+def test_wissensstand_defaults_to_empty_string_and_is_never_rendered_into_body():
+    s = _snapshot()  # no wissensstand passed
+    assert s.wissensstand == ""
+    art = ArtifactRenderer().briefing(s)
+    assert art.wissensstand == ""
+    assert "wissensstand" not in art.body.lower()  # metadata field, not template output

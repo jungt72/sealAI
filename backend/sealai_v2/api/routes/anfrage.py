@@ -87,6 +87,7 @@ async def anfrage(
             "title": art.title,
             "body": art.body,
             "provenance": list(art.provenance),
+            "wissensstand": art.wissensstand,
         },
         "hinweis": (
             "Ihre Anfrage mit dem technischen Briefing wurde an den Hersteller übermittelt. "

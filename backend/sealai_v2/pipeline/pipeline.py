@@ -44,8 +44,10 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
+from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
 from sealai_v2.knowledge.archetypes import load_archetypes
+from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
 from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
@@ -250,6 +252,11 @@ class Pipeline:
     # no extra binding + no extra prompt block -> byte-identical. Governs the derivation + prompt block.
     baseline_hardening_enabled: bool = False
     material_param_table_enabled: bool = False
+    # P3 (audit §4.3 Versionierung / L8): the knowledge-catalog state this pipeline instance was
+    # built against (core.wissensstand.compute_wissensstand) — computed ONCE in build_pipeline()
+    # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
+    # "" when no catalogs wired. Attached to every PipelineResult; never fed to L1/L3.
+    wissensstand: str = ""
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -691,6 +698,7 @@ class Pipeline:
             alternativen=alternativen_result,
             medium_intelligence=medium_intelligence,
             kandidaten_spec=kandidaten_spec,
+            wissensstand=self.wissensstand,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -930,6 +938,26 @@ def build_pipeline(
     # seed, canonical for this hop (a DB adapter is the deferred prod path, like the other stores).
     archetypes = load_archetypes() if settings.understand_enabled else None
 
+    # P3 Wissensstand-Referenz: computed ONCE here from the catalogs this pipeline instance wires,
+    # not per turn — the seed versions are load-time-fixed. Prefer the already-loaded in-memory
+    # catalog (InProcessRetriever/InProcessCompatibilityMatrix/InProcessVersagensmodiStore all expose
+    # ``.catalog``) to avoid a second parse; the Qdrant retriever holds no local FachkartenCatalog, so
+    # its fachkarten version is read once via ``load_fachkarten()`` — the git-tracked seed that the
+    # served collection was ingested from (not a live Qdrant-content hash; see core/wissensstand.py).
+    fachkarten_version = ""
+    if isinstance(retriever, InProcessRetriever):
+        fachkarten_version = retriever.catalog.version
+    elif retriever is not None:
+        fachkarten_version = load_fachkarten().version
+    wissensstand = compute_wissensstand(
+        fachkarten_version=fachkarten_version,
+        matrix_version=matrix.catalog.version if matrix is not None else "",
+        traps_version=catalog.version if catalog is not None else "",
+        versagensmodi_version=(
+            versagensmodi.catalog.version if versagensmodi is not None else ""
+        ),
+    )
+
     return Pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
@@ -953,4 +981,5 @@ def build_pipeline(
         response_contract_enabled=settings.response_contract_enabled,
         baseline_hardening_enabled=settings.baseline_hardening_enabled,
         material_param_table_enabled=settings.material_param_table_enabled,
+        wissensstand=wissensstand,
     )

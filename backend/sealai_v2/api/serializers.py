@@ -184,6 +184,9 @@ def chat_response(result: PipelineResult) -> dict:
         # (structurally capped, always "vorläufig"), or None when off / non-RWDR / no basis. Already a
         # plain dict from the pipeline adapter — passed through verbatim. Never from L1/L3.
         "kandidaten_spec": result.kandidaten_spec,
+        # P3 (audit §4.3 Versionierung): the knowledge-catalog state this answer was grounded
+        # against, or "" when no catalogs were wired. Passed through verbatim.
+        "wissensstand": result.wissensstand,
         # P1.5: surface L3's verdict (verified flag + action/parse_ok/hedged) so the client can
         # distinguish a confidently-verified answer from a hedge or a silently-unverified one.
         # Additive only — existing keys are untouched.

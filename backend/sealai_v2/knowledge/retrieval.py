@@ -65,6 +65,12 @@ class InProcessRetriever:
     def __init__(self, catalog: FachkartenCatalog | None = None) -> None:
         self._catalog = catalog or load_fachkarten()
 
+    @property
+    def catalog(self) -> FachkartenCatalog:
+        """The backing catalog — exposed for its ``.version`` (P3 Wissensstand-Referenz), mirroring
+        the accessor already on ``InProcessCompatibilityMatrix``/``InProcessVersagensmodiStore``."""
+        return self._catalog
+
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
     ) -> RetrievalResult:
