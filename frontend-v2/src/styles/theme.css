@@ -29,9 +29,9 @@
 
   /* markdown body — Gemini-style typography (near-black heading hierarchy, light code/table grounds
      that read on both the #FCFCFC chat and the #FFFFFF cockpit) */
-  --md-ink: #2d2e31;          /* answer body text — neutral dark grey (Gemini on-surface; NO blue tint) */
-  --md-heading: #1a1a1c;      /* headings + bold — near-black neutral, the top of the hierarchy */
-  --md-muted: #5f6368;        /* list markers, h5/h6, captions — Gemini secondary grey */
+  --md-ink: #181a1f;          /* answer + user body text — high-contrast anthracite */
+  --md-heading: #101114;      /* headings + bold — near-black neutral, the top of the hierarchy */
+  --md-muted: #59606a;        /* list markers, h5/h6, captions — Gemini secondary grey */
   --md-code-bg: #f6f7f9;      /* code-block <pre> area */
   --md-code-head-bg: #eef0f3; /* code-block header bar (language + copy) */
   --md-code-inline-bg: #f0f1f4;

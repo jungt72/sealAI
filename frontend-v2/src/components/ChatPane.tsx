@@ -19,7 +19,7 @@ import type {
   ParamItem,
 } from "../contracts";
 import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
-import { useChatScroll } from "../lib/chatScroll";
+import { pinNewTurn, useChatScroll } from "../lib/chatScroll";
 import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
@@ -112,18 +112,22 @@ export function ChatPane({
   const [userClosed, setUserClosed] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { ref: logRef, onScroll, showJumpButton, scrollToBottom, scrollElementToTop } =
-    useChatScroll<HTMLDivElement>(msgs.length);
+  const { ref: logRef, onScroll, showJumpButton, scrollToBottom } = useChatScroll<HTMLDivElement>(
+    msgs.length,
+  );
   // No auto-follow (see chatScroll.ts). The ONE programmatic scroll: right after the user submits,
-  // their new message goes to the top of the log - full reading room below for the answer, and the
-  // user reads/scrolls at their own pace from there on (the jump button covers the rest).
+  // their new message is pinned ~1/3 down the log (ChatGPT/Claude/Gemini pattern) — the answer fills
+  // in below it without moving anything further; the user reads/scrolls at their own pace from there
+  // on (the jump button covers the rest). `spacerRef` is the trailing element `pinNewTurn` grows so
+  // that position is reachable even before the (short, not-yet-arrived) answer exists.
   const [scrollToTopIndex, setScrollToTopIndex] = useState<number | null>(null);
   const scrollTargetRef = useRef<HTMLDivElement | null>(null);
+  const spacerRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     if (scrollToTopIndex === null) return;
-    scrollElementToTop(scrollTargetRef.current);
+    pinNewTurn(logRef.current, scrollTargetRef.current, spacerRef.current);
     setScrollToTopIndex(null);
-  }, [scrollToTopIndex, scrollElementToTop]);
+  }, [scrollToTopIndex]);
   // resizable chat|cockpit divider (split, ≥1024px): the chosen width drives the `--cockpit-w` track;
   // null = CSS default (~50/50). Persisted in localStorage, restored on mount, reset on double-click.
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -575,6 +579,7 @@ export function ChatPane({
                   </div>
                 )}
                 <BriefingPane briefing={briefing} />
+                <div ref={spacerRef} className="chat-log-spacer" aria-hidden="true" />
               </div>
               {showJumpButton && (
                 <button
