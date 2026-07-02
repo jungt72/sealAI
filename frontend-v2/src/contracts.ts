@@ -219,6 +219,26 @@ export interface AdminContribution {
   status: string;
   review_note: string;
 }
+// Modus E (Gegencheck): a DISQUALIFY-ONLY verdict (owner doctrine E4-1) — `disqualified`/`basis` are
+// always present when the object exists at all; `reason`/`source` only accompany a disqualification,
+// `condition`/`source` only accompany `basis === "matrix_conditional"`. NEVER render a badge/claim for
+// any other `basis` value — the absence of a documented incompatibility is not itself a suitability
+// claim (see backend core/gegencheck.py).
+export interface Gegencheck {
+  disqualified: boolean;
+  basis?: "matrix_compatible" | "matrix_conditional" | "no_matrix_data" | "no_medium";
+  reason?: string; // grounded matrix cell text, verbatim — only when disqualified
+  condition?: string; // grounded matrix cell text, verbatim — only when basis === "matrix_conditional"
+  source?: string;
+}
+// L3 trust status (P1.5) — lets the client distinguish a confidently-verified answer from a hedge or
+// a silently-unverified one. See backend api/serializers.py::_verification() for the exact semantics.
+export interface Verification {
+  action: "pass" | "flag" | "corrected" | "blocked_hedge" | null;
+  parse_ok: boolean | null;
+  hedged: boolean;
+  ran: boolean;
+}
 export interface ChatResponse {
   answer: string;
   model: string;
@@ -230,6 +250,9 @@ export interface ChatResponse {
   medium_intelligence?: MediumIntelligence | null; // Phase 2: the MEDIUM panel data (vorläufig)
   kandidaten_spec?: KandidatenSpec | null; // Produktspec v3.1: the PRODUKT-KANDIDAT panel (vorläufig)
   alternativen?: Alternativen | null; // Modus F: the HERSTELLER-AUSWAHL panel data
+  gegencheck?: Gegencheck | null; // Modus E: disqualify-only verdict, or null (no Gegencheck situation)
+  verified?: boolean; // P1.5: the conservative, honest L3 trust signal
+  verification?: Verification; // P1.5: the raw signals behind `verified` (for a precise badge)
 }
 export interface RememberedFact {
   feld: string;
