@@ -72,6 +72,9 @@ def test_anfrage_captures_lead_and_returns_briefing():
     assert body["status"] == "captured"
     assert body["partner"]["firmenname"] == "ACME Dichtungen GmbH"
     assert body["briefing"]["title"] and body["briefing"]["body"]
+    # P3: the briefing carries its knowledge-catalog state (empty here — this pipeline is
+    # hand-built, not build_pipeline()'d, so no catalog versions were wired).
+    assert body["briefing"]["wissensstand"] == ""
     leads = store.list_for_partner("acme")
     assert len(leads) == 1
     assert leads[0].lead_email == "leads@acme.example"  # routed internally

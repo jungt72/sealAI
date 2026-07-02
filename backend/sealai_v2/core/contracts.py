@@ -363,6 +363,10 @@ class RenderSnapshot:
     positions: tuple[
         dict, ...
     ] = ()  # RFQ headroom (deferred); ≥0, never assume exactly one
+    # P3 (audit §4.3 Versionierung / L8): the knowledge-catalog state this turn was grounded
+    # against (core.wissensstand.compute_wissensstand) — "" when unset (e.g. hand-built snapshots
+    # in tests). Render-only; never fed back into L1/L3.
+    wissensstand: str = ""
 
 
 @dataclass(frozen=True)
@@ -374,6 +378,9 @@ class Artifact:
     title: str
     body: str
     provenance: tuple[str, ...] = ()
+    # P3: the knowledge-catalog state (see RenderSnapshot.wissensstand) — closes audit L8's
+    # "Artifact ohne Version-/Hash-Feld" finding. A metadata field, not rendered into ``body``.
+    wissensstand: str = ""
 
 
 class Renderer(Protocol):
@@ -644,6 +651,12 @@ class PipelineResult:
     # render dict, or None when off / non-RWDR / no basis. Structurally capped (G1/G2/G3, always
     # "vorläufig"); a render/serializer surface only — NEVER injected into L1/L3 (prompt byte-identical).
     kandidaten_spec: dict | None = None
+    # P3 (audit §4.3 Versionierung, "keine Empfehlung ist auf den Wissensstand rueckfuehrbar"): the
+    # knowledge-catalog state this turn was answered against (core.wissensstand.compute_wissensstand,
+    # concatenated fachkarten/matrix/traps/versagensmodi seed versions) — "" when the pipeline wired
+    # no catalogs. Always attached (not flag-gated: pure metadata, never fed to L1/L3, so exposing it
+    # cannot perturb the eval/golden).
+    wissensstand: str = ""
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

@@ -15,6 +15,7 @@ def test_briefing_renders_artifact():
     assert r.status_code == 200
     body = r.json()
     assert body["kind"] == "briefing" and isinstance(body["body"], str) and body["body"]
+    assert isinstance(body["wissensstand"], str)  # P3: metadata field always present
 
 
 def test_briefing_requires_auth():

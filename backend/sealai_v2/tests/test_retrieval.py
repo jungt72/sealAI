@@ -195,3 +195,13 @@ def test_relevance_still_beats_claim_severity():
         )
     )
     assert {f.card_id for f in res.grounding_facts} == {"FK-Z"}  # 3 hits beats 2
+
+
+# --- P3: catalog accessor (Wissensstand-Referenz) ------------------------------------------------
+
+
+def test_catalog_property_exposes_the_backing_catalog():
+    # mirrors the accessor already on InProcessCompatibilityMatrix/InProcessVersagensmodiStore
+    catalog = FachkartenCatalog(cards=(_card("FK-T", "family_tendency"),), version="test_v1")
+    assert InProcessRetriever(catalog).catalog is catalog
+    assert InProcessRetriever(catalog).catalog.version == "test_v1"

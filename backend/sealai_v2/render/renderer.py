@@ -65,6 +65,7 @@ class ArtifactRenderer:
             title="Berechnete Werte",
             body=body,
             provenance=_provenance(snapshot),
+            wissensstand=snapshot.wissensstand,
         )
 
     def briefing(self, snapshot: RenderSnapshot) -> Artifact:
@@ -83,6 +84,7 @@ class ArtifactRenderer:
             title="Technische Orientierung (Screening)",
             body=body,
             provenance=_provenance(snapshot),
+            wissensstand=snapshot.wissensstand,
         )
 
 
@@ -96,4 +98,5 @@ def snapshot_from_result(question: str, result: PipelineResult) -> RenderSnapsho
         calc_notes=result.calc_notes,
         grounding_facts=result.grounding_facts,
         grounded=result.grounded,
+        wissensstand=result.wissensstand,
     )

@@ -45,4 +45,5 @@ async def briefing(
         "title": art.title,
         "body": art.body,
         "provenance": list(art.provenance),
+        "wissensstand": art.wissensstand,
     }
