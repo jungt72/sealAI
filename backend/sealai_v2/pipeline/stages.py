@@ -352,7 +352,9 @@ def decode(question: str) -> dict | None:
     return {**spec, "equivalenz_grenze": EQUIVALENZ_GRENZE}
 
 
-def alternativen(partner_registry, question: str, *, tenant_id: str) -> dict | None:
+def alternativen(
+    partner_registry, question: str, gegencheck_verdict: dict | None, *, tenant_id: str
+) -> dict | None:
     """Stage - Alternativen/Hersteller (Modus F, Dim. 6, owner business model): from the PARTNER POOL,
     the best-FIT manufacturers for the seal spec, ranked BY CAPABILITY ONLY (Produkt-Konzept §3.9 —
     payment gates pool MEMBERSHIP, NEVER ranking; ``rank_partners`` never reads ``plan``). Transparent:
@@ -360,9 +362,31 @@ def alternativen(partner_registry, question: str, *, tenant_id: str) -> dict | N
     alternatives/manufacturer request (keyword gate); otherwise None. No partner matches the spec
     (incl. the empty registry — eval/CI) -> an honest "no partner listed" marker with ZERO firm names
     (P1.7 — the backend never invents a manufacturer). No LLM, no mutation. ``partner_registry`` is the
-    in-process (CI) or Postgres (dashboard-editable prod) ``PartnerRegistry``."""
+    in-process (CI) or Postgres (dashboard-editable prod) ``PartnerRegistry``.
+
+    L6 "Matching folgt dem Verdikt, nie umgekehrt" (owner Leitbild-Audit 2026-07-02, Relay-Increment
+    P0-C): the keyword gate alone used to fire ranking regardless of whether ANY situational
+    assessment existed for the case — a first-turn "welcher Hersteller kann NBR-RWDR?" ranked
+    partners before any Gegencheck had run. Now, once the keyword gate fires, a MISSING
+    ``gegencheck_verdict`` (``stages.gegencheck`` returns ``None`` until the case carries BOTH a
+    stated seal material AND a stated medium — the Matrix-Trichotomie precondition) yields an
+    honest "assessment needed first" stance instead of a ranking: ZERO firm names (same P1.7
+    discipline as the empty-pool case), steering the user toward what is missing. Once a verdict
+    exists — of ANY kind: compatible, bedingt, disqualified, even a matrix-miss — ranking proceeds
+    exactly as before; what matters is that an assessment was RUN, not its outcome."""
     if partner_registry is None or not _ALT_RE.search(question):
         return None
+    if gegencheck_verdict is None:
+        return {
+            "grounded_data": False,
+            "partner": True,  # the directory is a partner directory — stated transparently
+            "neutralitaet": "Auswahl nach fachlicher Eignung (Werkstoff, Bauform), unabhängig von der Bezahlung.",
+            "hinweis": (
+                "Für eine Herstellerempfehlung fehlt zunächst eine fachliche Bewertung der Anwendung. "
+                "Nenne Werkstoff und Medium — sobald diese Situationsbewertung vorliegt, zeige ich "
+                "passende Partner."
+            ),
+        }
     spec = decode_designation(question) or {}
     material = spec.get("material")
     bauform = spec.get("type")

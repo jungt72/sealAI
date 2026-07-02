@@ -334,9 +334,13 @@ class Pipeline:
         # Result-side structured parse + the §9.2 equivalence boundary. Pure + sync, no I/O.
         decode_result = stages.decode(question)
         # Modus F: capable manufacturers BY CAPABILITY (neutral). None unless an alternatives/
-        # manufacturer request; grounded_data=False with the owner-pending empty seed.
+        # manufacturer request; grounded_data=False with the owner-pending empty seed, or (L6,
+        # P0-C) grounded_data=False "assessment needed first" when no Gegencheck verdict exists yet.
         alternativen_result = stages.alternativen(
-            self.partner_registry, question, tenant_id=scope.tenant_id
+            self.partner_registry,
+            question,
+            gegencheck_verdict,
+            tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
         # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +

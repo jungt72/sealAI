@@ -32,8 +32,12 @@ def test_alternativen_substrate_present():
 
     assert hasattr(stages, "alternativen")
     assert "alternativen" in PipelineResult.__dataclass_fields__
-    # empty partner registry → honest no-grounded-data, neutral
+    # empty partner registry → honest no-grounded-data, neutral (verdict present so we're
+    # exercising the empty-pool path, not the L6 verdict precondition — see test_alternativen.py)
     v = stages.alternativen(
-        InProcessPartnerRegistry(), "Wer macht FKM-RWDR? Alternativen?", tenant_id="t1"
+        InProcessPartnerRegistry(),
+        "Wer macht FKM-RWDR? Alternativen?",
+        {"disqualified": False, "basis": "matrix_compatible"},
+        tenant_id="t1",
     )
     assert v is not None and v["grounded_data"] is False
