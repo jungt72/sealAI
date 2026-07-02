@@ -24,6 +24,7 @@ from sealai_v2.core.contracts import (
     LlmClient,
     MemoryView,
     ModelConfig,
+    RememberedFact,
     RetrievalResult,
     Retriever,
     SessionContext,
@@ -32,6 +33,7 @@ from sealai_v2.core.contracts import (
 from sealai_v2.core.gegencheck import evaluate_gegencheck
 from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
 from sealai_v2.core.medium_extract import extract_medium_facts
+from sealai_v2.core.seal_spec_extract import extract_seal_spec
 from sealai_v2.knowledge.hersteller_partner import rank_partners
 import re as _re
 
@@ -315,6 +317,65 @@ def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:
     return evaluate_gegencheck(
         material, " ".join(matched), tenant=tenant_id, catalog=catalog
     )
+
+
+# L6 (Relay-Increment P0-C, follow-up): a Gegencheck verdict established in an EARLIER turn must
+# still gate `alternativen` in a LATER turn that doesn't restate material/medium — `gegencheck()`
+# above is deliberately this-turn-only (Case.from_case_state extracts seal_spec/medium fresh from
+# the live question, never from persisted facts — Modus E narration stays exactly as before,
+# UNTOUCHED by this addition). These two helpers recover a canonical material/medium from the
+# PERSISTED, session-local case-state instead, so the alternativen precondition can be checked
+# against the conversation's accumulated case-state — not the current message's text alone.
+
+
+def _case_state_material(case_state: tuple["RememberedFact", ...]) -> str | None:
+    """Recover a canonical material from persisted case-state. Checks the FORM channel's already-
+    canonical ``werkstoffvorgabe`` field first (situations.ts), then the CHAT distiller's free-text
+    ``werkstoff`` field (distill.jinja) — but never trusts the distilled string directly (the
+    distiller is an LLM, not a canonical vocabulary): it is re-run through the SAME deterministic
+    ``extract_seal_spec`` the live turn uses, so only a real matrix-vocabulary material counts, never
+    an arbitrary LLM-distilled phrase. Most recent fact wins (a corrected/updated statement)."""
+    for feld_name in ("werkstoffvorgabe", "werkstoff"):
+        for f in reversed(case_state):
+            if f.feld == feld_name and f.wert:
+                spec = extract_seal_spec(f.wert)
+                if spec and spec.get("material"):
+                    return spec["material"]
+    return None
+
+
+def _case_state_medium(case_state: tuple["RememberedFact", ...]) -> list[str]:
+    """Recover ALL canonical media stated across the persisted case-state. ``feld="medium"`` is
+    written deterministically by ``extract_medium_facts`` (chat-inline, every turn) — already a
+    canonical §4-vocabulary tag, so no re-extraction is needed here (unlike material). Collects
+    every DISTINCT value across turns (mirrors the disqualify-lean multi-medium fold in
+    ``gegencheck`` — a co-mentioned disqualifying medium from an earlier turn must not be dropped)."""
+    media: list[str] = []
+    for f in case_state:
+        if f.feld == "medium" and f.wert and f.wert not in media:
+            media.append(f.wert)
+    return media
+
+
+def gegencheck_from_case_state(
+    matrix, case_state: tuple["RememberedFact", ...], *, tenant_id: str
+) -> dict | None:
+    """L6 fallback for `alternativen`'s verdict precondition: re-derive a Gegencheck verdict from
+    the session's PERSISTED case-state (material + medium accumulated across turns), independent
+    of whether the LIVE turn's text restates them. `gegencheck()` itself is intentionally left
+    this-turn-only (Modus E narration); this is a SEPARATE, additive path used only to decide
+    whether a situational assessment has already happened for the conversation. No I/O beyond the
+    injected matrix, no LLM, no mutation — pure, same discipline as `gegencheck()`."""
+    if matrix is None:
+        return None
+    material = _case_state_material(case_state)
+    media = _case_state_medium(case_state)
+    if not material or not media:
+        return None
+    catalog = getattr(matrix, "catalog", None)
+    if catalog is None:
+        return None
+    return evaluate_gegencheck(material, " ".join(media), tenant=tenant_id, catalog=catalog)
 
 
 def diagnose(versagensmodi, question: str, *, tenant_id: str) -> dict | None:

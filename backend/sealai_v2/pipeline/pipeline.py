@@ -336,10 +336,18 @@ class Pipeline:
         # Modus F: capable manufacturers BY CAPABILITY (neutral). None unless an alternatives/
         # manufacturer request; grounded_data=False with the owner-pending empty seed, or (L6,
         # P0-C) grounded_data=False "assessment needed first" when no Gegencheck verdict exists yet.
+        # The verdict precondition honours a THIS-turn verdict first; failing that, it falls back
+        # to a verdict re-derived from the session's PERSISTED case-state (stages.
+        # gegencheck_from_case_state) — so an assessment made in an EARLIER turn still gates a
+        # manufacturer question in a LATER turn that doesn't restate material/medium (Akzeptanz-
+        # kriterium 2/4). gegencheck_verdict itself (Modus E narration) is UNCHANGED by this.
+        alternativen_verdict = gegencheck_verdict or stages.gegencheck_from_case_state(
+            self.matrix, mem.case_state, tenant_id=scope.tenant_id
+        )
         alternativen_result = stages.alternativen(
             self.partner_registry,
             question,
-            gegencheck_verdict,
+            alternativen_verdict,
             tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
