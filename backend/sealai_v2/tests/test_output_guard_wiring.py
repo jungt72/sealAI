@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 
-from sealai_v2.core.contracts import ModelConfig
+from sealai_v2.core.contracts import GroundingFact, ModelConfig, RetrievalResult
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.output_guard import (
     GuardResult,
@@ -96,3 +96,100 @@ def test_correction_note_empty_on_pass_and_names_violations_on_block():
         and "freigegeben" in note
         and note.startswith("OUTPUT-GUARD-KORREKTUR")
     )
+
+
+# ── P0-B: response_contract_general_guard_enabled — the guard on NON-Gegencheck turns ──────────────
+
+_KQ = "Was ist FKM und wo wird es eingesetzt?"
+_FKM_FACT = GroundingFact(
+    text="FKM ist ein fluoriertes Elastomer mit hoher Temperatur- und Ölbeständigkeit.",
+    quelle="Fachkarte FKM",
+    card_id="CARD-FKM-1",
+    kind="card",
+)
+_KNOWLEDGE_CLEAN = "FKM ist ein fluoriertes Elastomer mit hoher Temperatur- und Ölbeständigkeit."
+_KNOWLEDGE_LEAKY = "FKM ist bis 400 °C dauerhaft einsetzbar und für alle Medien freigegeben."
+
+
+class _FixedRetriever:
+    """Minimal Retriever test double — returns the SAME GroundingFact for any query (no matrix_facts,
+    no provisional): a stand-in for a real L2 hit on a pure knowledge question (no Gegencheck verdict
+    is ever produced for a question with no stated medium, regardless of grounding)."""
+
+    async def retrieve(self, query, *, tenant_id, k=5):
+        return RetrievalResult(grounding_facts=(_FKM_FACT,))
+
+
+def _knowledge_pipeline(client, *, rc: bool = True, general_guard: bool = False) -> Pipeline:
+    return Pipeline(
+        generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
+        client=client,
+        helper_model=ModelConfig("fake-helper"),
+        understand_enabled=False,
+        retriever=_FixedRetriever(),
+        matrix=InProcessCompatibilityMatrix(),  # present, but this question states no medium -> gegencheck stays None
+        response_contract_enabled=rc,
+        response_contract_general_guard_enabled=general_guard,
+    )
+
+
+def _run_knowledge(p):
+    return asyncio.run(p.run(_KQ, tenant=TenantContext("t1")))
+
+
+def test_general_guard_off_by_default_is_noop_on_a_grounded_knowledge_turn():
+    # regression lock: response_contract_enabled=True ALONE (the new flag defaulted/omitted) must
+    # behave EXACTLY as before this change — a knowledge turn with real grounding ships unguarded.
+    client = ScriptedFakeLlmClient([_KNOWLEDGE_LEAKY])
+    res = _run_knowledge(_knowledge_pipeline(client))  # general_guard defaults to False
+    assert res.gegencheck is None  # no medium stated -> no verdict, confirms this is the non-Gegencheck path
+    assert res.contract is None  # the renderer-mode contract never builds without a verdict
+    assert res.guard is None  # the NEW guard path did not fire either — flag is off
+    assert len(client.calls) == 1  # no regenerate
+
+
+def test_general_guard_on_passes_a_clean_knowledge_answer():
+    client = ScriptedFakeLlmClient([_KNOWLEDGE_CLEAN])
+    res = _run_knowledge(_knowledge_pipeline(client, general_guard=True))
+    assert res.guard is not None and res.guard["action"] == "PASS"
+    assert len(client.calls) == 1
+
+
+def test_general_guard_on_blocks_invented_number_and_regenerates_without_renderer_mode():
+    client = ScriptedFakeLlmClient([_KNOWLEDGE_LEAKY, _KNOWLEDGE_CLEAN])
+    res = _run_knowledge(_knowledge_pipeline(client, general_guard=True))
+    assert len(client.calls) == 2  # generate + exactly one regenerate
+    assert res.answer.text == _KNOWLEDGE_CLEAN
+    assert res.guard is not None and res.guard["action"] == "PASS"
+    # the regenerate call's rendered system prompt must NOT contain the Renderer-Modus takeover —
+    # contract stayed None (only guard_contract, guard-only, was ever built) — this is the whole
+    # point of P0-B's design: the safety net widens, the teaching-depth prompt does not narrow.
+    regenerate_system_prompt = client.calls[1]["system"]
+    assert "Renderer-Modus" not in regenerate_system_prompt
+    assert "Du bist Renderer, nicht Autor" not in regenerate_system_prompt
+    # the correction note DID reach L1 independent of contract (own prompt block, not nested in it)
+    assert "OUTPUT-GUARD-KORREKTUR" in regenerate_system_prompt
+
+
+def test_general_guard_does_not_change_the_existing_gegencheck_renderer_path():
+    # both new-flag states, on a REAL Gegencheck turn: must reproduce test_guard_regenerates_once_on_block
+    # exactly — the general-guard flag only ever ADDS a second path for turns with no verdict.
+    for general_guard in (False, True):
+        client = ScriptedFakeLlmClient([_LEAKY, _CLEAN])
+        res = asyncio.run(
+            Pipeline(
+                generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
+                client=client,
+                helper_model=ModelConfig("fake-helper"),
+                understand_enabled=False,
+                retriever=None,
+                matrix=InProcessCompatibilityMatrix(),
+                response_contract_enabled=True,
+                response_contract_general_guard_enabled=general_guard,
+            ).run(_Q, tenant=TenantContext("t1"))
+        )
+        assert len(client.calls) == 2
+        assert res.answer.text == _CLEAN
+        assert res.guard is not None and res.guard["action"] == "PASS"
+        # the renderer-mode contract (Gegencheck-shaped) is unaffected either way
+        assert res.contract is not None and res.contract["status"] == "COVERED_RECOMMENDATION"

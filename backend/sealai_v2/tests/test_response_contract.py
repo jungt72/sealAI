@@ -15,9 +15,11 @@ from sealai_v2.core.coverage import coverage_for
 from sealai_v2.core.response_contract import (
     STATUS_COVERED_CAUTION,
     STATUS_COVERED_RECOMMENDATION,
+    STATUS_GENERAL,
     STATUS_NEEDS_CLARIFICATION,
     STATUS_OUT_OF_SCOPE,
     build_contract,
+    build_guard_contract,
 )
 
 # ── real gegencheck verdict shapes (core/gegencheck.py) ──────────────────────────────────────────
@@ -198,3 +200,70 @@ def test_to_dict_round_trips_the_surface():
     assert d["status"] == STATUS_COVERED_RECOMMENDATION
     assert d["allowed_claims"][0]["id"] == "MX-FKM-DAMPF"
     assert isinstance(d["forbidden_phrases"], list)
+
+
+# ── build_guard_contract (P0-B: the guard-only path for non-Gegencheck turns) ───────────────────────
+
+
+def test_guard_contract_none_with_no_evidence_at_all():
+    assert build_guard_contract(grounding_facts=(), calc=None) is None
+
+
+def test_guard_contract_none_with_calc_but_nothing_computed():
+    # not_computed-only (fail-closed kern misses) is still "nothing to check an answer against"
+    calc = CalcResult(not_computed=(NotComputed("pv_wert", "nicht berechenbar"),))
+    assert build_guard_contract(grounding_facts=(), calc=calc) is None
+
+
+def test_guard_contract_built_from_grounding_alone():
+    c = build_guard_contract(grounding_facts=(_card_fact(),), calc=None)
+    assert c is not None
+    assert c.status == STATUS_GENERAL
+    assert c.allowed_claims[0].id == "CARD-EPDM-1"
+    assert "EPDM" in c.allowed_materials
+
+
+def test_guard_contract_required_clauses_always_empty():
+    # L1 was never instructed (no Renderer-Modus) to include any required clause on this path —
+    # asserting their presence would be a guaranteed, meaningless BLOCK. See the docstring.
+    c = build_guard_contract(grounding_facts=(_card_fact(),), calc=None)
+    assert c.required_clauses == ()
+
+
+def test_guard_contract_allowed_values_from_calc_computed():
+    calc = CalcResult(
+        computed=(
+            ComputedValue(
+                calc_id="pv_wert",
+                name="pv",
+                value=3.2,
+                unit="N/(mm·s)",
+                stage=1,
+                derivation_depth=1,
+            ),
+        )
+    )
+    c = build_guard_contract(grounding_facts=(), calc=calc)
+    assert c is not None  # a computed value alone is evidence, even with zero grounding_facts
+    assert c.allowed_values == (
+        {"name": "pv", "value": 3.2, "unit": "N/(mm·s)", "calc_id": "pv_wert"},
+    )
+
+
+def test_guard_contract_forbidden_always_present():
+    # the universal fabricated-authority markers apply on EVERY turn type, guard-only path included
+    c = build_guard_contract(grounding_facts=(_card_fact(),), calc=None)
+    assert "belegter befund" in c.forbidden_phrases
+    assert "freigegeben" in c.forbidden_phrases and "garantiert" in c.forbidden_phrases
+
+
+def test_guard_contract_never_reaches_the_gegencheck_status_values():
+    # sentinel status must be distinct from every renderer-mode status — nothing downstream should
+    # ever confuse a guard-only contract for a Gegencheck-shaped one by status alone
+    c = build_guard_contract(grounding_facts=(_card_fact(),), calc=None)
+    assert c.status not in (
+        STATUS_OUT_OF_SCOPE,
+        STATUS_NEEDS_CLARIFICATION,
+        STATUS_COVERED_CAUTION,
+        STATUS_COVERED_RECOMMENDATION,
+    )

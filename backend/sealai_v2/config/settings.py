@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     # result. INERT — the L1 prompt is NOT changed (byte-identical); the renderer that consumes the
     # contract is the next, also-gated phase. Flip via SEALAI_V2_RESPONSE_CONTRACT_ENABLED.
     response_contract_enabled: bool = False
+    # P0-B (owner Leitbild-Audit 2026-07-02): widens the output_guard (forbidden phrase / invented
+    # number / invented material) to turns WITHOUT a gegencheck_verdict — requires
+    # response_contract_enabled=True. Never touches the L1 prompt/Renderer-Modus (guard-only contract,
+    # see pipeline.py + response_contract.build_guard_contract docstrings for why that separation
+    # matters — forcing Renderer-Modus onto a knowledge question would gut its teaching depth). OFF by
+    # default → byte-identical (no guard_contract is built at all); flip via
+    # SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED after a targeted eval on knowledge-turn
+    # overblock rate (same measured-before-activation discipline as every other flag here).
+    response_contract_general_guard_enabled: bool = False
     # INC-BASELINE-HARDENING (V2.2): two Free-Narrator baseline fixes the narrator-contract-replay
     # surfaced (NOT touched by the narrator contract — these are non-Gegencheck turns): (1) derive the
     # RWDR shaft Ø (Welle = d1) from a bare designation so the Umfangsgeschwindigkeit kern fires, plus

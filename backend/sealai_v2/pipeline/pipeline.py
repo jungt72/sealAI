@@ -247,6 +247,16 @@ class Pipeline:
     # INC-NARRATOR-CONTRACT Phase 1: assemble + attach the deterministic answer-contract (INERT — not
     # fed to L1 in Phase 1, so byte-identical). Governs computation/exposure only.
     response_contract_enabled: bool = False
+    # P0-B (owner Leitbild-Audit 2026-07-02): widen the output_guard's safety net (forbidden phrase /
+    # invented number / invented material) to turns WITHOUT a gegencheck_verdict — general knowledge,
+    # fallarbeit before material+medium are both stated. Requires response_contract_enabled=True (this
+    # flag only widens WHICH turns get a guard, not whether the guard machinery exists at all). The
+    # guard-only contract (response_contract.build_guard_contract) is NEVER passed to
+    # generator.generate(contract=...) — it never triggers the L1 Renderer-Modus prompt takeover, only
+    # output_guard.evaluate_render(check_sentence_coverage=False). OFF -> no guard_contract is built ->
+    # byte-identical to today (the existing Gegencheck-only guard path is completely unaffected either
+    # way — this flag only ever ADDS a second, narrower guard path, never changes the first).
+    response_contract_general_guard_enabled: bool = False
     # INC-BASELINE-HARDENING (V2.2): flag-gated Free-Narrator baseline fixes (RWDR shaft-Ø derivation
     # for the Umfangsgeschwindigkeit kern + the speed-trap / unclear-medium prompt discipline). OFF ->
     # no extra binding + no extra prompt block -> byte-identical. Governs the derivation + prompt block.
@@ -488,6 +498,21 @@ class Pipeline:
                     calc=calc,
                 )
                 contract = _rc.to_dict() if _rc is not None else None
+            # P0-B: on turns where the Gegencheck-shaped contract above is None (no verdict — general
+            # knowledge / fallarbeit without material+medium yet), build a NARROWER guard-only contract
+            # from the SAME grounding — never passed to generate() (see build_guard_contract's
+            # docstring for why), only to the output_guard call below. OFF -> guard_contract stays
+            # None -> the guard-wiring block's effective contract is unchanged -> byte-identical.
+            guard_contract = None
+            if (
+                self.response_contract_enabled
+                and self.response_contract_general_guard_enabled
+                and contract is None
+            ):
+                from sealai_v2.core.response_contract import build_guard_contract
+
+                _gc = build_guard_contract(grounding_facts=l1_grounding, calc=calc)
+                guard_contract = _gc.to_dict() if _gc is not None else None
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
             # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
             # None when OFF (byte-identical).
@@ -524,20 +549,30 @@ class Pipeline:
             # Fail-closed coverage — on BLOCK, regenerate ONCE with a deterministic correction note, then
             # re-score; the verdict is attached + logged (GOVERNANCE). Flag-gated + only with a contract →
             # OFF / no-contract = no-op = byte-identical. The (re)generated answer still goes through L3.
+            # P0-B: the guard now ALSO runs against `guard_contract` (the narrower, non-renderer contract
+            # built above) when there was no gegencheck-shaped `contract`. `check_sentence_coverage` is
+            # False for that path (see build_guard_contract's docstring — L1 was never instructed to
+            # stay inside the contract, so the strict "every technical sentence maps to a claim" check
+            # would be nonsensical there). Regeneration passes `contract=contract` — the ORIGINAL
+            # (renderer-mode-or-None) variable, NEVER `guard_contract` — so a guard-only turn's
+            # regeneration still never enters Renderer-Modus, only receives the correction_note.
             guard = None
-            if self.response_contract_enabled and contract is not None:
+            _effective_contract = contract if contract is not None else guard_contract
+            if self.response_contract_enabled and _effective_contract is not None:
                 from sealai_v2.core.output_guard import (
                     correction_note as _guard_note,
                     evaluate_render as _guard_eval,
                     known_inputs as _guard_known,
                 )
 
+                _check_sentence_coverage = contract is not None
                 _kv, _km = _guard_known(question)
                 _gr = _guard_eval(
                     answer_text=answer.text,
-                    contract=contract,
+                    contract=_effective_contract,
                     known_values=_kv,
                     known_materials=_km,
+                    check_sentence_coverage=_check_sentence_coverage,
                 )
                 if _gr.action == "BLOCK":
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
@@ -558,9 +593,10 @@ class Pipeline:
                         )
                     _gr2 = _guard_eval(
                         answer_text=answer.text,
-                        contract=contract,
+                        contract=_effective_contract,
                         known_values=_kv,
                         known_materials=_km,
+                        check_sentence_coverage=_check_sentence_coverage,
                     )
                     _log.info(
                         "GOVERNANCE output_guard: regenerated (first=%s -> after=%s); first_violations=%s",
@@ -979,6 +1015,7 @@ def build_pipeline(
         produktspec_enabled=settings.produktspec_enabled,
         coverage_gate_enabled=settings.coverage_gate_enabled,
         response_contract_enabled=settings.response_contract_enabled,
+        response_contract_general_guard_enabled=settings.response_contract_general_guard_enabled,
         baseline_hardening_enabled=settings.baseline_hardening_enabled,
         material_param_table_enabled=settings.material_param_table_enabled,
         wissensstand=wissensstand,

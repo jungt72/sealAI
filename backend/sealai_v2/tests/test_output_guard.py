@@ -9,7 +9,7 @@ pass. The guard is PURE/INERT — this tests the enforcement logic, not any prod
 from sealai_v2.core.coverage import coverage_for
 from sealai_v2.core.contracts import GroundingFact
 from sealai_v2.core.output_guard import evaluate_render
-from sealai_v2.core.response_contract import build_contract
+from sealai_v2.core.response_contract import build_contract, build_guard_contract
 
 V_DISQ = {
     "disqualified": True,
@@ -143,3 +143,91 @@ def test_block_action_and_to_dict_shape():
     d = r.to_dict()
     assert d["action"] == "BLOCK" and d["ok"] is False
     assert isinstance(d["violations"], list) and d["violations"]
+
+
+# ── check_sentence_coverage=False (P0-B: the guard-only / general-knowledge path) ───────────────────
+
+# "was ist FKM?"-shaped grounding: an FKM Fachkarte, no verdict, no matrix cell.
+_FKM_KNOWLEDGE_FACT = GroundingFact(
+    text="FKM ist ein fluoriertes Elastomer mit hoher Temperatur- und Ölbeständigkeit.",
+    quelle="Fachkarte FKM",
+    card_id="CARD-FKM-1",
+    kind="card",
+)
+C_GENERAL = build_guard_contract(
+    grounding_facts=(_FKM_KNOWLEDGE_FACT,), calc=None
+).to_dict()
+
+
+def test_default_check_sentence_coverage_is_unchanged_for_every_existing_caller():
+    # the default (omitted) must reproduce EXACTLY today's behaviour — the Gegencheck-path
+    # foreign-sentence BLOCK from test_foreign_technical_sentence_blocks, byte-identical.
+    foreign = (
+        " Für aggressive Laugen ist die Chemikalienbeständigkeit hier ausgezeichnet."
+    )
+    with_default = evaluate_render(answer_text=CLEAN + foreign, contract=C_DISQ)
+    with_explicit_true = evaluate_render(
+        answer_text=CLEAN + foreign, contract=C_DISQ, check_sentence_coverage=True
+    )
+    assert with_default.to_dict() == with_explicit_true.to_dict()
+    assert "unmapped_sentence" in {v.kind for v in with_default.violations}
+
+
+def test_light_mode_does_not_block_in_depth_elaboration_beyond_the_literal_claim():
+    # this is the WHOLE POINT of the light mode: a knowledge answer legitimately goes further than
+    # the one retrieved claim sentence ("gib das volle Bild, nicht die Kurzfassung") — with
+    # check_sentence_coverage=False this must NOT be flagged as an unmapped/foreign sentence, even
+    # though it names no contract material/clause verbatim and would fail the full-mode check.
+    # (NOT a sentence naming FKM — the guard already exempts ANY sentence anchored to an allowed
+    # material from the coverage check in BOTH modes, see prefilter comment "(1) anchored to a
+    # contract/known material — elaboration is allowed"; that exemption is pre-existing, unrelated
+    # to P0-B. This test targets what check_sentence_coverage actually gates: a genuinely
+    # foreign-subject technical sentence, same shape as test_foreign_technical_sentence_blocks.)
+    elaboration = (
+        "Für aggressive Laugen ist die Chemikalienbeständigkeit hier ausgezeichnet."
+    )
+    full = evaluate_render(
+        answer_text=elaboration, contract=C_GENERAL, check_sentence_coverage=True
+    )
+    light = evaluate_render(
+        answer_text=elaboration, contract=C_GENERAL, check_sentence_coverage=False
+    )
+    assert "unmapped_sentence" in {v.kind for v in full.violations}  # full mode: would block
+    assert light.ok and light.action == "PASS"  # light mode: elaboration is allowed
+
+
+def test_light_mode_still_blocks_invented_number():
+    a = "FKM ist bis 400 °C dauerhaft einsetzbar."  # fabricated temperature, no source
+    r = evaluate_render(
+        answer_text=a, contract=C_GENERAL, check_sentence_coverage=False
+    )
+    assert not r.ok and r.action == "BLOCK"
+    assert "invented_number" in {v.kind for v in r.violations}
+
+
+def test_light_mode_still_blocks_invented_material():
+    a = "FKM und NBR sind hier beide eine gute Wahl."  # NBR not in this turn's grounding
+    r = evaluate_render(
+        answer_text=a, contract=C_GENERAL, check_sentence_coverage=False
+    )
+    assert not r.ok and r.action == "BLOCK"
+    assert "invented_material" in {v.kind for v in r.violations}
+
+
+def test_light_mode_still_blocks_forbidden_phrase():
+    a = "FKM ist hierfür freigegeben."
+    r = evaluate_render(
+        answer_text=a, contract=C_GENERAL, check_sentence_coverage=False
+    )
+    assert not r.ok and r.action == "BLOCK"
+    assert "forbidden_phrase" in {v.kind for v in r.violations}
+
+
+def test_light_mode_empty_required_clauses_never_blocks_on_missing_clause():
+    # required_clauses is always () for a guard-only contract — the check is a structural no-op,
+    # not just "usually satisfied"
+    a = "FKM ist ein fluoriertes Elastomer."
+    r = evaluate_render(
+        answer_text=a, contract=C_GENERAL, check_sentence_coverage=False
+    )
+    assert "missing_required_clause" not in {v.kind for v in r.violations}
