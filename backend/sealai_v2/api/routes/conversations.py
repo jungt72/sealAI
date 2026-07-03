@@ -30,10 +30,17 @@ def _memory(pipeline: Pipeline):
 
 
 @router.get("")
-def list_conversations(
+async def list_conversations(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
+    # P2 flush-then-read (same discipline as every other route in this file): a background
+    # remember from the turn the user JUST sent may still be in flight — without this, a brand
+    # new case's very first message could resolve, return the answer, and the case list
+    # (re-fetched by the frontend right after) would still show "keine Fälle", since the
+    # V2Session row record_turn creates hadn't landed yet. Flushes ALL of this tenant's pending
+    # remembers (not one session_id) because this endpoint reads across every case at once.
+    await pipeline.flush_all_memory(tenant_id=identity.tenant_id)
     summaries = _memory(pipeline).sessions(tenant_id=identity.tenant_id)
     return {
         "cases": [

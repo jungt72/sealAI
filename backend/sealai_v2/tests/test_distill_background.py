@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import asyncio
 
-from sealai_v2.api.routes.conversations import forget_all, view_memory
+from sealai_v2.api.routes.conversations import (
+    forget_all,
+    list_conversations,
+    view_memory,
+)
 from sealai_v2.core.contracts import (
     LlmResult,
     ModelConfig,
@@ -153,6 +157,32 @@ def test_memory_view_route_flushes_so_chips_are_current_after_chat():
     assert len(data["history"]) == 2  # the turn itself landed before the read
 
 
+def test_list_conversations_route_flushes_so_a_brand_new_case_appears_immediately():
+    """Reproduces a live bug (2026-07-03): GET /api/v2/conversations never flushed before
+    reading, unlike every other route in conversations.py — so a case's very FIRST message
+    could resolve, the answer render, and the "Fälle"-Sidebar re-fetch (right after) still show
+    "keine Fälle", because record_turn (which creates the case's row) was still an in-flight
+    background task. This is the exact ordering-guard gap; flush_all_memory closes it."""
+    client = _GatedDistillClient()
+    ident = VerifiedIdentity("t1", "s1", "u1")
+
+    async def main():
+        p = _memory_pipeline(client)
+        await p.run(
+            "EPDM in Hydrauliköl?",
+            tenant=TenantContext("t1"),
+            session=SessionContext("s1"),
+        )
+        # the answer is back, but the background remember (which creates the case row) is
+        # STILL pending here — exactly the window the live bug fell into.
+        assert ("t1", "s1") in p._pending_remember
+        client.release_distill.set()  # unblock it — list_conversations must await it, not race it
+        return await list_conversations(identity=ident, pipeline=p)
+
+    data = asyncio.run(main())
+    assert [c["case_id"] for c in data["cases"]] == ["s1"]
+
+
 def test_forget_all_flushes_first_so_a_pending_distill_cannot_resurrect_facts():
     client = ScriptedFakeLlmClient(["Antwort.", _FACT_JSON])
     ident = VerifiedIdentity("t1", "s1", "u1")
@@ -170,6 +200,39 @@ def test_forget_all_flushes_first_so_a_pending_distill_cannot_resurrect_facts():
         await p.flush_memory(tenant_id="t1", session_id="s1")
         assert p.memory.case_state(tenant_id="t1", session_id="s1") == ()
         assert p.memory.history(tenant_id="t1", session_id="s1") == ()
+
+    asyncio.run(main())
+
+
+def test_flush_all_memory_only_awaits_the_given_tenants_sessions():
+    """A deterministic unit test of the filter itself: flush_all_memory(tenant_id="t1") must
+    never AWAIT t2's pending task — P0-adjacent isolation for the "Fälle"-Sidebar list endpoint,
+    which now flushes across a WHOLE tenant rather than one known session_id. Proven by making
+    t2's task block FOREVER (an Event that's never set): if flush_all_memory ever awaited it,
+    this test would hang and fail on the timeout below — a scheduling-order-independent proof,
+    unlike asserting on which coroutine bodies happened to *run*, which asyncio does not
+    guarantee is limited to what was explicitly awaited."""
+
+    async def main():
+        p = _memory_pipeline(ScriptedFakeLlmClient(["unused"]))
+        never_release = asyncio.Event()
+
+        async def quick() -> None:
+            return None
+
+        async def blocks_forever() -> None:
+            await never_release.wait()
+
+        p._pending_remember[("t1", "s1")] = asyncio.create_task(quick())
+        p._pending_remember[("t2", "s3")] = asyncio.create_task(blocks_forever())
+
+        await asyncio.wait_for(p.flush_all_memory(tenant_id="t1"), timeout=2.0)
+        # returned without hanging → t2's still-blocked task was never awaited by that call
+        assert not p._pending_remember[("t2", "s3")].done()
+        never_release.set()
+        await p._pending_remember[
+            ("t2", "s3")
+        ]  # drain it so nothing dangles past the test
 
     asyncio.run(main())
 
