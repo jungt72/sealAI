@@ -66,9 +66,9 @@ def test_clean_standard_cases_reach_L2():
     }
     for name, fall in cases.items():
         s = K(fall)
-        assert s.response_level is RL.L2_SCREENING_CANDIDATE, (
-            f"{name}: {s.response_level}"
-        )
+        assert (
+            s.response_level is RL.L2_SCREENING_CANDIDATE
+        ), f"{name}: {s.response_level}"
 
 
 def test_material_candidate_sets_are_sane():

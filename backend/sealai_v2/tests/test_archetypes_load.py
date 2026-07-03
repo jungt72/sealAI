@@ -129,6 +129,6 @@ def test_seed_loads_starter_profiles_owner_reviewed():
         assert p.owner_grounded, f"{key} must carry owner-grounded provenance"
         assert p.interview_fragen, f"{key} must carry interview questions"
         assert p.blinde_flecken, f"{key} must carry blind spots"
-        assert p.anwendbare_regime == (), (
-            f"{key}: anwendbare_regime structural/empty at Inc 1"
-        )
+        assert (
+            p.anwendbare_regime == ()
+        ), f"{key}: anwendbare_regime structural/empty at Inc 1"

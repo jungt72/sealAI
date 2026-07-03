@@ -224,10 +224,12 @@ Import-purity keystone:
 python -m pytest ../backend/tests/architecture/test_v2_import_boundary.py --noconftest
 ```
 
-Formatting (CI's non-blocking `Backend ruff-format guard`):
+Formatting (CI's non-blocking `Backend ruff-format guard` — CI pins
+`ruff==0.6.9`, matched by `.venv`; a different local ruff version WILL
+disagree on formatting):
 
 ```bash
-cd .. && python -m ruff format backend/
+cd .. && .venv/bin/ruff format backend/
 ```
 
 Live eval REPLAY (needs `OPENAI_API_KEY` transiently from `~/sealai/.env` for
