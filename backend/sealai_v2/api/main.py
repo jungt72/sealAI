@@ -17,6 +17,7 @@ from sealai_v2.api.routes import (
     conversations,
     framing,
     hersteller,
+    memory_v2,
     partner_self,
     rag_ingest,
 )
@@ -34,6 +35,7 @@ app.include_router(hersteller.router)
 app.include_router(partner_self.router)
 app.include_router(contribute.router)
 app.include_router(rag_ingest.router)
+app.include_router(memory_v2.router)
 
 
 @app.get("/health")
