@@ -4,6 +4,14 @@ In-process impl for CI/eval; Postgres for prod (build-spec §3 pattern, mirrors 
 P0: EVERY read/write is tenant-scoped — a store method takes ``tenant_id`` explicitly and filters on
 it server-side; there is no method that returns cross-tenant data. This mirrors the ``memory/store.py``
 Layer 1-4 discipline exactly.
+
+Patch 9 reconciliation: the Postgres write paths now (a) populate the full set of denormalized scope
+columns (``workspace_id``/``user_id``/``session_id``, alongside the pre-existing ``project_id``/
+``case_id``), (b) carry the new ``MemoryItem`` fields through to/from ``V2MemoryItem`` (confidence,
+sensitivity, conflict-linkage fields), and (c) snapshot a self-contained ``payload`` onto every
+``V2MemoryOutbox`` row at enqueue time (``_outbox_payload``) rather than leaving the outbox worker to
+re-read ``V2MemoryItem`` live at drain time — the real outbox-pattern shape, and what lets a drain
+sync exactly the state that was actually committed, not whatever the row happens to look like later.
 """
 
 from __future__ import annotations
@@ -57,7 +65,50 @@ def _item_to_domain(row: V2MemoryItem, sources: tuple[MemorySource, ...]) -> Mem
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
         purge_after=row.purge_after,
+        confidence=row.confidence,
+        sensitivity=row.sensitivity,
+        subject_hash=row.subject_hash,
+        supersedes_memory_id=row.supersedes_memory_id,
+        deprecated_by_memory_id=row.deprecated_by_memory_id,
     )
+
+
+# Denormalized-column population, shared by both Postgres write paths (create_candidate reads it via
+# the domain item; a later conflict-resolution patch can reuse it too) — one place that knows which
+# scope maps to which read-path column, so the two can never drift apart.
+_SCOPE_COLUMN: dict[MemoryScope, str] = {
+    MemoryScope.WORKSPACE: "workspace_id",
+    MemoryScope.PROJECT: "project_id",
+    MemoryScope.CASE: "case_id",
+    MemoryScope.USER: "user_id",
+    MemoryScope.SESSION: "session_id",
+}
+
+
+def _denormalized_scope_columns(item: MemoryItem) -> dict[str, str | None]:
+    cols: dict[str, str | None] = dict.fromkeys(set(_SCOPE_COLUMN.values()))
+    column = _SCOPE_COLUMN.get(item.scope)
+    if column is not None:
+        cols[column] = item.scope_id
+    return cols
+
+
+def _outbox_payload(item: MemoryItem) -> dict:
+    """The self-contained snapshot a ``V2MemoryOutbox`` row carries — everything the outbox worker
+    needs to sync to Qdrant without re-reading ``V2MemoryItem`` live (real outbox-pattern shape,
+    Patch 9 reconciliation). Deliberately a small, flat dict — the exact fields the Qdrant payload
+    (``outbox_worker.py``) already mirrors, plus ``content`` (needed to embed)."""
+    return {
+        "id": item.id,
+        "tenant_id": item.tenant_id,
+        "scope": item.scope.value,
+        "scope_id": item.scope_id,
+        "status": item.status.value,
+        "version": item.version,
+        "type": item.type.value,
+        "semantic_key": item.semantic_key,
+        "content": item.content,
+    }
 
 
 class MemoryStore(Protocol):
@@ -180,15 +231,20 @@ class PostgresMemoryStore:
                 tenant_id=item.tenant_id,
                 scope=item.scope.value,
                 scope_id=item.scope_id,
-                # Read-path denormalization (Patch 2 design note): populated here at write time from
-                # scope/scope_id, kept in sync by construction rather than a separate update step.
-                project_id=item.scope_id if item.scope == MemoryScope.PROJECT else None,
-                case_id=item.scope_id if item.scope == MemoryScope.CASE else None,
+                # Read-path denormalization (Patch 2 design note, extended Patch 9): populated here
+                # at write time from scope/scope_id, kept in sync by construction rather than a
+                # separate update step.
+                **_denormalized_scope_columns(item),
                 type=item.type.value,
                 status=item.status.value,
                 content=item.content,
                 semantic_key=item.semantic_key,
                 version=item.version,
+                confidence=item.confidence,
+                sensitivity=item.sensitivity,
+                subject_hash=item.subject_hash,
+                supersedes_memory_id=item.supersedes_memory_id,
+                deprecated_by_memory_id=item.deprecated_by_memory_id,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
                 deleted_at=item.deleted_at,
@@ -203,6 +259,10 @@ class PostgresMemoryStore:
                         session_id=src.session_id,
                         turn_id=src.turn_id,
                         note=src.note,
+                        source_ref=src.source_ref,
+                        message_id=src.message_id,
+                        document_id=src.document_id,
+                        case_snapshot_id=src.case_snapshot_id,
                         created_at=item.created_at,
                     )
                 )
@@ -214,7 +274,8 @@ class PostgresMemoryStore:
                 V2MemoryOutbox(
                     memory_item_id=item.id,
                     tenant_id=item.tenant_id,
-                    operation="upsert",
+                    event_type="upsert",
+                    payload=_outbox_payload(item),
                     created_at=item.created_at,
                 )
             )
@@ -229,7 +290,14 @@ class PostgresMemoryStore:
         ).all()
         return tuple(
             MemorySource(
-                kind=r.kind, session_id=r.session_id, turn_id=r.turn_id, note=r.note
+                kind=r.kind,
+                session_id=r.session_id,
+                turn_id=r.turn_id,
+                note=r.note,
+                source_ref=r.source_ref,
+                message_id=r.message_id,
+                document_id=r.document_id,
+                case_snapshot_id=r.case_snapshot_id,
             )
             for r in rows
         )
@@ -324,17 +392,19 @@ class PostgresMemoryStore:
                     created_at=now,
                 )
             )
+            updated_item = _item_to_domain(row, self._sources_for(s, row.id))
             s.add(
                 V2MemoryOutbox(
                     memory_item_id=item_id,
                     tenant_id=tenant_id,
-                    operation="upsert",  # the Postgres row persists with a new status; a physical
+                    event_type="upsert",  # the Postgres row persists with a new status; a physical
                     # Qdrant point removal is Patch 14's purge job, not a status transition.
+                    payload=_outbox_payload(updated_item),
                     created_at=now,
                 )
             )
             s.commit()
-            return _item_to_domain(row, self._sources_for(s, row.id))
+            return updated_item
 
 
 def build_memory_store(settings) -> MemoryStore:
