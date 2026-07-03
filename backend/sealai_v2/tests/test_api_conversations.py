@@ -96,6 +96,86 @@ def test_unknown_origin_fails_closed_to_user_edited():
     assert f.provenance == "user-edited"
 
 
+def test_list_conversations_returns_cases_with_metadata():
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-A", "sess-A", "medium", "Öl")
+    r = client.get("/api/v2/conversations", headers=auth("tok-A"))
+    assert r.status_code == 200
+    cases = r.json()["cases"]
+    assert len(cases) == 1
+    assert cases[0]["case_id"] == "sess-A"
+    # _seed's record_turn() doesn't pass now (mirrors the pipeline's own remember-stage default
+    # being the only real caller) — title/timestamps stay None, exactly like an existing session
+    # that predates this feature.
+    assert cases[0]["title"] is None
+
+
+def test_list_conversations_never_leaks_across_tenants():
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-A", "sess-A", "medium", "Öl")
+    _seed(pipeline, "tenant-B", "sess-B", "medium", "Wasser")
+    r = client.get("/api/v2/conversations", headers=auth("tok-A"))
+    case_ids = {c["case_id"] for c in r.json()["cases"]}
+    assert case_ids == {"sess-A"}
+
+
+def test_case_id_query_param_overrides_the_tokens_session_for_view_memory():
+    # "Fälle"-Sidebar (Patch A): a tenant can view a DIFFERENT one of its own cases by passing
+    # ?case_id=..., not just the token-derived "current" one.
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-A", "sess-A", "medium", "Öl")
+    _seed(pipeline, "tenant-A", "case-2", "medium", "Wasser")
+    default = client.get(
+        "/api/v2/conversations/current/memory", headers=auth("tok-A")
+    ).json()
+    assert any(f["wert"] == "Öl" for f in default["case_state"])
+    other = client.get(
+        "/api/v2/conversations/current/memory",
+        params={"case_id": "case-2"},
+        headers=auth("tok-A"),
+    ).json()
+    assert any(f["wert"] == "Wasser" for f in other["case_state"])
+    assert not any(f["wert"] == "Öl" for f in other["case_state"])
+
+
+def test_case_id_naming_a_foreign_tenants_session_returns_empty_not_leaked():
+    # tenant-A's token + case_id="sess-B" (a REAL session, but belonging to tenant-B) must resolve
+    # to nothing — the (tenant_id, case_id) tuple matches no row for tenant-A, same as any unused
+    # session_id today; never tenant-B's data.
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-B", "sess-B", "medium", "Wasser")
+    r = client.get(
+        "/api/v2/conversations/current/memory",
+        params={"case_id": "sess-B"},
+        headers=auth("tok-A"),
+    ).json()
+    assert r["case_state"] == []
+    assert r["history"] == []
+
+
+def test_case_id_query_param_overrides_for_edit_and_forget_too():
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-A", "case-2", "medium", "Öl")
+    client.put(
+        "/api/v2/conversations/current/facts/medium",
+        json={"wert": "Wasser"},
+        params={"case_id": "case-2"},
+        headers=auth("tok-A"),
+    )
+    assert (
+        pipeline.memory.case_state(tenant_id="tenant-A", session_id="case-2")[0].wert
+        == "Wasser"
+    )
+    # the token's OWN session (sess-A) must be untouched by an edit scoped to case-2
+    assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A") == ()
+    client.delete(
+        "/api/v2/conversations/current/facts/medium",
+        params={"case_id": "case-2"},
+        headers=auth("tok-A"),
+    )
+    assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="case-2") == ()
+
+
 def test_cross_tenant_MUTATION_isolation_via_token():
     # req 3: tenant A's token cannot edit OR forget tenant B's facts — the route scopes by the token.
     client, pipeline = make_client()
