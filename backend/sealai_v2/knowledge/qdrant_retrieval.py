@@ -35,6 +35,10 @@ _DENSE = "dense"
 _POINT_NAMESPACE = uuid.UUID(
     "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
 )  # uuid5 NAMESPACE_URL
+_REVIEWED_BACKFILL_FACTOR = 24
+_REVIEWED_BACKFILL_MAX_CANDIDATES = 128
+_REVIEWED_BACKFILL_MAX_FACTS = 2
+_REVIEWED_BACKFILL_MIN_RELATIVE_SCORE = 0.75
 
 
 def _query_text(q: str, prefix: str = "query: ") -> str:
@@ -73,6 +77,88 @@ def _hits_to_result(points) -> RetrievalResult:
     return RetrievalResult(
         grounding_facts=tuple(reviewed), provisional=tuple(provisional)
     )
+
+
+def _review_state(point) -> str:
+    return (getattr(point, "payload", None) or {}).get("review_state", "")
+
+
+def _score(point) -> float | None:
+    value = getattr(point, "score", None)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _payload(point) -> dict:
+    return getattr(point, "payload", None) or {}
+
+
+def _scope_materials(point) -> set[str]:
+    scope = _payload(point).get("scope", {}) or {}
+    return {str(item).lower() for item in scope.get("material", ())}
+
+
+def _query_material_tokens(points, query: str) -> set[str]:
+    q = (query or "").lower()
+    if not q:
+        return set()
+    materials: set[str] = set()
+    for point in points:
+        materials.update(tok for tok in _scope_materials(point) if tok and tok in q)
+    return materials
+
+
+def _card_id_matches_material(point, material_tokens: set[str]) -> bool:
+    card_id = str(_payload(point).get("card_id", "")).lower()
+    return any(tok in card_id for tok in material_tokens)
+
+
+def _matches_material_scope(point, material_tokens: set[str]) -> bool:
+    scoped = _scope_materials(point)
+    return bool(material_tokens & scoped) or _card_id_matches_material(point, material_tokens)
+
+
+def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
+    """Return the normal top-k, plus a tiny reviewed backfill when top-k is draft-only.
+
+    Production Qdrant stores many draft points for broad material topics. A general query such as
+    "Informationen zu PTFE" can therefore rank relevant but unreviewed overview claims above the few
+    reviewed safety/caveat cards. The output contract treats only reviewed claims as grounding_facts,
+    so a draft-only top-k makes the turn falsely ungrounded even though reviewed knowledge exists just
+    below the cutoff. Keep the original top-k intact, then add a small, score-bounded reviewed tail.
+    """
+    limit = max(0, k)
+    candidates = list(points)
+    selected = candidates[:limit]
+    if limit == 0 or not candidates or any(_review_state(p) == "reviewed" for p in selected):
+        return selected
+
+    top_score = _score(candidates[0])
+    min_score = (
+        top_score * _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE if top_score is not None else None
+    )
+    material_tokens = _query_material_tokens(candidates, query)
+    eligible = []
+    for idx, point in enumerate(candidates[limit:]):
+        if _review_state(point) != "reviewed":
+            continue
+        if material_tokens and not _matches_material_scope(point, material_tokens):
+            continue
+        point_score = _score(point)
+        if min_score is not None and point_score is not None and point_score < min_score:
+            continue
+        eligible.append((idx, point))
+
+    if material_tokens and any(_card_id_matches_material(p, material_tokens) for _idx, p in eligible):
+        eligible = [(idx, p) for idx, p in eligible if _card_id_matches_material(p, material_tokens)]
+
+    for _idx, point in eligible[:_REVIEWED_BACKFILL_MAX_FACTS]:
+        selected.append(point)
+    return selected
 
 
 def claim_points(catalog: FachkartenCatalog):
@@ -237,12 +323,17 @@ class QdrantFachkartenRetriever:
                 )
             ]
         )
+        requested_limit = max(0, k)
+        candidate_limit = min(
+            _REVIEWED_BACKFILL_MAX_CANDIDATES,
+            max(requested_limit, requested_limit * _REVIEWED_BACKFILL_FACTOR),
+        )
         res = self._client.query_points(
             self._collection,
             query=qvec,
             using=_DENSE,
-            limit=max(0, k),
+            limit=candidate_limit,
             query_filter=tenant_filter,
             with_payload=True,
         )
-        return _hits_to_result(res.points)
+        return _hits_to_result(_select_points_with_reviewed_backfill(res.points, k, query))

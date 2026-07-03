@@ -13,14 +13,16 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     _hits_to_result,
     _make_embedder,
     _quelle,
+    _select_points_with_reviewed_backfill,
     claim_points,
 )
 from sealai_v2.knowledge.retrieval import _quelle as inproc_quelle
 
 
 class _FakePoint:
-    def __init__(self, payload: dict) -> None:
+    def __init__(self, payload: dict, score: float | None = None) -> None:
         self.payload = payload
+        self.score = score
 
 
 def test_hits_to_result_splits_reviewed_and_provisional():
@@ -54,6 +56,88 @@ def test_hits_to_result_splits_reviewed_and_provisional():
         len(res.provisional) == 1 and res.provisional[0].text == "VMQ breit beständig"
     )
     assert res.grounded  # grounding_facts present
+
+
+def test_reviewed_backfill_preserves_top_k_and_adds_close_reviewed_tail():
+    pts = [
+        _FakePoint(
+            {
+                "review_state": "draft",
+                "card_id": f"draft-{idx}",
+                "scope": {"material": ["PTFE"]},
+            },
+            1.0 - idx * 0.02,
+        )
+        for idx in range(5)
+    ]
+    close_reviewed = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+            "scope": {"material": ["PTFE"]},
+        },
+        0.78,
+    )
+    weak_reviewed = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-WEAK",
+            "scope": {"material": ["PTFE"]},
+        },
+        0.40,
+    )
+    selected = _select_points_with_reviewed_backfill(
+        [*pts, close_reviewed, weak_reviewed], k=5, query="Informationen zu PTFE"
+    )
+
+    assert selected[:5] == pts
+    assert close_reviewed in selected
+    assert weak_reviewed not in selected
+
+
+def test_reviewed_backfill_prefers_matching_material_scope_for_material_queries():
+    pts = [
+        _FakePoint(
+            {
+                "review_state": "draft",
+                "card_id": f"draft-{idx}",
+                "scope": {"material": ["PTFE"]},
+            },
+            1.0 - idx * 0.02,
+        )
+        for idx in range(5)
+    ]
+    vmq_ptfe_lip = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-VMQ-DYNAMISCH",
+            "scope": {"material": ["VMQ"]},
+        },
+        0.80,
+    )
+    ptfe_card = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+            "scope": {"material": ["PTFE"]},
+        },
+        0.78,
+    )
+
+    selected = _select_points_with_reviewed_backfill(
+        [*pts, vmq_ptfe_lip, ptfe_card], k=5, query="Informationen zu PTFE"
+    )
+
+    assert ptfe_card in selected
+    assert vmq_ptfe_lip not in selected
+
+
+def test_reviewed_backfill_is_noop_when_top_k_already_has_reviewed():
+    reviewed = _FakePoint({"review_state": "reviewed", "card_id": "FK-REVIEWED"}, 0.9)
+    extra = _FakePoint({"review_state": "reviewed", "card_id": "FK-EXTRA"}, 0.89)
+    pts = [_FakePoint({"review_state": "draft"}, 1.0), reviewed, extra]
+
+    assert _select_points_with_reviewed_backfill(pts, k=2) == pts[:2]
 
 
 def test_claim_points_one_per_claim_with_payload():
