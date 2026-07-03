@@ -12,6 +12,7 @@ import logging
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.binding import bind_params
@@ -44,6 +45,7 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
+from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContextService
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
 from sealai_v2.knowledge.archetypes import load_archetypes
@@ -86,6 +88,32 @@ def _build_retriever(settings: Settings) -> Retriever:
         except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on retrieval
             _log.warning("qdrant retriever unavailable (%s) → in-process fallback", exc)
     return InProcessRetriever()
+
+
+def _build_memory_context_service(settings: Settings):
+    """sealingAI Memory Architecture V1.0 (Patch 8): the Postgres store + Qdrant client + embedder
+    a ``MemoryContextService`` needs. Fail-safe, same discipline as ``_build_retriever`` above: an
+    unset ``database_url``/``qdrant_url``, a missing optional dep, or an unreachable DB/Qdrant
+    returns None rather than crashing startup — the caller (``build_pipeline``) only invokes this
+    when ``memory_context_enabled`` is set, mirroring the ``retriever``/``ground_enabled`` pattern."""
+    if not settings.database_url or not settings.qdrant_url:
+        return None
+    try:
+        from sealai_v2.db.memory_store import build_memory_store
+        from sealai_v2.knowledge.qdrant_retrieval import _make_client, _make_embedder
+        from sealai_v2.memory.context_assembler import MemoryContextService
+
+        store = build_memory_store(settings)
+        qdrant_client = _make_client(settings)
+        embedder = _make_embedder(settings)
+        return MemoryContextService(
+            store=store, qdrant_client=qdrant_client, embedder=embedder
+        )
+    except Exception as exc:  # noqa: BLE001 — fail safe to None; never crash startup
+        _log.warning(
+            "memory context service unavailable (%s) → memory context inert", exc
+        )
+        return None
 
 
 def _build_partner_registry(settings: Settings):
@@ -235,6 +263,11 @@ class Pipeline:
     # researcher OR flag off → fully inert.
     medium_researcher: MediumResearcher | None = None
     medium_intel_enabled: bool = False
+    # sealingAI Memory Architecture V1.0 (Patch 8): the curated-memory context-assembly service.
+    # Default-OFF flag; L1-NEUTRAL when off (service never constructed → result field stays None) —
+    # same structural guarantee as Medium Intelligence above. None service OR flag off → fully inert.
+    memory_context_service: MemoryContextService | None = None
+    memory_context_enabled: bool = False
     # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN from the
     # case. Default-OFF flag (owner governance gate: expert Fachfreigabe + DIN-Lizenz). RWDR-scoped +
     # structurally capped (G1/G2/G3, always "vorläufig"); a render surface only — NEVER enters L1/L3, so
@@ -336,6 +369,18 @@ class Pipeline:
                 medium_intelligence = await self.medium_researcher.research(
                     _medium, _kategorie
                 )
+        # sealingAI Memory Architecture V1.0 (Patch 8): assemble the bounded curated-memory context
+        # bundle. Gated (default-off) + fail-safe (MemoryContextService.assemble() never raises into
+        # the turn) + L1-NEUTRAL in this patch (a render/serializer surface only — NOT injected into
+        # the L1 prompt yet, see memory/context_assembler.py's module docstring). Inert when off / no
+        # service wired.
+        memory_context: MemoryContextBundle | None = None
+        if self.memory_context_enabled and self.memory_context_service is not None:
+            memory_context = await self.memory_context_service.assemble(
+                question,
+                tenant_id=scope.tenant_id,
+                now=datetime.now(timezone.utc).isoformat(),
+            )
         # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
         # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
         # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
@@ -738,6 +783,7 @@ class Pipeline:
             decode=decode_result,
             alternativen=alternativen_result,
             medium_intelligence=medium_intelligence,
+            memory_context=memory_context,
             kandidaten_spec=kandidaten_spec,
             wissensstand=self.wissensstand,
         )
@@ -933,6 +979,14 @@ def build_pipeline(
     matrix = InProcessCompatibilityMatrix() if settings.ground_enabled else None
     versagensmodi = InProcessVersagensmodiStore() if settings.ground_enabled else None
     partner_registry = _build_partner_registry(settings)
+    # sealingAI Memory Architecture V1.0 (Patch 8): only constructed when the flag is on — mirrors
+    # the retriever/ground_enabled pattern above, so a disabled feature never pays the Qdrant/DB
+    # client construction cost at all, not just at call time.
+    memory_context_service: MemoryContextService | None = (
+        _build_memory_context_service(settings)
+        if settings.memory_context_enabled
+        else None
+    )
 
     # M4 deterministic calc layer: the cascade evaluator over the reviewed calc registry.
     engine: CalcEngine | None = (
@@ -1017,6 +1071,8 @@ def build_pipeline(
         distiller=distiller,
         medium_researcher=medium_researcher,
         medium_intel_enabled=settings.medium_intel_enabled,
+        memory_context_service=memory_context_service,
+        memory_context_enabled=settings.memory_context_enabled,
         produktspec_enabled=settings.produktspec_enabled,
         coverage_gate_enabled=settings.coverage_gate_enabled,
         response_contract_enabled=settings.response_contract_enabled,

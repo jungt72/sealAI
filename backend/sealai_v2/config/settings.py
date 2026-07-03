@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     # default — L1-NEUTRAL (never enters the prompt), so enabling adds only the tab + one helper call
     # per medium (cached); flip via SEALAI_V2_MEDIUM_INTEL_ENABLED when the owner wants it live.
     medium_intel_enabled: bool = False
+    # sealingAI Memory Architecture V1.0 (Patch 8): assembles a bounded MemoryContextBundle (max 8
+    # items, max 750 tokens, max 10% of prompt budget) from retrieved+revalidated+policy-gated
+    # curated memory items. OFF by default — L1-NEUTRAL when off, same as Medium Intelligence (the
+    # service is never constructed, PipelineResult.memory_context stays None). NOTE: even when ON,
+    # this flag only computes + exposes the bundle (context_sources on the chat response) — it does
+    # NOT yet inject memory into the L1 prompt text; that's a deliberately separate, later step
+    # needing its own eval-verification pass. Flip via SEALAI_V2_MEMORY_CONTEXT_ENABLED.
+    memory_context_enabled: bool = False
     # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN as a
     # render surface. OFF by default — wired but inert until the owner lifts the governance NO-GO (expert
     # Fachfreigabe + DIN-Lizenz). L1-NEUTRAL (never enters the prompt); flip via SEALAI_V2_PRODUKTSPEC_ENABLED.
