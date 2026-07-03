@@ -1,8 +1,15 @@
-"""POST /api/v2/chat (+ /chat/stream, P4a) — thin projections over ``pipeline.run``. Tenant +
-session come ONLY from the verified token (``current_identity``), never from the request
-body/headers (P0). Both endpoints share ``_run_pipeline`` — same body, same auth, same flags;
-only the response transport differs. The stream's doctrine: stage frames carry keys only, the
-answer is ONE complete gated payload after verify + cite (see ``api/sse.py``)."""
+"""POST /api/v2/chat (+ /chat/stream, P4a) — thin projections over ``pipeline.run``. Tenant comes
+ONLY from the verified token (``current_identity``), never from the request body/headers (P0).
+Both endpoints share ``_run_pipeline`` — same body, same auth, same flags; only the response
+transport differs. The stream's doctrine: stage frames carry keys only, the answer is ONE complete
+gated payload after verify + cite (see ``api/sse.py``).
+
+"Fälle"-Sidebar (Patch B): ``ChatRequest.case_id`` is an OPTIONAL override of the effective
+session — ``req.case_id or identity.session_id``. Omitted, this is byte-identical to before (the
+whole point of Patch A/B's design: the token-derived session stays the default everywhere). Present,
+it lets the client target one of its own several persisted cases instead of always "the current
+login's conversation" — still exclusively tenant-scoped by the verified token, never by the client
+(P0 unchanged; see ``api/routes/conversations.py``'s module docstring for the identical reasoning)."""
 
 from __future__ import annotations
 
@@ -39,6 +46,7 @@ _STREAM_ERROR_MESSAGE = (
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+    case_id: str | None = None
 
 
 async def _run_pipeline(
@@ -53,7 +61,7 @@ async def _run_pipeline(
     return await pipeline.run(
         req.message,
         tenant=TenantContext(identity.tenant_id),
-        session=SessionContext(session_id=identity.session_id),
+        session=SessionContext(session_id=req.case_id or identity.session_id),
         flags=flags_from_settings(settings),
         progress=progress,
     )

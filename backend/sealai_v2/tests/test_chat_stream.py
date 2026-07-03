@@ -131,6 +131,15 @@ def test_pipeline_failure_yields_one_fixed_error_frame_and_no_result():
     assert errors[0]["data"]["message"]  # non-empty fixed text
 
 
+def test_stream_case_id_targets_that_case_not_the_tokens_session():
+    # "Fälle"-Sidebar Patch B: the case_id override works identically over SSE as over /chat.
+    pipeline = make_pipeline("Antwort.")
+    client, _ = make_client(pipeline)
+    _stream(client, {"message": _Q, "case_id": "case-2"})
+    assert pipeline.memory.history(tenant_id="tenant-A", session_id="case-2")
+    assert pipeline.memory.history(tenant_id="tenant-A", session_id="sess-A") == ()
+
+
 def test_stream_requires_auth_like_chat():
     client, _ = make_client()
     r = client.post("/api/v2/chat/stream", json={"message": _Q})
