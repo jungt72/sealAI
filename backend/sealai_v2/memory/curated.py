@@ -1,4 +1,12 @@
-"""Curated memory domain types — sealingAI Memory Architecture V1.0, Patch 1 (Types & Schemas).
+"""Curated memory domain types — sealingAI Memory Architecture V1.0, Patch 1 (Types & Schemas),
+reconciled against "sealingAI Memory Architecture V1.0 — Finales Konzept" (2026-07-03) in Patch 9.
+
+RECONCILIATION NOTE (Patch 9): Patch 1 built ``MemoryType`` as a 3-value INFERENCE (flagged
+explicitly at the time — the earlier source prompt named only preference/technical_note/
+case_parameter in prose, without an exhaustive enum the way Status/Scope had one). The final,
+authoritative concept doc DOES give the full 9-value enum — this module now matches it exactly.
+The inference was directionally correct (all 3 original values are a subset of the real 9) but
+incomplete; nothing built against the smaller set needs to change, it only gains new values.
 
 This is the CURATED, cross-session, owner-confirmable memory tier the existing
 ``db/cross_session_memory.py`` (Layer 4) explicitly deferred: "the broader CURATED cross-session
@@ -37,15 +45,30 @@ class MemoryScope(str, Enum):
 
 class MemoryType(str, Enum):
     """What KIND of thing a memory item records — drives the per-type policy (Patch 7's
-    ``policy.py``). NOTE: the source prompt names these three explicitly (Patch 7/12) but does not
-    give an exhaustive bullet-list enum the way it does for Status and Scope — this enum is an
-    INFERENCE from that context, flagged here for explicit owner confirmation before Patch 7 wires
-    the policy table against it (see the Patch 1 report)."""
+    ``policy.py``). Full 9-value set per the final concept doc §3 (Patch 9 reconciliation);
+    ``usage_for()`` currently has explicit policy rules for preference/implicit_context-status/
+    technical_note/case_parameter (the four the final concept's §7 policy table spells out) — the
+    other five fall through to the fail-closed NEVER default until a later patch defines their
+    policy explicitly (matches this codebase's "wire the field, gate the behavior" discipline)."""
 
     PREFERENCE = "preference"  # style/UX preference — policy: style_only, never a technical input
-    TECHNICAL_NOTE = "technical_note"  # a technical hint — policy: context_only, never a recommendation
+    WORKFLOW_INSTRUCTION = "workflow_instruction"  # e.g. "RFQ-Briefe immer kurz halten"
+    PROJECT_CONTEXT = "project_context"  # standing project-level facts (non-technical)
     CASE_PARAMETER = (
         "case_parameter"  # a concrete case fact — policy: confirmed + case-scope only
+    )
+    TECHNICAL_NOTE = "technical_note"  # a technical hint — policy: context_only, never a recommendation
+    MANUFACTURER_FEEDBACK = (
+        "manufacturer_feedback"  # e.g. a supplier's stated capability/preference
+    )
+    RFQ_PATTERN = (
+        "rfq_pattern"  # recurring RFQ shape/preference for a customer or project
+    )
+    RISK_NOTE = (
+        "risk_note"  # a flagged risk observation, never itself a technical verdict
+    )
+    CONVERSATION_SUMMARY = (
+        "conversation_summary"  # a condensed prior-conversation digest
     )
 
 
@@ -120,12 +143,28 @@ class MemorySource:
     """Provenance for a memory item — mandatory per doctrine ("Keine Memory-Schreibvorgänge ohne
     Source/Provenance"). ``kind`` is a free-form tag (e.g. "user_stated", "llm_inferred",
     "owner_manual_entry") rather than its own enum for now — Patch 1 doesn't have enough real
-    extraction cases yet to know the full set; revisit once Patch 12 (extraction) lands real data."""
+    extraction cases yet to know the full set; revisit once Patch 12 (extraction) lands real data.
+
+    Patch 9 reconciliation: the final concept doc models ``memory_sources`` as a normalized
+    source-CATALOG (one row per message/document/case-snapshot, referenced by id) rather than a
+    one-to-many provenance-note list per item. Deliberately NOT restructured to match that exactly —
+    the existing one-to-many model (multiple sources per item, already required + tested end-to-end
+    since Patch 3) is a legitimate, arguably richer alternative normalization, and rebuilding it
+    would invalidate significant already-shipped, already-tested surface for no functional gain.
+    Instead this dataclass gains the specific REFERENCE fields the final doc calls for, so the same
+    provenance information is captured either way."""
 
     kind: str
     session_id: str | None = None
     turn_id: str | None = None
     note: str = ""
+    # Patch 9 additions (final concept doc §7 memory_sources columns):
+    source_ref: str | None = None  # a human/URI-ish reference to the source (free-form)
+    message_id: str | None = (
+        None  # the specific chat message this was extracted from, if any
+    )
+    document_id: str | None = None  # the specific uploaded/ingested document, if any
+    case_snapshot_id: str | None = None  # the specific case-state snapshot, if any
 
 
 @dataclass(frozen=True)
@@ -158,6 +197,22 @@ class MemoryItem:
     updated_at: str = ""
     deleted_at: str | None = None
     purge_after: str | None = None
+    # Patch 9 reconciliation (final concept doc §7 memory_items columns):
+    # How confident the source (extraction, manual entry) is in this item's content — [0.0, 1.0].
+    # Wired here + persisted (Patch 2 extension) but NOT yet consumed by usage_for() (Patch 7) — a
+    # later patch's policy refinement, not invented speculatively now without a concrete rule.
+    confidence: float = 1.0
+    # A free-form data-classification tag (e.g. "internal", "customer_confidential") — no exhaustive
+    # enum given in the final concept doc (only one example value shown), so left as a string rather
+    # than guessing a full taxonomy. Wired + persisted, not yet enforced by any access-control rule.
+    sensitivity: str = "internal"
+    # Conflict-detection keys (Patch 13's own scope) — wired now so Patch 2's schema doesn't need a
+    # second migration later. subject_hash identifies "the same real-world subject" independent of
+    # semantic_key (which identifies "the same claim shape"); supersedes/deprecated_by link items in
+    # a resolved-conflict chain. All None until Patch 13 actually populates them.
+    subject_hash: str | None = None
+    supersedes_memory_id: str | None = None
+    deprecated_by_memory_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.tenant_id.strip():
