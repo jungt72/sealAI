@@ -49,12 +49,12 @@ export function useChatScroll<T extends HTMLElement>(watch: unknown) {
  * The turn is too short on its own (a user bubble + "thinking" indicator, before the answer lands)
  * for that scroll position to be reachable — the browser would clamp `scrollTop` to whatever content
  * exists below, landing the message lower than intended, and it would silently STAY there once the
- * (non-streaming) answer arrives, because nothing re-scrolls afterward. So `spacer` — an always-present
- * trailing element in the log — is grown to one full container height first, guaranteeing headroom
- * regardless of how short the eventual answer turns out to be. It is left in place (not shrunk back)
- * until the next turn recomputes it fresh; a resting gap under the latest answer is the same trade-off
- * ChatGPT/Claude/Gemini make, not a bug. Direct DOM writes (not React state) so the browser's layout
- * reflects the new spacer height the instant `scrollTop` is read/written after it, in one paint. */
+   * (non-streaming) answer arrives, because nothing re-scrolls afterward. So `spacer` — an always-present
+   * trailing element in the log — is grown to one full container height first, guaranteeing headroom
+   * while the response is pending. Once the turn settles, `settleNewTurnSpacer` trims that temporary
+   * headroom to the minimum required to preserve the current reading position. Direct DOM writes (not
+   * React state) so the browser's layout reflects the new spacer height the instant `scrollTop` is
+   * read/written after it, in one paint. */
 export function pinNewTurn(
   container: HTMLElement | null,
   el: HTMLElement | null,
@@ -65,4 +65,19 @@ export function pinNewTurn(
   if (spacer) spacer.style.minHeight = `${Math.round(container.clientHeight)}px`;
   const targetOffset = Math.round(container.clientHeight * fraction);
   container.scrollTop = Math.max(0, el.offsetTop - targetOffset);
+}
+
+function spacerBlockSize(spacer: HTMLElement): number {
+  const measured = spacer.offsetHeight || spacer.getBoundingClientRect().height;
+  if (measured > 0) return measured;
+  return Number.parseFloat(spacer.style.minHeight || "0") || 0;
+}
+
+export function settleNewTurnSpacer(container: HTMLElement | null, spacer: HTMLElement | null) {
+  if (!container || !spacer) return;
+  const currentTop = container.scrollTop;
+  const naturalScrollHeight = Math.max(0, container.scrollHeight - spacerBlockSize(spacer));
+  const requiredSpacer = Math.max(0, currentTop + container.clientHeight - naturalScrollHeight);
+  spacer.style.minHeight = `${Math.ceil(requiredSpacer)}px`;
+  container.scrollTop = currentTop;
 }

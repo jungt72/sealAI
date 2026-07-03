@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isNearBottom, pinNewTurn } from "./chatScroll";
+import { isNearBottom, pinNewTurn, settleNewTurnSpacer } from "./chatScroll";
 
 describe("isNearBottom (jump-button visibility decision)", () => {
   it("true when scrolled to the bottom", () => {
@@ -17,7 +17,7 @@ describe("isNearBottom (jump-button visibility decision)", () => {
 // Plain mutable objects standing in for DOM nodes — pinNewTurn only touches offsetTop/clientHeight/
 // scrollTop/style.minHeight, none of which need real layout (jsdom has none).
 function fakeContainer(clientHeight: number) {
-  return { clientHeight, scrollTop: 0 } as unknown as HTMLElement;
+  return { clientHeight, scrollHeight: clientHeight, scrollTop: 0 } as unknown as HTMLElement;
 }
 function fakeEl(offsetTop: number) {
   return { offsetTop } as unknown as HTMLElement;
@@ -54,5 +54,33 @@ describe("pinNewTurn (pin the new turn ~1/3 down, ChatGPT/Claude/Gemini pattern)
   it("no-ops without throwing when the container or element is not yet mounted", () => {
     expect(() => pinNewTurn(null, fakeEl(100), fakeSpacer())).not.toThrow();
     expect(() => pinNewTurn(fakeContainer(900), null, fakeSpacer())).not.toThrow();
+  });
+
+  it("trims the spacer to preserve the current reading position after a short answer settles", () => {
+    const container = fakeContainer(900);
+    const spacer = fakeSpacer();
+    Object.defineProperty(spacer, "offsetHeight", { configurable: true, value: 900 });
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1600 });
+    container.scrollTop = 500;
+    spacer.style.minHeight = "900px";
+
+    settleNewTurnSpacer(container, spacer);
+
+    expect(spacer.style.minHeight).toBe("700px");
+    expect(container.scrollTop).toBe(500);
+  });
+
+  it("removes the spacer entirely when the settled answer is already tall enough", () => {
+    const container = fakeContainer(900);
+    const spacer = fakeSpacer();
+    Object.defineProperty(spacer, "offsetHeight", { configurable: true, value: 900 });
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 2400 });
+    container.scrollTop = 500;
+    spacer.style.minHeight = "900px";
+
+    settleNewTurnSpacer(container, spacer);
+
+    expect(spacer.style.minHeight).toBe("0px");
+    expect(container.scrollTop).toBe(500);
   });
 });

@@ -19,7 +19,7 @@ import type {
   ParamItem,
 } from "../contracts";
 import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
-import { pinNewTurn, useChatScroll } from "../lib/chatScroll";
+import { pinNewTurn, settleNewTurnSpacer, useChatScroll } from "../lib/chatScroll";
 import { Answer } from "./Answer";
 import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
@@ -36,6 +36,21 @@ type Msg =
   | { role: "user"; text: string }
   | { role: "assistant"; res: ChatResponse }
   | { role: "confirmation"; conf: ConfirmationResponse };
+
+function wheelDeltaYPx(e: WheelEvent, pageHeight: number): number {
+  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 40;
+  if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return e.deltaY * pageHeight;
+  return e.deltaY;
+}
+
+function canScrollVertically(el: HTMLElement, deltaY: number): boolean {
+  const style = window.getComputedStyle(el);
+  if (!/(auto|scroll|overlay)/.test(style.overflowY)) return false;
+  if (el.scrollHeight <= el.clientHeight) return false;
+  if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight;
+  if (deltaY < 0) return el.scrollTop > 0;
+  return false;
+}
 
 /* P4b — the frontend owns the German stage labels; the backend streams keys only. Unmapped keys
  * (recall, cite, future stages) keep the last mapped label — forward-compatible by ignoring. */
@@ -128,6 +143,10 @@ export function ChatPane({
     pinNewTurn(logRef.current, scrollTargetRef.current, spacerRef.current);
     setScrollToTopIndex(null);
   }, [scrollToTopIndex]);
+  useLayoutEffect(() => {
+    if (busy) return;
+    settleNewTurnSpacer(logRef.current, spacerRef.current);
+  }, [busy, msgs.length]);
   // resizable chat|cockpit divider (split, ≥1024px): the chosen width drives the `--cockpit-w` track;
   // null = CSS default (~50/50). Persisted in localStorage, restored on mount, reset on double-click.
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -402,6 +421,42 @@ export function ChatPane({
     setCockpitW(`${px}px`);
     saveCockpitPx(px);
   }
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+
+    const onWorkspaceWheel = (e: WheelEvent) => {
+      if (e.defaultPrevented || e.ctrlKey) return;
+      const log = logRef.current;
+      if (!log) return;
+      const target = e.target;
+      if (!(target instanceof Element) || !workspace.contains(target)) return;
+      if (target.closest(".cockpit-panel, .cockpit-splitter")) return;
+
+      const path = e.composedPath();
+      for (const node of path) {
+        if (node === workspace) break;
+        if (!(node instanceof HTMLElement)) continue;
+        if (node === log) return;
+        if (canScrollVertically(node, e.deltaY)) return;
+      }
+
+      const maxTop = Math.max(0, log.scrollHeight - log.clientHeight);
+      if (maxTop === 0) return;
+      const deltaY = wheelDeltaYPx(e, log.clientHeight);
+      if (deltaY === 0) return;
+      const nextTop = Math.max(0, Math.min(maxTop, log.scrollTop + deltaY));
+      if (nextTop === log.scrollTop) return;
+
+      e.preventDefault();
+      log.scrollTop = nextTop;
+      onScroll();
+    };
+
+    workspace.addEventListener("wheel", onWorkspaceWheel, { capture: true, passive: false });
+    return () => workspace.removeEventListener("wheel", onWorkspaceWheel, { capture: true });
+  }, [onScroll]);
 
   // null → no inline override → the CSS default (~50/50) applies; a px string → the dragged width
   const workspaceStyle = cockpitW ? ({ "--cockpit-w": cockpitW } as unknown as CSSProperties) : undefined;

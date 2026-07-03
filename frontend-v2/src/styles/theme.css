@@ -1,20 +1,24 @@
 /* sealingAI design tokens — pilot-ui.
-   A Grok-like Inter stack carries the UI voice, IBM Plex Mono carries engineering values; the V1
+   IBM Plex Sans carries the UI voice, IBM Plex Mono carries engineering values; the V1
    seal-blue survives as the single accent (brandmark, send, links). Quiet grays do the rest. */
 :root {
-  --font-sans: "Inter Variable", Inter, Roboto, "Open Sans", Arial, system-ui, sans-serif;
+  --font-sans: "IBM Plex Sans", Roboto, "Open Sans", Arial, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* stage grays (mockup tokens) */
   --sai-bg: #fcfcfc;
-  --sai-text: #050505;
+  --sai-text: #0d0d0d;
   --sai-text-soft: #333333;
   --sai-text-muted: #636363;
   --sai-text-subtle: #6b6b6b;
   --sai-user-bubble: #f3f3f3;
   --sai-surface: #ffffff;
   --sai-border-soft: rgba(5, 5, 5, 0.06);
-  --sai-content-max-width: 40rem;
+  --sai-chat-shell-max-width: 48rem;
+  --sai-content-max-width: 48rem;
+  --sai-composer-max-width: 48rem;
+  --sai-chat-padding-x: clamp(16px, 2.5vw, 24px);
+  --sai-chat-frame-max-width: calc(var(--sai-content-max-width) + (2 * var(--sai-chat-padding-x)));
 
   --ink: var(--sai-text);    /* greeting / body text */
   --ink-soft: var(--sai-text-muted);       /* rail icons, secondary text */
@@ -39,7 +43,7 @@
 
   /* markdown body — Grok-style typography (near-black heading hierarchy, light code/table grounds
      that read on both the #FCFCFC chat and the #FFFFFF cockpit) */
-  --md-ink: var(--sai-text);          /* answer + user body text — high-contrast anthracite */
+  --md-ink: var(--sai-text);          /* answer + user body text — high-contrast near-black */
   --md-heading: var(--sai-text);      /* headings + bold — near-black neutral, the top of the hierarchy */
   --md-muted: var(--sai-text-subtle);        /* list markers, h5/h6, captions — secondary grey */
   --md-code-bg: #f6f7f9;      /* code-block <pre> area */

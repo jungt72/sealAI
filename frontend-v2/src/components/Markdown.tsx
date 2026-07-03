@@ -2,6 +2,7 @@ import {
   Children,
   isValidElement,
   useState,
+  type ComponentPropsWithoutRef,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -72,6 +73,30 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   );
 }
 
+function isStandaloneStrong(children: ReactNode): boolean {
+  const visibleChildren = Children.toArray(children).filter((child) => {
+    if (typeof child === "string") return child.trim().length > 0;
+    return child !== null && child !== undefined;
+  });
+  if (visibleChildren.length !== 1) return false;
+
+  const onlyChild = visibleChildren[0];
+  if (!isValidElement(onlyChild)) return false;
+  return onlyChild.type === "strong" || onlyChild.type === "b";
+}
+
+function Paragraph({ children, className, ...props }: ComponentPropsWithoutRef<"p">) {
+  const classes = [className, isStandaloneStrong(children) ? "md-standalone-strong" : ""]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <p className={classes || undefined} {...props}>
+      {children}
+    </p>
+  );
+}
+
 /** Renders an assistant answer as markdown + KaTeX. GFM is ON (tables, strikethrough, autolinks,
  * task-lists) so the briefing/answer formatting matches the Gemini-style reference. Raw HTML stays
  * DISABLED (no rehype-raw) so untrusted model output can never inject a live node; KaTeX runs with
@@ -84,7 +109,7 @@ export function Markdown({ source }: { source: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, trust: false, strict: false }]]}
-        components={{ pre: CodeBlock }}
+        components={{ p: Paragraph, pre: CodeBlock }}
       >
         {normalizeMath(source)}
       </ReactMarkdown>
