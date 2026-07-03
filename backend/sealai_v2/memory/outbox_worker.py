@@ -12,21 +12,30 @@ patch's retrieval path (Patch 6) MUST re-check the live Postgres status before e
 result into a prompt. This module's payload mirroring (status/scope/tenant/version) exists so that
 check is cheap to reason about, not so it can be skipped.
 
-Retry semantics: an ATTEMPT-COUNT cap (fails permanently after ``max_attempts``), not a time-windowed
-exponential backoff — a failed sync retries again on the very next drain pass, up to the cap. This is
-a deliberate simplification for this patch (no new column, reuses the existing schema); a real
-backoff window (e.g. a ``next_attempt_at`` column) is a reasonable future improvement if the retry
-volume ever justifies it, not implemented here.
+Patch 9 reconciliation (final concept doc §6/§7), two changes:
+
+- The drain reads each row's own snapshotted ``payload`` (captured by the writer at enqueue time,
+  ``db/memory_store.py::_outbox_payload``) instead of re-reading ``V2MemoryItem`` live. This is the
+  real outbox-pattern shape: the row is self-contained, so a drain syncs exactly the state that was
+  committed at enqueue time, not whatever the item happens to look like by the time the worker gets
+  to it. A consequence: this worker no longer checks whether the source item still exists in
+  Postgres — a hard-purged item's already-enqueued rows still sync their last known state (Qdrant is
+  advisory-only per the doctrine above; a purge job, Patch 14's own scope, is what will enqueue the
+  matching "delete" event once it exists).
+- Retry semantics upgraded from an ATTEMPT-COUNT cap with immediate next-pass retry to a real
+  time-windowed exponential backoff via ``next_attempt_at`` (base 30s, doubling per attempt, capped
+  at 1h) — a failed sync no longer hammers Qdrant on every single drain pass while it's down.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from sealai_v2.db.models import V2MemoryItem, V2MemoryOutbox
+from sealai_v2.db.models import V2MemoryOutbox
 from sealai_v2.knowledge.qdrant_retrieval import (
     _make_client,
     _make_embedder,
@@ -35,6 +44,8 @@ from sealai_v2.knowledge.qdrant_retrieval import (
 
 MEMORY_COLLECTION = "sealai_v2_memory"
 _DENSE = "dense"
+_BACKOFF_BASE_SECONDS = 30
+_BACKOFF_MAX_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -42,7 +53,6 @@ class DrainResult:
     claimed: int
     synced: int
     failed_permanently: int
-    skipped_missing_item: int
 
 
 def _make_memory_embedder(settings):
@@ -61,10 +71,28 @@ def ensure_memory_collection(client, embedder) -> None:
     ensure_collection(client, MEMORY_COLLECTION, dim, sparse=False)
 
 
-def _claim_pending(s, *, batch_size: int) -> list[V2MemoryOutbox]:
+def _parse_iso(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _compute_next_attempt_at(now: str, attempts: int) -> str:
+    """Exponential backoff, deterministic given ``now``/``attempts`` — no live clock read here,
+    matches this codebase's "``now`` is always a caller-supplied parameter" discipline."""
+    delay_seconds = min(
+        _BACKOFF_BASE_SECONDS * (2 ** (attempts - 1)), _BACKOFF_MAX_SECONDS
+    )
+    when = _parse_iso(now) + timedelta(seconds=delay_seconds)
+    return when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _claim_pending(s, *, batch_size: int, now: str) -> list[V2MemoryOutbox]:
     rows = s.scalars(
         select(V2MemoryOutbox)
         .where(V2MemoryOutbox.status == "pending")
+        .where(
+            (V2MemoryOutbox.next_attempt_at.is_(None))
+            | (V2MemoryOutbox.next_attempt_at <= now)
+        )
         .order_by(V2MemoryOutbox.id)
         .limit(batch_size)
     ).all()
@@ -77,6 +105,7 @@ def _claim_pending(s, *, batch_size: int) -> list[V2MemoryOutbox]:
 def _mark_done(s, row: V2MemoryOutbox, *, now: str) -> None:
     row.status = "done"
     row.processed_at = now
+    row.next_attempt_at = None
     s.commit()
 
 
@@ -91,9 +120,13 @@ def _mark_retry_or_failed(
     row.processed_at = now
     if row.attempts >= max_attempts:
         row.status = "failed"
+        row.next_attempt_at = None
         s.commit()
         return True
-    row.status = "pending"  # retried on the next drain pass (attempt-count cap, not time-windowed)
+    row.status = (
+        "pending"  # retried once the backoff window elapses (see _claim_pending)
+    )
+    row.next_attempt_at = _compute_next_attempt_at(now, row.attempts)
     s.commit()
     return False
 
@@ -107,42 +140,37 @@ def drain_outbox(
     batch_size: int = 50,
     max_attempts: int = 5,
 ) -> DrainResult:
-    """One drain pass: claim up to ``batch_size`` pending rows, sync each to Qdrant, mark
-    done/retry/failed. Safe to call repeatedly (e.g. from a periodic CLI invocation — this codebase
-    has no always-on task scheduler; matches the ``ops/`` script convention of periodic invocation
-    over inventing new background-process infra)."""
-    claimed = synced = failed_permanently = skipped_missing_item = 0
+    """One drain pass: claim up to ``batch_size`` pending rows whose backoff window (if any) has
+    elapsed, sync each to Qdrant from its own snapshotted ``payload``, mark done/retry/failed. Safe
+    to call repeatedly (e.g. from a periodic CLI invocation — this codebase has no always-on task
+    scheduler; matches the ``ops/`` script convention of periodic invocation over inventing new
+    background-process infra)."""
+    claimed = synced = failed_permanently = 0
     with session_factory() as s:
-        rows = _claim_pending(s, batch_size=batch_size)
+        rows = _claim_pending(s, batch_size=batch_size, now=now)
         claimed = len(rows)
         for row in rows:
-            item_row = s.get(V2MemoryItem, row.memory_item_id)
-            if item_row is None:
-                # The item was hard-deleted (Patch 14 purge) between enqueue and drain — nothing to
-                # sync; the outbox row itself is done (there's nothing left to represent in Qdrant).
-                skipped_missing_item += 1
-                _mark_done(s, row, now=now)
-                continue
+            payload = row.payload or {}
             try:
                 from qdrant_client.models import (
                     PointStruct,
                 )  # lazy, mirrors qdrant_retrieval.py
 
-                vec = next(iter(embedder.embed([item_row.content]))).tolist()
+                vec = next(iter(embedder.embed([payload.get("content", "")]))).tolist()
                 qdrant_client.upsert(
                     MEMORY_COLLECTION,
                     points=[
                         PointStruct(
-                            id=item_row.id,
+                            id=payload.get("id", row.memory_item_id),
                             vector={_DENSE: vec},
                             payload={
-                                "tenant_id": item_row.tenant_id,
-                                "scope": item_row.scope,
-                                "scope_id": item_row.scope_id,
-                                "status": item_row.status,
-                                "version": item_row.version,
-                                "type": item_row.type,
-                                "semantic_key": item_row.semantic_key,
+                                "tenant_id": payload.get("tenant_id"),
+                                "scope": payload.get("scope"),
+                                "scope_id": payload.get("scope_id"),
+                                "status": payload.get("status"),
+                                "version": payload.get("version"),
+                                "type": payload.get("type"),
+                                "semantic_key": payload.get("semantic_key"),
                             },
                         )
                     ],
@@ -158,7 +186,6 @@ def drain_outbox(
         claimed=claimed,
         synced=synced,
         failed_permanently=failed_permanently,
-        skipped_missing_item=skipped_missing_item,
     )
 
 
@@ -187,7 +214,6 @@ def main(argv: list[str] | None = None) -> int:
     periodic invocation (cron/systemd timer), not a long-running process."""
     import argparse
     import sys
-    from datetime import datetime, timezone
 
     from sealai_v2.config.settings import Settings
     from sealai_v2.db.engine import make_engine, make_sessionmaker

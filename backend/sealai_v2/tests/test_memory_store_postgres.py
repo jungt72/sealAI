@@ -12,7 +12,7 @@ from sealai_v2.db.memory_store import (
     MemoryItemNotFound,
     PostgresMemoryStore,
 )
-from sealai_v2.db.models import V2MemoryEvent, V2MemoryOutbox
+from sealai_v2.db.models import V2MemoryEvent, V2MemoryItem, V2MemoryOutbox
 from sealai_v2.memory.curated import (
     MemoryItem,
     MemoryScope,
@@ -98,6 +98,30 @@ def test_case_id_is_denormalized_from_scope_at_write_time(db_url):
     assert (
         not_a_project == ()
     )  # case-scoped item must not leak into a project_id filter
+
+
+def test_session_id_is_denormalized_from_scope_at_write_time(db_url):
+    # The default _item() fixture is session-scoped — proves the newly added workspace_id/user_id/
+    # session_id denormalized columns (Patch 9) are populated the same way project_id/case_id are.
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        row = s.get(V2MemoryItem, "mem-1")
+        assert row.session_id == "session-1"
+        assert row.workspace_id is None
+        assert row.user_id is None
+        assert row.project_id is None
+        assert row.case_id is None
+
+
+def test_confidence_and_sensitivity_roundtrip_through_the_store(db_url):
+    store = _store(db_url)
+    store.create_candidate(
+        _item(id="mem-conf", confidence=0.4, sensitivity="customer_confidential")
+    )
+    fetched = store.get_item(tenant_id="tenant-a", item_id="mem-conf")
+    assert fetched.confidence == 0.4
+    assert fetched.sensitivity == "customer_confidential"
 
 
 # --- Patch 4: status transitions (confirm/reject/deprecate/delete) ---
@@ -216,7 +240,23 @@ def test_create_candidate_also_enqueues_an_outbox_upsert(db_url):
             select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
         ).all()
         assert len(rows) == 1
-        assert rows[0].operation == "upsert"
+        assert rows[0].event_type == "upsert"  # Patch 9 rename: operation -> event_type
+        assert rows[0].target == "qdrant"
+
+
+def test_create_candidate_snapshots_an_outbox_payload(db_url):
+    # Patch 9: the outbox row must be self-contained (real outbox-pattern shape) — the worker
+    # drains from this snapshot, not a live re-read of V2MemoryItem.
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        row = s.scalars(
+            select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
+        ).one()
+        assert row.payload["id"] == "mem-1"
+        assert row.payload["tenant_id"] == "tenant-a"
+        assert row.payload["status"] == "candidate"
+        assert row.payload["content"] == "prefers metric units"
 
 
 def test_transition_status_enqueues_an_additional_outbox_upsert(db_url):
@@ -234,8 +274,10 @@ def test_transition_status_enqueues_an_additional_outbox_upsert(db_url):
             select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
         ).all()
         assert len(rows) == 2  # one from create, one from the transition
-        assert all(r.operation == "upsert" for r in rows)
+        assert all(r.event_type == "upsert" for r in rows)
         assert rows[0].status == "pending"
+        # the transition's own outbox row must snapshot the UPDATED status, not the stale one
+        assert rows[1].payload["status"] == "confirmed"
 
 
 def test_two_transitions_write_two_events_and_two_outbox_rows(db_url):

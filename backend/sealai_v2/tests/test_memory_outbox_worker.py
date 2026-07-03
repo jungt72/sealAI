@@ -1,5 +1,11 @@
 """Qdrant outbox sync worker (Patch 5) — tested against a FAKE Qdrant client (no network), including
-a simulated Qdrant outage (the exact scenario the retry/attempt-cap logic exists for)."""
+a simulated Qdrant outage (the exact scenario the retry/backoff logic exists for).
+
+Patch 9 reconciliation: the outage-retry tests below use hourly-spaced ``now`` timestamps, which
+happens to already exceed the real time-windowed backoff (base 30s, doubling, capped at 1h) between
+every pair of passes — so their pass-by-pass assertions are unchanged by the backoff upgrade. A new
+test below (``test_backoff_window_blocks_an_immediate_retry_pass``) exercises the actual backoff
+window directly, since none of the pre-existing tests otherwise would."""
 
 from __future__ import annotations
 
@@ -118,9 +124,7 @@ def test_drain_is_a_noop_when_nothing_is_pending(db_url):
         embedder=_FakeEmbedder(),
         now="2026-07-03T01:00:00Z",
     )
-    assert result == type(result)(
-        claimed=0, synced=0, failed_permanently=0, skipped_missing_item=0
-    )
+    assert result == type(result)(claimed=0, synced=0, failed_permanently=0)
 
 
 def test_simulated_qdrant_outage_retries_then_permanently_fails(db_url):
@@ -183,27 +187,58 @@ def test_a_permanently_failed_row_is_never_claimed_again(db_url):
     assert result.claimed == 0
 
 
-def test_drain_skips_and_completes_when_the_item_was_hard_deleted(db_url):
+def test_backoff_window_blocks_an_immediate_retry_pass(db_url):
+    # Patch 9: real time-windowed backoff (base 30s) replaces the old attempt-count-cap-with-
+    # immediate-retry — a drain pass run only 10s after a failure must NOT reclaim the row yet.
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    client = _AlwaysFailingQdrantClient()
+
+    first = drain_outbox(
+        sm, qdrant_client=client, embedder=_FakeEmbedder(), now="2026-07-03T01:00:00Z"
+    )
+    assert first.claimed == 1
+    with sm() as s:
+        row = s.scalars(select(V2MemoryOutbox)).one()
+        assert row.next_attempt_at == "2026-07-03T01:00:30Z"  # base 30s backoff
+
+    too_soon = drain_outbox(
+        sm, qdrant_client=client, embedder=_FakeEmbedder(), now="2026-07-03T01:00:10Z"
+    )
+    assert too_soon.claimed == 0  # backoff window not yet elapsed
+
+    after_window = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=_FakeEmbedder(),
+        now="2026-07-03T01:00:31Z",
+    )
+    assert after_window.claimed == 1
+    assert after_window.synced == 1
+
+
+def test_drain_syncs_from_its_own_snapshot_even_after_the_item_is_hard_deleted(db_url):
+    # Patch 9: the outbox row is self-contained (a payload snapshot captured at enqueue time), so a
+    # drain no longer needs the source item to still exist in Postgres — it syncs the last known
+    # state regardless. Qdrant is advisory-only (doctrine); a purge job enqueueing its own "delete"
+    # event is what would actually retract a hard-purged item from Qdrant (Patch 14's own scope).
     store = _store(db_url)
     store.create_candidate(_item())
     sm = make_sessionmaker(make_engine(db_url))
-    # simulate Patch 14's purge job having removed the row between enqueue and drain
     with sm() as s:
         from sealai_v2.db.models import V2MemoryItem
 
         s.query(V2MemoryItem).filter_by(id="mem-1").delete()
         s.commit()
+    client = _FakeQdrantClient()
     result = drain_outbox(
-        sm,
-        qdrant_client=_FakeQdrantClient(),
-        embedder=_FakeEmbedder(),
-        now="2026-07-03T01:00:00Z",
+        sm, qdrant_client=client, embedder=_FakeEmbedder(), now="2026-07-03T01:00:00Z"
     )
-    assert result.skipped_missing_item == 1
-    assert result.synced == 0
+    assert result.synced == 1
+    assert len(client.upserted) == 1
     with sm() as s:
         row = s.scalars(select(V2MemoryOutbox)).one()
-        assert row.status == "done"  # nothing left to sync — not a failure, just done
+        assert row.status == "done"
 
 
 def test_outbox_health_counts_by_status(db_url):
