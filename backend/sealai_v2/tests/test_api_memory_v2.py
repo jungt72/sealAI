@@ -241,6 +241,17 @@ def test_delete_marks_deleted_pending_purge_from_any_non_terminal_status():
     assert r.json()["status"] == "deleted_pending_purge"
 
 
+def test_delete_sets_a_future_purge_after_grace_period():
+    # Patch 10: without this, memory/purge.py's reap job would never have an eligibility
+    # timestamp and the item would sit in deleted_pending_purge forever.
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.post(f"/api/v2/memory/items/{item_id}/delete", headers=_auth("tok-A"))
+    purge_after = r.json()["purge_after"]
+    assert purge_after is not None
+    assert purge_after > r.json()["updated_at"]  # grace period is in the future
+
+
 def test_double_delete_is_rejected_with_409():
     client, _store = _client()
     item_id = _create(client)
@@ -334,6 +345,9 @@ def test_delete_verb_marks_deleted_pending_purge():
     r = client.delete(f"/api/v2/memory/items/{item_id}", headers=_auth("tok-A"))
     assert r.status_code == 200
     assert r.json()["status"] == "deleted_pending_purge"
+    assert (
+        r.json()["purge_after"] is not None
+    )  # Patch 10: same grace period as POST .../delete
 
 
 def test_delete_verb_unknown_id_is_404():

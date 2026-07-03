@@ -48,9 +48,13 @@ class _FakeEmbedder:
 class _FakeQdrantClient:
     def __init__(self) -> None:
         self.upserted: list[tuple[str, list]] = []
+        self.deleted: list[tuple[str, list]] = []
 
     def upsert(self, collection: str, points):
         self.upserted.append((collection, list(points)))
+
+    def delete(self, collection: str, points_selector):
+        self.deleted.append((collection, list(points_selector)))
 
 
 class _AlwaysFailingQdrantClient:
@@ -99,6 +103,37 @@ def test_create_candidate_enqueues_and_drain_syncs_it(db_url):
     assert points[0].id == "mem-1"
     assert points[0].payload["tenant_id"] == "tenant-a"
     assert points[0].payload["status"] == "candidate"
+
+
+def test_drain_calls_qdrant_delete_for_a_delete_event_type_not_upsert(db_url):
+    # Patch 10: memory/purge.py's reap job enqueues event_type="delete" rows — the drain must call
+    # qdrant_client.delete for these, NOT re-upsert the item's last known state (the bug this test
+    # guards against: before Patch 10, drain_outbox ignored event_type entirely).
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        s.add(
+            V2MemoryOutbox(
+                memory_item_id="mem-purged",
+                tenant_id="tenant-a",
+                event_type="delete",
+                payload={"id": "mem-purged", "tenant_id": "tenant-a"},
+                created_at="2026-07-03T00:00:00Z",
+            )
+        )
+        s.commit()
+    client = _FakeQdrantClient()
+    result = drain_outbox(
+        sm, qdrant_client=client, embedder=_FakeEmbedder(), now="2026-07-03T01:00:00Z"
+    )
+    assert result.synced == 1
+    assert client.upserted == []  # never upserted
+    assert len(client.deleted) == 1
+    collection, point_ids = client.deleted[0]
+    assert collection == "sealai_v2_memory"
+    assert point_ids == ["mem-purged"]
+    with sm() as s:
+        row = s.scalars(select(V2MemoryOutbox)).one()
+        assert row.status == "done"
 
 
 def test_drain_marks_outbox_row_done_after_successful_sync(db_url):

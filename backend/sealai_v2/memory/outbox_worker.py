@@ -19,12 +19,18 @@ Patch 9 reconciliation (final concept doc §6/§7), two changes:
   real outbox-pattern shape: the row is self-contained, so a drain syncs exactly the state that was
   committed at enqueue time, not whatever the item happens to look like by the time the worker gets
   to it. A consequence: this worker no longer checks whether the source item still exists in
-  Postgres — a hard-purged item's already-enqueued rows still sync their last known state (Qdrant is
-  advisory-only per the doctrine above; a purge job, Patch 14's own scope, is what will enqueue the
-  matching "delete" event once it exists).
+  Postgres — a hard-purged item's already-enqueued rows still sync their last known state.
 - Retry semantics upgraded from an ATTEMPT-COUNT cap with immediate next-pass retry to a real
   time-windowed exponential backoff via ``next_attempt_at`` (base 30s, doubling per attempt, capped
   at 1h) — a failed sync no longer hammers Qdrant on every single drain pass while it's down.
+
+Patch 10 (Purge & Compliance): ``memory/purge.py``'s reap job now enqueues ``event_type="delete"``
+rows here for hard-purged items. This drain FIXES a latent gap from the Patch 9 reconciliation above:
+every row was previously synced via ``qdrant_client.upsert`` regardless of ``event_type`` — a "delete"
+row would have silently RE-UPSERTED the item's last known state into Qdrant instead of removing it
+(harmless before Patch 10, since nothing ever enqueued a "delete" row until now, but a real bug had
+this drain ever been exercised with one). Now branches on ``row.event_type``: "delete" calls
+``qdrant_client.delete``, "upsert" is unchanged.
 """
 
 from __future__ import annotations
@@ -151,30 +157,36 @@ def drain_outbox(
         claimed = len(rows)
         for row in rows:
             payload = row.payload or {}
+            point_id = payload.get("id", row.memory_item_id)
             try:
-                from qdrant_client.models import (
-                    PointStruct,
-                )  # lazy, mirrors qdrant_retrieval.py
+                if row.event_type == "delete":
+                    qdrant_client.delete(MEMORY_COLLECTION, points_selector=[point_id])
+                else:
+                    from qdrant_client.models import (
+                        PointStruct,
+                    )  # lazy, mirrors qdrant_retrieval.py
 
-                vec = next(iter(embedder.embed([payload.get("content", "")]))).tolist()
-                qdrant_client.upsert(
-                    MEMORY_COLLECTION,
-                    points=[
-                        PointStruct(
-                            id=payload.get("id", row.memory_item_id),
-                            vector={_DENSE: vec},
-                            payload={
-                                "tenant_id": payload.get("tenant_id"),
-                                "scope": payload.get("scope"),
-                                "scope_id": payload.get("scope_id"),
-                                "status": payload.get("status"),
-                                "version": payload.get("version"),
-                                "type": payload.get("type"),
-                                "semantic_key": payload.get("semantic_key"),
-                            },
-                        )
-                    ],
-                )
+                    vec = next(
+                        iter(embedder.embed([payload.get("content", "")]))
+                    ).tolist()
+                    qdrant_client.upsert(
+                        MEMORY_COLLECTION,
+                        points=[
+                            PointStruct(
+                                id=point_id,
+                                vector={_DENSE: vec},
+                                payload={
+                                    "tenant_id": payload.get("tenant_id"),
+                                    "scope": payload.get("scope"),
+                                    "scope_id": payload.get("scope_id"),
+                                    "status": payload.get("status"),
+                                    "version": payload.get("version"),
+                                    "type": payload.get("type"),
+                                    "semantic_key": payload.get("semantic_key"),
+                                },
+                            )
+                        ],
+                    )
                 synced += 1
                 _mark_done(s, row, now=now)
             except Exception as exc:  # noqa: BLE001 — any Qdrant/network failure is a retry candidate
