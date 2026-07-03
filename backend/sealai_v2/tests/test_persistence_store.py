@@ -49,7 +49,7 @@ def test_tenant_isolation_p0_no_cross_tenant_read(db_url):
     assert other.is_empty
     assert mem.case_state(tenant_id="B", session_id="s1") == ()
     assert mem.history(tenant_id="B", session_id="s1") == ()
-    assert "s1" not in mem.sessions(tenant_id="B")
+    assert "s1" not in {s.case_id for s in mem.sessions(tenant_id="B")}
     mine = mem.recall(tenant_id="A", session_id="s1")
     assert not mine.is_empty
     assert any(f.feld == "medium" for f in mine.case_state)
@@ -166,4 +166,78 @@ def test_restart_survival_reinstantiate_against_same_db(db_url):
         "EPDM in Hydrauliköl, warum?",
         "EPDM quillt in unpolaren Medien.",
     ]
-    assert "s1" in after.sessions(tenant_id="A")
+    assert "s1" in {s.case_id for s in after.sessions(tenant_id="A")}
+
+
+def test_sessions_returns_summaries_sorted_by_updated_at_desc(db_url):
+    mem = _mem(db_url)
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s-older",
+        question="erste Frage",
+        answer="a",
+        now="2026-07-01T00:00:00Z",
+    )
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s-newer",
+        question="zweite Frage",
+        answer="a",
+        now="2026-07-02T00:00:00Z",
+    )
+    summaries = mem.sessions(tenant_id="A")
+    assert [s.case_id for s in summaries] == ["s-newer", "s-older"]
+    assert summaries[0].updated_at == "2026-07-02T00:00:00Z"
+
+
+def test_record_turn_without_now_leaves_title_and_timestamps_unset(db_url):
+    # Backward compatibility: a caller that never passes `now` (none exist today outside the
+    # pipeline's remember stage) gets today's exact behavior — no stamping, no error.
+    mem = _mem(db_url)
+    mem.record_turn(tenant_id="A", session_id="s1", question="q", answer="a")
+    summary = mem.sessions(tenant_id="A")[0]
+    assert summary.title is None
+    assert summary.created_at is None
+    assert summary.updated_at is None
+
+
+def test_record_turn_stamps_title_from_first_question_and_bumps_updated_at(db_url):
+    mem = _mem(db_url)
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question="Welche Dichtung passt für EPDM in Hydrauliköl bei 120°C?",
+        answer="a1",
+        now="2026-07-03T00:00:00Z",
+    )
+    first = mem.sessions(tenant_id="A")[0]
+    assert first.title == "Welche Dichtung passt für EPDM in Hydrauliköl bei 120°C?"
+    assert first.created_at == "2026-07-03T00:00:00Z"
+    assert first.updated_at == "2026-07-03T00:00:00Z"
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question="und bei 150°C?",
+        answer="a2",
+        now="2026-07-03T01:00:00Z",
+    )
+    second = mem.sessions(tenant_id="A")[0]
+    assert second.title == first.title  # title never changes after the first turn
+    assert second.created_at == "2026-07-03T00:00:00Z"  # created_at never moves
+    assert second.updated_at == "2026-07-03T01:00:00Z"  # updated_at bumps every turn
+
+
+def test_long_question_title_truncates_at_word_boundary(db_url):
+    mem = _mem(db_url)
+    long_question = "Welche Werkstoffkombination eignet sich für einen Radialwellendichtring in einer Hydraulikpumpe mit hoher Drehzahl und wechselnden Temperaturen"
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question=long_question,
+        answer="a",
+        now="2026-07-03T00:00:00Z",
+    )
+    title = mem.sessions(tenant_id="A")[0].title
+    assert len(title) <= 61  # 60 chars + the "…" ellipsis
+    assert title.endswith("…")
+    assert not title[:-1].endswith(" ")  # trimmed to a full word, no trailing space

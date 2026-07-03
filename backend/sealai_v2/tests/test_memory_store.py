@@ -34,7 +34,7 @@ def test_tenant_isolation_p0_no_cross_tenant_read():
     assert other.is_empty
     assert mem.case_state(tenant_id="B", session_id="s1") == ()
     assert mem.history(tenant_id="B", session_id="s1") == ()
-    assert "s1" not in mem.sessions(tenant_id="B")
+    assert "s1" not in {s.case_id for s in mem.sessions(tenant_id="B")}
     # tenant A still sees its own
     mine = mem.recall(tenant_id="A", session_id="s1")
     assert not mine.is_empty
@@ -104,6 +104,61 @@ def test_user_control_edit_delete_clear():
     assert mem.case_state(tenant_id="A", session_id="s1") == ()
     mem.clear(tenant_id="A", session_id="s1")
     assert mem.recall(tenant_id="A", session_id="s1").is_empty
+
+
+def test_sessions_returns_summaries_sorted_by_updated_at_desc():
+    mem = _mem()
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s-older",
+        question="erste Frage",
+        answer="a",
+        now="2026-07-01T00:00:00Z",
+    )
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s-newer",
+        question="zweite Frage",
+        answer="a",
+        now="2026-07-02T00:00:00Z",
+    )
+    summaries = mem.sessions(tenant_id="A")
+    assert [s.case_id for s in summaries] == ["s-newer", "s-older"]
+    assert summaries[0].updated_at == "2026-07-02T00:00:00Z"
+
+
+def test_record_turn_without_now_leaves_title_and_timestamps_unset():
+    mem = _mem()
+    mem.record_turn(tenant_id="A", session_id="s1", question="q", answer="a")
+    summary = mem.sessions(tenant_id="A")[0]
+    assert summary.title is None
+    assert summary.created_at is None
+    assert summary.updated_at is None
+
+
+def test_record_turn_stamps_title_from_first_question_and_bumps_updated_at():
+    mem = _mem()
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question="Welche Dichtung passt für EPDM in Hydrauliköl bei 120°C?",
+        answer="a1",
+        now="2026-07-03T00:00:00Z",
+    )
+    first = mem.sessions(tenant_id="A")[0]
+    assert first.title == "Welche Dichtung passt für EPDM in Hydrauliköl bei 120°C?"
+    assert first.created_at == "2026-07-03T00:00:00Z"
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question="und bei 150°C?",
+        answer="a2",
+        now="2026-07-03T01:00:00Z",
+    )
+    second = mem.sessions(tenant_id="A")[0]
+    assert second.title == first.title  # title never changes after the first turn
+    assert second.created_at == "2026-07-03T00:00:00Z"  # created_at never moves
+    assert second.updated_at == "2026-07-03T01:00:00Z"  # updated_at bumps every turn
 
 
 def test_cross_session_seam_inert_but_tenant_scoped():

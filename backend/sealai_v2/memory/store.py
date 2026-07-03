@@ -15,8 +15,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sealai_v2.core.contracts import DerivedFact, MemoryView, RememberedFact, Turn
+from sealai_v2.core.contracts import (
+    DerivedFact,
+    MemoryView,
+    RememberedFact,
+    SessionSummary,
+    Turn,
+)
 from sealai_v2.security.tenant import TenantContext, require_tenant
+
+_TITLE_MAX_LEN = 60
 
 
 @dataclass
@@ -25,12 +33,18 @@ class _SessionState:
     case-state (L2, keyed by ``feld``, last value wins) + a completed-exchange counter + the M8
     derived slice (kernel_computed values, keyed by ``calc_id``). The derived slice is a SEPARATE
     channel: the input case-state (``facts``) and the kernel outputs (``derived``) never mix — the
-    binder reads only ``facts``, so a kernel value can never feed a calc input."""
+    binder reads only ``facts``, so a kernel value can never feed a calc input.
+
+    ``title``/``created_at``/``updated_at`` mirror ``V2Session``'s "Fälle"-Sidebar columns (Patch A)
+    for parity between this hermetic CI/eval store and ``PostgresConversationMemory``."""
 
     messages: list[Turn] = field(default_factory=list)
     facts: dict[str, RememberedFact] = field(default_factory=dict)
     derived: dict[str, DerivedFact] = field(default_factory=dict)
     turns: int = 0
+    title: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 def _require(tenant_id: str, session_id: str) -> None:
@@ -40,6 +54,21 @@ def _require(tenant_id: str, session_id: str) -> None:
     )  # raises TenantScopeError on empty/blank tenant
     if not isinstance(session_id, str) or not session_id.strip():
         raise ValueError("session_id is mandatory (memory is per-session)")
+
+
+def _title_from_question(question: str) -> str:
+    """The "Fälle"-Sidebar title heuristic (Patch A) — mirrors
+    ``db.conversation_memory._title_from_question`` exactly (same duplication discipline this file
+    already uses for ``_require``, kept dependency-free rather than importing across the
+    in-process/Postgres boundary)."""
+    normalized = " ".join(question.split())
+    if len(normalized) <= _TITLE_MAX_LEN:
+        return normalized
+    cut = normalized[:_TITLE_MAX_LEN]
+    last_space = cut.rfind(" ")
+    if last_space > 0:
+        cut = cut[:last_space]
+    return cut + "…"
 
 
 class InProcessConversationMemory:
@@ -72,9 +101,16 @@ class InProcessConversationMemory:
         question: str,
         answer: str,
         facts: tuple[RememberedFact, ...] = (),
+        now: str | None = None,
     ) -> None:
         _require(tenant_id, session_id)
+        is_new = (tenant_id, session_id) not in self._store
         st = self._state(tenant_id, session_id)
+        if is_new and now is not None:
+            st.created_at = now
+            st.title = _title_from_question(question)
+        if now is not None:
+            st.updated_at = now
         st.turns += 1
         st.messages.append(Turn(role="user", text=question, index=len(st.messages)))
         st.messages.append(Turn(role="assistant", text=answer, index=len(st.messages)))
@@ -91,9 +127,20 @@ class InProcessConversationMemory:
         st = self._store.get((tenant_id, session_id))
         return tuple(st.messages) if st else ()
 
-    def sessions(self, *, tenant_id: str) -> tuple[str, ...]:
+    def sessions(self, *, tenant_id: str) -> tuple[SessionSummary, ...]:
         require_tenant(TenantContext(tenant_id))
-        return tuple(s for (t, s) in self._store if t == tenant_id)
+        summaries = [
+            SessionSummary(
+                case_id=s,
+                title=st.title,
+                created_at=st.created_at,
+                updated_at=st.updated_at,
+            )
+            for (t, s), st in self._store.items()
+            if t == tenant_id
+        ]
+        summaries.sort(key=lambda x: x.updated_at or "", reverse=True)
+        return tuple(summaries)
 
     # --- user control (build-spec §7: view / edit / delete / clear) ---
 

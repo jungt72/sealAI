@@ -477,6 +477,23 @@ class Turn:
 
 
 @dataclass(frozen=True)
+class SessionSummary:
+    """One entry in a tenant's session/case list (``ConversationMemory.sessions()``) — the
+    display-ready metadata a "Fälle" sidebar needs, without fetching each session's full history.
+    Deliberately named ``SessionSummary``, not ``Case`` — ``Case`` (below) is a distinct, already
+    established V2.1 §5.1 type (the per-turn typed case-STATE snapshot for prompt context), not a
+    session-list entry; reusing the name here would collide two unrelated concepts.
+
+    ``title``/``created_at``/``updated_at`` are ``None`` for a session that predates this field
+    (existing rows are never backfilled) or for the in-process store outside a real turn."""
+
+    case_id: str  # the session_id, presented under the case_id/"Fall" naming the API surface uses
+    title: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
 class RememberedFact:
     """A distilled, structured case-state fact (layer 2) — the re-ask keystone. A REMEMBERED-CLAIM,
     NOT a reviewed/authoritative fact: ``provenance`` stays ``distilled-from-conversation`` and the
@@ -580,6 +597,7 @@ class ConversationMemory(Protocol):
         question: str,
         answer: str,
         facts: tuple["RememberedFact", ...] = (),
+        now: str | None = None,
     ) -> None: ...
 
 

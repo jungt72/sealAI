@@ -1,6 +1,12 @@
 """/api/v2/conversations — the M5 memory/history + user-control surface (view / edit / forget).
-Every op derives (tenant_id, session_id) ONLY from the verified token — same no-header-trust as chat,
-so a tenant's token can never read OR mutate another tenant's memory (P0)."""
+``tenant_id`` ALWAYS derives from the verified token (P0 — a tenant's token can never read or
+mutate another tenant's memory, no exceptions). The effective session, in contrast, is now an
+OPTIONAL client-supplied ``case_id`` override ("Fälle"-Sidebar, Patch A): every route below falls
+back to ``identity.session_id`` (today's sole behavior) when ``case_id`` is absent — byte-identical
+for any caller that doesn't opt in. A ``case_id`` for a session that doesn't exist (wrong tenant, or
+simply never created) resolves to an empty/no-op read, never a leak — the ``(tenant_id, case_id)``
+tuple then matches no row, the exact same "fresh session" behavior an unused ``session_id`` already
+has today."""
 
 from __future__ import annotations
 
@@ -28,22 +34,33 @@ def list_conversations(
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
-    return {"sessions": list(_memory(pipeline).sessions(tenant_id=identity.tenant_id))}
+    summaries = _memory(pipeline).sessions(tenant_id=identity.tenant_id)
+    return {
+        "cases": [
+            {
+                "case_id": s.case_id,
+                "title": s.title,
+                "created_at": s.created_at,
+                "updated_at": s.updated_at,
+            }
+            for s in summaries
+        ]
+    }
 
 
 @router.get("/current/memory")
 async def view_memory(
+    case_id: str | None = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     mem = _memory(pipeline)
+    session_id = case_id or identity.session_id
     # P2: a background distill may still be in flight — flush first, so the chips re-fetch
     # right after /chat already sees the fresh case-state (and the history shows the turn).
-    await pipeline.flush_memory(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
-    cs = mem.case_state(tenant_id=identity.tenant_id, session_id=identity.session_id)
-    hist = mem.history(tenant_id=identity.tenant_id, session_id=identity.session_id)
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
+    cs = mem.case_state(tenant_id=identity.tenant_id, session_id=session_id)
+    hist = mem.history(tenant_id=identity.tenant_id, session_id=session_id)
     return {
         "case_state": [
             {"feld": f.feld, "wert": f.wert, "provenance": f.provenance} for f in cs
@@ -68,27 +85,25 @@ class FactEdit(BaseModel):
 async def edit_fact(
     feld: str,
     body: FactEdit,
+    case_id: str | None = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     provenance = body.origin if body.origin in _EDIT_ORIGINS else "user-edited"
     mem = _memory(pipeline)
+    session_id = case_id or identity.session_id
     # P2 flush-then-mutate: a pending distill must land BEFORE the user's write, never after
     # it (the user edit is the stronger, later provenance — it must win).
-    await pipeline.flush_memory(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
     mem.edit_fact(
         tenant_id=identity.tenant_id,
-        session_id=identity.session_id,
+        session_id=session_id,
         feld=feld,
         wert=body.wert,
         provenance=provenance,
     )
     # M8: a settled input change → recompute + replace the derived slice (no stale kernel value)
-    pipeline.recompute_derived_for(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
+    pipeline.recompute_derived_for(tenant_id=identity.tenant_id, session_id=session_id)
     return {"status": "ok"}
 
 
@@ -107,6 +122,7 @@ class FactBatch(BaseModel):
 @router.post("/current/facts")
 async def submit_facts(
     body: FactBatch,
+    case_id: str | None = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
@@ -118,25 +134,20 @@ async def submit_facts(
     mem = _memory(pipeline)
     if pipeline.engine is None:
         raise HTTPException(status_code=503, detail="compute not enabled")
+    session_id = case_id or identity.session_id
     # P2 flush-then-mutate: a pending distill lands before the form writes (mirror edit_fact)
-    await pipeline.flush_memory(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
     for it in body.items:
         mem.edit_fact(
             tenant_id=identity.tenant_id,
-            session_id=identity.session_id,
+            session_id=session_id,
             feld=it.feld,
             wert=it.wert,
             provenance="user-form",
         )
     # one recompute over the merged settled inputs (persists the derived slice), then confirm
-    comp = pipeline.compute_for(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
-    settled = mem.case_state(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
+    comp = pipeline.compute_for(tenant_id=identity.tenant_id, session_id=session_id)
+    settled = mem.case_state(tenant_id=identity.tenant_id, session_id=session_id)
     return build_param_confirmation(
         [it.model_dump() for it in body.items], settled, comp
     )
@@ -167,34 +178,30 @@ async def preview_facts(
 @router.delete("/current/facts/{feld}")
 async def forget_fact(
     feld: str,
+    case_id: str | None = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     mem = _memory(pipeline)
+    session_id = case_id or identity.session_id
     # P2 flush-then-mutate: the pending distill lands first, then the forget — a late distill
     # must never re-create what the user just deleted.
-    await pipeline.flush_memory(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
-    mem.delete_fact(
-        tenant_id=identity.tenant_id, session_id=identity.session_id, feld=feld
-    )
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
+    mem.delete_fact(tenant_id=identity.tenant_id, session_id=session_id, feld=feld)
     # M8: forgetting a parent input → recompute → its derived child is evicted (no stale value)
-    pipeline.recompute_derived_for(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
+    pipeline.recompute_derived_for(tenant_id=identity.tenant_id, session_id=session_id)
     return {"status": "ok"}
 
 
 @router.delete("/current")
 async def forget_all(
+    case_id: str | None = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     mem = _memory(pipeline)
+    session_id = case_id or identity.session_id
     # P2 flush-then-mutate: "alles vergessen" is final — flush the pending distill, THEN clear.
-    await pipeline.flush_memory(
-        tenant_id=identity.tenant_id, session_id=identity.session_id
-    )
-    mem.clear(tenant_id=identity.tenant_id, session_id=identity.session_id)
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
+    mem.clear(tenant_id=identity.tenant_id, session_id=session_id)
     return {"status": "ok"}

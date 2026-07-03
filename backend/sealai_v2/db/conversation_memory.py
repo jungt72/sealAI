@@ -8,6 +8,12 @@ last-value-wins case-state (re-stamped to the current exchange), and a SEPARATE 
 
 Sync (the Protocol is sync). Tenant scope (P0) is enforced on every read/write — the same fail-closed
 guard as the in-process store, so a cross-tenant read can never hit another tenant's state.
+
+"Fälle"-Sidebar (Patch A): ``record_turn`` gains an optional ``now`` (ISO-8601 string, caller-
+supplied — no DB-side clock read here) to stamp ``V2Session.created_at``/``title`` on the FIRST
+turn and bump ``updated_at`` on every turn. ``sessions()`` now returns ``SessionSummary`` tuples
+(``case_id``/``title``/``created_at``/``updated_at``) instead of bare id strings, so a "Fälle" list
+UI has display-ready metadata without a per-session follow-up fetch.
 """
 
 from __future__ import annotations
@@ -17,9 +23,17 @@ from dataclasses import asdict
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker
 
-from sealai_v2.core.contracts import DerivedFact, MemoryView, RememberedFact, Turn
+from sealai_v2.core.contracts import (
+    DerivedFact,
+    MemoryView,
+    RememberedFact,
+    SessionSummary,
+    Turn,
+)
 from sealai_v2.db.models import V2Derived, V2Fact, V2Message, V2Session
 from sealai_v2.security.tenant import TenantContext, require_tenant
+
+_TITLE_MAX_LEN = 60
 
 
 def _require(tenant_id: str, session_id: str) -> None:
@@ -31,6 +45,20 @@ def _require(tenant_id: str, session_id: str) -> None:
 
 def _ser_derived(d: DerivedFact) -> dict:
     return asdict(d)
+
+
+def _title_from_question(question: str) -> str:
+    """The "Fälle"-Sidebar title heuristic (Patch A): first ~60 chars of the first user message,
+    whitespace-normalized — no LLM call, matches ChatGPT's own convention. Truncation never lands
+    mid-word where avoidable (trims back to the last space within the limit)."""
+    normalized = " ".join(question.split())
+    if len(normalized) <= _TITLE_MAX_LEN:
+        return normalized
+    cut = normalized[:_TITLE_MAX_LEN]
+    last_space = cut.rfind(" ")
+    if last_space > 0:
+        cut = cut[:last_space]
+    return cut + "…"
 
 
 def _deser_derived(raw: dict) -> DerivedFact:
@@ -102,13 +130,22 @@ class PostgresConversationMemory:
         question: str,
         answer: str,
         facts: tuple[RememberedFact, ...] = (),
+        now: str | None = None,
     ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
             sess = s.get(V2Session, (tenant_id, session_id))
             if sess is None:
-                sess = V2Session(tenant_id=tenant_id, session_id=session_id, turns=0)
+                sess = V2Session(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    turns=0,
+                    created_at=now,
+                    title=_title_from_question(question) if now else None,
+                )
                 s.add(sess)
+            if now is not None:
+                sess.updated_at = now
             sess.turns += 1
             # next idx = current message count (messages are append-only per session; only
             # ``clear`` removes them, wholesale) — mirrors ``len(st.messages)`` in-process.
@@ -163,15 +200,23 @@ class PostgresConversationMemory:
             )
         return tuple(Turn(role=m.role, text=m.text, index=m.idx) for m in msgs)
 
-    def sessions(self, *, tenant_id: str) -> tuple[str, ...]:
+    def sessions(self, *, tenant_id: str) -> tuple[SessionSummary, ...]:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
-            rows = s.execute(
-                select(V2Session.session_id)
+            rows = s.scalars(
+                select(V2Session)
                 .where(V2Session.tenant_id == tenant_id)
-                .order_by(V2Session.session_id)
+                .order_by(V2Session.updated_at.desc().nullslast(), V2Session.session_id)
             ).all()
-        return tuple(r[0] for r in rows)
+        return tuple(
+            SessionSummary(
+                case_id=r.session_id,
+                title=r.title,
+                created_at=r.created_at,
+                updated_at=r.updated_at,
+            )
+            for r in rows
+        )
 
     # --- user control (build-spec §7: view / edit / delete / clear) ---
 

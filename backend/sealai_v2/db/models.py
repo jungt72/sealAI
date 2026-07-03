@@ -46,6 +46,15 @@ class V2Session(Base):
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     turns: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # "Fälle"-Sidebar (Patch A): additive, nullable — existing rows stay valid with all three
+    # None until their next record_turn. title is derived from the first user message (~60 chars,
+    # no LLM call); created_at/updated_at are ISO-8601 strings stamped by the caller (record_turn),
+    # never a DB-side clock, matching every other table in this schema.
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
 
 
 class V2Message(Base):

@@ -11,6 +11,7 @@ gegencheck, diagnose, decode, alternativen) live alongside them here.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from sealai_v2.core.contracts import (
     Answer,
@@ -290,6 +291,11 @@ async def remember(
         question=question,
         answer=answer,
         facts=facts,
+        # "Fälle"-Sidebar (Patch A): a real clock read here, not deep pure business logic — this is
+        # already the effectful, once-per-real-turn database-write moment (same boundary convention
+        # as the API routes' `datetime.now(timezone.utc).isoformat()` calls), so record_turn gets an
+        # honest, real timestamp to stamp V2Session's title/created_at/updated_at with.
+        now=datetime.now(timezone.utc).isoformat(),
     )
     if cross_session is not None and facts:
         cross_session.remember_durable(tenant_id=tenant_id, facts=facts)
