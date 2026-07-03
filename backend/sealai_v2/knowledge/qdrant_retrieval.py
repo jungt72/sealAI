@@ -40,7 +40,17 @@ _POINT_NAMESPACE = uuid.UUID(
 _REVIEWED_BACKFILL_FACTOR = 24
 _REVIEWED_BACKFILL_MAX_CANDIDATES = 128
 _REVIEWED_BACKFILL_MAX_FACTS = 2
+# Incident note (2026-07-03): this ratio is SCALE-DEPENDENT — it only makes sense relative to the
+# score distribution it was calibrated against. Dense cosine similarity decays gently across rank
+# (e.g. top=0.69, rank~68/128=0.58 — still 84% of top), so 0.75 lets a genuinely-relevant reviewed
+# card several dozen ranks deep still qualify. Qdrant's RRF fusion decays MUCH more steeply (e.g.
+# top=0.51, the equivalent genuinely-relevant reviewed card at rank~27/128=0.077 — only 15% of top);
+# reusing the dense ratio for RRF-fused scores made the gate impossibly strict and silently defeated
+# the whole reviewed-backfill mechanism under hybrid mode (caught live: PTFE stopped grounding within
+# minutes of the first hybrid-mode production deploy, reverted same-day). Each retrieval mode needs
+# its OWN ratio, chosen against that mode's OWN score distribution — see qdrant_hybrid_enabled callers.
 _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE = 0.75
+_REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID = 0.10
 
 
 def _query_text(q: str, prefix: str = "query: ") -> str:
@@ -174,7 +184,13 @@ def _rerank_points(query: str, points, reranker, top_n: int):
     return reordered + tail
 
 
-def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
+def _select_points_with_reviewed_backfill(
+    points,
+    k: int,
+    query: str = "",
+    *,
+    min_relative_score: float = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE,
+):
     """Return the normal top-k, plus a tiny reviewed backfill when top-k is draft-only.
 
     Production Qdrant stores many draft points for broad material topics. A general query such as
@@ -182,6 +198,9 @@ def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
     reviewed safety/caveat cards. The output contract treats only reviewed claims as grounding_facts,
     so a draft-only top-k makes the turn falsely ungrounded even though reviewed knowledge exists just
     below the cutoff. Keep the original top-k intact, then add a small, score-bounded reviewed tail.
+
+    ``min_relative_score`` is SCALE-DEPENDENT (see the constant's docstring) — callers on a non-dense
+    score scale (RRF fusion) MUST pass the matching mode-specific ratio, not the dense default.
     """
     limit = max(0, k)
     candidates = list(points)
@@ -190,9 +209,7 @@ def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
         return selected
 
     top_score = _score(candidates[0])
-    min_score = (
-        top_score * _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE if top_score is not None else None
-    )
+    min_score = top_score * min_relative_score if top_score is not None else None
     material_tokens = _detected_scope_tokens(candidates, query, "material")
     # Medium check (fixes a real cross-contamination case found in review, 2026-07-03): a query
     # naming BOTH a material and a medium ("Ist FKM beständig gegen Essigsäure?") must not backfill
@@ -464,6 +481,10 @@ class QdrantFachkartenRetriever:
 
         if self._hybrid_enabled:
             points = self._query_hybrid(query, tenant_filter, candidate_limit)
+            # RRF-fused scores decay far more steeply than dense cosine similarity — the SAME relative
+            # threshold silently starves the backfill under hybrid mode (see the constant's docstring
+            # for the incident this caught). Each score scale needs its own calibrated ratio.
+            min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID
         else:
             qvec = next(
                 iter(self._embedder.embed([_query_text(query, self._qprefix)]))
@@ -477,11 +498,25 @@ class QdrantFachkartenRetriever:
                 with_payload=True,
             )
             points = res.points
+            min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE
 
-        if self._rerank_enabled and points:
-            points = _rerank_points(query, points, self._reranker, self._rerank_candidates)
+        # Backfill selection MUST run on the retrieval-native score scale (dense or RRF, whichever the
+        # branch above produced) BEFORE any reranking — the cross-encoder only rescores its own top-N
+        # slice, leaving the untouched tail on the old scale, so comparing a post-rerank top_score
+        # against a pre-rerank tail score would silently mix two incompatible scales (same incident).
+        selected = _select_points_with_reviewed_backfill(
+            points, k, query, min_relative_score=min_relative_score
+        )
 
-        return _hits_to_result(_select_points_with_reviewed_backfill(points, k, query))
+        # Rerank is a pure ORDERING refinement over the already-selected small set (top-k + backfill,
+        # never more than k + _REVIEWED_BACKFILL_MAX_FACTS), not a pre-filter over the wide candidate
+        # pool — keeps it cheap and keeps its score scale fully isolated from backfill selection.
+        if self._rerank_enabled and selected:
+            selected = _rerank_points(
+                query, selected, self._reranker, min(len(selected), self._rerank_candidates)
+            )
+
+        return _hits_to_result(selected)
 
     def _query_hybrid(self, query: str, tenant_filter, candidate_limit: int):
         """Dense + sparse (BM25) prefetch, fused server-side via Qdrant's native RRF — deterministic,

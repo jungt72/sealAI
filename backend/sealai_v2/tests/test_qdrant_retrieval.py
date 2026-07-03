@@ -10,6 +10,7 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     GLOBAL_TENANT,
     OpenAiEmbedder,
     QdrantFachkartenRetriever,
+    _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID,
     _hits_to_result,
     _make_embedder,
     _quelle,
@@ -496,3 +497,74 @@ def test_retrieve_skips_rerank_when_disabled():
     )
     res = asyncio.run(r.retrieve("q", tenant_id="eval", k=2))
     assert [f.card_id for f in res.provisional] == ["A", "B"]  # incoming order preserved
+
+
+# --- Incident regression (2026-07-03): the reviewed-backfill's relative-score threshold is
+# scale-dependent. Real numbers below are from the live incident (PTFE stopped grounding within
+# minutes of the first hybrid-mode production deploy — the deploy was reverted same-day). ---
+
+
+def _rrf_scale_candidates_with_deep_reviewed(reviewed_score: float = 0.0768):
+    top5 = [
+        _FakePoint(
+            {"claim_text": f"draft {idx}", "review_state": "draft", "card_id": f"draft-{idx}"},
+            score,
+        )
+        for idx, score in enumerate([0.5116, 0.5, 0.375, 0.3472, 0.3333])
+    ]
+    padding = [
+        _FakePoint({"claim_text": f"pad {i}", "review_state": "draft", "card_id": f"pad-{i}"}, 0.05)
+        for i in range(21)  # pushes the reviewed candidate well past a typical rerank-candidates window
+    ]
+    reviewed = _FakePoint(
+        {
+            "claim_text": "PTFE reviewed fact",
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+        },
+        reviewed_score,
+    )
+    return [*top5, *padding, reviewed], reviewed
+
+
+def test_reviewed_backfill_dense_ratio_is_too_strict_for_rrf_scale_scores():
+    # Demonstrates the failure mode: the dense ratio (0.75) applied to RRF-scale scores silently
+    # excludes a reviewed card that IS the correct backfill target — this is what broke PTFE grounding
+    # under hybrid mode in production.
+    candidates, reviewed = _rrf_scale_candidates_with_deep_reviewed()
+    selected = _select_points_with_reviewed_backfill(
+        candidates, k=5, query="PTFE", min_relative_score=0.75
+    )
+    assert reviewed not in selected
+
+
+def test_reviewed_backfill_hybrid_ratio_finds_the_same_rrf_scale_candidate():
+    # The fix: a ratio calibrated against RRF's own (much steeper) decay finds the identical candidate
+    # the dense ratio missed above — same input, only the ratio differs.
+    candidates, reviewed = _rrf_scale_candidates_with_deep_reviewed()
+    selected = _select_points_with_reviewed_backfill(
+        candidates,
+        k=5,
+        query="PTFE",
+        min_relative_score=_REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID,
+    )
+    assert reviewed in selected
+
+
+def test_retrieve_hybrid_with_rerank_still_grounds_deep_reviewed_candidate():
+    # End-to-end regression test through the full retrieve() call with BOTH hybrid and rerank enabled
+    # together (the exact incident configuration) — proves backfill selection runs on the RRF-native
+    # score scale before rerank ever touches the candidates, and that grounding survives intact.
+    candidates, _reviewed = _rrf_scale_candidates_with_deep_reviewed()
+    client = _FakeClient(points=candidates)
+    reranker = _FakeReranker({f"draft {i}": 0.5 - i * 0.01 for i in range(5)})
+    r = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=True, qdrant_rerank_enabled=True, qdrant_rerank_candidates=20),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+        sparse_embedder=_FakeSparseEmbedder(),
+        reranker=reranker,
+    )
+    res = asyncio.run(r.retrieve("Informationen zu PTFE", tenant_id="eval", k=5))
+    assert res.grounded
+    assert [f.card_id for f in res.grounding_facts] == ["FK-PTFE-KALTFLUSS"]
