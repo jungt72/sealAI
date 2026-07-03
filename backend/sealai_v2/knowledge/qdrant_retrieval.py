@@ -23,6 +23,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sealai_v2.core.contracts import GroundingFact, RetrievalResult
+from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, load_fachkarten
 
 if TYPE_CHECKING:
@@ -97,19 +98,27 @@ def _payload(point) -> dict:
     return getattr(point, "payload", None) or {}
 
 
-def _scope_materials(point) -> set[str]:
+def _scope_dim(point, dim: str) -> tuple[str, ...]:
     scope = _payload(point).get("scope", {}) or {}
-    return {str(item).lower() for item in scope.get("material", ())}
+    return tuple(str(item) for item in scope.get(dim, ()))
 
 
-def _query_material_tokens(points, query: str) -> set[str]:
-    q = (query or "").lower()
-    if not q:
+def _detected_scope_tokens(points, query: str, dim: str) -> set[str]:
+    """Scope tags (from ANY candidate's ``scope[dim]``) that actually appear in the query — word-
+    boundary matched via the SAME shared tokenizer the §4 matrix and the L3 trap gate already use
+    (``core.text_match``), not a raw substring check (which over-matches on short/compound German
+    tokens, e.g. a bare "öl" tag inside "Kühlöl"). A dimension with zero detected tokens is treated
+    as unconstrained by the query — callers must not filter on it (see ``_point_matches_scope``)."""
+    q_tokens = query_tokens(query or "")
+    q_norm = (query or "").lower()
+    if not q_tokens:
         return set()
-    materials: set[str] = set()
+    tags: set[str] = set()
     for point in points:
-        materials.update(tok for tok in _scope_materials(point) if tok and tok in q)
-    return materials
+        for tag in _scope_dim(point, dim):
+            if tag and tag_matches(tag, q_tokens, q_norm):
+                tags.add(tag.lower())
+    return tags
 
 
 def _card_id_matches_material(point, material_tokens: set[str]) -> bool:
@@ -117,9 +126,20 @@ def _card_id_matches_material(point, material_tokens: set[str]) -> bool:
     return any(tok in card_id for tok in material_tokens)
 
 
+def _point_matches_scope(point, dim: str, tokens: set[str]) -> bool:
+    """True when ``tokens`` is empty (the query didn't name anything on this dimension — not a
+    constraint) OR the point's own ``scope[dim]`` overlaps with the detected tokens."""
+    if not tokens:
+        return True
+    point_tags = {t.lower() for t in _scope_dim(point, dim)}
+    return bool(tokens & point_tags)
+
+
 def _matches_material_scope(point, material_tokens: set[str]) -> bool:
-    scoped = _scope_materials(point)
-    return bool(material_tokens & scoped) or _card_id_matches_material(point, material_tokens)
+    return (
+        _point_matches_scope(point, "material", material_tokens)
+        or _card_id_matches_material(point, material_tokens)
+    )
 
 
 def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
@@ -141,12 +161,21 @@ def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
     min_score = (
         top_score * _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE if top_score is not None else None
     )
-    material_tokens = _query_material_tokens(candidates, query)
+    material_tokens = _detected_scope_tokens(candidates, query, "material")
+    # Medium check (fixes a real cross-contamination case found in review, 2026-07-03): a query
+    # naming BOTH a material and a medium ("Ist FKM beständig gegen Essigsäure?") must not backfill
+    # a reviewed card for the RIGHT material but the WRONG medium (e.g. an FKM×Lauge card for an
+    # FKM×Essigsäure question) — material overlap alone is not "on topic". When the query names no
+    # recognisable medium at all (e.g. the PTFE property-only case this backfill was built for),
+    # medium_tokens is empty and _point_matches_scope treats the dimension as unconstrained.
+    medium_tokens = _detected_scope_tokens(candidates, query, "medium")
     eligible = []
     for idx, point in enumerate(candidates[limit:]):
         if _review_state(point) != "reviewed":
             continue
         if material_tokens and not _matches_material_scope(point, material_tokens):
+            continue
+        if not _point_matches_scope(point, "medium", medium_tokens):
             continue
         point_score = _score(point)
         if min_score is not None and point_score is not None and point_score < min_score:

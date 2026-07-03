@@ -132,6 +132,54 @@ def test_reviewed_backfill_prefers_matching_material_scope_for_material_queries(
     assert vmq_ptfe_lip not in selected
 
 
+def test_reviewed_backfill_rejects_wrong_medium_for_same_material():
+    # Regression (found in review, 2026-07-03): a query naming BOTH a material and a medium must not
+    # backfill a reviewed card for the RIGHT material but the WRONG medium — e.g. "Ist FKM beständig
+    # gegen Essigsäure?" must not ground on an FKM card scoped to amines/bases/ketones, not acids.
+    pts = [
+        _FakePoint(
+            {
+                "review_state": "draft",
+                "card_id": f"draft-{idx}",
+                "scope": {"material": ["FKM"], "medium": ["essigsäure"]},
+            },
+            1.0 - idx * 0.02,
+        )
+        for idx in range(5)
+    ]
+    wrong_medium = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-FKM-AMIN-LAUGE-KETON",
+            "scope": {"material": ["FKM"], "medium": ["amine", "lauge", "keton"]},
+        },
+        0.80,
+    )
+    right_medium = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-FKM-SAEUREN",
+            "scope": {"material": ["FKM"], "medium": ["essigsäure"]},
+        },
+        0.78,
+    )
+
+    selected = _select_points_with_reviewed_backfill(
+        [*pts, wrong_medium],
+        k=5,
+        query="Ist FKM beständig gegen Essigsäure?",
+    )
+    assert wrong_medium not in selected  # material matches, medium doesn't → excluded
+
+    selected_with_match = _select_points_with_reviewed_backfill(
+        [*pts, wrong_medium, right_medium],
+        k=5,
+        query="Ist FKM beständig gegen Essigsäure?",
+    )
+    assert right_medium in selected_with_match  # material AND medium match → backfilled
+    assert wrong_medium not in selected_with_match
+
+
 def test_reviewed_backfill_is_noop_when_top_k_already_has_reviewed():
     reviewed = _FakePoint({"review_state": "reviewed", "card_id": "FK-REVIEWED"}, 0.9)
     extra = _FakePoint({"review_state": "reviewed", "card_id": "FK-EXTRA"}, 0.89)
