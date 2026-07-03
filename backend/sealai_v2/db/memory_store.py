@@ -206,6 +206,18 @@ class PostgresMemoryStore:
                         created_at=item.created_at,
                     )
                 )
+            # Patch 5 fix: a brand-new candidate must also reach Qdrant, not just later status
+            # transitions (transition_status already enqueues on confirm/reject/deprecate/delete) —
+            # even an unconfirmed candidate is surfaceable (e.g. implicit_context's clarifying-
+            # question-only use, Patch 7), so it needs to be retrievable from the moment it exists.
+            s.add(
+                V2MemoryOutbox(
+                    memory_item_id=item.id,
+                    tenant_id=item.tenant_id,
+                    operation="upsert",
+                    created_at=item.created_at,
+                )
+            )
             s.commit()
             return item
 
