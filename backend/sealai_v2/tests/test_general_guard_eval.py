@@ -26,7 +26,9 @@ def test_open_question_with_no_grounding_and_no_calc_never_builds_a_contract():
     # Zero evidence -> build_guard_contract() returns None -> the guard does not run at all for a
     # pure open-ended question (byte-identical no-guard path, the safest case by construction).
     r = seed_general_guard_overblock_report()
-    case = next(c for c in r["per_case"] if c["id"] == "no-grounding-no-calc-open-question")
+    case = next(
+        c for c in r["per_case"] if c["id"] == "no-grounding-no-calc-open-question"
+    )
     assert case["contract_built"] is False
     assert case["action"] == "PASS"
 
@@ -37,7 +39,9 @@ def test_known_limitations_still_correctly_block():
     # for its documented reason — this is the guard's real safety value, not just its overblock cost.
     r = seed_general_guard_overblock_report()
     assert r["known_limitations_confirmed"] == len(GENERAL_GUARD_KNOWN_LIMITATION_CASES)
-    for detail, case in zip(r["known_limitations_detail"], GENERAL_GUARD_KNOWN_LIMITATION_CASES):
+    for detail, case in zip(
+        r["known_limitations_detail"], GENERAL_GUARD_KNOWN_LIMITATION_CASES
+    ):
         assert detail["action"] == "BLOCK", detail
         kinds = {v["kind"] for v in detail["violations"]}
         assert case["expected_violation_kind"] in kinds, (case["id"], kinds)

@@ -52,6 +52,7 @@ def is_alternativen_request(question: str) -> bool:
     silently open)."""
     return bool(_ALT_RE.search(question))
 
+
 _UNDERSTAND_SYSTEM = (
     "Du klassifizierst eine Nutzer-Nachricht an einen Dichtungstechnik-Assistenten GROB nach "
     'Absicht. Antworte NUR mit einem JSON-Objekt {"intent": <label>, "rationale": <kurz>}. '
@@ -384,7 +385,9 @@ def gegencheck_from_case_state(
     catalog = getattr(matrix, "catalog", None)
     if catalog is None:
         return None
-    return evaluate_gegencheck(material, " ".join(media), tenant=tenant_id, catalog=catalog)
+    return evaluate_gegencheck(
+        material, " ".join(media), tenant=tenant_id, catalog=catalog
+    )
 
 
 def diagnose(versagensmodi, question: str, *, tenant_id: str) -> dict | None:

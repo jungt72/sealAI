@@ -12,7 +12,12 @@ instance into one string. Pure; no I/O, no LLM.
 
 from __future__ import annotations
 
-_LABELS = (("fk", "fachkarten_version"), ("mx", "matrix_version"), ("trap", "traps_version"), ("vm", "versagensmodi_version"))
+_LABELS = (
+    ("fk", "fachkarten_version"),
+    ("mx", "matrix_version"),
+    ("trap", "traps_version"),
+    ("vm", "versagensmodi_version"),
+)
 
 
 def compute_wissensstand(
@@ -33,6 +38,4 @@ def compute_wissensstand(
         "traps_version": traps_version,
         "versagensmodi_version": versagensmodi_version,
     }
-    return "|".join(
-        f"{label}:{values[key]}" for label, key in _LABELS if values[key]
-    )
+    return "|".join(f"{label}:{values[key]}" for label, key in _LABELS if values[key])

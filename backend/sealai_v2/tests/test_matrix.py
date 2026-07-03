@@ -58,9 +58,9 @@ def test_seed_loads_and_every_cell_traces_to_a_reviewed_source():
             )
             for p in c.provenance
         )
-        assert (
-            reviewed_prov or c.sources
-        ), f"{c.id}: no reviewed provenance and no source"
+        assert reviewed_prov or c.sources, (
+            f"{c.id}: no reviewed provenance and no source"
+        )
 
 
 def test_loader_rejects_a_model_sourced_cell(tmp_path):
@@ -237,7 +237,10 @@ def test_matrix_grounding_facts_carry_provenance_and_no_selection():
         (("fk-EPDM-1",), 0),
         (("fachkarte:FK-1",), 0),
         ((), 0),
-        (("model:guess",), 0),  # no reviewed prefix — degrades safely, not a loader-valid cell anyway
+        (
+            ("model:guess",),
+            0,
+        ),  # no reviewed prefix — degrades safely, not a loader-valid cell anyway
     ],
 )
 def test_provenance_authority_ranks_each_prefix(provenance, expected):
@@ -253,7 +256,9 @@ def test_tie_break_prefers_higher_provenance_authority_at_equal_relevance():
     # two cells, IDENTICAL scope (same score) — MX-A would win the OLD alphabetical tie-break, but
     # MX-Z (eval: — an adjudicated conflict resolution) must win under the new provenance tie-break.
     low = _cell("MX-A", provenance=("fk-OTHER",), material="FKM", medium="Testmedium")
-    high = _cell("MX-Z", provenance=("eval:CONFLICT-01",), material="FKM", medium="Testmedium")
+    high = _cell(
+        "MX-Z", provenance=("eval:CONFLICT-01",), material="FKM", medium="Testmedium"
+    )
     cat = CompatibilityMatrixCatalog(cells=(low, high))
     facts = InProcessCompatibilityMatrix(cat).query(
         tenant_id="t1", query_text="FKM Testmedium"

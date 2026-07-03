@@ -362,9 +362,14 @@ class Pipeline:
         # turn was even asking about manufacturers; `is_alternativen_request` mirrors alternativen's
         # own keyword gate so unrelated turns (most of them) never pay for it.
         alternativen_verdict = None
-        if self.partner_registry is not None and stages.is_alternativen_request(question):
-            alternativen_verdict = gegencheck_verdict or stages.gegencheck_from_case_state(
-                self.matrix, mem.case_state, tenant_id=scope.tenant_id
+        if self.partner_registry is not None and stages.is_alternativen_request(
+            question
+        ):
+            alternativen_verdict = (
+                gegencheck_verdict
+                or stages.gegencheck_from_case_state(
+                    self.matrix, mem.case_state, tenant_id=scope.tenant_id
+                )
             )
         alternativen_result = stages.alternativen(
             self.partner_registry,

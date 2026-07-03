@@ -86,6 +86,8 @@ def _provenance_authority(cell: MatrixCell) -> int:
             if pl.startswith(prefix) and rank > best:
                 best = rank
     return best
+
+
 # token/tag matching primitives now live in core.text_match (shared with the L3 trap topic-gate).
 
 

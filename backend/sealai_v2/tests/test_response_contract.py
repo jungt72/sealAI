@@ -244,7 +244,9 @@ def test_guard_contract_allowed_values_from_calc_computed():
         )
     )
     c = build_guard_contract(grounding_facts=(), calc=calc)
-    assert c is not None  # a computed value alone is evidence, even with zero grounding_facts
+    assert (
+        c is not None
+    )  # a computed value alone is evidence, even with zero grounding_facts
     assert c.allowed_values == (
         {"name": "pv", "value": 3.2, "unit": "N/(mm·s)", "calc_id": "pv_wert"},
     )

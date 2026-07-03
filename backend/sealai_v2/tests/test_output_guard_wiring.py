@@ -107,8 +107,12 @@ _FKM_FACT = GroundingFact(
     card_id="CARD-FKM-1",
     kind="card",
 )
-_KNOWLEDGE_CLEAN = "FKM ist ein fluoriertes Elastomer mit hoher Temperatur- und Ölbeständigkeit."
-_KNOWLEDGE_LEAKY = "FKM ist bis 400 °C dauerhaft einsetzbar und für alle Medien freigegeben."
+_KNOWLEDGE_CLEAN = (
+    "FKM ist ein fluoriertes Elastomer mit hoher Temperatur- und Ölbeständigkeit."
+)
+_KNOWLEDGE_LEAKY = (
+    "FKM ist bis 400 °C dauerhaft einsetzbar und für alle Medien freigegeben."
+)
 
 
 class _FixedRetriever:
@@ -120,7 +124,9 @@ class _FixedRetriever:
         return RetrievalResult(grounding_facts=(_FKM_FACT,))
 
 
-def _knowledge_pipeline(client, *, rc: bool = True, general_guard: bool = False) -> Pipeline:
+def _knowledge_pipeline(
+    client, *, rc: bool = True, general_guard: bool = False
+) -> Pipeline:
     return Pipeline(
         generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
         client=client,
@@ -142,8 +148,12 @@ def test_general_guard_off_by_default_is_noop_on_a_grounded_knowledge_turn():
     # behave EXACTLY as before this change — a knowledge turn with real grounding ships unguarded.
     client = ScriptedFakeLlmClient([_KNOWLEDGE_LEAKY])
     res = _run_knowledge(_knowledge_pipeline(client))  # general_guard defaults to False
-    assert res.gegencheck is None  # no medium stated -> no verdict, confirms this is the non-Gegencheck path
-    assert res.contract is None  # the renderer-mode contract never builds without a verdict
+    assert (
+        res.gegencheck is None
+    )  # no medium stated -> no verdict, confirms this is the non-Gegencheck path
+    assert (
+        res.contract is None
+    )  # the renderer-mode contract never builds without a verdict
     assert res.guard is None  # the NEW guard path did not fire either — flag is off
     assert len(client.calls) == 1  # no regenerate
 
@@ -178,7 +188,9 @@ def test_general_guard_does_not_change_the_existing_gegencheck_renderer_path():
         client = ScriptedFakeLlmClient([_LEAKY, _CLEAN])
         res = asyncio.run(
             Pipeline(
-                generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
+                generator=L1Generator(
+                    client, PromptAssembler(), ModelConfig("fake-l1")
+                ),
                 client=client,
                 helper_model=ModelConfig("fake-helper"),
                 understand_enabled=False,
@@ -192,4 +204,7 @@ def test_general_guard_does_not_change_the_existing_gegencheck_renderer_path():
         assert res.answer.text == _CLEAN
         assert res.guard is not None and res.guard["action"] == "PASS"
         # the renderer-mode contract (Gegencheck-shaped) is unaffected either way
-        assert res.contract is not None and res.contract["status"] == "COVERED_RECOMMENDATION"
+        assert (
+            res.contract is not None
+            and res.contract["status"] == "COVERED_RECOMMENDATION"
+        )

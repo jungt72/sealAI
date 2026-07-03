@@ -111,10 +111,16 @@ class TestIsAlternativenRequest:
     turns that were never going to trigger Modus F). Must agree with `alternativen` exactly."""
 
     def test_true_on_a_manufacturer_question(self):
-        assert stages.is_alternativen_request("Welcher Hersteller kann das liefern?") is True
+        assert (
+            stages.is_alternativen_request("Welcher Hersteller kann das liefern?")
+            is True
+        )
 
     def test_false_on_an_unrelated_question(self):
-        assert stages.is_alternativen_request("Was ist der Unterschied FKM vs. EPDM?") is False
+        assert (
+            stages.is_alternativen_request("Was ist der Unterschied FKM vs. EPDM?")
+            is False
+        )
 
     def test_agrees_with_alternativen_itself_on_the_keyword_gate(self):
         # regression: this helper must never drift from _ALT_RE inside alternativen()
@@ -295,7 +301,9 @@ def test_alternativen_ranks_once_a_verdict_exists_end_to_end():
             tenant=TenantContext("t1"),
         )
     )
-    assert res.gegencheck is not None  # verdict ran (disqualified — irrelevant to matching)
+    assert (
+        res.gegencheck is not None
+    )  # verdict ran (disqualified — irrelevant to matching)
     assert res.alternativen is not None
     assert res.alternativen["grounded_data"] is True
     assert [h["firmenname"] for h in res.alternativen["hersteller"]] == ["Voll-Fit"]
@@ -313,7 +321,9 @@ class _ChatDistillFake:
         self.distill_json = distill_json
         self.answer = answer
 
-    async def generate(self, *, system: str, user: str, model_config: ModelConfig) -> LlmResult:
+    async def generate(
+        self, *, system: str, user: str, model_config: ModelConfig
+    ) -> LlmResult:
         text = self.distill_json if _DISTILL_MARKER in system else self.answer
         return LlmResult(text=text, model=model_config.model, finish_reason="stop")
 
@@ -327,7 +337,9 @@ def _chat_pipeline_with_partners(client, registry, matrix):
         matrix=matrix,
         partner_registry=registry,
         memory=InProcessConversationMemory(),
-        distiller=Distiller(client, DistillPromptAssembler(), ModelConfig("fake-helper")),
+        distiller=Distiller(
+            client, DistillPromptAssembler(), ModelConfig("fake-helper")
+        ),
     )
 
 
@@ -344,19 +356,31 @@ def test_alternativen_ranks_on_a_later_turn_using_persisted_case_state():
     tenant, session = TenantContext("t1"), SessionContext("s1")
 
     turn1 = asyncio.run(
-        p.run("Wir verwenden FKM in Heißdampf, ist das okay?", tenant=tenant, session=session)
+        p.run(
+            "Wir verwenden FKM in Heißdampf, ist das okay?",
+            tenant=tenant,
+            session=session,
+        )
     )
-    assert turn1.gegencheck is not None  # turn 1 itself already assessed it (same-turn path)
+    assert (
+        turn1.gegencheck is not None
+    )  # turn 1 itself already assessed it (same-turn path)
     assert turn1.alternativen is None  # turn 1 never asked about manufacturers
 
-    asyncio.run(p.flush_memory(tenant_id="t1", session_id="s1"))  # land the background remember
+    asyncio.run(
+        p.flush_memory(tenant_id="t1", session_id="s1")
+    )  # land the background remember
 
     turn2 = asyncio.run(
         p.run("Welcher Hersteller kann das liefern?", tenant=tenant, session=session)
     )
-    assert turn2.gegencheck is None  # turn 2's OWN text names neither material nor medium
+    assert (
+        turn2.gegencheck is None
+    )  # turn 2's OWN text names neither material nor medium
     assert turn2.alternativen is not None
-    assert turn2.alternativen["grounded_data"] is True  # ranked anyway — via persisted case-state
+    assert (
+        turn2.alternativen["grounded_data"] is True
+    )  # ranked anyway — via persisted case-state
     assert [h["firmenname"] for h in turn2.alternativen["hersteller"]] == ["Voll-Fit"]
 
 

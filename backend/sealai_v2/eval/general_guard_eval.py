@@ -30,7 +30,12 @@ from sealai_v2.core.response_contract import build_guard_contract
 
 
 def _gf(text: str, card_id: str) -> dict:
-    return {"text": text, "quelle": "Fachkarte (reviewed)", "card_id": card_id, "kind": "card"}
+    return {
+        "text": text,
+        "quelle": "Fachkarte (reviewed)",
+        "card_id": card_id,
+        "kind": "card",
+    }
 
 
 # ── verbatim reviewed-claim grounding, pulled 2026-07-03 from the live seed (fachkarten_seed.json) ──
@@ -60,7 +65,10 @@ _PTFE_KALTFLUSS = [
         "elastische Rückstellung.",
         "FK-PTFE-KALTFLUSS",
     ),
-    _gf("Chemische Beständigkeit ist nicht gleich mechanische Eignung.", "FK-PTFE-KALTFLUSS"),
+    _gf(
+        "Chemische Beständigkeit ist nicht gleich mechanische Eignung.",
+        "FK-PTFE-KALTFLUSS",
+    ),
     _gf(
         "Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder "
         "PTFE-Compound.",
@@ -79,8 +87,11 @@ _FOODGRADE_FETT = [
         "1935/2004).",
         "FK-FOODGRADE-FETT",
     ),
-    _gf("VMQ bietet nur moderate Fettbeständigkeit; FKM und FFKM sind für fetthaltige Medien deutlich "
-        "stärker.", "FK-FOODGRADE-FETT"),
+    _gf(
+        "VMQ bietet nur moderate Fettbeständigkeit; FKM und FFKM sind für fetthaltige Medien deutlich "
+        "stärker.",
+        "FK-FOODGRADE-FETT",
+    ),
 ]
 
 _NBR_DAUERTEMP = [
@@ -98,8 +109,10 @@ _VMQ_DYNAMISCH = [
         "für dynamische, schnelldrehende Wellendichtungen ungeeignet.",
         "FK-VMQ-DYNAMISCH",
     ),
-    _gf("Der Temperaturbereich allein qualifiziert VMQ nicht; Dynamik und Verschleiß sind limitierend.",
-        "FK-VMQ-DYNAMISCH"),
+    _gf(
+        "Der Temperaturbereich allein qualifiziert VMQ nicht; Dynamik und Verschleiß sind limitierend.",
+        "FK-VMQ-DYNAMISCH",
+    ),
     _gf("Stattdessen FKM oder eine PTFE-Lippe.", "FK-VMQ-DYNAMISCH"),
 ]
 
@@ -116,8 +129,14 @@ def _calc(calc_id: str, name: str, value: float, unit: str) -> CalcResult:
     return CalcResult(
         computed=(
             ComputedValue(
-                calc_id=calc_id, name=name, value=value, unit=unit, stage=1, derivation_depth=1,
-                formula="—", source="Kernel",
+                calc_id=calc_id,
+                name=name,
+                value=value,
+                unit=unit,
+                stage=1,
+                derivation_depth=1,
+                formula="—",
+                source="Kernel",
             ),
         )
     )
@@ -272,7 +291,12 @@ def _score(case: dict) -> dict:
     contract_dict = contract.to_dict() if contract is not None else None
     known_values, known_materials = known_inputs(case["question"])
     if contract_dict is None:
-        return {"id": case["id"], "contract_built": False, "action": "PASS", "violations": []}
+        return {
+            "id": case["id"],
+            "contract_built": False,
+            "action": "PASS",
+            "violations": [],
+        }
     g = evaluate_render(
         answer_text=case["reference_render"],
         contract=contract_dict,
@@ -296,7 +320,8 @@ def seed_general_guard_overblock_report() -> dict:
     blocked = [r for r in main if r["action"] == "BLOCK"]
     limitation = [_score(c) for c in GENERAL_GUARD_KNOWN_LIMITATION_CASES]
     limitation_confirmed = [
-        r for r, c in zip(limitation, GENERAL_GUARD_KNOWN_LIMITATION_CASES)
+        r
+        for r, c in zip(limitation, GENERAL_GUARD_KNOWN_LIMITATION_CASES)
         if r["action"] == "BLOCK"
         and any(v["kind"] == c["expected_violation_kind"] for v in r["violations"])
     ]

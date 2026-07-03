@@ -75,9 +75,9 @@ def test_c2_l3_has_deterministic_v_over_limit_detector() -> None:
     detect_parametric_leaks. RED until built."""
     import sealai_v2.core.l3_verifier as l3
 
-    assert hasattr(
-        l3, "detect_velocity_over_limit"
-    ), "C2 not built: deterministic v-over-limit verifier rule missing in l3_verifier"
+    assert hasattr(l3, "detect_velocity_over_limit"), (
+        "C2 not built: deterministic v-over-limit verifier rule missing in l3_verifier"
+    )
 
 
 def _velocity_cv(d1_mm: float, rpm: float):
@@ -190,12 +190,12 @@ def test_c_ptfe_cold_flow_caution_scoped_to_static() -> None:
     from sealai_v2.prompts.assembler import PromptAssembler
 
     sys = PromptAssembler().system_prompt(flags=Flags(False, False)).lower()
-    assert (
-        "reine statik" in sys
-    ), "the static cold-flow caution must remain (not weakened)"
-    assert (
-        "im dynamischen rwdr-kontext" in sys
-    ), "(c) not built: the cold-flow caution is not scoped — a dynamic RWDR PTFE lip is not marked valid"
+    assert "reine statik" in sys, (
+        "the static cold-flow caution must remain (not weakened)"
+    )
+    assert "im dynamischen rwdr-kontext" in sys, (
+        "(c) not built: the cold-flow caution is not scoped — a dynamic RWDR PTFE lip is not marked valid"
+    )
 
 
 def test_c3_restraint_and_selfcheck_byte_unchanged() -> None:

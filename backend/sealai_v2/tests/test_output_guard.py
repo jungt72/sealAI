@@ -192,7 +192,9 @@ def test_light_mode_does_not_block_in_depth_elaboration_beyond_the_literal_claim
     light = evaluate_render(
         answer_text=elaboration, contract=C_GENERAL, check_sentence_coverage=False
     )
-    assert "unmapped_sentence" in {v.kind for v in full.violations}  # full mode: would block
+    assert "unmapped_sentence" in {
+        v.kind for v in full.violations
+    }  # full mode: would block
     assert light.ok and light.action == "PASS"  # light mode: elaboration is allowed
 
 
