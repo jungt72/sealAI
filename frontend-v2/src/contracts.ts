@@ -273,3 +273,64 @@ export interface Briefing {
   body: string;
   provenance: string[];
 }
+
+// --- sealingAI Memory Architecture V1.0 — Patch 1 (Types & Schemas) ---
+// Mirrors backend/sealai_v2/memory/curated.py. This is the CURATED, cross-session, owner-
+// confirmable memory tier — distinct from ConversationMemory/RememberedFact above (the existing
+// session working-window/case-state, Layer 1-3). No API wiring yet (Patch 3+); these types exist
+// so the Right Rail / Memory Inspector UI (Patch 9/10) can be typed against the real shape from
+// the start instead of retrofitted later.
+
+export type MemoryScope = "user" | "workspace" | "tenant" | "project" | "case" | "session";
+
+// NOTE: TECHNICAL_NOTE/PREFERENCE/CASE_PARAMETER are inferred from the source prompt's Patch 7/12
+// policy text (not an exhaustive bullet-list enum the way Status/Scope are) — see the Patch 1
+// report for the explicit owner-confirmation flag on this set.
+export type MemoryType = "preference" | "technical_note" | "case_parameter";
+
+export type MemoryStatus =
+  | "candidate"
+  | "implicit_context"
+  | "confirmed"
+  | "rejected"
+  | "deprecated"
+  | "deleted_pending_purge"
+  | "purged";
+
+// Statuses a client must NEVER treat as usable context, even if a stale response briefly contains
+// one (e.g. a Right Rail re-render racing a "forget" action) — mirrors the backend's
+// NEVER_INJECTABLE_STATUSES so both sides agree on what "still live" means.
+export const NEVER_INJECTABLE_STATUSES: ReadonlySet<MemoryStatus> = new Set([
+  "rejected",
+  "deprecated",
+  "deleted_pending_purge",
+  "purged",
+]);
+
+export interface MemorySource {
+  kind: string; // e.g. "user_stated" | "llm_inferred" | "owner_manual_entry"
+  session_id?: string;
+  turn_id?: string;
+  note?: string;
+}
+
+export interface MemoryItem {
+  id: string;
+  tenant_id: string;
+  scope: MemoryScope;
+  scope_id: string;
+  type: MemoryType;
+  status: MemoryStatus;
+  content: string;
+  semantic_key: string;
+  sources: MemorySource[];
+  version: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+  purge_after?: string | null;
+}
+
+export function isMemoryItemInjectable(item: Pick<MemoryItem, "status">): boolean {
+  return !NEVER_INJECTABLE_STATUSES.has(item.status);
+}
