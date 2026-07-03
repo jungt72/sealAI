@@ -83,6 +83,7 @@ services:
     volumes:
     - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     - ./nginx/00-tuning.conf:/etc/nginx/conf.d/00-tuning.conf:ro
+    - ./nginx/00-ratelimit.conf:/etc/nginx/conf.d/00-ratelimit.conf:ro
     - ./nginx/www:/var/www/certbot:ro
     - /etc/letsencrypt:/etc/letsencrypt:ro
     - ./nginx/certs/config:/etc/letsencrypt-analytics:ro
