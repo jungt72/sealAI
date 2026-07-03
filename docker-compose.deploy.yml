@@ -119,6 +119,24 @@ services:
       SEALAI_V2_AUTH_JWKS_URL: ${SEALAI_V2_AUTH_JWKS_URL:-http://sealai-keycloak:8080/realms/sealAI/protocol/openid-connect/certs}
       SEALAI_V2_AUTH_ISSUER: ${SEALAI_V2_AUTH_ISSUER:-https://sealingai.com/realms/sealAI}
       SEALAI_V2_AUTH_AUDIENCE: ${SEALAI_V2_AUTH_AUDIENCE:-sealai-v2}
+      # Ops hardening (2026-07-03 deep-dive re-audit, §3): these two gate real runtime access
+      # (api/deps.py — the Hersteller-Partner admin/manufacturer surface) but had no compose
+      # passthrough, so a `.env.prod` override would have silently done nothing. Defaults match
+      # settings.py's own defaults, so this is a pure no-op today — additive-only, zero behavior
+      # change until someone actually needs to override a Keycloak role name.
+      SEALAI_V2_AUTH_ADMIN_ROLE: ${SEALAI_V2_AUTH_ADMIN_ROLE:-admin}
+      SEALAI_V2_AUTH_MANUFACTURER_ROLE: ${SEALAI_V2_AUTH_MANUFACTURER_ROLE:-manufacturer}
+      # Ops hardening (2026-07-03): the 6 documented "incident-only kill-switches" (their own
+      # settings.py docstrings say they're meant to be env-flippable in an emergency) had no
+      # compose passthrough either — same gap, higher stakes (a real incident is exactly the
+      # moment you don't want to discover a silent no-op). Defaults match settings.py's own
+      # defaults (all True) — pure no-op today, only matters if ever actually flipped.
+      SEALAI_V2_UNDERSTAND_ENABLED: ${SEALAI_V2_UNDERSTAND_ENABLED:-true}
+      SEALAI_V2_VERIFY_ENABLED: ${SEALAI_V2_VERIFY_ENABLED:-true}
+      SEALAI_V2_GROUND_ENABLED: ${SEALAI_V2_GROUND_ENABLED:-true}
+      SEALAI_V2_COMPUTE_ENABLED: ${SEALAI_V2_COMPUTE_ENABLED:-true}
+      SEALAI_V2_MEMORY_ENABLED: ${SEALAI_V2_MEMORY_ENABLED:-true}
+      SEALAI_V2_DISTILL_ENABLED: ${SEALAI_V2_DISTILL_ENABLED:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — set in .env or .env.prod}
       # V2 per-role model config (eval-validated by adjudicated run v21-gpt51-gate): L1=gpt-5.1
       # (only model holding the Gegencheck/§9.2 calibration); L3 verifier + helper on Mistral
