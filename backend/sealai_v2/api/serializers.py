@@ -154,6 +154,18 @@ def _medium_intelligence(mi) -> dict | None:
     }
 
 
+def _memory_context(bundle) -> dict | None:
+    """sealingAI Memory Architecture V1.0 (Patch 8) → the ``context_sources`` payload, or None when
+    absent/empty. Render/serializer surface only in this patch — NOT injected into L1/L3 yet (the
+    prompt-text injection step is deliberately separate, see memory/context_assembler.py)."""
+    if bundle is None or bundle.is_empty:
+        return None
+    return {
+        "context_sources": list(bundle.context_sources),
+        "total_estimated_tokens": bundle.total_estimated_tokens,
+    }
+
+
 def chat_response(result: PipelineResult) -> dict:
     return {
         "answer": result.answer.text,
@@ -180,6 +192,10 @@ def chat_response(result: PipelineResult) -> dict:
         # Medium Intelligence (Phase 2): provisional researched medium properties + challenges for the
         # MEDIUM tab, or None. Render/serializer surface only — never injected into L1/L3.
         "medium_intelligence": _medium_intelligence(result.medium_intelligence),
+        # sealingAI Memory Architecture V1.0 (Patch 8): the bounded curated-memory context bundle's
+        # context_sources, or None when off/empty/failed. Render/serializer surface only in this
+        # patch — NOT injected into L1/L3 yet (see memory/context_assembler.py's module docstring).
+        "memory_context": _memory_context(result.memory_context),
         # Kandidaten-Spezifikation (Produktspec v3.1): the candidate Bauform/Werkstoff/DIN render dict
         # (structurally capped, always "vorläufig"), or None when off / non-RWDR / no basis. Already a
         # plain dict from the pipeline adapter — passed through verbatim. Never from L1/L3.

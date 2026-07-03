@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from sealai_v2.core.medium_research import MediumIntelligence
+    from sealai_v2.memory.context_assembler import MemoryContextBundle
 
 
 @dataclass(frozen=True)
@@ -655,6 +656,11 @@ class PipelineResult:
     # render/serializer surface (the MEDIUM tab) — NEVER injected into L1/L3, so the prompt stays
     # byte-identical and the eval is unperturbed.
     medium_intelligence: "MediumIntelligence | None" = None
+    # sealingAI Memory Architecture V1.0 (Patch 8): the bounded, policy-gated, revalidated memory
+    # slice for this turn, or None when the feature is off / no service wired / retrieval failed
+    # (fail-safe). A render/serializer surface (context_sources) — NOT YET injected into L1/L3 in
+    # this patch (a deliberately separate, later step; see memory/context_assembler.py's docstring).
+    memory_context: "MemoryContextBundle | None" = None
     # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN as a
     # render dict, or None when off / non-RWDR / no basis. Structurally capped (G1/G2/G3, always
     # "vorläufig"); a render/serializer surface only — NEVER injected into L1/L3 (prompt byte-identical).

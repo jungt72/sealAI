@@ -193,6 +193,10 @@ services:
       SEALAI_V2_QDRANT_RERANK_CANDIDATES: ${SEALAI_V2_QDRANT_RERANK_CANDIDATES:-20}
       # Medium Intelligence Phase-2: L1-NEUTRAL display data (never fed to L1/L3 → golden byte-identical).
       SEALAI_V2_MEDIUM_INTEL_ENABLED: ${SEALAI_V2_MEDIUM_INTEL_ENABLED:-false}
+      # sealingAI Memory Architecture V1.0 (Patch 8): L1-NEUTRAL in this patch (context_sources on the
+      # response, NOT yet injected into the L1 prompt — see memory/context_assembler.py). Needs both
+      # database_url AND qdrant_url set to actually construct a service; off/unset → fully inert.
+      SEALAI_V2_MEMORY_CONTEXT_ENABLED: ${SEALAI_V2_MEMORY_CONTEXT_ENABLED:-false}
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
       # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
       SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
