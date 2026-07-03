@@ -4,9 +4,15 @@ pattern against the sqlite-backed adapter; same dialect-agnostic SQL runs agains
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
-from sealai_v2.db.memory_store import PostgresMemoryStore
+from sealai_v2.db.memory_store import (
+    InvalidMemoryTransition,
+    MemoryItemNotFound,
+    PostgresMemoryStore,
+)
+from sealai_v2.db.models import V2MemoryEvent, V2MemoryOutbox
 from sealai_v2.memory.curated import (
     MemoryItem,
     MemoryScope,
@@ -92,3 +98,159 @@ def test_case_id_is_denormalized_from_scope_at_write_time(db_url):
     assert (
         not_a_project == ()
     )  # case-scoped item must not leak into a project_id filter
+
+
+# --- Patch 4: status transitions (confirm/reject/deprecate/delete) ---
+
+
+def test_get_item_returns_none_for_unknown_id(db_url):
+    assert _store(db_url).get_item(tenant_id="tenant-a", item_id="nope") is None
+
+
+def test_get_item_returns_none_across_tenants(db_url):
+    _store(db_url).create_candidate(_item(tenant_id="tenant-a"))
+    assert _store(db_url).get_item(tenant_id="tenant-b", item_id="mem-1") is None
+
+
+def test_transition_status_updates_status_bumps_version_stamps_updated_at(db_url):
+    _store(db_url).create_candidate(_item())
+    updated = _store(db_url).transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.CONFIRMED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+    )
+    assert updated.status == MemoryStatus.CONFIRMED
+    assert updated.version == 2
+    assert updated.updated_at == "2026-07-03T01:00:00Z"
+
+
+def test_transition_status_survives_a_fresh_store_instance(db_url):
+    _store(db_url).create_candidate(_item())
+    _store(db_url).transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.CONFIRMED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+    )
+    fresh = _store(db_url).get_item(tenant_id="tenant-a", item_id="mem-1")
+    assert fresh.status == MemoryStatus.CONFIRMED
+
+
+def test_transition_status_raises_not_found_for_unknown_id(db_url):
+    store = _store(db_url)
+    with pytest.raises(MemoryItemNotFound):
+        store.transition_status(
+            tenant_id="tenant-a",
+            item_id="nope",
+            to_status=MemoryStatus.CONFIRMED,
+            actor="user-1",
+            now="2026-07-03T01:00:00Z",
+        )
+
+
+def test_transition_status_raises_not_found_across_tenants(db_url):
+    _store(db_url).create_candidate(_item(tenant_id="tenant-a"))
+    with pytest.raises(MemoryItemNotFound):
+        _store(db_url).transition_status(
+            tenant_id="tenant-b",
+            item_id="mem-1",
+            to_status=MemoryStatus.CONFIRMED,
+            actor="user-1",
+            now="2026-07-03T01:00:00Z",
+        )
+
+
+def test_transition_status_rejects_illegal_transition(db_url):
+    _store(db_url).create_candidate(_item())
+    store = _store(db_url)
+    store.transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.REJECTED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+    )
+    with pytest.raises(InvalidMemoryTransition):
+        store.transition_status(
+            tenant_id="tenant-a",
+            item_id="mem-1",
+            to_status=MemoryStatus.CONFIRMED,
+            actor="user-1",
+            now="2026-07-03T02:00:00Z",
+        )
+
+
+def test_transition_status_writes_a_memory_event(db_url):
+    _store(db_url).create_candidate(_item())
+    _store(db_url).transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.CONFIRMED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+        note="confirmed via Right Rail",
+    )
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        events = s.scalars(
+            select(V2MemoryEvent).where(V2MemoryEvent.memory_item_id == "mem-1")
+        ).all()
+        assert len(events) == 1
+        ev = events[0]
+        assert ev.from_status == "candidate" and ev.to_status == "confirmed"
+        assert ev.actor == "user-1"
+        assert ev.note == "confirmed via Right Rail"
+
+
+def test_transition_status_enqueues_an_outbox_upsert(db_url):
+    _store(db_url).create_candidate(_item())
+    _store(db_url).transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.CONFIRMED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+    )
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        rows = s.scalars(
+            select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].operation == "upsert"
+        assert rows[0].status == "pending"
+
+
+def test_two_transitions_write_two_events_and_two_outbox_rows(db_url):
+    _store(db_url).create_candidate(_item())
+    store = _store(db_url)
+    store.transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.CONFIRMED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+    )
+    store.transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.DEPRECATED,
+        actor="user-1",
+        now="2026-07-03T02:00:00Z",
+    )
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        events = s.scalars(
+            select(V2MemoryEvent)
+            .where(V2MemoryEvent.memory_item_id == "mem-1")
+            .order_by(V2MemoryEvent.id)
+        ).all()
+        outbox = s.scalars(
+            select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
+        ).all()
+        assert len(events) == 2
+        assert len(outbox) == 2
+        assert [e.to_status for e in events] == ["confirmed", "deprecated"]

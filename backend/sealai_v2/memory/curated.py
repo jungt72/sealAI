@@ -78,6 +78,43 @@ NEVER_INJECTABLE_STATUSES: frozenset[MemoryStatus] = frozenset(
 )
 
 
+# Status-transition state machine (Patch 4). CANDIDATE/IMPLICIT_CONTEXT can be confirmed, rejected, or
+# deleted directly — a user hasn't committed to anything yet. CONFIRMED can only be deprecated (a new
+# fact supersedes it) or deleted, never re-rejected (it was already accepted; "wrong now" is a
+# deprecation, not an un-confirmation — keeps the audit trail honest about what was actually true when).
+# REJECTED/DEPRECATED can only move to DELETED_PENDING_PURGE. DELETED_PENDING_PURGE/PURGED are terminal
+# from the status-action API's perspective — only the purge job (Patch 14) advances past them.
+_VALID_TRANSITIONS: dict[MemoryStatus, frozenset[MemoryStatus]] = {
+    MemoryStatus.CANDIDATE: frozenset(
+        {
+            MemoryStatus.CONFIRMED,
+            MemoryStatus.REJECTED,
+            MemoryStatus.DELETED_PENDING_PURGE,
+        }
+    ),
+    MemoryStatus.IMPLICIT_CONTEXT: frozenset(
+        {
+            MemoryStatus.CONFIRMED,
+            MemoryStatus.REJECTED,
+            MemoryStatus.DELETED_PENDING_PURGE,
+        }
+    ),
+    MemoryStatus.CONFIRMED: frozenset(
+        {MemoryStatus.DEPRECATED, MemoryStatus.DELETED_PENDING_PURGE}
+    ),
+    MemoryStatus.REJECTED: frozenset({MemoryStatus.DELETED_PENDING_PURGE}),
+    MemoryStatus.DEPRECATED: frozenset({MemoryStatus.DELETED_PENDING_PURGE}),
+    MemoryStatus.DELETED_PENDING_PURGE: frozenset(),
+    MemoryStatus.PURGED: frozenset(),
+}
+
+
+def is_valid_transition(from_status: MemoryStatus, to_status: MemoryStatus) -> bool:
+    """Pure state-machine check — the single source of truth both the API layer (for a clean 409)
+    and the store's write path (defense in depth) consult, so the two can never disagree."""
+    return to_status in _VALID_TRANSITIONS.get(from_status, frozenset())
+
+
 @dataclass(frozen=True)
 class MemorySource:
     """Provenance for a memory item — mandatory per doctrine ("Keine Memory-Schreibvorgänge ohne
