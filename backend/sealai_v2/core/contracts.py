@@ -367,6 +367,14 @@ class RenderSnapshot:
     # against (core.wissensstand.compute_wissensstand) — "" when unset (e.g. hand-built snapshots
     # in tests). Render-only; never fed back into L1/L3.
     wissensstand: str = ""
+    # P5 (audit L8, "offene Punkte fehlen strukturell"): a flat, pre-assembled list of open/
+    # unresolved items for THIS turn — already-live signals consolidated under one heading (see
+    # render.renderer.snapshot_from_result for the assembly: not_computed reasons, calc_notes, a
+    # BEDINGT Gegencheck condition — never a disqualification, doctrine E4-1 stays silent-only —
+    # and, when the flag-gated Produktspec ran, its own offene_punkte). Pre-assembled to plain
+    # strings here (not raw dicts) so the template stays a dumb formatter, matching every other
+    # RenderSnapshot field.
+    offene_punkte: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
