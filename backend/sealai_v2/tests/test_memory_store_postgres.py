@@ -205,7 +205,21 @@ def test_transition_status_writes_a_memory_event(db_url):
         assert ev.note == "confirmed via Right Rail"
 
 
-def test_transition_status_enqueues_an_outbox_upsert(db_url):
+def test_create_candidate_also_enqueues_an_outbox_upsert(db_url):
+    # Patch 5 fix: a brand-new candidate must reach Qdrant immediately, not only on a later
+    # status transition (even an unconfirmed candidate is surfaceable — Patch 7's
+    # implicit_context clarifying-question-only use).
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        rows = s.scalars(
+            select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].operation == "upsert"
+
+
+def test_transition_status_enqueues_an_additional_outbox_upsert(db_url):
     _store(db_url).create_candidate(_item())
     _store(db_url).transition_status(
         tenant_id="tenant-a",
@@ -219,8 +233,8 @@ def test_transition_status_enqueues_an_outbox_upsert(db_url):
         rows = s.scalars(
             select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
         ).all()
-        assert len(rows) == 1
-        assert rows[0].operation == "upsert"
+        assert len(rows) == 2  # one from create, one from the transition
+        assert all(r.operation == "upsert" for r in rows)
         assert rows[0].status == "pending"
 
 
@@ -252,5 +266,7 @@ def test_two_transitions_write_two_events_and_two_outbox_rows(db_url):
             select(V2MemoryOutbox).where(V2MemoryOutbox.memory_item_id == "mem-1")
         ).all()
         assert len(events) == 2
-        assert len(outbox) == 2
+        assert (
+            len(outbox) == 3
+        )  # create + 2 transitions, each enqueues its own outbox row
         assert [e.to_status for e in events] == ["confirmed", "deprecated"]
