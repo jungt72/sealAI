@@ -8,20 +8,37 @@ Layer 1-4 discipline exactly.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
-from sealai_v2.db.models import V2MemoryItem, V2MemorySource
+from sealai_v2.db.models import (
+    V2MemoryEvent,
+    V2MemoryItem,
+    V2MemoryOutbox,
+    V2MemorySource,
+)
 from sealai_v2.memory.curated import (
     MemoryItem,
     MemoryScope,
     MemorySource,
     MemoryStatus,
     MemoryType,
+    is_valid_transition,
 )
 from sealai_v2.security.tenant import TenantContext, require_tenant
+
+
+class MemoryItemNotFound(LookupError):
+    """No item with this id for this tenant — same error for "doesn't exist" and "belongs to
+    another tenant" (P0: never reveal via a different error shape whether an id exists elsewhere)."""
+
+
+class InvalidMemoryTransition(ValueError):
+    """The requested status transition isn't legal from the item's current status
+    (``memory.curated.is_valid_transition``) — the API layer maps this to HTTP 409."""
 
 
 def _item_to_domain(row: V2MemoryItem, sources: tuple[MemorySource, ...]) -> MemoryItem:
@@ -55,6 +72,17 @@ class MemoryStore(Protocol):
         case_id: str | None = None,
     ) -> tuple[MemoryItem, ...]: ...
     def summary(self, *, tenant_id: str) -> dict: ...
+    def get_item(self, *, tenant_id: str, item_id: str) -> MemoryItem | None: ...
+    def transition_status(
+        self,
+        *,
+        tenant_id: str,
+        item_id: str,
+        to_status: MemoryStatus,
+        actor: str,
+        now: str,
+        note: str = "",
+    ) -> MemoryItem: ...
 
 
 class InProcessMemoryStore:
@@ -106,6 +134,38 @@ class InProcessMemoryStore:
             by_status[it.status.value] = by_status.get(it.status.value, 0) + 1
             by_scope[it.scope.value] = by_scope.get(it.scope.value, 0) + 1
         return {"total": len(items), "by_status": by_status, "by_scope": by_scope}
+
+    def get_item(self, *, tenant_id: str, item_id: str) -> MemoryItem | None:
+        require_tenant(TenantContext(tenant_id))
+        item = self._items.get(item_id)
+        if item is None or item.tenant_id != tenant_id:
+            return None
+        return item
+
+    def transition_status(
+        self,
+        *,
+        tenant_id: str,
+        item_id: str,
+        to_status: MemoryStatus,
+        actor: str,
+        now: str,
+        note: str = "",
+    ) -> MemoryItem:
+        require_tenant(TenantContext(tenant_id))
+        item = self.get_item(tenant_id=tenant_id, item_id=item_id)
+        if item is None:
+            raise MemoryItemNotFound(item_id)
+        if not is_valid_transition(item.status, to_status):
+            raise InvalidMemoryTransition(f"{item.status.value} -> {to_status.value}")
+        updated = replace(
+            item, status=to_status, updated_at=now, version=item.version + 1
+        )
+        self._items[item_id] = updated
+        # events/outbox are Postgres-only observability here (no in-process audit trail needed for
+        # CI/eval — the InProcess store's whole point is to be a hermetic behavior stand-in, not a
+        # full audit-log implementation).
+        return updated
 
 
 class PostgresMemoryStore:
@@ -205,6 +265,64 @@ class PostgresMemoryStore:
                 "by_status": by_status,
                 "by_scope": by_scope,
             }
+
+    def get_item(self, *, tenant_id: str, item_id: str) -> MemoryItem | None:
+        require_tenant(TenantContext(tenant_id))
+        with self._sf() as s:
+            row = s.get(V2MemoryItem, item_id)
+            if row is None or row.tenant_id != tenant_id:
+                return None
+            return _item_to_domain(row, self._sources_for(s, row.id))
+
+    def transition_status(
+        self,
+        *,
+        tenant_id: str,
+        item_id: str,
+        to_status: MemoryStatus,
+        actor: str,
+        now: str,
+        note: str = "",
+    ) -> MemoryItem:
+        require_tenant(TenantContext(tenant_id))
+        # ONE transaction: the row update, the audit event, and the outbox enqueue all commit
+        # together or not at all — a crash between them can't leave the outbox silently un-notified
+        # of a real status change (the exact failure mode an outbox pattern exists to prevent).
+        with self._sf() as s:
+            row = s.get(V2MemoryItem, item_id)
+            if row is None or row.tenant_id != tenant_id:
+                raise MemoryItemNotFound(item_id)
+            from_status = MemoryStatus(row.status)
+            if not is_valid_transition(from_status, to_status):
+                raise InvalidMemoryTransition(
+                    f"{from_status.value} -> {to_status.value}"
+                )
+            row.status = to_status.value
+            row.updated_at = now
+            row.version += 1
+            s.add(
+                V2MemoryEvent(
+                    memory_item_id=item_id,
+                    tenant_id=tenant_id,
+                    event_type=to_status.value,
+                    from_status=from_status.value,
+                    to_status=to_status.value,
+                    actor=actor,
+                    note=note,
+                    created_at=now,
+                )
+            )
+            s.add(
+                V2MemoryOutbox(
+                    memory_item_id=item_id,
+                    tenant_id=tenant_id,
+                    operation="upsert",  # the Postgres row persists with a new status; a physical
+                    # Qdrant point removal is Patch 14's purge job, not a status transition.
+                    created_at=now,
+                )
+            )
+            s.commit()
+            return _item_to_domain(row, self._sources_for(s, row.id))
 
 
 def build_memory_store(settings) -> MemoryStore:

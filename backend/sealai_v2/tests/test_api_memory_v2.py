@@ -158,3 +158,103 @@ def test_create_candidate_rejects_invalid_type_enum():
     body = {**_VALID_CANDIDATE, "type": "not_a_real_type"}
     r = client.post("/api/v2/memory/candidates", json=body, headers=_auth("tok-A"))
     assert r.status_code == 422
+
+
+# --- Patch 4: status actions (confirm/reject/deprecate/delete) ---
+
+
+def _create(client) -> str:
+    r = client.post(
+        "/api/v2/memory/candidates", json=_VALID_CANDIDATE, headers=_auth("tok-A")
+    )
+    return r.json()["id"]
+
+
+def test_confirm_transitions_candidate_to_confirmed():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.post(f"/api/v2/memory/items/{item_id}/confirm", headers=_auth("tok-A"))
+    assert r.status_code == 200
+    assert r.json()["status"] == "confirmed"
+    assert r.json()["version"] == 2  # bumped from the create
+
+
+def test_reject_transitions_candidate_to_rejected():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.post(f"/api/v2/memory/items/{item_id}/reject", headers=_auth("tok-A"))
+    assert r.status_code == 200
+    assert r.json()["status"] == "rejected"
+
+
+def test_deprecate_requires_confirmed_first():
+    client, _store = _client()
+    item_id = _create(client)
+    # still a candidate — deprecate is illegal from here
+    r = client.post(f"/api/v2/memory/items/{item_id}/deprecate", headers=_auth("tok-A"))
+    assert r.status_code == 409
+    client.post(f"/api/v2/memory/items/{item_id}/confirm", headers=_auth("tok-A"))
+    r2 = client.post(
+        f"/api/v2/memory/items/{item_id}/deprecate", headers=_auth("tok-A")
+    )
+    assert r2.status_code == 200
+    assert r2.json()["status"] == "deprecated"
+
+
+def test_reject_after_confirm_is_rejected_with_409():
+    client, _store = _client()
+    item_id = _create(client)
+    client.post(f"/api/v2/memory/items/{item_id}/confirm", headers=_auth("tok-A"))
+    r = client.post(f"/api/v2/memory/items/{item_id}/reject", headers=_auth("tok-A"))
+    assert r.status_code == 409
+
+
+def test_delete_marks_deleted_pending_purge_from_any_non_terminal_status():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.post(f"/api/v2/memory/items/{item_id}/delete", headers=_auth("tok-A"))
+    assert r.status_code == 200
+    assert r.json()["status"] == "deleted_pending_purge"
+
+
+def test_double_delete_is_rejected_with_409():
+    client, _store = _client()
+    item_id = _create(client)
+    client.post(f"/api/v2/memory/items/{item_id}/delete", headers=_auth("tok-A"))
+    r = client.post(f"/api/v2/memory/items/{item_id}/delete", headers=_auth("tok-A"))
+    assert r.status_code == 409
+
+
+def test_status_action_on_unknown_id_is_404():
+    client, _store = _client()
+    r = client.post(
+        "/api/v2/memory/items/does-not-exist/confirm", headers=_auth("tok-A")
+    )
+    assert r.status_code == 404
+
+
+def test_status_action_never_leaks_existence_across_tenants():
+    client, _store = _client()
+    item_id = _create(client)  # created under tenant-A
+    r = client.post(f"/api/v2/memory/items/{item_id}/confirm", headers=_auth("tok-B"))
+    assert (
+        r.status_code == 404
+    )  # NOT 403 — never reveal the id belongs to another tenant
+
+
+def test_status_action_requires_auth():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.post(f"/api/v2/memory/items/{item_id}/confirm")
+    assert r.status_code == 401
+
+
+def test_confirm_accepts_an_optional_note():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.post(
+        f"/api/v2/memory/items/{item_id}/confirm",
+        json={"note": "confirmed by the user in the Right Rail"},
+        headers=_auth("tok-A"),
+    )
+    assert r.status_code == 200

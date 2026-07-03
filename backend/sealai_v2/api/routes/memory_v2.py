@@ -10,8 +10,10 @@ it; the hard isolation boundary stays server-derived tenant_id).
 This is the CURATED memory tier (distinct from ``/api/v2/conversations/current/memory``, which is
 the existing Layer 1-3 session working-window/case-state — untouched by this patch).
 
-Status/action endpoints (confirm/reject/deprecate/delete) are Patch 4, not here — POST /candidates
-is the ONLY write path in this patch, and it only ever creates status=candidate items.
+Status-action endpoints (Patch 4: confirm/reject/deprecate/delete) live here too — each writes a
+``memory_events`` row (audit trail) and enqueues a ``memory_outbox`` row (Qdrant sync) atomically
+with the status change, and is rejected (409) if the transition isn't legal from the item's current
+status (``memory.curated.is_valid_transition`` — e.g. a REJECTED item can't be re-confirmed).
 """
 
 from __future__ import annotations
@@ -25,7 +27,12 @@ from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import current_identity, get_settings
 from sealai_v2.core.contracts import VerifiedIdentity
-from sealai_v2.db.memory_store import MemoryStore, build_memory_store
+from sealai_v2.db.memory_store import (
+    InvalidMemoryTransition,
+    MemoryItemNotFound,
+    MemoryStore,
+    build_memory_store,
+)
 from sealai_v2.memory.curated import (
     MemoryItem,
     MemoryScope,
@@ -150,3 +157,73 @@ def create_candidate(
     )
     created = store.create_candidate(item)
     return _item_dict(created)
+
+
+class MemoryTransitionRequest(BaseModel):
+    note: str = ""
+
+
+def _transition(
+    item_id: str,
+    to_status: MemoryStatus,
+    body: MemoryTransitionRequest,
+    identity: VerifiedIdentity,
+    store: MemoryStore,
+) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated = store.transition_status(
+            tenant_id=identity.tenant_id,
+            item_id=item_id,
+            to_status=to_status,
+            actor=identity.subject,
+            now=now,
+            note=body.note,
+        )
+    except MemoryItemNotFound:
+        raise HTTPException(status_code=404, detail="memory item not found") from None
+    except InvalidMemoryTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return _item_dict(updated)
+
+
+@router.post("/items/{item_id}/confirm")
+def confirm_item(
+    item_id: str,
+    body: MemoryTransitionRequest = MemoryTransitionRequest(),
+    identity: VerifiedIdentity = Depends(current_identity),
+    store: MemoryStore = Depends(get_memory_store),
+) -> dict:
+    return _transition(item_id, MemoryStatus.CONFIRMED, body, identity, store)
+
+
+@router.post("/items/{item_id}/reject")
+def reject_item(
+    item_id: str,
+    body: MemoryTransitionRequest = MemoryTransitionRequest(),
+    identity: VerifiedIdentity = Depends(current_identity),
+    store: MemoryStore = Depends(get_memory_store),
+) -> dict:
+    return _transition(item_id, MemoryStatus.REJECTED, body, identity, store)
+
+
+@router.post("/items/{item_id}/deprecate")
+def deprecate_item(
+    item_id: str,
+    body: MemoryTransitionRequest = MemoryTransitionRequest(),
+    identity: VerifiedIdentity = Depends(current_identity),
+    store: MemoryStore = Depends(get_memory_store),
+) -> dict:
+    return _transition(item_id, MemoryStatus.DEPRECATED, body, identity, store)
+
+
+@router.post("/items/{item_id}/delete")
+def delete_item(
+    item_id: str,
+    body: MemoryTransitionRequest = MemoryTransitionRequest(),
+    identity: VerifiedIdentity = Depends(current_identity),
+    store: MemoryStore = Depends(get_memory_store),
+) -> dict:
+    return _transition(
+        item_id, MemoryStatus.DELETED_PENDING_PURGE, body, identity, store
+    )
