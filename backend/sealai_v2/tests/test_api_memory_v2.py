@@ -16,6 +16,7 @@ from sealai_v2.security.auth import FakeAuthValidator
 IDS = {
     "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
     "tok-B": VerifiedIdentity("tenant-B", "sess-B", "user-B"),
+    "tok-admin": VerifiedIdentity("tenant-A", "sess-A", "owner", roles=("admin",)),
 }
 
 
@@ -153,6 +154,29 @@ def test_list_items_filters_by_case_id():
     assert items[0]["scope"] == "case" and items[0]["scope_id"] == "case-1"
 
 
+def test_create_candidate_accepts_patch9_source_reference_fields():
+    client, _store = _client()
+    body = {
+        **_VALID_CANDIDATE,
+        "sources": [
+            {
+                "kind": "doc_extracted",
+                "source_ref": "upload-42",
+                "message_id": "msg-7",
+                "document_id": "doc-9",
+                "case_snapshot_id": "case-snap-3",
+            }
+        ],
+    }
+    r = client.post("/api/v2/memory/candidates", json=body, headers=_auth("tok-A"))
+    assert r.status_code == 201
+    src = r.json()["sources"][0]
+    assert src["source_ref"] == "upload-42"
+    assert src["message_id"] == "msg-7"
+    assert src["document_id"] == "doc-9"
+    assert src["case_snapshot_id"] == "case-snap-3"
+
+
 def test_create_candidate_rejects_invalid_type_enum():
     client, _store = _client()
     body = {**_VALID_CANDIDATE, "type": "not_a_real_type"}
@@ -258,3 +282,90 @@ def test_confirm_accepts_an_optional_note():
         headers=_auth("tok-A"),
     )
     assert r.status_code == 200
+
+
+# --- Patch 9c: GET /items/{id}, DELETE /items/{id}, GET /outbox-health ---
+
+
+def test_get_item_returns_the_item():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.get(f"/api/v2/memory/items/{item_id}", headers=_auth("tok-A"))
+    assert r.status_code == 200
+    assert r.json()["id"] == item_id
+    assert r.json()["content"] == "prefers metric units"
+
+
+def test_get_item_unknown_id_is_404():
+    client, _store = _client()
+    r = client.get("/api/v2/memory/items/does-not-exist", headers=_auth("tok-A"))
+    assert r.status_code == 404
+
+
+def test_get_item_never_leaks_existence_across_tenants():
+    client, _store = _client()
+    item_id = _create(client)  # created under tenant-A
+    r = client.get(f"/api/v2/memory/items/{item_id}", headers=_auth("tok-B"))
+    assert (
+        r.status_code == 404
+    )  # NOT 403 — same discipline as the status-action endpoints
+
+
+def test_get_item_requires_auth():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.get(f"/api/v2/memory/items/{item_id}")
+    assert r.status_code == 401
+
+
+def test_get_item_surfaces_patch9_fields():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.get(f"/api/v2/memory/items/{item_id}", headers=_auth("tok-A"))
+    body = r.json()
+    assert body["confidence"] == 1.0
+    assert body["sensitivity"] == "internal"
+    assert body["sources"][0]["source_ref"] is None
+
+
+def test_delete_verb_marks_deleted_pending_purge():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.delete(f"/api/v2/memory/items/{item_id}", headers=_auth("tok-A"))
+    assert r.status_code == 200
+    assert r.json()["status"] == "deleted_pending_purge"
+
+
+def test_delete_verb_unknown_id_is_404():
+    client, _store = _client()
+    r = client.delete("/api/v2/memory/items/does-not-exist", headers=_auth("tok-A"))
+    assert r.status_code == 404
+
+
+def test_delete_verb_requires_auth():
+    client, _store = _client()
+    item_id = _create(client)
+    r = client.delete(f"/api/v2/memory/items/{item_id}")
+    assert r.status_code == 401
+
+
+def test_outbox_health_requires_admin_role():
+    client, _store = _client()
+    r = client.get("/api/v2/memory/outbox-health", headers=_auth("tok-A"))
+    assert r.status_code == 403
+
+
+def test_outbox_health_requires_auth():
+    client, _store = _client()
+    r = client.get("/api/v2/memory/outbox-health")
+    assert r.status_code == 401
+
+
+def test_outbox_health_with_admin_role_returns_health_payload():
+    client, _store = _client()
+    r = client.get("/api/v2/memory/outbox-health", headers=_auth("tok-admin"))
+    assert r.status_code == 200
+    body = r.json()
+    assert (
+        "total" in body and "by_status" in body and "oldest_pending_outbox_id" in body
+    )

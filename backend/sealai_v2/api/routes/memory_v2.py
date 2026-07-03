@@ -14,6 +14,17 @@ Status-action endpoints (Patch 4: confirm/reject/deprecate/delete) live here too
 ``memory_events`` row (audit trail) and enqueues a ``memory_outbox`` row (Qdrant sync) atomically
 with the status change, and is rejected (409) if the transition isn't legal from the item's current
 status (``memory.curated.is_valid_transition`` — e.g. a REJECTED item can't be re-confirmed).
+
+Patch 9c reconciliation (against "sealingAI Memory Architecture V1.0 — Finales Konzept", §12): adds
+``GET /items/{id}`` and a proper ``DELETE /items/{id}`` verb (additive — the existing
+``POST .../delete`` stays, since nothing has ever depended on only one of the two existing), plus an
+admin-gated ``GET /outbox-health`` wrapping the already-built ``outbox_worker.outbox_health()``.
+Deliberately NOT built here: ``GET /context-sources?message_id=...`` — the final doc's §11 Right Rail
+wants to look up which memory items were used for a SPECIFIC PAST turn, but nothing today persists a
+message_id -> memory_context mapping (Patch 8's ``MemoryContextBundle`` is computed per-request and
+returned inline in that same response, never stored keyed by message_id). Building this endpoint
+would mean inventing a new persistence decision, not reconciling existing code against the spec —
+left for the Patch 10/11 UX work that will actually consume it, where that design choice belongs.
 """
 
 from __future__ import annotations
@@ -25,7 +36,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_settings
+from sealai_v2.api.deps import current_identity, get_settings, require_admin
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.memory_store import (
     InvalidMemoryTransition,
@@ -51,6 +62,23 @@ def get_memory_store() -> MemoryStore:
     return build_memory_store(get_settings())
 
 
+@lru_cache(maxsize=1)
+def get_memory_outbox_session_factory():
+    """A separate DB-session-factory accessor for the outbox-health admin endpoint (Patch 9c) —
+    distinct from ``get_memory_store()`` because only the Postgres path has an outbox to report on;
+    ``None`` when no ``database_url`` is configured (in-process/eval mode has no outbox at all),
+    which the route below turns into an empty-but-valid health payload rather than a 500."""
+    settings = get_settings()
+    if not getattr(settings, "database_url", None):
+        return None
+    try:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+
+        return make_sessionmaker(make_engine(settings.database_url))
+    except Exception:  # noqa: BLE001 — fail safe; never crash the endpoint on startup
+        return None
+
+
 def _item_dict(item: MemoryItem) -> dict:
     return {
         "id": item.id,
@@ -67,6 +95,10 @@ def _item_dict(item: MemoryItem) -> dict:
                 "session_id": s.session_id,
                 "turn_id": s.turn_id,
                 "note": s.note,
+                "source_ref": s.source_ref,
+                "message_id": s.message_id,
+                "document_id": s.document_id,
+                "case_snapshot_id": s.case_snapshot_id,
             }
             for s in item.sources
         ],
@@ -75,6 +107,11 @@ def _item_dict(item: MemoryItem) -> dict:
         "updated_at": item.updated_at,
         "deleted_at": item.deleted_at,
         "purge_after": item.purge_after,
+        "confidence": item.confidence,
+        "sensitivity": item.sensitivity,
+        "subject_hash": item.subject_hash,
+        "supersedes_memory_id": item.supersedes_memory_id,
+        "deprecated_by_memory_id": item.deprecated_by_memory_id,
     }
 
 
@@ -105,11 +142,29 @@ def list_items(
     return {"items": [_item_dict(it) for it in items]}
 
 
+@router.get("/items/{item_id}")
+def get_item(
+    item_id: str,
+    identity: VerifiedIdentity = Depends(current_identity),
+    store: MemoryStore = Depends(get_memory_store),
+) -> dict:
+    item = store.get_item(tenant_id=identity.tenant_id, item_id=item_id)
+    if item is None:
+        # Same 404 whether the id doesn't exist or belongs to another tenant (P0 — see
+        # test_status_action_never_leaks_existence_across_tenants for the established precedent).
+        raise HTTPException(status_code=404, detail="memory item not found")
+    return _item_dict(item)
+
+
 class MemorySourceIn(BaseModel):
     kind: str = Field(min_length=1, max_length=64)
     session_id: str | None = None
     turn_id: str | None = None
     note: str = ""
+    source_ref: str | None = None
+    message_id: str | None = None
+    document_id: str | None = None
+    case_snapshot_id: str | None = None
 
 
 class MemoryCandidateCreate(BaseModel):
@@ -148,7 +203,14 @@ def create_candidate(
         semantic_key=body.semantic_key,
         sources=tuple(
             MemorySource(
-                kind=s.kind, session_id=s.session_id, turn_id=s.turn_id, note=s.note
+                kind=s.kind,
+                session_id=s.session_id,
+                turn_id=s.turn_id,
+                note=s.note,
+                source_ref=s.source_ref,
+                message_id=s.message_id,
+                document_id=s.document_id,
+                case_snapshot_id=s.case_snapshot_id,
             )
             for s in body.sources
         ),
@@ -227,3 +289,34 @@ def delete_item(
     return _transition(
         item_id, MemoryStatus.DELETED_PENDING_PURGE, body, identity, store
     )
+
+
+@router.delete("/items/{item_id}")
+def delete_item_verb(
+    item_id: str,
+    identity: VerifiedIdentity = Depends(current_identity),
+    store: MemoryStore = Depends(get_memory_store),
+) -> dict:
+    """The final concept doc's §12 literal ``DELETE /items/{id}`` verb — additive alongside
+    ``POST .../delete`` above (same soft-delete transition, no request body needed for a DELETE)."""
+    return _transition(
+        item_id,
+        MemoryStatus.DELETED_PENDING_PURGE,
+        MemoryTransitionRequest(),
+        identity,
+        store,
+    )
+
+
+@router.get("/outbox-health")
+def outbox_health_endpoint(
+    _identity: VerifiedIdentity = Depends(require_admin),
+) -> dict:
+    """Admin-only (Patch 9c): wraps the already-built ``outbox_worker.outbox_health()``. Global
+    across all tenants by design — this is Qdrant-sync-pipeline observability, not user data."""
+    from sealai_v2.memory.outbox_worker import outbox_health
+
+    session_factory = get_memory_outbox_session_factory()
+    if session_factory is None:
+        return {"total": 0, "by_status": {}, "oldest_pending_outbox_id": None}
+    return outbox_health(session_factory)
