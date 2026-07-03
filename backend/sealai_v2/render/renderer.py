@@ -39,6 +39,36 @@ def _provenance(snapshot: RenderSnapshot) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def _offene_punkte(result: PipelineResult) -> tuple[str, ...]:
+    """P5 (audit L8, 'offene Punkte fehlen strukturell'): consolidate the open/unresolved signals
+    that are ALREADY live on ``result`` — nothing new is computed here, this only gathers what
+    exists into one flat list for a single clearly-labelled briefing section, instead of leaving
+    it scattered/implicit across the calc report and (previously) nowhere at all for Gegencheck.
+
+    - ``not_computed`` reasons (fail-closed calc gaps — already shown inline in calc_report.jinja
+      too; the duplication is accepted, see commit message, rather than touching the shared
+      calc_report template that another artifact also renders standalone).
+    - ``calc_notes`` (cross-cutting calc advisories).
+    - the Gegencheck ``condition`` text, but ONLY for a ``matrix_conditional`` verdict — a
+      disqualification is NOT an "open point" (it is a hard verdict) and E4-1 forbids ever
+      surfacing anything for the non-disqualifying/non-conditional bases (matrix_compatible/
+      no_matrix_data/no_medium) as an affirmative claim, so those never contribute here either.
+    - the flag-gated Produktspec's own ``offene_punkte`` when the turn ran it (inert/empty list
+      while ``produktspec_enabled`` stays OFF in prod).
+    """
+    items: list[str] = [f"{n.calc_id}: {n.reason}" for n in result.not_computed]
+    items.extend(result.calc_notes)
+    gc = result.gegencheck
+    if gc and not gc.get("disqualified") and gc.get("basis") == "matrix_conditional":
+        condition = gc.get("condition")
+        if condition:
+            items.append(condition)
+    ks = result.kandidaten_spec
+    if ks:
+        items.extend(ks.get("offene_punkte") or ())
+    return tuple(items)
+
+
 def _env() -> Environment:
     return Environment(
         loader=FileSystemLoader(str(_TEMPLATE_DIR)),
@@ -77,6 +107,7 @@ class ArtifactRenderer:
             calc_notes=snapshot.calc_notes,
             grounding_facts=snapshot.grounding_facts,
             grounded=snapshot.grounded,
+            offene_punkte=snapshot.offene_punkte,
             claim_boundary=CLAIM_BOUNDARY,
         )
         return Artifact(
@@ -99,4 +130,5 @@ def snapshot_from_result(question: str, result: PipelineResult) -> RenderSnapsho
         grounding_facts=result.grounding_facts,
         grounded=result.grounded,
         wissensstand=result.wissensstand,
+        offene_punkte=_offene_punkte(result),
     )

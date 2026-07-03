@@ -17,6 +17,13 @@
 {%- else %}
 > _Zu dieser Frage liegt (noch) keine geerdete, zitierte Fachgrundlage vor — die Aussagen sind **vorläufig** und gegen Datenblatt/Norm zu verifizieren._
 {%- endif %}
+{% if offene_punkte %}
+
+## Offene Punkte
+{% for p in offene_punkte %}
+- {{ p }}
+{% endfor %}
+{%- endif %}
 
 ---
 {{ claim_boundary }}

@@ -20,6 +20,7 @@ from sealai_v2.core.contracts import (
     RenderSnapshot,
 )
 from sealai_v2.render import CLAIM_BOUNDARY, ArtifactRenderer, snapshot_from_result
+from sealai_v2.render.renderer import _offene_punkte
 
 
 def _snapshot() -> RenderSnapshot:
@@ -232,3 +233,100 @@ def test_wissensstand_defaults_to_empty_string_and_is_never_rendered_into_body()
     art = ArtifactRenderer().briefing(s)
     assert art.wissensstand == ""
     assert "wissensstand" not in art.body.lower()  # metadata field, not template output
+
+
+# --- P5: "Offene Punkte" — consolidating already-live open-item signals (audit L8) -------------
+
+
+def _result(**overrides) -> PipelineResult:
+    base = dict(
+        question="q",
+        tenant_id="t",
+        flags=Flags(),
+        understanding=None,
+        answer=Answer(text="ans", model="m"),
+    )
+    base.update(overrides)
+    return PipelineResult(**base)
+
+
+def test_offene_punkte_collects_not_computed_and_calc_notes():
+    res = _result(
+        not_computed=(NotComputed("pv_wert", "Eingaben fehlen (p_bar)"),),
+        calc_notes=("Quellungshinweis: Reserve lassen.",),
+    )
+    assert _offene_punkte(res) == (
+        "pv_wert: Eingaben fehlen (p_bar)",
+        "Quellungshinweis: Reserve lassen.",
+    )
+
+
+def test_offene_punkte_includes_the_bedingt_gegencheck_condition():
+    res = _result(
+        gegencheck={
+            "disqualified": False,
+            "basis": "matrix_conditional",
+            "condition": "Nur bei Wellendrehzahl < 10 m/s einsetzen.",
+            "source": "Verträglichkeitsmatrix · MX-VMQ-DYNAMISCH (reviewed)",
+        }
+    )
+    assert _offene_punkte(res) == ("Nur bei Wellendrehzahl < 10 m/s einsetzen.",)
+
+
+def test_offene_punkte_stays_silent_for_a_disqualified_verdict():
+    # E4-1: disqualified is a hard verdict, not an "open point" — and must not be silently
+    # softened into "just something to verify" alongside genuinely open items.
+    res = _result(
+        gegencheck={
+            "disqualified": True,
+            "reason": "FKM hydrolysiert in Heißdampf.",
+            "source": "Verträglichkeitsmatrix · MX-FKM-DAMPF (reviewed)",
+        }
+    )
+    assert _offene_punkte(res) == ()
+
+
+def test_offene_punkte_stays_silent_for_non_conditional_bases():
+    for basis in ("matrix_compatible", "no_matrix_data", "no_medium"):
+        res = _result(gegencheck={"disqualified": False, "basis": basis})
+        assert _offene_punkte(res) == ()
+
+
+def test_offene_punkte_includes_kandidaten_spec_offene_punkte():
+    res = _result(kandidaten_spec={"offene_punkte": ["Sonderwerkstoff-Freigabe klären."]})
+    assert _offene_punkte(res) == ("Sonderwerkstoff-Freigabe klären.",)
+
+
+def test_offene_punkte_empty_when_no_signal_present():
+    assert _offene_punkte(_result()) == ()
+
+
+def test_snapshot_from_result_carries_offene_punkte():
+    res = _result(calc_notes=("note",))
+    assert snapshot_from_result("q", res).offene_punkte == ("note",)
+
+
+def test_briefing_renders_the_offene_punkte_section_when_present():
+    s = RenderSnapshot(
+        question="q", answer_text="a", offene_punkte=("Sonderwerkstoff-Freigabe klären.",)
+    )
+    body = ArtifactRenderer().briefing(s).body
+    assert "## Offene Punkte" in body
+    assert "Sonderwerkstoff-Freigabe klären." in body
+
+
+def test_briefing_omits_the_offene_punkte_section_when_empty():
+    s = _snapshot()  # offene_punkte defaults to ()
+    body = ArtifactRenderer().briefing(s).body
+    assert "Offene Punkte" not in body
+
+
+def test_calc_report_never_gets_an_offene_punkte_section():
+    # the section is briefing-only; calc_report is a separate, standalone artifact elsewhere
+    # (e.g. the /compute panel) and must stay byte-identical to before this increment.
+    s = RenderSnapshot(
+        question="q", answer_text="a", offene_punkte=("should not appear here",)
+    )
+    body = ArtifactRenderer().calc_report(s).body
+    assert "should not appear here" not in body
+    assert "Offene Punkte" not in body
