@@ -848,6 +848,24 @@ class Pipeline:
             self._pending_remember.pop((tenant_id, session_id), None)
             _log.warning("flush_memory dropped an unawaitable remember task: %s", exc)
 
+    async def flush_all_memory(self, *, tenant_id: str) -> None:
+        """Same P2 ordering guard as ``flush_memory``, but for every one of this tenant's
+        in-flight background remembers at once — for an endpoint that reads ACROSS all of a
+        tenant's sessions (the "Fälle"-Sidebar case list) rather than one known ``session_id``,
+        so it has no single key to flush. Snapshots the task list before awaiting (each task's
+        own done-callback removes itself from ``_pending_remember``, so iterating the live dict
+        while awaiting would be a mutate-during-iterate bug)."""
+        tasks = [
+            t for (tid, _sid), t in self._pending_remember.items() if tid == tenant_id
+        ]
+        for task in tasks:
+            try:
+                await task
+            except RuntimeError as exc:  # foreign/dead loop — never fail the read
+                _log.warning(
+                    "flush_all_memory dropped an unawaitable remember task: %s", exc
+                )
+
     def _schedule_remember(
         self,
         timer: TurnTimer,
