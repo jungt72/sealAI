@@ -50,3 +50,55 @@ def test_cross_tenant_read_isolation_via_token():
     assert r.status_code == 200 and r.json()["history"] == []
     rA = client.get("/api/v2/conversations/current/memory", headers=auth("tok-A"))
     assert any("Fall A" in t["text"] for t in rA.json()["history"])
+
+
+# --- "Fälle"-Sidebar Patch B: optional case_id override ---
+
+
+def test_chat_without_case_id_uses_the_tokens_session():
+    # byte-identical to before this patch: omitting case_id records under identity.session_id.
+    client, pipeline = make_client()
+    client.post("/api/v2/chat", json={"message": "ohne case_id"}, headers=auth("tok-A"))
+    assert pipeline.memory.history(tenant_id="tenant-A", session_id="sess-A")
+
+
+def test_chat_with_case_id_targets_that_case_not_the_tokens_session():
+    client, pipeline = make_client()
+    client.post(
+        "/api/v2/chat",
+        json={"message": "in Fall 2", "case_id": "case-2"},
+        headers=auth("tok-A"),
+    )
+    assert pipeline.memory.history(tenant_id="tenant-A", session_id="case-2")
+    assert pipeline.memory.history(tenant_id="tenant-A", session_id="sess-A") == ()
+
+
+def test_two_case_ids_from_the_same_identity_stay_fully_isolated():
+    client, pipeline = make_client()
+    client.post(
+        "/api/v2/chat",
+        json={"message": "Fall 1: EPDM", "case_id": "case-1"},
+        headers=auth("tok-A"),
+    )
+    client.post(
+        "/api/v2/chat",
+        json={"message": "Fall 2: FKM", "case_id": "case-2"},
+        headers=auth("tok-A"),
+    )
+    h1 = pipeline.memory.history(tenant_id="tenant-A", session_id="case-1")
+    h2 = pipeline.memory.history(tenant_id="tenant-A", session_id="case-2")
+    assert any("EPDM" in t.text for t in h1) and not any("FKM" in t.text for t in h1)
+    assert any("FKM" in t.text for t in h2) and not any("EPDM" in t.text for t in h2)
+
+
+def test_case_id_never_crosses_the_tenant_boundary():
+    # tok-A naming tenant-B's real session id as case_id must still write under tenant-A — the
+    # token, never the client-supplied case_id, decides the tenant (P0).
+    client, pipeline = make_client()
+    client.post(
+        "/api/v2/chat",
+        json={"message": "versuchter Cross-Tenant-Zugriff", "case_id": "sess-B"},
+        headers=auth("tok-A"),
+    )
+    assert pipeline.memory.history(tenant_id="tenant-A", session_id="sess-B")
+    assert pipeline.memory.history(tenant_id="tenant-B", session_id="sess-B") == ()
