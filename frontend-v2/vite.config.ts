@@ -5,6 +5,9 @@ import { defineConfig } from "vitest/config";
 // /api/v2 (+ Keycloak) — never the V1 backend.
 export default defineConfig({
   base: "/dashboard/",
+  build: {
+    assetsInlineLimit: 0,
+  },
   plugins: [react()],
   server: { port: 5174 },
   test: {
