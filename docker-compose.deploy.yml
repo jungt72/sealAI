@@ -178,6 +178,11 @@ services:
       # INC-NARRATOR-CONTRACT: L1 renders the kernel answer-contract + claim-level guard (regenerate-on-BLOCK).
       # Activated 2026-06-29 via eval-REPLAY narrator-contract-replay (tree 98edd308, L1 gpt-5.1).
       SEALAI_V2_RESPONSE_CONTRACT_ENABLED: ${SEALAI_V2_RESPONSE_CONTRACT_ENABLED:-false}
+      # P0-B: widens the claim-level output_guard to non-Gegencheck turns (guard-only contract, NEVER
+      # passed to generate() — see response_contract.build_guard_contract's docstring). Activated
+      # 2026-07-03 after the targeted offline eval (eval/general_guard_eval.py) showed overblock_rate=0.0
+      # on realistic grounded answers, plus 3 confirmed known-limitation cases (still correctly blocks).
+      SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED: ${SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED:-false}
       # Material-Parameter-Tabelle: grounded kennwerte rendered as a table (numbers live in the kernel seed)
       SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED: ${SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED:-false}
       # Paperless auto-ingestion (POST /internal/rag/ingest, api/routes/rag_ingest.py): fetches
