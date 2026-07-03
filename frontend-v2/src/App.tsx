@@ -20,9 +20,10 @@ import { AdminPane } from "./components/AdminPane";
 import { ChatPane } from "./components/ChatPane";
 import { PartnerSelfPane } from "./components/PartnerSelfPane";
 import { Shell } from "./components/Shell";
-import type { Briefing, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
+import type { Briefing, CaseSummary, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
+import { getCaseIdFromUrl, newCaseId, setCaseIdInUrl } from "./lib/caseId";
 import { downloadBriefingPdf } from "./lib/pdf";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
@@ -53,6 +54,16 @@ export function App() {
   const [convKey, setConvKey] = useState(0);
   // P4b: latest stage-start from the /chat/stream progress frames (keys only; labels in ChatPane)
   const [liveStage, setLiveStage] = useState<string | null>(null);
+  // "Fälle"-Sidebar: the active case, persisted in the URL (?case=) so a hard reload keeps it —
+  // generated client-side on first load if the URL has none yet. The backend row is created lazily
+  // on the first real message; nothing here calls the API just to "start" a case. The URL itself is
+  // NOT written here (see the effect below) — this initializer must stay a pure read, because it
+  // also runs during the OIDC callback bootstrap, which needs to scrub ITS OWN query params
+  // (code/state) via a hardcoded replaceState a moment later; writing `?case=` here first would
+  // just get clobbered by that normalization.
+  const [caseId, setCaseId] = useState<string>(() => getCaseIdFromUrl() ?? newCaseId());
+  const [cases, setCases] = useState<CaseSummary[]>([]);
+  const [casesLoading, setCasesLoading] = useState(true);
 
   // 401/expiry path: LOCAL clear + re-login only — must NOT end the Keycloak SSO session
   const onUnauthenticated = useCallback(() => {
@@ -87,8 +98,8 @@ export function App() {
   const [selfView, setSelfView] = useState(false);
 
   const refreshMemory = useCallback(() => {
-    api.memory().then(setMemory).catch(() => undefined);
-  }, [api]);
+    api.memory(caseId).then(setMemory).catch(() => undefined);
+  }, [api, caseId]);
 
   // M8: the kernel channel is recomputed server-side on every input change; the panel re-reads it
   // here (flush-then-recompute happens on the backend). Fail-quiet — a failed read never blanks the UI.
@@ -96,11 +107,24 @@ export function App() {
     api.compute().then(setCompute).catch(() => undefined);
   }, [api]);
 
-  // refresh BOTH projections (chips + kernel panel) after any state change — one call site.
+  // "Fälle"-Sidebar: the case list, re-fetched after every turn (a new case appears, the active
+  // one's title/timestamp updates) — same fail-quiet discipline as the other refresh calls.
+  // `casesLoading` only covers the FIRST fetch (the drawer's initial "Lädt …" state), never
+  // subsequent refreshes — those replace the list in place without a loading flash.
+  const refreshCases = useCallback(() => {
+    api
+      .listCases()
+      .then((r) => setCases(r.cases))
+      .catch(() => undefined)
+      .finally(() => setCasesLoading(false));
+  }, [api]);
+
+  // refresh ALL projections (chips + kernel panel + case list) after any state change — one call site.
   const refreshState = useCallback(() => {
     refreshMemory();
     refreshCompute();
-  }, [refreshMemory, refreshCompute]);
+    refreshCases();
+  }, [refreshMemory, refreshCompute, refreshCases]);
 
   useEffect(() => {
     // Single backend-owned framing source; on any failure the fallback stays (never blank).
@@ -178,6 +202,17 @@ export function App() {
     if (authed) refreshState();
   }, [authed, refreshState]);
 
+  // "Fälle"-Sidebar: the browser back/forward buttons step between cases too, since switches use
+  // pushState — sync React state when the URL changes from OUTSIDE our own setCaseId calls.
+  useEffect(() => {
+    const onPop = () => {
+      const id = getCaseIdFromUrl();
+      if (id) setCaseId(id);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   // Proactive silent token refresh (the seamless-session pattern, like large platforms): while signed
   // in, refresh the access token WELL BEFORE it expires via the rotating refresh_token grant, so API
   // calls never hit a 401 mid-session. Transient failures retry within the remaining access-token
@@ -232,7 +267,7 @@ export function App() {
       setError(null);
       setLastMessage(message);
       try {
-        return await api.chatStream(message, setLiveStage);
+        return await api.chatStream(message, setLiveStage, caseId);
       } catch (e) {
         setError("Es ist ein Fehler aufgetreten — bitte erneut versuchen.");
         throw e;
@@ -241,7 +276,7 @@ export function App() {
         refreshState();
       }
     },
-    [api, refreshState],
+    [api, caseId, refreshState],
   );
 
   const makeBriefing = useCallback(() => {
@@ -271,7 +306,27 @@ export function App() {
     setBriefing(null);
     setLastMessage("");
     setConvKey((k) => k + 1);
+    // "Fälle"-Sidebar: "Neue Frage" starts an actual NEW case (not just a visual reset) — a fresh
+    // id, pushed (not replaced) so the back button can step back to the previous case.
+    const fresh = newCaseId();
+    setCaseIdInUrl(fresh, { replace: false });
+    setCaseId(fresh);
   }, []);
+
+  // "Fälle"-Sidebar: switch to an existing case from the drawer. Same convKey bump as "Neue Frage"
+  // so ChatPane remounts and re-hydrates from that case's memory.history.
+  const selectCase = useCallback(
+    (id: string) => {
+      if (id === caseId) return;
+      setError(null);
+      setBriefing(null);
+      setLastMessage("");
+      setConvKey((k) => k + 1);
+      setCaseIdInUrl(id, { replace: false });
+      setCaseId(id);
+    },
+    [caseId],
+  );
 
   if (!authed) {
     if (bootstrapping) {
@@ -310,6 +365,10 @@ export function App() {
         onNewQuestion={newQuestion}
         onAdmin={isAdmin ? () => setAdminView(true) : undefined}
         onPartnerSelf={isManufacturer ? () => setSelfView(true) : undefined}
+        cases={cases}
+        casesLoading={casesLoading}
+        activeCaseId={caseId}
+        onSelectCase={selectCase}
       >
         {adminView && isAdmin ? (
           <AdminPane api={api} onClose={() => setAdminView(false)} />
@@ -317,7 +376,7 @@ export function App() {
           <PartnerSelfPane api={api} onClose={() => setSelfView(false)} />
         ) : (
         <ChatPane
-          key={convKey}
+          key={`${caseId}:${convKey}`}
           onSend={send}
           error={error}
           memory={memory}
@@ -325,17 +384,20 @@ export function App() {
           liveStage={liveStage}
           onEditFact={(feld, wert) => {
             const next = window.prompt(`${feld}:`, wert);
-            if (next != null) api.editFact(feld, next).then(refreshState).catch(() => undefined);
+            if (next != null)
+              api.editFact(feld, next, undefined, caseId).then(refreshState).catch(() => undefined);
           }}
-          onForgetFact={(feld) => api.forgetFact(feld).then(refreshState).catch(() => undefined)}
-          onForgetAll={() => api.forgetAll().then(refreshState).catch(() => undefined)}
+          onForgetFact={(feld) =>
+            api.forgetFact(feld, caseId).then(refreshState).catch(() => undefined)
+          }
+          onForgetAll={() => api.forgetAll(caseId).then(refreshState).catch(() => undefined)}
           onSubmitParams={async (items, deletes = []) => {
             // R2 „Übernehmen": forget the reconciled (cleared) felder, then batch-settle + recompute
             // server-side; refresh chips + kern panel; return the deterministic confirmation. On
             // failure set the error + rethrow — the form keeps its values, ChatPane appends nothing.
             try {
-              await Promise.all(deletes.map((feld) => api.forgetFact(feld)));
-              const conf = await api.submitParams(items);
+              await Promise.all(deletes.map((feld) => api.forgetFact(feld, caseId)));
+              const conf = await api.submitParams(items, caseId);
               refreshState();
               return conf;
             } catch (e) {
@@ -347,7 +409,7 @@ export function App() {
           onConfirmUnit={(feld, value) =>
             // confirm the suggested unit → re-settle through the EXISTING edit/settle channel
             // (no new binding path); the backend M8 recompute fires and the kern then computes.
-            api.editFact(feld, value).then(refreshState).catch(() => undefined)
+            api.editFact(feld, value, undefined, caseId).then(refreshState).catch(() => undefined)
           }
           onMakeBriefing={makeBriefing}
           canBriefing={Boolean(lastMessage)}

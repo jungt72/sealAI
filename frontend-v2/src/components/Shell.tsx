@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
+import type { CaseSummary } from "../contracts";
 import { loadNavExpanded, saveNavExpanded } from "../lib/navSidebar";
+import { CaseSidebar } from "./CaseSidebar";
 import { SafetyBanner } from "./SafetyBanner";
 import {
   ComposeIcon,
@@ -21,6 +23,10 @@ export function Shell({
   onNewQuestion,
   onAdmin,
   onPartnerSelf,
+  cases = [],
+  casesLoading = false,
+  activeCaseId = null,
+  onSelectCase = () => undefined,
 }: {
   children: ReactNode;
   onLogout: () => void;
@@ -31,8 +37,17 @@ export function Shell({
   /** Manufacturer-only: open the self-service profile. Provided only when the token carries the
    * manufacturer role + a hersteller_id — otherwise never rendered. */
   onPartnerSelf?: () => void;
+  /** "Fälle"-Sidebar: the tenant's case list + which one is active. The "Verlauf" button opens a
+   * drawer listing them; clicking one hands the id back to the host (App owns the actual switch).
+   * Optional (default empty/inert) so callers that don't care about cases — e.g. existing Shell
+   * tests that only exercise nav collapse/expand — don't need to wire them. */
+  cases?: CaseSummary[];
+  casesLoading?: boolean;
+  activeCaseId?: string | null;
+  onSelectCase?: (caseId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [navExpanded, setNavExpanded] = useState<boolean>(loadNavExpanded);
   const toggleNav = () =>
     setNavExpanded((v) => {
@@ -76,9 +91,16 @@ export function Shell({
           <SearchIcon />
           <span className="rail-label">Suche</span>
         </button>
-        <button className="rail-btn" disabled title="Verlauf — in Vorbereitung" aria-label="Verlauf (in Vorbereitung)">
+        <button
+          className="rail-btn"
+          onClick={() => setHistoryOpen((o) => !o)}
+          title="Fälle"
+          aria-label="Fälle"
+          aria-expanded={historyOpen}
+          data-testid="rail-history"
+        >
           <HistoryIcon />
-          <span className="rail-label">Verlauf</span>
+          <span className="rail-label">Fälle</span>
         </button>
         <div className="rail-spacer" />
         <button
@@ -135,6 +157,18 @@ export function Shell({
           </div>
         )}
       </nav>
+      {historyOpen && (
+        <CaseSidebar
+          cases={cases}
+          loading={casesLoading}
+          activeCaseId={activeCaseId}
+          onSelect={(caseId) => {
+            onSelectCase(caseId);
+            setHistoryOpen(false);
+          }}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
       <main className="main-area">
         {children}
         <SafetyBanner />

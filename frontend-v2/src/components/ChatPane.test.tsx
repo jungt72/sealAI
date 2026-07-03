@@ -610,6 +610,67 @@ describe("P4b: live stage indicator (SSE progress — labels owned by the fronte
   });
 });
 
+describe("'Fälle'-Sidebar: hydration from memory.history", () => {
+  it("hydrates the message log from history on first render", () => {
+    renderPane({
+      memory: {
+        case_state: [],
+        history: [
+          { role: "user", text: "EPDM in Hydrauliköl?" },
+          { role: "assistant", text: "EPDM quillt in unpolaren Medien." },
+        ],
+      },
+    });
+    expect(screen.getByText("EPDM in Hydrauliköl?")).toBeInTheDocument();
+    const hydrated = screen.getByTestId("answer-history");
+    expect(hydrated).toHaveTextContent("EPDM quillt in unpolaren Medien.");
+  });
+
+  it("renders a hydrated turn without citation/verification chrome (never persisted)", () => {
+    renderPane({
+      memory: { case_state: [], history: [{ role: "assistant", text: "Antwort." }] },
+    });
+    expect(screen.getByTestId("answer-history")).toBeInTheDocument();
+    expect(screen.queryByTestId("answer")).toBeNull();
+  });
+
+  it("does NOT hydrate when history is empty (fresh/new case stays the clean stage)", () => {
+    renderPane({ memory: EMPTY });
+    expect(screen.queryByTestId("chat-log")).toBeNull();
+    expect(screen.queryByTestId("answer-history")).toBeNull();
+  });
+
+  it("a live send is never clobbered by a later memory refetch (the length===0 guard)", async () => {
+    const onSend = vi.fn(async (): Promise<ChatResponse> => ({
+      answer: "live antwort",
+      model: "m",
+      grounded: true,
+      intent: null,
+      citations: [],
+    }));
+    const { rerender, props } = renderPane({ onSend, memory: EMPTY });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() => expect(screen.getByTestId("answer")).toBeInTheDocument());
+    // a memory refetch now resolves with (stale-looking) history — msgs already has content, so
+    // the hydration effect's `prev.length === 0` guard must leave the live answer untouched.
+    rerender(
+      <ChatPane
+        {...props}
+        memory={{
+          case_state: [],
+          history: [
+            { role: "user", text: "Frage" },
+            { role: "assistant", text: "live antwort" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("answer")).toBeInTheDocument(); // still the rich live variant
+    expect(screen.queryByTestId("answer-history")).toBeNull(); // never downgraded
+  });
+});
+
 describe("pilot-ui shell (rail + doctrine line)", () => {
   it("the doctrine line stays persistently mounted in the shell", () => {
     render(
