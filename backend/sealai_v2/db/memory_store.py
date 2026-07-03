@@ -12,6 +12,11 @@ sensitivity, conflict-linkage fields), and (c) snapshot a self-contained ``paylo
 ``V2MemoryOutbox`` row at enqueue time (``_outbox_payload``) rather than leaving the outbox worker to
 re-read ``V2MemoryItem`` live at drain time — the real outbox-pattern shape, and what lets a drain
 sync exactly the state that was actually committed, not whatever the row happens to look like later.
+
+Patch 10 (Purge & Compliance): ``transition_status`` gains an optional ``purge_after`` — the API
+layer sets it only for the ``DELETED_PENDING_PURGE`` transition (now + ``memory_purge_grace_days``),
+giving ``memory/purge.py``'s periodic reap job a concrete eligibility timestamp per item instead of
+inferring one from ``updated_at``.
 """
 
 from __future__ import annotations
@@ -133,6 +138,7 @@ class MemoryStore(Protocol):
         actor: str,
         now: str,
         note: str = "",
+        purge_after: str | None = None,
     ) -> MemoryItem: ...
 
 
@@ -202,6 +208,7 @@ class InProcessMemoryStore:
         actor: str,
         now: str,
         note: str = "",
+        purge_after: str | None = None,
     ) -> MemoryItem:
         require_tenant(TenantContext(tenant_id))
         item = self.get_item(tenant_id=tenant_id, item_id=item_id)
@@ -209,9 +216,14 @@ class InProcessMemoryStore:
             raise MemoryItemNotFound(item_id)
         if not is_valid_transition(item.status, to_status):
             raise InvalidMemoryTransition(f"{item.status.value} -> {to_status.value}")
-        updated = replace(
-            item, status=to_status, updated_at=now, version=item.version + 1
-        )
+        changes: dict = {
+            "status": to_status,
+            "updated_at": now,
+            "version": item.version + 1,
+        }
+        if purge_after is not None:
+            changes["purge_after"] = purge_after
+        updated = replace(item, **changes)
         self._items[item_id] = updated
         # events/outbox are Postgres-only observability here (no in-process audit trail needed for
         # CI/eval — the InProcess store's whole point is to be a hermetic behavior stand-in, not a
@@ -363,6 +375,7 @@ class PostgresMemoryStore:
         actor: str,
         now: str,
         note: str = "",
+        purge_after: str | None = None,
     ) -> MemoryItem:
         require_tenant(TenantContext(tenant_id))
         # ONE transaction: the row update, the audit event, and the outbox enqueue all commit
@@ -380,6 +393,11 @@ class PostgresMemoryStore:
             row.status = to_status.value
             row.updated_at = now
             row.version += 1
+            if purge_after is not None:
+                # Caller-computed (Patch 10) — the API layer sets this only for the
+                # DELETED_PENDING_PURGE transition (now + memory_purge_grace_days); this store never
+                # reads a clock or a settings object itself, same discipline as `now`.
+                row.purge_after = purge_after
             s.add(
                 V2MemoryEvent(
                     memory_item_id=item_id,

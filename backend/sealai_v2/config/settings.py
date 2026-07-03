@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     # NOT yet inject memory into the L1 prompt text; that's a deliberately separate, later step
     # needing its own eval-verification pass. Flip via SEALAI_V2_MEMORY_CONTEXT_ENABLED.
     memory_context_enabled: bool = False
+    # Patch 10 (Purge & Compliance): grace period between a memory item's soft-delete
+    # (DELETED_PENDING_PURGE) and it becoming eligible for the periodic reap job's hard delete —
+    # gives the "Aus Memory entfernen" Right Rail action (Patch 11, not yet built) an undo window
+    # instead of an instant, irreversible purge. Applies regardless of memory_context_enabled — a
+    # deleted item's grace period isn't gated by whether retrieval is currently active.
+    memory_purge_grace_days: int = 30
     # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN as a
     # render surface. OFF by default — wired but inert until the owner lifts the governance NO-GO (expert
     # Fachfreigabe + DIN-Lizenz). L1-NEUTRAL (never enters the prompt); flip via SEALAI_V2_PRODUKTSPEC_ENABLED.

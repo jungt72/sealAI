@@ -25,12 +25,17 @@ message_id -> memory_context mapping (Patch 8's ``MemoryContextBundle`` is compu
 returned inline in that same response, never stored keyed by message_id). Building this endpoint
 would mean inventing a new persistence decision, not reconciling existing code against the spec —
 left for the Patch 10/11 UX work that will actually consume it, where that design choice belongs.
+
+Patch 10 (Purge & Compliance): both delete routes now compute a ``purge_after`` (now +
+``settings.memory_purge_grace_days``) and pass it into ``transition_status`` — giving
+``memory/purge.py``'s periodic reap job a concrete eligibility timestamp instead of a
+``deleted_pending_purge`` item that would otherwise sit forever with no purge schedule at all.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -231,6 +236,8 @@ def _transition(
     body: MemoryTransitionRequest,
     identity: VerifiedIdentity,
     store: MemoryStore,
+    *,
+    purge_after: str | None = None,
 ) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     try:
@@ -241,12 +248,21 @@ def _transition(
             actor=identity.subject,
             now=now,
             note=body.note,
+            purge_after=purge_after,
         )
     except MemoryItemNotFound:
         raise HTTPException(status_code=404, detail="memory item not found") from None
     except InvalidMemoryTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     return _item_dict(updated)
+
+
+def _purge_after_now() -> str:
+    """Patch 10: the grace-period eligibility timestamp for a DELETED_PENDING_PURGE transition —
+    computed here (the API layer), never inside the store, matching this codebase's "now/derived
+    timestamps are always caller-supplied" discipline."""
+    grace_days = get_settings().memory_purge_grace_days
+    return (datetime.now(timezone.utc) + timedelta(days=grace_days)).isoformat()
 
 
 @router.post("/items/{item_id}/confirm")
@@ -287,7 +303,12 @@ def delete_item(
     store: MemoryStore = Depends(get_memory_store),
 ) -> dict:
     return _transition(
-        item_id, MemoryStatus.DELETED_PENDING_PURGE, body, identity, store
+        item_id,
+        MemoryStatus.DELETED_PENDING_PURGE,
+        body,
+        identity,
+        store,
+        purge_after=_purge_after_now(),
     )
 
 
@@ -305,6 +326,7 @@ def delete_item_verb(
         MemoryTransitionRequest(),
         identity,
         store,
+        purge_after=_purge_after_now(),
     )
 
 

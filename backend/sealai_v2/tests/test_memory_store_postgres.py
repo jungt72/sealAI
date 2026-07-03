@@ -150,6 +150,34 @@ def test_transition_status_updates_status_bumps_version_stamps_updated_at(db_url
     assert updated.updated_at == "2026-07-03T01:00:00Z"
 
 
+def test_transition_status_purge_after_roundtrips_through_a_fresh_store(db_url):
+    # Patch 10: the API layer computes purge_after (now + grace period) only for the
+    # DELETED_PENDING_PURGE transition and passes it in — the store just carries it through.
+    _store(db_url).create_candidate(_item())
+    _store(db_url).transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.DELETED_PENDING_PURGE,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+        purge_after="2026-08-02T01:00:00Z",
+    )
+    fresh = _store(db_url).get_item(tenant_id="tenant-a", item_id="mem-1")
+    assert fresh.purge_after == "2026-08-02T01:00:00Z"
+
+
+def test_transition_status_leaves_purge_after_unset_when_not_provided(db_url):
+    _store(db_url).create_candidate(_item())
+    updated = _store(db_url).transition_status(
+        tenant_id="tenant-a",
+        item_id="mem-1",
+        to_status=MemoryStatus.CONFIRMED,
+        actor="user-1",
+        now="2026-07-03T01:00:00Z",
+    )
+    assert updated.purge_after is None
+
+
 def test_transition_status_survives_a_fresh_store_instance(db_url):
     _store(db_url).create_candidate(_item())
     _store(db_url).transition_status(
