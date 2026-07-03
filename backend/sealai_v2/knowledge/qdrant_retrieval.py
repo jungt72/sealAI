@@ -147,10 +147,9 @@ def _point_matches_scope(point, dim: str, tokens: set[str]) -> bool:
 
 
 def _matches_material_scope(point, material_tokens: set[str]) -> bool:
-    return (
-        _point_matches_scope(point, "material", material_tokens)
-        or _card_id_matches_material(point, material_tokens)
-    )
+    return _point_matches_scope(
+        point, "material", material_tokens
+    ) or _card_id_matches_material(point, material_tokens)
 
 
 class _ScoredPoint:
@@ -205,7 +204,11 @@ def _select_points_with_reviewed_backfill(
     limit = max(0, k)
     candidates = list(points)
     selected = candidates[:limit]
-    if limit == 0 or not candidates or any(_review_state(p) == "reviewed" for p in selected):
+    if (
+        limit == 0
+        or not candidates
+        or any(_review_state(p) == "reviewed" for p in selected)
+    ):
         return selected
 
     top_score = _score(candidates[0])
@@ -227,12 +230,22 @@ def _select_points_with_reviewed_backfill(
         if not _point_matches_scope(point, "medium", medium_tokens):
             continue
         point_score = _score(point)
-        if min_score is not None and point_score is not None and point_score < min_score:
+        if (
+            min_score is not None
+            and point_score is not None
+            and point_score < min_score
+        ):
             continue
         eligible.append((idx, point))
 
-    if material_tokens and any(_card_id_matches_material(p, material_tokens) for _idx, p in eligible):
-        eligible = [(idx, p) for idx, p in eligible if _card_id_matches_material(p, material_tokens)]
+    if material_tokens and any(
+        _card_id_matches_material(p, material_tokens) for _idx, p in eligible
+    ):
+        eligible = [
+            (idx, p)
+            for idx, p in eligible
+            if _card_id_matches_material(p, material_tokens)
+        ]
 
     for _idx, point in eligible[:_REVIEWED_BACKFILL_MAX_FACTS]:
         selected.append(point)
@@ -318,7 +331,9 @@ def _make_sparse_embedder(settings: "Settings"):
     actually enabled (lazy import: fastembed sparse support ships in the same optional dep as dense)."""
     from fastembed import SparseTextEmbedding  # lazy
 
-    return SparseTextEmbedding(model_name=settings.qdrant_sparse_model, language="german")
+    return SparseTextEmbedding(
+        model_name=settings.qdrant_sparse_model, language="german"
+    )
 
 
 def _make_reranker(settings: "Settings"):
@@ -339,7 +354,9 @@ def _embed_dim(embedder) -> int:
     return len(next(iter(embedder.embed(["passage: _warmup_"]))).tolist())
 
 
-def ensure_collection(client, collection: str, dim: int, *, sparse: bool = False) -> None:
+def ensure_collection(
+    client, collection: str, dim: int, *, sparse: bool = False
+) -> None:
     """Idempotent: create the collection (named ``dense`` vector, COSINE) if absent; if present,
     FAIL-FAST on a dimension mismatch (mirrors V1's qdrant_bootstrap guard — a silent re-embed at a
     wrong dim is a data-corruption trap). ``sparse=True`` additionally declares a named ``sparse``
@@ -403,7 +420,9 @@ def ingest_fachkarten(
     sparse_vectors = None
     if hybrid:
         sparse_embedder = sparse_embedder or _make_sparse_embedder(settings)
-        raw_texts = [txt for _pid, txt, _p in items]  # BM25 has no passage/query asymmetry
+        raw_texts = [
+            txt for _pid, txt, _p in items
+        ]  # BM25 has no passage/query asymmetry
         sparse_vectors = [
             SparseVector(indices=e.indices.tolist(), values=e.values.tolist())
             for e in sparse_embedder.embed(raw_texts)
@@ -513,7 +532,10 @@ class QdrantFachkartenRetriever:
         # pool — keeps it cheap and keeps its score scale fully isolated from backfill selection.
         if self._rerank_enabled and selected:
             selected = _rerank_points(
-                query, selected, self._reranker, min(len(selected), self._rerank_candidates)
+                query,
+                selected,
+                self._reranker,
+                min(len(selected), self._rerank_candidates),
             )
 
         return _hits_to_result(selected)
@@ -539,9 +561,7 @@ class QdrantFachkartenRetriever:
         res = self._client.query_points(
             self._collection,
             prefetch=[
-                Prefetch(
-                    query=qvec, using=_DENSE, limit=limit, filter=tenant_filter
-                ),
+                Prefetch(query=qvec, using=_DENSE, limit=limit, filter=tenant_filter),
                 Prefetch(
                     query=sparse_query,
                     using=_SPARSE,

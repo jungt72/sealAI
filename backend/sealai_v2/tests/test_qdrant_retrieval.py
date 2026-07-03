@@ -355,7 +355,9 @@ def test_rerank_points_reorders_head_and_leaves_tail_untouched():
     reranker = _FakeReranker({"low relevance": 0.1, "high relevance": 0.9})
     result = _rerank_points("query", pts, reranker, top_n=2)
     assert [p.payload["card_id"] for p in result] == ["B", "A", "C"]
-    assert result[0].score == 0.9 and result[1].score == 0.1  # score replaced by rerank score
+    assert (
+        result[0].score == 0.9 and result[1].score == 0.1
+    )  # score replaced by rerank score
 
 
 def test_rerank_points_noop_on_empty_or_zero_top_n():
@@ -403,7 +405,9 @@ class _FakeCollectionParams:
 
 class _FakeCollectionInfo:
     def __init__(self, dim: int, sparse_vectors=None) -> None:
-        self.config = type("Cfg", (), {"params": _FakeCollectionParams(dim, sparse_vectors)})()
+        self.config = type(
+            "Cfg", (), {"params": _FakeCollectionParams(dim, sparse_vectors)}
+        )()
 
 
 class _FakeExistingClient:
@@ -430,7 +434,9 @@ def test_ensure_collection_passes_when_existing_has_sparse():
 
 def test_ensure_collection_dense_check_unaffected_when_sparse_not_requested():
     client = _FakeExistingClient(1536, sparse_vectors=None)
-    ensure_collection(client, "col", 1536, sparse=False)  # no raise — sparse not requested
+    ensure_collection(
+        client, "col", 1536, sparse=False
+    )  # no raise — sparse not requested
 
 
 def test_hybrid_and_rerank_helpers_not_constructed_when_disabled():
@@ -461,18 +467,24 @@ def test_retrieve_hybrid_builds_prefetch_with_dense_and_sparse_fused_by_rrf():
 def test_retrieve_dense_only_when_hybrid_disabled_no_prefetch():
     client = _FakeClient(points=[])
     r = QdrantFachkartenRetriever(
-        Settings(qdrant_hybrid_enabled=False), client=client, embedder=_FakeDenseEmbedder()
+        Settings(qdrant_hybrid_enabled=False),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
     )
     asyncio.run(r.retrieve("Informationen zu PTFE", tenant_id="eval", k=5))
     kwargs = client.last_query_points_kwargs
     assert "prefetch" not in kwargs
-    assert kwargs["using"] == "dense"  # unchanged dense-only path, byte-identical to pre-hybrid
+    assert (
+        kwargs["using"] == "dense"
+    )  # unchanged dense-only path, byte-identical to pre-hybrid
 
 
 def test_retrieve_applies_rerank_when_enabled():
     pts = [
         _FakePoint({"claim_text": "low", "card_id": "A", "review_state": "draft"}, 0.9),
-        _FakePoint({"claim_text": "high", "card_id": "B", "review_state": "draft"}, 0.8),
+        _FakePoint(
+            {"claim_text": "high", "card_id": "B", "review_state": "draft"}, 0.8
+        ),
     ]
     client = _FakeClient(points=pts)
     reranker = _FakeReranker({"low": 0.1, "high": 0.9})
@@ -483,20 +495,30 @@ def test_retrieve_applies_rerank_when_enabled():
         reranker=reranker,
     )
     res = asyncio.run(r.retrieve("q", tenant_id="eval", k=2))
-    assert [f.card_id for f in res.provisional] == ["B", "A"]  # rerank order, not incoming score order
+    assert [f.card_id for f in res.provisional] == [
+        "B",
+        "A",
+    ]  # rerank order, not incoming score order
 
 
 def test_retrieve_skips_rerank_when_disabled():
     pts = [
         _FakePoint({"claim_text": "low", "card_id": "A", "review_state": "draft"}, 0.9),
-        _FakePoint({"claim_text": "high", "card_id": "B", "review_state": "draft"}, 0.8),
+        _FakePoint(
+            {"claim_text": "high", "card_id": "B", "review_state": "draft"}, 0.8
+        ),
     ]
     client = _FakeClient(points=pts)
     r = QdrantFachkartenRetriever(
-        Settings(qdrant_rerank_enabled=False), client=client, embedder=_FakeDenseEmbedder()
+        Settings(qdrant_rerank_enabled=False),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
     )
     res = asyncio.run(r.retrieve("q", tenant_id="eval", k=2))
-    assert [f.card_id for f in res.provisional] == ["A", "B"]  # incoming order preserved
+    assert [f.card_id for f in res.provisional] == [
+        "A",
+        "B",
+    ]  # incoming order preserved
 
 
 # --- Incident regression (2026-07-03): the reviewed-backfill's relative-score threshold is
@@ -507,14 +529,23 @@ def test_retrieve_skips_rerank_when_disabled():
 def _rrf_scale_candidates_with_deep_reviewed(reviewed_score: float = 0.0768):
     top5 = [
         _FakePoint(
-            {"claim_text": f"draft {idx}", "review_state": "draft", "card_id": f"draft-{idx}"},
+            {
+                "claim_text": f"draft {idx}",
+                "review_state": "draft",
+                "card_id": f"draft-{idx}",
+            },
             score,
         )
         for idx, score in enumerate([0.5116, 0.5, 0.375, 0.3472, 0.3333])
     ]
     padding = [
-        _FakePoint({"claim_text": f"pad {i}", "review_state": "draft", "card_id": f"pad-{i}"}, 0.05)
-        for i in range(21)  # pushes the reviewed candidate well past a typical rerank-candidates window
+        _FakePoint(
+            {"claim_text": f"pad {i}", "review_state": "draft", "card_id": f"pad-{i}"},
+            0.05,
+        )
+        for i in range(
+            21
+        )  # pushes the reviewed candidate well past a typical rerank-candidates window
     ]
     reviewed = _FakePoint(
         {
@@ -559,7 +590,11 @@ def test_retrieve_hybrid_with_rerank_still_grounds_deep_reviewed_candidate():
     client = _FakeClient(points=candidates)
     reranker = _FakeReranker({f"draft {i}": 0.5 - i * 0.01 for i in range(5)})
     r = QdrantFachkartenRetriever(
-        Settings(qdrant_hybrid_enabled=True, qdrant_rerank_enabled=True, qdrant_rerank_candidates=20),
+        Settings(
+            qdrant_hybrid_enabled=True,
+            qdrant_rerank_enabled=True,
+            qdrant_rerank_candidates=20,
+        ),
         client=client,
         embedder=_FakeDenseEmbedder(),
         sparse_embedder=_FakeSparseEmbedder(),

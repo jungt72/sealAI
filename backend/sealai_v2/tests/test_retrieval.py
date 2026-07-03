@@ -145,18 +145,24 @@ def test_card_severity_takes_the_max_across_multiple_claims():
         scope={"material": ["fkm"]},
         claims=(
             Claim(
-                text="a", review_state="reviewed", provenance=("owner:x",),
+                text="a",
+                review_state="reviewed",
+                provenance=("owner:x",),
                 kind="family_tendency",
             ),
             Claim(
-                text="b", review_state="draft", provenance=("cc:x",),
+                text="b",
+                review_state="draft",
+                provenance=("cc:x",),
                 kind="safety_nogo",
             ),
         ),
         review_state="reviewed",
         provenance=("owner:x",),
     )
-    assert _card_severity(card) == 4  # the draft safety_nogo still counts (see docstring)
+    assert (
+        _card_severity(card) == 4
+    )  # the draft safety_nogo still counts (see docstring)
 
 
 def test_tie_break_prefers_higher_claim_severity_at_equal_relevance():
@@ -178,10 +184,16 @@ def test_relevance_still_beats_claim_severity():
     weaker_but_severe = _card("FK-A", "safety_nogo")
     stronger_but_mild = Fachkarte(
         id="FK-Z",
-        scope={"material": ["fkm"], "medium": ["testmedium"], "property": ["hitzebestaendig"]},
+        scope={
+            "material": ["fkm"],
+            "medium": ["testmedium"],
+            "property": ["hitzebestaendig"],
+        },
         claims=(
             Claim(
-                text="fkm claim", review_state="reviewed", provenance=("owner:x",),
+                text="fkm claim",
+                review_state="reviewed",
+                provenance=("owner:x",),
                 kind="family_tendency",
             ),
         ),
@@ -202,6 +214,8 @@ def test_relevance_still_beats_claim_severity():
 
 def test_catalog_property_exposes_the_backing_catalog():
     # mirrors the accessor already on InProcessCompatibilityMatrix/InProcessVersagensmodiStore
-    catalog = FachkartenCatalog(cards=(_card("FK-T", "family_tendency"),), version="test_v1")
+    catalog = FachkartenCatalog(
+        cards=(_card("FK-T", "family_tendency"),), version="test_v1"
+    )
     assert InProcessRetriever(catalog).catalog is catalog
     assert InProcessRetriever(catalog).catalog.version == "test_v1"

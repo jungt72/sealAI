@@ -293,7 +293,9 @@ def test_offene_punkte_stays_silent_for_non_conditional_bases():
 
 
 def test_offene_punkte_includes_kandidaten_spec_offene_punkte():
-    res = _result(kandidaten_spec={"offene_punkte": ["Sonderwerkstoff-Freigabe klären."]})
+    res = _result(
+        kandidaten_spec={"offene_punkte": ["Sonderwerkstoff-Freigabe klären."]}
+    )
     assert _offene_punkte(res) == ("Sonderwerkstoff-Freigabe klären.",)
 
 
@@ -308,7 +310,9 @@ def test_snapshot_from_result_carries_offene_punkte():
 
 def test_briefing_renders_the_offene_punkte_section_when_present():
     s = RenderSnapshot(
-        question="q", answer_text="a", offene_punkte=("Sonderwerkstoff-Freigabe klären.",)
+        question="q",
+        answer_text="a",
+        offene_punkte=("Sonderwerkstoff-Freigabe klären.",),
     )
     body = ArtifactRenderer().briefing(s).body
     assert "## Offene Punkte" in body

@@ -50,7 +50,9 @@ def test_order_is_fixed_regardless_of_kwarg_order():
 
 def test_default_pipeline_wires_all_four_catalog_versions():
     p = build_pipeline(Settings(), FakeLlmClient("x"))
-    assert p.wissensstand  # non-empty by default (ground_enabled + verify_enabled both True)
+    assert (
+        p.wissensstand
+    )  # non-empty by default (ground_enabled + verify_enabled both True)
     for label in ("fk:", "mx:", "trap:", "vm:"):
         assert label in p.wissensstand
 
