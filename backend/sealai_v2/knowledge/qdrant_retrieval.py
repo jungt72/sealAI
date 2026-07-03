@@ -33,6 +33,7 @@ GLOBAL_TENANT = (
     "sealai"  # seed Fachkarten are GLOBAL knowledge (mirrors V1's shared tenant)
 )
 _DENSE = "dense"
+_SPARSE = "sparse"
 _POINT_NAMESPACE = uuid.UUID(
     "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
 )  # uuid5 NAMESPACE_URL
@@ -140,6 +141,37 @@ def _matches_material_scope(point, material_tokens: set[str]) -> bool:
         _point_matches_scope(point, "material", material_tokens)
         or _card_id_matches_material(point, material_tokens)
     )
+
+
+class _ScoredPoint:
+    """Minimal (payload, score) carrier matching ``ScoredPoint``'s ``.payload``/``.score`` duck-type —
+    used to substitute the qdrant-native score with the cross-encoder's score after ``_rerank_points``,
+    so every downstream helper (``_score``, ``_select_points_with_reviewed_backfill``) stays agnostic to
+    whether a point came straight from qdrant or was reordered by the reranker."""
+
+    __slots__ = ("payload", "score")
+
+    def __init__(self, payload: dict, score: float) -> None:
+        self.payload = payload
+        self.score = score
+
+
+def _rerank_points(query: str, points, reranker, top_n: int):
+    """Cross-encoder rerank the top ``top_n`` candidates (by incoming rank) against the query; the rest
+    pass through untouched — reranking cost is O(top_n) forward passes, not O(all candidates), see the
+    ``qdrant_rerank_candidates`` setting docstring. PURE aside from the injected ``reranker`` (duck-typed:
+    ``.rerank(query, documents) -> Iterable[float]``, fastembed's ``TextCrossEncoder`` protocol), so this
+    is unit-testable with a fake reranker and no fastembed import."""
+    if not points or top_n <= 0:
+        return points
+    head, tail = list(points[:top_n]), list(points[top_n:])
+    docs = [_payload(p).get("claim_text", "") for p in head]
+    scores = list(reranker.rerank(query, docs))
+    reordered = [
+        _ScoredPoint(_payload(p), float(s))
+        for s, p in sorted(zip(scores, head), key=lambda sp: -sp[0])
+    ]
+    return reordered + tail
 
 
 def _select_points_with_reviewed_backfill(points, k: int, query: str = ""):
@@ -263,6 +295,23 @@ def _make_embedder(settings: "Settings"):
     )
 
 
+def _make_sparse_embedder(settings: "Settings"):
+    """BM25 sparse embedder (fastembed's bundled ``Qdrant/bm25`` model) — real term-frequency scoring
+    with German stopwords, NOT a second neural model. Only constructed when hybrid retrieval is
+    actually enabled (lazy import: fastembed sparse support ships in the same optional dep as dense)."""
+    from fastembed import SparseTextEmbedding  # lazy
+
+    return SparseTextEmbedding(model_name=settings.qdrant_sparse_model, language="german")
+
+
+def _make_reranker(settings: "Settings"):
+    """Cross-encoder reranker (fastembed's bundled multilingual model) — a discriminative relevance
+    scorer, not a generative LLM (Leitsatz L1: the LLM only formulates the final answer)."""
+    from fastembed.rerank.cross_encoder import TextCrossEncoder  # lazy
+
+    return TextCrossEncoder(model_name=settings.qdrant_rerank_model)
+
+
 def _make_client(settings: "Settings"):
     from qdrant_client import QdrantClient  # lazy
 
@@ -273,48 +322,82 @@ def _embed_dim(embedder) -> int:
     return len(next(iter(embedder.embed(["passage: _warmup_"]))).tolist())
 
 
-def ensure_collection(client, collection: str, dim: int) -> None:
+def ensure_collection(client, collection: str, dim: int, *, sparse: bool = False) -> None:
     """Idempotent: create the collection (named ``dense`` vector, COSINE) if absent; if present,
     FAIL-FAST on a dimension mismatch (mirrors V1's qdrant_bootstrap guard — a silent re-embed at a
-    wrong dim is a data-corruption trap)."""
-    from qdrant_client.models import Distance, VectorParams  # lazy
+    wrong dim is a data-corruption trap). ``sparse=True`` additionally declares a named ``sparse``
+    vector (IDF-modified, for BM25 — see the hybrid-retrieval settings docstring) at creation time.
+    Qdrant collections fix their vector schema at creation, so adding sparse to an EXISTING dense-only
+    collection needs a recreate + re-ingest — this function does not do that migration silently; it
+    only fails fast if the existing collection doesn't already have what's requested."""
+    from qdrant_client.models import (  # lazy
+        Distance,
+        Modifier,
+        SparseVectorParams,
+        VectorParams,
+    )
 
     if client.collection_exists(collection):
-        existing = client.get_collection(collection).config.params.vectors[_DENSE].size
+        info = client.get_collection(collection)
+        existing = info.config.params.vectors[_DENSE].size
         if existing != dim:
             raise RuntimeError(
                 f"Qdrant collection {collection!r} has dim {existing}, embedder needs {dim} — refuse"
+            )
+        if sparse and not (info.config.params.sparse_vectors or {}).get(_SPARSE):
+            raise RuntimeError(
+                f"Qdrant collection {collection!r} has no {_SPARSE!r} vector — hybrid retrieval needs a "
+                "collection recreate + full re-ingest (owner-authorized migration, not automatic)"
             )
         return
     client.create_collection(
         collection,
         vectors_config={_DENSE: VectorParams(size=dim, distance=Distance.COSINE)},
+        sparse_vectors_config=(
+            {_SPARSE: SparseVectorParams(modifier=Modifier.IDF)} if sparse else None
+        ),
     )
 
 
-def ingest_fachkarten(settings, *, client=None, embedder=None, catalog=None) -> int:
+def ingest_fachkarten(
+    settings, *, client=None, embedder=None, catalog=None, sparse_embedder=None
+) -> int:
     """Embed every Fachkarten claim (``passage:``) + upsert into Qdrant. Idempotent (uuid5 point ids
-    → re-seed overwrites; a claim flipping draft→reviewed updates in place). Returns #points upserted."""
-    from qdrant_client.models import PointStruct  # lazy
+    → re-seed overwrites; a claim flipping draft→reviewed updates in place). Returns #points upserted.
+    When ``settings.qdrant_hybrid_enabled``, also embeds + upserts a ``sparse`` (BM25) vector alongside
+    ``dense`` — the collection must already have both vectors declared (``ensure_collection(...,
+    sparse=True)``, called below with the same flag)."""
+    from qdrant_client.models import PointStruct, SparseVector  # lazy
 
     client = client or _make_client(settings)
     embedder = embedder or _make_embedder(settings)
     catalog = catalog or load_fachkarten()
-    ensure_collection(client, settings.qdrant_collection, _embed_dim(embedder))
+    hybrid = bool(getattr(settings, "qdrant_hybrid_enabled", False))
+    ensure_collection(
+        client, settings.qdrant_collection, _embed_dim(embedder), sparse=hybrid
+    )
     items = list(claim_points(catalog))
     if not items:
         return 0
     pprefix = getattr(settings, "embed_passage_prefix", "passage: ")
-    vectors = [
-        v.tolist()
-        for v in embedder.embed(
-            [_passage_text(txt, pprefix) for _pid, txt, _p in items]
-        )
-    ]
-    points = [
-        PointStruct(id=pid, vector={_DENSE: vec}, payload=payload)
-        for (pid, _txt, payload), vec in zip(items, vectors)
-    ]
+    passages = [_passage_text(txt, pprefix) for _pid, txt, _p in items]
+    vectors = [v.tolist() for v in embedder.embed(passages)]
+
+    sparse_vectors = None
+    if hybrid:
+        sparse_embedder = sparse_embedder or _make_sparse_embedder(settings)
+        raw_texts = [txt for _pid, txt, _p in items]  # BM25 has no passage/query asymmetry
+        sparse_vectors = [
+            SparseVector(indices=e.indices.tolist(), values=e.values.tolist())
+            for e in sparse_embedder.embed(raw_texts)
+        ]
+
+    points = []
+    for idx, ((pid, _txt, payload), vec) in enumerate(zip(items, vectors)):
+        vector = {_DENSE: vec}
+        if sparse_vectors is not None:
+            vector[_SPARSE] = sparse_vectors[idx]
+        points.append(PointStruct(id=pid, vector=vector, payload=payload))
     client.upsert(settings.qdrant_collection, points=points)
     return len(points)
 
@@ -323,11 +406,35 @@ class QdrantFachkartenRetriever:
     """``Retriever`` Protocol impl — semantic Fachkarten recall over Qdrant. Drop-in for
     ``InProcessRetriever``: same async signature, same mandatory tenant, same RetrievalResult shape."""
 
-    def __init__(self, settings, *, client=None, embedder=None) -> None:
+    def __init__(
+        self,
+        settings,
+        *,
+        client=None,
+        embedder=None,
+        sparse_embedder=None,
+        reranker=None,
+    ) -> None:
         self._collection = settings.qdrant_collection
         self._client = client or _make_client(settings)
         self._embedder = embedder or _make_embedder(settings)
         self._qprefix = getattr(settings, "embed_query_prefix", "query: ")
+        # Hybrid retrieval (dense+sparse BM25, RRF-fused) + optional cross-encoder rerank — both default
+        # OFF (see settings docstring: flipping qdrant_hybrid_enabled needs a collection migration).
+        # Sparse embedder / reranker are constructed lazily (only when actually enabled) so the common
+        # dense-only path never pays their import/model-load cost.
+        self._hybrid_enabled = bool(getattr(settings, "qdrant_hybrid_enabled", False))
+        self._hybrid_candidate_limit = int(
+            getattr(settings, "qdrant_hybrid_candidate_limit", 128)
+        )
+        self._sparse_embedder = sparse_embedder or (
+            _make_sparse_embedder(settings) if self._hybrid_enabled else None
+        )
+        self._rerank_enabled = bool(getattr(settings, "qdrant_rerank_enabled", False))
+        self._rerank_candidates = int(getattr(settings, "qdrant_rerank_candidates", 20))
+        self._reranker = reranker or (
+            _make_reranker(settings) if self._rerank_enabled else None
+        )
 
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
@@ -342,9 +449,6 @@ class QdrantFachkartenRetriever:
     def _retrieve_sync(self, query: str, tenant_id: str, k: int) -> RetrievalResult:
         from qdrant_client.models import FieldCondition, Filter, MatchAny  # lazy
 
-        qvec = next(
-            iter(self._embedder.embed([_query_text(query, self._qprefix)]))
-        ).tolist()
         tenant_filter = Filter(
             must=[
                 FieldCondition(
@@ -357,12 +461,62 @@ class QdrantFachkartenRetriever:
             _REVIEWED_BACKFILL_MAX_CANDIDATES,
             max(requested_limit, requested_limit * _REVIEWED_BACKFILL_FACTOR),
         )
+
+        if self._hybrid_enabled:
+            points = self._query_hybrid(query, tenant_filter, candidate_limit)
+        else:
+            qvec = next(
+                iter(self._embedder.embed([_query_text(query, self._qprefix)]))
+            ).tolist()
+            res = self._client.query_points(
+                self._collection,
+                query=qvec,
+                using=_DENSE,
+                limit=candidate_limit,
+                query_filter=tenant_filter,
+                with_payload=True,
+            )
+            points = res.points
+
+        if self._rerank_enabled and points:
+            points = _rerank_points(query, points, self._reranker, self._rerank_candidates)
+
+        return _hits_to_result(_select_points_with_reviewed_backfill(points, k, query))
+
+    def _query_hybrid(self, query: str, tenant_filter, candidate_limit: int):
+        """Dense + sparse (BM25) prefetch, fused server-side via Qdrant's native RRF — deterministic,
+        no model involved in the fusion step itself (only in producing each candidate list)."""
+        from qdrant_client.models import (  # lazy
+            Fusion,
+            FusionQuery,
+            Prefetch,
+            SparseVector,
+        )
+
+        limit = max(candidate_limit, self._hybrid_candidate_limit)
+        qvec = next(
+            iter(self._embedder.embed([_query_text(query, self._qprefix)]))
+        ).tolist()
+        sparse = next(iter(self._sparse_embedder.embed([query])))
+        sparse_query = SparseVector(
+            indices=sparse.indices.tolist(), values=sparse.values.tolist()
+        )
         res = self._client.query_points(
             self._collection,
-            query=qvec,
-            using=_DENSE,
-            limit=candidate_limit,
+            prefetch=[
+                Prefetch(
+                    query=qvec, using=_DENSE, limit=limit, filter=tenant_filter
+                ),
+                Prefetch(
+                    query=sparse_query,
+                    using=_SPARSE,
+                    limit=limit,
+                    filter=tenant_filter,
+                ),
+            ],
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=limit,
             query_filter=tenant_filter,
             with_payload=True,
         )
-        return _hits_to_result(_select_points_with_reviewed_backfill(res.points, k, query))
+        return res.points

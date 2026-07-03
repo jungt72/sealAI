@@ -172,3 +172,30 @@ class Settings(BaseSettings):
     # (the openai prod path); set the e5 prefixes only when switching to the fastembed offline option.
     embed_query_prefix: str = ""
     embed_passage_prefix: str = ""
+
+    # --- Hybrid retrieval (dense + sparse BM25, RRF-fused, optional cross-encoder rerank) ---
+    # 2026-07-03 owner directive: retrieval/ranking must stay deterministic — the LLM only formulates
+    # the answer (Leitsatz L1). Dense-only embeddings blur exact German technical terms (DIN numbers,
+    # compound nouns); adding a lexical (BM25) signal + fusing it with dense via Qdrant's native RRF is
+    # itself deterministic (no model in the fusion step). The optional rerank stage is a discriminative
+    # cross-encoder (scores relevance), NOT a generative LLM — consistent with the same doctrine.
+    # Default OFF: flipping it on needs a Qdrant collection migration (a NEW "sparse" named vector must
+    # be declared at collection-creation time, so existing points need re-ingestion) — an explicit,
+    # owner-authorized ops step, not something that can be silently backfilled onto the live collection.
+    qdrant_hybrid_enabled: bool = False
+    # fastembed's bundled sparse model; ships German stopwords (verified: "german.txt" in its asset
+    # list) — this is real BM25 term-frequency scoring, not a neural re-embedding of the dense model.
+    qdrant_sparse_model: str = "Qdrant/bm25"
+    # How many RRF-fused candidates to pull before the reviewed-backfill / rerank stages run. Mirrors
+    # the existing dense-only candidate widening (_REVIEWED_BACKFILL_MAX_CANDIDATES) so behavior stays
+    # comparable when toggling the flag.
+    qdrant_hybrid_candidate_limit: int = 128
+    # Independent of qdrant_hybrid_enabled (rerank works fine on dense-only candidates too), but only
+    # meaningful together in practice. jina-reranker-v2-base-multilingual: German-capable cross-encoder,
+    # already bundled in fastembed — confirmed via TextCrossEncoder.list_supported_models().
+    qdrant_rerank_enabled: bool = False
+    qdrant_rerank_model: str = "jinaai/jina-reranker-v2-base-multilingual"
+    # How many top-ranked (post-fusion) candidates get sent through the cross-encoder. Small on purpose
+    # — reranking is the expensive step (a full forward pass per candidate), only needs to resolve
+    # ordering among the plausible top slice, not the whole candidate pool.
+    qdrant_rerank_candidates: int = 20

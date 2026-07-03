@@ -182,6 +182,15 @@ services:
       SEALAI_V2_EMBED_MODEL: ${SEALAI_V2_EMBED_MODEL:-text-embedding-3-small}
       SEALAI_V2_EMBED_QUERY_PREFIX: "${SEALAI_V2_EMBED_QUERY_PREFIX-query: }"
       SEALAI_V2_EMBED_PASSAGE_PREFIX: "${SEALAI_V2_EMBED_PASSAGE_PREFIX-passage: }"
+      # Hybrid retrieval (dense+sparse BM25, RRF-fused, optional cross-encoder rerank): wired but OFF by
+      # default — flipping it on needs a Qdrant collection migration (re-ingest with the new "sparse"
+      # named vector), an explicit owner-authorized ops step. Byte-identical when unset.
+      SEALAI_V2_QDRANT_HYBRID_ENABLED: ${SEALAI_V2_QDRANT_HYBRID_ENABLED:-false}
+      SEALAI_V2_QDRANT_SPARSE_MODEL: ${SEALAI_V2_QDRANT_SPARSE_MODEL:-Qdrant/bm25}
+      SEALAI_V2_QDRANT_HYBRID_CANDIDATE_LIMIT: ${SEALAI_V2_QDRANT_HYBRID_CANDIDATE_LIMIT:-128}
+      SEALAI_V2_QDRANT_RERANK_ENABLED: ${SEALAI_V2_QDRANT_RERANK_ENABLED:-false}
+      SEALAI_V2_QDRANT_RERANK_MODEL: ${SEALAI_V2_QDRANT_RERANK_MODEL:-jinaai/jina-reranker-v2-base-multilingual}
+      SEALAI_V2_QDRANT_RERANK_CANDIDATES: ${SEALAI_V2_QDRANT_RERANK_CANDIDATES:-20}
       # Medium Intelligence Phase-2: L1-NEUTRAL display data (never fed to L1/L3 → golden byte-identical).
       SEALAI_V2_MEDIUM_INTEL_ENABLED: ${SEALAI_V2_MEDIUM_INTEL_ENABLED:-false}
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate

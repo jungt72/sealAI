@@ -13,8 +13,10 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     _hits_to_result,
     _make_embedder,
     _quelle,
+    _rerank_points,
     _select_points_with_reviewed_backfill,
     claim_points,
+    ensure_collection,
 )
 from sealai_v2.knowledge.retrieval import _quelle as inproc_quelle
 
@@ -291,3 +293,206 @@ def test_make_embedder_openai_fails_closed_without_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
         _make_embedder(_S())
+
+
+# --- Hybrid retrieval (dense + sparse BM25, RRF-fused) + optional rerank — default OFF, see the
+# settings docstrings for why (Qdrant collection schema migration, not a silent backfill). ---
+
+
+class _ListLike(list):
+    """Stand-in for numpy arrays: adds ``.tolist()`` (the only numpy method the retriever calls)."""
+
+    def tolist(self):
+        return list(self)
+
+
+class _FakeDenseEmbedder:
+    def embed(self, texts):
+        return [_ListLike([0.1, 0.2, 0.3]) for _ in texts]
+
+
+class _FakeSparseEmbedding:
+    def __init__(self, indices, values):
+        self.indices = _ListLike(indices)
+        self.values = _ListLike(values)
+
+
+class _FakeSparseEmbedder:
+    def embed(self, texts):
+        return [_FakeSparseEmbedding([1, 2], [0.5, 0.5]) for _ in texts]
+
+
+class _FakeReranker:
+    def __init__(self, score_map: dict[str, float]) -> None:
+        self._score_map = score_map
+
+    def rerank(self, query, documents):
+        return [self._score_map.get(d, 0.0) for d in documents]
+
+
+class _FakeQueryResult:
+    def __init__(self, points) -> None:
+        self.points = points
+
+
+class _FakeClient:
+    def __init__(self, points=None) -> None:
+        self._points = points if points is not None else []
+        self.last_query_points_kwargs: dict | None = None
+
+    def query_points(self, collection, **kwargs):
+        self.last_query_points_kwargs = kwargs
+        return _FakeQueryResult(self._points)
+
+
+def test_rerank_points_reorders_head_and_leaves_tail_untouched():
+    pts = [
+        _FakePoint({"claim_text": "low relevance", "card_id": "A"}, 0.9),
+        _FakePoint({"claim_text": "high relevance", "card_id": "B"}, 0.8),
+        _FakePoint({"claim_text": "untouched tail", "card_id": "C"}, 0.1),
+    ]
+    reranker = _FakeReranker({"low relevance": 0.1, "high relevance": 0.9})
+    result = _rerank_points("query", pts, reranker, top_n=2)
+    assert [p.payload["card_id"] for p in result] == ["B", "A", "C"]
+    assert result[0].score == 0.9 and result[1].score == 0.1  # score replaced by rerank score
+
+
+def test_rerank_points_noop_on_empty_or_zero_top_n():
+    reranker = _FakeReranker({})
+    assert _rerank_points("q", [], reranker, top_n=5) == []
+    pts = [_FakePoint({"card_id": "A"}, 0.5)]
+    assert _rerank_points("q", pts, reranker, top_n=0) == pts
+
+
+class _FakeCreateClient:
+    def __init__(self, exists: bool = False) -> None:
+        self._exists = exists
+        self.create_kwargs: dict | None = None
+
+    def collection_exists(self, name):
+        return self._exists
+
+    def create_collection(self, name, **kwargs):
+        self.create_kwargs = kwargs
+
+
+def test_ensure_collection_creates_sparse_vector_when_requested():
+    client = _FakeCreateClient(exists=False)
+    ensure_collection(client, "col", 1536, sparse=True)
+    assert client.create_kwargs["sparse_vectors_config"] is not None
+    assert "sparse" in client.create_kwargs["sparse_vectors_config"]
+
+
+def test_ensure_collection_dense_only_by_default():
+    client = _FakeCreateClient(exists=False)
+    ensure_collection(client, "col", 1536)
+    assert client.create_kwargs["sparse_vectors_config"] is None
+
+
+class _FakeVectorParams:
+    def __init__(self, size: int) -> None:
+        self.size = size
+
+
+class _FakeCollectionParams:
+    def __init__(self, dim: int, sparse_vectors=None) -> None:
+        self.vectors = {"dense": _FakeVectorParams(dim)}
+        self.sparse_vectors = sparse_vectors
+
+
+class _FakeCollectionInfo:
+    def __init__(self, dim: int, sparse_vectors=None) -> None:
+        self.config = type("Cfg", (), {"params": _FakeCollectionParams(dim, sparse_vectors)})()
+
+
+class _FakeExistingClient:
+    def __init__(self, dim: int, sparse_vectors=None) -> None:
+        self._info = _FakeCollectionInfo(dim, sparse_vectors)
+
+    def collection_exists(self, name):
+        return True
+
+    def get_collection(self, name):
+        return self._info
+
+
+def test_ensure_collection_fails_fast_when_existing_lacks_sparse():
+    client = _FakeExistingClient(1536, sparse_vectors=None)
+    with pytest.raises(RuntimeError, match="sparse"):
+        ensure_collection(client, "col", 1536, sparse=True)
+
+
+def test_ensure_collection_passes_when_existing_has_sparse():
+    client = _FakeExistingClient(1536, sparse_vectors={"sparse": object()})
+    ensure_collection(client, "col", 1536, sparse=True)  # no raise
+
+
+def test_ensure_collection_dense_check_unaffected_when_sparse_not_requested():
+    client = _FakeExistingClient(1536, sparse_vectors=None)
+    ensure_collection(client, "col", 1536, sparse=False)  # no raise — sparse not requested
+
+
+def test_hybrid_and_rerank_helpers_not_constructed_when_disabled():
+    # Both default OFF → no sparse embedder / reranker built, no import cost paid on the common path.
+    r = QdrantFachkartenRetriever(Settings(), client=object(), embedder=object())
+    assert r._sparse_embedder is None
+    assert r._reranker is None
+
+
+def test_retrieve_hybrid_builds_prefetch_with_dense_and_sparse_fused_by_rrf():
+    from qdrant_client.models import Fusion, FusionQuery
+
+    client = _FakeClient(points=[])
+    r = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=True),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+        sparse_embedder=_FakeSparseEmbedder(),
+    )
+    asyncio.run(r.retrieve("Informationen zu PTFE", tenant_id="eval", k=5))
+    kwargs = client.last_query_points_kwargs
+    assert isinstance(kwargs["query"], FusionQuery)
+    assert kwargs["query"].fusion == Fusion.RRF
+    assert len(kwargs["prefetch"]) == 2
+    assert {p.using for p in kwargs["prefetch"]} == {"dense", "sparse"}
+
+
+def test_retrieve_dense_only_when_hybrid_disabled_no_prefetch():
+    client = _FakeClient(points=[])
+    r = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=False), client=client, embedder=_FakeDenseEmbedder()
+    )
+    asyncio.run(r.retrieve("Informationen zu PTFE", tenant_id="eval", k=5))
+    kwargs = client.last_query_points_kwargs
+    assert "prefetch" not in kwargs
+    assert kwargs["using"] == "dense"  # unchanged dense-only path, byte-identical to pre-hybrid
+
+
+def test_retrieve_applies_rerank_when_enabled():
+    pts = [
+        _FakePoint({"claim_text": "low", "card_id": "A", "review_state": "draft"}, 0.9),
+        _FakePoint({"claim_text": "high", "card_id": "B", "review_state": "draft"}, 0.8),
+    ]
+    client = _FakeClient(points=pts)
+    reranker = _FakeReranker({"low": 0.1, "high": 0.9})
+    r = QdrantFachkartenRetriever(
+        Settings(qdrant_rerank_enabled=True, qdrant_rerank_candidates=5),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+        reranker=reranker,
+    )
+    res = asyncio.run(r.retrieve("q", tenant_id="eval", k=2))
+    assert [f.card_id for f in res.provisional] == ["B", "A"]  # rerank order, not incoming score order
+
+
+def test_retrieve_skips_rerank_when_disabled():
+    pts = [
+        _FakePoint({"claim_text": "low", "card_id": "A", "review_state": "draft"}, 0.9),
+        _FakePoint({"claim_text": "high", "card_id": "B", "review_state": "draft"}, 0.8),
+    ]
+    client = _FakeClient(points=pts)
+    r = QdrantFachkartenRetriever(
+        Settings(qdrant_rerank_enabled=False), client=client, embedder=_FakeDenseEmbedder()
+    )
+    res = asyncio.run(r.retrieve("q", tenant_id="eval", k=2))
+    assert [f.card_id for f in res.provisional] == ["A", "B"]  # incoming order preserved
