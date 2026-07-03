@@ -154,3 +154,26 @@ describe("URL normalization (cutover 1b: nginx try_files serves the SPA for ever
     window.history.pushState({}, "", "/");
   });
 });
+
+describe("\"Fälle\"-Sidebar: a hard reload must not lose the current case", () => {
+  it("writes the auto-generated caseId into the URL once authed (so a reload finds it)", async () => {
+    window.history.pushState({}, "", "/dashboard/"); // no ?case= yet — matches a first-ever visit
+    const memoryRef = { current: { case_state: [], history: [] } as ConversationMemory };
+    stubApi(memoryRef);
+    setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
+    render(<App />);
+    await waitFor(() => expect(window.location.search).toMatch(/case=[^&]+/));
+    window.history.pushState({}, "", "/");
+  });
+
+  it("does not overwrite an existing ?case= from the URL (reload keeps the SAME case)", async () => {
+    window.history.pushState({}, "", "/dashboard/?case=existing-case-id");
+    const memoryRef = { current: { case_state: [], history: [] } as ConversationMemory };
+    const { calls } = stubApi(memoryRef);
+    setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
+    render(<App />);
+    await waitFor(() => expect(calls.some((u) => u.includes("case_id=existing-case-id"))).toBe(true));
+    expect(window.location.search).toBe("?case=existing-case-id");
+    window.history.pushState({}, "", "/");
+  });
+});

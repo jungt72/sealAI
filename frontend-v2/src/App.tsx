@@ -213,6 +213,17 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  // Persist a freshly-generated caseId into the URL once auth bootstrap has settled — deferred
+  // until `authed` so this never races the OIDC callback's own replaceState calls (which scrub
+  // code/state/verifier right after login and would otherwise clobber an early write). Without
+  // this, a caseId minted in-memory by the useState initializer above never reaches the URL, so a
+  // hard reload finds no ?case= param, mints ANOTHER fresh id, and the chat looks lost.
+  useEffect(() => {
+    if (!authed) return;
+    if (getCaseIdFromUrl() === caseId) return;
+    setCaseIdInUrl(caseId, { replace: true });
+  }, [authed, caseId]);
+
   // Proactive silent token refresh (the seamless-session pattern, like large platforms): while signed
   // in, refresh the access token WELL BEFORE it expires via the rotating refresh_token grant, so API
   // calls never hit a 401 mid-session. Transient failures retry within the remaining access-token
