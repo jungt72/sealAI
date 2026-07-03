@@ -2,7 +2,7 @@
 
 Stand: 2026-07-03  
 Branch: `relay/codex-audit-v2-grounding`  
-Commit: `6fec68e0`  
+Commit: `ad701d31`  
 Scope: VPS `sealai-vps`, Repo `~/sealai`, Branch-Basis `main`; keine Produktion deployed.
 
 ## Kurzfazit
@@ -145,7 +145,7 @@ Best-practice-Abgleich:
 
 ## Code Changes
 
-Commit: `6fec68e0` (`fix(v2): backfill reviewed qdrant grounding`)
+Commit: `ad701d31` (`fix(v2): backfill reviewed qdrant grounding`)
 
 Geändert:
 
