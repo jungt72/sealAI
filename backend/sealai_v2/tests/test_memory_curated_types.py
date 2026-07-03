@@ -50,11 +50,19 @@ def test_status_enum_has_all_seven_documented_states():
     }
 
 
-def test_type_enum_has_the_three_types_named_in_the_source_prompt():
+def test_type_enum_has_the_full_nine_types_from_the_final_concept_doc():
+    # Patch 9 reconciliation: the earlier 3-value set (preference/technical_note/case_parameter)
+    # was a correct-but-incomplete inference — this is now the full §3 enum.
     assert {t.value for t in MemoryType} == {
         "preference",
-        "technical_note",
+        "workflow_instruction",
+        "project_context",
         "case_parameter",
+        "technical_note",
+        "manufacturer_feedback",
+        "rfq_pattern",
+        "risk_note",
+        "conversation_summary",
     }
 
 
@@ -109,6 +117,17 @@ def test_memory_item_defaults_are_pure_no_clock_no_io():
     assert item.sources == ()
 
 
+def test_memory_item_patch9_fields_have_safe_inert_defaults():
+    # Patch 9 additions: wired for persistence but not yet consumed by any policy rule — defaults
+    # must be the most conservative choice (full confidence, internal sensitivity, no conflict links).
+    item = _item()
+    assert item.confidence == 1.0
+    assert item.sensitivity == "internal"
+    assert item.subject_hash is None
+    assert item.supersedes_memory_id is None
+    assert item.deprecated_by_memory_id is None
+
+
 def test_memory_source_is_a_plain_immutable_record():
     src = MemorySource(
         kind="user_stated", session_id="s1", turn_id="t1", note="said explicitly"
@@ -116,6 +135,28 @@ def test_memory_source_is_a_plain_immutable_record():
     assert src.kind == "user_stated"
     with pytest.raises(AttributeError):
         src.kind = "other"  # type: ignore[misc]  # frozen dataclass
+
+
+def test_memory_source_patch9_reference_fields_default_to_none():
+    src = MemorySource(kind="user_stated")
+    assert src.source_ref is None
+    assert src.message_id is None
+    assert src.document_id is None
+    assert src.case_snapshot_id is None
+
+
+def test_memory_source_patch9_reference_fields_can_be_set():
+    src = MemorySource(
+        kind="doc_extracted",
+        source_ref="upload-42",
+        message_id="msg-7",
+        document_id="doc-9",
+        case_snapshot_id="case-snap-3",
+    )
+    assert src.source_ref == "upload-42"
+    assert src.message_id == "msg-7"
+    assert src.document_id == "doc-9"
+    assert src.case_snapshot_id == "case-snap-3"
 
 
 def test_memory_item_is_frozen():

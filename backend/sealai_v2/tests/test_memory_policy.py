@@ -41,6 +41,7 @@ def test_memory_usage_has_no_recommendation_or_full_trust_value():
         "style_only",
         "ask_clarifying_question_only",
         "context_only",
+        "case_context_non_authoritative",
         "never",
     }
     assert not any("recommend" in v for v in values)
@@ -71,14 +72,16 @@ def test_technical_note_is_always_context_only_never_recommendation(status):
     assert usage_for(item) == MemoryUsage.CONTEXT_ONLY
 
 
-def test_case_parameter_confirmed_and_case_scoped_is_context_only():
+def test_case_parameter_confirmed_and_case_scoped_is_case_context_non_authoritative():
+    # Patch 9: distinct from generic CONTEXT_ONLY per the final concept doc §10 — a case_parameter
+    # is scoped to one concrete case and must never be read as a standing technical fact.
     item = _item(
         type=MemoryType.CASE_PARAMETER,
         status=MemoryStatus.CONFIRMED,
         scope=MemoryScope.CASE,
         scope_id="case-1",
     )
-    assert usage_for(item) == MemoryUsage.CONTEXT_ONLY
+    assert usage_for(item) == MemoryUsage.CASE_CONTEXT_NON_AUTHORITATIVE
 
 
 def test_case_parameter_unconfirmed_is_never_even_if_case_scoped():
