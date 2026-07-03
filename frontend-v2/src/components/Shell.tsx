@@ -13,9 +13,8 @@ import {
 
 /** Pilot-ui shell — a claude.ai-style collapsible navigation sidebar on the left + the main stage.
  * Collapsed = a calm narrow icon rail; expanded = wider with labels (the state is persisted). The
- * width is driven by `--rail-w` on `.shell` (overridden when expanded), so the fixed doctrine line
- * (SafetyBanner) tracks it automatically. Search/history/settings are visually present but disabled
- * until they have real backing — no invented functionality. */
+ * width is driven by `--rail-w` on `.shell` (overridden when expanded). Search/history/settings are
+ * visually present but disabled until they have real backing — no invented functionality. */
 export function Shell({
   children,
   onLogout,
@@ -136,8 +135,10 @@ export function Shell({
           </div>
         )}
       </nav>
-      <main className="main-area">{children}</main>
-      <SafetyBanner />
+      <main className="main-area">
+        {children}
+        <SafetyBanner />
+      </main>
     </div>
   );
 }

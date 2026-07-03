@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatResponse, Clarification, ConfirmationResponse, ConversationMemory } from "../contracts";
@@ -449,6 +449,110 @@ describe("scroll model (locked shell · one scroll region per surface · fade cu
     // the docked composer is a sibling of the scroll region, never inside it
     expect(wrap?.querySelector('[data-testid="composer-input"]')).toBeNull();
     expect(screen.getByTestId("composer-input")).toBeInTheDocument();
+  });
+
+  it("proxies wheel events from the broader chat column into the chat log", async () => {
+    renderPane();
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    const log = await screen.findByTestId("chat-log");
+    const col = log.closest(".chat-col");
+    expect(col).not.toBeNull();
+
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1200 });
+    log.scrollTop = 0;
+
+    fireEvent.wheel(col as Element, { deltaY: 160 });
+
+    expect(log.scrollTop).toBe(160);
+  });
+
+  it("proxies wheel events from the workspace background into the chat log", async () => {
+    renderPane();
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    const log = await screen.findByTestId("chat-log");
+    const pane = screen.getByTestId("chat-pane");
+
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1200 });
+    log.scrollTop = 0;
+
+    fireEvent.wheel(pane, { deltaY: 220 });
+
+    expect(log.scrollTop).toBe(220);
+  });
+
+  it("normalizes line-mode mouse wheels to native-like scroll distance", async () => {
+    renderPane();
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    const log = await screen.findByTestId("chat-log");
+    const pane = screen.getByTestId("chat-pane");
+
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1200 });
+    log.scrollTop = 0;
+
+    fireEvent.wheel(pane, { deltaY: 3, deltaMode: WheelEvent.DOM_DELTA_LINE });
+
+    expect(log.scrollTop).toBe(120);
+  });
+
+  it("settles the temporary spacer without jumping the viewport down after a short answer", async () => {
+    let resolveSend: (value: ChatResponse) => void = () => {};
+    renderPane({
+      onSend: vi.fn(
+        () =>
+          new Promise<ChatResponse>((resolve) => {
+            resolveSend = resolve;
+          }),
+      ),
+    });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    const log = await screen.findByTestId("chat-log");
+    const spacer = log.querySelector(".chat-log-spacer") as HTMLElement;
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 900 });
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1600 });
+    Object.defineProperty(spacer, "offsetHeight", { configurable: true, value: 900 });
+    log.scrollTop = 500;
+    spacer.style.minHeight = "600px";
+
+    resolveSend({
+      answer: "fertig",
+      model: "m",
+      grounded: true,
+      intent: null,
+      citations: [],
+    });
+
+    await screen.findByText("fertig");
+    await waitFor(() => expect(log.scrollTop).toBe(500));
+    expect(spacer.style.minHeight).toBe("700px");
+  });
+
+  it("does not steal wheel events from a nested scrollable answer surface", async () => {
+    renderPane();
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    const log = await screen.findByTestId("chat-log");
+    const pane = screen.getByTestId("chat-pane");
+    const nested = document.createElement("div");
+    nested.style.overflowY = "auto";
+    pane.appendChild(nested);
+
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 1200 });
+    Object.defineProperty(nested, "clientHeight", { configurable: true, value: 100 });
+    Object.defineProperty(nested, "scrollHeight", { configurable: true, value: 500 });
+    nested.scrollTop = 10;
+    log.scrollTop = 0;
+
+    fireEvent.wheel(nested, { deltaY: 80 });
+
+    expect(log.scrollTop).toBe(0);
   });
 });
 

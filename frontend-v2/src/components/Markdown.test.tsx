@@ -26,6 +26,13 @@ describe("Markdown rendering (presentation port)", () => {
     expect(container.querySelectorAll("li").length).toBe(2);
   });
 
+  it("marks standalone bold paragraphs as section-like answer headings", () => {
+    const { container } = render(<Markdown source={"**1. Zweck und Einsatzgebiet**\n\nRWDR dichten Wellen ab."} />);
+    const headingLike = container.querySelector("p.md-standalone-strong");
+
+    expect(headingLike?.textContent).toBe("1. Zweck und Einsatzgebiet");
+  });
+
   it("renders GFM tables (the briefing format the Gemini reference uses)", () => {
     const { container } = render(<Markdown source={"| Stoff | Eignung |\n| --- | --- |\n| FKM | gut |"} />);
     expect(container.querySelector("table")).not.toBeNull();

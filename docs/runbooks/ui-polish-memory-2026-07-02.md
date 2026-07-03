@@ -3,20 +3,33 @@
 ## Dashboard chat
 
 - Source of truth: `frontend-v2`.
-- Conversation width follows the Grok computed-style reference: chat column, assistant answer, markdown,
-  and composer use `--sai-content-max-width: 40rem` (`640px`).
-- Markdown body: Inter stack, `16px / 28px` root, paragraphs `16px / 26px`, weight `400`,
-  letter-spacing `-0.1px`, color `#050505`, transparent surface with no answer card.
-- Markdown rhythm: paragraphs `0 0 16px`, `p + p` top gap `8px`; h2 `22px / 30px / 560`;
-  h3 `19px / 29px / 550`; lists `19px` left padding with `16px / 28px` list items.
+- Active production template is the VPS `frontend-v2` dashboard, served from
+  `/home/thorsten/sealai/frontend-v2/dist`; do not polish or deploy the old cockpit/template copies.
+- Conversation width follows the ChatGPT computed-style reference: chat frame, assistant answer,
+  markdown, and composer use `--sai-content-max-width: 48rem` (`768px`) plus responsive side padding.
+- UI font is self-hosted IBM Plex Sans via `.woff2` assets under the same `/dashboard/` origin;
+  `vite.config.ts` keeps `assetsInlineLimit: 0`, CSP remains `font-src 'self'`, and `data:font`
+  must not be reintroduced.
+- Markdown body: IBM Plex Sans stack, `16px / 26px`, weight `400`, letter-spacing `0`,
+  color `#0d0d0d`, transparent surface with no answer card.
+- Markdown rhythm: paragraphs `0 0 4px`, `p + p` top gap `16px`; h2 and standalone bold section
+  headings `20px / 28px / 600`; h3 `18px / 26px / 600`; lists `26px` left padding with
+  `16px / 26px` list items and `6px` item padding.
+- Tables use compact technical rhythm (`14px / 24px`, `th` weight `600`, `th` line-height `16px`).
 - User message bubble: `#F3F3F3`, `28px` radius, `14px 18px` padding, `16px / 26px`,
   no hard border or heavy shadow.
 - Composer sits at the bottom with a white pill, `rgba(5,5,5,0.08)` border, subtle shadow,
-  and `16px / 28px` input typography.
+  and `16px / 26px` input typography.
 - `Parameter eingeben` is an orange CTA in the dashboard chrome, top right, not below the composer.
 - Trust/status labels stay in the DOM but outside the main reading flow inside the `Technische Vorbewertung`
   disclosure in `Answer.tsx`.
-- Chat scrolling uses `frontend-v2/src/lib/chatScroll.ts`; new user turns pin near the upper third and a jump-to-latest button appears when needed.
+- Chat scrolling uses `frontend-v2/src/lib/chatScroll.ts`; new user turns pin near the upper third,
+  the viewport must not auto-follow when the assistant response lands, the temporary bottom spacer is
+  trimmed via `settleNewTurnSpacer`, and a jump-to-latest button appears only when needed.
+- Wheel scrolling is delegated from the full dashboard workspace into the chat log so pointer position
+  inside or outside the chat column feels equally fast; line-mode wheels normalize at `40px` per line,
+  nested scrollable answer/code surfaces keep their own scroll, and `.chat-log` uses
+  `scroll-behavior: auto` so delegated wheel scrolling is not smoothed.
 
 ## Marketing homepage
 
