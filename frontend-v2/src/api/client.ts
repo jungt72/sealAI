@@ -9,6 +9,7 @@ import type {
   AdminPartner,
   AnfrageResponse,
   Briefing,
+  CaseSummary,
   ChatResponse,
   ComputeResponse,
   ConfirmationResponse,
@@ -54,16 +55,25 @@ export class ApiClient {
     return (await res.json()) as T;
   }
 
-  chat(message: string): Promise<ChatResponse> {
-    return this.req("/chat", { method: "POST", body: JSON.stringify({ message }) });
+  chat(message: string, caseId?: string): Promise<ChatResponse> {
+    return this.req("/chat", {
+      method: "POST",
+      body: JSON.stringify(caseId ? { message, case_id: caseId } : { message }),
+    });
   }
 
   /** P4b — same turn as chat(), streamed: `stage` frames report live progress (keys only; the
    * frontend owns labels), then ONE gated `result` frame carries the full /chat payload. Stage
    * `start`s reach onStage; ends/keepalives are transport detail. An `error` frame or a stream
    * that ends without a result rejects — no partial content ever surfaces. 404/405 (backend
-   * without the endpoint yet) falls back to plain /chat once, so the dual deploy is order-free. */
-  async chatStream(message: string, onStage?: (stage: string) => void): Promise<ChatResponse> {
+   * without the endpoint yet) falls back to plain /chat once, so the dual deploy is order-free.
+   * `caseId` ("Fälle"-Sidebar) targets one of the caller's own several persisted cases instead of
+   * always the token's default session — omitted, this is byte-identical to before. */
+  async chatStream(
+    message: string,
+    onStage?: (stage: string) => void,
+    caseId?: string,
+  ): Promise<ChatResponse> {
     const token = this.getToken();
     const res = await fetch(this.base + "/chat/stream", {
       method: "POST",
@@ -72,13 +82,13 @@ export class ApiClient {
         Accept: "text/event-stream",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(caseId ? { message, case_id: caseId } : { message }),
     });
     if (res.status === 401) {
       this.onUnauthenticated();
       throw new ApiError(401, "unauthenticated");
     }
-    if (res.status === 404 || res.status === 405) return this.chat(message);
+    if (res.status === 404 || res.status === 405) return this.chat(message, caseId);
     if (!res.ok || !res.body) throw new ApiError(res.status, `request failed (${res.status})`);
 
     const reader = res.body.getReader();
@@ -109,42 +119,54 @@ export class ApiClient {
     }
     throw new ApiError(502, "stream ended without result");
   }
-  memory(): Promise<ConversationMemory> {
-    return this.req("/conversations/current/memory");
+  /** Appends `?case_id=` when given ("Fälle"-Sidebar) — omitted, the path is unchanged, so a
+   * caller that never passes caseId gets byte-identical URLs to before this feature. */
+  private withCase(path: string, caseId?: string): string {
+    return caseId ? `${path}?case_id=${encodeURIComponent(caseId)}` : path;
+  }
+  memory(caseId?: string): Promise<ConversationMemory> {
+    return this.req(this.withCase("/conversations/current/memory", caseId));
   }
   /** M8 kernel channel: the deterministic compute for the current session (the Berechnungen panel's
    * source). Backend-only numbers — the client never computes. */
   compute(): Promise<ComputeResponse> {
     return this.req("/compute");
   }
-  editFact(feld: string, wert: string, origin?: string): Promise<unknown> {
-    return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, {
+  editFact(feld: string, wert: string, origin?: string, caseId?: string): Promise<unknown> {
+    return this.req(this.withCase(`/conversations/current/facts/${encodeURIComponent(feld)}`, caseId), {
       method: "PUT",
       body: JSON.stringify(origin ? { wert, origin } : { wert }),
     });
   }
   /** Phase 2b — the parameter-form batch settle: all fields in one POST → one settle + recompute,
    * returns the deterministic confirmation (post-bind echo + kern result + Rückfragen). */
-  submitParams(items: ParamItem[]): Promise<ConfirmationResponse> {
-    return this.req("/conversations/current/facts", {
+  submitParams(items: ParamItem[], caseId?: string): Promise<ConfirmationResponse> {
+    return this.req(this.withCase("/conversations/current/facts", caseId), {
       method: "POST",
       body: JSON.stringify({ items }),
     });
   }
   /** R2 live preview — the SAME deterministic kern as submitParams over the form's DRAFT values,
    * but READ-ONLY (no settle, no persist, no provenance). Returns the Berechnete Werte to show as
-   * „Vorschau · nicht übernommen". Backend-only numbers — the client never computes. */
+   * „Vorschau · nicht übernommen". Backend-only numbers — the client never computes. Stateless (no
+   * session write at all), so it never needs a caseId — nothing to target. */
   previewParams(items: ParamItem[]): Promise<ComputeResponse> {
     return this.req("/conversations/current/preview", {
       method: "POST",
       body: JSON.stringify({ items }),
     });
   }
-  forgetFact(feld: string): Promise<unknown> {
-    return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, { method: "DELETE" });
+  forgetFact(feld: string, caseId?: string): Promise<unknown> {
+    return this.req(this.withCase(`/conversations/current/facts/${encodeURIComponent(feld)}`, caseId), {
+      method: "DELETE",
+    });
   }
-  forgetAll(): Promise<unknown> {
-    return this.req("/conversations/current", { method: "DELETE" });
+  forgetAll(caseId?: string): Promise<unknown> {
+    return this.req(this.withCase("/conversations/current", caseId), { method: "DELETE" });
+  }
+  /** "Fälle"-Sidebar: the tenant's case list, sorted server-side by most-recently-updated. */
+  listCases(): Promise<{ cases: CaseSummary[] }> {
+    return this.req("/conversations");
   }
   briefing(message: string): Promise<Briefing> {
     return this.req("/briefing", { method: "POST", body: JSON.stringify({ message }) });

@@ -38,10 +38,14 @@ function stubApi(memoryRef: { current: ConversationMemory }) {
   const fn = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
-    if (url.endsWith("/framing")) return json({});
-    if (url.endsWith("/conversations/current/memory")) return json(memoryRef.current);
-    if (url.endsWith("/chat/stream")) return sse();
-    if (url.endsWith("/chat")) return json(result);
+    // "Fälle"-Sidebar: every conversations/chat call now carries ?case_id=... — match the PATH
+    // only (everything before "?"), same as a real router would, not the full querystring.
+    const path = url.split("?")[0];
+    if (path.endsWith("/framing")) return json({});
+    if (path.endsWith("/conversations/current/memory")) return json(memoryRef.current);
+    if (path.endsWith("/conversations")) return json({ cases: [] });
+    if (path.endsWith("/chat/stream")) return sse();
+    if (path.endsWith("/chat")) return json(result);
     return json({});
   });
   vi.stubGlobal("fetch", fn);
@@ -109,7 +113,9 @@ describe("Fix A: fact chips refresh after each chat turn (no reload)", () => {
     // chips appear without any reload/remount — memory was re-fetched after the turn resolved
     await waitFor(() => expect(screen.getByTestId("remembered-fact")).toHaveTextContent("Hydrauliköl"));
     const chatIdx = calls.findIndex((u) => u.endsWith("/chat/stream") || u.endsWith("/chat"));
-    const refreshIdx = calls.findIndex((u, i) => i > chatIdx && u.endsWith("/conversations/current/memory"));
+    const refreshIdx = calls.findIndex(
+      (u, i) => i > chatIdx && u.split("?")[0].endsWith("/conversations/current/memory"),
+    );
     expect(chatIdx).toBeGreaterThan(-1);
     expect(refreshIdx).toBeGreaterThan(chatIdx); // the re-fetch happens AFTER the turn completed
   });

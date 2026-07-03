@@ -267,6 +267,14 @@ export interface ConversationMemory {
   case_state: RememberedFact[];
   history: Turn[];
 }
+// "Fälle"-Sidebar — one entry in the tenant's case list (GET /api/v2/conversations). `title`/
+// `created_at`/`updated_at` are null for a case that predates this feature or hasn't had a turn yet.
+export interface CaseSummary {
+  case_id: string;
+  title: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
 export interface Briefing {
   kind: string;
   title: string;

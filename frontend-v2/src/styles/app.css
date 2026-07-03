@@ -68,6 +68,40 @@
 }
 .rail-menu-item:hover { background: var(--hover-wash); }
 
+/* ── "Fälle"-Sidebar: a drawer anchored to the rail's right edge, opened via "Fälle" ──────────── */
+.case-sidebar {
+  position: absolute; left: var(--rail-w); top: 0; bottom: 0; z-index: 35; width: 280px;
+  background: #fff; border-right: 1px solid var(--hairline); box-shadow: 8px 0 24px rgba(31, 42, 68, 0.08);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.case-sidebar-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--hairline); flex: none;
+}
+.case-sidebar-title { font-size: 14px; font-weight: 500; color: var(--ink); }
+.case-sidebar-close {
+  border: none; background: none; font: inherit; font-size: 18px; line-height: 1; cursor: pointer;
+  color: var(--ink-soft); padding: 4px 6px; border-radius: var(--radius-sm);
+}
+.case-sidebar-close:hover { background: var(--hover-wash); }
+.case-sidebar-empty { padding: 16px; font-size: 13px; color: var(--ink-soft); }
+.case-sidebar-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+.case-sidebar-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  text-align: left; border: none; background: none; font: inherit; cursor: pointer;
+  padding: 9px 10px; border-radius: 9px; color: var(--ink);
+}
+.case-sidebar-item:hover { background: var(--hover-wash); }
+.case-sidebar-item--active { background: var(--color-seal-light-blue); color: var(--color-seal-blue); }
+.case-sidebar-item-title {
+  font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.case-sidebar-item-time { font-size: 11.5px; color: var(--ink-soft); }
+.case-sidebar-item--active .case-sidebar-item-time { color: inherit; opacity: 0.75; }
+
+/* a hydrated historical turn: same visual weight as a live answer, no meta/citations (never persisted) */
+.answer-history { color: var(--ink); }
+
 .main-area { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
 
 /* ── persistent doctrine line — always present, never dropped ───────────────── */

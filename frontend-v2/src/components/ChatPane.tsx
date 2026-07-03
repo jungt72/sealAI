@@ -17,6 +17,7 @@ import type {
   ContributePayload,
   ConversationMemory,
   ParamItem,
+  Turn,
 } from "../contracts";
 import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
 import { pinNewTurn, settleNewTurnSpacer, useChatScroll } from "../lib/chatScroll";
@@ -26,6 +27,7 @@ import { BriefingPane } from "./BriefingPane";
 import { AlternativenPanel } from "./AlternativenPanel";
 import { ContributePanel } from "./ContributePanel";
 import { KandidatenSpecPanel } from "./KandidatenSpecPanel";
+import { Markdown } from "./Markdown";
 import { MediumPanel } from "./MediumPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { ParamConfirmation } from "./ParamConfirmation";
@@ -35,7 +37,19 @@ import { ArrowDownIcon, PaperclipIcon, SendIcon } from "./icons";
 type Msg =
   | { role: "user"; text: string }
   | { role: "assistant"; res: ChatResponse }
+  // a HYDRATED historical turn ("Fälle"-Sidebar: loaded from memory.history on open/switch) — text
+  // only, deliberately distinct from the live "assistant" variant above: citations/verification/
+  // badges were never persisted for past turns, so rendering them as a plain answer would be
+  // dishonest (looking identical to "checked, nothing found" rather than "not available").
+  | { role: "assistant-history"; text: string }
   | { role: "confirmation"; conf: ConfirmationResponse };
+
+/** memory.history → the hydrated Msg prefix for a freshly opened/switched case. */
+function historyToMsgs(history: Turn[]): Msg[] {
+  return history.map((t) =>
+    t.role === "user" ? { role: "user", text: t.text } : { role: "assistant-history", text: t.text },
+  );
+}
 
 function wheelDeltaYPx(e: WheelEvent, pageHeight: number): number {
   if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 40;
@@ -117,6 +131,15 @@ export function ChatPane({
   onContribute?: (payload: ContributePayload) => Promise<{ hinweis: string }>;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
+  // "Fälle"-Sidebar: hydrate from the case's persisted history exactly ONCE per mount (App remounts
+  // ChatPane — new `key` — on every case switch/"Neue Frage", so this naturally re-runs per case).
+  // The `prev.length === 0` guard, checked inside the updater (never stale), means a later memory
+  // refetch mid-conversation (after a live send) can never clobber the richer live "assistant"
+  // entries with the flattened historical ones.
+  useEffect(() => {
+    if (memory.history.length === 0) return;
+    setMsgs((prev) => (prev.length === 0 ? historyToMsgs(memory.history) : prev));
+  }, [memory.history]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   // claude.ai chat↔artifact: the cockpit opens on the right (a case becomes active, or the user opens
@@ -610,6 +633,10 @@ export function ChatPane({
                     </div>
                   ) : m.role === "confirmation" ? (
                     <ParamConfirmation key={i} conf={m.conf} />
+                  ) : m.role === "assistant-history" ? (
+                    <div key={i} className="answer answer-history" data-testid="answer-history">
+                      <Markdown source={m.text} />
+                    </div>
                   ) : (
                     <Answer key={i} res={m.res} />
                   ),

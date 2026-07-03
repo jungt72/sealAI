@@ -154,3 +154,96 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
     }
   });
 });
+
+describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
+  it("chat: omitted caseId sends only {message} (byte-identical to before)", async () => {
+    const fetchFn = mockFetch(200, RESULT_PAYLOAD);
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chat("hi");
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ message: "hi" });
+  });
+
+  it("chat: a given caseId is sent as case_id in the body", async () => {
+    const fetchFn = mockFetch(200, RESULT_PAYLOAD);
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chat("hi", "case-42");
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      message: "hi",
+      case_id: "case-42",
+    });
+  });
+
+  it("chatStream: a given caseId is sent as case_id in the body", async () => {
+    const fetchFn = vi.fn(() =>
+      Promise.resolve(sseResponse([`event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`])),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chatStream("hi", undefined, "case-42");
+    const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ message: "hi", case_id: "case-42" });
+  });
+
+  it("chatStream: the 404 fallback to plain /chat also carries the caseId through", async () => {
+    const fetchFn = vi.fn((input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        String(input).endsWith("/chat/stream")
+          ? new Response("not found", { status: 404 })
+          : new Response(JSON.stringify(RESULT_PAYLOAD), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchFn);
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chatStream("hi", undefined, "case-42");
+    const fallbackInit = fetchFn.mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(fallbackInit.body as string)).toEqual({ message: "hi", case_id: "case-42" });
+  });
+
+  it("memory: omitted caseId targets the bare path; a given one appends ?case_id=", async () => {
+    const fetchFn = mockFetch(200, { case_state: [], history: [] });
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.memory();
+    expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/conversations/current/memory");
+    await client.memory("case-42");
+    expect(String(fetchFn.mock.calls[1][0])).toBe(
+      "/api/v2/conversations/current/memory?case_id=case-42",
+    );
+  });
+
+  it("editFact/forgetFact/forgetAll/submitParams append ?case_id= only when given", async () => {
+    const fetchFn = mockFetch(200, {});
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.editFact("medium", "Wasser");
+    expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/conversations/current/facts/medium");
+    await client.editFact("medium", "Wasser", undefined, "case-42");
+    expect(String(fetchFn.mock.calls[1][0])).toBe(
+      "/api/v2/conversations/current/facts/medium?case_id=case-42",
+    );
+    await client.forgetFact("medium", "case-42");
+    expect(String(fetchFn.mock.calls[2][0])).toBe(
+      "/api/v2/conversations/current/facts/medium?case_id=case-42",
+    );
+    await client.forgetAll("case-42");
+    expect(String(fetchFn.mock.calls[3][0])).toBe(
+      "/api/v2/conversations/current?case_id=case-42",
+    );
+    await client.submitParams([], "case-42");
+    expect(String(fetchFn.mock.calls[4][0])).toBe(
+      "/api/v2/conversations/current/facts?case_id=case-42",
+    );
+  });
+
+  it("listCases targets GET /api/v2/conversations and returns the case list", async () => {
+    const payload = { cases: [{ case_id: "c1", title: "t", created_at: null, updated_at: null }] };
+    const fetchFn = mockFetch(200, payload);
+    const client = new ApiClient(() => "tok", () => undefined);
+    const res = await client.listCases();
+    expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/conversations");
+    expect(res).toEqual(payload);
+  });
+});
