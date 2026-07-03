@@ -29,6 +29,11 @@ _ALLOWED = {
         # runtime/user content, and never invoked by the prod request path (only the offline measurement
         # harness). The quarantine invariant (no untrusted content -> grounding in PROD) is preserved.
         "eval/contract_eval.py",
+        # P0-B targeted eval (same reasoning as contract_eval.py above): constructs GroundingFacts ONLY
+        # from the static GENERAL_GUARD_EVAL_CASES / GENERAL_GUARD_KNOWN_LIMITATION_CASES (verbatim
+        # reviewed Fachkarten claim texts, curated in-repo) — offline measurement harness only, never
+        # the prod request path.
+        "eval/general_guard_eval.py",
     ),
     "Claim": ("knowledge/fachkarten.py",),
 }
