@@ -238,8 +238,9 @@
         "nennt keine Geschwindigkeitsgrenze"
       ],
       "correct": "Die Umfangsgeschwindigkeit deterministisch berechnen lassen (Rechenkern: v = π·d1·n/60000; d1 in mm, n in 1/min → m/s) und den Kern-Wert exakt referenzieren — nie selbst rechnen. Den Wert gegen die zulässige Werkstoffgrenze stellen (Standard-NBR-Lippe enger, FKM mit mehr Reserve); Formel und Eingaben-Herkunft offenlegen. Fehlen Eingaben, keinen Zahlenwert nennen und die fehlenden Eingaben benennen. Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
+      "correct_general": "Liegt die Umfangsgeschwindigkeit über der Belastungsgrenze, ist eine Standard-NBR-Lippe unzureichend — eine höher belastbare Lippe ist nötig.",
       "gates": ["confident_wrong"],
-      "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)", "owner:kern-fix-01(strip plugged '~14 m/s' example — verbatim hedge-echo must be parametric-clean)"],
+      "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)", "owner:kern-fix-01(strip plugged '~14 m/s' example — verbatim hedge-echo must be parametric-clean)", "claude:incident-2026-07-04(correct_general added — a same-conclusion restatement of the always-relevant core consequence (v over limit -> standard NBR insufficient -> higher-rated lip needed), worded to match natural draft phrasing rather than the calc-methodology prose in `correct`, for _caveat_addressed's caveat-detection heuristic; calibrated against the actual flagged production draft text from this incident, not invented. Does NOT enable a recommendation split — correct_recommendation/applies_to intentionally absent, see l3_verifier.py::_caveat_addressed)"],
       "tags": ["Berechnung", "Umfangsgeschwindigkeit"],
       "xrefs": []
     },

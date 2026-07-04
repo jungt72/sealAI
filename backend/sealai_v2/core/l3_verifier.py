@@ -596,11 +596,21 @@ def _stem6(w: str) -> str:
 
 
 def _caveat_addressed(entry: TrapEntry, draft_text: str) -> bool:
-    """True iff the DRAFT itself already states the trap's correct caveat (correct_general) — i.e. it
-    EXPLAINED the limitation rather than recommending the wrong thing. Stemmed significant-token overlap
-    (German inflection/compounds: elastisch~elastische, kriechen~kriechverformung). The safety net for an
-    explanatory answer (e.g. a wissensfrage) that a topic-triggered judge over-flags as walked_into_trap."""
-    cg = (entry.correct_general or "").strip()
+    """True iff the DRAFT itself already states the trap's correct caveat — i.e. it EXPLAINED the
+    limitation rather than recommending the wrong thing. Stemmed significant-token overlap (German
+    inflection/compounds: elastisch~elastische, kriechen~kriechverformung). The safety net for an
+    explanatory answer (e.g. a wissensfrage) that a topic-triggered judge over-flags.
+
+    2026-07-04: was reading ``entry.correct_general`` gated on ``has_split`` (true only when a
+    ``correct_recommendation`` also exists — a DIFFERENT concept, the topic-scoped-material-recommendation
+    split from OPTIMIZE_BACKLOG #5). That silently disabled this safety net for any entry with a
+    ``correct_general`` excerpt but no recommendation half (e.g. CALC-UMFANGSGESCHWINDIGKEIT, the trap
+    in the live incident this was found through — its ``correct`` bundles 5 distinct sub-points, so a
+    draft addressing only the relevant one rarely clears the overlap threshold against the whole text).
+    Now prefers ``correct_general`` whenever it is populated, independent of ``has_split`` — a shorter,
+    faithful excerpt of "the always-relevant core fact" is exactly what this heuristic needs, whether or
+    not that entry also happens to have a topic-scoped recommendation half."""
+    cg = (entry.correct_general or entry.correct).strip()
     if not cg:
         return False
     cg_stems = {_stem6(t) for t in query_tokens(cg) if len(t) >= 4}
@@ -613,20 +623,32 @@ def _caveat_addressed(entry: TrapEntry, draft_text: str) -> bool:
     )
 
 
+_DEMOTABLE_GATES = ("walked_into_trap", "confident_wrong")
+
+
 def _demote_caveat_addressed_traps(
     findings: tuple[VerifierFinding, ...], catalog: TrapCatalog | None, draft_text: str
 ) -> tuple[VerifierFinding, ...]:
-    """A reviewed walked_into_trap finding whose caveat the DRAFT already states is demoted to FLAG-only
+    """A reviewed trap finding whose caveat the DRAFT already states is demoted to FLAG-only
     (review_state='draft') — the answer ADDRESSED the limitation, so a destructive hedge must not replace
-    a correct, richer answer. Only walked_into_trap (the explain-vs-recommend gate) is affected;
-    confident_wrong / invented_precision / matrix / calc findings pass through unchanged."""
+    a correct, richer answer. Covers walked_into_trap (the original explain-vs-recommend fix, the PTFE
+    wissensfrage over-correction) AND confident_wrong (2026-07-04: the SAME failure mode reproduced
+    through this gate — a draft correctly citing the kern's own over-limit verdict for
+    CALC-UMFANGSGESCHWINDIGKEIT was judged confident_wrong seconds after a near-identical claim in an
+    earlier draft passed as clean; the resulting hedge discarded a correct, situationally-relevant
+    material analysis for a generic calc-methodology note unrelated to the question asked). Both gates
+    reduce to the same underlying test — does the draft already assert the catalog's own correct_general
+    fact — which is gate-agnostic evidence of a judge false-positive, not a different semantic question.
+    NOT extended to invented_precision / matrix / calc_leak: those are fabrication-type findings where
+    stating correct_general does not prove a DIFFERENT invented number wasn't also introduced elsewhere
+    in the same draft, so this demotion is not a safe proxy for them."""
     if catalog is None:
         return findings
     out = []
     for f in findings:
         if (
             f.kind == "trap"
-            and f.gate == "walked_into_trap"
+            and f.gate in _DEMOTABLE_GATES
             and f.review_state == "reviewed"
         ):
             entry = catalog.by_id(f.trap_id)
@@ -666,6 +688,13 @@ _OVER_LIMIT_PRESCRIPTIVE_MARKERS = (
     "reicht nicht",
     "nicht aus",
     "grenze",
+    # 2026-07-04: widened after a real incident — "liegt deutlich oberhalb dessen, was ... abkönnen"
+    # (a genuine, correct paraphrase of the same over-limit consequence) matched none of the markers
+    # above, triggering an unneeded regeneration (and the extra LLM round-trip's latency with it).
+    "oberhalb dessen",
+    "übersteig",
+    "überfordert",
+    "sprengt die",
 )
 
 

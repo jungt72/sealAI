@@ -112,6 +112,21 @@ def test_c2_over_limit_prescriptive_passes() -> None:
     assert not detect_velocity_over_limit(draft, computed_values=cv)
 
 
+def test_c2_over_limit_natural_paraphrase_passes() -> None:
+    """2026-07-04 incident: a draft that names the consequence using a NATURAL paraphrase ("liegt
+    deutlich oberhalb dessen, was ... abkönnen") rather than the exact hardcoded markers must also
+    PASS — the earlier marker list missed this real, correct phrasing and triggered an unneeded
+    regeneration (plus its LLM round-trip latency) even though the draft already addressed the limit."""
+    from sealai_v2.core.l3_verifier import detect_velocity_over_limit
+
+    cv = _velocity_cv(40, 8000)
+    draft = (
+        "Die berechnete Umfangsgeschwindigkeit liegt deutlich oberhalb dessen, was ein "
+        "Standard-RWDR mit einer typischen Standard-Lippe abkönnen."
+    )
+    assert not detect_velocity_over_limit(draft, computed_values=cv)
+
+
 def test_c2_under_limit_passes() -> None:
     """Under the limit (no C1 over-limit warning) → PASS regardless of the draft."""
     from sealai_v2.core.l3_verifier import detect_velocity_over_limit
