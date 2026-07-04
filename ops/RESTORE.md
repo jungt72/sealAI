@@ -39,20 +39,26 @@ exists, or restore into a scratch database first (see verification procedure bel
 
 ## Restore Qdrant (a single collection)
 
+The collection name in the backup filename IS the collection to restore into — it changes over time
+as the schema evolves (e.g. `sealai_v2_fachkarten` was migrated to `sealai_v2_fachkarten_hybrid` on
+2026-07-03; check the current value with
+`docker exec backend-v2 env | grep SEALAI_V2_QDRANT_COLLECTION`). Substitute `<COLLECTION>` below with
+whatever the backup file itself is named after, not necessarily either example name above.
+
 1. Copy the snapshot file into the qdrant container's snapshot directory:
    ```bash
-   docker cp ~/sealai-backups/qdrant/sealai_v2_fachkarten-<TIMESTAMP>.snapshot \
-     qdrant:/qdrant/snapshots/sealai_v2_fachkarten/restore.snapshot
+   docker cp ~/sealai-backups/qdrant/<COLLECTION>-<TIMESTAMP>.snapshot \
+     qdrant:/qdrant/snapshots/<COLLECTION>/restore.snapshot
    ```
 2. Recover the collection from it (this REPLACES the collection if it already exists — confirm with
    the owner before running against the live collection):
    ```bash
    docker exec backend-v2 curl -sS -X PUT \
-     'http://qdrant:6333/collections/sealai_v2_fachkarten/snapshots/recover' \
+     'http://qdrant:6333/collections/<COLLECTION>/snapshots/recover' \
      -H 'Content-Type: application/json' \
-     -d '{"location": "file:///qdrant/snapshots/sealai_v2_fachkarten/restore.snapshot"}'
+     -d '{"location": "file:///qdrant/snapshots/<COLLECTION>/restore.snapshot"}'
    ```
-3. Verify: `docker exec backend-v2 curl -sS http://qdrant:6333/collections/sealai_v2_fachkarten` shows
+3. Verify: `docker exec backend-v2 curl -sS http://qdrant:6333/collections/<COLLECTION>` shows
    the expected `points_count`.
 
 ## Verifying a backup is actually restorable (safe, non-destructive)
@@ -75,6 +81,10 @@ docker exec pg-restore-test psql -U postgres -d sealai_v2 -tAc \
 docker stop pg-restore-test  # --rm cleans up the container + its volume automatically
 ```
 
-This is exactly the procedure run once on 2026-07-03 to prove the backup mechanism works (see the
-increment's commit message / owner report for the result), and is safe to repeat periodically — it
-never touches the live `postgres` container.
+**Correction (2026-07-04)**: this file previously claimed this procedure had already been run once
+(2026-07-03) to prove the mechanism works. That was inaccurate — `backup_postgres.sh`'s own content
+sanity check had a pipefail/SIGPIPE false-negative bug (fixed 2026-07-04) that silently discarded
+every dump it ever produced, so there was no kept backup to restore-verify against until the fix
+landed. The procedure above is safe and recommended to run periodically — it never touches the live
+`postgres` container — but treat it as NOT YET independently verified end-to-end until someone
+actually runs it against a real nightly backup file.
