@@ -369,6 +369,20 @@ diskriminierenden Rückfragen und um Übersehenes anzusprechen; frage NICHT alle
 {% for q in archetype_context.interview_fragen %}- mögliche Klärung: {{ q }}
 {% endfor %}{% for b in archetype_context.blinde_flecken %}- oft übersehen: {{ b }}
 {% endfor %}{% endif %}
+{%- if pack_suggestion_context %}
+
+# Möglicher Fall-Typ: {{ pack_suggestion_context.seal_type }} (Vermutung, NICHT bestätigt)
+Der Fall deutet auf diesen Typ hin, aber der Nutzer hat noch keinen bestätigt. Erwähne dies als
+Vorschlag in deiner Antwort (z. B. "das klingt nach einem {{ pack_suggestion_context.seal_type }}-Fall
+— passt das?"), behandle es aber NICHT als gesicherten Fakt und leite daraus keine Berechnung ab.
+{% endif %}
+{%- if medium_hint_context %}
+
+# Erwähntes, nicht erkanntes Medium: "{{ medium_hint_context.medium_hint }}" (unbestätigt)
+Dieser Begriff wurde genannt, aber unser Medium-Vokabular kennt ihn nicht. Frage kurz und konkret
+nach, um welches Medium es sich genau handelt, BEVOR du dazu inhaltliche Aussagen triffst — erfinde
+keine Eigenschaften für einen unbekannten Stoff.
+{% endif %}
 
 {% if durable_context -%}
 # Aus früheren Gesprächen (erinnert, NICHT aus diesem Gespräch, NICHT verifiziert)

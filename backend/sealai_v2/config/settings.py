@@ -119,6 +119,14 @@ class Settings(BaseSettings):
     # result. INERT — the L1 prompt is NOT changed (byte-identical); the renderer that consumes the
     # contract is the next, also-gated phase. Flip via SEALAI_V2_RESPONSE_CONTRACT_ENABLED.
     response_contract_enabled: bool = False
+    # 2026-07-04 routing/extraction audit: the `understand` stage (already-existing LLM call, no new
+    # latency/cost) ALSO annotates a soft, server-validated pack suggestion + a free-text medium hint
+    # when the deterministic extractors found nothing — closes the "Teig-Fall" gap (a medium outside
+    # the ~47-term vocabulary silently evaporates; the frontend defaults to RWDR with no signal to the
+    # user that another pack might fit). ANNOTATE-ONLY, same discipline as `archetype` — never gates/
+    # routes, only reaches the L1 prompt as advisory context L1 may mention in its own words. OFF by
+    # default — wired but inert (golden byte-identical) until explicitly verified live.
+    pack_suggestion_enabled: bool = False
     # P0-B (owner Leitbild-Audit 2026-07-02): widens the output_guard (forbidden phrase / invented
     # number / invented material) to turns WITHOUT a gegencheck_verdict — requires
     # response_contract_enabled=True. Never touches the L1 prompt/Renderer-Modus (guard-only contract,
