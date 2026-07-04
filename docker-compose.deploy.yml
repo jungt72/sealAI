@@ -200,6 +200,10 @@ services:
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
       # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
       SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
+      # 2026-07-04 routing/extraction audit: L1 pack suggestion + free-text medium hint, wired but
+      # OFF by default (annotate-only via the understand stage; never gates/routes). Byte-identical
+      # when unset.
+      SEALAI_V2_PACK_SUGGESTION_ENABLED: ${SEALAI_V2_PACK_SUGGESTION_ENABLED:-false}
       # V2.2 INC-COVERAGE-GATE: deterministic case-level coverage_status, wired but OFF by default —
       # goes productive only when the extended eval ruler is green (I-CAL-1). Byte-identical when unset.
       SEALAI_V2_COVERAGE_GATE_ENABLED: ${SEALAI_V2_COVERAGE_GATE_ENABLED:-false}
