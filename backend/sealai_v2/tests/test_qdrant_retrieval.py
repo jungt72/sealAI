@@ -17,6 +17,7 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     _rerank_points,
     _select_points_with_reviewed_backfill,
     claim_points,
+    delete_card_points,
     ensure_collection,
 )
 from sealai_v2.knowledge.retrieval import _quelle as inproc_quelle
@@ -603,3 +604,45 @@ def test_retrieve_hybrid_with_rerank_still_grounds_deep_reviewed_candidate():
     res = asyncio.run(r.retrieve("Informationen zu PTFE", tenant_id="eval", k=5))
     assert res.grounded
     assert [f.card_id for f in res.grounding_facts] == ["FK-PTFE-KALTFLUSS"]
+
+
+class _FakeCountResult:
+    def __init__(self, count: int) -> None:
+        self.count = count
+
+
+class _FakeDeleteClient:
+    """Tracks what filter delete_card_points builds and whether .delete() was actually called —
+    a card_id with zero matching points must be a no-op (never call delete for nothing)."""
+
+    def __init__(self, matching_count: int) -> None:
+        self._matching_count = matching_count
+        self.count_calls: list[tuple[str, object]] = []
+        self.delete_calls: list[tuple[str, object]] = []
+
+    def count(self, collection, count_filter=None):
+        self.count_calls.append((collection, count_filter))
+        return _FakeCountResult(self._matching_count)
+
+    def delete(self, collection, points_selector=None):
+        self.delete_calls.append((collection, points_selector))
+
+
+def test_delete_card_points_filters_by_card_id_and_returns_the_prior_count():
+    from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+    client = _FakeDeleteClient(matching_count=3)
+    deleted = delete_card_points(client, "col", "FK-DRAFT-DOC-42")
+    assert deleted == 3
+    assert len(client.delete_calls) == 1
+    _, flt = client.delete_calls[0]
+    assert flt == Filter(
+        must=[FieldCondition(key="card_id", match=MatchValue(value="FK-DRAFT-DOC-42"))]
+    )
+
+
+def test_delete_card_points_is_a_noop_when_nothing_matches():
+    client = _FakeDeleteClient(matching_count=0)
+    deleted = delete_card_points(client, "col", "FK-NEVER-INGESTED")
+    assert deleted == 0
+    assert client.delete_calls == []  # never called — nothing to delete

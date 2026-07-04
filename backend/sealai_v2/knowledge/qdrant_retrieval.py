@@ -438,6 +438,23 @@ def ingest_fachkarten(
     return len(points)
 
 
+def delete_card_points(client, collection: str, card_id: str) -> int:
+    """Delete every point whose payload ``card_id`` matches, via a Qdrant filter — not by
+    recomputing the uuid5 point ids (``claim_points``'s scheme), which would require knowing the
+    OLD card's exact claim count and ordering, information the caller may not have. Used by
+    ``ops/ingest_new_card.py`` to clean up a draft's stale points once it has been promoted into a
+    proper reviewed card under a new id (2026-07-04 RAG audit: draft points otherwise accumulate in
+    Qdrant forever — nothing else ever removes them). Returns the pre-delete point count; deleting
+    zero matching points (card_id not present) is a safe no-op, not an error."""
+    from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+    flt = Filter(must=[FieldCondition(key="card_id", match=MatchValue(value=card_id))])
+    before = client.count(collection, count_filter=flt).count
+    if before:
+        client.delete(collection, points_selector=flt)
+    return before
+
+
 class QdrantFachkartenRetriever:
     """``Retriever`` Protocol impl — semantic Fachkarten recall over Qdrant. Drop-in for
     ``InProcessRetriever``: same async signature, same mandatory tenant, same RetrievalResult shape."""
