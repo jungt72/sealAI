@@ -74,6 +74,14 @@ from sealai_v2.security.tenant import TenantContext, require_tenant
 
 _log = logging.getLogger("sealai_v2.pipeline")
 
+# 2026-07-04 routing/extraction audit: the currently ENABLED frontend packs — mirrors
+# frontend-v2/src/schema/situations.ts's SITUATIONS array (rwdr, hydraulik; "statisch" exists there
+# but is disabled=True, so it is deliberately excluded here too). Keep in sync with that file if a
+# pack is ever added/enabled — this list is the server-side allowlist for `suggested_seal_type`
+# (mirrors how `archetype` is validated against the archetype store's own keys), so an LLM can never
+# suggest a pack the frontend doesn't actually have.
+_KNOWN_SEAL_TYPES: tuple[str, ...] = ("rwdr", "hydraulik")
+
 
 def _build_retriever(settings: Settings) -> Retriever:
     """L2 retriever selection (build-spec §3): the in-process keyword matcher (default — the hermetic
@@ -273,6 +281,10 @@ class Pipeline:
     # structurally capped (G1/G2/G3, always "vorläufig"); a render surface only — NEVER enters L1/L3, so
     # enabling keeps the prompt + eval byte-identical. Flag off → fully inert.
     produktspec_enabled: bool = False
+    # 2026-07-04 routing/extraction audit: pack suggestion + free-text medium hint, both annotate-only
+    # (never gates/routes), threaded through the existing `understand` LLM call. OFF -> the two new
+    # Understanding fields stay None -> byte-identical prompt/eval.
+    pack_suggestion_enabled: bool = False
     # V2.2 INC-COVERAGE-GATE (§4): when True, compute the deterministic coverage_status this turn and
     # attach it to the result. OFF → coverage stays None → byte-identical. (The status→mode COUPLING
     # into L1 is a separate, also-gated sub-step; this field only governs the computation/exposure.)
@@ -452,6 +464,17 @@ class Pipeline:
             archetype_keys = (
                 tuple(self.archetypes.keys) if self.archetypes is not None else ()
             )
+            # 2026-07-04 routing/extraction audit: only ask for a pack suggestion / medium hint when
+            # the flag is on AND the case doesn't already have a settled value — never re-suggest
+            # once resolved, and OFF keeps this call byte-identical to before (empty tuple / True are
+            # the exact defaults understand()/​_understand_system() already had).
+            known_seal_types: tuple[str, ...] = ()
+            medium_already_known = True
+            if self.pack_suggestion_enabled:
+                known_seal_types = () if seal_type else _KNOWN_SEAL_TYPES
+                medium_already_known = any(
+                    f.feld == "medium" and f.wert for f in mem.case_state
+                )
 
             async def _understand_timed():
                 with _staged(timer, progress, "understand_ms", "understand"):
@@ -460,6 +483,8 @@ class Pipeline:
                         self.helper_model,
                         question,
                         archetype_keys=archetype_keys,
+                        known_seal_types=known_seal_types,
+                        medium_already_known=medium_already_known,
                     )
 
             understand_task = asyncio.create_task(_understand_timed())
@@ -522,6 +547,8 @@ class Pipeline:
             if understand_task is not None:
                 understanding = await understand_task
             archetype_context = self._archetype_context(understanding)
+            pack_suggestion_context = self._pack_suggestion_context(understanding)
+            medium_hint_context = self._medium_hint_context(understanding)
             # V2.2 INC-COVERAGE-GATE (§4/§5): deterministic case-level coverage from the grounded
             # evidence (chemical = gegencheck verdict; archetype = profile), computed BEFORE generate
             # so it can hard-cap the allowed L1 mode. Flag-gated → None when OFF (byte-identical). The
@@ -586,6 +613,8 @@ class Pipeline:
                     conversation_window=conversation_window or None,
                     untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
                     archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
+                    pack_suggestion_context=pack_suggestion_context,  # None → byte-identical
+                    medium_hint_context=medium_hint_context,  # None → byte-identical
                     coverage=coverage,  # None → byte-identical no-coverage-gate prompt
                     contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
                     baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
@@ -636,6 +665,8 @@ class Pipeline:
                             conversation_window=conversation_window or None,
                             untrusted=untrusted_data,
                             archetype_context=archetype_context,
+                            pack_suggestion_context=pack_suggestion_context,
+                            medium_hint_context=medium_hint_context,
                             coverage=coverage,
                             contract=contract,
                             baseline_hardening=self.baseline_hardening_enabled,
@@ -805,6 +836,32 @@ class Pipeline:
             "interview_fragen": list(profile.interview_fragen),
             "blinde_flecken": list(profile.blinde_flecken),
         }
+
+    def _pack_suggestion_context(
+        self, understanding: Understanding | None
+    ) -> dict | None:
+        """2026-07-04 routing/extraction audit: map a recognised soft pack suggestion to its L1
+        advisory context. None when there is no suggestion (flag off, LLM found nothing, or the
+        value failed the server-side allowlist in stages.understand) — so the no-suggestion path
+        stays byte-identical. Annotate-only; it never gates or routes or opens a pack itself."""
+        if understanding is None or not self.pack_suggestion_enabled:
+            return None
+        seal_type = getattr(understanding, "suggested_seal_type", None)
+        if not seal_type:
+            return None
+        return {"seal_type": seal_type}
+
+    def _medium_hint_context(self, understanding: Understanding | None) -> dict | None:
+        """2026-07-04 routing/extraction audit: map a captured free-text medium hint (the
+        deterministic vocabulary found nothing this turn) to its L1 advisory context. None when
+        there is no hint (flag off, medium already known, or the LLM found nothing) — so the
+        no-hint path stays byte-identical. Annotate-only; never committed as a case-state fact."""
+        if understanding is None or not self.pack_suggestion_enabled:
+            return None
+        hint = getattr(understanding, "medium_hint", None)
+        if not hint:
+            return None
+        return {"medium_hint": hint}
 
     def compute_for(self, *, tenant_id: str, session_id: str) -> DerivedComputation:
         """M8: recompute the kernel from the session's CURRENT settled inputs, PERSIST the derived
@@ -1092,6 +1149,7 @@ def build_pipeline(
         memory_context_service=memory_context_service,
         memory_context_enabled=settings.memory_context_enabled,
         produktspec_enabled=settings.produktspec_enabled,
+        pack_suggestion_enabled=settings.pack_suggestion_enabled,
         coverage_gate_enabled=settings.coverage_gate_enabled,
         response_contract_enabled=settings.response_contract_enabled,
         response_contract_general_guard_enabled=settings.response_contract_general_guard_enabled,

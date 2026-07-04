@@ -74,18 +74,49 @@ def _extract_json(raw: str) -> str:
     return s[start : end + 1] if start != -1 and end > start else s
 
 
-def _understand_system(archetype_keys: tuple[str, ...] = ()) -> str:
+def _understand_system(
+    archetype_keys: tuple[str, ...] = (),
+    *,
+    known_seal_types: tuple[str, ...] = (),
+    medium_already_known: bool = True,
+) -> str:
     """The understand system prompt. With archetype keys available (G4), it ALSO asks for a soft
-    ``archetype`` field constrained to those keys — one call, no second classifier (owner decision 3)."""
+    ``archetype`` field constrained to those keys — one call, no second classifier (owner decision 3).
+
+    2026-07-04 routing/extraction audit: two further OPTIONAL soft annotations, same call, same
+    "rate nicht, im Zweifel null" discipline as archetype:
+    - ``suggested_seal_type`` (only asked for when no seal_type is already committed) — constrained
+      to ``known_seal_types``, exactly like archetype is constrained to the archetype store's keys.
+    - ``medium_hint`` (only asked for when the deterministic extractor found no medium this turn) —
+      free text, but VERBATIM ("wörtlich, ohne Interpretation") to avoid the LLM silently
+      classifying/paraphrasing a substance into something it isn't.
+    """
     if not archetype_keys:
-        return _UNDERSTAND_SYSTEM
-    keys = ", ".join(archetype_keys)
-    return (
-        _UNDERSTAND_SYSTEM
-        + ' Ergänze das JSON-Objekt um ein Feld "archetype": die Maschinen-Art, AUSSCHLIESSLICH '
-        + f"einer von [{keys}] — aber NUR, wenn sie klar genannt oder eindeutig erkennbar ist; sonst "
-        + "null. Rate nicht; im Zweifel null. Auch dies ist eine WEICHE Annotation; sie steuert nichts."
-    )
+        prompt = _UNDERSTAND_SYSTEM
+    else:
+        keys = ", ".join(archetype_keys)
+        prompt = (
+            _UNDERSTAND_SYSTEM
+            + ' Ergänze das JSON-Objekt um ein Feld "archetype": die Maschinen-Art, AUSSCHLIESSLICH '
+            + f"einer von [{keys}] — aber NUR, wenn sie klar genannt oder eindeutig erkennbar ist; sonst "
+            + "null. Rate nicht; im Zweifel null. Auch dies ist eine WEICHE Annotation; sie steuert nichts."
+        )
+    if known_seal_types:
+        types = ", ".join(known_seal_types)
+        prompt += (
+            ' Ergänze außerdem ein Feld "suggested_seal_type": AUSSCHLIESSLICH einer von '
+            f"[{types}] — aber NUR, wenn der Fall eindeutig auf einen dieser Typen hindeutet "
+            "(z. B. am beschriebenen Medium/Anwendung), obwohl noch keiner bestätigt ist; sonst "
+            "null. Rate nicht; im Zweifel null. WEICHE Annotation — steuert nichts automatisch, "
+            "der Nutzer entscheidet."
+        )
+    if not medium_already_known:
+        prompt += (
+            ' Ergänze außerdem ein Feld "medium_hint": falls die Nachricht ein Medium/einen Stoff '
+            "nennt, der NICHT bereits erfasst ist, gib ihn WÖRTLICH wieder (kein Fachbegriff, keine "
+            "Interpretation, keine Kategorisierung) — sonst null. Rate nicht; im Zweifel null."
+        )
+    return prompt
 
 
 async def understand(
@@ -94,17 +125,28 @@ async def understand(
     question: str,
     *,
     archetype_keys: tuple[str, ...] = (),
+    known_seal_types: tuple[str, ...] = (),
+    medium_already_known: bool = True,
 ) -> Understanding:
-    """Stage 1 — soft LLM intent (+ G4: soft archetype). Annotation only; NEVER gates or routes
-    (build-spec §5.1). ``archetype`` is SERVER-SIDE validated against ``archetype_keys`` (a key the
-    store actually has), so an LLM-invented key can never survive."""
+    """Stage 1 — soft LLM intent (+ G4: soft archetype [+ 2026-07-04: soft pack suggestion / medium
+    hint]). Annotation only; NEVER gates or routes (build-spec §5.1). ``archetype`` and
+    ``suggested_seal_type`` are SERVER-SIDE validated against a known-key allowlist (an LLM-invented
+    value can never survive); ``medium_hint`` has no allowlist (its whole point is capturing
+    something OUTSIDE the deterministic vocabulary) but is length-capped and only ever surfaced as
+    an unconfirmed hint, never committed as a fact."""
     res = await client.generate(
-        system=_understand_system(archetype_keys),
+        system=_understand_system(
+            archetype_keys,
+            known_seal_types=known_seal_types,
+            medium_already_known=medium_already_known,
+        ),
         user=question,
         model_config=model_config,
     )
     raw = res.text.strip()
     archetype: str | None = None
+    suggested_seal_type: str | None = None
+    medium_hint: str | None = None
     try:
         data = json.loads(_extract_json(raw))
         intent = Intent(str(data.get("intent", "unklar")).strip().lower())
@@ -114,10 +156,28 @@ async def understand(
             a = str(a).strip().lower()
             if a in {k.lower() for k in archetype_keys}:  # only a KNOWN key survives
                 archetype = a
+        st = data.get("suggested_seal_type")
+        if st is not None and known_seal_types:
+            st = str(st).strip().lower()
+            if st in {
+                t.lower() for t in known_seal_types
+            }:  # only a KNOWN pack id survives
+                suggested_seal_type = st
+        mh = data.get("medium_hint")
+        if mh is not None and not medium_already_known:
+            mh = str(mh).strip()[
+                :80
+            ]  # bounded — this is a hint to ask about, never a settled fact
+            medium_hint = mh or None
     except (ValueError, KeyError, TypeError):
         intent, rationale = Intent.UNKLAR, ""
     return Understanding(
-        intent=intent, rationale=rationale, archetype=archetype, raw=raw[:500]
+        intent=intent,
+        rationale=rationale,
+        archetype=archetype,
+        suggested_seal_type=suggested_seal_type,
+        medium_hint=medium_hint,
+        raw=raw[:500],
     )
 
 

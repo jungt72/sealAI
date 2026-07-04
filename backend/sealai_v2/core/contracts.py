@@ -124,6 +124,19 @@ class Understanding:
     # NEVER gates/routes; it only lets the pipeline surface the matching profile's interview questions
     # + blind spots into the L1 prompt as advisory context.
     archetype: str | None = None
+    # 2026-07-04 routing/extraction audit: same discipline as ``archetype`` — soft, annotate-only,
+    # SERVER-SIDE validated against the actual known/enabled pack ids (never an LLM-invented value).
+    # Only set when no seal_type is ALREADY committed for this case (never nags once resolved). NEVER
+    # gates/routes — it only reaches the L1 prompt as an advisory suggestion the user can accept or
+    # correct in their own next message, closing the "frontend silently defaults to RWDR" gap without
+    # any new extraction pipeline or LLM call (piggybacks the existing `understand` call).
+    suggested_seal_type: str | None = None
+    # Free-text medium candidate, VERBATIM from the user's own words — only set when the deterministic
+    # vocabulary-based extractor (core/medium_extract.py) found NOTHING for this turn (never overrides
+    # a recognised medium). Bounded length, no interpretation/classification by the LLM — it is
+    # explicitly NOT committed as a case-state fact; L1 uses it only to ask a clarifying question in
+    # its own words (mirrors the "Teig"/novel-medium gap from the routing audit).
+    medium_hint: str | None = None
 
 
 @dataclass(frozen=True)
