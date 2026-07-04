@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { getCaseIdFromUrl, newCaseId, setCaseIdInUrl } from "./caseId";
+import {
+  getCaseIdFromUrl,
+  newCaseId,
+  setCaseIdInUrl,
+  stashCaseIdForAuthRedirect,
+  takeStashedCaseId,
+} from "./caseId";
 
 afterEach(() => {
   window.history.replaceState({}, "", "/dashboard/");
@@ -51,5 +57,26 @@ describe("caseId URL persistence ('Fälle'-Sidebar)", () => {
     const b = newCaseId();
     expect(a).toBeTruthy();
     expect(a).not.toBe(b);
+  });
+});
+
+
+describe("stashCaseIdForAuthRedirect / takeStashedCaseId (survives an OIDC redirect round trip)", () => {
+  afterEach(() => sessionStorage.clear());
+
+  it("round-trips a stashed caseId and clears it (one-time read, like the PKCE verifier)", () => {
+    stashCaseIdForAuthRedirect("case-before-redirect");
+    expect(takeStashedCaseId()).toBe("case-before-redirect");
+    expect(takeStashedCaseId()).toBeNull(); // consumed — a second read finds nothing
+  });
+
+  it("takeStashedCaseId returns null when nothing was ever stashed", () => {
+    expect(takeStashedCaseId()).toBeNull();
+  });
+
+  it("a later stash overwrites an earlier one (only the most recent redirect's case matters)", () => {
+    stashCaseIdForAuthRedirect("case-1");
+    stashCaseIdForAuthRedirect("case-2");
+    expect(takeStashedCaseId()).toBe("case-2");
   });
 });

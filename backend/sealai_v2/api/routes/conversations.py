@@ -10,7 +10,9 @@ has today."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from sealai_v2.api.confirmation import build_param_confirmation
@@ -21,6 +23,10 @@ from sealai_v2.core.contracts import RememberedFact, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/v2/conversations", tags=["conversations"])
+
+# Same width as V2Session.session_id (db/models.py) — an over-long case_id now fails closed with a
+# clean 422 instead of a generic 500 surfaced from the DB column's own length constraint.
+CaseIdParam = Annotated[str | None, Query(max_length=255)]
 
 
 def _memory(pipeline: Pipeline):
@@ -57,7 +63,7 @@ async def list_conversations(
 
 @router.get("/current/memory")
 async def view_memory(
-    case_id: str | None = None,
+    case_id: CaseIdParam = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
@@ -92,7 +98,7 @@ class FactEdit(BaseModel):
 async def edit_fact(
     feld: str,
     body: FactEdit,
-    case_id: str | None = None,
+    case_id: CaseIdParam = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
@@ -129,7 +135,7 @@ class FactBatch(BaseModel):
 @router.post("/current/facts")
 async def submit_facts(
     body: FactBatch,
-    case_id: str | None = None,
+    case_id: CaseIdParam = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
@@ -185,7 +191,7 @@ async def preview_facts(
 @router.delete("/current/facts/{feld}")
 async def forget_fact(
     feld: str,
-    case_id: str | None = None,
+    case_id: CaseIdParam = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
@@ -202,7 +208,7 @@ async def forget_fact(
 
 @router.delete("/current")
 async def forget_all(
-    case_id: str | None = None,
+    case_id: CaseIdParam = None,
     identity: VerifiedIdentity = Depends(current_identity),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:

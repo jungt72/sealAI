@@ -195,3 +195,26 @@ def test_cross_tenant_MUTATION_isolation_via_token():
     assert pipeline.memory.case_state(
         tenant_id="tenant-B", session_id="sess-B"
     )  # still there
+
+
+def test_case_id_over_255_chars_is_a_clean_422_not_a_db_500():
+    # 2026-07-04 audit finding: same gap as ChatRequest.case_id, but for the query-param form used
+    # by every route in this file — an over-long value hit the DB's own String(255) column and
+    # surfaced as a generic 500 instead of a validation error.
+    client, _ = make_client()
+    r = client.get(
+        "/api/v2/conversations/current/memory",
+        params={"case_id": "a" * 256},
+        headers=auth("tok-A"),
+    )
+    assert r.status_code == 422
+
+
+def test_case_id_at_exactly_255_chars_is_accepted():
+    client, _ = make_client()
+    r = client.get(
+        "/api/v2/conversations/current/memory",
+        params={"case_id": "a" * 255},
+        headers=auth("tok-A"),
+    )
+    assert r.status_code == 200

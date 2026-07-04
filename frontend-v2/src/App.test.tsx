@@ -177,3 +177,133 @@ describe("\"Fälle\"-Sidebar: a hard reload must not lose the current case", () 
     window.history.pushState({}, "", "/");
   });
 });
+
+
+describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages (2026-07-04 audit fix)', () => {
+  function stubCaseAwareMemory(byCase: Record<string, ConversationMemory>) {
+    const fetchFn = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      const path = url.split("?")[0];
+      if (path.endsWith("/framing")) return Promise.resolve(new Response("{}", { status: 200 }));
+      if (path.endsWith("/conversations/current/memory")) {
+        const caseId = new URL(url, "http://x").searchParams.get("case_id") ?? "case-a";
+        // Real network latency: the fetch resolves AFTER the synchronous remount + first paint,
+        // which is exactly the window the stale-hydration race lived in.
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve(
+                new Response(JSON.stringify(byCase[caseId] ?? { case_state: [], history: [] }), {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" },
+                }),
+              ),
+            20,
+          ),
+        );
+      }
+      if (path.endsWith("/conversations")) {
+        return Promise.resolve(new Response(JSON.stringify({ cases: [] }), { status: 200 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchFn);
+    return fetchFn;
+  }
+
+  it("popstate to a different case shows ONLY that case's messages once its fetch lands — never stuck on the old one", async () => {
+    stubCaseAwareMemory({
+      "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
+      "case-b": { case_state: [], history: [{ role: "user", text: "B-ONLY-MESSAGE" }] },
+    });
+    window.history.pushState({}, "", "/dashboard/?case=case-a");
+    setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText("A-ONLY-MESSAGE")).toBeInTheDocument());
+
+    window.history.pushState({}, "", "/dashboard/?case=case-b");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    await waitFor(() => expect(screen.queryByText("B-ONLY-MESSAGE")).toBeInTheDocument());
+    expect(screen.queryByText("A-ONLY-MESSAGE")).not.toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+  });
+
+  it("selectCase (an actual sidebar click) shows ONLY the newly selected case's messages, never a stale flash that sticks", async () => {
+    const fetchFn = stubCaseAwareMemory({
+      "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
+      "case-c": { case_state: [], history: [{ role: "user", text: "C-ONLY-MESSAGE" }] },
+    });
+    // override just the /conversations route so the drawer has a real, clickable case-c entry
+    fetchFn.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      const path = url.split("?")[0];
+      if (path.endsWith("/conversations") && !path.includes("/current")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              cases: [{ case_id: "case-c", title: "Fall C", created_at: null, updated_at: null }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (path.endsWith("/framing")) return Promise.resolve(new Response("{}", { status: 200 }));
+      if (path.endsWith("/conversations/current/memory")) {
+        const caseId = new URL(url, "http://x").searchParams.get("case_id") ?? "case-a";
+        const byCase: Record<string, ConversationMemory> = {
+          "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
+          "case-c": { case_state: [], history: [{ role: "user", text: "C-ONLY-MESSAGE" }] },
+        };
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve(
+                new Response(JSON.stringify(byCase[caseId] ?? { case_state: [], history: [] }), {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" },
+                }),
+              ),
+            20,
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    });
+    window.history.pushState({}, "", "/dashboard/?case=case-a");
+    setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText("A-ONLY-MESSAGE")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("rail-history"));
+    await waitFor(() => expect(screen.getAllByTestId("case-sidebar-item").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByTestId("case-sidebar-item"));
+
+    await waitFor(() => expect(screen.queryByText("C-ONLY-MESSAGE")).toBeInTheDocument());
+    expect(screen.queryByText("A-ONLY-MESSAGE")).not.toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+  });
+
+  it("switching to a genuinely NEW/empty case never inherits the previous case's messages", async () => {
+    stubCaseAwareMemory({
+      "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
+      // "case-fresh" deliberately absent from byCase -> the stub's default empty history
+    });
+    window.history.pushState({}, "", "/dashboard/?case=case-a");
+    setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
+    render(<App />);
+    await waitFor(() => expect(screen.queryByText("A-ONLY-MESSAGE")).toBeInTheDocument());
+
+    window.history.pushState({}, "", "/dashboard/?case=case-fresh");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    // give the (empty) fetch time to land, then confirm the OLD message never lingers
+    await new Promise((r) => setTimeout(r, 60));
+    expect(screen.queryByText("A-ONLY-MESSAGE")).not.toBeInTheDocument();
+    window.history.pushState({}, "", "/");
+  });
+});

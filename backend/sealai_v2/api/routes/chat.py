@@ -46,7 +46,9 @@ _STREAM_ERROR_MESSAGE = (
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
-    case_id: str | None = None
+    # max_length matches V2Session.session_id's own column width (db/models.py) — an over-long
+    # value now fails closed with a clean 422 instead of a generic 500 from the DB constraint.
+    case_id: str | None = Field(default=None, max_length=255)
 
 
 async def _run_pipeline(
