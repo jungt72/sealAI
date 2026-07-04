@@ -32,6 +32,7 @@ if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
 fi
 
 mkdir -p "$TARGET_DIR"
+chmod 700 "$TARGET_DIR"
 DATE=$(date -u +%Y-%m-%d_%H-%M-%S)
 FILE="$TARGET_DIR/postgres-all-${DATE}.sql.gz"
 TMP_FILE="${FILE}.partial"
@@ -39,6 +40,7 @@ TMP_FILE="${FILE}.partial"
 echo "backup_postgres: dumping all databases from container '${POSTGRES_CONTAINER}' -> ${FILE}"
 docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" \
   pg_dumpall -U "$POSTGRES_USER" | gzip -9 > "$TMP_FILE"
+chmod 600 "$TMP_FILE"
 
 # Sanity checks BEFORE the temp file replaces any prior good backup: non-trivial size + valid gzip +
 # contains at least one recognisable SQL statement (a truncated/failed dump must never look "done").
@@ -53,7 +55,11 @@ if ! gzip -t "$TMP_FILE"; then
   rm -f "$TMP_FILE"
   exit 1
 fi
-if ! zcat "$TMP_FILE" | grep -q "PostgreSQL database dump"; then
+# NOTE: must be `grep -c` (reads to EOF), NOT `grep -q` (exits on first match). With `pipefail` set,
+# `grep -q` exiting early on a multi-hundred-MB stream can make `zcat` receive SIGPIPE before it
+# finishes writing; pipefail then reports the *pipeline* as failed even though grep found the
+# pattern fine — a real, reproduced false-negative that silently discarded every good dump so far.
+if ! zcat "$TMP_FILE" | grep -c "PostgreSQL database dump" >/dev/null; then
   echo "backup_postgres: dump does not look like a Postgres dump — NOT keeping it" >&2
   rm -f "$TMP_FILE"
   exit 1

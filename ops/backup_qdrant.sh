@@ -28,6 +28,7 @@ TARGET_DIR=${TARGET_DIR:-"$HOME/sealai-backups/qdrant"}
 RETENTION_DAYS=${RETENTION_DAYS:-14}
 
 mkdir -p "$TARGET_DIR"
+chmod 700 "$TARGET_DIR"
 DATE=$(date -u +%Y-%m-%d_%H-%M-%S)
 
 echo "backup_qdrant: creating a server-side snapshot of '${COLLECTION}'"
@@ -49,6 +50,7 @@ fi
 FILE="$TARGET_DIR/${COLLECTION}-${DATE}.snapshot"
 echo "backup_qdrant: extracting ${SNAPSHOT_NAME} -> ${FILE}"
 docker cp "${QDRANT_CONTAINER}:/qdrant/snapshots/${COLLECTION}/${SNAPSHOT_NAME}" "$FILE"
+chmod 600 "$FILE"
 
 # Sanity check BEFORE deleting the remote copy — never lose the only copy on a truncated docker cp.
 SIZE=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE")
