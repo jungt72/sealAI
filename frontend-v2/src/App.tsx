@@ -23,7 +23,13 @@ import { Shell } from "./components/Shell";
 import type { Briefing, CaseSummary, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
-import { getCaseIdFromUrl, newCaseId, setCaseIdInUrl } from "./lib/caseId";
+import {
+  getCaseIdFromUrl,
+  newCaseId,
+  setCaseIdInUrl,
+  stashCaseIdForAuthRedirect,
+  takeStashedCaseId,
+} from "./lib/caseId";
 import { downloadBriefingPdf } from "./lib/pdf";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
@@ -31,6 +37,10 @@ const env = (import.meta as unknown as { env: Record<string, string | undefined>
 const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
 // Realm role for the manufacturer self-service dashboard (matches auth_manufacturer_role default).
 const MANUFACTURER_ROLE = env.VITE_MANUFACTURER_ROLE ?? "manufacturer";
+// A stable, reusable empty value for resetting `memory` the instant a case switch happens (see
+// every setMemory(EMPTY_MEMORY) call below) — module-level so it's one constant reference, not a
+// fresh object literal (and therefore a fresh render trigger) on every call site.
+const EMPTY_MEMORY: ConversationMemory = { case_state: [], history: [] };
 const CONFIG: OidcConfig = {
   issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
@@ -150,6 +160,14 @@ export function App() {
           .then(() => {
             sessionStorage.removeItem("v2_pkce_verifier"); // one-time; token stays in memory
             sessionStorage.removeItem("v2_auth_redirect_at"); // clear the redirect-loop window
+            // Restore the case that was active before this redirect (2026-07-04 audit finding):
+            // neither Keycloak's fixed redirect_uri nor the OAuth `state` nonce carries app data
+            // through the round trip, so the caseId must come back via sessionStorage instead —
+            // stashed by every redirect-out call site below. Setting it here, before setAuthed,
+            // means the existing "persist caseId to the URL once authed" effect further down
+            // picks it up and writes it into the now-clean URL — no separate URL-write needed.
+            const restoredCaseId = takeStashedCaseId();
+            if (restoredCaseId) setCaseId(restoredCaseId);
             window.history.replaceState({}, "", "/dashboard/");
             setAuthed(true);
           })
@@ -193,6 +211,7 @@ export function App() {
     const verifier = randomVerifier();
     const state = randomVerifier();
     sessionStorage.setItem("v2_pkce_verifier", verifier);
+    stashCaseIdForAuthRedirect(caseId); // survives the full-page round trip; restored above
     void authorizeUrl(CONFIG, { verifier, state }).then((u) => {
       window.location.href = u;
     });
@@ -207,11 +226,14 @@ export function App() {
   useEffect(() => {
     const onPop = () => {
       const id = getCaseIdFromUrl();
-      if (id) setCaseId(id);
+      if (!id || id === caseId) return;
+      setConvKey((k) => k + 1); // force a fresh ChatPane mount, same as selectCase/newQuestion
+      setMemory(EMPTY_MEMORY); // same stale-memory race guard as selectCase/newQuestion
+      setCaseId(id);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [caseId]);
 
   // Persist a freshly-generated caseId into the URL once auth bootstrap has settled — deferred
   // until `authed` so this never races the OIDC callback's own replaceState calls (which scrub
@@ -270,8 +292,9 @@ export function App() {
     const verifier = randomVerifier();
     const state = randomVerifier();
     sessionStorage.setItem("v2_pkce_verifier", verifier);
+    stashCaseIdForAuthRedirect(caseId); // survives the full-page round trip; restored above
     window.location.href = await authorizeUrl(CONFIG, { verifier, state });
-  }, []);
+  }, [caseId]);
 
   const send = useCallback(
     async (message: string) => {
@@ -317,6 +340,8 @@ export function App() {
     setBriefing(null);
     setLastMessage("");
     setConvKey((k) => k + 1);
+    // 2026-07-04 audit fix: same stale-memory race as selectCase — reset before the id/URL change.
+    setMemory(EMPTY_MEMORY);
     // "Fälle"-Sidebar: "Neue Frage" starts an actual NEW case (not just a visual reset) — a fresh
     // id, pushed (not replaced) so the back button can step back to the previous case.
     const fresh = newCaseId();
@@ -333,6 +358,12 @@ export function App() {
       setBriefing(null);
       setLastMessage("");
       setConvKey((k) => k + 1);
+      // 2026-07-04 audit fix: without this, the freshly-remounted ChatPane's one-shot hydration
+      // effect reads `memory` BEFORE this case's own memory fetch resolves (it's still the
+      // PREVIOUS case's data at that instant) and locks it in permanently — resetting here, in
+      // the same batch as setCaseId, means the new ChatPane sees an empty history on its very
+      // first render instead of someone else's.
+      setMemory(EMPTY_MEMORY);
       setCaseIdInUrl(id, { replace: false });
       setCaseId(id);
     },

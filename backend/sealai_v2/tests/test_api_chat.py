@@ -102,3 +102,25 @@ def test_case_id_never_crosses_the_tenant_boundary():
     )
     assert pipeline.memory.history(tenant_id="tenant-A", session_id="sess-B")
     assert pipeline.memory.history(tenant_id="tenant-B", session_id="sess-B") == ()
+
+
+def test_case_id_over_255_chars_is_a_clean_422_not_a_db_500():
+    # 2026-07-04 audit finding: case_id had no length constraint, so an over-long value hit the
+    # DB's own String(255) column and surfaced as a generic 500 instead of a validation error.
+    client, _ = make_client()
+    r = client.post(
+        "/api/v2/chat",
+        json={"message": "x", "case_id": "a" * 256},
+        headers=auth("tok-A"),
+    )
+    assert r.status_code == 422
+
+
+def test_case_id_at_exactly_255_chars_is_accepted():
+    client, _ = make_client()
+    r = client.post(
+        "/api/v2/chat",
+        json={"message": "x", "case_id": "a" * 255},
+        headers=auth("tok-A"),
+    )
+    assert r.status_code == 200
