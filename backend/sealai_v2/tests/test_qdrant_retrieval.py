@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.core.contracts import RetrievalResult
 from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.qdrant_retrieval import (
     GLOBAL_TENANT,
@@ -646,3 +647,35 @@ def test_delete_card_points_is_a_noop_when_nothing_matches():
     deleted = delete_card_points(client, "col", "FK-NEVER-INGESTED")
     assert deleted == 0
     assert client.delete_calls == []  # never called — nothing to delete
+
+
+class _FailingEmbedder:
+    """Simulates every retry the OpenAI SDK already attempts having been exhausted (or a
+    non-retryable error, e.g. an invalid key) — always raises."""
+
+    def embed(self, texts):
+        raise RuntimeError("simulated OpenAI outage — all SDK-level retries exhausted")
+
+
+def test_retrieve_degrades_to_an_empty_result_on_an_embed_failure_never_raises():
+    # 2026-07-04 RAG audit: a transient (or persistent) embedding failure during an actual
+    # retrieve() call — as opposed to at retriever CONSTRUCTION time, which _build_retriever
+    # (pipeline.py) already covers — must degrade this ONE turn to "nothing grounded", not crash it.
+    r = QdrantFachkartenRetriever(
+        Settings(), client=_FakeClient(points=[]), embedder=_FailingEmbedder()
+    )
+    res = asyncio.run(r.retrieve("Informationen zu PTFE", tenant_id="eval", k=5))
+    assert res == RetrievalResult()
+    assert res.grounded is False
+
+
+def test_retrieve_still_works_normally_when_the_embedder_does_not_fail():
+    # guard against the fail-safe wrapper accidentally swallowing a SUCCESSFUL retrieval too
+    pts = [
+        _FakePoint({"claim_text": "x", "card_id": "A", "review_state": "draft"}, 0.9)
+    ]
+    r = QdrantFachkartenRetriever(
+        Settings(), client=_FakeClient(points=pts), embedder=_FakeDenseEmbedder()
+    )
+    res = asyncio.run(r.retrieve("q", tenant_id="eval", k=5))
+    assert len(res.provisional) == 1

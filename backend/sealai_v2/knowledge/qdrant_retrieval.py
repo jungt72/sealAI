@@ -19,6 +19,7 @@ without fastembed/qdrant installed.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,8 @@ from sealai_v2.knowledge.fachkarten import FachkartenCatalog, load_fachkarten
 
 if TYPE_CHECKING:
     from sealai_v2.config.settings import Settings
+
+_log = logging.getLogger("sealai_v2.knowledge.qdrant_retrieval")
 
 GLOBAL_TENANT = (
     "sealai"  # seed Fachkarten are GLOBAL knowledge (mirrors V1's shared tenant)
@@ -497,7 +500,21 @@ class QdrantFachkartenRetriever:
         import asyncio
 
         # FastEmbed (local ONNX) + the qdrant call are sync/CPU+IO → off the event loop in a thread.
-        return await asyncio.to_thread(self._retrieve_sync, query, tenant_id, k)
+        try:
+            return await asyncio.to_thread(self._retrieve_sync, query, tenant_id, k)
+        except Exception as exc:  # noqa: BLE001 — fail safe to an empty result; never crash the turn
+            # 2026-07-04 RAG audit: the OpenAI SDK already retries transient embed failures itself
+            # (DEFAULT_MAX_RETRIES=2 with backoff) — this catches what's left AFTER those are
+            # exhausted, or a non-retryable error (bad key, unreachable Qdrant mid-turn). Degrades
+            # this ONE turn to "nothing grounded", the exact same shape as any other query with no
+            # matching Fachkarte (the pipeline already handles that case correctly) — never a 500.
+            # _build_retriever's own fail-safe (pipeline.py) only covers a failure at STARTUP
+            # (constructing the retriever); this is the missing counterpart for an already-built one.
+            _log.warning(
+                "qdrant retrieve failed (%s) → empty result for this turn, not a crash",
+                exc,
+            )
+            return RetrievalResult()
 
     def _retrieve_sync(self, query: str, tenant_id: str, k: int) -> RetrievalResult:
         from qdrant_client.models import FieldCondition, Filter, MatchAny  # lazy
