@@ -114,8 +114,8 @@ export function App() {
   // M8: the kernel channel is recomputed server-side on every input change; the panel re-reads it
   // here (flush-then-recompute happens on the backend). Fail-quiet — a failed read never blanks the UI.
   const refreshCompute = useCallback(() => {
-    api.compute().then(setCompute).catch(() => undefined);
-  }, [api]);
+    api.compute(caseId).then(setCompute).catch(() => undefined);
+  }, [api, caseId]);
 
   // "Fälle"-Sidebar: the case list, re-fetched after every turn (a new case appears, the active
   // one's title/timestamp updates) — same fail-quiet discipline as the other refresh calls.

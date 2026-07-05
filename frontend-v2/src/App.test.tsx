@@ -127,12 +127,12 @@ describe("M8: the kernel compute is read on load and refreshed after a chat turn
     const { calls } = stubApi(memoryRef);
     setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
     render(<App />);
-    await waitFor(() => expect(calls.some((u) => u.endsWith("/compute"))).toBe(true));
-    const before = calls.filter((u) => u.endsWith("/compute")).length;
+    await waitFor(() => expect(calls.some((u) => u.split("?")[0].endsWith("/compute"))).toBe(true));
+    const before = calls.filter((u) => u.split("?")[0].endsWith("/compute")).length;
     fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
     fireEvent.click(screen.getByTestId("composer-send"));
     await waitFor(() =>
-      expect(calls.filter((u) => u.endsWith("/compute")).length).toBeGreaterThan(before),
+      expect(calls.filter((u) => u.split("?")[0].endsWith("/compute")).length).toBeGreaterThan(before),
     );
   });
 });

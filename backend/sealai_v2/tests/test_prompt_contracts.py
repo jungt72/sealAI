@@ -12,6 +12,7 @@ from sealai_v2.memory.distiller import DistillPrompt
 from sealai_v2.prompts import assembler
 
 _PROMPT_DIR = Path(__file__).resolve().parents[1] / "prompts"
+_RENDER_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "render" / "templates"
 
 _EXPECTED_TEMPLATE_VARS = {
     "distill.jinja": set(),
@@ -30,6 +31,7 @@ _EXPECTED_TEMPLATE_VARS = {
         "correction_note",
         "coverage",
         "durable_context",
+        "engineering_flags",
         "grounding_facts",
         "material_params",
         "medium_hint_context",
@@ -69,6 +71,18 @@ def test_active_llm_prompt_templates_have_registered_variables():
         ast = env.parse(path.read_text(encoding="utf-8"))
         actual[path.name] = meta.find_undeclared_variables(ast)
     assert actual == _EXPECTED_TEMPLATE_VARS
+
+
+def test_active_render_templates_compile():
+    env = Environment(
+        loader=FileSystemLoader(str(_RENDER_TEMPLATE_DIR)),
+        undefined=StrictUndefined,
+        autoescape=False,
+    )
+    for path in sorted(
+        p for p in _RENDER_TEMPLATE_DIR.glob("*.jinja") if not p.name.startswith(".")
+    ):
+        env.parse(path.read_text(encoding="utf-8"))
 
 
 def test_prompt_assembler_protocols_match_concrete_signatures():

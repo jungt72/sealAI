@@ -8,20 +8,19 @@ from __future__ import annotations
 
 import asyncio
 
-from sealai_v2.core.contracts import ModelConfig, RememberedFact
+from sealai_v2.core.contracts import ModelConfig, RememberedFact, SessionContext
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.tenant import TenantContext
-from sealai_v2.core.contracts import SessionContext
 
-_UNDERSTAND_MARKER = "Du klassifizierst eine Nutzer-Nachricht"
+_UNDERSTAND_MARKER = "Du annotierst EINE Nutzer-Nachricht"
 
 
 class _RoutingFakeLlmClient:
-    """Routes by system prompt: the understand call (its prompt opens with the fixed classifier
+    """Routes by system prompt: the understand call (its prompt opens with the fixed annotate-only
     instruction) gets ``understand_json``; every other call (L1 generate) gets ``answer``."""
 
     def __init__(self, understand_json: str, answer: str = "Antwort.") -> None:

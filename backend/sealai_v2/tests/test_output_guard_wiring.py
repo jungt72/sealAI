@@ -175,7 +175,7 @@ def test_general_guard_on_blocks_invented_number_and_regenerates_without_rendere
     # contract stayed None (only guard_contract, guard-only, was ever built) — this is the whole
     # point of P0-B's design: the safety net widens, the teaching-depth prompt does not narrow.
     regenerate_system_prompt = client.calls[1]["system"]
-    assert "Renderer-Modus" not in regenerate_system_prompt
+    assert "# MODUS: RENDERER" not in regenerate_system_prompt
     assert "Du bist Renderer, nicht Autor" not in regenerate_system_prompt
     # the correction note DID reach L1 independent of contract (own prompt block, not nested in it)
     assert "OUTPUT-GUARD-KORREKTUR" in regenerate_system_prompt

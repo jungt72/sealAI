@@ -428,6 +428,27 @@ describe("cockpit internals: parameter/readout matrix", () => {
     expect(calc.compareDocumentPosition(medium) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("projects the right rail as orientation, not a critical list of missing internal keys", () => {
+    renderPane({
+      memory: WITH_FACTS,
+      compute: {
+        computed: [],
+        not_computed: [
+          { calc_id: "umfangsgeschwindigkeit", reason: "nicht berechenbar: Eingaben fehlen (d1_mm, rpm)" },
+        ],
+        notes: [],
+      },
+    });
+    const cockpit = screen.getByTestId("case-state");
+    const rail = within(cockpit).getByTestId("cockpit-readout-column");
+    expect(within(rail).getByTestId("cockpit-solution")).toHaveTextContent("RWDR plausibel");
+    expect(within(rail).getByTestId("cockpit-next-step")).toHaveTextContent("Drehzahl ergänzen");
+    expect(within(rail).getByTestId("cockpit-missing")).toHaveTextContent("Drehzahl n");
+    expect(within(rail).getByTestId("cockpit-warning")).toHaveTextContent("Keine kritischen Punkte");
+    expect(rail).not.toHaveTextContent("d1_mm");
+    expect(rail).not.toHaveTextContent("rpm");
+  });
+
   it("the cockpit body is a single scroll-area holding the two-column matrix", () => {
     renderPane({ memory: WITH_FACTS });
     const body = screen.getByTestId("case-state").querySelector(".cockpit-body");

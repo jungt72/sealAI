@@ -129,8 +129,8 @@ export class ApiClient {
   }
   /** M8 kernel channel: the deterministic compute for the current session (the Berechnungen panel's
    * source). Backend-only numbers — the client never computes. */
-  compute(): Promise<ComputeResponse> {
-    return this.req("/compute");
+  compute(caseId?: string): Promise<ComputeResponse> {
+    return this.req(this.withCase("/compute", caseId));
   }
   editFact(feld: string, wert: string, origin?: string, caseId?: string): Promise<unknown> {
     return this.req(this.withCase(`/conversations/current/facts/${encodeURIComponent(feld)}`, caseId), {

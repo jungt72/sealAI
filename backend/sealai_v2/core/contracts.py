@@ -81,6 +81,7 @@ class SystemPromptAssembler(Protocol):
         coverage: dict | None = None,
         contract: dict | None = None,
         baseline_hardening: bool = False,
+        engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
     ) -> str: ...
 

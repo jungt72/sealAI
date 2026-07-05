@@ -64,3 +64,31 @@ def test_berechnungen_same_message_inputs_and_provenance_label_ban():
     # (2) the kern-provenance labels are reserved for the injected block — never self-derived
     assert "ausschließlich" in flat and "selbst ermittelte Zahl" in flat
     assert "falsche Herkunftsangabe" in flat
+
+
+def test_contract_renderer_mode_renders_complete_jinja_branch():
+    contract = {
+        "status": "COVERED_RECOMMENDATION",
+        "allowed_claims": [
+            {
+                "severity": "disqualify",
+                "text": "FKM ist gegen Heißdampf unverträglich.",
+                "sources": ["Verträglichkeitsmatrix"],
+            }
+        ],
+        "required_clauses": ["Finale Freigabe liegt beim Hersteller."],
+        "missing_fields": ["Druck"],
+        "allowed_materials": ["FKM"],
+        "allowed_values": [
+            {"name": "Umfangsgeschwindigkeit", "value": 12.3, "unit": "m/s"}
+        ],
+        "forbidden_phrases": ["freigegeben"],
+    }
+
+    p = PromptAssembler().system_prompt(flags=Flags(), contract=contract)
+
+    assert "Renderer-Modus" in p
+    assert "FKM ist gegen Heißdampf unverträglich." in p
+    assert "Finale Freigabe liegt beim Hersteller." in p
+    assert "Fehlende Angaben" in p and "Druck" in p
+    assert "Umfangsgeschwindigkeit=12.3 m/s" in p

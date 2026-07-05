@@ -6,6 +6,50 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-05T16:41:44Z — VPS worktree hygiene: archived stale frontend scratch copy — no deploy
+
+**Context.** The VPS worktree had one untracked directory, `frontend-cockpit-deploy/`, after the V2 prompt deploy. It contained a full Next.js source copy and was therefore audited before any cleanup.
+
+**Finding.** The directory is a legacy one-off scratch/copy workspace, not a build artifact and not the SSoT for any live frontend. Production paths reference `frontend/` through `ops/release-frontend.sh`; the dashboard SPA remains `frontend-v2/`; Docker Compose/nginx and the running `sealai-frontend-1` container do not mount or reference `frontend-cockpit-deploy/`.
+
+**Action.** The directory was moved out of the repo and archived as `/home/thorsten/sealai-archives/frontend-cockpit-deploy-20260705-164144.tar.gz` with sha256 `b98036ff67dfe0d960bca0ee0a9be42b6b6ea402c883221d3b7ade221f00253b`. `.gitignore` now blocks accidental re-introduction of this scratch directory.
+
+**Verification.** Repository status was clean after the archive move. No production runtime files were changed and no deploy was required for this cleanup.
+
+## 2026-07-05T16:18:58Z — V2 PROD deploy: `backend-v2` rebuild — L1 Jinja fix + Mistral prompt hardening (run `no-eval-38426f31`)
+
+**Context.** The VPS worktree carried the active `feat/l1-prompt-v21-p0-rewrite` prompt rewrite plus the helper/verifier prompt hardening. A real runtime bug was found before deploy: `system_l1.jinja` started with a plain `#` instead of a Jinja comment opener `{#`, so the documentation text containing `{% if not contract %}` was parsed as a live, unclosed Jinja block. The deploy commit is `38426f31`.
+
+**Deploy path.** Work was completed on the VPS at `/home/thorsten/sealai`, committed and pushed to GitHub branch `feat/l1-prompt-v21-p0-rewrite`, then deployed only via `ops/release-backend-v2.sh`. The wrapper's eval gate remains owner-disabled/temporary for this run, so `no-eval-38426f31` is not an adjudicated eval replay. `dirty=true` is recorded because deploy-ledger state and the pre-existing untracked `frontend-cockpit-deploy/` artifact were present outside the served backend tree.
+
+**Runtime record.**
+- served `tree_hash` = `00d0e9d30f3cd57ca7bd7a41e9b4cb5af396a719`
+- served L1 = `mistral/mistral-small-2603`
+- new live `sealai-backend-v2:latest` = `sha256:b979d48b5d91104c8b9233c29530f6f81cd9f3b7543b4209d2304a6217a9cbbe`
+- rollback rung (read from the daemon) = `sha256:629ab93c8ede8c0f979c18e2d2e1ef4d8a0068d95bf896cb71818c57d6d054cd`, tagged `sealai-backend-v2:rollback-pre-no-eval-38426f31-20260705-161858`
+- machine ledger appended on VPS: `ops/deploy-ledger.jsonl`
+
+**Smoke.** Wrapper smoke green: health internal+public; kern one-shot (`umfangsgeschwindigkeit` 16.755 / PV 50.0); restart-survival. Additional live container verification confirmed default and contract-mode L1 prompt rendering, Mistral-style structured helper prompts, exact verifier clean JSON contract, public `https://sealingai.com/api/v2/health`, and the baked gate tree hash.
+
+## 2026-07-05T15:19:01Z — V2 helper/verifier prompts hardened for Mistral-style structured output — no live model calls, no deploy
+
+**Context.** The active non-L1 prompt templates were audited against current Mistral guidance: objective instructions
+over blurry wording, explicit JSON/schema requirements for structured outputs, minimal generated data, and clear
+separation between user/document content as DATA vs. instructions.
+
+**Change.** `distill.jinja`, `understand.jinja`, `fachkarte_extract.jinja`, `medium_research.jinja`, and
+`verifier_l3.jinja` now state stricter JSON discipline (valid JSON object only, no prose/Markdown/code fences, no
+trailing commas), explicit empty-list/null behavior, and tighter no-inference/no-fabrication rules. `understand.jinja`
+was rewritten from a one-line prompt into a readable decision tree with the same optional fields and server-side
+allowlist contract. `verifier_l3.jinja` no longer shows pseudo-JSON literals such as `true|false`; clean output is
+specified as exact JSON.
+
+**Verification.** Local no-spend verification only: active Jinja templates parse, targeted prompt/helper/verifier test
+surface is green, compile check passes, and `test_prompt_mistral_alignment.py` now guards JSON-discipline regressions.
+No live LLM eval, no production deploy.
+
+---
+
 ## 2026-07-05T06:46:41Z — V2 model-selection eval neutralized — no live model calls, no deploy
 
 **Context.** The model-swap matrix was audited after the owner questioned whether the existing eval was too tightly
@@ -2191,3 +2235,14 @@ container); re-establish an ADJUDICATED eval replay for the new tree_hash (the g
 until then — the ungated deterministic path was used here per "keine Eval"); the produktspec pre-launch
 wiring gaps (audit #22-25, all behind produktspec_enabled=false); optional DRY refactors (#37) + intentional
 deferred scaffolds (#38, keep-with-note); prune .env.prod.bak (after key rotation) + the 21 NOADJ eval/runs.
+
+---
+
+## 2026-07-05T17:32:15Z — V2 PROD deploy: case-aware compute + dashboard Right Rail cockpit
+
+**Scope** — fixed the active `frontend-v2` dashboard cockpit and the V2 compute read path so the right column uses the same active case-state as chat/facts/memory.
+- Backend: `/api/v2/compute` now accepts optional `case_id` and recomputes that same-tenant case; regression test covers default-session vs case-targeted compute.
+- Frontend: `ApiClient.compute(caseId)` and `App.refreshCompute` pass the active case; cockpit Right Rail in `ChatPane.tsx` now renders solution direction, next step, human-readable missing inputs, calculations, critical point, medium, and RFQ readiness.
+- UI hygiene: removed raw `not_computed` internal-key exposure from the cockpit critical surface; live Right Rail no longer shows `d1_mm`, `rpm`, `p_bar`, or `v_m_s`.
+- Verification: `check:boundary`, TypeScript, targeted Vitest suite, and `backend/sealai_v2/tests/test_api_compute.py` green. Live browser check on case `b6734cb0-c470-4222-ba1a-0d7e157617b2` shows `3,53 m/s` and `1,77 bar·m/s`, new asset `index-CgvG6V6x.js`, no console CSP/font warnings, and no internal keys in the rail.
+- Deploy: `backend-v2` via `ops/release-backend-v2.sh`, image `sha256:390b0e96993725f081d75a4407af1e3318ae28a510380be845818e29a2783b78`, rollback tag `sealai-backend-v2:rollback-pre-no-eval-966fb7d2-20260705-173215`; frontend-v2 dist swapped from `/tmp/sealai-frontend-v2-right-rail-20260705173201` with backup `/tmp/sealai-frontend-v2-dist-backup-20260705173257.tgz`.
