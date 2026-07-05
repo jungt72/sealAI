@@ -38,7 +38,5 @@ async def compute(
     # flush-then-recompute: a pending background distill must land first (mirror view_memory)
     session_id = case_id or identity.session_id
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    comp = pipeline.compute_for(
-        tenant_id=identity.tenant_id, session_id=session_id
-    )
+    comp = pipeline.compute_for(tenant_id=identity.tenant_id, session_id=session_id)
     return compute_response(comp)

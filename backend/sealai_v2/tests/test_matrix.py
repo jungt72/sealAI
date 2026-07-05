@@ -58,9 +58,9 @@ def test_seed_loads_and_every_cell_traces_to_a_reviewed_source():
             )
             for p in c.provenance
         )
-        assert (
-            reviewed_prov or c.sources
-        ), f"{c.id}: no reviewed provenance and no source"
+        assert reviewed_prov or c.sources, (
+            f"{c.id}: no reviewed provenance and no source"
+        )
 
 
 def test_loader_rejects_a_model_sourced_cell(tmp_path):

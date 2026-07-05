@@ -112,7 +112,9 @@ def test_compute_case_id_query_param_targets_that_case():
         headers=auth("tok-A"),
     )
     assert client.get("/api/v2/compute", headers=auth("tok-A")).json()["computed"] == []
-    body = client.get("/api/v2/compute", params={"case_id": "case-2"}, headers=auth("tok-A")).json()
+    body = client.get(
+        "/api/v2/compute", params={"case_id": "case-2"}, headers=auth("tok-A")
+    ).json()
     assert any(c["calc_id"] == "umfangsgeschwindigkeit" for c in body["computed"])
 
 

@@ -127,9 +127,9 @@ def test_provenance_ist_chat_inline():
     """Jedes emittierte Fact hat provenance='chat-inline'."""
     facts = extract_inline("16 bar bei 3000 U/min, Welle 80 mm, 2 m/s.")
     for f in facts:
-        assert (
-            f.provenance == "chat-inline"
-        ), f"Falsche provenance bei {f.feld}: {f.provenance}"
+        assert f.provenance == "chat-inline", (
+            f"Falsche provenance bei {f.feld}: {f.provenance}"
+        )
 
 
 def test_leere_nachricht_keine_facts():

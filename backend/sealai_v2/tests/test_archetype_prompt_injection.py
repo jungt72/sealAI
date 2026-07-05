@@ -31,7 +31,7 @@ def test_archetype_block_present_when_context_given():
 
 def test_no_archetype_heading_on_the_no_archetype_path():
     out = PromptAssembler().system_prompt(flags=Flags(False, False))
-    assert "Maschinen-Art" not in out
+    assert "# Erkannte Maschinen-Art" not in out
 
 
 def test_absent_archetype_is_byte_identical_to_none():

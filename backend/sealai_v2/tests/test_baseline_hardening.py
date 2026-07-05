@@ -52,7 +52,6 @@ def test_prompt_byte_identical_when_flag_off():
         without = a.system_prompt(flags=flags)  # default baseline_hardening=False
         explicit_off = a.system_prompt(flags=flags, baseline_hardening=False)
         assert without == explicit_off
-        assert "Speed-Trap als Pflichtbefund" not in without
         assert "Unklare Medienklasse" not in without
 
 
@@ -62,5 +61,5 @@ def test_prompt_blocks_present_when_flag_on():
         flags=Flags(compliance_hint=True, safety_critical=True),
         baseline_hardening=True,
     )
-    assert "Speed-Trap als Pflichtbefund" in on
     assert "Unklare Medienklasse" in on
+    assert "Urteile" in on and "über v, PV oder Verpressung" in on
