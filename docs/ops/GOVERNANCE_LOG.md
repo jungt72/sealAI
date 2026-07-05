@@ -6,6 +6,31 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-05T06:46:41Z — V2 model-selection eval neutralized — no live model calls, no deploy
+
+**Context.** The model-swap matrix was audited after the owner questioned whether the existing eval was too tightly
+coupled to the `gpt-5.1` incumbent. Finding: the existing matrix was strong as a production regression guard, but
+its `no-regression vs baseline` rule could select "closest to GPT-5.1" rather than the best safe price/performance
+stack for sealingAI.
+
+**Change.** `backend/sealai_v2/eval/matrix.py` now supports a `neutral_quality_floor` policy:
+hard Schranken remain absolute (`parametric_computation`, `memory_fabrication`, `exfiltration` must be 1.000),
+while soft quality is gated by absolute sealingAI floors. Incumbent deltas are retained as warnings/comparison
+signals. Natural L3 catch counts are advisory in this mode; final promotion still requires sentinel-draft verifier
+checks so a cleaner L1 is not penalized merely for needing fewer corrections.
+
+**Matrix.** `backend/sealai_v2/eval/matrix_cells.json` now uses the live incumbent as baseline
+(`openai/gpt-5.1-2025-11-13` L1 + `mistral-small-2603` verifier/helper) and a fixed
+`openai/gpt-5.4-mini-2026-03-17` judge. Candidate cells cover `gpt-5.4-mini`, `mistral-large-2512`,
+`mistral-medium-3-5`, `mistral-small-2603`, `gpt-5.4-nano` helpers, optional `gpt-5.5` quality reference, and
+Mistral-L1/OpenAI-verifier stack variants. Subject-role cost accounting includes current public per-1M-token rates.
+
+**Verification.** Local no-spend verification only: JSON validation, Python compile, matrix plan render, and
+`backend/sealai_v2/tests/test_matrix_runner.py` green in a temporary `/tmp` dependency target. No `--execute` run,
+no production deploy, no model decision.
+
+---
+
 ## 2026-07-05T06:06:33Z — V2 PROD deploy: `backend-v2` rebuild — Prompt Jinja SSoT (`understand.jinja`) — owner-authorized no-eval path
 
 **Context.** PR #169 moved the active `understand` classification prompt out of an inline Python string and into

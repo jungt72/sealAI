@@ -141,6 +141,25 @@ def _gate(cell, base=None, tol_cred=0.0, tol_aq=0.0):
     return matrix.evaluate_gate(base or _out(), cell, tol_cred=tol_cred, tol_aq=tol_aq)
 
 
+def _neutral_gate(cell, base=None):
+    policy = {
+        "mode": "neutral_quality_floor",
+        "l3_natural_catches": "advisory",
+        "quality_floor": {
+            "credibility_min": 0.97,
+            "must_contain_coverage_min": 0.94,
+            "must_catch_named_rate_min": 1.0,
+        },
+    }
+    return matrix.evaluate_gate(
+        base or _out(),
+        cell,
+        tol_cred=0.02,
+        tol_aq=0.02,
+        policy=policy,
+    )
+
+
 def test_gate_passes_when_no_regression():
     passed, reasons, _ = _gate(_out())
     assert passed and reasons == []
@@ -180,6 +199,62 @@ def test_schranken_have_no_tolerance_even_with_large_quality_tolerance():
     # A Schranke trip FAILS regardless of how loose the (quality) tolerance is — hard safety floor.
     passed, reasons, _ = _gate(_out(parametric=0.99), tol_cred=0.9, tol_aq=0.9)
     assert not passed and any("schranke" in r for r in reasons)
+
+
+def test_neutral_gate_passes_on_absolute_quality_even_with_small_baseline_delta():
+    # Neutral model selection is not "speak exactly like the incumbent": small incumbent deltas are
+    # advisory when the absolute sealingAI floor holds.
+    passed, reasons, views = _neutral_gate(_out(cred=0.985, mc=0.985, kt=1.0))
+    assert passed and reasons == []
+    assert views["warnings"] == []
+    assert views["quality_floor"]["ok"]
+    assert views["quality"]["score"] is not None
+
+
+def test_neutral_gate_fails_when_absolute_quality_floor_is_missed():
+    passed, reasons, views = _neutral_gate(_out(cred=0.99, mc=0.90, kt=1.0))
+    assert not passed
+    assert any("absolute quality floor" in r for r in reasons)
+    assert not views["quality_floor"]["ok"]
+
+
+def test_neutral_gate_warns_when_l3_natural_catches_go_silent():
+    passed, reasons, views = _neutral_gate(_out(corrected=0))
+    assert passed and reasons == []
+    assert any("L3 natural catches" in w for w in views["warnings"])
+
+
+def test_price_performance_uses_quality_per_dollar():
+    pp = matrix._price_performance_view(
+        {"score": 0.98}, {"est_cost_per_turn_usd": 0.49}
+    )
+    assert pp["quality_per_dollar"] == 2.0
+
+
+def test_data_residency_note_all_mistral():
+    roles = {
+        "l1": {"provider": "mistral", "model": "x"},
+        "verifier": {"provider": "mistral", "model": "x"},
+        "helper": {"provider": "mistral", "model": "x"},
+        "judge": {"provider": "openai", "model": "x"},  # judge excluded on purpose
+    }
+    assert matrix._data_residency_note(roles) == "EU-native (all subject roles on Mistral)"
+
+
+def test_data_residency_note_includes_openai():
+    roles = {
+        "l1": {"provider": "openai", "model": "x"},
+        "verifier": {"provider": "mistral", "model": "x"},
+        "helper": {"provider": "mistral", "model": "x"},
+        "judge": {"provider": "openai", "model": "x"},
+    }
+    assert "OpenAI" in matrix._data_residency_note(roles)
+
+
+def test_data_residency_note_never_raises_on_empty_roles():
+    # A hand-built CellResult (e.g. in a test, or a future code path) may omit roles entirely —
+    # this must degrade gracefully, never crash render_report.
+    assert matrix._data_residency_note({}) == "n/a (roles not recorded)"
 
 
 # --- cost ---------------------------------------------------------------------------------
@@ -293,7 +368,11 @@ def test_every_eval_model_has_a_rate_key():
     est_cost silently goes null. Guards against adding a model without its rate."""
     manifest = matrix.load_manifest()
     rate_keys = {k for k in manifest["rates_usd_per_mtok"] if not k.startswith("_")}
-    pins = {k: v for k, v in manifest["pinned_models"].items() if not k.startswith("_")}
+    pins = {
+        k: v
+        for k, v in manifest["pinned_models"].items()
+        if not k.startswith("_") and k.endswith("_model")
+    }
     models = set(pins.values())
     for c in manifest["cells"]:
         for key, val in c["overrides"].items():
