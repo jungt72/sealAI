@@ -29,6 +29,7 @@ from sealai_v2.core.contracts import (
     RetrievalResult,
     Retriever,
     SessionContext,
+    UnderstandPromptAssembler,
     Understanding,
 )
 from sealai_v2.core.gegencheck import evaluate_gegencheck
@@ -54,15 +55,6 @@ def is_alternativen_request(question: str) -> bool:
     return bool(_ALT_RE.search(question))
 
 
-_UNDERSTAND_SYSTEM = (
-    "Du klassifizierst eine Nutzer-Nachricht an einen Dichtungstechnik-Assistenten GROB nach "
-    'Absicht. Antworte NUR mit einem JSON-Objekt {"intent": <label>, "rationale": <kurz>}. '
-    "labels: wissensfrage (allgemeine Erklärung/Eigenschaften), fallarbeit (konkrete "
-    "Dichtungssituation/Auswahl), faktfrage (kurze Einzelfrage), gespraech "
-    "(Begrüßung/Smalltalk/Off-Topic), unklar. Dies ist eine WEICHE Annotation; sie steuert nichts."
-)
-
-
 def _extract_json(raw: str) -> str:
     """Best-effort: pull the first {...} block, tolerating code fences."""
     s = raw.strip()
@@ -74,56 +66,12 @@ def _extract_json(raw: str) -> str:
     return s[start : end + 1] if start != -1 and end > start else s
 
 
-def _understand_system(
-    archetype_keys: tuple[str, ...] = (),
-    *,
-    known_seal_types: tuple[str, ...] = (),
-    medium_already_known: bool = True,
-) -> str:
-    """The understand system prompt. With archetype keys available (G4), it ALSO asks for a soft
-    ``archetype`` field constrained to those keys — one call, no second classifier (owner decision 3).
-
-    2026-07-04 routing/extraction audit: two further OPTIONAL soft annotations, same call, same
-    "rate nicht, im Zweifel null" discipline as archetype:
-    - ``suggested_seal_type`` (only asked for when no seal_type is already committed) — constrained
-      to ``known_seal_types``, exactly like archetype is constrained to the archetype store's keys.
-    - ``medium_hint`` (only asked for when the deterministic extractor found no medium this turn) —
-      free text, but VERBATIM ("wörtlich, ohne Interpretation") to avoid the LLM silently
-      classifying/paraphrasing a substance into something it isn't.
-    """
-    if not archetype_keys:
-        prompt = _UNDERSTAND_SYSTEM
-    else:
-        keys = ", ".join(archetype_keys)
-        prompt = (
-            _UNDERSTAND_SYSTEM
-            + ' Ergänze das JSON-Objekt um ein Feld "archetype": die Maschinen-Art, AUSSCHLIESSLICH '
-            + f"einer von [{keys}] — aber NUR, wenn sie klar genannt oder eindeutig erkennbar ist; sonst "
-            + "null. Rate nicht; im Zweifel null. Auch dies ist eine WEICHE Annotation; sie steuert nichts."
-        )
-    if known_seal_types:
-        types = ", ".join(known_seal_types)
-        prompt += (
-            ' Ergänze außerdem ein Feld "suggested_seal_type": AUSSCHLIESSLICH einer von '
-            f"[{types}] — aber NUR, wenn der Fall eindeutig auf einen dieser Typen hindeutet "
-            "(z. B. am beschriebenen Medium/Anwendung), obwohl noch keiner bestätigt ist; sonst "
-            "null. Rate nicht; im Zweifel null. WEICHE Annotation — steuert nichts automatisch, "
-            "der Nutzer entscheidet."
-        )
-    if not medium_already_known:
-        prompt += (
-            ' Ergänze außerdem ein Feld "medium_hint": falls die Nachricht ein Medium/einen Stoff '
-            "nennt, der NICHT bereits erfasst ist, gib ihn WÖRTLICH wieder (kein Fachbegriff, keine "
-            "Interpretation, keine Kategorisierung) — sonst null. Rate nicht; im Zweifel null."
-        )
-    return prompt
-
-
 async def understand(
     client: LlmClient,
     model_config: ModelConfig,
     question: str,
     *,
+    prompt_assembler: UnderstandPromptAssembler,
     archetype_keys: tuple[str, ...] = (),
     known_seal_types: tuple[str, ...] = (),
     medium_already_known: bool = True,
@@ -135,8 +83,8 @@ async def understand(
     something OUTSIDE the deterministic vocabulary) but is length-capped and only ever surfaced as
     an unconfirmed hint, never committed as a fact."""
     res = await client.generate(
-        system=_understand_system(
-            archetype_keys,
+        system=prompt_assembler.understand_prompt(
+            archetype_keys=archetype_keys,
             known_seal_types=known_seal_types,
             medium_already_known=medium_already_known,
         ),
