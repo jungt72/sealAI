@@ -58,6 +58,7 @@ class PromptAssembler:
         coverage: dict | None = None,
         contract: dict | None = None,
         baseline_hardening: bool = False,
+        engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
     ) -> str:
         flags = flags or Flags()
@@ -81,6 +82,7 @@ class PromptAssembler:
             coverage=coverage or None,
             contract=contract or None,
             baseline_hardening=baseline_hardening,
+            engineering_flags=engineering_flags or [],
             material_params=material_params or None,
         )
 

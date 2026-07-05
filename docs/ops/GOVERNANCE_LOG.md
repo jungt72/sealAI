@@ -6,6 +6,25 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-05T15:19:01Z — V2 helper/verifier prompts hardened for Mistral-style structured output — no live model calls, no deploy
+
+**Context.** The active non-L1 prompt templates were audited against current Mistral guidance: objective instructions
+over blurry wording, explicit JSON/schema requirements for structured outputs, minimal generated data, and clear
+separation between user/document content as DATA vs. instructions.
+
+**Change.** `distill.jinja`, `understand.jinja`, `fachkarte_extract.jinja`, `medium_research.jinja`, and
+`verifier_l3.jinja` now state stricter JSON discipline (valid JSON object only, no prose/Markdown/code fences, no
+trailing commas), explicit empty-list/null behavior, and tighter no-inference/no-fabrication rules. `understand.jinja`
+was rewritten from a one-line prompt into a readable decision tree with the same optional fields and server-side
+allowlist contract. `verifier_l3.jinja` no longer shows pseudo-JSON literals such as `true|false`; clean output is
+specified as exact JSON.
+
+**Verification.** Local no-spend verification only: active Jinja templates parse, targeted prompt/helper/verifier test
+surface is green, compile check passes, and `test_prompt_mistral_alignment.py` now guards JSON-discipline regressions.
+No live LLM eval, no production deploy.
+
+---
+
 ## 2026-07-05T06:46:41Z — V2 model-selection eval neutralized — no live model calls, no deploy
 
 **Context.** The model-swap matrix was audited after the owner questioned whether the existing eval was too tightly

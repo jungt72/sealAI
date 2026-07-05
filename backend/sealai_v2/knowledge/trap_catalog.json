@@ -263,20 +263,22 @@
     },
     {
       "id": "TRAP-L1-PARAMETRIC-CALC",
-      "trigger": "die Antwort nennt einen konkreten Zahlenwert für eine kern-eigene Größe (Umfangsgeschwindigkeit/Gleitgeschwindigkeit, PV-Wert, Verpressung), den der deterministische Rechenkern NICHT berechnet hat oder der dem Kern-Wert widerspricht",
+      "trigger": "die Antwort nennt einen konkreten Zahlenwert für eine kern-eigene Größe (Umfangsgeschwindigkeit/Gleitgeschwindigkeit, PV-Wert, Verpressung) ODER für deren Belastungsgrenze/Schwellenwert, den der deterministische Rechenkern NICHT berechnet/injiziert hat oder der dem Kern-Wert widerspricht",
       "wrong": [
         "rechnet die Umfangsgeschwindigkeit/PV-Wert/Verpressung selbst aus und nennt das Ergebnis (z. B. 'v ≈ 10,5 m/s'), obwohl kein berechneter Wert injiziert wurde",
         "nennt einen Zahlenwert, der vom injizierten berechneten Wert abweicht",
-        "setzt Zahlen in die Formel ein statt sie nur symbolisch zu zeigen, wenn der Kern 'nicht berechenbar' meldet"
+        "setzt Zahlen in die Formel ein statt sie nur symbolisch zu zeigen, wenn der Kern 'nicht berechenbar' meldet",
+        "nennt eine eigene Belastungsgrenze/Schwellenzahl fuer v/PV-Wert/Verpressung (z. B. 'Standard-NBR haelt typisch bis ~10-12 m/s'), auch als 'typisch'/'Richtwert'/'ca.' gekennzeichnet, ohne dass diese Grenze injiziert (Engineering-Flag oder Warnung am berechneten Wert) vorliegt"
       ],
-      "correct": "Kern-eigene Größen berechnet ausschließlich der deterministische Rechenkern (Umfangsgeschwindigkeit v = π·d1·n/60000 [d1 in mm, n in 1/min → m/s]; PV = p·v; Verpressung = (Schnurstärke−Nuttiefe)/Schnurstärke·100) — die Antwort referenziert nur die injizierten berechneten Werte exakt. Liegt kein berechneter Wert vor ('nicht berechenbar'), nennt die Antwort KEINEN Zahlenwert, benennt die fehlenden Eingaben und zeigt die Formel höchstens symbolisch ohne eingesetzte Zahlen.",
+      "correct": "Kern-eigene Größen berechnet ausschließlich der deterministische Rechenkern (Umfangsgeschwindigkeit v = π·d1·n/60000 [d1 in mm, n in 1/min → m/s]; PV = p·v; Verpressung = (Schnurstärke−Nuttiefe)/Schnurstärke·100) — die Antwort referenziert nur die injizierten berechneten Werte exakt. Liegt kein berechneter Wert vor ('nicht berechenbar'), nennt die Antwort KEINEN Zahlenwert, benennt die fehlenden Eingaben und zeigt die Formel höchstens symbolisch ohne eingesetzte Zahlen. Die zulässige Belastungsgrenze dieser Größen (z. B. die maximale Umfangsgeschwindigkeit einer Standard-NBR-Lippe) nennt die Antwort ebenfalls NUR als injizierte Warnung/Engineering-Flag — nie als eigene Zahl, Spanne oder 'typischen' Richtwert; ohne Injektion bleibt die Aussage qualitativ ('grenzwertig', 'überfordert eine Standard-Lippe').",
       "gates": ["parametric_computation"],
       "provenance": [
         "owner:M8-plan-approval-2026-06-10(decisions 4-6)",
         "divergence:briefing-saltwater-d50-n4000(L1 'v ≈ 10,5 m/s' vs. Kern 'nicht berechenbar — d1_mm, rpm fehlen')",
-        "calc_seed:umfangsgeschwindigkeit/pv_wert/verpressung_prozent(reviewed)"
+        "calc_seed:umfangsgeschwindigkeit/pv_wert/verpressung_prozent(reviewed)",
+        "l1-prompt-sync-2026-07-05(P0-1/P0-2 Sperr-Domaenen-Umbau: 'wrong' um eigene Belastungsgrenzen-Zahl erweitert, damit L1 und L3 dieselbe Regel pruefen -- reproduzierter Fall: mistral-small-2603 nannte 'typisch bis ~10-12 m/s' fuer eine Standard-NBR-Lippe, ohne dass dieser Schwellenwert injiziert war)"
       ],
-      "tags": ["Berechnung", "Determinismus", "M8"],
+      "tags": ["Berechnung", "Determinismus", "M8", "Belastungsgrenze"],
       "xrefs": ["CALC-UMFANGSGESCHWINDIGKEIT"]
     }
   ],
