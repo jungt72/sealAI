@@ -6,6 +6,34 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-05T06:06:33Z — V2 PROD deploy: `backend-v2` rebuild — Prompt Jinja SSoT (`understand.jinja`) — owner-authorized no-eval path
+
+**Context.** PR #169 moved the active `understand` classification prompt out of an inline Python string and into
+the Jinja2 prompt SSoT at `backend/sealai_v2/prompts/understand.jinja`, with assembler/protocol wiring plus
+prompt-contract tests. GitHub merge commit: `0d288a1c1c9d8deaa50931e1862f947a9b68f757`.
+
+**Deploy path.** VPS `/home/thorsten/sealai` was fast-forwarded to GitHub `main`, then `backend-v2` was rebuilt
+only via the sanctioned wrapper `ops/release-backend-v2.sh`. The wrapper's eval gate was owner-disabled/temporary
+for this run and therefore recorded run label `no-eval-0d288a1c`; this is not an adjudicated eval replay.
+The wrapper recorded `dirty=true` because pre-existing VPS deploy artifacts were present
+(`ops/deploy-ledger.jsonl`, untracked `frontend-cockpit-deploy/`).
+
+**Runtime record.**
+- served `tree_hash` = `e779c47f8e503bc7201bef43658bdf84633dfb4a`
+- served L1 = `openai/gpt-5.1`
+- new live `sealai-backend-v2:latest` = `sha256:1b1c6ba674966ee712eb7549b1d5a2c965e3209bc38146203718725d23fe9b38`
+- rollback rung (read from the daemon) = `sha256:c5849676bd013ef3385691958ae1fcce9eab5996cda874ec36eb1861c5f707e5`,
+  tagged `sealai-backend-v2:rollback-pre-no-eval-0d288a1c-20260705-060633`
+- machine ledger appended on VPS: `ops/deploy-ledger.jsonl`
+
+**Smoke.** Wrapper smoke green: health internal+public; kern one-shot (`umfangsgeschwindigkeit` 16.755 / PV 50.0);
+restart-survival. Additional live verification confirmed public `https://sealingai.com/api/v2/health` returns
+`{"status":"ok","service":"sealai_v2"}` and the running container renders
+`UnderstandPromptAssembler().understand_prompt(...)` from the self-hosted Jinja template with `archetype`,
+`suggested_seal_type`, and `medium_hint` fields.
+
+---
+
 ## 2026-06-20 — V2.1 Inc-2 (Kalibrierung) eval-REPLAY: `inc2-close-replay` — Owner-Review deferred (TRAP-02)
 
 **Kontext.** Inc-2 = C3-Rückkalibrierung (Überrotations-Fix) + L3-CALC-Trap-Scope (Eingriff 2) + Case-(i)-Hygiene,
