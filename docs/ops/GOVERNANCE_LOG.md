@@ -6,6 +6,21 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-05T16:18:58Z — V2 PROD deploy: `backend-v2` rebuild — L1 Jinja fix + Mistral prompt hardening (run `no-eval-38426f31`)
+
+**Context.** The VPS worktree carried the active `feat/l1-prompt-v21-p0-rewrite` prompt rewrite plus the helper/verifier prompt hardening. A real runtime bug was found before deploy: `system_l1.jinja` started with a plain `#` instead of a Jinja comment opener `{#`, so the documentation text containing `{% if not contract %}` was parsed as a live, unclosed Jinja block. The deploy commit is `38426f31`.
+
+**Deploy path.** Work was completed on the VPS at `/home/thorsten/sealai`, committed and pushed to GitHub branch `feat/l1-prompt-v21-p0-rewrite`, then deployed only via `ops/release-backend-v2.sh`. The wrapper's eval gate remains owner-disabled/temporary for this run, so `no-eval-38426f31` is not an adjudicated eval replay. `dirty=true` is recorded because deploy-ledger state and the pre-existing untracked `frontend-cockpit-deploy/` artifact were present outside the served backend tree.
+
+**Runtime record.**
+- served `tree_hash` = `00d0e9d30f3cd57ca7bd7a41e9b4cb5af396a719`
+- served L1 = `mistral/mistral-small-2603`
+- new live `sealai-backend-v2:latest` = `sha256:b979d48b5d91104c8b9233c29530f6f81cd9f3b7543b4209d2304a6217a9cbbe`
+- rollback rung (read from the daemon) = `sha256:629ab93c8ede8c0f979c18e2d2e1ef4d8a0068d95bf896cb71818c57d6d054cd`, tagged `sealai-backend-v2:rollback-pre-no-eval-38426f31-20260705-161858`
+- machine ledger appended on VPS: `ops/deploy-ledger.jsonl`
+
+**Smoke.** Wrapper smoke green: health internal+public; kern one-shot (`umfangsgeschwindigkeit` 16.755 / PV 50.0); restart-survival. Additional live container verification confirmed default and contract-mode L1 prompt rendering, Mistral-style structured helper prompts, exact verifier clean JSON contract, public `https://sealingai.com/api/v2/health`, and the baked gate tree hash.
+
 ## 2026-07-05T15:19:01Z — V2 helper/verifier prompts hardened for Mistral-style structured output — no live model calls, no deploy
 
 **Context.** The active non-L1 prompt templates were audited against current Mistral guidance: objective instructions

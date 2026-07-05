@@ -16,3 +16,8 @@
 ## Jinja Safety
 
 - Keep the top block of `system_l1.jinja` as a real Jinja comment starting with `{#` and ending with `#}`. If the opener is changed to plain `#`, the explanatory text containing `{% if not contract %}` is parsed as a live Jinja block and crashes at runtime.
+
+## Last V2 Prompt Deploy
+
+- 2026-07-05T16:18:58Z: commit `38426f31` deployed on VPS via `ops/release-backend-v2.sh` as `backend-v2` image `sha256:b979d48b5d91104c8b9233c29530f6f81cd9f3b7543b4209d2304a6217a9cbbe`; tree hash `00d0e9d30f3cd57ca7bd7a41e9b4cb5af396a719`; L1 `mistral/mistral-small-2603`; rollback image `sha256:629ab93c8ede8c0f979c18e2d2e1ef4d8a0068d95bf896cb71818c57d6d054cd`.
+- This deploy fixed the `system_l1.jinja` top-comment Jinja crash and shipped the structured helper/verifier prompt hardening. Eval gate was temporarily disabled by owner policy; wrapper smoke and live prompt checks passed.
