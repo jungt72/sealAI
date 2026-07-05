@@ -96,6 +96,26 @@ def test_compute_is_tenant_scoped_via_token():
     assert body["computed"] == []
 
 
+def test_compute_case_id_query_param_targets_that_case():
+    """The dashboard's Fälle URL must drive the compute read surface just like memory/facts."""
+    client, _ = make_client(_engine_pipeline())
+    client.put(
+        "/api/v2/conversations/current/facts/wellendurchmesser",
+        params={"case_id": "case-2"},
+        json={"wert": "40 mm", "origin": "user-form"},
+        headers=auth("tok-A"),
+    )
+    client.put(
+        "/api/v2/conversations/current/facts/drehzahl",
+        params={"case_id": "case-2"},
+        json={"wert": "8000 U/min", "origin": "user-form"},
+        headers=auth("tok-A"),
+    )
+    assert client.get("/api/v2/compute", headers=auth("tok-A")).json()["computed"] == []
+    body = client.get("/api/v2/compute", params={"case_id": "case-2"}, headers=auth("tok-A")).json()
+    assert any(c["calc_id"] == "umfangsgeschwindigkeit" for c in body["computed"])
+
+
 def test_compute_503_when_compute_disabled():
     client, _ = make_client(_engine_pipeline(engine=False))
     assert client.get("/api/v2/compute", headers=auth("tok-A")).status_code == 503

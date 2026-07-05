@@ -19,10 +19,11 @@ import type {
   ParamItem,
   Turn,
 } from "../contracts";
+import { clarifyMessage } from "../lib/clarify";
 import { clampCockpitPx, clearCockpitPx, loadCockpitPx, saveCockpitPx } from "../lib/cockpitWidth";
 import { pinNewTurn, settleNewTurnSpacer, useChatScroll } from "../lib/chatScroll";
 import { Answer } from "./Answer";
-import {BerechnungenPanel, isNotApplicable } from "./BerechnungenPanel";
+import { BerechnungenPanel } from "./BerechnungenPanel";
 import { BriefingPane } from "./BriefingPane";
 import { AlternativenPanel } from "./AlternativenPanel";
 import { ContributePanel } from "./ContributePanel";
@@ -64,6 +65,113 @@ function canScrollVertically(el: HTMLElement, deltaY: number): boolean {
   if (deltaY > 0) return el.scrollTop + el.clientHeight < el.scrollHeight;
   if (deltaY < 0) return el.scrollTop > 0;
   return false;
+}
+
+const FACT_LABELS: Record<string, string> = {
+  dichtungstyp: "Dichtungstyp",
+  medium: "Medium",
+  medium_kategorie: "Kategorie",
+  druck: "Druck normal",
+  druck_max: "Maximaldruck",
+  betriebstemperatur: "Betriebstemperatur",
+  spitzentemperatur: "Spitzentemperatur",
+  wellendurchmesser: "Wellendurchmesser d1",
+  drehzahl: "Drehzahl n",
+  d1_mm: "Wellendurchmesser d1",
+  rpm: "Drehzahl n",
+  p_bar: "Druck normal",
+  v_m_s: "Umfangsgeschwindigkeit",
+  schnurstaerke_mm: "Schnurstärke",
+  nuttiefe_mm: "Nuttiefe",
+};
+
+const SEAL_LABELS: Record<string, string> = {
+  rwdr: "RWDR",
+  hydraulik: "Hydraulikdichtung",
+  statisch: "Statische Dichtung",
+};
+
+const FIELD_PRIORITY = [
+  {
+    key: "medium",
+    label: "Medium",
+    action: "Medium ergänzen",
+    hint: "für Werkstoff- und Verträglichkeitsbewertung",
+  },
+  {
+    key: "wellendurchmesser",
+    label: "Wellendurchmesser d1",
+    action: "Wellendurchmesser d1 ergänzen",
+    hint: "für Umfangsgeschwindigkeit",
+  },
+  {
+    key: "drehzahl",
+    label: "Drehzahl n",
+    action: "Drehzahl ergänzen",
+    hint: "für Umfangsgeschwindigkeit",
+  },
+  {
+    key: "druck",
+    label: "Druck normal",
+    action: "Betriebsdruck ergänzen",
+    hint: "für PV-Bewertung",
+  },
+  {
+    key: "druck_max",
+    label: "Maximaldruck",
+    action: "Maximaldruck ergänzen",
+    hint: "für Betriebsgrenzen und RFQ-Reife",
+  },
+  {
+    key: "betriebstemperatur",
+    label: "Betriebstemperatur",
+    action: "Temperatur ergänzen",
+    hint: "für Werkstoffauswahl",
+  },
+] as const;
+
+function labelKey(raw: string): string {
+  const key = raw.trim();
+  return FACT_LABELS[key] ?? key;
+}
+
+function humanizeComputeReason(reason: string): string {
+  return reason.replace(/\(([^)]*)\)/g, (_match, inner: string) => {
+    const labels = String(inner)
+      .split(",")
+      .map((part) => labelKey(part))
+      .join(", ");
+    return `(${labels})`;
+  });
+}
+
+function factValue(committed: Record<string, string>, key: string): string {
+  return (committed[key] ?? "").trim();
+}
+
+function activeSealType(committed: Record<string, string>): string {
+  return factValue(committed, "dichtungstyp").toLowerCase() || "rwdr";
+}
+
+function solutionSummary(committed: Record<string, string>, computedCount: number): { title: string; meta: string } {
+  const type = activeSealType(committed);
+  const label = SEAL_LABELS[type] ?? "Dichtungssituation";
+  if (factValue(committed, "dichtungstyp") || factValue(committed, "medium") || computedCount > 0) {
+    return { title: `${label} plausibel`, meta: "vorläufig · wird mit den aktuellen Angaben plausibilisiert" };
+  }
+  return { title: "Dichtungssituation offen", meta: "vorläufig · Startpunkt oder Fallbeschreibung fehlt noch" };
+}
+
+function missingRows(committed: Record<string, string>) {
+  return FIELD_PRIORITY.filter((f) => !factValue(committed, f.key));
+}
+
+function warningRows(compute: ComputeResponse | null): string[] {
+  const clarificationRows = (compute?.clarifications ?? []).map(clarifyMessage);
+  const noteRows = (compute?.notes ?? []).filter(
+    (note) => note && !/nicht berechenbar|Eingaben fehlen/i.test(note),
+  );
+  return [...clarificationRows, ...noteRows].map(humanizeComputeReason);
 }
 
 /* P4b — the frontend owns the German stage labels; the backend streams keys only. Unmapped keys
@@ -488,11 +596,16 @@ export function ChatPane({
   // + the Parameter | Readout 2-pane (side-by-side when the panel is wide, stacked when narrow — a CSS
   // container query). The fast-path form is the SINGLE form entry point; its batch submit reuses the
   // SAME settle → confirmation path. Pure placement: no data-flow / settle / recompute change.
-  const computeHasCritical =
-    (compute?.notes?.length ?? 0) +
-      (compute?.clarifications?.length ?? 0) +
-      ((compute?.not_computed ?? []).filter((n) => !isNotApplicable(n)).length) >
-    0;
+  const missing = missingRows(committed);
+  const warnings = warningRows(compute ?? null);
+  const primaryClarification = (compute?.clarifications ?? [])[0];
+  const solution = solutionSummary(committed, compute?.computed?.length ?? 0);
+  const nextStep =
+    missing[0]?.action ?? (warnings[0] ? "Kritischen Punkt prüfen" : "Herstelleranfrage vorbereiten");
+  const rfqReady = caseActive && missing.length === 0 && warnings.length === 0;
+  const rfqStatus = rfqReady
+    ? "Vorbereitbar · aktuelle Angaben sind ausreichend strukturiert"
+    : `Noch nicht bereit · ${missing.length || 1} ${missing.length === 1 ? "Punkt" : "Punkte"} offen`;
   const mediumReadoutRows = [
     { key: "medium", label: "Medium" },
     { key: "medium_kategorie", label: "Kategorie" },
@@ -535,8 +648,35 @@ export function ChatPane({
           {chips}
         </section>
 
-        <section className="cockpit-readout-column" data-testid="cockpit-readout-column" aria-label="Auswertung">
-          <section className="cockpit-readout-block" data-testid="cockpit-calculation-readout" aria-label="Berechnungen">
+        <section className="cockpit-readout-column right-rail" data-testid="cockpit-readout-column" aria-label="Orientierung">
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-solution" aria-label="Aktuelle Lösungsrichtung">
+            <span className="cockpit-section-title">Aktuelle Lösungsrichtung</span>
+            <p className="right-rail-main">{solution.title}</p>
+            <p className="right-rail-meta">{solution.meta}</p>
+          </section>
+
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-next-step" aria-label="Nächster Schritt">
+            <span className="cockpit-section-title">Nächster Schritt</span>
+            <p className="right-rail-main">{nextStep}</p>
+          </section>
+
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-missing" aria-label="Wichtigste fehlende Angaben">
+            <span className="cockpit-section-title">Wichtigste fehlende Angaben</span>
+            {missing.length > 0 ? (
+              <ul className="right-rail-list">
+                {missing.slice(0, 4).map((item) => (
+                  <li key={item.key}>
+                    <span>{item.label}</span>
+                    <small>{item.hint}</small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="cockpit-readout-empty">Keine Kernangaben offen.</p>
+            )}
+          </section>
+
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-calculation-readout" aria-label="Berechnungen">
             <span className="cockpit-section-title">Berechnungen</span>
             <BerechnungenPanel compute={compute ?? null} view="results" />
             {(compute?.computed?.length ?? 0) === 0 ? (
@@ -544,16 +684,35 @@ export function ChatPane({
                 Noch keine Werte vom Rechenkern.
               </p>
             ) : null}
-            <div className="cockpit-critical-readout" data-testid="cockpit-critical-readout">
-              <span className="cockpit-subsection-title">Kritische Punkte</span>
-              <BerechnungenPanel compute={compute ?? null} onConfirmUnit={onConfirmUnit} view="critical" />
-              {computeHasCritical ? null : (
-                <p className="cockpit-readout-empty">Keine kritischen Punkte zu den aktuellen Eingaben.</p>
-              )}
-            </div>
           </section>
 
-          <section className="cockpit-readout-block" data-testid="cockpit-medium-readout" aria-label="Medium">
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-warning" aria-label="Kritischster Punkt">
+            <span className="cockpit-section-title">Kritischster Punkt</span>
+            {warnings.length > 0 ? (
+              <>
+                <p className="right-rail-warning">{warnings[0]}</p>
+                {primaryClarification?.one_click && onConfirmUnit ? (
+                  <button
+                    type="button"
+                    className="right-rail-action"
+                    data-testid="right-rail-confirm-unit"
+                    onClick={() =>
+                      onConfirmUnit(
+                        primaryClarification.feld,
+                        `${primaryClarification.raw_value} ${primaryClarification.suggested_unit}`,
+                      )
+                    }
+                  >
+                    Einheit bestätigen
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <p className="cockpit-readout-empty">Keine kritischen Punkte zu den aktuellen Eingaben.</p>
+            )}
+          </section>
+
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-medium-readout" aria-label="Medium">
             <span className="cockpit-section-title">Medium</span>
             {latestMedium ? (
               <MediumPanel data={latestMedium} />
@@ -580,13 +739,12 @@ export function ChatPane({
             />
           ) : null}
 
-          <div className="readout-briefing">
-            <p className="readout-briefing-soon">Briefing · RFQ-Reife — kommt bald</p>
+          <section className="cockpit-readout-block right-rail-block" data-testid="cockpit-rfq" aria-label="Hersteller/RFQ">
+            <span className="cockpit-section-title">Hersteller/RFQ</span>
+            <p className="right-rail-main">{rfqStatus}</p>
             {briefingButton}
-            {panelOnContribute ? (
-              <ContributePanel onContribute={panelOnContribute} />
-            ) : null}
-          </div>
+            {panelOnContribute ? <ContributePanel onContribute={panelOnContribute} /> : null}
+          </section>
         </section>
       </div>
     </aside>

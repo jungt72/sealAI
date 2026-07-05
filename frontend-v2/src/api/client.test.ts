@@ -135,12 +135,14 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
     ]);
   });
 
-  it("compute() targets GET /api/v2/compute and returns the kernel payload", async () => {
+  it("compute() targets GET /api/v2/compute and appends case_id when given", async () => {
     const payload = { computed: [], not_computed: [], notes: [] };
     const fetchFn = mockFetch(200, payload);
     const client = new ApiClient(() => "tok", () => undefined);
     const res = await client.compute();
     expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/compute");
+    await client.compute("case-42");
+    expect(String(fetchFn.mock.calls[1][0])).toBe("/api/v2/compute?case_id=case-42");
     expect(res).toEqual(payload);
   });
 

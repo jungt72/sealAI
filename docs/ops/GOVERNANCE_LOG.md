@@ -2235,3 +2235,14 @@ container); re-establish an ADJUDICATED eval replay for the new tree_hash (the g
 until then — the ungated deterministic path was used here per "keine Eval"); the produktspec pre-launch
 wiring gaps (audit #22-25, all behind produktspec_enabled=false); optional DRY refactors (#37) + intentional
 deferred scaffolds (#38, keep-with-note); prune .env.prod.bak (after key rotation) + the 21 NOADJ eval/runs.
+
+---
+
+## 2026-07-05T17:32:15Z — V2 PROD deploy: case-aware compute + dashboard Right Rail cockpit
+
+**Scope** — fixed the active `frontend-v2` dashboard cockpit and the V2 compute read path so the right column uses the same active case-state as chat/facts/memory.
+- Backend: `/api/v2/compute` now accepts optional `case_id` and recomputes that same-tenant case; regression test covers default-session vs case-targeted compute.
+- Frontend: `ApiClient.compute(caseId)` and `App.refreshCompute` pass the active case; cockpit Right Rail in `ChatPane.tsx` now renders solution direction, next step, human-readable missing inputs, calculations, critical point, medium, and RFQ readiness.
+- UI hygiene: removed raw `not_computed` internal-key exposure from the cockpit critical surface; live Right Rail no longer shows `d1_mm`, `rpm`, `p_bar`, or `v_m_s`.
+- Verification: `check:boundary`, TypeScript, targeted Vitest suite, and `backend/sealai_v2/tests/test_api_compute.py` green. Live browser check on case `b6734cb0-c470-4222-ba1a-0d7e157617b2` shows `3,53 m/s` and `1,77 bar·m/s`, new asset `index-CgvG6V6x.js`, no console CSP/font warnings, and no internal keys in the rail.
+- Deploy: `backend-v2` via `ops/release-backend-v2.sh`, image `sha256:390b0e96993725f081d75a4407af1e3318ae28a510380be845818e29a2783b78`, rollback tag `sealai-backend-v2:rollback-pre-no-eval-966fb7d2-20260705-173215`; frontend-v2 dist swapped from `/tmp/sealai-frontend-v2-right-rail-20260705173201` with backup `/tmp/sealai-frontend-v2-dist-backup-20260705173257.tgz`.
