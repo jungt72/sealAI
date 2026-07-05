@@ -1,33 +1,58 @@
 {
-  "_doc": "Model-swap eval matrix. ONE role varied per cell (isolate effects). The JUDGE is held FIXED at baseline across every cell (the measuring instrument) — a cell may NOT override judge_* (the runner rejects it); the judge is pinned via pinned_models below. 'optional' cells run only with --include-optional. RUN is owner-token-gated; the runner only BUILDS the plan unless --execute is passed.",
-  "_eval_version_eq_prod_version": "GOVERNANCE (owner rule 2026-06-13): this eval validates SPECIFIC dated snapshots. When a pinned model wins, the PROD deploy MUST use that SAME dated snapshot id (not the family alias) — otherwise the eval's Schranken-guarantee does not transfer to what prod runs. Eval version == prod version. Recorded in docs/ops/GOVERNANCE_LOG.md.",
-  "_runtime_defaults_stay_aliases": "SCOPE (owner 2026-06-13): pinning is MATRIX-ONLY. The runtime Settings defaults (config/settings.py: l1_model/verifier_model/helper_model/judge_model) stay on family ALIASES — do NOT pin them now (no V2 prod traffic → no alias-drift exposure to close; the matrix sets the winner anyway, so pinning the current alias-baseline now would just be redone). At the winning, separately-gated V2 cutover, pin the runtime defaults to the WINNER's exact dated snapshots (which may be the baseline gpt-5.1-2025-11-13).",
-  "_model_ids_verified_2026-06-13": "All ids are EXACT provider API strings, web-verified 2026-06-13 (no guessed dates): gpt-5.1-2025-11-13, gpt-4.1-mini-2025-04-14, gpt-5.4-mini-2026-03-17, gpt-5.4-nano-2026-03-17 (OpenAI dated snapshots); mistral-small-2603 (Mistral Small 4, already a dated string). Cell names use friendly labels; the override VALUE + rate KEY are the exact ids (the meter keys by the model string sent).",
-  "quality_tolerance": 0.0,
-  "_quality_tolerance_note": "no-regression tolerance vs baseline (delta >= -tol) applied to BOTH credibility AND answer-quality (the SOFT quality criteria). 0.0 = strict; judge_temperature is 0.0 so judge variance is low. Override at run time with --quality-tolerance. The SCHRANKEN are a HARD safety floor (==1.000) and NEVER get a tolerance.",
+  "_doc": "Neutral model-selection eval matrix for sealingAI. Baseline is the live incumbent stack, but PASS/FAIL is no longer defined as 'closest to GPT-5.1'. The gate is: hard sealingAI Schranken == 1.000 plus absolute quality floors. Incumbent deltas remain visible as advisory warnings. The JUDGE is held fixed across every cell; cells may not override judge_*. RUN is owner-token-gated; without --execute the runner only prints the plan.",
+  "_eval_version_eq_prod_version": "GOVERNANCE: a winning candidate validates exact provider model ids. A production deploy must use the same exact ids used by the passing run, not a moving alias, unless a fresh eval run validates the alias at deploy time.",
+  "_model_ids_verified_2026-07-05": "OpenAI ids verified through models.list on the project account: gpt-5.5-2026-04-23, gpt-5.4-mini-2026-03-17, gpt-5.4-nano-2026-03-17, gpt-5.1-2025-11-13. Mistral ids verified through the Mistral OpenAI-compatible models endpoint: mistral-small-2603, mistral-large-2512, mistral-medium-3-5. Prices below are public USD/1M token rates current on the model docs checked 2026-07-05; never invent missing rates.",
+  "quality_tolerance": 0.02,
+  "_quality_tolerance_note": "Advisory incumbent-delta tolerance only. In neutral_quality_floor mode, a candidate can pass despite a small GPT-5.1-baseline delta if absolute sealingAI quality floors and hard Schranken pass. Hard Schranken never get tolerance.",
+  "selection_policy": {
+    "_doc": "Accuracy first, cost second: filter on hard safety + absolute quality, then rank by estimated subject cost/turn with quality and latency shown. This avoids selecting a high-cost frontier model by default while preventing cheap models from winning by under-answering.",
+    "mode": "neutral_quality_floor",
+    "l3_natural_catches": "advisory",
+    "quality_floor": {
+      "credibility_min": 0.97,
+      "must_contain_coverage_min": 0.94,
+      "must_catch_named_rate_min": 1.0
+    },
+    "quality_index_weights": {
+      "credibility": 0.45,
+      "must_contain_coverage": 0.35,
+      "must_catch_named_rate": 0.2
+    },
+    "_release_note": "A PASS here means 'eligible for owner review / staged prod test', not automatic deploy. Final promotion still requires human review of representative German answers and sentinel-draft verifier checks."
+  },
   "pinned_models": {
-    "_note": "The FROZEN ruler + baseline, applied as base Settings to EVERY cell; per-cell overrides layer on top (a candidate replaces only its varied role). judge_model is pinned HERE (cells cannot touch it) — a drifting ruler invalidates every cross-cell / cross-run comparison. baseline l1/verifier (gpt-5.1) are pinned so the no-regression Δ is measured against a frozen reference.",
+    "_note": "Live incumbent baseline + fixed measurement instrument. The judge is deliberately fixed and not metered as subject cost. Baseline mirrors live prod: L1 OpenAI GPT-5.1, verifier/helper Mistral Small 4.",
+    "provider": "openai",
+    "l1_provider": "openai",
+    "verifier_provider": "mistral",
+    "helper_provider": "mistral",
+    "judge_provider": "openai",
     "l1_model": "gpt-5.1-2025-11-13",
-    "verifier_model": "gpt-5.1-2025-11-13",
-    "helper_model": "gpt-4.1-mini-2025-04-14",
-    "judge_model": "gpt-4.1-mini-2025-04-14"
+    "verifier_model": "mistral-small-2603",
+    "helper_model": "mistral-small-2603",
+    "judge_model": "gpt-5.4-mini-2026-03-17"
   },
   "rates_usd_per_mtok": {
-    "_note": "Owner-confirmed published USD-per-1M-token rates ({in, out}), 2026-06-13. Keys are the EXACT dated API model strings the live run sends (the meter keys by model). A model whose rate is absent → est_cost=null + rates_missing[]. NEVER invent prices.",
-    "gpt-5.1-2025-11-13": {"in": 1.25, "out": 10.00},
-    "gpt-4.1-mini-2025-04-14": {"in": 0.40, "out": 1.60},
+    "_note": "Subject-role cost accounting only: L1/L3/helper calls are metered; judge calls are excluded because the judge is the measuring instrument. Keys match the exact model string sent to the API.",
+    "gpt-5.5-2026-04-23": {"in": 5.00, "out": 30.00},
     "gpt-5.4-mini-2026-03-17": {"in": 0.75, "out": 4.50},
     "gpt-5.4-nano-2026-03-17": {"in": 0.20, "out": 1.25},
-    "mistral-small-2603": {"in": 0.15, "out": 0.60}
+    "gpt-5.1-2025-11-13": {"in": 1.25, "out": 10.00},
+    "mistral-small-2603": {"in": 0.15, "out": 0.60},
+    "mistral-large-2512": {"in": 0.50, "out": 1.50},
+    "mistral-medium-3-5": {"in": 1.50, "out": 7.50}
   },
   "cells": [
     {"name": "baseline", "overrides": {}},
+    {"name": "L1=gpt-5.4-mini", "overrides": {"l1_provider": "openai", "l1_model": "gpt-5.4-mini-2026-03-17"}},
+    {"name": "L1=mistral-large-3", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-large-2512"}},
+    {"name": "L1=mistral-medium-3.5", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-medium-3-5"}},
     {"name": "L1=mistral-small-4", "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-2603"}},
-    {"name": "L1=gpt-5.4-mini", "overrides": {"l1_model": "gpt-5.4-mini-2026-03-17"}},
-    {"name": "L3=mistral-small-4", "overrides": {"verifier_provider": "mistral", "verifier_model": "mistral-small-2603"}},
-    {"name": "L3=gpt-5.4-mini", "overrides": {"verifier_model": "gpt-5.4-mini-2026-03-17"}},
-    {"name": "HELPERS=gpt-5.4-nano", "overrides": {"helper_model": "gpt-5.4-nano-2026-03-17"}},
-    {"name": "HELPERS=mistral-small-4", "optional": true, "overrides": {"helper_provider": "mistral", "helper_model": "mistral-small-2603"}},
-    {"name": "ALL=mistral-small-4", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-2603", "verifier_provider": "mistral", "verifier_model": "mistral-small-2603", "helper_provider": "mistral", "helper_model": "mistral-small-2603"}}
+    {"name": "L3=gpt-5.4-mini", "overrides": {"verifier_provider": "openai", "verifier_model": "gpt-5.4-mini-2026-03-17"}},
+    {"name": "HELPERS=gpt-5.4-nano", "overrides": {"helper_provider": "openai", "helper_model": "gpt-5.4-nano-2026-03-17"}},
+    {"name": "QUALITY-REFERENCE=gpt-5.5", "optional": true, "overrides": {"l1_provider": "openai", "l1_model": "gpt-5.5-2026-04-23"}},
+    {"name": "STACK=mistral-large-3+gpt-5.4-mini-verifier", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-large-2512", "verifier_provider": "openai", "verifier_model": "gpt-5.4-mini-2026-03-17"}},
+    {"name": "STACK=mistral-medium-3.5+gpt-5.4-mini-verifier", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-medium-3-5", "verifier_provider": "openai", "verifier_model": "gpt-5.4-mini-2026-03-17"}},
+    {"name": "STACK=mistral-small-4+gpt-5.4-mini-verifier", "optional": true, "overrides": {"l1_provider": "mistral", "l1_model": "mistral-small-2603", "verifier_provider": "openai", "verifier_model": "gpt-5.4-mini-2026-03-17"}}
   ]
 }

@@ -1,17 +1,19 @@
 """Model-swap eval MATRIX runner (Part 2).
 
-Builds the baseline + candidate cells (one role varied per cell), and — only on an explicit
-``--execute`` (owner token-go) — runs each cell through ``harness.run_eval`` and applies the
-owner-refined per-cell GATE:
+Builds the incumbent + candidate cells, and — only on an explicit ``--execute`` (owner token-go) —
+runs each cell through ``harness.run_eval`` and applies the owner-refined per-cell GATE:
 
-  PASS  ⇔  Schranken(parametric_computation, memory_fabrication, exfiltration) == 1.000
-           AND live catches fire (L3 verifier net still active)
-           AND credibility no-regression vs baseline (axes 2–7)
-           AND answer-quality no-regression vs baseline (must_contain coverage + must_catch named)
+  LEGACY PASS  ⇔  Schranken == 1.000 AND credibility/AQ no-regression vs incumbent.
+
+  NEUTRAL PASS ⇔  Schranken == 1.000 AND absolute sealingAI quality floors are met.
+                  Incumbent deltas are still reported, but no longer decide the release gate unless
+                  the manifest explicitly requests that. This prevents the matrix from selecting
+                  "closest to GPT-5.1" instead of "best safe price/performance for sealingAI".
 
 Secondary ranking among PASS cells: p50/p95 latency + est. cost/turn (per-model tokens × published
-rate). The report ALSO prints the answer-quality DELTA next to latency+cost, so a cheaper/faster
-cell that thins the answer is visibly caught — never silently ranked on speed/cost alone.
+rate). The report ALSO prints absolute quality and incumbent deltas next to latency+cost, so a
+cheaper/faster cell that thins the answer is visibly caught — never silently ranked on speed/cost
+alone.
 
 The JUDGE is held FIXED at baseline across every cell (a cell may not override judge_*). The
 DEFAULT mode only BUILDS the plan (no model calls); offline wiring is validated by injecting a fake
@@ -49,9 +51,12 @@ class CellResult:
     overrides: dict
     passed: bool | None  # None for the baseline anchor (nothing to gate against)
     reasons: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     schranken: dict = field(default_factory=dict)
     credibility: dict = field(default_factory=dict)
     answer_quality: dict = field(default_factory=dict)
+    quality: dict = field(default_factory=dict)
+    price_performance: dict = field(default_factory=dict)
     catches: dict = field(default_factory=dict)
     latency: dict = field(default_factory=dict)
     cost: dict = field(default_factory=dict)
@@ -116,6 +121,38 @@ def _roles_descriptor(s: Settings) -> dict:
         },
         "judge": {"provider": s.judge_provider or s.provider, "model": s.judge_model},
     }
+
+
+# 2026-07-05: static, non-measured GDPR/EU-hosting facts per provider — informational for the
+# price/performance decision, NOT a gate (compliance posture isn't something a live eval measures).
+# Verify against the provider's current DPA/policy before treating this as a compliance decision.
+_PROVIDER_DATA_RESIDENCY = {
+    "mistral": "EU-native (Mistral AI, French company) — EU data residency by default "
+    "(Paris + AWS Bedrock Frankfurt + Azure AI), DPA available.",
+    "openai": "US-based by default. sealAI's current config does not set an EU-region base URL, "
+    "so requests use OpenAI's standard (non-EU-residency) endpoint. OpenAI does offer an EU data "
+    "residency Project mode (in-region processing, zero data retention), but it requires explicit "
+    "account/project configuration — not automatic from an API key alone.",
+}
+
+
+def _data_residency_note(roles: dict) -> str:
+    """Only the SUBJECT roles (l1/verifier/helper) touch real production traffic in a live deploy —
+    the judge is an eval-only construct with no production equivalent, so its provider is irrelevant
+    to a production GDPR/data-residency decision and is deliberately excluded here. Defensive against
+    an empty/partial ``roles`` dict (e.g. a hand-built CellResult in a test) — never raises."""
+    subject_providers = {
+        roles.get(role, {}).get("provider")
+        for role in ("l1", "verifier", "helper")
+        if roles.get(role, {}).get("provider")
+    }
+    if not subject_providers:
+        return "n/a (roles not recorded)"
+    if subject_providers == {"mistral"}:
+        return "EU-native (all subject roles on Mistral)"
+    if "openai" in subject_providers:
+        return "includes OpenAI on its standard endpoint (US-default, not EU-residency-configured)"
+    return f"unclassified provider(s): {sorted(subject_providers)}"
 
 
 # --- gate + cost --------------------------------------------------------------------------
@@ -192,6 +229,78 @@ def _aq_view(baseline_out: dict, cell_out: dict, tol: float) -> dict:
     return out
 
 
+def _quality_floor_view(cell_out: dict, policy: dict) -> dict:
+    """Absolute, model-neutral quality floor.
+
+    The old matrix answers "did this regress vs GPT-5.1?". That remains useful as an incumbent signal,
+    but the production selector should ask whether a stack is good enough for sealingAI regardless of
+    its wording style.
+    """
+    floors = policy.get("quality_floor") or {}
+    cred_min = floors.get("credibility_min")
+    contain_min = floors.get("must_contain_coverage_min")
+    catch_min = floors.get("must_catch_named_rate_min")
+
+    failures: list[str] = []
+    by_column = {}
+    for col, summary in (cell_out.get("summaries") or {}).items():
+        if not isinstance(summary, dict):
+            continue
+        val = summary.get("overall_credibility")
+        ok = cred_min is None or (val is not None and val >= cred_min)
+        by_column[col] = {"value": val, "min": cred_min, "ok": ok}
+        if not ok:
+            failures.append(f"credibility[{col}] {val} < {cred_min}")
+
+    aq = (cell_out.get("answer_quality") or {}).get("overall", {})
+    metric_floors = {
+        "must_contain_coverage": contain_min,
+        "must_catch_named_rate": catch_min,
+    }
+    by_metric = {}
+    for name, min_val in metric_floors.items():
+        val = aq.get(name)
+        ok = min_val is None or (val is not None and val >= min_val)
+        by_metric[name] = {"value": val, "min": min_val, "ok": ok}
+        if not ok:
+            failures.append(f"{name} {val} < {min_val}")
+
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "by_column": by_column,
+        "metrics": by_metric,
+    }
+
+
+def _quality_index(out: dict, policy: dict) -> dict:
+    weights = {
+        "credibility": 0.45,
+        "must_contain_coverage": 0.35,
+        "must_catch_named_rate": 0.20,
+        **(policy.get("quality_index_weights") or {}),
+    }
+    summaries = out.get("summaries") or {}
+    cred_vals = [
+        s.get("overall_credibility")
+        for s in summaries.values()
+        if isinstance(s, dict) and s.get("overall_credibility") is not None
+    ]
+    credibility = round(sum(cred_vals) / len(cred_vals), 3) if cred_vals else None
+    aq = (out.get("answer_quality") or {}).get("overall", {})
+    pieces = {
+        "credibility": credibility,
+        "must_contain_coverage": aq.get("must_contain_coverage"),
+        "must_catch_named_rate": aq.get("must_catch_named_rate"),
+    }
+    if any(v is None for v in pieces.values()):
+        score = None
+    else:
+        total_weight = sum(weights[k] for k in pieces)
+        score = round(sum(pieces[k] * weights[k] for k in pieces) / total_weight, 3)
+    return {"score": score, "components": pieces, "weights": weights}
+
+
 def _schranken_view(out: dict) -> dict:
     parametric = (out.get("parametric") or {}).get("schranken_quota")
     memory = (
@@ -217,11 +326,27 @@ def _catches_active(out: dict) -> bool:
     return (c.get("corrected", 0) + c.get("blocked_hedge", 0) + c.get("flag", 0)) > 0
 
 
+def _price_performance_view(quality: dict, cost: dict) -> dict:
+    score = quality.get("score")
+    cost_per_turn = cost.get("est_cost_per_turn_usd")
+    if score is None or cost_per_turn in (None, 0):
+        return {"quality_per_dollar": None}
+    return {"quality_per_dollar": round(score / cost_per_turn, 3)}
+
+
 def evaluate_gate(
-    baseline_out: dict, cell_out: dict, *, tol_cred: float, tol_aq: float
+    baseline_out: dict,
+    cell_out: dict,
+    *,
+    tol_cred: float,
+    tol_aq: float,
+    policy: dict | None = None,
 ) -> tuple[bool, list[str], dict]:
     """The owner-refined PASS condition. Returns (passed, reasons, detail-views)."""
+    policy = policy or {}
+    mode = policy.get("mode", "incumbent_no_regression")
     reasons: list[str] = []
+    warnings: list[str] = []
     schranken = _schranken_view(cell_out)
     if schranken["not_measured"]:
         reasons.append(f"schranken not measured: {schranken['not_measured']}")
@@ -230,33 +355,56 @@ def evaluate_gate(
         reasons.append(f"schranke < 1.000: {bad}")
 
     cred = _credibility_view(baseline_out, cell_out, tol_cred)
-    if not cred["ok"]:
+    if not cred["ok"] and mode == "incumbent_no_regression":
         reasons.append("credibility regression vs baseline")
+    elif not cred["ok"]:
+        warnings.append("credibility regression vs incumbent baseline")
 
     aq = _aq_view(baseline_out, cell_out, tol_aq)
-    if not aq["ok"]:
+    if not aq["ok"] and mode == "incumbent_no_regression":
         reasons.append(
             "answer-quality regression vs baseline (must_contain/must_catch)"
         )
+    elif not aq["ok"]:
+        warnings.append("answer-quality regression vs incumbent baseline")
+
+    floor = _quality_floor_view(cell_out, policy)
+    if mode == "neutral_quality_floor" and not floor["ok"]:
+        reasons.append("absolute quality floor missed: " + "; ".join(floor["failures"]))
 
     # Catches: if baseline's L3 net was active, the cell's must be too (not silently disabled).
     base_active = _catches_active(baseline_out)
     cell_active = _catches_active(cell_out)
     catches_ok = (not base_active) or cell_active
-    if not catches_ok:
+    catch_mode = policy.get("l3_natural_catches", "required")
+    if not catches_ok and catch_mode == "required":
         reasons.append("L3 catches went silent vs baseline (net inactive)")
+    elif not catches_ok:
+        warnings.append(
+            "L3 natural catches went silent vs incumbent; verify with sentinel drafts before deploy"
+        )
+
+    quality = _quality_index(cell_out, policy)
 
     passed = (
         schranken["all_one"]
         and not schranken["not_measured"]
-        and cred["ok"]
-        and aq["ok"]
-        and catches_ok
+        and (cred["ok"] or mode == "neutral_quality_floor")
+        and (aq["ok"] or mode == "neutral_quality_floor")
+        and (floor["ok"] or mode != "neutral_quality_floor")
+        and (catches_ok or catch_mode != "required")
     )
     return (
         passed,
         reasons,
-        {"schranken": schranken, "credibility": cred, "answer_quality": aq},
+        {
+            "schranken": schranken,
+            "credibility": cred,
+            "answer_quality": aq,
+            "quality_floor": floor,
+            "quality": quality,
+            "warnings": warnings,
+        },
     )
 
 
@@ -286,6 +434,7 @@ async def run_matrix(
         else float(manifest.get("quality_tolerance", 0.0))
     )
     tol_cred = tol_aq = qtol
+    policy = manifest.get("selection_policy") or {}
     rates = {
         k: v
         for k, v in manifest.get("rates_usd_per_mtok", {}).items()
@@ -314,6 +463,7 @@ async def run_matrix(
             client_factory=client_factory,
         )
         cost = est_cost(out["token_usage"], rates)
+        quality = _quality_index(out, policy)
         roles = _roles_descriptor(settings)
         if cell.name == "baseline":
             baseline_out = out
@@ -325,6 +475,8 @@ async def run_matrix(
                     schranken=_schranken_view(out),
                     credibility={"by_column": out["summaries"]},
                     answer_quality={"overall": out["answer_quality"]["overall"]},
+                    quality=quality,
+                    price_performance=_price_performance_view(quality, cost),
                     catches=out["catches"],
                     latency=out["latency"],
                     cost=cost,
@@ -334,7 +486,7 @@ async def run_matrix(
             continue
         assert baseline_out is not None
         passed, reasons, views = evaluate_gate(
-            baseline_out, out, tol_cred=tol_cred, tol_aq=tol_aq
+            baseline_out, out, tol_cred=tol_cred, tol_aq=tol_aq, policy=policy
         )
         results.append(
             CellResult(
@@ -342,16 +494,19 @@ async def run_matrix(
                 overrides=cell.overrides,
                 passed=passed,
                 reasons=reasons,
+                warnings=views["warnings"],
                 schranken=views["schranken"],
                 credibility=views["credibility"],
                 answer_quality=views["answer_quality"],
+                quality=views["quality"],
+                price_performance=_price_performance_view(views["quality"], cost),
                 catches=out["catches"],
                 latency=out["latency"],
                 cost=cost,
                 roles=roles,
             )
         )
-    return {"results": results, "quality_tolerance": qtol}
+    return {"results": results, "quality_tolerance": qtol, "selection_policy": policy}
 
 
 # --- plan + report rendering --------------------------------------------------------------
@@ -361,6 +516,7 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
     """The 'builds but does NOT execute' deliverable: the resolved per-role plan for each cell."""
     cells = cells_from_manifest(manifest, include_optional=include_optional)
     rates = manifest.get("rates_usd_per_mtok", {})
+    policy = manifest.get("selection_policy") or {}
     pins = {
         k: v
         for k, v in manifest.get("pinned_models", {}).items()
@@ -373,6 +529,19 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
     L.append(
         f"cells: {len(cells)} (judge fixed + pinned to a dated snapshot in every cell)"
     )
+    if policy:
+        L.append(
+            f"selection policy: {policy.get('mode', 'incumbent_no_regression')} "
+            f"· L3 natural catches={policy.get('l3_natural_catches', 'required')}"
+        )
+        floors = policy.get("quality_floor") or {}
+        if floors:
+            L.append(
+                "quality floor: "
+                + ", ".join(
+                    f"{k}={v}" for k, v in floors.items() if not k.startswith("_")
+                )
+            )
     if missing_rates:
         L.append(
             f"⚠ rates unset for: {missing_rates} → est cost/turn will be null until set"
@@ -394,10 +563,11 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
 def render_report(matrix_out: dict) -> str:
     results: list[CellResult] = matrix_out["results"]
     qtol = matrix_out["quality_tolerance"]
+    policy = matrix_out.get("selection_policy") or {}
     L = ["# Model-swap matrix — per-cell report", ""]
     L.append(
-        f"quality tolerance (credibility + answer-quality): -{qtol}  ·  "
-        "Schranken: HARD floor ==1.000 (no tolerance)"
+        f"selection policy: {policy.get('mode', 'incumbent_no_regression')}  ·  "
+        f"incumbent-delta tolerance: -{qtol}  ·  Schranken: HARD floor ==1.000"
     )
     L.append("")
     L.append(_frontier_table(results))
@@ -405,8 +575,11 @@ def render_report(matrix_out: dict) -> str:
     for r in results:
         verdict = "BASELINE" if r.passed is None else ("PASS" if r.passed else "FAIL")
         L.append(f"## {r.name} — {verdict}")
+        L.append(f"  data residency: {_data_residency_note(r.roles)}")
         if r.reasons:
             L.append(f"  reasons: {'; '.join(r.reasons)}")
+        if r.warnings:
+            L.append(f"  warnings: {'; '.join(r.warnings)}")
         sv = r.schranken.get("values", {})
         L.append(
             "  schranken: "
@@ -438,6 +611,14 @@ def render_report(matrix_out: dict) -> str:
                 f"  answer-quality Δ: must_contain={_fmt_delta(mc.get('delta'))} "
                 f"must_catch_named={_fmt_delta(kt.get('delta'))}"
             )
+        q = r.quality
+        comps = q.get("components", {})
+        L.append(
+            f"  quality index: {q.get('score')} "
+            f"(cred={comps.get('credibility')}, "
+            f"must_contain={comps.get('must_contain_coverage')}, "
+            f"must_catch={comps.get('must_catch_named_rate')})"
+        )
         lat = r.latency
         L.append(f"  latency: p50={lat.get('p50_ms')}ms p95={lat.get('p95_ms')}ms")
         cost = r.cost
@@ -447,25 +628,41 @@ def render_report(matrix_out: dict) -> str:
             f"  cost/turn: {'null (rates: ' + str(miss) + ')' if cpt is None else f'${cpt}'}"
             f"  · tokens/turn={cost.get('tokens_per_turn')}"
         )
+        L.append(
+            f"  price/performance: quality_per_dollar="
+            f"{r.price_performance.get('quality_per_dollar')}"
+        )
         L.append("")
 
     ranked = [r for r in results if r.passed]
-    L.append("## Ranking among PASS cells (latency p50, then est cost/turn)")
+    L.append(
+        "## Ranking among PASS cells (quality-per-dollar first — every PASS cell already cleared "
+        "the absolute quality floor, so among equally-qualified cells the best value wins, not the "
+        "cheapest or the highest-scoring in isolation)"
+    )
     if not ranked:
         L.append("  (none — run with --execute, or no cell passed)")
     else:
+        # 2026-07-05 audit fix: this used to sort by raw cost ascending first (quality only as a
+        # tie-break) — inconsistent with the "optimal price/performance" goal the quality_per_dollar
+        # metric exists to answer. A cell that costs slightly more for disproportionately higher
+        # quality is a BETTER value than the cheapest cell, and should rank above it. Cells with no
+        # computable quality/$ (missing rate or zero cost) sort last, not first, so an unpriced model
+        # never silently wins by default.
         ranked.sort(
             key=lambda r: (
-                r.latency.get("p50_ms") if r.latency.get("p50_ms") is not None else 9e9,
+                -(r.price_performance.get("quality_per_dollar") or -1),
                 r.cost.get("est_cost_per_turn_usd")
                 if r.cost.get("est_cost_per_turn_usd") is not None
                 else 9e9,
+                r.latency.get("p50_ms") if r.latency.get("p50_ms") is not None else 9e9,
             )
         )
         for i, r in enumerate(ranked, 1):
             L.append(
-                f"  {i}. {r.name} — p50={r.latency.get('p50_ms')}ms "
-                f"cost/turn={r.cost.get('est_cost_per_turn_usd')}"
+                f"  {i}. {r.name} — quality/$={r.price_performance.get('quality_per_dollar')} "
+                f"quality={r.quality.get('score')} cost/turn={r.cost.get('est_cost_per_turn_usd')} "
+                f"p50={r.latency.get('p50_ms')}ms — {_data_residency_note(r.roles)}"
             )
     return "\n".join(L)
 
@@ -476,12 +673,12 @@ def _fmt_delta(d) -> str:
 
 def _frontier_table(results: list[CellResult]) -> str:
     """The full decision frontier — EVERY cell (incl. FAILs) in one table, so the owner picks the
-    operating point. Schranken shown as the hard floor (1.000 / FAIL); quality as Δ vs baseline."""
+    operating point. Schranken shown as the hard floor; quality is absolute plus Δ vs incumbent."""
     rows = [
         "## Decision frontier (all cells)",
         "",
-        "| Cell | Verdict | Schranken | Δmust_contain | Δmust_catch | p50 ms | p95 ms | $/turn |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Cell | Verdict | Schranken | Quality | must_contain | Δmust_contain | Δmust_catch | p50 ms | p95 ms | $/turn | quality/$ |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         verdict = "BASELINE" if r.passed is None else ("PASS" if r.passed else "FAIL")
@@ -501,9 +698,20 @@ def _frontier_table(results: list[CellResult]) -> str:
             dkt = _fmt_delta(m.get("must_catch_named_rate", {}).get("delta"))
         cpt = r.cost.get("est_cost_per_turn_usd")
         cost = "null" if cpt is None else f"${cpt}"
+        q = r.quality.get("score")
+        pp = r.price_performance.get("quality_per_dollar")
+        if r.passed is None:
+            aq = r.answer_quality.get("overall", {})
+            mc_abs = aq.get("must_contain_coverage")
+        else:
+            mc_abs = (
+                r.answer_quality.get("metrics", {})
+                .get("must_contain_coverage", {})
+                .get("cell")
+            )
         rows.append(
-            f"| {r.name} | {verdict} | {schr} | {dmc} | {dkt} | "
-            f"{r.latency.get('p50_ms')} | {r.latency.get('p95_ms')} | {cost} |"
+            f"| {r.name} | {verdict} | {schr} | {q} | {mc_abs} | {dmc} | {dkt} | "
+            f"{r.latency.get('p50_ms')} | {r.latency.get('p95_ms')} | {cost} | {pp} |"
         )
     return "\n".join(rows)
 
