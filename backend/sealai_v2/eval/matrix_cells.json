@@ -8,10 +8,11 @@
     "_doc": "Accuracy first, cost second: filter on hard safety + absolute quality, then rank by estimated subject cost/turn with quality and latency shown. This avoids selecting a high-cost frontier model by default while preventing cheap models from winning by under-answering.",
     "mode": "neutral_quality_floor",
     "l3_natural_catches": "advisory",
+    "_quality_floor_note": "2026-07-05: the prior floors (0.97/0.94/1.0) were never checked against the incumbent's own observed performance and rejected it too (real neutral_quality_floor run: baseline credibility 0.889-0.907, must_contain 0.823, must_catch 0.98 -- all below the old floor). Recalibrated against that real baseline run with a small margin below its worst observed column (owner-approved exact values 2026-07-05), so the current production stack passes with room and the floor still meaningfully rejects a genuine regression (observed: mistral-large-3 credibility 0.625, must_contain 0.5).",
     "quality_floor": {
-      "credibility_min": 0.97,
-      "must_contain_coverage_min": 0.94,
-      "must_catch_named_rate_min": 1.0
+      "credibility_min": 0.85,
+      "must_contain_coverage_min": 0.75,
+      "must_catch_named_rate_min": 0.9
     },
     "quality_index_weights": {
       "credibility": 0.45,
