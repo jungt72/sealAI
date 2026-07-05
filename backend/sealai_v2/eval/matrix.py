@@ -538,7 +538,9 @@ def render_plan(manifest: dict, *, include_optional: bool = False) -> str:
         if floors:
             L.append(
                 "quality floor: "
-                + ", ".join(f"{k}={v}" for k, v in floors.items() if not k.startswith("_"))
+                + ", ".join(
+                    f"{k}={v}" for k, v in floors.items() if not k.startswith("_")
+                )
             )
     if missing_rates:
         L.append(

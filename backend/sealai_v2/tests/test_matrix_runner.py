@@ -238,7 +238,9 @@ def test_data_residency_note_all_mistral():
         "helper": {"provider": "mistral", "model": "x"},
         "judge": {"provider": "openai", "model": "x"},  # judge excluded on purpose
     }
-    assert matrix._data_residency_note(roles) == "EU-native (all subject roles on Mistral)"
+    assert (
+        matrix._data_residency_note(roles) == "EU-native (all subject roles on Mistral)"
+    )
 
 
 def test_data_residency_note_includes_openai():
