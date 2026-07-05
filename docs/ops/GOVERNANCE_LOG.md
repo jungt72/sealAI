@@ -6,6 +6,16 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-05T16:41:44Z — VPS worktree hygiene: archived stale frontend scratch copy — no deploy
+
+**Context.** The VPS worktree had one untracked directory, `frontend-cockpit-deploy/`, after the V2 prompt deploy. It contained a full Next.js source copy and was therefore audited before any cleanup.
+
+**Finding.** The directory is a legacy one-off scratch/copy workspace, not a build artifact and not the SSoT for any live frontend. Production paths reference `frontend/` through `ops/release-frontend.sh`; the dashboard SPA remains `frontend-v2/`; Docker Compose/nginx and the running `sealai-frontend-1` container do not mount or reference `frontend-cockpit-deploy/`.
+
+**Action.** The directory was moved out of the repo and archived as `/home/thorsten/sealai-archives/frontend-cockpit-deploy-20260705-164144.tar.gz` with sha256 `b98036ff67dfe0d960bca0ee0a9be42b6b6ea402c883221d3b7ade221f00253b`. `.gitignore` now blocks accidental re-introduction of this scratch directory.
+
+**Verification.** Repository status was clean after the archive move. No production runtime files were changed and no deploy was required for this cleanup.
+
 ## 2026-07-05T16:18:58Z — V2 PROD deploy: `backend-v2` rebuild — L1 Jinja fix + Mistral prompt hardening (run `no-eval-38426f31`)
 
 **Context.** The VPS worktree carried the active `feat/l1-prompt-v21-p0-rewrite` prompt rewrite plus the helper/verifier prompt hardening. A real runtime bug was found before deploy: `system_l1.jinja` started with a plain `#` instead of a Jinja comment opener `{#`, so the documentation text containing `{% if not contract %}` was parsed as a live, unclosed Jinja block. The deploy commit is `38426f31`.

@@ -21,3 +21,8 @@
 
 - 2026-07-05T16:18:58Z: commit `38426f31` deployed on VPS via `ops/release-backend-v2.sh` as `backend-v2` image `sha256:b979d48b5d91104c8b9233c29530f6f81cd9f3b7543b4209d2304a6217a9cbbe`; tree hash `00d0e9d30f3cd57ca7bd7a41e9b4cb5af396a719`; L1 `mistral/mistral-small-2603`; rollback image `sha256:629ab93c8ede8c0f979c18e2d2e1ef4d8a0068d95bf896cb71818c57d6d054cd`.
 - This deploy fixed the `system_l1.jinja` top-comment Jinja crash and shipped the structured helper/verifier prompt hardening. Eval gate was temporarily disabled by owner policy; wrapper smoke and live prompt checks passed.
+
+## Worktree Hygiene / Frontend Sources
+
+- 2026-07-05: `frontend-cockpit-deploy/` was audited on the VPS and is an old untracked Next.js scratch/copy workspace, not a production source of truth. It is not referenced by `ops/release-frontend.sh`, Docker Compose, nginx dashboard mounts, or the running `sealai-frontend-1` container.
+- Canonical frontend sources remain `frontend/` for the public Next frontend and `frontend-v2/` for the dashboard SPA. The scratch copy was moved out of `/home/thorsten/sealai` and archived at `/home/thorsten/sealai-archives/frontend-cockpit-deploy-20260705-164144.tar.gz` with sha256 `b98036ff67dfe0d960bca0ee0a9be42b6b6ea402c883221d3b7ade221f00253b`.

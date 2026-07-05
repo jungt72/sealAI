@@ -52,6 +52,9 @@ build/
 
 # Local scratch
 *.sql
+# Legacy one-off frontend scratch copy. Canonical frontend sources are
+# frontend/ (public Next frontend) and frontend-v2/ (dashboard SPA).
+frontend-cockpit-deploy/
 # Exception: audit schema dumps ARE allowed (Gate 0→1 artifacts, no user data)
 !audits/sealai_schema_*.sql
 *.docx
