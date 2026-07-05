@@ -360,9 +360,9 @@ def test_manifest_pins_ruler_and_baseline_to_dated_snapshots():
     pins = matrix.load_manifest()["pinned_models"]
     for role in ("judge_model", "l1_model", "verifier_model", "helper_model"):
         assert role in pins, f"{role} not pinned"
-        assert _DATED.search(pins[role]), (
-            f"{role}={pins[role]!r} is not a dated snapshot"
-        )
+        assert _DATED.search(
+            pins[role]
+        ), f"{role}={pins[role]!r} is not a dated snapshot"
 
 
 def test_every_eval_model_has_a_rate_key():

@@ -49,6 +49,6 @@ def test_classification_accuracy_is_at_or_above_floor():
     # the deterministic gate must classify the grounded reference set at 100% (≥ the §8 / L3 0.95 floor).
     correct = sum(1 for m, med, exp in _CASES if _coverage(m, med) is exp)
     accuracy = correct / len(_CASES)
-    assert accuracy >= 0.95, (
-        f"coverage-classification accuracy {accuracy:.2f} below the 0.95 floor"
-    )
+    assert (
+        accuracy >= 0.95
+    ), f"coverage-classification accuracy {accuracy:.2f} below the 0.95 floor"
