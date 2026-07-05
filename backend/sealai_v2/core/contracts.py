@@ -64,10 +64,11 @@ class SystemPromptAssembler(Protocol):
     def system_prompt(
         self,
         *,
-        anrede: str,
-        grounding_facts: list["GroundingFact"] | None,
-        case_context: list[dict] | None,
-        flags: "Flags",
+        anrede: str = "du",
+        grounding_facts: list["GroundingFact"] | None = None,
+        case_context: list[dict] | None = None,
+        durable_context: list[dict] | None = None,
+        flags: "Flags | None" = None,
         correction_note: str | None = None,
         computed_values: list[dict] | None = None,
         not_computed: list[dict] | None = None,
@@ -75,8 +76,11 @@ class SystemPromptAssembler(Protocol):
         conversation_window: list[dict] | None = None,
         untrusted: list[dict] | None = None,
         archetype_context: dict | None = None,
+        pack_suggestion_context: dict | None = None,
+        medium_hint_context: dict | None = None,
         coverage: dict | None = None,
         contract: dict | None = None,
+        baseline_hardening: bool = False,
         material_params: list | None = None,
     ) -> str: ...
 
@@ -93,6 +97,19 @@ class VerifierPromptAssembler(Protocol):
         traps: list[dict],
         grounding_facts: list[dict] | None = None,
         computed_values: list[dict] | None = None,
+        matrix_facts: list[dict] | None = None,
+    ) -> str: ...
+
+
+class UnderstandPromptAssembler(Protocol):
+    """Structural type for the soft annotate-only understand prompt assembler."""
+
+    def understand_prompt(
+        self,
+        *,
+        archetype_keys: tuple[str, ...] = (),
+        known_seal_types: tuple[str, ...] = (),
+        medium_already_known: bool = True,
     ) -> str: ...
 
 

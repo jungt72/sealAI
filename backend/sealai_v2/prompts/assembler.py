@@ -19,6 +19,7 @@ _VERIFIER_TEMPLATE_NAME = "verifier_l3.jinja"
 _DISTILL_TEMPLATE_NAME = "distill.jinja"
 _MEDIUM_RESEARCH_TEMPLATE_NAME = "medium_research.jinja"
 _FACHKARTE_EXTRACT_TEMPLATE_NAME = "fachkarte_extract.jinja"
+_UNDERSTAND_TEMPLATE_NAME = "understand.jinja"
 
 
 def _env(template_dir: Path | None) -> Environment:
@@ -143,3 +144,25 @@ class FachkarteExtractPromptAssembler:
 
     def fachkarte_extract_prompt(self) -> str:
         return self._template.render()
+
+
+class UnderstandPromptAssembler:
+    """Renders ``understand.jinja`` for the soft annotate-only stage. The prompt stays in the
+    Jinja SSoT with the other active LLM prompts; server-side allowlists still validate every
+    optional annotation after parsing."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(_UNDERSTAND_TEMPLATE_NAME)
+
+    def understand_prompt(
+        self,
+        *,
+        archetype_keys: tuple[str, ...] = (),
+        known_seal_types: tuple[str, ...] = (),
+        medium_already_known: bool = True,
+    ) -> str:
+        return self._template.render(
+            archetype_keys=archetype_keys,
+            known_seal_types=known_seal_types,
+            medium_already_known=medium_already_known,
+        ).strip()

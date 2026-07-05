@@ -67,6 +67,7 @@ from sealai_v2.prompts.assembler import (
     DistillPromptAssembler,
     MediumResearchPromptAssembler,
     PromptAssembler,
+    UnderstandPromptAssembler,
     VerifierPromptAssembler,
 )
 from sealai_v2.security.leak_detect import exfiltration_leak
@@ -241,6 +242,9 @@ class Pipeline:
     generator: L1Generator
     client: LlmClient
     helper_model: ModelConfig
+    understand_prompt_assembler: UnderstandPromptAssembler = field(
+        default_factory=UnderstandPromptAssembler
+    )
     understand_enabled: bool = True
     # G4: owner-reviewed archetype store (ArchetypeCatalog) — feeds the understand annotation + the L1
     # interview. None → no archetype recognition → byte-identical no-archetype prompt.
@@ -467,7 +471,7 @@ class Pipeline:
             # 2026-07-04 routing/extraction audit: only ask for a pack suggestion / medium hint when
             # the flag is on AND the case doesn't already have a settled value — never re-suggest
             # once resolved, and OFF keeps this call byte-identical to before (empty tuple / True are
-            # the exact defaults understand()/​_understand_system() already had).
+            # the exact defaults of the understand prompt).
             known_seal_types: tuple[str, ...] = ()
             medium_already_known = True
             if self.pack_suggestion_enabled:
@@ -482,6 +486,7 @@ class Pipeline:
                         self.client,
                         self.helper_model,
                         question,
+                        prompt_assembler=self.understand_prompt_assembler,
                         archetype_keys=archetype_keys,
                         known_seal_types=known_seal_types,
                         medium_already_known=medium_already_known,
@@ -1132,6 +1137,7 @@ def build_pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
         helper_model=helper_cfg,
+        understand_prompt_assembler=UnderstandPromptAssembler(),
         understand_enabled=settings.understand_enabled,
         archetypes=archetypes,
         verifier=verifier,

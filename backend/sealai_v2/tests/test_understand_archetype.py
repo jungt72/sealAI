@@ -11,16 +11,22 @@ import asyncio
 
 from sealai_v2.core.contracts import ModelConfig
 from sealai_v2.pipeline import stages
+from sealai_v2.prompts.assembler import UnderstandPromptAssembler
 from sealai_v2.tests._fakes import FakeLlmClient
 
 _KEYS = ("getriebe", "ruehrwerk")
+_PROMPT_ASSEMBLER = UnderstandPromptAssembler()
 
 
 def _understand(text, keys=_KEYS):
     client = FakeLlmClient(text)
     return asyncio.run(
         stages.understand(
-            client, ModelConfig("fake-helper"), "Frage?", archetype_keys=keys
+            client,
+            ModelConfig("fake-helper"),
+            "Frage?",
+            prompt_assembler=_PROMPT_ASSEMBLER,
+            archetype_keys=keys,
         )
     )
 
@@ -50,7 +56,14 @@ def test_archetype_is_case_insensitive():
 def test_no_keys_means_no_archetype():
     # catalog absent → no archetype requested/parsed; intent still works (back-compat path)
     client = FakeLlmClient('{"intent":"faktfrage","rationale":"x"}')
-    u = asyncio.run(stages.understand(client, ModelConfig("fake-helper"), "Frage?"))
+    u = asyncio.run(
+        stages.understand(
+            client,
+            ModelConfig("fake-helper"),
+            "Frage?",
+            prompt_assembler=_PROMPT_ASSEMBLER,
+        )
+    )
     assert u.archetype is None
     assert u.intent.value == "faktfrage"
 
@@ -65,6 +78,7 @@ def _understand_pack(text, known_seal_types=_SEAL_TYPES, medium_already_known=Tr
             client,
             ModelConfig("fake-helper"),
             "Frage?",
+            prompt_assembler=_PROMPT_ASSEMBLER,
             known_seal_types=known_seal_types,
             medium_already_known=medium_already_known,
         )
@@ -151,6 +165,7 @@ def test_pack_suggestion_and_medium_hint_prompt_text_only_appears_when_requested
             client,
             ModelConfig("fake-helper"),
             "Frage?",
+            prompt_assembler=_PROMPT_ASSEMBLER,
             known_seal_types=_SEAL_TYPES,
             medium_already_known=False,
         )
@@ -160,7 +175,14 @@ def test_pack_suggestion_and_medium_hint_prompt_text_only_appears_when_requested
     assert "medium_hint" in system
 
     client2 = FakeLlmClient('{"intent":"fallarbeit","rationale":"x"}')
-    asyncio.run(stages.understand(client2, ModelConfig("fake-helper"), "Frage?"))
+    asyncio.run(
+        stages.understand(
+            client2,
+            ModelConfig("fake-helper"),
+            "Frage?",
+            prompt_assembler=_PROMPT_ASSEMBLER,
+        )
+    )
     system2 = client2.calls[0]["system"]
     assert "suggested_seal_type" not in system2
     assert "medium_hint" not in system2
