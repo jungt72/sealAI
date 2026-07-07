@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -17,6 +18,12 @@ from datetime import datetime, timezone
 from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import build_prompt_cache_key
 from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
+from sealai_v2.pipeline.routing import RouteName, classify_route
+from sealai_v2.pipeline.route_telemetry import (
+    LoggingRouteTelemetrySink,
+    RouteTelemetry,
+    RouteTelemetrySink,
+)
 from sealai_v2.core.calc.binding import bind_params
 from sealai_v2.core.calc.inline_extract import (
     extract_inline,
@@ -325,6 +332,16 @@ class Pipeline:
     # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
     # "" when no catalogs wired. Attached to every PipelineResult; never fed to L1/L3.
     wissensstand: str = ""
+    # Phase 2B (LangGraph-suitability audit): conservative routing. OFF -> classify_route() is
+    # never called at all (not just unused) -- strictly byte-identical to pre-Phase-2B behavior.
+    # ON -> a route is computed (telemetry-only unless the route is a CHEAP route with zero
+    # deterministic engineering signals, in which case L3 is skipped in favor of the SAME
+    # existing run_parametric_guard fallback already used when the verifier is disabled --
+    # no new guard mechanism is invented). Never affects engineering_case/leakage_troubleshooting/
+    # material_comparison/rfq_manufacturer_brief -- those always force the full pipeline.
+    route_optimization_enabled: bool = False
+    route_telemetry_sink: "RouteTelemetrySink | None" = None
+
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -563,6 +580,57 @@ class Pipeline:
             archetype_context = self._archetype_context(understanding)
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
+
+            # Phase 2B (LangGraph-suitability audit): conservative routing. OFF (default) ->
+            # this whole block is skipped -- classify_route() is never invoked, so behavior is
+            # strictly byte-identical to pre-Phase-2B. ON -> compute a route from the SAME
+            # deterministic signals already computed above (decode_result/diagnosis/
+            # gegencheck_verdict/mem.case_state) + the already-running understand() intent.
+            # skip_l3_for_route stays False unless the route is a CHEAP route with ZERO
+            # deterministic engineering signals -- any signal, or any doubt, keeps it False.
+            skip_l3_for_route = False
+            if self.route_optimization_enabled:
+                _route_started = time.monotonic()
+                route_decision = classify_route(
+                    question,
+                    case_state_nonempty=bool(mem.case_state),
+                    decode_result=decode_result,
+                    diagnosis=diagnosis,
+                    gegencheck_verdict=gegencheck_verdict,
+                    intent=understanding.intent if understanding is not None else None,
+                )
+                # Phase 2B safety correction: a stress test against the real eval seed cases (with
+                # an adversarially-uniform "wissensfrage" intent guess) found real cases where
+                # general_sealing_knowledge/material_knowledge signals under-fired on natural-
+                # language phrasing no finite keyword list fully covers (chemical-resistance
+                # claims, application descriptions without an explicit question form, etc.).
+                # Rather than chase an ever-expanding regex list, the L3-bypass itself is
+                # restricted to smalltalk_navigation ONLY -- the one route whose false-negative
+                # surface is structurally small (a message that is genuinely just smalltalk
+                # essentially never hides an engineering claim, since it doesn't reference the
+                # domain at all). general_sealing_knowledge/material_knowledge are still computed
+                # and labeled for telemetry, but never skip L3 in this phase -- see the Phase 2B
+                # report for the full analysis and the recommended Phase 2C (a stronger content-
+                # level guard, not more regexes) before extending this further.
+                skip_l3_for_route = (
+                    route_decision.route is RouteName.SMALLTALK_NAVIGATION
+                    and not route_decision.forced_full_pipeline
+                )
+                if self.route_telemetry_sink is not None:
+                    try:
+                        self.route_telemetry_sink.record(
+                            RouteTelemetry(
+                                route_name=route_decision.route.value,
+                                route_reason=route_decision.reason,
+                                route_confidence=route_decision.confidence,
+                                forced_full_pipeline=route_decision.forced_full_pipeline,
+                                deterministic_signal_count=route_decision.deterministic_signal_count,
+                                route_latency_ms=(time.monotonic() - _route_started)
+                                * 1000.0,  # i5-ok: sec->ms unit conversion, not an engineering value
+                            )
+                        )
+                    except Exception:  # noqa: BLE001 -- telemetry must never break/mask a real turn
+                        pass
             # V2.2 INC-COVERAGE-GATE (§4/§5): deterministic case-level coverage from the grounded
             # evidence (chemical = gegencheck verdict; archetype = profile), computed BEFORE generate
             # so it can hard-cap the allowed L1 mode. Flag-gated → None when OFF (byte-identical). The
@@ -703,7 +771,11 @@ class Pipeline:
                 guard = _gr.to_dict()
 
             verdict: VerifierVerdict | None = None
-            if self.verifier is not None and self.catalog is not None:
+            if (
+                self.verifier is not None
+                and self.catalog is not None
+                and not skip_l3_for_route
+            ):
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = await stages.verify(
                         self.verifier,
@@ -1187,4 +1259,8 @@ def build_pipeline(
         baseline_hardening_enabled=settings.baseline_hardening_enabled,
         material_param_table_enabled=settings.material_param_table_enabled,
         wissensstand=wissensstand,
+        route_optimization_enabled=settings.route_optimization_enabled,
+        route_telemetry_sink=(
+            LoggingRouteTelemetrySink() if settings.route_optimization_enabled else None
+        ),
     )

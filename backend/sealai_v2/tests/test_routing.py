@@ -1,0 +1,262 @@
+"""Phase 2B (LangGraph-suitability audit) — conservative route classification tests.
+
+Core invariant under test throughout: the router may only become MORE conservative, never less.
+Any deterministic engineering signal MUST force the full pipeline (forced_full_pipeline=True) —
+this is asserted both per-case and as a standalone property test.
+"""
+
+from __future__ import annotations
+
+from sealai_v2.core.contracts import Intent
+from sealai_v2.pipeline.routing import (
+    RouteName,
+    classify_route,
+    detect_engineering_signals,
+)
+
+
+class TestSmalltalkNavigation:
+    def test_clear_smalltalk_routes_cheap(self) -> None:
+        d = classify_route("Hallo, wie geht es dir?", intent=Intent.GESPRAECH)
+        assert d.route == RouteName.SMALLTALK_NAVIGATION
+        assert d.forced_full_pipeline is False
+        assert d.deterministic_signal_count == 0
+
+    def test_thanks_and_greeting_variants(self) -> None:
+        for q in ("Danke dir!", "Guten Morgen", "Vielen Dank fuer die Hilfe"):
+            d = classify_route(q, intent=Intent.GESPRAECH)
+            assert d.route == RouteName.SMALLTALK_NAVIGATION
+            assert d.forced_full_pipeline is False
+
+
+class TestGeneralAndMaterialKnowledge:
+    def test_general_ptfe_knowledge_question_routes_material_knowledge(self) -> None:
+        d = classify_route("Was ist PTFE?", intent=Intent.WISSENSFRAGE)
+        assert d.route == RouteName.MATERIAL_KNOWLEDGE
+        assert d.forced_full_pipeline is False
+        assert d.deterministic_signal_count == 0
+
+    def test_general_sealing_knowledge_question_without_material_name(self) -> None:
+        d = classify_route(
+            "Was ist eine Dichtung allgemein?", intent=Intent.WISSENSFRAGE
+        )
+        assert d.route == RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert d.forced_full_pipeline is False
+
+    def test_faktfrage_with_material_name_is_material_knowledge(self) -> None:
+        d = classify_route("Ist FKM ein Elastomer?", intent=Intent.FAKTFRAGE)
+        assert d.route == RouteName.MATERIAL_KNOWLEDGE
+        assert d.forced_full_pipeline is False
+
+
+class TestMaterialComparison:
+    def test_explicit_comparison_question_forces_full_pipeline(self) -> None:
+        d = classify_route("PTFE vs FKM, was ist besser?", intent=Intent.WISSENSFRAGE)
+        assert d.route == RouteName.MATERIAL_COMPARISON
+        assert d.forced_full_pipeline is True
+
+    def test_comparison_forces_even_when_intent_says_knowledge(self) -> None:
+        """The trap catalog's sharpest edge (comparative-suitability claims) must force the full
+        path regardless of what the soft LLM intent guessed — the deterministic signal wins."""
+        d = classify_route(
+            "Welches Material ist besser, EPDM oder Silikon?",
+            intent=Intent.WISSENSFRAGE,
+        )
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.MATERIAL_COMPARISON
+
+    def test_vor_und_nachteile_phrasing(self) -> None:
+        d = classify_route(
+            "Vor- und Nachteile von NBR gegenueber HNBR?", intent=Intent.WISSENSFRAGE
+        )
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.MATERIAL_COMPARISON
+
+
+class TestEngineeringCase:
+    def test_concrete_rwdr_case_with_dimensions_forces_full_pipeline(self) -> None:
+        d = classify_route(
+            "RWDR 45x62x8 FKM, 1500 U/min, welches Material?", intent=Intent.FALLARBEIT
+        )
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.ENGINEERING_CASE
+
+    def test_dimensions_like_45x62x8_alone_force_full_pipeline(self) -> None:
+        d = classify_route("Passt das fuer 45x62x8?", intent=None)
+        assert d.forced_full_pipeline is True
+
+    def test_pressure_temperature_rpm_question_forces_full_pipeline(self) -> None:
+        for q in (
+            "Wie hoch darf der Druck bei 10 bar sein?",
+            "Ist 150 °C fuer FKM okay?",
+            "Bei 1500 U/min, welche Dichtung?",
+        ):
+            d = classify_route(q, intent=Intent.WISSENSFRAGE)
+            assert d.forced_full_pipeline is True, q
+
+    def test_medium_and_operating_condition_combination_forces_full_pipeline(
+        self,
+    ) -> None:
+        d = classify_route(
+            "Ist PTFE fuer Hydrauliköl geeignet?", intent=Intent.FALLARBEIT
+        )
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.ENGINEERING_CASE
+
+    def test_replacement_case_language_forces_full_pipeline(self) -> None:
+        d = classify_route(
+            "Ich brauche einen Ersatz fuer meine Dichtung.", intent=Intent.FALLARBEIT
+        )
+        assert d.forced_full_pipeline is True
+
+    def test_compression_language_forces_full_pipeline(self) -> None:
+        d = classify_route(
+            "Wie viel Verpressung braucht der O-Ring?", intent=Intent.FALLARBEIT
+        )
+        assert d.forced_full_pipeline is True
+
+
+class TestLeakageTroubleshooting:
+    def test_leakage_case_forces_full_pipeline(self) -> None:
+        d = classify_route("Meine Dichtung leckt, was tun?", intent=Intent.FALLARBEIT)
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.LEAKAGE_TROUBLESHOOTING
+
+    def test_leakage_verb_forms(self) -> None:
+        for q in (
+            "Der RWDR tropft seit gestern.",
+            "Die Dichtung ist undicht geworden.",
+        ):
+            d = classify_route(q, intent=Intent.FALLARBEIT)
+            assert d.forced_full_pipeline is True, q
+            assert d.route == RouteName.LEAKAGE_TROUBLESHOOTING
+
+
+class TestRfqManufacturerBrief:
+    def test_rfq_request_forces_full_pipeline(self) -> None:
+        d = classify_route("Bitte RFQ fuer Herstelleranfrage", intent=None)
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.RFQ_MANUFACTURER_BRIEF
+
+    def test_manufacturer_alternatives_request_forces_full_pipeline(self) -> None:
+        d = classify_route(
+            "Welcher Hersteller kann eine vergleichbare Dichtung liefern?", intent=None
+        )
+        assert d.forced_full_pipeline is True
+
+
+class TestAmbiguousAndMissingIntent:
+    def test_ambiguous_technical_request_with_no_intent_forces_full_pipeline(
+        self,
+    ) -> None:
+        d = classify_route("Kannst du mir helfen?", intent=None)
+        assert d.route == RouteName.UNSUPPORTED_OR_AMBIGUOUS
+        assert d.forced_full_pipeline is True
+
+    def test_unklar_intent_forces_full_pipeline(self) -> None:
+        d = classify_route("Ähm, also, das mit dem Ding da...", intent=Intent.UNKLAR)
+        assert d.route == RouteName.UNSUPPORTED_OR_AMBIGUOUS
+        assert d.forced_full_pipeline is True
+
+    def test_fallarbeit_intent_with_zero_signals_still_forces_full_pipeline(
+        self,
+    ) -> None:
+        """Defensive: if understand() ever says fallarbeit despite zero deterministic signals,
+        doubt must still win — never trust the soft LLM label alone."""
+        d = classify_route("irgendwas technisches", intent=Intent.FALLARBEIT)
+        assert d.forced_full_pipeline is True
+
+
+class TestCaseStateAndPipelineHints:
+    def test_nonempty_case_state_forces_full_pipeline_even_for_a_short_followup(
+        self,
+    ) -> None:
+        """A case already in progress must never downgrade on a short follow-up turn like 'und?'"""
+        d = classify_route("und?", case_state_nonempty=True, intent=Intent.GESPRAECH)
+        assert d.forced_full_pipeline is True
+
+    def test_decode_result_hint_forces_full_pipeline(self) -> None:
+        d = classify_route(
+            "passt das so", decode_result={"dims_mm": (45, 62, 8)}, intent=None
+        )
+        assert d.forced_full_pipeline is True
+
+    def test_diagnosis_hint_forces_leakage_route(self) -> None:
+        d = classify_route(
+            "was mache ich jetzt",
+            diagnosis={"ursache": "x", "fix": "y"},
+            intent=Intent.GESPRAECH,
+        )
+        assert d.forced_full_pipeline is True
+        assert d.route == RouteName.LEAKAGE_TROUBLESHOOTING
+
+    def test_gegencheck_verdict_hint_forces_full_pipeline(self) -> None:
+        d = classify_route(
+            "und weiter?",
+            gegencheck_verdict={"bewertung": "vertraeglich"},
+            intent=Intent.GESPRAECH,
+        )
+        assert d.forced_full_pipeline is True
+
+
+class TestFalsePositiveSafety:
+    """Cases explicitly checking the router does NOT over-trigger on knowledge-question phrasing
+    that superficially resembles engineering language but carries no real signal."""
+
+    def test_bare_material_name_alone_never_forces(self) -> None:
+        d = classify_route("PTFE ist ein Fluorpolymer.", intent=Intent.WISSENSFRAGE)
+        assert d.forced_full_pipeline is False
+
+    def test_bare_seal_type_word_alone_never_forces(self) -> None:
+        d = classify_route("Was ist ein RWDR?", intent=Intent.WISSENSFRAGE)
+        assert d.forced_full_pipeline is False
+
+    def test_bare_medium_name_alone_never_forces(self) -> None:
+        d = classify_route(
+            "Was ist Hydrauliköl chemisch gesehen?", intent=Intent.WISSENSFRAGE
+        )
+        assert d.forced_full_pipeline is False
+
+    def test_number_without_engineering_unit_never_forces(self) -> None:
+        d = classify_route("Ich habe 3 Fragen an dich.", intent=Intent.GESPRAECH)
+        assert d.forced_full_pipeline is False
+
+
+class TestForcedFullPipelineInvariant:
+    """Property-style: ANY non-empty detect_engineering_signals() result must, through
+    classify_route, always yield forced_full_pipeline=True — never a route in CHEAP_ROUTES."""
+
+    _SIGNAL_BEARING_QUESTIONS = [
+        "RWDR 45x62x8 FKM",
+        "1500 U/min",
+        "10 bar Druck",
+        "150 °C",
+        "PV-Wert berechnen",
+        "Verpressung pruefen",
+        "RFQ anfrage bitte",
+        "Dichtung leckt",
+        "Ersatzteil auslegen",
+        "PTFE vs FKM",
+        "Ist PTFE fuer Öl geeignet",
+    ]
+
+    def test_every_signal_bearing_question_forces_full_pipeline(self) -> None:
+        for q in self._SIGNAL_BEARING_QUESTIONS:
+            signals = detect_engineering_signals(q)
+            if not signals:
+                continue  # this particular phrasing didn't trip a signal; not what's under test
+            d = classify_route(
+                q, intent=Intent.WISSENSFRAGE
+            )  # even with a "cheap" intent guess
+            assert (
+                d.forced_full_pipeline is True
+            ), f"{q!r} had signals {signals} but was not forced"
+            from sealai_v2.pipeline.routing import CHEAP_ROUTES
+
+            assert d.route not in CHEAP_ROUTES
+
+    def test_at_least_one_signal_bearing_question_exists_in_the_fixture(self) -> None:
+        """Guards the test above against a silent no-op (every fixture failing detection)."""
+        assert any(
+            detect_engineering_signals(q) for q in self._SIGNAL_BEARING_QUESTIONS
+        )

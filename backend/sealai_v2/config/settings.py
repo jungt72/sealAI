@@ -151,6 +151,19 @@ class Settings(BaseSettings):
     # as a table for material-info / comparison turns. Numbers live in the kernel store (no L1
     # invention); OFF -> byte-identical. Flip via SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED.
     material_param_table_enabled: bool = False
+    # Phase 2B (LangGraph-suitability audit): conservative route classification
+    # (pipeline/routing.py). OFF (default) -> classify_route() is never called; the pipeline is
+    # strictly byte-identical to pre-Phase-2B behavior. ON -> a route is computed per turn from
+    # deterministic engineering signals (dimensions, pressure/temperature/rpm, PV, compression,
+    # leakage/RFQ/replacement language, comparative-suitability claims, an already-known
+    # material+medium pairing, or a non-empty accumulated case-state) + the already-running
+    # understand() intent. The router can only make the system MORE conservative: any engineering
+    # signal, or any doubt (missing/unklar intent), always forces the existing full engineering
+    # pipeline (unchanged L1/RAG/kernel/L3). Only smalltalk_navigation / general_sealing_knowledge
+    # / material_knowledge -- and ONLY when zero engineering signals were found -- may skip the
+    # LLM-based L3 verifier; when skipped, the EXISTING deterministic run_parametric_guard fallback
+    # (already used when the verifier is disabled) still runs -- no new/weaker guard is invented.
+    route_optimization_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6
