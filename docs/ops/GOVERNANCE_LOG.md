@@ -6,6 +6,46 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-07T14:59Z — STAGING ACTIVATION: route_optimization_enabled + route_prompt_families_enabled (owner-authorized, staging only)
+
+**Owner authorization.** The owner explicitly confirmed reusing `ops/staging/` (`backend-v2-staging`
++ `nginx-staging`, originally built for the V1->V2 cutover validation per
+`docs/ops/RUNBOOK_V2_CUTOVER.md` Phase 2, completed 2026-06-10) as the staging target for
+validating the LangGraph-suitability-audit routing work, after this agent flagged that the stack
+was purpose-built for a different, already-completed exercise and paused rather than assume.
+
+**What changed.** New `ops/release-backend-v2-staging.sh` (mirrors `ops/release-backend-v2.sh`'s
+gate chain -- tree-hash marker, rollback rung from the running daemon, build+recreate ONLY
+`backend-v2-staging`, smoke, a separate `ops/deploy-ledger-staging.jsonl`). `ops/staging/
+docker-compose.staging.yml` gained two hardcoded env lines (matching that file's own existing
+convention -- no `.env` indirection for anything except `OPENAI_API_KEY`):
+`SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED: 'true'` and `SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED: 'true'`.
+**`docker-compose.deploy.yml` (production) was NOT touched** -- an earlier attempt to add even the
+default-`false` passthrough there was correctly blocked twice by the auto-mode classifier for
+lacking a specific, action-naming confirmation, and this agent did not attempt to work around that.
+
+**Deploy + live verification.** `bash ops/release-backend-v2-staging.sh` -- smoke GREEN (internal
+health, kern one-shot v=16.755/PV=50.0, restart-survival). Post-deploy, confirmed LIVE in the
+running container (not just the compose file): `docker exec backend-v2-staging python3 -c
+"from sealai_v2.config.settings import Settings; s = Settings();
+print(s.route_optimization_enabled, s.route_prompt_families_enabled)"` -> `True True`. Logs since
+deploy clean. `nginx-staging` was not touched (blast radius = `backend-v2-staging` only).
+
+**This is the first-ever live activation of the Phase 2B/2D routing/prompt-family behavior in any
+environment.** Production remains fully unaffected -- `route_optimization_enabled` /
+`route_prompt_families_enabled` are still `False` on the live `backend-v2` container (last verified
+2026-07-07T14:35Z, see the entry above).
+
+**Still outstanding (owner-only, unchanged from the earlier deferral entry):**
+- An authenticated end-to-end test on staging (`TOKEN=<bearer>
+  BASE_URL=https://sealingai.com:8443 ops/smoke-v2.sh`) has NOT been run by this agent -- no
+  Keycloak bearer token available. This is the one piece of evidence still missing before the
+  owner's own rollout plan calls for evaluating production activation.
+- Route telemetry (`RouteTelemetry` log lines, `sealai_v2.pipeline.routing` logger) will only
+  start accumulating once real authenticated traffic reaches staging.
+- The four LangSmith owner-only items (API-key rotation, old-trace cleanup, project split) remain
+  separately tracked and consciously deferred, unaffected by this staging activation.
+
 ## 2026-07-07T14:35Z — `backend-v2` PROD deploy — Phase 2D smalltalk prompt wiring (PR #185)
 
 **Deploy.** Autonomous deploy of PR #185 (Phase 2D, `440d61ac`) via `ops/release-backend-v2.sh`,

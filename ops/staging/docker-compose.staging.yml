@@ -54,6 +54,13 @@ services:
       SEALAI_V2_AUTH_ISSUER: https://sealingai.com/realms/sealAI
       SEALAI_V2_AUTH_AUDIENCE: sealai-v2
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — pass via docker compose --env-file}
+      # LangGraph-suitability audit Phase 2B/2D, owner-authorized STAGING-ONLY activation
+      # (2026-07-07): conservative route classification + the compact smalltalk_navigation
+      # prompt. Deliberately hardcoded here (matching this file's own convention — no .env
+      # indirection for anything except OPENAI_API_KEY) rather than mirrored into
+      # docker-compose.deploy.yml — prod stays untouched and unaffected by this file.
+      SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED: 'true'
+      SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED: 'true'
     # NO host port publish: this host's firewall drops host→container traffic on newly created
     # bridges (verified 2026-06-10: 172.18.x sealai_default reachable, fresh staging bridge not),
     # and docker-proxy targets the staging-net IP. Diagnose via
