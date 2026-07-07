@@ -1,9 +1,11 @@
 # Doctrine (hard lines)
 
-The product doctrine — what SealAI may and may not claim — lives in **`AGENTS.md`
-§ Safety Boundaries** and **`CLAUDE.md` § Safety language**. Those are the source
-of truth. This file does **not** restate them; it records how they are *enforced*
-and the lines that must never be crossed while changing code.
+The product doctrine — what sealAI may and may not claim — lives in **`AGENTS.md`
+§ Safety Boundaries** and the **sealingAI Leitbild V3** (also in `AGENTS.md`), with
+`CLAUDE.md § Safety language` as the Claude-facing restatement. Those are the
+source of truth. This file does **not** restate them; it records how they are
+*enforced* in the V2 runtime and the lines that must never be crossed while
+changing code.
 
 ## Source of truth
 - Claim boundaries (no final release, no guaranteed suitability, no manufacturer
@@ -13,74 +15,80 @@ and the lines that must never be crossed while changing code.
 - Allowed wording stays scoped: screening, orientation, current evidence,
   calculated value, open point, review required, manufacturer review basis.
 
-## Two-layer output enforcement (the mechanism)
-- **L1** `backend/app/agent/runtime/output_guard.py::check_fast_path_output` — the
-  live streaming enforcer. Categories: manufacturer, recommendation, suitability,
-  comparative-ranking, compliance-overclaim, form-dump.
-- **L2** `backend/app/agent/v92/final_guard.py::validate_final_output` — the
-  knowledge-turn / non-technical backstop. Shares the comparative-ranking denylist
-  with L1 via `comparative_ranking_patterns()` (single source of truth).
-- Both layers now **enforce** (substitute the safe fallback on block) on the
-  streamed (F1) and non-technical (F2) knowledge paths. See
-  `docs/runtime-audit-fixmap.md`.
+## The enforcement mechanism (V2 four-layer trust model)
+
+The single production backend is `backend/sealai_v2/`. Halluzination-resistance
+comes from four layers carrying **together**, not from control-determinism — the
+concrete implementation of Leitsätze L1/L2. Full model: `AGENTS.md § Four-layer
+trust model`.
+
+1. **L1 honesty norms** in the system prompt (`prompts/system_l1.jinja`) —
+   *primary*: ranges not false precision, no invented numbers/compound-numbers, no
+   life-number, orientation ≠ release, mark "Allgemeinwissen — verifizieren".
+2. **L2 grounding/provenance** — specifics (numbers, norms, compatibility) carried
+   by curated Fachkarten + matrix + Qdrant retrieval, **with sources**. Never
+   control logic.
+3. **L3 verifier** (`core/l3_verifier.py`, `prompts/verifier_l3.jinja`) — critic
+   pass vs. the **trap catalog** (`knowledge/traps.py`, `trap_catalog.json`) +
+   matrix. A correction's replacement fact comes **only** from a `reviewed` entry,
+   else a deterministic **hedge** — L3 never invents its own source of truth. The
+   integrity rule guarantees **provenance** (reviewed-sourced), **not topical
+   fit**: a reviewed trap's `correct` is split into a topic-agnostic
+   `correct_general` (always injected) + a topic-scoped `correct_recommendation`
+   (injected only when the question matches the trap's `applies_to`), so an
+   off-topic trap firing never mis-directs with a wrong-topic recommendation. The
+   general assertion always carries — the catch stays intact.
+4. **L4 human/manufacturer** — final validation; and the **eval hard Schranken**
+   measure it. The authoritative gated set is `ops/v2_deploy_gate.py`'s `GATED`
+   columns — the seed-v0 trio (no entered trap, no confident-false, no invented
+   precision) **plus** the memory, exfiltration, and parametric
+   (multiturn/singleturn) Schranken-quotas — every gated column at
+   `schranken_quota_final == 1.0`.
+
+`core/response_contract.py` **builds** the answer contract; `core/output_guard.py`
+(`evaluate_render`) **enforces** it — claim-level, fail-closed, regenerating on a
+violation (wired in `pipeline/pipeline.py`). It is flag-gated
+(`SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED`) and **live in prod**
+(activated 2026-07-03). Touched response paths must preserve the contract / guard
+coverage.
 
 ## Hard lines (never cross)
-- **Never weaken a guard, lexicon, or doctrine test to make something pass.** If a
+- **Never weaken a guard, catalog, or eval test to make something pass.** If a
   test only goes green by loosening what blocks → **HALT to human**, do not edit.
-- Changing *what* blocks (L1/L2 lexicon, denylist) is a doctrine change → plan +
-  zero-FP proof against the `material_comparison.py` corpus + existing negatives +
-  golden, and surface it. Changing only *that a block is enforced* is mechanics.
-- The four original comparative-ranking repros must always block at L1:
-  "EPDM könnte optimal sein", "PTFE ist NBR überlegen", "PTFE übertrifft NBR",
-  "EPDM ist optimal für diese Anwendung". A change that lets any of them through
-  is a regression, not a feature.
-- AC8: legitimate, thorough knowledge answers + property statements + the
-  deterministic comparison render must keep streaming (no over-block).
-- AC9: knowledge-without-concrete-facts must not create or mutate `CaseState`.
-- The comparative-ranking denylist is a *leaky backstop*; the prompt (#1) and the
-  deterministic passthrough (#4) stay primary. Do not treat the denylist as the
-  whole defense.
-
-## V2 doctrine mechanism (`backend/sealai_v2/` — green-field, not cut over)
-
-> Applies to the V2 tree only. The V1 L1/L2 enforcement above (`output_guard.py` /
-> `final_guard.py`) is unchanged and stays the live V1 mechanism. The claim
-> boundaries themselves (AGENTS.md § Safety Boundaries) are the same source of truth
-> for both worlds. Full V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.
-
-- **V2 does NOT use the V1 `output_guard.py` / `final_guard.py` layers.** Its
-  honesty/grounding/verification spine is the **four-layer trust model**:
-  1. **L1 honesty norms** in the system prompt (`prompts/system_l1.jinja`) — *primary*:
-     ranges not false precision, no invented numbers/compound-numbers, no life-number,
-     orientation ≠ release, mark "Allgemeinwissen — verifizieren".
-  2. **L2 grounding/provenance** — specifics carried by curated facts with sources.
-  3. **L3 verifier** (`core/l3_verifier.py`) — critic pass vs. the **trap catalog**;
-     a correction's replacement fact comes **only** from a `reviewed` entry, else a
-     deterministic **hedge** — L3 never invents its own source of truth. The integrity rule
-     guarantees **provenance** (reviewed-sourced), **not topical fit**: a reviewed trap's `correct`
-     is split into a topic-agnostic `correct_general` (always injected) + a topic-scoped
-     `correct_recommendation` (injected only when the question matches the trap's `applies_to`), so an
-     off-topic trap firing never mis-directs with a wrong-topic material recommendation
-     (OPTIMIZE_BACKLOG #5). The general assertion always carries — the catch stays intact.
-  4. **L4 human/manufacturer** — final validation; and the **eval hard Schranken**
-     (no entered trap, no confident-false, no invented precision → **100 %**) measure it.
-- **The hard lines extend to V2.** Never weaken a guard, catalog, or eval test to make
-  something pass → **HALT to human**. Changing what `reviewed` catalog entries assert is
-  a doctrine change (owner-grounded, never model-sourced). **The human is the
-  factual-correctness oracle** — the agent never self-adjudicates eval verdicts.
+- Changing what a `reviewed` catalog/Fachkarte entry asserts is a **doctrine
+  change** — owner-grounded, never model-sourced. `drafts` are model-proposed and
+  flag-only; they surface, they never correct.
+- **The human is the factual-correctness oracle** — the agent never
+  self-adjudicates eval verdicts and never free-corrects a factual verdict.
+- The deterministic kernel is the only source of numbers; the LLM never invents a
+  value, norm, or compound fact.
 
 ## V2.1 calibration (forward — `docs/V2/sealingai_v2_1_*`)
 
-> Additive to the four-layer model above — not a replacement. Tunes *how assertively* V2 claims,
-> on the same "backend owns facts, LLM narrates" base. Canonical: Produkt-Konzept §3 / §9.
+Additive to the four-layer model above — not a replacement. Tunes *how assertively*
+V2 claims, on the same "backend owns facts, LLM narrates" base. Canonical:
+Produkt-Konzept §3 / §9.
 
-- **Confident-correct is the default**, *as assertive as the grounding*; the hedge is the **rare
-  marked edge**, never the fallback — the user always gets a material.
-- **Safety-critical / unsure → "stop, confirm"** (the SAFETY clause is never gated away).
-- **Norms grounded, never recited** — number/revision/value only from a reviewed source; honest
-  where the current revision is unsure.
-- **Equivalence is the sharpest edge** — "part X = part Y" only grounded, honest over the boundary
-  (nominal size + material class, not compound); L4 carries real weight.
+- **Confident-correct is the default**, *as assertive as the grounding*; the hedge
+  is the **rare marked edge**, never the fallback — the user always gets a
+  material.
+- **Safety-critical / unsure → "stop, confirm"** (the SAFETY clause is never gated
+  away).
+- **Norms grounded, never recited** — number/revision/value only from a reviewed
+  source; honest where the current revision is unsure.
+- **Equivalence is the sharpest edge** — "part X = part Y" only grounded, honest
+  over the boundary (nominal size + material class, not compound); L4 carries real
+  weight.
 - **Neutrality is sacred — no pay-to-rank** (capability only).
-- **Uniform Trust-Spine:** L3 must be able to verify norm- and equivalence-claims, not only
-  material recommendations.
+- **Uniform Trust-Spine:** L3 must be able to verify norm- and equivalence-claims,
+  not only material recommendations.
+
+## Retired (historical only)
+
+The former V1 `backend/app/` LangGraph runtime enforced doctrine with a two-layer
+output guard (`backend/app/agent/runtime/output_guard.py` +
+`backend/app/agent/v92/final_guard.py`). That runtime was **retired 2026-06-28**;
+those layers are **not** live and are not the V2 mechanism. Do not look for them,
+resurrect them, or build against them. The claim boundaries themselves
+(AGENTS.md § Safety Boundaries) are unchanged and bind both the retired and current
+worlds.

@@ -191,8 +191,11 @@ state machine.
   distiller, integrity guard, cross-session durable facts):
   `memory/store.py`, `memory/distiller.py`, `memory/integrity.py`,
   `db/conversation_memory.py`, `db/cross_session_memory.py`
-- Response contract + output guard: `core/response_contract.py`,
-  claim-level fail-closed guard
+- Response contract + output guard: `core/response_contract.py` (builds the
+  answer contract) + `core/output_guard.py` (`evaluate_render` — claim-level
+  fail-closed guard that enforces it; wired in `pipeline/pipeline.py`, flag-gated
+  `SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED`, active in prod since
+  2026-07-03)
 - Produktspec / Kandidaten-Spezifikation: `pipeline/produktspec_step.py`,
   `produktspec/kernel.py` (flag-gated, owner-activation-gated)
 - Hersteller-Partner (paid pool + leads): `db/hersteller_partner.py`

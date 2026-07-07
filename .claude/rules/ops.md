@@ -1,5 +1,35 @@
 # Ops
 
+> **⚠️ RECONCILIATION (2026-07-07) — read this first.** Parts of this file predate
+> the **2026-06-28 V1 retirement** and describe the retired `backend/app/` runtime
+> as if it were live. Per **`AGENTS.md`** (the authoritative contract), current
+> reality is:
+>
+> - The **only** production backend is **`backend/sealai_v2/`** (the `backend-v2`
+>   service). Prod backend deploys go via **`ops/release-backend-v2.sh`** ONLY (the
+>   `backend-v2-deploy` skill is the current procedure), not `ops/release-backend.sh`.
+>   The "V2.0 track" section at the bottom describes a **raw `docker compose … up
+>   --no-deps backend-v2`** — that manual path is **superseded** by the release
+>   wrapper and is now **blocked in-CC** by `ops/hooks/v2-deploy-deny.sh` (and by the
+>   image start-time TEETH). Treat that paragraph as historical mechanics, not a
+>   sanctioned procedure.
+> - **`main` is the single active line** with **3 required checks**
+>   (`backend-contracts`, `v2-contracts`, `secret-scan`), `enforce_admins` ON. The
+>   "Branch model" section below (integration on `demo/rwdr-limited-external`, all
+>   PRs target demo) is **retired** — short-lived branch off `main` → PR → merge.
+> - The V1 pre-deploy pytest sentinel, the V1 deploy gate, and the
+>   `docker inspect backend …` rollback anchor all targeted the **retired** V1
+>   runtime. For V2, the rollback anchor is read from the **running `backend-v2`
+>   daemon** (`docker inspect sealai-backend-v2 …`).
+>
+> The **secrets/untouchables**, **eval key hygiene**, **rollback-from-the-running-
+> daemon (never memory)**, **GOVERNANCE_LOG-every-deploy**, and **gate-mechanics /
+> fail-closed parsing** rules below are **still binding**. A full rewrite of the
+> deploy-gate mechanics is deliberately deferred (production-critical, hook-tested)
+> — this banner reconciles the framing; the detailed V1 mechanics stand as
+> reference.
+
+
 Production is gated. These rules are enforced by hooks (`ops/hooks/*.sh`) and
 permissions (`.claude/settings.json`); they are also the contract for humans.
 
