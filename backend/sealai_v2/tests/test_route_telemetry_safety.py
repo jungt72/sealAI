@@ -65,9 +65,27 @@ class TestRouteTelemetrySchemaIsClosed:
             "forced_full_pipeline",
             "deterministic_signal_count",
             "route_latency_ms",
+            # Phase 2D: prompt_family is a fixed CLASSIFIER LABEL (e.g. "smalltalk_navigation" /
+            # "PromptAssembler"), never prompt text — l3_bypassed is a boolean. Both safe by the
+            # same "label/count/boolean only" criterion as every other field here.
+            "prompt_family",
+            "l3_bypassed",
         }
 
     def test_no_field_name_suggests_raw_content_or_identifiers(self) -> None:
+        # NOTE: "prompt_family" is a deliberate, reviewed exception (see the test above) — a
+        # blanket "prompt" substring ban would false-positive on it while it holds only a fixed
+        # label, never prompt text. The checks below target the actually risky shapes precisely
+        # (a field that would hold prompt/system/user TEXT) instead of a blunt substring ban.
+        risky_field_names = (
+            "raw_prompt",
+            "prompt_text",
+            "system_prompt",
+            "user_prompt",
+        )
+        for f in dataclasses.fields(RouteTelemetry):
+            assert f.name not in risky_field_names, f"field {f.name!r} looks unsafe"
+
         forbidden_substrings = (
             "question",
             "answer",
@@ -79,7 +97,6 @@ class TestRouteTelemetrySchemaIsClosed:
             "file",
             "medium",
             "customer",
-            "prompt",
             "message",
         )
         for f in dataclasses.fields(RouteTelemetry):

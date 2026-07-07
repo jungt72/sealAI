@@ -159,11 +159,24 @@ class Settings(BaseSettings):
     # material+medium pairing, or a non-empty accumulated case-state) + the already-running
     # understand() intent. The router can only make the system MORE conservative: any engineering
     # signal, or any doubt (missing/unklar intent), always forces the existing full engineering
-    # pipeline (unchanged L1/RAG/kernel/L3). Only smalltalk_navigation / general_sealing_knowledge
-    # / material_knowledge -- and ONLY when zero engineering signals were found -- may skip the
-    # LLM-based L3 verifier; when skipped, the EXISTING deterministic run_parametric_guard fallback
-    # (already used when the verifier is disabled) still runs -- no new/weaker guard is invented.
+    # pipeline (unchanged L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero
+    # engineering signals were found -- may skip the LLM-based L3 verifier (Phase 2B safety
+    # correction: a stress test found real false-negatives on general_sealing_knowledge/
+    # material_knowledge's keyword signals against real eval questions, incl. injection fixtures
+    # -- both routes stay L3=True). When skipped, the EXISTING deterministic run_parametric_guard
+    # fallback (already used when the verifier is disabled) still runs -- no new guard invented.
     route_optimization_enabled: bool = False
+    # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
+    # smalltalk_navigation prompt family. OFF (default) -> Pipeline.run() is byte-identical to
+    # pre-Phase-2D behavior even with route_optimization_enabled=True (the smalltalk generator is
+    # never constructed, so there is nothing to branch to). ON -> ONLY takes effect when ALL of
+    # the following hold for a turn: route_optimization_enabled is True, the classified route is
+    # smalltalk_navigation, forced_full_pipeline is False, and deterministic_signal_count is 0 --
+    # in that case (and only that case) the compact, fully-static smalltalk_navigation.jinja
+    # prompt + the existing cheap helper-tier model answer the turn instead of the full L1
+    # prompt. Every other route (including general_sealing_knowledge/material_knowledge, which
+    # stay L3=True and prompt-unchanged in this phase) is completely unaffected by this flag.
+    route_prompt_families_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

@@ -19,6 +19,8 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import build_prompt_cache_key
 from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
 from sealai_v2.pipeline.routing import RouteName, classify_route
+from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
+from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
 from sealai_v2.pipeline.route_telemetry import (
     LoggingRouteTelemetrySink,
     RouteTelemetry,
@@ -341,6 +343,13 @@ class Pipeline:
     # material_comparison/rfq_manufacturer_brief -- those always force the full pipeline.
     route_optimization_enabled: bool = False
     route_telemetry_sink: "RouteTelemetrySink | None" = None
+    # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
+    # smalltalk_navigation prompt family. None (default) -> nothing to branch to, so
+    # route_prompt_families_enabled being True with no generator wired is still a safe no-op
+    # (the pipeline falls through to the unchanged full L1 generator, see run()). Only
+    # constructed in build_pipeline() when settings.route_prompt_families_enabled is True.
+    route_prompt_families_enabled: bool = False
+    smalltalk_generator: "SmalltalkGenerator | None" = None
 
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
@@ -588,7 +597,16 @@ class Pipeline:
             # gegencheck_verdict/mem.case_state) + the already-running understand() intent.
             # skip_l3_for_route stays False unless the route is a CHEAP route with ZERO
             # deterministic engineering signals -- any signal, or any doubt, keeps it False.
+            route_decision = None
             skip_l3_for_route = False
+            # Phase 2D: whether THIS turn will actually use the compact smalltalk_navigation
+            # prompt instead of the full L1 prompt. Stays False (byte-identical generate() call)
+            # unless ALL of: route_optimization_enabled, route_prompt_families_enabled, the
+            # classified route is smalltalk_navigation, forced_full_pipeline is False,
+            # deterministic_signal_count is 0 (redundant with the route check, kept explicit per
+            # the audit's own required-condition list), AND a smalltalk_generator is actually
+            # wired (build_pipeline() only constructs one when the flag is on).
+            smalltalk_prompt_active = False
             if self.route_optimization_enabled:
                 _route_started = time.monotonic()
                 route_decision = classify_route(
@@ -616,6 +634,16 @@ class Pipeline:
                     route_decision.route is RouteName.SMALLTALK_NAVIGATION
                     and not route_decision.forced_full_pipeline
                 )
+                # Phase 2D: the compact prompt is strictly NARROWER than the L3-bypass condition
+                # above (both must hold: smalltalk_navigation is the route AND the pipeline is
+                # actually willing to skip L3 for it) -- a smalltalk turn never gets the cheap
+                # prompt while still being forced through the full path for some other reason.
+                smalltalk_prompt_active = (
+                    self.route_prompt_families_enabled
+                    and self.smalltalk_generator is not None
+                    and skip_l3_for_route
+                    and route_decision.deterministic_signal_count == 0
+                )
                 if self.route_telemetry_sink is not None:
                     try:
                         self.route_telemetry_sink.record(
@@ -627,6 +655,12 @@ class Pipeline:
                                 deterministic_signal_count=route_decision.deterministic_signal_count,
                                 route_latency_ms=(time.monotonic() - _route_started)
                                 * 1000.0,  # i5-ok: sec->ms unit conversion, not an engineering value
+                                prompt_family=(
+                                    "smalltalk_navigation"
+                                    if smalltalk_prompt_active
+                                    else None
+                                ),
+                                l3_bypassed=skip_l3_for_route,
                             )
                         )
                     except Exception:  # noqa: BLE001 -- telemetry must never break/mask a real turn
@@ -683,25 +717,33 @@ class Pipeline:
 
                 material_params = material_parameters_for(question) or None
             with _staged(timer, progress, "generate_ms", "generate"):
-                answer = await self.generator.generate(
-                    question,
-                    flags=flags,
-                    grounding_facts=l1_grounding,
-                    calc=calc,
-                    case_context=case_context
-                    or None,  # empty → None → byte-identical no-memory prompt
-                    durable_context=durable_context
-                    or None,  # empty → None → byte-identical no-cross-session prompt
-                    conversation_window=conversation_window or None,
-                    untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
-                    archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
-                    pack_suggestion_context=pack_suggestion_context,  # None → byte-identical
-                    medium_hint_context=medium_hint_context,  # None → byte-identical
-                    coverage=coverage,  # None → byte-identical no-coverage-gate prompt
-                    contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
-                    baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
-                    material_params=material_params,  # None → byte-identical no-table
-                )
+                # Phase 2D: the ONLY branch point where the compact smalltalk_navigation prompt
+                # can ever answer a turn. self.generator (L1Generator, the full engineering
+                # prompt) is completely untouched below -- every route except a fully-qualified
+                # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
+                # EXACT same call it always has.
+                if smalltalk_prompt_active and self.smalltalk_generator is not None:
+                    answer = await self.smalltalk_generator.generate(question)
+                else:
+                    answer = await self.generator.generate(
+                        question,
+                        flags=flags,
+                        grounding_facts=l1_grounding,
+                        calc=calc,
+                        case_context=case_context
+                        or None,  # empty → None → byte-identical no-memory prompt
+                        durable_context=durable_context
+                        or None,  # empty → None → byte-identical no-cross-session prompt
+                        conversation_window=conversation_window or None,
+                        untrusted=untrusted_data,  # empty → None → byte-identical no-untrusted prompt
+                        archetype_context=archetype_context,  # None → byte-identical no-archetype prompt
+                        pack_suggestion_context=pack_suggestion_context,  # None → byte-identical
+                        medium_hint_context=medium_hint_context,  # None → byte-identical
+                        coverage=coverage,  # None → byte-identical no-coverage-gate prompt
+                        contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
+                        baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
+                        material_params=material_params,  # None → byte-identical no-table
+                    )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
             )
@@ -1230,6 +1272,33 @@ def build_pipeline(
         ),
     )
 
+    # Phase 2D (LangGraph-suitability audit): construct the compact smalltalk_navigation
+    # generator ONLY when the flag is on -- None otherwise, so run()'s
+    # `self.smalltalk_generator is not None` check is a genuine no-op when this is unset (the
+    # branch in run() is unreachable regardless of route_optimization_enabled/route_decision).
+    # Reuses helper_client (the SAME already-wired cheap-tier client used by understand/distill --
+    # already carries a telemetry sink when llm_telemetry_enabled is on) and the SAME
+    # hash-based-cache-key scheme Phase 1 wired for L1 (build_prompt_cache_key), computed once
+    # here from the fully-static template (see prompts/smalltalk_navigation.jinja).
+    smalltalk_generator: SmalltalkGenerator | None = None
+    if settings.route_prompt_families_enabled:
+        _smalltalk_assembler = SmalltalkNavigationPromptAssembler()
+        _smalltalk_static_prompt = _smalltalk_assembler.system_prompt()
+        smalltalk_generator = SmalltalkGenerator(
+            client=helper_client,
+            assembler=_smalltalk_assembler,
+            model_config=ModelConfig(
+                model=settings.helper_model,
+                temperature=settings.helper_temperature,
+                cache_key=build_prompt_cache_key(
+                    "smalltalk_navigation",
+                    settings.helper_model,
+                    _smalltalk_static_prompt,
+                ),
+                stage="smalltalk_navigation",
+            ),
+        )
+
     return Pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
@@ -1263,4 +1332,6 @@ def build_pipeline(
         route_telemetry_sink=(
             LoggingRouteTelemetrySink() if settings.route_optimization_enabled else None
         ),
+        route_prompt_families_enabled=settings.route_prompt_families_enabled,
+        smalltalk_generator=smalltalk_generator,
     )
