@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     default_safety_critical: bool = True
 
     # --- run knobs ---
+    # Phase 1 (LangGraph-suitability audit): safe, log-only per-call LLM telemetry (provider,
+    # model, stage, cache hit/miss counts, latency, status — never raw prompt/answer text). A
+    # logging call cannot change pipeline output, so this defaults ON; incident-only kill-switch.
+    llm_telemetry_enabled: bool = True
     concurrency: int = 6
     request_timeout_s: float = 180.0
     max_retries: int = 3

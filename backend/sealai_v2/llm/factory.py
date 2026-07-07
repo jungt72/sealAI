@@ -17,6 +17,7 @@ from collections.abc import Callable
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import LlmClient
 from sealai_v2.llm.client import OpenAiLlmClient
+from sealai_v2.llm.telemetry import LoggingTelemetrySink
 from sealai_v2.obs.tracing import maybe_wrap_openai
 
 # Strongest-first preference for resolving L1 when the configured id is not on the account.
@@ -69,11 +70,20 @@ def _async_openai_compatible(settings: Settings, provider: str):
 
 
 def build_client_for(settings: Settings, provider: str) -> LlmClient:
-    """One concrete client for one provider (OpenAI-compatible adapter; Mistral reuses it)."""
+    """One concrete client for one provider (OpenAI-compatible adapter; Mistral reuses it).
+
+    Phase 1 (LangGraph-suitability audit): passes ``provider`` through for telemetry labeling and
+    wires the default log-only ``LoggingTelemetrySink`` unless ``settings.llm_telemetry_enabled`` is
+    False (an incident-only kill-switch, same pattern as the other flags in ``config.settings`` — a
+    logging call can never change pipeline output, so this defaults ON)."""
     return OpenAiLlmClient(
         _async_openai_compatible(settings, provider),
         timeout_s=settings.request_timeout_s,
         max_retries=settings.max_retries,
+        provider=provider,
+        telemetry_sink=LoggingTelemetrySink()
+        if settings.llm_telemetry_enabled
+        else None,
     )
 
 

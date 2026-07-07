@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.llm.cache_key import build_prompt_cache_key
+from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
 from sealai_v2.core.calc.binding import bind_params
 from sealai_v2.core.calc.inline_extract import (
     extract_inline,
@@ -219,22 +221,29 @@ def _resolve_medium(question: str, case_state) -> tuple[str, str]:
 
 
 def _trace_inputs(inputs: dict) -> dict:
-    """LangSmith input view of a turn — the user question + flags; drop ``self`` + heavy objects."""
-    return {
-        "question": inputs.get("question"),
-        "flags": repr(inputs.get("flags")),
-        "has_untrusted": bool(inputs.get("untrusted")),
-    }
+    """LangSmith input view of a turn — Phase 0 (LangGraph-suitability audit): a SAFE projection
+    only (booleans/lengths/hash), never the raw question. See ``obs.safe_trace`` for the policy
+    this delegates to (production fails closed to ``safe_metadata_only`` regardless of what a
+    caller requests)."""
+    return safe_input_projection(
+        question=inputs.get("question"),
+        flags_repr=repr(inputs.get("flags")),
+        has_untrusted=bool(inputs.get("untrusted")),
+    )
 
 
 def _trace_outputs(result) -> dict:
-    """LangSmith output view — the final answer + grounding status, not the whole result object."""
+    """LangSmith output view — Phase 0 (LangGraph-suitability audit): a SAFE projection only
+    (length/booleans/labels), never the raw answer text."""
     answer = getattr(result, "answer", None)
-    return {
-        "answer": getattr(answer, "text", None),
-        "answer_model": getattr(answer, "model", None),
-        "grounded": getattr(result, "grounded", None),
-    }
+    verifier = getattr(result, "verifier", None)
+    action = getattr(verifier, "action", None)
+    return safe_output_projection(
+        answer_text=getattr(answer, "text", None),
+        answer_model=getattr(answer, "model", None),
+        grounded=getattr(result, "grounded", None),
+        verdict=getattr(action, "value", action) if action is not None else None,
+    )
 
 
 @dataclass
@@ -1020,15 +1029,30 @@ def build_pipeline(
     helper_client = resolve(settings.helper_provider or settings.provider)
 
     assembler = PromptAssembler()
+    _l1_model_name = l1_model or settings.l1_model
+    # Phase 1 (LangGraph-suitability audit): the L1 doctrine-only prompt (flags only — no
+    # grounding/case/memory data, identical to L1Generator.doctrine_system_prompt / the
+    # exfiltration-gate reference) is a genuinely STATIC string, so a hash-versioned cache key is
+    # safe to switch to now. Helper/verifier keep their literal keys for this phase — neither has
+    # an equally clean static-only prompt available without a prompt split (out of scope here; see
+    # the audit's routing-proposal phase).
+    _l1_static_doctrine = assembler.system_prompt(
+        flags=Flags(
+            compliance_hint=settings.default_compliance_hint,
+            safety_critical=settings.default_safety_critical,
+        )
+    )
     l1_cfg = ModelConfig(
-        model=l1_model or settings.l1_model,
+        model=_l1_model_name,
         temperature=settings.l1_temperature,
-        cache_key="sealai-v2-l1",
+        cache_key=build_prompt_cache_key("l1", _l1_model_name, _l1_static_doctrine),
+        stage="l1",
     )
     helper_cfg = ModelConfig(
         model=settings.helper_model,
         temperature=settings.helper_temperature,
         cache_key="sealai-v2-helper",
+        stage="helper",
     )
     generator = L1Generator(l1_client, assembler, l1_cfg)
     medium_researcher = MediumResearcher(
@@ -1043,6 +1067,7 @@ def build_pipeline(
             model=settings.verifier_model,
             temperature=settings.verifier_temperature,
             cache_key="sealai-v2-verifier",
+            stage="verifier",
         )
         verifier = L3Verifier(
             verifier_client, VerifierPromptAssembler(), verifier_cfg, catalog
