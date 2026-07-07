@@ -126,7 +126,8 @@ class OpenAiLlmClient:
                 self._emit_telemetry(
                     model_config=model_config,
                     usage=usage,
-                    latency_ms=(time.monotonic() - started) * 1000.0,
+                    latency_ms=(time.monotonic() - started)
+                    * 1000.0,  # i5-ok: sec->ms unit conversion, not an engineering value
                     status="ok",
                     error_type=None,
                 )
@@ -164,7 +165,8 @@ class OpenAiLlmClient:
         self._emit_telemetry(
             model_config=model_config,
             usage=None,
-            latency_ms=(time.monotonic() - started) * 1000.0,
+            latency_ms=(time.monotonic() - started)
+            * 1000.0,  # i5-ok: sec->ms unit conversion, not an engineering value
             status="error",
             error_type=type(last_exc).__name__,
         )
