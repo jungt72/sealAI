@@ -6,6 +6,33 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-07T11:12Z — FRONTEND-INDEPENDENT: `backend-v2` PROD deploy — Phase 2B route classification (PR #182)
+
+**Deploy.** Owner-directed deploy of PR #182 (conservative route classification foundation,
+`474820b9`) via `ops/release-backend-v2.sh`, even though `route_optimization_enabled` defaults to
+`False` (verhaltensneutral) — rationale: production should not lag behind `main` unnecessarily once
+a merged change is proven safe, and this deploy validates the merged tree cleanly before any later
+activation decision.
+
+- new live `sealai-backend-v2:latest` = `sha256:9566bcdab9aeabee9d4b74faa6a9537b5c61f8a1be7a7b49ad683dc79bd052ba`
+- rollback target (from the daemon) = `sha256:5c8a04069c28629fc0002da06a165d378a47b17a75d301dbce6e7b3e9972b851`, tagged `sealai-backend-v2:rollback-pre-no-eval-474820b9-20260707-111248`
+- smoke GREEN: health internal+public; kern one-shot (v=16.755 / PV=50.0); restart-survival.
+- **Post-deploy owner checklist, all verified live (not just code review):**
+  - logs since deploy: no errors/exceptions.
+  - `docker exec backend-v2 python3 -c "from sealai_v2.config.settings import Settings; print(Settings().route_optimization_enabled)"` → `False`, confirming the flag is genuinely off in the running process, not just in source.
+  - `ops/smoke-v2.sh` (unauthenticated leg) — 10/10 PASS, including `/api/v2/chat` correctly 401 fail-closed.
+- ledger: `ops/deploy-ledger.jsonl`.
+
+**Status: Phase 2B code is live but INERT** (flag off). No behavior change to any route. Activation
+is a separate, future, explicitly owner-gated decision — not part of this deploy.
+
+**Owner directive:** Phase 2C (telemetry evaluation + prompt-family preparation, still no
+L3-bypass widening) does not start until the LangSmith owner-only items from the
+2026-07-07T10:26Z incident entry above are closed or explicitly, consciously deferred: API key
+rotation (leaked 2026-06-27, still open), old-trace retention cleanup, and the dev/prod LangSmith
+project split. An authenticated `ops/smoke-v2.sh` run (real bearer token, owner-only — this agent
+has no Keycloak credentials) is also expected before Phase 2C.
+
 ## 2026-07-07T10:26Z — INCIDENT FINDING + FIX: LangSmith production tracing was active and unprotected
 
 **Finding.** A read-only architecture audit (LangGraph-suitability review) found that
