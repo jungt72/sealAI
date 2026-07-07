@@ -1,154 +1,149 @@
 # Ops
 
-> **⚠️ RECONCILIATION (2026-07-07) — read this first.** Parts of this file predate
-> the **2026-06-28 V1 retirement** and describe the retired `backend/app/` runtime
-> as if it were live. Per **`AGENTS.md`** (the authoritative contract), current
-> reality is:
->
-> - The **only** production backend is **`backend/sealai_v2/`** (the `backend-v2`
->   service). Prod backend deploys go via **`ops/release-backend-v2.sh`** ONLY (the
->   `backend-v2-deploy` skill is the current procedure), not `ops/release-backend.sh`.
->   The "V2.0 track" section at the bottom describes a **raw `docker compose … up
->   --no-deps backend-v2`** — that manual path is **superseded** by the release
->   wrapper and is now **blocked in-CC** by `ops/hooks/v2-deploy-deny.sh` (and by the
->   image start-time TEETH). Treat that paragraph as historical mechanics, not a
->   sanctioned procedure.
-> - **`main` is the single active line** with **3 required checks**
->   (`backend-contracts`, `v2-contracts`, `secret-scan`), `enforce_admins` ON. The
->   "Branch model" section below (integration on `demo/rwdr-limited-external`, all
->   PRs target demo) is **retired** — short-lived branch off `main` → PR → merge.
-> - The V1 pre-deploy pytest sentinel, the V1 deploy gate, and the
->   `docker inspect backend …` rollback anchor all targeted the **retired** V1
->   runtime. For V2, the rollback anchor is read from the **running `backend-v2`
->   daemon** (`docker inspect sealai-backend-v2 …`).
->
-> The **secrets/untouchables**, **eval key hygiene**, **rollback-from-the-running-
-> daemon (never memory)**, **GOVERNANCE_LOG-every-deploy**, and **gate-mechanics /
-> fail-closed parsing** rules below are **still binding**. A full rewrite of the
-> deploy-gate mechanics is deliberately deferred (production-critical, hook-tested)
-> — this banner reconciles the framing; the detailed V1 mechanics stand as
-> reference.
+Production is gated. These rules are enforced by Claude Code PreToolUse hooks
+(`ops/hooks/*.sh`) and permissions (`.claude/settings.json`); they are also the
+contract for humans. The single production backend is `backend/sealai_v2/`
+(`backend-v2`); the former `backend/app/` V1 runtime was retired 2026-06-28. Full
+contract: `AGENTS.md`.
 
+## Branch model — `main` is the single line
 
-Production is gated. These rules are enforced by hooks (`ops/hooks/*.sh`) and
-permissions (`.claude/settings.json`); they are also the contract for humans.
+`main` is the single active line for `sealai_v2` / `frontend-v2` work. Branch
+protection requires a PR with **3 green required checks** (`backend-contracts`,
+`v2-contracts`, `secret-scan`) and **`enforce_admins` ON** — no direct-push bypass
+(direct pushes to `main` are also denied in permissions). Work on a short-lived
+branch → PR → merge once green → delete the branch. One active branch per
+workstream.
 
-## Branch model (2026-06-04; branch strategy decided 2026-06-05)
+## Backend-v2 production deploy — `ops/release-backend-v2.sh` (the ONLY sanctioned path)
 
-`main` is the **converged truth** as of 2026-06-04 (demo→main via PR #11, tag `v1.7.0`).
+A backend-v2 deploy runs **only** through this wrapper. It binds the deploy to the
+exact served tree and fails closed. Never `docker compose … up backend-v2` by hand
+(the hooks + the image TEETH block it — see below). The chain:
 
-**Branch strategy — DECIDED (2026-06-05, Parked-Items-Closeout; was "parked").**
-Keep the current model and treat it as the standing rule, not a temporary state:
-- Integration happens on `demo/rwdr-limited-external`. **All PRs target demo.**
-  Direct pushes to `main` stay denied.
-- The `demo→main` convergence is a deliberate, **owner-gated** step, run **per
-  milestone / per day** — never the routine per-commit flow. Every merge into demo
-  gets a small `demo→main` **carry-over PR** that the owner merges.
-- This matches the existing branch-guard, hooks, and CI triggers, so **no
-  infrastructure change is needed** (that was the point of keeping it).
+1. **`TREE_HASH = ops/tree-hash.sh`** — the served-runtime content hash (single
+   source of truth for "what is being shipped").
+2. **Served L1** — resolved from `.env.prod` (`SEALAI_V2_L1_PROVIDER`/`_L1_MODEL`,
+   defaults `openai/gpt-5.1`) so an `.env`-only model swap can't ship on a stale
+   eval.
+3. **Eval gate** — `ops/v2_deploy_gate.py <runs_dir> <tree_hash> <served_l1>`
+   requires an **adjudicated** eval-REPLAY for that exact tree **and** L1 with
+   **every GATED axis** at `schranken_quota_final == 1.0`; else exit 2 (refuse).
+   > **Currently `###EVAL-GATE-DISABLED-TEMP###`** (owner-authorized 2026-06-30 —
+   > per-iteration REPLAY is too costly). A no-eval fallback ships instead. **To
+   > restore:** delete the fallback block and uncomment the
+   > `###EVAL-GATE-ORIGINAL-BEGIN###`…`###EVAL-GATE-ORIGINAL-END###` block. Disabled
+   > ≠ skip — run a **targeted** REPLAY on the touched dimension yourself (see the
+   > `eval-replay-adjudication` skill).
+4. **Rollback rung** — tag the **running** image read from the daemon
+   (`docker inspect backend-v2 --format '{{.Image}}'`, **never memory**) as
+   `sealai-backend-v2:rollback-pre-<label>-<ts>` before the flip.
+5. **Build + recreate only backend-v2** — `build --build-arg GATE_TREE_HASH=…`
+   then `up -d --no-deps --force-recreate backend-v2`.
+6. **Smoke (RED anywhere → HALT, no ledger line, prints the rollback path):**
+   health (internal `:8001/health` + public `https://sealingai.com/api/v2/health`),
+   kern one-shot (`umfangsgeschwindigkeit`=16.755 / `pv_wert`=50.0),
+   restart-survival.
+7. **Ledger + log** — append `ops/deploy-ledger.jsonl` (machine-readable
+   commit→deploy index) and print a `GOVERNANCE_LOG` paste-block (prose stays
+   owner-authored).
 
-The broader trunk-based alternative was considered and **not** adopted today; if it
-is ever revisited it must be scoped as its own arc (branch-guard, CI triggers,
-rules). The **CI-trigger / `ruff format` scope questions remain separately parked**
-— do not change branch-guard, hooks, or CI triggers as part of routine work.
+**Authoritative gate logic** = `ops/v2_deploy_gate.py` (pure stdlib, JSON-only,
+network-free, unit-tested offline). The `GATED` set = the four deterministic
+Schranken (`memory`, `exfiltration`, `parametric_{multiturn,singleturn}`) **plus**
+every column with `n_gate_cases > 0`, each fully adjudicated at
+`schranken_quota_final == 1.0`.
 
-## Pre-deploy gate (authoritative)
-- Run the **full backend suite** before any deploy:
-  `cd /home/thorsten/sealai && .venv/bin/python -m pytest backend -q -rf`.
-- The **exit code is authoritative** — the summary line is unreliable under `\r`
-  rendering. Only `EXIT=0` clears the gate.
-- After it passes, write the sentinel the deploy gate checks:
-  `touch .claude/.gate-logs/sentinels/pytest-green`.
+**TEETH against a raw deploy:** the build bakes `GATE_TREE_HASH` and
+`backend/docker-entrypoint-v2.sh` refuses to start a raw build (empty hash) run
+outside the wrapper; the `v2-deploy-deny` hook blocks the raw compose shapes
+in-CC. Do not try to route around them.
 
-## Rollback anchor (from the running daemon, never memory)
-- Before deploy, read the live image from the daemon:
-  `docker inspect backend --format '{{.Config.Image}}'` — this `@sha256:…` digest
-  is the rollback target. Confirm `status=running health=healthy`.
-- Then write the sentinel: `touch .claude/.gate-logs/sentinels/anchor-verified`.
-- Never quote a rollback anchor from memory or from a prior turn.
+## Dashboard deploy (`frontend-v2`) — a different mechanism
 
-## Production deploy
-- Prod changes go **only** through the sanctioned release scripts: backend via
-  `ops/release-backend.sh`, frontend via `ops/release-frontend.sh`. Both: build →
-  push GHCR → pin `@sha256` in `.env.prod` → recreate the one service → health +
-  auto-rollback (health-fail) → nginx reload → live pilot smoke.
-- The **deploy gate** (`ops/hooks/deploy-gate.sh`) blocks `release-backend.sh`
-  until both sentinels above are fresh (< 1h); the project permission then still
-  **asks** the human to confirm. The frontend script is **not** sentinel-gated by the
-  hook — its pre-deploy gate is a green `next build` + frontend tests (the known
-  pre-existing `workspaceMapping` vitest fail is the only tolerated red; nothing new
-  may break) + the rollback anchor read from the running daemon.
-- After deploy: record the new live digest, re-run the smoke, and verify live
-  acceptance in the deployed container (`docker exec … `).
-- **Every prod deploy is logged in `docs/ops/GOVERNANCE_LOG.md` — no exceptions**
-  (backend, frontend, doctrine or brand; owner rule 2026-06-04). One entry per
-  deploy with: the new pinned `@sha256` digest, the rollback target (read from the
-  running daemon, never memory), the pre-deploy gate result, and the live-smoke
-  outcome.
+The dashboard has **no release script**: `frontend-v2/dist` is a live read-only
+bind-mount into nginx (`docker-compose.deploy.yml:93`), so `npm run build` on the
+VPS checkout **is** the deploy. Be explicit that you're deploying. Details +
+footguns: the `frontend-v2-dashboard` skill.
+
+## Marketing deploy (`frontend`) — `ops/release-frontend.sh`
+
+Marketing ships only via this script: a Next.js standalone build → recreate the
+`frontend` container → health check (`:3000/api/health`) → **nginx reload guarded
+by `ops/guard-nginx-reload.sh`** (refuses a reload that would silently drop live
+V2 routing — the cutover-drift guard) → live pilot smoke
+(`ops/smoke-live-pilot-readiness.sh`). Rollback via the `.env.prod.rollback-<ts>`
+file it writes. Details: the `frontend-marketing` skill.
+
+## nginx / cutover — owner-gated per action
+
+Shared-edge nginx changes and the `/dashboard` + `/api/v2` cutover
+(`ops/v2-flip.sh`, `nginx/snippets/v2_dashboard.conf`) are **owner-gated per
+action** — a rate-limit rollout once broke Keycloak login for real. A confirmation
+must NAME the action, not just affirm. Never flip the edge yourself.
+
+## GOVERNANCE_LOG — every prod deploy logged
+
+**Every prod deploy is logged in `docs/ops/GOVERNANCE_LOG.md` — no exceptions**
+(backend, frontend, doctrine or brand; owner rule). One entry per deploy: the new
+pinned `@sha256`/image, the rollback target (read from the running daemon, never
+memory), the gate result, and the live-smoke outcome. The machine-readable index
+is `ops/deploy-ledger.jsonl`.
+
+## Claude Code enforcement hooks (PreToolUse, matcher `Bash`, fail-closed)
+
+- **`doctrine-gate.sh`** — blocks `git commit` / `git push` unless the **V2
+  doctrine guard suite** passes (`pytest backend/sealai_v2 --noconftest -q`; the
+  suite was re-pointed to the V2 tree 2026-06-25 — it no longer runs the retired
+  V1 tests). Emergency override `SEALAI_DOCTRINE_GATE_BYPASS=1` — allowed but
+  **logged**, never silent; use only when the gate itself is broken.
+- **`v2-deploy-deny.sh`** — blocks a **raw** backend-v2 compose deploy (every
+  bypass shape: named service, `--profile v2`, `--profile=v2`, `COMPOSE_PROFILES`,
+  profile-wide), anchored to a genuine invocation so a trailing-comment can't
+  smuggle past. In-CC counterpart to the image TEETH.
+- **`relay-deny.sh`** — blocks `git merge`, `git push`, `v2-flip`,
+  `release-backend*`, and `docker compose up` in-CC: **merges to `main` and prod
+  deploys are owner-triggered only.** An agent must not self-merge or self-deploy
+  from inside Claude Code — surface the ready action and let the owner trigger it.
+- **`deploy-gate.sh`** — gates `ops/release-backend.sh` (the **retired V1** deploy
+  script) via two fresh (<1h) sentinels (`pytest-green`, `anchor-verified`).
+  **Legacy / effectively inert** for current work: `release-backend.sh` is the V1
+  path and is not used to deploy `backend-v2`. Kept until the V1 script is removed.
+
+**Parsing is fail-closed:** jq missing, malformed payload, or an undeterminable
+`.tool_input.command` → BLOCK. Matching is on the executed command only and only at
+a command position — a commit message or prose that merely *mentions* a gated path
+does not trigger. **Residual gaps** (`sh -c "…"`, aliases/functions, variable
+expansion, a path chained mid-line inside a quoted string) are a **discipline
+anchor, not a sandbox** — accepted by design. Hooks **hot-reload in-session** (no
+restart needed; verified 2026-06-04).
 
 ## Secrets & untouchables
+
 - `.env*` files are never read, printed, or committed (denied in permissions).
-- **V2 eval key hygiene:** V2 offline tests use a **fake LLM client (no key)**. A
-  **live eval REPLAY** (`python -m sealai_v2.eval`) sources `OPENAI_API_KEY`
-  **transiently from `~/sealai/.env` for that run only** — never persisted into the
-  agent env, never echoed to logs, never committed.
+- **V2 eval key hygiene:** offline tests use a **fake LLM client (no key)**. A live
+  eval REPLAY sources `OPENAI_API_KEY` **transiently from `~/sealai/.env` for that
+  run only** — never persisted into the agent env, never echoed to logs, never
+  committed.
 - Never push to `main`; never `git push --force`, `git clean`, or
-  `docker compose down/rm` against prod (denied).
-- `.claude/.gate-logs/` holds runtime gate logs and sentinels — gitignored, not
+  `docker compose down/rm` against prod (all denied).
+- `.claude/.gate-logs/` holds runtime gate logs + sentinels — gitignored, not
   committed.
 
-## Gate mechanics — command-parsing & deliberate residual gaps
-- The PreToolUse gates (`ops/hooks/doctrine-gate.sh`, `ops/hooks/deploy-gate.sh`)
-  match on the executed command only (`jq -r '.tool_input.command'`), never the
-  whole payload — a Bash `description` or a commit message that merely mentions
-  `git commit` / `git push` / `ops/release-backend.sh` no longer triggers a gate
-  (audit F1/F2). The deploy gate fires only on an actual **invocation** of the
-  release script (command position), not a prose mention.
-- Parsing is **fail-closed**: jq missing, malformed payload, or an undeterminable
-  command field → BLOCK. Parse ambiguity is never waved through.
-- **Deliberate residual gaps** (a *discipline anchor, not a sandbox*): command-text
-  matching does not see through `sh -c "…"`, shell aliases/functions, variable
-  expansion, or the literal path chained mid-line inside a quoted string. Accepted —
-  the gates enforce the habit, not an airtight boundary.
-- **Activation reality:** the hooks load from project settings and **hot-reload
-  in-session** — no session restart needed (verified 2026-06-04; see
-  `docs/ops/GOVERNANCE_LOG.md`). Renaming a `.proposed` settings file onto
-  `.claude/settings.json` makes the gates live for the next tool call.
+## HALT-gate rhythm
 
-## Runtime kill-switches (incident-only, default = enforced)
-- **`SEALAI_TIER0_RETRIEVAL_GUARD`** (P1-2 TEIL B) — fail-closed guard at the RAG
-  retrieval funnel (`rag_orchestrator.hybrid_retrieve`): a turn declared **Tier-0**
-  (GREETING / META_QUESTION / BLOCKED — no-retrieval fast routes) that reaches
-  retrieval raises `TierViolation`. **Default ON** (unset or any value not in
-  `{0,false,no,off}` = enforced).
-  - **Set `=0` ONLY during an incident** where the guard is wrongly blocking a
-    legitimate retrieval (a suspected false-trip), to restore service while the
-    real cause is fixed. The bypass is **logged** (`tier0_retrieval_guard_BYPASS`),
-    never silent.
-  - It is **not a steady state**: a bypass means a tier-label-vs-behaviour
-    contradiction is live → open a finding, fix the label or the route, re-enforce.
-  - Toggling it is an env change on the running service (`.env.prod` is operator-
-    owned; never read/printed by agents) — re-enforce as soon as the incident is
-    resolved.
+Plan → owner gate → build → review; never auto past a gate. A self-caused
+production incident is itself a HALT point — report and stop, do not self-commit a
+fix to `main`. See `.claude/rules/workflow.md`.
 
-## V2.0 track: live `backend-v2`, deployed under Gap #1/#2 discipline
+## Retired (historical only)
 
-`backend/sealai_v2/` is **de-facto live in prod** — the `sealai-backend-v2` container runs and nginx
-routes `/api/v2` → `sealai-backend-v2:8001` (Gap #1/#2 shipped there; durable `sealai_v2` Postgres,
-restart-survival proven; see the 2026-06-17 `GOVERNANCE_LOG`). It does **NOT** go through the V1 release
-path: `ops/release-backend.sh`, the deploy gate, the pre-deploy pytest sentinel, and the rollback anchor
-all still target the **V1** runtime (`backend/app/`) unchanged. A V2 change deploys with **Gap #1/#2
-discipline** instead: **eval-gate green first** → read the **rollback image from the running daemon**
-(`docker inspect sealai-backend-v2 --format '{{.Config.Image}}'`, never memory) → rebuild + recreate
-**only** `backend-v2` surgically (`up -d --no-deps backend-v2`) → **restart-survival** check (durable
-`sealai_v2` Postgres; catalog/code are file-backed in the image, no DB migration) → live `/api/v2` smoke
-→ **`GOVERNANCE_LOG` entry** (new pinned `@sha256`, rollback target, eval-gate result, smoke). The full
-**demo→main convergence and the V1→V2 cutover remain owner-gated**. (V2 CI: `.github/workflows/v2-contracts.yml`;
-V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.)
-
-**V2.1 deploys per-increment under this same Gap #1/#2 discipline** — each increment is a coherent,
-testable, deployable unit, gated by an owner plan-review *before* and an owner deploy-review *after*;
-the 8 hard eval Schranken hold **1.000** through every increment. See
-`docs/V2/sealingai_v2_1_implementierungs_konzept_cc.md §7` (deploy) + §1.3 (the four owner-HALTs).
-The public `/api/v2` nginx flip (`ops/v2-flip.sh`) stays owner-gated — these deploys only update the
-backend image.
+- **Branch model `demo/rwdr-limited-external`** (all-PRs-target-demo, per-milestone
+  `demo→main` carry-over) — gone; `main` is the single line.
+- **V1 `ops/release-backend.sh`** + its pre-deploy pytest sentinel + the
+  `docker inspect backend` (V1 service) rollback anchor — targeted the retired
+  runtime. The `deploy-gate.sh` hook still guards that dead script (see above).
+- **`SEALAI_TIER0_RETRIEVAL_GUARD`** kill-switch on `rag_orchestrator.hybrid_retrieve`
+  — a **V1-only** guard (`rag_orchestrator` does not exist in `sealai_v2`); dead.
+  V2 retrieval fail-open behavior lives in `knowledge/qdrant_retrieval.py` (see the
+  `retrieval-rag` skill).
