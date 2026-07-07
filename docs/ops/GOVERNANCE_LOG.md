@@ -6,6 +6,40 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-07T14:35Z — `backend-v2` PROD deploy — Phase 2D smalltalk prompt wiring (PR #185)
+
+**Deploy.** Autonomous deploy of PR #185 (Phase 2D, `440d61ac`) via `ops/release-backend-v2.sh`,
+following the owner's explicit "go ahead autonom" instruction. Both `route_optimization_enabled`
+and the new `route_prompt_families_enabled` remain `False` -- this deploy is behavior-neutral,
+matching the same rationale as the Phase 2B deploy (2026-07-07T11:12Z entry above): keep
+production from lagging behind `main` once a merged change is proven safe, without activating
+anything new.
+
+- new live `sealai-backend-v2:latest` = `sha256:76c0b9a45cbf685a1e6be2f621ea10bd9b220a623428fef507ce5845d072dad1`
+- rollback target (from the daemon) = `sha256:9566bcdab9aeabee9d4b74faa6a9537b5c61f8a1be7a7b49ad683dc79bd052ba`, tagged `sealai-backend-v2:rollback-pre-no-eval-440d61ac-20260707-143545`
+- smoke GREEN: health internal+public; kern one-shot (v=16.755 / PV=50.0); restart-survival.
+- **Post-deploy checklist, all verified live:** logs since deploy clean; `docker exec backend-v2
+  python3 -c "from sealai_v2.config.settings import Settings; s = Settings();
+  print(s.route_optimization_enabled, s.route_prompt_families_enabled)"` -> `False False`;
+  `ops/smoke-v2.sh` (unauthenticated leg) 10/10 PASS.
+- ledger: `ops/deploy-ledger.jsonl`.
+
+**Status: Phase 2D code is live but fully INERT** (both flags off). No behavior change to any
+route -- the smalltalk generator is never constructed (`route_prompt_families_enabled=False`), so
+`Pipeline.run()`'s Phase 2D branch is unreachable.
+
+**Explicitly NOT done, and staying owner-gated per the owner's own stated rollout order (deploy ->
+owner authed smoke test -> THEN staging activation):**
+- An authenticated `ops/smoke-v2.sh` run -- requires a real Keycloak bearer token this agent does
+  not have and must not attempt to obtain.
+- Enabling `route_optimization_enabled` / `route_prompt_families_enabled` in ANY environment
+  (staging or production) -- the owner's own rollout plan places this AFTER the authed smoke test,
+  and this repo's own incident-learned rule (2026-07-03 nginx outage postmortem) requires that a
+  confirmation NAME the specific action being authorized, not a blanket "go ahead" -- a first-ever
+  activation of new LLM-routing/prompt-swap behavior in any live environment meets that bar.
+- The four LangSmith owner-only items from the earlier incident entry remain separately tracked
+  and consciously deferred (see the 2026-07-08T00:00Z entry above).
+
 ## 2026-07-08T00:00Z — OWNER DECISION: LangSmith owner-only actions consciously deferred; Phase 2C authorized
 
 **Owner decision.** The four owner-only LangSmith follow-up actions from the 2026-07-07T10:26Z
