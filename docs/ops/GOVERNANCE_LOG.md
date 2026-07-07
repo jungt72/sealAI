@@ -6,6 +6,19 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-07T09:40Z — FRONTEND (marketing) PROD deploy: homepage V2 rebuild — via ops/release-frontend.sh (PR #178)
+
+**Deploy.** Marketing homepage rebuilt into a premium technical B2B platform page (PR #178, squash `b17b2cb6`). Shipped through the sanctioned `ops/release-frontend.sh` (build → GHCR → recreate `frontend` only → health → guarded nginx reload → live smoke).
+
+- new live image = `ghcr.io/jungt72/sealai-frontend:b17b2cb6-20260707-093857@sha256:f4630be4965f894cb39153f0a7838b0f3f1cf1b8797bf9fedf6ed727d4925c90`
+- rollback target (from `.env.prod.rollback-*`, read from the daemon) = `ghcr.io/jungt72/sealai-frontend:9816165a-20260702-042104@sha256:2d09852594343527c43a7b5e7e4f489b6ffa89a1824e10d732765bf9c3084133`
+- pre-deploy gate: PR #178 CI green (backend-contracts, v2-contracts, secret-scan, frontend/frontend-v2 audits); local `lint` 0, `tsc` 0, `vitest` 31/31, `test:node` 9/9, `next build` OK.
+- container `sealai-frontend-1` Up (healthy); nginx reloaded via `guard-nginx-reload.sh`.
+- **live smoke: 6/7 PASS.** The 1 FAIL (`dashboard route did not expose expected app/auth marker`) is **pre-existing / stale, not a regression**: it greps the `/dashboard` **Vite SPA** (`frontend-v2`, dist built 2026-07-05, untouched by this deploy) for Next.js/`__next`/`SeaLAI` markers the current Vite dashboard does not emit. Only the marketing `frontend` container was recreated.
+- verified live: `https://sealingai.com/` HTTP 200 — new hero "Dichtungstechnik ist Erfahrungswissenschaft", precheck, all 15 sections, JSON-LD present, single H1; old `aOS`/English content gone.
+
+**TODO (ops cleanup, not blocking):** update `ops/smoke-live-pilot-readiness.sh` dashboard-marker grep for the Vite `frontend-v2` SPA (one of the two known-stale smoke checks).
+
 ## 2026-07-05T16:41:44Z — VPS worktree hygiene: archived stale frontend scratch copy — no deploy
 
 **Context.** The VPS worktree had one untracked directory, `frontend-cockpit-deploy/`, after the V2 prompt deploy. It contained a full Next.js source copy and was therefore audited before any cleanup.
