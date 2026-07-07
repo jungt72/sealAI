@@ -6,6 +6,51 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-07T10:26Z — INCIDENT FINDING + FIX: LangSmith production tracing was active and unprotected
+
+**Finding.** A read-only architecture audit (LangGraph-suitability review) found that
+`obs/tracing.py` wrapped every OpenAI-compatible LLM call via `wrap_openai(client)` with no
+arguments, and `pipeline.py`'s `@traceable` parent span (`_trace_inputs`/`_trace_outputs`) sent the
+raw user question and raw final answer text. Live verification on the running `backend-v2`
+container, BEFORE the fix was deployed, confirmed this was not theoretical: `docker exec backend-v2
+env` showed `LANGSMITH_TRACING=true` and `APP_ENV=production` on the container that had been
+running for 41+ hours. `LANGSMITH_CAPTURE_LLM_CONTENT` / `LANGSMITH_REDACTED_OBSERVATION_SPANS` in
+`.env.prod` are not variables the installed `langsmith` SDK (0.4.38) recognizes — they were doing
+nothing. **Conclusion: production LLM calls (L1/L3/helper) were traced to LangSmith with full,
+unredacted prompts/completions, and the raw question + answer were sent a second time via the
+parent span, for an unknown but non-trivial prior period.**
+
+**Fix.** PR #180 (`f8daf070`): new `obs/safe_trace.py` (three tracing modes, fails closed to
+`safe_metadata_only` in production regardless of what is requested), `obs/tracing.py` now
+constructs an explicit `langsmith.Client(hide_inputs=True, hide_outputs=True)`, and `pipeline.py`'s
+trace projections carry only booleans/lengths/hashes. 58 new tests. Deployed via
+`ops/release-backend-v2.sh` (health/kern-one-shot/restart-survival all green).
+
+**Verification (live, not just code review).** Post-deploy, `docker exec backend-v2 python3 -c
+"from sealai_v2.obs.safe_trace import resolve_tracing_mode, resolve_langsmith_client_policy;
+print(resolve_tracing_mode()); print(resolve_langsmith_client_policy())"` on the ACTUAL running
+container confirmed: `resolved tracing mode: safe_metadata_only`, `hide_inputs: True`,
+`hide_outputs: True`. Unauthenticated `ops/smoke-v2.sh` green (10/10 checks). Full offline suite +
+architecture enforcers (incl. the repo-wide I5 narration-no-numbers guard) exit 0 on `main`.
+
+**Remaining — historical data + credential hygiene (owner action, requires LangSmith dashboard
+access this agent does not have):**
+1. Check the LangSmith retention window for the affected project/period and identify which traces
+   predate this fix (created before 2026-07-07T10:26Z; the exact start of the exposure window —
+   i.e. whenever `LANGSMITH_TRACING` was first set true in this deployment's history — is not
+   established here).
+2. Delete or retention-cleanse traces from that window that carry raw prompt/completion/question/
+   answer content.
+3. Consider splitting the LangSmith project/workspace: a `full_synthetic_only`-eligible
+   dev/staging project vs. a `safe_metadata_only`-only production project, so the modes are
+   enforced by project separation as well as by code.
+4. **Rotate the LangSmith API key** — this repo's own history already records "API key leaked
+   2026-06-27, STILL NOT ROTATED"; that standing exposure is unrelated to but compounds this
+   finding (a leaked key plus a period of unredacted tracing is a materially worse combination than
+   either alone). Requires the owner's own LangSmith dashboard + `.env.prod` update (never
+   agent-readable).
+5. Once 1-4 are done (or explicitly deferred with a reason), append a closing entry here.
+
 ## 2026-07-07T09:40Z — FRONTEND (marketing) PROD deploy: homepage V2 rebuild — via ops/release-frontend.sh (PR #178)
 
 **Deploy.** Marketing homepage rebuilt into a premium technical B2B platform page (PR #178, squash `b17b2cb6`). Shipped through the sanctioned `ops/release-frontend.sh` (build → GHCR → recreate `frontend` only → health → guarded nginx reload → live smoke).
