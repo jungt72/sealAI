@@ -26,6 +26,10 @@ class ModelConfig:
     # Mistral/OpenAI prompt-cache routing hint: a STABLE per-role key so the large stable
     # doctrine PREFIX bills at 10% on cache hits (quality-neutral). None → no caching.
     cache_key: str | None = None
+    # Phase 1 (LangGraph-suitability audit, telemetry): a short, safe label ("l1", "helper",
+    # "verifier", "judge", ...) for grouping LlmCallTelemetry — never tenant/case/user data.
+    # None → telemetry still works, just unlabeled by stage.
+    stage: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,18 @@ class TokenUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    # Phase 1 (LangGraph-suitability audit): tokens served from the provider's prompt cache
+    # (OpenAI/Mistral both expose ``usage.prompt_tokens_details.cached_tokens``). Default 0 — a
+    # provider/response without this field (or an offline fake) stays byte-identical.
+    cached_tokens: int = 0
+
+    @property
+    def cache_ratio(self) -> float:
+        """``cached_tokens / prompt_tokens``, or 0.0 when there is nothing to divide by (never
+        raises on a zero-token or fake/offline usage record)."""
+        if self.prompt_tokens <= 0:
+            return 0.0
+        return self.cached_tokens / self.prompt_tokens
 
 
 @dataclass(frozen=True)

@@ -4,26 +4,43 @@ Param-defensive across model families (strips an unsupported ``temperature``; ad
 max-tokens param name) and retries transient failures with bounded backoff. Holds a
 pre-constructed ``AsyncOpenAI`` instance (built by ``llm.factory``); it does not import the
 ``openai`` package itself, so this module stays import-light.
+
+Phase 1 (LangGraph-suitability audit, telemetry): extracts ``cached_tokens`` when the provider
+exposes it and emits a safe ``LlmCallTelemetry`` event per call via an optional, injected
+``TelemetrySink`` — fully inert (zero behavior/latency-relevant change) when no sink is wired, which
+is the default for every existing call site.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from sealai_v2.core.contracts import LlmResult, ModelConfig, TokenUsage
+from sealai_v2.llm.telemetry import LlmCallTelemetry, TelemetrySink
 
 
 def _parse_usage(resp: Any) -> TokenUsage | None:
     """Read the provider's token usage defensively (OpenAI + OpenAI-compatible Mistral both expose
-    ``resp.usage.{prompt,completion,total}_tokens``). Absent/partial → best-effort/None, never raises."""
+    ``resp.usage.{prompt,completion,total}_tokens``). Absent/partial → best-effort/None, never raises.
+
+    ``cached_tokens`` (Phase 1): both OpenAI and Mistral expose prompt-cache hits at
+    ``usage.prompt_tokens_details.cached_tokens``. Missing (older response shape, a provider that
+    doesn't support caching, or an offline fake) → 0, never raises — the caller's ``cache_ratio``
+    then safely reads as 0.0."""
     usage = getattr(resp, "usage", None)
     if usage is None:
         return None
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = (
+        int(getattr(details, "cached_tokens", 0) or 0) if details is not None else 0
+    )
     return TokenUsage(
         prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
         completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
         total_tokens=int(getattr(usage, "total_tokens", 0) or 0),
+        cached_tokens=cached,
     )
 
 
@@ -34,10 +51,50 @@ class OpenAiLlmClient:
         *,
         timeout_s: float = 180.0,  # i5-ok: Transport-Timeout
         max_retries: int = 3,
+        provider: str = "unknown",
+        telemetry_sink: TelemetrySink | None = None,
     ) -> None:
         self._client = async_client
         self._timeout_s = timeout_s
         self._max_retries = max(1, max_retries)
+        self._provider = provider
+        self._telemetry_sink = telemetry_sink
+
+    def _emit_telemetry(
+        self,
+        *,
+        model_config: ModelConfig,
+        usage: TokenUsage | None,
+        latency_ms: float,
+        status: str,
+        error_type: str | None,
+    ) -> None:
+        """Build + emit a safe ``LlmCallTelemetry`` event. Never raises into the caller — a
+        telemetry bug (or a misbehaving sink) must never break a real LLM call or mask a real
+        exception. No-op when no sink is wired (the default for every existing call site)."""
+        if self._telemetry_sink is None:
+            return
+        try:
+            u = usage or TokenUsage()
+            self._telemetry_sink.record(
+                LlmCallTelemetry(
+                    provider=self._provider,
+                    model=model_config.model,
+                    stage=model_config.stage,
+                    prompt_cache_key=model_config.cache_key,
+                    prompt_hash=None,
+                    prompt_tokens=u.prompt_tokens,
+                    cached_tokens=u.cached_tokens,
+                    completion_tokens=u.completion_tokens,
+                    total_tokens=u.total_tokens,
+                    cache_ratio=u.cache_ratio,
+                    latency_ms=latency_ms,
+                    status=status,
+                    error_type=error_type,
+                )
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never break or mask a real call/error
+            pass
 
     async def generate(
         self, *, system: str, user: str, model_config: ModelConfig
@@ -56,6 +113,7 @@ class OpenAiLlmClient:
             # bills at 10% on cache hits. extra_body passes through regardless of SDK version.
             kwargs["extra_body"] = {"prompt_cache_key": model_config.cache_key}
 
+        started = time.monotonic()
         last_exc: Exception | None = None
         attempts = 0  # counts only REAL (transient) failures — param adaptations don't consume budget
         while attempts < self._max_retries:
@@ -64,11 +122,19 @@ class OpenAiLlmClient:
                     timeout=self._timeout_s, **kwargs
                 )
                 choice = resp.choices[0]
+                usage = _parse_usage(resp)
+                self._emit_telemetry(
+                    model_config=model_config,
+                    usage=usage,
+                    latency_ms=(time.monotonic() - started) * 1000.0,
+                    status="ok",
+                    error_type=None,
+                )
                 return LlmResult(
                     text=choice.message.content or "",
                     model=getattr(resp, "model", model_config.model),
                     finish_reason=getattr(choice, "finish_reason", None),
-                    usage=_parse_usage(resp),
+                    usage=usage,
                 )
             except Exception as exc:  # noqa: BLE001 — param-defensive + transient retry, then re-raise
                 msg = str(exc).lower()
@@ -95,4 +161,11 @@ class OpenAiLlmClient:
         assert (
             last_exc is not None
         )  # loop only exits here after a real failure incremented attempts
+        self._emit_telemetry(
+            model_config=model_config,
+            usage=None,
+            latency_ms=(time.monotonic() - started) * 1000.0,
+            status="error",
+            error_type=type(last_exc).__name__,
+        )
         raise last_exc
