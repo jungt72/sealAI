@@ -1,61 +1,67 @@
 # Workflow
 
-How changes move from audit to merge. Derived from the standing governance in
-`docs/runtime-audit-fixmap.md`.
+How changes move from audit to merge in the V2 runtime (`backend/sealai_v2/`,
+`frontend-v2/`). The binding rhythm is `AGENTS.md § Git / branch workflow` +
+`§ Hard invariants`.
 
 ## Per-fix protocol
-1. **Tight plan** — root `file:line`, affected ACs, blast radius. No scope creep
-   beyond the named change.
+1. **Audit first, tight plan** — root `file:line`, affected eval dimension /
+   Schranken, blast radius. No scope creep beyond the named change. Evidence =
+   path + line.
 2. **Verify the repro, don't trust the audit.** Define the concrete user-side
-   reproduction and confirm it actually fails *before* fixing. Lesson: an audit
-   sibling is not the reported bug (e.g. Group B did not reproduce post-D — it was
-   closed by the routing fix, not by the audited resume-seam).
-3. **Red-before-green** — reproduce the symptom as a failing test first, then fix.
-4. **Zero-FP proof** if a guard / lexicon / doctrine path is touched (see
-   `doctrine.md`).
-5. **Atomic, conventional commits**, honest messages. Report the exact validation
-   commands and results; never hide a failing test.
+   reproduction (a real LangSmith trace where possible) and confirm it actually
+   fails *before* fixing. An audit sibling is not the reported bug.
+3. **Red-before-green** — reproduce the symptom as a failing test / failing eval
+   case first, then fix. Build against the eval, not gut feeling.
+4. **Never weaken a guard, catalog, or eval test** to get green (see
+   `doctrine.md`). If green needs loosening what blocks → **HALT to human**.
+5. **Atomic, honest commits.** Report the exact validation commands and results;
+   never hide a failing test. Prove a flag-gated change is byte-identical when
+   unset before merge.
 
 ## Branch & merge
-- Work on a feature branch. **PRs target `demo/rwdr-limited-external` — never
-  `main`.** Direct pushes to `main` are denied (see permissions).
-- CI `agent-bff-guardrails` must be green before merge.
-- `gh pr merge --merge --delete-branch` → `git switch demo/rwdr-limited-external`
-  → `git pull`.
-- **No merge without a `doctrine-reviewer` approval** when the change touches the
-  output doctrine, guards, streaming, or mutation paths. The reviewer is read-only
-  and adversarial (see `.claude/agents/doctrine-reviewer.md`).
+- `main` is the **single active line** for `sealai_v2` / `frontend-v2` work. Work
+  on a **short-lived branch off `main`**, open a PR, merge once green.
+- Branch protection on `main` requires a PR with **3 green required checks**
+  (`backend-contracts`, `v2-contracts`, `secret-scan`) and **`enforce_admins` is
+  ON** — this applies to every push, including agent/admin credentials. There is
+  **no direct-push bypass** (direct pushes to `main` are also denied in
+  `.claude/settings.json`).
+- One active branch per workstream — merged (or explicitly closed) before starting
+  the next. **Delete a branch immediately once merged**
+  (`git branch -d` / `git push origin --delete`); a stale merged branch causes
+  "wrong branch" mistakes later.
 
-## Blast-radius gating (when to HALT to the human)
-- Changes to **live enforcement / streaming / mutation / `runtime_contract`** may
-  go autonomously **to demo**, then **HALT before prod** with a risk summary
-  (what changed `file:line`, AC8 no-over-block proof, how the streaming flash is
-  handled, proof L1 is unchanged, verified rollback anchor, test coverage).
+## HALT-gate rhythm (never auto past a gate)
+- **Plan → owner gate → build → review.** HALT after **every milestone (M1…M6)**
+  with an **Eval-REPLAY** + owner gate (build-spec §10/§12). A milestone is reached
+  only when its eval cases pass and the **Schranken-Quote is 100%**.
 - Also HALT for: a doctrine/security design decision; a test that would only pass
   by weakening a guard (never weaken); a real FP / regression / ambiguity that
   can't be cleanly resolved; live behaviour contradicting tests; a finding
   **outside** the current scope (log + surface, do not silently action).
-- Low-blast-radius fixes (composition, routing collapse, docs) may run autonomously
-  including deploy, still behind the deploy gate.
+- **A self-caused production incident is itself a HALT point** — report and stop,
+  do **not** self-commit a fix to `main` without checking back with the owner
+  first, even when the fix is already tested and correct.
+- Shared edge changes (nginx, `docker-compose.deploy.yml`, new bind mounts) need
+  **explicit per-action owner go-ahead** — a confirmation must NAME the action,
+  not just affirm.
 
-## V2 build rhythm (`backend/sealai_v2/`, `feat/v2*`)
+## Review & the human oracle
+A V2 PR that touches the trust spine (L1/L3), the live `core/output_guard.py`
+guard, grounding correction, tenant security, or a mutation path must get an
+**APPROVE from the read-only `.claude/agents/v2-doctrine-reviewer.md`** before
+merge. Surface eval divergences as owner-final candidates; **never self-tick
+verdicts or free-correct facts** (the TRAP-02 discipline; `eval/adjudicate.py`).
+Deploys go only via `ops/release-backend-v2.sh` (backend) / `ops/release-frontend.sh`
+(marketing); `frontend-v2` deploys via its live `dist/` bind-mount.
 
-> Applies to the green-field V2 tree only — not cut over to demo/main. The V1
-> per-fix protocol + branch/merge + blast-radius rules above are unchanged. Full
-> V2 doctrine: `AGENTS.md § "V2.0 green-field track"`.
-
-- **Gate rhythm:** plan → **owner gate** → build → review; **never auto past a gate.**
-  HALT after **every milestone (M1…M6)** with an **Eval-REPLAY** + owner gate
-  (build-spec §10/§12). The milestone is reached only when the relevant eval cases
-  pass and the **Schranken-Quote is 100 %**.
-- **Build against the eval, not gut feeling.** Red-before-green here = a failing eval
-  case / unit test first, then the change.
-- **The human is the factual-correctness oracle.** Surface eval divergences as
-  owner-final candidates; **never self-tick verdicts or free-correct facts** (the
-  TRAP-02 discipline; `eval/adjudicate.py`).
-- **Branch:** work on the `feat/v2*` line; V2 does **not** target
-  `demo/rwdr-limited-external`/`main` until an explicit, owner-gated cutover.
-- **Reviewer scope:** the read-only `doctrine-reviewer` is **V1-scoped** (L1/L2
-  `output_guard`/`final_guard`) — it does not apply to V2, which has no such guards.
-  V2 doctrine review = the eval hard-gate + L3 integrity (reviewed-only correction)
-  + owner. See `.claude/rules/doctrine.md § "V2 doctrine mechanism"`.
+## Retired (historical only)
+The former V1 runtime targeted PRs at `demo/rwdr-limited-external`, gated on the
+`agent-bff-guardrails` check, and used the read-only `doctrine-reviewer` agent for
+V1 `output_guard`/`final_guard` changes. That runtime was **retired 2026-06-28**.
+`main` is now the single line; the `doctrine-reviewer` is V1-scoped (it probes the
+retired `backend/app` comparative-ranking lexicon) and does not apply to V2. V2
+doctrine review = the eval hard-gate + L3 integrity (reviewed-only correction) +
+the live `core/output_guard.py` contract guard + the `v2-doctrine-reviewer` agent
++ owner. See `doctrine.md`.
