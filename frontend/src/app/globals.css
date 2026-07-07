@@ -11,6 +11,10 @@
   --color-seal-blue: #002A5B;
   --color-seal-light-blue: color-mix(in srgb, var(--color-seal-blue) 14%, #FFFFFF);
 
+  /* Marketing CTA accent (terracotta) — intentional highlight only */
+  --color-seal-accent: #D97757;
+  --color-seal-accent-hover: #C86544;
+
   --color-sidebar: color-mix(in srgb, var(--color-seal-blue) 8%, #FFFFFF);
   --color-surface: #FFFFFF;
   --color-border: #E3E3E3;

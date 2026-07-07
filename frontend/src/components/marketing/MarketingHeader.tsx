@@ -1,94 +1,90 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Menu } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { ArrowRight, Menu, X } from "lucide-react";
+
 import { TrackedLink } from "@/components/analytics/TrackedLink";
+import { ANALYZE_HREF } from "@/lib/marketing/homeContent";
 
-const loginHref = "/dashboard";
+const LOGIN_HREF = "/login";
 
-const navLinks = [
-  ["Produkt", "/werkstoffe"],
-  ["Lösungen", "/medien"],
-  ["Wissen", "/wissen"],
-  ["Cockpit", loginHref],
-  ["Anfrage", "/anfrage/dichtung-auslegen-lassen"],
+const navLinks: [string, string][] = [
+  ["Für Anwender", "/#fuer-anwender"],
+  ["Für Hersteller", "/#fuer-hersteller"],
+  ["So funktioniert", "/#so-funktioniert"],
+  ["Fragen zu sealingAI", "/#website-guide"],
 ];
 
 export function MarketingHeader() {
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const update = () => setScrolled(window.scrollY > 24);
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    return () => window.removeEventListener("scroll", update);
-  }, []);
-
-  const navText = scrolled ? "text-[#536879] hover:text-[#2f4559]" : "text-white/88 hover:text-white";
+  const [open, setOpen] = useState(false);
 
   return (
-    <header
-      className={`fixed top-0 z-50 w-full transition-all duration-300 ${
-        scrolled
-          ? "border-b border-[#536879]/12 bg-[#FAFAF9]/76 text-[#536879] shadow-[0_14px_40px_rgba(17,32,45,0.08)] backdrop-blur-xl"
-          : "border-b border-transparent bg-transparent text-white"
-      }`}
-    >
-      <div className="relative mx-auto flex h-16 max-w-[1480px] items-center px-4 sm:px-6">
-        <div className="flex flex-1 items-center">
-          <nav className="hidden items-center gap-6 lg:flex" aria-label="Hauptnavigation">
+    <header className="sticky top-0 z-50 border-b border-border bg-[#FAFAF9]/85 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-[1240px] items-center justify-between px-5 sm:px-8">
+        <Link href="/" aria-label="sealingAI Startseite" className="flex items-center">
+          <span className="text-[16px] font-semibold tracking-[0.28em] text-seal-blue">sealingAI</span>
+        </Link>
+
+        <nav className="hidden items-center gap-7 lg:flex" aria-label="Hauptnavigation">
+          {navLinks.map(([label, href]) => (
+            <Link
+              key={label}
+              href={href}
+              className="text-[13.5px] font-medium text-muted-foreground transition-colors hover:text-seal-blue"
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href={LOGIN_HREF}
+            className="hidden h-9 items-center rounded-full px-4 text-[13px] font-medium text-muted-foreground transition-colors hover:text-seal-blue sm:inline-flex"
+          >
+            Login
+          </Link>
+          <TrackedLink
+            href={ANALYZE_HREF}
+            analyticsEvent="landing_cta_clicked"
+            analyticsPayload={{ cta: "header_analyze", location: "header" }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-seal-blue px-4 text-[13px] font-semibold text-white transition-all hover:bg-seal-blue/92 active:translate-y-px"
+          >
+            Kostenlos analysieren
+            <ArrowRight size={14} />
+          </TrackedLink>
+          <button
+            type="button"
+            aria-label={open ? "Menü schließen" : "Menü öffnen"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground lg:hidden"
+          >
+            {open ? <X size={16} /> : <Menu size={16} />}
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <nav className="border-t border-border bg-[#FAFAF9] lg:hidden" aria-label="Mobile Navigation">
+          <div className="mx-auto flex max-w-[1240px] flex-col px-5 py-3 sm:px-8">
             {navLinks.map(([label, href]) => (
               <Link
                 key={label}
                 href={href}
-                className={`text-[14px] font-normal transition-colors ${navText}`}
+                onClick={() => setOpen(false)}
+                className="py-2.5 text-[14px] font-medium text-foreground/80"
               >
                 {label}
               </Link>
             ))}
-          </nav>
-          <button
-            type="button"
-            aria-label="Menü öffnen"
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors lg:hidden ${
-              scrolled ? "border-[#536879]/22 text-[#536879]" : "border-white/25 text-white"
-            }`}
-          >
-            <Menu size={16} />
-          </button>
-        </div>
-
-        <Link
-          href="/"
-          aria-label="sealingAI Startseite"
-          className="absolute left-1/2 flex h-9 -translate-x-1/2 items-center justify-center"
-        >
-          <span
-            className={`text-[15px] font-semibold tracking-[0.34em] transition-colors duration-300 sm:text-[16px] ${
-              scrolled ? "text-[#2f4559]" : "text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.28)]"
-            }`}
-          >
-            sealingAI
-          </span>
-        </Link>
-
-        <div className="flex flex-1 items-center justify-end">
-          <TrackedLink
-            href={loginHref}
-            analyticsEvent="landing_cta_clicked"
-            analyticsPayload={{ cta: "header_login", location: "header" }}
-            className={`inline-flex h-9 items-center gap-1.5 rounded-full px-5 text-[13px] font-semibold transition-all active:translate-y-px ${
-              scrolled
-                ? "border border-[#536879]/18 bg-white/62 text-[#2f4559] shadow-[0_8px_22px_rgba(17,32,45,0.08)] hover:bg-white/82"
-                : "border border-white/25 bg-white/14 text-white backdrop-blur-md hover:bg-white/22"
-            }`}
-          >
-            Login
-            <ArrowRight size={14} />
-          </TrackedLink>
-        </div>
-      </div>
+            <Link href={LOGIN_HREF} onClick={() => setOpen(false)} className="py-2.5 text-[14px] font-medium text-foreground/80">
+              Login
+            </Link>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

@@ -139,3 +139,68 @@ export function generateTechArticleSchema({
     },
   };
 }
+
+export function generateWebSiteSchema() {
+  const siteUrl = getSiteUrl();
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": SITE_NAME,
+    "url": siteUrl,
+    "inLanguage": "de-DE",
+    "description":
+      "sealingAI strukturiert Dichtungsfälle, erkennt fehlende Angaben und berechnet erste technische Kennwerte.",
+    "publisher": {
+      "@type": "Organization",
+      "name": SITE_NAME,
+      "url": siteUrl,
+    },
+  };
+}
+
+export function generateWebApplicationSchema() {
+  const siteUrl = getSiteUrl();
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": SITE_NAME,
+    "url": siteUrl,
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "de-DE",
+    "description":
+      "Technische Plattform für Dichtungstechnik: Dichtungsfälle strukturieren, fehlende Angaben erkennen, erste Kennwerte berechnen und qualifizierte Anfragen vorbereiten.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "EUR",
+      "description": "Kostenloser Vorcheck und kostenlose Analyse nach Login.",
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": SITE_NAME,
+      "url": siteUrl,
+    },
+  };
+}
+
+type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+/** FAQPage schema — use ONLY for FAQ content that is visibly rendered on the page. */
+export function generateFAQPageSchema(items: FaqItem[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": items.map((item) => ({
+      "@type": "Question",
+      "name": item.question,
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": item.answer,
+      },
+    })),
+  };
+}
