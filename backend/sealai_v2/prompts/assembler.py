@@ -20,6 +20,12 @@ _DISTILL_TEMPLATE_NAME = "distill.jinja"
 _MEDIUM_RESEARCH_TEMPLATE_NAME = "medium_research.jinja"
 _FACHKARTE_EXTRACT_TEMPLATE_NAME = "fachkarte_extract.jinja"
 _UNDERSTAND_TEMPLATE_NAME = "understand.jinja"
+# Phase 2C (LangGraph-suitability audit): PREPARED, not yet wired into production generation —
+# see pipeline/routing.py's route-to-prompt matrix (inactive) and config.settings for the
+# activation flags these are gated behind once a later phase wires them in.
+_SMALLTALK_NAVIGATION_TEMPLATE_NAME = "smalltalk_navigation.jinja"
+_GENERAL_SEALING_KNOWLEDGE_TEMPLATE_NAME = "general_sealing_knowledge.jinja"
+_MATERIAL_KNOWLEDGE_TEMPLATE_NAME = "material_knowledge.jinja"
 
 
 def _env(template_dir: Path | None) -> Environment:
@@ -168,3 +174,60 @@ class UnderstandPromptAssembler:
             known_seal_types=known_seal_types,
             medium_already_known=medium_already_known,
         ).strip()
+
+
+# --- Phase 2C (LangGraph-suitability audit): cheap-route prompt families --------------------
+#
+# PREPARED, not yet wired into production generation. Mirrors the DistillPromptAssembler /
+# MediumResearchPromptAssembler pattern deliberately: a purely static template with NO Jinja
+# variables, so `.render()` takes no arguments and always returns the identical string — this
+# is what makes these compatible with llm.cache_key.build_prompt_cache_key's static-prompt-hash
+# scheme (no dynamic case data can leak into the static section because there is no variable
+# slot for it to leak through). See pipeline/routing.py for the route classifier that would,
+# in a later phase, select one of these; see pipeline/route_prompt_matrix.py for the (also
+# inactive) documented route -> prompt-family -> model-class mapping.
+
+
+class SmalltalkNavigationPromptAssembler:
+    """Renders ``smalltalk_navigation.jinja`` — short, non-technical, safety-bounded responses
+    for genuine smalltalk/navigation turns. Only reachable (in a later, still-unbuilt activation
+    phase) when the router found zero deterministic engineering signals AND the soft intent is
+    ``gespraech``."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(
+            _SMALLTALK_NAVIGATION_TEMPLATE_NAME
+        )
+
+    def system_prompt(self) -> str:
+        return self._template.render()
+
+
+class GeneralKnowledgePromptAssembler:
+    """Renders ``general_sealing_knowledge.jinja`` — general sealing-technology explanations
+    with no case-specific claims, explicit escalation instruction for any application-shaped
+    content. Only reachable (in a later phase) when the router found zero deterministic
+    engineering signals, no material name, and the soft intent is ``wissensfrage``/``faktfrage``."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(
+            _GENERAL_SEALING_KNOWLEDGE_TEMPLATE_NAME
+        )
+
+    def system_prompt(self) -> str:
+        return self._template.render()
+
+
+class MaterialKnowledgePromptAssembler:
+    """Renders ``material_knowledge.jinja`` — general material-class explanations, explicitly
+    forbidding a final suitability confirmation for any concrete application. Only reachable
+    (in a later phase) when the router found zero deterministic engineering signals, a material
+    name IS present, and the soft intent is ``wissensfrage``/``faktfrage``."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(
+            _MATERIAL_KNOWLEDGE_TEMPLATE_NAME
+        )
+
+    def system_prompt(self) -> str:
+        return self._template.render()
