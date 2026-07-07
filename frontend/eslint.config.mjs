@@ -5,6 +5,7 @@ const config = [
     ignores: [
       ".next/**",
       "node_modules/**",
+      "**/._*",
     ],
   },
   ...nextCoreWebVitals,

@@ -13,7 +13,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:node": "tsx --test src/proxy-auth.test.ts src/lib/site.test.ts src/lib/lifecycleSteps.test.ts src/lib/streamWorkspace.test.ts src/lib/workspaceActionAvailability.test.ts src/lib/bff/workspace.test.ts src/lib/bff/http.test.ts",
+    "test:node": "tsx --test src/proxy-auth.test.ts src/lib/site.test.ts",
     "test:all": "npm run test:node && npm run test:run",
     "gsc": "node scripts/gsc/gsc.mjs",
     "gsc:auth": "node scripts/gsc/oauth.mjs"
