@@ -18,6 +18,12 @@ _EXPECTED_TEMPLATE_VARS = {
     "distill.jinja": set(),
     "fachkarte_extract.jinja": set(),
     "medium_research.jinja": set(),
+    # Phase 2C (LangGraph-suitability audit): prepared cheap-route prompt families — NOT wired
+    # into production generation yet (see pipeline/route_prompt_matrix.py, activation_status=
+    # "inactive"). Deliberately zero variables, same pattern as distill/medium_research above.
+    "general_sealing_knowledge.jinja": set(),
+    "material_knowledge.jinja": set(),
+    "smalltalk_navigation.jinja": set(),
     "system_l1.jinja": {
         "anrede",
         "archetype_context",

@@ -6,6 +6,38 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-08T00:00Z — OWNER DECISION: LangSmith owner-only actions consciously deferred; Phase 2C authorized
+
+**Owner decision.** The four owner-only LangSmith follow-up actions from the 2026-07-07T10:26Z
+incident entry (API-key rotation, old-trace deletion/retention cleanup, prod/dev project split,
+an authenticated `ops/smoke-v2.sh` run) are **consciously deferred** by the owner — not forgotten,
+not silently skipped. The owner has explicitly authorized Phase 2C to proceed now, on the basis
+that the system remains protected by the **already-deployed, live-verified** `safe_metadata_only`
+tracing controls from PR #180: LangSmith's `hide_inputs`/`hide_outputs` are enforced regardless of
+whether the (still-unrotated) API key or historical traces are addressed. The deferred items are a
+**credential/data-hygiene risk, not an active code-level leak** — the code-level leak was the thing
+PR #180 closed and this entry does not reopen that assessment.
+
+**Explicitly NOT performed by Claude Code, and out of scope for it going forward without a fresh
+owner instruction:**
+- LangSmith API-key rotation.
+- Old LangSmith trace deletion / retention-policy configuration.
+- LangSmith project split (prod-safe vs. dev/staging/full-synthetic).
+- An authenticated `ops/smoke-v2.sh` run (requires a real Keycloak bearer token this agent does not
+  have and must not attempt to obtain).
+
+**Residual risk tracked, not closed.** The unrotated key (leaked 2026-06-27) and any historical
+traces predating the PR #180 fix remain a standing exposure until the owner completes the four
+items above. This should be revisited **before any broader production rollout of route
+optimization** (i.e., before `route_optimization_enabled` is ever flipped to `True`, and certainly
+before any L3-bypass is widened beyond `smalltalk_navigation`).
+
+**Phase 2C scope, per this authorization:** telemetry evaluation + prompt-family *preparation*
+only — new prompt templates/assemblers/route-to-prompt mapping are prepared but not wired into
+production traffic; `route_optimization_enabled` stays as-is (currently `False`, live-verified).
+No LangGraph, no broader L3-bypass, no unverified-content streaming, no deterministic
+engineering-logic change. See the Phase 2C PR for the full scope and verification.
+
 ## 2026-07-07T11:12Z — FRONTEND-INDEPENDENT: `backend-v2` PROD deploy — Phase 2B route classification (PR #182)
 
 **Deploy.** Owner-directed deploy of PR #182 (conservative route classification foundation,
