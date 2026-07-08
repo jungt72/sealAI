@@ -220,6 +220,14 @@ services:
       SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED: ${SEALAI_V2_RESPONSE_CONTRACT_GENERAL_GUARD_ENABLED:-false}
       # Material-Parameter-Tabelle: grounded kennwerte rendered as a table (numbers live in the kernel seed)
       SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED: ${SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED:-false}
+      # Phase 2D (PR #185, 2026-07-08 governance reconciliation): conservative deterministic-first
+      # route classification + the smalltalk_navigation-only compact prompt/L3-bypass path. Same
+      # compose-passthrough gap as the auth-role/kill-switch flags above (settings.py default False,
+      # but a .env.prod override would have silently done nothing without this line) — closing it
+      # here. Defaults match settings.py's own defaults, so this is additive-only, zero behavior
+      # change until the owner explicitly sets both true in .env.prod.
+      SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED: ${SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED:-false}
+      SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED: ${SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED:-false}
       # Paperless auto-ingestion (POST /internal/rag/ingest, api/routes/rag_ingest.py): fetches
       # a newly consumed rag:enabled document + LLM-extracts a DRAFT Fachkarte (never reviewed).
       # Values are never logged; unset -> the route fails safe (paperless_not_configured / 401).
