@@ -43,6 +43,7 @@ _EXPECTED_TEMPLATE_VARS = {
         "medium_hint_context",
         "not_computed",
         "pack_suggestion_context",
+        "risk_flags",
         "safety_critical",
         "untrusted",
     },

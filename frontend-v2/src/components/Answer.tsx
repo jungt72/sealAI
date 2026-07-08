@@ -1,7 +1,25 @@
 import type { ChatResponse } from "../contracts";
 import { useFraming } from "../framing-context";
+import { hasRiskFlags, RISK_WARNING_TEXT } from "../lib/safety/riskFlags";
 import { Citations } from "./Citation";
 import { Markdown } from "./Markdown";
+
+/** Legal-by-Design Phase D (Goal 6): an unmissable warning when the QUESTION matched a regulated/
+ * safety-critical term (ATEX, FDA, Sauerstoff, ...) — reuses the Gegencheck note's exact visual
+ * treatment (same severity tier, same warning tokens, see app.css's .gegencheck-note comment) and
+ * the same "rendered OUTSIDE the collapsed meta" placement, for the identical reason: this must not
+ * require a click to see. Detection is backend-only + deterministic (safety/risk_flags.py) — this
+ * component only renders what the server already decided, never re-detects client-side. */
+function RiskFlagsNote({ riskFlags }: { riskFlags: ChatResponse["risk_flags"] }) {
+  if (!hasRiskFlags(riskFlags)) return null;
+  return (
+    <div className="gegencheck-note" data-testid="risk-flags-note">
+      <span className="gegencheck-label">Regulierter/sicherheitskritischer Bereich erkannt</span>
+      <p className="gegencheck-text">{RISK_WARNING_TEXT}</p>
+      <p className="gegencheck-source">Erkannt: {riskFlags.join(", ")}</p>
+    </div>
+  );
+}
 
 /** Modus E (Gegencheck): a DISQUALIFY-ONLY verdict (owner doctrine E4-1) — never render an
  * affirmative "passt/geeignet" for a non-disqualifying basis. Only the two attention-worthy states
@@ -70,6 +88,7 @@ export function Answer({ res }: { res: ChatResponse }) {
   const { candidate, vorlaeufig } = useFraming();
   return (
     <div className="answer" data-testid="answer">
+      <RiskFlagsNote riskFlags={res.risk_flags} />
       <GegencheckNote gegencheck={res.gegencheck} />
       <details className="answer-meta">
         <summary>Technische Vorbewertung</summary>

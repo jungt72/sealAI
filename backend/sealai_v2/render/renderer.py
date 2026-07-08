@@ -116,6 +116,7 @@ class ArtifactRenderer:
             body=body,
             provenance=_provenance(snapshot),
             wissensstand=snapshot.wissensstand,
+            risk_flags=snapshot.risk_flags,
         )
 
 
@@ -131,4 +132,5 @@ def snapshot_from_result(question: str, result: PipelineResult) -> RenderSnapsho
         grounded=result.grounded,
         wissensstand=result.wissensstand,
         offene_punkte=_offene_punkte(result),
+        risk_flags=result.risk_flags,
     )

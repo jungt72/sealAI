@@ -203,6 +203,10 @@ def chat_response(result: PipelineResult) -> dict:
         # P3 (audit §4.3 Versionierung): the knowledge-catalog state this answer was grounded
         # against, or "" when no catalogs were wired. Passed through verbatim.
         "wissensstand": result.wissensstand,
+        # Legal-by-Design Phase D (Goal 6): deterministic risk-flag terms matched in the question
+        # ((), or e.g. ["ATEX", "Sauerstoff"]) — drives the SPA's warning badge. Always present
+        # (never flag-gated — see PipelineResult.risk_flags's docstring).
+        "risk_flags": list(result.risk_flags),
         # P1.5: surface L3's verdict (verified flag + action/parse_ok/hedged) so the client can
         # distinguish a confidently-verified answer from a hedge or a silently-unverified one.
         # Additive only — existing keys are untouched.

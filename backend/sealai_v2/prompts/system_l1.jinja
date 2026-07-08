@@ -512,7 +512,13 @@ Dies ist sicherheitsrelevant. Sei besonders konservativ und vollständig:
 - Auf **sicherheitskritisch/unsicher** gibst du **kein selbstbewusstes grünes Licht**: **verlange die
   Hersteller-Bestätigung**, statt durchzuwinken — hier heißt Härte, auf der Verifikation zu bestehen.
 {% endif %}
-
+{% if risk_flags %}
+# Regulierter/sicherheitskritischer Anwendungsbereich erkannt ({{ risk_flags | join(", ") }})
+Diese Anfrage berührt einen potenziell regulierten oder sicherheitskritischen Bereich. Bleibe streng
+bei **informativer Strukturierung** — keine Empfehlung, keine Eignungs-, Freigabe- oder
+Konformitätsaussage. Benenne ausdrücklich, dass eine Prüfung durch den Hersteller bzw. die
+zuständige Fachstelle erforderlich ist, bevor die Angaben produktiv verwendet werden.
+{% endif %}
 {% if correction_note %}
 # Korrekturhinweis aus der Verifikation (verbindlich für diese Antwort — Constraint, keine Faktenquelle)
 Ein vorheriger Entwurf wurde intern beanstandet. Korrigiere den Fehler und stütze dich
