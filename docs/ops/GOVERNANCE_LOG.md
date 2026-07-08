@@ -6,6 +6,44 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-08T07:04Z — Legal-by-Design PR #188 + #189 merged + deployed (backend-v2 + frontend-v2 dashboard)
+
+**Merge + deploy.** Owner-authorized ("Alle vier Schritte jetzt") full rollout of the Legal-by-Design
+implementation (Phase A-F, 11-goal spec): PR #188 (Phase A+B -- doctrine SSoT, legal pages, onboarding
+Legal Gate) and PR #189 (Phase C-F -- tenant-isolation guardrail tests, deterministic risk-flag
+detection + prompt hardening, terminology lint, docs) both squash-merged to `main`, then deployed.
+
+**backend-v2** via `ops/release-backend-v2.sh` (tree_hash `101c56721d78bb691bd4f16afa87b2dcf2ba8c58`,
+git `67d6867b`) -- new live `sealai-backend-v2:latest` =
+`sha256:22ca7c451ec97452ede12b8c8d69f14c2e655d6b3782936ef1a84a264833c4ea`, rollback rung
+`sha256:76c0b9a45cbf685a1e6be2f621ea10bd9b220a623428fef507ce5845d072dad1` (tagged
+`rollback-pre-no-eval-67d6867b-20260708-070216`). Smoke GREEN (health internal+public, kern one-shot
+v=16.755/PV=50.0, restart-survival). **Post-deploy checklist, all verified live:** logs since deploy
+clean; `docker exec backend-v2 python3 -c "from sealai_v2.config.settings import Settings; s =
+Settings(); print(s.legal_gate_enabled, s.risk_flag_prompt_enabled)"` -> `False False`; public
+`GET /api/v2/health` -> 200; public `GET /api/v2/legal/doctrine` -> 200 with the current doctrine
+payload. Ledger: `ops/deploy-ledger.jsonl`.
+
+**frontend-v2 (dashboard)** -- this surface has no container/image; it is a static build
+(`frontend-v2/dist`) bind-mounted directly into the shared `nginx` container
+(`docker-compose.deploy.yml`), so its "deploy" is `npm run build` (which also runs the new
+`check:terminology` gate, alongside the existing `check:boundary`) writing straight into the live
+mount -- no separate release script exists for this surface today. Build succeeded cleanly; verified
+live by confirming `https://sealingai.com/dashboard/` serves the freshly built bundle hash
+(`index-VZRig6RJ.js`, matching the local `dist/assets/` output) and returns 200.
+
+**Status: both new flags (`SEALAI_V2_LEGAL_GATE_ENABLED`, `SEALAI_V2_RISK_FLAG_PROMPT_ENABLED`) are
+live but OFF -- fully deployed, fully inert.** The Legal Gate does not block any route yet; the
+risk-flag L1-prompt reinforcement never fires. The DETECTION side (risk_flags on every chat/briefing/
+anfrage response) and the PDF export changes (new title/disclaimer/badge) ARE live and active now --
+these are pure additive/informational changes, not behavior-gated (see `docs/ai-safety-guardrails.md`
+for why detection itself is never flag-gated).
+
+**Explicitly NOT done, staying owner-only (see `docs/legal-onboarding.md`'s open-items list):**
+attorney review of the three draft legal pages; filling the `[Platzhalter: ...]` company-identity
+facts; building `/impressum` (needs real registration data this agent cannot invent); a real
+cookie-consent banner UI; activating either new flag in any environment.
+
 ## 2026-07-07T14:35Z — `backend-v2` PROD deploy — Phase 2D smalltalk prompt wiring (PR #185)
 
 **Deploy.** Autonomous deploy of PR #185 (Phase 2D, `440d61ac`) via `ops/release-backend-v2.sh`,
