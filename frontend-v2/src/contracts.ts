@@ -342,3 +342,22 @@ export interface MemoryItem {
 export function isMemoryItemInjectable(item: Pick<MemoryItem, "status">): boolean {
   return !NEVER_INJECTABLE_STATUSES.has(item.status);
 }
+
+// Legal-by-Design Phase B (Goal 3): the Legal-Gate onboarding submission — field names mirror the
+// backend's LegalAcceptanceRequest (api/routes/legal.py) 1:1.
+export interface LegalAcceptancePayload {
+  company_name: string;
+  business_email: string;
+  role: string;
+  vat_id: string;
+  legal_basis_accepted: boolean;
+  dpa_accepted: boolean;
+  business_user_confirmed: boolean;
+  terms_version: string;
+  privacy_version: string;
+  dpa_version: string;
+}
+
+export interface LegalAcceptanceStatus {
+  accepted: boolean;
+}

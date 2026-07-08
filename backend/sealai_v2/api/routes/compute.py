@@ -16,7 +16,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from sealai_v2.api.deps import current_identity, get_pipeline
+from sealai_v2.api.deps import get_pipeline, require_legal_acceptance
 from sealai_v2.api.serializers import compute_response
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -28,7 +28,7 @@ CaseIdParam = Annotated[str | None, Query(max_length=255)]
 @router.get("/compute")
 async def compute(
     case_id: CaseIdParam = None,
-    identity: VerifiedIdentity = Depends(current_identity),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
     if pipeline.memory is None:

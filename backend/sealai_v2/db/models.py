@@ -326,3 +326,35 @@ class V2MemoryOutbox(Base):
     next_attempt_at: Mapped[str | None] = mapped_column(
         String(32), nullable=True, index=True
     )
+
+
+class V2LegalAcceptance(Base):
+    """Legal-by-Design Phase B (Goal 3): the B2B onboarding / Legal-Gate acceptance record — one row
+    per tenant (last acceptance wins, mirrors ``V2DurableFact``'s tenant-scoped-not-session-scoped
+    keying: this is an ORG-level fact, not a per-conversation one). ``require_legal_acceptance``
+    (``api/deps.py``) fail-closed-gates every productive route on this row existing AND its three
+    accepted-version columns matching ``core.legal_doctrine``'s current versions — a doctrine-text
+    bump (new ``TERMS_VERSION`` etc.) therefore forces re-acceptance without a migration.
+
+    ``accepted_ip_hash`` is a salted hash (``security/ip_hash.py``), never the raw IP — the record
+    proves "an acceptance happened from a stable-but-unlinkable network origin", not who/where,
+    matching this schema's existing PII-minimalism (``V2Message.text`` is the only free-text PII
+    surface already accepted elsewhere in this schema).
+    """
+
+    __tablename__ = "v2_legal_acceptance"
+
+    tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    business_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(128), nullable=False)
+    vat_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    legal_basis_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    dpa_accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    business_user_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    accepted_terms_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_privacy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_dpa_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_ip_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    accepted_user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")

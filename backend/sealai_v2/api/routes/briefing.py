@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import (
-    current_identity,
     flags_from_settings,
     get_pipeline,
     get_settings,
+    require_legal_acceptance,
 )
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
@@ -29,7 +29,7 @@ class BriefingRequest(BaseModel):
 @router.post("/briefing")
 async def briefing(
     req: BriefingRequest,
-    identity: VerifiedIdentity = Depends(current_identity),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> dict:

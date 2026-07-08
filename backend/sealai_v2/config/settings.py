@@ -193,6 +193,18 @@ class Settings(BaseSettings):
     # Env: SEALAI_V2_AUTH_MANUFACTURER_ROLE.
     auth_manufacturer_role: str = "manufacturer"
 
+    # Legal-by-Design (Phase B): fail-closed-gates chat/briefing/anfrage/compute on a CURRENT
+    # (version-matching) V2LegalAcceptance row per tenant. OFF by default — the draft legal texts
+    # (core/legal_doctrine.py, frontend/(marketing)/{nutzungsbedingungen,datenschutz,
+    # auftragsverarbeitung}) need an attorney review pass before they can lawfully block paying
+    # customers (see docs/legal-onboarding.md). While OFF, require_legal_acceptance is a no-op
+    # passthrough — byte-identical to having no gate at all. Env: SEALAI_V2_LEGAL_GATE_ENABLED.
+    legal_gate_enabled: bool = False
+    # De-identification pepper for the Legal-Gate's accepted_ip_hash (security/ip_hash.py) — NOT a
+    # cryptographic secret (see that module's docstring for why a fixed default is acceptable here).
+    # Env: SEALAI_V2_LEGAL_IP_HASH_PEPPER.
+    legal_ip_hash_pepper: str = "sealai-legal-gate-v1"
+
     # --- L2 retrieval backend (Phase-1 Qdrant production adapter, behind the Retriever Protocol) ---
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —
     # deterministic, hermetic, no network) and the QdrantFachkartenRetriever (semantic, production).

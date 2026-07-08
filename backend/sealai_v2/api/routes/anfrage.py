@@ -19,11 +19,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import (
-    current_identity,
     flags_from_settings,
     get_lead_store,
     get_pipeline,
     get_settings,
+    require_legal_acceptance,
 )
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
@@ -44,7 +44,7 @@ class AnfrageRequest(BaseModel):
 @router.post("/anfrage")
 async def anfrage(
     req: AnfrageRequest,
-    identity: VerifiedIdentity = Depends(current_identity),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     leads: LeadStore = Depends(get_lead_store),
     settings: Settings = Depends(get_settings),
