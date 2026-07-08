@@ -10,7 +10,7 @@ export function TrustNeutralitySection() {
       data-header-theme="dark"
       className="section-anchor bg-[#0D1016] text-white"
     >
-      <div className="marketing-wide py-20 lg:py-28">
+      <div className="marketing-section py-20 lg:py-28">
         <div className="marketing-copy">
           <h2 className="text-[clamp(2rem,3.6vw,3rem)] font-normal leading-[1.1] tracking-[-0.03em]">
             {trustNeutrality.headline}
