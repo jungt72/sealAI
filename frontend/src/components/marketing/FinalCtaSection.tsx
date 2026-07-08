@@ -4,8 +4,6 @@ import { ArrowRight } from "lucide-react";
 import { TrackedLink } from "@/components/analytics/TrackedLink";
 import { PARTNER_HREF, REGISTER_HREF, finalCta } from "@/lib/marketing/homeContent";
 
-const CONTAINER = "mx-auto max-w-[1240px] px-5 sm:px-8";
-
 /** Final CTA — light, reduced closing section. */
 export function FinalCtaSection() {
   return (
@@ -14,8 +12,8 @@ export function FinalCtaSection() {
       data-header-theme="light"
       className="section-anchor border-t border-border bg-background"
     >
-      <div className={`${CONTAINER} py-20 lg:py-28`}>
-        <div className="mx-auto max-w-2xl text-center">
+      <div className="marketing-wide py-20 lg:py-28">
+        <div className="marketing-copy-center text-center">
           <h2 className="text-[clamp(2.1rem,3.8vw,3.2rem)] font-normal leading-[1.06] tracking-[-0.03em] text-foreground">
             {finalCta.headline}
           </h2>

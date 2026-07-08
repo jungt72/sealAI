@@ -180,6 +180,67 @@
   scroll-margin-top: 76px;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Marketing width system — Legora-style near-viewport spatial logic.      */
+/* Replaces the old `mx-auto max-w-[1240px] px-5 sm:px-8` CONTAINER const  */
+/* that every section duplicated. `.marketing-wide` is deliberately        */
+/* uncapped (no max-width) — it is meant to stay a fixed-gutter fluid      */
+/* width all the way out to ultra-wide monitors, not a wide-but-still-     */
+/* centered box. Text-only intro blocks (headline + short intro copy)      */
+/* should nest `.marketing-copy` / `.marketing-copy-center` inside a       */
+/* `.marketing-wide` section instead of capping the whole section.         */
+/* ---------------------------------------------------------------------- */
+.marketing-shell {
+  width: 100%;
+}
+
+.marketing-wide {
+  width: calc(100% - 48px);
+  max-width: none;
+  margin-inline: auto;
+}
+
+@media (max-width: 1199px) {
+  .marketing-wide {
+    width: calc(100% - 32px);
+  }
+}
+
+@media (max-width: 480px) {
+  .marketing-wide {
+    width: calc(100% - 30px);
+  }
+}
+
+.marketing-copy {
+  max-width: 520px;
+}
+
+.marketing-copy-center {
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+/* 4-up highlight card grid (IntelligenceHighlights). Gap sits at the upper
+   end of the 24-32px range the cards can visually carry at full width. */
+.highlights-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px;
+}
+
+@media (max-width: 1023px) {
+  .highlights-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .highlights-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Scroll-aware marketing header. Default (no data-state yet, e.g. no-JS or
    pre-hydration) renders the legible light-glass state — never fully
    transparent-on-white. MarketingHeader.tsx swaps `data-state` at runtime via
@@ -220,20 +281,38 @@
   }
 }
 
-/* Dark technical hero atmosphere — pure CSS, no external/CDN image.
-   TODO(frontend): swap this gradient atmosphere for a final photographed or
-   rendered dark hero asset once available, e.g.
-   public/images/marketing/hero-sealing-intelligence-dark.jpg. Neither
-   existing asset fit the brief: hero-background.png is a pale, light
-   blue/white gradient, and sealing-intelligence-hero.png is a generic
-   stock-photo laptop scene — both were rejected in favor of this restrained
-   dark/technical placeholder. */
+/* Dark technical hero atmosphere. `hero-background.png` (pale light-blue
+   gradient) still doesn't fit a dark hero. `sealing-intelligence-hero.png`
+   (generic person-at-laptop stock photo) was previously rejected wholesale —
+   but it also contains a clean, on-brand technical detail in one corner: an
+   engineering dimension drawing with O-ring seals on a desk, no face/hands/
+   laptop in frame. That detail is cropped tight into
+   public/images/marketing/hero-technical-detail.jpg (520x368, ~25KB) and
+   pushed to a moody near-black/navy duotone entirely via CSS — the source
+   file itself stays a plain, re-gradeable color photo; `.hero-technical-bg`
+   applies grayscale/brightness/contrast, and `.hero-technical-tint` layers a
+   multiply-blended navy gradient on top (reusing the previous placeholder's
+   radial-gradient warmth for continuity).
+   NOTE: the crop is modest native resolution (source asset is only
+   1086x1448), so it reads intentionally soft at ultra-wide viewport widths —
+   fine for an atmospheric backdrop, not a sharp hero shot.
+   TODO(frontend): swap for a purpose-shot or rendered dark macro asset (e.g.
+   a studio macro of a seal/O-ring against a dark backdrop) once available —
+   replace the background-image url below and this comment. */
 .hero-technical-bg {
+  background-color: #04070d;
+  background-image: url("/images/marketing/hero-technical-detail.jpg");
+  background-repeat: no-repeat;
+  background-position: center 42%;
+  background-size: cover;
+  filter: grayscale(0.82) brightness(0.48) contrast(1.22) saturate(0.85);
+}
+
+.hero-technical-tint {
   background:
-    radial-gradient(120% 90% at 50% 8%, rgba(38, 66, 104, 0.55) 0%, rgba(6, 12, 22, 0) 55%),
-    radial-gradient(85% 60% at 82% 78%, rgba(20, 45, 74, 0.5) 0%, rgba(6, 12, 22, 0) 60%),
-    radial-gradient(70% 50% at 12% 88%, rgba(15, 33, 56, 0.45) 0%, rgba(6, 12, 22, 0) 60%),
-    linear-gradient(180deg, #0a121f 0%, #060b14 55%, #04070d 100%);
+    radial-gradient(120% 90% at 50% 8%, rgba(38, 66, 104, 0.5) 0%, rgba(6, 12, 22, 0) 55%),
+    linear-gradient(165deg, rgba(0, 42, 91, 0.45) 0%, rgba(6, 12, 22, 0.35) 55%, rgba(4, 7, 13, 0.55) 100%);
+  mix-blend-mode: multiply;
 }
 
 .hero-technical-rings {

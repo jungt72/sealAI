@@ -2,8 +2,6 @@ import { CheckCircle2 } from "lucide-react";
 
 import { trustNeutrality } from "@/lib/marketing/homeContent";
 
-const CONTAINER = "mx-auto max-w-[1240px] px-5 sm:px-8";
-
 /** "Neutralität und Vertrauen" — dark reduced trust section. */
 export function TrustNeutralitySection() {
   return (
@@ -12,8 +10,8 @@ export function TrustNeutralitySection() {
       data-header-theme="dark"
       className="section-anchor bg-[#0D1016] text-white"
     >
-      <div className={`${CONTAINER} py-20 lg:py-28`}>
-        <div className="max-w-2xl">
+      <div className="marketing-wide py-20 lg:py-28">
+        <div className="marketing-copy">
           <h2 className="text-[clamp(2rem,3.6vw,3rem)] font-normal leading-[1.1] tracking-[-0.03em]">
             {trustNeutrality.headline}
           </h2>

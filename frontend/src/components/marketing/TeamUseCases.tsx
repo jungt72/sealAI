@@ -16,8 +16,6 @@ const ICONS: Record<string, LucideIcon> = {
   qualitaet: ClipboardCheck,
 };
 
-const CONTAINER = "mx-auto max-w-[1240px] px-5 sm:px-8";
-
 /**
  * "Für jedes Team. Jede Aufgabe." — premium horizontal use-case showcase.
  * Native CSS scroll-snap (no carousel dependency) with arrow buttons and a
@@ -51,8 +49,8 @@ export function TeamUseCases() {
       data-header-theme="light"
       className="section-anchor border-t border-border bg-[#FAFAFB]"
     >
-      <div className={`${CONTAINER} py-20 lg:py-28`}>
-        <div className="mx-auto max-w-2xl text-center">
+      <div className="marketing-wide py-20 lg:py-28">
+        <div className="text-center">
           <h2 className="text-[clamp(2rem,3.4vw,2.9rem)] font-normal leading-[1.08] tracking-[-0.025em] text-foreground">
             {teamUseCases.headlineLines.map((line) => (
               <span key={line} className="block">
@@ -60,7 +58,13 @@ export function TeamUseCases() {
               </span>
             ))}
           </h2>
-          <p className="mt-5 text-[15px] leading-7 text-muted-foreground">{teamUseCases.subline}</p>
+          {/* Subline is deliberately narrower than the shared .marketing-copy-center
+              (680px) primitive — the owner wants this specific subline capped at
+              ~520px so it reads as a tight, editorial caption under a much wider
+              headline/section, not a generic centered paragraph. */}
+          <p className="mx-auto mt-5 max-w-[520px] text-[15px] leading-7 text-muted-foreground">
+            {teamUseCases.subline}
+          </p>
         </div>
 
         <div className="mt-10 flex items-center justify-end gap-2">
@@ -96,14 +100,14 @@ export function TeamUseCases() {
               <article
                 key={card.key}
                 data-carousel-item
-                className="snap-item w-[260px] shrink-0 rounded-[18px] border border-border bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)] sm:w-[300px]"
+                className="snap-item flex h-[240px] w-[520px] shrink-0 overflow-hidden rounded-[20px] border border-border bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)] sm:h-[260px] sm:w-[560px] lg:w-[600px]"
               >
-                <div className="flex h-36 items-center justify-center rounded-t-[18px] bg-[linear-gradient(160deg,#F4F5F6_0%,#EBEDEF_100%)]">
-                  <Icon size={30} strokeWidth={1.4} className="text-seal-blue/70" aria-hidden="true" />
+                <div className="flex w-[42%] shrink-0 items-center justify-center bg-[linear-gradient(160deg,#F4F5F6_0%,#EBEDEF_100%)]">
+                  <Icon size={44} strokeWidth={1.3} className="text-seal-blue/70" aria-hidden="true" />
                 </div>
-                <div className="px-5 py-5">
-                  <h3 className="text-[15px] font-medium text-foreground">{card.title}</h3>
-                  <p className="mt-2 text-[13px] leading-6 text-muted-foreground">{card.text}</p>
+                <div className="flex flex-1 flex-col justify-center px-7 py-6">
+                  <h3 className="text-[17px] font-medium text-foreground">{card.title}</h3>
+                  <p className="mt-2.5 text-[14px] leading-6 text-muted-foreground">{card.text}</p>
                 </div>
               </article>
             );

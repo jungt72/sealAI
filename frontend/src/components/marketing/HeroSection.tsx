@@ -7,9 +7,13 @@ import { heroContent } from "@/lib/marketing/homeContent";
  * Full-viewport intelligence hero. Server component (no client JS needed) so
  * the hero text/background never wait on hydration — keeps LCP fast.
  *
- * Background is a pure CSS dark technical atmosphere, see `.hero-technical-bg`
- * in globals.css for the asset-selection rationale and the TODO pointing at
- * where a final photographed/rendered hero image should later be dropped in.
+ * Background is a cropped, heavily dark-graded detail from the existing
+ * sealing-intelligence-hero.png stock asset (technical dimension drawing +
+ * O-ring seals, cropped clear of any person/laptop), composited entirely via
+ * CSS (`.hero-technical-bg` + `.hero-technical-tint`). See the comment above
+ * `.hero-technical-bg` in globals.css for the full asset-selection rationale
+ * and the TODO pointing at where a final purpose-shot/rendered hero asset
+ * should later replace it.
  */
 export function HeroSection() {
   return (
@@ -19,6 +23,7 @@ export function HeroSection() {
       className="hero-viewport section-anchor relative isolate -mt-[76px] overflow-hidden bg-[#04070d] text-white"
     >
       <div className="hero-technical-bg absolute inset-0" aria-hidden="true" />
+      <div className="hero-technical-tint absolute inset-0" aria-hidden="true" />
       <div className="hero-technical-rings absolute inset-0" aria-hidden="true" />
 
       {/* Top scrim — keeps the transparent header legible over the image. */}
