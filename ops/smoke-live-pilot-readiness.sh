@@ -107,11 +107,15 @@ else
   fail 'dashboard route did not expose expected SPA shell marker'
 fi
 
-assert_code POST /api/bff/agent/chat/stream 401 '{"message":"smoke from pilot readiness"}'
-assert_code GET /api/bff/workspace/smoke-case 401
-assert_code GET /api/bff/agent/chat/history/smoke-case 401
-assert_code_any GET /api/bff/rfq/smoke-case/preview '401,404'
-assert_code_any GET /api/bff/rag/documents '401,403'
+# The Next.js BFF route layer (agent/chat/stream, workspace, rag, rfq) was intentionally
+# and fully removed in fb98ab5a (V2 cutover — the dashboard calls /api/v2 directly now).
+# nginx has no /api/bff/ location either, so these correctly 410 via the generic /api/
+# catch-all. Assert they stay retired rather than expecting the old 401 auth-boundary.
+assert_code_any POST /api/bff/agent/chat/stream '404,410' '{"message":"smoke from pilot readiness"}'
+assert_code_any GET /api/bff/workspace/smoke-case '404,410'
+assert_code_any GET /api/bff/agent/chat/history/smoke-case '404,410'
+assert_code_any GET /api/bff/rfq/smoke-case/preview '404,410'
+assert_code_any GET /api/bff/rag/documents '404,410'
 
 assert_code_any GET /api/langgraph/state?thread_id=smoke '404,410'
 assert_code_any POST /api/langgraph/parameters/patch '404,410' '{"chat_id":"smoke","parameters":{"pressure_bar":1}}'
