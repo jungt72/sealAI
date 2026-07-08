@@ -6,6 +6,69 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-08T12:49:42Z — Phase 2D governance reconciliation (implemented + deployed-inert; staging active; production activation NO-GO)
+
+Post-audit governance cleanup after a read-only audit of the "Phase 2D" (smalltalk_navigation compact-prompt
+routing) state. No product behavior changed by this entry — documentation-only reconciliation. State
+re-verified live on the VPS checkout (`main` HEAD `91d7a1660fa430406c2c4a22badf4517b21d93b2`, clean, in sync
+with `origin/main`).
+
+**1 — Corrected finding.** Phase 2D (smalltalk_navigation compact-prompt routing, PR #185 / commit
+`440d61ac`) is **already implemented and merged to `main`** (confirmed ancestor of HEAD), with its deploy
+governance entry PR #186 / commit `3c5c4bad` also on `main`. This **supersedes** any earlier assumption that
+Phase 2D was "not yet approved for implementation" — the implementation phase is done and merged.
+
+**2 — Production state (inert).** Phase 2D code is deployed to production but **inert**. Live `backend-v2`
+runs `sealai-backend-v2:latest` = `sha256:22ca7c45…` at git `67d6867b` (tree_hash
+`101c56721d78bb691bd4f16afa87b2dcf2ba8c58`); the backend-code diff `67d6867b..main` under
+`backend/sealai_v2/` is **empty** (prod backend == main backend). Both flags are default-off:
+`route_optimization_enabled=False` and `route_prompt_families_enabled=False` in
+`backend/sealai_v2/config/settings.py` (lines 168 / 179), and both are **absent from `.env.prod`** and unset
+in the running container's environment (`SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED` /
+`SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED` not present) → defaults apply → the compact smalltalk generator is
+never constructed and `Pipeline.run()` is byte-identical to pre-Phase-2D behavior.
+
+**3 — Staging state (active test).** The separate `backend-v2-staging` container currently runs with
+**both** flags ON — `SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED=true` and
+`SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED=true` (verified via `docker inspect` of the staging container env).
+This is a **staging-only active test state**, currently sourced from the **unmerged** branch
+`origin/feat/v2-staging-deploy-script-and-activation`, current tip `1d20112db8bee7bbbf212ccddc387335a8cb4dd4`
+("feat(ops): staging deploy script + owner-authorized staging activation of route flags"). That branch adds
+only ops/deploy/governance artefacts (`ops/release-backend-v2-staging.sh`,
+`ops/staging/docker-compose.staging.yml`, `ops/deploy-ledger-staging.jsonl`, a `docs/ops/GOVERNANCE_LOG.md`
+entry) — **no `backend/sealai_v2/` product code**.
+
+**4 — Activation status.** Production activation of these two flags remains **NO-GO** pending every gate
+below.
+
+**5 — Required gates before production activation** (each explicit, none paraphrased away):
+- **LangSmith API-key rotation**, or an explicit owner deferral of it.
+- **Old LangSmith trace review / deletion / retention** decision, or an explicit owner deferral of it.
+- **LangSmith project-split** decision, or an explicit owner deferral of it.
+- **Owner-run authenticated smoke test.**
+- **Targeted smalltalk eval / replay.**
+- **Staging result review.**
+- **Named owner approval for production activation** — per the repo HALT-gate convention
+  (`.claude/rules/workflow.md`: "explicit per-action owner go-ahead — a confirmation must NAME the action"),
+  the approval must name the action (flip `route_optimization_enabled` + `route_prompt_families_enabled` to
+  True in `.env.prod` and recreate `backend-v2`).
+
+**6 — Doctrine invariants (unchanged, verbatim-equivalent):**
+- No LangGraph.
+- No knowledge-route L3 bypass.
+- No material-route L3 bypass.
+- No unverified engineering streaming.
+- `general_sealing_knowledge` remains **L3=True**.
+- `material_knowledge` remains **L3=True**.
+- `material_comparison` remains **L3=True**.
+- Only `smalltalk_navigation` is eligible for the compact prompt path.
+
+**Companion doc.** A concise production-activation checklist was added at
+`docs/V2/phase2d_production_activation_checklist.md` (current flags, owner gates, smoke/eval checks, rollback
+via `ops/release-backend-v2.sh`, post-activation metrics, and activation/deactivation command placeholders).
+
+---
+
 ## 2026-07-08T07:04Z — Legal-by-Design PR #188 + #189 merged + deployed (backend-v2 + frontend-v2 dashboard)
 
 **Merge + deploy.** Owner-authorized ("Alle vier Schritte jetzt") full rollout of the Legal-by-Design
