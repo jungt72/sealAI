@@ -15,8 +15,6 @@ const ICONS: Record<string, LucideIcon> = {
   sicherheit: ShieldCheck,
 };
 
-const CONTAINER = "mx-auto max-w-[1240px] px-5 sm:px-8";
-
 /**
  * "Introducing Sealing Intelligence" — platform/system explainer. The
  * interactive `HeroPrecheckCard` (deterministic, no LLM, no recommendation)
@@ -30,8 +28,8 @@ export function SealingIntelligenceSection() {
       data-header-theme="light"
       className="section-anchor border-t border-border bg-background"
     >
-      <div className={`${CONTAINER} py-20 lg:py-28`}>
-        <div className="mx-auto max-w-2xl text-center">
+      <div className="marketing-wide py-20 lg:py-28">
+        <div className="marketing-copy-center text-center">
           <h2 className="text-[clamp(2rem,3.4vw,2.9rem)] font-normal leading-[1.08] tracking-[-0.025em] text-foreground">
             {sealingIntelligence.headline}
           </h2>
@@ -52,7 +50,7 @@ export function SealingIntelligenceSection() {
         </div>
 
         <div className="mt-16 rounded-[24px] border border-border bg-[#FAFAFB] p-6 sm:p-10">
-          <div className="mx-auto max-w-xl text-center">
+          <div className="marketing-copy-center text-center">
             <p className="text-[12px] font-semibold uppercase tracking-wide text-seal-blue">
               {sealingIntelligence.demo.eyebrow}
             </p>

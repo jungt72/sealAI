@@ -101,7 +101,7 @@ export function MarketingHeader() {
 
   return (
     <header data-state={state} className="marketing-header fixed inset-x-0 top-0 z-50">
-      <div className="relative mx-auto flex h-[76px] max-w-[1400px] items-center justify-between px-5 sm:px-8">
+      <div className="marketing-wide relative flex h-[76px] items-center justify-between">
         <nav className="hidden items-center gap-8 lg:flex" aria-label="Hauptnavigation">
           {LEFT_NAV.map(([label, href]) => (
             <Link
@@ -169,7 +169,7 @@ export function MarketingHeader() {
             onClick={() => setOpen(false)}
           />
           <div className="fixed inset-x-0 top-[76px] z-40 border-t border-border bg-[#FAFAF9] shadow-xl">
-            <div className="mx-auto flex max-w-[1400px] items-center justify-between px-5 py-3 sm:px-8">
+            <div className="marketing-wide flex items-center justify-between py-3">
               <span className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Menü</span>
               <button
                 ref={closeButtonRef}
@@ -181,7 +181,7 @@ export function MarketingHeader() {
                 <X size={15} />
               </button>
             </div>
-            <nav className="mx-auto flex max-w-[1400px] flex-col px-5 pb-4 sm:px-8" aria-label="Mobile Navigation">
+            <nav className="marketing-wide flex flex-col pb-4" aria-label="Mobile Navigation">
               {DRAWER_LINKS.map(([label, href]) => (
                 <Link
                   key={label}
