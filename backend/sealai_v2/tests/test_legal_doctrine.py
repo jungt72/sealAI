@@ -57,5 +57,12 @@ def test_forbidden_status_terms_map_is_non_empty_and_lowercase_keyed():
 
 
 def test_risk_trigger_terms_cover_the_owner_specified_list():
-    for must_have in ("ATEX", "Sauerstoff", "FDA", "Maschinenrichtlinie", "Wasserstoff", "CE"):
+    for must_have in (
+        "ATEX",
+        "Sauerstoff",
+        "FDA",
+        "Maschinenrichtlinie",
+        "Wasserstoff",
+        "CE",
+    ):
         assert must_have in RISK_TRIGGER_TERMS

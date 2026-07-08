@@ -51,7 +51,9 @@ def test_acceptance_requires_a_token():
 
 def test_valid_acceptance_is_stored_under_the_tokens_tenant():
     client, store = _client()
-    r = client.post("/api/v2/legal/acceptance", json=_valid_body(), headers=auth("tok-A"))
+    r = client.post(
+        "/api/v2/legal/acceptance", json=_valid_body(), headers=auth("tok-A")
+    )
     assert r.status_code == 200
     got = store.get("tenant-A")
     assert got is not None

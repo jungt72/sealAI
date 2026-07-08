@@ -16,7 +16,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from sealai_v2.api.deps import current_identity, get_legal_acceptance_store, get_settings
+from sealai_v2.api.deps import (
+    current_identity,
+    get_legal_acceptance_store,
+    get_settings,
+)
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.core.legal_doctrine import doctrine_payload, is_business_email
@@ -50,6 +54,7 @@ class LegalAcceptanceRequest(BaseModel):
         if not _EMAIL_RE.match(v):
             raise ValueError("invalid email format")
         return v
+
     vat_id: str = Field(default="", max_length=64)
     legal_basis_accepted: bool
     dpa_accepted: bool
@@ -80,9 +85,14 @@ async def accept(
     settings: Settings = Depends(get_settings),
     user_agent: str = Header(default=""),
 ) -> dict:
-    if not req.legal_basis_accepted or not req.dpa_accepted or not req.business_user_confirmed:
+    if (
+        not req.legal_basis_accepted
+        or not req.dpa_accepted
+        or not req.business_user_confirmed
+    ):
         raise HTTPException(
-            status_code=422, detail="alle drei Bestätigungen sind für die Produktivnutzung erforderlich"
+            status_code=422,
+            detail="alle drei Bestätigungen sind für die Produktivnutzung erforderlich",
         )
     if not is_business_email(req.business_email):
         raise HTTPException(
@@ -114,7 +124,9 @@ async def accept(
             accepted_privacy_version=req.privacy_version,
             accepted_dpa_version=req.dpa_version,
             accepted_at=datetime.now(timezone.utc).isoformat(),
-            accepted_ip_hash=hash_ip(_client_ip(request), pepper=settings.legal_ip_hash_pepper),
+            accepted_ip_hash=hash_ip(
+                _client_ip(request), pepper=settings.legal_ip_hash_pepper
+            ),
             accepted_user_agent=user_agent[:512],
         )
     )

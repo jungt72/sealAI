@@ -356,5 +356,7 @@ class V2LegalAcceptance(Base):
     accepted_privacy_version: Mapped[str] = mapped_column(String(32), nullable=False)
     accepted_dpa_version: Mapped[str] = mapped_column(String(32), nullable=False)
     accepted_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    accepted_ip_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    accepted_ip_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, default=""
+    )
     accepted_user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")

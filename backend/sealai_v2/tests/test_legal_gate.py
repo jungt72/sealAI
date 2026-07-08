@@ -115,7 +115,9 @@ def test_stale_acceptance_version_still_blocks():
     store = InProcessLegalAcceptanceStore()
     import dataclasses
 
-    stale = dataclasses.replace(_current_acceptance("tenant-A"), accepted_terms_version="old-v0")
+    stale = dataclasses.replace(
+        _current_acceptance("tenant-A"), accepted_terms_version="old-v0"
+    )
     store.upsert(stale)
     client, _, _ = _base_client(gate_enabled=True, store=store)
     r = client.post("/api/v2/chat", json={"message": "x"}, headers=auth("tok-A"))
