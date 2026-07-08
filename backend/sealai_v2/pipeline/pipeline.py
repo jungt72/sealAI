@@ -67,6 +67,7 @@ from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.traps import TrapCatalog, load_traps
 from sealai_v2.memory.distiller import Distiller
+from sealai_v2.safety.risk_flags import detect_risk_flags
 from sealai_v2.memory.store import (
     InProcessConversationMemory,
     InProcessCrossSessionMemory,
@@ -329,6 +330,12 @@ class Pipeline:
     # no extra binding + no extra prompt block -> byte-identical. Governs the derivation + prompt block.
     baseline_hardening_enabled: bool = False
     material_param_table_enabled: bool = False
+    # Legal-by-Design Phase D (Goal 6/7): when True, a turn whose question matched a risk-flag term
+    # gets the additional system_l1.jinja `{% if risk_flags %}` instruction block. OFF -> risk_flags
+    # is never passed to the generator -> byte-identical prompt. detect_risk_flags() is ALWAYS run
+    # (see run()) and always attached to PipelineResult.risk_flags regardless of this flag — this
+    # flag governs ONLY whether the detected terms also reach the L1 prompt.
+    risk_flag_prompt_enabled: bool = False
     # P3 (audit §4.3 Versionierung / L8): the knowledge-catalog state this pipeline instance was
     # built against (core.wissensstand.compute_wissensstand) — computed ONCE in build_pipeline()
     # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
@@ -377,6 +384,10 @@ class Pipeline:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
         timer = TurnTimer()  # per-stage timing; pure bookkeeping, never alters results
+        # Legal-by-Design Phase D: deterministic, ALWAYS-on detection (no LLM, cannot be perturbed
+        # by anything downstream) — always attached to the result (risk_flags= below); only reaches
+        # the L1 prompt when risk_flag_prompt_enabled is separately on (see the generate() calls).
+        risk_flags = detect_risk_flags(question)
         # M6b quarantine: untrusted content reaches L1 ONLY as delimited DATA (never grounding, never
         # cited). Empty → None → byte-identical no-op. The grounding path cannot consume it (keystone).
         untrusted_data = [
@@ -743,6 +754,9 @@ class Pipeline:
                         contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
                         baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
                         material_params=material_params,  # None → byte-identical no-table
+                        risk_flags=(
+                            list(risk_flags) if self.risk_flag_prompt_enabled else None
+                        ),  # None → byte-identical
                     )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -795,6 +809,11 @@ class Pipeline:
                             contract=contract,
                             baseline_hardening=self.baseline_hardening_enabled,
                             correction_note=_guard_note(_gr),
+                            risk_flags=(
+                                list(risk_flags)
+                                if self.risk_flag_prompt_enabled
+                                else None
+                            ),
                         )
                     _gr2 = _guard_eval(
                         answer_text=answer.text,
@@ -945,6 +964,7 @@ class Pipeline:
             memory_context=memory_context,
             kandidaten_spec=kandidaten_spec,
             wissensstand=self.wissensstand,
+            risk_flags=risk_flags,
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -1334,4 +1354,5 @@ def build_pipeline(
         ),
         route_prompt_families_enabled=settings.route_prompt_families_enabled,
         smalltalk_generator=smalltalk_generator,
+        risk_flag_prompt_enabled=settings.risk_flag_prompt_enabled,
     )

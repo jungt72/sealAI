@@ -147,3 +147,36 @@ describe("Answer — P4 Verification badge (L3 trust status)", () => {
     expect(screen.queryByTestId("verification-unverified")).not.toBeInTheDocument();
   });
 });
+
+describe("Answer — Legal-by-Design Phase D risk-flags note", () => {
+  it("renders nothing when risk_flags is absent or empty", () => {
+    render(<Answer res={base} />);
+    expect(screen.queryByTestId("risk-flags-note")).not.toBeInTheDocument();
+    render(<Answer res={{ ...base, risk_flags: [] }} />);
+    expect(screen.queryByTestId("risk-flags-note")).not.toBeInTheDocument();
+  });
+
+  it("renders the warning visibly (outside the collapsed meta) with the matched terms", () => {
+    render(<Answer res={{ ...base, risk_flags: ["ATEX", "Sauerstoff"] }} />);
+    const note = screen.getByTestId("risk-flags-note");
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveTextContent("ATEX, Sauerstoff");
+    expect(note).toHaveTextContent("keine Empfehlung");
+    expect(note.closest("details")).toBeNull();
+  });
+
+  it("renders before the Gegencheck note when both are present", () => {
+    render(
+      <Answer
+        res={{
+          ...base,
+          risk_flags: ["ATEX"],
+          gegencheck: { disqualified: true, reason: "x", source: "y" },
+        }}
+      />,
+    );
+    const risk = screen.getByTestId("risk-flags-note");
+    const gegencheck = screen.getByTestId("gegencheck-disqualified");
+    expect(risk.compareDocumentPosition(gegencheck) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

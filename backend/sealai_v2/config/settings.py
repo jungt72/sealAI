@@ -204,6 +204,14 @@ class Settings(BaseSettings):
     # cryptographic secret (see that module's docstring for why a fixed default is acceptable here).
     # Env: SEALAI_V2_LEGAL_IP_HASH_PEPPER.
     legal_ip_hash_pepper: str = "sealai-legal-gate-v1"
+    # Legal-by-Design Phase D (Goal 6/7): when True, a turn whose question matched a risk-flag term
+    # (safety.risk_flags.detect_risk_flags) gets an ADDITIONAL L1 prompt instruction
+    # (system_l1.jinja's `{% if risk_flags %}` block) reinforcing informative-only framing. OFF by
+    # default -> the block is never rendered (risk_flags is only threaded into the prompt when this
+    # flag is on) -> byte-identical prompt. Detection + the response/PDF badge are UNAFFECTED by
+    # this flag (always on — see PipelineResult.risk_flags's docstring); this flag governs ONLY the
+    # secondary prompt-reinforcement layer. Env: SEALAI_V2_RISK_FLAG_PROMPT_ENABLED.
+    risk_flag_prompt_enabled: bool = False
 
     # --- L2 retrieval backend (Phase-1 Qdrant production adapter, behind the Retriever Protocol) ---
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —

@@ -6,12 +6,13 @@
   "description": "Clean V2 client — minimal SPA projecting over /api/v2. Imports nothing from V1 (frontend/).",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:boundary && vite build",
+    "build": "npm run check:boundary && npm run check:terminology && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:boundary": "node scripts/check-no-v1-imports.mjs",
-    "verify": "npm run check:boundary && npm run typecheck && npm run test && npm run build"
+    "check:terminology": "node scripts/check-terminology.mjs",
+    "verify": "npm run check:boundary && npm run check:terminology && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "jspdf": "^2.5.2",

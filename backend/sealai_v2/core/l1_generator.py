@@ -86,6 +86,7 @@ class L1Generator:
         contract: dict | None = None,
         baseline_hardening: bool = False,
         material_params: list | None = None,
+        risk_flags: list[str] | None = None,
     ) -> Answer:
         computed_values, not_computed, calc_notes = _calc_payload(calc)
         system = self._assembler.system_prompt(
@@ -107,6 +108,7 @@ class L1Generator:
             contract=contract,
             baseline_hardening=baseline_hardening,
             material_params=material_params,
+            risk_flags=risk_flags,
         )
         result = await self._client.generate(
             system=system, user=question, model_config=self._model_config

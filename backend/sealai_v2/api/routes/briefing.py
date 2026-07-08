@@ -46,4 +46,7 @@ async def briefing(
         "body": art.body,
         "provenance": list(art.provenance),
         "wissensstand": art.wissensstand,
+        # Legal-by-Design Phase D (Goal 6/9): drives the PDF export's warning badge
+        # (frontend-v2/src/lib/pdf.ts) — same signal as the chat response's risk_flags.
+        "risk_flags": list(art.risk_flags),
     }

@@ -253,6 +253,7 @@ export interface ChatResponse {
   gegencheck?: Gegencheck | null; // Modus E: disqualify-only verdict, or null (no Gegencheck situation)
   verified?: boolean; // P1.5: the conservative, honest L3 trust signal
   verification?: Verification; // P1.5: the raw signals behind `verified` (for a precise badge)
+  risk_flags?: string[]; // Legal-by-Design Phase D: matched regulated/safety-critical terms, or []
 }
 export interface RememberedFact {
   feld: string;
@@ -280,6 +281,7 @@ export interface Briefing {
   title: string;
   body: string;
   provenance: string[];
+  risk_flags?: string[]; // Legal-by-Design Phase D/E: drives the same badge in-app and in the PDF export
 }
 
 // --- sealingAI Memory Architecture V1.0 — Patch 1 (Types & Schemas) ---

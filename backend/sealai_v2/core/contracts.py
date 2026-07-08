@@ -99,6 +99,7 @@ class SystemPromptAssembler(Protocol):
         baseline_hardening: bool = False,
         engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
+        risk_flags: list[str] | None = None,
     ) -> str: ...
 
 
@@ -423,6 +424,9 @@ class RenderSnapshot:
     # strings here (not raw dicts) so the template stays a dumb formatter, matching every other
     # RenderSnapshot field.
     offene_punkte: tuple[str, ...] = ()
+    # Legal-by-Design Phase D (Goal 6): PipelineResult.risk_flags, carried through so the briefing/
+    # PDF artifact can render the same warning badge as the chat response. Render-only.
+    risk_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -437,6 +441,10 @@ class Artifact:
     # P3: the knowledge-catalog state (see RenderSnapshot.wissensstand) — closes audit L8's
     # "Artifact ohne Version-/Hash-Feld" finding. A metadata field, not rendered into ``body``.
     wissensstand: str = ""
+    # Legal-by-Design Phase D (Goal 6): the risk-flag terms carried from RenderSnapshot — a
+    # metadata field (like wissensstand), not rendered into ``body``; the PDF export
+    # (frontend-v2/src/lib/pdf.ts) reads this to show the same warning badge as the chat UI.
+    risk_flags: tuple[str, ...] = ()
 
 
 class Renderer(Protocol):
@@ -736,6 +744,12 @@ class PipelineResult:
     # no catalogs. Always attached (not flag-gated: pure metadata, never fed to L1/L3, so exposing it
     # cannot perturb the eval/golden).
     wissensstand: str = ""
+    # Legal-by-Design Phase D (Goal 6): deterministic risk-flag terms found in the user's QUESTION
+    # text (safety.risk_flags.detect_risk_flags) — e.g. ("ATEX", "Sauerstoff"), or () when none
+    # matched. Always attached (not flag-gated: pure deterministic detection over already-available
+    # text, never fed to L1/L3 unless SEALAI_V2_RISK_FLAG_PROMPT_ENABLED is separately on — see that
+    # flag's docstring in config/settings.py). The SPA/PDF badge is the primary guarantee.
+    risk_flags: tuple[str, ...] = ()
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.
