@@ -21,21 +21,21 @@ def assert_tenant_scoped_query(
     filter. Raises ``AssertionError`` with a precise message on any deviation."""
     from qdrant_client.models import FieldCondition, MatchAny
 
-    assert query_filter is not None, (
-        "query has NO filter at all — would match every tenant"
-    )
+    assert (
+        query_filter is not None
+    ), "query has NO filter at all — would match every tenant"
     conditions = list(query_filter.must or ())
     tenant_conditions = [
         c for c in conditions if isinstance(c, FieldCondition) and c.key == "tenant_id"
     ]
     assert tenant_conditions, "query filter has no tenant_id FieldCondition at all"
-    assert len(tenant_conditions) == 1, (
-        "multiple tenant_id conditions — ambiguous scoping"
-    )
+    assert (
+        len(tenant_conditions) == 1
+    ), "multiple tenant_id conditions — ambiguous scoping"
     match = tenant_conditions[0].match
-    assert isinstance(match, MatchAny), (
-        f"tenant_id condition is not a MatchAny: {match!r}"
-    )
+    assert isinstance(
+        match, MatchAny
+    ), f"tenant_id condition is not a MatchAny: {match!r}"
     allowed = set(match.any)
     expected = {tenant_id, global_tenant}
     assert allowed == expected, (
