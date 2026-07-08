@@ -97,10 +97,14 @@ assert_json_field '.status == "ok"' 'backend-v2 health reports ok'
 
 assert_code_any GET /dashboard/new '200,302,307,308'
 assert_no_legacy_domain 'dashboard auth boundary'
-if grep -Eq 'api/auth/signin|/login\\?callbackUrl=|/login|SealingAI|SeaLAI|__next' "${BODY_FILE}"; then
-  pass 'dashboard route resolves to app or auth boundary'
+# frontend-v2 is a client-rendered Vite SPA: the server-side HTML shell never
+# contains brand strings, a Next.js "__next" marker, or a server-redirected
+# /login URL — auth happens client-side after the bundle loads. The stable
+# markers are the Vite build output path and the SPA's mount node.
+if grep -Eq '/dashboard/assets/|id="root"' "${BODY_FILE}"; then
+  pass 'dashboard route serves the app SPA shell'
 else
-  fail 'dashboard route did not expose expected app/auth marker'
+  fail 'dashboard route did not expose expected SPA shell marker'
 fi
 
 assert_code POST /api/bff/agent/chat/stream 401 '{"message":"smoke from pilot readiness"}'
