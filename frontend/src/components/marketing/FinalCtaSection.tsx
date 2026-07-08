@@ -12,7 +12,7 @@ export function FinalCtaSection() {
       data-header-theme="light"
       className="section-anchor border-t border-border bg-background"
     >
-      <div className="marketing-wide py-20 lg:py-28">
+      <div className="marketing-section py-20 lg:py-28">
         <div className="marketing-copy-center text-center">
           <h2 className="text-[clamp(2.1rem,3.8vw,3.2rem)] font-normal leading-[1.06] tracking-[-0.03em] text-foreground">
             {finalCta.headline}

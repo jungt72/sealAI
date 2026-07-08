@@ -28,7 +28,7 @@ export function SealingIntelligenceSection() {
       data-header-theme="light"
       className="section-anchor border-t border-border bg-background"
     >
-      <div className="marketing-wide py-20 lg:py-28">
+      <div className="marketing-section py-20 lg:py-28">
         <div className="marketing-copy-center text-center">
           <h2 className="text-[clamp(2rem,3.4vw,2.9rem)] font-normal leading-[1.08] tracking-[-0.025em] text-foreground">
             {sealingIntelligence.headline}

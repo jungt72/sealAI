@@ -9,7 +9,7 @@ export function MarketingFooter() {
       <h2 id="footer-heading" className="sr-only">
         Fußbereich
       </h2>
-      <div className="marketing-wide py-16">
+      <div className="marketing-section py-16">
         <div className="grid gap-10 lg:grid-cols-[1.1fr_2.4fr]">
           <div className="max-w-xs">
             <Image

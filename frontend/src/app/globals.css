@@ -212,6 +212,32 @@
   }
 }
 
+/* Body-section content wrapper. Live-measured against legora.com: their
+   header uses the same tight/uncapped gutter as `.marketing-wide` (matches
+   already), but their actual card/text section wrapper caps out around
+   1680px content width on wide screens (measured: 112.5px gutter per side at
+   a ~1905px viewport — see the 2026-07-08 audit). Fluid up to the cap (same
+   48/32/30px gutters as `.marketing-wide`), then capped, so extra space on
+   wide desktops becomes generous outer whitespace instead of ever-wider
+   content — this is what reads as "airier" than a plain fluid gutter. */
+.marketing-section {
+  width: calc(100% - 48px);
+  max-width: 1680px;
+  margin-inline: auto;
+}
+
+@media (max-width: 1199px) {
+  .marketing-section {
+    width: calc(100% - 32px);
+  }
+}
+
+@media (max-width: 480px) {
+  .marketing-section {
+    width: calc(100% - 30px);
+  }
+}
+
 .marketing-copy {
   max-width: 520px;
 }
