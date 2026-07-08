@@ -117,7 +117,7 @@ export function MarketingHeader() {
         <Link
           href="/"
           aria-label="sealingAI Startseite"
-          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[15px] font-semibold tracking-[0.3em] text-current"
+          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[19px] font-medium tracking-[0.14em] text-current"
         >
           sealingAI
         </Link>
