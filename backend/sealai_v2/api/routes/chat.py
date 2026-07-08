@@ -21,10 +21,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import (
-    current_identity,
     flags_from_settings,
     get_pipeline,
     get_settings,
+    require_legal_acceptance,
 )
 from sealai_v2.api.serializers import chat_response
 from sealai_v2.api.sse import stream_frames
@@ -72,7 +72,7 @@ async def _run_pipeline(
 @router.post("/chat")
 async def chat(
     req: ChatRequest,
-    identity: VerifiedIdentity = Depends(current_identity),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -83,7 +83,7 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(
     req: ChatRequest,
-    identity: VerifiedIdentity = Depends(current_identity),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:

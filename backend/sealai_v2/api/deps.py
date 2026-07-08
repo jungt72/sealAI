@@ -129,3 +129,46 @@ def get_contribution_store():
     from sealai_v2.db.contributions import build_contribution_store
 
     return build_contribution_store(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_legal_acceptance_store():
+    """Legal-Gate acceptance store (Legal-by-Design Phase B) — Postgres (durable, survives a
+    restart) when database_url set, else in-process. Mirrors get_contribution_store's pattern."""
+    from sealai_v2.db.legal_acceptance import build_legal_acceptance_store
+
+    return build_legal_acceptance_store(get_settings())
+
+
+def require_legal_acceptance(
+    identity: VerifiedIdentity = Depends(current_identity),
+    store=Depends(get_legal_acceptance_store),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Legal-Gate fail-closed guard (Legal-by-Design Phase B, Goal 3). OFF by default via
+    ``settings.legal_gate_enabled`` (the draft legal texts this gate protects need an attorney
+    review pass before they can lawfully block paying customers; see ``docs/legal-onboarding.md``)
+    — while off this dependency is a no-op passthrough, byte-identical to a route with no gate at
+    all. Once enabled: 403 unless a CURRENT (version-matching) acceptance row exists for this
+    tenant — a stale acceptance (pre-dating a reviewed text bump) does not count, same doctrine as
+    the /acceptance endpoint's own version check. ``settings`` is a Depends param (not a direct
+    ``get_settings()`` call like require_admin/require_manufacturer use) so tests can flip
+    ``legal_gate_enabled`` per-test via ``app.dependency_overrides`` instead of fighting the
+    module-level ``lru_cache``."""
+    if not settings.legal_gate_enabled:
+        return identity
+    from sealai_v2.core.legal_doctrine import doctrine_payload
+
+    a = store.get(identity.tenant_id)
+    current = doctrine_payload()
+    up_to_date = a is not None and (
+        a.accepted_terms_version == current["terms_version"]
+        and a.accepted_privacy_version == current["privacy_version"]
+        and a.accepted_dpa_version == current["dpa_version"]
+    )
+    if not up_to_date:
+        raise HTTPException(
+            status_code=403,
+            detail="legal_acceptance_required",
+        )
+    return identity

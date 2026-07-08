@@ -17,6 +17,7 @@ from sealai_v2.api.routes import (
     conversations,
     framing,
     hersteller,
+    legal,
     memory_v2,
     partner_self,
     rag_ingest,
@@ -30,6 +31,7 @@ app.include_router(conversations.router)
 app.include_router(briefing.router)
 app.include_router(compute.router)
 app.include_router(framing.router)
+app.include_router(legal.router)
 app.include_router(anfrage.router)
 app.include_router(hersteller.router)
 app.include_router(partner_self.router)

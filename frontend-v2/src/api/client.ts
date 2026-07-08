@@ -15,6 +15,8 @@ import type {
   ConfirmationResponse,
   ContributePayload,
   ConversationMemory,
+  LegalAcceptancePayload,
+  LegalAcceptanceStatus,
   ParamItem,
   SelfLead,
   SelfPartnerUpdate,
@@ -226,5 +228,13 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify({ status, review_note: reviewNote }),
     });
+  }
+
+  // ── Legal-by-Design (Phase B): the onboarding Legal-Gate ────────────────────────────────────
+  legalAcceptanceStatus(): Promise<LegalAcceptanceStatus> {
+    return this.req("/legal/acceptance-status");
+  }
+  submitLegalAcceptance(payload: LegalAcceptancePayload): Promise<unknown> {
+    return this.req("/legal/acceptance", { method: "POST", body: JSON.stringify(payload) });
   }
 }

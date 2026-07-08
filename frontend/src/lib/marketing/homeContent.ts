@@ -349,6 +349,7 @@ export const footerColumns = [
       { label: "Impressum", href: "/impressum" },
       { label: "Datenschutz", href: "/datenschutz" },
       { label: "Nutzungsbedingungen", href: "/nutzungsbedingungen" },
+      { label: "Auftragsverarbeitung (AVV)", href: "/auftragsverarbeitung" },
     ],
   },
 ];

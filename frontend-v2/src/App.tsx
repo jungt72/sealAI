@@ -18,6 +18,7 @@ import {
 } from "./auth/oidc";
 import { AdminPane } from "./components/AdminPane";
 import { ChatPane } from "./components/ChatPane";
+import { LegalGate } from "./components/LegalGate";
 import { PartnerSelfPane } from "./components/PartnerSelfPane";
 import { Shell } from "./components/Shell";
 import type { Briefing, CaseSummary, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
@@ -37,6 +38,10 @@ const env = (import.meta as unknown as { env: Record<string, string | undefined>
 const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
 // Realm role for the manufacturer self-service dashboard (matches auth_manufacturer_role default).
 const MANUFACTURER_ROLE = env.VITE_MANUFACTURER_ROLE ?? "manufacturer";
+// Legal-by-Design (Phase B): mirrors the backend's SEALAI_V2_LEGAL_GATE_ENABLED — both default OFF
+// until the draft legal texts have had an attorney review pass (see docs/legal-onboarding.md). OFF
+// here means this component is never mounted at all — byte-identical to before this patch.
+const LEGAL_GATE_ENABLED = env.VITE_LEGAL_GATE_ENABLED === "true";
 // A stable, reusable empty value for resetting `memory` the instant a case switch happens (see
 // every setMemory(EMPTY_MEMORY) call below) — module-level so it's one constant reference, not a
 // fresh object literal (and therefore a fresh render trigger) on every call site.
@@ -74,6 +79,10 @@ export function App() {
   const [caseId, setCaseId] = useState<string>(() => getCaseIdFromUrl() ?? newCaseId());
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
+  // Legal-by-Design Phase B: null = not yet checked (renders nothing rather than flashing the
+  // gate), true/false once GET /legal/acceptance-status has answered. Irrelevant (stays null,
+  // never checked) when LEGAL_GATE_ENABLED is false — see the render branch below.
+  const [legalAccepted, setLegalAccepted] = useState<boolean | null>(null);
 
   // 401/expiry path: LOCAL clear + re-login only — must NOT end the Keycloak SSO session
   const onUnauthenticated = useCallback(() => {
@@ -220,6 +229,25 @@ export function App() {
   useEffect(() => {
     if (authed) refreshState();
   }, [authed, refreshState]);
+
+  // Legal-by-Design Phase B: once authed (and only if the gate is switched on), ask the backend
+  // whether THIS tenant already has a current acceptance. Deliberately fails CLOSED, unlike every
+  // other fail-quiet refresh here: a network hiccup leaves legalAccepted at null, and the render
+  // branch below treats null as "not yet cleared" (shows a neutral loading state, never Shell) —
+  // a failed check must never silently unlock the app.
+  useEffect(() => {
+    if (!authed || !LEGAL_GATE_ENABLED) return;
+    let cancelled = false;
+    api
+      .legalAcceptanceStatus()
+      .then((s) => {
+        if (!cancelled) setLegalAccepted(s.accepted);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [authed, api]);
 
   // "Fälle"-Sidebar: the browser back/forward buttons step between cases too, since switches use
   // pushState — sync React state when the URL changes from OUTSIDE our own setCaseId calls.
@@ -396,6 +424,24 @@ export function App() {
           </button>
           {error && <p role="alert">{error}</p>}
         </div>
+      </FramingContext.Provider>
+    );
+  }
+
+  // Legal-by-Design Phase B: blocks Shell (chat/upload/case functions) until a current acceptance
+  // is confirmed. `legalAccepted === null` covers BOTH "still checking" and "check failed" —
+  // either way, fail closed: never render Shell, never render LegalGate on top of a stale check.
+  if (LEGAL_GATE_ENABLED && legalAccepted !== true) {
+    return (
+      <FramingContext.Provider value={framing}>
+        {legalAccepted === false ? (
+          <LegalGate api={api} onAccepted={() => setLegalAccepted(true)} />
+        ) : (
+          <div className="login" data-testid="legal-gate-checking" aria-busy="true">
+            <div className="stage-glow" aria-hidden="true" />
+            <p>Wird geprüft …</p>
+          </div>
+        )}
       </FramingContext.Provider>
     );
   }

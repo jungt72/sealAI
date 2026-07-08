@@ -747,6 +747,26 @@
   border-radius: 999px; padding: 13px 34px; font: inherit; font-size: 15px;
   font-weight: 500; cursor: pointer; box-shadow: 0 10px 30px rgba(122, 166, 235, 0.3); }
 
+/* ── legal gate (Legal-by-Design Phase B) — same stage language, a form instead of one button ── */
+.legal-gate-card { display: flex; flex-direction: column; gap: var(--space-4);
+  width: min(420px, 90vw); text-align: left; }
+.legal-gate-title { color: var(--ink); font-size: 24px; font-weight: 400; margin: 0; text-align: center; }
+.legal-gate-intro { color: var(--ink-soft); font-size: 14px; margin: 0 0 var(--space-2);
+  text-align: center; }
+.legal-gate-field { display: flex; flex-direction: column; gap: 4px; }
+.legal-gate-field label { color: var(--ink-soft); font-size: 12px; font-weight: 500; }
+.legal-gate-field input { border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 9px 12px; font: inherit; font-size: 14px; color: var(--ink); background: var(--sai-surface); }
+.legal-gate-checkbox { display: flex; align-items: flex-start; gap: 8px; font-size: 13px;
+  line-height: 1.5; color: var(--ink-soft); cursor: pointer; }
+.legal-gate-checkbox input { margin-top: 3px; flex-shrink: 0; }
+.legal-gate-checkbox a { color: var(--color-seal-blue); text-decoration: underline; }
+.legal-gate-error { color: #b3261e; font-size: 13px; margin: 0; }
+.legal-gate-card button { background: var(--color-seal-blue); color: #fff; border: none;
+  border-radius: 999px; padding: 12px 24px; font: inherit; font-size: 15px; font-weight: 500;
+  cursor: pointer; box-shadow: 0 10px 30px rgba(122, 166, 235, 0.3); }
+.legal-gate-card button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
 /* ════════════════════════════════════════════════════════════════════════════════════════════
    COCKPIT — technical two-column matrix: Parameter left, readout right.
    Pure placement over existing data flow; white surface, hairlines, rows, no shadowed surfaces. */
