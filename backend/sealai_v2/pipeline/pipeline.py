@@ -965,6 +965,14 @@ class Pipeline:
             kandidaten_spec=kandidaten_spec,
             wissensstand=self.wissensstand,
             risk_flags=risk_flags,
+            # Phase 2B routing → render contract: attach the classified route's value ONLY when
+            # route optimization actually ran and produced a decision (route_decision is None
+            # whenever route_optimization_enabled is False), else None. Backward-compat: a None
+            # here makes the serializer default every chat-UI display flag to today's always-show
+            # behavior. Render-only — this does NOT touch skip_l3_for_route / L3 / kernel / RAG.
+            route_name=(
+                route_decision.route.value if route_decision is not None else None
+            ),
         )
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:

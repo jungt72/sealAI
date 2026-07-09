@@ -180,3 +180,53 @@ describe("Answer — Legal-by-Design Phase D risk-flags note", () => {
     expect(risk.compareDocumentPosition(gegencheck) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+// A citation so the Belege section has content to (conditionally) render — its own empty-citations
+// guard is independent of the route-aware show_evidence flag.
+const withCite: ChatResponse = {
+  ...base,
+  citations: [{ text: "FKM ist beständig gegen Mineralöl.", sources: ["Parker O-Ring Handbook"] }],
+};
+
+describe("Answer — Phase 2B route-aware display flags (Technische Vorbewertung)", () => {
+  it("shows the Technische Vorbewertung block when the flag is absent (backward compat)", () => {
+    render(<Answer res={base} />);
+    expect(screen.getByTestId("technical-preassessment")).toBeInTheDocument();
+    expect(screen.getByText("Technische Vorbewertung")).toBeInTheDocument();
+  });
+
+  it("shows it when the flag is explicitly true (e.g. an engineering route)", () => {
+    render(<Answer res={{ ...base, show_technical_preassessment: true }} />);
+    expect(screen.getByTestId("technical-preassessment")).toBeInTheDocument();
+  });
+
+  it("hides it ONLY when the flag is explicitly false (e.g. smalltalk/off-topic)", () => {
+    render(<Answer res={{ ...base, route_name: "smalltalk_navigation", show_technical_preassessment: false }} />);
+    expect(screen.queryByTestId("technical-preassessment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Technische Vorbewertung")).not.toBeInTheDocument();
+    // The badges live inside that block, so they disappear with it.
+    expect(screen.queryByTestId("candidate-label")).not.toBeInTheDocument();
+  });
+});
+
+describe("Answer — Phase 2B route-aware display flags (Belege / citations)", () => {
+  it("shows Belege when show_evidence is absent and citations exist (backward compat)", () => {
+    render(<Answer res={withCite} />);
+    expect(screen.getByText(/Belege/)).toBeInTheDocument();
+  });
+
+  it("shows Belege when show_evidence is explicitly true and citations exist", () => {
+    render(<Answer res={{ ...withCite, show_evidence: true }} />);
+    expect(screen.getByText(/Belege/)).toBeInTheDocument();
+  });
+
+  it("hides Belege when show_evidence is explicitly false, even though citations exist", () => {
+    render(<Answer res={{ ...withCite, route_name: "smalltalk_navigation", show_evidence: false }} />);
+    expect(screen.queryByText(/Belege/)).not.toBeInTheDocument();
+  });
+
+  it("still hides Belege when there are no citations (empty guard is independent of the flag)", () => {
+    render(<Answer res={{ ...base, show_evidence: true }} />);
+    expect(screen.queryByText(/Belege/)).not.toBeInTheDocument();
+  });
+});

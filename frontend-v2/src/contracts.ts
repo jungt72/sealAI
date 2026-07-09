@@ -254,6 +254,16 @@ export interface ChatResponse {
   verified?: boolean; // P1.5: the conservative, honest L3 trust signal
   verification?: Verification; // P1.5: the raw signals behind `verified` (for a precise badge)
   risk_flags?: string[]; // Legal-by-Design Phase D: matched regulated/safety-critical terms, or []
+  // Phase 2B routing → render contract: route-aware chat-UI display flags. All OPTIONAL/nullable so
+  // older cached responses and the non-streaming /chat fallback never break. The backend defaults
+  // every flag to True whenever no route was classified, so `undefined` MUST be treated as `true`
+  // (show) — a section only hides when the flag is explicitly `false`. show_evidence is ANDed with
+  // the existing non-empty-citations check; it can only hide Belege, never invent citations.
+  route_name?: string | null; // the classified RouteName, or null when route optimization did not run
+  show_technical_preassessment?: boolean; // gate the "Technische Vorbewertung" meta block
+  show_evidence?: boolean; // gate the "Belege" (citations) section
+  show_calculations?: boolean; // gate calculation-derived sections (no matching block in Answer yet)
+  show_rfq_sections?: boolean; // gate RFQ-specific sections (no matching block in Answer yet)
 }
 export interface RememberedFact {
   feld: string;

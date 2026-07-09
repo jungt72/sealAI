@@ -13,7 +13,20 @@ export function Citation({ cite }: { cite: CitationT }) {
   );
 }
 
-export function Citations({ cites }: { cites: CitationT[] }) {
+/** The "Belege" (evidence/citations) section. Two INDEPENDENT guards each hide it:
+ *  1. `showEvidence === false` — the route-aware display flag (Phase 2B); off-topic/smalltalk routes
+ *     pass `false` so citations never surface where they make no sense. `undefined`/`true` → allowed
+ *     (backward compat: older payloads without the flag behave exactly as before).
+ *  2. `cites.length === 0` — the pre-existing empty check. `showEvidence` is ANDed with this, NOT an
+ *     override: a technical route with no real citations still renders nothing. */
+export function Citations({
+  cites,
+  showEvidence,
+}: {
+  cites: CitationT[];
+  showEvidence?: boolean;
+}) {
+  if (showEvidence === false) return null;
   if (cites.length === 0) return null;
   return (
     <details className="citations">

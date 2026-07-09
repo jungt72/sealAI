@@ -750,6 +750,14 @@ class PipelineResult:
     # text, never fed to L1/L3 unless SEALAI_V2_RISK_FLAG_PROMPT_ENABLED is separately on — see that
     # flag's docstring in config/settings.py). The SPA/PDF badge is the primary guarantee.
     risk_flags: tuple[str, ...] = ()
+    # Phase 2B routing → render contract: the classified RouteName.value (e.g. "smalltalk_navigation")
+    # when route optimization actually ran and produced a decision, else None (route optimization off /
+    # no decision → backward-compatible "always show" at the serializer). Pure render-only metadata,
+    # like wissensstand/risk_flags above: NEVER fed to L1/L3 and NEVER changes skip_l3_for_route or any
+    # engineering/kernel behavior — it only lets api/serializers.py::chat_response() look up the
+    # per-route chat-UI display flags (route_prompt_matrix) so smalltalk turns stop showing
+    # "Technische Vorbewertung"/"Belege". None on every path where classification did not run.
+    route_name: str | None = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.
