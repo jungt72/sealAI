@@ -211,6 +211,23 @@ class Settings(BaseSettings):
     # activation is a separate, later, owner-gated step (same pattern as Phase 2D/3A).
     # Env: SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED.
     draft_token_streaming_enabled: bool = False
+    # INC-CALC-ROUTE-RELEVANCE: prompt-relevance fix for the calc-kernel context that leaks into
+    # knowledge-question answers. compute()/stages.compute runs UNCONDITIONALLY for every turn,
+    # BEFORE route classification, so a `calc` (incl. its `not_computed` entries when kernel inputs
+    # are missing) exists on every turn — even a purely conceptual one. Feeding that calc into the
+    # L1 prompt on a route whose route_prompt_matrix.py `kernel` flag is False (general_sealing_
+    # knowledge / material_knowledge / smalltalk_navigation) made the LLM notice+comment on off-topic
+    # kernel quantities the user never asked about (the real report: a "function of an RWDR" question
+    # got a confusing "Umfangsgeschwindigkeit: nicht berechenbar — Eingaben fehlen (d1_mm, rpm)"
+    # tangent, then had to be output_guard-corrected). When True AND route classification actually
+    # ran (route_optimization_enabled) AND the classified route's `kernel` flag is False, the L1
+    # generator's prompt construction receives an EMPTY CalcResult() instead of the real calc. This
+    # is PURELY a prompt-relevance fix: the real `calc` is UNCHANGED for the guard contract, L3
+    # verify(), and the response payload's computed/not_computed fields — no safety/transparency
+    # check is weakened. Default False → byte-identical to today when off. Production activation is a
+    # separate, later, owner-gated step (same pattern as Phase 2D/3A/3B).
+    # Env: SEALAI_V2_SUPPRESS_CALC_FOR_NON_KERNEL_ROUTES_ENABLED.
+    suppress_calc_for_non_kernel_routes_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

@@ -199,6 +199,7 @@ services:
       # response, NOT yet injected into the L1 prompt — see memory/context_assembler.py). Needs both
       # database_url AND qdrant_url set to actually construct a service; off/unset → fully inert.
       SEALAI_V2_MEMORY_CONTEXT_ENABLED: ${SEALAI_V2_MEMORY_CONTEXT_ENABLED:-false}
+      SEALAI_V2_SUPPRESS_CALC_FOR_NON_KERNEL_ROUTES_ENABLED: ${SEALAI_V2_SUPPRESS_CALC_FOR_NON_KERNEL_ROUTES_ENABLED:-false}
       SEALAI_V2_OUTBOX_POLL_INTERVAL_S: ${SEALAI_V2_OUTBOX_POLL_INTERVAL_S:-10}
       SEALAI_V2_OUTBOX_BATCH_SIZE: ${SEALAI_V2_OUTBOX_BATCH_SIZE:-50}
       SEALAI_V2_OUTBOX_MAX_ATTEMPTS: ${SEALAI_V2_OUTBOX_MAX_ATTEMPTS:-5}
