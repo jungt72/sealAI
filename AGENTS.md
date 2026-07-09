@@ -189,7 +189,8 @@ state machine.
 - Memory (4 layers — session working-window/case-state/derived facts,
   distiller, integrity guard, cross-session durable facts):
   `memory/store.py`, `memory/distiller.py`, `memory/integrity.py`,
-  `db/conversation_memory.py`, `db/cross_session_memory.py`
+  `db/conversation_memory.py`, `db/cross_session_memory.py`; durable Qdrant
+  outbox consumer: `memory/outbox_daemon.py`
 - Response contract + output guard: `core/response_contract.py` (builds the
   answer contract) + `core/output_guard.py` (`evaluate_render` — claim-level
   fail-closed guard that enforces it; wired in `pipeline/pipeline.py`, flag-gated

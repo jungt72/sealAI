@@ -96,9 +96,8 @@ source/provenance, and coverage or uncertainty.
 
 The repository now contains the first P0 slice: V2-only build/push workflow,
 immutable image labels, exact commit/tree verification, dirty-worktree refusal,
-active eval gate, and V2 host recovery. Next P0 work is adding a staging
-environment approval and making the three required CI checks cover both web
-surfaces.
+active eval gate, V2 host recovery, and blocking web contracts for the marketing
+and dashboard surfaces. Next P0 work is adding a staging environment approval.
 
 ### P1: Boundary extraction
 
@@ -109,10 +108,12 @@ tests at each port before moving files.
 
 ### P2: Durable operations
 
-Promote the existing outbox and worker code to a real `services/worker`
-container with lease ownership, retries, dead letters, metrics, and a startup
-probe. Remove request-scoped `asyncio.create_task` for work that must survive a
-process restart.
+The first slice is now implemented in `backend/sealai_v2/memory/outbox_daemon.py`
+and the `backend-v2-worker` Compose service: it has lease timeout recovery,
+retries, backoff, graceful shutdown, and a release smoke. The remaining work is
+moving it physically to `services/worker`, adding queue-depth/age metrics and
+alerting, and replacing request-scoped `asyncio.create_task` for work that must
+survive a process restart.
 
 ### P3: Contract and UI synchronization
 
