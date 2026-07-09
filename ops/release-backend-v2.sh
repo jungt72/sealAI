@@ -29,10 +29,20 @@ cd "${REPO_ROOT}"
 
 SERVICE="backend-v2"
 RUNS_DIR="backend/sealai_v2/eval/runs"
-LEDGER="ops/deploy-ledger.jsonl"
 COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2)
+BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
 
 die() { echo "release-backend-v2: $*" >&2; exit 1; }
+
+# Production is an artifact promotion. Never deploy bytes from an uncommitted
+# worktree because the eval tree hash would no longer describe the served code.
+if [[ -n "$(git status --porcelain)" ]]; then
+  die "worktree is dirty; commit and deploy the exact reviewed commit"
+fi
+GIT_SHA_FULL="$(git rev-parse HEAD)"
+RUNTIME_DIR="${SEALAI_RUNTIME_DIR:-${REPO_ROOT}/.runtime}"
+LEDGER="${RUNTIME_DIR}/deploy-ledger.jsonl"
+mkdir -p "${RUNTIME_DIR}"
 
 # ── 1. served-runtime content hash (single source of truth) ──────────────────
 TREE_HASH="$(bash ops/tree-hash.sh)"
@@ -51,26 +61,26 @@ SERVED_L1="${SERVED_L1_PROVIDER}/${SERVED_L1_MODEL}"
 [ -n "${SERVED_L1_PROVIDER}" ] && [ -n "${SERVED_L1_MODEL}" ] || die "could not resolve served L1 from .env.prod"
 echo ">> served L1 = ${SERVED_L1}"
 
-# ── 2. GATE: ###EVAL-GATE-DISABLED-TEMP### (owner-authorized 2026-06-30 — the adjudicated eval-REPLAY
-# is too costly per small iteration deploy). TO RESTORE FOR FINAL: delete the fallback block below and
-# UNCOMMENT the original gate block (between the ###EVAL-GATE markers). The deploy then again refuses
-# unless an adjudicated eval-REPLAY validates the exact served tree + L1.
-# ###EVAL-GATE-ORIGINAL-BEGIN###
-# if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}")"; then
-#   echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH} + L1 ${SERVED_L1}" >&2
-#   echo "!! run + adjudicate an eval-REPLAY for this exact served tree AND L1, then retry." >&2
-#   exit 2
-# fi
-# RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
-# GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
-# DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
-# echo ">> gate PASS — validated by run '${RUN_LABEL}' (git ${GIT_SHA}, dirty=${DIRTY}, L1=${SERVED_L1})"
-# ###EVAL-GATE-ORIGINAL-END###
-# --- TEMP no-eval fallback (remove this block when restoring the gate) ---
-RUN_LABEL="no-eval-$(git rev-parse --short HEAD 2>/dev/null || echo manual)"
-GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '')"
-DIRTY="$(test -n "$(git status --porcelain 2>/dev/null)" && echo true || echo false)"
-echo ">> ⚠️  EVAL-GATE DISABLED (owner-authorized, temporary) — deploying tree ${TREE_HASH} WITHOUT an adjudicated eval-REPLAY (L1=${SERVED_L1}, git=${GIT_SHA}, dirty=${DIRTY})"
+# ── 2. GATE: exact served tree + served L1 must have an adjudicated replay ────
+if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}")"; then
+  echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH} + L1 ${SERVED_L1}" >&2
+  echo "!! run and adjudicate an eval-REPLAY for this exact served tree and L1, then retry." >&2
+  exit 2
+fi
+RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
+EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
+EVAL_DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
+echo ">> gate PASS — validated by run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, eval dirty=${EVAL_DIRTY}, L1=${SERVED_L1})"
+
+if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
+  [[ "${BACKEND_IMAGE_REF}" == *@sha256:* ]] || die "BACKEND_V2_IMAGE must be pinned as tag@sha256:digest"
+  echo ">> pulling immutable backend-v2 image ${BACKEND_IMAGE_REF}"
+  docker pull "${BACKEND_IMAGE_REF}" >/dev/null
+  IMAGE_TREE_HASH="$(docker image inspect --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
+  IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
+  [[ "${IMAGE_TREE_HASH}" == "${TREE_HASH}" ]] || die "image tree hash ${IMAGE_TREE_HASH:-<missing>} does not match served tree ${TREE_HASH}"
+  [[ "${IMAGE_REVISION}" == "${GIT_SHA_FULL}" ]] || die "image revision ${IMAGE_REVISION:-<missing>} does not match checkout ${GIT_SHA_FULL}"
+fi
 
 # ── 3. rollback rung: tag the RUNNING image (from the daemon, never memory) ───
 ROLLBACK_FROM="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
@@ -81,9 +91,14 @@ docker tag "${ROLLBACK_FROM}" "${ROLLBACK_TAG}"
 echo ">> rollback rung: ${ROLLBACK_TAG} -> ${ROLLBACK_FROM}"
 
 # ── 4. build (marker baked in) + recreate ONLY backend-v2 ────────────────────
-echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
-"${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" "${SERVICE}"
-"${COMPOSE[@]}" up -d --no-deps --force-recreate "${SERVICE}"
+if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
+  echo ">> promoting prebuilt immutable ${SERVICE} image"
+  "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}"
+else
+  echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
+  "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${GIT_SHA_FULL}" "${SERVICE}"
+  "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}"
+fi
 IMAGE_SHA="$(docker inspect "${SERVICE}" --format '{{.Image}}')"
 echo ">> live ${SERVICE} image = ${IMAGE_SHA}"
 
@@ -127,14 +142,14 @@ for i in $(seq 1 30); do
 done
 
 # ── 6. ledger (machine-readable commit→deploy index) + GOVERNANCE_LOG paste ───
-LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA" "$DIRTY" "$ROLLBACK_FROM" "$SERVED_L1" <<'PY'
+LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA_FULL" "$ROLLBACK_FROM" "$SERVED_L1" "$BACKEND_IMAGE_REF" <<'PY'
 import json, sys
-ts, tree_hash, run_label, image_sha, git_sha, dirty, rollback_from, served_l1 = sys.argv[1:9]
+ts, tree_hash, run_label, image_sha, git_sha, rollback_from, served_l1, backend_image = sys.argv[1:9]
 print(json.dumps({
     "ts": ts, "tree_hash": tree_hash, "run_label": run_label,
     "image_sha": image_sha, "git_sha": git_sha,
-    "dirty": dirty == "true", "rollback_from": rollback_from,
-    "l1": served_l1,
+    "dirty": False, "rollback_from": rollback_from,
+    "l1": served_l1, "backend_image": backend_image or None,
 }))
 PY
 )"
@@ -144,11 +159,12 @@ echo ">> ledger appended: ${LEDGER}"
 cat <<EOF
 
 ================ GOVERNANCE_LOG paste-block (owner-authored prose) ================
-## ${TS} — V2 PROD deploy: \`backend-v2\` rebuild — gated via ops/release-backend-v2.sh (run ${RUN_LABEL})
+## ${TS} — V2 PROD deploy: \`backend-v2\` promotion — gated via ops/release-backend-v2.sh (run ${RUN_LABEL})
 
 **Gated deploy** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` validated by adjudicated
-eval-REPLAY \`${RUN_LABEL}\` (git \`${GIT_SHA}\`, dirty=${DIRTY}); all gated axes Schranken-quota(final)=1.000.
+eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000.
 - new live \`sealai-backend-v2:latest\` = \`${IMAGE_SHA}\`
+- promoted image ref = \`${BACKEND_IMAGE_REF:-local-build}\`
 - rollback rung (read from the daemon) = \`${ROLLBACK_FROM}\`, tagged \`${ROLLBACK_TAG}\`
 - smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.
 - ledger: ${LEDGER}

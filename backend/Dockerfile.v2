@@ -47,7 +47,11 @@ RUN chown -R appuser:appuser /app
 COPY docker-entrypoint-v2.sh /usr/local/bin/docker-entrypoint-v2.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-v2.sh
 ARG GATE_TREE_HASH=""
+ARG SOURCE_GIT_SHA=""
 RUN mkdir -p /etc/sealai && printf '%s' "${GATE_TREE_HASH}" > /etc/sealai/gate-tree-hash
+
+LABEL org.opencontainers.image.revision="${SOURCE_GIT_SHA}" \
+      io.sealai.served-tree-hash="${GATE_TREE_HASH}"
 
 USER appuser
 

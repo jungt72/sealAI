@@ -24,10 +24,16 @@ echo ">> Validating .env.prod and pinned production image refs"
 
 cd "$REPO_ROOT"
 prepare_backend_volume
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml pull backend keycloak gotenberg tika
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml up -d --remove-orphans backend keycloak gotenberg tika
+
+# This is host boot/recovery orchestration only. It must never build or deploy
+# application code. Backend-v2 application releases go through
+# ops/release-backend-v2.sh, which binds code, eval, image and rollback.
+COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2 --profile frontend-container)
+"${COMPOSE[@]}" pull postgres redis qdrant gotenberg tika keycloak nginx frontend
+"${COMPOSE[@]}" up -d --no-build --no-recreate --remove-orphans \
+  postgres redis qdrant gotenberg tika keycloak nginx frontend backend-v2
 
 # Nginx resolves Docker upstream container IPs at startup. Refresh it after
-# backend/Keycloak recreation so public smoke does not hit stale upstreams.
+# infrastructure recovery so public smoke does not hit stale upstreams.
 echo ">> Refreshing nginx upstreams"
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml restart nginx
+"${COMPOSE[@]}" restart nginx

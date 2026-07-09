@@ -116,9 +116,8 @@ state machine.
 
 - **Eval is the instrument.** The eval seed set (`docs/V2/sealingai_eval_seed_set_v0.md`)
   is the build target *and* the regression guard. Hard Schranken-Quote = 100%
-  where the deploy gate applies (see below — currently temporarily disabled,
-  owner-authorized, see `ops/release-backend-v2.sh` `###EVAL-GATE###`
-  markers).
+  for every gated axis. `ops/release-backend-v2.sh` fails closed unless an
+  adjudicated replay matches the exact served tree and served L1 model.
 - **The human is the factual-correctness ORACLE; the agent never
   self-adjudicates.** The agent surfaces divergences as candidates and
   recomputes from the owner's ticked worksheet. It never ticks PASS/FAIL
@@ -244,9 +243,9 @@ PYTHONPATH=. python -m sealai_v2.eval --label <run-label>
 PYTHONPATH=. python -m sealai_v2.eval --adjudicate --label <run-label>
 ```
 
-Owner directive (2026-06-27): no full eval before every deploy — targeted eval
-against the changed dimension + the deterministic Schranken. See
-`ops/release-backend-v2.sh` for the current (temporarily owner-disabled) gate.
+Every production release must carry an adjudicated replay for the exact served
+tree and L1 model. Targeted evals remain useful during development, but they
+do not replace the production gate. See `ops/release-backend-v2.sh`.
 
 Do not install new dependencies unless the user explicitly asks.
 

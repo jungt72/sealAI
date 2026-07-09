@@ -1,45 +1,77 @@
-# SealAI - LangGraph Migration V0.6.10
+# sealingAI
 
-## Prerequisites
-- Redis with RedisJSON and RediSearch modules.
-- Python dependencies: langgraph, pydantic, jinja2, etc.
+sealingAI is a manufacturer-neutral pre-assessment workspace for industrial
+sealing technology. It explains from reviewed evidence, calculates only through
+the deterministic kernel, and keeps final engineering release outside the
+system.
 
-## Feature Flag
-Set `ENABLE_LANGGRAPH_V06=1` to enable new LangGraph workflow.
+## Active Runtime
 
-## Configuration Keys
-See `backend/app/langgraph/config/agents.yaml` for model, prompt, rag, tools, limits, budget settings.
+The active production path is V2:
 
-## Test Commands
-- `pytest backend/app/langgraph/tests/`
-- Specific: `pytest backend/app/langgraph/tests/test_state.py`
+```text
+marketing web (Next.js)     /                    frontend/
+workspace web (Vite)        /dashboard/         frontend-v2/
+API (FastAPI)               /api/v2/             backend/sealai_v2/
+deterministic kernel        domain boundary      backend/sealai_v2/core/calc/
+Postgres                    system of record     sealai_v2.db/
+Redis                       ephemeral hot state  database 1
+Qdrant                      derived retrieval     reviewed Fachkarten index
+Keycloak                    OIDC                 keycloak/
+Nginx                       TLS and routing       nginx/
+```
 
-## Migration Notes
-- Phase-1: State slimmed, ToolNode introduced, Redis checkpointer.
-- Phase-2: Discovery loop, subgraphs, resolver, debate.
+`backend/app/` and its former LangGraph runtime are retired history. LangGraph
+is deliberately not part of the active request path: V2 is a typed,
+observable pipeline with a deterministic calculation boundary. A durable
+workflow engine becomes relevant only for future multi-day human approvals or
+scheduled work, not for the synchronous advisory turn.
 
-## Blueprint Status
-- **Blueprint v1.2 (Engineering Firewall):** ✅ Successfully completed. The architecture is frozen.
-- **Blueprint v1.3 (LangGraph Orchestration):** ✅ Successfully completed (v1.3.1). Orchestrator & Strict Tooling are operational.
-- **Blueprint v1.4 (Knowledge Integration):** ✅ Successfully completed. RAG Pipeline & FactCard Injection are operational.
-- **Blueprint v1.5 (API Layer Foundation):** ✅ Successfully completed. FastAPI Router & SSE Streaming are operational.
-- **Blueprint v1.6 (Frontend Sync):** ✅ Successfully completed. Frontend Sync PoC & SSE Integration are operational.
-- **Blueprint v1.7 (Advanced Domain Logic):** ✅ Successfully completed. Units, Limits & RAG-Sync are operational.
+The binding architecture and migration plan are in
+[`docs/architecture/2026-07-09-production-architecture.md`](docs/architecture/2026-07-09-production-architecture.md).
+The product and safety invariants remain in [`AGENTS.md`](AGENTS.md) and
+`docs/V2/`.
 
-🎉 **Foundation Phase Complete.** System is ready for production workflows.
+## Local Verification
 
-## Changelog
-- MIGRATION: Phase-1 - Initial structure.
-- MIGRATION: Phase-2 - Full architecture.
+Backend offline suite:
 
-## Monitoring Runbook (Phase 6)
-- Start dev stack: `./ops/up-dev.sh`
-- Start prod stack: `./ops/up-prod.sh`
-- Production Docker services are `backend`, `keycloak`, and the `frontend` container (Compose `frontend-container` profile); deploy the frontend with `./ops/release-frontend.sh`.
-- Production uses a local `.env.prod` created from `.env.prod.example`; images must be pinned as immutable refs, not `:latest`.
-- API: `http://localhost:8000`
-- Health: `http://localhost:8000/health`
-- Metrics: `http://localhost:8000/metrics`
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (`admin` / `admin`)
-- Smoke test: `cd /home/thorsten/sealai && pytest backend/app/agent/tests -q --maxfail=1 --ignore=backend/app/agent/tests/test_agent_health.py`
+```bash
+cd backend
+python -m pytest sealai_v2/ -q
+python -m pytest tests/architecture/test_v2_import_boundary.py --noconftest
+```
+
+Dashboard:
+
+```bash
+cd frontend-v2
+npm ci
+npm run verify
+```
+
+Marketing:
+
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run build
+```
+
+## Production Operations
+
+Production application releases are artifact promotions through:
+
+```bash
+./ops/release-backend-v2.sh
+./ops/release-frontend.sh
+```
+
+The backend release requires a clean checkout, an adjudicated eval replay for
+the exact served tree and L1 model, health and kernel smokes, restart survival,
+and a rollback rung. `ops/up-prod.sh` is host boot/recovery orchestration only;
+it never builds or deploys application code.
+
+Never commit `.env*`, credentials, tokens, or user data. Production image refs
+must be immutable `tag@sha256:digest` references.

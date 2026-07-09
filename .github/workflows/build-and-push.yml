@@ -1,33 +1,50 @@
-name: Build and Push Backend
-
-# Manual release-candidate backend builds → pushes the production backend image to
-# GHCR. Manual-dispatch only: the previous `workflow_run` auto-trigger watched a "CI"
-# workflow that was removed in abce3634, so it could never fire (audit 2026-06-05 §4
-# "Dead auto-trigger"). Removed rather than re-pointed — the auto build→deploy chain is
-# intentionally not wired here.
+name: Build and Push Backend V2
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/Dockerfile.v2"
+      - "backend/docker-entrypoint-v2.sh"
+      - "backend/requirements-v2.txt"
+      - "backend/sealai_v2/**"
+      - "ops/tree-hash.sh"
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Commit to build (defaults to the selected ref)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_BACKEND: ${{ github.repository_owner }}/sealai-backend
+  IMAGE_BACKEND_V2: ${{ github.repository_owner }}/sealai-backend-v2
 
 jobs:
   push:
-    name: Build + Push backend image
+    name: Build and push immutable backend-v2 image
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout source at build commit
+      - name: Checkout source at the requested commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
+
+      - name: Compute served tree hash
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          tree_hash="$(bash ops/tree-hash.sh)"
+          test -n "$tree_hash"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${sha:0:8}" >> "$GITHUB_OUTPUT"
+          echo "tree_hash=$tree_hash" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -36,24 +53,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set image tags
-        id: tags
-        run: |
-          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
-          SHORT_SHA="${SHA:0:8}"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "backend_tag=${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "backend_latest=${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:latest" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
+      - name: Build and push backend-v2
+        uses: docker/build-push-action@v6
         with:
           context: backend
-          file: backend/Dockerfile
+          file: backend/Dockerfile.v2
           push: true
           tags: |
-            ${{ steps.tags.outputs.backend_tag }}
-            ${{ steps.tags.outputs.backend_latest }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}
           build-args: |
-            GIT_SHA=${{ steps.tags.outputs.sha }}
+            GATE_TREE_HASH=${{ steps.source.outputs.tree_hash }}
+            SOURCE_GIT_SHA=${{ steps.source.outputs.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            io.sealai.served-tree-hash=${{ steps.source.outputs.tree_hash }}
+
+      - name: Publish artifact coordinates
+        run: |
+          {
+            echo "### backend-v2 artifact"
+            echo "- commit: \`${{ steps.source.outputs.sha }}\`"
+            echo "- tree hash: \`${{ steps.source.outputs.tree_hash }}\`"
+            echo "- image tag: \`${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
