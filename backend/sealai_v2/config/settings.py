@@ -177,6 +177,20 @@ class Settings(BaseSettings):
     # prompt. Every other route (including general_sealing_knowledge/material_knowledge, which
     # stay L3=True and prompt-unchanged in this phase) is completely unaffected by this flag.
     route_prompt_families_enabled: bool = False
+    # Phase 3A (live token streaming, PR feat/smalltalk-token-streaming): stream the compact
+    # smalltalk_navigation answer to the client token-by-token over SSE. OFF (default) -> the
+    # streaming path is unreachable and the turn is byte-identical to Phase 2D (the non-streaming
+    # smalltalk generate() answers, delivered as ONE atomic `result` frame). ON -> it ADDITIONALLY
+    # requires, for the SAME turn, everything the compact smalltalk prompt itself already requires
+    # (route_optimization_enabled AND route_prompt_families_enabled AND the classified route is
+    # smalltalk_navigation AND forced_full_pipeline is False AND deterministic_signal_count == 0 --
+    # i.e. the EXISTING smalltalk_prompt_active gate, never recomputed) PLUS a token sink actually
+    # wired by the /chat/stream transport. Any one of those being false makes the streamed tokens
+    # never fire; the authoritative final answer is ALWAYS the gated `result` frame either way. Only
+    # the fully-static, zero-signal smalltalk route can reach it -- engineering/verified content
+    # never streams. Production activation is a separate, later, owner-gated step (same pattern as
+    # Phase 2D). Env: SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED.
+    smalltalk_token_streaming_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

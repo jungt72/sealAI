@@ -59,7 +59,11 @@ ROUTE_PROMPT_MATRIX: tuple[RoutePromptPlan, ...] = (
         rag=False,
         kernel=False,
         l3=False,
-        streaming=False,
+        # Phase 3A: the ONE route that streams (smalltalk-only token streaming). Documentary INTENT
+        # like every other column here; the ACTUAL gate is settings.smalltalk_token_streaming_enabled
+        # + the smalltalk_prompt_active boolean in pipeline.py, never this field. Every other row's
+        # `streaming` stays False -- no unverified engineering content ever streams.
+        streaming=True,
         cache_strategy="static-hash (build_prompt_cache_key)",
         activation_status="inactive",
         # smalltalk/navigation: no technical UI sections at all — the core of the trust-bug fix.

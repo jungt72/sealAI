@@ -249,3 +249,33 @@ describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
     expect(res).toEqual(payload);
   });
 });
+
+describe("ApiClient.chatStream — Phase 3A live token streaming (smalltalk-only)", () => {
+  it("invokes onToken for each token frame, then resolves with the gated result", async () => {
+    const frames = [
+      'event: stage\ndata: {"stage":"generate","status":"start"}\n\n',
+      'event: token\ndata: {"text":"Hal"}\n\n',
+      'event: token\ndata: {"text":"lo!"}\n\n',
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(sseResponse(frames))));
+    const tokens: string[] = [];
+    const client = new ApiClient(() => "tok", () => undefined);
+    const res = await client.chatStream("hi", undefined, undefined, (t) => tokens.push(t));
+    expect(tokens).toEqual(["Hal", "lo!"]);
+    expect(res).toEqual(RESULT_PAYLOAD);
+  });
+
+  it("a stream with NO token frames never calls onToken (non-streaming path is unchanged)", async () => {
+    const frames = [
+      'event: stage\ndata: {"stage":"generate","status":"start"}\n\n',
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(sseResponse(frames))));
+    const onToken = vi.fn();
+    const client = new ApiClient(() => "tok", () => undefined);
+    const res = await client.chatStream("hi", undefined, undefined, onToken);
+    expect(onToken).not.toHaveBeenCalled();
+    expect(res).toEqual(RESULT_PAYLOAD);
+  });
+});
