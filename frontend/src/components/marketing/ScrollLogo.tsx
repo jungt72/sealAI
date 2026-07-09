@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 export function ScrollLogo({ tone = "dark" }: { tone?: "dark" | "light" }) {
   const [compact, setCompact] = useState(false);
   const compactColor = tone === "light" ? "text-white" : "text-[#002A5B]";
-  const compactBar = tone === "light" ? "bg-white" : "bg-[#002A5B]";
+  const compactBar = tone === "light" ? "bg-[#FAFAF9]" : "bg-[#002A5B]";
 
   useEffect(() => {
     const update = () => setCompact(window.scrollY > 72);

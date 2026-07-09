@@ -1,7 +1,6 @@
 import { BookOpen, Database, FileCheck2, Gauge, MessageCircleQuestion, Factory, FlaskConical, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { HeroPrecheckCard } from "@/components/marketing/HeroPrecheckCard";
 import { sealingIntelligence } from "@/lib/marketing/homeContent";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -15,18 +14,13 @@ const ICONS: Record<string, LucideIcon> = {
   sicherheit: ShieldCheck,
 };
 
-/**
- * "Introducing Sealing Intelligence" — platform/system explainer. The
- * interactive `HeroPrecheckCard` (deterministic, no LLM, no recommendation)
- * lives here as a live demonstration of the "Dichtungssituation" module,
- * relocated out of the hero per the no-RFQ-in-hero positioning rule.
- */
+/** Platform/system explainer for the core Sealing Intelligence modules. */
 export function SealingIntelligenceSection() {
   return (
     <section
       id={sealingIntelligence.id}
       data-header-theme="light"
-      className="section-anchor border-t border-border bg-background"
+      className="section-anchor bg-[#FAFAF9]"
     >
       <div className="marketing-section py-20 lg:py-28">
         <div className="marketing-copy-center text-center">
@@ -47,19 +41,6 @@ export function SealingIntelligenceSection() {
               </div>
             );
           })}
-        </div>
-
-        <div className="mt-16 rounded-[24px] border border-border bg-[#FAFAFB] p-6 sm:p-10">
-          <div className="marketing-copy-center text-center">
-            <p className="text-[12px] font-semibold uppercase tracking-wide text-seal-blue">
-              {sealingIntelligence.demo.eyebrow}
-            </p>
-            <h3 className="mt-2 text-[22px] font-medium text-foreground">{sealingIntelligence.demo.headline}</h3>
-            <p className="mt-2 text-[14px] leading-6 text-muted-foreground">{sealingIntelligence.demo.subline}</p>
-          </div>
-          <div className="mx-auto mt-8 max-w-md">
-            <HeroPrecheckCard />
-          </div>
         </div>
       </div>
     </section>

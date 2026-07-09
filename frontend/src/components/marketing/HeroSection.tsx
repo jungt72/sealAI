@@ -20,7 +20,7 @@ export function HeroSection() {
     <section
       id="hero"
       data-header-theme="hero"
-      className="hero-viewport section-anchor relative isolate -mt-[76px] overflow-hidden bg-[#04070d] text-white"
+      className="hero-viewport section-anchor relative isolate -mt-[56px] overflow-hidden bg-[#04070d] text-white"
     >
       <div className="hero-technical-bg absolute inset-0" aria-hidden="true" />
       <div className="hero-technical-tint absolute inset-0" aria-hidden="true" />
@@ -43,7 +43,7 @@ export function HeroSection() {
       />
 
       <div className="hero-fade-up absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-16 text-center sm:px-8 sm:pb-20 lg:pb-24">
-        <h1 className="max-w-[16ch] text-[clamp(2.35rem,6vw,4.75rem)] font-normal leading-[1.04] tracking-[-0.03em] text-white [text-wrap:balance]">
+        <h1 className="max-w-[18ch] text-[clamp(2.1rem,5vw,4.2rem)] font-normal leading-[1.04] tracking-[-0.03em] text-white [text-wrap:balance]">
           {heroContent.headline}
         </h1>
         <p className="mt-5 max-w-[36ch] text-[clamp(1rem,1.6vw,1.2rem)] font-normal leading-relaxed text-white/78 [text-wrap:balance]">
@@ -51,7 +51,7 @@ export function HeroSection() {
         </p>
         <Link
           href="#highlights"
-          className="mt-8 inline-flex h-11 items-center gap-2 rounded-full bg-white px-6 text-[14px] font-semibold text-[#0a121f] transition-all hover:bg-white/90 active:translate-y-px"
+          className="mt-8 inline-flex h-11 items-center gap-2 rounded-full bg-[#FAFAF9] px-6 text-[14px] font-semibold text-[#0a121f] transition-all hover:bg-[#FAFAF9]/90 active:translate-y-px"
         >
           {heroContent.cta}
           <ArrowRight size={16} aria-hidden="true" />

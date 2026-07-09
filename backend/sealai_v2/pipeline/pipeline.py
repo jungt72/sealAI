@@ -393,6 +393,14 @@ class Pipeline:
     # verification.
     draft_token_streaming_enabled: bool = False
 
+    # INC-CALC-ROUTE-RELEVANCE: when True AND route classification ran AND the classified route's
+    # route_prompt_matrix `kernel` flag is False, the L1 generator's prompt receives an EMPTY
+    # CalcResult() instead of the real calc — a prompt-relevance fix so conceptual/knowledge answers
+    # no longer drift into off-topic kernel calc-refusal text. Suppresses ONLY the L1 PROMPT input;
+    # the real `calc` is unchanged for the guard contract, L3 verify(), and the response payload's
+    # computed/not_computed fields. False (default) -> l1_calc IS calc everywhere -> byte-identical.
+    suppress_calc_for_non_kernel_routes_enabled: bool = False
+
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
     _pending_remember: dict[tuple[str, str], asyncio.Task] = field(
@@ -736,6 +744,28 @@ class Pipeline:
                         )
                     except Exception:  # noqa: BLE001 -- telemetry must never break/mask a real turn
                         pass
+            # INC-CALC-ROUTE-RELEVANCE: the calc context the L1 PROMPT sees. compute()/stages.compute
+            # already ran unconditionally above (before routing), so `calc` exists for every turn.
+            # On a route whose route_prompt_matrix `kernel` flag is False (general_sealing_knowledge,
+            # material_knowledge, smalltalk_navigation — the kernel=True routes are unchanged), the L1
+            # prompt has no business discussing kernel/calc topics — feeding it the real calc (esp. its
+            # `not_computed` entries) is what caused the off-topic "Umfangsgeschwindigkeit nicht
+            # berechenbar" tangent on a conceptual question. Suppress ONLY the L1 PROMPT input to an
+            # empty CalcResult() here; every OTHER consumer below keeps the real `calc` untouched —
+            # build_guard_contract(calc=calc), stages.verify(computed_values=calc.computed, ...), and
+            # the PipelineResult's computed/not_computed all still reflect the real calc for
+            # transparency/telemetry/L3. Flag OFF (default) or no route decision -> l1_calc IS calc
+            # -> byte-identical to today; and it can only ever REMOVE calc from a kernel=False route's
+            # prompt, never change any kernel=True route's prompt.
+            l1_calc = calc
+            if (
+                self.suppress_calc_for_non_kernel_routes_enabled
+                and route_decision is not None
+            ):
+                from sealai_v2.pipeline.route_prompt_matrix import plan_for
+
+                if not plan_for(route_decision.route).kernel:
+                    l1_calc = CalcResult()
             # V2.2 INC-COVERAGE-GATE (§4/§5): deterministic case-level coverage from the grounded
             # evidence (chemical = gegencheck verdict; archetype = profile), computed BEFORE generate
             # so it can hard-cap the allowed L1 mode. Flag-gated → None when OFF (byte-identical). The
@@ -826,7 +856,7 @@ class Pipeline:
                         draft_stream_active=draft_stream_active,
                         flags=flags,
                         grounding_facts=l1_grounding,
-                        calc=calc,
+                        calc=l1_calc,  # INC-CALC-ROUTE-RELEVANCE: real calc on kernel routes, empty on kernel=False
                         case_context=case_context
                         or None,  # empty → None → byte-identical no-memory prompt
                         durable_context=durable_context
@@ -889,7 +919,7 @@ class Pipeline:
                             draft_stream_active=draft_stream_active,
                             flags=flags,
                             grounding_facts=l1_grounding,
-                            calc=calc,
+                            calc=l1_calc,  # INC-CALC-ROUTE-RELEVANCE: same suppression on the guard-triggered regen
                             case_context=case_context or None,
                             durable_context=durable_context or None,
                             conversation_window=conversation_window or None,
@@ -1495,5 +1525,6 @@ def build_pipeline(
         smalltalk_generator=smalltalk_generator,
         smalltalk_token_streaming_enabled=settings.smalltalk_token_streaming_enabled,
         draft_token_streaming_enabled=settings.draft_token_streaming_enabled,
+        suppress_calc_for_non_kernel_routes_enabled=settings.suppress_calc_for_non_kernel_routes_enabled,
         risk_flag_prompt_enabled=settings.risk_flag_prompt_enabled,
     )

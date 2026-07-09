@@ -5,7 +5,7 @@ import { footerColumns } from "@/lib/marketing/homeContent";
 
 export function MarketingFooter() {
   return (
-    <footer className="border-t border-border bg-white" aria-labelledby="footer-heading">
+    <footer className="bg-[#FAFAF9]" aria-labelledby="footer-heading">
       <h2 id="footer-heading" className="sr-only">
         Fußbereich
       </h2>
@@ -45,7 +45,7 @@ export function MarketingFooter() {
           </nav>
         </div>
 
-        <div className="mt-14 flex flex-col gap-3 border-t border-border pt-8 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-14 flex flex-col gap-3 pt-8 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} sealingAI. Alle Rechte vorbehalten.</p>
           <p>Technische Freigaben erfolgen ausschließlich durch den Hersteller.</p>
         </div>
