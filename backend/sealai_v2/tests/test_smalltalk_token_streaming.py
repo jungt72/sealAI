@@ -151,9 +151,13 @@ def _run(p: Pipeline, question: str, *, token_sink=None):
 class _SinkSpy:
     def __init__(self) -> None:
         self.deltas: list[str] = []
+        # Phase 3B: TokenSink is now Callable[[str, bool], None] — recorded here too so a test can
+        # assert the smalltalk path always fires draft=False (draft IS final for this route).
+        self.drafts: list[bool] = []
 
-    def __call__(self, delta: str) -> None:
+    def __call__(self, delta: str, draft: bool) -> None:
         self.deltas.append(delta)
+        self.drafts.append(draft)
 
 
 # --- 1 / 8 / 10: clear smalltalk + all flags on ⇒ tokens fire, terminal answer lands, safe ------
@@ -166,6 +170,9 @@ def test_clear_smalltalk_all_flags_on_streams_tokens_and_still_returns_final() -
     result = _run(p, "Hallo, wie geht's dir?", token_sink=sink)
 
     assert sink.deltas == list(_DELTAS)  # raw deltas streamed in order
+    # Phase 3B: smalltalk deltas are explicitly draft=False — this route's streamed text IS the
+    # final answer (it never goes through L3), unlike every other route's draft=True preview.
+    assert sink.drafts == [False] * len(_DELTAS)
     assert client.stream_calls == ["smalltalk_navigation"]  # streaming path taken
     assert (
         "smalltalk_navigation" not in client.calls
@@ -300,9 +307,11 @@ def test_sse_streams_token_frames_then_one_result_when_flag_on() -> None:
     assert [f["data"]["text"] for f in token_frames] == list(_DELTAS)
     assert len(result_frames) == 1
     assert frames[-1]["event"] == "result"  # the gated answer is still the LAST frame
-    # token frames carry ONLY {"text": ...} — no ids/tenant/case/PII
+    # Phase 3B: token frames now carry {"text": ..., "draft": ...} — no ids/tenant/case/PII. The
+    # smalltalk route is explicitly draft=False (its streamed text IS the final answer).
     for f in token_frames:
-        assert set(f["data"].keys()) == {"text"}
+        assert set(f["data"].keys()) == {"text", "draft"}
+        assert f["data"]["draft"] is False
     assert result_frames[0]["data"]["answer"] == _SMALLTALK_TEXT
 
 

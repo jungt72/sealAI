@@ -44,6 +44,15 @@ type Msg =
   // of truth. Only ever created when a token actually arrives; a turn that streams no token is
   // byte-identical to before (a single atomic { role:"assistant", res } append in send()).
   | { role: "assistant-streaming"; text: string }
+  // Phase 3B draft-token streaming (every route EXCEPT smalltalk): an in-flight, NON-AUTHORITATIVE
+  // preview of the full L1 generator's raw output, appended token-by-token as `token` frames with
+  // draft=true arrive. Deliberately a SEPARATE variant from "assistant-streaming" above — the two
+  // can never visually concatenate — and rendered with a distinct, clearly-labeled, muted style (see
+  // Answer.tsx usage below) so it can never be mistaken for the delivered/verified answer. REPLACED
+  // (never appended to) by the atomic { role:"assistant", res } on the gated `result`; discarded
+  // entirely (never rendered as final) on a stream `error`; reset on a `stage:"regenerate"` event so
+  // the first and second L1 attempts never visually concatenate.
+  | { role: "assistant-draft"; text: string }
   // a HYDRATED historical turn ("Fälle"-Sidebar: loaded from memory.history on open/switch) — text
   // only, deliberately distinct from the live "assistant" variant above: citations/verification/
   // badges were never persisted for past turns, so rendering them as a plain answer would be
@@ -217,7 +226,10 @@ export function ChatPane({
   onDownloadPdf,
   onContribute,
 }: {
-  onSend: (message: string, onToken?: (text: string) => void) => Promise<ChatResponse>;
+  /** `onToken(text, draft)` — Phase 3A (`draft=false`, smalltalk only, text IS the final answer) /
+   * Phase 3B (`draft=true`, every other route, text is a non-authoritative preview only). `draft`
+   * defaults to `false` when a caller omits it — preserves the exact Phase 3A call shape. */
+  onSend: (message: string, onToken?: (text: string, draft?: boolean) => void) => Promise<ChatResponse>;
   error: string | null;
   memory: ConversationMemory;
   onEditFact: (feld: string, wert: string) => void;
@@ -300,6 +312,20 @@ export function ChatPane({
     else if (liveStage && STAGE_LABELS[liveStage]) setStageLabel(STAGE_LABELS[liveStage]);
   }, [busy, liveStage]);
 
+  // Phase 3B: the EXISTING "regenerate" stage-start progress event (pre-Phase-3B, fired by the
+  // output_guard BLOCK path) doubles as the frontend's signal to clear the draft buffer before the
+  // second L1 attempt's tokens start arriving — no new event type. Only clears "assistant-draft"
+  // (the Phase 3B preview channel); "assistant-streaming" (Phase 3A's draft==final smalltalk
+  // channel) is untouched, since smalltalk turns don't drive this draft-preview flow.
+  useEffect(() => {
+    if (liveStage !== "regenerate") return;
+    setMsgs((m) => {
+      const last = m[m.length - 1];
+      if (last && last.role === "assistant-draft") return m.slice(0, -1);
+      return m;
+    });
+  }, [liveStage]);
+
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
@@ -308,9 +334,26 @@ export function ChatPane({
     setMsgs((m) => [...m, { role: "user", text }]);
     setBusy(true);
     try {
-      const res = await onSend(text, (delta) => {
-        // Phase 3A: append the raw delta to the in-flight streaming buffer, creating it on the first
-        // token. Never invoked when no token arrives (the non-streaming path stays byte-identical).
+      const res = await onSend(text, (delta, draft = false) => {
+        if (draft) {
+          // Phase 3B: append the raw delta to the in-flight DRAFT buffer (non-authoritative preview,
+          // every route except smalltalk) — a separate Msg variant from "assistant-streaming" below,
+          // so the two can never visually concatenate. Never invoked when the draft flag is off /
+          // no sink is wired (the non-streaming path stays byte-identical).
+          setMsgs((m) => {
+            const last = m[m.length - 1];
+            if (last && last.role === "assistant-draft") {
+              const copy = m.slice();
+              copy[copy.length - 1] = { role: "assistant-draft", text: last.text + delta };
+              return copy;
+            }
+            return [...m, { role: "assistant-draft", text: delta }];
+          });
+          return;
+        }
+        // Phase 3A: append the raw delta to the in-flight (FINAL) streaming buffer, creating it on
+        // the first token. Never invoked when no token arrives (the non-streaming path stays
+        // byte-identical).
         setMsgs((m) => {
           const last = m[m.length - 1];
           if (last && last.role === "assistant-streaming") {
@@ -321,11 +364,11 @@ export function ChatPane({
           return [...m, { role: "assistant-streaming", text: delta }];
         });
       });
-      // REPLACE the streaming buffer (if any) with the authoritative gated result; otherwise append
-      // the normal atomic assistant message exactly as before (no-token / non-streaming path).
+      // REPLACE the streaming/draft buffer (if any) with the authoritative gated result; otherwise
+      // append the normal atomic assistant message exactly as before (no-token / non-streaming path).
       setMsgs((m) => {
         const last = m[m.length - 1];
-        if (last && last.role === "assistant-streaming") {
+        if (last && (last.role === "assistant-streaming" || last.role === "assistant-draft")) {
           const copy = m.slice();
           copy[copy.length - 1] = { role: "assistant", res };
           return copy;
@@ -333,7 +376,16 @@ export function ChatPane({
         return [...m, { role: "assistant", res }];
       });
     } catch {
-      // error rendered via the `error` prop; deliberately append nothing (no stale content)
+      // error rendered via the `error` prop; deliberately append nothing (no stale content) — and
+      // discard any in-flight streaming/draft buffer so a partial preview never lingers as if it
+      // were the final answer (same discipline as the "append nothing" rule above).
+      setMsgs((m) => {
+        const last = m[m.length - 1];
+        if (last && (last.role === "assistant-streaming" || last.role === "assistant-draft")) {
+          return m.slice(0, -1);
+        }
+        return m;
+      });
     } finally {
       setBusy(false);
     }
@@ -830,6 +882,19 @@ export function ChatPane({
                       data-testid="answer-streaming"
                       aria-live="polite"
                     >
+                      <Markdown source={m.text} />
+                    </div>
+                  ) : m.role === "assistant-draft" ? (
+                    // Phase 3B: a NON-AUTHORITATIVE preview — deliberately NOT styled like a normal
+                    // assistant message (muted/italic + an explicit label), and always fully REPLACED
+                    // (never appended to) by the verified `result`.
+                    <div
+                      key={i}
+                      className="answer answer-draft"
+                      data-testid="answer-draft"
+                      aria-live="polite"
+                    >
+                      <p className="answer-draft-label">Entwurf, wird geprüft …</p>
                       <Markdown source={m.text} />
                     </div>
                   ) : (

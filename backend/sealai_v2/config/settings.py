@@ -191,6 +191,26 @@ class Settings(BaseSettings):
     # never streams. Production activation is a separate, later, owner-gated step (same pattern as
     # Phase 2D). Env: SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED.
     smalltalk_token_streaming_enabled: bool = False
+    # Phase 3B (draft-token streaming): stream the FULL L1 engineering generator's raw output
+    # token-by-token, for EVERY route (engineering_case, leakage_troubleshooting,
+    # rfq_manufacturer_brief, material_comparison, general_sealing_knowledge, material_knowledge --
+    # every route except smalltalk_navigation, which already has its own independent Phase 3A path).
+    # Completely INDEPENDENT of smalltalk_token_streaming_enabled -- either can be on/off without
+    # affecting the other. OFF (default) -> Pipeline.run()'s draft-streaming branch is unreachable;
+    # every self.generator.generate() call is byte-identical to pre-Phase-3B. ON (AND a token sink
+    # wired by the /chat/stream transport) -> each L1 generation call ADDITIONALLY streams its raw
+    # deltas into a NON-AUTHORITATIVE "draft" channel (token frames carrying draft=true) purely for
+    # perceived speed / process transparency. This flag does NOT skip or weaken ANY verification: the
+    # actual delivered answer for every route (except smalltalk, unchanged) still requires the full,
+    # UNCHANGED output_guard check + L3 verify + citations, and still arrives only as the one atomic
+    # `result` event after the complete pipeline finishes -- exactly as before this flag existed. This
+    # is precisely why the route stays gated behind full verification while only the raw generation
+    # tokens stream early: RAG grounding reduces but does not eliminate hallucination risk, and this
+    # repo's own Phase 2B stress test found real router-detection gaps on general_sealing_knowledge/
+    # material_knowledge, so L3 remains the safety net for those routes, not a formality. Production
+    # activation is a separate, later, owner-gated step (same pattern as Phase 2D/3A).
+    # Env: SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED.
+    draft_token_streaming_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6

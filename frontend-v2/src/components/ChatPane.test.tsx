@@ -798,3 +798,96 @@ describe("Phase 3A live token streaming (smalltalk-only)", () => {
     expect(screen.queryByTestId("answer-streaming")).toBeNull(); // no streaming element ever
   });
 });
+
+describe("Phase 3B draft-token streaming (every route except smalltalk)", () => {
+  function paneProps(over: Partial<Parameters<typeof ChatPane>[0]>): Parameters<typeof ChatPane>[0] {
+    return {
+      onSend: () => new Promise<ChatResponse>(() => {}),
+      error: null,
+      memory: EMPTY,
+      onEditFact: vi.fn(),
+      onForgetFact: vi.fn(),
+      onForgetAll: vi.fn(),
+      onSubmitParams: vi.fn(async () => EMPTY_CONF),
+      onMakeBriefing: vi.fn(),
+      canBriefing: false,
+      briefing: null,
+      ...over,
+    };
+  }
+
+  it("renders draft tokens in the distinct draft region, then REPLACES it with the final answer", async () => {
+    let resolveSend: (r: ChatResponse) => void = () => undefined;
+    const onSend = vi.fn((_msg: string, onToken?: (t: string, draft?: boolean) => void) => {
+      onToken?.("RWDR ", true);
+      onToken?.("45x62x8 …", true);
+      return new Promise<ChatResponse>((res) => {
+        resolveSend = res;
+      });
+    });
+    renderPane({ onSend });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "RWDR?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    // interim: the draft preview is visible, clearly distinct from the Phase 3A "final" buffer
+    await waitFor(() =>
+      expect(screen.getByTestId("answer-draft")).toHaveTextContent("RWDR 45x62x8 …"),
+    );
+    expect(screen.queryByTestId("answer-streaming")).toBeNull();
+    // terminal result REPLACES the draft with the authoritative, verified answer
+    await act(async () => {
+      resolveSend({ answer: "GEPRÜFTE ANTWORT", model: "m", grounded: true, intent: null, citations: [] });
+    });
+    await waitFor(() => expect(screen.queryByTestId("answer-draft")).toBeNull());
+    expect(screen.getByText("GEPRÜFTE ANTWORT")).toBeInTheDocument();
+  });
+
+  it("draft tokens and Phase 3A final tokens are structurally distinct channels (never concatenate)", async () => {
+    const onSend = vi.fn((_msg: string, onToken?: (t: string, draft?: boolean) => void) => {
+      onToken?.("Entwurf-Text", true);
+      onToken?.("Finaler-Text", false);
+      return new Promise<ChatResponse>(() => undefined);
+    });
+    renderPane({ onSend });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() => {
+      expect(screen.getByTestId("answer-draft")).toHaveTextContent("Entwurf-Text");
+      expect(screen.getByTestId("answer-streaming")).toHaveTextContent("Finaler-Text");
+    });
+  });
+
+  it("discards the draft buffer on a stream error — never rendered as if it were final", async () => {
+    const onSend = vi.fn(async (_msg: string, onToken?: (t: string, draft?: boolean) => void) => {
+      onToken?.("Entwurf, der nie ankommt", true);
+      throw new Error("stream failed");
+    });
+    renderPane({ onSend });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await waitFor(() => expect(screen.getByTestId("answer-draft")).toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTestId("answer-draft")).toBeNull());
+  });
+
+  it("a stage:regenerate event clears the draft buffer before the second attempt's tokens arrive", async () => {
+    let tokenCb: ((t: string, draft?: boolean) => void) | undefined;
+    const onSend = vi.fn((_msg: string, onToken?: (t: string, draft?: boolean) => void) => {
+      tokenCb = onToken;
+      return new Promise<ChatResponse>(() => undefined);
+    });
+    const { rerender } = renderPane({ onSend });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Frage?" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    act(() => tokenCb?.("Erster Entwurf", true));
+    await waitFor(() =>
+      expect(screen.getByTestId("answer-draft")).toHaveTextContent("Erster Entwurf"),
+    );
+    // the EXISTING "regenerate" stage-start progress event — reused verbatim, no new event type
+    rerender(<ChatPane {...paneProps({ onSend, liveStage: "regenerate" })} />);
+    await waitFor(() => expect(screen.queryByTestId("answer-draft")).toBeNull());
+    act(() => tokenCb?.("Zweiter Entwurf", true));
+    await waitFor(() =>
+      expect(screen.getByTestId("answer-draft")).toHaveTextContent("Zweiter Entwurf"),
+    );
+    expect(screen.getByTestId("answer-draft")).not.toHaveTextContent("Erster Entwurf");
+  });
+});

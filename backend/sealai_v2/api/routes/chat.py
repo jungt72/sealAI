@@ -94,12 +94,16 @@ async def chat_stream(
     def progress(stage: str, status: str) -> None:
         queue.put_nowait(("stage", {"stage": stage, "status": status}))
 
-    # Phase 3A: the token sink is constructed ONLY here, in the SSE path (where the queue exists). It
-    # carries ONLY {"text": <raw delta>} of the already-safe, zero-signal smalltalk answer -- no
-    # ids/tenant/case/PII can cross it (structurally: the smalltalk route requires zero deterministic
-    # signals). The plain /chat handler passes NO sink, so it stays byte-identical.
-    def token(delta: str) -> None:
-        queue.put_nowait(("token", {"text": delta}))
+    # Phase 3A + Phase 3B: the token sink is constructed ONLY here, in the SSE path (where the queue
+    # exists). It carries ONLY {"text": <raw delta>, "draft": <bool>} -- no ids/tenant/case/PII ever
+    # crosses it. ``draft=False`` (Phase 3A) means the delta IS the final, authoritative answer being
+    # typed (smalltalk_navigation only -- structurally the route requires zero deterministic
+    # signals). ``draft=True`` (Phase 3B) means the delta is a NON-AUTHORITATIVE preview of the full
+    # L1 generator's output for every other route -- the actual delivered answer still arrives only
+    # via the atomic "result" frame after the full output_guard + L3 pipeline. The plain /chat handler
+    # passes NO sink, so it stays byte-identical either way.
+    def token(delta: str, draft: bool) -> None:
+        queue.put_nowait(("token", {"text": delta, "draft": draft}))
 
     async def _run() -> None:
         try:

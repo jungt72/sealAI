@@ -102,6 +102,21 @@
 /* a hydrated historical turn: same visual weight as a live answer, no meta/citations (never persisted) */
 .answer-history { color: var(--ink); }
 
+/* Phase 3B (draft-token streaming): a NON-AUTHORITATIVE preview of the full L1 generator's raw
+   output (every route except smalltalk). Deliberately muted + italic + an explicit label so it can
+   never be mistaken for the delivered, verified answer — always fully REPLACED (never left in
+   place) once the gated `result` arrives. */
+.answer-draft { color: var(--ink-soft); font-style: italic; opacity: 0.85; }
+.answer-draft-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
 .main-area { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; }
 
 /* ── persistent doctrine line — always present, never dropped ───────────────── */
