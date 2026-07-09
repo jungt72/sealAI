@@ -14,6 +14,8 @@ from sealai_v2.core.contracts import (
     VerifierAction,
     VerifierVerdict,
 )
+from sealai_v2.pipeline.route_prompt_matrix import plan_for
+from sealai_v2.pipeline.routing import RouteName
 
 
 def _verification(result: PipelineResult) -> dict:
@@ -166,6 +168,38 @@ def _memory_context(bundle) -> dict | None:
     }
 
 
+def _display_flags(result: PipelineResult) -> dict:
+    """Route-aware chat-UI display flags (the trust-bug fix): decide which optional chat-UI
+    sections a given classified route is ELIGIBLE to render, from the one authoritative per-route
+    table (pipeline/route_prompt_matrix.py).
+
+    BACKWARD COMPATIBILITY is the whole point of the default: when no route was classified
+    (``result.route_name is None`` — route optimization off / first request / no decision) OR the
+    value is not a recognized RouteName (an unrecognized or future route), ALL FOUR flags default to
+    ``True`` — i.e. today's always-show behavior — so behavior is 100% unchanged whenever route
+    classification did not run. Only a recognized classified route narrows what is shown.
+
+    Render-only. ``show_evidence`` is ANDed with the existing non-empty-citations check on the
+    client (Citation.tsx keeps its own ``cites.length === 0`` guard), so it can only HIDE the Belege
+    section — it never forces citations to appear when there are none.
+    """
+    plan = None
+    if result.route_name is not None:
+        try:
+            plan = plan_for(RouteName(result.route_name))
+        except (ValueError, KeyError):
+            plan = None  # unrecognized/future route → fall back to always-show
+    return {
+        "route_name": result.route_name,
+        "show_technical_preassessment": (
+            plan.show_technical_preassessment if plan is not None else True
+        ),
+        "show_evidence": plan.show_evidence if plan is not None else True,
+        "show_calculations": plan.show_calculations if plan is not None else True,
+        "show_rfq_sections": plan.show_rfq_sections if plan is not None else True,
+    }
+
+
 def chat_response(result: PipelineResult) -> dict:
     return {
         "answer": result.answer.text,
@@ -211,4 +245,9 @@ def chat_response(result: PipelineResult) -> dict:
         # distinguish a confidently-verified answer from a hedge or a silently-unverified one.
         # Additive only — existing keys are untouched.
         **_verification(result),
+        # Phase 2B routing → render contract: route_name + the four route-aware chat-UI display
+        # flags (route_prompt_matrix). Backward-compatible: all four default to True when no route
+        # was classified, so existing behavior is unchanged. Fixes "Technische Vorbewertung"/"Belege"
+        # showing on smalltalk/off-topic turns. Render-only — never gates L1/L3/kernel/RAG.
+        **_display_flags(result),
     }

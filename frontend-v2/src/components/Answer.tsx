@@ -90,22 +90,30 @@ export function Answer({ res }: { res: ChatResponse }) {
     <div className="answer" data-testid="answer">
       <RiskFlagsNote riskFlags={res.risk_flags} />
       <GegencheckNote gegencheck={res.gegencheck} />
-      <details className="answer-meta">
-        <summary>Technische Vorbewertung</summary>
-        <span className="badge badge-candidate" data-testid="candidate-label">
-          {candidate}
-        </span>
-        {!res.grounded && (
-          <span className="badge badge-vorlaeufig" data-testid="vorlaeufig-label">
-            {vorlaeufig}
+      {/* Phase 2B route-aware display: the "Technische Vorbewertung" meta block is render-only
+          scaffolding and makes no sense on smalltalk/off-topic turns. Hide it ONLY when the backend
+          explicitly says so (show_technical_preassessment === false); `undefined`/`true` keep the
+          pre-existing always-show behavior (older payloads / route optimization off). */}
+      {res.show_technical_preassessment !== false && (
+        <details className="answer-meta" data-testid="technical-preassessment">
+          <summary>Technische Vorbewertung</summary>
+          <span className="badge badge-candidate" data-testid="candidate-label">
+            {candidate}
           </span>
-        )}
-        <VerificationBadge res={res} />
-      </details>
+          {!res.grounded && (
+            <span className="badge badge-vorlaeufig" data-testid="vorlaeufig-label">
+              {vorlaeufig}
+            </span>
+          )}
+          <VerificationBadge res={res} />
+        </details>
+      )}
       <div className="answer-text">
         <Markdown source={res.answer} />
       </div>
-      <Citations cites={res.citations} />
+      {/* Belege: `show_evidence` is threaded as an INDEPENDENT guard, ANDed with Citations' own
+          empty-citations check (so it can only hide, never invent citations). */}
+      <Citations cites={res.citations} showEvidence={res.show_evidence} />
     </div>
   );
 }
