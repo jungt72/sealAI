@@ -92,18 +92,46 @@ def _compute_next_attempt_at(now: str, attempts: int) -> str:
 
 
 def _claim_pending(s, *, batch_size: int, now: str) -> list[V2MemoryOutbox]:
+    return _claim_pending_with_timeout(
+        s, batch_size=batch_size, now=now, claim_timeout_seconds=300
+    )
+
+
+def _claim_pending_with_timeout(
+    s, *, batch_size: int, now: str, claim_timeout_seconds: int
+) -> list[V2MemoryOutbox]:
+    stale_before = (
+        (_parse_iso(now) - timedelta(seconds=claim_timeout_seconds))
+        .astimezone(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
     rows = s.scalars(
         select(V2MemoryOutbox)
-        .where(V2MemoryOutbox.status == "pending")
         .where(
-            (V2MemoryOutbox.next_attempt_at.is_(None))
-            | (V2MemoryOutbox.next_attempt_at <= now)
+            (
+                (V2MemoryOutbox.status == "pending")
+                & (
+                    (V2MemoryOutbox.next_attempt_at.is_(None))
+                    | (V2MemoryOutbox.next_attempt_at <= now)
+                )
+            )
+            | (
+                (V2MemoryOutbox.status == "processing")
+                & (
+                    V2MemoryOutbox.processed_at.is_(None)
+                    | (V2MemoryOutbox.processed_at <= stale_before)
+                )
+            )
         )
         .order_by(V2MemoryOutbox.id)
         .limit(batch_size)
     ).all()
     for row in rows:
         row.status = "processing"
+        # ``processed_at`` is also the lease heartbeat. It is updated again when
+        # the attempt is finalized, so a crashed worker can be reclaimed safely.
+        row.processed_at = now
     s.commit()
     return list(rows)
 
@@ -145,6 +173,7 @@ def drain_outbox(
     now: str,
     batch_size: int = 50,
     max_attempts: int = 5,
+    claim_timeout_seconds: int = 300,
 ) -> DrainResult:
     """One drain pass: claim up to ``batch_size`` pending rows whose backoff window (if any) has
     elapsed, sync each to Qdrant from its own snapshotted ``payload``, mark done/retry/failed. Safe
@@ -153,7 +182,12 @@ def drain_outbox(
     background-process infra)."""
     claimed = synced = failed_permanently = 0
     with session_factory() as s:
-        rows = _claim_pending(s, batch_size=batch_size, now=now)
+        rows = _claim_pending_with_timeout(
+            s,
+            batch_size=batch_size,
+            now=now,
+            claim_timeout_seconds=claim_timeout_seconds,
+        )
         claimed = len(rows)
         for row in rows:
             payload = row.payload or {}

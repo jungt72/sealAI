@@ -28,6 +28,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
 SERVICE="backend-v2"
+WORKER_SERVICE="backend-v2-worker"
 RUNS_DIR="backend/sealai_v2/eval/runs"
 COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2)
 BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
@@ -93,11 +94,11 @@ echo ">> rollback rung: ${ROLLBACK_TAG} -> ${ROLLBACK_FROM}"
 # ── 4. build (marker baked in) + recreate ONLY backend-v2 ────────────────────
 if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
   echo ">> promoting prebuilt immutable ${SERVICE} image"
-  "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}"
+  "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}" "${WORKER_SERVICE}"
 else
   echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
   "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${GIT_SHA_FULL}" "${SERVICE}"
-  "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}"
+  "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}" "${WORKER_SERVICE}"
 fi
 IMAGE_SHA="$(docker inspect "${SERVICE}" --format '{{.Image}}')"
 echo ">> live ${SERVICE} image = ${IMAGE_SHA}"

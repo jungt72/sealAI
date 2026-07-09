@@ -252,6 +252,26 @@ def test_backoff_window_blocks_an_immediate_retry_pass(db_url):
     assert after_window.synced == 1
 
 
+def test_stale_processing_lease_is_reclaimed_after_worker_restart(db_url):
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        row = s.scalars(select(V2MemoryOutbox)).one()
+        row.status = "processing"
+        row.processed_at = "2026-07-03T00:00:00Z"
+        s.commit()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=_FakeEmbedder(),
+        now="2026-07-03T01:00:00Z",
+        claim_timeout_seconds=300,
+    )
+    assert result.claimed == 1
+    assert result.synced == 1
+
+
 def test_drain_syncs_from_its_own_snapshot_even_after_the_item_is_hard_deleted(db_url):
     # Patch 9: the outbox row is self-contained (a payload snapshot captured at enqueue time), so a
     # drain no longer needs the source item to still exist in Postgres — it syncs the last known

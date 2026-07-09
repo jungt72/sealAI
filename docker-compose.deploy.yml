@@ -199,6 +199,10 @@ services:
       # response, NOT yet injected into the L1 prompt — see memory/context_assembler.py). Needs both
       # database_url AND qdrant_url set to actually construct a service; off/unset → fully inert.
       SEALAI_V2_MEMORY_CONTEXT_ENABLED: ${SEALAI_V2_MEMORY_CONTEXT_ENABLED:-false}
+      SEALAI_V2_OUTBOX_POLL_INTERVAL_S: ${SEALAI_V2_OUTBOX_POLL_INTERVAL_S:-10}
+      SEALAI_V2_OUTBOX_BATCH_SIZE: ${SEALAI_V2_OUTBOX_BATCH_SIZE:-50}
+      SEALAI_V2_OUTBOX_MAX_ATTEMPTS: ${SEALAI_V2_OUTBOX_MAX_ATTEMPTS:-5}
+      SEALAI_V2_OUTBOX_CLAIM_TIMEOUT_S: ${SEALAI_V2_OUTBOX_CLAIM_TIMEOUT_S:-300}
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
       # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
       SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
@@ -270,5 +274,32 @@ services:
       default:
         aliases:
         - sealai-backend-v2
+  # Durable queue consumer. It extends the exact backend-v2 image and allow-listed
+  # environment, but has no HTTP port and no API responsibility. Keeping it as a
+  # separate container makes outbox delivery restart-safe without adding a hidden
+  # scheduler to the request process.
+  backend-v2-worker:
+    container_name: backend-v2-worker
+    profiles:
+    - v2
+    extends:
+      service: backend-v2
+    command:
+    - python
+    - -m
+    - sealai_v2.memory.outbox_daemon
+    ports: !reset []
+    expose: !reset []
+    networks: !reset
+      default: {}
+    healthcheck:
+      disable: true
+    depends_on:
+      backend-v2:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
 volumes:
   backend-data: null
