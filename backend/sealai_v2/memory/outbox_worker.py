@@ -101,8 +101,11 @@ def _claim_pending_with_timeout(
     s, *, batch_size: int, now: str, claim_timeout_seconds: int
 ) -> list[V2MemoryOutbox]:
     stale_before = (
-        _parse_iso(now) - timedelta(seconds=claim_timeout_seconds)
-    ).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        (_parse_iso(now) - timedelta(seconds=claim_timeout_seconds))
+        .astimezone(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
     rows = s.scalars(
         select(V2MemoryOutbox)
         .where(
