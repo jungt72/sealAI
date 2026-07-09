@@ -7,6 +7,7 @@ injected. No ``app.*`` imports anywhere.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -63,6 +64,18 @@ class LlmResult:
     usage: TokenUsage | None = None
 
 
+@dataclass(frozen=True)
+class LlmStreamEvent:
+    """One item from ``LlmClient.generate_stream``: EITHER a text delta (``delta`` set, ``result``
+    None) OR the terminal event (``result`` set with the final text+usage, ``delta`` None). Exactly
+    one terminal event per SUCCESSFUL stream, always yielded LAST; a raised exception means the whole
+    call failed -- no partial/synthetic "final" is ever produced (a failed stream is a failed call,
+    identical to a failed non-streaming ``generate``). Phase 3A (live token streaming)."""
+
+    delta: str | None = None
+    result: LlmResult | None = None
+
+
 @runtime_checkable
 class LlmClient(Protocol):
     """The single I/O seam. Implemented by ``llm.client.OpenAiLlmClient``; faked in tests."""
@@ -70,6 +83,10 @@ class LlmClient(Protocol):
     async def generate(
         self, *, system: str, user: str, model_config: ModelConfig
     ) -> LlmResult: ...
+
+    def generate_stream(
+        self, *, system: str, user: str, model_config: ModelConfig
+    ) -> "AsyncIterator[LlmStreamEvent]": ...
 
 
 class SystemPromptAssembler(Protocol):

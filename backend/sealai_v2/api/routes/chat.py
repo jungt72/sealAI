@@ -30,7 +30,7 @@ from sealai_v2.api.serializers import chat_response
 from sealai_v2.api.sse import stream_frames
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
-from sealai_v2.pipeline.pipeline import Pipeline, ProgressSink
+from sealai_v2.pipeline.pipeline import Pipeline, ProgressSink, TokenSink
 from sealai_v2.security.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v2", tags=["chat"])
@@ -57,6 +57,7 @@ async def _run_pipeline(
     pipeline: Pipeline,
     settings: Settings,
     progress: ProgressSink | None = None,
+    token_sink: TokenSink | None = None,
 ):
     # Production flag baseline from settings (tunable, not hardcoded). Eval columns stay
     # harness-constructed; the pipeline `or Flags()` fallback (flags_off) is untouched.
@@ -66,6 +67,7 @@ async def _run_pipeline(
         session=SessionContext(session_id=req.case_id or identity.session_id),
         flags=flags_from_settings(settings),
         progress=progress,
+        token_sink=token_sink,
     )
 
 
@@ -92,10 +94,17 @@ async def chat_stream(
     def progress(stage: str, status: str) -> None:
         queue.put_nowait(("stage", {"stage": stage, "status": status}))
 
+    # Phase 3A: the token sink is constructed ONLY here, in the SSE path (where the queue exists). It
+    # carries ONLY {"text": <raw delta>} of the already-safe, zero-signal smalltalk answer -- no
+    # ids/tenant/case/PII can cross it (structurally: the smalltalk route requires zero deterministic
+    # signals). The plain /chat handler passes NO sink, so it stays byte-identical.
+    def token(delta: str) -> None:
+        queue.put_nowait(("token", {"text": delta}))
+
     async def _run() -> None:
         try:
             result = await _run_pipeline(
-                req, identity, pipeline, settings, progress=progress
+                req, identity, pipeline, settings, progress=progress, token_sink=token
             )
             queue.put_nowait(("result", chat_response(result)))
         except Exception:  # noqa: BLE001 — surfaced as ONE fixed-message error frame

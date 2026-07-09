@@ -38,6 +38,12 @@ import { ArrowDownIcon, PaperclipIcon, SendIcon } from "./icons";
 type Msg =
   | { role: "user"; text: string }
   | { role: "assistant"; res: ChatResponse }
+  // Phase 3A live token streaming (smalltalk-only): an in-flight assistant turn whose text buffer is
+  // appended token-by-token as `token` frames arrive. On the terminal `result` it is REPLACED (never
+  // appended) by the authoritative { role:"assistant", res } — the gated answer is the single source
+  // of truth. Only ever created when a token actually arrives; a turn that streams no token is
+  // byte-identical to before (a single atomic { role:"assistant", res } append in send()).
+  | { role: "assistant-streaming"; text: string }
   // a HYDRATED historical turn ("Fälle"-Sidebar: loaded from memory.history on open/switch) — text
   // only, deliberately distinct from the live "assistant" variant above: citations/verification/
   // badges were never persisted for past turns, so rendering them as a plain answer would be
@@ -211,7 +217,7 @@ export function ChatPane({
   onDownloadPdf,
   onContribute,
 }: {
-  onSend: (message: string) => Promise<ChatResponse>;
+  onSend: (message: string, onToken?: (text: string) => void) => Promise<ChatResponse>;
   error: string | null;
   memory: ConversationMemory;
   onEditFact: (feld: string, wert: string) => void;
@@ -302,8 +308,30 @@ export function ChatPane({
     setMsgs((m) => [...m, { role: "user", text }]);
     setBusy(true);
     try {
-      const res = await onSend(text);
-      setMsgs((m) => [...m, { role: "assistant", res }]);
+      const res = await onSend(text, (delta) => {
+        // Phase 3A: append the raw delta to the in-flight streaming buffer, creating it on the first
+        // token. Never invoked when no token arrives (the non-streaming path stays byte-identical).
+        setMsgs((m) => {
+          const last = m[m.length - 1];
+          if (last && last.role === "assistant-streaming") {
+            const copy = m.slice();
+            copy[copy.length - 1] = { role: "assistant-streaming", text: last.text + delta };
+            return copy;
+          }
+          return [...m, { role: "assistant-streaming", text: delta }];
+        });
+      });
+      // REPLACE the streaming buffer (if any) with the authoritative gated result; otherwise append
+      // the normal atomic assistant message exactly as before (no-token / non-streaming path).
+      setMsgs((m) => {
+        const last = m[m.length - 1];
+        if (last && last.role === "assistant-streaming") {
+          const copy = m.slice();
+          copy[copy.length - 1] = { role: "assistant", res };
+          return copy;
+        }
+        return [...m, { role: "assistant", res }];
+      });
     } catch {
       // error rendered via the `error` prop; deliberately append nothing (no stale content)
     } finally {
@@ -793,6 +821,15 @@ export function ChatPane({
                     <ParamConfirmation key={i} conf={m.conf} />
                   ) : m.role === "assistant-history" ? (
                     <div key={i} className="answer answer-history" data-testid="answer-history">
+                      <Markdown source={m.text} />
+                    </div>
+                  ) : m.role === "assistant-streaming" ? (
+                    <div
+                      key={i}
+                      className="answer answer-streaming"
+                      data-testid="answer-streaming"
+                      aria-live="polite"
+                    >
                       <Markdown source={m.text} />
                     </div>
                   ) : (

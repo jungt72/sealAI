@@ -235,9 +235,14 @@ class TestRoutePromptMatrixIsInactiveAndComplete:
             assert plan.streaming is False
             assert plan.prompt_family == "PromptAssembler"
 
-    def test_no_route_plans_streaming_of_unverified_content(self) -> None:
+    def test_only_smalltalk_navigation_streams_no_unverified_content_streams(
+        self,
+    ) -> None:
+        # Phase 3A: smalltalk_navigation is the SOLE streaming row (compact, zero-signal,
+        # non-engineering content). Every OTHER route -- all engineering/verified-content routes --
+        # keeps streaming=False, so no unverified engineering content ever streams.
         for plan in ROUTE_PROMPT_MATRIX:
-            assert plan.streaming is False
+            assert plan.streaming is (plan.route is RouteName.SMALLTALK_NAVIGATION)
 
     def test_matrix_is_not_imported_by_pipeline_py(self) -> None:
         """Structural proof the matrix stays inactive: pipeline.py must not import it."""

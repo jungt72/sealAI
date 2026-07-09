@@ -174,6 +174,13 @@ _EXFIL_HEDGE_TEXT = (
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
 ProgressSink = Callable[[str, str], None]
 
+# Phase 3A (live token streaming): optional per-turn RAW-token sink for the compact
+# smalltalk_navigation answer ONLY. One str delta per call; sync + fire-and-forget so a broken sink
+# can never block/fail the turn (same discipline as ProgressSink). Only ever fired on a fully-
+# qualified smalltalk turn with the streaming flag on AND a sink wired (see run()); the deltas carry
+# only already-safe, zero-signal smalltalk text -- never ids/tenant/case/PII.
+TokenSink = Callable[[str], None]
+
 
 def _emit_progress(progress: ProgressSink | None, stage: str, status: str) -> None:
     if progress is None:
@@ -182,6 +189,15 @@ def _emit_progress(progress: ProgressSink | None, stage: str, status: str) -> No
         progress(stage, status)
     except Exception:  # noqa: BLE001 — a broken sink must never alter or fail a turn
         _log.warning("progress sink failed (ignored)", exc_info=True)
+
+
+def _emit_token(token_sink: "TokenSink | None", delta: str) -> None:
+    if token_sink is None:
+        return
+    try:
+        token_sink(delta)
+    except Exception:  # noqa: BLE001 — a broken token sink must never alter or fail a turn
+        _log.warning("token sink failed (ignored)", exc_info=True)
 
 
 def _exfil_guard(answer, *, system_prompt: str, kb_claims):
@@ -357,6 +373,10 @@ class Pipeline:
     # constructed in build_pipeline() when settings.route_prompt_families_enabled is True.
     route_prompt_families_enabled: bool = False
     smalltalk_generator: "SmalltalkGenerator | None" = None
+    # Phase 3A (live token streaming): flag-gate for streaming the compact smalltalk answer
+    # token-by-token. False (default) -> the streaming branch in run() is unreachable and the
+    # smalltalk turn takes the UNCHANGED non-streaming generate() -- byte-identical to Phase 2D.
+    smalltalk_token_streaming_enabled: bool = False
 
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
@@ -380,6 +400,7 @@ class Pipeline:
         session: SessionContext | None = None,
         untrusted: tuple[UntrustedContent, ...] = (),
         progress: ProgressSink | None = None,
+        token_sink: TokenSink | None = None,
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
         flags = flags or Flags()
@@ -618,6 +639,7 @@ class Pipeline:
             # the audit's own required-condition list), AND a smalltalk_generator is actually
             # wired (build_pipeline() only constructs one when the flag is on).
             smalltalk_prompt_active = False
+            stream_tokens_active = False
             if self.route_optimization_enabled:
                 _route_started = time.monotonic()
                 route_decision = classify_route(
@@ -654,6 +676,17 @@ class Pipeline:
                     and self.smalltalk_generator is not None
                     and skip_l3_for_route
                     and route_decision.deterministic_signal_count == 0
+                )
+                # Phase 3A: whether THIS turn will actually STREAM tokens. Strictly NARROWER than
+                # smalltalk_prompt_active (itself narrower than the L3-bypass): it ADDITIONALLY
+                # requires the streaming flag AND a token sink actually wired by the transport. Any
+                # one being false -> no token ever fires; the gated `result` answer is unchanged
+                # either way. Reuses smalltalk_prompt_active verbatim -- never recomputes route
+                # eligibility.
+                stream_tokens_active = (
+                    smalltalk_prompt_active
+                    and self.smalltalk_token_streaming_enabled
+                    and token_sink is not None
                 )
                 if self.route_telemetry_sink is not None:
                     try:
@@ -733,7 +766,24 @@ class Pipeline:
                 # prompt) is completely untouched below -- every route except a fully-qualified
                 # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
                 # EXACT same call it always has.
-                if smalltalk_prompt_active and self.smalltalk_generator is not None:
+                if stream_tokens_active and self.smalltalk_generator is not None:
+                    # Phase 3A: stream the compact smalltalk answer token-by-token. Each RAW delta
+                    # fires the token sink (fire-and-forget); the terminal event carries the finished
+                    # strip_sourcing-cleaned Answer -- byte-identical to the non-streaming generate()
+                    # result for the same completion. A mid-stream failure propagates (the streaming
+                    # transport surfaces the fixed error frame + cancels the task), never a partial.
+                    answer = None
+                    async for _ev in self.smalltalk_generator.generate_stream(question):
+                        if _ev.delta is not None:
+                            _emit_token(token_sink, _ev.delta)
+                        elif _ev.answer is not None:
+                            answer = _ev.answer
+                    if answer is None:
+                        # Defensive: a successful stream always yields a terminal answer, so this is
+                        # unreachable on success (a failure would have raised above). Fall back to the
+                        # non-streaming generate() rather than proceed with no answer.
+                        answer = await self.smalltalk_generator.generate(question)
+                elif smalltalk_prompt_active and self.smalltalk_generator is not None:
                     answer = await self.smalltalk_generator.generate(question)
                 else:
                     answer = await self.generator.generate(
@@ -1362,5 +1412,6 @@ def build_pipeline(
         ),
         route_prompt_families_enabled=settings.route_prompt_families_enabled,
         smalltalk_generator=smalltalk_generator,
+        smalltalk_token_streaming_enabled=settings.smalltalk_token_streaming_enabled,
         risk_flag_prompt_enabled=settings.risk_flag_prompt_enabled,
     )

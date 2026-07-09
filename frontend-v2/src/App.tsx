@@ -325,11 +325,11 @@ export function App() {
   }, [caseId]);
 
   const send = useCallback(
-    async (message: string) => {
+    async (message: string, onToken?: (text: string) => void) => {
       setError(null);
       setLastMessage(message);
       try {
-        return await api.chatStream(message, setLiveStage, caseId);
+        return await api.chatStream(message, setLiveStage, caseId, onToken);
       } catch (e) {
         setError("Es ist ein Fehler aufgetreten — bitte erneut versuchen.");
         throw e;

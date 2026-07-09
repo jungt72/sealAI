@@ -15,9 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
-from sealai_v2.core.contracts import LlmResult, ModelConfig, TokenUsage
+from sealai_v2.core.contracts import (
+    LlmResult,
+    LlmStreamEvent,
+    ModelConfig,
+    TokenUsage,
+)
 from sealai_v2.llm.telemetry import LlmCallTelemetry, TelemetrySink
 
 
@@ -96,9 +102,13 @@ class OpenAiLlmClient:
         except Exception:  # noqa: BLE001 — telemetry must never break or mask a real call/error
             pass
 
-    async def generate(
+    def _build_request_kwargs(
         self, *, system: str, user: str, model_config: ModelConfig
-    ) -> LlmResult:
+    ) -> dict[str, Any]:
+        """The shared Chat-Completions request kwargs for BOTH ``generate`` and ``generate_stream``
+        -- identical model / system+user / temperature / max-tokens / prompt-cache construction, so
+        the two paths can never drift. The streaming path layers ``stream``/``stream_options`` on
+        top of this (see ``generate_stream``)."""
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -112,6 +122,14 @@ class OpenAiLlmClient:
             # Mistral/OpenAI prompt caching: opt-in via a stable key; the doctrine prefix then
             # bills at 10% on cache hits. extra_body passes through regardless of SDK version.
             kwargs["extra_body"] = {"prompt_cache_key": model_config.cache_key}
+        return kwargs
+
+    async def generate(
+        self, *, system: str, user: str, model_config: ModelConfig
+    ) -> LlmResult:
+        kwargs = self._build_request_kwargs(
+            system=system, user=user, model_config=model_config
+        )
 
         started = time.monotonic()
         last_exc: Exception | None = None
@@ -171,3 +189,96 @@ class OpenAiLlmClient:
             error_type=type(last_exc).__name__,
         )
         raise last_exc
+
+    async def generate_stream(
+        self, *, system: str, user: str, model_config: ModelConfig
+    ) -> AsyncIterator[LlmStreamEvent]:
+        """Stream the SAME Chat-Completions call as ``generate`` token-by-token (Phase 3A). Yields an
+        ``LlmStreamEvent(delta=...)`` per content fragment as it arrives, then EXACTLY ONE terminal
+        ``LlmStreamEvent(result=...)`` carrying the fully accumulated text + finish_reason + usage
+        (parsed from the final ``stream_options={"include_usage": True}`` chunk -- confirmed present
+        for OpenAI + OpenAI-compatible Mistral).
+
+        Failure model: a mid-stream exception PROPAGATES unchanged -- no synthetic/partial terminal
+        event is ever synthesized (a failed stream is a failed call, identical to a failed
+        ``generate``). The param-defensive unwind (strip an unsupported ``temperature`` /
+        ``prompt_cache_key`` / rename ``max_completion_tokens``) is applied ONLY on the FIRST attempt,
+        BEFORE any delta has been yielded: once a token has crossed the wire the request cannot be
+        transparently retried from scratch without duplicating already-sent tokens, so any failure
+        after the first yielded delta simply propagates. Transient-retry backoff is deliberately NOT
+        applied here for the same reason (a partial stream is not safely resumable)."""
+        base_kwargs = self._build_request_kwargs(
+            system=system, user=user, model_config=model_config
+        )
+        base_kwargs["stream"] = True
+        base_kwargs["stream_options"] = {"include_usage": True}
+        started = time.monotonic()
+        kwargs = dict(base_kwargs)
+        yielded_any = False
+        while True:
+            buffer: list[str] = []
+            model_name = model_config.model
+            finish_reason: str | None = None
+            usage: TokenUsage | None = None
+            try:
+                stream = await self._client.chat.completions.create(
+                    timeout=self._timeout_s, **kwargs
+                )
+                async for chunk in stream:
+                    model_name = getattr(chunk, "model", None) or model_name
+                    choices = getattr(chunk, "choices", None) or []
+                    if choices:
+                        choice0 = choices[0]
+                        fr = getattr(choice0, "finish_reason", None)
+                        if fr is not None:
+                            finish_reason = fr
+                        delta = getattr(
+                            getattr(choice0, "delta", None), "content", None
+                        )
+                        if delta:
+                            buffer.append(delta)
+                            yielded_any = True
+                            yield LlmStreamEvent(delta=delta)
+                    # The final chunk (include_usage) carries usage, typically with empty choices.
+                    if getattr(chunk, "usage", None) is not None:
+                        usage = _parse_usage(chunk)
+                break
+            except Exception as exc:  # noqa: BLE001 — param-defensive ONCE, else propagate
+                if not yielded_any:
+                    msg = str(exc).lower()
+                    # ONE-TIME param adaptations (model-family drift), mirroring generate(); each is
+                    # guarded by "param in kwargs" so it fires at most once. Only reachable before the
+                    # first delta -- see the docstring for why a post-first-token failure can't retry.
+                    if "temperature" in msg and "temperature" in kwargs:
+                        kwargs.pop("temperature", None)
+                        continue
+                    if "prompt_cache_key" in msg and "extra_body" in kwargs:
+                        kwargs.pop("extra_body", None)
+                        continue
+                    if (
+                        "max_completion_tokens" in msg or "max_tokens" in msg
+                    ) and "max_completion_tokens" in kwargs:
+                        kwargs["max_tokens"] = kwargs.pop("max_completion_tokens")
+                        continue
+                self._emit_telemetry(
+                    model_config=model_config,
+                    usage=None,
+                    latency_ms=(time.monotonic() - started) * 1000.0,
+                    status="error",
+                    error_type=type(exc).__name__,
+                )
+                raise
+        final = LlmResult(
+            text="".join(buffer),
+            model=model_name,
+            finish_reason=finish_reason,
+            usage=usage,
+        )
+        self._emit_telemetry(
+            model_config=model_config,
+            usage=usage,
+            latency_ms=(time.monotonic() - started) * 1000.0,
+            status="ok",
+            error_type=None,
+        )
+        yield LlmStreamEvent(result=final)

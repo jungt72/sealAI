@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatResponse, Clarification, ConfirmationResponse, ConversationMemory } from "../contracts";
@@ -752,5 +752,49 @@ describe("pilot-ui shell (rail + doctrine line)", () => {
     );
     expect(c2.querySelector(".shell")).toHaveClass("shell--nav-expanded");
     localStorage.clear();
+  });
+});
+
+describe("Phase 3A live token streaming (smalltalk-only)", () => {
+  it("appends token deltas to an in-flight buffer, then REPLACES it with the final answer", async () => {
+    let resolveSend: (r: ChatResponse) => void = () => undefined;
+    const onSend = vi.fn((_msg: string, onToken?: (t: string) => void) => {
+      onToken?.("Hal");
+      onToken?.("lo, Welt!");
+      return new Promise<ChatResponse>((res) => {
+        resolveSend = res;
+      });
+    });
+    renderPane({ onSend });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Hallo" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    // interim: the streamed buffer is visible (raw deltas concatenated)
+    await waitFor(() =>
+      expect(screen.getByTestId("answer-streaming")).toHaveTextContent("Hallo, Welt!"),
+    );
+    // terminal result REPLACES the buffer with the authoritative answer (never appended)
+    await act(async () => {
+      resolveSend({ answer: "FINALE ANTWORT", model: "m", grounded: true, intent: null, citations: [] });
+    });
+    await waitFor(() => expect(screen.queryByTestId("answer-streaming")).toBeNull());
+    expect(screen.getByText("FINALE ANTWORT")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("answer-streaming")).toHaveLength(0); // buffer replaced, not left
+  });
+
+  it("a turn that streams NO token behaves exactly as before (atomic assistant append)", async () => {
+    const onSend = vi.fn(
+      async (): Promise<ChatResponse> => ({
+        answer: "ATOMARE ANTWORT",
+        model: "m",
+        grounded: true,
+        intent: null,
+        citations: [],
+      }),
+    );
+    renderPane({ onSend });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "Hallo" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+    await screen.findByText("ATOMARE ANTWORT");
+    expect(screen.queryByTestId("answer-streaming")).toBeNull(); // no streaming element ever
   });
 });

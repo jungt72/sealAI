@@ -75,6 +75,7 @@ export class ApiClient {
     message: string,
     onStage?: (stage: string) => void,
     caseId?: string,
+    onToken?: (text: string) => void,
   ): Promise<ChatResponse> {
     const token = this.getToken();
     const res = await fetch(this.base + "/chat/stream", {
@@ -101,7 +102,17 @@ export class ApiClient {
         const { done, value } = await reader.read();
         const chunk = decoder.decode(value ?? new Uint8Array(), { stream: !done });
         for (const frame of parser.push(chunk)) {
-          if (frame.event === "stage") {
+          if (frame.event === "token") {
+            // Phase 3A live token streaming (smalltalk-only): a raw delta of the in-flight answer.
+            // Cosmetic — the gated `result` frame is always the authoritative answer, so a malformed
+            // token frame never fails the turn.
+            try {
+              const d = JSON.parse(frame.data) as { text?: string };
+              if (typeof d.text === "string") onToken?.(d.text);
+            } catch {
+              // malformed token frame — ignore (progress/streamed tokens are never load-bearing)
+            }
+          } else if (frame.event === "stage") {
             try {
               const d = JSON.parse(frame.data) as { stage?: string; status?: string };
               if (d.status === "start" && d.stage) onStage?.(d.stage);
