@@ -235,6 +235,13 @@ services:
       # smalltalk_prompt_active boolean in pipeline.py -- setting this alone does not stream
       # anything if those are unset. Default false, additive-only.
       SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED: ${SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED:-false}
+      # Phase 3B (PR #206): draft-token streaming for EVERY route's L1 generation call (not just
+      # smalltalk). Same compose-passthrough gap as every flag above. This streams a
+      # non-authoritative PREVIEW of the raw LLM draft only -- the delivered/verified answer still
+      # requires the full output_guard + L3 verify pipeline unchanged for every non-smalltalk route;
+      # this flag never skips or weakens verification, it only adds an observability/UX channel
+      # around the existing generate() calls. Default false, additive-only.
+      SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED: ${SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED:-false}
       # Paperless auto-ingestion (POST /internal/rag/ingest, api/routes/rag_ingest.py): fetches
       # a newly consumed rag:enabled document + LLM-extracts a DRAFT Fachkarte (never reviewed).
       # Values are never logged; unset -> the route fails safe (paperless_not_configured / 401).
