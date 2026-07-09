@@ -87,7 +87,7 @@ export function AosMiniStack() {
         {Array.from({ length: 6 }).map((_, index) => (
           <div
             key={index}
-            className="absolute left-1/2 top-1/2 h-24 w-44 rounded-sm border border-white/80 bg-white/68 shadow-[0_24px_48px_rgba(20,24,24,0.14)] [transform:translate(-50%,-50%)_perspective(760px)_rotateX(62deg)_rotateZ(-28deg)]"
+            className="absolute left-1/2 top-1/2 h-24 w-44 rounded-sm border border-white/80 bg-[#FAFAF9]/68 shadow-[0_24px_48px_rgba(20,24,24,0.14)] [transform:translate(-50%,-50%)_perspective(760px)_rotateX(62deg)_rotateZ(-28deg)]"
             style={{ marginTop: `${28 - index * 11}px`, zIndex: index + 1 }}
           />
         ))}
@@ -163,7 +163,7 @@ export function AosScrollStack() {
                 key={layer.title}
                 className={`relative overflow-hidden rounded-[18px] px-4 transition-[width,max-height,padding,box-shadow,transform,background-color] duration-300 ease-out will-change-transform ${
                   active
-                    ? "max-h-[260px] w-full border border-white/70 bg-white/76 py-4 text-[#121719] backdrop-blur-md"
+                    ? "max-h-[260px] w-full border border-white/70 bg-[#FAFAF9]/76 py-4 text-[#121719] backdrop-blur-md"
                     : "max-h-10 w-[min(54%,238px)] border border-white/50 bg-[#f7f7f8]/92 py-1.5 text-[#17201f]/76"
                 }`}
                 style={{
@@ -270,7 +270,7 @@ export function AosScrollStack() {
                 >
                   <div className="absolute inset-0 rounded-[18px] bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(255,255,255,0.2)_48%,rgba(20,24,24,0.1))]" />
                   <div className="absolute inset-x-[5%] bottom-[-13%] h-[18%] rounded-b-[18px] bg-[linear-gradient(180deg,rgba(151,158,155,0.5),rgba(82,91,87,0.24))]" />
-                  <div className="absolute left-[6%] top-[13%] flex items-center gap-2 rounded-full bg-white/62 px-3 py-1 text-[10px] font-bold text-[#002A5B]/72 shadow-sm">
+                  <div className="absolute left-[6%] top-[13%] flex items-center gap-2 rounded-full bg-[#FAFAF9]/62 px-3 py-1 text-[10px] font-bold text-[#002A5B]/72 shadow-sm">
                     {String(index + 1).padStart(2, "0")}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center px-8">
@@ -293,7 +293,7 @@ export function AosScrollStack() {
               {Array.from({ length: 12 }).map((_, index) => (
                 <span
                   key={index}
-                  className="flex h-9 w-14 items-center justify-center rounded-[6px] border border-white/80 bg-white/84 shadow-[0_20px_38px_rgba(20,24,24,0.14)] sm:h-14 sm:w-20"
+                  className="flex h-9 w-14 items-center justify-center rounded-[6px] border border-white/80 bg-[#FAFAF9]/84 shadow-[0_20px_38px_rgba(20,24,24,0.14)] sm:h-14 sm:w-20"
                   style={{ transform: `translateY(${Math.sin(index) * 5}px)` }}
                 >
                   {index % 3 === 0 ? <Database size={13} /> : index % 3 === 1 ? <FileCheck2 size={13} /> : <LockKeyhole size={13} />}
@@ -304,7 +304,7 @@ export function AosScrollStack() {
         </div>
 
         <div
-          className="absolute inset-x-0 bottom-0 z-30 border-t border-white/60 bg-white/80 px-5 py-5 shadow-[0_-20px_55px_rgba(20,24,24,0.08)] backdrop-blur-md transition-opacity duration-300 sm:px-8"
+          className="absolute inset-x-0 bottom-0 z-30 border-t border-white/60 bg-[#FAFAF9]/80 px-5 py-5 shadow-[0_-20px_55px_rgba(20,24,24,0.08)] backdrop-blur-md transition-opacity duration-300 sm:px-8"
           style={{ opacity: progress > 0.12 && progress < 0.92 ? 1 : 0 }}
         >
           <div className="mx-auto grid max-w-[980px] gap-4 sm:grid-cols-[210px_1fr] sm:items-start">

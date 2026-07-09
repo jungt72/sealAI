@@ -41,7 +41,7 @@ export function WebsiteGuide() {
           e.preventDefault();
           ask(query);
         }}
-        className="flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2"
+        className="flex items-center gap-2 rounded-full border border-border bg-[#FAFAF9] px-4 py-2"
         role="search"
         aria-label="Website-Guide"
       >
@@ -71,7 +71,7 @@ export function WebsiteGuide() {
             <button
               type="button"
               onClick={() => (chip.kind === "faq" ? ask(chip.query) : router.push(chip.href))}
-              className="rounded-full border border-border bg-white px-3.5 py-1.5 text-[12px] font-medium text-muted-foreground transition hover:border-seal-blue/40 hover:text-seal-blue"
+              className="rounded-full border border-border bg-[#FAFAF9] px-3.5 py-1.5 text-[12px] font-medium text-muted-foreground transition hover:border-seal-blue/40 hover:text-seal-blue"
             >
               {chip.label}
             </button>
@@ -80,7 +80,7 @@ export function WebsiteGuide() {
       </ul>
 
       {resolution && (
-        <div className="mt-5 rounded-xl border border-border bg-white p-5" aria-live="polite">
+        <div className="mt-5 rounded-xl border border-border bg-[#FAFAF9] p-5" aria-live="polite">
           <div className="flex items-center gap-2 text-seal-blue">
             <MessageSquareText size={16} aria-hidden />
             <span className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">

@@ -3,6 +3,7 @@ import { Metadata } from "next";
 import { FinalCtaSection } from "@/components/marketing/FinalCtaSection";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { IntelligenceHighlights } from "@/components/marketing/IntelligenceHighlights";
+// import { PrecheckDemoSection } from "@/components/marketing/PrecheckDemoSection";
 import { SealingIntelligenceSection } from "@/components/marketing/SealingIntelligenceSection";
 import { TeamUseCases } from "@/components/marketing/TeamUseCases";
 import { TrustNeutralitySection } from "@/components/marketing/TrustNeutralitySection";
@@ -58,11 +59,12 @@ export default function LandingPage() {
     <div className="bg-background">
       <JsonLd />
       <HeroSection />
+      <SealingIntelligenceSection />
       <IntelligenceHighlights />
       <TeamUseCases />
-      <SealingIntelligenceSection />
       <TrustNeutralitySection />
       <FinalCtaSection />
+      {/* <PrecheckDemoSection /> */}
     </div>
   );
 }

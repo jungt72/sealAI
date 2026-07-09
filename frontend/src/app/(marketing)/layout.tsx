@@ -13,7 +13,7 @@ export default function MarketingLayout({
           non-hero pages need top padding to clear it. The homepage's hero
           section cancels this with a matching negative margin so it can sit
           full-bleed at y=0 under the transparent header. */}
-      <main className="flex-1 pt-[76px]">{children}</main>
+      <main className="flex-1 pt-[56px]">{children}</main>
       <MarketingFooter />
     </div>
   );

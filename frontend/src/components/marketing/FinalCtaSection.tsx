@@ -10,7 +10,7 @@ export function FinalCtaSection() {
     <section
       id={finalCta.id}
       data-header-theme="light"
-      className="section-anchor border-t border-border bg-background"
+      className="section-anchor bg-[#FAFAF9]"
     >
       <div className="marketing-section py-20 lg:py-28">
         <div className="marketing-copy-center text-center">
@@ -30,7 +30,7 @@ export function FinalCtaSection() {
             </TrackedLink>
             <Link
               href={PARTNER_HREF}
-              className="inline-flex h-11 items-center rounded-full border border-border bg-white px-6 text-[14px] font-semibold text-foreground transition-colors hover:border-seal-blue/40"
+              className="inline-flex h-11 items-center rounded-full border border-border bg-[#FAFAF9] px-6 text-[14px] font-semibold text-foreground transition-colors hover:border-seal-blue/40"
             >
               {finalCta.secondaryCta}
             </Link>

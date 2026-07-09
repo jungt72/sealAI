@@ -8,7 +8,7 @@ export function TrustNeutralitySection() {
     <section
       id={trustNeutrality.id}
       data-header-theme="dark"
-      className="section-anchor bg-[#0D1016] text-white"
+      className="section-anchor bg-[radial-gradient(115%_95%_at_58%_12%,rgba(31,76,132,0.62)_0%,rgba(13,41,75,0.58)_34%,rgba(5,13,25,0.96)_78%),linear-gradient(180deg,#07101d_0%,#0b2541_46%,#04101d_100%)] text-white"
     >
       <div className="marketing-section py-20 lg:py-28">
         <div className="marketing-copy">
@@ -21,7 +21,7 @@ export function TrustNeutralitySection() {
           {trustNeutrality.points.map((point) => (
             <li
               key={point}
-              className="flex items-start gap-2.5 rounded-[14px] border border-white/12 bg-white/[0.04] px-4 py-3.5 text-[13.5px] leading-6 text-white/85"
+              className="flex items-start gap-2.5 rounded-[14px] border border-white/12 bg-[#FAFAF9]/[0.04] px-4 py-3.5 text-[13.5px] leading-6 text-white/85"
             >
               <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-white/60" aria-hidden="true" />
               {point}
