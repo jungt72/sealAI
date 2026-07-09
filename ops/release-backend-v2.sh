@@ -107,7 +107,7 @@ echo ">> live ${SERVICE} image = ${IMAGE_SHA}"
 rollback_hint() {
   echo "!! SMOKE RED — NOT writing the ledger. Rollback path:" >&2
   echo "   docker tag ${ROLLBACK_TAG} sealai-backend-v2:latest && \\" >&2
-  echo "   ${COMPOSE[*]} up -d --no-deps --force-recreate ${SERVICE}" >&2
+  echo "   ${COMPOSE[*]} up -d --no-build --no-deps --force-recreate ${SERVICE} ${WORKER_SERVICE}" >&2
 }
 smoke_fail() { rollback_hint; exit 1; }
 
@@ -120,6 +120,18 @@ for i in $(seq 1 30); do
 done
 docker exec "${SERVICE}" curl -fsS http://127.0.0.1:8001/health >/dev/null || { echo "!! internal /health failed" >&2; smoke_fail; }
 curl -fsS -m 8 https://sealingai.com/api/v2/health >/dev/null || { echo "!! public /api/v2/health failed" >&2; smoke_fail; }
+
+echo ">> smoke: durable outbox worker"
+for i in $(seq 1 30); do
+  running="$(docker inspect "${WORKER_SERVICE}" --format '{{.State.Running}}' 2>/dev/null || true)"
+  [ "${running}" = "true" ] && break
+  [ "${i}" -eq 30 ] && { echo "!! ${WORKER_SERVICE} is not running" >&2; smoke_fail; }
+  sleep 2
+done
+docker exec "${WORKER_SERVICE}" python -c 'import sealai_v2.memory.outbox_daemon' || {
+  echo "!! outbox worker module import failed" >&2
+  smoke_fail
+}
 
 echo ">> smoke: kern one-shot (PV=50.0 / v=16,755)"
 docker exec -i "${SERVICE}" python - <<'PY' || smoke_fail
@@ -168,6 +180,7 @@ eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA
 - promoted image ref = \`${BACKEND_IMAGE_REF:-local-build}\`
 - rollback rung (read from the daemon) = \`${ROLLBACK_FROM}\`, tagged \`${ROLLBACK_TAG}\`
 - smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.
+- worker GREEN: process running and outbox daemon importable.
 - ledger: ${LEDGER}
 ==================================================================================
 EOF
