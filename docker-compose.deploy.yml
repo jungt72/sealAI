@@ -106,6 +106,8 @@ services:
     container_name: backend-v2
     profiles:
     - v2
+    image: ${BACKEND_V2_IMAGE:-sealai-backend-v2:local}
+    pull_policy: ${BACKEND_V2_PULL_POLICY:-missing}
     build:
       context: ./backend
       dockerfile: Dockerfile.v2

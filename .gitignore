@@ -168,3 +168,4 @@ ops/ESCALATION.md
 
 # Fachkarten-Ingestion review queue (transient — owner promotes to the seed)
 ops/fachkarten_drafts/
+.runtime/

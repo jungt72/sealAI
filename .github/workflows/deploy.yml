@@ -1,66 +1,91 @@
-name: Deploy Backend
+name: Deploy Backend V2
 
 on:
   workflow_run:
-    workflows: ["Build and Push Backend"]
+    workflows: ["Build and Push Backend V2"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
-      backend_tag:
-        description: "Optional backend image tag or pinned ref override (e.g. ghcr.io/jungt72/sealai-backend:abcd1234)"
+      source_sha:
+        description: "Exact main commit whose image was built"
+        required: true
+        type: string
+      backend_image:
+        description: "Optional fully qualified image ref; otherwise GHCR commit tag"
         required: false
         type: string
 
 permissions:
   contents: read
+  actions: read
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_BACKEND: ${{ github.repository_owner }}/sealai-backend
+  IMAGE_BACKEND_V2: ${{ github.repository_owner }}/sealai-backend-v2
 
 jobs:
   deploy:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    environment:
+      name: production
     steps:
-      - name: Resolve backend image
-        id: image
+      - name: Resolve source commit
+        id: source
+        shell: bash
         env:
-          INPUT_BACKEND_TAG: ${{ inputs.backend_tag }}
+          INPUT_SHA: ${{ inputs.source_sha }}
           WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          if [[ -n "${INPUT_BACKEND_TAG:-}" ]]; then
-            BACKEND_IMAGE_REF="$INPUT_BACKEND_TAG"
-          else
-            SHA="${WORKFLOW_SHA:-${GITHUB_SHA}}"
-            SHORT_SHA="${SHA:0:8}"
-            BACKEND_IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}:${SHORT_SHA}"
-          fi
-          if [[ "$BACKEND_IMAGE_REF" == *@sha256:* ]]; then
-            BACKEND_IMAGE="$BACKEND_IMAGE_REF"
-          else
-            DIGEST="$(docker buildx imagetools inspect "$BACKEND_IMAGE_REF" --format '{{.Manifest.Digest}}')"
-            test -n "$DIGEST"
-            BACKEND_IMAGE="${BACKEND_IMAGE_REF}@${DIGEST}"
-          fi
-          echo "backend_image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
+          sha="${INPUT_SHA:-${WORKFLOW_SHA:-${GITHUB_SHA}}}"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source SHA" >&2; exit 2; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${sha:0:8}" >> "$GITHUB_OUTPUT"
 
-      - name: SSH deploy
+      - name: Resolve and pin backend-v2 image
+        id: image
+        shell: bash
+        env:
+          INPUT_IMAGE: ${{ inputs.backend_image }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_BACKEND_V2: ${{ env.IMAGE_BACKEND_V2 }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ref="${INPUT_IMAGE:-${REGISTRY}/${IMAGE_BACKEND_V2}:${SOURCE_SHA}}"
+          if [[ "$ref" == *@sha256:* ]]; then
+            pinned="$ref"
+          else
+            digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')"
+            test -n "$digest"
+            pinned="${ref}@${digest}"
+          fi
+          echo "ref=$pinned" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy through the sanctioned V2 release gate
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          EXPECTED_SHA: ${{ steps.source.outputs.sha }}
+          BACKEND_V2_IMAGE: ${{ steps.image.outputs.ref }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
+          envs: EXPECTED_SHA,BACKEND_V2_IMAGE
           script: |
             set -euo pipefail
             cd /home/thorsten/sealai
-            if grep -q '^BACKEND_IMAGE=' .env.prod; then
-              sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=${{ steps.image.outputs.backend_image }}|" .env.prod
-            else
-              printf '\nBACKEND_IMAGE=%s\n' '${{ steps.image.outputs.backend_image }}' >> .env.prod
-            fi
-            ./ops/up-prod.sh
-            ./ops/stack_smoke.sh
+            test "$(git rev-parse HEAD)" = "$EXPECTED_SHA" || {
+              echo "refusing deploy: VPS checkout is not the artifact commit" >&2
+              git status --short --branch >&2
+              exit 20
+            }
+            test -z "$(git status --porcelain)" || {
+              echo "refusing deploy: VPS worktree is dirty" >&2
+              git status --short >&2
+              exit 21
+            }
+            BACKEND_V2_IMAGE="$BACKEND_V2_IMAGE" ./ops/release-backend-v2.sh
