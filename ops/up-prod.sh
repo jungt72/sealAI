@@ -31,7 +31,7 @@ prepare_backend_volume
 COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2 --profile frontend-container)
 "${COMPOSE[@]}" pull postgres redis qdrant gotenberg tika keycloak nginx frontend
 "${COMPOSE[@]}" up -d --no-build --no-recreate --remove-orphans \
-  postgres redis qdrant gotenberg tika keycloak nginx frontend backend-v2
+  postgres redis qdrant gotenberg tika keycloak nginx frontend backend-v2 backend-v2-worker
 
 # Nginx resolves Docker upstream container IPs at startup. Refresh it after
 # infrastructure recovery so public smoke does not hit stale upstreams.

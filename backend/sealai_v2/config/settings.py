@@ -260,6 +260,12 @@ class Settings(BaseSettings):
         "sealai_v2_fachkarten"  # OWN collection, separate from the V1 stack
     )
     qdrant_api_key: str | None = None  # value never logged
+    # Durable outbox worker controls. The worker is a separate process so queue delivery survives
+    # API restarts; these values are operational knobs, not product behavior.
+    outbox_poll_interval_s: int = 10
+    outbox_batch_size: int = 50
+    outbox_max_attempts: int = 5
+    outbox_claim_timeout_s: int = 300
     # Embedding model: the PROD path is the OpenAI API ("text-embedding-3-small", 1536-dim) — strong on
     # German, reuses OPENAI_API_KEY, and crucially NO local model so NO RAM/OOM (the local e5-large model
     # OOM'd the 7.6 GB host). DATA leaves the box for the embedding call (it IS an API) — this is NOT a
