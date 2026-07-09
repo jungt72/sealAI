@@ -279,3 +279,45 @@ describe("ApiClient.chatStream — Phase 3A live token streaming (smalltalk-only
     expect(res).toEqual(RESULT_PAYLOAD);
   });
 });
+
+describe("ApiClient.chatStream — Phase 3B draft-token streaming (every route except smalltalk)", () => {
+  it("passes draft=true through to onToken for a draft token frame", async () => {
+    const frames = [
+      'event: token\ndata: {"text":"RWDR ","draft":true}\n\n',
+      'event: token\ndata: {"text":"45x62x8","draft":true}\n\n',
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(sseResponse(frames))));
+    const calls: Array<[string, boolean]> = [];
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chatStream("hi", undefined, undefined, (t, d) => calls.push([t, d]));
+    expect(calls).toEqual([
+      ["RWDR ", true],
+      ["45x62x8", true],
+    ]);
+  });
+
+  it("passes draft=false through to onToken for the smalltalk (final) token frame shape", async () => {
+    const frames = [
+      'event: token\ndata: {"text":"Hallo","draft":false}\n\n',
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(sseResponse(frames))));
+    const calls: Array<[string, boolean]> = [];
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chatStream("hi", undefined, undefined, (t, d) => calls.push([t, d]));
+    expect(calls).toEqual([["Hallo", false]]);
+  });
+
+  it("a missing/malformed draft field defaults to true (never treated as authoritative)", async () => {
+    const frames = [
+      'event: token\ndata: {"text":"unklar"}\n\n',
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ];
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(sseResponse(frames))));
+    const calls: Array<[string, boolean]> = [];
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.chatStream("hi", undefined, undefined, (t, d) => calls.push([t, d]));
+    expect(calls).toEqual([["unklar", true]]);
+  });
+});

@@ -325,7 +325,7 @@ export function App() {
   }, [caseId]);
 
   const send = useCallback(
-    async (message: string, onToken?: (text: string) => void) => {
+    async (message: string, onToken?: (text: string, draft: boolean) => void) => {
       setError(null);
       setLastMessage(message);
       try {

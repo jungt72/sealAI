@@ -101,3 +101,38 @@ def test_hide_gate_holds_even_if_full_synthetic_requested_in_prod(
     reconstructed = _reduce_chat([_chunk(_SENTINEL, finish="stop")])
     client = _prod_client()  # re-resolves policy under this env; still hidden
     assert client._hide_run_outputs(reconstructed) == {}
+
+
+# --- Phase 3B (draft-token streaming) -- the SAME generic hide-gate, exercised against
+# engineering-shaped (non-smalltalk) draft content --------------------------------------------
+#
+# `core.l1_generator.L1Generator.generate_stream` rides on the exact SAME `LlmClient.generate_stream`
+# (`llm.client.OpenAiLlmClient`, wrapped by LangSmith's `wrap_openai`) as `SmalltalkGenerator.
+# generate_stream` already does -- Phase 3B adds no new I/O client or LangSmith wrapping of its own.
+# The test above proves the hide-gate mechanism itself (`_reduce_chat` + `Client._hide_run_outputs`)
+# is generic to ANY streamed chat-completion content, not smalltalk-specific; this test makes that
+# explicit for an engineering-route-shaped draft completion, so a regression that somehow special-
+# cased the hide-gate to smalltalk text would be caught here.
+
+
+_ENG_SENTINEL = "SENTINEL-STREAMED-ENGINEERING-DRAFT-DO-NOT-LEAK"
+
+
+def test_reconstructed_stream_hides_non_smalltalk_engineering_draft_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_env(monkeypatch)  # default env → production → hide both
+    chunks = [
+        _chunk("RWDR 45x62x8, "),
+        _chunk("FKM bei Hydrauliköl: "),
+        _chunk(_ENG_SENTINEL, finish="stop"),
+    ]
+
+    reconstructed = _reduce_chat(chunks)
+    # sanity: the reduce step really DOES reconstruct the streamed engineering draft content
+    assert _ENG_SENTINEL in repr(reconstructed)
+
+    client = _prod_client()
+    hidden = client._hide_run_outputs(reconstructed)
+    assert hidden == {}  # the reconstructed streamed draft output is dropped wholesale
+    assert _ENG_SENTINEL not in repr(hidden)

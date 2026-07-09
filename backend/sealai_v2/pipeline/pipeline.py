@@ -174,12 +174,15 @@ _EXFIL_HEDGE_TEXT = (
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
 ProgressSink = Callable[[str, str], None]
 
-# Phase 3A (live token streaming): optional per-turn RAW-token sink for the compact
-# smalltalk_navigation answer ONLY. One str delta per call; sync + fire-and-forget so a broken sink
-# can never block/fail the turn (same discipline as ProgressSink). Only ever fired on a fully-
-# qualified smalltalk turn with the streaming flag on AND a sink wired (see run()); the deltas carry
-# only already-safe, zero-signal smalltalk text -- never ids/tenant/case/PII.
-TokenSink = Callable[[str], None]
+# Phase 3A (live token streaming) + Phase 3B (draft-token streaming): optional per-turn RAW-token
+# sink. Called as ``sink(delta, draft)``: ``draft=False`` for the Phase 3A smalltalk_navigation path
+# (the streamed text IS the final, authoritative answer, since smalltalk never goes through L3);
+# ``draft=True`` for the Phase 3B path (every non-smalltalk route's L1 generation), where the delta
+# is a NON-AUTHORITATIVE preview only -- the delivered answer still arrives as the atomic verified
+# ``result`` after the full output_guard + L3 pipeline. One str delta per call; sync + fire-and-forget
+# so a broken sink can never block/fail the turn (same discipline as ProgressSink). The deltas carry
+# only the model's raw natural-language text -- never ids/tenant/case/PII/structured fields.
+TokenSink = Callable[[str, bool], None]
 
 
 def _emit_progress(progress: ProgressSink | None, stage: str, status: str) -> None:
@@ -191,11 +194,11 @@ def _emit_progress(progress: ProgressSink | None, stage: str, status: str) -> No
         _log.warning("progress sink failed (ignored)", exc_info=True)
 
 
-def _emit_token(token_sink: "TokenSink | None", delta: str) -> None:
+def _emit_token(token_sink: "TokenSink | None", delta: str, *, draft: bool) -> None:
     if token_sink is None:
         return
     try:
-        token_sink(delta)
+        token_sink(delta, draft)
     except Exception:  # noqa: BLE001 — a broken token sink must never alter or fail a turn
         _log.warning("token sink failed (ignored)", exc_info=True)
 
@@ -377,6 +380,18 @@ class Pipeline:
     # token-by-token. False (default) -> the streaming branch in run() is unreachable and the
     # smalltalk turn takes the UNCHANGED non-streaming generate() -- byte-identical to Phase 2D.
     smalltalk_token_streaming_enabled: bool = False
+    # Phase 3B (draft-token streaming): flag-gate for streaming the FULL L1 engineering generator's
+    # raw deltas into a NON-AUTHORITATIVE "draft" channel, for EVERY route that goes through
+    # self.generator (engineering_case, leakage_troubleshooting, rfq_manufacturer_brief,
+    # material_comparison, general_sealing_knowledge, material_knowledge -- i.e. every route EXCEPT
+    # smalltalk_navigation, which has its own Phase 3A path). Independent of
+    # smalltalk_token_streaming_enabled. False (default) -> draft_stream_active is always False, the
+    # generate_stream branch in run() is unreachable, every generate() call is byte-identical to
+    # pre-Phase-3B. When True (AND a token sink is wired) it ONLY adds an observability side-channel:
+    # the delivered answer still goes through the UNCHANGED output_guard + L3 verify + citations
+    # pipeline and still arrives as one atomic `result`. This flag never skips or weakens any
+    # verification.
+    draft_token_streaming_enabled: bool = False
 
     # P2: in-flight background remember tasks, keyed by (tenant_id, session_id). Filled only
     # when a distiller is wired; drained by ``flush_memory`` (the ordering guard).
@@ -640,6 +655,18 @@ class Pipeline:
             # wired (build_pipeline() only constructs one when the flag is on).
             smalltalk_prompt_active = False
             stream_tokens_active = False
+            # Phase 3B (draft-token streaming): whether THIS turn's self.generator.generate() calls
+            # (the full L1 engineering generator, used by every route below the smalltalk if/elif
+            # arms) should stream raw deltas into the token sink as a non-authoritative draft preview.
+            # Independent of route_optimization_enabled/smalltalk_prompt_active — those gate whether
+            # the COMPACT smalltalk prompt is used at all; this gates an observability channel around
+            # the FULL generator's calls, which the smalltalk if/elif arms never reach in the first
+            # place (see the "else:" arm below), so no additional route check is needed here. False
+            # (flag off or no sink wired) -> the generate_stream branch in _l1_generate is
+            # unreachable -> every self.generator.generate() call stays byte-identical to today.
+            draft_stream_active = (
+                self.draft_token_streaming_enabled and token_sink is not None
+            )
             if self.route_optimization_enabled:
                 _route_started = time.monotonic()
                 route_decision = classify_route(
@@ -775,7 +802,9 @@ class Pipeline:
                     answer = None
                     async for _ev in self.smalltalk_generator.generate_stream(question):
                         if _ev.delta is not None:
-                            _emit_token(token_sink, _ev.delta)
+                            # Phase 3A: smalltalk deltas are the FINAL answer being typed (draft=False)
+                            # -- this route never goes through L3, so draft IS final here.
+                            _emit_token(token_sink, _ev.delta, draft=False)
                         elif _ev.answer is not None:
                             answer = _ev.answer
                     if answer is None:
@@ -786,8 +815,15 @@ class Pipeline:
                 elif smalltalk_prompt_active and self.smalltalk_generator is not None:
                     answer = await self.smalltalk_generator.generate(question)
                 else:
-                    answer = await self.generator.generate(
+                    # Phase 3B: every non-smalltalk route lands here. ``_l1_generate`` is
+                    # byte-identical to the plain ``self.generator.generate(...)`` call it replaces
+                    # unless draft_stream_active is True (flag on AND a sink is wired) — see its
+                    # docstring. The delivered ``answer`` is unaffected either way; it still goes
+                    # through the unchanged output_guard + L3 verify pipeline below.
+                    answer = await self._l1_generate(
                         question,
+                        token_sink=token_sink,
+                        draft_stream_active=draft_stream_active,
                         flags=flags,
                         grounding_facts=l1_grounding,
                         calc=calc,
@@ -842,9 +878,15 @@ class Pipeline:
                     check_sentence_coverage=_check_sentence_coverage,
                 )
                 if _gr.action == "BLOCK":
+                    # Phase 3B: this ``_staged(..., "regenerate", "start")`` progress event ALREADY
+                    # exists (pre-Phase-3B) and is reused verbatim as the frontend's signal to
+                    # reset/clear its draft buffer before this second attempt's tokens arrive — no
+                    # new event type is introduced for that purpose.
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
-                        answer = await self.generator.generate(
+                        answer = await self._l1_generate(
                             question,
+                            token_sink=token_sink,
+                            draft_stream_active=draft_stream_active,
                             flags=flags,
                             grounding_facts=l1_grounding,
                             calc=calc,
@@ -1024,6 +1066,45 @@ class Pipeline:
                 route_decision.route.value if route_decision is not None else None
             ),
         )
+
+    async def _l1_generate(
+        self,
+        question: str,
+        *,
+        token_sink: "TokenSink | None",
+        draft_stream_active: bool,
+        **kwargs,
+    ) -> Answer:
+        """Phase 3B (draft-token streaming): the SINGLE seam shared by both
+        ``self.generator.generate()`` call sites in ``run()`` (the initial generate and the
+        regenerate-after-guard-BLOCK call) so the streaming-vs-non-streaming branch is written once,
+        not duplicated. ``kwargs`` are forwarded VERBATIM to ``self.generator.generate`` /
+        ``generate_stream`` — identical keyword args, identical prompt assembly either way.
+
+        When ``draft_stream_active`` is False (flag off, no sink wired — this method is never even
+        reached for the smalltalk route, since the smalltalk if/elif arms in ``run()`` never call
+        this helper) this is byte-identical to ``await self.generator.generate(question, **kwargs)``.
+
+        When True, streams raw deltas into ``token_sink`` as a non-authoritative draft
+        (``draft=True``) — a pure observability side-channel — and returns the terminal Answer, which
+        is byte-identical to what the non-streaming ``generate`` would have returned for the same
+        inputs (the caller then feeds it into the SAME UNCHANGED output_guard / L3 verify pipeline as
+        always). A mid-stream failure propagates unchanged, exactly like ``generate``'s own contract.
+        """
+        if not draft_stream_active:
+            return await self.generator.generate(question, **kwargs)
+        answer: Answer | None = None
+        async for _ev in self.generator.generate_stream(question, **kwargs):
+            if _ev.delta is not None:
+                _emit_token(token_sink, _ev.delta, draft=True)
+            elif _ev.answer is not None:
+                answer = _ev.answer
+        if answer is None:
+            # Defensive: a successful stream always yields a terminal answer (mirrors the identical
+            # defensive fallback on the Phase 3A smalltalk streaming branch above) -- unreachable on
+            # success; a failure would already have raised out of the async-for above.
+            answer = await self.generator.generate(question, **kwargs)
+        return answer
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
         """G4: map a recognised soft archetype to its reviewed profile's advisory L1 context
@@ -1413,5 +1494,6 @@ def build_pipeline(
         route_prompt_families_enabled=settings.route_prompt_families_enabled,
         smalltalk_generator=smalltalk_generator,
         smalltalk_token_streaming_enabled=settings.smalltalk_token_streaming_enabled,
+        draft_token_streaming_enabled=settings.draft_token_streaming_enabled,
         risk_flag_prompt_enabled=settings.risk_flag_prompt_enabled,
     )

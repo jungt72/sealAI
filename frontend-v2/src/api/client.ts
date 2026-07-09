@@ -70,12 +70,18 @@ export class ApiClient {
    * that ends without a result rejects — no partial content ever surfaces. 404/405 (backend
    * without the endpoint yet) falls back to plain /chat once, so the dual deploy is order-free.
    * `caseId` ("Fälle"-Sidebar) targets one of the caller's own several persisted cases instead of
-   * always the token's default session — omitted, this is byte-identical to before. */
+   * always the token's default session — omitted, this is byte-identical to before.
+   *
+   * `onToken(text, draft)` — Phase 3A/3B: `draft=false` (smalltalk_navigation only) means `text`
+   * IS the final answer being typed (this route never goes through L3); `draft=true` (every other
+   * route, Phase 3B) means `text` is a NON-AUTHORITATIVE preview — the real answer only arrives via
+   * the returned/resolved `result` payload. A malformed or missing `draft` field defaults to `true`
+   * (never treat an ambiguous frame as authoritative). */
   async chatStream(
     message: string,
     onStage?: (stage: string) => void,
     caseId?: string,
-    onToken?: (text: string) => void,
+    onToken?: (text: string, draft: boolean) => void,
   ): Promise<ChatResponse> {
     const token = this.getToken();
     const res = await fetch(this.base + "/chat/stream", {
@@ -103,12 +109,13 @@ export class ApiClient {
         const chunk = decoder.decode(value ?? new Uint8Array(), { stream: !done });
         for (const frame of parser.push(chunk)) {
           if (frame.event === "token") {
-            // Phase 3A live token streaming (smalltalk-only): a raw delta of the in-flight answer.
-            // Cosmetic — the gated `result` frame is always the authoritative answer, so a malformed
-            // token frame never fails the turn.
+            // Phase 3A (smalltalk, draft=false — the delta IS the final answer) + Phase 3B (every
+            // other route, draft=true — a non-authoritative preview only). Cosmetic either way — the
+            // gated `result` frame is always the authoritative answer, so a malformed token frame
+            // never fails the turn.
             try {
-              const d = JSON.parse(frame.data) as { text?: string };
-              if (typeof d.text === "string") onToken?.(d.text);
+              const d = JSON.parse(frame.data) as { text?: string; draft?: boolean };
+              if (typeof d.text === "string") onToken?.(d.text, d.draft !== false);
             } catch {
               // malformed token frame — ignore (progress/streamed tokens are never load-bearing)
             }

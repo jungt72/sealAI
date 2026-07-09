@@ -7,6 +7,9 @@ framework-/I/O-free, build-spec §3).
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+
 from sealai_v2.core.contracts import (
     Answer,
     CalcResult,
@@ -44,6 +47,27 @@ def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list
     return computed, not_computed, list(calc.notes)
 
 
+@dataclass(frozen=True)
+class L1StreamEvent:
+    """One item from ``L1Generator.generate_stream`` (Phase 3B, draft-token streaming): EITHER a RAW
+    text delta (``delta`` set, ``answer`` None) forwarded verbatim from the client stream, OR the
+    terminal event (``answer`` set, ``delta`` None) carrying the finished, ``strip_sourcing``-cleaned
+    Answer. Deltas stream RAW — never per-delta stripped (stripping a fragment mid-token would corrupt
+    it); ``strip_sourcing`` is applied to the FULL accumulated final text ONCE, so the terminal
+    ``answer`` is byte-identical to what the non-streaming ``generate`` returns for the same completion
+    + the same inputs. Exactly one terminal event per SUCCESSFUL stream, always yielded LAST; a
+    mid-stream exception propagates unchanged (a failed stream is a failed call — no partial/synthetic
+    Answer is ever emitted, identical to ``generate``'s and ``LlmStreamEvent``'s failure contract).
+
+    This mirrors ``pipeline.smalltalk_generator.SmalltalkStreamEvent`` exactly, but for the full L1
+    engineering generator. It is a pure OBSERVABILITY channel: the terminal ``answer`` still goes
+    through the UNCHANGED output_guard + L3 verify pipeline downstream — draft deltas are never
+    treated as, or substituted for, the delivered/verified answer."""
+
+    delta: str | None = None
+    answer: Answer | None = None
+
+
 class L1Generator:
     def __init__(
         self,
@@ -67,6 +91,53 @@ class L1Generator:
         Pure: the assembler is injected (``core`` stays I/O-free)."""
         return self._assembler.system_prompt(flags=flags)
 
+    def _assemble_system(
+        self,
+        *,
+        flags: Flags,
+        grounding_facts: tuple[GroundingFact, ...],
+        case_context: list[dict] | None,
+        durable_context: list[dict] | None,
+        conversation_window: list[dict] | None,
+        correction_note: str | None,
+        calc: CalcResult | None,
+        untrusted: list[dict] | None,
+        archetype_context: dict | None,
+        pack_suggestion_context: dict | None,
+        medium_hint_context: dict | None,
+        coverage: dict | None,
+        contract: dict | None,
+        baseline_hardening: bool,
+        material_params: list | None,
+        risk_flags: list[str] | None,
+    ) -> str:
+        """The SINGLE prompt-assembly path shared by ``generate`` and ``generate_stream`` so the two
+        can never drift: streaming assembles a byte-identical system prompt to the non-streaming call
+        for the same inputs, guaranteeing the streamed draft is generated from the exact same prompt
+        as the delivered answer would be."""
+        computed_values, not_computed, calc_notes = _calc_payload(calc)
+        return self._assembler.system_prompt(
+            anrede="du",
+            grounding_facts=list(grounding_facts),
+            case_context=case_context,
+            durable_context=durable_context,
+            conversation_window=conversation_window,
+            flags=flags,
+            correction_note=correction_note,
+            computed_values=computed_values,
+            not_computed=not_computed,
+            calc_notes=calc_notes,
+            untrusted=untrusted,
+            archetype_context=archetype_context,
+            pack_suggestion_context=pack_suggestion_context,
+            medium_hint_context=medium_hint_context,
+            coverage=coverage,
+            contract=contract,
+            baseline_hardening=baseline_hardening,
+            material_params=material_params,
+            risk_flags=risk_flags,
+        )
+
     async def generate(
         self,
         question: str,
@@ -88,18 +159,14 @@ class L1Generator:
         material_params: list | None = None,
         risk_flags: list[str] | None = None,
     ) -> Answer:
-        computed_values, not_computed, calc_notes = _calc_payload(calc)
-        system = self._assembler.system_prompt(
-            anrede="du",
-            grounding_facts=list(grounding_facts),
+        system = self._assemble_system(
+            flags=flags,
+            grounding_facts=grounding_facts,
             case_context=case_context,
             durable_context=durable_context,
             conversation_window=conversation_window,
-            flags=flags,
             correction_note=correction_note,
-            computed_values=computed_values,
-            not_computed=not_computed,
-            calc_notes=calc_notes,
+            calc=calc,
             untrusted=untrusted,
             archetype_context=archetype_context,
             pack_suggestion_context=pack_suggestion_context,
@@ -119,3 +186,68 @@ class L1Generator:
             grounding_facts=grounding_facts,
             finish_reason=result.finish_reason,
         )
+
+    async def generate_stream(
+        self,
+        question: str,
+        *,
+        flags: Flags,
+        grounding_facts: tuple[GroundingFact, ...] = (),
+        case_context: list[dict] | None = None,
+        durable_context: list[dict] | None = None,
+        conversation_window: list[dict] | None = None,
+        correction_note: str | None = None,
+        calc: CalcResult | None = None,
+        untrusted: list[dict] | None = None,
+        archetype_context: dict | None = None,
+        pack_suggestion_context: dict | None = None,
+        medium_hint_context: dict | None = None,
+        coverage: dict | None = None,
+        contract: dict | None = None,
+        baseline_hardening: bool = False,
+        material_params: list | None = None,
+        risk_flags: list[str] | None = None,
+    ) -> AsyncIterator[L1StreamEvent]:
+        """Streaming variant of ``generate`` (Phase 3B, draft-token streaming). IDENTICAL keyword-arg
+        signature and IDENTICAL prompt assembly (both go through ``_assemble_system``), but calls the
+        client's ``generate_stream`` instead of ``generate``. Forwards each RAW content delta as an
+        ``L1StreamEvent(delta=...)``, then yields exactly ONE terminal ``L1StreamEvent(answer=...)``
+        whose Answer applies ``strip_sourcing`` to the FINAL accumulated text only — byte-identical to
+        ``generate``'s Answer for the same completion + inputs (proven output-equivalent by the Phase
+        3B tests). A mid-stream failure propagates unchanged (no partial Answer is ever emitted).
+
+        This is a pure observability channel: the returned terminal Answer is fed into the SAME
+        output_guard + L3 verify pipeline as the non-streaming path — draft deltas never bypass, skip,
+        or weaken verification, and are never substituted for the delivered answer."""
+        system = self._assemble_system(
+            flags=flags,
+            grounding_facts=grounding_facts,
+            case_context=case_context,
+            durable_context=durable_context,
+            conversation_window=conversation_window,
+            correction_note=correction_note,
+            calc=calc,
+            untrusted=untrusted,
+            archetype_context=archetype_context,
+            pack_suggestion_context=pack_suggestion_context,
+            medium_hint_context=medium_hint_context,
+            coverage=coverage,
+            contract=contract,
+            baseline_hardening=baseline_hardening,
+            material_params=material_params,
+            risk_flags=risk_flags,
+        )
+        async for event in self._client.generate_stream(
+            system=system, user=question, model_config=self._model_config
+        ):
+            if event.delta is not None:
+                yield L1StreamEvent(delta=event.delta)
+            elif event.result is not None:
+                yield L1StreamEvent(
+                    answer=Answer(
+                        text=strip_sourcing(event.result.text),
+                        model=event.result.model,
+                        grounding_facts=grounding_facts,
+                        finish_reason=event.result.finish_reason,
+                    )
+                )
