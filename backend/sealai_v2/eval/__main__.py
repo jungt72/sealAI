@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,8 @@ def _parse_role_overrides(model_args, provider_args) -> dict:
 
 
 def _git_sha() -> str:
+    if value := os.getenv("SEALAI_EVAL_GIT_SHA"):
+        return value.strip()
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -61,6 +64,15 @@ def _tree_binding() -> tuple[str, bool]:
     cannot give (under validate-then-commit, HEAD is the pre-fix commit but the eval'd content is the
     fix). Best-effort: ``("unknown", False)`` if git or the script is unavailable.
     """
+    if tree_hash := os.getenv("SEALAI_EVAL_TREE_HASH"):
+        dirty = os.getenv("SEALAI_EVAL_DIRTY", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        return tree_hash.strip(), dirty
+
     repo = Path(__file__).resolve().parents[3]
     try:
         tree_hash = subprocess.check_output(

@@ -31,5 +31,8 @@ mkdir -p backend/sealai_v2/eval/runs
   -e LANGCHAIN_TRACING_V2=false \
   -e LANGSMITH_API_KEY= \
   -e LANGCHAIN_API_KEY= \
+  -e "SEALAI_EVAL_TREE_HASH=${TREE_HASH}" \
+  -e "SEALAI_EVAL_GIT_SHA=${GIT_SHA}" \
+  -e SEALAI_EVAL_DIRTY=false \
   -v "${REPO_ROOT}/backend/sealai_v2/eval/runs:/app/sealai_v2/eval/runs" \
   backend-v2 -m sealai_v2.eval "$@"
