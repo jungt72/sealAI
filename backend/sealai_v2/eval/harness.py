@@ -48,7 +48,11 @@ from sealai_v2.eval.scorer import (
     summarize_column,
 )
 from sealai_v2.knowledge.fachkarten import load_fachkarten
-from sealai_v2.llm.factory import build_client_factory, build_client_for, resolve_l1_model
+from sealai_v2.llm.factory import (
+    build_client_factory,
+    build_client_for,
+    resolve_l1_model,
+)
 from sealai_v2.pipeline.pipeline import build_pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.leak_detect import exfiltration_leak

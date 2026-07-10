@@ -39,7 +39,10 @@ def test_paced_judge_serializes_and_spaces_concurrent_calls() -> None:
         judge = PacedLlmClient(inner, max_concurrency=1, min_interval_s=0.02)
         cfg = ModelConfig("judge")
         await asyncio.gather(
-            *(judge.generate(system="s", user=str(i), model_config=cfg) for i in range(3))
+            *(
+                judge.generate(system="s", user=str(i), model_config=cfg)
+                for i in range(3)
+            )
         )
         return inner
 
@@ -47,5 +50,6 @@ def test_paced_judge_serializes_and_spaces_concurrent_calls() -> None:
     assert inner.max_active == 1
     assert len(inner.starts) == 3
     assert all(
-        later - earlier >= 0.015 for earlier, later in zip(inner.starts, inner.starts[1:])
+        later - earlier >= 0.015
+        for earlier, later in zip(inner.starts, inner.starts[1:])
     )

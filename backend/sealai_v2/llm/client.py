@@ -37,20 +37,20 @@ def _parse_retry_duration(value: object) -> float | None:
     if not raw:
         return None
     try:
-        return max(0.0, float(raw))
+        return max(0.0, float(raw))  # i5-ok: protocol retry duration
     except ValueError:
         pass
     match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)", raw)
     if match:
         amount, unit = float(match.group(1)), match.group(2)
-        return amount * {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]
+        return amount * {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]  # i5-ok: retry duration unit conversion
     try:
         retry_at = email.utils.parsedate_to_datetime(raw)
     except (TypeError, ValueError):
         return None
     if retry_at.tzinfo is None:
         return None
-    return max(0.0, retry_at.timestamp() - time.time())
+    return max(0.0, retry_at.timestamp() - time.time())  # i5-ok: protocol retry duration
 
 
 def _retry_delay_s(exc: Exception, attempt: int) -> float:
@@ -67,8 +67,8 @@ def _retry_delay_s(exc: Exception, attempt: int) -> float:
         if (duration := _parse_retry_duration(value)) is not None
     ]
     if retry_after_ms is not None:
-        hinted.append(retry_after_ms / 1000.0)
-    fallback = min(2.0 ** (attempt - 1), 30.0)
+        hinted.append(retry_after_ms / 1000.0)  # i5-ok: milliseconds to seconds
+    fallback = min(2.0 ** (attempt - 1), 30.0)  # i5-ok: retry timing constants
     return max([fallback, *hinted])
 
 
