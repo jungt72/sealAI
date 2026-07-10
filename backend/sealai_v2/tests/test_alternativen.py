@@ -207,6 +207,7 @@ def test_generic_replacement_and_comparison_are_not_partner_requests():
         "Meine alte Dichtung ist kaputt. Wie finde ich Ersatz?",
         "Schlüssel den RWDR auf und finde etwas Vergleichbares.",
         "Sind diese beiden Dichtungen austauschbar?",
+        "Ist Hersteller A technisch dasselbe wie Hersteller B?",
     ):
         assert stages.alternativen(registry, question, None, tenant_id="t1") is None
 

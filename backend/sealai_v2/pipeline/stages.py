@@ -42,8 +42,10 @@ from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 import re as _re
 
 _ALT_RE = _re.compile(
-    r"\b(alternativ|hersteller|lieferant|bezugsquelle|wer\s+(macht|kann|stellt|liefert|baut)|"
-    r"anbieter|wer\s+noch)\b",
+    r"\b(?:lieferant(?:en)?|bezugsquelle(?:n)?|anbieter|"
+    r"wer\s+(?:macht|kann|stellt|liefert|baut)|wer\s+noch|"
+    r"welche[rsn]?\s+hersteller|alternative[rsn]?\s+hersteller|"
+    r"hersteller\s+(?:empfehlen|nennen|finden|zeigen|auflisten))\b",
     _re.IGNORECASE,
 )
 
