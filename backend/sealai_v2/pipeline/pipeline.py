@@ -929,10 +929,13 @@ class Pipeline:
             if self.execution_policy_enabled:
                 if route_decision is None:  # defensive: policy routing is mandatory
                     raise RuntimeError("execution policy requires a route decision")
-                contract_missing = tuple((contract or {}).get("missing_fields", ()))
-                policy_missing_fields = tuple(
-                    dict.fromkeys((*case_state_v2.required_missing, *contract_missing))
-                )
+                # Only explicit case-state requirements may block model execution. The response
+                # contract also lists inputs missing from every registered calculation; most of
+                # those calculations are irrelevant to a material-compatibility or knowledge turn.
+                # Treating that generic list as intake requirements made valid grounded questions
+                # stop at D1 (for example, asking about FKM in steam requested shaft diameter and
+                # O-ring groove depth). Calculation transparency remains in ``calc.not_computed``.
+                policy_missing_fields = case_state_v2.required_missing
                 source_ids = {
                     source for fact in l1_grounding for source in fact.sources if source
                 }
@@ -946,7 +949,11 @@ class Pipeline:
                         tool_step_count=len(calc.computed),
                         case_conflict_count=len(case_state_v2.open_conflicts),
                         required_missing=policy_missing_fields,
-                        contract_status=(contract or {}).get("status"),
+                        contract_status=(
+                            (contract or {}).get("status")
+                            if policy_missing_fields
+                            else None
+                        ),
                         untrusted_content_count=len(untrusted),
                         has_diagnosis=diagnosis is not None,
                         exact_cache_hit=cached_answer is not None,

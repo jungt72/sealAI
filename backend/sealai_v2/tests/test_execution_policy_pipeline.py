@@ -124,6 +124,23 @@ def test_complex_multidocument_case_goes_frontier_directly():
     assert result.turn_state.model_tier == "frontier"
 
 
+def test_irrelevant_calc_inputs_do_not_block_grounded_material_compatibility():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
+    result = asyncio.run(
+        pipeline.run(
+            "FKM für Heißdampf-Sterilisation bei 140 °C einordnen",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert helper.calls == []
+    assert standard.calls == []
+    assert len(frontier.calls) == 1
+    assert result.answer.model == "frontier"
+    assert result.turn_state.execution_class == "C2"
+    assert result.turn_state.needs_human_review is True
+
+
 def test_ungrounded_high_risk_case_never_calls_a_model():
     pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
     result = asyncio.run(
