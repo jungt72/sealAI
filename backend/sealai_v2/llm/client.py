@@ -43,14 +43,23 @@ def _parse_retry_duration(value: object) -> float | None:
     match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)", raw)
     if match:
         amount, unit = float(match.group(1)), match.group(2)
-        return amount * {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]  # i5-ok: retry duration unit conversion
+        seconds_per_unit = {  # i5-ok: protocol retry duration unit conversion
+            "ms": 0.001,  # i5-ok: protocol retry duration unit conversion
+            "s": 1.0,  # i5-ok: protocol retry duration unit conversion
+            "m": 60.0,  # i5-ok: protocol retry duration unit conversion
+            "h": 3600.0,  # i5-ok: protocol retry duration unit conversion
+        }
+        return amount * seconds_per_unit[unit]
     try:
         retry_at = email.utils.parsedate_to_datetime(raw)
     except (TypeError, ValueError):
         return None
     if retry_at.tzinfo is None:
         return None
-    return max(0.0, retry_at.timestamp() - time.time())  # i5-ok: protocol retry duration
+    return max(
+        0.0,  # i5-ok: protocol retry duration
+        retry_at.timestamp() - time.time(),
+    )
 
 
 def _retry_delay_s(exc: Exception, attempt: int) -> float:
