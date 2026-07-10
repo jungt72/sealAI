@@ -332,7 +332,8 @@ def _partner_grounding_guard(answer: Answer, alternatives: dict | None) -> Answe
             )
             if name:
                 rendered.append(
-                    f"- {name}" + (f" — Werkstoffe: {capabilities}" if capabilities else "")
+                    f"- {name}"
+                    + (f" — Werkstoffe: {capabilities}" if capabilities else "")
                 )
         heading = "Passende Partner nach fachlicher Eignung (Partner/Anzeige):"
         text = "\n".join([heading, *rendered])
@@ -1298,7 +1299,9 @@ class Pipeline:
 
             # Neutrality override guard: an explicit persistent/preferred manufacturer ranking is
             # replaced after the model/verifier chain and before any answer can ship.
-            answer, _neutrality_overridden = _neutrality_override_guard(question, answer)
+            answer, _neutrality_overridden = _neutrality_override_guard(
+                question, answer
+            )
 
             # P1.4: SERVE-path deterministic exfiltration Schranke. Runs AFTER the final answer is set
             # (post verify if/else) and BEFORE cite, on the answer that would actually ship. The leak

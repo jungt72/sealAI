@@ -459,7 +459,9 @@ def fail_closed_answer(contract: dict) -> str:
     values = []
     for value in contract.get("allowed_values", ()):
         name = labels.get(value.get("calc_id"), value.get("name", "Berechneter Wert"))
-        values.append(f"- {name}: {value.get('value')} {value.get('unit', '')}".rstrip())
+        values.append(
+            f"- {name}: {value.get('value')} {value.get('unit', '')}".rstrip()
+        )
         values.extend(
             f"  - {warning}"
             for warning in value.get("warnings", ())

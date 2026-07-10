@@ -198,6 +198,7 @@ def _is_smalltalk_shape(question: str) -> bool:
         or (len(text) <= 160 and _SMALLTALK_PREFIX_RE.match(text))
     )
 
+
 _DOMAIN_KNOWLEDGE_RE = re.compile(
     r"\b(dichtung(?:stechnik)?|dichtungsart|wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
     r"o-?ring|hydraulikdichtung|werkstoff|elastomer|thermoplast|nut|dichtlippe|"

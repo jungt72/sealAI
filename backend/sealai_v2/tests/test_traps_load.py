@@ -37,9 +37,7 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
     assert [fact.card_id for fact in facts] == ["CONF-SCHEIN-OPTIMUM"]
     assert facts[0].kind == "trap"
 
-    assert not retrieve_reviewed_trap_facts(
-        catalog, "Ist EPDM gegen Aceton beständig?"
-    )
+    assert not retrieve_reviewed_trap_facts(catalog, "Ist EPDM gegen Aceton beständig?")
 
     uncertainty = retrieve_reviewed_trap_facts(
         catalog, "Ist FKM beständig gegen Essigsäure?"

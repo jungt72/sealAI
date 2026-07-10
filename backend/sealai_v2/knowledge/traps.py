@@ -145,7 +145,9 @@ def load_traps(path: Path | None = None) -> TrapCatalog:
                     )
             if e.retrieval_terms:
                 if e.review_state != "reviewed":
-                    raise ValueError(f"{e.id}: only reviewed traps may define retrieval_terms")
+                    raise ValueError(
+                        f"{e.id}: only reviewed traps may define retrieval_terms"
+                    )
                 if not 1 <= e.retrieval_min_hits <= len(e.retrieval_terms):
                     raise ValueError(
                         f"{e.id}: retrieval_min_hits must be within retrieval_terms"
@@ -208,9 +210,7 @@ def reviewed_trap_retrieval_hits(
     """
     q_norm = (question or "").lower()
     tokens = q_tokens if q_tokens is not None else query_tokens(q_norm)
-    return sum(
-        1 for term in entry.retrieval_terms if tag_matches(term, tokens, q_norm)
-    )
+    return sum(1 for term in entry.retrieval_terms if tag_matches(term, tokens, q_norm))
 
 
 def reviewed_trap_retrieval_matches(entry: TrapEntry, question: str) -> bool:

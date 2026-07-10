@@ -29,9 +29,7 @@ class TestSmalltalkNavigation:
             assert d.forced_full_pipeline is False
 
     def test_natural_courtesy_after_greeting_routes_smalltalk(self) -> None:
-        d = classify_route(
-            "Hallo, schön dass es euch gibt!", intent=Intent.GESPRAECH
-        )
+        d = classify_route("Hallo, schön dass es euch gibt!", intent=Intent.GESPRAECH)
         assert d.route == RouteName.SMALLTALK_NAVIGATION
         assert d.forced_full_pipeline is False
 

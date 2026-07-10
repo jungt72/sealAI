@@ -238,9 +238,7 @@ def test_grounded_partner_result_renders_only_ranked_registry_rows():
         draft,
         {
             "grounded_data": True,
-            "hersteller": [
-                {"firmenname": "ListedSeal", "werkstoffe": ["FKM", "NBR"]}
-            ],
+            "hersteller": [{"firmenname": "ListedSeal", "werkstoffe": ["FKM", "NBR"]}],
             "neutralitaet": "Capability-Ranking, unabhängig von Bezahlung.",
         },
     )

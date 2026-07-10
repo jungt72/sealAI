@@ -119,7 +119,9 @@ def test_fail_closed_answer_preserves_only_kernel_value_and_warning():
                     "name": "v_m_s",
                     "value": 12.5664,
                     "unit": "m/s",
-                    "warnings": ["nahe an der Belastungsgrenze → grenzwertige Auslegung"],
+                    "warnings": [
+                        "nahe an der Belastungsgrenze → grenzwertige Auslegung"
+                    ],
                 }
             ],
             "required_clauses": [],

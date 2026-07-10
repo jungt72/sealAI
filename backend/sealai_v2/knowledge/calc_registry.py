@@ -141,8 +141,10 @@ def _calc_def(raw: dict) -> CalcDef:
     )
     if not d.output.name:
         raise ValueError(f"{cid}: output name required")
-    if d.limit and d.limit.caution_ratio is not None and not (
-        0 < d.limit.caution_ratio <= 1
+    if (
+        d.limit
+        and d.limit.caution_ratio is not None
+        and not (0 < d.limit.caution_ratio <= 1)
     ):
         raise ValueError(f"{cid}: limit.caution_ratio must be in (0, 1]")
     if d.reviewed:
