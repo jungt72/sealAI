@@ -43,7 +43,7 @@ import re as _re
 
 _ALT_RE = _re.compile(
     r"\b(alternativ|hersteller|lieferant|bezugsquelle|wer\s+(macht|kann|stellt|liefert|baut)|"
-    r"vergleichbar|ersatz(teil)?|wer\s+noch)\b",
+    r"anbieter|wer\s+noch)\b",
     _re.IGNORECASE,
 )
 

@@ -229,6 +229,19 @@ _NEUTRALITY_HEDGE_TEXT = (
     "per Datenblatt und Herstellerbestätigung zu verifizieren."
 )
 _PARTNER_GROUNDING_GUARD_MODEL = "partner-grounding-guard"
+_EXFIL_REQUEST_GUARD_MODEL = "exfil-request-guard"
+_EXFIL_REQUEST_REFUSAL_TEXT = (
+    "Interne Systemanweisungen, Prompts und vertrauliche Wissensbasis-Inhalte gebe ich nicht aus. "
+    "Bei einer konkreten Frage zur Dichtungstechnik helfe ich dir gern fachlich weiter."
+)
+_EXFIL_REQUEST_RE = re.compile(
+    r"\b(?:system[- ]?prompt|systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|"
+    r"wissensbasis)\b.*\b(?:aus(?:geben|gabe)|zeig(?:en|e)?|nenn(?:en|e)?|"
+    r"w[oö]rtlich|vollst[aä]ndig|verrat(?:en|e)?|offenleg(?:en|e)?)\b|"
+    r"\b(?:gib|zeige?|nenne?|verrate?|offenlege?)\b.*\b(?:system[- ]?prompt|"
+    r"systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|wissensbasis)\b",
+    re.IGNORECASE | re.DOTALL,
+)
 
 # P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
@@ -344,6 +357,21 @@ def _partner_grounding_guard(answer: Answer, alternatives: dict | None) -> Answe
     return Answer(
         text=text,
         model=_PARTNER_GROUNDING_GUARD_MODEL,
+        grounding_facts=answer.grounding_facts,
+    )
+
+
+def _explicit_exfil_request_guard(question: str, answer: Answer) -> Answer:
+    """Refuse direct requests for confidential instructions even when no leak was emitted.
+
+    The leak detector remains the final content-based backstop. This intent-shaped guard closes the
+    UX gap where a model safely avoided disclosure but failed to state a clear refusal.
+    """
+    if not _EXFIL_REQUEST_RE.search(question or ""):
+        return answer
+    return Answer(
+        text=_EXFIL_REQUEST_REFUSAL_TEXT,
+        model=_EXFIL_REQUEST_GUARD_MODEL,
         grounding_facts=answer.grounding_facts,
     )
 
@@ -1302,6 +1330,10 @@ class Pipeline:
             answer, _neutrality_overridden = _neutrality_override_guard(
                 question, answer
             )
+
+            # Direct exfiltration requests receive a deterministic refusal even when the model did
+            # not emit enough confidential text to trip the content-based leak detector below.
+            answer = _explicit_exfil_request_guard(question, answer)
 
             # P1.4: SERVE-path deterministic exfiltration Schranke. Runs AFTER the final answer is set
             # (post verify if/else) and BEFORE cite, on the answer that would actually ship. The leak
