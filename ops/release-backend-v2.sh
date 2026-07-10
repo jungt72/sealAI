@@ -14,7 +14,8 @@
 #   3. ops/v2_deploy_gate.py → an adjudicated run with that exact tree, L1 and
 #      runtime profile; all gated axes schranken_quota_final == 1.0.
 #   4. Rollback rung, verified pre-migration backup and Alembic migration,
-#      then recreate backend-v2 + its durable worker from the same image.
+#      idempotent knowledge-ledger bootstrap + derived-index drain, then recreate
+#      backend-v2 + its durable worker from the same image.
 #   5. Smoke: health (internal+public) · worker · kern one-shot (PV=50.0 / v=16,755) ·
 #      restart-survival. RED at any point → HALT, NO ledger line, print rollback.
 #   6. Ledger: append ops/deploy-ledger.jsonl (machine-readable commit→deploy
@@ -115,6 +116,13 @@ echo ">> applying V2 Alembic migrations with the gated image"
   -m sealai_v2.db.migrate upgrade
 "${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
   -m sealai_v2.db.migrate check
+
+echo ">> bootstrapping reviewed knowledge into Postgres system-of-record"
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.knowledge.bootstrap
+echo ">> synchronizing the ledger-derived knowledge index before traffic switch"
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.knowledge.outbox_worker drain-all --batch-size 100
 
 "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}" "${WORKER_SERVICE}"
 IMAGE_SHA="$(docker inspect "${SERVICE}" --format '{{.Image}}')"

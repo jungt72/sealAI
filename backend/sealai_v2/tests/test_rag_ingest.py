@@ -1,6 +1,7 @@
 """POST /internal/rag/ingest — the Paperless auto-ingestion webhook. Proves: a wrong/missing token is
-refused (401), an untagged document is a no-op, an empty document is a no-op but tagged
-sealai:status-failed, a successful extraction lands EXACTLY ONE draft card in Qdrant (never
+    refused (401), an untagged document is a no-op, an empty document is a no-op but tagged
+    sealai:status-failed, a successful extraction lands EXACTLY ONE draft card in the Postgres
+    ledger and queues its Qdrant projection (never
 reviewed — doctrine), the endpoint RETRIES a failed extraction attempt (the real 2026-07-01
 incident: attempt 1 returned zero claims, a manual retry succeeded — this is now automatic), and
 every terminal failure is tagged sealai:status-failed so a silent drop is visible in Paperless."""
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from sealai_v2.api.main import app
 from sealai_v2.api.routes import rag_ingest
+from sealai_v2.knowledge.ledger import LedgerWriteResult
 from sealai_v2.knowledge.paperless_client import PaperlessConfigError
 from sealai_v2.tests._fakes import ScriptedFakeLlmClient
 
@@ -37,6 +39,7 @@ def _client(
     fetch_error=None,
     llm_responses=None,
     ingested_catalogs=None,
+    ledger_error=None,
     find_tag_id_result=15,
     add_calls=None,
     add_error=None,
@@ -81,11 +84,25 @@ def _client(
 
     captured = ingested_catalogs if ingested_catalogs is not None else []
 
-    def _fake_ingest(settings, *, catalog=None, **_kw):
-        captured.append(catalog)
-        return sum(len(c.claims) for c in catalog.cards)
+    class _FakeLedger:
+        def replace_catalog(self, document, catalog, *, now, actor):
+            if ledger_error is not None:
+                raise ledger_error
+            captured.append(catalog)
+            claims = sum(len(c.claims) for c in catalog.cards)
+            return LedgerWriteResult(
+                document_id=f"ledger-{document.source_id}",
+                document_version=1,
+                claims_total=claims,
+                claims_created=claims,
+                claims_updated=0,
+                claims_retired=0,
+                outbox_enqueued=claims,
+            )
 
-    monkeypatch.setattr(rag_ingest, "ingest_fachkarten", _fake_ingest)
+    monkeypatch.setattr(
+        rag_ingest, "build_knowledge_ledger", lambda _settings: _FakeLedger()
+    )
     return TestClient(app), llm_client
 
 
@@ -242,10 +259,7 @@ def test_llm_exception_retries_then_fails_safe_tagged_failed(monkeypatch):
     assert add_calls == [("5", 15)]
 
 
-def test_qdrant_upsert_error_retries_then_fails_safe_tagged_failed(monkeypatch):
-    def _boom(settings, *, catalog=None, **_kw):
-        raise RuntimeError("qdrant unreachable")
-
+def test_ledger_commit_error_retries_then_fails_safe_tagged_failed(monkeypatch):
     add_calls = []
     client, llm_client = _client(
         monkeypatch,
@@ -255,20 +269,18 @@ def test_qdrant_upsert_error_retries_then_fails_safe_tagged_failed(monkeypatch):
             ("sealai:ingest",),
         ),
         llm_responses=[_valid_claims(), _valid_claims(), _valid_claims()],
+        ledger_error=RuntimeError("postgres unavailable"),
         add_calls=add_calls,
     )
-    monkeypatch.setattr(rag_ingest, "ingest_fachkarten", _boom)
     r = client.post(
         "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
     )
     assert r.status_code == 200
     body = r.json()
     assert body["ingested"] is False
-    assert "qdrant_upsert_failed" in body["reason"]
+    assert "knowledge_ledger_commit_failed" in body["reason"]
     assert body["attempts"] == 3
-    assert (
-        len(llm_client.calls) == 3
-    )  # retried the FULL attempt, not just the qdrant call
+    assert len(llm_client.calls) == 3  # retried the full extraction+commit attempt
     assert add_calls == [("5", 15)]
 
 
@@ -306,7 +318,7 @@ def test_recovers_automatically_after_a_failed_first_attempt(monkeypatch):
     )  # attempt 1 (empty) + attempt 2 (succeeded) — no 3rd call
     assert (
         len(captured) == 1
-    )  # exactly one Qdrant upsert, from the successful attempt only
+    )  # exactly one ledger commit, from the successful attempt only
     # success tags status-draft — NOT status-failed (recovered before exhausting retries)
     assert add_calls == [("18", 15)]
 
@@ -366,8 +378,9 @@ def test_successful_ingestion_lands_exactly_one_draft_card(monkeypatch):
     assert body["ingested"] is True
     assert body["claims"] == 2
     assert body["review_state"] == "draft"
+    assert body["index_status"] == "queued" and body["points_queued"] == 2
 
-    # exactly ONE card was handed to the Qdrant ingest — doctrine: draft-only, never reviewed
+    # exactly ONE card was handed to the ledger — doctrine: draft-only, never reviewed
     assert len(captured) == 1
     catalog = captured[0]
     assert len(catalog.cards) == 1

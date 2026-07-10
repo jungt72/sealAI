@@ -441,6 +441,13 @@ def test_ensure_collection_dense_check_unaffected_when_sparse_not_requested():
     )  # no raise — sparse not requested
 
 
+def test_direct_qdrant_ingest_is_rejected_when_postgres_is_configured():
+    from sealai_v2.knowledge.qdrant_retrieval import ingest_fachkarten
+
+    with pytest.raises(RuntimeError, match="direct Fachkarten-to-Qdrant"):
+        ingest_fachkarten(Settings(database_url="sqlite://"))
+
+
 def test_hybrid_and_rerank_helpers_not_constructed_when_disabled():
     # Both default OFF → no sparse embedder / reranker built, no import cost paid on the common path.
     r = QdrantFachkartenRetriever(Settings(), client=object(), embedder=object())
@@ -479,6 +486,54 @@ def test_retrieve_dense_only_when_hybrid_disabled_no_prefetch():
     assert (
         kwargs["using"] == "dense"
     )  # unchanged dense-only path, byte-identical to pre-hybrid
+
+
+def test_retrieve_revalidates_qdrant_payload_against_postgres_ledger():
+    pts = [
+        _FakePoint(
+            {
+                "claim_id": "active",
+                "claim_text": "stale text",
+                "card_id": "STALE",
+                "review_state": "reviewed",
+            },
+            0.9,
+        ),
+        _FakePoint(
+            {
+                "claim_id": "retired",
+                "claim_text": "must disappear",
+                "card_id": "RETIRED",
+                "review_state": "reviewed",
+            },
+            0.8,
+        ),
+    ]
+
+    class _Ledger:
+        def resolve_claims(self, claim_ids, *, tenant_id):
+            assert claim_ids == ("active", "retired") and tenant_id == "customer-a"
+            return {
+                "active": {
+                    "claim_id": "active",
+                    "claim_text": "canonical text",
+                    "card_id": "FK-CANONICAL",
+                    "review_state": "draft",
+                    "sources": [],
+                    "quelle": "ledger",
+                    "scope": {},
+                }
+            }
+
+    retriever = QdrantFachkartenRetriever(
+        Settings(),
+        client=_FakeClient(points=pts),
+        embedder=_FakeDenseEmbedder(),
+        knowledge_ledger=_Ledger(),
+    )
+    result = asyncio.run(retriever.retrieve("PTFE", tenant_id="customer-a", k=2))
+    assert result.grounding_facts == ()
+    assert [fact.text for fact in result.provisional] == ["canonical text"]
 
 
 def test_retrieve_applies_rerank_when_enabled():

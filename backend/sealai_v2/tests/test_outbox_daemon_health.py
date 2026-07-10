@@ -9,8 +9,10 @@ from sealai_v2.memory import outbox_daemon
 
 
 class _Qdrant:
+    calls: list[str] = []
+
     def get_collection(self, name: str):
-        assert name == "sealai_v2_memory"
+        self.calls.append(name)
         return {"status": "green"}
 
 
@@ -28,6 +30,7 @@ def test_worker_healthchecks_heartbeat_database_and_qdrant(tmp_path, monkeypatch
         now=now,
     )
     assert result == {"status": "ok", "heartbeat_age_s": "2.0"}
+    assert _Qdrant.calls[-2:] == ["sealai_v2_memory", "sealai_v2_knowledge_v1"]
 
 
 def test_worker_healthcheck_rejects_stale_heartbeat(tmp_path):

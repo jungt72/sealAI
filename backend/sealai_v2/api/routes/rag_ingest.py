@@ -2,9 +2,9 @@
 (``paperless/scripts/sealai-rag-webhook.sh``).
 
 Auto-ingests a NEWLY consumed document tagged ``sealai:ingest`` as a DRAFT Fachkarte
-(``core/fachkarte_extract.py``) directly into the live Qdrant index — so new knowledge uploaded via
-Paperless becomes available (as ``review_state=draft``, rendered "vorläufig") WITHOUT a manual
-``ops/ingest_fachkarte.py`` run. Untagged / non-knowledge documents (invoices, unrelated paperwork)
+(``core/fachkarte_extract.py``) into the authoritative Postgres knowledge ledger. The same
+transaction appends durable Qdrant-outbox rows; the worker updates the derived search index.
+Untagged / non-knowledge documents (invoices, unrelated paperwork)
 are a no-op — a document simply never gets ``sealai:ingest`` if it should stay out of sealingAI's
 knowledge (build-spec §3 tag taxonomy: ``sealai:ingest`` gate, ``sealai:status-draft`` /
 ``sealai:status-reviewed`` / ``sealai:status-failed`` review state, ``sealai:source-*`` provenance
@@ -22,9 +22,9 @@ a silent drop is visible in Paperless itself, not just in a log nobody is watchi
 DOCTRINE (unchanged from the manual CLI path): this endpoint can only ever ADD DRAFT claims — never
 ``reviewed`` (never gains L3 block/correct authority, always rendered "vorläufig" by L1). Promotion
 draft->reviewed stays a SEPARATE, deliberate step (the periodic challenge process), never automatic.
-Idempotent: the card id is derived from the Paperless document id, so re-consuming (or retrying) the
-same document overwrites its own Qdrant points rather than duplicating them (``ingest_fachkarten``,
-uuid5 keys) — retrying is therefore safe with no side effects from a partial/failed prior attempt.
+Idempotent: the card id is derived from the Paperless document id and document/claim identities are
+content-addressed. Re-consuming the same revision is a no-op after successful index delivery; a
+changed source creates an auditable new document version and retires stale claims transactionally.
 
 Auth: a static shared-secret header (``X-SeaLAI-Webhook-Token`` == ``PAPERLESS_WEBHOOK_TOKEN`` env) —
 Paperless is a server, not a user, so this is NOT the tenant JWT flow. Fail-closed if the expected
@@ -36,6 +36,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import replace
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -44,6 +45,11 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import ModelConfig
 from sealai_v2.core.fachkarte_extract import FachkarteExtractor
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, _card
+from sealai_v2.knowledge.ledger import (
+    GLOBAL_KNOWLEDGE_TENANT,
+    KnowledgeDocumentInput,
+    build_knowledge_ledger,
+)
 from sealai_v2.knowledge.paperless_client import (
     PaperlessConfigError,
     add_tag_to_document,
@@ -51,7 +57,6 @@ from sealai_v2.knowledge.paperless_client import (
     find_tag_id,
     remove_tag_from_document,
 )
-from sealai_v2.knowledge.qdrant_retrieval import ingest_fachkarten
 from sealai_v2.llm.factory import build_client_factory
 from sealai_v2.prompts.assembler import FachkarteExtractPromptAssembler
 
@@ -71,6 +76,10 @@ _MAX_ATTEMPTS = 3
 
 class IngestRequest(BaseModel):
     document_id: str
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _build_extractor(settings: Settings) -> FachkarteExtractor:
@@ -139,15 +148,32 @@ async def _attempt(
 
     catalog = FachkartenCatalog(cards=(card,))
     try:
-        n_points = ingest_fachkarten(settings, catalog=catalog)
-    except Exception as exc:  # noqa: BLE001 — a Qdrant/embedder hiccup must not abort the loop
-        return None, f"qdrant_upsert_failed: {exc}"
+        result = build_knowledge_ledger(settings).replace_catalog(
+            KnowledgeDocumentInput(
+                tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+                source_type="paperless",
+                source_id=document_id,
+                source_uri=source,
+                object_key=source,
+                title=source.partition(":")[2] or source,
+                content=text.encode("utf-8"),
+                authority="external_unreviewed",
+            ),
+            catalog,
+            now=_utc_now(),
+            actor="paperless-webhook",
+        )
+    except Exception as exc:  # noqa: BLE001 - a transient DB failure is retryable
+        return None, f"knowledge_ledger_commit_failed: {exc}"
 
     return {
         "ingested": True,
         "card_id": card.id,
         "claims": len(card.claims),
-        "points": n_points,
+        "document_id": result.document_id,
+        "document_version": result.document_version,
+        "index_status": "queued",
+        "points_queued": result.outbox_enqueued,
         "review_state": "draft",
     }, ""
 
@@ -199,10 +225,11 @@ async def ingest(
         result, last_reason = await _attempt(settings, text, source, req.document_id)
         if result is not None:
             _log.info(
-                "rag_ingest: card=%s claims=%d points=%d source=%s attempt=%d/%d",
+                "rag_ingest: card=%s claims=%d index=%s queued=%d source=%s attempt=%d/%d",
                 result["card_id"],
                 result["claims"],
-                result["points"],
+                result["index_status"],
+                result["points_queued"],
                 source,
                 attempt,
                 _MAX_ATTEMPTS,

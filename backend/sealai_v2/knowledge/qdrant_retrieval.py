@@ -399,11 +399,19 @@ def ensure_collection(
 def ingest_fachkarten(
     settings, *, client=None, embedder=None, catalog=None, sparse_embedder=None
 ) -> int:
-    """Embed every Fachkarten claim (``passage:``) + upsert into Qdrant. Idempotent (uuid5 point ids
+    """Eval-only scratch-index loader. Production writes are rejected when a DB is configured.
+
+    Embed every Fachkarten claim (``passage:``) + upsert into Qdrant. Idempotent (uuid5 point ids
     → re-seed overwrites; a claim flipping draft→reviewed updates in place). Returns #points upserted.
     When ``settings.qdrant_hybrid_enabled``, also embeds + upserts a ``sparse`` (BM25) vector alongside
     ``dense`` — the collection must already have both vectors declared (``ensure_collection(...,
     sparse=True)``, called below with the same flag)."""
+    if getattr(settings, "database_url", None):
+        raise RuntimeError(
+            "direct Fachkarten-to-Qdrant writes are disabled when Postgres is configured; "
+            "write the knowledge ledger and drain its outbox"
+        )
+
     from qdrant_client.models import PointStruct, SparseVector  # lazy
 
     client = client or _make_client(settings)
@@ -442,12 +450,10 @@ def ingest_fachkarten(
 
 
 def delete_card_points(client, collection: str, card_id: str) -> int:
-    """Delete every point whose payload ``card_id`` matches, via a Qdrant filter — not by
-    recomputing the uuid5 point ids (``claim_points``'s scheme), which would require knowing the
-    OLD card's exact claim count and ordering, information the caller may not have. Used by
-    ``ops/ingest_new_card.py`` to clean up a draft's stale points once it has been promoted into a
-    proper reviewed card under a new id (2026-07-04 RAG audit: draft points otherwise accumulate in
-    Qdrant forever — nothing else ever removes them). Returns the pre-delete point count; deleting
+    """Legacy/eval cleanup helper; production retirement belongs to the knowledge ledger.
+
+    Delete every point whose payload ``card_id`` matches, via a Qdrant filter rather than
+    recomputing legacy point IDs. Returns the pre-delete point count; deleting
     zero matching points (card_id not present) is a safe no-op, not an error."""
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
@@ -470,6 +476,7 @@ class QdrantFachkartenRetriever:
         embedder=None,
         sparse_embedder=None,
         reranker=None,
+        knowledge_ledger=None,
     ) -> None:
         self._collection = settings.qdrant_collection
         self._client = client or _make_client(settings)
@@ -491,6 +498,10 @@ class QdrantFachkartenRetriever:
         self._reranker = reranker or (
             _make_reranker(settings) if self._rerank_enabled else None
         )
+        # Production injects the Postgres ledger. Keeping this optional preserves
+        # the pure Qdrant adapter as a hermetic retrieval-quality instrument, but
+        # ``pipeline._build_retriever`` never enables Qdrant in production without it.
+        self._knowledge_ledger = knowledge_ledger
 
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
@@ -552,6 +563,21 @@ class QdrantFachkartenRetriever:
             )
             points = res.points
             min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE
+
+        if self._knowledge_ledger is not None:
+            claim_ids = tuple(
+                str(_payload(point).get("claim_id") or "") for point in points
+            )
+            canonical = self._knowledge_ledger.resolve_claims(
+                claim_ids, tenant_id=tenant_id
+            )
+            # Drop legacy, retired and rejected index entries. Every payload field
+            # used below comes from Postgres, while Qdrant contributes only score/order.
+            points = [
+                _ScoredPoint(canonical[claim_id], _score(point) or 0.0)
+                for point, claim_id in zip(points, claim_ids)
+                if claim_id in canonical
+            ]
 
         # Backfill selection MUST run on the retrieval-native score scale (dense or RRF, whichever the
         # branch above produced) BEFORE any reranking — the cross-encoder only rescores its own top-N

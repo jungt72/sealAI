@@ -284,9 +284,7 @@ class Settings(BaseSettings):
     qdrant_url: str | None = (
         None  # e.g. http://qdrant:6333; UNSET → in-process forced (fail-safe)
     )
-    qdrant_collection: str = (
-        "sealai_v2_fachkarten"  # OWN collection, separate from the V1 stack
-    )
+    qdrant_collection: str = "sealai_v2_knowledge_v1"  # ledger-derived index; legacy direct-write collection stays rollback-only
     qdrant_api_key: str | None = None  # value never logged
     # Durable outbox worker controls. The worker is a separate process so queue delivery survives
     # API restarts; these values are operational knobs, not product behavior.

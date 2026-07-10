@@ -18,7 +18,7 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260710_0002"
+    assert current == head == "20260710_0003"
     validate_schema(engine)
 
 
@@ -43,4 +43,18 @@ def test_alembic_baseline_rejects_partial_legacy_schema(tmp_path) -> None:
 
     engine = make_engine(f"sqlite:///{path}")
     with pytest.raises(RuntimeError, match="partial V2 schema"):
+        up(engine)
+
+
+def test_knowledge_migration_rejects_partial_precreated_ledger(tmp_path) -> None:
+    path = tmp_path / "partial-knowledge.db"
+    engine = make_engine(f"sqlite:///{path}")
+    up(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE v2_knowledge_outbox")
+        connection.exec_driver_sql(
+            "UPDATE alembic_version SET version_num='20260710_0002'"
+        )
+
+    with pytest.raises(RuntimeError, match="partial technical-knowledge ledger"):
         up(engine)

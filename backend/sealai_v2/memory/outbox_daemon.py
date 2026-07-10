@@ -18,7 +18,11 @@ from sqlalchemy import text
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.db.engine import make_engine, make_sessionmaker
-from sealai_v2.knowledge.qdrant_retrieval import _make_client
+from sealai_v2.knowledge.qdrant_retrieval import _make_client, _make_sparse_embedder
+from sealai_v2.knowledge.outbox_worker import (
+    drain_knowledge_outbox,
+    ensure_knowledge_collection,
+)
 from sealai_v2.memory.outbox_worker import (
     _make_memory_embedder,
     drain_outbox,
@@ -58,7 +62,9 @@ def healthcheck(
             connection.execute(text("SELECT 1"))
     finally:
         engine.dispose()
-    _make_client(settings).get_collection("sealai_v2_memory")
+    client = _make_client(settings)
+    client.get_collection("sealai_v2_memory")
+    client.get_collection(settings.qdrant_collection)
     return {"status": "ok", "heartbeat_age_s": f"{age:.1f}"}
 
 
@@ -73,7 +79,11 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
     session_factory = make_sessionmaker(make_engine(settings.database_url))
     client = _make_client(settings)
     embedder = _make_memory_embedder(settings)
+    sparse_embedder = (
+        _make_sparse_embedder(settings) if settings.qdrant_hybrid_enabled else None
+    )
     ensure_memory_collection(client, embedder)
+    ensure_knowledge_collection(client, settings, embedder)
     _write_heartbeat()
     _LOG.info(
         "outbox worker started (poll=%ss batch=%s max_attempts=%s claim_timeout=%ss)",
@@ -95,7 +105,21 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
                 claim_timeout_seconds=settings.outbox_claim_timeout_s,
             )
             if result.claimed or result.failed_permanently:
-                _LOG.info("outbox pass: %s", result)
+                _LOG.info("memory outbox pass: %s", result)
+            knowledge_result = drain_knowledge_outbox(
+                session_factory,
+                qdrant_client=client,
+                embedder=embedder,
+                collection=settings.qdrant_collection,
+                passage_prefix=settings.embed_passage_prefix,
+                sparse_embedder=sparse_embedder,
+                now=_utc_now(),
+                batch_size=settings.outbox_batch_size,
+                max_attempts=settings.outbox_max_attempts,
+                claim_timeout_seconds=settings.outbox_claim_timeout_s,
+            )
+            if knowledge_result.claimed or knowledge_result.failed_permanently:
+                _LOG.info("knowledge outbox pass: %s", knowledge_result)
         except Exception:  # noqa: BLE001 - the loop must survive transient infrastructure faults
             _LOG.exception("outbox pass failed; retrying after poll interval")
         _write_heartbeat()

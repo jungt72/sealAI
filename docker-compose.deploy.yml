@@ -168,7 +168,7 @@ services:
       SEALAI_V2_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/1
       SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_fachkarten}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge_v1}
       # Phase-1 Qdrant semantic retrieval (eval-validated by adjudicated run v21-qdrant-gate-4).
       # Flip via .env.prod (SEALAI_V2_RETRIEVER_BACKEND=qdrant); the retriever FAIL-SAFES to the
       # in-process keyword matcher on a missing dep / unreachable Qdrant / missing collection.
