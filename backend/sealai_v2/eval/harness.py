@@ -649,6 +649,7 @@ async def run_eval(
     judge_cfg = ModelConfig(
         model=settings.judge_model,
         temperature=settings.judge_temperature,
+        max_output_tokens=settings.eval_judge_max_output_tokens,
         cache_key="sealai-v2-judge",
     )
 
@@ -987,6 +988,7 @@ async def run_eval(
             "concurrency": settings.eval_judge_concurrency,
             "min_interval_s": settings.eval_judge_min_interval_s,
             "max_retries": settings.eval_judge_max_retries,
+            "max_output_tokens": settings.eval_judge_max_output_tokens,
         },
         "scoring_split": (
             "LLM-judge: rubric-adherence only (axes 2-7); axis 1 (Faktische Korrektheit) and the "

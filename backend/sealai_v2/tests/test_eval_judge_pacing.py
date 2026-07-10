@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator
 
+from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import LlmResult, LlmStreamEvent, ModelConfig
 from sealai_v2.eval.judge_pacing import PacedLlmClient
 
@@ -53,3 +54,7 @@ def test_paced_judge_serializes_and_spaces_concurrent_calls() -> None:
         later - earlier >= 0.015
         for earlier, later in zip(inner.starts, inner.starts[1:])
     )
+
+
+def test_eval_judge_token_reservation_is_bounded() -> None:
+    assert Settings().eval_judge_max_output_tokens == 512

@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     eval_judge_concurrency: int = 1
     eval_judge_min_interval_s: float = 3.0
     eval_judge_max_retries: int = 8
+    # The judge returns a compact rubric JSON object. Bound its completion reservation so OpenAI's
+    # TPM admission control reflects the actual response shape instead of an open-ended default.
+    eval_judge_max_output_tokens: int = 512
     understand_enabled: bool = True
     # L3 is an always-on CORE trust layer (Prinzipien §2), NOT a feature flag. This toggle is an
     # incident-only kill-switch (default = enforced); set False only to restore service.
