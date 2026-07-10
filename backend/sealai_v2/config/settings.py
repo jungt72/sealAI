@@ -44,13 +44,13 @@ class Settings(BaseSettings):
     auth_audience: str | None = None
     auth_tenant_claim: str = "tenant_id"
 
-    # --- model tiers (build-spec §3): strong frontier for L1; cheaper for judge/helper ---
+    # --- model tiers (build-spec §3): strong frontier for L1; current cost tier for judge/helper ---
     l1_model: str = "gpt-5.1"  # decision #1: OpenAI's strongest GPT; resolved against models.list() at runtime
     judge_model: str = (
-        "gpt-4.1-mini"  # decision #1: cheaper tier (rubric-adherence is constrained)
+        "gpt-5.6-luna"  # current cost tier for deterministic eval scoring
     )
     helper_model: str = (
-        "gpt-4.1-mini"  # soft `understand` intent — cheap, annotate-only
+        "gpt-5.6-luna"  # soft `understand` intent — cheap, annotate-only
     )
     # L3 verifier (M2): strong-frontier, same as L1 for the FIRST measured L3 (owner decision #1);
     # model is config so a cross-vendor swap is a thin adapter + a config flip, no core change.

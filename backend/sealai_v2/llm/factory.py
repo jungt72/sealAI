@@ -28,7 +28,6 @@ _L1_PREFERENCE: tuple[str, ...] = (
     "gpt-5-mini",
     "gpt-4.1",
     "gpt-4o",
-    "gpt-4.1-mini",
     "gpt-4o-mini",
 )
 
