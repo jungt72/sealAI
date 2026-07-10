@@ -12,7 +12,7 @@ from sealai_v2.knowledge.traps import load_traps, retrieve_reviewed_trap_facts
 def test_loads_production_catalog():
     cat = load_traps()
     assert cat.reviewed(), "expected reviewed entries"
-    assert cat.version == "trap_catalog_v3"
+    assert cat.version == "trap_catalog_v4"
 
 
 def test_every_entry_well_formed():
@@ -50,6 +50,44 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
         catalog, "FKM in verdünnter Natronlauge bei 200 °C"
     )
     assert [fact.card_id for fact in combo] == ["TRAP-FKM-AMIN-LAUGE-KETON"]
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        (
+            "Medium ist Synthetiköl, die genaue Sorte weiß ich nicht. Welcher Werkstoff passt?",
+            "POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
+        ),
+        (
+            "Schoko-Rührwerk mit taumelnder Welle und CIP: Welche Dichtungslösung ist sinnvoll?",
+            "POLICY-SCHOKO-CIP-WERKSTOFF-OFFEN",
+        ),
+        (
+            "Belüftetes Getriebe, Mineralöl bei 80 °C und staubige Umgebung: sinnvoller Ansatz?",
+            "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM",
+        ),
+    ],
+)
+def test_reviewed_solution_policy_is_prefetched_only_for_qualified_context(
+    question, expected
+):
+    facts = retrieve_reviewed_trap_facts(load_traps(), question)
+    assert expected in [fact.card_id for fact in facts]
+
+
+def test_solution_policy_does_not_fire_on_single_generic_keyword():
+    catalog = load_traps()
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(catalog, "Was ist Synthetiköl?")
+    }
+    assert "POLICY-SYNTHETIKOEL-KLASSE-OFFEN" not in ids
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(catalog, "Erkläre mir ein Getriebe.")
+    }
+    assert "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM" not in ids
 
 
 def test_draft_trap_cannot_define_prefetch_terms(tmp_path):

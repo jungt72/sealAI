@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v3",
+  "version": "trap_catalog_v4",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -137,6 +137,54 @@
       "provenance": ["principles:§2", "eval:COMBO-03(must_catch)"],
       "tags": ["EPDM", "food-grade", "Fett", "Compliance"],
       "xrefs": ["TRAP-EPDM-MINERALOEL"]
+    },
+    {
+      "id": "POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
+      "trigger": "Werkstoffauswahl bei nur allgemein bezeichnetem Synthetiköl, dessen genaue Sorte/Basis unbekannt ist",
+      "wrong": [
+        "eine Werkstofffamilie als passend festlegen, obwohl die Synthetiköl-Basis unbekannt ist",
+        "aus Temperatur oder Geschwindigkeit allein eine Elastomer-Verträglichkeit ableiten",
+        "eine konkrete Verträglichkeits- oder Temperaturgrenze ohne passende geprüfte Quelle nennen"
+      ],
+      "correct": "Die Bezeichnung 'Synthetiköl' reicht für eine Werkstoffwahl nicht aus: PAO-, Ester-, PAG- oder Silikonbasis und das Additivpaket können Elastomere unterschiedlich angreifen. Solange die genaue Ölklasse und das Produktdatenblatt fehlen, bleiben Werkstofffamilie sowie Verträglichkeits- und Temperaturgrenze ausdrücklich OFFEN; keine Familie als passend bestätigen. Zuerst Öltyp/Basis und Additivpaket klären, dann Kandidaten gegen die konkrete Beständigkeitstabelle prüfen. Wellendaten oder eine genannte Gleitgeschwindigkeit lösen diese chemische Unklarheit nicht.",
+      "gates": ["confident_wrong", "invented_precision"],
+      "provenance": ["eval:LOES-UNKLARES-MEDIUM-KEIN-MATERIAL-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["Synthetiköl", "Sorte", "weiß", "unbekannt", "unklar"],
+      "retrieval_min_hits": 2,
+      "tags": ["Synthetiköl", "Medium unbekannt", "Werkstoff offen"],
+      "xrefs": ["TRAP-NBR-DAUERTEMP"]
+    },
+    {
+      "id": "POLICY-SCHOKO-CIP-WERKSTOFF-OFFEN",
+      "trigger": "Schokoladen-Rührwerk mit Produktkontakt, taumelnder Welle und noch unbekannter CIP-Chemie",
+      "wrong": [
+        "FKM, VMQ, FFKM oder eine andere Werkstofffamilie als passend festlegen, bevor die CIP-Chemie bekannt ist",
+        "eine Lebensmittelzulassung für eine nicht konkret belegte Ausführung behaupten",
+        "nur einen Werkstoff nennen, ohne den hygienischen Dichtungstyp und die Taumelproblematik zu erarbeiten"
+      ],
+      "correct": "Für ein Schokoladen-Rührwerk mit taumelnder Welle ist eine hygienische doppeltwirkende Gleitringdichtung mit geeignetem Sperr-/Barrieremedium der naheliegende Dichtungstyp-Kandidat; eine einfache Lippenlösung ist wegen Taumeln, Hygiene und Produktkontakt kritisch. Der Werkstoff bleibt jedoch OFFEN, bis genaue CIP-Chemie und -Temperatur, Wellenauslenkung/Rundlauf, Zulassungsumfang, Bauraum und akzeptable Leckage geklärt sind. Keine Werkstofffamilie als passend und keine konkrete Zulassung behaupten; die konkrete Ausführung anschließend per Datenblatt und Herstellerfreigabe verifizieren.",
+      "gates": ["invented_precision", "confident_wrong"],
+      "provenance": ["eval:LOES-SCHOKO-NICHT-ABSCHIEBEN-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["Schoko", "Schokolade", "Rührwerk", "CIP", "taumelt", "taumeln"],
+      "retrieval_min_hits": 3,
+      "tags": ["Schokolade", "CIP", "Rührwerk", "Werkstoff offen"],
+      "xrefs": ["TRAP-FOODGRADE-FETT"]
+    },
+    {
+      "id": "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM",
+      "trigger": "Ausreichend geklärter Getriebefall mit Mineralöl, moderater Temperatur und staubiger Umgebung",
+      "wrong": [
+        "NBR als freigegeben oder sicher passend zusagen",
+        "NBR als einzigen Werkstoff festlegen, ohne HNBR als Reserve-Kandidaten zu prüfen",
+        "den Staubschutz oder die Auslegungs-Prüfpunkte weglassen"
+      ],
+      "correct": "Für ein belüftetes Getriebe mit Mineralöl bei 80 °C und staubiger Umgebung ist ein RWDR mit Staublippe/AS-Ausführung die sinnvolle Grundrichtung. NBR und HNBR bilden einen zu prüfenden Kandidatenraum; NBR ist keine Freigabe-Zusage, HNBR ist als Temperatur-/Alterungsreserve mitzuprüfen. Vor der Auswahl sind Wellenzustand (Härte, Rauheit, Drall, Rundlauf), Schmierfilm beziehungsweise Fettfüllung zwischen Haupt- und Staublippe, Entlüftung/Differenzdruck und die konkrete Compound-Beständigkeit zu verifizieren.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:LOES-ERARBEITEN-NICHT-NUR-FRAGEN-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["Getriebe", "Mineralöl", "80 °C", "Staub", "staubig", "belüftet"],
+      "retrieval_min_hits": 3,
+      "tags": ["Getriebe", "Mineralöl", "NBR", "HNBR", "Staublippe"],
+      "xrefs": ["TRAP-NBR-DAUERTEMP"]
     },
     {
       "id": "PREC-LEBENSDAUER",
