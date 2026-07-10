@@ -22,6 +22,7 @@ from sealai_v2.core.contracts import (
 from sealai_v2.core.technical_answer import (
     TechnicalAnswer,
     TechnicalAnswerValidationError,
+    calibrate_technical_answer,
     validate_technical_answer,
 )
 from sealai_v2.core.sourcing_guard import strip_sourcing
@@ -223,6 +224,7 @@ class L1Generator:
                     model_config=self._model_config,
                     max_repairs=0,
                 )
+                technical = calibrate_technical_answer(technical)
                 validate_technical_answer(
                     technical,
                     case_revision=case_revision,

@@ -7,7 +7,12 @@ import pytest
 
 from sealai_v2.core.contracts import Flags, GroundingFact, ModelConfig
 from sealai_v2.core.l1_generator import L1Generator
-from sealai_v2.core.technical_answer import TechnicalAnswerValidationError
+from sealai_v2.core.technical_answer import (
+    TechnicalAnswer,
+    TechnicalAnswerValidationError,
+    calibrate_technical_answer,
+    validate_technical_answer,
+)
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.tests._fakes import FakeLlmClient, ScriptedFakeLlmClient
 
@@ -97,3 +102,37 @@ def test_second_semantic_failure_stops_without_retry_loop():
             )
         )
     assert len(client.calls) == 2
+
+
+def test_human_review_calibrates_unsupported_decisions_to_provisional():
+    payload = json.loads(_payload(evidence_ids=[]))
+    payload["claims"][0]["criticality"] = "decision_relevant"
+    payload["recommendation"] = {
+        "summary": "Werkstoff nur nach Prüfung einsetzen.",
+        "status": "conditional",
+        "conditions": ["Herstellerprüfung"],
+    }
+    payload["needs_human_review"] = True
+    answer = TechnicalAnswer.model_validate(payload)
+
+    calibrated = calibrate_technical_answer(answer)
+
+    assert calibrated.claims[0].criticality == "supporting"
+    assert calibrated.recommendation.status == "provisional"
+    validate_technical_answer(
+        calibrated, case_revision=7, allowed_evidence_ids=frozenset()
+    )
+
+
+def test_unsupported_decision_without_human_review_remains_fail_closed():
+    payload = json.loads(_payload(evidence_ids=[]))
+    payload["claims"][0]["criticality"] = "decision_relevant"
+    answer = TechnicalAnswer.model_validate(payload)
+
+    calibrated = calibrate_technical_answer(answer)
+
+    assert calibrated == answer
+    with pytest.raises(TechnicalAnswerValidationError):
+        validate_technical_answer(
+            calibrated, case_revision=7, allowed_evidence_ids=frozenset()
+        )
