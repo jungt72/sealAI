@@ -618,8 +618,22 @@ async def run_eval(
     factory = client_factory or build_client_factory(settings)
     meter = TokenMeter()
 
-    def subject_client_for(provider: str):
-        return MeteringLlmClient(factory(provider), meter)
+    subject_clients: dict[str, MeteringLlmClient] = {}
+
+    def subject_client_for(provider: str) -> MeteringLlmClient:
+        if provider not in subject_clients:
+            raw_client = factory(provider)
+            subject_clients[provider] = MeteringLlmClient(
+                raw_client
+                if offline
+                else PacedLlmClient(
+                    raw_client,
+                    max_concurrency=settings.eval_subject_concurrency,
+                    min_interval_s=settings.eval_subject_min_interval_s,
+                ),
+                meter,
+            )
+        return subject_clients[provider]
 
     l1_model = settings.l1_model if offline else await resolve_l1_model(settings)
     pipeline = build_pipeline(
@@ -984,6 +998,10 @@ async def run_eval(
         "columns": list(columns.keys()),
         "n_cases": len(cases),
         "concurrency": settings.concurrency,
+        "subject_pacing": {
+            "concurrency": settings.eval_subject_concurrency,
+            "min_interval_s": settings.eval_subject_min_interval_s,
+        },
         "judge_pacing": {
             "concurrency": settings.eval_judge_concurrency,
             "min_interval_s": settings.eval_judge_min_interval_s,

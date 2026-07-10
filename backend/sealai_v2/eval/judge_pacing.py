@@ -1,9 +1,8 @@
-"""Rate-aware wrapper for the eval-only LLM judge.
+"""Rate-aware wrapper for eval-only LLM clients.
 
 The replay sends many independent cases to the subject pipeline concurrently. The external judge
-must not inherit that burst: it is a measurement instrument, not user-facing work. This wrapper
-paces every judge call, including the multi-turn re-ask judge, while leaving L1/L3 concurrency
-unchanged.
+must not inherit that burst. This wrapper paces every request for the subject and the separate
+judge client, including multi-turn re-ask checks, while leaving serving concurrency unchanged.
 """
 
 from __future__ import annotations
