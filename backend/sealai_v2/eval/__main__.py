@@ -94,6 +94,7 @@ def _tree_binding() -> tuple[str, bool]:
                 ":(exclude)backend/sealai_v2/eval",
                 ":(exclude)backend/sealai_v2/tests",
                 "backend/requirements-v2.txt",
+                "backend/.dockerignore",
                 "backend/Dockerfile.v2",
                 "backend/docker-entrypoint-v2.sh",
             ],
