@@ -157,6 +157,27 @@ _EXPECTED_COLUMNS = {
 }
 
 
+def _create_legal_acceptance_table() -> None:
+    op.create_table(
+        "v2_legal_acceptance",
+        sa.Column("tenant_id", sa.String(255), nullable=False),
+        sa.Column("company_name", sa.String(255), nullable=False),
+        sa.Column("business_email", sa.String(320), nullable=False),
+        sa.Column("role", sa.String(128), nullable=False),
+        sa.Column("vat_id", sa.String(64), nullable=False),
+        sa.Column("legal_basis_accepted", sa.Boolean(), nullable=False),
+        sa.Column("dpa_accepted", sa.Boolean(), nullable=False),
+        sa.Column("business_user_confirmed", sa.Boolean(), nullable=False),
+        sa.Column("accepted_terms_version", sa.String(32), nullable=False),
+        sa.Column("accepted_privacy_version", sa.String(32), nullable=False),
+        sa.Column("accepted_dpa_version", sa.String(32), nullable=False),
+        sa.Column("accepted_at", sa.String(32), nullable=False),
+        sa.Column("accepted_ip_hash", sa.String(64), nullable=False),
+        sa.Column("accepted_user_agent", sa.Text(), nullable=False),
+        sa.PrimaryKeyConstraint("tenant_id"),
+    )
+
+
 def _create_schema() -> None:
     op.create_table(
         "v2_contributions",
@@ -232,24 +253,7 @@ def _create_schema() -> None:
         sa.Column("status", sa.String(32), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_table(
-        "v2_legal_acceptance",
-        sa.Column("tenant_id", sa.String(255), nullable=False),
-        sa.Column("company_name", sa.String(255), nullable=False),
-        sa.Column("business_email", sa.String(320), nullable=False),
-        sa.Column("role", sa.String(128), nullable=False),
-        sa.Column("vat_id", sa.String(64), nullable=False),
-        sa.Column("legal_basis_accepted", sa.Boolean(), nullable=False),
-        sa.Column("dpa_accepted", sa.Boolean(), nullable=False),
-        sa.Column("business_user_confirmed", sa.Boolean(), nullable=False),
-        sa.Column("accepted_terms_version", sa.String(32), nullable=False),
-        sa.Column("accepted_privacy_version", sa.String(32), nullable=False),
-        sa.Column("accepted_dpa_version", sa.String(32), nullable=False),
-        sa.Column("accepted_at", sa.String(32), nullable=False),
-        sa.Column("accepted_ip_hash", sa.String(64), nullable=False),
-        sa.Column("accepted_user_agent", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("tenant_id"),
-    )
+    _create_legal_acceptance_table()
     op.create_table(
         "v2_memory_events",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -387,7 +391,21 @@ def _validate_existing_schema(inspector: sa.Inspector) -> bool:
 
 
 def upgrade() -> None:
-    if not _validate_existing_schema(sa.inspect(op.get_bind())):
+    inspector = sa.inspect(op.get_bind())
+    existing_tables = set(inspector.get_table_names())
+    missing_tables = set(_EXPECTED_COLUMNS) - existing_tables
+    missing_columns = {
+        table: columns - {c["name"] for c in inspector.get_columns(table)}
+        for table, columns in _EXPECTED_COLUMNS.items()
+        if table in existing_tables
+        and columns - {c["name"] for c in inspector.get_columns(table)}
+    }
+    # The legal-acceptance surface was introduced after the pre-Alembic production schema. Adopt
+    # only that exact, known legacy state; every other partial/drifted schema still fails closed.
+    if missing_tables == {"v2_legal_acceptance"} and not missing_columns:
+        _create_legal_acceptance_table()
+        return
+    if not _validate_existing_schema(inspector):
         _create_schema()
 
 
