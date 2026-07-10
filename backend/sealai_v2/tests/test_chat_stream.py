@@ -105,7 +105,12 @@ def test_result_frame_equals_the_non_streaming_chat_payload():
     streamed, _ = make_client(make_pipeline("Antwort A."))  # fresh, identical pipeline
     _, _, raw = _stream(streamed, {"message": _Q})
     result = [f for f in _frames(raw) if f["event"] == "result"][0]
-    assert result["data"] == r.json()
+    streamed_payload = result["data"]
+    plain_payload = r.json()
+    assert streamed_payload["run"]["run_id"] != plain_payload["run"]["run_id"]
+    streamed_payload["run"].pop("run_id")
+    plain_payload["run"].pop("run_id")
+    assert streamed_payload == plain_payload
 
 
 def test_pipeline_failure_yields_one_fixed_error_frame_and_no_result():

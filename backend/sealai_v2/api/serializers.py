@@ -201,9 +201,35 @@ def _display_flags(result: PipelineResult) -> dict:
 
 
 def chat_response(result: PipelineResult) -> dict:
+    turn_state = result.turn_state
+    case_state = result.case_state
     return {
         "answer": result.answer.text,
         "model": result.answer.model,
+        "run": (
+            {
+                "run_id": turn_state.run_id,
+                "status": turn_state.status,
+                "case_id": turn_state.case_id,
+                "case_revision_started": turn_state.case_revision_started,
+                "case_revision_current": turn_state.case_revision_current,
+                "risk_level": turn_state.risk_level,
+            }
+            if turn_state is not None
+            else None
+        ),
+        "case": (
+            {
+                "case_id": case_state.case_id,
+                "revision": case_state.revision,
+                "schema_version": case_state.schema_version,
+                "fingerprint": case_state.fingerprint,
+                "required_missing": list(case_state.required_missing),
+                "open_conflicts": len(case_state.open_conflicts),
+            }
+            if case_state is not None
+            else None
+        ),
         "grounded": result.grounded,
         "intent": (result.understanding.intent.value if result.understanding else None),
         "citations": [citation(f) for f in result.grounding_facts],

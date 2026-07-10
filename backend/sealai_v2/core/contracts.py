@@ -13,6 +13,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from sealai_v2.core.case_state import CaseStateV2
     from sealai_v2.core.medium_research import MediumIntelligence
     from sealai_v2.memory.context_assembler import MemoryContextBundle
 
@@ -576,6 +577,19 @@ class RememberedFact:
     wert: str
     provenance: str = "distilled-from-conversation"
     as_of_turn: int = 0
+    unit: str = ""
+    status: str = "stated"
+    source_ref: str = ""
+    observed_at: str = ""
+    document_id: str = ""
+    document_version: str = ""
+    page: int | None = None
+    bbox: tuple[float, float, float, float] | None = None
+    confidence: float | None = None
+
+
+class CaseRevisionConflict(RuntimeError):
+    """The case changed after generation started; stale output must not be committed."""
 
 
 @dataclass(frozen=True)
@@ -587,10 +601,26 @@ class MemoryView:
     window: tuple[Turn, ...] = ()
     case_state: tuple[RememberedFact, ...] = ()
     durable: tuple[RememberedFact, ...] = ()
+    case_state_v2: "CaseStateV2 | None" = None
 
     @property
     def is_empty(self) -> bool:
-        return not (self.window or self.case_state or self.durable)
+        return not (
+            self.window or self.case_state or self.durable or self.case_state_v2
+        )
+
+
+@dataclass(frozen=True)
+class TurnState:
+    """Immutable execution identity bound to the case revision used for this answer."""
+
+    run_id: str
+    case_id: str
+    case_revision_started: int
+    case_revision_current: int
+    status: str
+    risk_level: str = "standard"
+    route_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -670,7 +700,17 @@ class ConversationMemory(Protocol):
         answer: str,
         facts: tuple["RememberedFact", ...] = (),
         now: str | None = None,
+        expected_case_revision: int | None = None,
     ) -> None: ...
+
+    def merge_facts(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        facts: tuple["RememberedFact", ...],
+        expected_case_revision: int | None = None,
+    ) -> int: ...
 
 
 @runtime_checkable
@@ -699,6 +739,8 @@ class PipelineResult:
     flags: Flags
     understanding: Understanding | None
     answer: Answer
+    case_state: "CaseStateV2 | None" = None
+    turn_state: TurnState | None = None
     grounded: bool = False
     verified: bool = False
     cited: bool = False

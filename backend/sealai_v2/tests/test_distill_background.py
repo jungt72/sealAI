@@ -79,8 +79,12 @@ def test_run_returns_before_distill_completes_and_flush_lands_the_facts():
         )
         # the answer is back while the distill call is still blocked → off the user path
         assert res.answer.text == "ANTWORT"
-        assert p.memory.case_state(tenant_id="t1", session_id="s1") == ()
-        # release + flush → the facts land (nothing is lost, only deferred)
+        immediate = p.memory.case_state(tenant_id="t1", session_id="s1")
+        assert [(f.feld, f.wert) for f in immediate] == [
+            ("medium", "Hydrauliköl"),
+            ("medium_kategorie", "Öl"),
+        ]  # deterministic extraction and the turn itself are already durable
+        # release + flush → the distilled facts merge (only the LLM work is deferred)
         client.release_distill.set()
         await p.flush_memory(tenant_id="t1", session_id="s1")
         facts = p.memory.case_state(tenant_id="t1", session_id="s1")
@@ -121,6 +125,29 @@ def test_distill_lands_before_a_subsequent_same_session_recall():
     assert "Hydrauliköl" in t2_system  # turn-1's fact reached turn-2's prompt
     assert "Bereits bekannter Fallkontext" in t2_system
     assert "EPDM quillt in Hydrauliköl, warum?" in t2_system  # window carried too
+
+
+def test_background_distill_cannot_overwrite_a_newer_user_revision():
+    async def main():
+        client = _GatedDistillClient()
+        p = _memory_pipeline(client)
+        result = await p.run(
+            "EPDM in Hydrauliköl?",
+            tenant=TenantContext("t1"),
+            session=SessionContext("s1"),
+        )
+        assert result.turn_state.case_revision_current == 1
+        p.memory.edit_fact(
+            tenant_id="t1", session_id="s1", feld="medium", wert="Wasser"
+        )
+        client.release_distill.set()
+        await p.flush_memory(tenant_id="t1", session_id="s1")
+        state = p.memory.recall(tenant_id="t1", session_id="s1").case_state_v2
+        assert state.revision == 2
+        assert state.field("medium").value == "Wasser"
+        assert len(p.memory.history(tenant_id="t1", session_id="s1")) == 2
+
+    asyncio.run(main())
 
 
 def test_memory_view_route_flushes_so_chips_are_current_after_chat():

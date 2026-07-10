@@ -46,6 +46,7 @@ class V2Session(Base):
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     turns: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    case_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # "Fälle"-Sidebar (Patch A): additive, nullable — existing rows stay valid with all three
     # None until their next record_turn. title is derived from the first user message (~60 chars,
     # no LLM call); created_at/updated_at are ISO-8601 strings stamped by the caller (record_turn),
@@ -82,6 +83,17 @@ class V2Fact(Base):
         String(64), default="distilled-from-conversation", nullable=False
     )
     as_of_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="stated", nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    observed_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    document_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    document_version: Mapped[str] = mapped_column(
+        String(64), default="", nullable=False
+    )
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bbox: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class V2Derived(Base):

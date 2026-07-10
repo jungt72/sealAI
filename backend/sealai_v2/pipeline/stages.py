@@ -259,7 +259,10 @@ def recall(
         durable = cross_session.relevant_facts(tenant_id=tenant_id, query=question)
         if durable:
             view = MemoryView(
-                window=view.window, case_state=view.case_state, durable=durable
+                window=view.window,
+                case_state=view.case_state,
+                durable=durable,
+                case_state_v2=view.case_state_v2,
             )
     return view
 

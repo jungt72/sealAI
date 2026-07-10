@@ -34,6 +34,7 @@ from sealai_v2.core.calc.inline_extract import (
 )
 from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
+from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.contracts import (
     Answer,
     CalcEngine,
@@ -48,6 +49,7 @@ from sealai_v2.core.contracts import (
     PipelineResult,
     Retriever,
     SessionContext,
+    TurnState,
     Understanding,
     UntrustedContent,
     VerifierVerdict,
@@ -456,6 +458,14 @@ class Pipeline:
                 session=session,
                 question=question,
             )
+        effective_case_id = (
+            session.session_id if session is not None else f"turn-{timer.turn_id}"
+        )
+        case_state_v2 = mem.case_state_v2 or CaseStateV2.from_remembered_facts(
+            case_id=effective_case_id,
+            revision=0,
+            facts=mem.case_state,
+        )
         # This-session case-state (L2) and cross-session durable facts (L4) are kept SEPARATE: the
         # durable facts surface under their own honest "aus früheren Gesprächen — bei Bedarf
         # bestätigen" frame and (below) do NOT feed the deterministic calc binder — a remembered
@@ -463,8 +473,10 @@ class Pipeline:
         # G1 (V2.1 Inc 1): build the typed Case at the generalisation point, then project to the
         # byte-identical list[dict] the L1 prompt + L3 topic-scope consume (owner decision 2 —
         # Jinja unchanged, so the eval stays unperturbed). The typed slots fill in later increments.
-        case = Case.from_case_state(mem.case_state, question=question)
-        case_context = case.to_prompt_context()
+        case = Case.from_case_state(
+            case_state_v2.to_remembered_facts(), question=question
+        )
+        case_context = case_state_v2.to_prompt_context()
         # Medium Intelligence (Phase 2): research the stated medium → provisional facts + the MEDIUM
         # tab. Gated (default-off) + fail-safe + L1-NEUTRAL (never enters the L1 prompt). Inert when
         # off / no researcher / no medium stated.
@@ -1011,15 +1023,33 @@ class Pipeline:
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
 
-            # M5 remember (after answering): record the turn + distill STATED facts into case-state.
-            # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
-            # means it can never perturb the turn it observed. (Timed only when it actually runs, so
-            # the timing line omits ``distill_ms`` on the single-turn/no-session path.)
-            # P2: with a distiller wired, the distill LLM call moves OFF the user-facing path —
-            # a background task, ordering-guarded by ``flush_memory`` (next recall / memory read /
-            # user mutation). Distiller-less remember (pure in-process record, no LLM) stays inline.
+            # Persist the authoritative turn BEFORE it can be returned. Only LLM distillation stays
+            # asynchronous. The optimistic revision check prevents an answer generated against an
+            # old case snapshot from being committed after a concurrent user edit.
             scheduled_background = False
+            result_case_state = case_state_v2
+            committed_revision = case_state_v2.revision
             if self.memory is not None and session is not None:
+                immediate_facts = extract_medium_facts(question)
+                self.memory.record_turn(
+                    tenant_id=scope.tenant_id,
+                    session_id=session.session_id,
+                    question=question,
+                    answer=answer.text,
+                    facts=immediate_facts,
+                    now=datetime.now(timezone.utc).isoformat(),
+                    expected_case_revision=case_state_v2.revision,
+                )
+                if immediate_facts:
+                    committed_revision += 1
+                    if self.cross_session is not None:
+                        self.cross_session.remember_durable(
+                            tenant_id=scope.tenant_id, facts=immediate_facts
+                        )
+                committed_view = self.memory.recall(
+                    tenant_id=scope.tenant_id, session_id=session.session_id
+                )
+                result_case_state = committed_view.case_state_v2 or case_state_v2
                 if self.distiller is not None:
                     self._schedule_remember(
                         timer,
@@ -1027,19 +1057,10 @@ class Pipeline:
                         session=session,
                         question=question,
                         answer_text=answer.text,
+                        expected_case_revision=committed_revision,
                     )
                     scheduled_background = True
                 else:
-                    with timer.stage("distill_ms"):
-                        await stages.remember(
-                            self.memory,
-                            self.distiller,
-                            tenant_id=scope.tenant_id,
-                            session=session,
-                            question=question,
-                            answer=answer.text,
-                            cross_session=self.cross_session,
-                        )
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
                         tenant_id=scope.tenant_id, session_id=session.session_id
@@ -1066,6 +1087,18 @@ class Pipeline:
             flags=flags,
             understanding=understanding,
             answer=answer,
+            case_state=result_case_state,
+            turn_state=TurnState(
+                run_id=timer.turn_id,
+                case_id=result_case_state.case_id,
+                case_revision_started=case_state_v2.revision,
+                case_revision_current=result_case_state.revision,
+                status="completed",
+                risk_level="high" if risk_flags else "standard",
+                route_name=(
+                    route_decision.route.value if route_decision is not None else None
+                ),
+            ),
             grounded=retrieval.grounded,
             verified=verdict is not None,
             cited=False,
@@ -1248,6 +1281,7 @@ class Pipeline:
         session: SessionContext,
         question: str,
         answer_text: str,
+        expected_case_revision: int,
     ) -> None:
         key = (tenant_id, session.session_id)
         task = asyncio.create_task(
@@ -1257,6 +1291,7 @@ class Pipeline:
                 session=session,
                 question=question,
                 answer_text=answer_text,
+                expected_case_revision=expected_case_revision,
             )
         )
         self._pending_remember[key] = task
@@ -1275,22 +1310,28 @@ class Pipeline:
         session: SessionContext,
         question: str,
         answer_text: str,
+        expected_case_revision: int,
     ) -> None:
-        """The deferred remember (distill LLM call + record_turn). Fail-safe: an error here is
-        logged-only — the answer already went out, so the worst case is a lost memory record
-        for this turn, never a failed request and never a guessed fact (the distiller's own
-        numeric-trace guard is untouched). Emits the turn's timing line on completion."""
+        """Distill and merge facts after the already-committed turn.
+
+        A revision mismatch means the user changed the case meanwhile; stale distilled
+        values are discarded rather than overwriting the newer state.
+        """
         try:
             with timer.stage("distill_ms"):
-                await stages.remember(
-                    self.memory,
-                    self.distiller,
-                    tenant_id=tenant_id,
-                    session=session,
-                    question=question,
-                    answer=answer_text,
-                    cross_session=self.cross_session,
+                facts = await self.distiller.distill(
+                    question=question, answer=answer_text
                 )
+                self.memory.merge_facts(
+                    tenant_id=tenant_id,
+                    session_id=session.session_id,
+                    facts=facts,
+                    expected_case_revision=expected_case_revision,
+                )
+                if self.cross_session is not None and facts:
+                    self.cross_session.remember_durable(
+                        tenant_id=tenant_id, facts=facts
+                    )
             # M8: settle the derived slice from the just-distilled inputs (chat channel). Inside the
             # try so a recompute fault is caught by the same fail-safe (a lost derived slice is never
             # a failed request; the next read/mutation recomputes anyway).
