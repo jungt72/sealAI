@@ -33,6 +33,20 @@ def test_alembic_baseline_adopts_complete_legacy_schema(tmp_path) -> None:
     validate_schema(engine)
 
 
+def test_alembic_baseline_adopts_known_legacy_schema_without_legal_table(
+    tmp_path,
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'legacy-before-legal.db'}")
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE v2_legal_acceptance")
+
+    up(engine)
+
+    assert "v2_legal_acceptance" in inspect(engine).get_table_names()
+    validate_schema(engine)
+
+
 def test_alembic_baseline_rejects_partial_legacy_schema(tmp_path) -> None:
     path = tmp_path / "partial.db"
     with sqlite3.connect(path) as connection:
