@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     eval_judge_max_retries: int = 8
     # The judge returns a compact rubric JSON object. Bound its completion reservation so OpenAI's
     # TPM admission control reflects the actual response shape instead of an open-ended default.
-    eval_judge_max_output_tokens: int = 512
+    eval_judge_max_output_tokens: int = 1024
     # Rubric adherence is a bounded classification task. Low effort is both sufficient and
     # materially faster than the model-family default; the human oracle remains final on facts.
     eval_judge_reasoning_effort: str = "low"

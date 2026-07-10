@@ -19,12 +19,13 @@ class _Output(BaseModel):
 
 
 class _Completions:
-    def __init__(self) -> None:
+    def __init__(self, content='{"answer":"ok"}') -> None:
         self.calls: list[dict] = []
+        self.content = content
 
     async def create(self, **kwargs):
         self.calls.append(kwargs)
-        message = SimpleNamespace(content='{"answer":"ok"}')
+        message = SimpleNamespace(content=self.content)
         choice = SimpleNamespace(message=message, finish_reason="stop")
         return SimpleNamespace(choices=[choice], model="test-model", usage=None)
 
@@ -48,6 +49,30 @@ def test_openai_compatible_client_sends_strict_json_schema():
     assert response_format["json_schema"]["name"] == "test_output"
     assert response_format["json_schema"]["strict"] is True
     assert response_format["json_schema"]["schema"]["additionalProperties"] is False
+
+
+def test_openai_compatible_client_normalizes_mistral_reasoning_parts():
+    completions = _Completions(
+        [
+            {"type": "thinking", "thinking": "private chain of thought"},
+            {"type": "text", "text": '{"answer":"ok"}'},
+        ]
+    )
+    inner = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    client = OpenAiLlmClient(inner, provider="mistral")
+
+    result = asyncio.run(
+        client.generate_structured(
+            system="S",
+            user="U",
+            model_config=ModelConfig("mistral-small-2603"),
+            schema_name="test_output",
+            json_schema=_Output.model_json_schema(),
+        )
+    )
+
+    assert result.text == '{"answer":"ok"}'
+    assert "private chain of thought" not in result.text
 
 
 def test_schema_validation_repairs_exactly_once_with_same_model():

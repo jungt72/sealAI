@@ -29,6 +29,37 @@ from sealai_v2.core.contracts import (
 from sealai_v2.llm.telemetry import LlmCallTelemetry, TelemetrySink
 
 
+def _content_text(content: Any) -> str:
+    """Normalize OpenAI-compatible text content while discarding reasoning-only parts.
+
+    OpenAI currently returns a string for Chat Completions, while Mistral Small 4 may return a
+    content-part list containing a private ``thinking`` part followed by a public ``text`` part.
+    The adapter boundary owns that provider difference; core callers always receive plain text.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts = content if isinstance(content, list) else [content]
+    output: list[str] = []
+    for part in parts:
+        if isinstance(part, dict):
+            part_type = part.get("type")
+            value = part.get("text")
+        else:
+            part_type = getattr(part, "type", None)
+            value = getattr(part, "text", None)
+        if part_type in {"thinking", "reasoning"}:
+            continue
+        if isinstance(value, str):
+            output.append(value)
+            continue
+        nested = getattr(value, "value", None)
+        if isinstance(nested, str):
+            output.append(nested)
+    return "".join(output)
+
+
 def _parse_retry_duration(value: object) -> float | None:
     """Parse common HTTP/OpenAI retry reset formats without depending on SDK exception types."""
     if value is None:
@@ -233,7 +264,7 @@ class OpenAiLlmClient:
                     error_type=None,
                 )
                 return LlmResult(
-                    text=choice.message.content or "",
+                    text=_content_text(choice.message.content),
                     model=getattr(resp, "model", model_config.model),
                     finish_reason=getattr(choice, "finish_reason", None),
                     usage=usage,
@@ -315,9 +346,10 @@ class OpenAiLlmClient:
                         fr = getattr(choice0, "finish_reason", None)
                         if fr is not None:
                             finish_reason = fr
-                        delta = getattr(
+                        raw_delta = getattr(
                             getattr(choice0, "delta", None), "content", None
                         )
+                        delta = _content_text(raw_delta)
                         if delta:
                             buffer.append(delta)
                             yielded_any = True
