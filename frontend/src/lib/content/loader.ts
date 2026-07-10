@@ -6,6 +6,8 @@ export type ContentMetadata = {
   description: string;
   category?: string;
   datePublished?: string;
+  /** Falls back to `datePublished` when the article has never been edited since. */
+  dateModified?: string;
   author?: string;
   slug: string;
 };
@@ -48,6 +50,7 @@ function parseFrontmatter(fileContent: string, slug: string): ContentDoc {
       slug: metadata.slug || slug,
       category: metadata.category,
       datePublished: metadata.datePublished,
+      dateModified: metadata.dateModified || metadata.datePublished,
       author: metadata.author,
     },
     content: lines.slice(contentStart).join("\n").trim(),
@@ -83,4 +86,12 @@ export async function getAllContentDocs(type: "medien" | "werkstoffe" | "wissen"
   const docs = await Promise.all(slugs.map((slug) => getContentDoc(type, slug)));
 
   return docs.filter((doc): doc is ContentDoc => Boolean(doc));
+}
+
+/** German-locale "Stand: 5. Mai 2026" formatting for the visible date shown on article pages. */
+export function formatContentDate(dateStr: string | undefined): string | undefined {
+  if (!dateStr) return undefined;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" }).format(date);
 }

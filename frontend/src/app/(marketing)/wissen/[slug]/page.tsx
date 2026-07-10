@@ -1,6 +1,6 @@
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getContentDoc, getAllSlugs } from "@/lib/content/loader";
+import { formatContentDate, getContentDoc, getAllSlugs } from "@/lib/content/loader";
 import { createMetadata } from "@/lib/seo/metadata";
 import { generateArticleSchema, generateBreadcrumbSchema } from "@/lib/seo/jsonLd";
 import MdxProse from "@/components/content/MdxProse";
@@ -40,6 +40,7 @@ export default async function WissenPage({ params }: Props) {
     description: doc.metadata.description,
     path: `/wissen/${slug}`,
     datePublished: doc.metadata.datePublished,
+    dateModified: doc.metadata.dateModified,
     author: doc.metadata.author,
   });
   const breadcrumbJsonLd = generateBreadcrumbSchema([
@@ -58,7 +59,13 @@ export default async function WissenPage({ params }: Props) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
-      <MdxProse content={doc.content} type="wissen" slug={slug} title={doc.metadata.title} />
+      <MdxProse
+        content={doc.content}
+        type="wissen"
+        slug={slug}
+        title={doc.metadata.title}
+        dateLabel={formatContentDate(doc.metadata.dateModified)}
+      />
     </>
   );
 }

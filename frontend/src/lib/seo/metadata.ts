@@ -30,12 +30,18 @@ export function createMetadata({
     alternates: {
       canonical: url,
     },
+    robots: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+    },
     openGraph: {
       title: fullTitle,
       description: fullDescription,
       url,
       siteName: SITE_NAME,
       type,
+      locale: "de_DE",
       images: image ? [{ url: image }] : [],
     },
     twitter: {

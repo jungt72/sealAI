@@ -30,12 +30,15 @@ export function generateArticleSchema({
   description,
   path,
   datePublished,
+  dateModified,
   author = SITE_NAME,
 }: {
   title: string;
   description: string;
   path: string;
   datePublished?: string;
+  /** Falls back to `datePublished` — Google treats a missing dateModified as staler than one that just repeats the publish date. */
+  dateModified?: string;
   author?: string;
 }) {
   const siteUrl = getSiteUrl();
@@ -58,6 +61,7 @@ export function generateArticleSchema({
       },
     },
     "datePublished": datePublished,
+    "dateModified": dateModified || datePublished,
   };
 }
 
@@ -117,11 +121,15 @@ export function generateTechArticleSchema({
   description,
   path,
   category,
+  datePublished,
+  dateModified,
 }: {
   title: string;
   description: string;
   path: string;
   category: string;
+  datePublished?: string;
+  dateModified?: string;
 }) {
   const siteUrl = getSiteUrl();
   return {
@@ -139,6 +147,8 @@ export function generateTechArticleSchema({
       "@type": "Organization",
       "name": SITE_NAME,
     },
+    "datePublished": datePublished,
+    "dateModified": dateModified || datePublished,
   };
 }
 
