@@ -40,6 +40,7 @@ from sealai_v2.eval.multiturn import (
     summarize_multiturn,
 )
 from sealai_v2.eval.metering import MeteringLlmClient, TokenMeter
+from sealai_v2.eval.judge_pacing import PacedLlmClient
 from sealai_v2.eval.scorer import (
     CaseScore,
     aggregate_answer_quality,
@@ -47,7 +48,7 @@ from sealai_v2.eval.scorer import (
     summarize_column,
 )
 from sealai_v2.knowledge.fachkarten import load_fachkarten
-from sealai_v2.llm.factory import build_client_factory, resolve_l1_model
+from sealai_v2.llm.factory import build_client_factory, build_client_for, resolve_l1_model
 from sealai_v2.pipeline.pipeline import build_pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.leak_detect import exfiltration_leak
@@ -620,7 +621,27 @@ async def run_eval(
     pipeline = build_pipeline(
         settings, client_for=subject_client_for, l1_model=l1_model
     )
-    judge_client = factory(settings.judge_provider or settings.provider)
+    judge_provider = settings.judge_provider or settings.provider
+    # The judge has its own provider budget and is never on the user-serving path. Give live evals
+    # a dedicated, rate-aware client; controlled offline tests retain their injected fake unchanged.
+    raw_judge_client = (
+        factory(judge_provider)
+        if offline
+        else build_client_for(
+            settings,
+            judge_provider,
+            max_retries=settings.eval_judge_max_retries,
+        )
+    )
+    judge_client = (
+        raw_judge_client
+        if offline
+        else PacedLlmClient(
+            raw_judge_client,
+            max_concurrency=settings.eval_judge_concurrency,
+            min_interval_s=settings.eval_judge_min_interval_s,
+        )
+    )
     judge_cfg = ModelConfig(
         model=settings.judge_model,
         temperature=settings.judge_temperature,
@@ -958,6 +979,11 @@ async def run_eval(
         "columns": list(columns.keys()),
         "n_cases": len(cases),
         "concurrency": settings.concurrency,
+        "judge_pacing": {
+            "concurrency": settings.eval_judge_concurrency,
+            "min_interval_s": settings.eval_judge_min_interval_s,
+            "max_retries": settings.eval_judge_max_retries,
+        },
         "scoring_split": (
             "LLM-judge: rubric-adherence only (axes 2-7); axis 1 (Faktische Korrektheit) and the "
             "3 hard gates are HUMAN-FINAL via the worksheet."

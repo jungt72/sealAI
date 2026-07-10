@@ -14,6 +14,8 @@ is the default for every existing call site.
 from __future__ import annotations
 
 import asyncio
+import email.utils
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -25,6 +27,48 @@ from sealai_v2.core.contracts import (
     TokenUsage,
 )
 from sealai_v2.llm.telemetry import LlmCallTelemetry, TelemetrySink
+
+
+def _parse_retry_duration(value: object) -> float | None:
+    """Parse common HTTP/OpenAI retry reset formats without depending on SDK exception types."""
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)", raw)
+    if match:
+        amount, unit = float(match.group(1)), match.group(2)
+        return amount * {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]
+    try:
+        retry_at = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if retry_at.tzinfo is None:
+        return None
+    return max(0.0, retry_at.timestamp() - time.time())
+
+
+def _retry_delay_s(exc: Exception, attempt: int) -> float:
+    """Prefer provider reset hints; otherwise use bounded exponential backoff for transient calls."""
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    values = (
+        headers.get("retry-after-ms"),
+        headers.get("retry-after"),
+        headers.get("x-ratelimit-reset-requests"),
+        headers.get("x-ratelimit-reset-tokens"),
+    )
+    hinted = [
+        duration
+        for value in values
+        if (duration := _parse_retry_duration(value)) is not None
+    ]
+    fallback = min(2.0 ** (attempt - 1), 30.0)
+    return max([fallback, *hinted])
 
 
 def _parse_usage(resp: Any) -> TokenUsage | None:
@@ -175,7 +219,7 @@ class OpenAiLlmClient:
                 last_exc = exc
                 attempts += 1
                 if attempts < self._max_retries:
-                    backoff = min(2.0 ** (attempts - 1), 8.0)  # i5-ok: Retry-Backoff
+                    backoff = _retry_delay_s(exc, attempts)
                     await asyncio.sleep(backoff)
         assert (
             last_exc is not None

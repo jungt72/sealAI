@@ -68,7 +68,9 @@ def _async_openai_compatible(settings: Settings, provider: str):
     return maybe_wrap_openai(AsyncOpenAI(api_key=key, base_url=base_url))
 
 
-def build_client_for(settings: Settings, provider: str) -> LlmClient:
+def build_client_for(
+    settings: Settings, provider: str, *, max_retries: int | None = None
+) -> LlmClient:
     """One concrete client for one provider (OpenAI-compatible adapter; Mistral reuses it).
 
     Phase 1 (LangGraph-suitability audit): passes ``provider`` through for telemetry labeling and
@@ -78,7 +80,7 @@ def build_client_for(settings: Settings, provider: str) -> LlmClient:
     return OpenAiLlmClient(
         _async_openai_compatible(settings, provider),
         timeout_s=settings.request_timeout_s,
-        max_retries=settings.max_retries,
+        max_retries=max_retries if max_retries is not None else settings.max_retries,
         provider=provider,
         telemetry_sink=LoggingTelemetrySink()
         if settings.llm_telemetry_enabled
