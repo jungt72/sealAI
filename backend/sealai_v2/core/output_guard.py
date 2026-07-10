@@ -446,7 +446,7 @@ def fail_closed_answer(contract: dict) -> str:
         )
     )
     if approved:
-        sections.append("\n".join(f"- {text}" for text in approved[:3]))
+        sections.append("\n".join(f"- {text}" for text in approved[:5]))
     else:
         sections.append(
             "Für eine belastbare technische Einordnung fehlen derzeit geprüfte Grundlagen."

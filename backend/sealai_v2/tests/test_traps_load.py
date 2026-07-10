@@ -12,7 +12,7 @@ from sealai_v2.knowledge.traps import load_traps, retrieve_reviewed_trap_facts
 def test_loads_production_catalog():
     cat = load_traps()
     assert cat.reviewed(), "expected reviewed entries"
-    assert cat.version == "trap_catalog_v1"
+    assert cat.version == "trap_catalog_v2"
 
 
 def test_every_entry_well_formed():
@@ -45,6 +45,11 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
         catalog, "Ist FKM beständig gegen Essigsäure?"
     )
     assert [fact.card_id for fact in uncertainty] == ["CONF-PAUSCHAL-BESTAENDIG"]
+
+    combo = retrieve_reviewed_trap_facts(
+        catalog, "FKM in verdünnter Natronlauge bei 200 °C"
+    )
+    assert [fact.card_id for fact in combo] == ["TRAP-FKM-AMIN-LAUGE-KETON"]
 
 
 def test_draft_trap_cannot_define_prefetch_terms(tmp_path):

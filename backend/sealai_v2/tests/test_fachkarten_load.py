@@ -15,13 +15,14 @@ def _write(tmp_path, cards):
     return p
 
 
-def test_seed_loads_nine_reviewed_cards():
-    # Updated 2026-06-28 (8-kind taxonomy + 38-card provisional promotion, GPT-5.5 round 4: 522/522
-    # claims clean -> GO): the seed grew from 9 owner-grounded reviewed cards to 47 (9 reviewed + 38
-    # draft/provisional) — the REVIEWED count is the invariant that must hold, not the total.
+def test_seed_loads_eleven_reviewed_cards():
+    # The original 9 reviewed cards are joined by two owner-reviewed operational cards for Pharma-SIP
+    # qualification and unknown replacement-seal identification; 38 research cards remain draft.
     cat = load_fachkarten()
-    assert len(cat.reviewed()) == 9
-    assert len(cat.cards) == 47
+    assert len(cat.reviewed()) == 11
+    assert cat.by_id("FK-PHARMA-SIP-VALIDIERUNG").review_state == "reviewed"
+    assert cat.by_id("FK-ERSATZDICHTUNG-IDENTIFIKATION").review_state == "reviewed"
+    assert len(cat.cards) == 49
     # circularity guard held: every reviewed claim is owner/trap-grounded (path i) or sourced (path ii)
     # — checked across ALL cards (a draft card's reviewed_claims() is always empty by construction, so
     # this is equivalent to iterating cat.reviewed(), just doesn't assume which cards are reviewed).
