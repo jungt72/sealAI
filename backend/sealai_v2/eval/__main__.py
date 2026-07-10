@@ -119,6 +119,11 @@ def main() -> None:
         help="comma list of flag columns to run (subset of: flags_off, flags_on)",
     )
     ap.add_argument(
+        "--case-ids",
+        default=None,
+        help="comma-separated primary case ids; auxiliary suites are skipped",
+    )
+    ap.add_argument(
         "--run-dir", default=None, help="output dir (default eval/runs/<label>)"
     )
     ap.add_argument(
@@ -178,6 +183,11 @@ def main() -> None:
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    case_ids = (
+        frozenset(item.strip() for item in args.case_ids.split(",") if item.strip())
+        if args.case_ids
+        else None
+    )
 
     tree_hash, dirty = _tree_binding()
     out = asyncio.run(
@@ -191,7 +201,8 @@ def main() -> None:
             timestamp=timestamp,
             columns=columns,
             smoke_limit=args.smoke,
-            include_auxiliary=args.smoke is None,
+            include_auxiliary=args.smoke is None and case_ids is None,
+            case_ids=case_ids,
         )
     )
     print(f"\n=== M1 eval-REPLAY: {args.label} ===")

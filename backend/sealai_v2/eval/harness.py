@@ -68,6 +68,21 @@ _EVAL_TENANT = TenantContext(tenant_id="eval-tenant")
 _CALC_FIXTURES_FILE = Path(__file__).resolve().parent / "calc_fixtures.json"
 
 
+def _select_primary_cases(
+    cases, case_ids: frozenset[str] | None, smoke_limit: int | None
+):
+    selected = list(cases)
+    if case_ids is not None:
+        known = {case.id for case in selected}
+        unknown = sorted(case_ids - known)
+        if unknown:
+            raise ValueError(f"unknown primary eval case ids: {unknown}")
+        selected = [case for case in selected if case.id in case_ids]
+    if smoke_limit:
+        selected = selected[:smoke_limit]
+    return selected
+
+
 def _percentile(values: list[float], pct: float) -> float | None:
     """Nearest-rank percentile (no numpy dep). ``pct`` in [0,100]. Empty → None."""
     if not values:
@@ -602,12 +617,11 @@ async def run_eval(
     columns: dict[str, Flags] | None = None,
     smoke_limit: int | None = None,
     include_auxiliary: bool = True,
+    case_ids: frozenset[str] | None = None,
     client_factory=None,
 ) -> dict:
     columns = columns or COLUMNS
-    cases = load_cases()
-    if smoke_limit:
-        cases = cases[:smoke_limit]
+    cases = _select_primary_cases(load_cases(), case_ids, smoke_limit)
 
     # Per-role provider factory (cached): an all-openai cell shares ONE client across roles
     # (byte-identical to the old single-client path). SUBJECT roles (L1/L3/helpers) are metered
