@@ -41,6 +41,11 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
         catalog, "Ist EPDM gegen Aceton beständig?"
     )
 
+    uncertainty = retrieve_reviewed_trap_facts(
+        catalog, "Ist FKM beständig gegen Essigsäure?"
+    )
+    assert [fact.card_id for fact in uncertainty] == ["CONF-PAUSCHAL-BESTAENDIG"]
+
 
 def test_draft_trap_cannot_define_prefetch_terms(tmp_path):
     p = tmp_path / "draft-prefetch.json"

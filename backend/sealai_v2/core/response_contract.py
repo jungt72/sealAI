@@ -174,7 +174,13 @@ def _allowed_values(calc: CalcResult | None) -> tuple[dict, ...]:
     if calc is None:
         return ()
     return tuple(
-        {"name": cv.name, "value": cv.value, "unit": cv.unit, "calc_id": cv.calc_id}
+        {
+            "name": cv.name,
+            "value": cv.value,
+            "unit": cv.unit,
+            "calc_id": cv.calc_id,
+            "warnings": list(cv.warnings),
+        }
         for cv in calc.computed
     )
 

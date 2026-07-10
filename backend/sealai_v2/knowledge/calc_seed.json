@@ -1,5 +1,5 @@
 {
-  "version": "calc_seed_v0",
+  "version": "calc_seed_v1",
   "source": "M4a seed: 3 owner-reviewed deterministic calc-defs (Umfangsgeschwindigkeit, PV-Wert, O-Ring-Verpressung/Nutfüllung). Formulas are reviewed CODE bound by id (core/calc/formulas.py); this file is METADATA only (units/validity/conditions/source/provenance). Kontakttemperatur is DEFERRED to the content-track pending an owner-supplied model + assumptions + source (Q3). Sources name the standard references; owner is the oracle that confirms/refines them at the build gate.",
   "calcs": [
     {
@@ -20,13 +20,14 @@
       "limit": {
         "applies_to": "v_m_s",
         "max": 14,
+        "caution_ratio": 0.85,
         "label": "Standard-NBR-Lippe",
         "source_ref": "owner:eval-CALC-01"
       },
-      "source": "Umfangsgeschwindigkeit v = π·d·n — Grundformel der RWDR-Auslegung (z. B. Freudenberg Sealing Technologies, Technisches Handbuch Simmerring); NBR-Lippen-Grenze ~14 m/s owner-confirmed via eval CALC-01",
+      "source": "Umfangsgeschwindigkeit v = π·d·n — Grundformel der RWDR-Auslegung (z. B. Freudenberg Sealing Technologies, Technisches Handbuch Simmerring); NBR-Lippen-Grenze ~14 m/s und qualitative Vorsichtszone ab 85 % owner-confirmed via eval CALC-01",
       "review_state": "reviewed",
       "provenance": ["trap-correct:CALC-UMFANGSGESCHWINDIGKEIT", "owner:eval-CALC-01"],
-      "version": "calc_seed_v0"
+      "version": "calc_seed_v1"
     },
     {
       "id": "pv_wert",
@@ -47,7 +48,7 @@
       "source": "PV-Wert = Flächenpressung × Gleitgeschwindigkeit — Standard-Auslegungskennwert gleitender Dichtungen (Tietze (Hrsg.), Handbuch Dichtungspraxis)",
       "review_state": "reviewed",
       "provenance": ["owner:PV-standard-kennwert"],
-      "version": "calc_seed_v0"
+      "version": "calc_seed_v1"
     },
     {
       "id": "verpressung_prozent",
@@ -68,7 +69,7 @@
       "source": "O-Ring-Verpressung/Nutfüllung Richtwerte (~15–25 % statisch; Füllgrad ~75–90 %) — z. B. Parker O-Ring Handbook / ISO 3601-2 (Nutauslegung; ersetzt DIN 3771); owner-confirmed via eval CALC-02",
       "review_state": "reviewed",
       "provenance": ["eval:CALC-02", "owner:nutauslegung"],
-      "version": "calc_seed_v0"
+      "version": "calc_seed_v1"
     }
   ]
 }

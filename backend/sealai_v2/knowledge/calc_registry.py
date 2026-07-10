@@ -41,6 +41,7 @@ class CalcLimit:
 
     applies_to: str
     max: float
+    caution_ratio: float | None = None
     label: str = ""
     source_ref: str = ""
 
@@ -103,6 +104,11 @@ def _calc_def(raw: dict) -> CalcDef:
         CalcLimit(
             applies_to=str(lim["applies_to"]),
             max=float(lim["max"]),
+            caution_ratio=(
+                float(lim["caution_ratio"])
+                if lim.get("caution_ratio") is not None
+                else None
+            ),
             label=str(lim.get("label", "")),
             source_ref=str(lim.get("source_ref", "")),
         )
@@ -135,6 +141,10 @@ def _calc_def(raw: dict) -> CalcDef:
     )
     if not d.output.name:
         raise ValueError(f"{cid}: output name required")
+    if d.limit and d.limit.caution_ratio is not None and not (
+        0 < d.limit.caution_ratio <= 1
+    ):
+        raise ValueError(f"{cid}: limit.caution_ratio must be in (0, 1]")
     if d.reviewed:
         # circularity guard for formulas — reviewed = sourced + provenanced + validated + bound code
         if not d.source.strip():

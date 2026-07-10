@@ -38,6 +38,10 @@ class CascadeCalcEngine:
     def __init__(self, registry: CalcRegistry | None = None) -> None:
         self._reg = registry or load_calc_registry()
 
+    @property
+    def registry(self) -> CalcRegistry:
+        return self._reg
+
     def evaluate(
         self,
         *,
@@ -142,6 +146,16 @@ class CascadeCalcEngine:
                     warnings.append(
                         f"über der Belastungsgrenze der {d.limit.label} → "
                         f"{d.limit.label} bei diesem Wert unzureichend, höher belastbare Lösung nötig"
+                    )
+                elif (
+                    d.limit
+                    and d.limit.applies_to == d.output.name
+                    and d.limit.caution_ratio is not None
+                    and out >= d.limit.max * d.limit.caution_ratio
+                ):
+                    warnings.append(
+                        f"nahe an der Belastungsgrenze der {d.limit.label} → grenzwertige "
+                        "Auslegung; Schmierung, Wellenoberfläche und Temperatur bestimmen die Reserve"
                     )
                 if ctx.get("swelling") and d.id == "verpressung_prozent":
                     warnings.append(

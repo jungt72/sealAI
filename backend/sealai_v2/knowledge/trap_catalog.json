@@ -184,6 +184,8 @@
       "correct": "Differenzieren statt pauschal: für viele Medien-Werkstoff-Paare (z. B. FKM × organische Säuren) entscheiden Konzentration und Temperatur — verdünnt evtl. ok, konzentriert/heiß problematisch. Nach Konzentration und Temperatur fragen und auf die Beständigkeitstabelle des konkreten Compounds verweisen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:UNCERT-03(must_catch)"],
+      "retrieval_terms": ["FKM", "Essigsäure"],
+      "retrieval_min_hits": 2,
       "tags": ["Beständigkeit", "Differenzierung"],
       "xrefs": []
     },

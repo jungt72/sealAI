@@ -11,6 +11,7 @@ from sealai_v2.core.output_guard import (
     GuardResult,
     Violation,
     correction_note,
+    fail_closed_answer,
     known_inputs,
 )
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
@@ -106,6 +107,26 @@ def test_correction_note_empty_on_pass_and_names_violations_on_block():
         and "freigegeben" in note
         and note.startswith("OUTPUT-GUARD-KORREKTUR")
     )
+
+
+def test_fail_closed_answer_preserves_only_kernel_value_and_warning():
+    text = fail_closed_answer(
+        {
+            "allowed_claims": [],
+            "allowed_values": [
+                {
+                    "calc_id": "umfangsgeschwindigkeit",
+                    "name": "v_m_s",
+                    "value": 12.5664,
+                    "unit": "m/s",
+                    "warnings": ["nahe an der Belastungsgrenze → grenzwertige Auslegung"],
+                }
+            ],
+            "required_clauses": [],
+        }
+    )
+    assert "Umfangsgeschwindigkeit: 12.5664 m/s" in text
+    assert "grenzwertige Auslegung" in text
 
 
 # ── P0-B: response_contract_general_guard_enabled — the guard on NON-Gegencheck turns ──────────────

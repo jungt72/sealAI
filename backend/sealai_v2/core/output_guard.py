@@ -438,17 +438,35 @@ def fail_closed_answer(contract: dict) -> str:
         "Die technische Antwort konnte auf Basis der geprüften Informationen nicht "
         "widerspruchsfrei ausgegeben werden. Belastbar festhalten kann ich:"
     ]
-    approved = [
-        claim.get("text", "").strip()
-        for claim in claims
-        if claim.get("text", "").strip()
-    ]
+    approved = list(
+        dict.fromkeys(
+            claim.get("text", "").strip()
+            for claim in claims
+            if claim.get("text", "").strip()
+        )
+    )
     if approved:
         sections.append("\n".join(f"- {text}" for text in approved[:3]))
     else:
         sections.append(
             "Für eine belastbare technische Einordnung fehlen derzeit geprüfte Grundlagen."
         )
+    labels = {
+        "umfangsgeschwindigkeit": "Umfangsgeschwindigkeit",
+        "pv_wert": "PV-Wert",
+        "verpressung_prozent": "Verpressung",
+    }
+    values = []
+    for value in contract.get("allowed_values", ()):
+        name = labels.get(value.get("calc_id"), value.get("name", "Berechneter Wert"))
+        values.append(f"- {name}: {value.get('value')} {value.get('unit', '')}".rstrip())
+        values.extend(
+            f"  - {warning}"
+            for warning in value.get("warnings", ())
+            if str(warning).strip()
+        )
+    if values:
+        sections.append("**Deterministisch berechnet**\n" + "\n".join(values))
     required = [
         str(clause).strip()
         for clause in contract.get("required_clauses", ())

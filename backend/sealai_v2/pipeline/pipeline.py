@@ -1773,6 +1773,9 @@ def build_pipeline(
         fachkarten_version=fachkarten_version,
         matrix_version=matrix.catalog.version if matrix is not None else "",
         traps_version=catalog.version if catalog is not None else "",
+        calc_version=(
+            engine.registry.version if isinstance(engine, CascadeCalcEngine) else ""
+        ),
         versagensmodi_version=(
             versagensmodi.catalog.version if versagensmodi is not None else ""
         ),
