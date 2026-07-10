@@ -56,17 +56,18 @@ def _parse_retry_duration(value: object) -> float | None:
 def _retry_delay_s(exc: Exception, attempt: int) -> float:
     """Prefer provider reset hints; otherwise use bounded exponential backoff for transient calls."""
     headers = getattr(getattr(exc, "response", None), "headers", None) or {}
-    values = (
-        headers.get("retry-after-ms"),
-        headers.get("retry-after"),
-        headers.get("x-ratelimit-reset-requests"),
-        headers.get("x-ratelimit-reset-tokens"),
-    )
+    retry_after_ms = _parse_retry_duration(headers.get("retry-after-ms"))
     hinted = [
         duration
-        for value in values
+        for value in (
+            headers.get("retry-after"),
+            headers.get("x-ratelimit-reset-requests"),
+            headers.get("x-ratelimit-reset-tokens"),
+        )
         if (duration := _parse_retry_duration(value)) is not None
     ]
+    if retry_after_ms is not None:
+        hinted.append(retry_after_ms / 1000.0)
     fallback = min(2.0 ** (attempt - 1), 30.0)
     return max([fallback, *hinted])
 
