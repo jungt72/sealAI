@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v2",
+  "version": "trap_catalog_v3",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -77,8 +77,8 @@
         "Angriff durch Amine/Laugen/Ketone übersehen",
         "Temperatur-/Konzentrationsabhängigkeit der Laugenbeständigkeit ignoriert"
       ],
-      "correct": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Je nach Fall EPDM oder FFKM. Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
-      "correct_general": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "correct": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Je nach Fall EPDM oder FFKM. Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt. Ein Erfolg im Vorprojekt ist nicht übertragbar, wenn dort ein anderes Medium vorlag.",
+      "correct_general": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt. Ein Erfolg im Vorprojekt ist nicht übertragbar, wenn dort ein anderes Medium vorlag.",
       "correct_recommendation": "Je nach Fall EPDM oder FFKM.",
       "applies_to": ["amin", "amine", "lauge", "base", "keton", "ester", "kühlmittel", "inhibitor"],
       "gates": ["walked_into_trap", "confident_wrong"],

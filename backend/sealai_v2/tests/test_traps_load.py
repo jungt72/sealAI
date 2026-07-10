@@ -12,7 +12,7 @@ from sealai_v2.knowledge.traps import load_traps, retrieve_reviewed_trap_facts
 def test_loads_production_catalog():
     cat = load_traps()
     assert cat.reviewed(), "expected reviewed entries"
-    assert cat.version == "trap_catalog_v2"
+    assert cat.version == "trap_catalog_v3"
 
 
 def test_every_entry_well_formed():
