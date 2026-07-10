@@ -38,9 +38,9 @@ def test_default_role_models_and_temperatures_unchanged():
         "gpt-5.1",
         None,
     )
-    assert (p.helper_model.model, p.helper_model.temperature) == ("gpt-5.6-luna", 0.0)
+    assert (p.helper_model.model, p.helper_model.temperature) == ("gpt-5.4-mini", 0.0)
     assert (p.distiller._model_config.model, p.distiller._model_config.temperature) == (
-        "gpt-5.6-luna",
+        "gpt-5.4-mini",
         0.0,
     )
 
@@ -54,8 +54,8 @@ def test_default_run_uses_l1_and_helper_models():
     models = {c["model"] for c in fake.calls}
     assert models == {
         "gpt-5.1",
-        "gpt-5.6-luna",
-    }  # L1/verify = gpt-5.1, understand = gpt-5.6-luna
+        "gpt-5.4-mini",
+    }  # L1/verify = gpt-5.1, understand = gpt-5.4-mini
 
 
 # --- single-client mode ignores provider settings (test/default path unaffected) ----------
@@ -109,7 +109,7 @@ def test_per_role_provider_routing_mixed_cell():
         c["model"] == "mistral-small-4" for c in mistral_fake.calls
     )
     oai_models = {c["model"] for c in openai_fake.calls}
-    assert oai_models == {"gpt-5.1", "gpt-5.6-luna"}
+    assert oai_models == {"gpt-5.1", "gpt-5.4-mini"}
 
 
 # --- fail-closed: unknown provider / missing key raise (never a silent default) ------------
