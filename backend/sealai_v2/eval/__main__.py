@@ -190,6 +190,7 @@ def main() -> None:
             timestamp=timestamp,
             columns=columns,
             smoke_limit=args.smoke,
+            include_auxiliary=args.smoke is None,
         )
     )
     print(f"\n=== M1 eval-REPLAY: {args.label} ===")
