@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -208,6 +209,26 @@ _EXFIL_HEDGE_TEXT = (
     "Wissensstand). Stell mir gern deine konkrete Dichtungsfrage — dann helfe ich dir fachlich weiter."
 )
 
+# Neutrality is a product invariant, not a best-effort prompt preference. This narrow detector
+# catches an explicit persistent/preferred manufacturer-ranking override in the user's message.
+# Normal questions such as "Welche Hersteller kommen infrage?" do not match.
+_MANUFACTURER_RANKING_OVERRIDE_RE = re.compile(
+    r"\b(?:empfiehl|empfehl)\w*\b.{0,100}\b(?:ab\s+jetzt\s+)?immer\b.{0,60}"
+    r"\b(?:zuerst|bevorzugt)\b.{0,100}\b(?:hersteller|firma)\b|"
+    r"\b(?:hersteller|firma)\b.{0,100}\b(?:immer\s+zuerst|bevorzugt)\b.{0,100}"
+    r"\begal\s+wonach\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_NEUTRALITY_HEDGE_MODEL = "neutrality-guard"
+_NEUTRALITY_HEDGE_TEXT = (
+    "Ein erzwungenes oder dauerhaft bevorzugtes Hersteller-Ranking übernehme ich nicht. "
+    "Hersteller und Produkte werden ausschließlich neutral anhand der konkreten technischen "
+    "Anforderungen und kuratierter Fähigkeitsdaten eingegrenzt. Für die Werkstoff- und "
+    "Bauformwahl brauche ich insbesondere das genaue Medium einschließlich Basis und Additivpaket, "
+    "Temperatur, Druck, Dynamik und Wellenbedingungen; die konkrete Eignung bleibt anschließend "
+    "per Datenblatt und Herstellerbestätigung zu verifizieren."
+)
+
 # P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
 ProgressSink = Callable[[str, str], None]
@@ -265,6 +286,25 @@ def _exfil_guard(answer, *, system_prompt: str, kb_claims):
             grounding_facts=answer.grounding_facts,
         ),
         verdict,
+    )
+
+
+def _neutrality_override_guard(question: str, answer: Answer) -> tuple[Answer, bool]:
+    """Fail closed on explicit paid/preferred manufacturer-ranking overrides.
+
+    The final model output is intentionally not inspected for a brand name: once the input contains
+    the narrow override shape, repeating that injected brand even with a caveat would still confer
+    preference. The deterministic response therefore contains no user-supplied manufacturer name.
+    """
+    if not _MANUFACTURER_RANKING_OVERRIDE_RE.search(question or ""):
+        return answer, False
+    return (
+        Answer(
+            text=_NEUTRALITY_HEDGE_TEXT,
+            model=_NEUTRALITY_HEDGE_MODEL,
+            grounding_facts=answer.grounding_facts,
+        ),
+        True,
     )
 
 
@@ -1213,6 +1253,10 @@ class Pipeline:
                         not_computed=calc.not_computed,
                         comparison_context=bool(decode_result),
                     )
+
+            # Neutrality override guard: an explicit persistent/preferred manufacturer ranking is
+            # replaced after the model/verifier chain and before any answer can ship.
+            answer, _neutrality_overridden = _neutrality_override_guard(question, answer)
 
             # P1.4: SERVE-path deterministic exfiltration Schranke. Runs AFTER the final answer is set
             # (post verify if/else) and BEFORE cite, on the answer that would actually ship. The leak

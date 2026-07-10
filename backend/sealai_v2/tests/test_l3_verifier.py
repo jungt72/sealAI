@@ -762,6 +762,21 @@ def test_topic_scope_home_topic_default01_nbr_dauertemp_keeps_recommendation():
     assert "HNBR" in note and "FKM" in note
 
 
+def test_high_precision_policy_is_hidden_from_l3_off_topic():
+    from sealai_v2.core.l3_verifier import _trap_payload
+
+    ids = {item["id"] for item in _trap_payload(_REAL, _DEFAULT01_Q)}
+    assert "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM" not in ids
+    assert "TRAP-NBR-DAUERTEMP" in ids
+
+    qualified = (
+        "Belüftetes Getriebe mit Mineralöl bei 80 °C und staubiger Umgebung: "
+        "Was ist der sinnvolle Ansatz?"
+    )
+    ids = {item["id"] for item in _trap_payload(_REAL, qualified)}
+    assert "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM" in ids
+
+
 def test_recommendation_applies_unit_table():
     from sealai_v2.core.l3_verifier import _recommendation_applies as applies
 

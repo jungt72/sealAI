@@ -48,7 +48,11 @@ from sealai_v2.core.contracts import (
     VerifierVerdict,
 )
 from sealai_v2.core.text_match import query_tokens, tag_matches
-from sealai_v2.knowledge.traps import TrapCatalog, TrapEntry
+from sealai_v2.knowledge.traps import (
+    TrapCatalog,
+    TrapEntry,
+    reviewed_trap_retrieval_matches,
+)
 from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 
 _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-generated
@@ -147,11 +151,18 @@ class _VerifierOutput(BaseModel):
     verdict: Literal["clean", "violation"]
 
 
-def _trap_payload(catalog: TrapCatalog) -> list[dict]:
-    """All catalog entries as delimited DATA for the prompt (reviewed first). ``review_state`` is
-    NOT sent — the model judges the claim; the review state is applied server-side on parse."""
+def _trap_payload(catalog: TrapCatalog, question: str = "") -> list[dict]:
+    """Relevant catalog entries as delimited DATA for the prompt (reviewed first).
+
+    Entries carrying owner-curated ``retrieval_terms`` are high-precision policies and are visible
+    to L3 only when the same deterministic activation used for L1 prefetch matches. Broad traps
+    without this optional surface retain the historical catalog-wide behavior. ``review_state`` is
+    not sent; it is applied server-side during parsing.
+    """
     out: list[dict] = []
     for e in (*catalog.reviewed(), *catalog.drafts()):
+        if e.retrieval_terms and not reviewed_trap_retrieval_matches(e, question):
+            continue
         out.append(
             {
                 "id": e.id,
@@ -201,8 +212,10 @@ class L3Verifier:
             {"cell_id": f.card_id, "text": f.text, "quelle": f.quelle}
             for f in matrix_facts
         ]
+        trap_payload = _trap_payload(self._catalog, question)
+        active_trap_ids = frozenset(item["id"] for item in trap_payload)
         system = self._assembler.verifier_system_prompt(
-            traps=_trap_payload(self._catalog),
+            traps=trap_payload,
             grounding_facts=gf_payload,
             computed_values=cv_payload,
             matrix_facts=mx_payload,
@@ -237,6 +250,7 @@ class L3Verifier:
             card_ids=card_ids,
             calc_refs=calc_refs,
             matrix_ids=matrix_ids,
+            active_trap_ids=active_trap_ids,
         )
 
     def _parse(
@@ -246,6 +260,7 @@ class L3Verifier:
         card_ids: frozenset[str] = frozenset(),
         calc_refs: frozenset[str] = frozenset(),
         matrix_ids: frozenset[str] = frozenset(),
+        active_trap_ids: frozenset[str] | None = None,
     ) -> _RawVerdict:
         raw = (raw or "").strip()
         try:
@@ -311,6 +326,8 @@ class L3Verifier:
             entry = self._catalog.by_id(str(item.get("trap_id", "")))
             if entry is None:
                 continue  # never trust an id the catalog doesn't know
+            if active_trap_ids is not None and entry.id not in active_trap_ids:
+                continue  # never accept a policy id that was not shown for this question
             if is_precision_overapplication(entry.id, evidence, draft):
                 continue  # range + verify-caveat respects 'Einzelzahl OHNE Bereich' → L3 over-applied
             gate = str(item.get("gate", ""))

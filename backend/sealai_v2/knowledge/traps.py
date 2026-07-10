@@ -178,11 +178,7 @@ def retrieve_reviewed_trap_facts(
     for entry in catalog.reviewed():
         if not entry.retrieval_terms:
             continue
-        hits = sum(
-            1
-            for term in entry.retrieval_terms
-            if tag_matches(term, q_tokens, q_norm)
-        )
+        hits = reviewed_trap_retrieval_hits(entry, q_norm, q_tokens=q_tokens)
         if hits >= entry.retrieval_min_hits:
             matches.append((hits, entry))
     matches.sort(key=lambda item: (-item[0], item[1].id))
@@ -197,4 +193,28 @@ def retrieve_reviewed_trap_facts(
             kind="trap",
         )
         for _hits, entry in matches[:k]
+    )
+
+
+def reviewed_trap_retrieval_hits(
+    entry: TrapEntry, question: str, *, q_tokens: set[str] | None = None
+) -> int:
+    """Count owner-curated activation terms for one high-precision trap.
+
+    L1 prefetch and L3 catalog scoping share this exact matcher so a policy fact cannot be
+    considered relevant before generation but off-topic during verification, or vice versa.
+    Entries without an explicit retrieval surface return zero and remain governed by the broad
+    verifier catalog behavior.
+    """
+    q_norm = (question or "").lower()
+    tokens = q_tokens if q_tokens is not None else query_tokens(q_norm)
+    return sum(
+        1 for term in entry.retrieval_terms if tag_matches(term, tokens, q_norm)
+    )
+
+
+def reviewed_trap_retrieval_matches(entry: TrapEntry, question: str) -> bool:
+    """Whether an explicitly scoped reviewed trap is active for this question."""
+    return bool(entry.retrieval_terms) and (
+        reviewed_trap_retrieval_hits(entry, question) >= entry.retrieval_min_hits
     )
