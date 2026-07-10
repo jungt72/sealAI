@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     concurrency: int = 6
     request_timeout_s: float = 180.0
     max_retries: int = 3
+    # Eval-only judge controls. Subject work stays concurrent, while the external rubric judge is
+    # paced to avoid exhausting a provider's shared RPM/TPM budget during a replay burst.
+    eval_judge_concurrency: int = 1
+    eval_judge_min_interval_s: float = 3.0
+    eval_judge_max_retries: int = 8
     understand_enabled: bool = True
     # L3 is an always-on CORE trust layer (Prinzipien §2), NOT a feature flag. This toggle is an
     # incident-only kill-switch (default = enforced); set False only to restore service.
