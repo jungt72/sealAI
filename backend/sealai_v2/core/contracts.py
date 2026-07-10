@@ -85,6 +85,16 @@ class LlmClient(Protocol):
         self, *, system: str, user: str, model_config: ModelConfig
     ) -> LlmResult: ...
 
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
+    ) -> LlmResult: ...
+
     def generate_stream(
         self, *, system: str, user: str, model_config: ModelConfig
     ) -> "AsyncIterator[LlmStreamEvent]": ...

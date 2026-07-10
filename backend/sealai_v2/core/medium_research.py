@@ -14,11 +14,13 @@ the helper call once.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Protocol
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from sealai_v2.core.contracts import LlmClient, ModelConfig
+from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 
 _MAX = {"eigenschaften": 4, "herausforderungen": 4, "werkstoff_tendenz": 3}
 _MAX_LEN = 240  # a sealing-relevant bullet, not an essay
@@ -47,15 +49,36 @@ class MediumIntelligence:
         )
 
 
-def _extract_json(raw: str) -> str:
-    """Pull the first {...} block, tolerating code fences (mirrors stages/distiller)."""
-    s = raw.strip()
-    if s.startswith("```"):
-        s = s.strip("`")
-        if "\n" in s:
-            s = s.split("\n", 1)[1]
-    start, end = s.find("{"), s.rfind("}")
-    return s[start : end + 1] if start != -1 and end > start else s
+class _MediumResearchOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eigenschaften: list[str] = Field(default_factory=list, max_length=4)
+    herausforderungen: list[str] = Field(default_factory=list, max_length=4)
+    werkstoff_tendenz: list[str] = Field(default_factory=list, max_length=3)
+    unsicher: bool = False
+
+    @field_validator(
+        "eigenschaften", "herausforderungen", "werkstoff_tendenz", mode="before"
+    )
+    @classmethod
+    def _sanitize_provider_list(cls, value, info):
+        limits = {
+            "eigenschaften": 4,
+            "herausforderungen": 4,
+            "werkstoff_tendenz": 3,
+        }
+        if not isinstance(value, list):
+            return []
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, str) or item.lower() in seen:
+                continue
+            seen.add(item.lower())
+            result.append(item)
+            if len(result) >= limits[info.field_name]:
+                break
+        return result
 
 
 def _clean_list(value, limit: int) -> tuple[str, ...]:
@@ -109,26 +132,26 @@ class MediumResearcher:
     ) -> MediumIntelligence:
         user = f"Medium: {medium}" + (f" (Kategorie: {kategorie})" if kategorie else "")
         try:
-            res = await self._client.generate(
+            data, _ = await generate_structured(
+                self._client,
+                output_type=_MediumResearchOutput,
+                schema_name="sealingai_medium_research",
                 system=self._assembler.medium_research_prompt(),
                 user=user,
                 model_config=self._model_config,
             )
-            data = json.loads(_extract_json(res.text))
-            if not isinstance(data, dict):
-                raise ValueError("medium research did not return a JSON object")
-        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        except StructuredOutputError:
             return MediumIntelligence(medium=medium, kategorie=kategorie)  # fail safe
 
         return MediumIntelligence(
             medium=medium,
             kategorie=kategorie,
-            eigenschaften=_clean_list(data.get("eigenschaften"), _MAX["eigenschaften"]),
+            eigenschaften=_clean_list(data.eigenschaften, _MAX["eigenschaften"]),
             herausforderungen=_clean_list(
-                data.get("herausforderungen"), _MAX["herausforderungen"]
+                data.herausforderungen, _MAX["herausforderungen"]
             ),
             werkstoff_tendenz=_clean_list(
-                data.get("werkstoff_tendenz"), _MAX["werkstoff_tendenz"]
+                data.werkstoff_tendenz, _MAX["werkstoff_tendenz"]
             ),
-            unsicher=bool(data.get("unsicher", False)),
+            unsicher=data.unsicher,
         )

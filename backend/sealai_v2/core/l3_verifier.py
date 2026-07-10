@@ -22,6 +22,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, replace
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
 from sealai_v2.core.equivalence_guard import (
@@ -46,6 +49,7 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.traps import TrapCatalog, TrapEntry
+from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 
 _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-generated
 
@@ -121,6 +125,28 @@ class _RawVerdict:
     raw: str
 
 
+class _VerifierFindingOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    violated: bool
+    evidence: str = Field(default="", max_length=400)
+    trap_id: str = ""
+    gate: str = ""
+    card_contradiction: bool = False
+    card_id: str = ""
+    matrix_contradiction: bool = False
+    cell_id: str = ""
+    calc_violation: bool = False
+    calc: str = ""
+
+
+class _VerifierOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[_VerifierFindingOutput] = Field(default_factory=list, max_length=64)
+    verdict: Literal["clean", "violation"]
+
+
 def _trap_payload(catalog: TrapCatalog) -> list[dict]:
     """All catalog entries as delimited DATA for the prompt (reviewed first). ``review_state`` is
     NOT sent — the model judges the claim; the review state is applied server-side on parse."""
@@ -187,9 +213,19 @@ class L3Verifier:
             "Prüfe die Entwurfsantwort gegen den Fallen-Katalog, die geerdeten Fakten, die "
             "Verträglichkeits-Matrix und die berechneten Werte und gib NUR das JSON zurück."
         )
-        res = await self._client.generate(
-            system=system, user=user, model_config=self._model_config
-        )
+        try:
+            _, res = await generate_structured(
+                self._client,
+                output_type=_VerifierOutput,
+                schema_name="sealingai_verifier",
+                system=system,
+                user=user,
+                model_config=self._model_config,
+                # run_verify already owns the single verifier retry; avoid nested repair loops.
+                max_repairs=0,
+            )
+        except StructuredOutputError:
+            return _RawVerdict(findings=(), parse_ok=False, raw="")
         card_ids = frozenset(f.card_id for f in grounding_facts if f.card_id)
         calc_refs = frozenset(
             [c.name for c in computed_values] + [c.calc_id for c in computed_values]

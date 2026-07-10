@@ -184,7 +184,34 @@ class OpenAiLlmClient:
         kwargs = self._build_request_kwargs(
             system=system, user=user, model_config=model_config
         )
+        return await self._generate_with_kwargs(kwargs, model_config=model_config)
 
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
+    ) -> LlmResult:
+        """Use the provider's strict JSON Schema mode, then let the caller validate locally too."""
+        kwargs = self._build_request_kwargs(
+            system=system, user=user, model_config=model_config
+        )
+        kwargs["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "strict": True,
+                "schema": json_schema,
+            },
+        }
+        return await self._generate_with_kwargs(kwargs, model_config=model_config)
+
+    async def _generate_with_kwargs(
+        self, kwargs: dict[str, Any], *, model_config: ModelConfig
+    ) -> LlmResult:
         started = time.monotonic()
         last_exc: Exception | None = None
         attempts = 0  # counts only REAL (transient) failures — param adaptations don't consume budget

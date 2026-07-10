@@ -10,8 +10,9 @@ gegencheck, diagnose, decode, alternativen) live alongside them here.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.core.contracts import (
     Answer,
@@ -37,6 +38,7 @@ from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
 from sealai_v2.knowledge.hersteller_partner import rank_partners
+from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 import re as _re
 
 _ALT_RE = _re.compile(
@@ -55,15 +57,14 @@ def is_alternativen_request(question: str) -> bool:
     return bool(_ALT_RE.search(question))
 
 
-def _extract_json(raw: str) -> str:
-    """Best-effort: pull the first {...} block, tolerating code fences."""
-    s = raw.strip()
-    if s.startswith("```"):
-        s = s.strip("`")
-        if "\n" in s:
-            s = s.split("\n", 1)[1]
-    start, end = s.find("{"), s.rfind("}")
-    return s[start : end + 1] if start != -1 and end > start else s
+class _UnderstandingOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Intent = Intent.UNKLAR
+    rationale: str = Field(default="", max_length=300)
+    archetype: str | None = Field(default=None, max_length=128)
+    suggested_seal_type: str | None = Field(default=None, max_length=128)
+    medium_hint: str | None = None
 
 
 async def understand(
@@ -82,43 +83,46 @@ async def understand(
     value can never survive); ``medium_hint`` has no allowlist (its whole point is capturing
     something OUTSIDE the deterministic vocabulary) but is length-capped and only ever surfaced as
     an unconfirmed hint, never committed as a fact."""
-    res = await client.generate(
-        system=prompt_assembler.understand_prompt(
-            archetype_keys=archetype_keys,
-            known_seal_types=known_seal_types,
-            medium_already_known=medium_already_known,
-        ),
-        user=question,
-        model_config=model_config,
+    system = prompt_assembler.understand_prompt(
+        archetype_keys=archetype_keys,
+        known_seal_types=known_seal_types,
+        medium_already_known=medium_already_known,
     )
-    raw = res.text.strip()
     archetype: str | None = None
     suggested_seal_type: str | None = None
     medium_hint: str | None = None
     try:
-        data = json.loads(_extract_json(raw))
-        intent = Intent(str(data.get("intent", "unklar")).strip().lower())
-        rationale = str(data.get("rationale", ""))[:300]
-        a = data.get("archetype")
+        data, res = await generate_structured(
+            client,
+            output_type=_UnderstandingOutput,
+            schema_name="sealingai_understanding",
+            system=system,
+            user=question,
+            model_config=model_config,
+        )
+        raw = res.text.strip()
+        intent = data.intent
+        rationale = data.rationale
+        a = data.archetype
         if a is not None and archetype_keys:
             a = str(a).strip().lower()
             if a in {k.lower() for k in archetype_keys}:  # only a KNOWN key survives
                 archetype = a
-        st = data.get("suggested_seal_type")
+        st = data.suggested_seal_type
         if st is not None and known_seal_types:
             st = str(st).strip().lower()
             if st in {
                 t.lower() for t in known_seal_types
             }:  # only a KNOWN pack id survives
                 suggested_seal_type = st
-        mh = data.get("medium_hint")
+        mh = data.medium_hint
         if mh is not None and not medium_already_known:
             mh = str(mh).strip()[
                 :80
             ]  # bounded — this is a hint to ask about, never a settled fact
             medium_hint = mh or None
-    except (ValueError, KeyError, TypeError):
-        intent, rationale = Intent.UNKLAR, ""
+    except StructuredOutputError:
+        intent, rationale, raw = Intent.UNKLAR, "", ""
     return Understanding(
         intent=intent,
         rationale=rationale,
