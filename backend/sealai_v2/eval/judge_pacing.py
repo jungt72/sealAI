@@ -48,6 +48,30 @@ class PacedLlmClient:
                 system=system, user=user, model_config=model_config
             )
 
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
+    ) -> LlmResult:
+        async with self._semaphore:
+            await self._wait_for_turn()
+            native = getattr(self._inner, "generate_structured", None)
+            if native is None:
+                return await self._inner.generate(
+                    system=system, user=user, model_config=model_config
+                )
+            return await native(
+                system=system,
+                user=user,
+                model_config=model_config,
+                schema_name=schema_name,
+                json_schema=json_schema,
+            )
+
     async def generate_stream(
         self, *, system: str, user: str, model_config: ModelConfig
     ) -> AsyncIterator[LlmStreamEvent]:
