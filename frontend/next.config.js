@@ -53,18 +53,6 @@ const nextConfig = {
   },
 
 
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "sealingai.com",
-      },
-      {
-        protocol: "https",
-        hostname: "www.sealingai.com",
-      },
-    ],
-  },
 };
 
 module.exports = withBundleAnalyzer(nextConfig);

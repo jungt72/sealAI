@@ -10,7 +10,7 @@ import { TrustNeutralitySection } from "@/components/marketing/TrustNeutralitySe
 import { createMetadata } from "@/lib/seo/metadata";
 import { generateOrganizationSchema, generateWebApplicationSchema, generateWebSiteSchema } from "@/lib/seo/jsonLd";
 
-const OG_IMAGE = "/images/marketing/sealing-intelligence-hero.png";
+const OG_IMAGE = "/images/marketing/og-sealing-intelligence.jpg";
 
 const base = createMetadata({
   title: "Sealing Intelligence — Wissen, Bewertung und Orientierung in der Dichtungstechnik",
@@ -22,16 +22,16 @@ const base = createMetadata({
 
 export const metadata: Metadata = {
   ...base,
-  title: "sealingAI — Sealing Intelligence",
+  title: "sealingAI — Sealing Intelligence für Dichtungstechnik",
   openGraph: {
     ...base.openGraph,
-    title: "sealingAI — Sealing Intelligence",
+    title: "sealingAI — Sealing Intelligence für Dichtungstechnik",
     description:
       "Die zentrale Anlaufstelle für Wissen, Bewertung und Orientierung in der industriellen Dichtungstechnik.",
   },
   twitter: {
     ...base.twitter,
-    title: "sealingAI — Sealing Intelligence",
+    title: "sealingAI — Sealing Intelligence für Dichtungstechnik",
     description:
       "Die zentrale Anlaufstelle für Wissen, Bewertung und Orientierung in der industriellen Dichtungstechnik.",
   },

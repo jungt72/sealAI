@@ -17,9 +17,11 @@ export function generateOrganizationSchema() {
     "url": siteUrl,
     "logo": DEFAULT_LOGO,
     "description": "Sealing Intelligence — Professionelle technische Analyse und Vorqualifizierung von Dichtungslösungen.",
-    "sameAs": [
-      "https://sealingai.com",
-    ],
+    // TODO(seo): add real external profile URLs here once they exist (LinkedIn
+    // company page, Xing, etc.) — `sameAs` is an E-E-A-T entity-trust signal
+    // and only helps when it points at independently verifiable profiles. A
+    // self-referencing URL (the previous value) is a no-op, so it's omitted
+    // rather than kept as a placeholder.
   };
 }
 

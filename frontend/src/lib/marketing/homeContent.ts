@@ -21,7 +21,7 @@ export const PARTNER_HREF = "/kontakt";
 export const TEASER_STORAGE_KEY = "sealingai.homepageTeaserState";
 
 export const heroContent = {
-  headline: "Sealing Intelligence",
+  headline: "Sealing Intelligence für Dichtungstechnik",
   subline:
     "Die zentrale Anlaufstelle für Wissen, Bewertung und Orientierung in der industriellen Dichtungstechnik.",
   cta: "sealingAI entdecken",

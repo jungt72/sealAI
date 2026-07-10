@@ -311,16 +311,10 @@
 /* Dark technical hero atmosphere: purpose-built PTFE radial shaft seal
    background with technical drawing, caliper, and seal macro detail. The asset
    is already dark-graded, so the CSS keeps it clean and only adds the overlay
-   layers below for text readability. */
-.hero-technical-bg {
-  background-color: #04070d;
-  background-image: url("/images/marketing/radialwellendichtring-ptfe-background.png");
-  background-repeat: no-repeat;
-  background-position: center center;
-  background-size: cover;
-}
-
-
+   layers below for text readability. The image itself is rendered by
+   `next/image` (see HeroSection.tsx) rather than as a CSS background — that
+   gets it into the browser's preload scanner and served as AVIF/WebP, which
+   matters because this is the LCP element on a full-viewport hero. */
 .hero-technical-tint {
   background:
     radial-gradient(120% 90% at 50% 8%, rgba(38, 66, 104, 0.5) 0%, rgba(6, 12, 22, 0) 55%),
@@ -334,13 +328,14 @@
   opacity: 0.6;
 }
 
+/* Transform-only (no opacity) so the H1 counts as painted immediately for
+   LCP purposes — animating opacity from 0 on the LCP candidate delays (or
+   disqualifies) its measured paint time, a common Core Web Vitals mistake. */
 @keyframes sealai-hero-fade-up {
   from {
-    opacity: 0;
     transform: translate3d(0, 14px, 0);
   }
   to {
-    opacity: 1;
     transform: translate3d(0, 0, 0);
   }
 }

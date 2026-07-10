@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
@@ -9,11 +10,12 @@ import { heroContent } from "@/lib/marketing/homeContent";
  *
  * Background is a cropped, heavily dark-graded detail from the existing
  * sealing-intelligence-hero.png stock asset (technical dimension drawing +
- * O-ring seals, cropped clear of any person/laptop), composited entirely via
- * CSS (`.hero-technical-bg` + `.hero-technical-tint`). See the comment above
- * `.hero-technical-bg` in globals.css for the full asset-selection rationale
- * and the TODO pointing at where a final purpose-shot/rendered hero asset
- * should later replace it.
+ * O-ring seals, cropped clear of any person/laptop). Rendered via `next/image`
+ * with `priority` (not a CSS `background-image`) so it is discovered by the
+ * browser's preload scanner and served as AVIF/WebP — this is almost always
+ * the LCP element on a full-viewport hero, so skipping next/image here would
+ * cost real Core Web Vitals score. The tint/rings overlays stay CSS-only
+ * (`.hero-technical-tint` / `.hero-technical-rings` in globals.css).
  */
 export function HeroSection() {
   return (
@@ -22,7 +24,14 @@ export function HeroSection() {
       data-header-theme="hero"
       className="hero-viewport section-anchor relative isolate -mt-[56px] overflow-hidden bg-[#04070d] text-white"
     >
-      <div className="hero-technical-bg absolute inset-0" aria-hidden="true" />
+      <Image
+        src="/images/marketing/radialwellendichtring-ptfe-background.png"
+        alt=""
+        fill
+        priority
+        sizes="100vw"
+        className="object-cover"
+      />
       <div className="hero-technical-tint absolute inset-0" aria-hidden="true" />
       <div className="hero-technical-rings absolute inset-0" aria-hidden="true" />
 
@@ -43,7 +52,7 @@ export function HeroSection() {
       />
 
       <div className="hero-fade-up absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-16 text-center sm:px-8 sm:pb-20 lg:pb-24">
-        <h1 className="max-w-[18ch] text-[clamp(2.1rem,5vw,4.2rem)] font-normal leading-[1.04] tracking-[-0.03em] text-white [text-wrap:balance]">
+        <h1 className="max-w-[26ch] text-[clamp(2.1rem,5vw,4.2rem)] font-normal leading-[1.04] tracking-[-0.03em] text-white [text-wrap:balance]">
           {heroContent.headline}
         </h1>
         <p className="mt-5 max-w-[36ch] text-[clamp(1rem,1.6vw,1.2rem)] font-normal leading-relaxed text-white/78 [text-wrap:balance]">
