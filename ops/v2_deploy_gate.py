@@ -6,11 +6,9 @@ Finds an eval run that VALIDATES the served runtime about to be deployed: its
 ``adjudication`` block (the owner folded the worksheet), and EVERY gated axis is clean
 (``schranken_quota_final == 1.0``). No such run → the deploy is refused (exit 2).
 
-[P1.6] ``tree_hash`` binds the served CODE but NOT the model config — an ``.env``-only L1 swap ships
-the same tree with a different model, so an eval scored on model A could gate a deploy serving model
-B. The OPTIONAL 3rd arg ``served_l1`` ("provider/model") closes that: when given, the validating run
-must ALSO have adjudicated that exact L1 (``manifest.roles.l1``). A run that never recorded its L1
-fails closed. Omitting it preserves the old behavior (warned, but allowed — backward-compatible).
+[P1.6] ``tree_hash`` binds the served CODE but not environment-driven behavior. ``served_l1`` and
+``runtime_profile_hash`` bind the exact model/trust/retrieval profile that was adjudicated. Production
+passes both; optional arguments remain only for offline backwards-compatible inspection.
 
 Pure stdlib, JSON-only: the gate CHECKS artifacts; it cannot run the eval (the OPENAI_API_KEY is
 .env-denied) and never imports sealai_v2, an LLM, or the network. ``provisional_until_deep_audit:
@@ -53,7 +51,12 @@ def _manifest_l1_id(manifest) -> str | None:
     return f"{provider}/{model}"
 
 
-def find_gated_run(runs_dir, tree_hash: str, served_l1: str | None = None):
+def find_gated_run(
+    runs_dir,
+    tree_hash: str,
+    served_l1: str | None = None,
+    runtime_profile_hash: str | None = None,
+):
     """Return a small match dict for the first run whose manifest.tree_hash == tree_hash that is
     FULLY adjudicated AND every hard gate is clean, else None.
 
@@ -88,6 +91,11 @@ def find_gated_run(runs_dir, tree_hash: str, served_l1: str | None = None):
         # different L1 (or one that never recorded its L1) must not validate this deploy → fail closed.
         if served_l1 is not None and _manifest_l1_id(manifest) != served_l1:
             continue
+        if (
+            runtime_profile_hash is not None
+            and manifest.get("runtime_profile_hash") != runtime_profile_hash
+        ):
+            continue
 
         # G1 — every deterministic hard-gate Schranke present and clean (missing/None → fail closed).
         if any(adj.get(k) != 1.0 for k in _DETERMINISTIC_SCHRANKEN):
@@ -119,14 +127,16 @@ def find_gated_run(runs_dir, tree_hash: str, served_l1: str | None = None):
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not 2 <= len(argv) <= 3:
+    if not 2 <= len(argv) <= 4:
         print(
-            "usage: v2_deploy_gate.py <runs_dir> <tree_hash> [served_l1]",
+            "usage: v2_deploy_gate.py <runs_dir> <tree_hash> [served_l1] "
+            "[runtime_profile_hash]",
             file=sys.stderr,
         )
         return 2
     runs_dir, tree_hash = argv[0], argv[1]
-    served_l1 = argv[2] if len(argv) == 3 else None
+    served_l1 = argv[2] if len(argv) >= 3 else None
+    runtime_hash = argv[3] if len(argv) == 4 else None
     if served_l1 is None:
         # P1.6 — without a served-L1 pin the gate binds CODE (tree_hash) but not the model, so an
         # ``.env``-only L1 swap could ship unevaluated. Callers (release-backend-v2.sh) MUST pass it.
@@ -135,11 +145,19 @@ def main(argv=None) -> int:
             "(an .env-only model swap could ship with no fresh eval)",
             file=sys.stderr,
         )
-    match = find_gated_run(runs_dir, tree_hash, served_l1)
+    if runtime_hash is None:
+        print(
+            "DEPLOY GATE (V2): WARNING — no runtime_profile_hash given; full runtime-policy "
+            "binding NOT enforced",
+            file=sys.stderr,
+        )
+    match = find_gated_run(runs_dir, tree_hash, served_l1, runtime_hash)
     if match is None:
         detail = f"tree {tree_hash}" + (
             f" + L1 {served_l1}" if served_l1 is not None else ""
         )
+        if runtime_hash is not None:
+            detail += f" + runtime profile {runtime_hash}"
         print(
             f"DEPLOY GATE (V2): no adjudicated eval-REPLAY for {detail} — refuse",
             file=sys.stderr,

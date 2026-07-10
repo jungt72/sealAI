@@ -7,8 +7,6 @@ accidentally enable full raw tracing.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from sealai_v2.obs.safe_trace import (

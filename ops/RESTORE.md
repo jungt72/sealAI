@@ -37,6 +37,29 @@ split by database, so prefer a fresh `pg_dump -U sealai -d sealai_v2` taken BEFO
 exists, or restore into a scratch database first (see verification procedure below) and manually
 `pg_dump`/`pg_restore` just the needed tables across.
 
+### Restoring the automatic pre-migration V2 backup
+
+Every sanctioned backend-v2 release writes a verified custom-format dump to
+`~/sealai-backups/pre-migration/` before Alembic runs. Its adjacent `.sha256`
+file must validate before use. Restoring is destructive and therefore requires
+an explicit incident decision and a stopped API/worker:
+
+```bash
+cd ~/sealai-backups/pre-migration
+sha256sum -c sealai_v2-pre-migration-<TIMESTAMP>.dump.sha256
+docker compose --env-file /home/thorsten/sealai/.env.prod \
+  -f /home/thorsten/sealai/docker-compose.yml \
+  -f /home/thorsten/sealai/docker-compose.deploy.yml \
+  --profile v2 stop backend-v2 backend-v2-worker
+docker exec postgres dropdb -U sealai --if-exists sealai_v2
+docker exec postgres createdb -U sealai sealai_v2
+docker exec -i postgres pg_restore -U sealai -d sealai_v2 \
+  --no-owner --no-acl --exit-on-error < sealai_v2-pre-migration-<TIMESTAMP>.dump
+```
+
+Before restarting production, run the candidate image's schema check and then
+the sanctioned release script; never use a direct `compose up` as a substitute.
+
 ## Restore Qdrant (a single collection)
 
 The collection name in the backup filename IS the collection to restore into — it changes over time

@@ -54,3 +54,5 @@ def test_manifest_records_tree_hash_and_dirty(tmp_path):
     ]
     assert manifest["tree_hash"] == "PROBE_TREE_HASH"  # param → manifest wiring
     assert manifest["dirty"] is True
+    assert len(manifest["runtime_profile_hash"]) == 64
+    assert manifest["runtime_profile"]["schema_version"] == 1

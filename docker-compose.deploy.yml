@@ -294,7 +294,16 @@ services:
     networks: !reset
       default: {}
     healthcheck:
-      disable: true
+      test:
+      - CMD
+      - python
+      - -m
+      - sealai_v2.memory.outbox_daemon
+      - --healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     depends_on:
       backend-v2:
         condition: service_healthy

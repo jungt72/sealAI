@@ -928,6 +928,11 @@ async def run_eval(
         if l3_on
         else "M1"
     )
+    from sealai_v2.config.runtime_profile import (
+        runtime_profile,
+        runtime_profile_hash,
+    )
+
     manifest = {
         "run_label": run_label,
         "git_sha": git_sha,
@@ -937,6 +942,10 @@ async def run_eval(
         # validate-then-commit points at the PRE-fix commit; tree_hash binds the actual content.
         "tree_hash": tree_hash,
         "dirty": dirty,
+        # Full behavior binding: tree_hash covers source bytes; this profile covers the
+        # environment-driven model, trust-layer and retrieval behavior those bytes serve.
+        "runtime_profile": runtime_profile(settings),
+        "runtime_profile_hash": runtime_profile_hash(settings),
         "timestamp": timestamp,
         "milestone": milestone,
         "subject": (

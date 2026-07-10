@@ -6,7 +6,7 @@
 # ALL call this script (no args) — byte-identical by construction.
 #
 # SCOPE — every input that determines the image content, per backend/Dockerfile.v2
-# (FROM python:3.11-slim; COPY requirements-v2.txt; COPY sealai_v2; COPY
+# (FROM python:3.12-slim; COPY requirements-v2.txt; COPY sealai_v2; COPY
 # docker-entrypoint-v2.sh):
 #     backend/Dockerfile.v2            # the build recipe itself
 #     backend/requirements-v2.txt      # pinned runtime deps (COPYed)

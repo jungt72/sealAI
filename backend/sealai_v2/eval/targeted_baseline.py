@@ -127,9 +127,12 @@ async def _amain(args) -> None:
             f"credibility(2-7)={s['overall_credibility']:.3f} "
             f"status={s['provisional_status_counts']}"
         )
+    schranken_quota = parametric["schranken_quota"]
+    schranken_quota_text = (
+        "n/a" if schranken_quota is None else f"{schranken_quota:.3f}"
+    )
     print(
-        f"[parametric] Schranken-quota(agent-final)="
-        f"{'n/a' if parametric['schranken_quota'] is None else f'{parametric["schranken_quota"]:.3f}'} "
+        f"[parametric] Schranken-quota(agent-final)={schranken_quota_text} "
         f"({parametric['n_leak_records']} leak record(s))"
     )
     # advisory judge read on the two narrator-replay target cases
