@@ -74,8 +74,11 @@ class Settings(BaseSettings):
     concurrency: int = 6
     request_timeout_s: float = 180.0
     max_retries: int = 3
-    # Eval-only judge controls. Subject work stays concurrent, while the external rubric judge is
-    # paced to avoid exhausting a provider's shared RPM/TPM budget during a replay burst.
+    # Eval-only provider controls. They apply only to the replay; serving keeps its independent
+    # concurrency policy. A shared provider client is paced across all subject roles, so an eval
+    # cannot turn six case workers into a burst of helper/L1/L3 requests.
+    eval_subject_concurrency: int = 1
+    eval_subject_min_interval_s: float = 3.0
     eval_judge_concurrency: int = 1
     eval_judge_min_interval_s: float = 3.0
     eval_judge_max_retries: int = 8
