@@ -44,14 +44,17 @@ class TechnicalAnswerValidationError(ValueError):
 
 
 def calibrate_technical_answer(answer: TechnicalAnswer) -> TechnicalAnswer:
-    """Deterministically weaken unsupported decisions that already require human review.
+    """Deterministically weaken unsupported decisions and require human review.
 
-    This never adds evidence or strengthens a model claim. Without an explicit human-review flag,
-    the strict validator still rejects the same object. With that flag, unsupported decision claims
-    remain visible as provisional supporting context and an unsupported conditional/negative
-    recommendation is rendered only as provisional orientation.
+    This never adds evidence or strengthens a model claim. An unsupported decision claim forces
+    human review regardless of the model's flag, remains visible only as provisional supporting
+    context, and weakens an unsupported conditional/negative recommendation to orientation.
     """
-    if not answer.needs_human_review:
+    unsupported_decision = any(
+        claim.criticality == "decision_relevant" and not claim.evidence_ids
+        for claim in answer.claims
+    )
+    if not unsupported_decision:
         return answer
     claims = [
         claim.model_copy(update={"criticality": "supporting"})
@@ -69,8 +72,17 @@ def calibrate_technical_answer(answer: TechnicalAnswer) -> TechnicalAnswer:
         and not has_evidenced_decision
     ):
         recommendation = recommendation.model_copy(update={"status": "provisional"})
+    prefix = "Vorläufige Einordnung ohne belastbaren Beleg: "
+    conclusion = answer.conclusion
+    if not conclusion.startswith(prefix):
+        conclusion = prefix + conclusion
     return answer.model_copy(
-        update={"claims": claims, "recommendation": recommendation}
+        update={
+            "claims": claims,
+            "recommendation": recommendation,
+            "conclusion": conclusion,
+            "needs_human_review": True,
+        }
     )
 
 

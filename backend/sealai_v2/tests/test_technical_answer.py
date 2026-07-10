@@ -124,15 +124,18 @@ def test_human_review_calibrates_unsupported_decisions_to_provisional():
     )
 
 
-def test_unsupported_decision_without_human_review_remains_fail_closed():
+def test_unsupported_decision_forces_conservative_human_review():
     payload = json.loads(_payload(evidence_ids=[]))
     payload["claims"][0]["criticality"] = "decision_relevant"
     answer = TechnicalAnswer.model_validate(payload)
 
     calibrated = calibrate_technical_answer(answer)
 
-    assert calibrated == answer
-    with pytest.raises(TechnicalAnswerValidationError):
-        validate_technical_answer(
-            calibrated, case_revision=7, allowed_evidence_ids=frozenset()
-        )
+    assert calibrated.needs_human_review is True
+    assert calibrated.claims[0].criticality == "supporting"
+    assert calibrated.conclusion.startswith(
+        "Vorläufige Einordnung ohne belastbaren Beleg:"
+    )
+    validate_technical_answer(
+        calibrated, case_revision=7, allowed_evidence_ids=frozenset()
+    )
