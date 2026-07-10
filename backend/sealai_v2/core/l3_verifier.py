@@ -559,23 +559,64 @@ def build_calc_leak_hedge(
     )
 
 
+_TRAP_PROVENANCE_RE = re.compile(r"trap-correct:([A-Z0-9_-]+)")
+
+
+def _matrix_correction_facts(
+    matrix_facts: tuple[GroundingFact, ...],
+    findings: tuple[VerifierFinding, ...],
+    *,
+    catalog: TrapCatalog | None = None,
+    question: str = "",
+    case_context: list[dict] | None = None,
+) -> list[str]:
+    by_id = {fact.card_id: fact for fact in matrix_facts if fact.card_id}
+    seen_cells: set[str] = set()
+    seen_traps: set[str] = set()
+    facts: list[str] = []
+    for finding in findings:
+        if finding.kind != "matrix" or finding.trap_id in seen_cells:
+            continue
+        cell = by_id.get(finding.trap_id)
+        if cell is None or not cell.text.strip():
+            continue
+        seen_cells.add(finding.trap_id)
+        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+        if catalog is None:
+            continue
+        provenance = " ".join((cell.quelle, *cell.sources))
+        for trap_id in _TRAP_PROVENANCE_RE.findall(provenance):
+            if trap_id in seen_traps:
+                continue
+            entry = catalog.by_id(trap_id)
+            if entry is None or not entry.reviewed or not entry.correct.strip():
+                continue
+            seen_traps.add(trap_id)
+            facts.append(
+                f"{_scoped_fact(entry, question, case_context)} "
+                f"[Quelle: geprüfter Fachfakt {trap_id}]"
+            )
+    return facts
+
+
 def build_matrix_correction_note(
-    matrix_facts: tuple[GroundingFact, ...], findings: tuple[VerifierFinding, ...]
+    matrix_facts: tuple[GroundingFact, ...],
+    findings: tuple[VerifierFinding, ...],
+    *,
+    catalog: TrapCatalog | None = None,
+    question: str = "",
+    case_context: list[dict] | None = None,
 ) -> str | None:
     """The §4-matrix-grounded correction for a regeneration (Gap #2, Step B) — built ONLY from the
     reviewed matrix cells that were flagged (integrity rule: the replacement fact is the reviewed
     cell's verdict text, never free-generated). Returns None when no flagged cell is available."""
-    by_id = {f.card_id: f for f in matrix_facts if f.card_id}
-    seen: set[str] = set()
-    facts: list[str] = []
-    for f in findings:
-        if f.kind != "matrix" or f.trap_id in seen:
-            continue
-        cell = by_id.get(f.trap_id)
-        if cell is None or not cell.text.strip():
-            continue
-        seen.add(f.trap_id)
-        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+    facts = _matrix_correction_facts(
+        matrix_facts,
+        findings,
+        catalog=catalog,
+        question=question,
+        case_context=case_context,
+    )
     if not facts:
         return None
     bullets = "\n".join(f"- {c}" for c in facts)
@@ -588,21 +629,22 @@ def build_matrix_correction_note(
 
 
 def build_matrix_hedge(
-    matrix_facts: tuple[GroundingFact, ...], findings: tuple[VerifierFinding, ...]
+    matrix_facts: tuple[GroundingFact, ...],
+    findings: tuple[VerifierFinding, ...],
+    *,
+    catalog: TrapCatalog | None = None,
+    question: str = "",
+    case_context: list[dict] | None = None,
 ) -> str:
     """Deterministic fail-closed fallback for a persisting matrix contradiction. States the reviewed
     verdict (L3 holds it) + the verify/no-release caveat; never echoes the draft's wrong claim."""
-    by_id = {f.card_id: f for f in matrix_facts if f.card_id}
-    seen: set[str] = set()
-    facts: list[str] = []
-    for f in findings:
-        if f.kind != "matrix" or f.trap_id in seen:
-            continue
-        cell = by_id.get(f.trap_id)
-        if cell is None or not cell.text.strip():
-            continue
-        seen.add(f.trap_id)
-        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+    facts = _matrix_correction_facts(
+        matrix_facts,
+        findings,
+        catalog=catalog,
+        question=question,
+        case_context=case_context,
+    )
     bullets = "\n".join(f"- {c}" for c in facts)
     return (
         "⚠️ Hier ist Vorsicht geboten. Nach geprüftem Verträglichkeits-Stand gilt:\n"
@@ -995,7 +1037,13 @@ async def run_verify(
         if trap_note is not None:
             notes.append(trap_note)
     if reviewed_mx:
-        mx_note = build_matrix_correction_note(matrix_facts, reviewed_mx)
+        mx_note = build_matrix_correction_note(
+            matrix_facts,
+            reviewed_mx,
+            catalog=catalog,
+            question=question,
+            case_context=case_context,
+        )
         if mx_note is not None:
             notes.append(mx_note)
 
@@ -1060,7 +1108,13 @@ async def run_verify(
             persisting_overlimit, computed_values=computed_values
         )
     elif persisting_mx or reviewed_mx:
-        hedge_text = build_matrix_hedge(matrix_facts, reviewed_mx or persisting_mx)
+        hedge_text = build_matrix_hedge(
+            matrix_facts,
+            reviewed_mx or persisting_mx,
+            catalog=catalog,
+            question=question,
+            case_context=case_context,
+        )
     elif reviewed or persisting_traps:
         hedge_text = build_hedge(
             reviewed or persisting_traps,

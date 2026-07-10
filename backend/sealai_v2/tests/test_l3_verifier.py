@@ -354,6 +354,26 @@ def test_hedge_states_reviewed_correct_fact_not_the_wrong_claim():
     assert "EPDM ist polar" not in h  # never the wrong claim/evidence
 
 
+def test_matrix_hedge_expands_reviewed_trap_provenance():
+    finding = VerifierFinding("MX-1", "confident_wrong", "reviewed", "x", kind="matrix")
+    matrix_fact = GroundingFact(
+        text="Kurzes Matrixverdikt.",
+        quelle="Matrix MX-1 (reviewed; trap-correct:R1)",
+        card_id="MX-1",
+    )
+
+    hedge = build_matrix_hedge(
+        (matrix_fact,),
+        (finding,),
+        catalog=_catalog(),
+        question="EPDM in Mineralöl",
+    )
+
+    assert "Kurzes Matrixverdikt" in hedge
+    assert "UNPOLAR" in hedge
+    assert "geprüfter Fachfakt R1" in hedge
+
+
 def test_user_facing_hedges_carry_no_l3_internals():
     """kern-fix-01: a user-facing hedge must read as a clean orientation — never expose the internal
     verifier ('L3' / 'Verifikation' / 'Falle … markiert'). The safety framing (Vorsicht + verifizieren
