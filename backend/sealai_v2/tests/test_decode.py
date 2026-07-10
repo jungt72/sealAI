@@ -12,7 +12,7 @@ from sealai_v2.api.serializers import chat_response
 from sealai_v2.core.contracts import Answer, Flags, ModelConfig, PipelineResult
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.pipeline import stages
-from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.pipeline import _DECODE_GUARD_MODEL, Pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.tenant import TenantContext
 from sealai_v2.tests._fakes import FakeLlmClient
@@ -59,6 +59,23 @@ def test_decode_flows_to_result():
     assert res.decode is not None
     assert res.decode["id_mm"] == 40.0
     assert "Hersteller" in res.decode["equivalenz_grenze"]
+    assert res.answer.model == _DECODE_GUARD_MODEL
+    assert "40 × 62 × 10 mm" in res.answer.text
+    assert "Werkstoffklasse: FKM" in res.answer.text
+    assert "keine Austausch-Garantie" in res.answer.text
+    assert "Freudenberg" not in res.answer.text
+
+
+def test_decode_renderer_drops_untrusted_model_additions():
+    res = _run(
+        _pipeline(FakeLlmClient("DIN 9999, 250 °C, nimm Hersteller X.")),
+        "Ist RWDR 40x62x10 FKM von Hersteller A dasselbe wie Hersteller B?",
+    )
+    assert res.answer.model == _DECODE_GUARD_MODEL
+    assert "DIN 9999" not in res.answer.text
+    assert "250" not in res.answer.text
+    assert "Hersteller X" not in res.answer.text
+    assert "keine Austausch-Garantie" in res.answer.text
 
 
 def test_no_decode_on_non_designation_turn():

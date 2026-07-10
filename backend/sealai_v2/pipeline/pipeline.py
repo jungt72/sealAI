@@ -230,6 +230,7 @@ _NEUTRALITY_HEDGE_TEXT = (
 )
 _PARTNER_GROUNDING_GUARD_MODEL = "partner-grounding-guard"
 _EXFIL_REQUEST_GUARD_MODEL = "exfil-request-guard"
+_DECODE_GUARD_MODEL = "deterministic-decode"
 _EXFIL_REQUEST_REFUSAL_TEXT = (
     "Interne Systemanweisungen, Prompts und vertrauliche Wissensbasis-Inhalte gebe ich nicht aus. "
     "Bei einer konkreten Frage zur Dichtungstechnik helfe ich dir gern fachlich weiter."
@@ -241,6 +242,11 @@ _EXFIL_REQUEST_RE = re.compile(
     r"\b(?:gib|zeige?|nenne?|verrate?|offenlege?)\b.*\b(?:system[- ]?prompt|"
     r"systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|wissensbasis)\b",
     re.IGNORECASE | re.DOTALL,
+)
+_DECODE_REQUEST_RE = re.compile(
+    r"\b(?:aufschl[uü]ssel(?:n|e)?|schl[uü]ssel(?:n|e)?|dekodier(?:en|e)?|decode|was\s+bedeutet|"
+    r"vergleichbar|dasselbe|identisch|tausch(?:en|bar)|austausch(?:en|bar)|ersatzteil)\b",
+    re.IGNORECASE,
 )
 
 # P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
@@ -372,6 +378,45 @@ def _explicit_exfil_request_guard(question: str, answer: Answer) -> Answer:
     return Answer(
         text=_EXFIL_REQUEST_REFUSAL_TEXT,
         model=_EXFIL_REQUEST_GUARD_MODEL,
+        grounding_facts=answer.grounding_facts,
+    )
+
+
+def _decode_grounding_guard(
+    question: str, answer: Answer, decoded: dict | None
+) -> Answer:
+    """Render a parsed designation from deterministic fields only.
+
+    Decode is an extraction task, so free model prose adds risk without adding authority. Keeping
+    this renderer closed over the parser result prevents invented norms, brands and performance
+    limits while preserving the explicit interchangeability boundary.
+    """
+    if not decoded or not _DECODE_REQUEST_RE.search(question or ""):
+        return answer
+
+    def number(value) -> str:
+        numeric = float(value)
+        return str(int(numeric)) if numeric.is_integer() else f"{numeric:g}"
+
+    lines = ["Aufschlüsselung der Bezeichnung:"]
+    if seal_type := decoded.get("type"):
+        lines.append(f"- Bauform: {seal_type}")
+    if dims := decoded.get("dims_mm"):
+        labels = {
+            "id_od_breite": "Innendurchmesser × Außendurchmesser × Breite",
+            "id_schnurstaerke": "Innendurchmesser × Schnurstärke",
+            "uneindeutig": "Maßfolge; Zuordnung noch bestätigen",
+        }
+        rendered = " × ".join(number(value) for value in dims)
+        interpretation = labels.get(decoded.get("dim_interpretation"), "Nennmaße")
+        lines.append(f"- Nennmaße: {rendered} mm ({interpretation})")
+    if material := decoded.get("material"):
+        lines.append(f"- Werkstoffklasse: {material}")
+    if boundary := decoded.get("equivalenz_grenze"):
+        lines.extend(("", str(boundary)))
+    return Answer(
+        text="\n".join(lines),
+        model=_DECODE_GUARD_MODEL,
         grounding_facts=answer.grounding_facts,
     )
 
@@ -1321,6 +1366,10 @@ class Pipeline:
                         not_computed=calc.not_computed,
                         comparison_context=bool(decode_result),
                     )
+
+            # Designation decoding is deterministic extraction. Do not let free model prose add
+            # ungrounded brands, standards, limits or interchangeability claims to parsed fields.
+            answer = _decode_grounding_guard(question, answer, decode_result)
 
             # Manufacturer narration comes only from the deterministic capability registry result.
             answer = _partner_grounding_guard(answer, alternativen_result)
