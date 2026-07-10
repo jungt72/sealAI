@@ -332,7 +332,8 @@ def test_settings_for_cell_applies_overrides():
     )
     assert s.l1_provider == "mistral" and s.l1_model == "mistral-small-4"
     assert (
-        s.verifier_model == "gpt-5.4-mini" and s.judge_model == "gpt-5.4-mini"
+        s.verifier_model == "gpt-5.4-mini"
+        and s.judge_model == "gpt-5.4-mini-2026-03-17"
     )  # untouched
 
 

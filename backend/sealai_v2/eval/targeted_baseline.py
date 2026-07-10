@@ -52,7 +52,10 @@ async def _amain(args) -> None:
     judge_cfg = ModelConfig(
         model=settings.judge_model,
         temperature=settings.judge_temperature,
+        max_output_tokens=settings.eval_judge_max_output_tokens,
         cache_key="sealai-v2-judge",
+        stage="judge",
+        reasoning_effort=settings.eval_judge_reasoning_effort,
     )
     fixtures = harness._load_calc_fixtures()
 

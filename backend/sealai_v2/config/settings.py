@@ -50,9 +50,7 @@ class Settings(BaseSettings):
     # --- model tiers: Small 4 standard, current broadly available OpenAI frontier for complex cases ---
     standard_model: str = "mistral-small-2603"
     l1_model: str = "gpt-5.5"
-    judge_model: str = (
-        "gpt-5.4-mini"  # current cost tier for deterministic eval scoring
-    )
+    judge_model: str = "gpt-5.4-mini-2026-03-17"
     helper_model: str = (
         "gpt-5.4-mini"  # soft `understand` intent — cheap, annotate-only
     )
@@ -95,6 +93,9 @@ class Settings(BaseSettings):
     # The judge returns a compact rubric JSON object. Bound its completion reservation so OpenAI's
     # TPM admission control reflects the actual response shape instead of an open-ended default.
     eval_judge_max_output_tokens: int = 512
+    # Rubric adherence is a bounded classification task. Low effort is both sufficient and
+    # materially faster than the model-family default; the human oracle remains final on facts.
+    eval_judge_reasoning_effort: str = "low"
     understand_enabled: bool = True
     # L3 is an always-on CORE trust layer (Prinzipien §2), NOT a feature flag. This toggle is an
     # incident-only kill-switch (default = enforced); set False only to restore service.

@@ -57,7 +57,9 @@ def test_paced_judge_serializes_and_spaces_concurrent_calls() -> None:
 
 
 def test_eval_judge_token_reservation_is_bounded() -> None:
-    assert Settings().eval_judge_max_output_tokens == 512
+    settings = Settings()
+    assert settings.eval_judge_max_output_tokens == 512
+    assert settings.eval_judge_reasoning_effort == "low"
 
 
 def test_eval_subject_pacing_defaults_are_conservative() -> None:

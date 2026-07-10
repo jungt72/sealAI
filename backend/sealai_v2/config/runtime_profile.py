@@ -58,6 +58,7 @@ _NON_BEHAVIOR_FIELDS = frozenset(
         "eval_judge_min_interval_s",
         "eval_judge_max_retries",
         "eval_judge_max_output_tokens",
+        "eval_judge_reasoning_effort",
         "database_url",
         "qdrant_url",
         "qdrant_api_key",
