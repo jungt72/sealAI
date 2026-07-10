@@ -26,8 +26,10 @@ from sealai_v2.pipeline.pipeline import (
     _EXFIL_HEDGE_TEXT,
     _NEUTRALITY_HEDGE_MODEL,
     _NEUTRALITY_HEDGE_TEXT,
+    _PARTNER_GROUNDING_GUARD_MODEL,
     _exfil_guard,
     _neutrality_override_guard,
+    _partner_grounding_guard,
     Pipeline,
 )
 from sealai_v2.prompts.assembler import PromptAssembler
@@ -210,3 +212,37 @@ def test_manufacturer_ranking_override_is_hedged_through_pipeline():
     assert res.answer.model == _NEUTRALITY_HEDGE_MODEL
     assert res.answer.text == _NEUTRALITY_HEDGE_TEXT
     assert "SealCorp" not in res.answer.text
+
+
+def test_ungrounded_partner_result_cannot_ship_model_invented_names():
+    draft = Answer(text="Nimm AlphaSeal oder BetaSeal.", model="fake-l1")
+    out = _partner_grounding_guard(
+        draft,
+        {
+            "grounded_data": False,
+            "hinweis": "Aktuell ist kein passender Partner gelistet.",
+            "neutralitaet": "Auswahl nach fachlicher Eignung.",
+        },
+    )
+    assert out.model == _PARTNER_GROUNDING_GUARD_MODEL
+    assert out.text == (
+        "Aktuell ist kein passender Partner gelistet.\n\n"
+        "Auswahl nach fachlicher Eignung."
+    )
+    assert "AlphaSeal" not in out.text and "BetaSeal" not in out.text
+
+
+def test_grounded_partner_result_renders_only_ranked_registry_rows():
+    draft = Answer(text="Nimm UnlistedSeal.", model="fake-l1")
+    out = _partner_grounding_guard(
+        draft,
+        {
+            "grounded_data": True,
+            "hersteller": [
+                {"firmenname": "ListedSeal", "werkstoffe": ["FKM", "NBR"]}
+            ],
+            "neutralitaet": "Capability-Ranking, unabhängig von Bezahlung.",
+        },
+    )
+    assert out.model == _PARTNER_GROUNDING_GUARD_MODEL
+    assert "ListedSeal" in out.text and "UnlistedSeal" not in out.text

@@ -228,6 +228,7 @@ _NEUTRALITY_HEDGE_TEXT = (
     "Temperatur, Druck, Dynamik und Wellenbedingungen; die konkrete Eignung bleibt anschließend "
     "per Datenblatt und Herstellerbestätigung zu verifizieren."
 )
+_PARTNER_GROUNDING_GUARD_MODEL = "partner-grounding-guard"
 
 # P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
@@ -305,6 +306,44 @@ def _neutrality_override_guard(question: str, answer: Answer) -> tuple[Answer, b
             grounding_facts=answer.grounding_facts,
         ),
         True,
+    )
+
+
+def _partner_grounding_guard(answer: Answer, alternatives: dict | None) -> Answer:
+    """Render manufacturer alternatives only from the authoritative partner result.
+
+    The registry stage already owns capability ranking and payment-neutrality. Replacing the free
+    model narration here prevents an empty/unassessed registry from being filled with remembered
+    brand names and prevents a grounded result from being reordered or supplemented by the model.
+    """
+    if alternatives is None:
+        return answer
+    neutral = str(alternatives.get("neutralitaet") or "").strip()
+    if not alternatives.get("grounded_data"):
+        hint = str(alternatives.get("hinweis") or "").strip()
+        text = "\n\n".join(part for part in (hint, neutral) if part)
+    else:
+        rows = alternatives.get("hersteller") or []
+        rendered = []
+        for row in rows:
+            name = str(row.get("firmenname") or "").strip()
+            capabilities = ", ".join(
+                str(item) for item in (row.get("werkstoffe") or []) if item
+            )
+            if name:
+                rendered.append(
+                    f"- {name}" + (f" — Werkstoffe: {capabilities}" if capabilities else "")
+                )
+        heading = "Passende Partner nach fachlicher Eignung (Partner/Anzeige):"
+        text = "\n".join([heading, *rendered])
+        if neutral:
+            text += f"\n\n{neutral}"
+    if not text:
+        return answer
+    return Answer(
+        text=text,
+        model=_PARTNER_GROUNDING_GUARD_MODEL,
+        grounding_facts=answer.grounding_facts,
     )
 
 
@@ -1253,6 +1292,9 @@ class Pipeline:
                         not_computed=calc.not_computed,
                         comparison_context=bool(decode_result),
                     )
+
+            # Manufacturer narration comes only from the deterministic capability registry result.
+            answer = _partner_grounding_guard(answer, alternativen_result)
 
             # Neutrality override guard: an explicit persistent/preferred manufacturer ranking is
             # replaced after the model/verifier chain and before any answer can ship.

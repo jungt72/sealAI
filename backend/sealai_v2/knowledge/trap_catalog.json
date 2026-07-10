@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v4",
+  "version": "trap_catalog_v5",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -185,6 +185,54 @@
       "retrieval_min_hits": 3,
       "tags": ["Getriebe", "Mineralöl", "NBR", "HNBR", "Staublippe"],
       "xrefs": ["TRAP-NBR-DAUERTEMP"]
+    },
+    {
+      "id": "POLICY-FKM-WASSER-KEIN-VERDIKT",
+      "trigger": "Eignungsfrage zu FKM in normalem Wasser bei Raumtemperatur ohne geprüften Matrix- oder Fachkartenbefund",
+      "wrong": [
+        "FKM in Wasser pauschal als geeignet bestätigen",
+        "FKM in Wasser pauschal als hydrolysegefährdet oder ungeeignet erklären",
+        "eine dokumentierte Verträglichkeit oder Unverträglichkeit behaupten, obwohl dafür kein geprüfter Befund vorliegt"
+      ],
+      "correct": "Für FKM in normalem Wasser bei Raumtemperatur liegt im geprüften Wissensstand kein belastbares Verträglichkeitsverdikt vor. Deshalb weder 'passt' noch 'unverträglich' behaupten. Zuerst Wasserqualität und Zusätze, Temperaturprofil, statische oder dynamische Belastung, Druck und Zulassungsanforderungen klären; anschließend den konkreten Compound gegen eine belastbare Beständigkeitstabelle beziehungsweise Herstellerdaten prüfen. Eine Dampf-/Heißwasser-Unverträglichkeit darf nicht auf kaltes Wasser übertragen werden.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:GC-KEINE-DATEN-FKM-WASSER-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["FKM", "Wasser", "Raumtemperatur", "normal"],
+      "retrieval_min_hits": 2,
+      "tags": ["FKM", "Wasser", "kein Verdikt"],
+      "xrefs": ["TRAP-FKM-DAMPF"]
+    },
+    {
+      "id": "POLICY-RWDR-GESCHWINDIGKEIT-MECHANISMUS",
+      "trigger": "Wissensfrage nach den Ausfallmechanismen eines RWDR bei zu hoher Umfangsgeschwindigkeit",
+      "wrong": [
+        "ungesicherte Temperatur-, Geschwindigkeits- oder Rauheitsgrenzen nennen",
+        "behaupten, die Elastomerhärte sinke bei thermo-oxidativer Verhärtung",
+        "nur eine Formel oder einen Fragenkatalog liefern, statt die Wirkzusammenhänge zu erklären"
+      ],
+      "correct": "Zu hohe Umfangsgeschwindigkeit erhöht Reibungswärme und beansprucht den Schmierfilm an der Dichtkante. Temperaturanstieg und Mangelschmierung beschleunigen Verschleiß und thermo-oxidative Alterung; die Lippe kann verhärten, Rückstellvermögen verlieren, verschleißen und schließlich lecken. Mitentscheidend sind Werkstoff und Lippenbauform, Medium/Schmierung, Temperaturabfuhr, Wellenoberfläche einschließlich Rauheit und Drall sowie Rundlauf/Exzentrizität. Keine eigene Grenzzahl nennen; konkrete Grenzen kommen nur aus Rechenkern, Datenblatt oder Herstellerangabe.",
+      "gates": ["confident_wrong", "invented_precision"],
+      "provenance": ["eval:BUX-WISSENSFRAGE-DEPTH-01(must_catch,must_avoid)", "calc_seed:umfangsgeschwindigkeit(reviewed)"],
+      "retrieval_terms": ["RWDR", "Umfangsgeschwindigkeit", "ausfällt", "ausfall", "warum", "zu hoch"],
+      "retrieval_min_hits": 2,
+      "tags": ["RWDR", "Umfangsgeschwindigkeit", "Wissensfrage"],
+      "xrefs": ["CALC-UMFANGSGESCHWINDIGKEIT", "TRAP-L1-PARAMETRIC-CALC"]
+    },
+    {
+      "id": "POLICY-DIAG-QUELLUNG-MATERIAL-OFFEN",
+      "trigger": "Quellung und Erweichung einer nicht identifizierten Dichtung in Mineralöl",
+      "wrong": [
+        "aus dem Symptom allein auf EPDM oder einen anderen konkreten Werkstoff schließen",
+        "einen Ersatzwerkstoff als sicher geeignet zusagen, bevor Altwerkstoff und Betriebsdaten geklärt sind",
+        "eine dokumentierte Einzelursache behaupten, obwohl der Werkstoff unbekannt ist"
+      ],
+      "correct": "Quellung und Erweichung sprechen für einen Medienangriff, identifizieren den Werkstoff aber nicht. Zuerst Altwerkstoff beziehungsweise Kennzeichnung, genaue Öl-/Additivspezifikation, Temperatur, Dauer und Belastungsart klären und den Befund gegen Beständigkeitsdaten prüfen. Nur falls EPDM tatsächlich bestätigt ist, gilt der reviewed Befund: EPDM quillt in Mineralöl grundsätzlich stark. Einen Ersatzwerkstoff erst als zu prüfenden Kandidatenraum und nicht als sichere Eignungszusage nennen.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:DIAG-QUELLUNG-MEDIUM-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["quillt", "Quellung", "weich", "Mineralöl"],
+      "retrieval_min_hits": 2,
+      "tags": ["Diagnose", "Quellung", "Werkstoff offen"],
+      "xrefs": ["TRAP-EPDM-MINERALOEL"]
     },
     {
       "id": "PREC-LEBENSDAUER",

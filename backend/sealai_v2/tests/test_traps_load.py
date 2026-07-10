@@ -12,7 +12,7 @@ from sealai_v2.knowledge.traps import load_traps, retrieve_reviewed_trap_facts
 def test_loads_production_catalog():
     cat = load_traps()
     assert cat.reviewed(), "expected reviewed entries"
-    assert cat.version == "trap_catalog_v4"
+    assert cat.version == "trap_catalog_v5"
 
 
 def test_every_entry_well_formed():
@@ -66,6 +66,18 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
         (
             "Belüftetes Getriebe, Mineralöl bei 80 °C und staubige Umgebung: sinnvoller Ansatz?",
             "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM",
+        ),
+        (
+            "Passt FKM in normalem Wasser bei Raumtemperatur?",
+            "POLICY-FKM-WASSER-KEIN-VERDIKT",
+        ),
+        (
+            "Warum fällt ein RWDR bei zu hoher Umfangsgeschwindigkeit aus?",
+            "POLICY-RWDR-GESCHWINDIGKEIT-MECHANISMUS",
+        ),
+        (
+            "Die Dichtung quillt in Mineralöl und wird weich. Was ist die Ursache?",
+            "POLICY-DIAG-QUELLUNG-MATERIAL-OFFEN",
         ),
     ],
 )
