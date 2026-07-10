@@ -139,3 +139,11 @@ def test_unsupported_decision_forces_conservative_human_review():
     validate_technical_answer(
         calibrated, case_revision=7, allowed_evidence_ids=frozenset()
     )
+
+
+def test_structured_answer_contract_caps_chat_density():
+    schema = TechnicalAnswer.model_json_schema()
+    props = schema["properties"]
+    assert props["assumptions"]["maxItems"] == 6
+    assert props["missing_information"]["maxItems"] == 6
+    assert props["claims"]["maxItems"] == 8

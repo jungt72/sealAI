@@ -103,6 +103,19 @@ def test_standard_technical_case_uses_small_model_plus_selective_verifier():
     assert decision.verification_mode is VerificationMode.CLAIM_LLM
 
 
+def test_reviewed_policy_fact_routes_decision_case_directly_to_frontier():
+    decision = decide_execution(
+        ExecutionFeatures(
+            route=_route(RouteName.ENGINEERING_CASE, forced=True, signals=1),
+            authoritative_evidence_count=1,
+            reviewed_policy_fact_count=1,
+        )
+    )
+    assert decision.execution_class is ExecutionClass.C2
+    assert decision.model_tier is ModelTier.FRONTIER
+    assert decision.needs_human_review is True
+
+
 def test_complex_context_routes_frontier_directly_without_cheap_first_attempt():
     decision = decide_execution(
         ExecutionFeatures(

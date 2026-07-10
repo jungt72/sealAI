@@ -52,6 +52,7 @@ class ExecutionFeatures:
     untrusted_content_count: int = 0
     has_diagnosis: bool = False
     exact_cache_hit: bool = False
+    reviewed_policy_fact_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,11 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "high_risk_with_unresolved_or_ungrounded_basis",
         )
 
-    if technical and (features.risk_flags or features.case_conflict_count):
+    if technical and (
+        features.risk_flags
+        or features.case_conflict_count
+        or features.reviewed_policy_fact_count
+    ):
         return ExecutionDecision(
             ExecutionClass.C2,
             ModelTier.FRONTIER,
@@ -126,7 +131,7 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             VerificationMode.DETERMINISTIC,
             StreamingMode.ATOMIC,
             True,
-            "decision_relevant_risk_or_conflict",
+            "decision_relevant_risk_conflict_or_policy_fact",
         )
 
     if (

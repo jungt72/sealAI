@@ -419,6 +419,49 @@ def evaluate_render(
     )
 
 
+def fail_closed_answer(contract: dict) -> str:
+    """Build a useful terminal fallback solely from contract-approved content.
+
+    This runs only after one failed regeneration. Every technical line is copied from an allowed
+    claim or required clause assembled by the kernel, so the fallback cannot invent a material,
+    number, source, or recommendation.
+    """
+    claims = list(contract.get("allowed_claims", ()))
+    priority = {"disqualify": 0, "caution": 1, "info": 2}
+    claims.sort(
+        key=lambda claim: (
+            priority.get(claim.get("severity"), 3),
+            claim.get("id", ""),
+        )
+    )
+    sections = [
+        "Die technische Antwort konnte auf Basis der geprüften Informationen nicht "
+        "widerspruchsfrei ausgegeben werden. Belastbar festhalten kann ich:"
+    ]
+    approved = [
+        claim.get("text", "").strip()
+        for claim in claims
+        if claim.get("text", "").strip()
+    ]
+    if approved:
+        sections.append("\n".join(f"- {text}" for text in approved[:3]))
+    else:
+        sections.append(
+            "Für eine belastbare technische Einordnung fehlen derzeit geprüfte Grundlagen."
+        )
+    required = [
+        str(clause).strip()
+        for clause in contract.get("required_clauses", ())
+        if str(clause).strip()
+    ]
+    sections.append(
+        "\n".join(required)
+        if required
+        else "Bitte die konkrete Auswahl gegen Datenblatt und Herstellerangaben prüfen."
+    )
+    return "\n\n".join(sections)
+
+
 def known_inputs(
     text: str, policy: ContractPolicy = DEFAULT_POLICY
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:

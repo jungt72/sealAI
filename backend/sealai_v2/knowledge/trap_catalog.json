@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v0",
+  "version": "trap_catalog_v1",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -226,6 +226,8 @@
       "correct": "Wenn Anforderungen konkurrieren, den Zielkonflikt offenlegen statt ein Schein-Optimum vortäuschen. Beispiel Aceton × 180 °C × günstig: Aceton greift NBR/FKM an; EPDM ist gegen Aceton ok, aber 180 °C dauerhaft grenzwertig; FFKM löst Chemie + Temperatur, ist aber teuer — kein günstiger Werkstoff erfüllt alle drei. Den Trade-off dem Nutzer/Hersteller überlassen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:CONFLICT-01(must_catch)"],
+      "retrieval_terms": ["Aceton", "180 °C", "günstig", "billig", "preiswert", "Kosten"],
+      "retrieval_min_hits": 3,
       "tags": ["Zielkonflikt", "Trade-off"],
       "xrefs": []
     },

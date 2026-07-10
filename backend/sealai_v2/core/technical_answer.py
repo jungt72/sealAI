@@ -20,7 +20,7 @@ class TechnicalRecommendation(BaseModel):
 
     summary: str = Field(max_length=1200)
     status: Literal["none", "provisional", "conditional", "not_recommended"]
-    conditions: list[str] = Field(max_length=12)
+    conditions: list[str] = Field(max_length=6)
 
 
 class TechnicalAnswer(BaseModel):
@@ -32,9 +32,9 @@ class TechnicalAnswer(BaseModel):
     intent: str = Field(min_length=1, max_length=120)
     case_revision: int = Field(ge=0)
     conclusion: str = Field(min_length=1, max_length=1800)
-    assumptions: list[str] = Field(max_length=20)
-    missing_information: list[str] = Field(max_length=20)
-    claims: list[TechnicalClaim] = Field(max_length=30)
+    assumptions: list[str] = Field(max_length=6)
+    missing_information: list[str] = Field(max_length=6)
+    claims: list[TechnicalClaim] = Field(max_length=8)
     recommendation: TechnicalRecommendation
     needs_human_review: bool
 

@@ -177,6 +177,27 @@ _SMALLTALK_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SMALLTALK_PREFIX_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|guten\s+(?:morgen|tag|abend)|danke|vielen\s+dank|"
+    r"tsch(?:u|ü)ss|auf\s+wiedersehen)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_smalltalk_shape(question: str) -> bool:
+    """Recognize a short social turn after engineering/security signals were ruled out.
+
+    The exact-match regex remains the narrow fast path. The prefix path covers natural courtesy
+    such as "Hallo, schön dass es euch gibt" without turning a greeting-prefixed engineering case
+    into a cheap route: callers invoke this only after ``detect_engineering_signals`` returned empty.
+    A length cap keeps open-ended requests on the conservative ambiguous route.
+    """
+    text = (question or "").strip()
+    return bool(
+        _SMALLTALK_RE.fullmatch(text)
+        or (len(text) <= 160 and _SMALLTALK_PREFIX_RE.match(text))
+    )
+
 _DOMAIN_KNOWLEDGE_RE = re.compile(
     r"\b(dichtung(?:stechnik)?|dichtungsart|wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
     r"o-?ring|hydraulikdichtung|werkstoff|elastomer|thermoplast|nut|dichtlippe|"
@@ -366,7 +387,7 @@ def classify_route_deterministic(
             forced_full_pipeline=True,
             deterministic_signal_count=len(signals),
         )
-    if _SMALLTALK_RE.fullmatch(question or ""):
+    if _is_smalltalk_shape(question):
         return RouteDecision(
             route=RouteName.SMALLTALK_NAVIGATION,
             reason="deterministic_smalltalk_shape",

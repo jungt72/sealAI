@@ -87,7 +87,11 @@ from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
 from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 from sealai_v2.knowledge.retrieval import InProcessRetriever
-from sealai_v2.knowledge.traps import TrapCatalog, load_traps
+from sealai_v2.knowledge.traps import (
+    TrapCatalog,
+    load_traps,
+    retrieve_reviewed_trap_facts,
+)
 from sealai_v2.memory.distiller import Distiller
 from sealai_v2.safety.risk_flags import detect_risk_flags
 from sealai_v2.memory.store import (
@@ -703,7 +707,8 @@ class Pipeline:
             )  # reviewed Fachkarten → compute + (Step A) verify
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
-            l1_grounding = grounding_facts + retrieval.matrix_facts
+            trap_facts = retrieve_reviewed_trap_facts(self.catalog, question)
+            l1_grounding = grounding_facts + retrieval.matrix_facts + trap_facts
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
@@ -964,6 +969,9 @@ class Pipeline:
                         untrusted_content_count=len(untrusted),
                         has_diagnosis=diagnosis is not None,
                         exact_cache_hit=cached_answer is not None,
+                        reviewed_policy_fact_count=sum(
+                            fact.kind == "trap" for fact in l1_grounding
+                        ),
                     )
                 )
                 if execution_decision.model_tier is ModelTier.NONE:
@@ -1099,6 +1107,7 @@ class Pipeline:
                 from sealai_v2.core.output_guard import (
                     correction_note as _guard_note,
                     evaluate_render as _guard_eval,
+                    fail_closed_answer as _guard_fallback,
                     known_inputs as _guard_known,
                 )
 
@@ -1156,6 +1165,12 @@ class Pipeline:
                         _gr2.action,
                         [v.kind for v in _gr.violations],
                     )
+                    if _gr2.action == "BLOCK":
+                        answer = Answer(
+                            text=_guard_fallback(_effective_contract),
+                            model="deterministic-output-guard",
+                            grounding_facts=l1_grounding,
+                        )
                     _gr = _gr2
                 guard = _gr.to_dict()
 
@@ -1330,7 +1345,7 @@ class Pipeline:
                     else False
                 ),
             ),
-            grounded=retrieval.grounded,
+            grounded=bool(l1_grounding),
             verified=verdict is not None,
             cited=False,
             verifier=verdict,

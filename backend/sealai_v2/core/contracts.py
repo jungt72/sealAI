@@ -218,9 +218,9 @@ class GroundingFact:
     # card_id. L1-NEUTRAL: the assembler renders only text+quelle, so this never reaches the prompt
     # (byte-identical) → no behavior change, no eval perturbation.
     sources: tuple[str, ...] = ()
-    # Gap #2: provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
-    # cell). L1-neutral (assembler renders text+quelle only). L3 uses it to apply the corrective policy:
-    # a matrix contradiction CORRECTS (reviewed cell), a card contradiction only FLAGs.
+    # Provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
+    # cell) | "trap" (owner-reviewed policy/failure-mode fact). L1-neutral (the assembler renders
+    # text+quelle only). L3 still receives matrix and trap catalogs through their dedicated lanes.
     kind: str = "card"
 
 

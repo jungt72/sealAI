@@ -55,6 +55,16 @@ def test_guard_regenerates_once_on_block():
     assert res.guard is not None and res.guard["action"] == "PASS"
 
 
+def test_guard_fails_closed_when_regeneration_is_still_blocked():
+    client = ScriptedFakeLlmClient([_LEAKY, _LEAKY])
+    res = _run(_pipeline(client))
+    assert len(client.calls) == 2
+    assert res.answer.model == "deterministic-output-guard"
+    assert _LEAKY not in res.answer.text
+    assert "FKM" in res.answer.text
+    assert res.guard is not None and res.guard["action"] == "BLOCK"
+
+
 def test_guard_passes_clean_first_time_no_regenerate():
     client = ScriptedFakeLlmClient(
         [_CLEAN]

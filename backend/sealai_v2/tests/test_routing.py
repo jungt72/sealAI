@@ -28,6 +28,20 @@ class TestSmalltalkNavigation:
             assert d.route == RouteName.SMALLTALK_NAVIGATION
             assert d.forced_full_pipeline is False
 
+    def test_natural_courtesy_after_greeting_routes_smalltalk(self) -> None:
+        d = classify_route(
+            "Hallo, schön dass es euch gibt!", intent=Intent.GESPRAECH
+        )
+        assert d.route == RouteName.SMALLTALK_NAVIGATION
+        assert d.forced_full_pipeline is False
+
+    def test_greeting_never_hides_engineering_signal(self) -> None:
+        d = classify_route(
+            "Hallo, ich brauche eine Dichtung für 150 °C.", intent=Intent.GESPRAECH
+        )
+        assert d.route == RouteName.ENGINEERING_CASE
+        assert d.forced_full_pipeline is True
+
 
 class TestGeneralAndMaterialKnowledge:
     def test_general_ptfe_knowledge_question_routes_material_knowledge(self) -> None:
