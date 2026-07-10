@@ -12,6 +12,8 @@ interface MdxProseProps {
   type: "medien" | "werkstoffe" | "wissen";
   slug: string;
   title: string;
+  /** Pre-formatted (server-side, de-DE) "Stand: ..." date — visible freshness signal matching the Article schema's dateModified. */
+  dateLabel?: string;
 }
 
 type RelatedLink = {
@@ -154,7 +156,7 @@ const TYPE_LABELS = {
   wissen: "Wissen",
 };
 
-export default function MdxProse({ content, type, slug, title }: MdxProseProps) {
+export default function MdxProse({ content, type, slug, title, dateLabel }: MdxProseProps) {
   // Mapping for Context-Link
   const contextParam = type === "medien" ? "medium" : type === "werkstoffe" ? "material" : "context";
   const relatedLinks = RELATED_LINKS[`${type}/${slug}`] ?? [];
@@ -162,7 +164,7 @@ export default function MdxProse({ content, type, slug, title }: MdxProseProps) 
 
   return (
     <article className="max-w-4xl mx-auto py-12 px-6">
-      <nav className="mb-8 flex flex-wrap items-center gap-2 text-sm text-muted-foreground" aria-label="Breadcrumb">
+      <nav className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground" aria-label="Breadcrumb">
         <Link href="/" className="font-medium hover:text-seal-blue">
           Startseite
         </Link>
@@ -173,6 +175,7 @@ export default function MdxProse({ content, type, slug, title }: MdxProseProps) 
         <span aria-hidden="true">/</span>
         <span className="font-medium text-foreground">{title}</span>
       </nav>
+      {dateLabel ? <p className="mb-8 text-xs font-medium uppercase tracking-wide text-muted-foreground">Stand: {dateLabel}</p> : null}
       <div className="prose-clean">
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]}

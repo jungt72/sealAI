@@ -48,6 +48,37 @@ def test_metering_keys_by_model_and_ignores_none_usage():
     )
 
 
+def test_metering_preserves_provider_native_structured_output():
+    class StructuredFake:
+        def __init__(self):
+            self.calls = []
+
+        async def generate_structured(self, **kwargs):
+            self.calls.append(kwargs)
+            return LlmResult(
+                text='{"answer":"ok"}',
+                model=kwargs["model_config"].model,
+                usage=TokenUsage(20, 5, 25),
+            )
+
+    inner = StructuredFake()
+    meter = TokenMeter()
+    subject = MeteringLlmClient(inner, meter)
+    result = asyncio.run(
+        subject.generate_structured(
+            system="S",
+            user="U",
+            model_config=ModelConfig("structured-model"),
+            schema_name="answer",
+            json_schema={"type": "object"},
+        )
+    )
+
+    assert result.text == '{"answer":"ok"}'
+    assert inner.calls[0]["schema_name"] == "answer"
+    assert meter.by_model["structured-model"]["total_tokens"] == 25
+
+
 # --- judge is metered-EXCLUDED and uses its own client ------------------------------------
 
 
@@ -332,7 +363,8 @@ def test_settings_for_cell_applies_overrides():
     )
     assert s.l1_provider == "mistral" and s.l1_model == "mistral-small-4"
     assert (
-        s.verifier_model == "gpt-5.1" and s.judge_model == "gpt-5.4-mini"
+        s.verifier_model == "gpt-5.4-mini"
+        and s.judge_model == "gpt-5.4-mini-2026-03-17"
     )  # untouched
 
 
@@ -430,6 +462,7 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
         "quality_tolerance": 0.0,
         "rates_usd_per_mtok": {
             "gpt-5.1": {"in": 1.0, "out": 2.0},
+            "gpt-5.5": {"in": 1.0, "out": 2.0},
             "gpt-5.4-mini": {"in": 0.1, "out": 0.2},
             "mistral-small-4": {"in": 0.05, "out": 0.1},
         },

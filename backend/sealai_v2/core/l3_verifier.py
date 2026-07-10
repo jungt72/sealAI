@@ -22,6 +22,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, replace
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.core.calc.leak_detector import LeakFinding, detect_parametric_leaks
 from sealai_v2.core.equivalence_guard import (
@@ -45,7 +48,12 @@ from sealai_v2.core.contracts import (
     VerifierVerdict,
 )
 from sealai_v2.core.text_match import query_tokens, tag_matches
-from sealai_v2.knowledge.traps import TrapCatalog, TrapEntry
+from sealai_v2.knowledge.traps import (
+    TrapCatalog,
+    TrapEntry,
+    reviewed_trap_retrieval_matches,
+)
+from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 
 _HEDGE_MODEL = "l3-hedge"  # sentinel: the hedge is deterministic, not model-generated
 
@@ -121,11 +129,40 @@ class _RawVerdict:
     raw: str
 
 
-def _trap_payload(catalog: TrapCatalog) -> list[dict]:
-    """All catalog entries as delimited DATA for the prompt (reviewed first). ``review_state`` is
-    NOT sent — the model judges the claim; the review state is applied server-side on parse."""
+class _VerifierFindingOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    violated: bool
+    evidence: str = Field(default="", max_length=400)
+    trap_id: str = ""
+    gate: str = ""
+    card_contradiction: bool = False
+    card_id: str = ""
+    matrix_contradiction: bool = False
+    cell_id: str = ""
+    calc_violation: bool = False
+    calc: str = ""
+
+
+class _VerifierOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[_VerifierFindingOutput] = Field(default_factory=list, max_length=64)
+    verdict: Literal["clean", "violation"]
+
+
+def _trap_payload(catalog: TrapCatalog, question: str = "") -> list[dict]:
+    """Relevant catalog entries as delimited DATA for the prompt (reviewed first).
+
+    Entries carrying owner-curated ``retrieval_terms`` are high-precision policies and are visible
+    to L3 only when the same deterministic activation used for L1 prefetch matches. Broad traps
+    without this optional surface retain the historical catalog-wide behavior. ``review_state`` is
+    not sent; it is applied server-side during parsing.
+    """
     out: list[dict] = []
     for e in (*catalog.reviewed(), *catalog.drafts()):
+        if e.retrieval_terms and not reviewed_trap_retrieval_matches(e, question):
+            continue
         out.append(
             {
                 "id": e.id,
@@ -175,8 +212,10 @@ class L3Verifier:
             {"cell_id": f.card_id, "text": f.text, "quelle": f.quelle}
             for f in matrix_facts
         ]
+        trap_payload = _trap_payload(self._catalog, question)
+        active_trap_ids = frozenset(item["id"] for item in trap_payload)
         system = self._assembler.verifier_system_prompt(
-            traps=_trap_payload(self._catalog),
+            traps=trap_payload,
             grounding_facts=gf_payload,
             computed_values=cv_payload,
             matrix_facts=mx_payload,
@@ -187,9 +226,19 @@ class L3Verifier:
             "Prüfe die Entwurfsantwort gegen den Fallen-Katalog, die geerdeten Fakten, die "
             "Verträglichkeits-Matrix und die berechneten Werte und gib NUR das JSON zurück."
         )
-        res = await self._client.generate(
-            system=system, user=user, model_config=self._model_config
-        )
+        try:
+            _, res = await generate_structured(
+                self._client,
+                output_type=_VerifierOutput,
+                schema_name="sealingai_verifier",
+                system=system,
+                user=user,
+                model_config=self._model_config,
+                # run_verify already owns the single verifier retry; avoid nested repair loops.
+                max_repairs=0,
+            )
+        except StructuredOutputError:
+            return _RawVerdict(findings=(), parse_ok=False, raw="")
         card_ids = frozenset(f.card_id for f in grounding_facts if f.card_id)
         calc_refs = frozenset(
             [c.name for c in computed_values] + [c.calc_id for c in computed_values]
@@ -201,6 +250,7 @@ class L3Verifier:
             card_ids=card_ids,
             calc_refs=calc_refs,
             matrix_ids=matrix_ids,
+            active_trap_ids=active_trap_ids,
         )
 
     def _parse(
@@ -210,6 +260,7 @@ class L3Verifier:
         card_ids: frozenset[str] = frozenset(),
         calc_refs: frozenset[str] = frozenset(),
         matrix_ids: frozenset[str] = frozenset(),
+        active_trap_ids: frozenset[str] | None = None,
     ) -> _RawVerdict:
         raw = (raw or "").strip()
         try:
@@ -275,6 +326,8 @@ class L3Verifier:
             entry = self._catalog.by_id(str(item.get("trap_id", "")))
             if entry is None:
                 continue  # never trust an id the catalog doesn't know
+            if active_trap_ids is not None and entry.id not in active_trap_ids:
+                continue  # never accept a policy id that was not shown for this question
             if is_precision_overapplication(entry.id, evidence, draft):
                 continue  # range + verify-caveat respects 'Einzelzahl OHNE Bereich' → L3 over-applied
             gate = str(item.get("gate", ""))
@@ -523,23 +576,64 @@ def build_calc_leak_hedge(
     )
 
 
+_TRAP_PROVENANCE_RE = re.compile(r"trap-correct:([A-Z0-9_-]+)")
+
+
+def _matrix_correction_facts(
+    matrix_facts: tuple[GroundingFact, ...],
+    findings: tuple[VerifierFinding, ...],
+    *,
+    catalog: TrapCatalog | None = None,
+    question: str = "",
+    case_context: list[dict] | None = None,
+) -> list[str]:
+    by_id = {fact.card_id: fact for fact in matrix_facts if fact.card_id}
+    seen_cells: set[str] = set()
+    seen_traps: set[str] = set()
+    facts: list[str] = []
+    for finding in findings:
+        if finding.kind != "matrix" or finding.trap_id in seen_cells:
+            continue
+        cell = by_id.get(finding.trap_id)
+        if cell is None or not cell.text.strip():
+            continue
+        seen_cells.add(finding.trap_id)
+        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+        if catalog is None:
+            continue
+        provenance = " ".join((cell.quelle, *cell.sources))
+        for trap_id in _TRAP_PROVENANCE_RE.findall(provenance):
+            if trap_id in seen_traps:
+                continue
+            entry = catalog.by_id(trap_id)
+            if entry is None or not entry.reviewed or not entry.correct.strip():
+                continue
+            seen_traps.add(trap_id)
+            facts.append(
+                f"{_scoped_fact(entry, question, case_context)} "
+                f"[Quelle: geprüfter Fachfakt {trap_id}]"
+            )
+    return facts
+
+
 def build_matrix_correction_note(
-    matrix_facts: tuple[GroundingFact, ...], findings: tuple[VerifierFinding, ...]
+    matrix_facts: tuple[GroundingFact, ...],
+    findings: tuple[VerifierFinding, ...],
+    *,
+    catalog: TrapCatalog | None = None,
+    question: str = "",
+    case_context: list[dict] | None = None,
 ) -> str | None:
     """The §4-matrix-grounded correction for a regeneration (Gap #2, Step B) — built ONLY from the
     reviewed matrix cells that were flagged (integrity rule: the replacement fact is the reviewed
     cell's verdict text, never free-generated). Returns None when no flagged cell is available."""
-    by_id = {f.card_id: f for f in matrix_facts if f.card_id}
-    seen: set[str] = set()
-    facts: list[str] = []
-    for f in findings:
-        if f.kind != "matrix" or f.trap_id in seen:
-            continue
-        cell = by_id.get(f.trap_id)
-        if cell is None or not cell.text.strip():
-            continue
-        seen.add(f.trap_id)
-        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+    facts = _matrix_correction_facts(
+        matrix_facts,
+        findings,
+        catalog=catalog,
+        question=question,
+        case_context=case_context,
+    )
     if not facts:
         return None
     bullets = "\n".join(f"- {c}" for c in facts)
@@ -552,21 +646,22 @@ def build_matrix_correction_note(
 
 
 def build_matrix_hedge(
-    matrix_facts: tuple[GroundingFact, ...], findings: tuple[VerifierFinding, ...]
+    matrix_facts: tuple[GroundingFact, ...],
+    findings: tuple[VerifierFinding, ...],
+    *,
+    catalog: TrapCatalog | None = None,
+    question: str = "",
+    case_context: list[dict] | None = None,
 ) -> str:
     """Deterministic fail-closed fallback for a persisting matrix contradiction. States the reviewed
     verdict (L3 holds it) + the verify/no-release caveat; never echoes the draft's wrong claim."""
-    by_id = {f.card_id: f for f in matrix_facts if f.card_id}
-    seen: set[str] = set()
-    facts: list[str] = []
-    for f in findings:
-        if f.kind != "matrix" or f.trap_id in seen:
-            continue
-        cell = by_id.get(f.trap_id)
-        if cell is None or not cell.text.strip():
-            continue
-        seen.add(f.trap_id)
-        facts.append(f"{cell.text.strip()} [Quelle: {cell.quelle}]")
+    facts = _matrix_correction_facts(
+        matrix_facts,
+        findings,
+        catalog=catalog,
+        question=question,
+        case_context=case_context,
+    )
     bullets = "\n".join(f"- {c}" for c in facts)
     return (
         "⚠️ Hier ist Vorsicht geboten. Nach geprüftem Verträglichkeits-Stand gilt:\n"
@@ -861,6 +956,7 @@ async def run_verify(
     conversation_window: list[dict] | None = None,
     untrusted: list[dict] | None = None,
     comparison_context: bool = False,
+    case_revision: int = 0,
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
@@ -892,8 +988,14 @@ async def run_verify(
         )
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
     overlimit = detect_velocity_over_limit(draft.text, computed_values=computed_values)
+    verifier_subject = (
+        "Entscheidungsrelevante technische Claims:\n"
+        + "\n".join(f"- {claim}" for claim in draft.verification_claims)
+        if draft.verification_claims
+        else draft.text
+    )
     raw = await verifier.verify(
-        question, draft.text, grounding_facts, computed_values, matrix_facts
+        question, verifier_subject, grounding_facts, computed_values, matrix_facts
     )
     # P0.1 fail-closed: the LLM verdict IS the catalog/matrix trap net. If it did not parse, that net
     # did NOT run — a no-findings PASS here would ship an UNVERIFIED draft as if clean (the §2/§9
@@ -901,7 +1003,7 @@ async def run_verify(
     # not parse, treat verification as UNAVAILABLE and fail closed to a hedge below — never PASS.
     if not raw.parse_ok:
         raw = await verifier.verify(
-            question, draft.text, grounding_facts, computed_values, matrix_facts
+            question, verifier_subject, grounding_facts, computed_values, matrix_facts
         )
     verify_unavailable = not raw.parse_ok
     # Eingriff 2: the CALC-velocity trap only counts when the kern computed a v verdict this turn.
@@ -952,7 +1054,13 @@ async def run_verify(
         if trap_note is not None:
             notes.append(trap_note)
     if reviewed_mx:
-        mx_note = build_matrix_correction_note(matrix_facts, reviewed_mx)
+        mx_note = build_matrix_correction_note(
+            matrix_facts,
+            reviewed_mx,
+            catalog=catalog,
+            question=question,
+            case_context=case_context,
+        )
         if mx_note is not None:
             notes.append(mx_note)
 
@@ -972,6 +1080,7 @@ async def run_verify(
             conversation_window=conversation_window,
             untrusted=untrusted,
             correction_note="\n\n".join(notes),
+            case_revision=case_revision,
         )
         persisting_leaks = detect_parametric_leaks(
             regen.text, computed_values=computed_values
@@ -979,8 +1088,14 @@ async def run_verify(
         persisting_overlimit = detect_velocity_over_limit(
             regen.text, computed_values=computed_values
         )
+        regen_subject = (
+            "Entscheidungsrelevante technische Claims:\n"
+            + "\n".join(f"- {claim}" for claim in regen.verification_claims)
+            if regen.verification_claims
+            else regen.text
+        )
         raw2 = await verifier.verify(
-            question, regen.text, grounding_facts, computed_values, matrix_facts
+            question, regen_subject, grounding_facts, computed_values, matrix_facts
         )
         scoped2 = scope_calc_velocity_trap(raw2.findings, computed_values)
         persisting_traps = _reviewed_traps(scoped2)
@@ -1010,7 +1125,13 @@ async def run_verify(
             persisting_overlimit, computed_values=computed_values
         )
     elif persisting_mx or reviewed_mx:
-        hedge_text = build_matrix_hedge(matrix_facts, reviewed_mx or persisting_mx)
+        hedge_text = build_matrix_hedge(
+            matrix_facts,
+            reviewed_mx or persisting_mx,
+            catalog=catalog,
+            question=question,
+            case_context=case_context,
+        )
     elif reviewed or persisting_traps:
         hedge_text = build_hedge(
             reviewed or persisting_traps,

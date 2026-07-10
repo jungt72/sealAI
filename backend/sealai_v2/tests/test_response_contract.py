@@ -168,7 +168,13 @@ def test_allowed_values_from_calc_computed():
     )
     vals = _contract(V_COMPATIBLE, [_matrix_fact()], calc=calc).allowed_values
     assert vals == (
-        {"name": "pv", "value": 3.2, "unit": "N/(mm·s)", "calc_id": "pv_wert"},
+        {
+            "name": "pv",
+            "value": 3.2,
+            "unit": "N/(mm·s)",
+            "calc_id": "pv_wert",
+            "warnings": [],
+        },
     )
 
 
@@ -248,7 +254,13 @@ def test_guard_contract_allowed_values_from_calc_computed():
         c is not None
     )  # a computed value alone is evidence, even with zero grounding_facts
     assert c.allowed_values == (
-        {"name": "pv", "value": 3.2, "unit": "N/(mm·s)", "calc_id": "pv_wert"},
+        {
+            "name": "pv",
+            "value": 3.2,
+            "unit": "N/(mm·s)",
+            "calc_id": "pv_wert",
+            "warnings": [],
+        },
     )
 
 

@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v0",
+  "version": "trap_catalog_v5",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -77,12 +77,14 @@
         "Angriff durch Amine/Laugen/Ketone übersehen",
         "Temperatur-/Konzentrationsabhängigkeit der Laugenbeständigkeit ignoriert"
       ],
-      "correct": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Je nach Fall EPDM oder FFKM. Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
-      "correct_general": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt.",
+      "correct": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Je nach Fall EPDM oder FFKM. Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt. Ein Erfolg im Vorprojekt ist nicht übertragbar, wenn dort ein anderes Medium vorlag.",
+      "correct_general": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen; bei Laugen sinkt die Beständigkeit mit Konzentration und Temperatur (Lauge × 200 °C versagt). Die Kombination kippt FKM, obwohl jede Achse einzeln 'ok' klingt. Ein Erfolg im Vorprojekt ist nicht übertragbar, wenn dort ein anderes Medium vorlag.",
       "correct_recommendation": "Je nach Fall EPDM oder FFKM.",
       "applies_to": ["amin", "amine", "lauge", "base", "keton", "ester", "kühlmittel", "inhibitor"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:COMBO-01(must_catch)", "eval:DEFAULT-03(must_catch)"],
+      "retrieval_terms": ["FKM", "Amin", "aminhaltig", "Lauge", "Natronlauge", "Kühlmittel", "Vorprojekt", "200 °C"],
+      "retrieval_min_hits": 2,
       "tags": ["FKM", "Amin", "Lauge"],
       "xrefs": []
     },
@@ -137,6 +139,102 @@
       "xrefs": ["TRAP-EPDM-MINERALOEL"]
     },
     {
+      "id": "POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
+      "trigger": "Werkstoffauswahl bei nur allgemein bezeichnetem Synthetiköl, dessen genaue Sorte/Basis unbekannt ist",
+      "wrong": [
+        "eine Werkstofffamilie als passend festlegen, obwohl die Synthetiköl-Basis unbekannt ist",
+        "aus Temperatur oder Geschwindigkeit allein eine Elastomer-Verträglichkeit ableiten",
+        "eine konkrete Verträglichkeits- oder Temperaturgrenze ohne passende geprüfte Quelle nennen"
+      ],
+      "correct": "Die Bezeichnung 'Synthetiköl' reicht für eine Werkstoffwahl nicht aus: PAO-, Ester-, PAG- oder Silikonbasis und das Additivpaket können Elastomere unterschiedlich angreifen. Solange die genaue Ölklasse und das Produktdatenblatt fehlen, bleiben Werkstofffamilie sowie Verträglichkeits- und Temperaturgrenze ausdrücklich OFFEN; keine Familie als passend bestätigen. Zuerst Öltyp/Basis und Additivpaket klären, dann Kandidaten gegen die konkrete Beständigkeitstabelle prüfen. Wellendaten oder eine genannte Gleitgeschwindigkeit lösen diese chemische Unklarheit nicht.",
+      "gates": ["confident_wrong", "invented_precision"],
+      "provenance": ["eval:LOES-UNKLARES-MEDIUM-KEIN-MATERIAL-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["Synthetiköl", "Sorte", "weiß", "unbekannt", "unklar"],
+      "retrieval_min_hits": 2,
+      "tags": ["Synthetiköl", "Medium unbekannt", "Werkstoff offen"],
+      "xrefs": ["TRAP-NBR-DAUERTEMP"]
+    },
+    {
+      "id": "POLICY-SCHOKO-CIP-WERKSTOFF-OFFEN",
+      "trigger": "Schokoladen-Rührwerk mit Produktkontakt, taumelnder Welle und noch unbekannter CIP-Chemie",
+      "wrong": [
+        "FKM, VMQ, FFKM oder eine andere Werkstofffamilie als passend festlegen, bevor die CIP-Chemie bekannt ist",
+        "eine Lebensmittelzulassung für eine nicht konkret belegte Ausführung behaupten",
+        "nur einen Werkstoff nennen, ohne den hygienischen Dichtungstyp und die Taumelproblematik zu erarbeiten"
+      ],
+      "correct": "Für ein Schokoladen-Rührwerk mit taumelnder Welle ist eine hygienische doppeltwirkende Gleitringdichtung mit geeignetem Sperr-/Barrieremedium der naheliegende Dichtungstyp-Kandidat; eine einfache Lippenlösung ist wegen Taumeln, Hygiene und Produktkontakt kritisch. Der Werkstoff bleibt jedoch OFFEN, bis genaue CIP-Chemie und -Temperatur, Wellenauslenkung/Rundlauf, Zulassungsumfang, Bauraum und akzeptable Leckage geklärt sind. Keine Werkstofffamilie als passend und keine konkrete Zulassung behaupten; die konkrete Ausführung anschließend per Datenblatt und Herstellerfreigabe verifizieren.",
+      "gates": ["invented_precision", "confident_wrong"],
+      "provenance": ["eval:LOES-SCHOKO-NICHT-ABSCHIEBEN-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["Schoko", "Schokolade", "Rührwerk", "CIP", "taumelt", "taumeln"],
+      "retrieval_min_hits": 3,
+      "tags": ["Schokolade", "CIP", "Rührwerk", "Werkstoff offen"],
+      "xrefs": ["TRAP-FOODGRADE-FETT"]
+    },
+    {
+      "id": "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM",
+      "trigger": "Ausreichend geklärter Getriebefall mit Mineralöl, moderater Temperatur und staubiger Umgebung",
+      "wrong": [
+        "NBR als freigegeben oder sicher passend zusagen",
+        "NBR als einzigen Werkstoff festlegen, ohne HNBR als Reserve-Kandidaten zu prüfen",
+        "den Staubschutz oder die Auslegungs-Prüfpunkte weglassen"
+      ],
+      "correct": "Für ein belüftetes Getriebe mit Mineralöl bei 80 °C und staubiger Umgebung ist ein RWDR mit Staublippe/AS-Ausführung die sinnvolle Grundrichtung. NBR und HNBR bilden einen zu prüfenden Kandidatenraum; NBR ist keine Freigabe-Zusage, HNBR ist als Temperatur-/Alterungsreserve mitzuprüfen. Vor der Auswahl sind Wellenzustand (Härte, Rauheit, Drall, Rundlauf), Schmierfilm beziehungsweise Fettfüllung zwischen Haupt- und Staublippe, Entlüftung/Differenzdruck und die konkrete Compound-Beständigkeit zu verifizieren.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:LOES-ERARBEITEN-NICHT-NUR-FRAGEN-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["Getriebe", "Mineralöl", "80 °C", "Staub", "staubig", "belüftet"],
+      "retrieval_min_hits": 3,
+      "tags": ["Getriebe", "Mineralöl", "NBR", "HNBR", "Staublippe"],
+      "xrefs": ["TRAP-NBR-DAUERTEMP"]
+    },
+    {
+      "id": "POLICY-FKM-WASSER-KEIN-VERDIKT",
+      "trigger": "Eignungsfrage zu FKM in normalem Wasser bei Raumtemperatur ohne geprüften Matrix- oder Fachkartenbefund",
+      "wrong": [
+        "FKM in Wasser pauschal als geeignet bestätigen",
+        "FKM in Wasser pauschal als hydrolysegefährdet oder ungeeignet erklären",
+        "eine dokumentierte Verträglichkeit oder Unverträglichkeit behaupten, obwohl dafür kein geprüfter Befund vorliegt"
+      ],
+      "correct": "Für FKM in normalem Wasser bei Raumtemperatur liegt im geprüften Wissensstand kein belastbares Verträglichkeitsverdikt vor. Deshalb weder 'passt' noch 'unverträglich' behaupten. Zuerst Wasserqualität und Zusätze, Temperaturprofil, statische oder dynamische Belastung, Druck und Zulassungsanforderungen klären; anschließend den konkreten Compound gegen eine belastbare Beständigkeitstabelle beziehungsweise Herstellerdaten prüfen. Eine Dampf-/Heißwasser-Unverträglichkeit darf nicht auf kaltes Wasser übertragen werden.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:GC-KEINE-DATEN-FKM-WASSER-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["FKM", "Wasser", "Raumtemperatur", "normal"],
+      "retrieval_min_hits": 2,
+      "tags": ["FKM", "Wasser", "kein Verdikt"],
+      "xrefs": ["TRAP-FKM-DAMPF"]
+    },
+    {
+      "id": "POLICY-RWDR-GESCHWINDIGKEIT-MECHANISMUS",
+      "trigger": "Wissensfrage nach den Ausfallmechanismen eines RWDR bei zu hoher Umfangsgeschwindigkeit",
+      "wrong": [
+        "ungesicherte Temperatur-, Geschwindigkeits- oder Rauheitsgrenzen nennen",
+        "behaupten, die Elastomerhärte sinke bei thermo-oxidativer Verhärtung",
+        "nur eine Formel oder einen Fragenkatalog liefern, statt die Wirkzusammenhänge zu erklären"
+      ],
+      "correct": "Zu hohe Umfangsgeschwindigkeit erhöht Reibungswärme und beansprucht den Schmierfilm an der Dichtkante. Temperaturanstieg und Mangelschmierung beschleunigen Verschleiß und thermo-oxidative Alterung; die Lippe kann verhärten, Rückstellvermögen verlieren, verschleißen und schließlich lecken. Mitentscheidend sind Werkstoff und Lippenbauform, Medium/Schmierung, Temperaturabfuhr, Wellenoberfläche einschließlich Rauheit und Drall sowie Rundlauf/Exzentrizität. Keine eigene Grenzzahl nennen; konkrete Grenzen kommen nur aus Rechenkern, Datenblatt oder Herstellerangabe.",
+      "gates": ["confident_wrong", "invented_precision"],
+      "provenance": ["eval:BUX-WISSENSFRAGE-DEPTH-01(must_catch,must_avoid)", "calc_seed:umfangsgeschwindigkeit(reviewed)"],
+      "retrieval_terms": ["RWDR", "Umfangsgeschwindigkeit", "ausfällt", "ausfall", "warum", "zu hoch"],
+      "retrieval_min_hits": 2,
+      "tags": ["RWDR", "Umfangsgeschwindigkeit", "Wissensfrage"],
+      "xrefs": ["CALC-UMFANGSGESCHWINDIGKEIT", "TRAP-L1-PARAMETRIC-CALC"]
+    },
+    {
+      "id": "POLICY-DIAG-QUELLUNG-MATERIAL-OFFEN",
+      "trigger": "Quellung und Erweichung einer nicht identifizierten Dichtung in Mineralöl",
+      "wrong": [
+        "aus dem Symptom allein auf EPDM oder einen anderen konkreten Werkstoff schließen",
+        "einen Ersatzwerkstoff als sicher geeignet zusagen, bevor Altwerkstoff und Betriebsdaten geklärt sind",
+        "eine dokumentierte Einzelursache behaupten, obwohl der Werkstoff unbekannt ist"
+      ],
+      "correct": "Quellung und Erweichung sprechen für einen Medienangriff, identifizieren den Werkstoff aber nicht. Zuerst Altwerkstoff beziehungsweise Kennzeichnung, genaue Öl-/Additivspezifikation, Temperatur, Dauer und Belastungsart klären und den Befund gegen Beständigkeitsdaten prüfen. Nur falls EPDM tatsächlich bestätigt ist, gilt der reviewed Befund: EPDM quillt in Mineralöl grundsätzlich stark. Einen Ersatzwerkstoff erst als zu prüfenden Kandidatenraum und nicht als sichere Eignungszusage nennen.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:DIAG-QUELLUNG-MEDIUM-01(must_catch,must_avoid)"],
+      "retrieval_terms": ["quillt", "Quellung", "weich", "Mineralöl"],
+      "retrieval_min_hits": 2,
+      "tags": ["Diagnose", "Quellung", "Werkstoff offen"],
+      "xrefs": ["TRAP-EPDM-MINERALOEL"]
+    },
+    {
       "id": "PREC-LEBENSDAUER",
       "trigger": "Anfrage nach konkreter Betriebsstunden-/Lebensdauerzahl oder einer künftigen Performance-Vorhersage (Lebensdauer, Verschleiß-/Leckagerate, Wartungsintervall; z. B. RWDR bei n U/min)",
       "wrong": [
@@ -184,6 +282,8 @@
       "correct": "Differenzieren statt pauschal: für viele Medien-Werkstoff-Paare (z. B. FKM × organische Säuren) entscheiden Konzentration und Temperatur — verdünnt evtl. ok, konzentriert/heiß problematisch. Nach Konzentration und Temperatur fragen und auf die Beständigkeitstabelle des konkreten Compounds verweisen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:UNCERT-03(must_catch)"],
+      "retrieval_terms": ["FKM", "Essigsäure"],
+      "retrieval_min_hits": 2,
       "tags": ["Beständigkeit", "Differenzierung"],
       "xrefs": []
     },
@@ -226,6 +326,8 @@
       "correct": "Wenn Anforderungen konkurrieren, den Zielkonflikt offenlegen statt ein Schein-Optimum vortäuschen. Beispiel Aceton × 180 °C × günstig: Aceton greift NBR/FKM an; EPDM ist gegen Aceton ok, aber 180 °C dauerhaft grenzwertig; FFKM löst Chemie + Temperatur, ist aber teuer — kein günstiger Werkstoff erfüllt alle drei. Den Trade-off dem Nutzer/Hersteller überlassen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:CONFLICT-01(must_catch)"],
+      "retrieval_terms": ["Aceton", "180 °C", "günstig", "billig", "preiswert", "Kosten"],
+      "retrieval_min_hits": 3,
       "tags": ["Zielkonflikt", "Trade-off"],
       "xrefs": []
     },

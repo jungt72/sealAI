@@ -171,6 +171,46 @@ _MATERIAL_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SMALLTALK_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|guten\s+(?:morgen|tag|abend)|danke|vielen\s+dank|"
+    r"tsch(?:u|ü)ss|auf\s+wiedersehen|was\s+kannst\s+du|hilfe)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+_SMALLTALK_PREFIX_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|guten\s+(?:morgen|tag|abend)|danke|vielen\s+dank|"
+    r"tsch(?:u|ü)ss|auf\s+wiedersehen)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_smalltalk_shape(question: str) -> bool:
+    """Recognize a short social turn after engineering/security signals were ruled out.
+
+    The exact-match regex remains the narrow fast path. The prefix path covers natural courtesy
+    such as "Hallo, schön dass es euch gibt" without turning a greeting-prefixed engineering case
+    into a cheap route: callers invoke this only after ``detect_engineering_signals`` returned empty.
+    A length cap keeps open-ended requests on the conservative ambiguous route.
+    """
+    text = (question or "").strip()
+    return bool(
+        _SMALLTALK_RE.fullmatch(text)
+        or (len(text) <= 160 and _SMALLTALK_PREFIX_RE.match(text))
+    )
+
+
+_DOMAIN_KNOWLEDGE_RE = re.compile(
+    r"\b(dichtung(?:stechnik)?|dichtungsart|wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
+    r"o-?ring|hydraulikdichtung|werkstoff|elastomer|thermoplast|nut|dichtlippe|"
+    r"gegenlauffl(?:a|ä)che|schmierung|tribologie)\b",
+    re.IGNORECASE,
+)
+
+
+def requests_calculation(question: str) -> bool:
+    """Whether the user explicitly asks for a kernel quantity or calculation context."""
+    return bool(_CALC_TERM_RE.search(question))
+
 
 def detect_engineering_signals(
     question: str,
@@ -211,7 +251,7 @@ def detect_engineering_signals(
         signals.append("suitability_or_recommendation_request")
     if _META_INSTRUCTION_RE.search(question):
         signals.append("meta_or_directive_language")
-    if _CALC_TERM_RE.search(question):
+    if requests_calculation(question):
         signals.append("kinematic_or_calc_term")
     if _RESISTANCE_CLAIM_RE.search(question):
         signals.append("resistance_or_suitability_claim")
@@ -313,6 +353,68 @@ def classify_route(
     return RouteDecision(
         route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
         reason=f"intent={intent.value}_no_signals",
+        confidence=1.0,
+        forced_full_pipeline=True,
+        deterministic_signal_count=0,
+    )
+
+
+def classify_route_deterministic(
+    question: str,
+    *,
+    case_state_nonempty: bool = False,
+    decode_result: dict | None = None,
+    diagnosis: dict | None = None,
+    gegencheck_verdict: dict | None = None,
+) -> RouteDecision:
+    """LLM-free production router.
+
+    The same conservative engineering signals as :func:`classify_route` force
+    the full path. Only narrow, explicit smalltalk and domain-knowledge shapes
+    receive a cheaper route; anything else is ambiguous and therefore full.
+    """
+    signals = detect_engineering_signals(
+        question,
+        case_state_nonempty=case_state_nonempty,
+        decode_result=decode_result,
+        diagnosis=diagnosis,
+        gegencheck_verdict=gegencheck_verdict,
+    )
+    if signals:
+        return RouteDecision(
+            route=_forced_route(question, signals),
+            reason=f"deterministic_signals:{','.join(signals)}",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=len(signals),
+        )
+    if _is_smalltalk_shape(question):
+        return RouteDecision(
+            route=RouteName.SMALLTALK_NAVIGATION,
+            reason="deterministic_smalltalk_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _MATERIAL_NAME_RE.search(question):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason="deterministic_material_knowledge_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question):
+        return RouteDecision(
+            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
+            reason="deterministic_domain_knowledge_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    return RouteDecision(
+        route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+        reason="no_deterministic_route",
         confidence=1.0,
         forced_full_pipeline=True,
         deterministic_signal_count=0,

@@ -65,7 +65,7 @@ jobs:
           echo "ref=$pinned" >> "$GITHUB_OUTPUT"
 
       - name: Deploy through the sanctioned V2 release gate
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         env:
           EXPECTED_SHA: ${{ steps.source.outputs.sha }}
           BACKEND_V2_IMAGE: ${{ steps.image.outputs.ref }}
@@ -78,14 +78,16 @@ jobs:
           script: |
             set -euo pipefail
             cd /home/thorsten/sealai
-            test "$(git rev-parse HEAD)" = "$EXPECTED_SHA" || {
-              echo "refusing deploy: VPS checkout is not the artifact commit" >&2
-              git status --short --branch >&2
-              exit 20
-            }
             test -z "$(git status --porcelain)" || {
-              echo "refusing deploy: VPS worktree is dirty" >&2
-              git status --short >&2
+              echo "refusing deploy: VPS worktree is dirty before promotion" >&2
+              git status --short --branch >&2
               exit 21
             }
+            git fetch --prune origin main
+            test "$(git rev-parse origin/main)" = "$EXPECTED_SHA" || {
+              echo "refusing deploy: artifact is no longer the current origin/main" >&2
+              exit 20
+            }
+            git checkout --detach "$EXPECTED_SHA"
+            test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
             BACKEND_V2_IMAGE="$BACKEND_V2_IMAGE" ./ops/release-backend-v2.sh

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -18,7 +19,26 @@ from datetime import datetime, timezone
 from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import build_prompt_cache_key
 from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
-from sealai_v2.pipeline.routing import RouteName, classify_route
+from sealai_v2.pipeline.routing import (
+    RouteName,
+    classify_route,
+    classify_route_deterministic,
+    requests_calculation,
+)
+from sealai_v2.orchestration.execution_policy import (
+    ExecutionClass,
+    ExecutionDecision,
+    ExecutionFeatures,
+    ModelTier,
+    StreamingMode,
+    VerificationMode,
+    decide_execution,
+    deterministic_response,
+)
+from sealai_v2.orchestration.answer_cache import (
+    InProcessExactAnswerCache,
+    exact_answer_key,
+)
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
 from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
 from sealai_v2.pipeline.route_telemetry import (
@@ -34,6 +54,7 @@ from sealai_v2.core.calc.inline_extract import (
 )
 from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
+from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.contracts import (
     Answer,
     CalcEngine,
@@ -46,8 +67,10 @@ from sealai_v2.core.contracts import (
     LlmClient,
     ModelConfig,
     PipelineResult,
+    RetrievalResult,
     Retriever,
     SessionContext,
+    TurnState,
     Understanding,
     UntrustedContent,
     VerifierVerdict,
@@ -65,7 +88,11 @@ from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
 from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 from sealai_v2.knowledge.retrieval import InProcessRetriever
-from sealai_v2.knowledge.traps import TrapCatalog, load_traps
+from sealai_v2.knowledge.traps import (
+    TrapCatalog,
+    load_traps,
+    retrieve_reviewed_trap_facts,
+)
 from sealai_v2.memory.distiller import Distiller
 from sealai_v2.safety.risk_flags import detect_risk_flags
 from sealai_v2.memory.store import (
@@ -101,13 +128,25 @@ def _build_retriever(settings: Settings) -> Retriever:
     CI/eval measurement instrument) OR the Qdrant production adapter (``retriever_backend=qdrant`` +
     a set ``qdrant_url``). Fail-safe: an unset url, a missing optional dep (fastembed/qdrant-client),
     or an unreachable Qdrant falls back to in-process rather than crashing startup."""
-    if settings.retriever_backend == "qdrant" and settings.qdrant_url:
+    if (
+        settings.retriever_backend == "qdrant"
+        and settings.qdrant_url
+        and settings.database_url
+    ):
         try:
+            from sealai_v2.knowledge.ledger import build_knowledge_ledger
             from sealai_v2.knowledge.qdrant_retrieval import QdrantFachkartenRetriever
 
-            return QdrantFachkartenRetriever(settings)
+            return QdrantFachkartenRetriever(
+                settings, knowledge_ledger=build_knowledge_ledger(settings)
+            )
         except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on retrieval
             _log.warning("qdrant retriever unavailable (%s) → in-process fallback", exc)
+    elif settings.retriever_backend == "qdrant":
+        _log.warning(
+            "qdrant retriever requires both Qdrant and Postgres ledger; "
+            "using in-process reviewed seed"
+        )
     return InProcessRetriever()
 
 
@@ -170,6 +209,46 @@ _EXFIL_HEDGE_TEXT = (
     "Wissensstand). Stell mir gern deine konkrete Dichtungsfrage — dann helfe ich dir fachlich weiter."
 )
 
+# Neutrality is a product invariant, not a best-effort prompt preference. This narrow detector
+# catches an explicit persistent/preferred manufacturer-ranking override in the user's message.
+# Normal questions such as "Welche Hersteller kommen infrage?" do not match.
+_MANUFACTURER_RANKING_OVERRIDE_RE = re.compile(
+    r"\b(?:empfiehl|empfehl)\w*\b.{0,100}\b(?:ab\s+jetzt\s+)?immer\b.{0,60}"
+    r"\b(?:zuerst|bevorzugt)\b.{0,100}\b(?:hersteller|firma)\b|"
+    r"\b(?:hersteller|firma)\b.{0,100}\b(?:immer\s+zuerst|bevorzugt)\b.{0,100}"
+    r"\begal\s+wonach\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_NEUTRALITY_HEDGE_MODEL = "neutrality-guard"
+_NEUTRALITY_HEDGE_TEXT = (
+    "Ein erzwungenes oder dauerhaft bevorzugtes Hersteller-Ranking übernehme ich nicht. "
+    "Hersteller und Produkte werden ausschließlich neutral anhand der konkreten technischen "
+    "Anforderungen und kuratierter Fähigkeitsdaten eingegrenzt. Für die Werkstoff- und "
+    "Bauformwahl brauche ich insbesondere das genaue Medium einschließlich Basis und Additivpaket, "
+    "Temperatur, Druck, Dynamik und Wellenbedingungen; die konkrete Eignung bleibt anschließend "
+    "per Datenblatt und Herstellerbestätigung zu verifizieren."
+)
+_PARTNER_GROUNDING_GUARD_MODEL = "partner-grounding-guard"
+_EXFIL_REQUEST_GUARD_MODEL = "exfil-request-guard"
+_DECODE_GUARD_MODEL = "deterministic-decode"
+_EXFIL_REQUEST_REFUSAL_TEXT = (
+    "Interne Systemanweisungen, Prompts und vertrauliche Wissensbasis-Inhalte gebe ich nicht aus. "
+    "Bei einer konkreten Frage zur Dichtungstechnik helfe ich dir gern fachlich weiter."
+)
+_EXFIL_REQUEST_RE = re.compile(
+    r"\b(?:system[- ]?prompt|systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|"
+    r"wissensbasis)\b.*\b(?:aus(?:geben|gabe)|zeig(?:en|e)?|nenn(?:en|e)?|"
+    r"w[oö]rtlich|vollst[aä]ndig|verrat(?:en|e)?|offenleg(?:en|e)?)\b|"
+    r"\b(?:gib|zeige?|nenne?|verrate?|offenlege?)\b.*\b(?:system[- ]?prompt|"
+    r"systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|wissensbasis)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_DECODE_REQUEST_RE = re.compile(
+    r"\b(?:aufschl[uü]ssel(?:n|e)?|schl[uü]ssel(?:n|e)?|dekodier(?:en|e)?|decode|was\s+bedeutet|"
+    r"vergleichbar|dasselbe|identisch|tausch(?:en|bar)|austausch(?:en|bar)|ersatzteil)\b",
+    re.IGNORECASE,
+)
+
 # P4a: optional per-turn progress sink — (stage, "start"|"end"), stage keys only (NEVER content/
 # PII; the SSE doctrine test pins this). Sync + fire-and-forget so a sink can never block a seam.
 ProgressSink = Callable[[str, str], None]
@@ -230,6 +309,118 @@ def _exfil_guard(answer, *, system_prompt: str, kb_claims):
     )
 
 
+def _neutrality_override_guard(question: str, answer: Answer) -> tuple[Answer, bool]:
+    """Fail closed on explicit paid/preferred manufacturer-ranking overrides.
+
+    The final model output is intentionally not inspected for a brand name: once the input contains
+    the narrow override shape, repeating that injected brand even with a caveat would still confer
+    preference. The deterministic response therefore contains no user-supplied manufacturer name.
+    """
+    if not _MANUFACTURER_RANKING_OVERRIDE_RE.search(question or ""):
+        return answer, False
+    return (
+        Answer(
+            text=_NEUTRALITY_HEDGE_TEXT,
+            model=_NEUTRALITY_HEDGE_MODEL,
+            grounding_facts=answer.grounding_facts,
+        ),
+        True,
+    )
+
+
+def _partner_grounding_guard(answer: Answer, alternatives: dict | None) -> Answer:
+    """Render manufacturer alternatives only from the authoritative partner result.
+
+    The registry stage already owns capability ranking and payment-neutrality. Replacing the free
+    model narration here prevents an empty/unassessed registry from being filled with remembered
+    brand names and prevents a grounded result from being reordered or supplemented by the model.
+    """
+    if alternatives is None:
+        return answer
+    neutral = str(alternatives.get("neutralitaet") or "").strip()
+    if not alternatives.get("grounded_data"):
+        hint = str(alternatives.get("hinweis") or "").strip()
+        text = "\n\n".join(part for part in (hint, neutral) if part)
+    else:
+        rows = alternatives.get("hersteller") or []
+        rendered = []
+        for row in rows:
+            name = str(row.get("firmenname") or "").strip()
+            capabilities = ", ".join(
+                str(item) for item in (row.get("werkstoffe") or []) if item
+            )
+            if name:
+                rendered.append(
+                    f"- {name}"
+                    + (f" — Werkstoffe: {capabilities}" if capabilities else "")
+                )
+        heading = "Passende Partner nach fachlicher Eignung (Partner/Anzeige):"
+        text = "\n".join([heading, *rendered])
+        if neutral:
+            text += f"\n\n{neutral}"
+    if not text:
+        return answer
+    return Answer(
+        text=text,
+        model=_PARTNER_GROUNDING_GUARD_MODEL,
+        grounding_facts=answer.grounding_facts,
+    )
+
+
+def _explicit_exfil_request_guard(question: str, answer: Answer) -> Answer:
+    """Refuse direct requests for confidential instructions even when no leak was emitted.
+
+    The leak detector remains the final content-based backstop. This intent-shaped guard closes the
+    UX gap where a model safely avoided disclosure but failed to state a clear refusal.
+    """
+    if not _EXFIL_REQUEST_RE.search(question or ""):
+        return answer
+    return Answer(
+        text=_EXFIL_REQUEST_REFUSAL_TEXT,
+        model=_EXFIL_REQUEST_GUARD_MODEL,
+        grounding_facts=answer.grounding_facts,
+    )
+
+
+def _decode_grounding_guard(
+    question: str, answer: Answer, decoded: dict | None
+) -> Answer:
+    """Render a parsed designation from deterministic fields only.
+
+    Decode is an extraction task, so free model prose adds risk without adding authority. Keeping
+    this renderer closed over the parser result prevents invented norms, brands and performance
+    limits while preserving the explicit interchangeability boundary.
+    """
+    if not decoded or not _DECODE_REQUEST_RE.search(question or ""):
+        return answer
+
+    def number(value) -> str:
+        numeric = float(value)
+        return str(int(numeric)) if numeric.is_integer() else f"{numeric:g}"
+
+    lines = ["Aufschlüsselung der Bezeichnung:"]
+    if seal_type := decoded.get("type"):
+        lines.append(f"- Bauform: {seal_type}")
+    if dims := decoded.get("dims_mm"):
+        labels = {
+            "id_od_breite": "Innendurchmesser × Außendurchmesser × Breite",
+            "id_schnurstaerke": "Innendurchmesser × Schnurstärke",
+            "uneindeutig": "Maßfolge; Zuordnung noch bestätigen",
+        }
+        rendered = " × ".join(number(value) for value in dims)
+        interpretation = labels.get(decoded.get("dim_interpretation"), "Nennmaße")
+        lines.append(f"- Nennmaße: {rendered} mm ({interpretation})")
+    if material := decoded.get("material"):
+        lines.append(f"- Werkstoffklasse: {material}")
+    if boundary := decoded.get("equivalenz_grenze"):
+        lines.extend(("", str(boundary)))
+    return Answer(
+        text="\n".join(lines),
+        model=_DECODE_GUARD_MODEL,
+        grounding_facts=answer.grounding_facts,
+    )
+
+
 @contextmanager
 def _staged(timer, progress: ProgressSink | None, ms_key: str, stage: str):
     """One seam: progress start → timed body → progress end. On an exception the ``end`` is
@@ -280,6 +471,11 @@ class Pipeline:
     generator: L1Generator
     client: LlmClient
     helper_model: ModelConfig
+    standard_generator: L1Generator | None = None
+    frontier_generator: L1Generator | None = None
+    execution_policy_enabled: bool = False
+    answer_cache: InProcessExactAnswerCache | None = None
+    answer_cache_namespace: str = ""
     understand_prompt_assembler: UnderstandPromptAssembler = field(
         default_factory=UnderstandPromptAssembler
     )
@@ -456,6 +652,14 @@ class Pipeline:
                 session=session,
                 question=question,
             )
+        effective_case_id = (
+            session.session_id if session is not None else f"turn-{timer.turn_id}"
+        )
+        case_state_v2 = mem.case_state_v2 or CaseStateV2.from_remembered_facts(
+            case_id=effective_case_id,
+            revision=0,
+            facts=mem.case_state,
+        )
         # This-session case-state (L2) and cross-session durable facts (L4) are kept SEPARATE: the
         # durable facts surface under their own honest "aus früheren Gesprächen — bei Bedarf
         # bestätigen" frame and (below) do NOT feed the deterministic calc binder — a remembered
@@ -463,8 +667,10 @@ class Pipeline:
         # G1 (V2.1 Inc 1): build the typed Case at the generalisation point, then project to the
         # byte-identical list[dict] the L1 prompt + L3 topic-scope consume (owner decision 2 —
         # Jinja unchanged, so the eval stays unperturbed). The typed slots fill in later increments.
-        case = Case.from_case_state(mem.case_state, question=question)
-        case_context = case.to_prompt_context()
+        case = Case.from_case_state(
+            case_state_v2.to_remembered_facts(), question=question
+        )
+        case_context = case_state_v2.to_prompt_context()
         # Medium Intelligence (Phase 2): research the stated medium → provisional facts + the MEDIUM
         # tab. Gated (default-off) + fail-safe + L1-NEUTRAL (never enters the L1 prompt). Inert when
         # off / no researcher / no medium stated.
@@ -547,6 +753,55 @@ class Pipeline:
         )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
+        if self.execution_policy_enabled:
+            # CaseStateV2 is authoritative. Historical transcript text and cross-session hints
+            # are not re-injected into the one-shot production prompt.
+            durable_context = []
+            conversation_window = []
+        policy_route_decision = (
+            classify_route_deterministic(
+                question,
+                case_state_nonempty=bool(
+                    case_state_v2.fields
+                    or case_state_v2.open_conflicts
+                    or case_state_v2.required_missing
+                ),
+                decode_result=decode_result,
+                diagnosis=diagnosis,
+                gegencheck_verdict=gegencheck_verdict,
+            )
+            if self.execution_policy_enabled
+            else None
+        )
+        early_clarification = bool(
+            policy_route_decision is not None
+            and policy_route_decision.forced_full_pipeline
+            and case_state_v2.required_missing
+        )
+        cache_key: str | None = None
+        cached_answer: Answer | None = None
+        cache_eligible = bool(
+            self.execution_policy_enabled
+            and self.answer_cache is not None
+            and policy_route_decision is not None
+            and policy_route_decision.route
+            in {
+                RouteName.GENERAL_SEALING_KNOWLEDGE,
+                RouteName.MATERIAL_KNOWLEDGE,
+            }
+            and not case_state_v2.fields
+            and not case_state_v2.open_conflicts
+            and not case_state_v2.required_missing
+            and not risk_flags
+            and not untrusted
+        )
+        if cache_eligible:
+            cache_key = exact_answer_key(
+                tenant_id=scope.tenant_id,
+                question=question,
+                namespace=self.answer_cache_namespace,
+            )
+            cached_answer = self.answer_cache.get(cache_key)
 
         # P1: soft understand is annotate-only (Intent NEVER gates/routes; it feeds only the
         # API intent field via PipelineResult.understanding) — so it runs CONCURRENT with the
@@ -554,7 +809,7 @@ class Pipeline:
         # failure cancels it (same failure surface as the serial order, pure reordering).
         understand_task: asyncio.Task | None = None
         understanding: Understanding | None = None
-        if self.understand_enabled:
+        if self.understand_enabled and not self.execution_policy_enabled:
             archetype_keys = (
                 tuple(self.archetypes.keys) if self.archetypes is not None else ()
             )
@@ -585,20 +840,28 @@ class Pipeline:
             understand_task = asyncio.create_task(_understand_timed())
 
         try:
-            with _staged(timer, progress, "ground_ms", "ground"):
-                retrieval = await stages.ground(
-                    self.retriever,
-                    self.matrix,
-                    question,
-                    tenant_id=scope.tenant_id,
-                    case_facts=mem.case_state,
+            if early_clarification:
+                retrieval = RetrievalResult()
+            elif cached_answer is not None:
+                retrieval = RetrievalResult(
+                    grounding_facts=cached_answer.grounding_facts
                 )
+            else:
+                with _staged(timer, progress, "ground_ms", "ground"):
+                    retrieval = await stages.ground(
+                        self.retriever,
+                        self.matrix,
+                        question,
+                        tenant_id=scope.tenant_id,
+                        case_facts=mem.case_state,
+                    )
             grounding_facts = (
                 retrieval.grounding_facts
             )  # reviewed Fachkarten → compute + (Step A) verify
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
-            l1_grounding = grounding_facts + retrieval.matrix_facts
+            trap_facts = retrieve_reviewed_trap_facts(self.catalog, question)
+            l1_grounding = grounding_facts + retrieval.matrix_facts + trap_facts
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
@@ -619,13 +882,16 @@ class Pipeline:
                 param_origins[key] = "Parameter (explizit übergeben)"
             # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
             # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
-            with _staged(timer, progress, "compute_ms", "compute"):
-                calc = await stages.compute(
-                    self.engine,
-                    merged_params or None,
-                    grounding_facts=grounding_facts,
-                    param_origins=param_origins or None,
-                )
+            if early_clarification or cached_answer is not None:
+                calc = CalcResult()
+            else:
+                with _staged(timer, progress, "compute_ms", "compute"):
+                    calc = await stages.compute(
+                        self.engine,
+                        merged_params or None,
+                        grounding_facts=grounding_facts,
+                        param_origins=param_origins or None,
+                    )
             if (
                 bound.notes
             ):  # surfaced fail-closed drops — visible to L1 + render, never silent
@@ -675,16 +941,21 @@ class Pipeline:
             draft_stream_active = (
                 self.draft_token_streaming_enabled and token_sink is not None
             )
-            if self.route_optimization_enabled:
+            if self.route_optimization_enabled or self.execution_policy_enabled:
                 _route_started = time.monotonic()
-                route_decision = classify_route(
-                    question,
-                    case_state_nonempty=bool(mem.case_state),
-                    decode_result=decode_result,
-                    diagnosis=diagnosis,
-                    gegencheck_verdict=gegencheck_verdict,
-                    intent=understanding.intent if understanding is not None else None,
-                )
+                if self.execution_policy_enabled:
+                    route_decision = policy_route_decision
+                else:
+                    route_decision = classify_route(
+                        question,
+                        case_state_nonempty=bool(mem.case_state),
+                        decode_result=decode_result,
+                        diagnosis=diagnosis,
+                        gegencheck_verdict=gegencheck_verdict,
+                        intent=understanding.intent
+                        if understanding is not None
+                        else None,
+                    )
                 # Phase 2B safety correction: a stress test against the real eval seed cases (with
                 # an adversarially-uniform "wissensfrage" intent guess) found real cases where
                 # general_sealing_knowledge/material_knowledge signals under-fired on natural-
@@ -759,6 +1030,12 @@ class Pipeline:
             # prompt, never change any kernel=True route's prompt.
             l1_calc = calc
             if (
+                self.execution_policy_enabled
+                and not calc.computed
+                and not requests_calculation(question)
+            ):
+                l1_calc = CalcResult()
+            if (
                 self.suppress_calc_for_non_kernel_routes_enabled
                 and route_decision is not None
             ):
@@ -789,7 +1066,7 @@ class Pipeline:
                     else coverage_for(gegencheck_verdict, archetype_context),
                     grounding_facts=l1_grounding,
                     gegencheck_verdict=gegencheck_verdict,
-                    calc=calc,
+                    calc=l1_calc if self.execution_policy_enabled else calc,
                 )
                 contract = _rc.to_dict() if _rc is not None else None
             # P0-B: on turns where the Gegencheck-shaped contract above is None (no verdict — general
@@ -807,6 +1084,76 @@ class Pipeline:
 
                 _gc = build_guard_contract(grounding_facts=l1_grounding, calc=calc)
                 guard_contract = _gc.to_dict() if _gc is not None else None
+
+            execution_decision: ExecutionDecision | None = None
+            active_generator: L1Generator | None = self.generator
+            policy_missing_fields: tuple[str, ...] = ()
+            policy_conflicts = tuple(
+                conflict.field_key for conflict in case_state_v2.open_conflicts
+            )
+            if self.execution_policy_enabled:
+                if route_decision is None:  # defensive: policy routing is mandatory
+                    raise RuntimeError("execution policy requires a route decision")
+                # Only explicit case-state requirements may block model execution. The response
+                # contract also lists inputs missing from every registered calculation; most of
+                # those calculations are irrelevant to a material-compatibility or knowledge turn.
+                # Treating that generic list as intake requirements made valid grounded questions
+                # stop at D1 (for example, asking about FKM in steam requested shaft diameter and
+                # O-ring groove depth). Calculation transparency remains in ``calc.not_computed``.
+                policy_missing_fields = case_state_v2.required_missing
+                source_ids = {
+                    source for fact in l1_grounding for source in fact.sources if source
+                }
+                execution_decision = decide_execution(
+                    ExecutionFeatures(
+                        route=route_decision,
+                        risk_flags=tuple(risk_flags),
+                        authoritative_evidence_count=len(l1_grounding),
+                        provisional_evidence_count=len(retrieval.provisional),
+                        document_count=len(source_ids),
+                        tool_step_count=len(calc.computed),
+                        case_conflict_count=len(case_state_v2.open_conflicts),
+                        required_missing=policy_missing_fields,
+                        contract_status=(
+                            (contract or {}).get("status")
+                            if policy_missing_fields
+                            else None
+                        ),
+                        untrusted_content_count=len(untrusted),
+                        has_diagnosis=diagnosis is not None,
+                        exact_cache_hit=cached_answer is not None,
+                        reviewed_policy_fact_count=sum(
+                            fact.kind == "trap" for fact in l1_grounding
+                        ),
+                    )
+                )
+                if execution_decision.model_tier is ModelTier.NONE:
+                    active_generator = None
+                elif execution_decision.model_tier is ModelTier.STANDARD:
+                    active_generator = self.standard_generator or self.generator
+                else:
+                    active_generator = self.frontier_generator or self.generator
+                if active_generator is not None:
+                    active_generator = active_generator.with_reasoning_effort(
+                        execution_decision.reasoning_effort
+                    )
+                skip_l3_for_route = (
+                    execution_decision.verification_mode
+                    is not VerificationMode.CLAIM_LLM
+                )
+                draft_stream_active = (
+                    execution_decision.streaming_mode is StreamingMode.DRAFT
+                    and self.draft_token_streaming_enabled
+                    and token_sink is not None
+                    and active_generator is not None
+                    and active_generator.supports_token_streaming
+                )
+                stream_tokens_active = (
+                    execution_decision.streaming_mode is StreamingMode.FINAL
+                    and smalltalk_prompt_active
+                    and self.smalltalk_token_streaming_enabled
+                    and token_sink is not None
+                )
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
             # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
             # None when OFF (byte-identical).
@@ -823,7 +1170,19 @@ class Pipeline:
                 # prompt) is completely untouched below -- every route except a fully-qualified
                 # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
                 # EXACT same call it always has.
-                if stream_tokens_active and self.smalltalk_generator is not None:
+                if cached_answer is not None:
+                    answer = cached_answer
+                elif active_generator is None and execution_decision is not None:
+                    answer = Answer(
+                        text=deterministic_response(
+                            execution_decision,
+                            missing_fields=policy_missing_fields,
+                            conflicts=policy_conflicts,
+                        ),
+                        model="deterministic-policy",
+                        grounding_facts=l1_grounding,
+                    )
+                elif stream_tokens_active and self.smalltalk_generator is not None:
                     # Phase 3A: stream the compact smalltalk answer token-by-token. Each RAW delta
                     # fires the token sink (fire-and-forget); the terminal event carries the finished
                     # strip_sourcing-cleaned Answer -- byte-identical to the non-streaming generate()
@@ -851,6 +1210,7 @@ class Pipeline:
                     # docstring. The delivered ``answer`` is unaffected either way; it still goes
                     # through the unchanged output_guard + L3 verify pipeline below.
                     answer = await self._l1_generate(
+                        active_generator or self.generator,
                         question,
                         token_sink=token_sink,
                         draft_stream_active=draft_stream_active,
@@ -873,6 +1233,7 @@ class Pipeline:
                         risk_flags=(
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
+                        case_revision=case_state_v2.revision,
                     )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -891,10 +1252,15 @@ class Pipeline:
             # regeneration still never enters Renderer-Modus, only receives the correction_note.
             guard = None
             _effective_contract = contract if contract is not None else guard_contract
-            if self.response_contract_enabled and _effective_contract is not None:
+            if (
+                self.response_contract_enabled
+                and _effective_contract is not None
+                and active_generator is not None
+            ):
                 from sealai_v2.core.output_guard import (
                     correction_note as _guard_note,
                     evaluate_render as _guard_eval,
+                    fail_closed_answer as _guard_fallback,
                     known_inputs as _guard_known,
                 )
 
@@ -914,6 +1280,7 @@ class Pipeline:
                     # new event type is introduced for that purpose.
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
                         answer = await self._l1_generate(
+                            active_generator or self.generator,
                             question,
                             token_sink=token_sink,
                             draft_stream_active=draft_stream_active,
@@ -936,6 +1303,7 @@ class Pipeline:
                                 if self.risk_flag_prompt_enabled
                                 else None
                             ),
+                            case_revision=case_state_v2.revision,
                         )
                     _gr2 = _guard_eval(
                         answer_text=answer.text,
@@ -950,6 +1318,12 @@ class Pipeline:
                         _gr2.action,
                         [v.kind for v in _gr.violations],
                     )
+                    if _gr2.action == "BLOCK":
+                        answer = Answer(
+                            text=_guard_fallback(_effective_contract),
+                            model="deterministic-output-guard",
+                            grounding_facts=l1_grounding,
+                        )
                     _gr = _gr2
                 guard = _gr.to_dict()
 
@@ -962,7 +1336,7 @@ class Pipeline:
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = await stages.verify(
                         self.verifier,
-                        self.generator,
+                        active_generator or self.generator,
                         self.catalog,
                         question,
                         answer,
@@ -979,6 +1353,7 @@ class Pipeline:
                         untrusted=untrusted_data,
                         # §9.2 guard fires ONLY on a part-comparison turn (decode parsed a designation)
                         comparison_context=bool(decode_result),
+                        case_revision=case_state_v2.revision,
                     )
             else:
                 # P0.3: the DETERMINISTIC parametric Schranke is pure (no LLM) and must hold even when
@@ -992,6 +1367,23 @@ class Pipeline:
                         comparison_context=bool(decode_result),
                     )
 
+            # Designation decoding is deterministic extraction. Do not let free model prose add
+            # ungrounded brands, standards, limits or interchangeability claims to parsed fields.
+            answer = _decode_grounding_guard(question, answer, decode_result)
+
+            # Manufacturer narration comes only from the deterministic capability registry result.
+            answer = _partner_grounding_guard(answer, alternativen_result)
+
+            # Neutrality override guard: an explicit persistent/preferred manufacturer ranking is
+            # replaced after the model/verifier chain and before any answer can ship.
+            answer, _neutrality_overridden = _neutrality_override_guard(
+                question, answer
+            )
+
+            # Direct exfiltration requests receive a deterministic refusal even when the model did
+            # not emit enough confidential text to trip the content-based leak detector below.
+            answer = _explicit_exfil_request_guard(question, answer)
+
             # P1.4: SERVE-path deterministic exfiltration Schranke. Runs AFTER the final answer is set
             # (post verify if/else) and BEFORE cite, on the answer that would actually ship. The leak
             # reference is the STATIC doctrine system prompt (flags only) — the SAME reference the eval
@@ -1004,22 +1396,51 @@ class Pipeline:
             # refusal before cite/return.
             answer, _exfil_verdict = _exfil_guard(
                 answer,
-                system_prompt=self.generator.doctrine_system_prompt(flags=flags),
+                system_prompt=(
+                    active_generator or self.generator
+                ).doctrine_system_prompt(flags=flags),
                 kb_claims=[f.text for f in l1_grounding],
             )
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
 
-            # M5 remember (after answering): record the turn + distill STATED facts into case-state.
-            # No-op (and no distill LLM call) when memory/session absent — distilling AFTER the answer
-            # means it can never perturb the turn it observed. (Timed only when it actually runs, so
-            # the timing line omits ``distill_ms`` on the single-turn/no-session path.)
-            # P2: with a distiller wired, the distill LLM call moves OFF the user-facing path —
-            # a background task, ordering-guarded by ``flush_memory`` (next recall / memory read /
-            # user mutation). Distiller-less remember (pure in-process record, no LLM) stays inline.
+            if (
+                cache_key is not None
+                and cached_answer is None
+                and self.answer_cache is not None
+                and execution_decision is not None
+                and execution_decision.execution_class is ExecutionClass.S0
+            ):
+                self.answer_cache.put(cache_key, answer)
+
+            # Persist the authoritative turn BEFORE it can be returned. Only LLM distillation stays
+            # asynchronous. The optimistic revision check prevents an answer generated against an
+            # old case snapshot from being committed after a concurrent user edit.
             scheduled_background = False
+            result_case_state = case_state_v2
+            committed_revision = case_state_v2.revision
             if self.memory is not None and session is not None:
+                immediate_facts = extract_medium_facts(question)
+                self.memory.record_turn(
+                    tenant_id=scope.tenant_id,
+                    session_id=session.session_id,
+                    question=question,
+                    answer=answer.text,
+                    facts=immediate_facts,
+                    now=datetime.now(timezone.utc).isoformat(),
+                    expected_case_revision=case_state_v2.revision,
+                )
+                if immediate_facts:
+                    committed_revision += 1
+                    if self.cross_session is not None:
+                        self.cross_session.remember_durable(
+                            tenant_id=scope.tenant_id, facts=immediate_facts
+                        )
+                committed_view = self.memory.recall(
+                    tenant_id=scope.tenant_id, session_id=session.session_id
+                )
+                result_case_state = committed_view.case_state_v2 or case_state_v2
                 if self.distiller is not None:
                     self._schedule_remember(
                         timer,
@@ -1027,19 +1448,10 @@ class Pipeline:
                         session=session,
                         question=question,
                         answer_text=answer.text,
+                        expected_case_revision=committed_revision,
                     )
                     scheduled_background = True
                 else:
-                    with timer.stage("distill_ms"):
-                        await stages.remember(
-                            self.memory,
-                            self.distiller,
-                            tenant_id=scope.tenant_id,
-                            session=session,
-                            question=question,
-                            answer=answer.text,
-                            cross_session=self.cross_session,
-                        )
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
                         tenant_id=scope.tenant_id, session_id=session.session_id
@@ -1066,7 +1478,44 @@ class Pipeline:
             flags=flags,
             understanding=understanding,
             answer=answer,
-            grounded=retrieval.grounded,
+            case_state=result_case_state,
+            turn_state=TurnState(
+                run_id=timer.turn_id,
+                case_id=result_case_state.case_id,
+                case_revision_started=case_state_v2.revision,
+                case_revision_current=result_case_state.revision,
+                status="completed",
+                risk_level="high" if risk_flags else "standard",
+                route_name=(
+                    route_decision.route.value if route_decision is not None else None
+                ),
+                execution_class=(
+                    execution_decision.execution_class.value
+                    if execution_decision is not None
+                    else None
+                ),
+                model_tier=(
+                    execution_decision.model_tier.value
+                    if execution_decision is not None
+                    else None
+                ),
+                verification_mode=(
+                    execution_decision.verification_mode.value
+                    if execution_decision is not None
+                    else None
+                ),
+                policy_version=(
+                    execution_decision.policy_version
+                    if execution_decision is not None
+                    else None
+                ),
+                needs_human_review=(
+                    execution_decision.needs_human_review
+                    if execution_decision is not None
+                    else False
+                ),
+            ),
+            grounded=bool(l1_grounding),
             verified=verdict is not None,
             cited=False,
             verifier=verdict,
@@ -1099,6 +1548,7 @@ class Pipeline:
 
     async def _l1_generate(
         self,
+        generator: L1Generator,
         question: str,
         *,
         token_sink: "TokenSink | None",
@@ -1122,9 +1572,9 @@ class Pipeline:
         always). A mid-stream failure propagates unchanged, exactly like ``generate``'s own contract.
         """
         if not draft_stream_active:
-            return await self.generator.generate(question, **kwargs)
+            return await generator.generate(question, **kwargs)
         answer: Answer | None = None
-        async for _ev in self.generator.generate_stream(question, **kwargs):
+        async for _ev in generator.generate_stream(question, **kwargs):
             if _ev.delta is not None:
                 _emit_token(token_sink, _ev.delta, draft=True)
             elif _ev.answer is not None:
@@ -1133,7 +1583,7 @@ class Pipeline:
             # Defensive: a successful stream always yields a terminal answer (mirrors the identical
             # defensive fallback on the Phase 3A smalltalk streaming branch above) -- unreachable on
             # success; a failure would already have raised out of the async-for above.
-            answer = await self.generator.generate(question, **kwargs)
+            answer = await generator.generate(question, **kwargs)
         return answer
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -1248,6 +1698,7 @@ class Pipeline:
         session: SessionContext,
         question: str,
         answer_text: str,
+        expected_case_revision: int,
     ) -> None:
         key = (tenant_id, session.session_id)
         task = asyncio.create_task(
@@ -1257,6 +1708,7 @@ class Pipeline:
                 session=session,
                 question=question,
                 answer_text=answer_text,
+                expected_case_revision=expected_case_revision,
             )
         )
         self._pending_remember[key] = task
@@ -1275,22 +1727,28 @@ class Pipeline:
         session: SessionContext,
         question: str,
         answer_text: str,
+        expected_case_revision: int,
     ) -> None:
-        """The deferred remember (distill LLM call + record_turn). Fail-safe: an error here is
-        logged-only — the answer already went out, so the worst case is a lost memory record
-        for this turn, never a failed request and never a guessed fact (the distiller's own
-        numeric-trace guard is untouched). Emits the turn's timing line on completion."""
+        """Distill and merge facts after the already-committed turn.
+
+        A revision mismatch means the user changed the case meanwhile; stale distilled
+        values are discarded rather than overwriting the newer state.
+        """
         try:
             with timer.stage("distill_ms"):
-                await stages.remember(
-                    self.memory,
-                    self.distiller,
-                    tenant_id=tenant_id,
-                    session=session,
-                    question=question,
-                    answer=answer_text,
-                    cross_session=self.cross_session,
+                facts = await self.distiller.distill(
+                    question=question, answer=answer_text
                 )
+                self.memory.merge_facts(
+                    tenant_id=tenant_id,
+                    session_id=session.session_id,
+                    facts=facts,
+                    expected_case_revision=expected_case_revision,
+                )
+                if self.cross_session is not None and facts:
+                    self.cross_session.remember_durable(
+                        tenant_id=tenant_id, facts=facts
+                    )
             # M8: settle the derived slice from the just-distilled inputs (chat channel). Inside the
             # try so a recompute fault is caught by the same fail-safe (a lost derived slice is never
             # a failed request; the next read/mutation recomputes anyway).
@@ -1330,6 +1788,11 @@ def build_pipeline(
     l1_client = resolve(settings.l1_provider or settings.provider)
     verifier_client = resolve(settings.verifier_provider or settings.provider)
     helper_client = resolve(settings.helper_provider or settings.provider)
+    standard_client = (
+        resolve(settings.standard_provider)
+        if settings.execution_policy_enabled
+        else None
+    )
 
     assembler = PromptAssembler()
     _l1_model_name = l1_model or settings.l1_model
@@ -1357,7 +1820,31 @@ def build_pipeline(
         cache_key="sealai-v2-helper",
         stage="helper",
     )
-    generator = L1Generator(l1_client, assembler, l1_cfg)
+    generator = L1Generator(
+        l1_client,
+        assembler,
+        l1_cfg,
+        structured_output_enabled=settings.structured_answer_enabled,
+    )
+    standard_generator = None
+    if standard_client is not None:
+        standard_cfg = ModelConfig(
+            model=settings.standard_model,
+            temperature=settings.standard_temperature,
+            cache_key=build_prompt_cache_key(
+                "l1-standard",
+                settings.standard_model,
+                _l1_static_doctrine,
+            ),
+            stage="l1-standard",
+            reasoning_effort="none",
+        )
+        standard_generator = L1Generator(
+            standard_client,
+            assembler,
+            standard_cfg,
+            structured_output_enabled=settings.structured_answer_enabled,
+        )
     medium_researcher = MediumResearcher(
         helper_client, MediumResearchPromptAssembler(), helper_cfg
     )
@@ -1456,6 +1943,9 @@ def build_pipeline(
         fachkarten_version=fachkarten_version,
         matrix_version=matrix.catalog.version if matrix is not None else "",
         traps_version=catalog.version if catalog is not None else "",
+        calc_version=(
+            engine.registry.version if isinstance(engine, CascadeCalcEngine) else ""
+        ),
         versagensmodi_version=(
             versagensmodi.catalog.version if versagensmodi is not None else ""
         ),
@@ -1473,18 +1963,30 @@ def build_pipeline(
     if settings.route_prompt_families_enabled:
         _smalltalk_assembler = SmalltalkNavigationPromptAssembler()
         _smalltalk_static_prompt = _smalltalk_assembler.system_prompt()
+        _smalltalk_client = standard_client or helper_client
+        _smalltalk_model = (
+            settings.standard_model
+            if settings.execution_policy_enabled
+            else settings.helper_model
+        )
+        _smalltalk_temperature = (
+            settings.standard_temperature
+            if settings.execution_policy_enabled
+            else settings.helper_temperature
+        )
         smalltalk_generator = SmalltalkGenerator(
-            client=helper_client,
+            client=_smalltalk_client,
             assembler=_smalltalk_assembler,
             model_config=ModelConfig(
-                model=settings.helper_model,
-                temperature=settings.helper_temperature,
+                model=_smalltalk_model,
+                temperature=_smalltalk_temperature,
                 cache_key=build_prompt_cache_key(
                     "smalltalk_navigation",
-                    settings.helper_model,
+                    _smalltalk_model,
                     _smalltalk_static_prompt,
                 ),
                 stage="smalltalk_navigation",
+                reasoning_effort="none",
             ),
         )
 
@@ -1492,6 +1994,21 @@ def build_pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
         helper_model=helper_cfg,
+        standard_generator=standard_generator,
+        frontier_generator=generator,
+        execution_policy_enabled=settings.execution_policy_enabled,
+        answer_cache=(
+            InProcessExactAnswerCache(
+                max_entries=settings.exact_answer_cache_max_entries,
+                ttl_s=settings.exact_answer_cache_ttl_s,
+            )
+            if settings.execution_policy_enabled and settings.exact_answer_cache_enabled
+            else None
+        ),
+        answer_cache_namespace=(
+            f"{wissensstand}:execution-policy.v1:{settings.standard_provider}/"
+            f"{settings.standard_model}:structured={settings.structured_answer_enabled}"
+        ),
         understand_prompt_assembler=UnderstandPromptAssembler(),
         understand_enabled=settings.understand_enabled,
         archetypes=archetypes,

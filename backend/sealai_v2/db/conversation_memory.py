@@ -20,20 +20,42 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from dataclasses import replace
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from sealai_v2.core.contracts import (
+    CaseRevisionConflict,
     DerivedFact,
     MemoryView,
     RememberedFact,
     SessionSummary,
     Turn,
 )
+from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.db.models import V2Derived, V2Fact, V2Message, V2Session
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
 _TITLE_MAX_LEN = 60
+
+
+def _remembered_fact(row: V2Fact) -> RememberedFact:
+    return RememberedFact(
+        feld=row.feld,
+        wert=row.wert,
+        provenance=row.provenance,
+        as_of_turn=row.as_of_turn,
+        unit=row.unit,
+        status=row.status,
+        source_ref=row.source_ref,
+        observed_at=row.observed_at,
+        document_id=row.document_id,
+        document_version=row.document_version,
+        page=row.page,
+        bbox=tuple(row.bbox) if row.bbox is not None else None,
+        confidence=row.confidence,
+    )
 
 
 def _require(tenant_id: str, session_id: str) -> None:
@@ -84,6 +106,7 @@ class PostgresConversationMemory:
     def recall(self, *, tenant_id: str, session_id: str) -> MemoryView:
         _require(tenant_id, session_id)
         with self._sf() as s:
+            session_row = s.get(V2Session, (tenant_id, session_id))
             msgs = (
                 s.execute(
                     select(V2Message)
@@ -111,16 +134,15 @@ class PostgresConversationMemory:
             Turn(role=m.role, text=m.text, index=m.idx)
             for m in msgs[-(self._window_turns * 2) :]
         )
-        case_state = tuple(
-            RememberedFact(
-                feld=f.feld,
-                wert=f.wert,
-                provenance=f.provenance,
-                as_of_turn=f.as_of_turn,
-            )
-            for f in facts
+        case_state = tuple(_remembered_fact(f) for f in facts)
+        revision = session_row.case_revision if session_row is not None else 0
+        return MemoryView(
+            window=window,
+            case_state=case_state,
+            case_state_v2=CaseStateV2.from_remembered_facts(
+                case_id=session_id, revision=revision, facts=case_state
+            ),
         )
-        return MemoryView(window=window, case_state=case_state)
 
     def record_turn(
         self,
@@ -131,22 +153,44 @@ class PostgresConversationMemory:
         answer: str,
         facts: tuple[RememberedFact, ...] = (),
         now: str | None = None,
+        expected_case_revision: int | None = None,
     ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
-            sess = s.get(V2Session, (tenant_id, session_id))
+            sess = s.scalar(
+                select(V2Session)
+                .where(
+                    V2Session.tenant_id == tenant_id,
+                    V2Session.session_id == session_id,
+                )
+                .with_for_update()
+            )
             if sess is None:
+                if expected_case_revision not in (None, 0):
+                    raise CaseRevisionConflict(
+                        f"expected case revision {expected_case_revision}, got 0"
+                    )
                 sess = V2Session(
                     tenant_id=tenant_id,
                     session_id=session_id,
                     turns=0,
+                    case_revision=0,
                     created_at=now,
                     title=_title_from_question(question) if now else None,
                 )
                 s.add(sess)
+            elif (
+                expected_case_revision is not None
+                and sess.case_revision != expected_case_revision
+            ):
+                raise CaseRevisionConflict(
+                    f"expected case revision {expected_case_revision}, got {sess.case_revision}"
+                )
             if now is not None:
                 sess.updated_at = now
             sess.turns += 1
+            if facts:
+                sess.case_revision += 1
             # next idx = current message count (messages are append-only per session; only
             # ``clear`` removes them, wholesale) — mirrors ``len(st.messages)`` in-process.
             n = s.execute(
@@ -178,8 +222,53 @@ class PostgresConversationMemory:
             for f in facts:
                 # last value wins; re-stamp staleness to the current exchange (conservative merge).
                 self._upsert_fact(
-                    s, tenant_id, session_id, f.feld, f.wert, f.provenance, sess.turns
+                    s,
+                    tenant_id,
+                    session_id,
+                    replace(f, as_of_turn=sess.turns),
                 )
+
+    def merge_facts(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        facts: tuple[RememberedFact, ...],
+        expected_case_revision: int | None = None,
+    ) -> int:
+        _require(tenant_id, session_id)
+        with self._sf.begin() as s:
+            sess = s.scalar(
+                select(V2Session)
+                .where(
+                    V2Session.tenant_id == tenant_id,
+                    V2Session.session_id == session_id,
+                )
+                .with_for_update()
+            )
+            actual = sess.case_revision if sess is not None else 0
+            if expected_case_revision is not None and actual != expected_case_revision:
+                raise CaseRevisionConflict(
+                    f"expected case revision {expected_case_revision}, got {actual}"
+                )
+            if sess is None:
+                sess = V2Session(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    turns=0,
+                    case_revision=0,
+                )
+                s.add(sess)
+            if facts:
+                sess.case_revision += 1
+                for fact in facts:
+                    self._upsert_fact(
+                        s,
+                        tenant_id,
+                        session_id,
+                        replace(fact, as_of_turn=sess.turns),
+                    )
+            return sess.case_revision
 
     # --- history (layer 3) + session listing ---
 
@@ -234,15 +323,7 @@ class PostgresConversationMemory:
                 .scalars()
                 .all()
             )
-        return tuple(
-            RememberedFact(
-                feld=f.feld,
-                wert=f.wert,
-                provenance=f.provenance,
-                as_of_turn=f.as_of_turn,
-            )
-            for f in facts
-        )
+        return tuple(_remembered_fact(f) for f in facts)
 
     def edit_fact(
         self,
@@ -255,20 +336,56 @@ class PostgresConversationMemory:
     ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
-            sess = s.get(V2Session, (tenant_id, session_id))
-            turns = sess.turns if sess is not None else 0
-            self._upsert_fact(s, tenant_id, session_id, feld, wert, provenance, turns)
+            sess = s.scalar(
+                select(V2Session)
+                .where(
+                    V2Session.tenant_id == tenant_id,
+                    V2Session.session_id == session_id,
+                )
+                .with_for_update()
+            )
+            if sess is None:
+                sess = V2Session(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    turns=0,
+                    case_revision=0,
+                )
+                s.add(sess)
+            self._upsert_fact(
+                s,
+                tenant_id,
+                session_id,
+                RememberedFact(
+                    feld=feld,
+                    wert=wert,
+                    provenance=provenance,
+                    as_of_turn=sess.turns,
+                    status="confirmed",
+                ),
+            )
+            sess.case_revision += 1
 
     def delete_fact(self, *, tenant_id: str, session_id: str, feld: str) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
-            s.execute(
+            sess = s.scalar(
+                select(V2Session)
+                .where(
+                    V2Session.tenant_id == tenant_id,
+                    V2Session.session_id == session_id,
+                )
+                .with_for_update()
+            )
+            result = s.execute(
                 delete(V2Fact).where(
                     V2Fact.tenant_id == tenant_id,
                     V2Fact.session_id == session_id,
                     V2Fact.feld == feld,
                 )
             )
+            if result.rowcount and sess is not None:
+                sess.case_revision += 1
 
     # --- M8 derived slice (kernel_computed values — a SEPARATE, backend-only channel) ---
 
@@ -316,24 +433,32 @@ class PostgresConversationMemory:
         s,
         tenant_id: str,
         session_id: str,
-        feld: str,
-        wert: str,
-        provenance: str,
-        as_of_turn: int,
+        fact: RememberedFact,
     ) -> None:
-        row = s.get(V2Fact, (tenant_id, session_id, feld))
+        values = {
+            "wert": fact.wert,
+            "provenance": fact.provenance,
+            "as_of_turn": fact.as_of_turn,
+            "unit": fact.unit,
+            "status": fact.status,
+            "source_ref": fact.source_ref,
+            "observed_at": fact.observed_at,
+            "document_id": fact.document_id,
+            "document_version": fact.document_version,
+            "page": fact.page,
+            "bbox": list(fact.bbox) if fact.bbox is not None else None,
+            "confidence": fact.confidence,
+        }
+        row = s.get(V2Fact, (tenant_id, session_id, fact.feld))
         if row is None:
             s.add(
                 V2Fact(
                     tenant_id=tenant_id,
                     session_id=session_id,
-                    feld=feld,
-                    wert=wert,
-                    provenance=provenance,
-                    as_of_turn=as_of_turn,
+                    feld=fact.feld,
+                    **values,
                 )
             )
         else:
-            row.wert = wert
-            row.provenance = provenance
-            row.as_of_turn = as_of_turn
+            for key, value in values.items():
+                setattr(row, key, value)

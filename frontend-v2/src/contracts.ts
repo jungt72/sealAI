@@ -254,6 +254,20 @@ export interface ChatResponse {
   verified?: boolean; // P1.5: the conservative, honest L3 trust signal
   verification?: Verification; // P1.5: the raw signals behind `verified` (for a precise badge)
   risk_flags?: string[]; // Legal-by-Design Phase D: matched regulated/safety-critical terms, or []
+  run?: {
+    run_id: string;
+    status: string;
+    case_id: string;
+    case_revision_started: number;
+    case_revision_current: number;
+    risk_level: string;
+    route_name?: string | null;
+    execution_class?: string | null;
+    model_tier?: string | null;
+    verification_mode?: string | null;
+    policy_version?: string | null;
+    needs_human_review?: boolean;
+  } | null;
   // Phase 2B routing → render contract: route-aware chat-UI display flags. All OPTIONAL/nullable so
   // older cached responses and the non-streaming /chat fallback never break. The backend defaults
   // every flag to True whenever no route was classified, so `undefined` MUST be treated as `true`

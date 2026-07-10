@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiClient } from "./api/client";
 import { fetchFraming } from "./api/framing";
@@ -16,10 +16,7 @@ import {
   rpInitiatedLogout,
   type OidcConfig,
 } from "./auth/oidc";
-import { AdminPane } from "./components/AdminPane";
-import { ChatPane } from "./components/ChatPane";
 import { LegalGate } from "./components/LegalGate";
-import { PartnerSelfPane } from "./components/PartnerSelfPane";
 import { Shell } from "./components/Shell";
 import type { Briefing, CaseSummary, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
@@ -31,7 +28,6 @@ import {
   stashCaseIdForAuthRedirect,
   takeStashedCaseId,
 } from "./lib/caseId";
-import { downloadBriefingPdf } from "./lib/pdf";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
 // Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
@@ -46,6 +42,15 @@ const LEGAL_GATE_ENABLED = env.VITE_LEGAL_GATE_ENABLED === "true";
 // every setMemory(EMPTY_MEMORY) call below) — module-level so it's one constant reference, not a
 // fresh object literal (and therefore a fresh render trigger) on every call site.
 const EMPTY_MEMORY: ConversationMemory = { case_state: [], history: [] };
+const AdminPane = lazy(() =>
+  import("./components/AdminPane").then((module) => ({ default: module.AdminPane })),
+);
+const ChatPane = lazy(() =>
+  import("./components/ChatPane").then((module) => ({ default: module.ChatPane })),
+);
+const PartnerSelfPane = lazy(() =>
+  import("./components/PartnerSelfPane").then((module) => ({ default: module.PartnerSelfPane })),
+);
 const CONFIG: OidcConfig = {
   issuer: env.VITE_OIDC_ISSUER ?? "https://sealingai.com/realms/sealAI",
   clientId: env.VITE_OIDC_CLIENT_ID ?? "sealai-v2",
@@ -458,6 +463,7 @@ export function App() {
         activeCaseId={caseId}
         onSelectCase={selectCase}
       >
+        <Suspense fallback={<div className="login" aria-busy="true" />}>
         {adminView && isAdmin ? (
           <AdminPane api={api} onClose={() => setAdminView(false)} />
         ) : selfView && isManufacturer ? (
@@ -504,12 +510,17 @@ export function App() {
           briefing={briefing}
           compute={compute}
           onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
-          onDownloadPdf={(message) =>
-            api.briefing(message).then(downloadBriefingPdf)
-          }
+          onDownloadPdf={async (message) => {
+            const [result, pdf] = await Promise.all([
+              api.briefing(message),
+              import("./lib/pdf"),
+            ]);
+            pdf.downloadBriefingPdf(result);
+          }}
           onContribute={(payload) => api.contribute(payload)}
         />
         )}
+        </Suspense>
       </Shell>
     </FramingContext.Provider>
   );

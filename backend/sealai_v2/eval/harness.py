@@ -68,6 +68,21 @@ _EVAL_TENANT = TenantContext(tenant_id="eval-tenant")
 _CALC_FIXTURES_FILE = Path(__file__).resolve().parent / "calc_fixtures.json"
 
 
+def _select_primary_cases(
+    cases, case_ids: frozenset[str] | None, smoke_limit: int | None
+):
+    selected = list(cases)
+    if case_ids is not None:
+        known = {case.id for case in selected}
+        unknown = sorted(case_ids - known)
+        if unknown:
+            raise ValueError(f"unknown primary eval case ids: {unknown}")
+        selected = [case for case in selected if case.id in case_ids]
+    if smoke_limit:
+        selected = selected[:smoke_limit]
+    return selected
+
+
 def _percentile(values: list[float], pct: float) -> float | None:
     """Nearest-rank percentile (no numpy dep). ``pct`` in [0,100]. Empty → None."""
     if not values:
@@ -601,12 +616,12 @@ async def run_eval(
     timestamp: str,
     columns: dict[str, Flags] | None = None,
     smoke_limit: int | None = None,
+    include_auxiliary: bool = True,
+    case_ids: frozenset[str] | None = None,
     client_factory=None,
 ) -> dict:
     columns = columns or COLUMNS
-    cases = load_cases()
-    if smoke_limit:
-        cases = cases[:smoke_limit]
+    cases = _select_primary_cases(load_cases(), case_ids, smoke_limit)
 
     # Per-role provider factory (cached): an all-openai cell shares ONE client across roles
     # (byte-identical to the old single-client path). SUBJECT roles (L1/L3/helpers) are metered
@@ -665,6 +680,8 @@ async def run_eval(
         temperature=settings.judge_temperature,
         max_output_tokens=settings.eval_judge_max_output_tokens,
         cache_key="sealai-v2-judge",
+        stage="judge",
+        reasoning_effort=settings.eval_judge_reasoning_effort,
     )
 
     fixtures = _load_calc_fixtures()
@@ -699,14 +716,20 @@ async def run_eval(
     # ONLY this measurement. Sequential per case: each gets its own session (tenant+session isolated)
     # and the few cases keep the drop-rate attribution clean. Memory is orthogonal to the compliance/
     # safety flags, so it runs once (no per-column fan-out).
-    multiturn = await _run_multiturn(pipeline, judge_cfg, judge_client=judge_client)
+    multiturn = (
+        None
+        if not include_auxiliary
+        else await _run_multiturn(pipeline, judge_cfg, judge_client=judge_client)
+    )
 
     # M6a-B — Konversations-Rand (EDGE) class. Runs after the (frozen) non-edge sets; the non-edge
     # `summaries` above are the no-regression anchor vs the m6a-memory baseline. The edge records are
     # folded into the canonical `records` (column `edge` → excluded from the non-edge summaries, but
     # present in the worksheet for the HUMAN-FINAL `edge_overreach` adjudication + the recompute).
-    edge_records, edge_errors = await _run_edge(
-        pipeline, judge_cfg, judge_client=judge_client
+    edge_records, edge_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_edge(pipeline, judge_cfg, judge_client=judge_client)
     )
     edge = (
         {
@@ -724,8 +747,10 @@ async def run_eval(
     # M6b — Injektion/Sicherheit class. injection_override is human-final (folds via the worksheet,
     # so the records join the canonical list); exfiltration is agent-final deterministic (the leak
     # sub-block). Excluded from the non-edge no-regression by column.
-    inj_records, inj_errors, inj_exfil = await _run_injection(
-        pipeline, judge_cfg, judge_client=judge_client
+    inj_records, inj_errors, inj_exfil = (
+        ([], [], None)
+        if not include_auxiliary
+        else await _run_injection(pipeline, judge_cfg, judge_client=judge_client)
     )
     injection = (
         {
@@ -744,8 +769,10 @@ async def run_eval(
     # archetype_fit (G5, V2.1 Inc 1) — runs after the frozen non-edge sets (the `summaries` above stay
     # the no-regression anchor). Folded in under column `archetype` (excluded from the non-edge
     # summaries by the column filter); a CREDIBILITY/axes class — NO new hard gate (the 8 stay fixed).
-    arch_records, arch_errors = await _run_archetype(
-        pipeline, judge_cfg, judge_client=judge_client
+    arch_records, arch_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_archetype(pipeline, judge_cfg, judge_client=judge_client)
     )
     archetype = (
         {
@@ -764,8 +791,12 @@ async def run_eval(
     # honest hedge; + the kern-fix-01 restraint guard). Folded under column `calibration` (excluded
     # from the non-edge summaries by the column filter); CREDIBILITY/axes class — NO new hard gate.
     # Appended BEFORE the parametric block so CALIB-RESTRAINT-01 is in the agent-final parametric gate.
-    calib_records, calib_errors = await _run_calibration(
-        pipeline, judge_cfg, judge_client=judge_client, fixtures=fixtures
+    calib_records, calib_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_calibration(
+            pipeline, judge_cfg, judge_client=judge_client, fixtures=fixtures
+        )
     )
     calibration = (
         {
@@ -784,8 +815,10 @@ async def run_eval(
     # Abruf / Prioritätsleiter). Folded under column `beratungs_ux` (excluded from the non-edge
     # summaries by the column filter). Mostly CREDIBILITY/axes; three cases carry an EXISTING hard gate
     # (walked_into_trap / confident_wrong) — no new Schranke. Appended BEFORE the parametric block.
-    bux_records, bux_errors = await _run_beratungs_ux(
-        pipeline, judge_cfg, judge_client=judge_client
+    bux_records, bux_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_beratungs_ux(pipeline, judge_cfg, judge_client=judge_client)
     )
     beratungs_ux = (
         {
@@ -804,8 +837,12 @@ async def run_eval(
     # abschieben, OHNE zu erfinden). Folded under column `loesungserarbeitung` (excluded from the non-edge
     # summaries by the column filter). ALL five cases carry an EXISTING hard gate (invented_precision /
     # confident_wrong) — no new Schranke. Appended BEFORE the parametric block.
-    loes_records, loes_errors = await _run_loesungserarbeitung(
-        pipeline, judge_cfg, judge_client=judge_client
+    loes_records, loes_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_loesungserarbeitung(
+            pipeline, judge_cfg, judge_client=judge_client
+        )
     )
     loesungserarbeitung = (
         {
@@ -824,8 +861,10 @@ async def run_eval(
     # surface the conditional's condition, never affirm the compatible). Folded under column
     # `gegencheck` (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes
     # class - NO new hard gate. Appended BEFORE the parametric block (same agent-final gate coverage).
-    gc_records, gc_errors = await _run_gegencheck(
-        pipeline, judge_cfg, judge_client=judge_client
+    gc_records, gc_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_gegencheck(pipeline, judge_cfg, judge_client=judge_client)
     )
     gegencheck = (
         {
@@ -843,8 +882,10 @@ async def run_eval(
     # Diagnose (DIAGNOSE, Modus D, V2.1) - symptom cases. Folded under column `diagnose`
     # (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes - NO new hard
     # gate. Appended BEFORE the parametric block (same agent-final gate coverage).
-    dg_records, dg_errors = await _run_diagnose(
-        pipeline, judge_cfg, judge_client=judge_client
+    dg_records, dg_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_diagnose(pipeline, judge_cfg, judge_client=judge_client)
     )
     diagnose = (
         {
@@ -862,8 +903,10 @@ async def run_eval(
     # Decode (DECODE, Modus G, V2.1) - designation-decode cases. Folded under column `decode`
     # (excluded from the non-edge summaries by the column filter); the equivalence case is
     # gate-relevant (confident_wrong, §9.2). Appended BEFORE the parametric block.
-    dc_records, dc_errors = await _run_decode(
-        pipeline, judge_cfg, judge_client=judge_client
+    dc_records, dc_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_decode(pipeline, judge_cfg, judge_client=judge_client)
     )
     decode = (
         {
@@ -880,8 +923,10 @@ async def run_eval(
 
     # Alternativen (ALTERNATIVEN, Modus F) - neutral capable-manufacturer cases. Folded under
     # column `alternativen`; CREDIBILITY/axes - NO new hard gate.
-    al_records, al_errors = await _run_alternativen(
-        pipeline, judge_cfg, judge_client=judge_client
+    al_records, al_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_alternativen(pipeline, judge_cfg, judge_client=judge_client)
     )
     alternativen = (
         {
@@ -928,6 +973,11 @@ async def run_eval(
         if l3_on
         else "M1"
     )
+    from sealai_v2.config.runtime_profile import (
+        runtime_profile,
+        runtime_profile_hash,
+    )
+
     manifest = {
         "run_label": run_label,
         "git_sha": git_sha,
@@ -937,6 +987,10 @@ async def run_eval(
         # validate-then-commit points at the PRE-fix commit; tree_hash binds the actual content.
         "tree_hash": tree_hash,
         "dirty": dirty,
+        # Full behavior binding: tree_hash covers source bytes; this profile covers the
+        # environment-driven model, trust-layer and retrieval behavior those bytes serve.
+        "runtime_profile": runtime_profile(settings),
+        "runtime_profile_hash": runtime_profile_hash(settings),
         "timestamp": timestamp,
         "milestone": milestone,
         "subject": (
@@ -997,6 +1051,7 @@ async def run_eval(
         },  # m6a-memory no-regression anchor
         "columns": list(columns.keys()),
         "n_cases": len(cases),
+        "auxiliary_suites_included": include_auxiliary,
         "concurrency": settings.concurrency,
         "subject_pacing": {
             "concurrency": settings.eval_subject_concurrency,
@@ -1007,6 +1062,7 @@ async def run_eval(
             "min_interval_s": settings.eval_judge_min_interval_s,
             "max_retries": settings.eval_judge_max_retries,
             "max_output_tokens": settings.eval_judge_max_output_tokens,
+            "reasoning_effort": settings.eval_judge_reasoning_effort,
         },
         "scoring_split": (
             "LLM-judge: rubric-adherence only (axes 2-7); axis 1 (Faktische Korrektheit) and the "

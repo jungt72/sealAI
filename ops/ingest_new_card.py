@@ -1,80 +1,59 @@
-"""ops/ingest_new_card.py — push ONE (already-merged, already-in-the-seed) Fachkarte live into
-Qdrant with a single incremental upsert, instead of re-embedding the whole catalog every time
-(the 2026-07-04 RAG audit's "iterativ erweiterbar?" finding: ``ops/ingest_prod_qdrant.py`` always
-reloads + re-embeds all ~47 cards, which is safe but wasteful for a single new card, and only gets
-more so as the seed grows).
+"""Publish a newly reviewed seed card through the knowledge ledger.
 
-Run INSIDE the backend-v2 container (same as ops/ingest_prod_qdrant.py — needs the prod env: Qdrant
-URL on the docker network, OpenAI key):
-
-    docker cp fachkarten_seed.json backend-v2:/app/sealai_v2/knowledge/fachkarten_seed.json  # if
-                                                                                                # promoted on the host first
-    docker exec -i backend-v2 python ops/ingest_new_card.py --card-id FK-NEWCARD-ID
-
-Optionally cleans up a stale DRAFT card's points in the same run (``--delete-draft-id``) — e.g. after
-promoting a Paperless-sourced draft (``FK-DRAFT-DOC-<paperless_id>``) into a proper reviewed card
-under a new, permanent id, the old draft's points would otherwise sit in Qdrant forever (nothing else
-ever removes them — see the audit's draft-accumulation finding).
+The complete seed is imported because it is one versioned review artifact; the
+ledger hashes it, writes only changed claims and queues only required index
+operations. ``--delete-draft-id`` is retained as a compatibility spelling, but
+now performs an audited Postgres retirement instead of a raw Qdrant deletion.
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import sys
 
 from sealai_v2.config.settings import Settings
-from sealai_v2.knowledge.fachkarten import FachkartenCatalog, load_fachkarten
-from sealai_v2.knowledge.qdrant_retrieval import (
-    _make_client,
-    delete_card_points,
-    ingest_fachkarten,
+from sealai_v2.knowledge.bootstrap import bootstrap_seed
+from sealai_v2.knowledge.fachkarten import load_fachkarten
+from sealai_v2.knowledge.ledger import (
+    GLOBAL_KNOWLEDGE_TENANT,
+    build_knowledge_ledger,
 )
+from sealai_v2.knowledge.outbox_worker import main as outbox_main
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ops.ingest_new_card")
-    parser.add_argument(
-        "--card-id", required=True, help="the seed card id to push live"
-    )
+    parser.add_argument("--card-id", required=True)
     parser.add_argument(
         "--delete-draft-id",
         default=None,
-        help="optional: also delete this OTHER card_id's stale points (e.g. the draft being promoted)",
+        help="compatibility name: auditably retire this draft card in Postgres",
     )
     args = parser.parse_args(argv)
-
-    settings = Settings()
-    client = _make_client(settings)
-    catalog = load_fachkarten()
-    card = catalog.by_id(args.card_id)
-    if card is None:
+    if load_fachkarten().by_id(args.card_id) is None:
         print(
-            f"ingest_new_card: {args.card_id!r} not found in the seed — promote it first",
+            f"ingest_new_card: {args.card_id!r} not found in the reviewed seed",
             file=sys.stderr,
         )
         return 1
 
-    print("collection      :", settings.qdrant_collection)
-    if client.collection_exists(settings.qdrant_collection):
-        print("baseline points :", client.count(settings.qdrant_collection).count)
-    else:
-        print(
-            "baseline points : 0 (collection does not exist yet — ensure_collection will create it)"
-        )
-
-    n = ingest_fachkarten(
-        settings, client=client, catalog=FachkartenCatalog(cards=(card,))
-    )
-    print(f"upserted {n} point(s) for {args.card_id!r} ({len(card.claims)} claims)")
-
+    ledger = build_knowledge_ledger(Settings())
+    print("ledger import   :", bootstrap_seed(ledger))
     if args.delete_draft_id:
-        deleted = delete_card_points(
-            client, settings.qdrant_collection, args.delete_draft_id
+        retired = ledger.retire_card(
+            tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+            card_id=args.delete_draft_id,
+            actor="knowledge-publisher",
+            now=_now(),
+            note=f"Superseded by reviewed card {args.card_id}",
         )
-        print(f"deleted {deleted} stale point(s) for {args.delete_draft_id!r}")
-
-    print("final points    :", client.count(settings.qdrant_collection).count)
-    return 0
+        print(f"retired drafts : {retired} claim(s) from {args.delete_draft_id}")
+    return outbox_main(["drain-all", "--batch-size", "100"])
 
 
 if __name__ == "__main__":

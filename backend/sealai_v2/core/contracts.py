@@ -13,6 +13,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from sealai_v2.core.case_state import CaseStateV2
     from sealai_v2.core.medium_research import MediumIntelligence
     from sealai_v2.memory.context_assembler import MemoryContextBundle
 
@@ -31,6 +32,9 @@ class ModelConfig:
     # "verifier", "judge", ...) for grouping LlmCallTelemetry — never tenant/case/user data.
     # None → telemetry still works, just unlabeled by stage.
     stage: str | None = None
+    # Provider-native reasoning control. Both current OpenAI reasoning models and
+    # Mistral Small 4 accept this on Chat Completions. None omits the parameter.
+    reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,16 @@ class LlmClient(Protocol):
 
     async def generate(
         self, *, system: str, user: str, model_config: ModelConfig
+    ) -> LlmResult: ...
+
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
     ) -> LlmResult: ...
 
     def generate_stream(
@@ -204,9 +218,9 @@ class GroundingFact:
     # card_id. L1-NEUTRAL: the assembler renders only text+quelle, so this never reaches the prompt
     # (byte-identical) → no behavior change, no eval perturbation.
     sources: tuple[str, ...] = ()
-    # Gap #2: provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
-    # cell). L1-neutral (assembler renders text+quelle only). L3 uses it to apply the corrective policy:
-    # a matrix contradiction CORRECTS (reviewed cell), a card contradiction only FLAGs.
+    # Provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
+    # cell) | "trap" (owner-reviewed policy/failure-mode fact). L1-neutral (the assembler renders
+    # text+quelle only). L3 still receives matrix and trap catalogs through their dedicated lanes.
     kind: str = "card"
 
 
@@ -480,6 +494,9 @@ class Answer:
     model: str
     grounding_facts: tuple[GroundingFact, ...] = ()
     finish_reason: str | None = None
+    # Internal claim projection for selective LLM verification. Empty keeps the
+    # legacy full-answer verifier path; it is never serialized to the client.
+    verification_claims: tuple[str, ...] = ()
 
 
 class VerifierAction(str, Enum):
@@ -576,6 +593,19 @@ class RememberedFact:
     wert: str
     provenance: str = "distilled-from-conversation"
     as_of_turn: int = 0
+    unit: str = ""
+    status: str = "stated"
+    source_ref: str = ""
+    observed_at: str = ""
+    document_id: str = ""
+    document_version: str = ""
+    page: int | None = None
+    bbox: tuple[float, float, float, float] | None = None
+    confidence: float | None = None
+
+
+class CaseRevisionConflict(RuntimeError):
+    """The case changed after generation started; stale output must not be committed."""
 
 
 @dataclass(frozen=True)
@@ -587,10 +617,31 @@ class MemoryView:
     window: tuple[Turn, ...] = ()
     case_state: tuple[RememberedFact, ...] = ()
     durable: tuple[RememberedFact, ...] = ()
+    case_state_v2: "CaseStateV2 | None" = None
 
     @property
     def is_empty(self) -> bool:
-        return not (self.window or self.case_state or self.durable)
+        return not (
+            self.window or self.case_state or self.durable or self.case_state_v2
+        )
+
+
+@dataclass(frozen=True)
+class TurnState:
+    """Immutable execution identity bound to the case revision used for this answer."""
+
+    run_id: str
+    case_id: str
+    case_revision_started: int
+    case_revision_current: int
+    status: str
+    risk_level: str = "standard"
+    route_name: str | None = None
+    execution_class: str | None = None
+    model_tier: str | None = None
+    verification_mode: str | None = None
+    policy_version: str | None = None
+    needs_human_review: bool = False
 
 
 @dataclass(frozen=True)
@@ -670,7 +721,17 @@ class ConversationMemory(Protocol):
         answer: str,
         facts: tuple["RememberedFact", ...] = (),
         now: str | None = None,
+        expected_case_revision: int | None = None,
     ) -> None: ...
+
+    def merge_facts(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        facts: tuple["RememberedFact", ...],
+        expected_case_revision: int | None = None,
+    ) -> int: ...
 
 
 @runtime_checkable
@@ -699,6 +760,8 @@ class PipelineResult:
     flags: Flags
     understanding: Understanding | None
     answer: Answer
+    case_state: "CaseStateV2 | None" = None
+    turn_state: TurnState | None = None
     grounded: bool = False
     verified: bool = False
     cited: bool = False

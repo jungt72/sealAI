@@ -17,18 +17,16 @@ from collections.abc import Callable
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import LlmClient
 from sealai_v2.llm.client import OpenAiLlmClient
+from sealai_v2.llm.pacing import PacedLlmClient
 from sealai_v2.llm.telemetry import LoggingTelemetrySink
 from sealai_v2.obs.tracing import maybe_wrap_openai
 
 # Strongest-first preference for resolving L1 when the configured id is not on the account.
 _L1_PREFERENCE: tuple[str, ...] = (
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
     "gpt-5.1",
-    "gpt-5",
-    "gpt-5-pro",
-    "gpt-5-mini",
-    "gpt-4.1",
-    "gpt-4o",
-    "gpt-4o-mini",
 )
 
 
@@ -77,7 +75,7 @@ def build_client_for(
     wires the default log-only ``LoggingTelemetrySink`` unless ``settings.llm_telemetry_enabled`` is
     False (an incident-only kill-switch, same pattern as the other flags in ``config.settings`` — a
     logging call can never change pipeline output, so this defaults ON)."""
-    return OpenAiLlmClient(
+    inner = OpenAiLlmClient(
         _async_openai_compatible(settings, provider),
         timeout_s=settings.request_timeout_s,
         max_retries=max_retries if max_retries is not None else settings.max_retries,
@@ -85,6 +83,17 @@ def build_client_for(
         telemetry_sink=LoggingTelemetrySink()
         if settings.llm_telemetry_enabled
         else None,
+    )
+    if provider == "openai":
+        return PacedLlmClient(
+            inner,
+            max_concurrency=settings.openai_max_concurrency,
+            min_interval_s=settings.openai_min_interval_s,
+        )
+    return PacedLlmClient(
+        inner,
+        max_concurrency=settings.mistral_max_concurrency,
+        min_interval_s=settings.mistral_min_interval_s,
     )
 
 
@@ -104,7 +113,7 @@ def build_client_factory(settings: Settings) -> Callable[[str], LlmClient]:
 
 async def resolve_l1_model(settings: Settings, preferred: str | None = None) -> str:
     """Pick the L1 model. For the OpenAI provider: honor an explicit choice, else rank
-    ``models.list()`` by ``_L1_PREFERENCE``, else the lexicographically-last ``gpt-*``. For any
+    ``models.list()`` by the reviewed production allowlist. For any
     non-OpenAI provider, return the CONFIGURED ``l1_model`` verbatim — a candidate cell names its
     model explicitly, and ``models.list()`` against a foreign account must not gate it."""
     l1_provider = settings.l1_provider or settings.provider
@@ -118,7 +127,7 @@ async def resolve_l1_model(settings: Settings, preferred: str | None = None) -> 
     for cand in _L1_PREFERENCE:
         if cand in available:
             return cand
-    gpts = sorted(m for m in available if m.startswith("gpt-"))
-    if gpts:
-        return gpts[-1]
-    raise RuntimeError("no GPT chat model available on this OpenAI account")
+    raise RuntimeError(
+        "no reviewed GPT model available on this OpenAI account; "
+        f"reviewed={','.join(_L1_PREFERENCE)}"
+    )

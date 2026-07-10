@@ -8,7 +8,7 @@ framework-/I/O-free, build-spec §3).
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sealai_v2.core.contracts import (
     Answer,
@@ -19,7 +19,15 @@ from sealai_v2.core.contracts import (
     ModelConfig,
     SystemPromptAssembler,
 )
+from sealai_v2.core.technical_answer import (
+    TechnicalAnswer,
+    TechnicalAnswerValidationError,
+    calibrate_technical_answer,
+    validate_technical_answer,
+)
 from sealai_v2.core.sourcing_guard import strip_sourcing
+from sealai_v2.llm.structured import StructuredOutputError, generate_structured
+from sealai_v2.render.technical_answer import render_technical_answer
 
 
 def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list[str]]:
@@ -74,10 +82,26 @@ class L1Generator:
         client: LlmClient,
         assembler: SystemPromptAssembler,
         model_config: ModelConfig,
+        *,
+        structured_output_enabled: bool = False,
     ) -> None:
         self._client = client
         self._assembler = assembler
         self._model_config = model_config
+        self._structured_output_enabled = structured_output_enabled
+
+    @property
+    def supports_token_streaming(self) -> bool:
+        return not self._structured_output_enabled
+
+    def with_reasoning_effort(self, effort: str | None) -> "L1Generator":
+        """Return a turn-scoped generator without mutating the shared pipeline object."""
+        return L1Generator(
+            self._client,
+            self._assembler,
+            replace(self._model_config, reasoning_effort=effort),
+            structured_output_enabled=self._structured_output_enabled,
+        )
 
     def doctrine_system_prompt(self, *, flags: Flags) -> str:
         """P1.4: the STATIC doctrine system prompt (flags only — NO grounding, calc, memory or
@@ -158,6 +182,7 @@ class L1Generator:
         baseline_hardening: bool = False,
         material_params: list | None = None,
         risk_flags: list[str] | None = None,
+        case_revision: int = 0,
     ) -> Answer:
         system = self._assemble_system(
             flags=flags,
@@ -177,6 +202,61 @@ class L1Generator:
             material_params=material_params,
             risk_flags=risk_flags,
         )
+        if self._structured_output_enabled:
+            allowed_ids = frozenset(
+                fact.card_id for fact in grounding_facts if fact.card_id
+            )
+            structured_instruction = (
+                "\n\nCreate the internal TechnicalAnswer object. Do not write user-facing "
+                "Markdown. Use only these evidence_ids: "
+                f"{', '.join(sorted(allowed_ids)) or '(none)'}. "
+                f"case_revision must be {case_revision}. A decision_relevant claim must carry "
+                "at least one allowed evidence_id. Never invent evidence IDs or tool results."
+            )
+
+            async def _call(current_system: str):
+                technical, result = await generate_structured(
+                    self._client,
+                    output_type=TechnicalAnswer,
+                    schema_name="sealingai_technical_answer_v1",
+                    system=current_system,
+                    user=question,
+                    model_config=self._model_config,
+                    max_repairs=0,
+                )
+                technical = calibrate_technical_answer(technical)
+                validate_technical_answer(
+                    technical,
+                    case_revision=case_revision,
+                    allowed_evidence_ids=allowed_ids,
+                )
+                return technical, result
+
+            try:
+                technical, result = await _call(system + structured_instruction)
+            except (StructuredOutputError, TechnicalAnswerValidationError) as exc:
+                repair = (
+                    "\n\nThe previous object failed deterministic validation "
+                    f"({exc}). Repair it once. Return exactly one schema-valid "
+                    "TechnicalAnswer and obey the allowed evidence IDs and case revision."
+                )
+                technical, result = await _call(
+                    system + structured_instruction + repair
+                )
+            return Answer(
+                text=strip_sourcing(render_technical_answer(technical)),
+                model=result.model,
+                grounding_facts=grounding_facts,
+                finish_reason=result.finish_reason,
+                verification_claims=tuple(
+                    claim.text
+                    for claim in sorted(
+                        technical.claims,
+                        key=lambda claim: claim.criticality != "decision_relevant",
+                    )
+                ),
+            )
+
         result = await self._client.generate(
             system=system, user=question, model_config=self._model_config
         )
@@ -207,6 +287,7 @@ class L1Generator:
         baseline_hardening: bool = False,
         material_params: list | None = None,
         risk_flags: list[str] | None = None,
+        case_revision: int = 0,
     ) -> AsyncIterator[L1StreamEvent]:
         """Streaming variant of ``generate`` (Phase 3B, draft-token streaming). IDENTICAL keyword-arg
         signature and IDENTICAL prompt assembly (both go through ``_assemble_system``), but calls the
@@ -219,6 +300,31 @@ class L1Generator:
         This is a pure observability channel: the returned terminal Answer is fed into the SAME
         output_guard + L3 verify pipeline as the non-streaming path — draft deltas never bypass, skip,
         or weaken verification, and are never substituted for the delivered answer."""
+        if self._structured_output_enabled:
+            yield L1StreamEvent(
+                answer=await self.generate(
+                    question,
+                    flags=flags,
+                    grounding_facts=grounding_facts,
+                    case_context=case_context,
+                    durable_context=durable_context,
+                    conversation_window=conversation_window,
+                    correction_note=correction_note,
+                    calc=calc,
+                    untrusted=untrusted,
+                    archetype_context=archetype_context,
+                    pack_suggestion_context=pack_suggestion_context,
+                    medium_hint_context=medium_hint_context,
+                    coverage=coverage,
+                    contract=contract,
+                    baseline_hardening=baseline_hardening,
+                    material_params=material_params,
+                    risk_flags=risk_flags,
+                    case_revision=case_revision,
+                )
+            )
+            return
+
         system = self._assemble_system(
             flags=flags,
             grounding_facts=grounding_facts,

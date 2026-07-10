@@ -133,6 +133,8 @@ def _severity(gf: GroundingFact, disqualified: bool, basis: str | None) -> str:
     # Coarse v1: the case-level gegencheck verdict tags the MATRIX facts; card facts are supporting
     # info. (The per-claim 8-value epistemics live on the Fachkarte Claim, not propagated to the
     # GroundingFact — a later refinement, owner-tracked.)
+    if gf.kind == "trap":
+        return "caution"
     if gf.kind == "matrix":
         if disqualified:
             return "disqualify"
@@ -174,7 +176,13 @@ def _allowed_values(calc: CalcResult | None) -> tuple[dict, ...]:
     if calc is None:
         return ()
     return tuple(
-        {"name": cv.name, "value": cv.value, "unit": cv.unit, "calc_id": cv.calc_id}
+        {
+            "name": cv.name,
+            "value": cv.value,
+            "unit": cv.unit,
+            "calc_id": cv.calc_id,
+            "warnings": list(cv.warnings),
+        }
         for cv in calc.computed
     )
 

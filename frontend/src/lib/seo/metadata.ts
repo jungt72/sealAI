@@ -30,19 +30,30 @@ export function createMetadata({
     alternates: {
       canonical: url,
     },
+    robots: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+    },
     openGraph: {
       title: fullTitle,
       description: fullDescription,
       url,
       siteName: SITE_NAME,
       type,
-      images: image ? [{ url: image }] : [],
+      locale: "de_DE",
+      // Omit `images` entirely (not `[]`) when no explicit image is given —
+      // an explicit-but-empty array overrides Next's file-convention
+      // `opengraph-image.tsx` fallback instead of letting it fill the gap,
+      // which silently dropped the per-article OG images this was meant to
+      // enable.
+      ...(image ? { images: [{ url: image }] } : {}),
     },
     twitter: {
       card: "summary_large_image",
       title: fullTitle,
       description: fullDescription,
-      images: image ? [image] : [],
+      ...(image ? { images: [image] } : {}),
     },
   };
 }

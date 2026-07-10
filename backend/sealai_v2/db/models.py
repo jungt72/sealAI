@@ -34,7 +34,7 @@ an application-layer concern, same as every other table here).
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Float, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from sealai_v2.db.engine import Base
@@ -46,6 +46,7 @@ class V2Session(Base):
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     turns: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    case_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # "Fälle"-Sidebar (Patch A): additive, nullable — existing rows stay valid with all three
     # None until their next record_turn. title is derived from the first user message (~60 chars,
     # no LLM call); created_at/updated_at are ISO-8601 strings stamped by the caller (record_turn),
@@ -82,6 +83,17 @@ class V2Fact(Base):
         String(64), default="distilled-from-conversation", nullable=False
     )
     as_of_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="stated", nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    observed_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    document_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    document_version: Mapped[str] = mapped_column(
+        String(64), default="", nullable=False
+    )
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bbox: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class V2Derived(Base):
@@ -321,6 +333,124 @@ class V2MemoryOutbox(Base):
     )  # "pending" | "processing" | "done" | "failed"
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    processed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    next_attempt_at: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+
+
+class V2KnowledgeDocument(Base):
+    """Immutable source-document revision in the technical knowledge ledger.
+
+    ``source_type``/``source_id`` identify the external logical document (for
+    example a Paperless document or the reviewed Git seed). A changed checksum
+    creates a new monotonically increasing revision; historical revisions are
+    retained for reproducibility and audit.
+    """
+
+    __tablename__ = "v2_knowledge_documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source_type",
+            "source_id",
+            "version",
+            name="uq_v2_knowledge_document_version",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "source_type",
+            "source_id",
+            "content_sha256",
+            name="uq_v2_knowledge_document_content",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_uri: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    object_key: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    authority: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    valid_from: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    valid_to: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2KnowledgeClaim(Base):
+    """Versioned technical claim; Postgres is authoritative for review state.
+
+    Qdrant contains a derived copy only. Retrieval must resolve the ``id`` back
+    through this table before a claim may become authoritative prompt context.
+    """
+
+    __tablename__ = "v2_knowledge_claims"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    card_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    card_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    document_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    claim_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    scope_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    sources_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    provenance_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    qdrant_sync_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending"
+    )
+    qdrant_synced_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qdrant_synced_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    reviewed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class V2KnowledgeReview(Base):
+    """Append-only audit record for every knowledge review transition."""
+
+    __tablename__ = "v2_knowledge_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    claim_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    from_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2KnowledgeOutbox(Base):
+    """Transactional queue for the derived technical-knowledge Qdrant index."""
+
+    __tablename__ = "v2_knowledge_outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    claim_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     processed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     next_attempt_at: Mapped[str | None] = mapped_column(

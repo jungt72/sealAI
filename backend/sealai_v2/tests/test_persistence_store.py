@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from sealai_v2.core.contracts import DerivedFact, RememberedFact
+from sealai_v2.core.contracts import (
+    CaseRevisionConflict,
+    DerivedFact,
+    RememberedFact,
+)
 from sealai_v2.db.conversation_memory import PostgresConversationMemory
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
 from sealai_v2.security.tenant import TenantScopeError
@@ -96,6 +100,65 @@ def test_case_state_merge_last_wins_and_stamps_turn(db_url):
     assert facts["medium"].wert == "Wasser"  # last value wins
     assert facts["medium"].as_of_turn == 2  # re-stamped to the current exchange
     assert facts["temp"].wert == "120°C"
+    view = mem.recall(tenant_id="A", session_id="s1")
+    assert view.case_state_v2 is not None
+    assert view.case_state_v2.revision == 2
+    assert view.case_state_v2.field("medium").value == "Wasser"
+
+
+def test_case_state_metadata_survives_restart(db_url):
+    mem = _mem(db_url)
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question="q",
+        answer="a",
+        facts=(
+            RememberedFact(
+                feld="temperature",
+                wert="120",
+                unit="degC",
+                status="document_extracted",
+                provenance="document-extracted",
+                source_ref="DOC-1#p3",
+                observed_at="2026-07-10T10:00:00Z",
+                document_id="DOC-1",
+                document_version="v2",
+                page=3,
+                bbox=(1.0, 2.0, 3.0, 4.0),
+                confidence=0.95,
+            ),
+        ),
+    )
+    state = _mem(db_url).recall(tenant_id="A", session_id="s1").case_state_v2
+    assert state is not None
+    field = state.field("temperature")
+    assert field.unit == "degC"
+    assert field.source.document_id == "DOC-1"
+    assert field.source.bbox == (1.0, 2.0, 3.0, 4.0)
+    assert field.confidence == 0.95
+
+
+def test_record_turn_rejects_stale_case_revision_atomically(db_url):
+    mem = _mem(db_url)
+    mem.record_turn(
+        tenant_id="A",
+        session_id="s1",
+        question="q1",
+        answer="a1",
+        facts=(RememberedFact("medium", "Öl"),),
+        expected_case_revision=0,
+    )
+    with pytest.raises(CaseRevisionConflict):
+        mem.record_turn(
+            tenant_id="A",
+            session_id="s1",
+            question="stale",
+            answer="must-not-land",
+            expected_case_revision=0,
+        )
+    history = mem.history(tenant_id="A", session_id="s1")
+    assert [turn.text for turn in history] == ["q1", "a1"]
 
 
 def test_user_control_edit_delete_clear(db_url):
@@ -113,8 +176,11 @@ def test_user_control_edit_delete_clear(db_url):
     assert (
         state["medium"].provenance == "user-edited"
     )  # honesty: provenance reflects the edit
+    assert state["medium"].status == "confirmed"
+    assert mem.recall(tenant_id="A", session_id="s1").case_state_v2.revision == 2
     mem.delete_fact(tenant_id="A", session_id="s1", feld="medium")
     assert mem.case_state(tenant_id="A", session_id="s1") == ()
+    assert mem.recall(tenant_id="A", session_id="s1").case_state_v2.revision == 3
     mem.clear(tenant_id="A", session_id="s1")
     assert mem.recall(tenant_id="A", session_id="s1").is_empty
 

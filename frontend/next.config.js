@@ -8,6 +8,22 @@ const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname),
 
+  // Marketing pages are static but content changes (copy, design, article
+  // edits) should be visible immediately after a deploy — the framework
+  // default (s-maxage=1y) otherwise lets browsers/proxies sit on a stale
+  // page for a very long time. Scoped to everything except /api and /login
+  // so auth/API responses keep their own cache behavior.
+  async headers() {
+    return [
+      {
+        source: "/((?!api|login).*)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+        ],
+      },
+    ];
+  },
+
   async redirects() {
     return [
       {
@@ -53,18 +69,6 @@ const nextConfig = {
   },
 
 
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "sealingai.com",
-      },
-      {
-        protocol: "https",
-        hostname: "www.sealingai.com",
-      },
-    ],
-  },
 };
 
 module.exports = withBundleAnalyzer(nextConfig);

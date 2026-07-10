@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import (
     build_prompt_cache_key,
     normalize_prompt,
     static_prompt_hash,
 )
+from sealai_v2.pipeline.pipeline import build_pipeline
+from sealai_v2.tests._fakes import FakeLlmClient
 
 _SYNTHETIC_TENANT = "tenant-musterfirma-42"
 _SYNTHETIC_CASE = "case-2026-07-08-XYZ"
@@ -109,10 +112,6 @@ class TestNormalizeAndHashHelpers:
 
 
 # --- build_pipeline() wiring: confirm the real L1 ModelConfig uses the new hash-based key ---
-
-from sealai_v2.config.settings import Settings
-from sealai_v2.pipeline.pipeline import build_pipeline
-from sealai_v2.tests._fakes import FakeLlmClient
 
 
 def test_build_pipeline_wires_l1_with_hash_based_cache_key_and_stage() -> None:

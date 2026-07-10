@@ -20,14 +20,15 @@ _T = TenantContext("t1")
 # --- compute_wissensstand() — pure ---------------------------------------------------------
 
 
-def test_all_four_present_in_fixed_order():
+def test_all_five_present_in_fixed_order():
     s = compute_wissensstand(
         fachkarten_version="fk_v1",
         matrix_version="mx_v1",
         traps_version="trap_v1",
+        calc_version="calc_v1",
         versagensmodi_version="vm_v1",
     )
-    assert s == "fk:fk_v1|mx:mx_v1|trap:trap_v1|vm:vm_v1"
+    assert s == "fk:fk_v1|mx:mx_v1|trap:trap_v1|calc:calc_v1|vm:vm_v1"
 
 
 def test_missing_catalogs_are_omitted_not_padded():
@@ -48,12 +49,12 @@ def test_order_is_fixed_regardless_of_kwarg_order():
 # --- build_pipeline() wiring ----------------------------------------------------------------
 
 
-def test_default_pipeline_wires_all_four_catalog_versions():
+def test_default_pipeline_wires_all_five_catalog_versions():
     p = build_pipeline(Settings(), FakeLlmClient("x"))
     assert (
         p.wissensstand
     )  # non-empty by default (ground_enabled + verify_enabled both True)
-    for label in ("fk:", "mx:", "trap:", "vm:"):
+    for label in ("fk:", "mx:", "trap:", "calc:", "vm:"):
         assert label in p.wissensstand
 
 
@@ -62,16 +63,18 @@ def test_wissensstand_matches_the_loaded_catalog_versions():
     assert f"fk:{p.retriever.catalog.version}" in p.wissensstand
     assert f"mx:{p.matrix.catalog.version}" in p.wissensstand
     assert f"trap:{p.catalog.version}" in p.wissensstand
+    assert f"calc:{p.engine.registry.version}" in p.wissensstand
     assert f"vm:{p.versagensmodi.catalog.version}" in p.wissensstand
 
 
-def test_ground_disabled_drops_fk_mx_vm_but_keeps_trap():
+def test_ground_disabled_drops_fk_mx_vm_but_keeps_trap_and_calc():
     p = build_pipeline(Settings(ground_enabled=False), FakeLlmClient("x"))
     assert p.retriever is None and p.matrix is None and p.versagensmodi is None
     assert "fk:" not in p.wissensstand
     assert "mx:" not in p.wissensstand
     assert "vm:" not in p.wissensstand
     assert "trap:" in p.wissensstand  # verify_enabled still True by default
+    assert "calc:" in p.wissensstand  # compute_enabled remains True
 
 
 def test_verify_disabled_drops_trap_only():
@@ -79,6 +82,7 @@ def test_verify_disabled_drops_trap_only():
     assert p.catalog is None
     assert "trap:" not in p.wissensstand
     assert "fk:" in p.wissensstand  # ground_enabled still True by default
+    assert "calc:" in p.wissensstand
 
 
 # --- PipelineResult attachment (every turn, not flag-gated) ---------------------------------
@@ -93,7 +97,8 @@ def test_run_attaches_the_pipeline_wissensstand_to_the_result():
 
 def test_no_catalogs_wired_yields_empty_result_field():
     p = build_pipeline(
-        Settings(ground_enabled=False, verify_enabled=False), FakeLlmClient("x")
+        Settings(ground_enabled=False, verify_enabled=False, compute_enabled=False),
+        FakeLlmClient("x"),
     )
     result = asyncio.run(p.run("Frage?", tenant=_T, flags=Flags()))
     assert result.wissensstand == ""
@@ -109,9 +114,9 @@ def test_chat_response_passes_wissensstand_through_verbatim():
         flags=Flags(),
         understanding=None,
         answer=Answer(text="…", model="fake"),
-        wissensstand="fk:v1|mx:v2|trap:v3|vm:v4",
+        wissensstand="fk:v1|mx:v2|trap:v3|calc:v4|vm:v5",
     )
-    assert chat_response(result)["wissensstand"] == "fk:v1|mx:v2|trap:v3|vm:v4"
+    assert chat_response(result)["wissensstand"] == "fk:v1|mx:v2|trap:v3|calc:v4|vm:v5"
 
 
 def test_chat_response_defaults_to_empty_string():

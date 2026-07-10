@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from sealai_v2.core.contracts import AXES, LlmClient, ModelConfig
 from sealai_v2.eval.cases import Case
-from sealai_v2.pipeline.stages import _extract_json
+from sealai_v2.llm.structured import extract_json_object
 
 _JUDGE_SYSTEM = (
     "Du bist ein STRIKTER Rubrik-Prüfer für Antworten eines Dichtungstechnik-Assistenten. "
@@ -101,7 +101,7 @@ async def judge_no_reask(
     )
     out = {t: False for t in already_known}
     try:
-        data = json.loads(_extract_json(res.text.strip()))
+        data = json.loads(extract_json_object(res.text.strip()))
         for item in data.get("reasked", []):
             topic = str(item.get("topic", "")).strip()
             if topic in out:
@@ -125,7 +125,7 @@ async def judge_answer(
     )
     raw = res.text.strip()
     try:
-        data = json.loads(_extract_json(raw))
+        data = json.loads(extract_json_object(raw))
         return JudgeResult(
             case_id=case.id,
             column=column,

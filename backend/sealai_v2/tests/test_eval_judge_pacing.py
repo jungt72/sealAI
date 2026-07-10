@@ -14,6 +14,7 @@ class _RecordingClient:
         self.starts: list[float] = []
         self.active = 0
         self.max_active = 0
+        self.structured_calls = 0
 
     async def generate(
         self, *, system: str, user: str, model_config: ModelConfig
@@ -32,6 +33,14 @@ class _RecordingClient:
             system=system, user=user, model_config=model_config
         )
         yield LlmStreamEvent(result=result)
+
+    async def generate_structured(self, **kwargs) -> LlmResult:
+        self.structured_calls += 1
+        return await self.generate(
+            system=kwargs["system"],
+            user=kwargs["user"],
+            model_config=kwargs["model_config"],
+        )
 
 
 def test_paced_judge_serializes_and_spaces_concurrent_calls() -> None:
@@ -57,10 +66,31 @@ def test_paced_judge_serializes_and_spaces_concurrent_calls() -> None:
 
 
 def test_eval_judge_token_reservation_is_bounded() -> None:
-    assert Settings().eval_judge_max_output_tokens == 512
+    settings = Settings()
+    assert settings.eval_judge_max_output_tokens == 1024
+    assert settings.eval_judge_reasoning_effort == "low"
 
 
 def test_eval_subject_pacing_defaults_are_conservative() -> None:
     settings = Settings()
     assert settings.eval_subject_concurrency == 1
     assert settings.eval_subject_min_interval_s == 3.0
+
+
+def test_paced_eval_client_preserves_structured_output_path() -> None:
+    inner = _RecordingClient()
+    client = PacedLlmClient(inner, max_concurrency=1, min_interval_s=0.0)
+
+    result = asyncio.run(
+        client.generate_structured(
+            system="S",
+            user="U",
+            model_config=ModelConfig("structured-model"),
+            schema_name="answer",
+            json_schema={"type": "object"},
+        )
+    )
+
+    assert result.model == "structured-model"
+    assert len(inner.starts) == 1
+    assert inner.structured_calls == 1

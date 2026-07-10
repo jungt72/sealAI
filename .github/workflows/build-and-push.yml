@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source at the requested commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ inputs.source_sha || github.sha }}
 
@@ -47,18 +47,24 @@ jobs:
           echo "tree_hash=$tree_hash" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend-v2
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: backend
           file: backend/Dockerfile.v2
+          platforms: linux/amd64
           push: true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=backend-v2
+          cache-to: type=gha,mode=max,scope=backend-v2
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.short_sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}
@@ -77,4 +83,6 @@ jobs:
             echo "- commit: \`${{ steps.source.outputs.sha }}\`"
             echo "- tree hash: \`${{ steps.source.outputs.tree_hash }}\`"
             echo "- image tag: \`${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}\`"
+            echo "- image digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- provenance: OCI build provenance and SBOM attached"
           } >> "$GITHUB_STEP_SUMMARY"

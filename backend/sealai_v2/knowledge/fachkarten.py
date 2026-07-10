@@ -14,9 +14,9 @@ Circularity guard (build-spec §8 — "no LLM erdet LLM"). A claim may reach ``r
 A ``reviewed`` claim with NEITHER an owner/trap provenance NOR a primary source is a load error.
 ``draft`` claims are flag-only (never authoritative, never corrective) and carry no such constraint.
 
-Pure data + a typed loader — no LLM, no network (``core`` stays I/O-free; retrieval is a separate
-seam). The seed file is canonical for M3 (git = provenance/version/audit), mirroring trap_catalog.json;
-Postgres/Qdrant are deferred runtime adapters behind the Retriever seam.
+Pure data + a typed loader - no LLM, no network. The reviewed seed is the version-controlled release
+artifact; ``knowledge.bootstrap`` imports it into the authoritative Postgres runtime ledger. Qdrant
+is a derived projection and is never a runtime source of truth.
 """
 
 from __future__ import annotations

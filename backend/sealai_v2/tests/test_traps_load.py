@@ -6,13 +6,13 @@ import re
 import pytest
 
 from sealai_v2.core.contracts import HARD_GATES
-from sealai_v2.knowledge.traps import load_traps
+from sealai_v2.knowledge.traps import load_traps, retrieve_reviewed_trap_facts
 
 
 def test_loads_production_catalog():
     cat = load_traps()
     assert cat.reviewed(), "expected reviewed entries"
-    assert cat.version == "trap_catalog_v0"
+    assert cat.version == "trap_catalog_v5"
 
 
 def test_every_entry_well_formed():
@@ -26,6 +26,103 @@ def test_reviewed_entries_carry_a_correct_fact():
     # reviewed entries may CORRECT, so they must have a non-empty correct fact (integrity)
     for e in load_traps().reviewed():
         assert e.correct.strip(), f"{e.id}: reviewed entry needs a correct fact"
+
+
+def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
+    catalog = load_traps()
+    facts = retrieve_reviewed_trap_facts(
+        catalog,
+        "Aceton, dauerhaft 180 °C und möglichst günstig: welche Dichtung?",
+    )
+    assert [fact.card_id for fact in facts] == ["CONF-SCHEIN-OPTIMUM"]
+    assert facts[0].kind == "trap"
+
+    assert not retrieve_reviewed_trap_facts(catalog, "Ist EPDM gegen Aceton beständig?")
+
+    uncertainty = retrieve_reviewed_trap_facts(
+        catalog, "Ist FKM beständig gegen Essigsäure?"
+    )
+    assert [fact.card_id for fact in uncertainty] == ["CONF-PAUSCHAL-BESTAENDIG"]
+
+    combo = retrieve_reviewed_trap_facts(
+        catalog, "FKM in verdünnter Natronlauge bei 200 °C"
+    )
+    assert [fact.card_id for fact in combo] == ["TRAP-FKM-AMIN-LAUGE-KETON"]
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        (
+            "Medium ist Synthetiköl, die genaue Sorte weiß ich nicht. Welcher Werkstoff passt?",
+            "POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
+        ),
+        (
+            "Schoko-Rührwerk mit taumelnder Welle und CIP: Welche Dichtungslösung ist sinnvoll?",
+            "POLICY-SCHOKO-CIP-WERKSTOFF-OFFEN",
+        ),
+        (
+            "Belüftetes Getriebe, Mineralöl bei 80 °C und staubige Umgebung: sinnvoller Ansatz?",
+            "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM",
+        ),
+        (
+            "Passt FKM in normalem Wasser bei Raumtemperatur?",
+            "POLICY-FKM-WASSER-KEIN-VERDIKT",
+        ),
+        (
+            "Warum fällt ein RWDR bei zu hoher Umfangsgeschwindigkeit aus?",
+            "POLICY-RWDR-GESCHWINDIGKEIT-MECHANISMUS",
+        ),
+        (
+            "Die Dichtung quillt in Mineralöl und wird weich. Was ist die Ursache?",
+            "POLICY-DIAG-QUELLUNG-MATERIAL-OFFEN",
+        ),
+    ],
+)
+def test_reviewed_solution_policy_is_prefetched_only_for_qualified_context(
+    question, expected
+):
+    facts = retrieve_reviewed_trap_facts(load_traps(), question)
+    assert expected in [fact.card_id for fact in facts]
+
+
+def test_solution_policy_does_not_fire_on_single_generic_keyword():
+    catalog = load_traps()
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(catalog, "Was ist Synthetiköl?")
+    }
+    assert "POLICY-SYNTHETIKOEL-KLASSE-OFFEN" not in ids
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(catalog, "Erkläre mir ein Getriebe.")
+    }
+    assert "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM" not in ids
+
+
+def test_draft_trap_cannot_define_prefetch_terms(tmp_path):
+    p = tmp_path / "draft-prefetch.json"
+    p.write_text(
+        json.dumps(
+            {
+                "draft_for_review": [
+                    {
+                        "id": "D",
+                        "trigger": "t",
+                        "wrong": ["w"],
+                        "correct": "c",
+                        "gates": ["confident_wrong"],
+                        "provenance": ["model:unreviewed"],
+                        "retrieval_terms": ["Aceton"],
+                        "retrieval_min_hits": 1,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_traps(p)
 
 
 def test_review_state_is_stamped_from_the_block_not_the_entry(tmp_path):

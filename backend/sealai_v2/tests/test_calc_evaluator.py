@@ -24,6 +24,10 @@ def test_umfangsgeschwindigkeit_owner_expected_12_6():
     assert cv["umfangsgeschwindigkeit"].unit == "m/s"
     assert cv["umfangsgeschwindigkeit"].stage == 1
     assert cv["umfangsgeschwindigkeit"].estimate is False
+    assert any(
+        "grenzwertige Auslegung" in warning
+        for warning in cv["umfangsgeschwindigkeit"].warnings
+    )
 
 
 def test_fail_closed_missing_input_is_never_a_number():

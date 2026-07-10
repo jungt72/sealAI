@@ -3,7 +3,7 @@
 THE load-bearing security invariant: untrusted content (user-pasted claims, datasheets, legacy
 text) is DATA, never authoritative grounding. Enforced STRUCTURALLY — every ``GroundingFact`` /
 ``Claim`` constructor originates in the curated-catalog grounding lanes (``retrieval.py`` /
-``matrix.py`` / ``fachkarten.py``), NEVER from ``UntrustedContent``. AST-based (robust vs string-grep)
+``matrix.py`` / ``fachkarten.py`` / reviewed ``traps.py``), NEVER from ``UntrustedContent``. AST-based (robust vs string-grep)
 so it holds when uploads land.
 """
 
@@ -24,6 +24,10 @@ _ALLOWED = {
         "knowledge/retrieval.py",
         "knowledge/qdrant_retrieval.py",
         "knowledge/matrix.py",
+        # Owner-reviewed failure-mode policy facts with explicit high-precision retrieval terms.
+        # The loader rejects retrieval terms on draft traps, so runtime/user text can only select
+        # an already-reviewed fact; it can never become the fact itself.
+        "knowledge/traps.py",
         # Offline eval-fixture builder (INC-NARRATOR-CONTRACT Phase 4): constructs GroundingFacts ONLY
         # from the static, in-repo CONTRACT_EVAL_CASES (curated, owner-authored scenarios) — never from
         # runtime/user content, and never invoked by the prod request path (only the offline measurement

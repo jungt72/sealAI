@@ -13,10 +13,12 @@ never hit another tenant's state — a durable leak is the worst case (build-spe
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.contracts import (
     DerivedFact,
+    CaseRevisionConflict,
     MemoryView,
     RememberedFact,
     SessionSummary,
@@ -42,6 +44,7 @@ class _SessionState:
     facts: dict[str, RememberedFact] = field(default_factory=dict)
     derived: dict[str, DerivedFact] = field(default_factory=dict)
     turns: int = 0
+    case_revision: int = 0
     title: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -91,7 +94,14 @@ class InProcessConversationMemory:
         if st is None:
             return MemoryView()  # fresh session → true no-op
         window = tuple(st.messages[-(self._window_turns * 2) :])
-        return MemoryView(window=window, case_state=tuple(st.facts.values()))
+        facts = tuple(st.facts.values())
+        return MemoryView(
+            window=window,
+            case_state=facts,
+            case_state_v2=CaseStateV2.from_remembered_facts(
+                case_id=session_id, revision=st.case_revision, facts=facts
+            ),
+        )
 
     def record_turn(
         self,
@@ -102,10 +112,18 @@ class InProcessConversationMemory:
         answer: str,
         facts: tuple[RememberedFact, ...] = (),
         now: str | None = None,
+        expected_case_revision: int | None = None,
     ) -> None:
         _require(tenant_id, session_id)
         is_new = (tenant_id, session_id) not in self._store
         st = self._state(tenant_id, session_id)
+        if (
+            expected_case_revision is not None
+            and st.case_revision != expected_case_revision
+        ):
+            raise CaseRevisionConflict(
+                f"expected case revision {expected_case_revision}, got {st.case_revision}"
+            )
         if is_new and now is not None:
             st.created_at = now
             st.title = _title_from_question(question)
@@ -114,11 +132,34 @@ class InProcessConversationMemory:
         st.turns += 1
         st.messages.append(Turn(role="user", text=question, index=len(st.messages)))
         st.messages.append(Turn(role="assistant", text=answer, index=len(st.messages)))
+        if facts:
+            st.case_revision += 1
         for f in facts:
             # last value wins; re-stamp staleness to the current exchange (conservative merge).
-            st.facts[f.feld] = RememberedFact(
-                feld=f.feld, wert=f.wert, provenance=f.provenance, as_of_turn=st.turns
+            st.facts[f.feld] = replace(f, as_of_turn=st.turns)
+
+    def merge_facts(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        facts: tuple[RememberedFact, ...],
+        expected_case_revision: int | None = None,
+    ) -> int:
+        _require(tenant_id, session_id)
+        st = self._state(tenant_id, session_id)
+        if (
+            expected_case_revision is not None
+            and st.case_revision != expected_case_revision
+        ):
+            raise CaseRevisionConflict(
+                f"expected case revision {expected_case_revision}, got {st.case_revision}"
             )
+        if facts:
+            st.case_revision += 1
+            for fact in facts:
+                st.facts[fact.feld] = replace(fact, as_of_turn=st.turns)
+        return st.case_revision
 
     # --- history (layer 3) + session listing ---
 
@@ -165,14 +206,19 @@ class InProcessConversationMemory:
         # a user-supplied value is a stronger provenance than a distilled claim (honesty: reflect the
         # source). Default = the inline MemoryPanel edit; the parameter form passes "user-form".
         st.facts[feld] = RememberedFact(
-            feld=feld, wert=wert, provenance=provenance, as_of_turn=st.turns
+            feld=feld,
+            wert=wert,
+            provenance=provenance,
+            as_of_turn=st.turns,
+            status="confirmed",
         )
+        st.case_revision += 1
 
     def delete_fact(self, *, tenant_id: str, session_id: str, feld: str) -> None:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
-        if st:
-            st.facts.pop(feld, None)
+        if st and st.facts.pop(feld, None) is not None:
+            st.case_revision += 1
 
     # --- M8 derived slice (kernel_computed values — a SEPARATE, backend-only channel) ---
 

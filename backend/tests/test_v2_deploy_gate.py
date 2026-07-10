@@ -66,6 +66,7 @@ def _write_run(
     det=None,
     columns=None,
     l1="openai/gpt-5.1",
+    runtime_profile_hash="PROFILE-A",
 ):
     d = runs_dir / label
     d.mkdir(parents=True)
@@ -80,6 +81,8 @@ def _write_run(
     if l1 is not None:
         provider, _, model = l1.partition("/")
         manifest["roles"] = {"l1": {"provider": provider, "model": model}}
+    if runtime_profile_hash is not None:
+        manifest["runtime_profile_hash"] = runtime_profile_hash
     data = {"manifest": manifest}
     if adjudicated:
         adj = {"provisional_until_deep_audit": True}
@@ -260,3 +263,21 @@ def test_p16_main_accepts_served_l1_arg(tmp_path, capsys):
     _write_run(tmp_path, "kern-fix-01", tree_hash="ABC", l1="openai/gpt-5.1")
     assert _gate().main([str(tmp_path), "ABC", "openai/gpt-5.1"]) == 0
     assert _gate().main([str(tmp_path), "ABC", "openai/gpt-5.4-mini"]) == 2
+
+
+def test_runtime_profile_must_match_when_required(tmp_path):
+    _write_run(tmp_path, "r", tree_hash="ABC", runtime_profile_hash="PROFILE-A")
+    assert (
+        _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.1", "PROFILE-A")
+        is not None
+    )
+    assert (
+        _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.1", "PROFILE-B") is None
+    )
+
+
+def test_runtime_profile_fails_closed_when_manifest_predates_binding(tmp_path):
+    _write_run(tmp_path, "legacy", tree_hash="ABC", runtime_profile_hash=None)
+    assert (
+        _gate().find_gated_run(tmp_path, "ABC", "openai/gpt-5.1", "PROFILE-A") is None
+    )

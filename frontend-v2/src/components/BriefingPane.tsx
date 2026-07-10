@@ -1,5 +1,4 @@
 import type { Briefing } from "../contracts";
-import { downloadBriefingPdf } from "../lib/pdf";
 import { ClaimBoundaryNote } from "./SafetyBanner";
 
 /** The M4b briefing render. It carries the SAME claim-boundary framing as the chat view (build-gate
@@ -16,7 +15,11 @@ export function BriefingPane({ briefing }: { briefing: Briefing | null }) {
           type="button"
           className="briefing-pdf-btn"
           data-testid="briefing-pdf"
-          onClick={() => downloadBriefingPdf(briefing)}
+          onClick={() => {
+            void import("../lib/pdf").then(({ downloadBriefingPdf }) =>
+              downloadBriefingPdf(briefing),
+            );
+          }}
         >
           Als PDF herunterladen
         </button>

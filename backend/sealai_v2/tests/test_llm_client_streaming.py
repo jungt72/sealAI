@@ -139,6 +139,14 @@ def test_prompt_cache_key_passed_via_extra_body_and_stream_flags_on_create() -> 
     assert call["messages"][1] == {"role": "user", "content": "U"}
 
 
+def test_reasoning_effort_is_forwarded_provider_natively() -> None:
+    inner = _StreamingFakeOpenAI([_delta_chunk("x", finish="stop")])
+    client = OpenAiLlmClient(inner)
+    cfg = ModelConfig(model="mistral-small-2603", reasoning_effort="high")
+    asyncio.run(_collect(client, system="S", user="U", model_config=cfg))
+    assert inner.calls[0]["reasoning_effort"] == "high"
+
+
 def test_prompt_cache_key_rejection_unwinds_once_before_any_delta() -> None:
     # First create() raises a prompt_cache_key rejection BEFORE yielding anything; the client must
     # strip extra_body and retry the stream from scratch (safe: no token has crossed the wire yet).

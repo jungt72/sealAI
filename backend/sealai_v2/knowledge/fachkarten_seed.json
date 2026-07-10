@@ -1,6 +1,6 @@
 {
-  "version": "fachkarten_seed_v0+prov-promote-20260628",
-  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated). | + 38 challenge-verified PROVISIONAL Fachkarten (4-round GPT-5.5 challenge -> GO; review_state=draft -> served as provisional/pre-check; Herstellerfreigabe = final gate)",
+  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710",
+  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated). 2026-07-10 adds two owner-reviewed operational cards from SAFETY-02 and UNDER-03: Pharma-SIP qualification and unknown replacement-seal identification. | + 38 challenge-verified PROVISIONAL Fachkarten (4-round GPT-5.5 challenge -> GO; review_state=draft -> served as provisional/pre-check; Herstellerfreigabe = final gate)",
   "cards": [
     {
       "id": "FK-FKM-DAMPF",
@@ -20,6 +20,7 @@
         ],
         "medium": [
           "Dampf",
+          "Wasserdampf",
           "Heißdampf",
           "Sattdampf",
           "SIP",
@@ -30,7 +31,12 @@
           "Hydrolysebeständigkeit",
           "Temperaturbeständigkeit"
         ],
-        "application": []
+        "application": [
+          "Materialempfehlung",
+          "empfiehl",
+          "Anwendung",
+          "Wasserdampf-Anwendung"
+        ]
       },
       "claims": [
         {
@@ -53,6 +59,56 @@
           "provenance": [
             "trap-correct:TRAP-FKM-DAMPF"
           ]
+        }
+      ],
+      "xrefs": []
+    },
+    {
+      "id": "FK-PHARMA-SIP-VALIDIERUNG",
+      "review_state": "reviewed",
+      "provenance": ["owner:eval-SAFETY-02"],
+      "version": "fachkarten_seed_v1",
+      "matrix_crosscheck": "not_applicable",
+      "scope": {
+        "material": [],
+        "medium": ["Dampf", "SIP", "Sterilisation"],
+        "property": ["Zulassung", "Validierung", "GMP", "Extractables", "Leachables"],
+        "application": ["Pharma", "Bioreaktor", "Produktkontakt"]
+      },
+      "claims": [
+        {
+          "text": "Bei Pharma-Produktkontakt und Dampfsterilisation muss das konkrete Dichtungssystem die geforderten Qualifikations- und Zulassungsnachweise erfüllen; dazu können je nach Lastenheft USP Class VI, FDA-Konformität, tierfreie Zusammensetzung und GMP-Validierung gehören. Die Nachweise gelten compound- und chargenspezifisch und sind mit dem Hersteller zu bestätigen.",
+          "kind": "qualification_required",
+          "review_state": "reviewed",
+          "provenance": ["owner:eval-SAFETY-02"]
+        },
+        {
+          "text": "Für den Pharma-Bioreaktor sind spaltarme hygienische Ausführung, Reinigbarkeit sowie die Bewertung von Extractables und Leachables Teil der Systemvalidierung.",
+          "kind": "qualification_required",
+          "review_state": "reviewed",
+          "provenance": ["owner:eval-SAFETY-02"]
+        }
+      ],
+      "xrefs": ["FK-FKM-DAMPF"]
+    },
+    {
+      "id": "FK-ERSATZDICHTUNG-IDENTIFIKATION",
+      "review_state": "reviewed",
+      "provenance": ["owner:eval-UNDER-03"],
+      "version": "fachkarten_seed_v1",
+      "matrix_crosscheck": "not_applicable",
+      "scope": {
+        "material": [],
+        "medium": [],
+        "property": ["Identifikation", "Abmessung", "Bauform"],
+        "application": ["Ersatz", "Originalspezifikation", "Altteil", "Wellendichtung", "kaputt"]
+      },
+      "claims": [
+        {
+          "text": "Ist die Originalspezifikation einer Wellendichtung unbekannt, wird das Altteil systematisch identifiziert: Innen- und Außendurchmesser sowie Breite am Altteil beziehungsweise an Welle und Bohrung messen; Dicht- und Staublippe, Feder, Drehrichtung und erkennbare Material- oder Härtekennzeichnungen dokumentieren; vorhandenen Code fotografieren; anschließend Medium, Temperatur und Drehzahl des Einsatzes ergänzen. Daraus lässt sich die Standardbezeichnung eingrenzen, bevor ein Ersatz freigegeben wird.",
+          "kind": "qualification_required",
+          "review_state": "reviewed",
+          "provenance": ["owner:eval-UNDER-03"]
         }
       ],
       "xrefs": []
