@@ -172,6 +172,8 @@ class OpenAiLlmClient:
             kwargs["temperature"] = model_config.temperature
         if model_config.max_output_tokens is not None:
             kwargs["max_completion_tokens"] = model_config.max_output_tokens
+        if model_config.reasoning_effort is not None:
+            kwargs["reasoning_effort"] = model_config.reasoning_effort
         if model_config.cache_key is not None:
             # Mistral/OpenAI prompt caching: opt-in via a stable key; the doctrine prefix then
             # bills at 10% on cache hits. extra_body passes through regardless of SDK version.

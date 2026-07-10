@@ -214,6 +214,12 @@ def chat_response(result: PipelineResult) -> dict:
                 "case_revision_started": turn_state.case_revision_started,
                 "case_revision_current": turn_state.case_revision_current,
                 "risk_level": turn_state.risk_level,
+                "route_name": turn_state.route_name,
+                "execution_class": turn_state.execution_class,
+                "model_tier": turn_state.model_tier,
+                "verification_mode": turn_state.verification_mode,
+                "policy_version": turn_state.policy_version,
+                "needs_human_review": turn_state.needs_human_review,
             }
             if turn_state is not None
             else None

@@ -95,6 +95,16 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
     await expect(client.chatStream("hi", () => undefined)).rejects.toBeInstanceOf(ApiError);
   });
 
+  it("chatStream: rejects an unsupported version before consuming frames", async () => {
+    const response = sseResponse([
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ]);
+    response.headers.set("X-SealingAI-Stream-Version", "99");
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response)));
+    const client = new ApiClient(() => "tok", () => undefined);
+    await expect(client.chatStream("hi")).rejects.toMatchObject({ status: 502 });
+  });
+
   it("chatStream: a stream that ends without a result frame rejects (fail-closed)", async () => {
     vi.stubGlobal(
       "fetch",

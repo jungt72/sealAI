@@ -171,6 +171,19 @@ _MATERIAL_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SMALLTALK_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|guten\s+(?:morgen|tag|abend)|danke|vielen\s+dank|"
+    r"tsch(?:u|ü)ss|auf\s+wiedersehen|was\s+kannst\s+du|hilfe)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+_DOMAIN_KNOWLEDGE_RE = re.compile(
+    r"\b(dichtung(?:stechnik)?|dichtungsart|wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
+    r"o-?ring|hydraulikdichtung|werkstoff|elastomer|thermoplast|nut|dichtlippe|"
+    r"gegenlauffl(?:a|ä)che|schmierung|tribologie)\b",
+    re.IGNORECASE,
+)
+
 
 def detect_engineering_signals(
     question: str,
@@ -313,6 +326,68 @@ def classify_route(
     return RouteDecision(
         route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
         reason=f"intent={intent.value}_no_signals",
+        confidence=1.0,
+        forced_full_pipeline=True,
+        deterministic_signal_count=0,
+    )
+
+
+def classify_route_deterministic(
+    question: str,
+    *,
+    case_state_nonempty: bool = False,
+    decode_result: dict | None = None,
+    diagnosis: dict | None = None,
+    gegencheck_verdict: dict | None = None,
+) -> RouteDecision:
+    """LLM-free production router.
+
+    The same conservative engineering signals as :func:`classify_route` force
+    the full path. Only narrow, explicit smalltalk and domain-knowledge shapes
+    receive a cheaper route; anything else is ambiguous and therefore full.
+    """
+    signals = detect_engineering_signals(
+        question,
+        case_state_nonempty=case_state_nonempty,
+        decode_result=decode_result,
+        diagnosis=diagnosis,
+        gegencheck_verdict=gegencheck_verdict,
+    )
+    if signals:
+        return RouteDecision(
+            route=_forced_route(question, signals),
+            reason=f"deterministic_signals:{','.join(signals)}",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=len(signals),
+        )
+    if _SMALLTALK_RE.fullmatch(question or ""):
+        return RouteDecision(
+            route=RouteName.SMALLTALK_NAVIGATION,
+            reason="deterministic_smalltalk_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _MATERIAL_NAME_RE.search(question):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason="deterministic_material_knowledge_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question):
+        return RouteDecision(
+            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
+            reason="deterministic_domain_knowledge_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    return RouteDecision(
+        route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+        reason="no_deterministic_route",
         confidence=1.0,
         forced_full_pipeline=True,
         deterministic_signal_count=0,

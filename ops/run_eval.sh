@@ -4,7 +4,7 @@
 set -e
 cd ~/sealai
 set -a
-. <(grep -E '^(OPENAI_API_KEY|MISTRAL_API_KEY|SEALAI_V2_PROVIDER|SEALAI_V2_(L1|VERIFIER|HELPER|JUDGE)_(MODEL|PROVIDER))=' .env.prod)
+. <(grep -E '^(OPENAI_API_KEY|MISTRAL_API_KEY|SEALAI_V2_PROVIDER|SEALAI_V2_(L1|VERIFIER|HELPER|JUDGE|STANDARD)_(MODEL|PROVIDER)|SEALAI_V2_(EXECUTION_POLICY|STRUCTURED_ANSWER)_ENABLED)=' .env.prod)
 set +a
 unset SEALAI_V2_DATABASE_URL DATABASE_URL 2>/dev/null || true
 # Eval traces NOTHING: keep LangSmith off so the run stays byte-identical + creates no eval noise.

@@ -18,7 +18,25 @@ from datetime import datetime, timezone
 from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import build_prompt_cache_key
 from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
-from sealai_v2.pipeline.routing import RouteName, classify_route
+from sealai_v2.pipeline.routing import (
+    RouteName,
+    classify_route,
+    classify_route_deterministic,
+)
+from sealai_v2.orchestration.execution_policy import (
+    ExecutionClass,
+    ExecutionDecision,
+    ExecutionFeatures,
+    ModelTier,
+    StreamingMode,
+    VerificationMode,
+    decide_execution,
+    deterministic_response,
+)
+from sealai_v2.orchestration.answer_cache import (
+    InProcessExactAnswerCache,
+    exact_answer_key,
+)
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
 from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
 from sealai_v2.pipeline.route_telemetry import (
@@ -47,6 +65,7 @@ from sealai_v2.core.contracts import (
     LlmClient,
     ModelConfig,
     PipelineResult,
+    RetrievalResult,
     Retriever,
     SessionContext,
     TurnState,
@@ -294,6 +313,11 @@ class Pipeline:
     generator: L1Generator
     client: LlmClient
     helper_model: ModelConfig
+    standard_generator: L1Generator | None = None
+    frontier_generator: L1Generator | None = None
+    execution_policy_enabled: bool = False
+    answer_cache: InProcessExactAnswerCache | None = None
+    answer_cache_namespace: str = ""
     understand_prompt_assembler: UnderstandPromptAssembler = field(
         default_factory=UnderstandPromptAssembler
     )
@@ -571,6 +595,55 @@ class Pipeline:
         )
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
+        if self.execution_policy_enabled:
+            # CaseStateV2 is authoritative. Historical transcript text and cross-session hints
+            # are not re-injected into the one-shot production prompt.
+            durable_context = []
+            conversation_window = []
+        policy_route_decision = (
+            classify_route_deterministic(
+                question,
+                case_state_nonempty=bool(
+                    case_state_v2.fields
+                    or case_state_v2.open_conflicts
+                    or case_state_v2.required_missing
+                ),
+                decode_result=decode_result,
+                diagnosis=diagnosis,
+                gegencheck_verdict=gegencheck_verdict,
+            )
+            if self.execution_policy_enabled
+            else None
+        )
+        early_clarification = bool(
+            policy_route_decision is not None
+            and policy_route_decision.forced_full_pipeline
+            and case_state_v2.required_missing
+        )
+        cache_key: str | None = None
+        cached_answer: Answer | None = None
+        cache_eligible = bool(
+            self.execution_policy_enabled
+            and self.answer_cache is not None
+            and policy_route_decision is not None
+            and policy_route_decision.route
+            in {
+                RouteName.GENERAL_SEALING_KNOWLEDGE,
+                RouteName.MATERIAL_KNOWLEDGE,
+            }
+            and not case_state_v2.fields
+            and not case_state_v2.open_conflicts
+            and not case_state_v2.required_missing
+            and not risk_flags
+            and not untrusted
+        )
+        if cache_eligible:
+            cache_key = exact_answer_key(
+                tenant_id=scope.tenant_id,
+                question=question,
+                namespace=self.answer_cache_namespace,
+            )
+            cached_answer = self.answer_cache.get(cache_key)
 
         # P1: soft understand is annotate-only (Intent NEVER gates/routes; it feeds only the
         # API intent field via PipelineResult.understanding) — so it runs CONCURRENT with the
@@ -578,7 +651,7 @@ class Pipeline:
         # failure cancels it (same failure surface as the serial order, pure reordering).
         understand_task: asyncio.Task | None = None
         understanding: Understanding | None = None
-        if self.understand_enabled:
+        if self.understand_enabled and not self.execution_policy_enabled:
             archetype_keys = (
                 tuple(self.archetypes.keys) if self.archetypes is not None else ()
             )
@@ -609,14 +682,21 @@ class Pipeline:
             understand_task = asyncio.create_task(_understand_timed())
 
         try:
-            with _staged(timer, progress, "ground_ms", "ground"):
-                retrieval = await stages.ground(
-                    self.retriever,
-                    self.matrix,
-                    question,
-                    tenant_id=scope.tenant_id,
-                    case_facts=mem.case_state,
+            if early_clarification:
+                retrieval = RetrievalResult()
+            elif cached_answer is not None:
+                retrieval = RetrievalResult(
+                    grounding_facts=cached_answer.grounding_facts
                 )
+            else:
+                with _staged(timer, progress, "ground_ms", "ground"):
+                    retrieval = await stages.ground(
+                        self.retriever,
+                        self.matrix,
+                        question,
+                        tenant_id=scope.tenant_id,
+                        case_facts=mem.case_state,
+                    )
             grounding_facts = (
                 retrieval.grounding_facts
             )  # reviewed Fachkarten → compute + (Step A) verify
@@ -643,13 +723,16 @@ class Pipeline:
                 param_origins[key] = "Parameter (explizit übergeben)"
             # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
             # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
-            with _staged(timer, progress, "compute_ms", "compute"):
-                calc = await stages.compute(
-                    self.engine,
-                    merged_params or None,
-                    grounding_facts=grounding_facts,
-                    param_origins=param_origins or None,
-                )
+            if early_clarification or cached_answer is not None:
+                calc = CalcResult()
+            else:
+                with _staged(timer, progress, "compute_ms", "compute"):
+                    calc = await stages.compute(
+                        self.engine,
+                        merged_params or None,
+                        grounding_facts=grounding_facts,
+                        param_origins=param_origins or None,
+                    )
             if (
                 bound.notes
             ):  # surfaced fail-closed drops — visible to L1 + render, never silent
@@ -699,16 +782,21 @@ class Pipeline:
             draft_stream_active = (
                 self.draft_token_streaming_enabled and token_sink is not None
             )
-            if self.route_optimization_enabled:
+            if self.route_optimization_enabled or self.execution_policy_enabled:
                 _route_started = time.monotonic()
-                route_decision = classify_route(
-                    question,
-                    case_state_nonempty=bool(mem.case_state),
-                    decode_result=decode_result,
-                    diagnosis=diagnosis,
-                    gegencheck_verdict=gegencheck_verdict,
-                    intent=understanding.intent if understanding is not None else None,
-                )
+                if self.execution_policy_enabled:
+                    route_decision = policy_route_decision
+                else:
+                    route_decision = classify_route(
+                        question,
+                        case_state_nonempty=bool(mem.case_state),
+                        decode_result=decode_result,
+                        diagnosis=diagnosis,
+                        gegencheck_verdict=gegencheck_verdict,
+                        intent=understanding.intent
+                        if understanding is not None
+                        else None,
+                    )
                 # Phase 2B safety correction: a stress test against the real eval seed cases (with
                 # an adversarially-uniform "wissensfrage" intent guess) found real cases where
                 # general_sealing_knowledge/material_knowledge signals under-fired on natural-
@@ -831,6 +919,66 @@ class Pipeline:
 
                 _gc = build_guard_contract(grounding_facts=l1_grounding, calc=calc)
                 guard_contract = _gc.to_dict() if _gc is not None else None
+
+            execution_decision: ExecutionDecision | None = None
+            active_generator: L1Generator | None = self.generator
+            policy_missing_fields: tuple[str, ...] = ()
+            policy_conflicts = tuple(
+                conflict.field_key for conflict in case_state_v2.open_conflicts
+            )
+            if self.execution_policy_enabled:
+                if route_decision is None:  # defensive: policy routing is mandatory
+                    raise RuntimeError("execution policy requires a route decision")
+                contract_missing = tuple((contract or {}).get("missing_fields", ()))
+                policy_missing_fields = tuple(
+                    dict.fromkeys((*case_state_v2.required_missing, *contract_missing))
+                )
+                source_ids = {
+                    source for fact in l1_grounding for source in fact.sources if source
+                }
+                execution_decision = decide_execution(
+                    ExecutionFeatures(
+                        route=route_decision,
+                        risk_flags=tuple(risk_flags),
+                        authoritative_evidence_count=len(l1_grounding),
+                        provisional_evidence_count=len(retrieval.provisional),
+                        document_count=len(source_ids),
+                        tool_step_count=len(calc.computed),
+                        case_conflict_count=len(case_state_v2.open_conflicts),
+                        required_missing=policy_missing_fields,
+                        contract_status=(contract or {}).get("status"),
+                        untrusted_content_count=len(untrusted),
+                        has_diagnosis=diagnosis is not None,
+                        exact_cache_hit=cached_answer is not None,
+                    )
+                )
+                if execution_decision.model_tier is ModelTier.NONE:
+                    active_generator = None
+                elif execution_decision.model_tier is ModelTier.STANDARD:
+                    active_generator = self.standard_generator or self.generator
+                else:
+                    active_generator = self.frontier_generator or self.generator
+                if active_generator is not None:
+                    active_generator = active_generator.with_reasoning_effort(
+                        execution_decision.reasoning_effort
+                    )
+                skip_l3_for_route = (
+                    execution_decision.verification_mode
+                    is not VerificationMode.CLAIM_LLM
+                )
+                draft_stream_active = (
+                    execution_decision.streaming_mode is StreamingMode.DRAFT
+                    and self.draft_token_streaming_enabled
+                    and token_sink is not None
+                    and active_generator is not None
+                    and active_generator.supports_token_streaming
+                )
+                stream_tokens_active = (
+                    execution_decision.streaming_mode is StreamingMode.FINAL
+                    and smalltalk_prompt_active
+                    and self.smalltalk_token_streaming_enabled
+                    and token_sink is not None
+                )
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
             # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
             # None when OFF (byte-identical).
@@ -847,7 +995,19 @@ class Pipeline:
                 # prompt) is completely untouched below -- every route except a fully-qualified
                 # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
                 # EXACT same call it always has.
-                if stream_tokens_active and self.smalltalk_generator is not None:
+                if cached_answer is not None:
+                    answer = cached_answer
+                elif active_generator is None and execution_decision is not None:
+                    answer = Answer(
+                        text=deterministic_response(
+                            execution_decision,
+                            missing_fields=policy_missing_fields,
+                            conflicts=policy_conflicts,
+                        ),
+                        model="deterministic-policy",
+                        grounding_facts=l1_grounding,
+                    )
+                elif stream_tokens_active and self.smalltalk_generator is not None:
                     # Phase 3A: stream the compact smalltalk answer token-by-token. Each RAW delta
                     # fires the token sink (fire-and-forget); the terminal event carries the finished
                     # strip_sourcing-cleaned Answer -- byte-identical to the non-streaming generate()
@@ -875,6 +1035,7 @@ class Pipeline:
                     # docstring. The delivered ``answer`` is unaffected either way; it still goes
                     # through the unchanged output_guard + L3 verify pipeline below.
                     answer = await self._l1_generate(
+                        active_generator or self.generator,
                         question,
                         token_sink=token_sink,
                         draft_stream_active=draft_stream_active,
@@ -897,6 +1058,7 @@ class Pipeline:
                         risk_flags=(
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
+                        case_revision=case_state_v2.revision,
                     )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -915,7 +1077,11 @@ class Pipeline:
             # regeneration still never enters Renderer-Modus, only receives the correction_note.
             guard = None
             _effective_contract = contract if contract is not None else guard_contract
-            if self.response_contract_enabled and _effective_contract is not None:
+            if (
+                self.response_contract_enabled
+                and _effective_contract is not None
+                and active_generator is not None
+            ):
                 from sealai_v2.core.output_guard import (
                     correction_note as _guard_note,
                     evaluate_render as _guard_eval,
@@ -938,6 +1104,7 @@ class Pipeline:
                     # new event type is introduced for that purpose.
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
                         answer = await self._l1_generate(
+                            active_generator or self.generator,
                             question,
                             token_sink=token_sink,
                             draft_stream_active=draft_stream_active,
@@ -960,6 +1127,7 @@ class Pipeline:
                                 if self.risk_flag_prompt_enabled
                                 else None
                             ),
+                            case_revision=case_state_v2.revision,
                         )
                     _gr2 = _guard_eval(
                         answer_text=answer.text,
@@ -986,7 +1154,7 @@ class Pipeline:
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = await stages.verify(
                         self.verifier,
-                        self.generator,
+                        active_generator or self.generator,
                         self.catalog,
                         question,
                         answer,
@@ -1003,6 +1171,7 @@ class Pipeline:
                         untrusted=untrusted_data,
                         # §9.2 guard fires ONLY on a part-comparison turn (decode parsed a designation)
                         comparison_context=bool(decode_result),
+                        case_revision=case_state_v2.revision,
                     )
             else:
                 # P0.3: the DETERMINISTIC parametric Schranke is pure (no LLM) and must hold even when
@@ -1028,12 +1197,23 @@ class Pipeline:
             # refusal before cite/return.
             answer, _exfil_verdict = _exfil_guard(
                 answer,
-                system_prompt=self.generator.doctrine_system_prompt(flags=flags),
+                system_prompt=(
+                    active_generator or self.generator
+                ).doctrine_system_prompt(flags=flags),
                 kb_claims=[f.text for f in l1_grounding],
             )
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
+
+            if (
+                cache_key is not None
+                and cached_answer is None
+                and self.answer_cache is not None
+                and execution_decision is not None
+                and execution_decision.execution_class is ExecutionClass.S0
+            ):
+                self.answer_cache.put(cache_key, answer)
 
             # Persist the authoritative turn BEFORE it can be returned. Only LLM distillation stays
             # asynchronous. The optimistic revision check prevents an answer generated against an
@@ -1110,6 +1290,31 @@ class Pipeline:
                 route_name=(
                     route_decision.route.value if route_decision is not None else None
                 ),
+                execution_class=(
+                    execution_decision.execution_class.value
+                    if execution_decision is not None
+                    else None
+                ),
+                model_tier=(
+                    execution_decision.model_tier.value
+                    if execution_decision is not None
+                    else None
+                ),
+                verification_mode=(
+                    execution_decision.verification_mode.value
+                    if execution_decision is not None
+                    else None
+                ),
+                policy_version=(
+                    execution_decision.policy_version
+                    if execution_decision is not None
+                    else None
+                ),
+                needs_human_review=(
+                    execution_decision.needs_human_review
+                    if execution_decision is not None
+                    else False
+                ),
             ),
             grounded=retrieval.grounded,
             verified=verdict is not None,
@@ -1144,6 +1349,7 @@ class Pipeline:
 
     async def _l1_generate(
         self,
+        generator: L1Generator,
         question: str,
         *,
         token_sink: "TokenSink | None",
@@ -1167,9 +1373,9 @@ class Pipeline:
         always). A mid-stream failure propagates unchanged, exactly like ``generate``'s own contract.
         """
         if not draft_stream_active:
-            return await self.generator.generate(question, **kwargs)
+            return await generator.generate(question, **kwargs)
         answer: Answer | None = None
-        async for _ev in self.generator.generate_stream(question, **kwargs):
+        async for _ev in generator.generate_stream(question, **kwargs):
             if _ev.delta is not None:
                 _emit_token(token_sink, _ev.delta, draft=True)
             elif _ev.answer is not None:
@@ -1178,7 +1384,7 @@ class Pipeline:
             # Defensive: a successful stream always yields a terminal answer (mirrors the identical
             # defensive fallback on the Phase 3A smalltalk streaming branch above) -- unreachable on
             # success; a failure would already have raised out of the async-for above.
-            answer = await self.generator.generate(question, **kwargs)
+            answer = await generator.generate(question, **kwargs)
         return answer
 
     def _archetype_context(self, understanding: Understanding | None) -> dict | None:
@@ -1383,6 +1589,11 @@ def build_pipeline(
     l1_client = resolve(settings.l1_provider or settings.provider)
     verifier_client = resolve(settings.verifier_provider or settings.provider)
     helper_client = resolve(settings.helper_provider or settings.provider)
+    standard_client = (
+        resolve(settings.standard_provider)
+        if settings.execution_policy_enabled
+        else None
+    )
 
     assembler = PromptAssembler()
     _l1_model_name = l1_model or settings.l1_model
@@ -1410,7 +1621,31 @@ def build_pipeline(
         cache_key="sealai-v2-helper",
         stage="helper",
     )
-    generator = L1Generator(l1_client, assembler, l1_cfg)
+    generator = L1Generator(
+        l1_client,
+        assembler,
+        l1_cfg,
+        structured_output_enabled=settings.structured_answer_enabled,
+    )
+    standard_generator = None
+    if standard_client is not None:
+        standard_cfg = ModelConfig(
+            model=settings.standard_model,
+            temperature=settings.standard_temperature,
+            cache_key=build_prompt_cache_key(
+                "l1-standard",
+                settings.standard_model,
+                _l1_static_doctrine,
+            ),
+            stage="l1-standard",
+            reasoning_effort="none",
+        )
+        standard_generator = L1Generator(
+            standard_client,
+            assembler,
+            standard_cfg,
+            structured_output_enabled=settings.structured_answer_enabled,
+        )
     medium_researcher = MediumResearcher(
         helper_client, MediumResearchPromptAssembler(), helper_cfg
     )
@@ -1526,18 +1761,30 @@ def build_pipeline(
     if settings.route_prompt_families_enabled:
         _smalltalk_assembler = SmalltalkNavigationPromptAssembler()
         _smalltalk_static_prompt = _smalltalk_assembler.system_prompt()
+        _smalltalk_client = standard_client or helper_client
+        _smalltalk_model = (
+            settings.standard_model
+            if settings.execution_policy_enabled
+            else settings.helper_model
+        )
+        _smalltalk_temperature = (
+            settings.standard_temperature
+            if settings.execution_policy_enabled
+            else settings.helper_temperature
+        )
         smalltalk_generator = SmalltalkGenerator(
-            client=helper_client,
+            client=_smalltalk_client,
             assembler=_smalltalk_assembler,
             model_config=ModelConfig(
-                model=settings.helper_model,
-                temperature=settings.helper_temperature,
+                model=_smalltalk_model,
+                temperature=_smalltalk_temperature,
                 cache_key=build_prompt_cache_key(
                     "smalltalk_navigation",
-                    settings.helper_model,
+                    _smalltalk_model,
                     _smalltalk_static_prompt,
                 ),
                 stage="smalltalk_navigation",
+                reasoning_effort="none",
             ),
         )
 
@@ -1545,6 +1792,21 @@ def build_pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
         helper_model=helper_cfg,
+        standard_generator=standard_generator,
+        frontier_generator=generator,
+        execution_policy_enabled=settings.execution_policy_enabled,
+        answer_cache=(
+            InProcessExactAnswerCache(
+                max_entries=settings.exact_answer_cache_max_entries,
+                ttl_s=settings.exact_answer_cache_ttl_s,
+            )
+            if settings.execution_policy_enabled and settings.exact_answer_cache_enabled
+            else None
+        ),
+        answer_cache_namespace=(
+            f"{wissensstand}:execution-policy.v1:{settings.standard_provider}/"
+            f"{settings.standard_model}:structured={settings.structured_answer_enabled}"
+        ),
         understand_prompt_assembler=UnderstandPromptAssembler(),
         understand_enabled=settings.understand_enabled,
         archetypes=archetypes,

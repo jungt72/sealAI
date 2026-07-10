@@ -99,6 +99,10 @@ export class ApiClient {
     }
     if (res.status === 404 || res.status === 405) return this.chat(message, caseId);
     if (!res.ok || !res.body) throw new ApiError(res.status, `request failed (${res.status})`);
+    const streamVersion = res.headers.get("X-SealingAI-Stream-Version");
+    if (streamVersion !== null && streamVersion !== "1") {
+      throw new ApiError(502, `unsupported stream schema (${streamVersion})`);
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();

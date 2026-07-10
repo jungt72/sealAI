@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BriefingPane } from "./BriefingPane";
@@ -23,10 +23,10 @@ describe("BriefingPane", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders the briefing + downloads it as PDF (without sending)", () => {
+  it("renders the briefing + downloads it as PDF (without sending)", async () => {
     render(<BriefingPane briefing={BRIEFING} />);
     expect(screen.getByTestId("briefing-body")).toHaveTextContent("Inhalt");
     fireEvent.click(screen.getByTestId("briefing-pdf"));
-    expect(downloadBriefingPdf).toHaveBeenCalledWith(BRIEFING);
+    await waitFor(() => expect(downloadBriefingPdf).toHaveBeenCalledWith(BRIEFING));
   });
 });

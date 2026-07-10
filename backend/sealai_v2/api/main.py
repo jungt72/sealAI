@@ -7,6 +7,7 @@ over the pure ``sealai_v2`` core; identity is derived ONLY from a verified token
 from __future__ import annotations
 
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from sealai_v2.api.routes import (
     anfrage,
@@ -22,6 +23,7 @@ from sealai_v2.api.routes import (
     partner_self,
     rag_ingest,
 )
+from sealai_v2.config.settings import Settings
 from sealai_v2.pipeline.timing import configure_timing_logging
 
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
@@ -38,6 +40,10 @@ app.include_router(partner_self.router)
 app.include_router(contribute.router)
 app.include_router(rag_ingest.router)
 app.include_router(memory_v2.router)
+if Settings().metrics_enabled:
+    Instrumentator(
+        excluded_handlers=["/health", "/api/v2/health", "/metrics"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/health")

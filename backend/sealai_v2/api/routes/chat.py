@@ -27,7 +27,7 @@ from sealai_v2.api.deps import (
     require_legal_acceptance,
 )
 from sealai_v2.api.serializers import chat_response
-from sealai_v2.api.sse import stream_frames
+from sealai_v2.api.sse import STREAM_SCHEMA_VERSION, stream_frames
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline, ProgressSink, TokenSink
@@ -123,5 +123,6 @@ async def chat_stream(
             "X-Accel-Buffering": "no",  # nginx: per-response unbuffered (no config edit)
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-SealingAI-Stream-Version": STREAM_SCHEMA_VERSION,
         },
     )

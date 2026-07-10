@@ -897,6 +897,7 @@ async def run_verify(
     conversation_window: list[dict] | None = None,
     untrusted: list[dict] | None = None,
     comparison_context: bool = False,
+    case_revision: int = 0,
 ) -> tuple[Answer, VerifierVerdict]:
     """The L3 policy: PASS / FLAG / CORRECTED (regenerate-once) / BLOCKED_HEDGE.
 
@@ -928,8 +929,14 @@ async def run_verify(
         )
     leaks = detect_parametric_leaks(draft.text, computed_values=computed_values)
     overlimit = detect_velocity_over_limit(draft.text, computed_values=computed_values)
+    verifier_subject = (
+        "Entscheidungsrelevante technische Claims:\n"
+        + "\n".join(f"- {claim}" for claim in draft.verification_claims)
+        if draft.verification_claims
+        else draft.text
+    )
     raw = await verifier.verify(
-        question, draft.text, grounding_facts, computed_values, matrix_facts
+        question, verifier_subject, grounding_facts, computed_values, matrix_facts
     )
     # P0.1 fail-closed: the LLM verdict IS the catalog/matrix trap net. If it did not parse, that net
     # did NOT run — a no-findings PASS here would ship an UNVERIFIED draft as if clean (the §2/§9
@@ -937,7 +944,7 @@ async def run_verify(
     # not parse, treat verification as UNAVAILABLE and fail closed to a hedge below — never PASS.
     if not raw.parse_ok:
         raw = await verifier.verify(
-            question, draft.text, grounding_facts, computed_values, matrix_facts
+            question, verifier_subject, grounding_facts, computed_values, matrix_facts
         )
     verify_unavailable = not raw.parse_ok
     # Eingriff 2: the CALC-velocity trap only counts when the kern computed a v verdict this turn.
@@ -1008,6 +1015,7 @@ async def run_verify(
             conversation_window=conversation_window,
             untrusted=untrusted,
             correction_note="\n\n".join(notes),
+            case_revision=case_revision,
         )
         persisting_leaks = detect_parametric_leaks(
             regen.text, computed_values=computed_values
@@ -1015,8 +1023,14 @@ async def run_verify(
         persisting_overlimit = detect_velocity_over_limit(
             regen.text, computed_values=computed_values
         )
+        regen_subject = (
+            "Entscheidungsrelevante technische Claims:\n"
+            + "\n".join(f"- {claim}" for claim in regen.verification_claims)
+            if regen.verification_claims
+            else regen.text
+        )
         raw2 = await verifier.verify(
-            question, regen.text, grounding_facts, computed_values, matrix_facts
+            question, regen_subject, grounding_facts, computed_values, matrix_facts
         )
         scoped2 = scope_calc_velocity_trap(raw2.findings, computed_values)
         persisting_traps = _reviewed_traps(scoped2)

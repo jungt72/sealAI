@@ -55,11 +55,11 @@ echo ">> served tree_hash = ${TREE_HASH}"
 # ── 1b. served L1 id (P1.6): the SAME runtime config the container reads. tree_hash binds the CODE
 # but not the model, so an .env-only L1 swap would otherwise ship on a stale eval. The container reads
 # .env.prod (SEALAI_V2_ prefix); resolve provider/model with the settings.py defaults (provider→openai,
-# model→gpt-5.1) — pure config, no models.list() (the gate stays network-free). Read directly from
+# model→gpt-5.5) — pure config, no models.list() (the gate stays network-free). Read directly from
 # .env.prod (the file --env-file feeds the container) rather than the shell env. ──────────────────
 env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
 SERVED_L1_PROVIDER="$(env_prod SEALAI_V2_L1_PROVIDER)"; SERVED_L1_PROVIDER="${SERVED_L1_PROVIDER:-openai}"
-SERVED_L1_MODEL="$(env_prod SEALAI_V2_L1_MODEL)";       SERVED_L1_MODEL="${SERVED_L1_MODEL:-gpt-5.1}"
+SERVED_L1_MODEL="$(env_prod SEALAI_V2_L1_MODEL)";       SERVED_L1_MODEL="${SERVED_L1_MODEL:-gpt-5.5}"
 SERVED_L1="${SERVED_L1_PROVIDER}/${SERVED_L1_MODEL}"
 [ -n "${SERVED_L1_PROVIDER}" ] && [ -n "${SERVED_L1_MODEL}" ] || die "could not resolve served L1 from .env.prod"
 echo ">> served L1 = ${SERVED_L1}"
@@ -82,7 +82,7 @@ else
 fi
 
 echo ">> deriving secret-free runtime behavior profile from candidate image"
-RUNTIME_PROFILE_HASH="$(docker run --rm --env-file .env.prod --entrypoint python "${PREPARED_IMAGE}" \
+RUNTIME_PROFILE_HASH="$("${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
   -m sealai_v2.config.runtime_profile --hash)"
 [[ "${RUNTIME_PROFILE_HASH}" =~ ^[0-9a-f]{64}$ ]] || die "invalid runtime profile hash: ${RUNTIME_PROFILE_HASH:-<empty>}"
 echo ">> runtime profile = ${RUNTIME_PROFILE_HASH}"

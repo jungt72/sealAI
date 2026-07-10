@@ -140,12 +140,17 @@ services:
       SEALAI_V2_MEMORY_ENABLED: ${SEALAI_V2_MEMORY_ENABLED:-true}
       SEALAI_V2_DISTILL_ENABLED: ${SEALAI_V2_DISTILL_ENABLED:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — set in .env or .env.prod}
-      # V2 per-role model config (eval-validated by adjudicated run v21-gpt51-gate): L1=gpt-5.1
-      # (only model holding the Gegencheck/§9.2 calibration); L3 verifier + helper on Mistral
-      # Small 4 (independent check + cost). Values come from .env.prod via --env-file substitution.
+      # V2 deterministic-first execution: Mistral Small 4 is the standard answer tier;
+      # GPT-5.5 is reserved for complex/high-risk routed cases. The runtime-profile hash binds
+      # this entire policy and model set to the adjudicated replay used by the release gate.
       SEALAI_V2_PROVIDER: ${SEALAI_V2_PROVIDER:-mistral}
       SEALAI_V2_L1_PROVIDER: ${SEALAI_V2_L1_PROVIDER:-openai}
-      SEALAI_V2_L1_MODEL: ${SEALAI_V2_L1_MODEL:-gpt-5.1}
+      SEALAI_V2_L1_MODEL: ${SEALAI_V2_L1_MODEL:-gpt-5.5}
+      SEALAI_V2_STANDARD_PROVIDER: ${SEALAI_V2_STANDARD_PROVIDER:-mistral}
+      SEALAI_V2_STANDARD_MODEL: ${SEALAI_V2_STANDARD_MODEL:-mistral-small-2603}
+      SEALAI_V2_EXECUTION_POLICY_ENABLED: ${SEALAI_V2_EXECUTION_POLICY_ENABLED:-true}
+      SEALAI_V2_STRUCTURED_ANSWER_ENABLED: ${SEALAI_V2_STRUCTURED_ANSWER_ENABLED:-true}
+      SEALAI_V2_EXACT_ANSWER_CACHE_ENABLED: ${SEALAI_V2_EXACT_ANSWER_CACHE_ENABLED:-true}
       SEALAI_V2_VERIFIER_MODEL: ${SEALAI_V2_VERIFIER_MODEL:-mistral-small-2603}
       SEALAI_V2_HELPER_MODEL: ${SEALAI_V2_HELPER_MODEL:-mistral-small-2603}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY required for the V2 Mistral roles}

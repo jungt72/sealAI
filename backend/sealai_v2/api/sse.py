@@ -5,7 +5,7 @@ Doctrine (AGENTS.md § Safety Boundaries + the P4 line): stage frames carry ONLY
 payload (`event: result`), after verify + cite; `event: error` carries a FIXED message,
 never exception detail. The generator owns pipeline-task cancellation: a client disconnect
 makes Starlette close the generator, and the ``finally`` cancels the in-flight run —
-the gpt-5.1 call of a gone user is stopped, not orphaned.
+the provider call of a gone user is stopped, not orphaned.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from collections.abc import AsyncIterator
 HEARTBEAT_SECONDS = (
     10.0  # < nginx default proxy_read_timeout (60s); keeps long stages alive
 )
+STREAM_SCHEMA_VERSION = "1"
 
 _TERMINAL = {"result", "error"}
 

@@ -69,6 +69,7 @@ def test_stream_emits_stage_frames_then_exactly_one_result_and_sse_headers():
     assert headers["content-type"].startswith("text/event-stream")
     assert headers["x-accel-buffering"] == "no"
     assert headers["cache-control"] == "no-cache"
+    assert headers["x-sealingai-stream-version"] == "1"
     frames = _frames(raw)
     stage_frames = [f for f in frames if f["event"] == "stage"]
     result_frames = [f for f in frames if f["event"] == "result"]

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # The MODEL strings live below; these pick which provider's client backs each role, so a
     # mixed cell (e.g. L1=mistral, L3=openai) is a pure config flip — no call-site change. ---
     l1_provider: str | None = None
+    # Deterministic execution policy's economical online tier. This is separate
+    # from helper_provider: it renders real user answers, not extraction metadata.
+    standard_provider: str = "mistral"
     verifier_provider: str | None = None
     helper_provider: str | None = (
         None  # backs BOTH understand + distill (one helper knob)
@@ -44,8 +47,9 @@ class Settings(BaseSettings):
     auth_audience: str | None = None
     auth_tenant_claim: str = "tenant_id"
 
-    # --- model tiers (build-spec §3): strong frontier for L1; current cost tier for judge/helper ---
-    l1_model: str = "gpt-5.1"  # decision #1: OpenAI's strongest GPT; resolved against models.list() at runtime
+    # --- model tiers: Small 4 standard, current broadly available OpenAI frontier for complex cases ---
+    standard_model: str = "mistral-small-2603"
+    l1_model: str = "gpt-5.5"
     judge_model: str = (
         "gpt-5.4-mini"  # current cost tier for deterministic eval scoring
     )
@@ -54,13 +58,14 @@ class Settings(BaseSettings):
     )
     # L3 verifier (M2): strong-frontier, same as L1 for the FIRST measured L3 (owner decision #1);
     # model is config so a cross-vendor swap is a thin adapter + a config flip, no core change.
-    verifier_model: str = "gpt-5.1"
+    verifier_model: str = "gpt-5.4-mini"
     l1_temperature: float | None = None  # None → omit (max model-family compatibility)
     judge_temperature: float | None = 0.0
     helper_temperature: float | None = 0.0
     verifier_temperature: float | None = (
         None  # None → omit (model-family compatibility)
     )
+    standard_temperature: float | None = None
 
     # --- flag defaults (production baseline = default-on; harness overrides per column) ---
     default_compliance_hint: bool = True
@@ -71,9 +76,14 @@ class Settings(BaseSettings):
     # model, stage, cache hit/miss counts, latency, status — never raw prompt/answer text). A
     # logging call cannot change pipeline output, so this defaults ON; incident-only kill-switch.
     llm_telemetry_enabled: bool = True
+    metrics_enabled: bool = True
     concurrency: int = 6
     request_timeout_s: float = 180.0
     max_retries: int = 3
+    openai_max_concurrency: int = 2
+    openai_min_interval_s: float = 0.0
+    mistral_max_concurrency: int = 1
+    mistral_min_interval_s: float = 0.5
     # Eval-only provider controls. They apply only to the replay; serving keeps its independent
     # concurrency policy. A shared provider client is paced across all subject roles, so an eval
     # cannot turn six case workers into a burst of helper/L1/L3 requests.
@@ -177,6 +187,15 @@ class Settings(BaseSettings):
     # -- both routes stay L3=True). When skipped, the EXISTING deterministic run_parametric_guard
     # fallback (already used when the verifier is disabled) still runs -- no new guard invented.
     route_optimization_enabled: bool = False
+    # Deterministic-first one-shot D1/S0/S1/C1/C2/H1 policy. While false, the
+    # legacy single-generator + broad L3 behavior remains available for replay.
+    execution_policy_enabled: bool = False
+    # Provider-native TechnicalAnswer JSON followed by deterministic rendering.
+    # Kept flag-gated so historical free-text replay artifacts remain reproducible.
+    structured_answer_enabled: bool = False
+    exact_answer_cache_enabled: bool = False
+    exact_answer_cache_max_entries: int = 512
+    exact_answer_cache_ttl_s: float = 3600.0
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
     # smalltalk_navigation prompt family. OFF (default) -> Pipeline.run() is byte-identical to
     # pre-Phase-2D behavior even with route_optimization_enabled=True (the smalltalk generator is

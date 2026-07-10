@@ -332,7 +332,7 @@ def test_settings_for_cell_applies_overrides():
     )
     assert s.l1_provider == "mistral" and s.l1_model == "mistral-small-4"
     assert (
-        s.verifier_model == "gpt-5.1" and s.judge_model == "gpt-5.4-mini"
+        s.verifier_model == "gpt-5.4-mini" and s.judge_model == "gpt-5.4-mini"
     )  # untouched
 
 
@@ -430,6 +430,7 @@ def test_run_matrix_offline_routes_meters_and_gates(tmp_path):
         "quality_tolerance": 0.0,
         "rates_usd_per_mtok": {
             "gpt-5.1": {"in": 1.0, "out": 2.0},
+            "gpt-5.5": {"in": 1.0, "out": 2.0},
             "gpt-5.4-mini": {"in": 0.1, "out": 0.2},
             "mistral-small-4": {"in": 0.05, "out": 0.1},
         },

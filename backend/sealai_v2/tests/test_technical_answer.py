@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import asyncio
+import json
+
+import pytest
+
+from sealai_v2.core.contracts import Flags, GroundingFact, ModelConfig
+from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.core.technical_answer import TechnicalAnswerValidationError
+from sealai_v2.prompts.assembler import PromptAssembler
+from sealai_v2.tests._fakes import FakeLlmClient, ScriptedFakeLlmClient
+
+
+def _payload(*, evidence_ids=None, revision=7):
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "intent": "material_knowledge",
+            "case_revision": revision,
+            "conclusion": "PTFE ist ein thermoplastischer Dichtungswerkstoff.",
+            "assumptions": [],
+            "missing_information": [],
+            "claims": [
+                {
+                    "text": "PTFE zeigt eine geringe Reibung.",
+                    "evidence_ids": evidence_ids
+                    if evidence_ids is not None
+                    else ["EV-1"],
+                    "criticality": "supporting",
+                }
+            ],
+            "recommendation": {
+                "summary": "",
+                "status": "none",
+                "conditions": [],
+            },
+            "needs_human_review": False,
+        }
+    )
+
+
+def _generator(client):
+    return L1Generator(
+        client,
+        PromptAssembler(),
+        ModelConfig("standard"),
+        structured_output_enabled=True,
+    )
+
+
+def test_structured_answer_is_validated_and_rendered_deterministically():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Was ist PTFE?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact("fact", "ledger", card_id="EV-1", sources=("DOC-1",)),
+            ),
+            case_revision=7,
+        )
+    )
+    assert answer.model == "standard"
+    assert answer.text.startswith("PTFE ist ein thermoplastischer Dichtungswerkstoff.")
+    assert "Belege: EV-1" in answer.text
+    assert len(client.calls) == 1
+
+
+def test_unknown_evidence_id_gets_exactly_one_semantic_repair():
+    client = ScriptedFakeLlmClient(
+        [_payload(evidence_ids=["INVENTED"]), _payload(evidence_ids=["EV-1"])]
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Was ist PTFE?",
+            flags=Flags(),
+            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            case_revision=7,
+        )
+    )
+    assert "Belege: EV-1" in answer.text
+    assert len(client.calls) == 2
+
+
+def test_second_semantic_failure_stops_without_retry_loop():
+    client = ScriptedFakeLlmClient(
+        [_payload(evidence_ids=["BAD-1"]), _payload(evidence_ids=["BAD-2"])]
+    )
+    with pytest.raises(TechnicalAnswerValidationError):
+        asyncio.run(
+            _generator(client).generate(
+                "Was ist PTFE?",
+                flags=Flags(),
+                grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+                case_revision=7,
+            )
+        )
+    assert len(client.calls) == 2

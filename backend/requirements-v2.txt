@@ -22,3 +22,5 @@ psycopg2-binary==2.9.11
 qdrant-client==1.17.1
 fastembed==0.8.0
 langsmith==0.8.18
+prometheus-client==0.24.1
+prometheus-fastapi-instrumentator==7.1.0

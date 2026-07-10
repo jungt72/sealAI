@@ -32,6 +32,9 @@ class ModelConfig:
     # "verifier", "judge", ...) for grouping LlmCallTelemetry — never tenant/case/user data.
     # None → telemetry still works, just unlabeled by stage.
     stage: str | None = None
+    # Provider-native reasoning control. Both current OpenAI reasoning models and
+    # Mistral Small 4 accept this on Chat Completions. None omits the parameter.
+    reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -491,6 +494,9 @@ class Answer:
     model: str
     grounding_facts: tuple[GroundingFact, ...] = ()
     finish_reason: str | None = None
+    # Internal claim projection for selective LLM verification. Empty keeps the
+    # legacy full-answer verifier path; it is never serialized to the client.
+    verification_claims: tuple[str, ...] = ()
 
 
 class VerifierAction(str, Enum):
@@ -631,6 +637,11 @@ class TurnState:
     status: str
     risk_level: str = "standard"
     route_name: str | None = None
+    execution_class: str | None = None
+    model_tier: str | None = None
+    verification_mode: str | None = None
+    policy_version: str | None = None
+    needs_human_review: bool = False
 
 
 @dataclass(frozen=True)
