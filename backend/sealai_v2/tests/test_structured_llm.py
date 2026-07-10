@@ -70,7 +70,7 @@ def test_schema_validation_repairs_exactly_once_with_same_model():
 
 def test_schema_validation_stops_after_one_failed_repair():
     client = ScriptedFakeLlmClient(["bad", "still bad", '{"answer":"too late"}'])
-    with pytest.raises(StructuredOutputError):
+    with pytest.raises(StructuredOutputError, match="json_invalid@root"):
         asyncio.run(
             generate_structured(
                 client,

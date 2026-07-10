@@ -22,6 +22,7 @@ from sealai_v2.pipeline.routing import (
     RouteName,
     classify_route,
     classify_route_deterministic,
+    requests_calculation,
 )
 from sealai_v2.orchestration.execution_policy import (
     ExecutionClass,
@@ -871,6 +872,12 @@ class Pipeline:
             # prompt, never change any kernel=True route's prompt.
             l1_calc = calc
             if (
+                self.execution_policy_enabled
+                and not calc.computed
+                and not requests_calculation(question)
+            ):
+                l1_calc = CalcResult()
+            if (
                 self.suppress_calc_for_non_kernel_routes_enabled
                 and route_decision is not None
             ):
@@ -901,7 +908,7 @@ class Pipeline:
                     else coverage_for(gegencheck_verdict, archetype_context),
                     grounding_facts=l1_grounding,
                     gegencheck_verdict=gegencheck_verdict,
-                    calc=calc,
+                    calc=l1_calc if self.execution_policy_enabled else calc,
                 )
                 contract = _rc.to_dict() if _rc is not None else None
             # P0-B: on turns where the Gegencheck-shaped contract above is None (no verdict — general

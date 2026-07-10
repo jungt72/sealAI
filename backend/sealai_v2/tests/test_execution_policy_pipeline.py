@@ -137,6 +137,8 @@ def test_irrelevant_calc_inputs_do_not_block_grounded_material_compatibility():
     assert standard.calls == []
     assert len(frontier.calls) == 1
     assert result.answer.model == "frontier"
+    assert "d1_mm" not in result.answer.text
+    assert "schnurstaerke_mm" not in result.answer.text
     assert result.turn_state.execution_class == "C2"
     assert result.turn_state.needs_human_review is True
 

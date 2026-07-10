@@ -185,6 +185,11 @@ _DOMAIN_KNOWLEDGE_RE = re.compile(
 )
 
 
+def requests_calculation(question: str) -> bool:
+    """Whether the user explicitly asks for a kernel quantity or calculation context."""
+    return bool(_CALC_TERM_RE.search(question))
+
+
 def detect_engineering_signals(
     question: str,
     *,
@@ -224,7 +229,7 @@ def detect_engineering_signals(
         signals.append("suitability_or_recommendation_request")
     if _META_INSTRUCTION_RE.search(question):
         signals.append("meta_or_directive_language")
-    if _CALC_TERM_RE.search(question):
+    if requests_calculation(question):
         signals.append("kinematic_or_calc_term")
     if _RESISTANCE_CLAIM_RE.search(question):
         signals.append("resistance_or_suitability_claim")

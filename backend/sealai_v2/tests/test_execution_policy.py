@@ -11,6 +11,7 @@ from sealai_v2.pipeline.routing import (
     RouteDecision,
     RouteName,
     classify_route_deterministic,
+    requests_calculation,
 )
 
 
@@ -22,6 +23,11 @@ def test_deterministic_router_never_needs_an_llm_intent():
     assert (
         classify_route_deterministic("Hallo!").route is RouteName.SMALLTALK_NAVIGATION
     )
+
+
+def test_calculation_context_requires_an_explicit_kernel_term():
+    assert requests_calculation("Bitte die Umfangsgeschwindigkeit berechnen") is True
+    assert requests_calculation("FKM in Heißdampf bei 140 °C einordnen") is False
     assert (
         classify_route_deterministic("Was ist PTFE?").route
         is RouteName.MATERIAL_KNOWLEDGE

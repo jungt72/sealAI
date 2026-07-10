@@ -235,7 +235,7 @@ class L1Generator:
             except (StructuredOutputError, TechnicalAnswerValidationError) as exc:
                 repair = (
                     "\n\nThe previous object failed deterministic validation "
-                    f"({type(exc).__name__}). Repair it once. Return exactly one schema-valid "
+                    f"({exc}). Repair it once. Return exactly one schema-valid "
                     "TechnicalAnswer and obey the allowed evidence IDs and case revision."
                 )
                 technical, result = await _call(
