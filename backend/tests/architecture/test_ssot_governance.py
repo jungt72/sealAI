@@ -147,6 +147,19 @@ def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> Non
         assert setting in compose
 
 
+def test_keycloak_provisioning_covers_governed_reviewer_roles() -> None:
+    provisioning = (REPO / "ops" / "keycloak_ensure_roles.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for role in (
+        "capability_reviewer",
+        "knowledge_reviewer",
+        "decision_reviewer",
+    ):
+        assert f'"{role}"' in provisioning
+
+
 def test_owner_decisions_and_companion_contracts_are_present() -> None:
     decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
     for number in range(1, 9):
