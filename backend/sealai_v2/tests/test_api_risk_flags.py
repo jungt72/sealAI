@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from sealai_v2.api import deps
 from sealai_v2.api.main import app
+from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import ModelConfig, VerifiedIdentity
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.db.leads import InProcessLeadStore
@@ -14,6 +15,10 @@ from sealai_v2.knowledge.hersteller_partner import (
     InProcessPartnerRegistry,
 )
 from sealai_v2.knowledge.retrieval import InProcessRetriever
+from sealai_v2.knowledge.manufacturer_capability import (
+    InProcessManufacturerCapabilityStore,
+    ManufacturerCapabilityProfile,
+)
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.auth import FakeAuthValidator
@@ -69,18 +74,39 @@ def test_anfrage_response_briefing_carries_risk_flags():
         werkstoffe=("FKM",),
         bauformen=("RWDR",),
     )
+    commercial_registry = InProcessPartnerRegistry((partner,))
     pipeline = Pipeline(
         generator=L1Generator(fake, PromptAssembler(), ModelConfig("fake-l1")),
         client=fake,
         helper_model=ModelConfig("fake-helper"),
         understand_enabled=False,
         retriever=InProcessRetriever(),
-        partner_registry=InProcessPartnerRegistry((partner,)),
+        partner_registry=commercial_registry,
+    )
+    capability_store = InProcessManufacturerCapabilityStore(
+        (
+            ManufacturerCapabilityProfile(
+                manufacturer_id="acme",
+                company_name="ACME Dichtungen GmbH",
+                status="verified",
+                seal_types=("RWDR",),
+                materials=("FKM",),
+                evidence=({"citation": "reviewed test evidence"},),
+                review_expires_at="2099-01-01T00:00:00Z",
+            ),
+        )
     )
     app.dependency_overrides.clear()
     app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(_IDS)
     app.dependency_overrides[deps.get_pipeline] = lambda: pipeline
     app.dependency_overrides[deps.get_lead_store] = lambda: InProcessLeadStore()
+    app.dependency_overrides[deps.get_partner_registry] = lambda: commercial_registry
+    app.dependency_overrides[deps.get_capability_store] = lambda: capability_store
+    app.dependency_overrides[deps.get_settings] = lambda: Settings(
+        capability_profiles_enabled=True,
+        manufacturer_fit_enabled=True,
+        manufacturer_handoff_enabled=True,
+    )
     client = TestClient(app)
     r = client.post(
         "/api/v2/anfrage",

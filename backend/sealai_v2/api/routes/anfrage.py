@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import (
     flags_from_settings,
+    get_capability_store,
     get_lead_store,
+    get_partner_registry,
     get_pipeline,
     get_settings,
     require_legal_acceptance,
@@ -47,13 +49,42 @@ async def anfrage(
     identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     leads: LeadStore = Depends(get_lead_store),
+    capabilities=Depends(get_capability_store),
+    commercial_registry=Depends(get_partner_registry),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    # A lead can only be routed to a PAYING (aktiv) partner the pool actually lists; an unknown or
-    # inactive id (or an unconfigured pool) yields a neutral 404 that leaks no internal state.
-    registry = pipeline.partner_registry
-    partner = registry.get(req.partner_id) if registry is not None else None
-    if partner is None or not partner.aktiv:
+    if not settings.manufacturer_handoff_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "product_mode_unavailable",
+                "mode": "manufacturer_handoff",
+                "maturity": "capability_review_required",
+                "message": (
+                    "Die Herstellerübergabe ist bis zum unabhängigen "
+                    "Fähigkeits- und Interessenkonflikt-Nachweis deaktiviert."
+                ),
+            },
+        )
+    # Technical fit and commercial routing are independent gates. The pipeline
+    # pool is capability-only; the commercial record supplies only contact and
+    # billing-independent routing metadata.
+    technical_registry = pipeline.partner_registry
+    technical_partner = (
+        technical_registry.get(req.partner_id)
+        if technical_registry is not None
+        else None
+    )
+    capability = capabilities.get(req.partner_id)
+    commercial = commercial_registry.get(req.partner_id)
+    if (
+        technical_partner is None
+        or capability is None
+        or not capability.is_verified()
+        or commercial is None
+        or not commercial.aktiv
+        or not commercial.lead_email
+    ):
         raise HTTPException(status_code=404, detail="partner nicht verfügbar")
 
     # Re-render the briefing from the SESSION case-state (P0: tenant/session from the verified token
@@ -68,9 +99,9 @@ async def anfrage(
 
     lead_id = leads.store(
         Lead(
-            partner_id=partner.hersteller,
-            firmenname=partner.firmenname,
-            lead_email=partner.lead_email,  # internal routing — NEVER returned to the user
+            partner_id=technical_partner.hersteller,
+            firmenname=technical_partner.firmenname,
+            lead_email=commercial.lead_email,  # internal routing — NEVER returned to the user
             tenant_id=identity.tenant_id,
             session_id=identity.session_id,
             briefing_title=art.title,
@@ -82,7 +113,10 @@ async def anfrage(
     return {
         "status": "captured",
         "lead_id": lead_id,
-        "partner": {"hersteller": partner.hersteller, "firmenname": partner.firmenname},
+        "partner": {
+            "hersteller": technical_partner.hersteller,
+            "firmenname": technical_partner.firmenname,
+        },
         "briefing": {
             "title": art.title,
             "body": art.body,

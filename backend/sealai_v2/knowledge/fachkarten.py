@@ -1,18 +1,15 @@
-"""Fachkarten — L2's grounded POSITIVE-knowledge cards (build-spec §3/§5/§8).
+"""Fachkarten: typed positive knowledge for L2 grounding.
 
 The affirmative counterpart to the trap catalog: where a trap says "do not claim X", a Fachkarte
 says "the grounded fact is Y, per <source>". Same two review states + provenance discipline as the
 trap catalog, applied to positive knowledge, plus **per-claim** sourcing (a card can mix reviewed
 and draft claims).
 
-Circularity guard (build-spec §8 — "no LLM erdet LLM"). A claim may reach ``reviewed`` by EITHER:
-  (i)  OWNER-CONFIRMED — provenance names the owner / a reviewed trap-correct
-       (``owner:…`` or ``trap-correct:…``); no external primary source required (the owner is the
-       domain authority); OR
-  (ii) DEEP-RESEARCH — the claim carries at least one PRIMARY ``source`` (norm/datasheet/literature)
-       that the owner verified.
-A ``reviewed`` claim with NEITHER an owner/trap provenance NOR a primary source is a load error.
-``draft`` claims are flag-only (never authoritative, never corrective) and carry no such constraint.
+P2 guard: provenance records who asserted or reviewed a statement; it never
+replaces technical evidence. A declared ``reviewed`` claim without a source is
+loaded as ``quarantined``. Quarantined claims remain visible to review tooling
+but never reach retrieval, prompts, citations, or a derived vector index.
+``draft`` claims remain provisional and never authoritative or corrective.
 
 Pure data + a typed loader - no LLM, no network. The reviewed seed is the version-controlled release
 artifact; ``knowledge.bootstrap`` imports it into the authoritative Postgres runtime ledger. Qdrant
@@ -22,7 +19,8 @@ is a derived projection and is never a runtime source of truth.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sealai_v2.core.knowledge_answer import ANSWER_FACETS, SUBJECT_TYPES
@@ -30,7 +28,7 @@ from sealai_v2.core.knowledge_answer import ANSWER_FACETS, SUBJECT_TYPES
 _CATALOG_DIR = Path(__file__).resolve().parent
 _DEFAULT_FILE = _CATALOG_DIR / "fachkarten_seed.json"
 
-_REVIEW_STATES = ("reviewed", "draft")
+_DECLARED_REVIEW_STATES = ("reviewed", "draft", "quarantined")
 # claim EPISTEMICS (audit 2026-06-28; taxonomy 4→8 after the re-challenge 2026-06-28): the structural
 # answer to "a datasheet value is NOT a material-family truth". Every claim declares what KIND of
 # statement it is, so the product frames it correctly and never oversells a value as a family limit.
@@ -54,9 +52,21 @@ _CLAIM_KINDS = (
     "qualification_required",
     "safety_caution",
 )
-# provenance markers that establish path (i) owner-grounding (no external source needed)
+# Provenance remains useful audit metadata, but is not evidence.
 _OWNER_PROV_PREFIXES = ("owner", "trap-correct:", "trap:")
 _SCOPE_DIMS = ("material", "medium", "property", "application")
+_UNCERTAINTY_STATES = (
+    "bounded",
+    "conditional",
+    "conflicted",
+    "not_sufficiently_supported",
+)
+_TRANSFERABILITY_STATES = (
+    "source_specific",
+    "family_level_orientation",
+    "application_dependent",
+    "not_assessed",
+)
 
 
 @dataclass(frozen=True)
@@ -64,10 +74,10 @@ class Claim:
     """One grounded statement on a card, with its own review state + grounding evidence."""
 
     text: str
-    review_state: str  # "reviewed" | "draft"
+    review_state: str  # "reviewed" | "draft" | "quarantined"
     sources: tuple[
         str, ...
-    ] = ()  # PRIMARY citations (path ii); may be empty for path (i)
+    ] = ()  # primary citations; mandatory for authoritative review
     provenance: tuple[
         str, ...
     ] = ()  # path (i): "trap-correct:…"/"owner:…"; path (ii): research origin
@@ -75,10 +85,29 @@ class Claim:
     # Deterministic engineering-answer coverage metadata. Unlike ``kind`` (epistemic status), these
     # facets describe where the claim belongs in a professional answer profile.
     answer_facets: tuple[str, ...] = ()
+    applicability: dict = field(default_factory=dict)
+    uncertainty: str = ""
+    transferability: str = ""
+    conflicts: tuple[str, ...] = ()
+    reviewed_at: str = ""
+    reviewed_by: str = ""
+    review_expires_at: str = ""
+    change_reason: str = ""
 
     @property
     def reviewed(self) -> bool:
-        return self.review_state == "reviewed"
+        return (
+            self.review_state == "reviewed"
+            and bool(self.sources)
+            and _human_reviewer(self.reviewed_by)
+            and _review_window_current(self.reviewed_at, self.review_expires_at)
+        )
+
+    @property
+    def quarantined(self) -> bool:
+        return self.review_state == "quarantined" or (
+            self.review_state == "reviewed" and not self.reviewed
+        )
 
     @property
     def owner_grounded(self) -> bool:
@@ -98,10 +127,13 @@ class Fachkarte:
     subject_type: str = "general"
 
     def reviewed_claims(self) -> tuple[Claim, ...]:
-        return tuple(c for c in self.claims if c.review_state == "reviewed")
+        return tuple(c for c in self.claims if c.reviewed)
 
     def draft_claims(self) -> tuple[Claim, ...]:
         return tuple(c for c in self.claims if c.review_state == "draft")
+
+    def quarantined_claims(self) -> tuple[Claim, ...]:
+        return tuple(c for c in self.claims if c.quarantined)
 
     def scope_tokens(self) -> frozenset[str]:
         """All scope-tag tokens (lower-cased), for the in-process retriever's overlap match."""
@@ -129,10 +161,11 @@ class FachkartenCatalog:
 
 
 def _claim(raw: dict, card_id: str) -> Claim:
-    state = str(raw.get("review_state", "")).strip()
-    if state not in _REVIEW_STATES:
+    declared_state = str(raw.get("review_state", "")).strip()
+    if declared_state not in _DECLARED_REVIEW_STATES:
         raise ValueError(
-            f"{card_id}: claim review_state {state!r} not in {_REVIEW_STATES}"
+            f"{card_id}: claim review_state {declared_state!r} not in "
+            f"{_DECLARED_REVIEW_STATES}"
         )
     kind = str(raw.get("kind", "family_tendency")).strip() or "family_tendency"
     if kind not in _CLAIM_KINDS:
@@ -145,30 +178,65 @@ def _claim(raw: dict, card_id: str) -> Claim:
     unknown_facets = tuple(f for f in answer_facets if f not in ANSWER_FACETS)
     if unknown_facets:
         raise ValueError(f"{card_id}: unknown answer_facets {unknown_facets!r}")
+    applicability = raw.get("applicability", {}) or {}
+    if not isinstance(applicability, dict):
+        raise ValueError(f"{card_id}: claim applicability must be an object")
+    uncertainty = str(raw.get("uncertainty", "")).strip()
+    if uncertainty and uncertainty not in _UNCERTAINTY_STATES:
+        raise ValueError(f"{card_id}: invalid uncertainty {uncertainty!r}")
+    transferability = str(raw.get("transferability", "")).strip()
+    if transferability and transferability not in _TRANSFERABILITY_STATES:
+        raise ValueError(f"{card_id}: invalid transferability {transferability!r}")
+    sources = tuple(str(s).strip() for s in raw.get("sources", []) if str(s).strip())
     c = Claim(
         text=str(raw["text"]).strip(),
-        review_state=state,
-        sources=tuple(str(s) for s in raw.get("sources", [])),
+        review_state=declared_state,
+        sources=sources,
         provenance=tuple(str(p) for p in raw.get("provenance", [])),
         kind=kind,
         answer_facets=answer_facets,
+        applicability=applicability,
+        uncertainty=uncertainty,
+        transferability=transferability,
+        conflicts=tuple(str(item) for item in raw.get("conflicts", ())),
+        reviewed_at=str(raw.get("reviewed_at", "")).strip(),
+        reviewed_by=str(raw.get("reviewed_by", "")).strip(),
+        review_expires_at=str(raw.get("review_expires_at", "")).strip(),
+        change_reason=str(raw.get("change_reason", "")).strip(),
     )
     if not c.text:
         raise ValueError(f"{card_id}: empty claim text")
-    # Circularity guard — a REVIEWED claim must be path (i) owner-grounded OR path (ii) primary-sourced.
-    if c.reviewed and not (c.owner_grounded or c.sources):
-        raise ValueError(
-            f"{card_id}: reviewed claim has neither owner/trap provenance (path i) nor a primary "
-            f"source (path ii) — 'no LLM erdet LLM': {c.text[:60]!r}"
-        )
+    if declared_state == "reviewed" and not c.reviewed:
+        return replace(c, review_state="quarantined")
     return c
+
+
+def _human_reviewer(value: str) -> bool:
+    reviewer = value.strip().lower()
+    if not reviewer:
+        return False
+    return not any(marker in reviewer for marker in ("codex", "llm", "model", "agent"))
+
+
+def _review_window_current(reviewed_at: str, review_expires_at: str) -> bool:
+    try:
+        reviewed = datetime.fromisoformat(reviewed_at.replace("Z", "+00:00"))
+        expires = datetime.fromisoformat(review_expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if reviewed.tzinfo is None or expires.tzinfo is None or expires <= reviewed:
+        return False
+    return expires > datetime.now(timezone.utc)
 
 
 def _card(raw: dict) -> Fachkarte:
     cid = str(raw["id"])
-    state = str(raw.get("review_state", "")).strip()
-    if state not in _REVIEW_STATES:
-        raise ValueError(f"{cid}: review_state {state!r} not in {_REVIEW_STATES}")
+    declared_state = str(raw.get("review_state", "")).strip()
+    if declared_state not in _DECLARED_REVIEW_STATES:
+        raise ValueError(
+            f"{cid}: review_state {declared_state!r} not in "
+            f"{_DECLARED_REVIEW_STATES}"
+        )
     scope = raw.get("scope", {}) or {}
     if not isinstance(scope, dict) or not any(scope.get(d) for d in _SCOPE_DIMS):
         raise ValueError(f"{cid}: scope must set at least one of {_SCOPE_DIMS}")
@@ -182,25 +250,23 @@ def _card(raw: dict) -> Fachkarte:
         raise ValueError(
             f"{cid}: subject_type {subject_type!r} not in {sorted(SUBJECT_TYPES)}"
         )
+    effective_state = "reviewed" if any(claim.reviewed for claim in claims) else "draft"
     card = Fachkarte(
         id=cid,
         scope={d: [str(v) for v in scope.get(d, [])] for d in _SCOPE_DIMS},
         claims=claims,
-        review_state=state,
+        review_state=effective_state,
         provenance=tuple(str(p) for p in raw["provenance"]),
         version=str(raw.get("version", "")),
         tags=tuple(str(t) for t in raw.get("tags", [])),
         xrefs=tuple(str(x) for x in raw.get("xrefs", [])),
         subject_type=subject_type,
     )
-    # a reviewed card must actually carry a reviewed claim (else it cannot ground anything)
-    if card.review_state == "reviewed" and not card.reviewed_claims():
-        raise ValueError(f"{cid}: review_state=reviewed but no reviewed claim present")
     return card
 
 
 def load_fachkarten(path: Path | None = None) -> FachkartenCatalog:
-    """Load + validate the Fachkarten seed. Raises on any circularity-guard / schema violation."""
+    """Load and validate the Fachkarten seed, quarantining unsupported approvals."""
     data = json.loads((path or _DEFAULT_FILE).read_text(encoding="utf-8"))
     cards: list[Fachkarte] = []
     seen: set[str] = set()

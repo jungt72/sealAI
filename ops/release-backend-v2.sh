@@ -194,7 +194,7 @@ echo ">> applying V2 Alembic migrations with the gated image"
 "${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
   -m sealai_v2.db.migrate check
 
-echo ">> bootstrapping reviewed knowledge into Postgres system-of-record"
+echo ">> reconciling governed knowledge states into Postgres system-of-record"
 "${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
   -m sealai_v2.knowledge.bootstrap
 echo ">> synchronizing the ledger-derived knowledge index before traffic switch"

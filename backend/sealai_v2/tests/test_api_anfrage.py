@@ -8,12 +8,17 @@ from fastapi.testclient import TestClient
 
 from sealai_v2.api import deps
 from sealai_v2.api.main import app
+from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import ModelConfig, VerifiedIdentity
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.db.leads import InProcessLeadStore
 from sealai_v2.knowledge.hersteller_partner import (
     HerstellerPartner,
     InProcessPartnerRegistry,
+)
+from sealai_v2.knowledge.manufacturer_capability import (
+    InProcessManufacturerCapabilityStore,
+    ManufacturerCapabilityProfile,
 )
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -38,21 +43,46 @@ def _partner(hersteller="acme", *, aktiv=True):
     )
 
 
-def _client(*partners):
+def _client(*partners, handoff_enabled=True, capability_status="verified"):
     client = FakeLlmClient("Antwort.")
+    commercial_registry = InProcessPartnerRegistry(tuple(partners))
     pipeline = Pipeline(
         generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
         client=client,
         helper_model=ModelConfig("fake-helper"),
         understand_enabled=False,
         retriever=InProcessRetriever(),
-        partner_registry=InProcessPartnerRegistry(tuple(partners)),
+        partner_registry=commercial_registry,
     )
+    profiles = tuple(
+        ManufacturerCapabilityProfile(
+            manufacturer_id=partner.hersteller,
+            company_name=partner.firmenname,
+            status=capability_status,
+            seal_types=partner.bauformen,
+            materials=partner.werkstoffe,
+            evidence=({"citation": "reviewed test evidence"},)
+            if capability_status == "verified"
+            else (),
+            review_expires_at="2099-01-01T00:00:00Z"
+            if capability_status == "verified"
+            else "",
+        )
+        for partner in partners
+    )
+    capability_store = InProcessManufacturerCapabilityStore(profiles)
     store = InProcessLeadStore()
     app.dependency_overrides.clear()
     app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(IDS)
     app.dependency_overrides[deps.get_pipeline] = lambda: pipeline
     app.dependency_overrides[deps.get_lead_store] = lambda: store
+    app.dependency_overrides[deps.get_partner_registry] = lambda: commercial_registry
+    app.dependency_overrides[deps.get_capability_store] = lambda: capability_store
+    app.dependency_overrides[deps.get_settings] = lambda: Settings(
+        capability_profiles_enabled=handoff_enabled,
+        manufacturer_fit_enabled=handoff_enabled,
+        manufacturer_handoff_enabled=handoff_enabled,
+    )
     return TestClient(app), store
 
 
@@ -118,3 +148,28 @@ def test_anfrage_requires_auth():
     client, _ = _client(_partner("acme"))
     r = client.post("/api/v2/anfrage", json={"partner_id": "acme", "message": "x"})
     assert r.status_code == 401
+
+
+def test_anfrage_fails_closed_while_handoff_mode_is_inactive():
+    client, store = _client(_partner("acme"), handoff_enabled=False)
+    response = client.post(
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "message": "x"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["mode"] == "manufacturer_handoff"
+    assert store.list_all() == ()
+
+
+def test_anfrage_rejects_unverified_capability_profile():
+    client, store = _client(_partner("acme"), capability_status="submitted")
+    response = client.post(
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "message": "x"},
+        headers=_auth(),
+    )
+
+    assert response.status_code == 404
+    assert store.list_all() == ()

@@ -2,11 +2,27 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 
 import pytest
 
 from sealai_v2.core.contracts import HARD_GATES
-from sealai_v2.knowledge.traps import load_traps, retrieve_reviewed_trap_facts
+from sealai_v2.knowledge.traps import (
+    TrapCatalog,
+    load_traps,
+    retrieve_reviewed_trap_facts,
+)
+
+
+def _evidenced(catalog: TrapCatalog) -> TrapCatalog:
+    return TrapCatalog(
+        entries=tuple(
+            replace(entry, sources=("test-source",)) if entry.reviewed else entry
+            for entry in catalog.entries
+        ),
+        version=catalog.version,
+        source=catalog.source,
+    )
 
 
 def test_loads_production_catalog():
@@ -23,19 +39,22 @@ def test_every_entry_well_formed():
 
 
 def test_reviewed_entries_carry_a_correct_fact():
-    # reviewed entries may CORRECT, so they must have a non-empty correct fact (integrity)
+    # The text remains available to the review queue, but the current production
+    # seed is block-only until sources are attached.
     for e in load_traps().reviewed():
         assert e.correct.strip(), f"{e.id}: reviewed entry needs a correct fact"
+        assert not e.corrective
 
 
 def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
-    catalog = load_traps()
+    catalog = _evidenced(load_traps())
     facts = retrieve_reviewed_trap_facts(
         catalog,
         "Aceton, dauerhaft 180 °C und möglichst günstig: welche Dichtung?",
     )
     assert [fact.card_id for fact in facts] == ["CONF-SCHEIN-OPTIMUM"]
     assert facts[0].kind == "trap"
+    assert facts[0].sources == ("test-source",)
 
     assert not retrieve_reviewed_trap_facts(catalog, "Ist EPDM gegen Aceton beständig?")
 
@@ -82,12 +101,12 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
 def test_reviewed_solution_policy_is_prefetched_only_for_qualified_context(
     question, expected
 ):
-    facts = retrieve_reviewed_trap_facts(load_traps(), question)
+    facts = retrieve_reviewed_trap_facts(_evidenced(load_traps()), question)
     assert expected in [fact.card_id for fact in facts]
 
 
 def test_solution_policy_does_not_fire_on_single_generic_keyword():
-    catalog = load_traps()
+    catalog = _evidenced(load_traps())
     ids = {
         fact.card_id
         for fact in retrieve_reviewed_trap_facts(catalog, "Was ist Synthetiköl?")

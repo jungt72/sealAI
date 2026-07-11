@@ -128,6 +128,9 @@ services:
       # change until someone actually needs to override a Keycloak role name.
       SEALAI_V2_AUTH_ADMIN_ROLE: ${SEALAI_V2_AUTH_ADMIN_ROLE:-admin}
       SEALAI_V2_AUTH_MANUFACTURER_ROLE: ${SEALAI_V2_AUTH_MANUFACTURER_ROLE:-manufacturer}
+      SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE: ${SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE:-capability_reviewer}
+      SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE:-knowledge_reviewer}
+      SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE: ${SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE:-decision_reviewer}
       # Ops hardening (2026-07-03): the 6 documented "incident-only kill-switches" (their own
       # settings.py docstrings say they're meant to be env-flippable in an emergency) had no
       # compose passthrough either — same gap, higher stakes (a real incident is exactly the
@@ -136,6 +139,7 @@ services:
       SEALAI_V2_UNDERSTAND_ENABLED: ${SEALAI_V2_UNDERSTAND_ENABLED:-true}
       SEALAI_V2_VERIFY_ENABLED: ${SEALAI_V2_VERIFY_ENABLED:-true}
       SEALAI_V2_GROUND_ENABLED: ${SEALAI_V2_GROUND_ENABLED:-true}
+      SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED: ${SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED:-false}
       SEALAI_V2_COMPUTE_ENABLED: ${SEALAI_V2_COMPUTE_ENABLED:-true}
       SEALAI_V2_MEMORY_ENABLED: ${SEALAI_V2_MEMORY_ENABLED:-true}
       SEALAI_V2_DISTILL_ENABLED: ${SEALAI_V2_DISTILL_ENABLED:-true}
@@ -159,6 +163,14 @@ services:
       SEALAI_V2_EXECUTION_POLICY_ENABLED: ${SEALAI_V2_EXECUTION_POLICY_ENABLED:-true}
       SEALAI_V2_STRUCTURED_ANSWER_ENABLED: ${SEALAI_V2_STRUCTURED_ANSWER_ENABLED:-true}
       SEALAI_V2_EXACT_ANSWER_CACHE_ENABLED: ${SEALAI_V2_EXACT_ANSWER_CACHE_ENABLED:-true}
+      # SSoT M15/G5: explicit product activation gates. Both fail closed until
+      # their independent evidence, review, and release requirements are met.
+      SEALAI_V2_KNOWLEDGE_MODE_ENABLED: ${SEALAI_V2_KNOWLEDGE_MODE_ENABLED:-false}
+      SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED: ${SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED:-false}
+      SEALAI_V2_CASE_DECISION_RECORDS_ENABLED: ${SEALAI_V2_CASE_DECISION_RECORDS_ENABLED:-false}
+      SEALAI_V2_CAPABILITY_PROFILES_ENABLED: ${SEALAI_V2_CAPABILITY_PROFILES_ENABLED:-false}
+      SEALAI_V2_MANUFACTURER_FIT_ENABLED: ${SEALAI_V2_MANUFACTURER_FIT_ENABLED:-false}
+      SEALAI_V2_MANUFACTURER_HANDOFF_ENABLED: ${SEALAI_V2_MANUFACTURER_HANDOFF_ENABLED:-false}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY required for the V2 Mistral roles}
       # LangSmith observability (V2 tracing seam: wrap_openai + @traceable, fail-open/observation-only).
       # Values from .env.prod via --env-file interpolation; default OFF so a missing config never traces.

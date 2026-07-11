@@ -18,8 +18,8 @@
     },
     "H1": {
       "name": "Knowledge Core",
-      "status": "pilot",
-      "public_label": "Pilot"
+      "status": "in_build",
+      "public_label": "Im Aufbau"
     },
     "H2": {
       "name": "Case Core",
@@ -45,13 +45,21 @@
   "modes": {
     "knowledge": {
       "horizon": "H1",
-      "status": "pilot",
-      "activation_gate": "M15"
+      "status": "in_build",
+      "activation_gate": "M15",
+      "activation_blockers": [
+        "independent_domain_review_of_seed_claims",
+        "exact_final_adjudicated_replay"
+      ]
     },
     "comparison": {
       "horizon": "H1",
-      "status": "pilot",
-      "activation_gate": "M15"
+      "status": "in_build",
+      "activation_gate": "M15",
+      "activation_blockers": [
+        "independent_domain_review_of_seed_claims",
+        "exact_final_adjudicated_replay"
+      ]
     },
     "engineering": {
       "horizon": "H3",

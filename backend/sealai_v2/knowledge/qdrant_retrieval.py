@@ -390,6 +390,8 @@ def claim_points(catalog: FachkartenCatalog):
     PURE (no optional-dep import) so it is unit-tested directly."""
     for card in catalog.cards:
         for idx, claim in enumerate(card.claims):
+            if claim.quarantined:
+                continue
             pid = str(
                 uuid.uuid5(_POINT_NAMESPACE, f"{card.id}:{idx}")
             )  # idempotent upsert key

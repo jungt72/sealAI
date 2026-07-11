@@ -103,9 +103,11 @@ control determinism. This is the concrete implementation of P1/P2:
 - **L1 · Generator** — strong LLM + the L1 system prompt; covers the infinite
   answer space, integrated reasoning, the *why*. Must not invent precise
   numbers/norms or rubber-stamp a default.
-- **L2 · Grounding** — RAG over the curated knowledge layer (Fachkarten +
-  compatibility matrix + Qdrant hybrid retrieval) for specifics (numbers,
-  norms, compatibility), **with provenance**. Must not become control logic.
+- **L2 · Grounding** — RAG over independently reviewed Fachkarten and the
+  derived Qdrant hybrid index for specifics (numbers, norms, compatibility),
+  **with provenance**. The legacy compatibility matrix remains default-off
+  until its cells satisfy the same evidence and review lifecycle. L2 must not
+  become control logic.
 - **L3 · Verifier** — an independent critic pass against the trap catalog
   (+ matrix). Must not smooth over correct answers or invent its own source
   of truth.
@@ -137,10 +139,13 @@ workflow engine requires a separate ADR and measured need.
   self-adjudicates.** The agent surfaces divergences as candidates and
   recomputes from the owner's ticked worksheet. It never ticks PASS/FAIL
   itself and never free-corrects a factual verdict.
-- **Reviewed means evidenced.** Owner or trap provenance alone does not replace
-  a source. An authoritative claim carries evidence, applicability,
-  transferability, uncertainty, review lifecycle, and conflict state. Draft or
-  quarantined claims never correct/block as reviewed truth.
+- **Reviewed means evidenced and independently human-reviewed.** Owner, agent,
+  model, trap, or release-bootstrap provenance never replaces either a source
+  or a current domain review. An authoritative claim carries evidence,
+  applicability, transferability, uncertainty, conflicts, reviewer identity,
+  review time, and future expiry. Draft, expired, or quarantined claims never
+  correct/block as reviewed truth. H1 remains fail-closed while the seed lacks
+  independent adjudication.
 - **Green-field boundary + import-purity.** No `sealai_v2.* ↔ app.*` imports,
   either direction — enforced by
   `backend/tests/architecture/test_v2_import_boundary.py`. This still applies
@@ -207,7 +212,13 @@ workflow engine requires a separate ADR and measured need.
 - Fachkarten knowledge: `knowledge/fachkarten.py`, in-process retrieval
   `knowledge/retrieval.py`, production Qdrant retrieval (dense + hybrid
   sparse/RRF/rerank, flag-gated) `knowledge/qdrant_retrieval.py`
-- Compatibility matrix: `knowledge/matrix.py`
+- Authoritative ledger and human review plane: `knowledge/ledger.py`,
+  `api/routes/knowledge_review.py`
+- Capability and neutrality plane: `knowledge/manufacturer_capability.py`,
+  `knowledge/verified_partner_registry.py`, `api/routes/capabilities.py`
+- Durable case and decision records: `core/decision_records.py`,
+  `db/case_decisions.py`, `api/routes/case_records.py`
+- Compatibility matrix: `knowledge/matrix.py` (default-off until evidenced)
 - Memory (4 layers — session working-window/case-state/derived facts,
   distiller, integrity guard, cross-session durable facts):
   `memory/store.py`, `memory/distiller.py`, `memory/integrity.py`,

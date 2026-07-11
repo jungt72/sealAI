@@ -18,10 +18,14 @@
     },
     "G2": {
       "name": "Evidence",
-      "status": "remediation_required",
+      "status": "implemented",
       "evidence": [
         "backend/sealai_v2/knowledge/ledger.py",
-        "backend/sealai_v2/db/models.py"
+        "backend/sealai_v2/db/models.py",
+        "backend/sealai_v2/db/migrations/versions/20260711_0004_claim_evidence_contract.py",
+        "backend/sealai_v2/knowledge/traps.py",
+        "backend/sealai_v2/config/settings.py",
+        "backend/sealai_v2/api/routes/knowledge_review.py"
       ]
     },
     "G3": {
@@ -42,17 +46,20 @@
     },
     "G5": {
       "name": "Neutrality",
-      "status": "remediation_required",
+      "status": "partial",
       "evidence": [
-        "backend/sealai_v2/knowledge/hersteller_partner.py"
+        "backend/sealai_v2/knowledge/manufacturer_capability.py",
+        "backend/sealai_v2/knowledge/verified_partner_registry.py",
+        "backend/sealai_v2/api/routes/capabilities.py"
       ]
     },
     "G6": {
       "name": "Audit",
-      "status": "partial",
+      "status": "implemented",
       "evidence": [
-        "backend/sealai_v2/db/models.py",
-        "backend/sealai_v2/knowledge/ledger.py"
+        "backend/sealai_v2/core/decision_records.py",
+        "backend/sealai_v2/db/case_decisions.py",
+        "backend/sealai_v2/api/routes/case_records.py"
       ]
     },
     "G7": {
@@ -77,10 +84,10 @@
     "M2": "implemented",
     "M3": "partial",
     "M4": "external_review_required",
-    "M5": "remediation_required",
+    "M5": "partial",
     "M6": "implemented",
     "M7": "partial",
-    "M8": "not_implemented",
+    "M8": "partial",
     "M9": "partial",
     "M10": "implemented",
     "M11": "owner_inputs_required",

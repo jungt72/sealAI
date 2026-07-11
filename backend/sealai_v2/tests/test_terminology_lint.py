@@ -36,8 +36,11 @@ _SCANNED_TERMS = tuple(
 # file path (relative to backend/sealai_v2/) -> every already-reviewed hit is safe in this file.
 _ALLOWLIST_FILES = {
     "api/routes/contribute.py",  # negated: "fließt nie automatisch in eine Empfehlung ein"
+    "api/routes/case_records.py",  # SSoT review-state enum; never component release language
+    "api/routes/knowledge_review.py",  # internal claim-review enum; never suitability advice
     "core/calc/binding.py",  # "owner-approved" = an approved UNIT SPELLING, unrelated meaning
     "core/contracts.py",  # negated doctrine comment: "keine Empfehlung ist auf den Wissensstand..."
+    "core/decision_records.py",  # internal SSoT case-review status, not suitability approval
     "core/gegencheck.py",  # describes what it does NOT do: "never an affirmative passt/geeignet"
     "core/legal_doctrine.py",  # defines the terms themselves (this module's own source list)
     "core/output_guard.py",  # IS the existing forbidden-phrase enforcement list this lint mirrors

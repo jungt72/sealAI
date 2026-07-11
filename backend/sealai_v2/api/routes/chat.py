@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -30,7 +30,12 @@ from sealai_v2.api.serializers import chat_response
 from sealai_v2.api.sse import STREAM_SCHEMA_VERSION, stream_frames
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
-from sealai_v2.pipeline.pipeline import Pipeline, ProgressSink, TokenSink
+from sealai_v2.pipeline.pipeline import (
+    Pipeline,
+    ProductModeUnavailable,
+    ProgressSink,
+    TokenSink,
+)
 from sealai_v2.security.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v2", tags=["chat"])
@@ -42,6 +47,19 @@ _log = logging.getLogger("sealai_v2.api.chat")
 _STREAM_ERROR_MESSAGE = (
     "Die Anfrage konnte nicht verarbeitet werden — bitte erneut versuchen."
 )
+_MODE_UNAVAILABLE_MESSAGE = (
+    "Dieser Produktmodus befindet sich noch in der fachlichen Freigabe und ist "
+    "derzeit nicht aktiviert."
+)
+
+
+def _mode_unavailable_detail(exc: ProductModeUnavailable) -> dict:
+    return {
+        "code": "product_mode_unavailable",
+        "mode": exc.mode,
+        "maturity": exc.maturity,
+        "message": _MODE_UNAVAILABLE_MESSAGE,
+    }
 
 
 class ChatRequest(BaseModel):
@@ -78,7 +96,12 @@ async def chat(
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    result = await _run_pipeline(req, identity, pipeline, settings)
+    try:
+        result = await _run_pipeline(req, identity, pipeline, settings)
+    except ProductModeUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail=_mode_unavailable_detail(exc)
+        ) from exc
     return chat_response(result)
 
 
@@ -111,6 +134,8 @@ async def chat_stream(
                 req, identity, pipeline, settings, progress=progress, token_sink=token
             )
             queue.put_nowait(("result", chat_response(result)))
+        except ProductModeUnavailable as exc:
+            queue.put_nowait(("error", _mode_unavailable_detail(exc)))
         except Exception:  # noqa: BLE001 — surfaced as ONE fixed-message error frame
             _log.exception("chat/stream pipeline failed")
             queue.put_nowait(("error", {"message": _STREAM_ERROR_MESSAGE}))

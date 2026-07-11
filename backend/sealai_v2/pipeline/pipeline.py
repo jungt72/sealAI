@@ -129,6 +129,23 @@ _KNOWN_SEAL_TYPES: tuple[str, ...] = (
     "hydraulik",
 )
 
+_KNOWLEDGE_ROUTES = frozenset(
+    {
+        RouteName.GENERAL_SEALING_KNOWLEDGE,
+        RouteName.MATERIAL_KNOWLEDGE,
+        RouteName.MATERIAL_COMPARISON,
+    }
+)
+
+
+class ProductModeUnavailable(RuntimeError):
+    """Raised before model execution when a governed product mode is inactive."""
+
+    def __init__(self, mode: str, maturity: str) -> None:
+        super().__init__(f"product mode {mode!r} is {maturity}")
+        self.mode = mode
+        self.maturity = maturity
+
 
 def _build_retriever(settings: Settings) -> Retriever:
     """L2 retriever selection (build-spec §3): the in-process keyword matcher (default — the hermetic
@@ -184,21 +201,24 @@ def _build_memory_context_service(settings: Settings):
 
 
 def _build_partner_registry(settings: Settings):
-    """Modus F partner pool (owner business model): the Postgres adapter (dashboard-editable,
-    system-of-record) when ``database_url`` is set, else the in-process registry (eval/CI hermetic —
-    empty → honest "no partner listed" + zero firm names). Fail-safe: a missing dep / unreachable DB
-    falls back to in-process rather than crashing startup."""
-    if settings.database_url:
+    """Build the technical-fit pool from verified capabilities, never billing."""
+    if settings.manufacturer_fit_enabled and settings.database_url:
         try:
             from sealai_v2.db.engine import make_engine, make_sessionmaker
-            from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
+            from sealai_v2.db.manufacturer_capability import (
+                PostgresManufacturerCapabilityStore,
+            )
+            from sealai_v2.knowledge.verified_partner_registry import (
+                VerifiedCapabilityPartnerRegistry,
+            )
 
-            return PostgresPartnerRegistry(
-                make_sessionmaker(make_engine(settings.database_url))
+            session_factory = make_sessionmaker(make_engine(settings.database_url))
+            return VerifiedCapabilityPartnerRegistry(
+                PostgresManufacturerCapabilityStore(session_factory)
             )
         except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on startup
             _log.warning(
-                "partner registry DB unavailable (%s) → in-process fallback", exc
+                "verified capability registry unavailable (%s) → empty pool", exc
             )
     return InProcessPartnerRegistry()
 
@@ -567,6 +587,13 @@ class Pipeline:
     # no extra binding + no extra prompt block -> byte-identical. Governs the derivation + prompt block.
     baseline_hardening_enabled: bool = False
     material_param_table_enabled: bool = False
+    # SSoT M15/G8. Direct Pipeline fixtures default to enabled so low-level
+    # tests stay focused; build_pipeline always injects the fail-closed Settings
+    # value used by every real API process.
+    knowledge_mode_enabled: bool = True
+    # Real API pipelines additionally require at least one current authoritative
+    # claim on a knowledge turn. Direct unit fixtures opt in explicitly.
+    authoritative_knowledge_required: bool = False
     # Legal-by-Design Phase D (Goal 6/7): when True, a turn whose question matched a risk-flag term
     # gets the additional system_l1.jinja `{% if risk_flags %}` instruction block. OFF -> risk_flags
     # is never passed to the generator -> byte-identical prompt. detect_risk_flags() is ALWAYS run
@@ -818,6 +845,26 @@ class Pipeline:
             if self.execution_policy_enabled
             else None
         )
+        activation_route_decision = (
+            policy_route_decision
+            or classify_route_deterministic(
+                knowledge_question,
+                case_state_nonempty=bool(
+                    case_state_v2.fields
+                    or case_state_v2.open_conflicts
+                    or case_state_v2.required_missing
+                ),
+                decode_result=decode_result,
+                diagnosis=diagnosis,
+                gegencheck_verdict=gegencheck_verdict,
+                material_terms=self.knowledge_material_terms,
+            )
+        )
+        if (
+            not self.knowledge_mode_enabled
+            and activation_route_decision.route in _KNOWLEDGE_ROUTES
+        ):
+            raise ProductModeUnavailable("knowledge", "pilot_not_activated")
         early_clarification = bool(
             policy_route_decision is not None
             and policy_route_decision.forced_full_pipeline
@@ -909,6 +956,14 @@ class Pipeline:
             grounding_facts = (
                 retrieval.grounding_facts
             )  # reviewed Fachkarten → compute + (Step A) verify
+            if (
+                self.authoritative_knowledge_required
+                and activation_route_decision.route in _KNOWLEDGE_ROUTES
+                and not grounding_facts
+            ):
+                raise ProductModeUnavailable(
+                    "knowledge", "independent_reviewed_evidence_unavailable"
+                )
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
             trap_facts = retrieve_reviewed_trap_facts(self.catalog, knowledge_question)
@@ -1957,7 +2012,11 @@ def build_pipeline(
     # L2 grounding (Gap #2): the §4 Verträglichkeitsmatrix — file-backed reviewed seed behind the
     # CompatibilityMatrix Protocol (a DB/Qdrant adapter is the deferred prod path). Under the same
     # ground_enabled kill-switch as the retriever (both are the L2 layer).
-    matrix = InProcessCompatibilityMatrix() if settings.ground_enabled else None
+    matrix = (
+        InProcessCompatibilityMatrix()
+        if settings.ground_enabled and settings.compatibility_matrix_enabled
+        else None
+    )
     versagensmodi = InProcessVersagensmodiStore() if settings.ground_enabled else None
     partner_registry = _build_partner_registry(settings)
     # sealingAI Memory Architecture V1.0 (Patch 8): only constructed when the flag is on — mirrors
@@ -2133,6 +2192,8 @@ def build_pipeline(
         response_contract_general_guard_enabled=settings.response_contract_general_guard_enabled,
         baseline_hardening_enabled=settings.baseline_hardening_enabled,
         material_param_table_enabled=settings.material_param_table_enabled,
+        knowledge_mode_enabled=settings.knowledge_mode_enabled,
+        authoritative_knowledge_required=True,
         wissensstand=wissensstand,
         route_optimization_enabled=settings.route_optimization_enabled,
         route_telemetry_sink=(

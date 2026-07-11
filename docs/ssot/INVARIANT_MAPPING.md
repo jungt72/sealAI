@@ -6,25 +6,25 @@ This map records implementation evidence, not aspiration. `partial` and
 | Principle | Implementation evidence | Verification | Status |
 | --- | --- | --- | --- |
 | P1 Kernel decides, LLM formulates | `backend/sealai_v2/core/calc/`, `core/l1_generator.py` | `backend/tests/architecture/test_i5_narration_no_numbers.py` | implemented |
-| P2 No technical claim without status | `knowledge/ledger.py`, `db/models.py` | knowledge ledger tests | remediation required |
+| P2 No technical claim without status | typed claim lifecycle; claims without independent current human review quarantined; source-less traps block-only; unsourced matrix inactive | knowledge, L3, matrix, and migration tests | implemented gate; H1 content review open |
 | P3 Unknown is a domain state | `core/case_state.py`, coverage contracts | case-state and coverage tests | partial |
 | P4 Family orients, compound is assessed, component is externally released | Fachkarten kinds and framing | doctrine and response tests | partial |
 | P5 State unknowns first | response contract and renderer | response-contract tests | partial |
-| P6 Matching follows the technical case | partner ranking | partner tests | remediation required |
+| P6 Matching follows the technical case | verified Capability Profile registry is independent of billing | capability and partner tests | partial: H4 remains disabled pending pilot evidence |
 | P7 Field experience is evidence, not autopilot | contribution review queue | contribution tests | partial |
-| P8 Product is the decision document | briefing renderer | briefing tests | remediation required |
+| P8 Product is the decision document | immutable snapshots, decision records, append-only reviews | case decision tests | partial: dashboard projection remains open |
 | P9 Depth before breadth | feature flags and maturity manifest | SSoT governance tests | partial |
 | P10 Boundaries are in the product | framing contract | frontend/backend framing tests | partial |
-| P11 Technical fit is not purchasable | ranking excludes plan | partner neutrality tests | remediation required |
+| P11 Technical fit is not purchasable | verified capability pool ignores commercial activation and plan | capability registry tests | implemented |
 | P12 Every scope extension needs an eval gate | config flags and release gate | deploy-gate tests | remediation required |
 
 | Gate | Current evidence | Status | Closure condition |
 | --- | --- | --- | --- |
 | G1 Tenant | server-derived identity and query scoping | implemented | keep cross-tenant suite green |
-| G2 Evidence | Postgres ledger plus derived Qdrant index | remediation required | typed applicability and no approved source-less claims |
+| G2 Evidence | typed evidence/applicability/reviewer/expiry, gated review queue, quarantine/Qdrant deletion, expiry check at resolution, block-only unsourced traps, default-off unsourced matrix | implemented | independently adjudicate the 51 source-backed seed candidates before H1 activation |
 | G3 Kernel | deterministic calculation registry | implemented | no LLM numeric escape |
 | G4 Approval | explicit orientation/release boundary | implemented | no sealingAI final release language |
-| G5 Neutrality | ranking ignores plan, but paid membership gates pool | remediation required | verified capability pool separated from commercial participation |
-| G6 Audit | knowledge reviews and case revision exist | partial | versioned case decisions, approvals, and responsibilities |
+| G5 Neutrality | verified capability pool has no commercial projection; independent reviewer role, COI attestation, and self-recusal | partial | pilot broader affiliation disclosure/recusal operations and real reviewed profiles |
+| G6 Audit | immutable snapshots, evidence-bound decisions, SSoT review states, append-only non-self reviews | implemented | keep tenant, evidence-binding, and immutability contracts green |
 | G7 Release | manual final-only production workflow; production candidate rejected; immutable image and rollback | implemented | keep exact adjudicated evidence binding green |
-| G8 Scope | many flags exist; no single maturity/activation contract | partial | maturity manifest and runtime activation policy enforced |
+| G8 Scope | runtime maturity endpoint plus fail-closed knowledge, fit, and handoff activation | partial | migrate every remaining scope flag into the shared activation registry |

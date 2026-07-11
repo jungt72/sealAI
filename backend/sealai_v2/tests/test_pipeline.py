@@ -10,6 +10,7 @@ from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.tenant import TenantContext, TenantScopeError
 from sealai_v2.tests._fakes import FakeLlmClient
+from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
 def _pipeline(fake: FakeLlmClient, *, understand: bool = False) -> Pipeline:
@@ -63,11 +64,11 @@ def test_pipeline_injects_reviewed_grounding_into_l1():
         client=fake,
         helper_model=ModelConfig("fake-helper"),
         understand_enabled=False,
-        retriever=InProcessRetriever(),
+        retriever=InProcessRetriever(independently_reviewed_test_catalog()),
     )
     res = asyncio.run(
         p.run(
-            "EPDM-O-Ringe quellen in Hydrauliköl, woran liegt das?",
+            "Bitte gib mir Details zu PTFE.",
             tenant=TenantContext("t1"),
             flags=Flags(),
         )
@@ -75,7 +76,7 @@ def test_pipeline_injects_reviewed_grounding_into_l1():
     assert res.grounded and res.grounding_facts
     # the reviewed card facts were rendered into the L1 system prompt (cited "Belegte Fakten")
     assert "Belegte Fakten" in fake.calls[-1]["system"]
-    assert "unpolar" in fake.calls[-1]["system"].lower()
+    assert "teilkristallin" in fake.calls[-1]["system"].lower()
 
 
 def test_pipeline_computes_and_injects_values():

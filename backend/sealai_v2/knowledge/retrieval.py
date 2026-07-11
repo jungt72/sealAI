@@ -43,11 +43,11 @@ _KIND_SEVERITY = {
 
 
 def _card_severity(card: Fachkarte) -> int:
-    """The HIGHEST claim severity on the card — checked across ALL claims (reviewed AND draft), not
-    just reviewed_claims(): a draft safety_nogo is still a real signal this card matters, even though
-    the draft channel is not yet authoritative for grounding (see the audit's dead-provisional-channel
-    finding) — the card-level retrieval decision (does it make the top-k at all) is upstream of that."""
-    return max((_KIND_SEVERITY.get(c.kind, 0) for c in card.claims), default=0)
+    """Highest visible claim severity; quarantined content cannot affect ranking."""
+    return max(
+        (_KIND_SEVERITY.get(c.kind, 0) for c in card.claims if not c.quarantined),
+        default=0,
+    )
 
 
 def _quelle(card: Fachkarte, *, reviewed: bool) -> str:
@@ -212,6 +212,8 @@ class InProcessRetriever:
         provisional: list[GroundingFact] = []
         for _s, card in scored[: max(0, k)]:
             for claim_index, claim in enumerate(card.claims):
+                if claim.quarantined:
+                    continue
                 fact = GroundingFact(
                     text=claim.text,
                     quelle=_quelle(card, reviewed=claim.reviewed),

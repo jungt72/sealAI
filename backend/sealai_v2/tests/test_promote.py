@@ -16,7 +16,11 @@ _EXISTING_CARD = {
         {
             "text": "Bestehende geprüfte Aussage.",
             "review_state": "reviewed",
+            "sources": ["Testquelle Bestand"],
             "provenance": ["owner:bestand"],
+            "reviewed_by": "test-domain-reviewer",
+            "reviewed_at": "2026-07-11T00:00:00Z",
+            "review_expires_at": "2099-07-11T00:00:00Z",
         }
     ],
     "review_state": "reviewed",
@@ -30,7 +34,9 @@ def _seed(tmp_path, cards=(_EXISTING_CARD,)):
     return p
 
 
-def _new_reviewed_card(card_id="FK-NEW", provenance=("owner:neu",)):
+def _new_reviewed_card(
+    card_id="FK-NEW", provenance=("owner:neu",), sources=("Testquelle Neu",)
+):
     return {
         "id": card_id,
         "scope": {"material": ["PTFE"]},
@@ -38,7 +44,11 @@ def _new_reviewed_card(card_id="FK-NEW", provenance=("owner:neu",)):
             {
                 "text": "Neue geprüfte Aussage.",
                 "review_state": "reviewed",
+                "sources": list(sources),
                 "provenance": list(provenance),
+                "reviewed_by": "test-domain-reviewer",
+                "reviewed_at": "2026-07-11T00:00:00Z",
+                "review_expires_at": "2099-07-11T00:00:00Z",
             }
         ],
         "review_state": "reviewed",
@@ -50,7 +60,7 @@ def test_merge_new_card_appends_a_valid_reviewed_card(tmp_path):
     seed_path = _seed(tmp_path)
     catalog = merge_new_card(_new_reviewed_card(), seed_path=seed_path)
     assert {c.id for c in catalog.cards} == {"FK-EXISTING", "FK-NEW"}
-    assert catalog.by_id("FK-NEW").reviewed_claims()[0].owner_grounded
+    assert catalog.by_id("FK-NEW").reviewed_claims()[0].sources == ("Testquelle Neu",)
     # re-read from disk independently — proves the write actually landed, not just an in-memory view
     on_disk = json.loads(seed_path.read_text(encoding="utf-8"))
     assert {c["id"] for c in on_disk["cards"]} == {"FK-EXISTING", "FK-NEW"}
@@ -87,9 +97,7 @@ def test_merge_new_card_rejects_id_collision_and_never_touches_the_file(tmp_path
 def test_merge_new_card_rejects_a_circularity_guard_violation(tmp_path):
     seed_path = _seed(tmp_path)
     before = seed_path.read_text(encoding="utf-8")
-    ungrounded = _new_reviewed_card(
-        provenance=()
-    )  # reviewed, but no owner/trap AND no sources
+    ungrounded = _new_reviewed_card(provenance=(), sources=())
     with pytest.raises(PromotionError, match="no LLM erdet LLM|failed validation"):
         merge_new_card(ungrounded, seed_path=seed_path)
     assert seed_path.read_text(encoding="utf-8") == before

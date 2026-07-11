@@ -3,11 +3,16 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 
 import sealai_v2.db.models  # noqa: F401
-from sealai_v2.db.engine import Base, make_engine
-from sealai_v2.db.migrate import migration_status, up, validate_schema
+from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
+from sealai_v2.db.migrate import _upgrade_engine, migration_status, up, validate_schema
+from sealai_v2.db.models import (
+    V2HerstellerPartner,
+    V2ManufacturerCapabilityProfile,
+    V2ManufacturerCapabilityReview,
+)
 
 
 def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
@@ -18,7 +23,7 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260710_0003"
+    assert current == head == "20260711_0006"
     validate_schema(engine)
 
 
@@ -72,3 +77,35 @@ def test_knowledge_migration_rejects_partial_precreated_ledger(tmp_path) -> None
 
     with pytest.raises(RuntimeError, match="partial technical-knowledge ledger"):
         up(engine)
+
+
+def test_legacy_partner_capabilities_become_unverified_submissions(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'legacy-capabilities.db'}")
+    _upgrade_engine(engine, "20260711_0004")
+    sf = make_sessionmaker(engine)
+    with sf() as session:
+        session.add(
+            V2HerstellerPartner(
+                hersteller="acme",
+                firmenname="ACME",
+                aktiv=True,
+                lead_email="leads@example.test",
+                werkstoffe=["FKM"],
+                bauformen=["RWDR"],
+                groessen="10-200 mm",
+                zertifikate=["ISO 9001"],
+            )
+        )
+        session.commit()
+
+    _upgrade_engine(engine)
+
+    with sf() as session:
+        profile = session.scalar(select(V2ManufacturerCapabilityProfile))
+        review = session.scalar(select(V2ManufacturerCapabilityReview))
+        assert profile.status == "submitted"
+        assert profile.materials_json == ["FKM"]
+        assert profile.seal_types_json == ["RWDR"]
+        assert profile.evidence_json == []
+        assert review.from_status == "legacy_partner_metadata"
+        assert review.to_status == "submitted"

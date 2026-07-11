@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from sealai_v2.config.settings import Settings
+from sealai_v2.core.contracts import SessionContext
+from sealai_v2.pipeline.pipeline import ProductModeUnavailable, build_pipeline
+from sealai_v2.security.tenant import TenantContext
+from sealai_v2.tests._apiutil import auth, make_client, make_pipeline
+from sealai_v2.tests._fakes import FakeLlmClient
+
+
+def _pipeline(*, enabled: bool):
+    client = FakeLlmClient("Belegte Antwort")
+    settings = Settings(
+        knowledge_mode_enabled=enabled,
+        execution_policy_enabled=True,
+        structured_answer_enabled=False,
+        verify_enabled=False,
+        compute_enabled=False,
+        memory_enabled=False,
+        understand_enabled=False,
+    )
+    return build_pipeline(settings, client=client), client
+
+
+def test_inactive_knowledge_mode_fails_before_any_model_call() -> None:
+    pipeline, client = _pipeline(enabled=False)
+
+    with pytest.raises(ProductModeUnavailable) as raised:
+        asyncio.run(
+            pipeline.run(
+                "Bitte gib mir Details zu PTFE.",
+                tenant=TenantContext("tenant-a"),
+                session=SessionContext("case-a"),
+            )
+        )
+
+    assert raised.value.mode == "knowledge"
+    assert raised.value.maturity == "pilot_not_activated"
+    assert client.calls == []
+
+
+def test_enabled_knowledge_mode_still_requires_authoritative_evidence() -> None:
+    pipeline, client = _pipeline(enabled=True)
+
+    with pytest.raises(ProductModeUnavailable) as raised:
+        asyncio.run(
+            pipeline.run(
+                "Bitte gib mir Details zu PTFE.",
+                tenant=TenantContext("tenant-a"),
+                session=SessionContext("case-a"),
+            )
+        )
+
+    assert raised.value.maturity == "independent_reviewed_evidence_unavailable"
+    assert client.calls == []
+
+
+def test_chat_api_exposes_structured_mode_unavailable_contract() -> None:
+    pipeline = make_pipeline()
+    pipeline.knowledge_mode_enabled = False
+    client, _ = make_client(pipeline)
+
+    response = client.post(
+        "/api/v2/chat",
+        json={"message": "Details zu PTFE"},
+        headers=auth("tok-A"),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "product_mode_unavailable",
+        "mode": "knowledge",
+        "maturity": "pilot_not_activated",
+        "message": (
+            "Dieser Produktmodus befindet sich noch in der fachlichen Freigabe und ist "
+            "derzeit nicht aktiviert."
+        ),
+    }
+
+
+def test_manufacturer_mode_dependencies_fail_closed_at_configuration_load() -> None:
+    with pytest.raises(ValueError, match="requires capability_profiles_enabled"):
+        Settings(manufacturer_fit_enabled=True)
+    with pytest.raises(ValueError, match="requires capability profiles and fit"):
+        Settings(manufacturer_handoff_enabled=True)
