@@ -123,6 +123,21 @@ class TestGeneralAndMaterialKnowledge:
             assert decision.forced_full_pipeline is False
             assert decision.deterministic_signal_count == 0
 
+    def test_incidental_diagnosis_match_does_not_hijack_knowledge_overview(
+        self,
+    ) -> None:
+        question = (
+            "Erkläre die technische Auslegung eines O-Rings: Verpressung, "
+            "Extrusionsspalt und Versagensbilder."
+        )
+        decision = classify_route_deterministic(
+            question,
+            diagnosis={"ursache": "Spaltextrusion", "fix": "Stützring"},
+        )
+        assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert decision.forced_full_pipeline is False
+        assert decision.deterministic_signal_count == 0
+
     def test_short_oring_compression_explanation_is_knowledge(self) -> None:
         decision = classify_route_deterministic(
             "Erkläre die Verpressung und Auslegung eines O-Rings."
@@ -209,6 +224,14 @@ class TestEngineeringCase:
             "Erkläre die Auslegung meines O-Rings bei 10 bar und 120 °C."
         )
         assert d.route is RouteName.ENGINEERING_CASE
+        assert d.forced_full_pipeline is True
+
+    def test_concrete_values_keep_diagnosis_signal_on_full_path(self) -> None:
+        d = classify_route_deterministic(
+            "Erkläre die Extrusion meines O-Rings bei 10 bar.",
+            diagnosis={"ursache": "Spaltextrusion", "fix": "Stützring"},
+        )
+        assert d.route is RouteName.LEAKAGE_TROUBLESHOOTING
         assert d.forced_full_pipeline is True
 
     def test_possessive_case_reference_keeps_design_question_on_full_path(self) -> None:

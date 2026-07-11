@@ -89,6 +89,17 @@ def test_no_diagnosis_on_non_symptom_turn():
     assert res.diagnose is None
 
 
+def test_failure_mode_vocabulary_in_knowledge_overview_is_not_a_diagnosis():
+    res = _run(
+        _pipeline(FakeLlmClient("Antwort")),
+        (
+            "Erkläre die technische Auslegung eines O-Rings: Verpressung, "
+            "Extrusionsspalt und Versagensbilder."
+        ),
+    )
+    assert res.diagnose is None
+
+
 def test_no_diagnosis_when_store_off():
     res = _run(
         _pipeline(FakeLlmClient("Antwort"), with_store=False),

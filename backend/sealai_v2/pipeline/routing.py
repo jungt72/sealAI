@@ -302,7 +302,7 @@ def _has_material_topic(question: str, material_terms: tuple[str, ...] = ()) -> 
     return False
 
 
-def _is_explicit_knowledge_overview(
+def is_explicit_knowledge_overview(
     question: str, *, material_terms: tuple[str, ...] = ()
 ) -> bool:
     """Recognise an educational overview even when it names design axes.
@@ -320,7 +320,18 @@ def _is_explicit_knowledge_overview(
         _DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)
     ):
         return False
-    return not _CONCRETE_CASE_REFERENCE_RE.search(text)
+    if _CONCRETE_CASE_REFERENCE_RE.search(text):
+        return False
+    return not any(
+        (
+            _ENGINEERING_VALUE_RE.search(text),
+            _RFQ_RE.search(text),
+            _SUITABILITY_QUESTION_RE.search(text),
+            _META_INSTRUCTION_RE.search(text),
+            _RESISTANCE_CLAIM_RE.search(text),
+            is_alternativen_request(text),
+        )
+    )
 
 
 def detect_engineering_signals(
@@ -339,9 +350,12 @@ def detect_engineering_signals(
     tests. A single positive signal is enough to force the full pipeline; the returned tuple's
     length is Stage 1's ``deterministic_signal_count``."""
     signals: list[str] = []
+    explicit_knowledge_overview = is_explicit_knowledge_overview(
+        question, material_terms=material_terms
+    )
     if decode_result:
         signals.append("designation_or_dimensions")
-    if diagnosis is not None:
+    if diagnosis is not None and not explicit_knowledge_overview:
         signals.append("recognized_failure_symptom")
     if gegencheck_verdict is not None:
         signals.append("material_and_medium_known")
@@ -351,9 +365,6 @@ def detect_engineering_signals(
         signals.append("manufacturer_alternatives_request")
     if _ENGINEERING_VALUE_RE.search(question):
         signals.append("engineering_value_with_unit")
-    explicit_knowledge_overview = _is_explicit_knowledge_overview(
-        question, material_terms=material_terms
-    )
     if _COMPRESSION_RE.search(question) and not explicit_knowledge_overview:
         signals.append("compression_or_interference_language")
     if _RFQ_RE.search(question):

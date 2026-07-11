@@ -23,6 +23,7 @@ from sealai_v2.pipeline.routing import (
     RouteName,
     classify_route,
     classify_route_deterministic,
+    is_explicit_knowledge_overview,
     requests_calculation,
 )
 from sealai_v2.orchestration.execution_policy import (
@@ -713,6 +714,15 @@ class Pipeline:
         diagnosis = stages.diagnose(
             self.versagensmodi, question, tenant_id=scope.tenant_id
         )
+        # A knowledge overview can legitimately name failure modes and diagnostic dimensions. The
+        # symptom index is lexical and may otherwise mistake terms such as "Extrusionsspalt" or
+        # "Versagensbilder" for a reported incident. Suppress that incidental diagnosis before it
+        # can alter routing or leak a case-specific cause/fix into an educational answer. Concrete
+        # case references and operating values are excluded by the shared deterministic predicate.
+        if diagnosis is not None and is_explicit_knowledge_overview(
+            question, material_terms=self.knowledge_material_terms
+        ):
+            diagnosis = None
         # Modus G: deterministic Decode - None unless a designation (with dims) is present.
         # Result-side structured parse + the §9.2 equivalence boundary. Pure + sync, no I/O.
         decode_result = stages.decode(question)
