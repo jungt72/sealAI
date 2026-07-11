@@ -10,10 +10,13 @@ const KEYCLOAK_CALLBACK_PATH = "/api/auth/callback/keycloak";
  * target. Every other provider/callback error remains with Auth.js and its custom error page so a
  * real configuration defect is never silently hidden.
  */
-export function expiredKeycloakRecoveryUrl(requestUrl: URL): URL | null {
+export function expiredKeycloakRecoveryUrl(
+  requestUrl: URL,
+  publicOrigin: string = requestUrl.origin,
+): URL | null {
   if (requestUrl.pathname !== KEYCLOAK_CALLBACK_PATH) return null;
   if (requestUrl.searchParams.get("error") !== "temporarily_unavailable") return null;
   if (requestUrl.searchParams.get("error_description") !== "authentication_expired") return null;
 
-  return new URL("/dashboard/", requestUrl.origin);
+  return new URL("/dashboard/", publicOrigin);
 }
