@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from sealai_v2.core.contracts import Intent
+from sealai_v2.core.knowledge_answer import detected_material_subjects
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
 from sealai_v2.core.text_match import query_tokens, tag_matches
@@ -73,6 +74,14 @@ class RouteDecision:
     confidence: float
     forced_full_pipeline: bool
     deterministic_signal_count: int
+
+
+@dataclass(frozen=True)
+class MaterialComparisonFollowup:
+    """A comparison whose omitted first subject was resolved from user-authored session context."""
+
+    resolved_question: str
+    subjects: tuple[str, str]
 
 
 # --- Stage-1 signal regexes (deliberately explicit + narrow; each is independently testable) -----
@@ -333,6 +342,68 @@ def is_explicit_knowledge_overview(
             is_alternativen_request(text),
         )
     )
+
+
+def resolve_material_comparison_followup(
+    question: str,
+    previous_turns: tuple[object, ...],
+    *,
+    material_terms: tuple[str, ...] = (),
+) -> MaterialComparisonFollowup | None:
+    """Resolve ``vergleiche mit PTFE`` against the recent user-authored subject.
+
+    The raw transcript remains outside the production prompt.  Only canonical
+    material names survive this boundary, and only for a pure knowledge
+    comparison without values, incidents, suitability claims or case language.
+    Assistant messages are never trusted as the source of a subject.
+    """
+    text = (question or "").strip()
+    current = detected_material_subjects(text, material_terms=material_terms)
+    if len(current) != 1 or not _COMPARISON_RE.search(text):
+        return None
+    if not is_explicit_knowledge_overview(text, material_terms=material_terms):
+        return None
+    if any(
+        blocker
+        for blocker in (
+            _ENGINEERING_VALUE_RE.search(text),
+            _RFQ_RE.search(text),
+            _LEAKAGE_RE.search(text),
+            _CASE_LANGUAGE_RE.search(text),
+            _CONCRETE_CASE_REFERENCE_RE.search(text),
+            _SUITABILITY_QUESTION_RE.search(text),
+            _META_INSTRUCTION_RE.search(text),
+            _RESISTANCE_CLAIM_RE.search(text),
+            is_alternativen_request(text),
+            requests_calculation(text),
+        )
+    ):
+        return None
+
+    # The memory window is already tenant/session scoped. Inspect at most three
+    # recent user turns and stop at an explicit technical topic change.
+    inspected = 0
+    for turn in reversed(previous_turns):
+        if getattr(turn, "role", None) != "user":
+            continue
+        inspected += 1
+        prior_text = str(getattr(turn, "text", "") or "")
+        prior = detected_material_subjects(prior_text, material_terms=material_terms)
+        candidates = tuple(subject for subject in prior if subject != current[0])
+        if len(prior) == 1 and len(candidates) == 1:
+            subjects = (candidates[0], current[0])
+            return MaterialComparisonFollowup(
+                resolved_question=(
+                    f"{text}\nAufgeloester Werkstoffvergleich: "
+                    f"{subjects[0]} und {subjects[1]}."
+                ),
+                subjects=subjects,
+            )
+        if prior or _DOMAIN_KNOWLEDGE_RE.search(prior_text):
+            break
+        if inspected >= 3:
+            break
+    return None
 
 
 def detect_engineering_signals(

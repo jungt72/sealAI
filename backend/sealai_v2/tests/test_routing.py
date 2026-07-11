@@ -7,13 +7,65 @@ this is asserted both per-case and as a standalone property test.
 
 from __future__ import annotations
 
-from sealai_v2.core.contracts import Intent
+from sealai_v2.core.contracts import Intent, Turn
 from sealai_v2.pipeline.routing import (
     RouteName,
     classify_route,
     classify_route_deterministic,
+    resolve_material_comparison_followup,
     detect_engineering_signals,
 )
+
+
+def test_material_comparison_followup_resolves_prior_user_subject() -> None:
+    resolution = resolve_material_comparison_followup(
+        "danke, bitte vergleiche mit ptfe",
+        (
+            Turn(role="user", text="Bitte gib mir Details ueber NBR"),
+            Turn(role="assistant", text="NBR-Fachantwort"),
+        ),
+    )
+
+    assert resolution is not None
+    assert resolution.subjects == ("NBR", "PTFE")
+    assert "NBR und PTFE" in resolution.resolved_question
+
+
+def test_material_comparison_followup_does_not_trust_assistant_subjects() -> None:
+    assert (
+        resolve_material_comparison_followup(
+            "Bitte vergleiche mit PTFE",
+            (Turn(role="assistant", text="NBR waere eine Option"),),
+        )
+        is None
+    )
+
+
+def test_material_comparison_followup_rejects_case_bound_or_complete_queries() -> None:
+    prior = (Turn(role="user", text="Details zu NBR"),)
+
+    assert (
+        resolve_material_comparison_followup("Vergleiche NBR und PTFE", prior) is None
+    )
+    assert (
+        resolve_material_comparison_followup(
+            "Vergleiche mit PTFE bei 130 °C in meiner Anwendung", prior
+        )
+        is None
+    )
+
+
+def test_material_comparison_followup_stops_at_explicit_topic_change() -> None:
+    turns = (
+        Turn(role="user", text="Details zu NBR"),
+        Turn(role="assistant", text="NBR-Fachantwort"),
+        Turn(role="user", text="Erklaere mir einen O-Ring"),
+        Turn(role="assistant", text="O-Ring-Fachantwort"),
+    )
+
+    assert (
+        resolve_material_comparison_followup("Bitte vergleiche mit PTFE", turns) is None
+    )
 
 
 class TestSmalltalkNavigation:

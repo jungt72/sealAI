@@ -403,6 +403,20 @@ def _detected_materials(
     return tuple(found)
 
 
+def detected_material_subjects(
+    text: str, *, material_terms: tuple[str, ...] = ()
+) -> tuple[str, ...]:
+    """Return canonical material subjects explicitly named in ``text``.
+
+    This is the shared, deterministic entity boundary for routing, retrieval and
+    answer planning.  It deliberately inspects only the supplied text; callers
+    that resolve a follow-up must decide separately which prior user turn is
+    trustworthy and relevant.
+    """
+    normalized = (text or "").lower()
+    return _detected_materials(material_terms, query_tokens(text or ""), normalized)
+
+
 def _detected_seals(tokens: set[str], normalized: str) -> tuple[str, ...]:
     return tuple(
         canonical
@@ -488,6 +502,7 @@ def build_knowledge_answer_plan(
     material_terms: tuple[str, ...] = (),
     grounding_facts: tuple["GroundingFact", ...] = (),
     route_name: str | None = None,
+    subject_order: tuple[str, ...] = (),
 ) -> KnowledgeAnswerPlan | None:
     """Build the plan only for a real knowledge/comparison turn.
 
@@ -500,7 +515,11 @@ def build_knowledge_answer_plan(
         return None
     tokens = query_tokens(text)
     normalized = text.lower()
-    materials = _detected_materials(material_terms, tokens, normalized)
+    materials = detected_material_subjects(text, material_terms=material_terms)
+    if subject_order:
+        detected = set(materials)
+        ordered = tuple(subject for subject in subject_order if subject in detected)
+        materials = tuple(dict.fromkeys((*ordered, *materials)))
     seals = _detected_seals(tokens, normalized)
     media = extract_media(text)
     medium_context = bool(_MEDIUM_CONTEXT_RE.search(text))

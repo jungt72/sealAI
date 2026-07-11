@@ -24,6 +24,7 @@ from sealai_v2.pipeline.routing import (
     classify_route,
     classify_route_deterministic,
     is_explicit_knowledge_overview,
+    resolve_material_comparison_followup,
     requests_calculation,
 )
 from sealai_v2.orchestration.execution_policy import (
@@ -673,6 +674,19 @@ class Pipeline:
                 session=session,
                 question=question,
             )
+        comparison_followup = resolve_material_comparison_followup(
+            question,
+            mem.window,
+            material_terms=self.knowledge_material_terms,
+        )
+        # A canonical, context-enriched query is used only by deterministic
+        # routing, retrieval and answer planning. The generator still receives
+        # the user's exact current question and never the raw prior transcript.
+        knowledge_question = (
+            comparison_followup.resolved_question
+            if comparison_followup is not None
+            else question
+        )
         effective_case_id = (
             session.session_id if session is not None else f"turn-{timer.turn_id}"
         )
@@ -790,7 +804,7 @@ class Pipeline:
             conversation_window = []
         policy_route_decision = (
             classify_route_deterministic(
-                question,
+                knowledge_question,
                 case_state_nonempty=bool(
                     case_state_v2.fields
                     or case_state_v2.open_conflicts
@@ -881,13 +895,13 @@ class Pipeline:
                 from sealai_v2.core.knowledge_answer import knowledge_retrieval_limit
 
                 retrieval_k = knowledge_retrieval_limit(
-                    question, material_terms=self.knowledge_material_terms
+                    knowledge_question, material_terms=self.knowledge_material_terms
                 )
                 with _staged(timer, progress, "ground_ms", "ground"):
                     retrieval = await stages.ground(
                         self.retriever,
                         self.matrix,
-                        question,
+                        knowledge_question,
                         tenant_id=scope.tenant_id,
                         case_facts=mem.case_state,
                         k=retrieval_k,
@@ -897,7 +911,7 @@ class Pipeline:
             )  # reviewed Fachkarten → compute + (Step A) verify
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
-            trap_facts = retrieve_reviewed_trap_facts(self.catalog, question)
+            trap_facts = retrieve_reviewed_trap_facts(self.catalog, knowledge_question)
             l1_grounding = grounding_facts + retrieval.matrix_facts + trap_facts
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
@@ -984,7 +998,7 @@ class Pipeline:
                     route_decision = policy_route_decision
                 else:
                     route_decision = classify_route(
-                        question,
+                        knowledge_question,
                         case_state_nonempty=bool(mem.case_state),
                         decode_result=decode_result,
                         diagnosis=diagnosis,
@@ -1204,10 +1218,15 @@ class Pipeline:
                 from sealai_v2.core.knowledge_answer import build_knowledge_answer_plan
 
                 _kap = build_knowledge_answer_plan(
-                    question,
+                    knowledge_question,
                     material_terms=self.knowledge_material_terms,
                     grounding_facts=l1_grounding,
                     route_name=route_decision.route.value,
+                    subject_order=(
+                        comparison_followup.subjects
+                        if comparison_followup is not None
+                        else ()
+                    ),
                 )
                 knowledge_answer_plan = _kap.to_dict() if _kap is not None else None
 
@@ -1220,7 +1239,7 @@ class Pipeline:
                     material_parameters_for,
                 )
 
-                material_params = material_parameters_for(question) or None
+                material_params = material_parameters_for(knowledge_question) or None
             with _staged(timer, progress, "generate_ms", "generate"):
                 # Phase 2D: the ONLY branch point where the compact smalltalk_navigation prompt
                 # can ever answer a turn. self.generator (L1Generator, the full engineering
