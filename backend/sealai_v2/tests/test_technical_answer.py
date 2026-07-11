@@ -127,6 +127,7 @@ def test_knowledge_answer_drops_redundant_recommendation_block():
         "status": "provisional",
         "conditions": ["Herstellerprüfung"],
     }
+    payload["needs_human_review"] = True
     client = FakeLlmClient(json.dumps(payload))
 
     answer = asyncio.run(
@@ -141,6 +142,7 @@ def test_knowledge_answer_drops_redundant_recommendation_block():
 
     assert "Vorläufige Orientierung" not in answer.text
     assert "PTFE nur nach Prüfung einsetzen" not in answer.text
+    assert "Fachprüfung erforderlich" not in answer.text
 
 
 def test_knowledge_answer_supplements_missing_claim_level_facet_coverage():
