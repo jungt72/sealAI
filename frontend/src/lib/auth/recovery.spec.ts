@@ -14,6 +14,17 @@ describe("expiredKeycloakRecoveryUrl", () => {
     );
   });
 
+  it("uses the configured public origin behind the reverse proxy", () => {
+    const internalUrl = new URL(
+      "http://0.0.0.0:3000/api/auth/callback/keycloak" +
+        "?error=temporarily_unavailable&error_description=authentication_expired",
+    );
+
+    expect(
+      expiredKeycloakRecoveryUrl(internalUrl, "https://sealingai.com")?.toString(),
+    ).toBe("https://sealingai.com/dashboard/");
+  });
+
   it("does not hide unrelated provider or configuration failures", () => {
     expect(
       expiredKeycloakRecoveryUrl(
