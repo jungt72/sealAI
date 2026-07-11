@@ -613,7 +613,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:nbr-overview"
       ],
-      "version": "primary-review-20260711",
+      "version": "primary-review-20260711-orthography",
       "matrix_crosscheck": "not-applicable-overview",
       "scope": {
         "material": [
@@ -624,21 +624,21 @@
         ],
         "medium": [],
         "property": [
-          "Oel- und Kraftstoffbestaendigkeit",
-          "Abrieb- und Verschleissbestaendigkeit",
-          "Ozon- und Witterungsbestaendigkeit",
+          "Öl- und Kraftstoffbeständigkeit",
+          "Abrieb- und Verschleißbeständigkeit",
+          "Ozon- und Witterungsbeständigkeit",
           "ACN-Gehalt"
         ],
         "application": [
           "Dichtungen",
           "O-Ringe",
-          "Schlaeuche",
+          "Schläuche",
           "Hydraulik und Pneumatik"
         ]
       },
       "claims": [
         {
-          "text": "NBR (Nitrilkautschuk) ist eine Familie ungesaettigter Copolymere aus Butadien und Acrylnitril.",
+          "text": "NBR (Nitrilkautschuk) ist eine Familie ungesättigter Copolymere aus Butadien und Acrylnitril.",
           "kind": "definition",
           "review_state": "reviewed",
           "provenance": [
@@ -650,7 +650,7 @@
           ]
         },
         {
-          "text": "Der Acrylnitril-Anteil beeinflusst die Eigenschaften des fertigen NBR-Compounds: Ein hoeherer Anteil verbessert familientypisch die Oel- und Kraftstoffbestaendigkeit, steht aber im Zielkonflikt mit Elastizitaet und Druckverformungsrest.",
+          "text": "Der Acrylnitril-Anteil beeinflusst die Eigenschaften des fertigen NBR-Compounds: Ein höherer Anteil verbessert familientypisch die Öl- und Kraftstoffbeständigkeit, steht aber im Zielkonflikt mit Elastizität und Druckverformungsrest.",
           "kind": "family_tendency",
           "review_state": "reviewed",
           "provenance": [
@@ -662,7 +662,7 @@
           ]
         },
         {
-          "text": "Typische Staerken von NBR sind die Bestaendigkeit gegen viele Mineraloele, Kraftstoffe und Fette sowie gute mechanische, Abrieb- und Verschleisseigenschaften; deshalb wird die Werkstofffamilie unter anderem fuer Dichtungen, O-Ringe und Schlaeuche eingesetzt.",
+          "text": "Typische Stärken von NBR sind die Beständigkeit gegen viele Mineralöle, Kraftstoffe und Fette sowie gute mechanische, Abrieb- und Verschleißeigenschaften; deshalb wird die Werkstofffamilie unter anderem für Dichtungen, O-Ringe und Schläuche eingesetzt.",
           "kind": "family_tendency",
           "review_state": "reviewed",
           "provenance": [
@@ -674,7 +674,7 @@
           ]
         },
         {
-          "text": "Eine wesentliche Familiengrenze ist die geringe Ozon- und Witterungsbestaendigkeit von Standard-NBR; fuer entsprechende Umgebungen muss ein konkret geeigneter Compound oder eine andere Werkstofffamilie geprueft werden.",
+          "text": "Eine wesentliche Familiengrenze ist die geringe Ozon- und Witterungsbeständigkeit von Standard-NBR; für entsprechende Umgebungen muss ein konkret geeigneter Compound oder eine andere Werkstofffamilie geprüft werden.",
           "kind": "safety_caution",
           "review_state": "reviewed",
           "provenance": [
@@ -686,7 +686,7 @@
           ]
         },
         {
-          "text": "Die Werkstofffamilie NBR allein ist keine Eignungsfreigabe: Acrylnitril-Anteil, Rezeptur und konkrete Betriebsbedingungen bestimmen die Eigenschaften des fertigen Compounds, weshalb die anwendungsbezogene Auswahl gegen Datenblatt und Herstellerangaben zu pruefen ist.",
+          "text": "Die Werkstofffamilie NBR allein ist keine Eignungsfreigabe: Acrylnitril-Anteil, Rezeptur und konkrete Betriebsbedingungen bestimmen die Eigenschaften des fertigen Compounds, weshalb die anwendungsbezogene Auswahl gegen Datenblatt und Herstellerangaben zu prüfen ist.",
           "kind": "qualification_required",
           "review_state": "reviewed",
           "provenance": [

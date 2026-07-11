@@ -44,6 +44,27 @@ def test_reviewed_seed_uses_owner_or_primary_source_grounding():
         ), c.id
 
 
+def test_reviewed_nbr_profile_uses_user_facing_german_orthography():
+    card = load_fachkarten().by_id("FK-NBR-UEBERBLICK")
+    text = " ".join(claim.text for claim in card.reviewed_claims())
+    for ascii_spelling in (
+        "ungesaettigt",
+        "hoeher",
+        "Mineraloele",
+        "Bestaendigkeit",
+        "Schlaeuche",
+        "geprueft",
+    ):
+        assert ascii_spelling not in text
+    for german_spelling in (
+        "ungesättigter",
+        "Mineralöle",
+        "Beständigkeit",
+        "Schläuche",
+    ):
+        assert german_spelling in text
+
+
 def test_foodgrade_carries_owner_vmq_nuance():
     fg = load_fachkarten().by_id("FK-FOODGRADE-FETT")
     nuance = [cl for cl in fg.claims if "moderate" in cl.text.lower()]

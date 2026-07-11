@@ -44,8 +44,8 @@ def test_general_fail_closed_answer_remains_a_useful_overview():
     assert contract is not None
 
     answer = fail_closed_answer(contract.to_dict())
-    assert answer.index("Familie ungesaettigter Copolymere") < answer.index(
+    assert answer.index("Familie ungesättigter Copolymere") < answer.index(
         "wesentliche Familiengrenze"
     )
-    assert "Typische Staerken" in answer
+    assert "Typische Stärken" in answer
     assert "keine Eignungsfreigabe" in answer
