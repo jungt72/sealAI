@@ -119,7 +119,23 @@ def _quelle(row: V2KnowledgeClaim) -> str:
     return f"Fachkarte {row.card_id} ({label}; {provenance})"
 
 
+def _claim_scope(card, claim) -> dict:
+    """Persist claim-level answer metadata inside the existing JSON scope column.
+
+    This keeps the authoritative ledger schema stable while making facets part of the versioned
+    claim projection. Reserved underscore keys are removed again before normal retrieval matching.
+    """
+    return {
+        **card.scope,
+        "_answer_facets": list(claim.answer_facets),
+        "_subject_type": card.subject_type,
+    }
+
+
 def _claim_payload(row: V2KnowledgeClaim, document: V2KnowledgeDocument) -> dict:
+    scope = dict(row.scope_json or {})
+    answer_facets = list(scope.pop("_answer_facets", ()) or ())
+    subject_type = str(scope.pop("_subject_type", "general") or "general")
     return {
         "claim_id": row.id,
         "card_id": row.card_id,
@@ -131,9 +147,11 @@ def _claim_payload(row: V2KnowledgeClaim, document: V2KnowledgeDocument) -> dict
         "review_status": row.review_status,
         "claim_text": row.text,
         "claim_kind": row.kind,
+        "answer_facets": answer_facets,
+        "subject_type": subject_type,
         "sources": list(row.sources_json or []),
         "provenance": list(row.provenance_json or []),
-        "scope": dict(row.scope_json or {}),
+        "scope": scope,
         "tenant_id": row.tenant_id,
         "version": row.version,
         "quelle": _quelle(row),
@@ -292,7 +310,7 @@ class PostgresKnowledgeLedger:
                         content_sha256=claim_hash,
                         kind=claim.kind,
                         review_status=desired_status,
-                        scope_json=card.scope,
+                        scope_json=_claim_scope(card, claim),
                         sources_json=list(claim.sources),
                         provenance_json=provenance,
                         active=True,
@@ -333,7 +351,7 @@ class PostgresKnowledgeLedger:
                     "text": _normalise_text(claim.text),
                     "kind": claim.kind,
                     "review_status": desired_status,
-                    "scope_json": card.scope,
+                    "scope_json": _claim_scope(card, claim),
                     "sources_json": list(claim.sources),
                     "provenance_json": provenance,
                     "active": True,

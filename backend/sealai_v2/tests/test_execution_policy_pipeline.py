@@ -22,9 +22,11 @@ class _RecordingClient:
     def __init__(self, text: str) -> None:
         self.text = text
         self.calls: list[ModelConfig] = []
+        self.systems: list[str] = []
 
     async def generate(self, *, system, user, model_config):
         self.calls.append(model_config)
+        self.systems.append(system)
         return LlmResult(text=self.text, model=model_config.model, finish_reason="stop")
 
     async def generate_structured(self, **kwargs):
@@ -105,6 +107,20 @@ def test_low_risk_knowledge_is_one_standard_call_without_helper():
     assert result.turn_state.execution_class == "S0"
     assert result.turn_state.model_tier == "standard"
     assert result.turn_state.verification_mode == "deterministic"
+    assert "# Fachantwort-Profil" in standard.systems[0]
+    assert "Einordnung und Werkstoffstruktur" in standard.systems[0]
+
+
+def test_deep_well_sourced_knowledge_stays_one_standard_call():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    result = asyncio.run(
+        pipeline.run("Details zu PTFE", tenant=TenantContext("tenant-1"))
+    )
+
+    assert helper.calls == frontier.calls == []
+    assert len(standard.calls) == 1
+    assert result.turn_state.execution_class == "S0"
+    assert result.turn_state.model_tier == "standard"
 
 
 def test_complex_multidocument_case_goes_frontier_directly():

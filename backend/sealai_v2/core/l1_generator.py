@@ -133,6 +133,7 @@ class L1Generator:
         contract: dict | None,
         baseline_hardening: bool,
         material_params: list | None,
+        knowledge_answer_plan: dict | None,
         risk_flags: list[str] | None,
     ) -> str:
         """The SINGLE prompt-assembly path shared by ``generate`` and ``generate_stream`` so the two
@@ -159,6 +160,7 @@ class L1Generator:
             contract=contract,
             baseline_hardening=baseline_hardening,
             material_params=material_params,
+            knowledge_answer_plan=knowledge_answer_plan,
             risk_flags=risk_flags,
         )
 
@@ -181,6 +183,7 @@ class L1Generator:
         contract: dict | None = None,
         baseline_hardening: bool = False,
         material_params: list | None = None,
+        knowledge_answer_plan: dict | None = None,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> Answer:
@@ -200,6 +203,7 @@ class L1Generator:
             contract=contract,
             baseline_hardening=baseline_hardening,
             material_params=material_params,
+            knowledge_answer_plan=knowledge_answer_plan,
             risk_flags=risk_flags,
         )
         if self._structured_output_enabled:
@@ -286,6 +290,7 @@ class L1Generator:
         contract: dict | None = None,
         baseline_hardening: bool = False,
         material_params: list | None = None,
+        knowledge_answer_plan: dict | None = None,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> AsyncIterator[L1StreamEvent]:
@@ -319,6 +324,7 @@ class L1Generator:
                     contract=contract,
                     baseline_hardening=baseline_hardening,
                     material_params=material_params,
+                    knowledge_answer_plan=knowledge_answer_plan,
                     risk_flags=risk_flags,
                     case_revision=case_revision,
                 )
@@ -341,6 +347,7 @@ class L1Generator:
             contract=contract,
             baseline_hardening=baseline_hardening,
             material_params=material_params,
+            knowledge_answer_plan=knowledge_answer_plan,
             risk_flags=risk_flags,
         )
         async for event in self._client.generate_stream(

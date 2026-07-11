@@ -37,6 +37,10 @@ def test_calculation_context_requires_an_explicit_kernel_term():
         is RouteName.GENERAL_SEALING_KNOWLEDGE
     )
     assert (
+        classify_route_deterministic("Details zu Skydrol als Dichtungsmedium").route
+        is RouteName.GENERAL_SEALING_KNOWLEDGE
+    )
+    assert (
         classify_route_deterministic("RWDR 40x62x8 bei 8000 U/min").route
         is RouteName.ENGINEERING_CASE
     )
@@ -89,6 +93,31 @@ def test_simple_knowledge_uses_standard_once_without_llm_verifier():
     assert decision.execution_class is ExecutionClass.S0
     assert decision.model_tier is ModelTier.STANDARD
     assert decision.verification_mode is VerificationMode.DETERMINISTIC
+
+
+def test_well_sourced_knowledge_does_not_escalate_only_because_of_citation_count():
+    decision = decide_execution(
+        ExecutionFeatures(
+            route=_route(RouteName.MATERIAL_KNOWLEDGE),
+            authoritative_evidence_count=12,
+            document_count=8,
+        )
+    )
+    assert decision.execution_class is ExecutionClass.S0
+    assert decision.model_tier is ModelTier.STANDARD
+
+
+def test_untrusted_knowledge_context_still_uses_frontier():
+    decision = decide_execution(
+        ExecutionFeatures(
+            route=_route(RouteName.MATERIAL_KNOWLEDGE),
+            authoritative_evidence_count=8,
+            document_count=8,
+            untrusted_content_count=1,
+        )
+    )
+    assert decision.execution_class is ExecutionClass.C1
+    assert decision.model_tier is ModelTier.FRONTIER
 
 
 def test_standard_technical_case_uses_small_model_plus_selective_verifier():

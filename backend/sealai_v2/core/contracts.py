@@ -130,6 +130,7 @@ class SystemPromptAssembler(Protocol):
         baseline_hardening: bool = False,
         engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
+        knowledge_answer_plan: dict | None = None,
         risk_flags: list[str] | None = None,
     ) -> str: ...
 
@@ -226,6 +227,13 @@ class GroundingFact:
     # Separate from ``kind`` above, which identifies the provenance lane. This lets retrieval and
     # fail-closed rendering preserve a balanced overview instead of sorting every card fact alike.
     claim_kind: str = ""
+    # Engineering-answer facets owned by the reviewed claim metadata. They let retrieval select a
+    # complete answer shape (definition + mechanism + limits + validation, etc.) instead of merely
+    # the semantically nearest passages. L1 receives the plan, not these metadata as new facts.
+    answer_facets: tuple[str, ...] = ()
+    # The card's subject class (material | medium | seal_type | method | general). This is metadata
+    # for deterministic planning/telemetry and never changes the claim's epistemic status.
+    subject_type: str = "general"
 
 
 @dataclass(frozen=True)

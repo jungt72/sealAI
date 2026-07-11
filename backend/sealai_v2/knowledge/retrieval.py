@@ -13,6 +13,7 @@ Postgres/Qdrant adapters land.
 from __future__ import annotations
 
 from sealai_v2.core.contracts import GroundingFact, RetrievalResult
+from sealai_v2.core.knowledge_answer import build_knowledge_answer_plan
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.fachkarten import Fachkarte, FachkartenCatalog, load_fachkarten
 
@@ -92,6 +93,46 @@ def _is_material_overview(card: Fachkarte, query_lower: str) -> bool:
     )
 
 
+def _is_knowledge_overview(card: Fachkarte, query: str) -> bool:
+    """Single-subject overview recall for material, medium and seal-type cards.
+
+    The old exception covered only a bare material ("Details zu PTFE"). A seal-type explanation
+    names the subject in ``scope.application`` instead, so the same one-subject/two-scope rule left
+    RWDR, O-Ring and mechanical-seal profiles unreachable in the deterministic fallback retriever.
+    """
+    plan = build_knowledge_answer_plan(
+        query,
+        material_terms=tuple(card.scope.get("material", ())),
+    )
+    if plan is None:
+        return False
+    if plan.subject_type == "material":
+        if plan.comparison:
+            tokens = query_tokens(query)
+            query_lower = query.lower()
+            return any(
+                tag_matches(str(tag), tokens, query_lower)
+                for tag in card.scope.get("material", ())
+            )
+        return _is_material_overview(card, query.lower())
+
+    # Seal/medium overviews use dedicated reviewed profile cards. This prevents a material card that
+    # merely mentions "Gleitring" or "O-Ring" as one application from masquerading as the complete
+    # engineering profile for that seal type.
+    if (
+        plan.subject_type in {"seal_type", "medium"}
+        and card.subject_type != plan.subject_type
+    ):
+        return False
+    tokens = query_tokens(query)
+    query_lower = query.lower()
+    dimension = "medium" if plan.subject_type == "medium" else "application"
+    return any(
+        tag_matches(str(tag), tokens, query_lower)
+        for tag in card.scope.get(dimension, ())
+    )
+
+
 class InProcessRetriever:
     """Implements the ``Retriever`` Protocol over an in-memory ``FachkartenCatalog``."""
 
@@ -110,19 +151,59 @@ class InProcessRetriever:
         if not (tenant_id or "").strip():
             raise ValueError("tenant_id is mandatory (P0 repository-layer scope)")
         q = (query or "").lower()
+        knowledge_turn = build_knowledge_answer_plan(
+            query,
+            material_terms=tuple(
+                dict.fromkeys(
+                    term
+                    for card in self._catalog.cards
+                    for term in card.scope.get("material", ())
+                )
+            ),
+        )
         scored = [
             (s, c)
             for c in self._catalog.cards
             if (s := _score(c, q)) >= _MIN_SCOPE_HITS
-            or (s >= 1 and _is_material_overview(c, q))
+            or _is_knowledge_overview(c, query)
         ]
-        # strongest scope match first (unchanged); ties broken by claim severity (P2-D), THEN id —
-        # still fully deterministic, but a safety-relevant card no longer loses an arbitrary
-        # alphabetical tie against a purely generic one right at the top-k cutoff.
+        if (
+            knowledge_turn is not None
+            and knowledge_turn.subject_type == "material"
+            and knowledge_turn.subjects
+        ):
+            # Prefer cards whose identity names the requested material. Multi-material compatibility
+            # cards often list NBR/PTFE only as alternatives while their actual claim concerns EPDM
+            # or VMQ; card-level scope alone cannot prove which subject a claim predicates on.
+            subject_specific = [
+                item
+                for item in scored
+                if item[1].reviewed_claims()
+                and any(
+                    subject.lower() in item[1].id.lower()
+                    for subject in knowledge_turn.subjects
+                )
+            ]
+            covered_subjects = {
+                subject
+                for subject in knowledge_turn.subjects
+                if any(
+                    subject.lower() in card.id.lower()
+                    for _score_value, card in subject_specific
+                )
+            }
+            if covered_subjects == set(knowledge_turn.subjects):
+                scored = subject_specific
+        # On an explicit knowledge turn, reviewed subject profiles lead draft multi-subject cards;
+        # otherwise strongest scope match remains first. Ties are broken by claim severity, then id.
         scored.sort(
             key=lambda sc: (
+                -int(
+                    knowledge_turn is not None
+                    and bool(sc[1].reviewed_claims())
+                    and _is_knowledge_overview(sc[1], query)
+                ),
                 -sc[0],
-                -int(bool(sc[1].reviewed_claims()) and _is_material_overview(sc[1], q)),
                 -_card_severity(sc[1]),
                 sc[1].id,
             )
@@ -138,6 +219,8 @@ class InProcessRetriever:
                         card_id=card.id,
                         sources=claim.sources,  # M6c: owner-verified primary sources for the citation
                         claim_kind=claim.kind,
+                        answer_facets=claim.answer_facets,
+                        subject_type=card.subject_type,
                     )
                 )
             for claim in card.draft_claims():
@@ -148,6 +231,8 @@ class InProcessRetriever:
                         card_id=card.id,
                         sources=claim.sources,
                         claim_kind=claim.kind,
+                        answer_facets=claim.answer_facets,
+                        subject_type=card.subject_type,
                     )
                 )
         return RetrievalResult(

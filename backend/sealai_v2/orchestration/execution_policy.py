@@ -134,6 +134,30 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "decision_relevant_risk_conflict_or_policy_fact",
         )
 
+    # A broad knowledge answer can legitimately cite many primary sources without becoming a
+    # complex reasoning case. Counting each citation URL as a "document" previously promoted a
+    # well-grounded PTFE/RWDR overview to the frontier model at four sources, increasing cost while
+    # adding no decision risk. Keep reviewed, self-contained knowledge on the standard renderer;
+    # untrusted input still takes the complex path below.
+    if (
+        route
+        in {
+            RouteName.GENERAL_SEALING_KNOWLEDGE,
+            RouteName.MATERIAL_KNOWLEDGE,
+        }
+        and not features.route.forced_full_pipeline
+        and features.untrusted_content_count == 0
+    ):
+        return ExecutionDecision(
+            ExecutionClass.S0,
+            ModelTier.STANDARD,
+            "none",
+            VerificationMode.DETERMINISTIC,
+            StreamingMode.DRAFT,
+            False,
+            "low_risk_knowledge_route",
+        )
+
     if (
         features.document_count >= 4
         or features.tool_step_count >= 3
@@ -159,24 +183,6 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             StreamingMode.FINAL,
             False,
             "deterministic_smalltalk_route",
-        )
-
-    if (
-        route
-        in {
-            RouteName.GENERAL_SEALING_KNOWLEDGE,
-            RouteName.MATERIAL_KNOWLEDGE,
-        }
-        and not features.route.forced_full_pipeline
-    ):
-        return ExecutionDecision(
-            ExecutionClass.S0,
-            ModelTier.STANDARD,
-            "none",
-            VerificationMode.DETERMINISTIC,
-            StreamingMode.DRAFT,
-            False,
-            "low_risk_knowledge_route",
         )
 
     return ExecutionDecision(

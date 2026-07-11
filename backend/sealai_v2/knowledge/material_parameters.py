@@ -18,10 +18,41 @@ from pathlib import Path
 _SEED = Path(__file__).resolve().parent / "material_parameters_seed.json"
 
 
+def _validated_blocks(data: dict) -> dict:
+    blocks = {k: v for k, v in data.items() if not k.startswith("_")}
+    for material, block in blocks.items():
+        state = block.get("review_state")
+        if state not in {"reviewed", "draft"}:
+            raise ValueError(
+                f"{material}: invalid material-parameter review_state {state!r}"
+            )
+        params = block.get("params")
+        if not isinstance(params, list) or not params:
+            raise ValueError(f"{material}: material-parameter block requires params")
+        for param in params:
+            if (
+                not str(param.get("label", "")).strip()
+                or not str(param.get("value", "")).strip()
+            ):
+                raise ValueError(
+                    f"{material}: every parameter requires label and value"
+                )
+        if state == "reviewed":
+            if not block.get("sources"):
+                raise ValueError(
+                    f"{material}: reviewed parameters require primary sources"
+                )
+            if any(not str(param.get("basis", "")).strip() for param in params):
+                raise ValueError(
+                    f"{material}: reviewed parameters require a source-conditioned basis"
+                )
+    return blocks
+
+
 @lru_cache(maxsize=1)
 def _load() -> dict:
     data = json.loads(_SEED.read_text(encoding="utf-8"))
-    return {k: v for k, v in data.items() if not k.startswith("_")}
+    return _validated_blocks(data)
 
 
 def lookup(material: str) -> dict | None:

@@ -1,0 +1,574 @@
+"""Deterministic answer profiles for engineering knowledge turns.
+
+The LLM is the renderer, not the owner of answer depth.  This module maps a
+knowledge/comparison question to an explicit engineering answer profile and
+measures which profile facets are backed by reviewed grounding facts.  It is
+pure: no I/O, no model call and no dependency on the knowledge store.
+
+The profile deliberately describes *what an engineer needs to see*, not what
+the model happens to remember.  Missing evidence therefore stays visible and
+can be filled by curation/retrieval instead of being papered over by fluent
+prose.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from sealai_v2.core.medium_extract import extract_media
+from sealai_v2.core.text_match import query_tokens, tag_matches
+
+if TYPE_CHECKING:
+    from sealai_v2.core.contracts import GroundingFact
+
+
+ANSWER_FACETS = frozenset(
+    {
+        "definition",
+        "mechanism",
+        "properties",
+        "parameters",
+        "variants",
+        "tradeoffs",
+        "media_compatibility",
+        "applications",
+        "operating_factors",
+        "design_interfaces",
+        "limits",
+        "failure_modes",
+        "selection_inputs",
+        "standards_validation",
+    }
+)
+
+SUBJECT_TYPES = frozenset({"material", "medium", "seal_type", "method", "general"})
+
+_COMPARISON_RE = re.compile(
+    r"\b(vergleich\w*|unterschied\w*|gegenüber|gegenueber|besser|schlechter|"
+    r"vor-\s*und\s*nachteile|vs\.?|versus)\b",
+    re.IGNORECASE,
+)
+_KNOWLEDGE_RE = re.compile(
+    r"\b(was\s+ist|was\s+sind|erkl(?:a|ä|ae)r\w*|einordnen|definition|grundlagen|details|"
+    r"informationen|[uü]berblick|eigenschaften|kennwerte|grenzwerte|aufbau|"
+    r"wie\s+funktioniert|funktionsweise|vergleich\w*|unterschied\w*)\b",
+    re.IGNORECASE,
+)
+_MEDIUM_CONTEXT_RE = re.compile(
+    r"\b(dichtungsmedium|betriebsmedium|medium|medien|fluid|betriebsstoff|schmierstoff|"
+    r"prozessfluid|reinigungsfluid|chemikalie)\b",
+    re.IGNORECASE,
+)
+
+_MATERIAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "PTFE": ("ptfe", "polytetrafluorethylen", "polytetrafluoroethylene"),
+    "NBR": ("nbr", "nitrilkautschuk", "acrylnitril-butadien-kautschuk"),
+    "HNBR": ("hnbr", "hydrierter nitrilkautschuk", "hydriertes nbr"),
+    "FKM": ("fkm", "fpm", "fluorelastomer", "viton"),
+    "FFKM": ("ffkm", "perfluorelastomer"),
+    "FEPM": ("fepm", "aflas"),
+    "EPDM": ("epdm", "ethylen-propylen-dien-kautschuk"),
+    "VMQ": ("vmq", "silikonkautschuk", "silikon"),
+    "ACM": ("acm", "polyacrylat-kautschuk", "acrylatkautschuk"),
+    "CR": ("cr", "chloropren-kautschuk", "neopren"),
+    "TPU": ("tpu", "polyurethan", "pu"),
+    "PEEK": ("peek",),
+    "POM": ("pom",),
+}
+
+_SEAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "O-Ring": ("o-ring", "oring"),
+    "X-Ring": ("x-ring", "quad-ring"),
+    "RWDR": (
+        "rwdr",
+        "radialwellendichtring",
+        "radial-wellendichtring",
+        "radialwellendichtung",
+        "simmerring",
+        "wellendichtring",
+    ),
+    "Gleitringdichtung": (
+        "gleitringdichtung",
+        "gleitdichtung",
+        "glrd",
+        "mechanical seal",
+        "mechanische dichtung",
+    ),
+    "V-Ring": ("v-ring",),
+    "Nutring": ("nutring",),
+    "Hydraulikdichtung": (
+        "hydraulikdichtung",
+        "stangendichtung",
+        "kolbendichtung",
+        "abstreifer",
+    ),
+    "Flachdichtung": ("flachdichtung", "flanschdichtung"),
+    "Stopfbuchspackung": ("stopfbuchspackung", "packungsdichtung"),
+}
+
+_PROFILE_ROUTES = frozenset(
+    {
+        "general_sealing_knowledge",
+        "material_knowledge",
+        "material_comparison",
+    }
+)
+
+
+@dataclass(frozen=True)
+class KnowledgeSection:
+    heading: str
+    instruction: str
+    facets: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class KnowledgeAnswerPlan:
+    profile: str
+    subject_type: str
+    subjects: tuple[str, ...]
+    comparison: bool
+    sections: tuple[KnowledgeSection, ...]
+    available_facets: tuple[str, ...]
+    subject_facets: tuple[tuple[str, tuple[str, ...]], ...]
+    evidence_status: str
+    evidence_fact_count: int
+    evidence_document_count: int
+
+    @property
+    def required_facets(self) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(f for section in self.sections for f in section.facets)
+        )
+
+    def to_dict(self) -> dict:
+        available = set(self.available_facets)
+        required = set(self.required_facets)
+        return {
+            "profile": self.profile,
+            "subject_type": self.subject_type,
+            "subjects": list(self.subjects),
+            "comparison": self.comparison,
+            "evidence_status": self.evidence_status,
+            "evidence_fact_count": self.evidence_fact_count,
+            "evidence_document_count": self.evidence_document_count,
+            "available_facets": list(self.available_facets),
+            "missing_facets": [
+                facet for facet in self.required_facets if facet not in available
+            ],
+            "subject_coverage": [
+                {
+                    "subject": subject,
+                    "covered_facets": list(facets),
+                    "missing_facets": [
+                        facet
+                        for facet in self.required_facets
+                        if facet not in set(facets)
+                    ],
+                    "coverage_ratio": round(
+                        len(set(facets) & required) / len(required), 3
+                    )
+                    if required
+                    else 0.0,
+                }
+                for subject, facets in self.subject_facets
+            ],
+            "sections": [
+                {
+                    "heading": section.heading,
+                    "instruction": section.instruction,
+                    "facets": list(section.facets),
+                    "covered_facets": [f for f in section.facets if f in available],
+                    "missing_facets": [f for f in section.facets if f not in available],
+                }
+                for section in self.sections
+            ],
+        }
+
+
+_MATERIAL_OVERVIEW = (
+    KnowledgeSection(
+        "Einordnung und Werkstoffstruktur",
+        "Werkstoffklasse, Aufbau und der daraus folgende Dichtungsmechanismus.",
+        ("definition", "mechanism"),
+    ),
+    KnowledgeSection(
+        "Kennwerte und Betriebsverhalten",
+        "Thermisches, mechanisches, tribologisches und chemisches Verhalten; Zahlen nur mit Bezugsbasis.",
+        ("properties", "parameters", "media_compatibility"),
+    ),
+    KnowledgeSection(
+        "Varianten und Trade-offs",
+        "Compounds, Fuellstoffe oder Unterfamilien und welche Eigenschaft damit gewonnen oder verloren wird.",
+        ("variants", "tradeoffs"),
+    ),
+    KnowledgeSection(
+        "Dichtungsformen und Anwendungen",
+        "Passende Bauformen, Bewegungsarten, Gegenpartner und typische Einsatzfelder.",
+        ("applications", "design_interfaces"),
+    ),
+    KnowledgeSection(
+        "Grenzen und Versagensmechanismen",
+        "Nicht nur Nachteile nennen, sondern Mechanismus, ausloesende Bedingung und technische Folge.",
+        ("limits", "failure_modes"),
+    ),
+    KnowledgeSection(
+        "Auswahl und Verifikation",
+        "Entscheidende Eingaben, anwendbare Norm-/Pruefbasis und was am konkreten Grade freizugeben ist.",
+        ("selection_inputs", "standards_validation"),
+    ),
+)
+
+_MATERIAL_COMPARISON = (
+    KnowledgeSection(
+        "Vergleichsbasis",
+        "Werkstoffklassen und verglichene Grade sauber trennen; gleiche Bezugsbedingungen verwenden.",
+        ("definition", "variants"),
+    ),
+    KnowledgeSection(
+        "Kennwerte im gleichen Bezugsrahmen",
+        "Parameter tabellarisch nur dann gegenueberstellen, wenn Pruefmethode und Bedingungen vergleichbar sind.",
+        ("properties", "parameters"),
+    ),
+    KnowledgeSection(
+        "Medien-, Temperatur- und Alterungsverhalten",
+        "Rezeptur-, Konzentrations- und temperaturabhaengige Unterschiede mit Mechanismus erklaeren.",
+        ("media_compatibility", "operating_factors"),
+    ),
+    KnowledgeSection(
+        "Mechanische und tribologische Trade-offs",
+        "Rueckstellung, Kriechen, Abrieb, Reibung, Extrusion und Gegenlaufflaeche auf denselben Achsen vergleichen.",
+        ("tradeoffs", "design_interfaces"),
+    ),
+    KnowledgeSection(
+        "Anwendungsfit und Grenzen",
+        "Szenarien nennen, in denen jede Option gewinnt oder ausscheidet; keinen universellen Sieger kueren.",
+        ("applications", "limits", "failure_modes"),
+    ),
+    KnowledgeSection(
+        "Entscheidung und Nachweis",
+        "Fehlende Falldaten, konkrete Grade, Datenblaetter und erforderliche Qualifikation benennen.",
+        ("selection_inputs", "standards_validation"),
+    ),
+)
+
+_SEAL_OVERVIEW = (
+    KnowledgeSection(
+        "Funktion und Dichtprinzip",
+        "Leckagepfad, Kontakt-/Spaltmechanismus, Kraefte und Schmierfilm fachlich erklaeren.",
+        ("definition", "mechanism"),
+    ),
+    KnowledgeSection(
+        "Aufbau und Bauformen",
+        "Komponenten, Varianten und die technische Auswahlwirkung jeder Variante.",
+        ("variants", "tradeoffs"),
+    ),
+    KnowledgeSection(
+        "Betriebsparameter",
+        "Druck, Temperatur, Geschwindigkeit/Bewegung, Medium, Lastwechsel und deren Kopplung.",
+        ("parameters", "operating_factors"),
+    ),
+    KnowledgeSection(
+        "Schnittstellen und Werkstoffe",
+        "Nut, Welle/Gegenlaufflaeche, Gehaeuse, Oberflaeche, Schmierung und Werkstoffpaarungen.",
+        ("design_interfaces", "properties", "media_compatibility"),
+    ),
+    KnowledgeSection(
+        "Einsatz und Grenzen",
+        "Passende Anwendungen, konstruktive Ausschluesse und Abgrenzung zu Alternativbauformen.",
+        ("applications", "limits"),
+    ),
+    KnowledgeSection(
+        "Versagensbilder und Diagnose",
+        "Schadensbild, physikalische Ursache, provozierende Bedingung und Gegenmassnahme verbinden.",
+        ("failure_modes",),
+    ),
+    KnowledgeSection(
+        "Normen, Montage und Auslegungsdaten",
+        "Normbereich, Pruefung/Installation und die fuer eine konkrete Auswahl benoetigten Eingaben.",
+        ("standards_validation", "selection_inputs"),
+    ),
+)
+
+_SEAL_COMPARISON = (
+    KnowledgeSection(
+        "Dichtprinzipien im Vergleich",
+        "Leckage-, Reibungs- und Vorspannmechanismus auf denselben Achsen vergleichen.",
+        ("definition", "mechanism"),
+    ),
+    KnowledgeSection(
+        "Bauformen und Schnittstellen",
+        "Bauraum, Welle/Nut/Gehaeuse, Oberflaeche, Hilfssysteme und Montageaufwand vergleichen.",
+        ("variants", "design_interfaces"),
+    ),
+    KnowledgeSection(
+        "Betriebsfenster und Medien",
+        "Druck, Temperatur, Geschwindigkeit, Bewegung, Schmierung und Medienwirkung konditioniert vergleichen.",
+        ("parameters", "operating_factors", "media_compatibility"),
+    ),
+    KnowledgeSection(
+        "Trade-offs, Grenzen und Ausfallrisiken",
+        "Keine pauschale Rangfolge; je Szenario Vorteile, Grenzen und dominante Versagensarten zeigen.",
+        ("tradeoffs", "limits", "failure_modes"),
+    ),
+    KnowledgeSection(
+        "Auswahlmatrix und Nachweis",
+        "Anwendungsfit, fehlende Eingaben, Normbasis und Qualifikationspfad transparent machen.",
+        ("applications", "selection_inputs", "standards_validation"),
+    ),
+)
+
+_MEDIUM_OVERVIEW = (
+    KnowledgeSection(
+        "Stoffidentitaet und Zusammensetzung",
+        "Handelsprodukt, Grundfluid, Konzentration, Wasseranteil, Additive und Verunreinigungen trennen.",
+        ("definition", "variants"),
+    ),
+    KnowledgeSection(
+        "Dichtungsrelevante Stoffdaten",
+        "Aggregatzustand, Viskositaet, Dichte, Dampfdruck/Phasenwechsel, Schmierfaehigkeit und Temperaturbezug.",
+        ("properties", "parameters"),
+    ),
+    KnowledgeSection(
+        "Werkstoffwechselwirkungen",
+        "Quellung, Extraktion/Schrumpfung, Haertung/Erweichung, Hydrolyse/Oxidation, Permeation und RGD pruefen.",
+        ("media_compatibility", "failure_modes"),
+    ),
+    KnowledgeSection(
+        "Auswirkung auf Dichtungssysteme",
+        "Folgen fuer Reibung, Schmierfilm, Waerme, Leckage, Bauform und Werkstoffpaarung erklaeren.",
+        ("mechanism", "applications", "operating_factors"),
+    ),
+    KnowledgeSection(
+        "Grenzen und Pruefpfad",
+        "Betriebsbedingungen, fehlende Produktdaten, Immersions-/Systemtest und Herstellerfreigabe nennen.",
+        ("limits", "selection_inputs", "standards_validation"),
+    ),
+)
+
+_GENERAL_OVERVIEW = (
+    KnowledgeSection(
+        "Definition und Funktionsprinzip",
+        "Begriff, Systemgrenze und physikalischen Wirkmechanismus erklaeren.",
+        ("definition", "mechanism"),
+    ),
+    KnowledgeSection(
+        "Technische Einflussgroessen",
+        "Entscheidende Parameter und deren Kopplungen strukturiert darstellen.",
+        ("properties", "parameters", "operating_factors"),
+    ),
+    KnowledgeSection(
+        "Bauformen, Anwendungen und Trade-offs",
+        "Varianten und deren Einsatzlogik statt einer blossen Begriffsliste liefern.",
+        ("variants", "applications", "tradeoffs", "design_interfaces"),
+    ),
+    KnowledgeSection(
+        "Grenzen, Versagen und Nachweis",
+        "Ausfallmechanismen, fehlende Auslegungsdaten sowie Norm-/Pruefpfad benennen.",
+        ("limits", "failure_modes", "selection_inputs", "standards_validation"),
+    ),
+)
+
+
+def _contains_alias(alias: str, tokens: set[str], normalized: str) -> bool:
+    return tag_matches(alias, tokens, normalized)
+
+
+def _detected_materials(
+    material_terms: tuple[str, ...], tokens: set[str], normalized: str
+) -> tuple[str, ...]:
+    found: list[str] = []
+    consumed: set[str] = set()
+    for canonical, aliases in _MATERIAL_ALIASES.items():
+        if any(_contains_alias(alias, tokens, normalized) for alias in aliases):
+            found.append(canonical)
+            consumed.update(alias.lower() for alias in aliases)
+    for term in material_terms:
+        clean = str(term).strip()
+        if (
+            not clean
+            or clean.lower() in consumed
+            or not _contains_alias(clean, tokens, normalized)
+        ):
+            continue
+        if clean not in found:
+            found.append(clean)
+    return tuple(found)
+
+
+def _detected_seals(tokens: set[str], normalized: str) -> tuple[str, ...]:
+    return tuple(
+        canonical
+        for canonical, aliases in _SEAL_ALIASES.items()
+        if any(_contains_alias(alias, tokens, normalized) for alias in aliases)
+    )
+
+
+def _fallback_facets(claim_kind: str) -> tuple[str, ...]:
+    return {
+        "definition": ("definition",),
+        "example_value": ("parameters",),
+        "regulatory_status": ("standards_validation",),
+        "qualification_required": ("selection_inputs", "standards_validation"),
+        "safety_nogo": ("limits", "failure_modes"),
+        "safety_caution": ("limits", "failure_modes"),
+        "system_dependent": ("operating_factors", "design_interfaces", "tradeoffs"),
+        "family_tendency": ("properties",),
+    }.get(claim_kind, ())
+
+
+def facets_for_fact(fact: "GroundingFact") -> tuple[str, ...]:
+    explicit = tuple(
+        facet for facet in getattr(fact, "answer_facets", ()) if facet in ANSWER_FACETS
+    )
+    return explicit or _fallback_facets(getattr(fact, "claim_kind", ""))
+
+
+def facets_for_payload(payload: dict) -> tuple[str, ...]:
+    explicit = tuple(
+        facet for facet in payload.get("answer_facets", ()) if facet in ANSWER_FACETS
+    )
+    return explicit or _fallback_facets(str(payload.get("claim_kind", "")))
+
+
+def _subject_aliases(subject: str) -> tuple[str, ...]:
+    if subject in _MATERIAL_ALIASES:
+        return (subject, *_MATERIAL_ALIASES[subject])
+    if subject in _SEAL_ALIASES:
+        return (subject, *_SEAL_ALIASES[subject])
+    return (subject,)
+
+
+def _fact_matches_subject(fact: "GroundingFact", subject: str) -> bool:
+    haystack = f"{getattr(fact, 'card_id', '')} {getattr(fact, 'text', '')}".lower()
+    tokens = query_tokens(haystack)
+    return any(
+        tag_matches(alias, tokens, haystack) for alias in _subject_aliases(subject)
+    )
+
+
+def _profile(
+    question: str,
+    *,
+    materials: tuple[str, ...],
+    seals: tuple[str, ...],
+    media: tuple[str, ...],
+    medium_context: bool,
+    route_name: str | None,
+) -> tuple[str, str, tuple[str, ...], bool, tuple[KnowledgeSection, ...]]:
+    comparison = (
+        bool(_COMPARISON_RE.search(question)) or route_name == "material_comparison"
+    )
+
+    if len(materials) >= 2 or (materials and comparison):
+        return "material_comparison", "material", materials, True, _MATERIAL_COMPARISON
+    if len(seals) >= 2 or (seals and comparison):
+        return "seal_type_comparison", "seal_type", seals, True, _SEAL_COMPARISON
+    if materials:
+        return "material_overview", "material", materials, False, _MATERIAL_OVERVIEW
+    if seals:
+        return "seal_type_overview", "seal_type", seals, False, _SEAL_OVERVIEW
+    if len(media) >= 2 or (media and comparison):
+        return "medium_comparison", "medium", media, True, _MEDIUM_OVERVIEW
+    if media or medium_context:
+        return "medium_overview", "medium", media, False, _MEDIUM_OVERVIEW
+    return "general_technical_overview", "general", (), comparison, _GENERAL_OVERVIEW
+
+
+def build_knowledge_answer_plan(
+    question: str,
+    *,
+    material_terms: tuple[str, ...] = (),
+    grounding_facts: tuple["GroundingFact", ...] = (),
+    route_name: str | None = None,
+) -> KnowledgeAnswerPlan | None:
+    """Build the plan only for a real knowledge/comparison turn.
+
+    ``route_name`` is the already-computed deterministic production route.  The
+    lexical fallback exists because retrieval runs before the final route object
+    is available in non-policy/test configurations.
+    """
+    text = (question or "").strip()
+    if not text:
+        return None
+    tokens = query_tokens(text)
+    normalized = text.lower()
+    materials = _detected_materials(material_terms, tokens, normalized)
+    seals = _detected_seals(tokens, normalized)
+    media = extract_media(text)
+    medium_context = bool(_MEDIUM_CONTEXT_RE.search(text))
+    short_subject_query = (
+        bool(materials or seals or media or medium_context) and len(tokens) <= 4
+    )
+    if route_name not in _PROFILE_ROUTES and not (
+        _KNOWLEDGE_RE.search(text) or _COMPARISON_RE.search(text) or short_subject_query
+    ):
+        return None
+
+    profile, subject_type, subjects, comparison, sections = _profile(
+        text,
+        materials=materials,
+        seals=seals,
+        media=media,
+        medium_context=medium_context,
+        route_name=route_name,
+    )
+    available = tuple(
+        dict.fromkeys(
+            facet for fact in grounding_facts for facet in facets_for_fact(fact)
+        )
+    )
+    required = tuple(dict.fromkeys(f for section in sections for f in section.facets))
+    subject_facets = tuple(
+        (
+            subject,
+            tuple(
+                dict.fromkeys(
+                    facet
+                    for fact in grounding_facts
+                    if _fact_matches_subject(fact, subject)
+                    for facet in facets_for_fact(fact)
+                )
+            ),
+        )
+        for subject in subjects
+    )
+    if comparison and len(subject_facets) >= 2 and required:
+        covered_pairs = sum(
+            len(set(facets) & set(required)) for _subject, facets in subject_facets
+        )
+        ratio = covered_pairs / (len(required) * len(subject_facets))
+    else:
+        ratio = (
+            (len(set(available) & set(required)) / len(required)) if required else 0.0
+        )
+    evidence_status = (
+        "complete" if ratio >= 0.75 else "partial" if ratio >= 0.35 else "sparse"
+    )
+    documents = {
+        getattr(fact, "card_id", "")
+        for fact in grounding_facts
+        if getattr(fact, "card_id", "")
+    }
+    return KnowledgeAnswerPlan(
+        profile=profile,
+        subject_type=subject_type,
+        subjects=subjects,
+        comparison=comparison,
+        sections=sections,
+        available_facets=available,
+        subject_facets=subject_facets,
+        evidence_status=evidence_status,
+        evidence_fact_count=len(grounding_facts),
+        evidence_document_count=len(documents),
+    )
+
+
+def knowledge_retrieval_limit(
+    question: str, *, material_terms: tuple[str, ...] = ()
+) -> int:
+    """Use a wider evidence set only for explicit engineering knowledge turns."""
+    plan = build_knowledge_answer_plan(question, material_terms=material_terms)
+    return 12 if plan is not None else 5
