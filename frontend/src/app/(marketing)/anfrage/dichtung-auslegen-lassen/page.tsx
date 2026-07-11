@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, FileText, Gauge, SearchCheck, ShieldCheck } from "lucide-react";
 import { TrackedLink } from "@/components/analytics/TrackedLink";
 import { PrecheckDemoSection } from "@/components/marketing/PrecheckDemoSection";
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 import { generatePrecheckToolSchema } from "@/lib/seo/jsonLd";
 
 /**
@@ -21,6 +21,7 @@ export const metadata: Metadata = createMetadata({
   description:
     "sealingAI klärt deinen Dichtungsfall, macht offene Punkte sichtbar und bereitet eine herstellerprüfbare Anfragebasis vor. Keine finale Auslegungsfreigabe.",
   path: "/anfrage/dichtung-auslegen-lassen",
+  image: DEFAULT_OG_IMAGE,
 });
 
 function JsonLd() {

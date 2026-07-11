@@ -3,7 +3,7 @@ title: "Wellendichtring Maße: Abmessungen richtig für die Anfrage erfassen"
 description: "Welche Maße bei Wellendichtringen wichtig sind: Wellendurchmesser, Gehäusedurchmesser, Breite, Bauform und Betriebsdaten."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Wellendichtring Maße: Abmessungen richtig für die Anfrage erfassen

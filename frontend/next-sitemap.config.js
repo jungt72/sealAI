@@ -68,6 +68,10 @@ module.exports = {
     "/rag",
     "/rag/*",
     "/robots.txt",
+    // Next's file-convention icon routes appear as build "pages"; a sitemap
+    // must only list indexable HTML documents, not image responses.
+    "/icon.png",
+    "/apple-icon.png",
   ],
   robotsTxtOptions: {
     policies: [

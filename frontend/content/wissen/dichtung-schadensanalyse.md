@@ -3,7 +3,7 @@ title: "Dichtung Schadensanalyse: Fehlerbild strukturiert für die Prüfung erfa
 description: "Dichtungsversagen professionell vorbereiten: Leckage, Laufzeit, Medium, Montage, Temperatur, Druck und Bauteilzustand dokumentieren."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung Schadensanalyse: Fehlerbild strukturiert für die Prüfung erfassen

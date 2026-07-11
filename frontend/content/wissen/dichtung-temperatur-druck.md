@@ -3,7 +3,7 @@ title: "Dichtung Temperatur und Druck: Betriebsdaten richtig klären"
 description: "Temperatur und Druck bei Dichtungen strukturiert erfassen: Dauerbetrieb, Spitzen, Druckwechsel, Bewegung und Werkstoffgrenzen."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung Temperatur und Druck: Betriebsdaten richtig klären

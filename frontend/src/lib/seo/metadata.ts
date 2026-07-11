@@ -4,6 +4,15 @@ import { getSiteUrl } from "@/lib/site";
 const SITE_NAME = "sealingAI";
 const SITE_DESCRIPTION = "Professionelle technische Vorqualifizierung und Analyse für industrielle Dichtungslösungen.";
 
+/**
+ * Brand OG card for pages that have no page-specific image. Pass explicitly
+ * (`image: DEFAULT_OG_IMAGE`) — do NOT bake it into createMetadata as a
+ * default, because the article routes rely on omitting the `images` key so
+ * Next's file-convention `opengraph-image.tsx` can take over (see comment in
+ * createMetadata below).
+ */
+export const DEFAULT_OG_IMAGE = "/images/marketing/og-sealing-intelligence.jpg";
+
 type SeoProps = {
   title?: string;
   description?: string;

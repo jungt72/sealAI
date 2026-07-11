@@ -3,7 +3,7 @@ title: "FKM vs EPDM: Dichtungswerkstoffe richtig vergleichen"
 description: "FKM und EPDM für Dichtungen vergleichen: Medien, Temperatur, Öl, Wasser, Dampf-nahe Anwendungen und offene Prüfpunkte."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # FKM vs EPDM: Dichtungswerkstoffe richtig vergleichen

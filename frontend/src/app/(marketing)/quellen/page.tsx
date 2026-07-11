@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 import { generateBreadcrumbSchema } from "@/lib/seo/jsonLd";
 
 export const metadata: Metadata = createMetadata({
@@ -9,6 +9,7 @@ export const metadata: Metadata = createMetadata({
   description:
     "Wie sealingAI Aussagen mit Evidenzstufen und Prüfstatus versieht — und welchen Stand die Wissensartikel aktuell haben.",
   path: "/quellen",
+  image: DEFAULT_OG_IMAGE,
 });
 
 function JsonLd() {

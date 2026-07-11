@@ -3,7 +3,7 @@ title: "PTFE-Dichtung: chemische Beständigkeit, Grenzen und Anfrageparameter"
 description: "PTFE für chemische, thermische und konstruktive Anforderungen einordnen, ohne finale Eignung zu behaupten."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # PTFE-Dichtung: chemische Beständigkeit, Grenzen und Anfrageparameter

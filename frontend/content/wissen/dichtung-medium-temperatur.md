@@ -3,7 +3,7 @@ title: "Dichtung Medium und Temperatur: Bestandsdaten für die Prüfung"
 description: "Warum Medium und Temperatur zusammen bewertet werden müssen: Konzentration, Additive, Kontaktzeit, Druck und Werkstofforientierung."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung Medium und Temperatur: Bestandsdaten für die Prüfung

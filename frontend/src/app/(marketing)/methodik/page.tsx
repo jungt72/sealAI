@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 import Link from "next/link";
 
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 import { generateBreadcrumbSchema } from "@/lib/seo/jsonLd";
 
 export const metadata: Metadata = createMetadata({
@@ -9,6 +9,7 @@ export const metadata: Metadata = createMetadata({
   description:
     "Wie sealingAI zwischen Kernel und Sprachmodell trennt, Unsicherheit sichtbar hält und warum die Plattform keine finale Materialfreigabe ausspricht.",
   path: "/methodik",
+  image: DEFAULT_OG_IMAGE,
 });
 
 function JsonLd() {
@@ -106,6 +107,18 @@ export default function MethodikPage() {
               Werkstofffamilien ein, bewertet Compounds mit ihren Randbedingungen und macht sichtbar,
               was für eine echte Freigabe noch fehlt. Die Freigabe eines konkreten Bauteils bleibt
               beim Hersteller.
+            </p>
+          </article>
+
+          <article id="redaktionelle-verantwortung" className="scroll-mt-20">
+            <h2 className="text-xl font-semibold text-foreground">Redaktionelle Verantwortung</h2>
+            <p className="mt-3">
+              Die Inhalte dieser Website werden unter menschlicher redaktioneller Kontrolle erstellt
+              und geprüft. Die redaktionelle Verantwortung im Sinne der Transparenzpflichten der
+              EU-KI-Verordnung (Art. 50 Abs. 4) trägt{" "}
+              <span className="font-medium text-foreground">Thorsten Jung</span>. Bei der Erstellung
+              und Strukturierung von Inhalten kommen auch KI-gestützte Werkzeuge zum Einsatz — die
+              inhaltliche Prüfung und Freigabe bleibt beim Menschen.
             </p>
           </article>
 
