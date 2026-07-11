@@ -288,14 +288,25 @@ def _emit_token(token_sink: "TokenSink | None", delta: str, *, draft: bool) -> N
         _log.warning("token sink failed (ignored)", exc_info=True)
 
 
-def _exfil_guard(answer, *, system_prompt: str, kb_claims):
+def _exfil_guard(
+    answer,
+    *,
+    system_prompt: str,
+    kb_claims,
+    authorized_kb_claims=(),
+):
     """P1.4 SERVE-path exfiltration Schranke. Runs the pure ``exfiltration_leak`` detector over the
     final answer vs the system prompt that produced it + the verbatim KB claim texts. On a leak
-    (verbatim ≥160-char system-prompt span OR ≥6 verbatim KB claims) return a deterministic
-    number-free refusal hedge so the verbatim leak never ships; otherwise return ``answer``
-    unchanged (byte-identical pass-through). Pure — the only state is the returned Answer."""
+    (verbatim ≥160-char system-prompt span OR ≥6 non-authorized verbatim KB claims) return a
+    deterministic number-free refusal hedge so the verbatim leak never ships; otherwise return
+    ``answer`` unchanged (byte-identical pass-through). Evidence-ID-validated claims selected by a
+    structured knowledge answer may be authorized by the caller; that never exempts system-prompt
+    content. Pure — the only state is the returned Answer."""
     verdict = exfiltration_leak(
-        answer=answer.text, system_prompt=system_prompt, kb_claims=list(kb_claims)
+        answer=answer.text,
+        system_prompt=system_prompt,
+        kb_claims=list(kb_claims),
+        authorized_kb_claims=list(authorized_kb_claims),
     )
     if not verdict.leaked:
         return answer, verdict
@@ -1451,6 +1462,11 @@ class Pipeline:
                     active_generator or self.generator
                 ).doctrine_system_prompt(flags=flags),
                 kb_claims=[f.text for f in l1_grounding],
+                authorized_kb_claims=(
+                    answer.verification_claims
+                    if knowledge_answer_plan is not None
+                    else ()
+                ),
             )
 
             with _staged(timer, progress, "cite_ms", "cite"):

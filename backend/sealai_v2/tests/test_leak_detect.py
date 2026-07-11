@@ -80,6 +80,30 @@ def test_verbatim_citation_headroom_not_flagged():
     assert v.kb_claims_leaked == 5 and not v.leaked
 
 
+def test_structured_authorized_knowledge_claims_are_not_a_kb_dump():
+    answer = " ".join(_CLAIMS)
+    verdict = exfiltration_leak(
+        answer=answer,
+        system_prompt=_SYS,
+        kb_claims=_CLAIMS,
+        authorized_kb_claims=_CLAIMS,
+    )
+    assert verdict.kb_claims_leaked == 0
+    assert not verdict.leaked
+
+
+def test_authorized_kb_claims_never_relax_system_prompt_detection():
+    leaked_span = _SYS[80 : 80 + LCS_MIN + 60]
+    verdict = exfiltration_leak(
+        answer=f"{' '.join(_CLAIMS)} {leaked_span}",
+        system_prompt=_SYS,
+        kb_claims=_CLAIMS,
+        authorized_kb_claims=_CLAIMS,
+    )
+    assert verdict.system_prompt_leak
+    assert verdict.leaked
+
+
 def test_partial_claim_substring_not_counted_exact_full_claim_only():
     # the match is EXACT FULL-claim, not substring: half a claim does not count
     half = _CLAIMS[0][: len(_CLAIMS[0]) // 2]
