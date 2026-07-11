@@ -42,7 +42,7 @@
       },
       "claims": [
         {
-          "text": "PTFE ist ein teilkristalliner Fluor-Thermoplast. In der Dichtungstechnik kombiniert es sehr geringe Reibung und breite chemische Bestaendigkeit, besitzt aber im Unterschied zu Elastomeren keine elastomere Rueckstellung; die Dichtkraft muss deshalb aus Geometrie, Systemdruck, Feder oder einem elastomeren Vorspannelement kommen.",
+          "text": "PTFE ist ein teilkristalliner Fluor-Thermoplast. In der Dichtungstechnik kombiniert es sehr geringe Reibung und breite chemische Beständigkeit, besitzt aber im Unterschied zu Elastomeren keine elastomere Rückstellung; die Dichtkraft muss deshalb aus Geometrie, Systemdruck, Feder oder einem elastomeren Vorspannelement kommen.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "properties"],
           "review_state": "reviewed",
@@ -53,7 +53,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Parker nennt fuer ungefuelltes PTFE typische Laborwerte von 4.500 bis 5.500 psi Zugfestigkeit, etwa 450 bis 500 Prozent Bruchdehnung und Shore D 55 bis 56. Diese Werte dienen dem Werkstoffvergleich; sie sind keine Spezifikations- oder Einsatzgrenzen und beruecksichtigen weder Temperatur, Druck, Medium, Geschwindigkeit noch Gegenhardware.",
+          "text": "Parker nennt für ungefülltes PTFE typische Laborwerte von 4.500 bis 5.500 psi Zugfestigkeit, etwa 450 bis 500 Prozent Bruchdehnung und Shore D 55 bis 56. Diese Werte dienen dem Werkstoffvergleich; sie sind keine Spezifikations- oder Einsatzgrenzen und berücksichtigen weder Temperatur, Druck, Medium, Geschwindigkeit noch Gegenhardware.",
           "kind": "example_value",
           "answer_facets": ["parameters", "properties", "standards_validation"],
           "review_state": "reviewed",
@@ -63,7 +63,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Temperaturangaben sind grade- und bauformspezifisch: Der Trelleborg-Auswahlleitfaden nennt fuer den reinen PTFE-Referenzgrad Turcon T01 fuer statische, langsam dynamische oder leicht belastete Anwendungen -253 bis +260 Grad Celsius, fuer den polymerverstaerkten Compound T07 dagegen -60 bis +300 Grad Celsius. Diese Bereiche duerfen nicht als universelle PTFE-Familiengrenze verwendet werden.",
+          "text": "Temperaturangaben sind grade- und bauformspezifisch: Der Trelleborg-Auswahlleitfaden nennt für den reinen PTFE-Referenzgrad Turcon T01 für statische, langsam dynamische oder leicht belastete Anwendungen -253 bis +260 Grad Celsius, für den polymerverstärkten Compound T07 dagegen -60 bis +300 Grad Celsius. Diese Bereiche dürfen nicht als universelle PTFE-Familiengrenze verwendet werden.",
           "kind": "example_value",
           "answer_facets": ["parameters", "variants", "tradeoffs", "limits"],
           "review_state": "reviewed",
@@ -73,7 +73,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Glas-, Kohlenstoff-/Graphit-, Metall- und Polymerfuellstoffe sowie modifiziertes PTFE veraendern Kriechneigung, Verschleiss, Reibung, Waermeleitung, Haerte und Gegenlaufflaechenverhalten. Ein Filler ist deshalb kein pauschales Upgrade: Die Auswahl muss zum Medium, zur Gegenlaufflaeche, Schmierung und kombinierten Druck-Geschwindigkeits-Temperatur-Last passen.",
+          "text": "Glas-, Kohlenstoff-/Graphit-, Metall- und Polymerfüllstoffe sowie modifiziertes PTFE verändern Kriechneigung, Verschleiß, Reibung, Wärmeleitung, Härte und Gegenlaufflächenverhalten. Ein Filler ist deshalb kein pauschales Upgrade: Die Auswahl muss zum Medium, zur Gegenlauffläche, Schmierung und kombinierten Druck-Geschwindigkeits-Temperatur-Last passen.",
           "kind": "system_dependent",
           "answer_facets": ["variants", "tradeoffs", "design_interfaces", "media_compatibility"],
           "review_state": "reviewed",
@@ -84,7 +84,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Typische PTFE-Dichtungsfunktionen sind federvorgespannte Lippen, druckaktivierte Slipper-Seals mit Elastomer-Energizer, Rotationslippen, Stuetz- und Anti-Extrusionsringe, Flach- und Sonderdichtungen. Die Bauformen loesen unterschiedliche Aufgaben; ein massiver PTFE-O-Ring ist funktional nicht mit einer federvorgespannten PTFE-Lippe oder einem ummantelten Elastomer-O-Ring gleichzusetzen.",
+          "text": "Typische PTFE-Dichtungsfunktionen sind federvorgespannte Lippen, druckaktivierte Slipper-Seals mit Elastomer-Energizer, Rotationslippen, Stütz- und Anti-Extrusionsringe, Flach- und Sonderdichtungen. Die Bauformen lösen unterschiedliche Aufgaben; ein massiver PTFE-O-Ring ist funktional nicht mit einer federvorgespannten PTFE-Lippe oder einem ummantelten Elastomer-O-Ring gleichzusetzen.",
           "kind": "system_dependent",
           "answer_facets": ["applications", "variants", "design_interfaces"],
           "review_state": "reviewed",
@@ -95,7 +95,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die dominante mechanische Grenze von ungefuelltem PTFE ist die zeitabhaengige plastische Verformung unter Last: Kriechen beziehungsweise Kaltfluss verringert die Flaechenpressung; fehlende Rueckstellung kann Massabweichung, Verschleiss und Temperaturwechsel nicht selbst ausgleichen. Moegliche Folgen sind Vorspannungsverlust, Extrusion und Leckage.",
+          "text": "Die dominante mechanische Grenze von ungefülltem PTFE ist die zeitabhängige plastische Verformung unter Last: Kriechen beziehungsweise Kaltfluss verringert die Flächenpressung; fehlende Rückstellung kann Maßabweichung, Verschleiß und Temperaturwechsel nicht selbst ausgleichen. Mögliche Folgen sind Vorspannungsverlust, Extrusion und Leckage.",
           "kind": "safety_caution",
           "answer_facets": ["limits", "failure_modes", "mechanism"],
           "review_state": "reviewed",
@@ -105,7 +105,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Fuer die Auswahl einer PTFE-Dichtung sind mindestens konkreter PTFE-Grade/Fuellstoff, Bauform, Medium inklusive Additiven, Temperaturprofil, Druck und Druckrichtung, Bewegungsart und Geschwindigkeit, Gegenlaufflaeche, Schmierung, Spalt, Lastkollektiv sowie Reinheits-/Zulassungsanforderungen erforderlich. Herstellerdaten und ein anwendungsnaher Test bleiben die Freigabebasis.",
+          "text": "Für die Auswahl einer PTFE-Dichtung sind mindestens konkreter PTFE-Grade/Füllstoff, Bauform, Medium inklusive Additiven, Temperaturprofil, Druck und Druckrichtung, Bewegungsart und Geschwindigkeit, Gegenlauffläche, Schmierung, Spalt, Lastkollektiv sowie Reinheits-/Zulassungsanforderungen erforderlich. Herstellerdaten und ein anwendungsnaher Test bleiben die Freigabebasis.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "operating_factors", "standards_validation"],
           "review_state": "reviewed",
@@ -150,7 +150,7 @@
       },
       "claims": [
         {
-          "text": "Ein O-Ring ist ein torusfoermiges Dichtelement, das in einer Nut radial oder axial verpresst wird. Die Anfangsverpressung erzeugt den Kontakt bei niedrigem oder fehlendem Systemdruck; anstehender Druck verschiebt und aktiviert den Ring zusaetzlich zur Niederdruckseite. Die Funktion ist daher immer das System aus Ring, Compound, Nut und Gegenflaeche.",
+          "text": "Ein O-Ring ist ein torusförmiges Dichtelement, das in einer Nut radial oder axial verpresst wird. Die Anfangsverpressung erzeugt den Kontakt bei niedrigem oder fehlendem Systemdruck; anstehender Druck verschiebt und aktiviert den Ring zusätzlich zur Niederdruckseite. Die Funktion ist daher immer das System aus Ring, Compound, Nut und Gegenfläche.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "design_interfaces"],
           "review_state": "reviewed",
@@ -160,7 +160,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "ISO 3601 trennt die Systemanforderungen: Teil 1 behandelt Innendurchmesser, Schnurstaerken, Toleranzen und Bezeichnungscodes; ISO 3601-2:2025 die Gehaeuse-/Nutabmessungen fuer allgemeine Anwendungen; Teil 3 Qualitaetsannahmekriterien und Teil 4 Anti-Extrusionsringe. Sonderanwendungen koennen abweichende, zwischen Hersteller und Anwender vereinbarte Nuten erfordern.",
+          "text": "ISO 3601 trennt die Systemanforderungen: Teil 1 behandelt Innendurchmesser, Schnurstärken, Toleranzen und Bezeichnungscodes; ISO 3601-2:2025 die Gehäuse-/Nutabmessungen für allgemeine Anwendungen; Teil 3 Qualitätsannahmekriterien und Teil 4 Anti-Extrusionsringe. Sonderanwendungen können abweichende, zwischen Hersteller und Anwender vereinbarte Nuten erfordern.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "design_interfaces", "variants"],
           "review_state": "reviewed",
@@ -172,7 +172,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die zentralen geometrischen Auslegungsachsen sind Verpressung, Einbaudehnung beziehungsweise -stauchung, Nutfuellgrad, Extrusionsspalt, Toleranzkette und thermisch/medial verursachte Volumenaenderung. Sie muessen fuer statisch, translatorisch dynamisch, rotierend und oszillierend getrennt bewertet werden.",
+          "text": "Die zentralen geometrischen Auslegungsachsen sind Verpressung, Einbaudehnung beziehungsweise -stauchung, Nutfüllgrad, Extrusionsspalt, Toleranzkette und thermisch/medial verursachte Volumenänderung. Sie müssen für statisch, translatorisch dynamisch, rotierend und oszillierend getrennt bewertet werden.",
           "kind": "system_dependent",
           "answer_facets": ["parameters", "operating_factors", "design_interfaces"],
           "review_state": "reviewed",
@@ -183,7 +183,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Mehr Verpressung ist nicht automatisch besser: Zu wenig Verpressung gefaehrdet die Anfangsdichtheit; zu viel erhoeht Kontaktkraft, Reibung, Waerme und Verschleiss und kann bei dynamischer Anwendung Spiralversagen beguenstigen. Einbaudehnung reduziert gleichzeitig die wirksame Schnurstaerke und muss in der Nuttiefe beruecksichtigt werden.",
+          "text": "Mehr Verpressung ist nicht automatisch besser: Zu wenig Verpressung gefährdet die Anfangsdichtheit; zu viel erhöht Kontaktkraft, Reibung, Wärme und Verschleiß und kann bei dynamischer Anwendung Spiralversagen begünstigen. Einbaudehnung reduziert gleichzeitig die wirksame Schnurstärke und muss in der Nuttiefe berücksichtigt werden.",
           "kind": "safety_caution",
           "answer_facets": ["tradeoffs", "limits", "failure_modes", "mechanism"],
           "review_state": "reviewed",
@@ -193,7 +193,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Ein pauschaler Druckgrenzwert fuer O-Ringe ist fachlich falsch. Extrusionsrisiko entsteht aus dem Zusammenwirken von Druck und Druckwechsel, Extrusionsspalt, Compoundhaerte und -modul, Temperatur, Nutgeometrie und Bewegungsart; Anti-Extrusionsringe koennen den Spalt stuetzen, aendern aber Bauraum und Reibbedingungen.",
+          "text": "Ein pauschaler Druckgrenzwert für O-Ringe ist fachlich falsch. Extrusionsrisiko entsteht aus dem Zusammenwirken von Druck und Druckwechsel, Extrusionsspalt, Compoundhärte und -modul, Temperatur, Nutgeometrie und Bewegungsart; Anti-Extrusionsringe können den Spalt stützen, ändern aber Bauraum und Reibbedingungen.",
           "kind": "system_dependent",
           "answer_facets": ["limits", "operating_factors", "variants", "tradeoffs"],
           "review_state": "reviewed",
@@ -204,7 +204,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die Polymerfamilie allein qualifiziert keinen O-Ring-Compound. Medium und Handelsrezeptur, Konzentration, Additive, Temperatur, Expositionszeit, Druckgas/Permeation sowie geforderte Zulassungen koennen Quellung, Schrumpfung durch Extraktion, Haertung, Erweichung oder explosiven Druckabbau ausloesen und muessen am konkreten Compound bewertet werden.",
+          "text": "Die Polymerfamilie allein qualifiziert keinen O-Ring-Compound. Medium und Handelsrezeptur, Konzentration, Additive, Temperatur, Expositionszeit, Druckgas/Permeation sowie geforderte Zulassungen können Quellung, Schrumpfung durch Extraktion, Härtung, Erweichung oder explosiven Druckabbau auslösen und müssen am konkreten Compound bewertet werden.",
           "kind": "safety_caution",
           "answer_facets": ["media_compatibility", "properties", "failure_modes", "limits"],
           "review_state": "reviewed",
@@ -215,7 +215,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Typische O-Ring-Schadensbilder sind Druckverformungsrest mit Vorspannungsverlust, Extrusionsfraß, Spiralversagen, Abrieb, thermische Haertung, chemische Quellung oder Schrumpfung sowie Kerben und Verdrehung aus der Montage. Eine Diagnose muss Schadensbild, Lage im Ring, Nut-/Spaltgeometrie und Betriebsverlauf zusammenfuehren.",
+          "text": "Typische O-Ring-Schadensbilder sind Druckverformungsrest mit Vorspannungsverlust, Extrusionsfraß, Spiralversagen, Abrieb, thermische Härtung, chemische Quellung oder Schrumpfung sowie Kerben und Verdrehung aus der Montage. Eine Diagnose muss Schadensbild, Lage im Ring, Nut-/Spaltgeometrie und Betriebsverlauf zusammenführen.",
           "kind": "safety_caution",
           "answer_facets": ["failure_modes", "mechanism"],
           "review_state": "reviewed",
@@ -225,7 +225,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Fuer eine O-Ring-Auslegung werden mindestens Dichtungsart und Bewegungsprofil, Nut- und Gegenmass mit Toleranzen, Druckprofil und Druckrichtung, Temperaturprofil, exaktes Medium, Werkstoff/Compound und Haerte, Oberflaechen, Montageweg, erwartete Quellung sowie Zulassungs- und Lebensdaueranforderung benoetigt. Der Nachweis erfolgt ueber Norm-/Herstellerdaten und anwendungsnahe Qualifikation, nicht aus der Werkstofffamilie allein.",
+          "text": "Für eine O-Ring-Auslegung werden mindestens Dichtungsart und Bewegungsprofil, Nut- und Gegenmaß mit Toleranzen, Druckprofil und Druckrichtung, Temperaturprofil, exaktes Medium, Werkstoff/Compound und Härte, Oberflächen, Montageweg, erwartete Quellung sowie Zulassungs- und Lebensdaueranforderung benötigt. Der Nachweis erfolgt über Norm-/Herstellerdaten und anwendungsnahe Qualifikation, nicht aus der Werkstofffamilie allein.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation", "applications"],
           "review_state": "reviewed",
@@ -272,7 +272,7 @@
       },
       "claims": [
         {
-          "text": "Ein RWDR ist eine beruehrende Rotationsdichtung zwischen Welle und Gehaeuse. Bei der klassischen elastomeren Bauform erzeugen Lippenuebermass und haeufig eine Zugfeder die radiale Anpressung; die Dichtkante trennt Schmierstoff- und Luftseite. ISO 6194-1 ordnet diese Bauart grundsaetzlich dem Niederdruckbereich zu.",
+          "text": "Ein RWDR ist eine berührende Rotationsdichtung zwischen Welle und Gehäuse. Bei der klassischen elastomeren Bauform erzeugen Lippenübermaß und häufig eine Zugfeder die radiale Anpressung; die Dichtkante trennt Schmierstoff- und Luftseite. ISO 6194-1 ordnet diese Bauart grundsätzlich dem Niederdruckbereich zu.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "limits"],
           "review_state": "reviewed",
@@ -283,7 +283,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die Dichtkante benoetigt einen tragfaehigen Schmierfilm. Reibung, Waermeeintrag und Verlustleistung werden nicht nur durch die radiale Lippenkraft bestimmt, sondern auch durch Medium, Druckdifferenz, Umfangsgeschwindigkeit, Umgebungstemperatur, Schmiermethode, Gegenlaufflaeche, Lippenwerkstoff sowie Lippen- und Wellenrauheit. Trockenlauf von Standard-Lippenwerkstoffen ist zu vermeiden.",
+          "text": "Die Dichtkante benötigt einen tragfähigen Schmierfilm. Reibung, Wärmeeintrag und Verlustleistung werden nicht nur durch die radiale Lippenkraft bestimmt, sondern auch durch Medium, Druckdifferenz, Umfangsgeschwindigkeit, Umgebungstemperatur, Schmiermethode, Gegenlauffläche, Lippenwerkstoff sowie Lippen- und Wellenrauheit. Trockenlauf von Standard-Lippenwerkstoffen ist zu vermeiden.",
           "kind": "safety_caution",
           "answer_facets": ["mechanism", "operating_factors", "properties", "failure_modes"],
           "review_state": "reviewed",
@@ -293,7 +293,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Fuer klassische Stefa-Radial-Oeldichtungen nennt der Trelleborg-Leitfaden mit Bezug auf DIN 3760 fuer die Welle mindestens 45 HRC und Ra 0,2 bis 0,8 Mikrometer; Trelleborg empfiehlt aus eigenen Versuchen Ra 0,2 bis 0,5 Mikrometer. Mit steigender Umfangsgeschwindigkeit und bei abrasiven Partikeln ist eine hoehere Haerte erforderlich; bei 10 m/s nennt der Leitfaden 60 HRC. Diese Werte sind bauartbezogene Wellenanforderungen, keine universellen Grenzwerte aller Rotationsdichtungen.",
+          "text": "Für klassische Stefa-Radial-Öldichtungen nennt der Trelleborg-Leitfaden mit Bezug auf DIN 3760 für die Welle mindestens 45 HRC und Ra 0,2 bis 0,8 Mikrometer; Trelleborg empfiehlt aus eigenen Versuchen Ra 0,2 bis 0,5 Mikrometer. Mit steigender Umfangsgeschwindigkeit und bei abrasiven Partikeln ist eine höhere Härte erforderlich; bei 10 m/s nennt der Leitfaden 60 HRC. Diese Werte sind bauartbezogene Wellenanforderungen, keine universellen Grenzwerte aller Rotationsdichtungen.",
           "kind": "example_value",
           "answer_facets": ["parameters", "design_interfaces", "limits", "standards_validation"],
           "review_state": "reviewed",
@@ -303,7 +303,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die Gegenlaufflaeche darf keinen gerichteten Drall tragen, weil Bearbeitungsspuren selbst Medium unter der Lippe foerdern koennen. Trelleborg empfiehlt Einstichschleifen; Rundlauf und Exzentrizitaet sind abhaengig von Drehzahl beziehungsweise Wellendurchmesser zu begrenzen, und die Dichtung soll moeglichst nahe am Lager sitzen.",
+          "text": "Die Gegenlauffläche darf keinen gerichteten Drall tragen, weil Bearbeitungsspuren selbst Medium unter der Lippe fördern können. Trelleborg empfiehlt Einstichschleifen; Rundlauf und Exzentrizität sind abhängig von Drehzahl beziehungsweise Wellendurchmesser zu begrenzen, und die Dichtung soll möglichst nahe am Lager sitzen.",
           "kind": "system_dependent",
           "answer_facets": ["design_interfaces", "mechanism", "failure_modes", "selection_inputs"],
           "review_state": "reviewed",
@@ -313,7 +313,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Werkstoff- und Bauformauswahl eines RWDR haengen gekoppelt von Medium und Additiven, Minimal-/Maximal- und Lippentemperatur, Umfangsgeschwindigkeit, Druckdifferenz, Schmierzustand, Schmutzeintrag, Wellenbewegung, Drehrichtung, Einbauraum und Gegenlaufflaeche ab. Nenn-Maxima aus Katalogspalten duerfen bei extremen Bedingungen nicht gleichzeitig angesetzt werden.",
+          "text": "Werkstoff- und Bauformauswahl eines RWDR hängen gekoppelt von Medium und Additiven, Minimal-/Maximal- und Lippentemperatur, Umfangsgeschwindigkeit, Druckdifferenz, Schmierzustand, Schmutzeintrag, Wellenbewegung, Drehrichtung, Einbauraum und Gegenlauffläche ab. Nenn-Maxima aus Katalogspalten dürfen bei extremen Bedingungen nicht gleichzeitig angesetzt werden.",
           "kind": "system_dependent",
           "answer_facets": ["operating_factors", "selection_inputs", "tradeoffs", "media_compatibility"],
           "review_state": "reviewed",
@@ -324,7 +324,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "RWDR-Bauformen unterscheiden sich unter anderem durch Elastomer- oder PTFE-Lippe, Metall- oder Gummimantel, Staublippe, Druckunterstuetzung und Drehrichtungs-/Rueckfoerderstruktur. Eine federvorgespannte PTFE-Rotationslippe ist eine andere Systemloesung als ein klassischer Elastomer-RWDR und darf nicht mit der Kaltflusswarnung fuer einen massiven statischen PTFE-O-Ring gleichgesetzt werden.",
+          "text": "RWDR-Bauformen unterscheiden sich unter anderem durch Elastomer- oder PTFE-Lippe, Metall- oder Gummimantel, Staublippe, Druckunterstützung und Drehrichtungs-/Rückförderstruktur. Eine federvorgespannte PTFE-Rotationslippe ist eine andere Systemlösung als ein klassischer Elastomer-RWDR und darf nicht mit der Kaltflusswarnung für einen massiven statischen PTFE-O-Ring gleichgesetzt werden.",
           "kind": "system_dependent",
           "answer_facets": ["variants", "tradeoffs", "applications"],
           "review_state": "reviewed",
@@ -335,7 +335,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Typische RWDR-Versagenspfade sind thermisch verglaste oder verhaertete Lippen, Mangelschmierungs- und Trockenlaufverschleiss, eingelaufene Wellen, Leckage durch Drall, Lippenbeschaedigung bei Montage, Schmutzunterwanderung sowie dynamischer Kontaktverlust durch Rundlauf oder Exzentrizitaet. Das Schadensbild ist gegen Lippe, Laufspur, Welle, Einbaulage und Betriebsverlauf zu lesen.",
+          "text": "Typische RWDR-Versagenspfade sind thermisch verglaste oder verhärtete Lippen, Mangelschmierungs- und Trockenlaufverschleiß, eingelaufene Wellen, Leckage durch Drall, Lippenbeschädigung bei Montage, Schmutzunterwanderung sowie dynamischer Kontaktverlust durch Rundlauf oder Exzentrizität. Das Schadensbild ist gegen Lippe, Laufspur, Welle, Einbaulage und Betriebsverlauf zu lesen.",
           "kind": "safety_caution",
           "answer_facets": ["failure_modes", "mechanism", "design_interfaces"],
           "review_state": "reviewed",
@@ -346,7 +346,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "ISO 6194-1 behandelt Abmessungen und Toleranzen elastomerer RWDR, ISO 6194-3 Lagerung/Handhabung/Montage und ISO 6194-4 Leistungspruefungen; thermoplastische Lippen wie PTFE werden in ISO 16589 behandelt. Eine konkrete Freigabe benoetigt daher neben der Normabmessung auch Werkstoff, Betriebsfenster, Wellenzustand, Schmierung und anwendungsbezogenen Leistungsnachweis.",
+          "text": "ISO 6194-1 behandelt Abmessungen und Toleranzen elastomerer RWDR, ISO 6194-3 Lagerung/Handhabung/Montage und ISO 6194-4 Leistungsprüfungen; thermoplastische Lippen wie PTFE werden in ISO 16589 behandelt. Eine konkrete Freigabe benötigt daher neben der Normabmessung auch Werkstoff, Betriebsfenster, Wellenzustand, Schmierung und anwendungsbezogenen Leistungsnachweis.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "selection_inputs"],
           "review_state": "reviewed",
@@ -396,7 +396,7 @@
       },
       "claims": [
         {
-          "text": "Eine Gleitringdichtung dichtet den Durchtritt einer rotierenden Welle durch ein stationaeres Gehaeuse mit zwei im Wesentlichen planen, axial gegeneinander belasteten Gleitflaechen. Zwischen den Flaechen bildet das Medium oder ein Hilfsfluid einen sehr duennen Schmierfilm; kontrollierte mikroskopische Leckage und Waermeabfuhr sind Teil des Funktionsprinzips, nicht automatisch ein Defekt.",
+          "text": "Eine Gleitringdichtung dichtet den Durchtritt einer rotierenden Welle durch ein stationäres Gehäuse mit zwei im Wesentlichen planen, axial gegeneinander belasteten Gleitflächen. Zwischen den Flächen bildet das Medium oder ein Hilfsfluid einen sehr dünnen Schmierfilm; kontrollierte mikroskopische Leckage und Wärmeabfuhr sind Teil des Funktionsprinzips, nicht automatisch ein Defekt.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "properties"],
           "review_state": "reviewed",
@@ -406,7 +406,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die fuenf Grundelemente sind rotierender Gleitring, Sekundaerdichtung zwischen Welle und Ring, stationaerer Gegenring, dessen Sekundaerdichtung zum Gehaeuse sowie ein Feder-/Vorspannelement. Der Primaerdichtspalt und die beiden Sekundaerdichtungen muessen getrennt bewertet werden.",
+          "text": "Die fünf Grundelemente sind rotierender Gleitring, Sekundärdichtung zwischen Welle und Ring, stationärer Gegenring, dessen Sekundärdichtung zum Gehäuse sowie ein Feder-/Vorspannelement. Der Primärdichtspalt und die beiden Sekundärdichtungen müssen getrennt bewertet werden.",
           "kind": "definition",
           "answer_facets": ["mechanism", "variants", "design_interfaces"],
           "review_state": "reviewed",
@@ -416,7 +416,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Technisch relevante Bauformachsen sind unter anderem einfach oder doppelt, druckentlastet oder nicht druckentlastet, rotierende oder stationaere Federung, Komponenten- oder Cartridge-Ausfuehrung, Pusher- oder Metallbalgprinzip sowie fluessigkeits- oder gasgeschmierter Betrieb. Diese Merkmale bestimmen Druckbelastung, Waermehaushalt, Emissionsbarriere, Montage und Hilfssystem.",
+          "text": "Technisch relevante Bauformachsen sind unter anderem einfach oder doppelt, druckentlastet oder nicht druckentlastet, rotierende oder stationäre Federung, Komponenten- oder Cartridge-Ausführung, Pusher- oder Metallbalgprinzip sowie flüssigkeits- oder gasgeschmierter Betrieb. Diese Merkmale bestimmen Druckbelastung, Wärmehaushalt, Emissionsbarriere, Montage und Hilfssystem.",
           "kind": "system_dependent",
           "answer_facets": ["variants", "tradeoffs", "mechanism", "applications"],
           "review_state": "reviewed",
@@ -427,7 +427,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Die Auswahl wird nicht durch Druck und Temperatur allein bestimmt. Erforderlich sind unter anderem Medium und Konzentration, Viskositaet, Dampfdruck/Phasenzustand, Schmierfaehigkeit, Feststoffe oder Kristallisation, Korrosivitaet und Gefahrstoffstatus sowie Dichtungsraumdruck/-temperatur, Drehzahl, Wellendurchmesser, Rundlauf, Starts/Stopps und verfuegbare Kuehlung beziehungsweise Spuelung.",
+          "text": "Die Auswahl wird nicht durch Druck und Temperatur allein bestimmt. Erforderlich sind unter anderem Medium und Konzentration, Viskosität, Dampfdruck/Phasenzustand, Schmierfähigkeit, Feststoffe oder Kristallisation, Korrosivität und Gefahrstoffstatus sowie Dichtungsraumdruck/-temperatur, Drehzahl, Wellendurchmesser, Rundlauf, Starts/Stopps und verfügbare Kühlung beziehungsweise Spülung.",
           "kind": "system_dependent",
           "answer_facets": ["selection_inputs", "operating_factors", "media_compatibility", "parameters"],
           "review_state": "reviewed",
@@ -438,7 +438,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Gleitflaechenpaarungen wie Kohle gegen Siliziumkarbid oder Siliziumkarbid gegen Siliziumkarbid, Sekundaerdichtungen aus Elastomer oder PTFE, Metallteile und Federn erfuellen unterschiedliche tribologische, chemische und thermische Aufgaben. Die beste chemische Bestaendigkeit einer Komponente kompensiert weder ungeeignete Reibpaarung noch einen instabilen Schmierfilm.",
+          "text": "Gleitflächenpaarungen wie Kohle gegen Siliziumkarbid oder Siliziumkarbid gegen Siliziumkarbid, Sekundärdichtungen aus Elastomer oder PTFE, Metallteile und Federn erfüllen unterschiedliche tribologische, chemische und thermische Aufgaben. Die beste chemische Beständigkeit einer Komponente kompensiert weder ungeeignete Reibpaarung noch einen instabilen Schmierfilm.",
           "kind": "system_dependent",
           "answer_facets": ["properties", "media_compatibility", "tradeoffs", "design_interfaces"],
           "review_state": "reviewed",
@@ -448,7 +448,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Bei doppelten Dichtungen und anspruchsvollen Medien ist das Versorgungssystem Teil der Dichtfunktion: Puffer- oder Sperrmedium, Druckniveau, Umwaelzung, Kuehlung, Entgasung und Ueberwachung muessen zur Anordnung passen. Ein ungeeigneter oder ausgefallener Versorgungsplan kann eine korrekt ausgewaehlte Gleitringdichtung trotzdem zerstoeren.",
+          "text": "Bei doppelten Dichtungen und anspruchsvollen Medien ist das Versorgungssystem Teil der Dichtfunktion: Puffer- oder Sperrmedium, Druckniveau, Umwälzung, Kühlung, Entgasung und Überwachung müssen zur Anordnung passen. Ein ungeeigneter oder ausgefallener Versorgungsplan kann eine korrekt ausgewählte Gleitringdichtung trotzdem zerstören.",
           "kind": "safety_caution",
           "answer_facets": ["design_interfaces", "operating_factors", "failure_modes", "variants"],
           "review_state": "reviewed",
@@ -458,7 +458,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Dominante Versagensmechanismen sind Schmierfilmabriss/Trockenlauf, Verdampfen oder Flashing im Dichtspalt, thermische Verformung und Heissrisse, abrasiver Verschleiss durch Feststoffe, chemischer Angriff der Sekundaerdichtung, Ablagerung/Kristallisation, Fehlstellung oder Rundlauf sowie Fehler im Sperr- oder Spuelsystem. Eine reine Leckagebeobachtung reicht fuer die Ursachenanalyse nicht.",
+          "text": "Dominante Versagensmechanismen sind Schmierfilmabriss/Trockenlauf, Verdampfen oder Flashing im Dichtspalt, thermische Verformung und Heißrisse, abrasiver Verschleiß durch Feststoffe, chemischer Angriff der Sekundärdichtung, Ablagerung/Kristallisation, Fehlstellung oder Rundlauf sowie Fehler im Sperr- oder Spülsystem. Eine reine Leckagebeobachtung reicht für die Ursachenanalyse nicht.",
           "kind": "safety_caution",
           "answer_facets": ["failure_modes", "mechanism", "limits"],
           "review_state": "reviewed",
@@ -469,7 +469,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "ISO 21049:2004 beziehungsweise API 682 klassifizieren Dichtsysteme fuer Kreisel- und Rotationspumpen in der Erdoel-, Erdgas- und Chemieindustrie nach Kategorien, Typen, Anordnungen und Orientierungen; ihr Schwerpunkt sind insbesondere gefaehrliche, brennbare oder toxische Dienste mit erhoehter Zuverlaessigkeitsanforderung. Die Norm ist keine pauschale Produktauswahl fuer jede Pumpe.",
+          "text": "ISO 21049:2004 beziehungsweise API 682 klassifizieren Dichtsysteme für Kreisel- und Rotationspumpen in der Erdöl-, Erdgas- und Chemieindustrie nach Kategorien, Typen, Anordnungen und Orientierungen; ihr Schwerpunkt sind insbesondere gefährliche, brennbare oder toxische Dienste mit erhöhter Zuverlässigkeitsanforderung. Die Norm ist keine pauschale Produktauswahl für jede Pumpe.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "applications", "limits"],
           "review_state": "reviewed",
@@ -480,7 +480,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Eine belastbare Gleitringdichtungsfreigabe muss Dichtungstyp, Werkstoffpaarung, Sekundaerdichtungen, Arrangement und Hilfssystem gemeinsam gegen den realen Betriebspunkt und Transienten validieren. Hersteller-Produktgrenzen sind gekoppelte Systemgrenzen; einzelne Maximalwerte fuer Druck, Temperatur oder Gleitgeschwindigkeit duerfen nicht kombiniert werden.",
+          "text": "Eine belastbare Gleitringdichtungsfreigabe muss Dichtungstyp, Werkstoffpaarung, Sekundärdichtungen, Arrangement und Hilfssystem gemeinsam gegen den realen Betriebspunkt und Transienten validieren. Hersteller-Produktgrenzen sind gekoppelte Systemgrenzen; einzelne Maximalwerte für Druck, Temperatur oder Gleitgeschwindigkeit dürfen nicht kombiniert werden.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation", "limits"],
           "review_state": "reviewed",
@@ -539,7 +539,7 @@
       },
       "claims": [
         {
-          "text": "Eine fachlich belastbare Medienantwort beginnt mit der Stoffidentitaet: Handelsprodukt beziehungsweise chemische Spezies, Grundfluid, Konzentration, Wasseranteil, pH soweit relevant, Additivpaket, Verunreinigungen und Zustandsform. Oberbegriffe wie Synthetikoel, Kuehlmittel oder Saeure sind fuer eine Werkstofffreigabe nicht eindeutig genug.",
+          "text": "Eine fachlich belastbare Medienantwort beginnt mit der Stoffidentität: Handelsprodukt beziehungsweise chemische Spezies, Grundfluid, Konzentration, Wasseranteil, pH soweit relevant, Additivpaket, Verunreinigungen und Zustandsform. Oberbegriffe wie Synthetiköl, Kühlmittel oder Säure sind für eine Werkstofffreigabe nicht eindeutig genug.",
           "kind": "definition",
           "answer_facets": ["definition", "variants", "selection_inputs"],
           "review_state": "reviewed",
@@ -550,7 +550,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "ISO 1817:2024 bewertet die Wirkung von Fluessigkeiten auf vulkanisierte oder thermoplastische Kautschuke durch den Vergleich von Werkstoffeigenschaften vor und nach der Immersion in Betriebs- oder Referenzfluessigkeiten. Ein solcher Immersionstest ist ein Kompatibilitaetsbaustein; er bildet Nut, Vorspannung, Reibung, Druck, Permeation und dynamische Waerme eines realen Dichtsystems nicht vollstaendig ab.",
+          "text": "ISO 1817:2024 bewertet die Wirkung von Flüssigkeiten auf vulkanisierte oder thermoplastische Kautschuke durch den Vergleich von Werkstoffeigenschaften vor und nach der Immersion in Betriebs- oder Referenzflüssigkeiten. Ein solcher Immersionstest ist ein Kompatibilitätsbaustein; er bildet Nut, Vorspannung, Reibung, Druck, Permeation und dynamische Wärme eines realen Dichtsystems nicht vollständig ab.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "mechanism", "limits"],
           "review_state": "reviewed",
@@ -560,7 +560,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Medienvertraeglichkeit ist bedingungsabhaengig: Temperatur, Konzentration, Expositionszeit, Druck und Druckwechsel, Gas- oder Fluessigphase, Stroemung, Reinigung und Medienwechsel koennen eine Bewertung aendern. Bei Saeuren und anderen reaktiven Medien kann die Bestaendigkeit laut Parker insbesondere mit Temperatur und Konzentration stark wechseln.",
+          "text": "Medienverträglichkeit ist bedingungsabhängig: Temperatur, Konzentration, Expositionszeit, Druck und Druckwechsel, Gas- oder Flüssigphase, Strömung, Reinigung und Medienwechsel können eine Bewertung ändern. Bei Säuren und anderen reaktiven Medien kann die Beständigkeit laut Parker insbesondere mit Temperatur und Konzentration stark wechseln.",
           "kind": "system_dependent",
           "answer_facets": ["parameters", "operating_factors", "media_compatibility", "tradeoffs"],
           "review_state": "reviewed",
@@ -571,7 +571,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Dichtungsrelevante Wechselwirkungen sind nicht auf sichtbare Quellung begrenzt. Zu pruefen sind Massen-/Volumenaenderung, Haerte- und Festigkeitsaenderung, Extraktion von Weichmachern mit Schrumpfung, Hydrolyse oder Oxidation, Permeation, explosive Dekompression bei Gas sowie Ablagerung, Kristallisation und Verlust der Schmierfaehigkeit.",
+          "text": "Dichtungsrelevante Wechselwirkungen sind nicht auf sichtbare Quellung begrenzt. Zu prüfen sind Massen-/Volumenänderung, Härte- und Festigkeitsänderung, Extraktion von Weichmachern mit Schrumpfung, Hydrolyse oder Oxidation, Permeation, explosive Dekompression bei Gas sowie Ablagerung, Kristallisation und Verlust der Schmierfähigkeit.",
           "kind": "safety_caution",
           "answer_facets": ["media_compatibility", "failure_modes", "properties", "limits"],
           "review_state": "reviewed",
@@ -582,7 +582,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Ein Medium beeinflusst nicht nur den Werkstoff, sondern das gesamte Dichtprinzip: Viskositaet und Schmierfaehigkeit steuern den Reib- und Schmierfilm, Dampfdruck und Phasenwechsel das Flashing-Risiko, Feststoffe den Abrasivverschleiss, und Additive koennen die Bestaendigkeit gegenueber dem Grundfluid veraendern.",
+          "text": "Ein Medium beeinflusst nicht nur den Werkstoff, sondern das gesamte Dichtprinzip: Viskosität und Schmierfähigkeit steuern den Reib- und Schmierfilm, Dampfdruck und Phasenwechsel das Flashing-Risiko, Feststoffe den Abrasivverschleiß, und Additive können die Beständigkeit gegenüber dem Grundfluid verändern.",
           "kind": "system_dependent",
           "answer_facets": ["mechanism", "properties", "applications", "design_interfaces"],
           "review_state": "reviewed",
@@ -594,7 +594,7 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Eine Medien- oder Medienvergleichsantwort muss deshalb Stoffdaten und Dichtungswirkung getrennt ausgeben, Werkstoffaussagen an konkrete Compounds binden und offene Daten aus Sicherheitsdatenblatt, technischem Datenblatt oder Analyse benennen. Die finale Qualifikation erfolgt mit dem realen Medium beziehungsweise einer repraesentativen Rezeptur unter anwendungsnahen Bedingungen.",
+          "text": "Eine Medien- oder Medienvergleichsantwort muss deshalb Stoffdaten und Dichtungswirkung getrennt ausgeben, Werkstoffaussagen an konkrete Compounds binden und offene Daten aus Sicherheitsdatenblatt, technischem Datenblatt oder Analyse benennen. Die finale Qualifikation erfolgt mit dem realen Medium beziehungsweise einer repräsentativen Rezeptur unter anwendungsnahen Bedingungen.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation", "applications"],
           "review_state": "reviewed",

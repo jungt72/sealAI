@@ -105,10 +105,16 @@ _LEAKAGE_RE = re.compile(
 )
 
 _CASE_LANGUAGE_RE = re.compile(
-    r"\b(ersatz(?:teil)?|ersetzen|auslegen|auslegung|vorqualifizierung|"
+    r"\b(ersatz(?:teil)?|ersetzen|vorqualifizierung|"
     r"welche[rs]?\s+dichtung|dichtungsfall|ich\s+suche\s+(?:einen?|eine))\b",
     re.IGNORECASE,
 )
+
+# "Auslegung" is also a legitimate knowledge subject ("Erklaere die O-Ring-Auslegung"). Keep it
+# separate from unequivocal case language so an explicit overview request can discuss engineering
+# design axes without being mistaken for a concrete application. It still forces the full path for
+# every non-overview shape and whenever a real case signal (value, damage, suitability, etc.) fires.
+_DESIGN_TOPIC_RE = re.compile(r"\b(auslegen|auslegung)\b", re.IGNORECASE)
 
 # Kinematic/calc-relevant terms that name a value WITHOUT stating it numerically yet (e.g. asking
 # to compute or reference Umfangsgeschwindigkeit) — the deterministic calc kernel (core/calc/) is
@@ -134,8 +140,9 @@ _COMPARISON_RE = re.compile(
 # Suitability/recommendation-request language: "passt das?", "reicht das?", "ich brauche eine
 # Dichtung fuer...", "welche X nehme ich/empfiehlst du" — the profile of a real (if under-
 # specified) application question, not a definitional knowledge question. Broader than
-# _CASE_LANGUAGE_RE on purpose (that regex catches explicit "Ersatz/Auslegung" vocabulary; this
-# one catches the much more common "is this okay / what should I use" phrasing that dominates
+# _CASE_LANGUAGE_RE/_DESIGN_TOPIC_RE on purpose (those regexes catch explicit replacement/design
+# vocabulary; this one catches the much more common "is this okay / what should I use" phrasing
+# that dominates
 # real intake messages, per a stress-test against the eval seed cases).
 _SUITABILITY_QUESTION_RE = re.compile(
     r"\b(passt\s+(?:\w+\s+){0,2}(?:das|dazu|hierzu|hierf[uü]r)|reicht\s+das|"
@@ -231,7 +238,7 @@ def _is_smalltalk_shape(question: str) -> bool:
 _DOMAIN_KNOWLEDGE_RE = re.compile(
     r"\b(dichtung(?:en|stechnik)?|dichtungsart|dichtungsmedium|medium|medien|fluid|betriebsstoff|"
     r"wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
-    r"o-?ring|gleitringdichtung|gleitdichtung|glrd|mechanical\s+seal|hydraulikdichtung|werkstoff|"
+    r"o-?ring(?:e|s)?|gleitringdichtung|gleitdichtung|glrd|mechanical\s+seal|hydraulikdichtung|werkstoff|"
     r"elastomer|thermoplast|nut|dichtlippe|"
     r"gegenlauffl(?:a|ä)che|schmierung|tribologie)\b",
     re.IGNORECASE,
@@ -243,8 +250,20 @@ _KNOWLEDGE_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A possessive/deictic reference makes even an explanation-shaped question case-bound: "Erklaere
+# meine Auslegung" is not the same route as "Erklaere die Auslegung". Numeric operating values,
+# failures, suitability requests and other hard signals are handled independently below.
+_CONCRETE_CASE_REFERENCE_RE = re.compile(
+    r"\b(mein(?:e|er|es|en|em)?|unser(?:e|er|es|en|em)?|bei\s+uns|"
+    r"in\s+(?:meiner|unserer)\s+(?:anlage|maschine|pumpe|anwendung)|"
+    r"f[uü]r\s+(?:meine|meinen|meiner|unsere|unseren|unserer)\s+"
+    r"(?:anlage|maschine|pumpe|anwendung)|"
+    r"(?:dieser|diese|dieses|vorliegende[rs]?)\s+(?:fall|anwendung|anlage|maschine|pumpe))\b",
+    re.IGNORECASE,
+)
+
 _SHORT_MATERIAL_CONTEXT_RE = re.compile(
-    r"\b(werkstoff|material|elastomer|kautschuk|gummi|dichtung|o-?ring|"
+    r"\b(werkstoff|material|elastomer|kautschuk|gummi|dichtung|o-?ring(?:e|s)?|"
     r"details|informationen|[uü]berblick|eigenschaften)\b",
     re.IGNORECASE,
 )
@@ -283,6 +302,25 @@ def _has_material_topic(question: str, material_terms: tuple[str, ...] = ()) -> 
     return False
 
 
+def _is_explicit_knowledge_overview(
+    question: str, *, material_terms: tuple[str, ...] = ()
+) -> bool:
+    """Recognise an educational overview even when it names design axes.
+
+    ``Verpressung`` and ``Auslegung`` are both engineering-case signals and normal chapter names in
+    an expert explanation. Only the latter interpretation is selected here: the user must explicitly
+    ask for an explanation/overview, name a sealing-domain subject, and avoid a concrete-case
+    reference. All hard signals remain active and therefore still force the full pipeline.
+    """
+
+    text = question or ""
+    if not _KNOWLEDGE_REQUEST_RE.search(text):
+        return False
+    if not (_DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)):
+        return False
+    return not _CONCRETE_CASE_REFERENCE_RE.search(text)
+
+
 def detect_engineering_signals(
     question: str,
     *,
@@ -311,13 +349,18 @@ def detect_engineering_signals(
         signals.append("manufacturer_alternatives_request")
     if _ENGINEERING_VALUE_RE.search(question):
         signals.append("engineering_value_with_unit")
-    if _COMPRESSION_RE.search(question):
+    explicit_knowledge_overview = _is_explicit_knowledge_overview(
+        question, material_terms=material_terms
+    )
+    if _COMPRESSION_RE.search(question) and not explicit_knowledge_overview:
         signals.append("compression_or_interference_language")
     if _RFQ_RE.search(question):
         signals.append("rfq_language")
     if _LEAKAGE_RE.search(question):
         signals.append("leakage_or_failure_language")
-    if _CASE_LANGUAGE_RE.search(question):
+    if _CASE_LANGUAGE_RE.search(question) or (
+        _DESIGN_TOPIC_RE.search(question) and not explicit_knowledge_overview
+    ):
         signals.append("replacement_or_case_language")
     if _SUITABILITY_QUESTION_RE.search(question):
         signals.append("suitability_or_recommendation_request")
