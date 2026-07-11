@@ -102,6 +102,9 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
 
 
 def test_seed_review_state_never_launders_model_review_into_authority() -> None:
+    import sys
+
+    sys.path.insert(0, str(REPO / "backend"))
     from sealai_v2.knowledge.fachkarten import load_fachkarten
 
     catalog = load_fachkarten()
