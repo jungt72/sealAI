@@ -56,6 +56,8 @@ WORKER_SERVICE="backend-v2-worker"
 RUNS_DIR="backend/sealai_v2/eval/runs"
 COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2)
 BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
+LOCAL_BACKEND_IMAGE="sealai-backend-v2:local"
+ROLLBACK_IMAGE_OVERRIDE="${SEALAI_V2_ROLLBACK_IMAGE:-}"
 
 die() { echo "release-backend-v2: $*" >&2; exit 1; }
 
@@ -78,6 +80,40 @@ mkdir -p "${RUNTIME_DIR}"
 TREE_HASH="$(bash ops/tree-hash.sh)"
 [ -n "${TREE_HASH}" ] || die "empty tree_hash from ops/tree-hash.sh"
 echo ">> served tree_hash = ${TREE_HASH}"
+
+# Preserve the running rollback artifact BEFORE a local build can replace the service image tag.
+# Docker/BuildKit may remove an untagged manifest-list record while its container keeps running;
+# reading/tagging it after the build is therefore too late. If that metadata is already missing,
+# accept only an explicit, secret-free reconstructed image whose baked revision + served-tree hash
+# exactly match the running container labels. Never `docker commit` a production container: its
+# Config includes runtime environment values and can therefore contain secrets.
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+ROLLBACK_STAMP="$(date -u +%Y%m%d-%H%M%S)"
+RUNNING_IMAGE_REF="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
+[[ -n "${RUNNING_IMAGE_REF}" ]] || die "cannot read running ${SERVICE} image from the daemon"
+RUNNING_REVISION="$(docker inspect "${SERVICE}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+RUNNING_TREE_HASH="$(docker inspect "${SERVICE}" --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' 2>/dev/null || true)"
+ROLLBACK_SOURCE="${RUNNING_IMAGE_REF}"
+if ! docker image inspect "${ROLLBACK_SOURCE}" >/dev/null 2>&1; then
+  [[ -n "${ROLLBACK_IMAGE_OVERRIDE}" ]] || die "running image metadata ${RUNNING_IMAGE_REF} is missing; rebuild that exact revision/tree as a secret-free image and retry with SEALAI_V2_ROLLBACK_IMAGE=<image>"
+  docker image inspect "${ROLLBACK_IMAGE_OVERRIDE}" >/dev/null 2>&1 \
+    || die "rollback override image does not exist: ${ROLLBACK_IMAGE_OVERRIDE}"
+  OVERRIDE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${ROLLBACK_IMAGE_OVERRIDE}")"
+  OVERRIDE_TREE_HASH="$(docker image inspect --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' "${ROLLBACK_IMAGE_OVERRIDE}")"
+  [[ -n "${RUNNING_REVISION}" && "${OVERRIDE_REVISION}" == "${RUNNING_REVISION}" ]] \
+    || die "rollback override revision ${OVERRIDE_REVISION:-<missing>} does not match running revision ${RUNNING_REVISION:-<missing>}"
+  [[ -n "${RUNNING_TREE_HASH}" && "${OVERRIDE_TREE_HASH}" == "${RUNNING_TREE_HASH}" ]] \
+    || die "rollback override tree ${OVERRIDE_TREE_HASH:-<missing>} does not match running tree ${RUNNING_TREE_HASH:-<missing>}"
+  ROLLBACK_SOURCE="${ROLLBACK_IMAGE_OVERRIDE}"
+  echo "!! running image metadata missing; using identity-matched rollback override ${ROLLBACK_SOURCE}" >&2
+fi
+docker run --rm --entrypoint python "${ROLLBACK_SOURCE}" \
+  -m sealai_v2.config.build_identity verify >/dev/null \
+  || die "rollback source failed immutable identity verification: ${ROLLBACK_SOURCE}"
+ROLLBACK_HOLD_TAG="sealai-backend-v2:rollback-hold-${RUNNING_REVISION:0:8}-${ROLLBACK_STAMP}"
+docker tag "${ROLLBACK_SOURCE}" "${ROLLBACK_HOLD_TAG}"
+ROLLBACK_FROM="$(docker image inspect --format '{{.Id}}' "${ROLLBACK_HOLD_TAG}")"
+echo ">> rollback artifact preserved before build: ${ROLLBACK_HOLD_TAG} -> ${ROLLBACK_FROM}"
 
 # ── 1b. served L1 id (P1.6): the SAME runtime config the container reads. tree_hash binds the CODE
 # but not the model, so an .env-only L1 swap would otherwise ship on a stale eval. The container reads
@@ -104,7 +140,7 @@ if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
 else
   echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
   "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${GIT_SHA_FULL}" "${SERVICE}"
-  PREPARED_IMAGE="$("${COMPOSE[@]}" images -q "${SERVICE}" | head -n1)"
+  PREPARED_IMAGE="$(docker image inspect --format '{{.Id}}' "${LOCAL_BACKEND_IMAGE}" 2>/dev/null || true)"
   [[ -n "${PREPARED_IMAGE}" ]] || die "could not resolve locally built candidate image"
 fi
 
@@ -134,12 +170,10 @@ else
   echo ">> candidate gate PASS — paid eval deferred; deterministic release controls remain active"
 fi
 
-# ── 4. rollback rung: tag the RUNNING image (from the daemon, never memory) ───
-ROLLBACK_FROM="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
-[ -n "${ROLLBACK_FROM}" ] || die "cannot read running ${SERVICE} image from the daemon"
-TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# ── 4. rollback rung: promote the artifact preserved before candidate preparation ───────────────
 ROLLBACK_TAG="sealai-backend-v2:rollback-pre-${RUN_LABEL}-$(date -u +%Y%m%d-%H%M%S)"
-docker tag "${ROLLBACK_FROM}" "${ROLLBACK_TAG}"
+docker tag "${ROLLBACK_HOLD_TAG}" "${ROLLBACK_TAG}"
+docker image rm "${ROLLBACK_HOLD_TAG}" >/dev/null 2>&1 || true
 echo ">> rollback rung: ${ROLLBACK_TAG} -> ${ROLLBACK_FROM}"
 
 echo ">> creating verified pre-migration backup"
@@ -168,8 +202,7 @@ echo ">> live ${SERVICE} image = ${IMAGE_SHA}"
 rollback_hint() {
   echo "!! SMOKE RED — NOT writing the ledger. Rollback path:" >&2
   echo "   pre-migration database backup: ${MIGRATION_BACKUP:-<not-created>}" >&2
-  echo "   docker tag ${ROLLBACK_TAG} sealai-backend-v2:latest && \\" >&2
-  echo "   ${COMPOSE[*]} up -d --no-build --no-deps --force-recreate ${SERVICE} ${WORKER_SERVICE}" >&2
+  echo "   BACKEND_V2_IMAGE=${ROLLBACK_TAG} ${COMPOSE[*]} up -d --no-build --no-deps --force-recreate ${SERVICE} ${WORKER_SERVICE}" >&2
 }
 smoke_fail() { rollback_hint; exit 1; }
 
